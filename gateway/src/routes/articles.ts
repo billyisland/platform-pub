@@ -31,7 +31,7 @@ const IndexArticleSchema = z.object({
   content: z.string(),                // free section content
   isPaywalled: z.boolean(),
   pricePence: z.number().int().min(0),
-  gatePositionPct: z.number().int().min(1).max(99),
+  gatePositionPct: z.number().int().min(0).max(99),
   vaultEventId: z.string().optional(),
 })
 
@@ -197,6 +197,8 @@ export async function articleRoutes(app: FastifyInstance) {
     '/articles/:nostrEventId/vault',
     { preHandler: requireAuth },
     async (req, reply) => {
+      // Inject writer identity so the key service can verify ownership
+      req.headers['x-writer-id'] = req.session!.sub!
       return proxyToService(
         `${KEY_SERVICE_URL}/api/v1/articles/${req.params.nostrEventId}/vault`,
         'POST',
@@ -210,6 +212,8 @@ export async function articleRoutes(app: FastifyInstance) {
     '/articles/:nostrEventId/vault',
     { preHandler: requireAuth },
     async (req, reply) => {
+      // Inject writer identity so the key service can verify ownership
+      req.headers['x-writer-id'] = req.session!.sub!
       return proxyToService(
         `${KEY_SERVICE_URL}/api/v1/articles/${req.params.nostrEventId}/vault`,
         'PATCH',

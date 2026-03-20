@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v1.8.1
+# platform.pub — Deployment Reference v1.8.2
 
 **Date:** 20 March 2026
-**Replaces:** v1.8 (see bottom for change log)
+**Replaces:** v1.8.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -480,6 +480,28 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v1.8.2 — 20 March 2026
+
+**Bug fixes**
+
+- `gateway/src/routes/articles.ts`: Changed `gatePositionPct` Zod validation from `min(1)` to `min(0)`. Non-paywalled articles send `gatePositionPct: 0` (unused by the DB, which stores `NULL` for non-paywalled rows), so `min(1)` was incorrectly rejecting every non-paywalled publish with a 400 error.
+- `gateway/src/routes/articles.ts`: The vault proxy routes (`POST` and `PATCH /articles/:nostrEventId/vault`) now inject `x-writer-id` from the authenticated session before forwarding to the key service. Previously the key service received no `x-writer-id` header and rejected every paywalled publish with 401 "Missing x-writer-id".
+- `web/src/lib/publish.ts`: If the DB index step (step 3 of the publish pipeline) throws after the relay event has already been published (step 2), a kind 5 deletion event is now immediately published to retract the relay event. Previously a failed index left the article on the relay as a dead link — visible in the feed but 404 on click.
+- `web/src/app/dashboard/page.tsx`: After a successful `DELETE /articles/:id` API call, the frontend now also publishes a kind 5 deletion event directly via NDK. This gives the relay a second, reliable path to receive the deletion and prevents deleted articles from reappearing in feeds when the gateway's own relay publish failed (non-fatal path).
+- `web/src/components/feed/FeedView.tsx`: Fixed a TypeScript type signature bug on the `isArticleDeleted` helper: the parameter type was `{ id, tags }` which omitted `pubkey`, causing the `a`-tag deletion check (`30023:${e.pubkey}:${dTag}`) to silently use `undefined` at runtime and miss coordinate-based deletions.
+
+**Upgrading from v1.8.1**
+
+No schema changes. Rebuild and restart `gateway` and `web`:
+
+```bash
+cd /root/platform-pub
+docker compose build --no-cache gateway web
+docker compose up -d gateway web
+```
+
+---
 
 ### v1.8.1 — 20 March 2026
 

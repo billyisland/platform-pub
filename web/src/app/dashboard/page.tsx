@@ -6,6 +6,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { payment, myArticles, type WriterEarnings, type ArticleEarnings, type MyArticle } from '../../lib/api'
 import { loadDrafts, deleteDraft } from '../../lib/drafts'
+import { NDKEvent } from '@nostr-dev-kit/ndk'
+import { getNdk, KIND_DELETION } from '../../lib/ndk'
+import { signViaGateway } from '../../lib/sign'
 
 type DashboardTab = 'articles' | 'drafts' | 'credits' | 'debits'
 
@@ -70,7 +73,7 @@ export default function DashboardPage() {
         </div>
         <Link href="/write" className="btn">New article</Link>
       </div>
-      {activeTab === 'articles' && <ArticlesTab userId={user.id} />}
+      {activeTab === 'articles' && <ArticlesTab userId={user.id} pubkey={user.pubkey} />}
       {activeTab === 'drafts' && <DraftsTab />}
       {activeTab === 'credits' && hasEarnings && <CreditsTab userId={user.id} stripeReady={user.stripeConnectKycComplete} />}
       {activeTab === 'debits' && <DebitsTab userId={user.id} freeAllowancePence={user.freeAllowanceRemainingPence} hasCard={user.hasPaymentMethod} />}
@@ -82,13 +85,26 @@ export default function DashboardPage() {
 // Articles Tab — unchanged from previous
 // =============================================================================
 
-function ArticlesTab({ userId }: { userId: string }) {
+function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
   const [articles, setArticles] = useState<MyArticle[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [deletingId, setDeletingId] = useState<string | null>(null)
   useEffect(() => { (async () => { setLoading(true); try { setArticles((await myArticles.list()).articles) } catch { setError('Failed to load articles.') } finally { setLoading(false) } })() }, [userId])
   async function handleToggleComments(id: string, on: boolean) { try { await myArticles.update(id, { commentsEnabled: on }); setArticles(p => p.map(a => a.id === id ? { ...a, commentsEnabled: on } : a)) } catch { setError('Failed to update.') } }
   async function handleDelete(id: string) {
     setDeletingId(id)
-    try { await myArticles.remove(id); setArticles(p => p.filter(a => a.id !== id)) }
+    try {
+      const result = await myArticles.remove(id)
+      setArticles(p => p.filter(a => a.id !== id))
+      // Also publish the kind 5 deletion event from the frontend so the relay
+      // removes the article from feeds even if the gateway's relay publish failed.
+      try {
+        const ndk = getNdk(); await ndk.connect()
+        const delEvent = new NDKEvent(ndk)
+        delEvent.kind = KIND_DELETION; delEvent.content = ''
+        delEvent.tags = [['e', result.nostrEventId], ['a', `30023:${pubkey}:${result.dTag}`]]
+        const signed = await signViaGateway(delEvent)
+        await signed.publish()
+      } catch { /* non-fatal — DB is already soft-deleted */ }
+    }
     catch { setError('Failed to delete.') }
     finally { setDeletingId(null) }
   }

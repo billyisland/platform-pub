@@ -1,4 +1,4 @@
-import { getNdk, KIND_ARTICLE } from './ndk'
+import { getNdk, KIND_ARTICLE, KIND_DELETION } from './ndk'
 import { signViaGateway } from './sign'
 import { articles as articlesApi } from './api'
 import type { PublishData } from '../components/editor/ArticleEditor'
@@ -73,15 +73,35 @@ export async function publishArticle(
 
   // Step 3: Index the article in the platform database — this returns the UUID
   // that the vault key service needs as a foreign key reference.
-  const { articleId } = await articlesApi.index({
-    nostrEventId: signedArticle.id,
-    dTag,
-    title: data.title,
-    content: data.freeContent,
-    isPaywalled: data.isPaywalled,
-    pricePence: data.pricePence,
-    gatePositionPct: data.gatePositionPct,
-  })
+  // If indexing fails we retract the relay event so it doesn't appear in feeds
+  // as a dead link (visible on relay but 404 in the DB).
+  let articleId!: string
+  try {
+    const result = await articlesApi.index({
+      nostrEventId: signedArticle.id,
+      dTag,
+      title: data.title,
+      content: data.freeContent,
+      isPaywalled: data.isPaywalled,
+      pricePence: data.pricePence,
+      gatePositionPct: data.gatePositionPct,
+    })
+    articleId = result.articleId
+  } catch (indexErr) {
+    // Try to retract the relay event so the article doesn't become a dead link
+    try {
+      const retractEvent = new NDKEvent(ndk)
+      retractEvent.kind = KIND_DELETION
+      retractEvent.content = ''
+      retractEvent.tags = [
+        ['e', signedArticle.id!],
+        ['a', `30023:${writerPubkey}:${dTag}`],
+      ]
+      const signedRetract = await signViaGateway(retractEvent)
+      await signedRetract.publish()
+    } catch { /* best-effort */ }
+    throw indexErr
+  }
 
   let vaultEventId: string | undefined
 

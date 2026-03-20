@@ -41,7 +41,7 @@ export function FeedView() {
             if (t[0] === 'e') deletedIds.add(t[1])
             if (t[0] === 'a') deletedCoords.add(t[1])
           }
-          const isArticleDeleted = (e: { id: string; tags: string[][] }) => {
+          const isArticleDeleted = (e: { id: string; pubkey: string; tags: string[][] }) => {
             if (deletedIds.has(e.id)) return true
             const dTag = e.tags.find(t => t[0] === 'd')?.[1]
             return dTag != null && deletedCoords.has(`30023:${e.pubkey}:${dTag}`)
