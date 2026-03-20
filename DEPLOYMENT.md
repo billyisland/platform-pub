@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v1.8.2
+# platform.pub — Deployment Reference v1.9
 
 **Date:** 20 March 2026
-**Replaces:** v1.8.1 (see bottom for change log)
+**Replaces:** v1.8.2 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -94,9 +94,9 @@ Key variables:
 ### 1. Upload files
 
 ```bash
-scp platform-pub-v1_7.zip root@your-server:/root/
+scp platform-pub-v1_9.zip root@your-server:/root/
 cd /root
-unzip -o platform-pub-v1_7.zip -d platform-pub
+unzip -o platform-pub-v1_9.zip -d platform-pub
 cd /root/platform-pub
 ```
 
@@ -172,6 +172,25 @@ This configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot aut
 
 ## Upgrading from a previous version
 
+### From v1.8.x
+
+```bash
+cd /root/platform-pub
+
+# Back up
+cp -r . ../platform-pub-backup-$(date +%Y%m%d)
+
+# Extract new files
+unzip -o /root/platform-pub-v1_9.zip -d /root/platform-pub
+
+# No schema changes in v1.9 — skip migrations
+
+# Rebuild and restart
+docker compose build --no-cache gateway web
+docker compose up -d
+docker compose restart nginx
+```
+
 ### From v1.6 or earlier
 
 ```bash
@@ -181,11 +200,13 @@ cd /root/platform-pub
 cp -r . ../platform-pub-backup-$(date +%Y%m%d)
 
 # Extract new files
-unzip -o /root/platform-pub-v1_7.zip -d /root/platform-pub
+unzip -o /root/platform-pub-v1_9.zip -d /root/platform-pub
 
-# Run new migration
-docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub \
-  < migrations/005_subscriptions.sql
+# Run all migrations in order
+for f in migrations/*.sql; do
+  echo "Applying $f..."
+  docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < "$f"
+done
 
 # Rebuild and restart
 docker compose build --no-cache gateway web
@@ -223,9 +244,11 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
 |-----------|---------|
 | 001_add_email_and_magic_links.sql | Email column on accounts, magic_links table |
 | 002_draft_upsert_index.sql | Partial unique index for draft upserts |
-| 003_comments.sql | Comments table, comments_enabled on articles/notes, deleted_at on articles |
+| 003_comments.sql | Comments/replies table, replies_enabled on articles/notes, deleted_at on articles |
 | 004_media_uploads.sql | Media uploads table with SHA-256 deduplication |
 | 005_subscriptions.sql | Subscriptions, subscription_events, article_unlocks, subscription pricing |
+
+> **Note:** The DB table is named `comments` and the column `comments_enabled` — these are internal names only. The API and frontend expose them as `replies` / `repliesEnabled`. No migration is required.
 
 Run all pending migrations:
 ```bash
@@ -293,14 +316,23 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
 | GET | /api/v1/drafts | session | List drafts |
 | POST | /api/v1/media/upload | session | Upload image |
 
+### Replies
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | /api/v1/replies | session | Post a reply |
+| GET | /api/v1/replies/:targetEventId | optional | Get replies for an event |
+| DELETE | /api/v1/replies/:replyId | session | Delete reply (author or content owner) |
+| PATCH | /api/v1/articles/:id/replies | session | Toggle replies on/off for an article |
+| PATCH | /api/v1/notes/:id/replies | session | Toggle replies on/off for a note |
+
+> **Backwards compatibility:** The old `/api/v1/comments/*` routes remain registered and proxy to the same handlers. Existing integrations do not need to change.
+
 ### Social
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | POST | /api/v1/follows/:writerId | session | Follow writer |
 | DELETE | /api/v1/follows/:writerId | session | Unfollow writer |
 | GET | /api/v1/follows/pubkeys | session | Followed pubkeys (for feed) |
-| GET | /api/v1/comments/:targetEventId | optional | Get comments |
-| POST | /api/v1/comments | session | Post comment |
 | POST | /api/v1/reports | session | Submit content report |
 
 ### Subscriptions
@@ -329,9 +361,9 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
 | Path | Component | Purpose |
 |------|-----------|---------|
 | / | page.tsx | Landing page (redirects to /feed if logged in via nav) |
-| /feed | FeedView.tsx | Mixed article + note feed from followed writers |
-| /write | WritePage → ArticleEditor | Article editor with inline paywall marker |
-| /article/:dTag | ArticlePage → ArticleReader | Article view with hero image, paywall gate |
+| /feed | FeedView.tsx | Sticky composer + For you / Following / Add tabs; mixed article + note feed |
+| /write | WritePage → ArticleEditor | Article editor with sticky toolbar and inline paywall marker |
+| /article/:dTag | ArticlePage → ArticleReader | Article view with hero image, paywall gate, replies |
 | /:username | WriterProfilePage | Writer profile, follow + subscribe buttons |
 | /auth | AuthPage | Signup / login (email + Google OAuth) |
 | /auth/verify | VerifyPage | Magic link verification |
@@ -343,6 +375,16 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
 ---
 
 ## Design system
+
+### Responsive layout
+
+The app uses three layout breakpoints:
+
+| Breakpoint | Nav behaviour | Main content |
+|-----------|---------------|-------------|
+| `< md` (< 768px) | Fixed top bar with hamburger + slide-out drawer | Full width, `pt-16` for top-bar clearance |
+| `md–lg` (768–1023px) | Fixed top bar with inline horizontal nav links | Full width, `pt-16` for top-bar clearance |
+| `lg+` (≥ 1024px) | Fixed left sidebar (`200px` wide), no top bar | `pl-[200px]` offset, `pt-8` (no top-bar) |
 
 ### Colour palette
 
@@ -466,10 +508,13 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ---
 
-## Known limitations (v1.8)
+## Known limitations (v1.9)
 
 - Subscription renewal is not yet automated (requires a cron job or scheduled worker to charge at period end)
-- "For You" feed tab returns empty (requires engagement data + ranking algorithm)
+- "For You" feed tab returns the same feed as Following — personalised ranking is not yet implemented
+- RSS feed ingestion not yet built — the "Feeds" panel in the Add tab shows a coming-soon placeholder
+- Quoting (NIP-18 kind 1 with `q` tag) is not yet implemented — the `notes` schema has the columns ready
+- Notification centre not yet built (no badge, no inbox for replies / quotes / follows)
 - Nostr keypair self-custody handover UI is not yet built
 - Cash-out-at-will (writer-initiated payout with fee absorption) is not yet implemented
 - Stripe webhook handler exists but live/test key switch is manual
@@ -480,6 +525,56 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v1.9 — 20 March 2026
+
+**Replies (rename from Comments)**
+
+- `gateway/src/routes/replies.ts` (new): Replaces `comments.ts`. All route logic, DB queries, and table references are unchanged — the `comments` table and `comments_enabled` column keep their DB names. API responses now return `repliesEnabled` (with `commentsEnabled` as a backwards-compatibility alias). The old `/api/v1/comments/*` routes remain registered and proxy to the same handlers.
+- `gateway/src/routes/articles.ts`: `GET /my/articles` response fields renamed `commentsEnabled` → `repliesEnabled`, `commentCount` → `replyCount`. `PATCH /articles/:id` now accepts `repliesEnabled` (with `commentsEnabled` fallback).
+- `web/src/lib/replies.ts` (new): Replaces `comments.ts`. `publishReply()` posts to `/api/v1/replies`.
+- `web/src/lib/api.ts`: `CommentResponse` → `ReplyResponse`, `comments` export → `replies`, `MyArticle.commentsEnabled` → `repliesEnabled`, `commentCount` → `replyCount`.
+- `web/src/components/replies/` (new directory): `ReplyItem.tsx`, `ReplyComposer.tsx`, `ReplySection.tsx` replace the old `web/src/components/comments/` equivalents.
+
+**Replies UX**
+
+- Compose box appears **below** existing replies (not above).
+- `ReplyComposer` matches the `NoteComposer` visual style: avatar left, textarea right, `bg-surface-sunken` → `focus:bg-white` transition.
+- `ReplyItem` uses tighter `py-2` spacing in compact mode (used inside `NoteCard`).
+- `NoteCard` reply panel: collapsed by default, inline toggle shows reply count or "Reply" / "Hide replies".
+
+**Article editor**
+
+- Title and toolbar are now sticky (`top-[53px]` on mobile/tablet, `top-0` on desktop) with `z-20` so they remain visible while scrolling long articles.
+- Paywall gate button label changed from `$ gate` to `Paywall`.
+- Toggle label updated to "Allow replies on this article".
+
+**Responsive navigation (three-zone)**
+
+- `< md`: Fixed top bar with logo + hamburger; full-screen slide-out drawer.
+- `md–lg`: Fixed top bar with inline horizontal nav links; hamburger and drawer hidden.
+- `lg+`: Fixed left sidebar (200 px wide), top bar hidden. Active link indicated with left border. Search and user actions anchored at sidebar bottom.
+- `web/src/app/layout.tsx`: `<main>` receives `lg:pl-[200px]` to offset for the sidebar.
+- All pages updated with `pt-16 lg:pt-8` (or `lg:pt-0`) to clear the correct nav height per breakpoint.
+
+**Feed — sticky composer + tabs**
+
+- `FeedView.tsx` rewritten: sticky zone contains `NoteComposer` + tab row (`For you` / `Following` / `Add`) anchored below the nav.
+- Tab order: For you → Following → Add (previously Following → For you).
+- `AddPanel` component: People search (debounced 300 ms, calls `/api/v1/search?type=writers`, Follow button posts to `/api/v1/follows/:writerId`, switches to Following tab on success) + Feeds stub ("coming soon").
+- Following empty state updated to direct users to the Add tab.
+
+**Upgrading from v1.8.x**
+
+No schema changes. Rebuild and restart `gateway` and `web`:
+
+```bash
+cd /root/platform-pub
+docker compose build --no-cache gateway web
+docker compose up -d gateway web
+```
+
+---
 
 ### v1.8.2 — 20 March 2026
 

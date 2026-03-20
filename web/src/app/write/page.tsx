@@ -123,7 +123,7 @@ export default function WritePage() {
 
   if (loading || !user) {
     return (
-      <div className="mx-auto max-w-article px-6 py-16 text-center">
+      <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8 text-center">
         <div className="h-8 w-48 mx-auto animate-pulse rounded bg-ink-100" />
       </div>
     )
@@ -131,7 +131,7 @@ export default function WritePage() {
 
   if (loadError) {
     return (
-      <div className="mx-auto max-w-article px-6 py-16 text-center">
+      <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8 text-center">
         <p className="text-red-600 mb-4">{loadError}</p>
         <a href="/dashboard" className="text-sm text-brand-600 hover:text-brand-700">
           Back to dashboard
@@ -142,7 +142,7 @@ export default function WritePage() {
 
   if ((editEventId || draftId) && !editorReady) {
     return (
-      <div className="mx-auto max-w-article px-6 py-16 text-center">
+      <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8 text-center">
         <div className="h-8 w-48 mx-auto animate-pulse rounded bg-ink-100" />
         <p className="mt-4 text-sm text-ink-400">Loading...</p>
       </div>

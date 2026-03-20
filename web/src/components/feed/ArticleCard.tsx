@@ -4,13 +4,13 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { ArticleEvent } from '../../lib/ndk'
 import { useWriterName } from '../../hooks/useWriterName'
-import { comments as commentsApi } from '../../lib/api'
+import { replies as repliesApi } from '../../lib/api'
 
 interface ArticleCardProps { article: ArticleEvent }
 
 export function ArticleCard({ article }: ArticleCardProps) {
   const writerInfo = useWriterName(article.pubkey)
-  const [commentCount, setCommentCount] = useState<number | null>(null)
+  const [replyCount, setReplyCount] = useState<number | null>(null)
   const wordCount = article.content.split(/\s+/).length
   const readMinutes = Math.max(1, Math.round(wordCount / 200))
   const excerpt = article.summary || truncate(stripMarkdown(article.content), 200)
@@ -19,7 +19,7 @@ export function ArticleCard({ article }: ArticleCardProps) {
   const heroImage = extractFirstImage(article.content)
 
   useEffect(() => {
-    commentsApi.getForTarget(article.id).then(d => setCommentCount(d.totalCount)).catch(() => {})
+    repliesApi.getForTarget(article.id).then(d => setReplyCount(d.totalCount)).catch(() => {})
   }, [article.id])
 
   return (
@@ -64,8 +64,8 @@ export function ArticleCard({ article }: ArticleCardProps) {
             <time dateTime={new Date(article.publishedAt * 1000).toISOString()}>{formatDate(article.publishedAt)}</time>
             <span className="opacity-40">/</span>
             <span>{readMinutes} min</span>
-            {commentCount !== null && commentCount > 0 && (
-              <><span className="opacity-40">/</span><span>{commentCount} comment{commentCount !== 1 ? 's' : ''}</span></>
+            {replyCount !== null && replyCount > 0 && (
+              <><span className="opacity-40">/</span><span>{replyCount} {replyCount !== 1 ? 'replies' : 'reply'}</span></>
             )}
             {article.isPaywalled && (
               <><span className="opacity-40">/</span><span className="text-accent">&pound;</span></>

@@ -15,7 +15,7 @@ import { rssRoutes } from './routes/rss.js'
 import { searchRoutes } from './routes/search.js'
 import { googleAuthRoutes } from './routes/google-auth.js'
 import { draftRoutes } from './routes/drafts.js'
-import { commentRoutes } from './routes/comments.js'
+import { replyRoutes } from './routes/replies.js'
 import { mediaRoutes } from './routes/media.js'
 import { subscriptionRoutes } from './routes/subscriptions.js'
 import { v1_6Routes } from './routes/v1_6.js'
@@ -78,8 +78,8 @@ async function start() {
   // Drafts (auto-save, load, delete — per ADR §III.3 open question #15)
   await app.register(draftRoutes, { prefix: '/api/v1' })
 
-  // Comments (index, threaded fetch, soft-delete, toggle)
-  await app.register(commentRoutes, { prefix: '/api/v1' })
+  // Replies (index, threaded fetch, soft-delete, toggle)
+  await app.register(replyRoutes, { prefix: '/api/v1' })
 
   // Media (Blossom upload proxy, oEmbed proxy)
   await app.register(mediaRoutes, { prefix: '/api/v1' })

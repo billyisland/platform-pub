@@ -197,18 +197,20 @@ export function ArticleEditor({
   const gateInserted = hasGateMarker()
 
   return (
-    <div className="mx-auto max-w-article px-6 py-8">
+    <div className="mx-auto max-w-article px-6 pt-16 lg:pt-8 pb-8">
+      {/* Sticky title + toolbar — stays visible while scrolling the body */}
+      <div className="sticky top-[53px] lg:top-0 z-20 bg-surface pb-4 border-b border-surface-strong mb-6">
       {/* Title input */}
       <input
         type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Article title"
-        className="w-full border-none bg-transparent font-serif text-3xl font-bold text-ink-900 placeholder:text-ink-300 focus:outline-none mb-6 sm:text-4xl"
+        className="w-full border-none bg-transparent font-serif text-3xl font-bold text-ink-900 placeholder:text-ink-300 focus:outline-none mb-3 pt-4 sm:text-4xl"
       />
 
       {/* Editor toolbar */}
-      <div className="flex items-center gap-1 border-b border-surface-strong pb-3 mb-6 flex-wrap">
+      <div className="flex items-center gap-1 flex-wrap">
         <ToolbarButton
           active={editor.isActive('bold')}
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -294,13 +296,14 @@ export function ArticleEditor({
             }
           }}
         >
-          {gateInserted ? '$ gate ✓' : '$ gate'}
+          {gateInserted ? 'Paywall ✓' : 'Paywall'}
         </ToolbarButton>
 
         <div className="ml-auto text-xs text-content-faint">
           {wordCount} words &middot; {readMinutes} min read
         </div>
       </div>
+      </div>{/* end sticky */}
 
       {/* Editor content */}
       <EditorContent editor={editor} />
@@ -330,7 +333,7 @@ export function ArticleEditor({
         </div>
       )}
 
-      {/* Comments toggle */}
+      {/* Replies toggle */}
       <div className="mt-6 flex items-center gap-2">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -339,7 +342,7 @@ export function ArticleEditor({
             onChange={(e) => setCommentsEnabled(e.target.checked)}
           />
           <span className="text-sm text-content-secondary">
-            Allow comments on this article
+            Allow replies on this article
           </span>
         </label>
       </div>

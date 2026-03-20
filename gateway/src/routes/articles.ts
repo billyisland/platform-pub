@@ -510,8 +510,8 @@ export async function articleRoutes(app: FastifyInstance) {
           pricePence: r.price_pence,
           wordCount: r.word_count,
           publishedAt: r.published_at?.toISOString() ?? null,
-          commentsEnabled: r.comments_enabled,
-          commentCount: r.comment_count,
+          repliesEnabled: r.comments_enabled,
+          replyCount: r.comment_count,
           readCount: r.read_count,
           netEarningsPence: r.net_earnings_pence,
         })),
@@ -537,9 +537,10 @@ export async function articleRoutes(app: FastifyInstance) {
       const params: any[] = []
       let paramIdx = 1
 
-      if (typeof body.commentsEnabled === 'boolean') {
+      const repliesEnabledValue = body.repliesEnabled ?? body.commentsEnabled
+      if (typeof repliesEnabledValue === 'boolean') {
         updates.push(`comments_enabled = $${paramIdx++}`)
-        params.push(body.commentsEnabled)
+        params.push(repliesEnabledValue)
       }
 
       if (updates.length === 0) {

@@ -7,7 +7,7 @@ import { unwrapContentKey, decryptVaultContent } from '../../lib/vault'
 import { getNdk, fetchVaultEvent } from '../../lib/ndk'
 import { renderMarkdown } from '../../lib/markdown'
 import { ReportButton } from '../ui/ReportButton'
-import { CommentSection } from '../comments/CommentSection'
+import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
 import { articles as articlesApi } from '../../lib/api'
 import type { ArticleEvent } from '../../lib/ndk'
@@ -118,7 +118,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
         </div>
       ) : (
         /* Standard header — no hero image */
-        <div className="mx-auto max-w-article px-6 pt-16 bg-surface-raised">
+        <div className="mx-auto max-w-article px-6 pt-16 lg:pt-8 bg-surface-raised">
           <div className="mb-10 flex items-center justify-between">
             <div className="flex items-center gap-3">
               {writerAvatar ? (
@@ -158,7 +158,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
         {paywallBody && <div className="prose prose-lg max-w-none mt-10" dangerouslySetInnerHTML={{ __html: paywallHtml }} />}
 
         <div className="ornament mt-16 mb-12" />
-        <CommentSection targetEventId={article.id} targetKind={30023} targetAuthorPubkey={article.pubkey} contentAuthorId={undefined} />
+        <ReplySection targetEventId={article.id} targetKind={30023} targetAuthorPubkey={article.pubkey} contentAuthorId={undefined} />
       </article>
     </div>
   )

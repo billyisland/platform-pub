@@ -88,7 +88,7 @@ export default function DashboardPage() {
 function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
   const [articles, setArticles] = useState<MyArticle[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [deletingId, setDeletingId] = useState<string | null>(null)
   useEffect(() => { (async () => { setLoading(true); try { setArticles((await myArticles.list()).articles) } catch { setError('Failed to load articles.') } finally { setLoading(false) } })() }, [userId])
-  async function handleToggleComments(id: string, on: boolean) { try { await myArticles.update(id, { commentsEnabled: on }); setArticles(p => p.map(a => a.id === id ? { ...a, commentsEnabled: on } : a)) } catch { setError('Failed to update.') } }
+  async function handleToggleReplies(id: string, on: boolean) { try { await myArticles.update(id, { repliesEnabled: on }); setArticles(p => p.map(a => a.id === id ? { ...a, repliesEnabled: on } : a)) } catch { setError('Failed to update.') } }
   async function handleDelete(id: string) {
     setDeletingId(id)
     try {
@@ -116,14 +116,14 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
   return (
     <div className="overflow-x-auto bg-surface-raised">
       <table className="w-full text-ui-xs">
-        <thead><tr className="border-b border-surface-strong"><th className="px-4 py-3 text-left label-ui text-content-muted">Title</th><th className="px-4 py-3 text-left label-ui text-content-muted">Status</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-center label-ui text-content-muted">Comments</th><th className="px-4 py-3 text-right label-ui text-content-muted">Actions</th></tr></thead>
+        <thead><tr className="border-b border-surface-strong"><th className="px-4 py-3 text-left label-ui text-content-muted">Title</th><th className="px-4 py-3 text-left label-ui text-content-muted">Status</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-center label-ui text-content-muted">Replies</th><th className="px-4 py-3 text-right label-ui text-content-muted">Actions</th></tr></thead>
         <tbody>{articles.map(a => (
           <tr key={a.id} className="border-b border-surface-strong last:border-b-0">
             <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-ink-900 hover:opacity-70">{a.title}</Link></td>
             <td className="px-4 py-3">{a.isPaywalled ? <span className="text-content-primary">£{((a.pricePence??0)/100).toFixed(2)}</span> : <span className="text-content-muted">Free</span>}</td>
             <td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td>
             <td className="px-4 py-3 text-right text-ink-900 tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td>
-            <td className="px-4 py-3 text-center"><button onClick={() => handleToggleComments(a.id, !a.commentsEnabled)} className={`text-ui-xs ${a.commentsEnabled ? 'text-accent' : 'text-content-faint'}`}>{a.commentsEnabled ? 'On' : 'Off'}</button></td>
+            <td className="px-4 py-3 text-center"><button onClick={() => handleToggleReplies(a.id, !a.repliesEnabled)} className={`text-ui-xs ${a.repliesEnabled ? 'text-accent' : 'text-content-faint'}`}>{a.repliesEnabled ? 'On' : 'Off'}</button></td>
             <td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-3"><Link href={`/write?edit=${a.nostrEventId}`} className="text-content-muted hover:text-ink-900">Edit</Link><button onClick={() => handleDelete(a.id)} disabled={deletingId===a.id} className="text-content-faint hover:text-ink-900 disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button></div></td>
           </tr>
         ))}</tbody>

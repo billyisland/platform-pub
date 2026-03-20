@@ -5,22 +5,22 @@ import type { NoteEvent } from '../../lib/ndk'
 import { useWriterName } from '../../hooks/useWriterName'
 import { useAuth } from '../../stores/auth'
 import { isImageUrl, isEmbeddableUrl, extractUrls } from '../../lib/media'
-import { CommentSection } from '../comments/CommentSection'
-import { comments as commentsApi } from '../../lib/api'
+import { ReplySection } from '../replies/ReplySection'
+import { replies as repliesApi } from '../../lib/api'
 
 interface NoteCardProps { note: NoteEvent; onDeleted?: (id: string) => void }
 
 export function NoteCard({ note, onDeleted }: NoteCardProps) {
   const { user } = useAuth()
   const writerInfo = useWriterName(note.pubkey)
-  const [showComments, setShowComments] = useState(false)
-  const [commentCount, setCommentCount] = useState<number | null>(null)
+  const [showReplies, setShowReplies] = useState(false)
+  const [replyCount, setReplyCount] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const isAuthor = user?.pubkey === note.pubkey
 
   useEffect(() => {
-    commentsApi.getForTarget(note.id).then(d => setCommentCount(d.totalCount)).catch(() => {})
+    repliesApi.getForTarget(note.id).then(d => setReplyCount(d.totalCount)).catch(() => {})
   }, [note.id])
 
   const urls = extractUrls(note.content)
@@ -116,20 +116,20 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
           {/* Actions row */}
           <div className="mt-2 flex items-center gap-4">
             <button
-              onClick={() => setShowComments(!showComments)}
+              onClick={() => setShowReplies(!showReplies)}
               className="text-ui-xs text-surface-sunken hover:text-surface-raised transition-colors"
             >
-              {showComments ? 'Hide' : 'Comment'}{commentCount !== null && commentCount > 0 && ` (${commentCount})`}
+              {showReplies ? 'Hide replies' : replyCount !== null && replyCount > 0 ? `${replyCount} ${replyCount !== 1 ? 'replies' : 'reply'}` : 'Reply'}
             </button>
           </div>
 
         </div>
       </div>
 
-      {/* Comments — cream panel at tile bottom */}
-      {showComments && (
-        <div className="-mx-5 -mb-4 mt-3 px-5 py-3 bg-surface-raised border-t border-slate-dark">
-          <CommentSection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact />
+      {/* Replies — flush panel at tile bottom */}
+      {showReplies && (
+        <div className="-mx-5 -mb-4 mt-1 px-5 pb-3 bg-surface-raised border-t border-slate-dark">
+          <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact />
         </div>
       )}
     </div>

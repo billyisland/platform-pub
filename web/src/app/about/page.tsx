@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 export default function AboutPage() {
   return (
-    <div className="mx-auto max-w-article px-6 py-16">
+    <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8">
       <h1 className="font-serif text-4xl font-light text-ink-900 mb-4 tracking-tight">
         How Platform works
       </h1>

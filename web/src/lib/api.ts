@@ -241,30 +241,31 @@ export const writers = {
 }
 
 // =============================================================================
-// Comments
+// Replies
 // =============================================================================
 
-export interface CommentResponse {
+export interface ReplyResponse {
   comments: any[]
   totalCount: number
-  commentsEnabled: boolean
+  repliesEnabled: boolean
+  commentsEnabled: boolean // backwards-compat alias
 }
 
-export const comments = {
+export const replies = {
   getForTarget: (targetEventId: string) =>
-    request<CommentResponse>(`/comments/${targetEventId}`),
+    request<ReplyResponse>(`/replies/${targetEventId}`),
 
-  deleteComment: (commentId: string) =>
-    request<{ ok: boolean }>(`/comments/${commentId}`, { method: 'DELETE' }),
+  deleteReply: (replyId: string) =>
+    request<{ ok: boolean }>(`/replies/${replyId}`, { method: 'DELETE' }),
 
-  toggleArticleComments: (articleId: string, enabled: boolean) =>
-    request<{ ok: boolean }>(`/articles/${articleId}/comments`, {
+  toggleArticleReplies: (articleId: string, enabled: boolean) =>
+    request<{ ok: boolean }>(`/articles/${articleId}/replies`, {
       method: 'PATCH',
       body: JSON.stringify({ enabled }),
     }),
 
-  toggleNoteComments: (noteId: string, enabled: boolean) =>
-    request<{ ok: boolean }>(`/notes/${noteId}/comments`, {
+  toggleNoteReplies: (noteId: string, enabled: boolean) =>
+    request<{ ok: boolean }>(`/notes/${noteId}/replies`, {
       method: 'PATCH',
       body: JSON.stringify({ enabled }),
     }),
@@ -284,8 +285,8 @@ export interface MyArticle {
   pricePence: number | null
   wordCount: number | null
   publishedAt: string | null
-  commentsEnabled: boolean
-  commentCount: number
+  repliesEnabled: boolean
+  replyCount: number
   readCount: number
   netEarningsPence: number
 }
@@ -294,7 +295,7 @@ export const myArticles = {
   list: () =>
     request<{ articles: MyArticle[] }>('/my/articles'),
 
-  update: (articleId: string, data: { commentsEnabled?: boolean }) =>
+  update: (articleId: string, data: { repliesEnabled?: boolean }) =>
     request<{ ok: boolean }>(`/articles/${articleId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

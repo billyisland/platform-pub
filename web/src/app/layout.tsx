@@ -26,7 +26,7 @@ export default function RootLayout({
       <body>
         <AuthProvider>
           <Nav />
-          <main className="min-h-screen">
+          <main className="min-h-screen lg:pl-[200px]">
             {children}
           </main>
         </AuthProvider>
