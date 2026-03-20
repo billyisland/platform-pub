@@ -1,0 +1,183 @@
+# =============================================================================
+# platform.pub — Local Development Stack
+#
+# Services:
+#   postgres    — shared database
+#   strfry      — Nostr relay (content + vault events + receipts)
+#   gateway     — API gateway (auth, session, proxy) — port 3000
+#   payment     — payment service — port 3001
+#   keyservice  — key service — port 3002
+#   web         — Next.js frontend — port 3010
+#   nginx       — reverse proxy with TLS
+#   blossom     — Nostr media server (kept for future use, not in upload path)
+#   certbot     — automatic TLS certificates
+#
+# Usage:
+#   docker compose up -d postgres strfry    # infrastructure first
+#   docker compose up                       # all services
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — shared database for all services
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: platformpub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: platformpub
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platformpub"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # strfry — Nostr relay
+  # ---------------------------------------------------------------------------
+  strfry:
+    image: dockurr/strfry:latest
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
+    ports:
+      - "4848:7777"
+    volumes:
+      - ./relay/strfry.conf:/etc/strfry.conf:ro
+      - strfry_data:/app/strfry-db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7777"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Gateway — API gateway (auth, sessions, media uploads, proxies)
+  # ---------------------------------------------------------------------------
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file: gateway/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - media_data:/app/media
+    environment:
+      DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+      PAYMENT_SERVICE_URL: http://payment:3001
+      KEY_SERVICE_URL: http://keyservice:3002
+      APP_URL: https://platform.pub
+      MEDIA_DIR: /app/media
+      PUBLIC_MEDIA_URL: https://platform.pub/media
+
+  # ---------------------------------------------------------------------------
+  # Payment service
+  # ---------------------------------------------------------------------------
+  payment:
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    ports:
+      - "127.0.0.1:3001:3001"
+    env_file: payment-service/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      strfry:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+      PLATFORM_RELAY_WS_URL: ws://strfry:7777
+
+  # ---------------------------------------------------------------------------
+  # Key service
+  # ---------------------------------------------------------------------------
+  keyservice:
+    build:
+      context: .
+      dockerfile: key-service/Dockerfile
+    ports:
+      - "127.0.0.1:3002:3002"
+    env_file: key-service/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+      PLATFORM_RELAY_WS_URL: ws://strfry:7777
+
+  # ---------------------------------------------------------------------------
+  # Web client (Next.js)
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        NEXT_PUBLIC_RELAY_URL: wss://platform.pub/relay
+        NEXT_PUBLIC_GATEWAY_URL: ""
+    ports:
+      - "3010:3000"
+    env_file: web/.env
+    depends_on:
+      - gateway
+
+  # ---------------------------------------------------------------------------
+  # Nginx — reverse proxy with TLS (Let's Encrypt)
+  # Serves /media/ directly from the shared media_data volume
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - certbot_data:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - media_data:/app/media:ro
+    depends_on:
+      - web
+      - gateway
+      - strfry
+
+  # ---------------------------------------------------------------------------
+  # Blossom — Nostr media server (kept for future federation/BUD-02 support)
+  # Not currently in the upload path — gateway writes directly to media_data
+  # ---------------------------------------------------------------------------
+  blossom:
+    image: ghcr.io/hzrd149/blossom-server:master
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3003:3000"
+    volumes:
+      - blossom_data:/app/data
+      - ./blossom-config.yml:/app/config.yml:ro
+
+  # ---------------------------------------------------------------------------
+  # Certbot — automatic TLS certificates
+  # ---------------------------------------------------------------------------
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_data:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+
+volumes:
+  pgdata:
+  strfry_data:
+  blossom_data:
+  media_data:
+  certbot_data:
+  certbot_certs:

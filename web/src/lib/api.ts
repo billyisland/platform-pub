@@ -1,0 +1,307 @@
+// =============================================================================
+// API Client
+//
+// Typed fetch wrappers for the gateway API. All requests include credentials
+// (cookies) automatically. Runs client-side only.
+//
+// The Next.js rewrites in next.config.js proxy /api/* to the gateway,
+// so these calls work in both dev and production.
+// =============================================================================
+
+const API_BASE = '/api/v1'
+
+class ApiError extends Error {
+  constructor(public status: number, public body: any) {
+    super(`API error ${status}: ${JSON.stringify(body)}`)
+    this.name = 'ApiError'
+  }
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    ...options,
+  })
+
+  const body = await res.json().catch(() => null)
+
+  if (!res.ok) {
+    throw new ApiError(res.status, body)
+  }
+
+  return body as T
+}
+
+// =============================================================================
+// Auth
+// =============================================================================
+
+export interface SignupInput {
+  email: string
+  displayName: string
+  username: string
+}
+
+export interface SignupResult {
+  accountId: string
+  pubkey: string
+  username: string
+}
+
+export interface MeResponse {
+  id: string
+  pubkey: string
+  username: string | null
+  displayName: string | null
+  avatar: string | null
+  isWriter: boolean
+  hasPaymentMethod: boolean
+  stripeConnectKycComplete: boolean
+  freeAllowanceRemainingPence: number
+}
+
+export const auth = {
+  signup: (input: SignupInput) =>
+    request<SignupResult>('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  login: (email: string) =>
+    request<{ message: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  verify: (token: string) =>
+    request<{ id: string; username: string; displayName: string }>('/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+
+  logout: () =>
+    request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
+
+  me: () =>
+    request<MeResponse>('/auth/me'),
+
+  connectStripe: () =>
+    request<{ stripeConnectUrl: string }>('/auth/upgrade-writer', { method: 'POST' }),
+
+  connectCard: (paymentMethodId: string) =>
+    request<{ ok: boolean; hasPaymentMethod: boolean }>('/auth/connect-card', {
+      method: 'POST',
+      body: JSON.stringify({ paymentMethodId }),
+    }),
+}
+
+// =============================================================================
+// Payment / Reading
+// =============================================================================
+
+export interface WriterEarnings {
+  writerId: string
+  earningsTotalPence: number
+  pendingTransferPence: number
+  paidOutPence: number
+  readCount: number
+}
+
+export interface ArticleEarnings {
+  articleId: string
+  title: string
+  dTag: string
+  publishedAt: string | null
+  readCount: number
+  netEarningsPence: number
+  pendingPence: number
+  paidPence: number
+}
+
+export interface GatePassResponse {
+  readEventId: string
+  readState: string
+  encryptedKey: string
+  algorithm: string
+  isReissuance: boolean
+}
+
+export const payment = {
+  getEarnings: (writerId: string) =>
+    request<WriterEarnings>(`/earnings/${writerId}`),
+
+  getPerArticleEarnings: (writerId: string) =>
+    request<{ articles: ArticleEarnings[] }>(`/earnings/${writerId}/articles`),
+}
+
+// =============================================================================
+// Articles
+// =============================================================================
+
+export interface ArticleMetadata {
+  id: string
+  nostrEventId: string
+  dTag: string
+  title: string
+  slug: string
+  summary: string | null
+  wordCount: number | null
+  isPaywalled: boolean
+  pricePence: number | null
+  gatePositionPct: number | null
+  vaultEventId: string | null
+  publishedAt: string | null
+  writer: {
+    id: string
+    username: string
+    displayName: string | null
+    avatar: string | null
+    pubkey: string
+  }
+}
+
+export const articles = {
+  getByDTag: (dTag: string) =>
+    request<ArticleMetadata>(`/articles/${dTag}`),
+
+  gatePass: (nostrEventId: string) =>
+    request<GatePassResponse>(`/articles/${nostrEventId}/gate-pass`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  index: (data: {
+    nostrEventId: string
+    dTag: string
+    title: string
+    content: string
+    isPaywalled: boolean
+    pricePence: number
+    gatePositionPct: number
+    vaultEventId?: string
+  }) =>
+    request<{ articleId: string }>('/articles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+}
+
+// =============================================================================
+// Key Service (via gateway proxy)
+// =============================================================================
+
+export interface KeyResponse {
+  encryptedKey: string
+  articleNostrEventId: string
+  algorithm: string
+  isReissuance: boolean
+}
+
+export const keys = {
+  requestKey: (nostrEventId: string) =>
+    request<KeyResponse>(`/articles/${nostrEventId}/key`, {
+      method: 'POST',
+    }),
+
+  unwrapKey: (encryptedKey: string) =>
+    request<{ contentKeyBase64: string }>('/unwrap-key', {
+      method: 'POST',
+      body: JSON.stringify({ encryptedKey }),
+    }),
+}
+
+// =============================================================================
+// Writers (public)
+// =============================================================================
+
+export interface WriterProfile {
+  id: string
+  pubkey: string
+  username: string
+  displayName: string | null
+  bio: string | null
+  avatar: string | null
+  hostingType: string
+  articleCount: number
+}
+
+export const writers = {
+  getProfile: (username: string) =>
+    request<WriterProfile>(`/writers/${username}`),
+
+  getArticles: (username: string, limit = 20, offset = 0) =>
+    request<{ articles: any[]; limit: number; offset: number }>(
+      `/writers/${username}/articles?limit=${limit}&offset=${offset}`
+    ),
+}
+
+// =============================================================================
+// Comments
+// =============================================================================
+
+export interface CommentResponse {
+  comments: any[]
+  totalCount: number
+  commentsEnabled: boolean
+}
+
+export const comments = {
+  getForTarget: (targetEventId: string) =>
+    request<CommentResponse>(`/comments/${targetEventId}`),
+
+  deleteComment: (commentId: string) =>
+    request<{ ok: boolean }>(`/comments/${commentId}`, { method: 'DELETE' }),
+
+  toggleArticleComments: (articleId: string, enabled: boolean) =>
+    request<{ ok: boolean }>(`/articles/${articleId}/comments`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+
+  toggleNoteComments: (noteId: string, enabled: boolean) =>
+    request<{ ok: boolean }>(`/notes/${noteId}/comments`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+}
+
+// =============================================================================
+// Article Management (editorial dashboard)
+// =============================================================================
+
+export interface MyArticle {
+  id: string
+  title: string
+  slug: string
+  dTag: string
+  nostrEventId: string
+  isPaywalled: boolean
+  pricePence: number | null
+  wordCount: number | null
+  publishedAt: string | null
+  commentsEnabled: boolean
+  commentCount: number
+  readCount: number
+  netEarningsPence: number
+}
+
+export const myArticles = {
+  list: () =>
+    request<{ articles: MyArticle[] }>('/my/articles'),
+
+  update: (articleId: string, data: { commentsEnabled?: boolean }) =>
+    request<{ ok: boolean }>(`/articles/${articleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  remove: (articleId: string) =>
+    request<{ ok: boolean; deletedArticleId: string; nostrEventId: string; dTag: string }>(
+      `/articles/${articleId}`,
+      { method: 'DELETE' }
+    ),
+}

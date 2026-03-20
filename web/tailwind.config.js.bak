@@ -1,0 +1,99 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './src/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['"Instrument Sans"', '"Inter"', 'system-ui', 'sans-serif'],
+        serif: ['"Newsreader"', '"Iowan Old Style"', 'Georgia', 'serif'],
+        mono: ['"IBM Plex Mono"', '"Courier New"', 'monospace'],
+      },
+      colors: {
+        // Two pinks — warm ground
+        pink: {
+          light: '#FFF0F0',   // tiles, nav, inputs, note cards
+          dark: '#F5D6D6',    // feed bg, landing bg, composer
+        },
+        // Two blues — cool accent for articles
+        blue: {
+          light: '#C5D3E0',   // article page bg, tile border, tile title text
+          dark: '#7E95AD',    // article tile fill, paywall gate, article accents
+        },
+        // Ink — single black for text, logo, buttons
+        ink: {
+          DEFAULT: '#1A1512',
+          900: '#1A1512',
+          800: '#2A2320',
+          700: '#3D3530',
+          600: '#5C5347',
+          500: '#7A6E5D',
+          400: '#A8977F',
+          300: '#D4C4B0',
+        },
+        // Derived tones for text-on-pink and text-on-blue
+        'on-pink': {
+          primary: '#3D2E2E',
+          secondary: '#8A6B6B',
+          muted: '#A88B8B',
+        },
+        'on-blue': {
+          primary: '#FDFDFE',    // near-white title on blue tile
+          secondary: '#B8C7D5',  // excerpt on blue tile
+          muted: '#5C7188',      // meta on blue tile
+          byline: '#44586C',     // byline on blue tile
+        },
+        // Aliases for backward compat with brand-* references
+        brand: {
+          50: '#FFF0F0',
+          100: '#F5D6D6',
+          500: '#1A1512',
+          600: '#1A1512',
+          700: '#1A1512',
+        },
+        // Aliases so existing ink-50 through ink-200 still resolve
+        paper: {
+          50: '#FFF0F0',
+          100: '#FFF0F0',
+          200: '#F5D6D6',
+          300: '#F5D6D6',
+        },
+      },
+      typography: {
+        DEFAULT: {
+          css: {
+            maxWidth: '640px',
+            fontSize: '1.125rem',
+            lineHeight: '1.85',
+            color: '#3D3530',
+            fontFamily: '"Newsreader", "Iowan Old Style", Georgia, serif',
+            h1: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400', letterSpacing: '-0.01em' },
+            h2: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400', letterSpacing: '-0.005em' },
+            h3: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400' },
+            a: { color: '#1A1512', textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationThickness: '1px' },
+            blockquote: { borderLeftColor: '#C5D3E0', borderLeftWidth: '1px', fontStyle: 'italic', color: '#5C5347' },
+            code: { fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.875em' },
+            p: { marginTop: '1.5em', marginBottom: '1.5em' },
+          },
+        },
+      },
+      maxWidth: {
+        article: '640px',
+        content: '960px',
+      },
+      letterSpacing: {
+        'mono-tight': '-0.01em',
+        'mono-wide': '0.05em',
+      },
+      fontSize: {
+        'mono-xs': ['0.8125rem', { lineHeight: '1.5', letterSpacing: '0.03em' }],
+        'mono-sm': ['0.9375rem', { lineHeight: '1.5', letterSpacing: '0.01em' }],
+        'mono-base': ['1rem', { lineHeight: '1.6' }],
+      },
+    },
+  },
+  plugins: [
+    require('@tailwindcss/typography'),
+  ],
+}

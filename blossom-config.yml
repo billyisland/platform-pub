@@ -1,0 +1,12 @@
+port: 3000
+storage:
+  backend: local
+  local:
+    dir: /app/data/blobs
+database:
+  backend: sqlite
+  sqlite:
+    file: /app/data/blossom.sqlite
+rules:
+  - type: allow
+    action: upload

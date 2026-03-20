@@ -1,0 +1,165 @@
+import type { FastifyInstance } from 'fastify'
+import { pool } from '../../shared/src/db/client.js'
+import { optionalAuth } from '../middleware/auth.js'
+
+// =============================================================================
+// Search Routes
+//
+// Per ADR §III.3 open question #6: "Full-text search across the network is
+// not well-supported in Nostr (NIP-50 is limited). The feed service likely
+// needs its own search index."
+//
+// The schema already has a pg_trgm trigram index on articles.title:
+//   CREATE INDEX idx_articles_title_trgm ON articles USING gin (title gin_trgm_ops);
+//
+// This endpoint provides:
+//   - Title trigram search (fuzzy matching — handles typos)
+//   - Content free-text search via ILIKE on content_free
+//   - Writer name search
+//
+// For launch this is sufficient. Post-launch, consider a dedicated search
+// service (MeiliSearch, Typesense) for better relevance ranking.
+//
+// GET /search?q=<query>&type=articles|writers&limit=20
+// =============================================================================
+
+export async function searchRoutes(app: FastifyInstance) {
+
+  app.get<{
+    Querystring: { q: string; type?: string; limit?: string; offset?: string }
+  }>(
+    '/search',
+    { preHandler: optionalAuth },
+    async (req, reply) => {
+      const query = (req.query.q ?? '').trim()
+      if (query.length < 2) {
+        return reply.status(400).send({ error: 'Search query must be at least 2 characters' })
+      }
+
+      const type = req.query.type ?? 'articles'
+      const limit = Math.min(parseInt(req.query.limit ?? '20', 10), 50)
+      const offset = parseInt(req.query.offset ?? '0', 10)
+
+      if (type === 'writers') {
+        return searchWriters(query, limit, offset, reply)
+      }
+
+      return searchArticles(query, limit, offset, reply)
+    }
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Article search — trigram similarity on title + ILIKE on content_free
+//
+// Uses pg_trgm similarity() for ranked results. The trigram index handles
+// fuzzy matching (misspellings, partial words). Results are ranked by
+// similarity score descending.
+// ---------------------------------------------------------------------------
+
+async function searchArticles(
+  query: string,
+  limit: number,
+  offset: number,
+  reply: any
+) {
+  const { rows } = await pool.query<{
+    id: string
+    nostr_event_id: string
+    nostr_d_tag: string
+    title: string
+    summary: string | null
+    word_count: number | null
+    is_paywalled: boolean
+    published_at: Date
+    writer_username: string
+    writer_display_name: string | null
+    similarity: number
+  }>(
+    `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, a.title, a.summary,
+            a.word_count, a.is_paywalled, a.published_at,
+            w.username AS writer_username,
+            w.display_name AS writer_display_name,
+            similarity(a.title, $1) AS similarity
+     FROM articles a
+     JOIN accounts w ON w.id = a.writer_id
+     WHERE a.published_at IS NOT NULL
+       AND a.deleted_at IS NULL
+       AND w.status = 'active'
+       AND (
+         similarity(a.title, $1) > 0.1
+         OR a.title ILIKE $2
+         OR a.content_free ILIKE $2
+       )
+     ORDER BY similarity DESC, a.published_at DESC
+     LIMIT $3 OFFSET $4`,
+    [query, `%${query}%`, limit, offset]
+  )
+
+  const results = rows.map((r) => ({
+    id: r.id,
+    nostrEventId: r.nostr_event_id,
+    dTag: r.nostr_d_tag,
+    title: r.title,
+    summary: r.summary,
+    wordCount: r.word_count,
+    isPaywalled: r.is_paywalled,
+    publishedAt: r.published_at.toISOString(),
+    writer: {
+      username: r.writer_username,
+      displayName: r.writer_display_name,
+    },
+    relevance: r.similarity,
+  }))
+
+  return reply.status(200).send({ query, type: 'articles', results, limit, offset })
+}
+
+// ---------------------------------------------------------------------------
+// Writer search — trigram on username and display_name
+// ---------------------------------------------------------------------------
+
+async function searchWriters(
+  query: string,
+  limit: number,
+  offset: number,
+  reply: any
+) {
+  const { rows } = await pool.query<{
+    id: string
+    username: string
+    display_name: string | null
+    bio: string | null
+    avatar_blossom_url: string | null
+    nostr_pubkey: string
+    article_count: string
+  }>(
+    `SELECT a.id, a.username, a.display_name, a.bio,
+            a.avatar_blossom_url, a.nostr_pubkey,
+            (SELECT COUNT(*) FROM articles WHERE writer_id = a.id AND published_at IS NOT NULL AND deleted_at IS NULL) AS article_count
+     FROM accounts a
+     WHERE a.is_writer = TRUE
+       AND a.status = 'active'
+       AND (
+         a.username ILIKE $1
+         OR a.display_name ILIKE $1
+       )
+     ORDER BY
+       CASE WHEN a.username ILIKE $2 THEN 0 ELSE 1 END,
+       a.display_name
+     LIMIT $3 OFFSET $4`,
+    [`%${query}%`, `${query}%`, limit, offset]
+  )
+
+  const results = rows.map((r) => ({
+    id: r.id,
+    username: r.username,
+    displayName: r.display_name,
+    bio: r.bio,
+    avatar: r.avatar_blossom_url,
+    pubkey: r.nostr_pubkey,
+    articleCount: parseInt(r.article_count, 10),
+  }))
+
+  return reply.status(200).send({ query, type: 'writers', results, limit, offset })
+}

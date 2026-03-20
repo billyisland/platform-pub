@@ -1,0 +1,279 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap');
+
+@layer base {
+  body {
+    @apply bg-surface text-content-primary antialiased;
+    font-family: 'Instrument Sans', 'Inter', system-ui, sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    padding-top: 60px;
+  }
+
+  ::selection {
+    background-color: #C1D1C1;
+    color: #1A1512;
+  }
+
+  hr {
+    border-color: #DDD3CB;
+    border-width: 0.5px;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="password"],
+  textarea,
+  select {
+    @apply bg-surface-raised text-content-primary rounded-none;
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+    font-size: 0.9375rem;
+    border: none;
+    transition: background-color 0.15s ease;
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    @apply outline-none ring-0;
+    background-color: #FFFFFF;
+  }
+
+  ::placeholder {
+    @apply text-content-muted;
+    font-style: normal;
+  }
+
+  /* Checkbox and radio styling */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: #6B7F6B;
+  }
+  input[type="checkbox"] {
+    @apply rounded border-ink-300;
+    width: 1rem;
+    height: 1rem;
+  }
+  input[type="checkbox"]:checked {
+    background-color: #6B7F6B;
+    border-color: #6B7F6B;
+  }
+  input[type="checkbox"]:focus {
+    box-shadow: 0 0 0 2px #C1D1C1;
+  }
+
+  /* Range slider */
+  input[type="range"] {
+    accent-color: #6B7F6B;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    background: #6B7F6B;
+  }
+  input[type="range"]::-moz-range-thumb {
+    background: #6B7F6B;
+  }
+}
+
+@layer components {
+  /* ----- Ornament divider ----- */
+  .ornament {
+    @apply text-center select-none;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.5em;
+    font-size: 0.75rem;
+    color: #A8977F;
+  }
+  .ornament::before {
+    content: '· · ·';
+  }
+
+  /* ----- Rules ----- */
+  .rule {
+    border-top: 0.5px solid #DDD3CB;
+  }
+  .rule-accent {
+    border-top: 2px solid #6B7F6B;
+  }
+  .rule-blue {
+    border-top: 0.5px solid #DDD3CB;
+  }
+
+  /* ----- Label styles ----- */
+  .label-ui {
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .label-mono {
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #7A6E5D;
+  }
+
+  /* ----- Tab pills ----- */
+  .tab-pill {
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .tab-pill-active {
+    background: #1A1512;
+    color: #FAF7F5;
+  }
+  .tab-pill-inactive {
+    @apply bg-surface-raised text-content-secondary;
+  }
+  .tab-pill-inactive:hover {
+    @apply text-content-primary;
+    background: #EBE3DE;
+  }
+
+  /* ----- Buttons ----- */
+  .btn {
+    background: #1A1512;
+    color: #FAF7F5;
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 0;
+    padding: 0.625rem 1.5rem;
+    transition: background-color 0.15s ease;
+    cursor: pointer;
+  }
+  .btn:hover { background: #3D3530; }
+  .btn:disabled { opacity: 0.5; }
+
+  .btn-accent {
+    background: #6B7F6B;
+    color: #FAF7F5;
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 0;
+    padding: 0.625rem 1.5rem;
+    transition: background-color 0.15s ease;
+    cursor: pointer;
+  }
+  .btn-accent:hover { background: #566756; }
+  .btn-accent:disabled { opacity: 0.5; }
+
+  .btn-soft {
+    @apply bg-surface-raised text-content-primary;
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 0;
+    padding: 0.625rem 1.5rem;
+    transition: background-color 0.15s ease;
+    cursor: pointer;
+  }
+  .btn-soft:hover {
+    background: #EBE3DE;
+  }
+
+  /* ----- Editor selection highlight ----- */
+  .ProseMirror ::selection,
+  .tiptap ::selection,
+  .prose ::selection {
+    background-color: #9FB39F !important;
+    color: #FFFFFF !important;
+  }
+  .ProseMirror .is-editor-empty:first-child::before {
+    color: #A8977F;
+  }
+
+  /* ----- Paywall gate marker in editor ----- */
+  .paywall-gate-marker {
+    position: relative;
+    margin: 2rem 0;
+    padding: 0.75rem 1rem;
+    background: #F2F5F2;
+    border: 1px dashed #9FB39F;
+    cursor: default;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .paywall-gate-marker::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 3px;
+    height: 60%;
+    transform: translateY(-50%);
+    background: #6B7F6B;
+  }
+  .paywall-gate-marker .gate-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #566756;
+  }
+  .paywall-gate-marker .gate-remove {
+    font-size: 0.75rem;
+    color: #A8977F;
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+  .paywall-gate-marker .gate-remove:hover {
+    color: #5C5347;
+  }
+
+  /* ----- Article hero image ----- */
+  .article-hero {
+    position: relative;
+    width: 100%;
+    min-height: 400px;
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    align-items: flex-end;
+    padding: 3rem 2rem;
+  }
+  .article-hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(26, 21, 18, 0.75) 0%, rgba(26, 21, 18, 0.15) 60%, transparent 100%);
+  }
+  .article-hero-content {
+    position: relative;
+    z-index: 1;
+    max-width: 640px;
+    margin: 0 auto;
+    width: 100%;
+  }
+}
+
+@layer utilities {
+  .sharp { border-radius: 0 !important; }
+}

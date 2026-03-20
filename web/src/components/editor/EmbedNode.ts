@@ -1,0 +1,106 @@
+import { Node, mergeAttributes } from '@tiptap/core'
+import { Plugin, PluginKey } from 'prosemirror-state'
+import { isEmbeddableUrl } from '../../lib/media'
+
+// =============================================================================
+// EmbedNode TipTap Extension
+//
+// Custom node that renders oEmbed previews for supported URLs (YouTube,
+// Vimeo, Twitter/X, Spotify). When the user pastes a supported URL on
+// its own line, the editor detects it and replaces it with an embed node.
+//
+// In Markdown serialisation, embeds are stored as plain URLs on their own
+// line (Nostr convention). The rendering layer enhances them.
+// =============================================================================
+
+export interface EmbedNodeOptions {
+  onEmbedInserted?: (url: string) => void
+}
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    embedNode: {
+      setEmbed: (options: { src: string }) => ReturnType
+    }
+  }
+}
+
+export const EmbedNode = Node.create<EmbedNodeOptions>({
+  name: 'embed',
+
+  group: 'block',
+
+  atom: true,
+
+  addAttributes() {
+    return {
+      src: {
+        default: null,
+      },
+    }
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: 'div[data-embed]',
+      },
+    ]
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, {
+      'data-embed': '',
+      class: 'border border-ink-200 rounded-lg p-4 my-4 bg-ink-50',
+    }), ['a', {
+      href: HTMLAttributes.src,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      class: 'text-sm text-brand-600 hover:text-brand-700 break-all',
+    }, HTMLAttributes.src]]
+  },
+
+  addCommands() {
+    return {
+      setEmbed: (options) => ({ commands }) => {
+        return commands.insertContent({
+          type: this.name,
+          attrs: options,
+        })
+      },
+    }
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey('embedDetection'),
+        props: {
+          handlePaste(view, event) {
+            const text = event.clipboardData?.getData('text/plain')?.trim()
+            if (!text) return false
+
+            // Only handle single-line URL pastes
+            if (text.includes('\n')) return false
+            if (!isEmbeddableUrl(text)) return false
+
+            event.preventDefault()
+
+            const { state } = view
+            const { tr, schema } = state
+            const nodeType = schema.nodes.embed
+            if (!nodeType) return false
+
+            const node = nodeType.create({ src: text })
+            const transaction = tr.replaceSelectionWith(node)
+            view.dispatch(transaction)
+
+            return true
+          },
+        },
+      }),
+    ]
+  },
+})
+
+export default EmbedNode

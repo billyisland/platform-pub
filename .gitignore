@@ -1,0 +1,8 @@
+node_modules/
+.env
+gateway/.env
+payment-service/.env
+key-service/.env
+web/.env
+web/.next/
+*.log

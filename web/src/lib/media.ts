@@ -1,0 +1,101 @@
+// =============================================================================
+// Media Client
+//
+// Blossom image upload and oEmbed proxy fetch functions.
+// All requests go through the gateway to protect reader privacy.
+// =============================================================================
+
+const API_BASE = '/api/v1'
+
+// =============================================================================
+// Image Upload
+// =============================================================================
+
+export interface UploadResult {
+  url: string
+  sha256: string
+  mimeType?: string
+  size?: number
+  duplicate?: boolean
+}
+
+export async function uploadImage(file: File): Promise<UploadResult> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const res = await fetch(`${API_BASE}/media/upload`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `Upload failed: ${res.status}`)
+  }
+
+  return res.json()
+}
+
+// =============================================================================
+// oEmbed
+// =============================================================================
+
+export interface OEmbedResult {
+  type: string
+  title?: string
+  authorName?: string
+  authorUrl?: string
+  providerName?: string
+  providerUrl?: string
+  thumbnailUrl?: string
+  thumbnailWidth?: number
+  thumbnailHeight?: number
+  html?: string
+  width?: number
+  height?: number
+}
+
+export async function fetchOEmbed(url: string): Promise<OEmbedResult> {
+  const res = await fetch(
+    `${API_BASE}/media/oembed?url=${encodeURIComponent(url)}`,
+    { credentials: 'include' }
+  )
+
+  if (!res.ok) {
+    throw new Error(`oEmbed lookup failed: ${res.status}`)
+  }
+
+  return res.json()
+}
+
+// =============================================================================
+// URL Detection
+// =============================================================================
+
+const EMBEDDABLE_PATTERNS = [
+  /^https?:\/\/(www\.)?youtube\.com\/watch/,
+  /^https?:\/\/youtu\.be\//,
+  /^https?:\/\/(www\.)?vimeo\.com\/\d+/,
+  /^https?:\/\/(www\.)?(twitter|x)\.com\/\w+\/status\//,
+  /^https?:\/\/open\.spotify\.com\//,
+]
+
+export function isEmbeddableUrl(url: string): boolean {
+  return EMBEDDABLE_PATTERNS.some(pattern => pattern.test(url))
+}
+
+const IMAGE_URL_PATTERN = /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i
+const BLOSSOM_PATTERN = /^https?:\/\/.*\/[a-f0-9]{64}$/i
+
+export function isImageUrl(url: string): boolean {
+  return IMAGE_URL_PATTERN.test(url) || BLOSSOM_PATTERN.test(url)
+}
+
+/**
+ * Extract URLs from text content.
+ */
+export function extractUrls(text: string): string[] {
+  const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g
+  return text.match(urlRegex) ?? []
+}

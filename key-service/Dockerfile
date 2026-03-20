@@ -1,0 +1,9 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY tsconfig.base.json ./
+COPY shared/ shared/
+COPY key-service/ key-service/
+RUN cd shared && npm install && cd ../key-service && npm install
+RUN ln -s /app/shared /app/key-service/shared
+EXPOSE 3002
+CMD ["./key-service/node_modules/.bin/tsx", "key-service/src/index.ts"]
