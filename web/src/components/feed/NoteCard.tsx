@@ -58,12 +58,12 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
   }
 
   return (
-    <div className="px-5 py-4 bg-surface border-b border-surface-sunken">
+    <div className="px-5 py-4 bg-terracotta border-b border-terracotta-dark">
       <div className="flex items-start gap-3">
         {writerInfo?.avatar ? (
           <img src={writerInfo.avatar} alt="" className="h-8 w-8 rounded-full object-cover flex-shrink-0 mt-0.5" />
         ) : (
-          <span className="flex h-8 w-8 items-center justify-center bg-surface-sunken text-[10px] font-medium text-content-muted flex-shrink-0 mt-0.5 rounded-full">
+          <span className="flex h-8 w-8 items-center justify-center bg-terracotta-dark text-[10px] font-medium text-surface-sunken flex-shrink-0 mt-0.5 rounded-full">
             {(writerInfo?.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
           </span>
         )}
@@ -71,10 +71,10 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
         <div className="flex-1 min-w-0">
           {/* Name + time row */}
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-ui-sm font-medium text-content-primary">
+            <span className="text-ui-sm font-medium text-surface-raised">
               {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
             </span>
-            <span className="text-ui-xs text-content-faint">
+            <span className="text-ui-xs text-surface-sunken">
               {formatDate(note.publishedAt)}
             </span>
             {isAuthor && (
@@ -83,8 +83,8 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
                 disabled={deleting}
                 className={`ml-auto text-ui-xs transition-colors disabled:opacity-40 ${
                   confirmDelete
-                    ? 'text-red-600 font-medium'
-                    : 'text-content-faint hover:text-content-secondary'
+                    ? 'text-red-200 font-medium'
+                    : 'text-surface-sunken hover:text-surface'
                 }`}
               >
                 {deleting ? '...' : confirmDelete ? 'Confirm delete?' : 'Delete'}
@@ -94,7 +94,7 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
 
           {/* Content */}
           {displayContent && (
-            <p className="text-sm text-content-primary leading-relaxed whitespace-pre-wrap">{displayContent}</p>
+            <p className="text-sm text-surface leading-relaxed whitespace-pre-wrap">{displayContent}</p>
           )}
 
           {/* Images */}
@@ -117,20 +117,21 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
           <div className="mt-2 flex items-center gap-4">
             <button
               onClick={() => setShowComments(!showComments)}
-              className="text-ui-xs text-content-faint hover:text-accent transition-colors"
+              className="text-ui-xs text-surface-sunken hover:text-surface-raised transition-colors"
             >
               {showComments ? 'Hide' : 'Comment'}{commentCount !== null && commentCount > 0 && ` (${commentCount})`}
             </button>
           </div>
 
-          {/* Comments */}
-          {showComments && (
-            <div className="mt-2">
-              <CommentSection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact />
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Comments — cream panel at tile bottom */}
+      {showComments && (
+        <div className="-mx-5 -mb-4 mt-3 px-5 py-3 bg-surface-raised border-t border-terracotta-dark">
+          <CommentSection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact />
+        </div>
+      )}
     </div>
   )
 }
@@ -138,7 +139,7 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
 function EmbedPreview({ url }: { url: string }) {
   const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/)
   if (yt) return <div className="relative overflow-hidden rounded" style={{ paddingBottom: '56.25%' }}><iframe src={`https://www.youtube.com/embed/${yt[1]}`} className="absolute inset-0 w-full h-full" frameBorder="0" allowFullScreen loading="lazy" /></div>
-  return <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-surface-raised p-3 rounded hover:opacity-80 transition-opacity"><p className="text-ui-xs text-content-faint truncate">{url}</p></a>
+  return <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-terracotta-dark p-3 rounded hover:opacity-80 transition-opacity"><p className="text-ui-xs text-surface-sunken truncate">{url}</p></a>
 }
 
 function formatDate(ts: number) {

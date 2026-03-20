@@ -35,10 +35,19 @@ export function FeedView() {
             ndk.fetchEvents({ kinds: [KIND_NOTE as NDKKind], limit: 30, ...af }),
             ndk.fetchEvents({ kinds: [KIND_DELETION as NDKKind], limit: 100, ...af }),
           ])
-          const deleted = new Set<string>()
-          for (const d of deletionEvents) for (const t of d.tags) if (t[0] === 'e') deleted.add(t[1])
-          const articles: FeedItem[] = Array.from(articleEvents).filter(e => !deleted.has(e.id)).map(e => ({ ...parseArticleEvent(e), type: 'article' as const }))
-          const notes: FeedItem[] = Array.from(noteEvents).filter(e => !e.tags.find(t => t[0] === 'e')).filter(e => !deleted.has(e.id)).map(e => parseNoteEvent(e))
+          const deletedIds = new Set<string>()
+          const deletedCoords = new Set<string>()
+          for (const d of deletionEvents) for (const t of d.tags) {
+            if (t[0] === 'e') deletedIds.add(t[1])
+            if (t[0] === 'a') deletedCoords.add(t[1])
+          }
+          const isArticleDeleted = (e: { id: string; tags: string[][] }) => {
+            if (deletedIds.has(e.id)) return true
+            const dTag = e.tags.find(t => t[0] === 'd')?.[1]
+            return dTag != null && deletedCoords.has(`30023:${e.pubkey}:${dTag}`)
+          }
+          const articles: FeedItem[] = Array.from(articleEvents).filter(e => !isArticleDeleted(e)).map(e => ({ ...parseArticleEvent(e), type: 'article' as const }))
+          const notes: FeedItem[] = Array.from(noteEvents).filter(e => !e.tags.find(t => t[0] === 'e')).filter(e => !deletedIds.has(e.id)).map(e => parseNoteEvent(e))
           setFeedItems([...articles, ...notes].sort((a, b) => b.publishedAt - a.publishedAt))
         } else { setFeedItems([]) }
       } catch (err) { console.error('Feed load error:', err) }

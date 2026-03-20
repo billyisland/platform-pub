@@ -40,7 +40,9 @@ export function NoteComposer({ onPublished }: NoteComposerProps) {
       <div className="flex gap-3">
         {user.avatar ? <img src={user.avatar} alt="" className="h-9 w-9 rounded-full object-cover flex-shrink-0" /> : <span className="flex h-9 w-9 items-center justify-center bg-surface-sunken text-xs font-medium text-content-muted flex-shrink-0">{initial}</span>}
         <div className="flex-1 min-w-0">
-          <textarea ref={ref} value={content} onChange={e => setContent(e.target.value)} placeholder="What's on your mind?" rows={2}
+          <textarea ref={ref} value={content} onChange={e => setContent(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
+            placeholder="What's on your mind?" rows={2}
             className="w-full resize-none bg-surface-raised text-ui-sm text-content-primary placeholder:text-content-faint focus:bg-white focus:outline-none leading-relaxed transition-colors px-3 py-2" />
           {error && <div className="mt-2 bg-surface-sunken px-3 py-2 text-ui-xs text-content-primary flex items-center justify-between"><span>{error}</span><button onClick={() => setError(null)} className="ml-2 text-content-faint hover:text-ink-900">×</button></div>}
           <div className="mt-2 flex items-center justify-between">

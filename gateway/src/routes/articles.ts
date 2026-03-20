@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { WebSocket } from 'ws'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { checkArticleAccess, recordSubscriptionRead, recordPurchaseUnlock } from '../services/access.js'
+import { signEvent } from '../../shared/src/auth/keypairs.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -93,13 +95,6 @@ export async function articleRoutes(app: FastifyInstance) {
           data.isPaywalled ? data.gatePositionPct : null,
           data.vaultEventId ?? null,
         ]
-      )
-
-      // Auto-promote to writer on first publish
-      await pool.query(
-        `UPDATE accounts SET is_writer = TRUE, updated_at = now()
-         WHERE id = $1 AND is_writer = FALSE`,
-        [writerId]
       )
 
       logger.info(
@@ -411,6 +406,7 @@ export async function articleRoutes(app: FastifyInstance) {
           encryptedKey: keyResult.encryptedKey,
           algorithm: keyResult.algorithm,
           isReissuance: keyResult.isReissuance,
+          allowanceJustExhausted: paymentResult.allowanceJustExhausted ?? false,
         })
       } catch (err) {
         logger.error({ err, readerId, nostrEventId }, 'Gate pass orchestration failed')
@@ -575,9 +571,11 @@ export async function articleRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const writerId = req.session!.sub!
 
-      const { rows } = await pool.query<{ id: string; nostr_event_id: string; nostr_d_tag: string }>(
-        `SELECT id, nostr_event_id, nostr_d_tag FROM articles
-         WHERE id = $1 AND writer_id = $2 AND deleted_at IS NULL`,
+      const { rows } = await pool.query<{ id: string; nostr_event_id: string; nostr_d_tag: string; nostr_pubkey: string }>(
+        `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, acc.nostr_pubkey
+         FROM articles a
+         JOIN accounts acc ON acc.id = a.writer_id
+         WHERE a.id = $1 AND a.writer_id = $2 AND a.deleted_at IS NULL`,
         [req.params.id, writerId]
       )
 
@@ -598,6 +596,24 @@ export async function articleRoutes(app: FastifyInstance) {
         'Article soft-deleted'
       )
 
+      // Publish kind 5 deletion event to the relay so the feed filters it out
+      try {
+        const deletionEvent = await signEvent(writerId, {
+          kind: 5,
+          content: '',
+          tags: [
+            ['e', article.nostr_event_id],
+            ['a', `30023:${article.nostr_pubkey}:${article.nostr_d_tag}`],
+          ],
+          created_at: Math.floor(Date.now() / 1000),
+        })
+        await publishToRelay(deletionEvent)
+        logger.info({ articleId: article.id, deletionEventId: deletionEvent.id }, 'Kind 5 deletion event published')
+      } catch (err) {
+        // Non-fatal: DB is source of truth; feed will still exclude via deleted_at
+        logger.error({ err, articleId: article.id }, 'Failed to publish kind 5 deletion event')
+      }
+
       return reply.status(200).send({
         ok: true,
         deletedArticleId: article.id,
@@ -606,6 +622,35 @@ export async function articleRoutes(app: FastifyInstance) {
       })
     }
   )
+}
+
+// =============================================================================
+// Relay publisher — sends a signed Nostr event to the platform strfry relay
+// =============================================================================
+
+async function publishToRelay(event: object): Promise<void> {
+  const relayUrl = process.env.PLATFORM_RELAY_WS_URL
+  if (!relayUrl) throw new Error('PLATFORM_RELAY_WS_URL not set')
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(relayUrl)
+    const timeout = setTimeout(() => { ws.close(); reject(new Error('Relay publish timeout')) }, 5_000)
+
+    ws.onopen = () => { ws.send(JSON.stringify(['EVENT', event])) }
+
+    ws.onmessage = (msg) => {
+      try {
+        const [type, , success, message] = JSON.parse(msg.data as string)
+        if (type === 'OK') {
+          clearTimeout(timeout)
+          ws.close()
+          success ? resolve() : reject(new Error(`Relay rejected event: ${message}`))
+        }
+      } catch { /* ignore NOTICE etc */ }
+    }
+
+    ws.onerror = (err) => { clearTimeout(timeout); reject(err) }
+  })
 }
 
 // =============================================================================

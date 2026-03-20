@@ -11,12 +11,17 @@ module.exports = {
         mono: ['"IBM Plex Mono"', '"Courier New"', 'monospace'],
       },
       colors: {
-        // Unified warm palette — cream to stone
+        // Warm palette — pale salmon background, cream surfaces
         surface: {
-          DEFAULT: '#FAF7F5',
-          raised: '#F3EDEA',
-          sunken: '#EBE3DE',
-          strong: '#DDD3CB',
+          DEFAULT: '#FAE8E2',
+          raised: '#FDF6F0',
+          sunken: '#F0D5CB',
+          strong: '#E0C0B5',
+        },
+        terracotta: {
+          DEFAULT: '#A85141',
+          dark: '#8C4035',
+          light: '#C1614F',
         },
         ink: {
           DEFAULT: '#1A1512',
@@ -39,36 +44,35 @@ module.exports = {
           muted: '#7A6E5D',
           faint: '#A8977F',
         },
-        // Accent — muted eucalyptus green
-        // Literary, contemporary, works with warm cream
+        // Accent — terracotta
         accent: {
-          DEFAULT: '#6B7F6B',
-          50:  '#F2F5F2',
-          100: '#E0E8E0',
-          200: '#C1D1C1',
-          300: '#9FB39F',
-          400: '#7F967F',
-          500: '#6B7F6B',
-          600: '#566756',
-          700: '#425042',
-          800: '#2E3A2E',
-          900: '#1A241A',
+          DEFAULT: '#C1614F',
+          50:  '#FAF0ED',
+          100: '#F2D5CF',
+          200: '#E4AC9F',
+          300: '#D4806E',
+          400: '#C96B58',
+          500: '#C1614F',
+          600: '#A85141',
+          700: '#8C4035',
+          800: '#6B3028',
+          900: '#4A2019',
         },
         // Backward-compat aliases
         brand: {
-          50: '#FAF7F5',
-          100: '#F3EDEA',
-          500: '#6B7F6B',
-          600: '#566756',
-          700: '#425042',
+          50: '#FAE8E2',
+          100: '#FDF6F0',
+          500: '#C1614F',
+          600: '#A85141',
+          700: '#8C4035',
         },
         pink: {
-          light: '#FAF7F5',
-          dark: '#F3EDEA',
+          light: '#FAE8E2',
+          dark: '#F0D5CB',
         },
         blue: {
-          light: '#EBE3DE',
-          dark: '#DDD3CB',
+          light: '#F0D5CB',
+          dark: '#E0C0B5',
         },
       },
       typography: {
@@ -82,8 +86,8 @@ module.exports = {
             h1: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400', letterSpacing: '-0.01em' },
             h2: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400', letterSpacing: '-0.005em' },
             h3: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400' },
-            a: { color: '#566756', textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationThickness: '1px', '&:hover': { color: '#425042' } },
-            blockquote: { borderLeftColor: '#9FB39F', borderLeftWidth: '2px', fontStyle: 'italic', color: '#5C5347' },
+            a: { color: '#A85141', textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationThickness: '1px', '&:hover': { color: '#8C4035' } },
+            blockquote: { borderLeftColor: '#D4806E', borderLeftWidth: '2px', fontStyle: 'italic', color: '#5C5347' },
             code: { fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.875em' },
             p: { marginTop: '1.5em', marginBottom: '1.5em' },
           },

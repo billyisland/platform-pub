@@ -124,6 +124,7 @@ export interface ArticleEarnings {
 
 export interface GatePassResponse {
   readEventId: string
+  allowanceJustExhausted?: boolean
   readState: string
   encryptedKey: string
   algorithm: string

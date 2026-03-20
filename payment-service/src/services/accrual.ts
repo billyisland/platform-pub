@@ -33,7 +33,7 @@ export class AccrualService {
   // Called synchronously in the gate-pass request path; must be fast.
   // ---------------------------------------------------------------------------
 
-  async recordGatePass(event: GatePassEvent): Promise<ReadEvent> {
+  async recordGatePass(event: GatePassEvent): Promise<{ readEvent: ReadEvent; allowanceJustExhausted: boolean }> {
     const config = await this.getConfig()
 
     return withTransaction(async (client) => {
@@ -58,17 +58,18 @@ export class AccrualService {
       let onFreeAllowance = false
       let readState: ReadEvent['state']
 
+      const allowanceJustExhausted = !hasCard &&
+        reader.free_allowance_remaining_pence > 0 &&
+        reader.free_allowance_remaining_pence - event.amountPence <= 0
+
       if (!hasCard) {
-        // Provisional: reader has no card — charge against free allowance
-        if (reader.free_allowance_remaining_pence <= 0) {
-          throw new Error('FREE_ALLOWANCE_EXHAUSTED')
-        }
-        onFreeAllowance = true
+        // Provisional: reader has no card — debit against free allowance (can go negative)
+        onFreeAllowance = reader.free_allowance_remaining_pence > 0
         readState = 'provisional'
 
         await client.query(
           `UPDATE accounts
-           SET free_allowance_remaining_pence = GREATEST(0, free_allowance_remaining_pence - $1),
+           SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1,
                updated_at = now()
            WHERE id = $2`,
           [event.amountPence, event.readerId]
@@ -123,7 +124,7 @@ export class AccrualService {
         'Gate pass recorded'
       )
 
-      return readEvent
+      return { readEvent, allowanceJustExhausted }
     })
   }
 

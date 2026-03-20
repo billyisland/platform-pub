@@ -214,7 +214,7 @@ export default function WriterProfilePage() {
       <div className="rule mb-10" />
 
       {articles.length === 0 ? (
-        <p className="text-ui-sm text-content-muted py-10">No published articles yet.</p>
+        <p className="text-ui-sm text-content-muted py-10">Looks like {writer?.displayName ?? username} hasn't said anything yet.</p>
       ) : (
         <div className="space-y-3">
           {articles.map(a => <DbArticleCard key={a.id} article={a} writerName={writer?.displayName ?? username} />)}

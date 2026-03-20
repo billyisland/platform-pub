@@ -214,15 +214,23 @@ async function createGoogleAccount(email: string, displayName: string): Promise<
     baseUsername = 'user'
   }
 
-  const suffix = randomBytes(3).toString('hex')
-  const username = `${baseUsername}-${suffix}`
+  // Use base username if available, otherwise append a random suffix
+  let username = baseUsername
+  const { rows: existing } = await pool.query<{ username: string }>(
+    `SELECT username FROM accounts WHERE username = $1 OR username LIKE $2 ORDER BY username`,
+    [baseUsername, `${baseUsername}-%`]
+  )
+  if (existing.some(r => r.username === baseUsername)) {
+    const taken = new Set(existing.map(r => r.username))
+    do { username = `${baseUsername}-${randomBytes(3).toString('hex')}` } while (taken.has(username))
+  }
 
   return withTransaction(async (client) => {
     const result = await client.query<{ id: string }>(
       `INSERT INTO accounts (
          nostr_pubkey, nostr_privkey_enc, username, display_name, email,
          is_writer, is_reader, status, free_allowance_remaining_pence
-       ) VALUES ($1, $2, $3, $4, $5, FALSE, TRUE, 'active', 500)
+       ) VALUES ($1, $2, $3, $4, $5, TRUE, TRUE, 'active', 500)
        RETURNING id`,
       [keypair.pubkeyHex, keypair.privkeyEncrypted, username, displayName, email]
     )

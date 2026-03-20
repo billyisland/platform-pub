@@ -117,6 +117,7 @@ export function CommentComposer({
         ref={textareaRef}
         value={content}
         onChange={(e) => setContent(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
         placeholder={compact ? 'Write a reply...' : 'Write a comment...'}
         rows={compact ? 1 : 2}
         className="w-full resize-none border border-ink-200 rounded-md bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 leading-relaxed"

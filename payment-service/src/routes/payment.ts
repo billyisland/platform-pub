@@ -45,7 +45,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
 
     try {
-      const readEvent = await accrualService.recordGatePass(parsed.data)
+      const { readEvent, allowanceJustExhausted } = await accrualService.recordGatePass(parsed.data)
 
       // After recording the read, check if settlement threshold is crossed
       // Non-blocking — settlement failure should not block content delivery
@@ -55,11 +55,8 @@ export async function paymentRoutes(app: FastifyInstance) {
         })
       }
 
-      return reply.status(201).send({ readEventId: readEvent.id, state: readEvent.state })
+      return reply.status(201).send({ readEventId: readEvent.id, state: readEvent.state, allowanceJustExhausted })
     } catch (err: any) {
-      if (err.message === 'FREE_ALLOWANCE_EXHAUSTED') {
-        return reply.status(402).send({ error: 'free_allowance_exhausted' })
-      }
       logger.error({ err }, 'Gate pass failed')
       return reply.status(500).send({ error: 'Internal error' })
     }

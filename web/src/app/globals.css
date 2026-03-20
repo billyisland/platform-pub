@@ -14,8 +14,8 @@
   }
 
   ::selection {
-    background-color: #C1D1C1;
-    color: #1A1512;
+    background-color: #D4806E;
+    color: #FDF6F0;
   }
 
   hr {
@@ -40,7 +40,7 @@
   textarea:focus,
   select:focus {
     @apply outline-none ring-0;
-    background-color: #FFFFFF;
+    background-color: #FDF6F0;
   }
 
   ::placeholder {
@@ -51,7 +51,7 @@
   /* Checkbox and radio styling */
   input[type="checkbox"],
   input[type="radio"] {
-    accent-color: #6B7F6B;
+    accent-color: #C1614F;
   }
   input[type="checkbox"] {
     @apply rounded border-ink-300;
@@ -59,22 +59,22 @@
     height: 1rem;
   }
   input[type="checkbox"]:checked {
-    background-color: #6B7F6B;
-    border-color: #6B7F6B;
+    background-color: #C1614F;
+    border-color: #C1614F;
   }
   input[type="checkbox"]:focus {
-    box-shadow: 0 0 0 2px #C1D1C1;
+    box-shadow: 0 0 0 2px #E4AC9F;
   }
 
   /* Range slider */
   input[type="range"] {
-    accent-color: #6B7F6B;
+    accent-color: #C1614F;
   }
   input[type="range"]::-webkit-slider-thumb {
-    background: #6B7F6B;
+    background: #C1614F;
   }
   input[type="range"]::-moz-range-thumb {
-    background: #6B7F6B;
+    background: #C1614F;
   }
 }
 
@@ -96,7 +96,7 @@
     border-top: 0.5px solid #DDD3CB;
   }
   .rule-accent {
-    border-top: 2px solid #6B7F6B;
+    border-top: 2px solid #A85141;
   }
   .rule-blue {
     border-top: 0.5px solid #DDD3CB;
@@ -135,7 +135,7 @@
   }
   .tab-pill-active {
     background: #1A1512;
-    color: #FAF7F5;
+    color: #FDF6F0;
   }
   .tab-pill-inactive {
     @apply bg-surface-raised text-content-secondary;
@@ -148,7 +148,7 @@
   /* ----- Buttons ----- */
   .btn {
     background: #1A1512;
-    color: #FAF7F5;
+    color: #FDF6F0;
     font-family: 'Instrument Sans', system-ui, sans-serif;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -164,8 +164,8 @@
   .btn:disabled { opacity: 0.5; }
 
   .btn-accent {
-    background: #6B7F6B;
-    color: #FAF7F5;
+    background: #A85141;
+    color: #FDF6F0;
     font-family: 'Instrument Sans', system-ui, sans-serif;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -177,7 +177,7 @@
     transition: background-color 0.15s ease;
     cursor: pointer;
   }
-  .btn-accent:hover { background: #566756; }
+  .btn-accent:hover { background: #8C4035; }
   .btn-accent:disabled { opacity: 0.5; }
 
   .btn-soft {
@@ -201,8 +201,8 @@
   .ProseMirror ::selection,
   .tiptap ::selection,
   .prose ::selection {
-    background-color: #9FB39F !important;
-    color: #FFFFFF !important;
+    background-color: #D4806E !important;
+    color: #FDF6F0 !important;
   }
   .ProseMirror .is-editor-empty:first-child::before {
     color: #A8977F;
@@ -213,8 +213,8 @@
     position: relative;
     margin: 2rem 0;
     padding: 0.75rem 1rem;
-    background: #F2F5F2;
-    border: 1px dashed #9FB39F;
+    background: #FAF0ED;
+    border: 1px dashed #D4806E;
     cursor: default;
     user-select: none;
     display: flex;
@@ -229,14 +229,14 @@
     width: 3px;
     height: 60%;
     transform: translateY(-50%);
-    background: #6B7F6B;
+    background: #A85141;
   }
   .paywall-gate-marker .gate-label {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.6875rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: #566756;
+    color: #A85141;
   }
   .paywall-gate-marker .gate-remove {
     font-size: 0.75rem;

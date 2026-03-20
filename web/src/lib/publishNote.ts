@@ -37,6 +37,18 @@ export async function publishNote(
   // Sign via gateway (custodial key)
   const signed = await signViaGateway(noteEvent)
 
+  // Wait for at least one relay to be connected before publishing
+  if (ndk.pool.connectedRelays().length === 0) {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('No relays available — try again in a moment')), 5000)
+      const check = () => {
+        if (ndk.pool.connectedRelays().length > 0) { clearTimeout(timeout); resolve() }
+        else setTimeout(check, 100)
+      }
+      check()
+    })
+  }
+
   // Publish to relay
   await signed.publish()
 

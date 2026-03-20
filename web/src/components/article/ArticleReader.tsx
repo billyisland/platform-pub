@@ -8,6 +8,7 @@ import { getNdk, fetchVaultEvent } from '../../lib/ndk'
 import { renderMarkdown } from '../../lib/markdown'
 import { ReportButton } from '../ui/ReportButton'
 import { CommentSection } from '../comments/CommentSection'
+import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
 import { articles as articlesApi } from '../../lib/api'
 import type { ArticleEvent } from '../../lib/ndk'
 
@@ -42,6 +43,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
   const [paywallBody, setPaywallBody] = useState<string | null>(null)
   const [unlocking, setUnlocking] = useState(false)
   const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [showAllowanceModal, setShowAllowanceModal] = useState(false)
   const [freeHtml, setFreeHtml] = useState<string>('')
   const [paywallHtml, setPaywallHtml] = useState<string>('')
 
@@ -76,6 +78,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
       const body = await decryptVaultContent(vaultEvent.ciphertext, contentKeyBase64)
       setPaywallBody(body)
       sessionStorage.setItem(`unlocked:${article.id}`, body)
+      if (gatePassResult.allowanceJustExhausted) setShowAllowanceModal(true)
     } catch (err: any) {
       if (!unlockError) setUnlockError('Something went wrong. Please try again.')
     } finally { setUnlocking(false) }
@@ -87,6 +90,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
 
   return (
     <div className="min-h-screen bg-surface">
+      {showAllowanceModal && <AllowanceExhaustedModal onClose={() => setShowAllowanceModal(false)} />}
       {/* Hero image with title overlay */}
       {heroImage ? (
         <div
@@ -114,7 +118,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
         </div>
       ) : (
         /* Standard header — no hero image */
-        <div className="mx-auto max-w-article px-6 pt-16">
+        <div className="mx-auto max-w-article px-6 pt-16 bg-surface-raised">
           <div className="mb-10 flex items-center justify-between">
             <div className="flex items-center gap-3">
               {writerAvatar ? (
@@ -137,7 +141,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
       )}
 
       {/* Article body */}
-      <article className="mx-auto max-w-article px-6 py-8">
+      <article className="mx-auto max-w-article px-6 py-8 bg-surface-raised">
         {heroImage && (
           <div className="flex items-center justify-between mb-8">
             <div />

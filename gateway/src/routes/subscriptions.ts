@@ -80,6 +80,12 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             [now, periodEnd, pricePence, sub.id]
           )
 
+          // Deduct from free allowance (can go negative)
+          await client.query(
+            `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
+            [pricePence, readerId]
+          )
+
           // Log the charge and earning
           await logSubscriptionCharge(client, sub.id, readerId, writerId, pricePence, now, periodEnd)
 
@@ -100,6 +106,12 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         )
 
         const subscriptionId = subResult.rows[0].id
+
+        // Deduct from free allowance (can go negative — same as article reads)
+        await client.query(
+          `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
+          [pricePence, readerId]
+        )
 
         // Log the charge and earning
         await logSubscriptionCharge(client, subscriptionId, readerId, writerId, pricePence, now, periodEnd)

@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v1.7
+# platform.pub — Deployment Reference v1.8
 
 **Date:** 20 March 2026
-**Replaces:** deployment-reference-v1_4-addendum.md (archived in docs/)
+**Replaces:** v1.7 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -348,17 +348,25 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
 
 | Token | Hex | Usage |
 |-------|-----|-------|
-| surface | #FAF7F5 | Page background, nav |
-| surface-raised | #F3EDEA | Cards, inputs, tiles |
-| surface-sunken | #EBE3DE | Hover states, dividers |
-| surface-strong | #DDD3CB | Borders, separators |
-| ink-900 | #1A1512 | Primary text, logo |
+| surface | #FAE8E2 | Page background (pale salmon) |
+| surface-raised | #FDF6F0 | Article body, cards, inputs (cream) |
+| surface-sunken | #F0D5CB | Hover states, dividers |
+| surface-strong | #E0C0B5 | Borders, separators |
+| ink-900 | #1A1512 | Primary text, logo border |
 | content-primary | #2A2320 | Body text |
 | content-secondary | #5C5347 | Supporting text |
 | content-muted | #7A6E5D | Labels, meta |
 | content-faint | #A8977F | Timestamps, tertiary |
-| accent | #6B7F6B | Links, borders, active states |
-| accent-50..900 | Eucalyptus green ramp | Subscriber badges, buttons, highlights |
+| terracotta | #A85141 | Nav bar, note tiles, accent buttons |
+| terracotta-dark | #8C4035 | Nav/tile borders, input bg on terracotta |
+| terracotta-light | #C1614F | Hover/rule accents |
+| accent | #A85141 | Links, active states (= terracotta) |
+| accent-50..900 | Terracotta ramp | Highlights, rule-accent |
+
+Text on terracotta backgrounds uses cream/salmon tokens only:
+- Primary: `text-surface-raised` (#FDF6F0)
+- Secondary: `text-surface` (#FAE8E2)
+- Muted: `text-surface-sunken` (#F0D5CB)
 
 ### Typography
 
@@ -372,12 +380,12 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
 
 | Class | Purpose |
 |-------|---------|
-| .btn | Primary button (ink-900 bg) |
-| .btn-accent | Accent button (eucalyptus green) |
+| .btn | Primary button (ink-900 bg, cream text) |
+| .btn-accent | Accent button (terracotta) |
 | .btn-soft | Soft button (surface-raised bg) |
 | .tab-pill / .tab-pill-active / .tab-pill-inactive | Tab navigation |
 | .label-ui | Uppercase small label |
-| .rule / .rule-accent | Horizontal dividers |
+| .rule / .rule-accent | Horizontal dividers (rule-accent = terracotta) |
 | .ornament | Centered dot ornament (· · ·) |
 
 ---
@@ -421,6 +429,12 @@ docker compose up -d gateway
 docker compose restart nginx  # if gateway IP changed
 ```
 
+> **Note:** After rebuilding any backend service, nginx may need a reload to re-resolve the new container IP:
+> ```bash
+> docker compose exec nginx nginx -s reload
+> ```
+> This is only necessary if you see 502 errors after a rebuild. The nginx config uses Docker's internal DNS resolver (`127.0.0.11`) with a 10-second TTL, so in normal operation it heals automatically.
+
 ### View logs
 ```bash
 docker logs platform-pub-gateway-1 --tail 50 -f
@@ -450,7 +464,7 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ---
 
-## Known limitations (v1.7)
+## Known limitations (v1.8)
 
 - Subscription renewal is not yet automated (requires a cron job or scheduled worker to charge at period end)
 - "For You" feed tab returns empty (requires engagement data + ranking algorithm)
@@ -459,3 +473,40 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 - Stripe webhook handler exists but live/test key switch is manual
 - Email sending requires configuring `EMAIL_PROVIDER` (postmark/resend) — defaults to console logging
 - Search uses pg_trgm (good for launch, consider MeiliSearch post-launch for better relevance)
+- Stripe payment collection not yet live — free allowance silently goes negative as a testing workaround
+
+---
+
+## Change log
+
+### v1.8 — 20 March 2026
+
+**Infrastructure**
+- `nginx.conf`: Added `resolver 127.0.0.11 valid=10s ipv6=off` and variable-based `proxy_pass` for all upstreams — nginx now re-resolves Docker container IPs dynamically rather than caching at startup. Eliminates 502 Bad Gateway after service rebuilds.
+- `docker-compose.yml`: Added `restart: unless-stopped` to all services.
+- `gateway/Dockerfile`: Changed `ln -s` to `ln -sf` on shared symlink to prevent build failure when symlink already exists.
+- `gateway/package.json`: Added `ws` dependency (Node 18 lacks a global `WebSocket`).
+
+**Behaviour changes**
+- All new accounts default to `is_writer = TRUE` — no separate writer-upgrade step required.
+- Username generation no longer appends a random suffix unless the base username is already taken.
+- Free allowance now covers subscriptions as well as per-article reads.
+- Reading past zero balance is allowed — balance goes negative. No hard stop. A "allowance exhausted" modal is shown after the first read that crosses zero (in-app notice only; no payment collection yet).
+- Articles deleted by author now publish a Nostr kind 5 deletion event with the correct `a` tag (`30023:<pubkey>:<d-tag>`) so deletions propagate to relays and the feed filters them correctly.
+- Notes: Enter key publishes; Shift+Enter inserts a newline. Same behaviour in comment composer.
+- Relay connection is awaited before note publish to prevent "0 relays available" errors on first post.
+
+**UI / design**
+- Full colour scheme overhaul:
+  - Page background: pale salmon (`#FAE8E2`)
+  - Article/card surfaces: cream (`#FDF6F0`)
+  - Nav bar and note tiles: terracotta (`#A85141`)
+  - Logo border: all-black (`#1A1512`)
+  - All text on terracotta uses cream/salmon tokens only
+  - Comment sections on note tiles appear in a cream inset panel
+  - Accent colour (links, rule-accent, buttons): terracotta replacing eucalyptus green
+- "Allowance exhausted" modal added (`AllowanceExhaustedModal.tsx`) — shown after first read past zero balance.
+- Empty writer profile message: "Looks like \<name\> hasn't said anything yet."
+
+### v1.7 — (previous baseline)
+See git history.

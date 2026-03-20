@@ -70,7 +70,7 @@ export async function signup(
       `INSERT INTO accounts (
          nostr_pubkey, nostr_privkey_enc, username, display_name, email,
          is_writer, is_reader, status, free_allowance_remaining_pence
-       ) VALUES ($1, $2, $3, $4, $5, FALSE, TRUE, 'active', 500)
+       ) VALUES ($1, $2, $3, $4, $5, TRUE, TRUE, 'active', 500)
        RETURNING id, nostr_pubkey, username`,
       [keypair.pubkeyHex, keypair.privkeyEncrypted, input.username, input.displayName, input.email.toLowerCase().trim()]
     )
