@@ -4,13 +4,17 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { ArticleEvent } from '../../lib/ndk'
 import { useWriterName } from '../../hooks/useWriterName'
+import { useAuth } from '../../stores/auth'
+import { NoteComposer } from './NoteComposer'
 import { replies as repliesApi } from '../../lib/api'
 
 interface ArticleCardProps { article: ArticleEvent }
 
 export function ArticleCard({ article }: ArticleCardProps) {
+  const { user } = useAuth()
   const writerInfo = useWriterName(article.pubkey)
   const [replyCount, setReplyCount] = useState<number | null>(null)
+  const [showQuoteModal, setShowQuoteModal] = useState(false)
   const wordCount = article.content.split(/\s+/).length
   const readMinutes = Math.max(1, Math.round(wordCount / 200))
   const excerpt = article.summary || truncate(stripMarkdown(article.content), 200)
@@ -22,7 +26,14 @@ export function ArticleCard({ article }: ArticleCardProps) {
     repliesApi.getForTarget(article.id).then(d => setReplyCount(d.totalCount)).catch(() => {})
   }, [article.id])
 
+  const quoteTarget = {
+    eventId: article.id,
+    eventKind: 30023,
+    authorPubkey: article.pubkey,
+  }
+
   return (
+    <div className="relative">
     <Link href={`/article/${article.dTag}`} className="group block overflow-hidden">
       {heroImage ? (
         // Card with hero image background
@@ -45,6 +56,14 @@ export function ArticleCard({ article }: ArticleCardProps) {
               <span className="opacity-40">/</span>
               <span>{readMinutes} min</span>
               {article.isPaywalled && (<><span className="opacity-40">/</span><span className="text-accent-300">&pound;</span></>)}
+              {user && (
+                <button
+                  onClick={e => { e.preventDefault(); e.stopPropagation(); setShowQuoteModal(true) }}
+                  className="btn-soft py-1 px-2 text-ui-xs ml-1"
+                >
+                  Quote
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -70,10 +89,34 @@ export function ArticleCard({ article }: ArticleCardProps) {
             {article.isPaywalled && (
               <><span className="opacity-40">/</span><span className="text-accent">&pound;</span></>
             )}
+            {user && (
+              <button
+                onClick={e => { e.preventDefault(); e.stopPropagation(); setShowQuoteModal(true) }}
+                className="btn-soft py-1 px-2 text-ui-xs ml-1"
+              >
+                Quote
+              </button>
+            )}
           </div>
         </div>
       )}
     </Link>
+
+    {/* Quote modal */}
+    {showQuoteModal && (
+      <div
+        className="fixed inset-0 z-50 bg-ink-900/60 flex items-center justify-center p-4"
+        onClick={() => setShowQuoteModal(false)}
+      >
+        <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
+          <NoteComposer
+            quoteTarget={quoteTarget}
+            onPublished={() => setShowQuoteModal(false)}
+          />
+        </div>
+      </div>
+    )}
+    </div>
   )
 }
 

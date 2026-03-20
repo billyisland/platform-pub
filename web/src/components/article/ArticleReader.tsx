@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../../stores/auth'
 import { PaywallGate } from './PaywallGate'
 import { unwrapContentKey, decryptVaultContent } from '../../lib/vault'
@@ -9,6 +9,7 @@ import { renderMarkdown } from '../../lib/markdown'
 import { ReportButton } from '../ui/ReportButton'
 import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
+import { NoteComposer } from '../feed/NoteComposer'
 import { articles as articlesApi } from '../../lib/api'
 import type { ArticleEvent } from '../../lib/ndk'
 
@@ -47,11 +48,38 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
   const [freeHtml, setFreeHtml] = useState<string>('')
   const [paywallHtml, setPaywallHtml] = useState<string>('')
 
+  // Text-selection quote flow
+  const articleBodyRef = useRef<HTMLDivElement>(null)
+  const [selectionPopup, setSelectionPopup] = useState<{ x: number; y: number; text: string } | null>(null)
+  const [quoteComposerText, setQuoteComposerText] = useState<string | null>(null)
+
+  const handleMouseUp = useCallback(() => {
+    if (!user) return
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) { setSelectionPopup(null); return }
+    const body = articleBodyRef.current
+    if (!body) return
+    // Check if selection is within the article body
+    const range = sel.getRangeAt(0)
+    if (!body.contains(range.commonAncestorContainer)) { setSelectionPopup(null); return }
+    const rect = range.getBoundingClientRect()
+    const words = sel.toString().trim().split(/\s+/).slice(0, 80).join(' ')
+    setSelectionPopup({
+      x: rect.left + rect.width / 2,
+      y: rect.top - 8,
+      text: words,
+    })
+  }, [user])
+
   const heroImage = extractHeroImage(article.content)
   const contentWithoutHero = heroImage ? stripHeroImage(article.content, heroImage) : article.content
 
   useEffect(() => { renderMarkdown(contentWithoutHero).then(setFreeHtml) }, [contentWithoutHero])
   useEffect(() => { if (paywallBody) renderMarkdown(paywallBody).then(setPaywallHtml) }, [paywallBody])
+  useEffect(() => {
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => document.removeEventListener('mouseup', handleMouseUp)
+  }, [handleMouseUp])
   useEffect(() => {
     if (!article.isPaywalled) return
     const cached = sessionStorage.getItem(`unlocked:${article.id}`)
@@ -91,6 +119,45 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
   return (
     <div className="min-h-screen bg-surface">
       {showAllowanceModal && <AllowanceExhaustedModal onClose={() => setShowAllowanceModal(false)} />}
+
+      {/* Text-selection quote popup */}
+      {selectionPopup && (
+        <div
+          className="fixed z-50 bg-ink-900 text-white px-3 py-1.5 text-ui-xs rounded-sm shadow-lg"
+          style={{ left: selectionPopup.x, top: selectionPopup.y, transform: 'translate(-50%, -100%)' }}
+        >
+          <button
+            onMouseDown={e => {
+              e.preventDefault()
+              setQuoteComposerText(selectionPopup.text)
+              setSelectionPopup(null)
+            }}
+          >
+            Quote
+          </button>
+        </div>
+      )}
+
+      {/* Quote composer modal */}
+      {quoteComposerText !== null && (
+        <div
+          className="fixed inset-0 z-50 bg-ink-900/60 flex items-center justify-center p-4"
+          onClick={() => setQuoteComposerText(null)}
+        >
+          <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <NoteComposer
+              quoteTarget={{
+                eventId: article.id,
+                eventKind: 30023,
+                authorPubkey: article.pubkey,
+                highlightedText: quoteComposerText,
+                previewContent: quoteComposerText,
+              }}
+              onPublished={() => setQuoteComposerText(null)}
+            />
+          </div>
+        </div>
+      )}
       {/* Hero image with title overlay */}
       {heroImage ? (
         <div
@@ -149,7 +216,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
           </div>
         )}
 
-        <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: freeHtml }} />
+        <div ref={articleBodyRef} className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: freeHtml }} />
 
         {article.isPaywalled && !isUnlocked && (
           <PaywallGate pricePounds={pricePounds} freeAllowanceRemaining={user?.freeAllowanceRemainingPence ?? 0} hasPaymentMethod={user?.hasPaymentMethod ?? false} isLoggedIn={!!user} onUnlock={handleUnlock} unlocking={unlocking} error={unlockError} />

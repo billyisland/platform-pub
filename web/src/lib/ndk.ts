@@ -77,6 +77,8 @@ export interface NoteEvent {
   pubkey: string
   content: string
   publishedAt: number
+  quotedEventId?: string
+  quotedEventKind?: number
 }
 
 // Discriminated union for mixed-kind feeds
@@ -115,12 +117,14 @@ export function parseArticleEvent(event: NDKEvent): ArticleEvent {
 }
 
 export function parseNoteEvent(event: NDKEvent): NoteEvent {
+  const qTag = event.tags.find(t => t[0] === 'q')
   return {
     type: 'note',
     id: event.id,
     pubkey: event.pubkey,
     content: event.content,
     publishedAt: event.created_at ?? 0,
+    quotedEventId: qTag?.[1],
   }
 }
 

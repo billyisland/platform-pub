@@ -6,6 +6,8 @@ import { useWriterName } from '../../hooks/useWriterName'
 import { useAuth } from '../../stores/auth'
 import { isImageUrl, isEmbeddableUrl, extractUrls } from '../../lib/media'
 import { ReplySection } from '../replies/ReplySection'
+import { QuoteCard } from './QuoteCard'
+import { NoteComposer } from './NoteComposer'
 import { replies as repliesApi } from '../../lib/api'
 
 interface NoteCardProps { note: NoteEvent; onDeleted?: (id: string) => void }
@@ -14,6 +16,7 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
   const { user } = useAuth()
   const writerInfo = useWriterName(note.pubkey)
   const [showReplies, setShowReplies] = useState(false)
+  const [showQuoteComposer, setShowQuoteComposer] = useState(false)
   const [replyCount, setReplyCount] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -27,6 +30,8 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
   const imageUrls = urls.filter(isImageUrl)
   const embedUrls = urls.filter(isEmbeddableUrl)
   let displayContent = note.content
+  // Strip nostr:nevent1... references (quote links added by some clients)
+  displayContent = displayContent.replace(/nostr:nevent1[a-z0-9]+/gi, '').trim()
   for (const url of [...imageUrls, ...embedUrls]) displayContent = displayContent.replace(url, '').trim()
 
   async function handleDelete() {
@@ -113,6 +118,9 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
             </div>
           )}
 
+          {/* Quoted content */}
+          {note.quotedEventId && <QuoteCard eventId={note.quotedEventId} />}
+
           {/* Actions row */}
           <div className="mt-2 flex items-center gap-4">
             <button
@@ -121,7 +129,25 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
             >
               {showReplies ? 'Hide replies' : replyCount !== null && replyCount > 0 ? `${replyCount} ${replyCount !== 1 ? 'replies' : 'reply'}` : 'Reply'}
             </button>
+            {user && (
+              <button
+                onClick={() => setShowQuoteComposer(!showQuoteComposer)}
+                className="btn-soft py-1 px-2 text-ui-xs"
+              >
+                Quote
+              </button>
+            )}
           </div>
+
+          {/* Inline quote composer */}
+          {showQuoteComposer && (
+            <div className="mt-3 -mx-5 px-5 pt-3 border-t border-slate-dark">
+              <NoteComposer
+                quoteTarget={{ eventId: note.id, eventKind: 1, authorPubkey: note.pubkey }}
+                onPublished={() => setShowQuoteComposer(false)}
+              />
+            </div>
+          )}
 
         </div>
       </div>

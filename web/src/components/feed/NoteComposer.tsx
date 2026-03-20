@@ -3,15 +3,26 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { publishNote } from '../../lib/publishNote'
+import type { QuoteTarget } from '../../lib/publishNote'
 import { uploadImage } from '../../lib/media'
 import type { NoteEvent } from '../../lib/ndk'
+import { QuoteCard } from './QuoteCard'
 
 const NOTE_CHAR_LIMIT = 1000
-interface NoteComposerProps { onPublished?: (note: NoteEvent) => void }
 
-export function NoteComposer({ onPublished }: NoteComposerProps) {
+interface NoteComposerProps {
+  onPublished?: (note: NoteEvent) => void
+  quoteTarget?: QuoteTarget & {
+    previewTitle?: string
+    previewContent?: string
+    previewAuthorName?: string
+    highlightedText?: string
+  }
+}
+
+export function NoteComposer({ onPublished, quoteTarget }: NoteComposerProps) {
   const { user } = useAuth()
-  const [content, setContent] = useState('')
+  const [content, setContent] = useState(quoteTarget?.highlightedText ? `"${quoteTarget.highlightedText}"\n\n` : '')
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -28,9 +39,9 @@ export function NoteComposer({ onPublished }: NoteComposerProps) {
     if (!canPost || !user) return
     setPublishing(true); setError(null)
     try {
-      const result = await publishNote(content.trim(), user.pubkey)
+      const result = await publishNote(content.trim(), user.pubkey, quoteTarget)
       setContent('')
-      onPublished?.({ type: 'note', id: result.noteEventId, pubkey: user.pubkey, content: content.trim(), publishedAt: Math.floor(Date.now() / 1000) })
+      onPublished?.({ type: 'note', id: result.noteEventId, pubkey: user.pubkey, content: content.trim(), publishedAt: Math.floor(Date.now() / 1000), quotedEventId: quoteTarget?.eventId })
     } catch (err) { setError(err instanceof Error ? err.message : 'Failed to post.') }
     finally { setPublishing(false) }
   }
@@ -44,6 +55,7 @@ export function NoteComposer({ onPublished }: NoteComposerProps) {
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
             placeholder="What's on your mind?" rows={2}
             className="w-full resize-none bg-surface-raised text-ui-sm text-content-primary placeholder:text-content-faint focus:bg-white focus:outline-none leading-relaxed transition-colors px-3 py-2" />
+          {quoteTarget && <QuoteCard eventId={quoteTarget.eventId} />}
           {error && <div className="mt-2 bg-surface-sunken px-3 py-2 text-ui-xs text-content-primary flex items-center justify-between"><span>{error}</span><button onClick={() => setError(null)} className="ml-2 text-content-faint hover:text-ink-900">×</button></div>}
           <div className="mt-2 flex items-center justify-between">
             <span className={`text-ui-xs transition-colors ${isOver ? 'text-red-600 font-medium' : charCount > NOTE_CHAR_LIMIT - 50 ? 'text-red-500' : 'text-content-faint'}`}>{charCount > 0 && `${charCount}/${NOTE_CHAR_LIMIT}`}</span>

@@ -9,6 +9,7 @@ import logger from '../../shared/src/lib/logger.js'
 //
 // POST   /notes                    — Index a published note
 // DELETE /notes/:nostrEventId      — Delete a note (author only)
+// GET    /content/resolve          — Resolve an event ID to preview metadata
 // =============================================================================
 
 const NOTE_CHAR_LIMIT = 1000
@@ -16,6 +17,9 @@ const NOTE_CHAR_LIMIT = 1000
 const IndexNoteSchema = z.object({
   nostrEventId: z.string().min(1),
   content: z.string().min(1).max(NOTE_CHAR_LIMIT),
+  isQuoteComment: z.boolean().optional(),
+  quotedEventId: z.string().optional(),
+  quotedEventKind: z.number().int().optional(),
 })
 
 export async function noteRoutes(app: FastifyInstance) {
@@ -36,8 +40,9 @@ export async function noteRoutes(app: FastifyInstance) {
     try {
       const result = await pool.query<{ id: string }>(
         `INSERT INTO notes (
-           author_id, nostr_event_id, content, char_count, tier, published_at
-         ) VALUES ($1, $2, $3, $4, 'tier1', now())
+           author_id, nostr_event_id, content, char_count, tier, published_at,
+           is_quote_comment, quoted_event_id, quoted_event_kind
+         ) VALUES ($1, $2, $3, $4, 'tier1', now(), $5, $6, $7)
          ON CONFLICT (nostr_event_id) DO NOTHING
          RETURNING id`,
         [
@@ -45,6 +50,9 @@ export async function noteRoutes(app: FastifyInstance) {
           data.nostrEventId,
           data.content,
           data.content.length,
+          data.isQuoteComment ?? false,
+          data.quotedEventId ?? null,
+          data.quotedEventKind ?? null,
         ]
       )
 
@@ -97,6 +105,80 @@ export async function noteRoutes(app: FastifyInstance) {
       } catch (err) {
         logger.error({ err, nostrEventId, authorId }, 'Note deletion failed')
         return reply.status(500).send({ error: 'Deletion failed' })
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // GET /content/resolve?eventId=xxx
+  //
+  // Resolves a Nostr event ID to preview metadata for quote cards.
+  // Checks notes first, then articles. Returns author info + content snippet.
+  // ---------------------------------------------------------------------------
+
+  app.get<{ Querystring: { eventId?: string } }>(
+    '/content/resolve',
+    async (req, reply) => {
+      const { eventId } = req.query
+      if (!eventId) return reply.status(400).send({ error: 'eventId required' })
+
+      try {
+        // Check notes table first
+        const noteResult = await pool.query(
+          `SELECT n.nostr_event_id, n.content, n.published_at,
+                  a.username, a.display_name, a.avatar
+           FROM notes n
+           JOIN accounts a ON a.id = n.author_id
+           WHERE n.nostr_event_id = $1`,
+          [eventId]
+        )
+
+        if (noteResult.rows.length > 0) {
+          const row = noteResult.rows[0]
+          return reply.send({
+            type: 'note',
+            eventId: row.nostr_event_id,
+            content: row.content.slice(0, 200),
+            publishedAt: Math.floor(new Date(row.published_at).getTime() / 1000),
+            author: {
+              username: row.username,
+              displayName: row.display_name,
+              avatar: row.avatar,
+            },
+          })
+        }
+
+        // Check articles table
+        const articleResult = await pool.query(
+          `SELECT ar.nostr_event_id, ar.title, ar.d_tag, ar.summary,
+                  ar.published_at, a.username, a.display_name, a.avatar
+           FROM articles ar
+           JOIN accounts a ON a.id = ar.author_id
+           WHERE ar.nostr_event_id = $1`,
+          [eventId]
+        )
+
+        if (articleResult.rows.length > 0) {
+          const row = articleResult.rows[0]
+          return reply.send({
+            type: 'article',
+            eventId: row.nostr_event_id,
+            title: row.title,
+            dTag: row.d_tag,
+            content: (row.summary || '').slice(0, 200),
+            publishedAt: Math.floor(new Date(row.published_at).getTime() / 1000),
+            author: {
+              username: row.username,
+              displayName: row.display_name,
+              avatar: row.avatar,
+            },
+          })
+        }
+
+        return reply.status(404).send({ error: 'Event not found' })
+      } catch (err) {
+        logger.error({ err, eventId }, 'Content resolve failed')
+        return reply.status(500).send({ error: 'Resolve failed' })
       }
     }
   )

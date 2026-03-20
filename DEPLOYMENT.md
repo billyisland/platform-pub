@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v1.9
+# platform.pub — Deployment Reference v2.0
 
 **Date:** 20 March 2026
-**Replaces:** v1.8.2 (see bottom for change log)
+**Replaces:** v1.9 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -172,6 +172,26 @@ This configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot aut
 
 ## Upgrading from a previous version
 
+### From v1.9
+
+```bash
+cd /root/platform-pub
+
+# Back up
+cp -r . ../platform-pub-backup-$(date +%Y%m%d)
+
+# Pull latest code
+git pull origin master
+
+# No schema changes in v2.0 — skip migrations
+# (notes table already has is_quote_comment, quoted_event_id, quoted_event_kind)
+
+# Rebuild and restart
+docker compose build --no-cache gateway web
+docker compose up -d
+docker compose restart nginx
+```
+
 ### From v1.8.x
 
 ```bash
@@ -180,10 +200,10 @@ cd /root/platform-pub
 # Back up
 cp -r . ../platform-pub-backup-$(date +%Y%m%d)
 
-# Extract new files
-unzip -o /root/platform-pub-v1_9.zip -d /root/platform-pub
+# Pull latest code
+git pull origin master
 
-# No schema changes in v1.9 — skip migrations
+# No schema changes in v2.0 — skip migrations
 
 # Rebuild and restart
 docker compose build --no-cache gateway web
@@ -310,8 +330,9 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
 | GET | /api/v1/articles/:dTag | optional | Article metadata by d-tag |
 | POST | /api/v1/articles/:eventId/gate-pass | session | Paywall gate pass (checks subscription/unlock first) |
 | DELETE | /api/v1/articles/:id | session | Delete article |
-| POST | /api/v1/notes | session | Index published note |
+| POST | /api/v1/notes | session | Index published note (accepts `isQuoteComment`, `quotedEventId`, `quotedEventKind`) |
 | DELETE | /api/v1/notes/:nostrEventId | session | Delete note (author only) |
+| GET | /api/v1/content/resolve?eventId= | — | Resolve event ID to preview metadata for quote cards |
 | POST | /api/v1/drafts | session | Save/upsert draft |
 | GET | /api/v1/drafts | session | List drafts |
 | POST | /api/v1/media/upload | session | Upload image |
@@ -508,12 +529,11 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ---
 
-## Known limitations (v1.9)
+## Known limitations (v2.0)
 
 - Subscription renewal is not yet automated (requires a cron job or scheduled worker to charge at period end)
 - "For You" feed tab returns the same feed as Following — personalised ranking is not yet implemented
 - RSS feed ingestion not yet built — the "Feeds" panel in the Add tab shows a coming-soon placeholder
-- Quoting (NIP-18 kind 1 with `q` tag) is not yet implemented — the `notes` schema has the columns ready
 - Notification centre not yet built (no badge, no inbox for replies / quotes / follows)
 - Nostr keypair self-custody handover UI is not yet built
 - Cash-out-at-will (writer-initiated payout with fee absorption) is not yet implemented
@@ -525,6 +545,32 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v2.0 — 20 March 2026
+
+**Quoting (NIP-18)**
+
+- `gateway/src/routes/notes.ts`: `POST /notes` now accepts `isQuoteComment` (boolean), `quotedEventId` (string), and `quotedEventKind` (integer). These are written into the `notes` table columns that were already present in `schema.sql`. New `GET /content/resolve?eventId=` endpoint resolves any event ID (note or article) to a JSON preview payload `{ type, eventId, title?, dTag?, content, publishedAt, author: { username, displayName, avatar } }` — used by quote cards on the frontend.
+- `web/src/lib/publishNote.ts`: `publishNote()` now accepts an optional `QuoteTarget` (`{ eventId, eventKind, authorPubkey }`). When provided, a `["q", eventId, "", authorPubkey]` tag is added to the kind 1 NDK event (NIP-18), and `isQuoteComment`/`quotedEventId`/`quotedEventKind` are passed to the indexer.
+- `web/src/lib/ndk.ts`: `NoteEvent` gains `quotedEventId?: string` and `quotedEventKind?: number`. `parseNoteEvent()` extracts the `q` tag from relay events.
+- `web/src/components/feed/QuoteCard.tsx` (new): Fetches `/api/v1/content/resolve` and renders a read-only preview tile. Articles render with left accent border and link to `/article/:dTag`. Notes render with a compact author + content snippet. Shows a skeleton while loading.
+- `web/src/components/feed/NoteComposer.tsx`: New `quoteTarget` prop. When set, shows a `QuoteCard` preview below the textarea and pre-populates the textarea with any `highlightedText`. On post, forwards quote params through `publishNote()`.
+- `web/src/components/feed/NoteCard.tsx`: If `note.quotedEventId` is set, renders a `QuoteCard` below the note text. `nostr:nevent1...` references are stripped from display content. Quote button in the action row opens an inline `NoteComposer` with the note as quote target.
+- `web/src/components/feed/ArticleCard.tsx`: Quote button in the metadata row of both hero-image and standard card variants. Opens a modal `NoteComposer` overlay. Uses `e.stopPropagation()` so the card link does not fire.
+- `web/src/components/article/ArticleReader.tsx`: `mouseup` listener on the article prose div. On non-empty selection within the article body, a floating "Quote" button appears near the selection (fixed z-50, positioned via `getBoundingClientRect`). Clicking it opens a modal `NoteComposer` with the selected text (truncated to 80 words) pre-filled as `highlightedText`.
+
+**Upgrading from v1.9**
+
+No schema changes. Rebuild and restart `gateway` and `web`:
+
+```bash
+cd /root/platform-pub
+git pull origin master
+docker compose build --no-cache gateway web
+docker compose up -d gateway web
+```
+
+---
 
 ### v1.9 — 20 March 2026
 
