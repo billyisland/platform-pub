@@ -19,6 +19,8 @@ import { replyRoutes } from './routes/replies.js'
 import { mediaRoutes } from './routes/media.js'
 import { subscriptionRoutes } from './routes/subscriptions.js'
 import { v1_6Routes } from './routes/v1_6.js'
+import { receiptRoutes } from './routes/receipts.js'
+import { exportRoutes } from './routes/export.js'
 import { pool } from '../shared/src/db/client.js'
 import logger from '../shared/src/lib/logger.js'
 
@@ -101,6 +103,12 @@ async function start() {
 
   // v1.6 additional routes (reading tab)
   await app.register(v1_6Routes, { prefix: '/api/v1' })
+
+  // Receipt portability (portable bearer proofs + platform pubkey for federation)
+  await app.register(receiptRoutes, { prefix: '/api/v1' })
+
+  // Author migration export (content keys + receipt whitelist for portability)
+  await app.register(exportRoutes, { prefix: '/api/v1' })
 
   // ---------------------------------------------------------------------------
   // Service proxies

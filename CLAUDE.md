@@ -21,6 +21,7 @@ DATABASE_URL=postgresql://platformpub:password@localhost:5432/platformpub npx ts
 cd gateway && npm run dev          # port 3000
 cd payment-service && npm run dev  # port 3001
 cd key-service && npm run dev      # port 3002
+cd key-custody && npm run dev      # port 3004
 cd web && npm run dev              # port 3010 (rewrites to gateway)
 ```
 
@@ -51,13 +52,14 @@ cd web && npm run lint   # next lint (only web has ESLint config)
 | `gateway` | 3000 | Main API: auth, articles, comments, search, RSS, moderation |
 | `payment-service` | 3001 | Reading tab accrual, Stripe billing, writer payouts |
 | `key-service` | 3002 | Vault key management, NIP-44 key issuance to readers |
+| `key-custody` | 3004 | Custodial keypair service: generates, stores, and uses user Nostr private keys |
 | `web` | 3010 | Next.js 14 App Router frontend |
 | `strfry` | 4848 | Nostr relay (C++, stores NIP-23 events, vaults, receipts) |
 | `blossom` | 3003 | Content-addressed image storage (SHA-256) |
 | `shared` | — | Shared TypeScript library: DB pool, auth, sessions, email, migrations |
 
 ### Request flow
-The Next.js frontend proxies all `/api/*` calls to the gateway (`next.config.js` rewrites). The gateway calls `payment-service` and `key-service` as internal services. All three backend services share the same PostgreSQL database via `shared/src/db/client.ts`.
+The Next.js frontend proxies all `/api/*` calls to the gateway (`next.config.js` rewrites). The gateway calls `payment-service`, `key-service`, and `key-custody` as internal services. All backend services share the same PostgreSQL database via `shared/src/db/client.ts`.
 
 ### Nostr integration
 - Articles are published as **NIP-23 kind 30023** (long-form) replaceable events — same `d-tag`, new event ID on edit
@@ -86,11 +88,13 @@ Zustand stores in `web/src/stores/`. The TipTap editor (`web/src/components/edit
 |---|---|---|
 | `DATABASE_URL` | all | PostgreSQL connection string |
 | `SESSION_SECRET` | gateway | JWT signing key |
-| `KEYPAIR_ENCRYPTION_KEY` | gateway | AES key for custodial Nostr privkeys |
+| `ACCOUNT_KEY_HEX` | key-custody | AES key for custodial Nostr privkeys — key-custody only |
 | `STRIPE_SECRET_KEY` | gateway, payment | Stripe API key |
-| `KMS_KEY` | key-service | Platform key for vault key encryption |
+| `KMS_MASTER_KEY_HEX` | key-service | Platform key for vault key encryption |
 | `KEY_SERVICE_URL` | gateway | Internal URL for key-service |
+| `KEY_CUSTODY_URL` | gateway | Internal URL for key-custody service |
 | `PAYMENT_SERVICE_URL` | gateway | Internal URL for payment-service |
+| `INTERNAL_SECRET` | gateway, key-custody | Shared secret for internal service calls |
 | `RELAY_URL` | payment, key | strfry WebSocket URL |
 
 See each service's `.env.example` for the full list.

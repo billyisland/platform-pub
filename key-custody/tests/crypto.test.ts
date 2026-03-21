@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { generateKeypair } from '../src/auth/keypairs.js'
+import { generateKeypair } from '../src/lib/crypto.js'
 import { getPublicKey } from 'nostr-tools'
 import { createDecipheriv } from 'crypto'
 
@@ -15,7 +15,6 @@ import { createDecipheriv } from 'crypto'
 // =============================================================================
 
 beforeAll(() => {
-  // Set up the account encryption key for tests
   process.env.ACCOUNT_KEY_HEX = 'c'.repeat(64) // 32 bytes of 0xcc
 })
 
@@ -23,11 +22,8 @@ describe('generateKeypair', () => {
   it('produces a valid Nostr keypair', () => {
     const { pubkeyHex, privkeyEncrypted } = generateKeypair()
 
-    // Pubkey should be 64 hex chars (32 bytes)
     expect(pubkeyHex).toMatch(/^[0-9a-f]{64}$/)
 
-    // Encrypted privkey should be base64
-    expect(privkeyEncrypted).toBeTruthy()
     const decoded = Buffer.from(privkeyEncrypted, 'base64')
     // iv(12) + authTag(16) + ciphertext(32) = 60 bytes
     expect(decoded.length).toBe(60)
@@ -44,7 +40,6 @@ describe('generateKeypair', () => {
   it('encrypted privkey decrypts to a key that matches the pubkey', () => {
     const { pubkeyHex, privkeyEncrypted } = generateKeypair()
 
-    // Manually decrypt the privkey
     const accountKey = Buffer.from(process.env.ACCOUNT_KEY_HEX!, 'hex')
     const combined = Buffer.from(privkeyEncrypted, 'base64')
     const iv = combined.subarray(0, 12)
@@ -55,7 +50,6 @@ describe('generateKeypair', () => {
     decipher.setAuthTag(authTag)
     const privkeyBytes = Buffer.concat([decipher.update(ciphertext), decipher.final()])
 
-    // The decrypted private key should derive the same public key
     const derivedPubkey = getPublicKey(new Uint8Array(privkeyBytes))
     expect(derivedPubkey).toBe(pubkeyHex)
   })

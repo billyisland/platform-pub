@@ -5,6 +5,7 @@ import { createSession, destroySession } from '../../shared/src/auth/session.js'
 import { requestMagicLink, verifyMagicLink } from '../../shared/src/auth/magic-links.js'
 import { sendMagicLinkEmail } from '../../shared/src/lib/email.js'
 import { requireAuth } from '../middleware/auth.js'
+import { generateKeypair } from '../lib/key-custody-client.js'
 import Stripe from 'stripe'
 import logger from '../../shared/src/lib/logger.js'
 
@@ -37,7 +38,9 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     try {
-      const result = await signup(parsed.data, reply)
+      // Generate keypair via key-custody service — gateway never sees ACCOUNT_KEY_HEX
+      const keypair = await generateKeypair()
+      const result = await signup(parsed.data, reply, keypair)
       return reply.status(201).send(result)
     } catch (err: any) {
       // Unique constraint violations (duplicate username, email, or pubkey)

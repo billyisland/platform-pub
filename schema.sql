@@ -209,6 +209,8 @@ CREATE TABLE read_events (
   -- Nostr audit trail
   receipt_nostr_event_id TEXT UNIQUE,          -- kind 9901 event ID once published
   reader_pubkey_hash    TEXT,                  -- keyed HMAC of reader pubkey (privacy model)
+  reader_pubkey         TEXT,                  -- actual Nostr pubkey (stored privately; not on public relay)
+  receipt_token         TEXT,                  -- portable signed Nostr event JSON for reader export
 
   -- Settlement linkage
   tab_settlement_id     UUID,                  -- FK added after tab_settlements table created

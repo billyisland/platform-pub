@@ -90,9 +90,18 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
     if (!user) { window.location.href = '/auth?mode=signup'; return }
     setUnlocking(true); setUnlockError(null)
     try {
-      const ndk = getNdk(); await ndk.connect()
-      const vaultEvent = await fetchVaultEvent(ndk, article.dTag)
-      if (!vaultEvent) { setUnlockError('Could not find the encrypted content.'); return }
+      // Resolve ciphertext: new articles have it in the NIP-23 payload tag;
+      // old articles (pre-spec §III.2) need a separate vault event fetch.
+      let ciphertext: string
+      if (article.encryptedPayload) {
+        ciphertext = article.encryptedPayload
+      } else {
+        const ndk = getNdk(); await ndk.connect()
+        const vaultEvent = await fetchVaultEvent(ndk, article.dTag)
+        if (!vaultEvent) { setUnlockError('Could not find the encrypted content.'); return }
+        ciphertext = vaultEvent.ciphertext
+      }
+
       let gatePassResult
       try { gatePassResult = await articlesApi.gatePass(article.id) }
       catch (err: any) {
@@ -102,8 +111,10 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
         }
         throw err
       }
+
+      const algorithm = (gatePassResult.algorithm ?? article.payloadAlgorithm ?? 'aes-256-gcm') as 'xchacha20poly1305' | 'aes-256-gcm'
       const contentKeyBase64 = await unwrapContentKey(gatePassResult.encryptedKey)
-      const body = await decryptVaultContent(vaultEvent.ciphertext, contentKeyBase64)
+      const body = await decryptVaultContent(ciphertext, contentKeyBase64, algorithm)
       setPaywallBody(body)
       sessionStorage.setItem(`unlocked:${article.id}`, body)
       if (gatePassResult.allowanceJustExhausted) setShowAllowanceModal(true)

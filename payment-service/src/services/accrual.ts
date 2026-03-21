@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg'
 import type { GatePassEvent, ReadEvent, ReadingTab, PlatformConfig } from '../types/index.js'
 import { pool, withTransaction, loadConfig } from '../db/client.js'
-import { publishReceiptEvent } from '../lib/nostr.js'
+import { publishReceiptEvent, createPortableReceipt } from '../lib/nostr.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -211,18 +211,34 @@ export class AccrualService {
 // pattern which could silently swallow rejections.
 async function publishReceiptAsync(readEvent: ReadEvent, event: GatePassEvent): Promise<void> {
   try {
+    const articleNostrEventId = await getArticleNostrEventId(event.articleId)
+    const writerPubkey = await getWriterPubkey(event.writerId)
+
+    // Publish public kind 9901 to relay (uses keyed HMAC hash, not real pubkey)
     const nostrEventId = await publishReceiptEvent({
       readEventId: readEvent.id,
-      articleNostrEventId: await getArticleNostrEventId(event.articleId),
-      writerPubkey: await getWriterPubkey(event.writerId),
+      articleNostrEventId,
+      writerPubkey,
       readerPubkeyHash: event.readerPubkeyHash,
       amountPence: event.amountPence,
       tabId: event.tabId,
     })
 
+    // Create portable receipt (private, not published — stored in DB for export)
+    const receiptToken = createPortableReceipt({
+      articleNostrEventId,
+      writerPubkey,
+      readerPubkey: event.readerPubkey,
+      amountPence: event.amountPence,
+    })
+
     await pool.query(
-      `UPDATE read_events SET receipt_nostr_event_id = $1 WHERE id = $2`,
-      [nostrEventId, readEvent.id]
+      `UPDATE read_events
+       SET receipt_nostr_event_id = $1,
+           reader_pubkey = $2,
+           receipt_token = $3
+       WHERE id = $4`,
+      [nostrEventId, event.readerPubkey, receiptToken, readEvent.id]
     )
   } catch (err) {
     // Receipt failure never fails the read — it queues for retry

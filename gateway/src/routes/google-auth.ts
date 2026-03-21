@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
-import { generateKeypair } from '../../shared/src/auth/keypairs.js'
+import { generateKeypair } from '../lib/key-custody-client.js'
 import { createSession } from '../../shared/src/auth/session.js'
 import { getAccount } from '../../shared/src/auth/accounts.js'
 import logger from '../../shared/src/lib/logger.js'
@@ -199,7 +199,7 @@ function decodeIdToken(idToken: string): {
 }
 
 async function createGoogleAccount(email: string, displayName: string): Promise<string> {
-  const keypair = generateKeypair()
+  const keypair = await generateKeypair()
 
   let baseUsername = displayName
     .toLowerCase()

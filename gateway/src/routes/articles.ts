@@ -4,7 +4,7 @@ import { WebSocket } from 'ws'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { checkArticleAccess, recordSubscriptionRead, recordPurchaseUnlock } from '../services/access.js'
-import { signEvent } from '../../shared/src/auth/keypairs.js'
+import { signEvent } from '../lib/key-custody-client.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -344,6 +344,7 @@ export async function articleRoutes(app: FastifyInstance) {
             articleId: article.id,
             writerId: article.writer_id,
             amountPence: article.price_pence,
+            readerPubkey,
             readerPubkeyHash,
             tabId,
           }),

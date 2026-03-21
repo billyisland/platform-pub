@@ -22,6 +22,7 @@ const GatePassSchema = z.object({
   articleId: z.string().uuid(),
   writerId: z.string().uuid(),
   amountPence: z.number().int().positive(),
+  readerPubkey: z.string().min(1),
   readerPubkeyHash: z.string(),
   tabId: z.string().uuid(),
 })

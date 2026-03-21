@@ -1,42 +1,61 @@
+import { xchacha20poly1305 } from '@noble/ciphers/chacha'
+
 // =============================================================================
 // Vault Decryption (Client-Side)
 //
 // After the key service issues a NIP-44 wrapped content key, the client
-// needs to decrypt the vault event ciphertext. The flow:
+// decrypts the article's encrypted body. The flow:
 //
-//   1. Key service returns encryptedKey (NIP-44 wrapped AES-256 content key)
+//   1. Key service returns encryptedKey (NIP-44 wrapped content key) + algorithm
 //   2. Client asks the gateway's signing service to unwrap the NIP-44 payload
 //      (the reader's private key is custodial — held server-side)
-//   3. Client receives the raw AES-256-GCM content key
-//   4. Client decrypts the vault event ciphertext locally (Web Crypto API)
-//   5. Decrypted markdown is rendered in the article view
+//   3. Client receives the raw content key (base64)
+//   4. Client extracts the ciphertext:
+//        NEW format — ciphertext is in the NIP-23 event's ['payload', ...] tag
+//        OLD format — ciphertext is fetched from a separate kind 39701 vault event
+//   5. Client decrypts ciphertext locally using the correct algorithm
+//   6. Decrypted markdown is rendered in the article view
 //
-// Step 4 runs entirely in the browser — the plaintext article body never
-// touches the server after decryption. This is a genuine privacy property:
-// the platform can see *that* a reader read an article, but the decrypted
-// body is reconstructed client-side.
+// Supported algorithms:
+//   xchacha20poly1305  — current (new articles post spec §III.2)
+//   aes-256-gcm        — legacy (articles published before the migration)
 //
-// Note: At launch with custodial keys, the signing service could technically
-// decrypt server-side. The client-side decryption is a design choice that
-// makes the transition to self-custodied keys seamless.
+// Step 5 runs entirely in the browser — the plaintext article body never
+// touches the server after decryption.
 // =============================================================================
 
 const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL ?? ''
 
-/**
- * Decrypt a vault event's ciphertext using a content key.
- *
- * The ciphertext format (from key-service/src/lib/crypto.ts):
- *   base64(iv[12] + authTag[16] + ciphertext[variable])
- */
-export async function decryptVaultContent(
+// =============================================================================
+// Decryption — XChaCha20-Poly1305 (current algorithm)
+// Format: base64(nonce[24] + ciphertext_with_tag)
+// =============================================================================
+
+export async function decryptVaultContentXChaCha(
   ciphertextBase64: string,
   contentKeyBase64: string
 ): Promise<string> {
-  // Decode the content key
-  const keyBytes = base64ToBuffer(contentKeyBase64)
+  const combined = base64ToUint8Array(ciphertextBase64)
+  const nonce = combined.slice(0, 24)
+  const ciphertextWithTag = combined.slice(24)
 
-  // Import as AES-GCM key
+  const key = base64ToUint8Array(contentKeyBase64)
+
+  const plaintext = xchacha20poly1305(key, nonce).decrypt(ciphertextWithTag)
+  return new TextDecoder().decode(plaintext)
+}
+
+// =============================================================================
+// Decryption — AES-256-GCM (legacy algorithm)
+// Format: base64(iv[12] + authTag[16] + ciphertext)
+// =============================================================================
+
+export async function decryptVaultContentAesGcm(
+  ciphertextBase64: string,
+  contentKeyBase64: string
+): Promise<string> {
+  const keyBytes = base64ToArrayBuffer(contentKeyBase64)
+
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
     keyBytes,
@@ -45,10 +64,7 @@ export async function decryptVaultContent(
     ['decrypt']
   )
 
-  // Decode the ciphertext
-  const combined = base64ToBuffer(ciphertextBase64)
-
-  // Extract iv (12 bytes), authTag (16 bytes), and ciphertext
+  const combined = base64ToArrayBuffer(ciphertextBase64)
   const iv = combined.slice(0, 12)
   const authTag = combined.slice(12, 28)
   const encrypted = combined.slice(28)
@@ -58,7 +74,6 @@ export async function decryptVaultContent(
   ciphertextWithTag.set(new Uint8Array(encrypted), 0)
   ciphertextWithTag.set(new Uint8Array(authTag), encrypted.byteLength)
 
-  // Decrypt
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: new Uint8Array(iv) },
     cryptoKey,
@@ -68,12 +83,25 @@ export async function decryptVaultContent(
   return new TextDecoder().decode(decrypted)
 }
 
-/**
- * Unwrap a NIP-44 encrypted content key via the signing service.
- * The signing service holds the reader's custodial private key.
- *
- * Returns the raw content key as base64.
- */
+// =============================================================================
+// decryptVaultContent — dispatches on algorithm
+// =============================================================================
+
+export async function decryptVaultContent(
+  ciphertextBase64: string,
+  contentKeyBase64: string,
+  algorithm: 'xchacha20poly1305' | 'aes-256-gcm' = 'aes-256-gcm'
+): Promise<string> {
+  if (algorithm === 'xchacha20poly1305') {
+    return decryptVaultContentXChaCha(ciphertextBase64, contentKeyBase64)
+  }
+  return decryptVaultContentAesGcm(ciphertextBase64, contentKeyBase64)
+}
+
+// =============================================================================
+// unwrapContentKey — asks the signing service to unwrap a NIP-44 key
+// =============================================================================
+
 export async function unwrapContentKey(
   encryptedKey: string
 ): Promise<string> {
@@ -92,41 +120,11 @@ export async function unwrapContentKey(
   return contentKeyBase64
 }
 
-/**
- * Full unlock flow: request key → unwrap → decrypt vault → return plaintext
- */
-export async function unlockArticle(
-  articleNostrEventId: string,
-  vaultCiphertextBase64: string
-): Promise<string> {
-  // Step 1: Request the content key (NIP-44 wrapped)
-  const res = await fetch(`${GATEWAY_URL}/api/v1/articles/${articleNostrEventId}/key`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-  })
-
-  if (!res.ok) {
-    throw new Error(`Key request failed: ${res.status}`)
-  }
-
-  const { encryptedKey } = await res.json()
-
-  // Step 2: Unwrap the NIP-44 envelope (server-side — custodial key)
-  const contentKeyBase64 = await unwrapContentKey(encryptedKey)
-
-  // Step 3: Decrypt the vault ciphertext (client-side — Web Crypto)
-  const plaintext = await decryptVaultContent(vaultCiphertextBase64, contentKeyBase64)
-
-  return plaintext
-}
-
 // =============================================================================
 // Helpers
 // =============================================================================
 
-function base64ToBuffer(base64: string): ArrayBuffer {
-  // Handle both standard and URL-safe base64
+function base64ToUint8Array(base64: string): Uint8Array {
   const normalized = base64.replace(/-/g, '+').replace(/_/g, '/')
   const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4)
   const binary = atob(padded)
@@ -134,5 +132,9 @@ function base64ToBuffer(base64: string): ArrayBuffer {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i)
   }
-  return bytes.buffer
+  return bytes
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  return base64ToUint8Array(base64).buffer
 }

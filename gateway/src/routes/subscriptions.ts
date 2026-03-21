@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
+import { publishSubscriptionEvent } from '../lib/nostr-publisher.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -42,8 +43,9 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           subscription_price_pence: number
           display_name: string | null
           username: string
+          nostr_pubkey: string
         }>(
-          `SELECT id, subscription_price_pence, display_name, username
+          `SELECT id, subscription_price_pence, display_name, username, nostr_pubkey
            FROM accounts WHERE id = $1 AND status = 'active'`,
           [writerId]
         )
@@ -90,6 +92,26 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           await logSubscriptionCharge(client, sub.id, readerId, writerId, pricePence, now, periodEnd)
 
           logger.info({ readerId, writerId, subscriptionId: sub.id }, 'Subscription reactivated')
+
+          // Publish subscription event asynchronously — non-blocking
+          const readerPubkey = req.session!.pubkey
+          publishSubscriptionEvent({
+            subscriptionId: sub.id,
+            readerPubkey,
+            writerPubkey: writer.nostr_pubkey,
+            status: 'active',
+            pricePence,
+            periodStart: now,
+            periodEnd,
+          }).then(nostrEventId =>
+            pool.query(
+              `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
+              [nostrEventId, sub.id]
+            )
+          ).catch(err =>
+            logger.error({ err, subscriptionId: sub.id }, 'Subscription reactivation Nostr event failed')
+          )
+
           return reply.status(200).send({ subscriptionId: sub.id, status: 'active', pricePence })
         }
 
@@ -118,6 +140,25 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 
         logger.info({ readerId, writerId, subscriptionId, pricePence }, 'Subscription created')
 
+        // Publish subscription event asynchronously — non-blocking
+        const readerPubkey = req.session!.pubkey
+        publishSubscriptionEvent({
+          subscriptionId,
+          readerPubkey,
+          writerPubkey: writer.nostr_pubkey,
+          status: 'active',
+          pricePence,
+          periodStart: now,
+          periodEnd,
+        }).then(nostrEventId =>
+          pool.query(
+            `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
+            [nostrEventId, subscriptionId]
+          )
+        ).catch(err =>
+          logger.error({ err, subscriptionId }, 'Subscription create Nostr event failed')
+        )
+
         return reply.status(201).send({
           subscriptionId,
           status: 'active',
@@ -142,11 +183,18 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       const readerId = req.session!.sub!
       const { writerId } = req.params
 
-      const result = await pool.query<{ id: string; current_period_end: Date }>(
+      const result = await pool.query<{
+        id: string
+        current_period_end: Date
+        current_period_start: Date
+        price_pence: number
+        writer_pubkey: string
+      }>(
         `UPDATE subscriptions
          SET status = 'cancelled', cancelled_at = now(), updated_at = now()
          WHERE reader_id = $1 AND writer_id = $2 AND status = 'active'
-         RETURNING id, current_period_end`,
+         RETURNING id, current_period_end, current_period_start, price_pence,
+                   (SELECT nostr_pubkey FROM accounts WHERE id = $2) AS writer_pubkey`,
         [readerId, writerId]
       )
 
@@ -156,6 +204,25 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 
       const sub = result.rows[0]
       logger.info({ readerId, writerId, subscriptionId: sub.id }, 'Subscription cancelled')
+
+      // Publish cancellation event asynchronously — non-blocking
+      const readerPubkey = req.session!.pubkey
+      publishSubscriptionEvent({
+        subscriptionId: sub.id,
+        readerPubkey,
+        writerPubkey: sub.writer_pubkey,
+        status: 'cancelled',
+        pricePence: sub.price_pence,
+        periodStart: sub.current_period_start,
+        periodEnd: sub.current_period_end,
+      }).then(nostrEventId =>
+        pool.query(
+          `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
+          [nostrEventId, sub.id]
+        )
+      ).catch(err =>
+        logger.error({ err, subscriptionId: sub.id }, 'Subscription cancel Nostr event failed')
+      )
 
       return reply.status(200).send({
         subscriptionId: sub.id,

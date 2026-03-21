@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { vaultService, KeyServiceError } from '../services/vault.js'
+import { decryptContentKey } from '../lib/kms.js'
+import { wrapKeyForReader } from '../lib/nip44.js'
 import { pool } from '../db/client.js'
 import logger from '../lib/logger.js'
 
@@ -10,6 +12,7 @@ import logger from '../lib/logger.js'
 // POST /articles/:nostrEventId/vault   — publish: encrypt body + store key
 // POST /articles/:nostrEventId/key     — issue: verify payment + return NIP-44 key
 // PATCH /articles/:nostrEventId/vault  — update vault event ID after relay publish
+// GET  /writers/export-keys            — export all vault keys wrapped to the writer
 //
 // Auth: all routes require a valid session token (verified at gateway).
 // The gateway injects x-reader-id and x-reader-pubkey headers after verification.
@@ -164,4 +167,67 @@ export async function keyRoutes(app: FastifyInstance) {
       }
     }
   )
+
+  // ---------------------------------------------------------------------------
+  // GET /writers/export-keys
+  //
+  // Author migration support. Returns all vault keys for the authenticated
+  // writer, each wrapped with NIP-44 to the writer's own pubkey. The writer
+  // can decrypt them with their Nostr private key to access their own content
+  // after leaving the platform.
+  //
+  // Requires x-writer-id and x-writer-pubkey headers (injected by gateway).
+  // ---------------------------------------------------------------------------
+
+  app.get('/writers/export-keys', async (req, reply) => {
+    const writerId = req.headers['x-writer-id']
+    const writerPubkey = req.headers['x-writer-pubkey']
+
+    if (!writerId || typeof writerId !== 'string') {
+      return reply.status(401).send({ error: 'Missing x-writer-id' })
+    }
+    if (!writerPubkey || typeof writerPubkey !== 'string') {
+      return reply.status(401).send({ error: 'Missing x-writer-pubkey' })
+    }
+
+    try {
+      // Fetch all vault keys for the writer's paywalled articles
+      const { rows } = await pool.query<{
+        article_id: string
+        nostr_event_id: string
+        nostr_d_tag: string
+        title: string
+        content_key_enc: string
+        algorithm: string
+      }>(
+        `SELECT vk.article_id, a.nostr_event_id, a.nostr_d_tag, a.title,
+                vk.content_key_enc, vk.algorithm
+         FROM vault_keys vk
+         JOIN articles a ON a.id = vk.article_id
+         WHERE a.writer_id = $1
+           AND a.deleted_at IS NULL
+         ORDER BY a.published_at DESC`,
+        [writerId]
+      )
+
+      const keys = rows.map(row => {
+        const contentKeyBytes = decryptContentKey(row.content_key_enc)
+        const encryptedKey = wrapKeyForReader(contentKeyBytes, writerPubkey)
+        return {
+          articleId: row.article_id,
+          nostrEventId: row.nostr_event_id,
+          dTag: row.nostr_d_tag,
+          title: row.title,
+          algorithm: row.algorithm,
+          encryptedKey,  // NIP-44 wrapped to writer's own pubkey
+        }
+      })
+
+      logger.info({ writerId, count: keys.length }, 'Writer key export')
+      return reply.status(200).send({ keys })
+    } catch (err) {
+      logger.error({ err, writerId }, 'Writer key export failed')
+      return reply.status(500).send({ error: 'Key export failed' })
+    }
+  })
 }

@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { pool, withTransaction } from '../db/client.js'
-import { generateKeypair } from './keypairs.js'
 import { createSession, destroySession } from './session.js'
 import logger from '../lib/logger.js'
 import type { FastifyReply } from 'fastify'
@@ -55,11 +54,9 @@ export interface SignupResult {
 
 export async function signup(
   input: SignupInput,
-  reply: FastifyReply
+  reply: FastifyReply,
+  keypair: { pubkeyHex: string; privkeyEncrypted: string }
 ): Promise<SignupResult> {
-  // Generate Nostr keypair
-  const keypair = generateKeypair()
-
   return withTransaction(async (client) => {
     // Create account
     const accountRow = await client.query<{

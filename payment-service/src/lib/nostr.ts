@@ -1,5 +1,24 @@
-import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools'
+import { finalizeEvent, getPublicKey } from 'nostr-tools'
 import logger from './logger.js'
+
+// =============================================================================
+// Portable Receipt Token
+//
+// A private signed Nostr kind 9901 event containing the reader's actual pubkey.
+// NOT published to the relay — stored in the DB and exportable by the reader.
+// Verifiable offline with verifyEvent() from nostr-tools against the platform
+// pubkey returned by GET /platform-pubkey.
+//
+// The public kind 9901 relay event (publishReceiptEvent below) still uses the
+// keyed HMAC hash for reader privacy on the public relay.
+// =============================================================================
+
+export interface PortableReceiptParams {
+  articleNostrEventId: string
+  writerPubkey: string
+  readerPubkey: string    // actual pubkey — only in the private receipt
+  amountPence: number
+}
 
 // =============================================================================
 // Nostr Receipt Publisher
@@ -31,6 +50,28 @@ function getServiceKeypair(): { privkey: Uint8Array; pubkey: string } {
   const privkey = Uint8Array.from(Buffer.from(privkeyHex, 'hex'))
   const pubkey = getPublicKey(privkey)
   return { privkey, pubkey }
+}
+
+// Creates and signs a portable receipt event. Does not publish to relay.
+// Returns the full JSON string of the signed event.
+export function createPortableReceipt(params: PortableReceiptParams): string {
+  const { privkey } = getServiceKeypair()
+
+  const eventTemplate = {
+    kind: 9901,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ['e', params.articleNostrEventId],
+      ['p', params.writerPubkey],
+      ['reader', params.readerPubkey],   // actual pubkey — private receipt only
+      ['amount', String(params.amountPence), 'GBP'],
+      ['gate', 'passed'],
+    ],
+    content: '',
+  }
+
+  const signedEvent = finalizeEvent(eventTemplate, privkey)
+  return JSON.stringify(signedEvent)
 }
 
 export async function publishReceiptEvent(params: ReceiptParams): Promise<string> {

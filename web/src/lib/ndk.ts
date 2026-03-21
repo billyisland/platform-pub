@@ -69,6 +69,10 @@ export interface ArticleEvent {
   pricePence?: number
   gatePositionPct?: number
   isPaywalled: boolean
+  // Co-located encrypted body (new format — articles published after spec §III.2)
+  // Absent on old articles; those use a separate kind 39701 vault event instead.
+  encryptedPayload?: string    // base64 ciphertext from ['payload', ...] tag
+  payloadAlgorithm?: string    // 'xchacha20poly1305' | 'aes-256-gcm'
 }
 
 export interface NoteEvent {
@@ -99,6 +103,7 @@ export function parseArticleEvent(event: NDKEvent): ArticleEvent {
   // but the article event itself may carry price/gate hints
   const priceTag = event.tags.find((t) => t[0] === 'price')
   const gateTag = event.tags.find((t) => t[0] === 'gate')
+  const payloadTag = event.tags.find((t) => t[0] === 'payload')
 
   return {
     id: event.id,
@@ -113,6 +118,8 @@ export function parseArticleEvent(event: NDKEvent): ArticleEvent {
     pricePence: priceTag ? parseInt(priceTag[1], 10) : undefined,
     gatePositionPct: gateTag ? parseInt(gateTag[1], 10) : undefined,
     isPaywalled: !!priceTag,
+    encryptedPayload: payloadTag?.[1],
+    payloadAlgorithm: payloadTag?.[2],
   }
 }
 

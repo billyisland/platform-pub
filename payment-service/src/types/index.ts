@@ -32,7 +32,8 @@ export interface GatePassEvent {
   articleId: string       // UUID
   writerId: string        // UUID
   amountPence: number
-  readerPubkeyHash: string  // keyed HMAC — never raw pubkey
+  readerPubkey: string      // actual Nostr pubkey — used for portable receipt (stored privately)
+  readerPubkeyHash: string  // keyed HMAC — used in public kind 9901 relay event
   tabId: string           // UUID of reader's reading_tab
 }
 
