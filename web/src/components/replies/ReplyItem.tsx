@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ReportButton } from '../ui/ReportButton'
 
 // =============================================================================
@@ -34,6 +34,7 @@ interface ReplyItemProps {
   compact?: boolean
   onReply?: (replyId: string, replyEventId: string, authorName: string) => void
   onDelete?: (replyId: string) => void
+  renderComposer?: (replyId: string) => ReactNode
 }
 
 export function ReplyItem({
@@ -44,6 +45,7 @@ export function ReplyItem({
   compact = false,
   onReply,
   onDelete,
+  renderComposer,
 }: ReplyItemProps) {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -135,15 +137,18 @@ export function ReplyItem({
       {reply.replies.length > 0 && (
         <div>
           {reply.replies.map((nested) => (
-            <ReplyItem
-              key={nested.id}
-              reply={nested}
-              currentUserId={currentUserId}
-              contentAuthorId={contentAuthorId}
-              depth={depth + 1}
-              onReply={onReply}
-              onDelete={onDelete}
-            />
+            <div key={nested.id}>
+              <ReplyItem
+                reply={nested}
+                currentUserId={currentUserId}
+                contentAuthorId={contentAuthorId}
+                depth={depth + 1}
+                onReply={onReply}
+                onDelete={onDelete}
+                renderComposer={renderComposer}
+              />
+              {renderComposer?.(nested.id)}
+            </div>
           ))}
         </div>
       )}

@@ -139,14 +139,28 @@ export function ReplySection({
           {replies.map((reply) => (
             <div key={reply.id}>
               <ReplyItem
-                reply={compact ? { ...reply, replies: [] } : reply}
+                reply={reply}
                 currentUserId={user?.id}
                 contentAuthorId={contentAuthorId}
                 compact={compact}
                 onReply={repliesEnabled ? handleReplyTo : undefined}
                 onDelete={handleDelete}
+                renderComposer={(replyId) => replyTarget?.replyId === replyId ? (
+                  <div className="ml-8 pl-4 border-l-2 border-ink-100">
+                    <ReplyComposer
+                      targetEventId={targetEventId}
+                      targetKind={targetKind}
+                      targetAuthorPubkey={targetAuthorPubkey}
+                      parentCommentId={replyId}
+                      parentCommentEventId={replyTarget.replyEventId}
+                      replyingToName={replyTarget.authorName}
+                      onPublished={handleNewNestedReply}
+                      onCancel={() => setReplyTarget(null)}
+                    />
+                  </div>
+                ) : null}
               />
-              {/* Inline nested reply composer */}
+              {/* Inline reply composer for top-level replies */}
               {replyTarget?.replyId === reply.id && (
                 <div className="ml-8 pl-4 border-l-2 border-ink-100">
                   <ReplyComposer

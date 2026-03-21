@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.1.5
+# platform.pub — Deployment Reference v3.1.6
 
 **Date:** 21 March 2026
-**Replaces:** v3.1.4 (see bottom for change log)
+**Replaces:** v3.1.5 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,26 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.1.5
+
+No schema changes. Rebuild web only:
+
+```bash
+cd /root/platform-pub
+git pull origin master
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker logs platform-pub-web-1 --tail 5
+# Feed should open on the Following tab (no For You tab)
+# Open a note with multiple replies — all replies and nested replies should expand
+```
+
+---
 
 ### From v3.1.4
 
@@ -675,7 +695,7 @@ Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), conver
 | Path | Purpose |
 |------|---------|
 | / | Landing (redirects to /feed if logged in) |
-| /feed | Sticky composer + For you / Following / Add tabs |
+| /feed | Sticky composer + Following / Add tabs |
 | /following | Writers you follow, with unfollow action |
 | /followers | Accounts who follow you |
 | /write | Article editor with paywall gate marker |
@@ -738,7 +758,6 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ## Known limitations (v3.1)
 
 - Subscription renewal is not yet automated (requires a scheduled worker)
-- "For You" feed tab returns the same feed as Following — personalised ranking not yet implemented
 - RSS feed ingestion not yet built
 - Notification centre not yet built
 - NIP-07 browser extension support not yet built
@@ -749,6 +768,31 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.1.6 — 21 March 2026
+
+**Feed and replies UX fixes (web only)**
+
+**Feed — removed unimplemented "For You" tab**
+
+The "For You" tab was a placeholder that showed an empty state. It has been removed. The feed now opens directly on the Following tab. The `FeedTab` type is narrowed to `'following' | 'add'`.
+
+**Files changed:** `web/src/components/feed/FeedView.tsx`
+
+**Replies — notes now expand all threaded replies**
+
+Two bugs prevented notes from showing all their replies:
+
+1. `ReplySection` in compact mode (used by `NoteCard`) was stripping all nested replies from every top-level reply before passing data to `ReplyItem` (`{ ...reply, replies: [] }`). Only the top-level reply text rendered; any threaded replies beneath it were silently discarded. Fixed by removing the stripping — `ReplyItem` now always receives the full reply tree.
+
+2. The inline reply composer was only rendered after top-level replies. Clicking Reply on a depth-1 (nested) reply set `replyTarget` but the composer never appeared because the render check only ran in the top-level map. Fixed by introducing a `renderComposer` callback prop on `ReplyItem`; it is called after each nested reply so the composer appears in the correct position at any depth up to 2.
+
+Replies now expand to show arbitrarily many threaded replies with up to two levels of indentation. The Reply button remains disabled at depth ≥ 2 to cap thread depth in the UI.
+
+**Files changed:** `web/src/components/replies/ReplySection.tsx`, `web/src/components/replies/ReplyItem.tsx`
+**No schema changes. Rebuild web only.**
+
+---
 
 ### v3.1.5 — 21 March 2026
 

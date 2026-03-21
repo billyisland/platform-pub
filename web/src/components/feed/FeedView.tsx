@@ -11,12 +11,12 @@ import { getNdk, parseArticleEvent, parseNoteEvent, KIND_ARTICLE, KIND_NOTE, KIN
 import type { QuoteTarget } from '../../lib/publishNote'
 import type { NDKKind } from '@nostr-dev-kit/ndk'
 
-type FeedTab = 'for-you' | 'following' | 'add'
+type FeedTab = 'following' | 'add'
 
 export function FeedView() {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<FeedTab>('for-you')
+  const [activeTab, setActiveTab] = useState<FeedTab>('following')
   const [feedItems, setFeedItems] = useState<FeedItem[]>([])
   const [feedLoading, setFeedLoading] = useState(true)
   const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
@@ -52,8 +52,6 @@ export function FeedView() {
           const articles: FeedItem[] = Array.from(articleEvents).filter(e => !isArticleDeleted(e)).map(e => ({ ...parseArticleEvent(e), type: 'article' as const }))
           const notes: FeedItem[] = Array.from(noteEvents).filter(e => !e.tags.find(t => t[0] === 'e')).filter(e => !deletedIds.has(e.id)).map(e => parseNoteEvent(e))
           setFeedItems([...articles, ...notes].sort((a, b) => b.publishedAt - a.publishedAt))
-        } else {
-          setFeedItems([])
         }
       } catch (err) { console.error('Feed load error:', err) }
       finally { setFeedLoading(false) }
@@ -95,12 +93,6 @@ export function FeedView() {
         </div>
         <div className="flex px-6 pt-1 border-b border-surface-strong">
           <button
-            onClick={() => setActiveTab('for-you')}
-            className={`tab-pill ${activeTab === 'for-you' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
-          >
-            For you
-          </button>
-          <button
             onClick={() => setActiveTab('following')}
             className={`tab-pill ${activeTab === 'following' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
           >
@@ -124,9 +116,7 @@ export function FeedView() {
         ) : feedItems.length === 0 ? (
           <div className="py-20 text-center px-6">
             <p className="text-ui-sm text-content-muted">
-              {activeTab === 'following'
-                ? 'Nothing here yet. Use the Add tab to follow writers.'
-                : 'For You recommendations are coming soon.'}
+              Nothing here yet. Use the Add tab to follow writers.
             </p>
           </div>
         ) : (
