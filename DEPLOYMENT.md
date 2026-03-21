@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.1.1
+# platform.pub — Deployment Reference v3.1.2
 
 **Date:** 21 March 2026
-**Replaces:** v3.1 (see bottom for change log)
+**Replaces:** v3.1.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -96,7 +96,8 @@ Key variables:
 | `KEY_CUSTODY_URL` | gateway | Internal URL for key-custody (default: http://localhost:3004) |
 | `PAYMENT_SERVICE_URL` | gateway | Internal URL for payment-service (default: http://localhost:3001) |
 | `PLATFORM_RELAY_WS_URL` | gateway, payment, key-service | strfry WebSocket URL (default: ws://localhost:4848) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth credentials |
+| `APP_URL` | gateway | **Frontend** URL (Next.js). Used for OAuth redirect URIs, Stripe redirects, CORS, and magic links. Dev: `http://localhost:3010`. **Must not be the gateway URL.** |
 | `ADMIN_ACCOUNT_IDS` | gateway | Comma-separated UUIDs for admin access |
 | `EMAIL_PROVIDER` | gateway | `postmark`, `resend`, or `console` |
 
@@ -200,6 +201,38 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.1.1
+
+No schema changes. Rebuild gateway and web, then update the Google OAuth redirect URI in Google Cloud Console.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Ensure APP_URL in gateway/.env is the FRONTEND URL (e.g. https://platform.pub),
+# NOT the gateway URL. This has always been required but was previously undocumented.
+grep APP_URL gateway/.env   # should be https://platform.pub or http://localhost:3010
+
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+**Google Cloud Console action required:**
+In APIs & Services → Credentials → your OAuth 2.0 client, remove the old redirect URI and add the new one:
+
+| Remove | Add |
+|--------|-----|
+| `https://platform.pub/api/v1/auth/google/callback` | `https://platform.pub/auth/google/callback` |
+
+Verify:
+```bash
+docker logs platform-pub-gateway-1 --tail 5
+docker logs platform-pub-web-1 --tail 5
+# Test Google login end-to-end
+```
+
+---
 
 ### From v3.1
 
@@ -349,7 +382,7 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 | POST | /api/v1/auth/logout | session | Clear session |
 | GET | /api/v1/auth/me | session | Current user info |
 | GET | /api/v1/auth/google | — | Google OAuth redirect |
-| GET | /api/v1/auth/google/callback | — | Google OAuth callback |
+| POST | /api/v1/auth/google/exchange | `{ code, state }` | Google OAuth code exchange |
 | POST | /api/v1/auth/upgrade-writer | session | Start Stripe Connect |
 | POST | /api/v1/auth/connect-card | session | Save reader payment method |
 
@@ -544,6 +577,7 @@ Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), conver
 | /article/:dTag | Article reader with paywall unlock |
 | /:username | Writer profile |
 | /auth | Signup / login |
+| /auth/google/callback | Google OAuth callback (handles Google redirect, exchanges code, sets session) |
 | /auth/verify | Magic link verification |
 | /dashboard | Articles, drafts, billing |
 | /settings | Payment, Stripe Connect, account |
@@ -610,6 +644,22 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.1.2 — 21 March 2026
+
+**Google OAuth login fix**
+
+- **Bug fix (auth loop):** Google login redirected back to `/auth` in a loop because the session cookie was being set inside a 302 redirect response that passed through the Next.js rewrite proxy. Next.js does not reliably forward `Set-Cookie` headers from proxied redirect responses to the browser, so the cookie was never saved and every `/feed` load failed the auth check.
+
+- **New flow:** The gateway's `GET /auth/google/callback` route has been replaced with `POST /auth/google/exchange`. Google now redirects to a Next.js page (`/auth/google/callback`) which POSTs the code and state to the exchange endpoint. The gateway validates the state cookie, exchanges the code with Google, creates or finds the account, and sets the session cookie in a normal JSON response — not a redirect. Next.js reliably forwards `Set-Cookie` from regular responses.
+
+- **`gateway/.env.example`:** `APP_URL` now correctly defaults to `http://localhost:3010` (the frontend) and is documented as requiring the frontend URL, not the gateway URL. This affects OAuth redirect URIs, Stripe redirects, CORS origin, and magic link URLs.
+
+- **Google Cloud Console:** The registered redirect URI must be updated from `/api/v1/auth/google/callback` to `/auth/google/callback`.
+
+**No schema changes. Rebuild gateway and web.**
+
+---
 
 ### v3.1.1 — 21 March 2026
 

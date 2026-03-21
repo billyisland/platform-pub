@@ -9,9 +9,21 @@ import { randomBytes } from 'crypto'
 // =============================================================================
 // Google OAuth Routes
 //
-// GET  /auth/google           — redirect to Google's consent screen
-// GET  /auth/google/callback  — handle the OAuth callback, create or find
-//                               account, set session, redirect to /feed
+// GET  /auth/google          — redirect to Google's consent screen
+// POST /auth/google/exchange — called by the frontend callback page after
+//                              Google redirects back; validates state, exchanges
+//                              code, creates or finds account, sets session cookie
+//
+// Flow:
+//   1. Browser clicks "Continue with Google" → GET /api/v1/auth/google
+//   2. Gateway sets pp_oauth_state cookie, redirects to Google
+//   3. Google redirects to ${APP_URL}/auth/google/callback (Next.js page)
+//   4. That page POSTs { code, state } to /api/v1/auth/google/exchange
+//   5. Gateway validates state cookie, exchanges code, sets pp_session cookie
+//   6. Page calls /auth/me to hydrate the store, then navigates to /feed
+//
+// This avoids setting a session cookie inside a redirect response, which
+// Next.js rewrite proxies do not reliably forward to the browser.
 // =============================================================================
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -21,7 +33,10 @@ function getGoogleConfig() {
   const clientId = process.env.GOOGLE_CLIENT_ID
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET
   const appUrl = process.env.APP_URL ?? 'https://platform.pub'
-  const redirectUri = `${appUrl}/api/v1/auth/google/callback`
+
+  // The redirect_uri must point to the Next.js callback page (not a proxied
+  // gateway route) so Google lands the browser directly on the frontend.
+  const redirectUri = `${appUrl}/auth/google/callback`
 
   if (!clientId || !clientSecret) {
     throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set')
@@ -62,31 +77,30 @@ export async function googleAuthRoutes(app: FastifyInstance) {
   })
 
   // ---------------------------------------------------------------------------
-  // GET /auth/google/callback — handle OAuth callback
+  // POST /auth/google/exchange — complete OAuth from the frontend callback page
+  //
+  // Called with credentials (cookies) so the pp_oauth_state cookie is present.
+  // Sets the pp_session cookie in the response body — a normal JSON response,
+  // not a redirect, so Next.js reliably forwards Set-Cookie to the browser.
   // ---------------------------------------------------------------------------
 
-  app.get<{
-    Querystring: { code?: string; state?: string; error?: string }
-  }>('/auth/google/callback', async (req, reply) => {
-    const { code, state, error } = req.query
-    const appUrl = process.env.APP_URL ?? 'https://platform.pub'
-
-    if (error) {
-      logger.warn({ error }, 'Google OAuth error')
-      return reply.redirect(`${appUrl}/auth?mode=login&error=google_denied`)
-    }
+  app.post<{
+    Body: { code: string; state: string }
+  }>('/auth/google/exchange', async (req, reply) => {
+    const { code, state } = req.body ?? {}
 
     if (!code || !state) {
-      return reply.redirect(`${appUrl}/auth?mode=login&error=google_invalid`)
+      return reply.status(400).send({ error: 'Missing code or state' })
     }
 
     const cookies = req.cookies as Record<string, string> | undefined
     const savedState = cookies?.pp_oauth_state
     if (!savedState || savedState !== state) {
-      logger.warn('Google OAuth state mismatch')
-      return reply.redirect(`${appUrl}/auth?mode=login&error=google_invalid`)
+      logger.warn('Google OAuth state mismatch in exchange')
+      return reply.status(400).send({ error: 'State mismatch' })
     }
 
+    // Clear the one-time state cookie
     reply.setCookie('pp_oauth_state', '', {
       path: '/',
       httpOnly: true,
@@ -113,21 +127,21 @@ export async function googleAuthRoutes(app: FastifyInstance) {
       if (!tokenRes.ok) {
         const body = await tokenRes.text()
         logger.error({ status: tokenRes.status, body }, 'Google token exchange failed')
-        return reply.redirect(`${appUrl}/auth?mode=login&error=google_failed`)
+        return reply.status(400).send({ error: 'Token exchange failed' })
       }
 
       const tokens = await tokenRes.json() as { id_token?: string }
 
       if (!tokens.id_token) {
         logger.error('No id_token in Google response')
-        return reply.redirect(`${appUrl}/auth?mode=login&error=google_failed`)
+        return reply.status(400).send({ error: 'No id_token' })
       }
 
       const payload = decodeIdToken(tokens.id_token)
 
       if (!payload.email) {
         logger.error('No email in Google ID token')
-        return reply.redirect(`${appUrl}/auth?mode=login&error=google_failed`)
+        return reply.status(400).send({ error: 'No email in token' })
       }
 
       const email = payload.email.toLowerCase().trim()
@@ -151,7 +165,7 @@ export async function googleAuthRoutes(app: FastifyInstance) {
       const account = await getAccount(accountId)
       if (!account) {
         logger.error({ accountId }, 'Account not found after Google login')
-        return reply.redirect(`${appUrl}/auth?mode=login&error=google_failed`)
+        return reply.status(500).send({ error: 'Account not found' })
       }
 
       await createSession(reply, {
@@ -160,11 +174,11 @@ export async function googleAuthRoutes(app: FastifyInstance) {
         isWriter: account.isWriter,
       })
 
-      return reply.redirect(`${appUrl}/feed`)
+      return reply.status(200).send({ ok: true })
 
     } catch (err) {
-      logger.error({ err }, 'Google OAuth callback failed')
-      return reply.redirect(`${appUrl}/auth?mode=login&error=google_failed`)
+      logger.error({ err }, 'Google OAuth exchange failed')
+      return reply.status(500).send({ error: 'Exchange failed' })
     }
   })
 }
