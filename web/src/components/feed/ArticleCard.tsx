@@ -5,45 +5,40 @@ import Link from 'next/link'
 import type { ArticleEvent } from '../../lib/ndk'
 import { useWriterName } from '../../hooks/useWriterName'
 import { useAuth } from '../../stores/auth'
-import { NoteComposer } from './NoteComposer'
 import { replies as repliesApi } from '../../lib/api'
+import type { QuoteTarget } from '../../lib/publishNote'
 
-interface ArticleCardProps { article: ArticleEvent }
+interface ArticleCardProps {
+  article: ArticleEvent
+  onQuote?: (target: QuoteTarget) => void
+}
 
-export function ArticleCard({ article }: ArticleCardProps) {
+export function ArticleCard({ article, onQuote }: ArticleCardProps) {
   const { user } = useAuth()
   const writerInfo = useWriterName(article.pubkey)
   const [replyCount, setReplyCount] = useState<number | null>(null)
-  const [showQuoteModal, setShowQuoteModal] = useState(false)
   const wordCount = article.content.split(/\s+/).length
   const readMinutes = Math.max(1, Math.round(wordCount / 200))
   const excerpt = article.summary || truncate(stripMarkdown(article.content), 200)
 
-  // Extract hero image — first image URL in the content
   const heroImage = extractFirstImage(article.content)
 
   useEffect(() => {
     repliesApi.getForTarget(article.id).then(d => setReplyCount(d.totalCount)).catch(() => {})
   }, [article.id])
 
-  const quoteTarget = {
-    eventId: article.id,
-    eventKind: 30023,
-    authorPubkey: article.pubkey,
+  function handleQuote(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    onQuote?.({ eventId: article.id, eventKind: 30023, authorPubkey: article.pubkey })
   }
 
   return (
-    <div className="relative">
     <Link href={`/article/${article.dTag}`} className="group block overflow-hidden">
       {heroImage ? (
-        // Card with hero image background
         <div
           className="relative p-6 min-h-[220px] flex flex-col justify-end"
-          style={{
-            backgroundImage: `url(${heroImage})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
+          style={{ backgroundImage: `url(${heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
         >
           <div className="absolute inset-0 bg-gradient-to-t from-ink-900/80 via-ink-900/40 to-transparent" />
           <div className="relative z-10">
@@ -56,19 +51,13 @@ export function ArticleCard({ article }: ArticleCardProps) {
               <span className="opacity-40">/</span>
               <span>{readMinutes} min</span>
               {article.isPaywalled && (<><span className="opacity-40">/</span><span className="text-accent-300">&pound;</span></>)}
-              {user && (
-                <button
-                  onClick={e => { e.preventDefault(); e.stopPropagation(); setShowQuoteModal(true) }}
-                  className="btn-soft py-1 px-2 text-ui-xs ml-1"
-                >
-                  Quote
-                </button>
+              {user && onQuote && (
+                <button onClick={handleQuote} className="btn-soft py-1 px-2 text-ui-xs ml-1">Quote</button>
               )}
             </div>
           </div>
         </div>
       ) : (
-        // Standard card — left accent border, serif excerpt
         <div className="bg-surface-raised p-5 border-l-[3px] border-accent">
           <p className="label-ui text-content-muted mb-3">
             {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
@@ -89,46 +78,21 @@ export function ArticleCard({ article }: ArticleCardProps) {
             {article.isPaywalled && (
               <><span className="opacity-40">/</span><span className="text-accent">&pound;</span></>
             )}
-            {user && (
-              <button
-                onClick={e => { e.preventDefault(); e.stopPropagation(); setShowQuoteModal(true) }}
-                className="btn-soft py-1 px-2 text-ui-xs ml-1"
-              >
-                Quote
-              </button>
+            {user && onQuote && (
+              <button onClick={handleQuote} className="btn-soft py-1 px-2 text-ui-xs ml-1">Quote</button>
             )}
           </div>
         </div>
       )}
     </Link>
-
-    {/* Quote modal */}
-    {showQuoteModal && (
-      <div
-        className="fixed inset-0 z-50 bg-ink-900/60 flex items-center justify-center p-4"
-        onClick={() => setShowQuoteModal(false)}
-      >
-        <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
-          <NoteComposer
-            quoteTarget={quoteTarget}
-            onPublished={() => setShowQuoteModal(false)}
-          />
-        </div>
-      </div>
-    )}
-    </div>
   )
 }
 
-// Extract first image URL from markdown content
 function extractFirstImage(content: string): string | null {
-  // Match markdown image: ![alt](url)
   const mdMatch = content.match(/!\[.*?\]\((.+?)\)/)
   if (mdMatch) return mdMatch[1]
-  // Match bare image URL on its own line
   const urlMatch = content.match(/^(https?:\/\/\S+\.(?:jpg|jpeg|png|gif|webp)(?:\?\S*)?)$/m)
   if (urlMatch) return urlMatch[1]
-  // Match blossom hash URL
   const blossomMatch = content.match(/(https?:\/\/\S+\/[a-f0-9]{64}(?:\.webp)?)/)
   if (blossomMatch) return blossomMatch[1]
   return null

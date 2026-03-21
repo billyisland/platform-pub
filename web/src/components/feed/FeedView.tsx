@@ -8,6 +8,7 @@ import { NoteCard } from '../feed/NoteCard'
 import { NoteComposer } from '../feed/NoteComposer'
 import type { FeedItem, NoteEvent } from '../../lib/ndk'
 import { getNdk, parseArticleEvent, parseNoteEvent, KIND_ARTICLE, KIND_NOTE, KIND_DELETION } from '../../lib/ndk'
+import type { QuoteTarget } from '../../lib/publishNote'
 import type { NDKKind } from '@nostr-dev-kit/ndk'
 
 type FeedTab = 'for-you' | 'following' | 'add'
@@ -18,6 +19,8 @@ export function FeedView() {
   const [activeTab, setActiveTab] = useState<FeedTab>('for-you')
   const [feedItems, setFeedItems] = useState<FeedItem[]>([])
   const [feedLoading, setFeedLoading] = useState(true)
+  const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
+  const composerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (!loading && !user) router.push('/auth?mode=login') }, [user, loading, router])
 
@@ -58,8 +61,23 @@ export function FeedView() {
     loadFeed()
   }, [user, activeTab])
 
-  const handleNotePublished = useCallback((note: NoteEvent) => { setFeedItems(prev => [note, ...prev]) }, [])
-  const handleNoteDeleted = useCallback((id: string) => { setFeedItems(prev => prev.filter(i => i.id !== id)) }, [])
+  const handleNotePublished = useCallback((note: NoteEvent) => {
+    setPendingQuote(null)
+    setFeedItems(prev => [note, ...prev])
+  }, [])
+
+  const handleNoteDeleted = useCallback((id: string) => {
+    setFeedItems(prev => prev.filter(i => i.id !== id))
+  }, [])
+
+  const handleQuote = useCallback((target: QuoteTarget) => {
+    setPendingQuote(target)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    // Focus the composer after scroll
+    setTimeout(() => {
+      composerRef.current?.querySelector('textarea')?.focus()
+    }, 300)
+  }, [])
 
   if (loading || !user) return <FeedSkeleton />
 
@@ -68,8 +86,12 @@ export function FeedView() {
 
       {/* ── Sticky zone: composer + tabs ── */}
       <div className="sticky top-[53px] lg:top-0 z-10 bg-surface">
-        <div className="px-6 pt-4">
-          <NoteComposer onPublished={handleNotePublished} />
+        <div ref={composerRef} className="px-6 pt-4">
+          <NoteComposer
+            quoteTarget={pendingQuote ?? undefined}
+            onPublished={handleNotePublished}
+            onClearQuote={() => setPendingQuote(null)}
+          />
         </div>
         <div className="flex px-6 pt-1 border-b border-surface-strong">
           <button
@@ -94,7 +116,7 @@ export function FeedView() {
       </div>
 
       {/* ── Content zone ── */}
-      <div className="pb-10">
+      <div className="pb-10 pt-3">
         {activeTab === 'add' ? (
           <AddPanel onFollowed={() => setActiveTab('following')} />
         ) : feedLoading ? (
@@ -108,10 +130,10 @@ export function FeedView() {
             </p>
           </div>
         ) : (
-          <div>
+          <div className="space-y-3 px-6">
             {feedItems.map(item => item.type === 'article'
-              ? <ArticleCard key={item.id} article={item} />
-              : <NoteCard key={item.id} note={item} onDeleted={handleNoteDeleted} />
+              ? <ArticleCard key={item.id} article={item} onQuote={handleQuote} />
+              : <NoteCard key={item.id} note={item} onDeleted={handleNoteDeleted} onQuote={handleQuote} />
             )}
           </div>
         )}
@@ -173,7 +195,6 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
 
   return (
     <div className="px-6 pt-5">
-      {/* Mode toggle */}
       <div className="flex gap-0 mb-4 border-b border-surface-strong">
         <button
           onClick={() => setMode('people')}
@@ -278,7 +299,7 @@ function FeedSkeleton() {
 
 function InlineSkeleton() {
   return (
-    <div className="px-6 pt-4 space-y-3">
+    <div className="px-6 pt-1 space-y-3">
       {[1, 2, 3].map(i => (
         <div key={i} className="bg-surface-raised p-5">
           <div className="h-3 w-24 animate-pulse bg-surface-sunken mb-4" />

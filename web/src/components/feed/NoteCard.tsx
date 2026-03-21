@@ -7,16 +7,19 @@ import { useAuth } from '../../stores/auth'
 import { isImageUrl, isEmbeddableUrl, extractUrls } from '../../lib/media'
 import { ReplySection } from '../replies/ReplySection'
 import { QuoteCard } from './QuoteCard'
-import { NoteComposer } from './NoteComposer'
 import { replies as repliesApi } from '../../lib/api'
+import type { QuoteTarget } from '../../lib/publishNote'
 
-interface NoteCardProps { note: NoteEvent; onDeleted?: (id: string) => void }
+interface NoteCardProps {
+  note: NoteEvent
+  onDeleted?: (id: string) => void
+  onQuote?: (target: QuoteTarget) => void
+}
 
-export function NoteCard({ note, onDeleted }: NoteCardProps) {
+export function NoteCard({ note, onDeleted, onQuote }: NoteCardProps) {
   const { user } = useAuth()
   const writerInfo = useWriterName(note.pubkey)
   const [showReplies, setShowReplies] = useState(false)
-  const [showQuoteComposer, setShowQuoteComposer] = useState(false)
   const [replyCount, setReplyCount] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -30,45 +33,41 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
   const imageUrls = urls.filter(isImageUrl)
   const embedUrls = urls.filter(isEmbeddableUrl)
   let displayContent = note.content
-  // Strip nostr:nevent1... references (quote links added by some clients)
   displayContent = displayContent.replace(/nostr:nevent1[a-z0-9]+/gi, '').trim()
   for (const url of [...imageUrls, ...embedUrls]) displayContent = displayContent.replace(url, '').trim()
 
   async function handleDelete() {
     if (!confirmDelete) {
       setConfirmDelete(true)
-      // Auto-dismiss after 3 seconds
       setTimeout(() => setConfirmDelete(false), 3000)
       return
     }
     setDeleting(true)
     try {
-      const res = await fetch(`/api/v1/notes/${note.id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
+      const res = await fetch(`/api/v1/notes/${note.id}`, { method: 'DELETE', credentials: 'include' })
       if (res.ok) {
-        // Immediately remove from feed
         onDeleted?.(note.id)
       } else {
-        console.error('Delete failed:', res.status)
         setConfirmDelete(false)
       }
-    } catch (err) {
-      console.error('Delete note error:', err)
+    } catch {
       setConfirmDelete(false)
     } finally {
       setDeleting(false)
     }
   }
 
+  function handleQuote() {
+    onQuote?.({ eventId: note.id, eventKind: 1, authorPubkey: note.pubkey })
+  }
+
   return (
-    <div className="px-5 py-4 bg-slate border-b border-slate-dark">
+    <div className="py-4 px-5 bg-surface-sunken border border-surface-strong">
       <div className="flex items-start gap-3">
         {writerInfo?.avatar ? (
           <img src={writerInfo.avatar} alt="" className="h-8 w-8 rounded-full object-cover flex-shrink-0 mt-0.5" />
         ) : (
-          <span className="flex h-8 w-8 items-center justify-center bg-slate-dark text-[10px] font-medium text-surface-sunken flex-shrink-0 mt-0.5 rounded-full">
+          <span className="flex h-8 w-8 items-center justify-center bg-surface-strong text-[10px] font-medium text-content-muted flex-shrink-0 mt-0.5 rounded-full">
             {(writerInfo?.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
           </span>
         )}
@@ -76,10 +75,10 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
         <div className="flex-1 min-w-0">
           {/* Name + time row */}
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-ui-sm font-medium text-surface-raised">
+            <span className="text-ui-sm font-medium text-content-primary">
               {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
             </span>
-            <span className="text-ui-xs text-surface-sunken">
+            <span className="text-ui-xs text-content-muted">
               {formatDate(note.publishedAt)}
             </span>
             {isAuthor && (
@@ -88,8 +87,8 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
                 disabled={deleting}
                 className={`ml-auto text-ui-xs transition-colors disabled:opacity-40 ${
                   confirmDelete
-                    ? 'text-red-200 font-medium'
-                    : 'text-surface-sunken hover:text-surface'
+                    ? 'text-red-500 font-medium'
+                    : 'text-content-faint hover:text-content-muted'
                 }`}
               >
                 {deleting ? '...' : confirmDelete ? 'Confirm delete?' : 'Delete'}
@@ -99,7 +98,7 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
 
           {/* Content */}
           {displayContent && (
-            <p className="text-sm text-surface leading-relaxed whitespace-pre-wrap">{displayContent}</p>
+            <p className="text-sm text-content-secondary leading-relaxed whitespace-pre-wrap">{displayContent}</p>
           )}
 
           {/* Images */}
@@ -118,43 +117,32 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
             </div>
           )}
 
-          {/* Quoted content */}
+          {/* Quoted content — inset tile */}
           {note.quotedEventId && <QuoteCard eventId={note.quotedEventId} />}
 
           {/* Actions row */}
-          <div className="mt-2 flex items-center gap-4">
+          <div className="mt-3 flex items-center gap-4">
             <button
               onClick={() => setShowReplies(!showReplies)}
-              className="text-ui-xs text-surface-sunken hover:text-surface-raised transition-colors"
+              className="text-ui-xs text-content-muted hover:text-content-primary transition-colors"
             >
               {showReplies ? 'Hide replies' : replyCount !== null && replyCount > 0 ? `${replyCount} ${replyCount !== 1 ? 'replies' : 'reply'}` : 'Reply'}
             </button>
-            {user && (
+            {user && onQuote && (
               <button
-                onClick={() => setShowQuoteComposer(!showQuoteComposer)}
-                className="btn-soft py-1 px-2 text-ui-xs"
+                onClick={handleQuote}
+                className="text-ui-xs text-content-muted hover:text-content-primary transition-colors"
               >
                 Quote
               </button>
             )}
           </div>
-
-          {/* Inline quote composer */}
-          {showQuoteComposer && (
-            <div className="mt-3 -mx-5 px-5 pt-3 border-t border-slate-dark">
-              <NoteComposer
-                quoteTarget={{ eventId: note.id, eventKind: 1, authorPubkey: note.pubkey }}
-                onPublished={() => setShowQuoteComposer(false)}
-              />
-            </div>
-          )}
-
         </div>
       </div>
 
       {/* Replies — flush panel at tile bottom */}
       {showReplies && (
-        <div className="-mx-5 -mb-4 mt-1 px-5 pb-3 bg-surface-raised border-t border-slate-dark">
+        <div className="-mx-5 -mb-4 mt-3 px-5 pb-3 bg-surface-raised border-t border-surface-strong">
           <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact />
         </div>
       )}
@@ -165,7 +153,7 @@ export function NoteCard({ note, onDeleted }: NoteCardProps) {
 function EmbedPreview({ url }: { url: string }) {
   const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/)
   if (yt) return <div className="relative overflow-hidden rounded" style={{ paddingBottom: '56.25%' }}><iframe src={`https://www.youtube.com/embed/${yt[1]}`} className="absolute inset-0 w-full h-full" frameBorder="0" allowFullScreen loading="lazy" /></div>
-  return <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-slate-dark p-3 rounded hover:opacity-80 transition-opacity"><p className="text-ui-xs text-surface-sunken truncate">{url}</p></a>
+  return <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-surface-strong p-3 rounded hover:opacity-80 transition-opacity"><p className="text-ui-xs text-content-muted truncate">{url}</p></a>
 }
 
 function formatDate(ts: number) {

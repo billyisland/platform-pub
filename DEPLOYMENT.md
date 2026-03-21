@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.0
+# platform.pub — Deployment Reference v3.1
 
 **Date:** 21 March 2026
-**Replaces:** v2.0 (see bottom for change log)
+**Replaces:** v3.0.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -346,7 +346,9 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 |--------|------|------|---------|
 | POST | /api/v1/follows/:writerId | session | Follow writer |
 | DELETE | /api/v1/follows/:writerId | session | Unfollow writer |
-| GET | /api/v1/follows/pubkeys | session | Followed pubkeys |
+| GET | /api/v1/follows | session | List followed writers with display info |
+| GET | /api/v1/follows/pubkeys | session | Followed writer pubkeys (for feed filter) |
+| GET | /api/v1/follows/followers | session | List accounts who follow you |
 | POST | /api/v1/reports | session | Submit content report |
 
 ### Subscriptions
@@ -499,6 +501,8 @@ Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), conver
 |------|---------|
 | / | Landing (redirects to /feed if logged in) |
 | /feed | Sticky composer + For you / Following / Add tabs |
+| /following | Writers you follow, with unfollow action |
+| /followers | Accounts who follow you |
 | /write | Article editor with paywall gate marker |
 | /article/:dTag | Article reader with paywall unlock |
 | /:username | Writer profile |
@@ -507,6 +511,7 @@ Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), conver
 | /dashboard | Articles, drafts, billing |
 | /settings | Payment, Stripe Connect, account |
 | /search | Article + writer search |
+| /about | About page |
 
 ---
 
@@ -554,7 +559,7 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ---
 
-## Known limitations (v3.0)
+## Known limitations (v3.1)
 
 - Subscription renewal is not yet automated (requires a scheduled worker)
 - "For You" feed tab returns the same feed as Following — personalised ranking not yet implemented
@@ -568,6 +573,48 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.1 — 21 March 2026
+
+**Feed UX, navigation, quoting, and social graph pages**
+
+**Quoting**
+
+- Clicking Quote on any note or article now scrolls to the top NoteComposer and pre-fills it with the quote target, rather than opening an inline or modal sub-composer. The composer auto-focuses and shows the quoted content as a dismissible inset tile.
+- `NoteComposer` now accepts `onClearQuote` and handles a reactive `quoteTarget` prop: when a new quote target arrives from the parent, the composer updates without losing any text already typed. A `×` button dismisses the quote while keeping the composed text.
+- `QuoteCard` is fully clickable: article quotes link to `/article/:dTag`; note quotes link to the author's profile. Styled as a proper inset card with a hover state and a crimson left bar for articles.
+- Inline quote sub-composer removed from `NoteCard`. Modal quote composer removed from `ArticleCard`. Both now call an `onQuote` callback up to `FeedView`, which manages the single pending-quote state.
+- `FeedView` clears `pendingQuote` on publish.
+
+**Feed layout**
+
+- Feed tiles now have `space-y-3` vertical gaps and `px-6` horizontal padding, matching the NoteComposer tile width exactly.
+- Replies expand within their note tile and are not separated from it.
+
+**Note tile colour**
+
+- Note tiles changed from dark slate (`bg-slate` / `#3D4A52`) to warm off-white (`bg-surface-sunken` / `#EDECEA`). All text is now dark-on-light. Avatar fallbacks, embed link backgrounds, and action button colours updated accordingly.
+
+**Navigation**
+
+- "Feed" removed from the sidebar nav and inline tablet nav — the Platform brand logo already navigates to `/feed`.
+- Brand logo is now centre-aligned in the left sidebar (`lg:justify-center`).
+- Search moved from the sidebar footer to the nav link list: renders as a magnifying-glass icon + "Search" label; clicking expands an inline input field. Collapses on blur if empty.
+- **Following** and **Followers** added as nav links in the left sidebar, inline tablet nav, and mobile drawer.
+
+**Social graph pages**
+
+- New `GET /api/v1/follows/followers` endpoint returns accounts who follow the authenticated user: `{ followers: [{ id, username, displayName, avatar, pubkey, isWriter, followedAt }] }`. Does not filter by `is_writer` — all follower account types are returned.
+- `/following` page: lists writers you follow with display name, username, avatar, and an Unfollow button per entry. Unfollow is applied immediately and reflected in local state.
+- `/followers` page: lists people who follow you with display name, username, avatar, and a "writer" label for writer accounts.
+
+**About page**
+
+- About page rewritten with revised copy (three sections: intro, "What makes Platform different", "You're free to leave").
+
+**No schema changes. Rebuild gateway and web.**
+
+---
 
 ### v3.0.1 — 21 March 2026
 

@@ -11,12 +11,14 @@ export function Nav() {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   function isActive(path: string) {
     if (path === '/dashboard') return pathname.startsWith('/dashboard')
-    if (path === '/feed') return pathname === '/feed'
     if (path === '/write') return pathname === '/write'
     if (path === '/about') return pathname === '/about'
+    if (path === '/following') return pathname === '/following'
+    if (path === '/followers') return pathname === '/followers'
     return false
   }
 
@@ -44,6 +46,7 @@ export function Nav() {
       router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`)
       setSearchQuery('')
       setMenuOpen(false)
+      setSearchOpen(false)
     }
   }
 
@@ -59,7 +62,7 @@ export function Nav() {
       {/* ================================================================
           TOP BAR — visible below lg breakpoint
           ================================================================ */}
-      <div className="flex items-center justify-between px-6 py-3 lg:px-5 lg:pt-7 lg:pb-5 lg:border-b lg:border-crimson-dark">
+      <div className="flex items-center justify-between px-6 py-3 lg:px-5 lg:pt-7 lg:pb-5 lg:justify-center lg:border-b lg:border-crimson-dark">
         {/* Logo */}
         <Link
           href={logoHref}
@@ -77,7 +80,7 @@ export function Nav() {
           Platform
         </Link>
 
-        {/* Hamburger — below lg only */}
+        {/* Hamburger — below md only */}
         <button
           onClick={() => setMenuOpen(!menuOpen)}
           className="flex flex-col justify-center gap-[5px] w-6 h-6 md:hidden"
@@ -94,7 +97,6 @@ export function Nav() {
             <div className="h-4 w-16 animate-pulse bg-crimson-dark" />
           ) : user ? (
             <>
-              <Link href="/feed" className={topLinkClass('/feed')}>Feed</Link>
               <Link href="/write" className={topLinkClass('/write')}>Write</Link>
               <Link href="/dashboard" className={topLinkClass('/dashboard')}>Dashboard</Link>
               <Link href="/about" className={topLinkClass('/about')}>About</Link>
@@ -149,9 +151,10 @@ export function Nav() {
             <div className="h-4 w-16 animate-pulse bg-crimson-dark" />
           ) : user ? (
             <>
-              <Link href="/feed" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/feed') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Feed</Link>
               <Link href="/write" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/write') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Write</Link>
               <Link href="/dashboard" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/dashboard') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Dashboard</Link>
+              <Link href="/following" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/following') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Following</Link>
+              <Link href="/followers" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/followers') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Followers</Link>
               <Link href="/about" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/about') ? 'text-surface-raised font-medium' : 'text-surface'}`}>About</Link>
 
               <form onSubmit={handleSearch} className="mt-3">
@@ -191,9 +194,42 @@ export function Nav() {
           <div className="px-4 py-3 h-4 w-24 animate-pulse bg-crimson-dark rounded" />
         ) : user ? (
           <>
-            <Link href="/feed" onClick={handleNavClick} className={sidebarLinkClass('/feed')}>Feed</Link>
+            {/* Search — icon only, expands on click */}
+            {searchOpen ? (
+              <form onSubmit={handleSearch} className="mx-3 mb-1 flex items-center gap-2 bg-crimson-dark px-3 py-2">
+                <svg className="h-3.5 w-3.5 text-surface-sunken flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="6.5" cy="6.5" r="5" />
+                  <line x1="10" y1="10" x2="14.5" y2="14.5" />
+                </svg>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search..."
+                  autoFocus
+                  onBlur={() => { if (!searchQuery) setSearchOpen(false) }}
+                  className="flex-1 bg-transparent text-xs text-surface-raised placeholder-surface-sunken focus:outline-none"
+                />
+                <button type="button" onClick={() => { setSearchOpen(false); setSearchQuery('') }} className="text-surface-sunken hover:text-surface-raised text-xs">×</button>
+              </form>
+            ) : (
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="flex items-center gap-3 pl-4 py-2.5 text-surface hover:bg-crimson-dark/50 hover:text-surface-raised transition-colors w-full"
+                title="Search"
+              >
+                <svg className="h-4 w-4 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="6.5" cy="6.5" r="5" />
+                  <line x1="10" y1="10" x2="14.5" y2="14.5" />
+                </svg>
+                <span className="font-serif text-sm">Search</span>
+              </button>
+            )}
+
             <Link href="/write" onClick={handleNavClick} className={sidebarLinkClass('/write')}>Write</Link>
             <Link href="/dashboard" onClick={handleNavClick} className={sidebarLinkClass('/dashboard')}>Dashboard</Link>
+            <Link href="/following" onClick={handleNavClick} className={sidebarLinkClass('/following')}>Following</Link>
+            <Link href="/followers" onClick={handleNavClick} className={sidebarLinkClass('/followers')}>Followers</Link>
             <Link href="/about" onClick={handleNavClick} className={sidebarLinkClass('/about')}>About</Link>
           </>
         ) : (
@@ -205,24 +241,9 @@ export function Nav() {
         )}
       </nav>
 
-      {/* Sidebar bottom — search + user info */}
+      {/* Sidebar bottom — user info */}
       {user && (
         <div className="hidden lg:block border-t border-crimson-dark px-4 py-4 space-y-3">
-          {/* Search */}
-          <form onSubmit={handleSearch} className="relative flex items-center">
-            <svg className="absolute left-2.5 h-3.5 w-3.5 text-surface-sunken pointer-events-none" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <circle cx="6.5" cy="6.5" r="5" />
-              <line x1="10" y1="10" x2="14.5" y2="14.5" />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search"
-              className="w-full bg-crimson-dark pl-8 pr-2 py-1.5 text-xs text-surface-raised placeholder-surface-sunken focus:ring-1 focus:ring-surface-raised/40 transition-all"
-            />
-          </form>
-
           {/* User */}
           <Link href={`/${user.username}`} className="flex items-center gap-2 group">
             {user.avatar ? (

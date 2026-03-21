@@ -113,6 +113,54 @@ export async function followRoutes(app: FastifyInstance) {
   // Used by the settings/profile page to show who the reader follows.
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // GET /follows/followers — list accounts who follow you
+  // ---------------------------------------------------------------------------
+
+  app.get(
+    '/follows/followers',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const followeeId = req.session!.sub!
+
+      const { rows } = await pool.query<{
+        id: string
+        username: string
+        display_name: string | null
+        avatar_blossom_url: string | null
+        nostr_pubkey: string
+        is_writer: boolean
+        followed_at: Date
+      }>(
+        `SELECT a.id, a.username, a.display_name, a.avatar_blossom_url,
+                a.nostr_pubkey, a.is_writer, f.followed_at
+         FROM follows f
+         JOIN accounts a ON a.id = f.follower_id
+         WHERE f.followee_id = $1 AND a.status = 'active'
+         ORDER BY f.followed_at DESC`,
+        [followeeId]
+      )
+
+      const followers = rows.map((r) => ({
+        id: r.id,
+        username: r.username,
+        displayName: r.display_name,
+        avatar: r.avatar_blossom_url,
+        pubkey: r.nostr_pubkey,
+        isWriter: r.is_writer,
+        followedAt: r.followed_at.toISOString(),
+      }))
+
+      return reply.status(200).send({ followers })
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // GET /follows — list followed writers with display info
+  //
+  // Used by the settings/profile page to show who the reader follows.
+  // ---------------------------------------------------------------------------
+
   app.get(
     '/follows',
     { preHandler: requireAuth },
