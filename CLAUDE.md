@@ -8,6 +8,15 @@ A publishing and social platform for writers built on the [Nostr protocol](https
 
 ## Development Commands
 
+### One-time local setup
+Each service imports from `shared/` via a sibling symlink. Create them once after cloning:
+```bash
+ln -snf ../shared gateway/shared
+ln -snf ../shared payment-service/shared
+ln -snf ../shared key-service/shared
+ln -snf ../shared key-custody/shared
+```
+
 ### Infrastructure (start first)
 ```bash
 docker compose up -d postgres strfry blossom

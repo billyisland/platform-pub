@@ -165,7 +165,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         return reply.status(res.status).send({ error: 'oEmbed lookup failed' })
       }
 
-      const oembedData = await res.json()
+      const oembedData = await res.json() as any
 
       return reply.status(200).send({
         type: oembedData.type,

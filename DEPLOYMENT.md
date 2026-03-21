@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.1
+# platform.pub — Deployment Reference v3.1.1
 
 **Date:** 21 March 2026
-**Replaces:** v3.0.1 (see bottom for change log)
+**Replaces:** v3.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -113,6 +113,14 @@ git clone https://github.com/ejklake/platform-pub /root/platform-pub
 cd /root/platform-pub
 ```
 
+> **Local dev only:** each service imports `shared/` via a sibling symlink. These are committed to the repo, so `git clone` restores them automatically. If for any reason they are missing:
+> ```bash
+> ln -snf ../shared gateway/shared
+> ln -snf ../shared payment-service/shared
+> ln -snf ../shared key-service/shared
+> ln -snf ../shared key-custody/shared
+> ```
+
 ### 2. Create environment files
 
 ```bash
@@ -192,6 +200,35 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.1
+
+No schema changes. Rebuild all services and restart.
+
+```bash
+cd /root/platform-pub
+
+# Pull latest code
+git pull origin master
+
+# Add key-custody env file (new — was missing from docker-compose before v3.1.1)
+# Copy key-custody/.env.example to key-custody/.env and fill in:
+#   ACCOUNT_KEY_HEX   — move the value from gateway/.env (remove it there)
+#   PLATFORM_SERVICE_PRIVKEY — same value as gateway/.env
+#   INTERNAL_SECRET   — new shared secret (also add to gateway/.env)
+#   DATABASE_URL      — same pattern as other services
+
+# Rebuild and restart all services
+docker compose build
+docker compose up -d
+```
+
+Verify:
+```bash
+docker compose ps   # key-custody should now appear on port 3004
+docker logs platform-pub-key-custody-1 --tail 5
+docker logs platform-pub-gateway-1 --tail 5
+```
 
 ### From v2.0
 
@@ -573,6 +610,30 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.1.1 — 21 March 2026
+
+**Build system fixes and key-custody activation**
+
+**Infrastructure**
+
+- `key-custody` added to `docker-compose.yml` — it was defined in all Dockerfiles and documented here but missing from compose, so the service never started in production. All Nostr signing operations (publish, delete, subscribe) were broken as a result.
+- `gateway/.env`: `ACCOUNT_KEY_HEX` removed (moved to `key-custody/.env`); `KEY_CUSTODY_URL=http://key-custody:3004` and `INTERNAL_SECRET` added; `PLATFORM_RELAY_WS_URL` corrected from `ws://localhost:4848` to `ws://strfry:7777` (Docker service name).
+- `payment-service/Dockerfile`, `key-service/Dockerfile`: `ln -s` → `ln -sf` so the symlink step is idempotent when the service directory already contains a `shared` symlink from the build context.
+- `shared/` symlinks (`gateway/shared`, `payment-service/shared`, `key-service/shared`, `key-custody/shared`) committed to the repo as relative symlinks (`../shared`) so `npm run dev` works immediately after `git clone` without manual setup.
+
+**TypeScript build**
+
+- All service `tsconfig.json` files: `rootDir` changed from `"src"` to `"."` so files imported transitively from `shared/` (via the sibling symlink) are within the TypeScript root and compile without error.
+- `*/package.json` `start` scripts updated from `dist/index.js` → `dist/src/index.js` to match the new output structure (only relevant to `node dist/…` production starts; Docker containers use `tsx` directly).
+- `shared/src/lib/logger.ts`: pino v8 uses a CJS `export =` declaration; TypeScript NodeNext ESM treats the default import as a non-callable namespace — cast via `any` to call the factory.
+- `gateway/src/routes/articles.ts`, `gateway/src/routes/media.ts`: `@types/node` v20 types `fetch().json()` as `Promise<unknown>` — cast results to `any`.
+- `gateway/src/routes/articles.ts`: `signEvent` (key-custody HTTP client) returns a plain object; `publishToRelay` expects `nostr-tools` `VerifiedEvent` — cast at call site.
+- `payment-service/src/routes/webhook.ts`: Stripe SDK v14 types do not include `transfer.paid` / `transfer.failed` in the event union despite them being valid webhook events — cast switch discriminant to `string`.
+
+**No schema changes.**
+
+---
 
 ### v3.1 — 21 March 2026
 

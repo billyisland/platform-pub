@@ -66,7 +66,9 @@ export async function webhookRoutes(app: FastifyInstance) {
 async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   logger.info({ eventType: event.type, eventId: event.id }, 'Stripe webhook received')
 
-  switch (event.type) {
+  // Cast to string: Stripe SDK v14 types don't include all webhook event types
+  // (e.g. 'transfer.paid', 'transfer.failed') but they are valid at runtime.
+  switch (event.type as string) {
     // -------------------------------------------------------------------------
     // Stage 2: Reader tab settlement confirmed
     // -------------------------------------------------------------------------

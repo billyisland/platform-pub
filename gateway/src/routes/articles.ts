@@ -306,7 +306,7 @@ export async function articleRoutes(app: FastifyInstance) {
             return reply.status(502).send({ error: 'Key issuance failed' })
           }
 
-          const keyResult = await keyRes.json()
+          const keyResult = await keyRes.json() as any
           return reply.status(200).send({
             readEventId: null,
             readState: access.reason,
@@ -352,7 +352,7 @@ export async function articleRoutes(app: FastifyInstance) {
         })
 
         if (!paymentRes.ok) {
-          const body = await paymentRes.json().catch(() => null)
+          const body = await paymentRes.json().catch(() => null) as any
           const status = paymentRes.status
 
           if (status === 402) {
@@ -366,7 +366,7 @@ export async function articleRoutes(app: FastifyInstance) {
           return reply.status(500).send({ error: 'Gate pass recording failed' })
         }
 
-        const paymentResult = await paymentRes.json()
+        const paymentResult = await paymentRes.json() as any
 
         // Step 3: Request content key from key service
         const keyRes = await fetch(
@@ -396,7 +396,7 @@ export async function articleRoutes(app: FastifyInstance) {
           })
         }
 
-        const keyResult = await keyRes.json()
+        const keyResult = await keyRes.json() as any
 
         // Record permanent unlock for this purchase
         await recordPurchaseUnlock(readerId, article.id)
@@ -628,7 +628,7 @@ export async function articleRoutes(app: FastifyInstance) {
           ],
           created_at: Math.floor(Date.now() / 1000),
         })
-        await publishToRelay(deletionEvent)
+        await publishToRelay(deletionEvent as any)
         logger.info({ articleId: article.id, deletionEventId: deletionEvent.id }, 'Kind 5 deletion event published')
       } catch (err) {
         // Non-fatal: DB is source of truth; feed will still exclude via deleted_at

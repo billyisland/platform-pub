@@ -1,8 +1,23 @@
 node_modules/
+
+# Environment files (contain secrets)
 .env
 gateway/.env
 payment-service/.env
 key-service/.env
+key-custody/.env
 web/.env
+
+# Build output
+*/dist/
 web/.next/
+*.tsbuildinfo
+web/next-env.d.ts
+
+# Compiled shared module outputs (source .ts files are canonical)
+shared/src/**/*.js
+shared/src/**/*.js.map
+shared/src/**/*.d.ts
+shared/src/**/*.d.ts.map
+
 *.log

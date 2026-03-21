@@ -123,6 +123,23 @@ services:
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
 
   # ---------------------------------------------------------------------------
+  # Key custody — custodial Nostr keypair service (sole holder of ACCOUNT_KEY_HEX)
+  # ---------------------------------------------------------------------------
+  key-custody:
+    build:
+      context: .
+      dockerfile: key-custody/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3004:3004"
+    env_file: key-custody/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+
+  # ---------------------------------------------------------------------------
   # Web client (Next.js)
   # ---------------------------------------------------------------------------
   web:
