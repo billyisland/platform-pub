@@ -6,19 +6,13 @@ import { publishNote } from '../../lib/publishNote'
 import type { QuoteTarget } from '../../lib/publishNote'
 import { uploadImage } from '../../lib/media'
 import type { NoteEvent } from '../../lib/ndk'
-import { QuoteCard } from './QuoteCard'
 
 const NOTE_CHAR_LIMIT = 1000
 
 interface NoteComposerProps {
   onPublished?: (note: NoteEvent) => void
   onClearQuote?: () => void
-  quoteTarget?: QuoteTarget & {
-    previewTitle?: string
-    previewContent?: string
-    previewAuthorName?: string
-    highlightedText?: string
-  }
+  quoteTarget?: QuoteTarget
 }
 
 export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteComposerProps) {
@@ -101,13 +95,30 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
             className="w-full resize-none bg-surface-raised text-ui-sm text-content-primary placeholder:text-content-faint focus:bg-white focus:outline-none leading-relaxed transition-colors px-3 py-2"
           />
 
-          {/* Quote preview */}
+          {/* Quote preview — inline, no API call needed */}
           {activeQuote && (
-            <div className="relative">
-              <QuoteCard eventId={activeQuote.eventId} />
+            <div className="mt-2 border border-surface-strong bg-surface-sunken p-3 flex gap-2">
+              <div className="w-[3px] bg-accent flex-shrink-0 self-stretch" />
+              <div className="flex-1 min-w-0">
+                <p className="text-ui-xs font-medium text-content-muted mb-0.5">
+                  {activeQuote.previewAuthorName ?? activeQuote.authorPubkey.slice(0, 10) + '…'}
+                </p>
+                {activeQuote.previewTitle && (
+                  <p className="text-ui-sm font-medium text-content-primary leading-snug mb-0.5 line-clamp-1">
+                    {activeQuote.previewTitle}
+                  </p>
+                )}
+                {activeQuote.previewContent ? (
+                  <p className="text-ui-xs text-content-secondary leading-relaxed line-clamp-2">
+                    {activeQuote.previewContent}
+                  </p>
+                ) : (
+                  <p className="text-ui-xs text-content-faint italic">Note</p>
+                )}
+              </div>
               <button
                 onClick={handleClearQuote}
-                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-surface-strong hover:bg-surface-strong/80 text-content-muted text-xs rounded-full transition-colors"
+                className="w-5 h-5 flex items-center justify-center bg-surface-strong hover:bg-surface-strong/80 text-content-muted text-xs rounded-full transition-colors flex-shrink-0 self-start"
                 title="Remove quote"
               >
                 ×

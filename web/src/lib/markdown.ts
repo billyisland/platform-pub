@@ -111,9 +111,9 @@ export function renderMarkdownSync(markdown: string): string {
 // Embed Enhancement
 // =============================================================================
 
-const EMBED_PATTERNS = [
-  { pattern: /https?:\/\/(www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/, getEmbed: (_: string, __: string, id: string) => `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${id}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>` },
-  { pattern: /https?:\/\/youtu\.be\/([a-zA-Z0-9_-]+)/, getEmbed: (_: string, id: string) => `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${id}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>` },
+const EMBED_PATTERNS: Array<{ pattern: RegExp; getEmbed: (m: RegExpMatchArray) => string }> = [
+  { pattern: /https?:\/\/(www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/, getEmbed: m => `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${m[2]}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>` },
+  { pattern: /https?:\/\/youtu\.be\/([a-zA-Z0-9_-]+)/, getEmbed: m => `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${m[1]}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>` },
 ]
 
 function enhanceEmbedUrls(html: string): string {
@@ -122,7 +122,7 @@ function enhanceEmbedUrls(html: string): string {
     for (const { pattern, getEmbed } of EMBED_PATTERNS) {
       const m = url.match(pattern)
       if (m) {
-        return getEmbed(...m)
+        return getEmbed(m)
       }
     }
     return match

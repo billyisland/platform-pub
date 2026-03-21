@@ -136,5 +136,5 @@ function base64ToUint8Array(base64: string): Uint8Array {
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  return base64ToUint8Array(base64).buffer
+  return base64ToUint8Array(base64).buffer as ArrayBuffer
 }

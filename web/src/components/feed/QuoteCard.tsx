@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { getNdk } from '../../lib/ndk'
 
 interface ResolvedContent {
   type: 'note' | 'article'
@@ -26,10 +27,43 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`/api/v1/content/resolve?eventId=${encodeURIComponent(eventId)}`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { setData(d); setLoading(false) })
-      .catch(() => setLoading(false))
+    let cancelled = false
+
+    async function fetchData() {
+      // Phase 1: try the platform index (richer author info)
+      try {
+        const r = await fetch(`/api/v1/content/resolve?eventId=${encodeURIComponent(eventId)}`, { credentials: 'include' })
+        if (!cancelled && r.ok) {
+          setData(await r.json())
+          setLoading(false)
+          return
+        }
+      } catch { /* fall through */ }
+
+      // Phase 2: fall back to the Nostr relay so external / un-indexed notes render
+      try {
+        const ndk = getNdk()
+        await ndk.connect()
+        const event = await ndk.fetchEvent(eventId)
+        if (!cancelled && event) {
+          setData({
+            type: 'note',
+            eventId: event.id,
+            content: (event.content ?? '').slice(0, 200),
+            publishedAt: event.created_at ?? 0,
+            author: {
+              username: event.pubkey,
+              displayName: event.pubkey.slice(0, 8) + '…',
+            },
+          })
+        }
+      } catch { /* give up */ }
+
+      if (!cancelled) setLoading(false)
+    }
+
+    fetchData()
+    return () => { cancelled = true }
   }, [eventId])
 
   if (loading) {
@@ -64,11 +98,12 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
     )
   }
 
-  // Note — links to author profile since there's no standalone note page
+  // Note — links to author profile if the username looks like a real slug, not a raw pubkey
+  const noteHref = data.author.username.length < 40 ? `/${data.author.username}` : null
   return (
     <Link
-      href={`/${data.author.username}`}
-      onClick={e => e.stopPropagation()}
+      href={noteHref ?? '#'}
+      onClick={e => { e.stopPropagation(); if (!noteHref) e.preventDefault() }}
       className="block mt-3 border border-surface-strong bg-surface-sunken hover:bg-surface-raised transition-colors p-3"
     >
       <div className="flex items-center gap-2 mb-1.5">

@@ -56,7 +56,7 @@ export function ReplyComposer({
   const initial = user.displayName?.[0]?.toUpperCase() ?? user.username?.[0]?.toUpperCase() ?? '?'
 
   async function handlePost() {
-    if (!canPost) return
+    if (!canPost || !user) return
     setPublishing(true)
     setError(null)
     try {

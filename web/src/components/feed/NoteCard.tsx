@@ -58,7 +58,13 @@ export function NoteCard({ note, onDeleted, onQuote }: NoteCardProps) {
   }
 
   function handleQuote() {
-    onQuote?.({ eventId: note.id, eventKind: 1, authorPubkey: note.pubkey })
+    onQuote?.({
+      eventId: note.id,
+      eventKind: 1,
+      authorPubkey: note.pubkey,
+      previewContent: displayContent.slice(0, 200),
+      previewAuthorName: writerInfo?.displayName ?? note.pubkey.slice(0, 8) + '…',
+    })
   }
 
   return (

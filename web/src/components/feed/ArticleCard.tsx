@@ -30,7 +30,14 @@ export function ArticleCard({ article, onQuote }: ArticleCardProps) {
   function handleQuote(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    onQuote?.({ eventId: article.id, eventKind: 30023, authorPubkey: article.pubkey })
+    onQuote?.({
+      eventId: article.id,
+      eventKind: 30023,
+      authorPubkey: article.pubkey,
+      previewTitle: article.title,
+      previewContent: article.summary,
+      previewAuthorName: writerInfo?.displayName ?? article.pubkey.slice(0, 8) + '…',
+    })
   }
 
   return (

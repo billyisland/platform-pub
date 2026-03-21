@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.1.3
+# platform.pub — Deployment Reference v3.1.4
 
 **Date:** 21 March 2026
-**Replaces:** v3.1.2 (see bottom for change log)
+**Replaces:** v3.1.3 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,26 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.1.3
+
+No schema changes. Rebuild web only:
+
+```bash
+cd /root/platform-pub
+git pull origin master
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker logs platform-pub-web-1 --tail 5
+# Test quoting a note from the feed — the compose preview should appear inline
+# Test posting a quote — the quoted tile should render in the published note
+```
+
+---
 
 ### From v3.1.2
 
@@ -671,6 +691,31 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.1.4 — 21 March 2026
+
+**Quote UX fixes and TypeScript clean-up (web only)**
+
+**Bug fix — quote compose preview broken (× button floated over Post button)**
+
+The "remove quote" button in `NoteComposer` was absolutely positioned (`absolute top-1 right-1`) inside a wrapper `div` that contained the `QuoteCard` component. `QuoteCard` fetches `/api/v1/content/resolve` to render the quoted content. When the API returned 404 — which happened whenever the quoted note was not present in the platform's `notes` DB table (e.g. a note published by an external Nostr client, or one whose DB indexing had silently failed) — `QuoteCard` returned `null`, collapsing the wrapper `div` to zero height. The absolutely-positioned `×` button then floated at the same vertical level as the right-aligned Post button, appearing to hover over it.
+
+Fixed by removing `QuoteCard` from the composer entirely. `NoteCard.handleQuote()` and `ArticleCard.handleQuote()` now populate four new optional fields on `QuoteTarget` (`previewContent`, `previewAuthorName`, `previewTitle`) at the moment the user clicks Quote (all data is already in scope). `NoteComposer` renders an instant always-visible inline tile from these fields — no API call, no loading state, no possibility of collapse. The `×` button is placed inside the tile and is correctly constrained by its parent.
+
+**Bug fix — quoted content not shown in published note**
+
+`QuoteCard` (used in `NoteCard` to display embedded quotes) was API-only: if `/api/v1/content/resolve` returned anything other than 200 it rendered nothing. Same root cause as the compose bug. Fixed by adding a two-phase fetch: Phase 1 tries the platform API (returns rich author info, avatar, display name); Phase 2 falls back to fetching the event directly from the Nostr relay via NDK. Notes that are on the relay but not in the platform DB index now render with a truncated-pubkey author credit instead of being invisible.
+
+**TypeScript — eliminated all three compiler errors in `web/`**
+
+- `web/src/components/replies/ReplyComposer.tsx`: `handlePost()` lacked a `!user` guard. TypeScript does not carry the component-level `if (!user) return null` narrowing into a separately-defined async closure. Added `if (!canPost || !user) return` at the top of the function, matching the pattern used in `NoteComposer`.
+- `web/src/lib/markdown.ts`: `getEmbed(...m)` spread a `RegExpMatchArray` (typed `string[]`) into functions with fixed positional parameters, which TypeScript rejects ("A spread argument must either have a tuple type or be passed to a rest parameter"). Fixed by re-typing `EMBED_PATTERNS` with `getEmbed: (m: RegExpMatchArray) => string` and passing the match array directly; each implementation now indexes `m[1]`, `m[2]` etc. instead of using named positional params.
+- `web/src/lib/vault.ts`: `Uint8Array.prototype.buffer` is typed as `ArrayBufferLike` (a union that includes `SharedArrayBuffer`) but `base64ToArrayBuffer()` declared a return type of `ArrayBuffer`. Fixed by casting at the return site (`as ArrayBuffer`), which is safe because `Uint8Array` always allocates an `ArrayBuffer`, never a `SharedArrayBuffer`.
+
+**Files changed:** `web/src/lib/publishNote.ts`, `web/src/components/feed/NoteCard.tsx`, `web/src/components/feed/ArticleCard.tsx`, `web/src/components/feed/NoteComposer.tsx`, `web/src/components/feed/QuoteCard.tsx`, `web/src/components/replies/ReplyComposer.tsx`, `web/src/lib/markdown.ts`, `web/src/lib/vault.ts`
+**No schema changes. Rebuild web only.**
+
+---
 
 ### v3.1.3 — 21 March 2026
 

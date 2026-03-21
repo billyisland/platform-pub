@@ -25,6 +25,12 @@ export interface QuoteTarget {
   eventId: string
   eventKind: number
   authorPubkey: string
+  // Preview fields — populated by the quoting card so the composer can show an
+  // instant preview without a round-trip to /api/v1/content/resolve
+  previewTitle?: string
+  previewContent?: string
+  previewAuthorName?: string
+  highlightedText?: string
 }
 
 export async function publishNote(
