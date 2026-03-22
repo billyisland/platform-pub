@@ -176,7 +176,7 @@ export async function writerRoutes(app: FastifyInstance) {
       }>(
         `SELECT id, nostr_event_id, content, published_at
          FROM notes
-         WHERE author_id = $1 AND deleted_at IS NULL
+         WHERE author_id = $1
          ORDER BY published_at DESC
          LIMIT $2 OFFSET $3`,
         [authorId, limit, offset]
