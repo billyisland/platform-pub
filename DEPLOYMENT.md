@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.5.2
+# platform.pub — Deployment Reference v3.5.3
 
 **Date:** 22 March 2026
-**Replaces:** v3.5.0 (see bottom for change log)
+**Replaces:** v3.5.2 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,27 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.5.2
+
+No schema changes. Web only. Rebuild and restart the web service:
+
+```bash
+cd /root/platform-pub
+git pull origin master
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker logs platform-pub-web-1 --tail 5
+# Publish a paywalled article — the paywalled version (v2) should reach the relay
+# even if the vault encryption round-trip took several seconds.
+# If it previously published as free-only with a "relay did not accept" error, retry now.
+```
+
+---
 
 ### From v3.5.0
 
@@ -990,6 +1011,20 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.5.3 — 22 March 2026
+
+**Hotfix: paywalled articles publishing as free-only due to stale NDK WebSocket**
+
+**Root cause:** After the vault encryption round-trip in `publishArticle()` (which involves multiple HTTP calls to the gateway and key-service), the NDK WebSocket connection to strfry could go idle and be dropped. The subsequent `signedV2.publish()` call would then fail with a "no relays available" error. Because this error was unhandled, the publish function threw before reaching Step 5 (re-index), leaving the article live on the relay as v1 (free content only, no `['payload', ...]` tag). Writers saw no error in the UI since the function had already completed the v1 publish and index steps successfully.
+
+**Fix:** `publishArticle()` now calls `ndk.connect()` immediately before publishing v2, then retries once with a fresh connection if the first attempt fails. If both attempts fail, a clear error is thrown explaining that the article is live as free-only and the writer should retry — rather than silently succeeding without the paywall.
+
+**Files changed:** `web/src/lib/publish.ts`
+
+**No schema changes. Rebuild web only.**
+
+---
 
 ### v3.5.2 — 22 March 2026
 
