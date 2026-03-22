@@ -1,4 +1,4 @@
-# platform.pub — Deployment Reference v3.5.1
+# platform.pub — Deployment Reference v3.5.2
 
 **Date:** 22 March 2026
 **Replaces:** v3.5.0 (see bottom for change log)
@@ -991,13 +991,156 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
+### v3.5.2 — 22 March 2026
+
+**Hotfix: user profile pages showing "Something went wrong" on all installs**
+
+**Root cause — two compounding bugs:**
+
+**Bug 1:** `migrations/003_comments.sql` and `migrations/004_media_uploads.sql` lacked `IF NOT EXISTS` guards. Because `schema.sql` (applied by Docker's `initdb.d` on first boot) already defines the `comments` and `media_uploads` tables and related columns, the migration runner fails on the first statement of migration 003, rolls back, and **stops**. On a fresh install using only the migration runner (no shell-loop bootstrap), migrations 004–010 are never applied.
+
+**Bug 2:** The v3.5.0 upgrade bootstrap INSERT marked migrations 005–007 as applied in `_migrations` without actually running their SQL. On servers set up this way, `subscription_price_pence` (added by migration 005) and other columns were never added to the database even though `_migrations` reported them as applied.
+
+**Combined effect:** `GET /writers/:username` queries `subscription_price_pence` from the `accounts` table. If that column is absent, PostgreSQL returns a column-not-found error → 500 → the profile page's `writers.getProfile()` call (which uses the `request()` helper that throws on non-200) throws → `profileError = true` → "Something went wrong loading this profile."
+
+Note: the v3.5.1 hotfix (removing `AND deleted_at IS NULL` from the notes query) addressed a separate bug where the Notes tab silently failed to load. It did **not** fix `profileError` — notes are fetched with raw `fetch()`, which does not throw on a 500 and cannot set `profileError`. Only `writers.getProfile()` can trigger that error state.
+
+**Files changed:** `migrations/003_comments.sql`, `migrations/004_media_uploads.sql`
+
+**Upgrade path:**
+
+> **Note:** The Postgres container is on the internal Docker network only (port 5432 is not exposed to the host). All database commands must go through `docker exec`.
+
+First, check the state of `_migrations`:
+
+```bash
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "SELECT filename FROM _migrations ORDER BY id;" 2>&1
+```
+
+---
+
+**Case A — `_migrations` has only `001` and `002`** (migration runner was used from the start and stopped at migration 003):
+
+Apply migrations 003–010 directly via psql. Migrations 003–009 all now use `IF NOT EXISTS` so they are safe to run even if some DDL already exists. Migration 010 may produce harmless errors on tables that `schema.sql` already created — that is expected.
+
+```bash
+for f in migrations/003_comments.sql migrations/004_media_uploads.sql \
+          migrations/005_subscriptions.sql migrations/006_receipt_portability.sql \
+          migrations/007_subscription_nostr_event.sql migrations/008_deduplicate_articles.sql \
+          migrations/009_notifications.sql migrations/010_votes.sql; do
+  echo "--- $f ---"
+  docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < "$f"
+done
+```
+
+Record them in `_migrations`:
+
+```bash
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "
+INSERT INTO _migrations (filename) VALUES
+  ('003_comments.sql'),
+  ('004_media_uploads.sql'),
+  ('005_subscriptions.sql'),
+  ('006_receipt_portability.sql'),
+  ('007_subscription_nostr_event.sql'),
+  ('008_deduplicate_articles.sql'),
+  ('009_notifications.sql'),
+  ('010_votes.sql')
+ON CONFLICT DO NOTHING;"
+```
+
+---
+
+**Case B — `_migrations` does not exist** (server was set up with the shell loop; runner was never used):
+
+Create and bootstrap `_migrations`, then apply migrations 003 and 004 (the only ones that may not have run cleanly via the shell loop). All other migrations used `IF NOT EXISTS` and applied correctly through the shell loop.
+
+```bash
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "
+CREATE TABLE IF NOT EXISTS _migrations (
+  id SERIAL PRIMARY KEY,
+  filename TEXT NOT NULL UNIQUE,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO _migrations (filename) VALUES
+  ('001_add_email_and_magic_links.sql'),
+  ('002_draft_upsert_index.sql'),
+  ('005_subscriptions.sql'),
+  ('006_receipt_portability.sql'),
+  ('007_subscription_nostr_event.sql'),
+  ('008_deduplicate_articles.sql'),
+  ('009_notifications.sql'),
+  ('010_votes.sql')
+ON CONFLICT DO NOTHING;"
+```
+
+Apply migrations 003 and 004 (now safe with `IF NOT EXISTS`):
+
+```bash
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/003_comments.sql
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/004_media_uploads.sql
+```
+
+Record them:
+
+```bash
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "
+INSERT INTO _migrations (filename) VALUES
+  ('003_comments.sql'),
+  ('004_media_uploads.sql')
+ON CONFLICT DO NOTHING;"
+```
+
+---
+
+**Case C — `_migrations` has 001–009 but not 010** (v3.5.0 bootstrap was applied; migrations 005–007 were marked as applied without running their SQL):
+
+This was the state of the production server. The bootstrap marked 005–007 as applied, so `subscription_price_pence` and other columns added by those migrations were never written to the database.
+
+Re-run migrations 005–007 (all use `IF NOT EXISTS` — safe to apply again) to fill in any missing columns, then record migration 010:
+
+```bash
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/005_subscriptions.sql
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/006_receipt_portability.sql
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/007_subscription_nostr_event.sql
+```
+
+The votes tables (`votes`, `vote_tallies`, `vote_charges`) are already present in `schema.sql`, so migration 010 does not need to be re-run — just record it:
+
+```bash
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "INSERT INTO _migrations (filename) VALUES ('010_votes.sql') ON CONFLICT DO NOTHING;"
+```
+
+---
+
+**After whichever case above — restart the gateway (no rebuild needed):**
+
+```bash
+docker compose restart gateway
+```
+
+**Verify:**
+
+```bash
+# subscription_price_pence must be present
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "\d accounts" | grep subscription_price_pence
+
+# All 10 migrations recorded
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "SELECT filename FROM _migrations ORDER BY id;"
+
+# No more 500s on profile requests
+docker logs platform-pub-gateway-1 --tail 20
+```
+
+---
+
 ### v3.5.1 — 22 March 2026
 
-**Hotfix: user profile pages failing to load Notes**
+**Hotfix: notes tab on user profile pages failing to load**
 
-The `GET /writers/:username/notes` endpoint added in v3.4.0 included `AND deleted_at IS NULL` in its SQL query. The `notes` table has no `deleted_at` column (unlike `comments` and `articles`), so PostgreSQL threw a column-not-found error on every request. This caused the gateway to return a 500 for the notes fetch, which in turn triggered the `profileError` state on the profile page and prevented it from rendering.
+The `GET /writers/:username/notes` endpoint added in v3.4.0 included `AND deleted_at IS NULL` in its SQL query. The `notes` table has no `deleted_at` column (unlike `comments` and `articles`), so PostgreSQL threw a column-not-found error on every request, returning a 500 for the notes fetch. The notes tab would silently show nothing.
 
-**Fix:** removed the invalid `AND deleted_at IS NULL` clause from the notes query. The `comments` table does have `deleted_at` so the replies endpoint is unaffected.
+**Fix:** removed the invalid `AND deleted_at IS NULL` clause from the notes query.
 
 **Files changed:** `gateway/src/routes/writers.ts`
 
