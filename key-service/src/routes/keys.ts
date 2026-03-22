@@ -76,8 +76,9 @@ export async function keyRoutes(app: FastifyInstance) {
 
         return reply.status(201).send({
           vaultKeyId: result.vaultKeyId,
+          ciphertext: result.ciphertext,
+          algorithm: result.algorithm,
           nostrVaultEvent: result.nostrVaultEvent,
-          // ciphertext not returned — it's embedded in the vault event
         })
       } catch (err) {
         logger.error({ err, writerId, nostrEventId: req.params.nostrEventId }, 'Vault publish failed')

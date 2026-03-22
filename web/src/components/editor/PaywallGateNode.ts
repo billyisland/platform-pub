@@ -70,6 +70,17 @@ export const PaywallGateNode = Node.create({
     ]
   },
 
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state: any) {
+          state.write('<!-- paywall-gate -->\n\n')
+        },
+        parse: {},
+      },
+    }
+  },
+
   addCommands() {
     return {
       insertPaywallGate:
