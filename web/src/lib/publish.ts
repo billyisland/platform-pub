@@ -98,9 +98,37 @@ export async function publishArticle(
   // Kind 30023 is replaceable by [pubkey, d-tag] — v2 atomically replaces v1
   const v2 = buildNip23Event(ndk, data, dTag, { ciphertext, algorithm })
   const signedV2 = await signViaGateway(v2)
-  await signedV2.publish()
+
+  // FIX: The NDK WebSocket connection may have gone stale during the vault
+  // encryption round-trip (Steps 2–3 involve multiple HTTP calls to the
+  // gateway and key service). Re-connect before publishing v2 to avoid the
+  // "no relays available" error. If the first attempt still fails, retry
+  // once with a fresh connection.
+  try {
+    await ndk.connect()
+    await signedV2.publish()
+  } catch (publishErr) {
+    // Second attempt with a forced reconnect
+    try {
+      await ndk.connect()
+      await signedV2.publish()
+    } catch (retryErr) {
+      // v2 failed to reach the relay. v1 (free-content-only, no payload tag)
+      // is still live. Do NOT re-index with v2's event ID — that would create
+      // an ID mismatch where the DB points to v2 but the relay only has v1,
+      // causing "Could not find the encrypted content" on unlock attempts.
+      //
+      // Throw so the caller knows publishing the paywalled version failed.
+      // The article is live as free-only (v1). The writer can retry.
+      throw new Error(
+        `Article published as free-only (relay did not accept the paywalled version). ` +
+        `Please try editing and re-publishing. Original error: ${retryErr}`
+      )
+    }
+  }
 
   // Step 5: Re-index with v2 event ID (upsert on nostr_event_id)
+  // Only reached if v2 was successfully published to the relay above.
   await articlesApi.index({
     nostrEventId: signedV2.id,
     dTag,
