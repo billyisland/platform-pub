@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.3.0
+# platform.pub — Deployment Reference v3.4.0
 
 **Date:** 22 March 2026
-**Replaces:** v3.2.0 (see bottom for change log)
+**Replaces:** v3.3.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,32 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.3.0
+
+No schema changes. Gateway and web both changed. Rebuild both:
+
+```bash
+cd /root/platform-pub
+git pull origin master
+docker compose build --no-cache gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker logs platform-pub-gateway-1 --tail 5
+docker logs platform-pub-web-1 --tail 5
+# Feed should show your own Notes and Articles alongside followed accounts
+# Visit /:username for any account — profile should load regardless of is_writer flag
+# Non-writer accounts should now be followable
+# Subscription to a writer should generate a notification for that writer
+# @mention a user in a note or reply — they should receive a new_mention notification
+# Quote a note — the quoted author should receive a new_quote notification
+# NotificationBell and /notifications should render new_subscriber, new_quote, new_mention types
+```
+
+---
 
 ### From v3.2.0
 
@@ -676,7 +702,7 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 ### Notifications
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | /api/v1/notifications | session | List recent notifications (max 50) with actor info, article title, comment excerpt, and unread count |
+| GET | /api/v1/notifications | session | List recent notifications (max 50) with actor info, article title, comment excerpt, and unread count. Types: `new_follower`, `new_reply`, `new_subscriber`, `new_quote`, `new_mention` |
 | POST | /api/v1/notifications/read-all | session | Mark all notifications as read |
 
 ### Subscriptions
@@ -699,8 +725,10 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 ### Public
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | /api/v1/writers/:username | optional | Writer profile |
-| GET | /api/v1/writers/:username/articles | optional | Writer's articles |
+| GET | /api/v1/writers/:username | optional | User profile (any active account, not just writers) |
+| GET | /api/v1/writers/:username/articles | optional | User's published articles |
+| GET | /api/v1/writers/:username/notes | optional | User's published notes |
+| GET | /api/v1/writers/:username/replies | optional | User's published replies |
 | GET | /api/v1/search?q=&type= | optional | Search articles + writers |
 | GET | /rss | — | Platform-wide RSS |
 | GET | /rss/:username | — | Writer RSS |
@@ -832,7 +860,7 @@ Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), conver
 | /profile | Edit your display name, bio, and avatar photo |
 | /following | Writers you follow, with unfollow action |
 | /followers | Accounts who follow you |
-| /notifications | Recent notifications (new followers, new replies) — full-page view used on mobile |
+| /notifications | Recent notifications (new followers, replies, subscribers, quotes, mentions) — full-page view used on mobile |
 | /write | Article editor with paywall gate marker |
 | /article/:dTag | Article reader with paywall unlock |
 | /:username | Writer profile (public) |
@@ -902,6 +930,63 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.4.0 — 22 March 2026
+
+**Feed fix, profile page overhaul, follow/profile for all accounts, three new notification types**
+
+**Feed — own content included; empty follow list no longer shows firehose**
+
+Two bugs in `FeedView.tsx`:
+
+1. The logged-in user's own pubkey was never added to the relay `authors` filter, so your own Notes and Articles were absent from your own feed. Fixed by pushing `user.pubkey` onto the `pks` array after fetching followed pubkeys.
+2. When the follow list was empty, the relay filter was `{}` (no `authors` key), which returned content from all users. Fixed by always applying `{ authors: pks }` — when only your own pubkey is present you see only your own content.
+
+The DB-deleted-articles fetch was also gated behind `pks.length > 0` and skipped when the list was empty. Since `pks` now always contains at least the user's own pubkey, this conditional has been removed.
+
+**Profile page — error handling, anonymous visitor prompt, and activity feed**
+
+`web/src/app/[username]/page.tsx`:
+
+- **Error state:** non-404 errors in `loadProfile` previously fell into `console.error`, leaving `writer` null and the page rendering a blank template. Now an explicit `profileError` state is set, triggering a user-visible error message.
+- **Subscription status fallback:** the `checkStatus` catch block was empty (`catch {}`), which left `subStatus` null and caused the Subscribe button to never appear. Fallback is now `{ subscribed: false }`.
+- **"Log in to follow" prompt:** anonymous visitors now see a "Log in to follow" link in place of the hidden action buttons, rather than no indication that logging in would reveal them.
+- **Notes and Replies in activity feed:** the profile page previously fetched and rendered only articles. It now fetches notes (`GET /writers/:username/notes`) and replies (`GET /writers/:username/replies`) alongside articles, merges them into a single time-sorted activity feed, and renders each type with a distinct card style (`DbNoteCard`, `DbReplyCard`).
+
+**Profile and follow routes relaxed to all active accounts**
+
+Previously `GET /writers/:username`, `GET /writers/:username/articles`, and `GET /writers/by-pubkey/:pubkey` all filtered by `is_writer = TRUE`. Any account without writer status 404'd — even if they actively post Notes and Replies. The `POST /follows/:writerId` route had the same restriction.
+
+All four queries now filter only on `status = 'active'`. Writers remain writers; the change simply stops excluding readers and note-only accounts.
+
+**New backend endpoints**
+
+`gateway/src/routes/writers.ts`:
+
+- `GET /writers/:username/notes` — queries `notes` table by `author_id`, returns id, nostrEventId, content, publishedAt. Limit up to 50.
+- `GET /writers/:username/replies` — queries `comments` table by `author_id`, returns id, nostrEventId, content, publishedAt. Limit up to 50.
+
+**Three new notification types**
+
+| Type | Trigger | Location |
+|------|---------|----------|
+| `new_subscriber` | Someone subscribes or reactivates a subscription | `subscriptions.ts` after new subscription create and after reactivation |
+| `new_quote` | Someone quotes your note or article | `notes.ts` after quote-note insert; resolves quoted content's author via `notes` then `articles` tables |
+| `new_mention` | Someone @mentions your username in a note or reply | `notes.ts` and `replies.ts`; parses `/@([a-zA-Z0-9_]+)/g`, resolves to account IDs, excludes self |
+
+All three are fire-and-forget (`.catch` logs a warning). No schema change required — the `notifications.type` column is `TEXT NOT NULL` with no check constraint.
+
+Frontend (`web/src/app/notifications/page.tsx` and `NotificationBell.tsx`) updated to render all three new types. `Notification.type` in `api.ts` extended to the full union.
+
+**TypeScript type fix**
+
+`WriterProfile` in `web/src/lib/api.ts` was missing `subscriptionPricePence`, which the backend already returned. The profile page worked around this with a `(writer as any)` cast. The field is now properly typed.
+
+**Files changed:** `gateway/src/routes/writers.ts`, `gateway/src/routes/follows.ts`, `gateway/src/routes/notes.ts`, `gateway/src/routes/replies.ts`, `gateway/src/routes/subscriptions.ts`, `web/src/components/feed/FeedView.tsx`, `web/src/app/[username]/page.tsx`, `web/src/app/notifications/page.tsx`, `web/src/components/ui/NotificationBell.tsx`, `web/src/lib/api.ts`
+
+**No schema changes. Rebuild gateway and web.**
+
+---
 
 ### v3.3.0 — 22 March 2026
 

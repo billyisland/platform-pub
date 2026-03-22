@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { writers, type WriterProfile } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
-import { ArticleCard } from '../../components/feed/ArticleCard'
-import type { ArticleEvent } from '../../lib/ndk'
+import Link from 'next/link'
 
 interface DbArticle {
   id: string
@@ -19,6 +18,25 @@ interface DbArticle {
   publishedAt: string | null
 }
 
+interface DbNote {
+  id: string
+  nostrEventId: string
+  content: string
+  publishedAt: string
+}
+
+interface DbReply {
+  id: string
+  nostrEventId: string
+  content: string
+  publishedAt: string
+}
+
+type ActivityItem =
+  | { kind: 'article'; publishedAt: string; data: DbArticle }
+  | { kind: 'note'; publishedAt: string; data: DbNote }
+  | { kind: 'reply'; publishedAt: string; data: DbReply }
+
 interface SubStatus {
   subscribed: boolean
   ownContent?: boolean
@@ -30,31 +48,53 @@ interface SubStatus {
 export default function WriterProfilePage() {
   const params = useParams()
   const username = params.username as string
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [writer, setWriter] = useState<WriterProfile | null>(null)
-  const [articles, setArticles] = useState<DbArticle[]>([])
+  const [activity, setActivity] = useState<ActivityItem[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [profileError, setProfileError] = useState(false)
   const [following, setFollowing] = useState(false)
   const [followLoading, setFollowLoading] = useState(false)
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null)
   const [subLoading, setSubLoading] = useState(false)
 
-  // Load profile and articles
+  // Load profile, articles, notes, and replies
   useEffect(() => {
     async function loadProfile() {
       setLoading(true)
       try {
         const writerData = await writers.getProfile(username)
         setWriter(writerData)
-        const articlesRes = await fetch(`/api/v1/writers/${username}/articles?limit=50`, { credentials: 'include' })
+        const [articlesRes, notesRes, repliesRes] = await Promise.all([
+          fetch(`/api/v1/writers/${username}/articles?limit=50`, { credentials: 'include' }),
+          fetch(`/api/v1/writers/${username}/notes?limit=50`, { credentials: 'include' }),
+          fetch(`/api/v1/writers/${username}/replies?limit=50`, { credentials: 'include' }),
+        ])
+        const items: ActivityItem[] = []
         if (articlesRes.ok) {
           const data = await articlesRes.json()
-          setArticles(data.articles ?? [])
+          for (const a of (data.articles ?? []) as DbArticle[]) {
+            if (a.publishedAt) items.push({ kind: 'article', publishedAt: a.publishedAt, data: a })
+          }
         }
+        if (notesRes.ok) {
+          const data = await notesRes.json()
+          for (const n of (data.notes ?? []) as DbNote[]) {
+            items.push({ kind: 'note', publishedAt: n.publishedAt, data: n })
+          }
+        }
+        if (repliesRes.ok) {
+          const data = await repliesRes.json()
+          for (const r of (data.replies ?? []) as DbReply[]) {
+            items.push({ kind: 'reply', publishedAt: r.publishedAt, data: r })
+          }
+        }
+        items.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+        setActivity(items)
       } catch (err: any) {
         if (err.status === 404) setNotFound(true)
-        else console.error(err)
+        else setProfileError(true)
       } finally { setLoading(false) }
     }
     if (username) loadProfile()
@@ -76,7 +116,7 @@ export default function WriterProfilePage() {
         if (subRes.ok) {
           setSubStatus(await subRes.json())
         }
-      } catch {}
+      } catch { setSubStatus({ subscribed: false }) }
     }
     checkStatus()
   }, [user, writer])
@@ -127,7 +167,8 @@ export default function WriterProfilePage() {
   }
 
   const isOwnProfile = user?.username === username
-  const hasPaywalledArticles = articles.some(a => a.isPaywalled)
+  const articleCount = activity.filter(i => i.kind === 'article').length
+  const hasPaywalledArticles = activity.some(i => i.kind === 'article' && (i.data as DbArticle).isPaywalled)
 
   if (loading) {
     return (
@@ -143,8 +184,16 @@ export default function WriterProfilePage() {
   if (notFound) {
     return (
       <div className="mx-auto max-w-article px-6 py-28 text-center">
-        <h1 className="font-serif text-2xl font-light text-ink-900 mb-2">Writer not found</h1>
-        <p className="text-ui-sm text-content-muted">No writer with the username @{username} exists on Platform.</p>
+        <h1 className="font-serif text-2xl font-light text-ink-900 mb-2">User not found</h1>
+        <p className="text-ui-sm text-content-muted">No user with the username @{username} exists on Platform.</p>
+      </div>
+    )
+  }
+
+  if (profileError) {
+    return (
+      <div className="mx-auto max-w-article px-6 py-28 text-center">
+        <p className="text-ui-sm text-content-muted">Something went wrong loading this profile. Please try again.</p>
       </div>
     )
   }
@@ -165,10 +214,9 @@ export default function WriterProfilePage() {
             <p className="text-ui-xs text-content-faint mt-0.5">@{username}</p>
           </div>
 
-          {/* Action buttons */}
+          {/* Action buttons — logged-in non-owner */}
           {user && !isOwnProfile && writer && (
             <div className="flex items-center gap-2">
-              {/* Follow button */}
               <button
                 onClick={handleToggleFollow}
                 disabled={followLoading}
@@ -177,7 +225,6 @@ export default function WriterProfilePage() {
                 {followLoading ? '...' : following ? 'Following' : 'Follow'}
               </button>
 
-              {/* Subscribe button — only shown if writer has paywalled content */}
               {hasPaywalledArticles && subStatus && !subStatus.ownContent && (
                 subStatus.subscribed ? (
                   <button
@@ -195,11 +242,18 @@ export default function WriterProfilePage() {
                     disabled={subLoading}
                     className="btn-accent py-1.5 px-4 text-ui-xs disabled:opacity-50 transition-colors"
                   >
-                    {subLoading ? '...' : `Subscribe £${((subStatus.pricePence ?? (writer as any).subscriptionPricePence ?? 500) / 100).toFixed(2)}/mo`}
+                    {subLoading ? '...' : `Subscribe £${((subStatus.pricePence ?? writer.subscriptionPricePence ?? 500) / 100).toFixed(2)}/mo`}
                   </button>
                 )
               )}
             </div>
+          )}
+
+          {/* Log in prompt for anonymous visitors */}
+          {!user && !authLoading && writer && !isOwnProfile && (
+            <Link href="/auth?mode=login" className="text-ui-xs text-content-muted hover:text-content-primary transition-colors">
+              Log in to follow
+            </Link>
           )}
         </div>
 
@@ -207,17 +261,25 @@ export default function WriterProfilePage() {
           <p className="font-serif text-sm text-content-secondary leading-relaxed max-w-lg" style={{ lineHeight: '1.7' }}>{writer.bio}</p>
         )}
         <p className="mt-4 text-ui-xs text-content-faint">
-          {articles.length} article{articles.length !== 1 ? 's' : ''}
+          {articleCount} article{articleCount !== 1 ? 's' : ''}
         </p>
       </div>
 
       <div className="rule mb-10" />
 
-      {articles.length === 0 ? (
+      {activity.length === 0 ? (
         <p className="text-ui-sm text-content-muted py-10">Looks like {writer?.displayName ?? username} hasn't said anything yet.</p>
       ) : (
         <div className="space-y-3">
-          {articles.map(a => <DbArticleCard key={a.id} article={a} writerName={writer?.displayName ?? username} />)}
+          {activity.map(item => {
+            if (item.kind === 'article') {
+              return <DbArticleCard key={item.data.id} article={item.data as DbArticle} writerName={writer?.displayName ?? username} />
+            }
+            if (item.kind === 'note') {
+              return <DbNoteCard key={item.data.id} note={item.data as DbNote} writerName={writer?.displayName ?? username} />
+            }
+            return <DbReplyCard key={item.data.id} reply={item.data as DbReply} writerName={writer?.displayName ?? username} />
+          })}
         </div>
       )}
     </div>
@@ -239,6 +301,26 @@ function DbArticleCard({ article, writerName }: { article: DbArticle; writerName
         {article.isPaywalled && <><span className="opacity-40">/</span><span className="text-accent">£</span></>}
       </div>
     </a>
+  )
+}
+
+function DbNoteCard({ note, writerName }: { note: DbNote; writerName: string }) {
+  return (
+    <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong">
+      <p className="label-ui text-content-muted mb-3">{writerName} · Note</p>
+      <p className="font-serif text-sm text-content-primary leading-relaxed" style={{ lineHeight: '1.7' }}>{note.content}</p>
+      <p className="mt-3 text-ui-xs text-content-muted"><time dateTime={note.publishedAt}>{formatDate(note.publishedAt)}</time></p>
+    </div>
+  )
+}
+
+function DbReplyCard({ reply, writerName }: { reply: DbReply; writerName: string }) {
+  return (
+    <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong opacity-80">
+      <p className="label-ui text-content-muted mb-3">{writerName} · Reply</p>
+      <p className="font-serif text-sm text-content-primary leading-relaxed" style={{ lineHeight: '1.7' }}>{reply.content}</p>
+      <p className="mt-3 text-ui-xs text-content-muted"><time dateTime={reply.publishedAt}>{formatDate(reply.publishedAt)}</time></p>
+    </div>
   )
 }
 

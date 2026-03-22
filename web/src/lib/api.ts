@@ -234,6 +234,7 @@ export interface WriterProfile {
   bio: string | null
   avatar: string | null
   hostingType: string
+  subscriptionPricePence: number
   articleCount: number
 }
 
@@ -328,7 +329,7 @@ export interface NotificationActor {
 
 export interface Notification {
   id: string
-  type: 'new_follower' | 'new_reply'
+  type: 'new_follower' | 'new_reply' | 'new_subscriber' | 'new_quote' | 'new_mention'
   read: boolean
   createdAt: string
   actor: NotificationActor | null

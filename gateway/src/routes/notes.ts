@@ -67,6 +67,45 @@ export async function noteRoutes(app: FastifyInstance) {
         'Note indexed'
       )
 
+      // Notify quoted content author (fire-and-forget)
+      if (data.isQuoteComment && data.quotedEventId) {
+        const quotedNote = await pool.query<{ author_id: string }>(
+          `SELECT author_id FROM notes WHERE nostr_event_id = $1`,
+          [data.quotedEventId]
+        )
+        const quotedArticle = quotedNote.rows.length === 0
+          ? await pool.query<{ author_id: string }>(
+              `SELECT writer_id AS author_id FROM articles WHERE nostr_event_id = $1 AND deleted_at IS NULL`,
+              [data.quotedEventId]
+            )
+          : quotedNote
+        const quotedAuthorId = quotedArticle.rows[0]?.author_id
+        if (quotedAuthorId && quotedAuthorId !== authorId) {
+          pool.query(
+            `INSERT INTO notifications (recipient_id, actor_id, type)
+             VALUES ($1, $2, 'new_quote')`,
+            [quotedAuthorId, authorId]
+          ).catch((err) => logger.warn({ err }, 'Failed to insert new_quote notification'))
+        }
+      }
+
+      // Notify @mentioned users (fire-and-forget)
+      const mentionMatches = data.content.matchAll(/@([a-zA-Z0-9_]+)/g)
+      const mentionedUsernames = [...new Set([...mentionMatches].map(m => m[1]))]
+      if (mentionedUsernames.length > 0) {
+        const { rows: mentionedUsers } = await pool.query<{ id: string }>(
+          `SELECT id FROM accounts WHERE username = ANY($1) AND status = 'active' AND id != $2`,
+          [mentionedUsernames, authorId]
+        )
+        for (const mentioned of mentionedUsers) {
+          pool.query(
+            `INSERT INTO notifications (recipient_id, actor_id, type)
+             VALUES ($1, $2, 'new_mention')`,
+            [mentioned.id, authorId]
+          ).catch((err) => logger.warn({ err }, 'Failed to insert mention notification'))
+        }
+      }
+
       return reply.status(201).send({ noteId: result.rows[0].id })
     } catch (err) {
       logger.error({ err, authorId }, 'Note indexing failed')

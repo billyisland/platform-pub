@@ -93,6 +93,12 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 
           logger.info({ readerId, writerId, subscriptionId: sub.id }, 'Subscription reactivated')
 
+          pool.query(
+            `INSERT INTO notifications (recipient_id, actor_id, type)
+             VALUES ($1, $2, 'new_subscriber')`,
+            [writerId, readerId]
+          ).catch((err) => logger.warn({ err }, 'Failed to insert new_subscriber notification'))
+
           // Publish subscription event asynchronously — non-blocking
           const readerPubkey = req.session!.pubkey
           publishSubscriptionEvent({
@@ -139,6 +145,12 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         await logSubscriptionCharge(client, subscriptionId, readerId, writerId, pricePence, now, periodEnd)
 
         logger.info({ readerId, writerId, subscriptionId, pricePence }, 'Subscription created')
+
+        pool.query(
+          `INSERT INTO notifications (recipient_id, actor_id, type)
+           VALUES ($1, $2, 'new_subscriber')`,
+          [writerId, readerId]
+        ).catch((err) => logger.warn({ err }, 'Failed to insert new_subscriber notification'))
 
         // Publish subscription event asynchronously — non-blocking
         const readerPubkey = req.session!.pubkey

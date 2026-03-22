@@ -40,7 +40,7 @@ export async function writerRoutes(app: FastifyInstance) {
         `SELECT id, nostr_pubkey, username, display_name, bio,
                 avatar_blossom_url, hosting_type, subscription_price_pence
          FROM accounts
-         WHERE username = $1 AND is_writer = TRUE AND status = 'active'`,
+         WHERE username = $1 AND status = 'active'`,
         [username]
       )
 
@@ -92,7 +92,7 @@ export async function writerRoutes(app: FastifyInstance) {
       // Look up writer
       const writerResult = await pool.query<{ id: string }>(
         `SELECT id FROM accounts
-         WHERE username = $1 AND is_writer = TRUE AND status = 'active'`,
+         WHERE username = $1 AND status = 'active'`,
         [username]
       )
 
@@ -143,6 +143,108 @@ export async function writerRoutes(app: FastifyInstance) {
   )
 
   // ---------------------------------------------------------------------------
+  // GET /writers/:username/notes — writer's published notes
+  // ---------------------------------------------------------------------------
+
+  app.get<{
+    Params: { username: string }
+    Querystring: { limit?: string; offset?: string }
+  }>(
+    '/writers/:username/notes',
+    { preHandler: optionalAuth },
+    async (req, reply) => {
+      const { username } = req.params
+      const limit = Math.min(parseInt(req.query.limit ?? '20', 10), 50)
+      const offset = parseInt(req.query.offset ?? '0', 10)
+
+      const accountResult = await pool.query<{ id: string }>(
+        `SELECT id FROM accounts WHERE username = $1 AND status = 'active'`,
+        [username]
+      )
+
+      if (accountResult.rows.length === 0) {
+        return reply.status(404).send({ error: 'User not found' })
+      }
+
+      const authorId = accountResult.rows[0].id
+
+      const { rows } = await pool.query<{
+        id: string
+        nostr_event_id: string
+        content: string
+        published_at: Date
+      }>(
+        `SELECT id, nostr_event_id, content, published_at
+         FROM notes
+         WHERE author_id = $1 AND deleted_at IS NULL
+         ORDER BY published_at DESC
+         LIMIT $2 OFFSET $3`,
+        [authorId, limit, offset]
+      )
+
+      const notes = rows.map((r) => ({
+        id: r.id,
+        nostrEventId: r.nostr_event_id,
+        content: r.content,
+        publishedAt: r.published_at.toISOString(),
+      }))
+
+      return reply.status(200).send({ notes, limit, offset })
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // GET /writers/:username/replies — writer's published replies
+  // ---------------------------------------------------------------------------
+
+  app.get<{
+    Params: { username: string }
+    Querystring: { limit?: string; offset?: string }
+  }>(
+    '/writers/:username/replies',
+    { preHandler: optionalAuth },
+    async (req, reply) => {
+      const { username } = req.params
+      const limit = Math.min(parseInt(req.query.limit ?? '20', 10), 50)
+      const offset = parseInt(req.query.offset ?? '0', 10)
+
+      const accountResult = await pool.query<{ id: string }>(
+        `SELECT id FROM accounts WHERE username = $1 AND status = 'active'`,
+        [username]
+      )
+
+      if (accountResult.rows.length === 0) {
+        return reply.status(404).send({ error: 'User not found' })
+      }
+
+      const authorId = accountResult.rows[0].id
+
+      const { rows } = await pool.query<{
+        id: string
+        nostr_event_id: string
+        content: string
+        published_at: Date
+      }>(
+        `SELECT id, nostr_event_id, content, published_at
+         FROM comments
+         WHERE author_id = $1 AND deleted_at IS NULL
+         ORDER BY published_at DESC
+         LIMIT $2 OFFSET $3`,
+        [authorId, limit, offset]
+      )
+
+      const replies = rows.map((r) => ({
+        id: r.id,
+        nostrEventId: r.nostr_event_id,
+        content: r.content,
+        publishedAt: r.published_at.toISOString(),
+      }))
+
+      return reply.status(200).send({ replies, limit, offset })
+    }
+  )
+
+  // ---------------------------------------------------------------------------
   // GET /writers/by-pubkey/:pubkey — resolve pubkey → writer info
   //
   // Used by feed cards to resolve a Nostr pubkey to a display name.
@@ -167,7 +269,7 @@ export async function writerRoutes(app: FastifyInstance) {
       }>(
         `SELECT username, display_name, avatar_blossom_url
          FROM accounts
-         WHERE nostr_pubkey = $1 AND is_writer = TRUE AND status = 'active'`,
+         WHERE nostr_pubkey = $1 AND status = 'active'`,
         [pubkey]
       )
 

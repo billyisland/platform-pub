@@ -32,16 +32,15 @@ export function FeedView() {
         const ndk = getNdk(); await ndk.connect()
         if (activeTab === 'following') {
           const pks = await fetchFollowedPubkeys(user!.id)
-          const af = pks.length > 0 ? { authors: pks } : {}
+          pks.push(user!.pubkey)   // include own content
+          const af = { authors: pks }  // always filter — never fall through to {}
           const [articleEvents, noteEvents, deletionEvents, dbDeleted] = await Promise.all([
             ndk.fetchEvents({ kinds: [KIND_ARTICLE as NDKKind], limit: 30, ...af }),
             ndk.fetchEvents({ kinds: [KIND_NOTE as NDKKind], limit: 30, ...af }),
             ndk.fetchEvents({ kinds: [KIND_DELETION as NDKKind], limit: 100, ...af }),
-            pks.length > 0
-              ? fetch(`/api/v1/articles/deleted?pubkeys=${pks.join(',')}`, { credentials: 'include' })
-                  .then(r => r.ok ? r.json() : { deletedEventIds: [], deletedCoords: [] })
-                  .catch(() => ({ deletedEventIds: [], deletedCoords: [] }))
-              : Promise.resolve({ deletedEventIds: [], deletedCoords: [] }),
+            fetch(`/api/v1/articles/deleted?pubkeys=${pks.join(',')}`, { credentials: 'include' })
+              .then(r => r.ok ? r.json() : { deletedEventIds: [], deletedCoords: [] })
+              .catch(() => ({ deletedEventIds: [], deletedCoords: [] })),
           ])
           const deletedIds = new Set<string>(dbDeleted.deletedEventIds)
           const deletedCoords = new Set<string>(dbDeleted.deletedCoords)

@@ -77,6 +77,33 @@ function NotificationRow({ n }: { n: Notification }) {
           </>
         )}
 
+        {n.type === 'new_subscriber' && (
+          <p className="text-sm text-content-primary leading-snug">
+            <Link href={n.actor ? `/${n.actor.username}` : '#'} className="font-medium hover:opacity-75 transition-opacity">
+              {actorName}
+            </Link>
+            {' '}subscribed to your content
+          </p>
+        )}
+
+        {n.type === 'new_quote' && (
+          <p className="text-sm text-content-primary leading-snug">
+            <Link href={n.actor ? `/${n.actor.username}` : '#'} className="font-medium hover:opacity-75 transition-opacity">
+              {actorName}
+            </Link>
+            {' '}quoted you
+          </p>
+        )}
+
+        {n.type === 'new_mention' && (
+          <p className="text-sm text-content-primary leading-snug">
+            <Link href={n.actor ? `/${n.actor.username}` : '#'} className="font-medium hover:opacity-75 transition-opacity">
+              {actorName}
+            </Link>
+            {' '}mentioned you
+          </p>
+        )}
+
         <p className="text-xs text-content-muted mt-1">{timeAgo(n.createdAt)}</p>
       </div>
 

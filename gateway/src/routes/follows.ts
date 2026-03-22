@@ -34,14 +34,14 @@ export async function followRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Cannot follow yourself' })
       }
 
-      // Verify the target is a writer
+      // Verify the target account exists and is active
       const writerCheck = await pool.query<{ id: string }>(
-        `SELECT id FROM accounts WHERE id = $1 AND is_writer = TRUE AND status = 'active'`,
+        `SELECT id FROM accounts WHERE id = $1 AND status = 'active'`,
         [writerId]
       )
 
       if (writerCheck.rows.length === 0) {
-        return reply.status(404).send({ error: 'Writer not found' })
+        return reply.status(404).send({ error: 'User not found' })
       }
 
       // Upsert — idempotent

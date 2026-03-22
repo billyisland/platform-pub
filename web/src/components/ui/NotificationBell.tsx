@@ -94,6 +94,37 @@ function NotificationItem({ n }: { n: Notification }) {
     )
   }
 
+  const simpleTypes: Partial<Record<Notification['type'], string>> = {
+    new_subscriber: 'subscribed to your content',
+    new_quote: 'quoted you',
+    new_mention: 'mentioned you',
+  }
+
+  if (n.type in simpleTypes) {
+    return (
+      <div className={`px-4 py-3 border-b border-ink-800 last:border-0 ${!n.read ? 'bg-white/5' : ''}`}>
+        <div className="flex items-start gap-2.5">
+          {n.actor?.avatar ? (
+            <img src={n.actor.avatar} alt="" className="h-7 w-7 rounded-full object-cover flex-shrink-0 mt-0.5" />
+          ) : (
+            <span className="flex h-7 w-7 items-center justify-center bg-ink-800 text-[10px] font-medium text-surface-raised rounded-full flex-shrink-0 mt-0.5">
+              {(n.actor?.displayName ?? n.actor?.username ?? '?')[0].toUpperCase()}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="text-xs text-surface-raised leading-snug">
+              <Link href={n.actor ? `/${n.actor.username}` : '#'} className="font-medium hover:text-white transition-colors">
+                {actorName}
+              </Link>
+              {' '}{simpleTypes[n.type]}
+            </p>
+            <p className="text-[11px] text-ink-400 mt-0.5">{timeAgo(n.createdAt)}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return null
 }
 
