@@ -90,18 +90,9 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
     if (!user) { window.location.href = '/auth?mode=signup'; return }
     setUnlocking(true); setUnlockError(null)
     try {
-      // Resolve ciphertext: new articles have it in the NIP-23 payload tag;
-      // old articles (pre-spec §III.2) need a separate vault event fetch.
-      let ciphertext: string
-      if (article.encryptedPayload) {
-        ciphertext = article.encryptedPayload
-      } else {
-        const ndk = getNdk(); await ndk.connect()
-        const vaultEvent = await fetchVaultEvent(ndk, article.dTag)
-        if (!vaultEvent) { setUnlockError('Could not find the encrypted content.'); return }
-        ciphertext = vaultEvent.ciphertext
-      }
-
+      // Step 1: Call gate-pass first — records payment, issues key, and now
+      // also returns the ciphertext from the server's vault_keys table.
+      // This decouples decryption from the relay having the correct event.
       let gatePassResult
       try { gatePassResult = await articlesApi.gatePass(article.id) }
       catch (err: any) {
@@ -112,6 +103,26 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
         throw err
       }
 
+      // Step 2: Resolve ciphertext from the best available source:
+      //   a) Server response (vault_keys.ciphertext — most reliable)
+      //   b) NIP-23 event payload tag (from relay, already in article state)
+      //   c) Legacy kind 39701 vault event on relay (pre-spec §III.2 articles)
+      let ciphertext: string | undefined = gatePassResult.ciphertext
+        ?? article.encryptedPayload
+
+      if (!ciphertext) {
+        // Legacy fallback — try fetching a separate kind 39701 vault event
+        const ndk = getNdk(); await ndk.connect()
+        const vaultEvent = await fetchVaultEvent(ndk, article.dTag)
+        if (vaultEvent) ciphertext = vaultEvent.ciphertext
+      }
+
+      if (!ciphertext) {
+        setUnlockError('Could not find the encrypted content.')
+        return
+      }
+
+      // Step 3: Unwrap the NIP-44 wrapped content key and decrypt
       const algorithm = (gatePassResult.algorithm ?? article.payloadAlgorithm ?? 'aes-256-gcm') as 'xchacha20poly1305' | 'aes-256-gcm'
       const contentKeyBase64 = await unwrapContentKey(gatePassResult.encryptedKey)
       const body = await decryptVaultContent(ciphertext, contentKeyBase64, algorithm)

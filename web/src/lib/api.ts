@@ -136,6 +136,7 @@ export interface GatePassResponse {
   encryptedKey: string
   algorithm: string
   isReissuance: boolean
+  ciphertext?: string          // base64-encoded encrypted body (from vault_keys)
 }
 
 export const payment = {

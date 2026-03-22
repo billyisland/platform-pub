@@ -61,7 +61,8 @@ export class VaultService {
         contentKeyBytes = decryptContentKey(existingKey.rows[0].content_key_enc)
         vaultKeyId = existingKey.rows[0].id
 
-        // Keep nostr_article_event_id current for audit purposes
+        // Keep nostr_article_event_id current for audit purposes;
+        // ciphertext is updated below after re-encryption.
         await client.query(
           `UPDATE vault_keys SET nostr_article_event_id = $1 WHERE id = $2`,
           [params.nostrArticleEventId, vaultKeyId]
@@ -87,6 +88,14 @@ export class VaultService {
 
       // Encrypt the paywalled body
       const ciphertext = encryptArticleBodyXChaCha(params.paywallBody, contentKeyBytes)
+
+      // Persist ciphertext in vault_keys so the gate-pass can serve it directly.
+      // This decouples decryption from relay availability — readers no longer need
+      // to find the ['payload', ...] tag on the NIP-23 event.
+      await client.query(
+        `UPDATE vault_keys SET ciphertext = $1 WHERE id = $2`,
+        [ciphertext, vaultKeyId]
+      )
 
       // Build a legacy vault event template for any callers that still expect it.
       // New callers should use ciphertext + algorithm directly and embed in NIP-23.
@@ -152,8 +161,8 @@ export class VaultService {
     }
 
     // Step 3: retrieve vault key by article_id (stable across event ID changes)
-    const keyRow = await pool.query<{ id: string; content_key_enc: string; algorithm: string }>(
-      `SELECT id, content_key_enc, algorithm FROM vault_keys WHERE article_id = $1`,
+    const keyRow = await pool.query<{ id: string; content_key_enc: string; algorithm: string; ciphertext: string | null }>(
+      `SELECT id, content_key_enc, algorithm, ciphertext FROM vault_keys WHERE article_id = $1`,
       [resolved.articleId]
     )
 
@@ -186,6 +195,7 @@ export class VaultService {
       articleNostrEventId: params.articleNostrEventId,
       algorithm,
       isReissuance,
+      ciphertext: vaultKey.ciphertext ?? undefined,
     }
   }
 

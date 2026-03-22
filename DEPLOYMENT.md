@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.5.3
+# platform.pub — Deployment Reference v3.5.4
 
 **Date:** 22 March 2026
-**Replaces:** v3.5.2 (see bottom for change log)
+**Replaces:** v3.5.3 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,54 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.5.3
+
+Schema change: migration `011_store_ciphertext.sql` must be applied. Deploy order is **migration → key-service → gateway → web**.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# 1. Apply migration
+DATABASE_URL=postgresql://platformpub:<POSTGRES_PASSWORD>@127.0.0.1:5432/platformpub \
+  npx tsx shared/src/db/migrate.ts
+
+# 2. Rebuild and restart key-service first (it now writes ciphertext to vault_keys)
+docker compose build --no-cache keyservice
+docker compose up -d keyservice
+
+# 3. Then gateway (forwards ciphertext in gate-pass responses)
+docker compose build --no-cache gateway
+docker compose up -d gateway
+
+# 4. Finally web (reads ciphertext from gate-pass response before relay fallback)
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker logs platform-pub-keyservice-1 --tail 5
+docker logs platform-pub-gateway-1 --tail 5
+docker logs platform-pub-web-1 --tail 5
+
+# Confirm migration applied
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "\d vault_keys" | grep ciphertext
+# Expected: "ciphertext | text | ..."
+
+# Publish a paywalled article — vault_keys.ciphertext should now be populated:
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "SELECT id, article_id, ciphertext IS NOT NULL AS has_ciphertext FROM vault_keys ORDER BY created_at DESC LIMIT 5;"
+
+# Unlock the article as a reader — it should decrypt without relay involvement.
+# Reader clicking the paywall gate should no longer get "Could not find the encrypted content."
+```
+
+> **Existing broken articles:** Articles whose v2 event never reached the relay (the bug fixed in v3.5.3) will have `ciphertext = NULL` in `vault_keys`. The writer must edit and re-publish — the content key is intact so re-publishing regenerates and stores the ciphertext. Articles published after this migration are automatically covered.
+
+---
 
 ### From v3.5.2
 
@@ -1011,6 +1059,29 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.5.4 — 22 March 2026
+
+**Fix: paywall decryption fails when v2 NIP-23 event is missing from relay (root-cause fix)**
+
+Addresses the root cause of "Could not find the encrypted content." errors. The v3.5.3 fix (NDK reconnect) reduced the frequency of v2 events failing to reach the relay, but if the relay still didn't have the event the reader's unlock flow bailed out before recording payment or issuing a key. The deeper issue was architectural: the encrypted paywall body (ciphertext) was stored only in the relay's NIP-23 event — the database held no copy.
+
+**Schema change:** `migrations/011_store_ciphertext.sql` — adds `ciphertext TEXT` column to `vault_keys`.
+
+**Changes:**
+
+- `migrations/011_store_ciphertext.sql`: `ALTER TABLE vault_keys ADD COLUMN ciphertext TEXT`.
+- `key-service/src/services/vault.ts`: `publishArticle()` now persists the ciphertext to `vault_keys` immediately after encryption (covers both new articles and re-publishes). `issueKey()` selects and returns `ciphertext` alongside the wrapped key.
+- `key-service/src/types/index.ts`: `KeyResponse` gains `ciphertext?: string`.
+- `gateway/src/routes/articles.ts`: both gate-pass response paths (free-access and paid) forward `ciphertext` from the key service response.
+- `web/src/lib/api.ts`: `GatePassResponse` gains `ciphertext?: string`.
+- `web/src/components/article/ArticleReader.tsx`: `handleUnlock` restructured — gate-pass call happens first (payment recorded, key issued), then ciphertext is resolved from a fallback chain: server response → relay payload tag → legacy kind 39701 vault event. The relay is no longer a single point of failure.
+
+**Files changed:** `migrations/011_store_ciphertext.sql`, `key-service/src/services/vault.ts`, `key-service/src/types/index.ts`, `gateway/src/routes/articles.ts`, `web/src/lib/api.ts`, `web/src/components/article/ArticleReader.tsx`
+
+**Schema change: migration 011 must be applied. Deploy order: migration → key-service → gateway → web.**
+
+---
 
 ### v3.5.3 — 22 March 2026
 

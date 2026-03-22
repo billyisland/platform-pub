@@ -315,6 +315,7 @@ export async function articleRoutes(app: FastifyInstance) {
             encryptedKey: keyResult.encryptedKey,
             algorithm: keyResult.algorithm,
             isReissuance: access.reason === 'already_unlocked',
+            ciphertext: keyResult.ciphertext ?? undefined,
           })
         }
 
@@ -415,6 +416,7 @@ export async function articleRoutes(app: FastifyInstance) {
           algorithm: keyResult.algorithm,
           isReissuance: keyResult.isReissuance,
           allowanceJustExhausted: paymentResult.allowanceJustExhausted ?? false,
+          ciphertext: keyResult.ciphertext ?? undefined,
         })
       } catch (err) {
         logger.error({ err, readerId, nostrEventId }, 'Gate pass orchestration failed')

@@ -21,6 +21,7 @@ export interface KeyResponse {
   articleNostrEventId: string
   algorithm: 'xchacha20poly1305' | 'aes-256-gcm'
   isReissuance: boolean
+  ciphertext?: string         // base64-encoded encrypted body (from vault_keys)
 }
 
 export interface PaymentVerification {
