@@ -4,10 +4,10 @@ import { useState, type ReactNode } from 'react'
 import { ReportButton } from '../ui/ReportButton'
 
 // =============================================================================
-// ReplyItem
+// ReplyItem — Conversational inline layout
 //
-// Renders a single reply with author info, timestamp, reply button,
-// delete button (for author or content owner), and report button.
+// Name and text on the same line for short replies, wrapping naturally for
+// longer ones. Compact feel like chat messages, not blog comments.
 // =============================================================================
 
 export interface ReplyData {
@@ -71,66 +71,68 @@ export function ReplyItem({
   }
 
   return (
-    <div className={`${depth > 0 ? 'ml-8 border-l-2 border-ink-100 pl-4' : ''}`}>
-      <div className={compact ? 'py-2' : 'py-3'}>
-        {/* Author line */}
-        <div className="flex items-center gap-2 mb-1.5">
+    <div className={`${depth > 0 ? 'ml-8 pl-3 border-l-2 border-surface-strong/40' : ''}`}>
+      <div className={compact ? 'py-1.5' : 'py-2'}>
+        {/* Inline layout: avatar | name text — all on one line for short replies */}
+        <div className="flex items-start gap-2.5">
           {reply.author.avatar ? (
             <img
               src={reply.author.avatar}
               alt=""
-              className="h-6 w-6 rounded-full object-cover"
+              className="h-5 w-5 rounded-full object-cover flex-shrink-0 mt-0.5"
             />
           ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-[10px] font-medium text-brand-700">
+            <span
+              className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-medium text-accent-700 flex-shrink-0 mt-0.5"
+              style={{ background: 'linear-gradient(135deg, #F5D5D6, #E8A5A7)' }}
+            >
               {initial}
-            </div>
+            </span>
           )}
-          <span className="text-xs font-medium text-ink-600">
-            {authorName}
-          </span>
-          <span className="text-xs text-ink-300">&middot;</span>
-          <time
-            dateTime={reply.publishedAt}
-            className="text-xs text-ink-400"
-          >
-            {formatRelativeTime(reply.publishedAt)}
-          </time>
-        </div>
+          <div className="flex-1 min-w-0">
+            {/* Name + content inline */}
+            <p className={`text-sm leading-relaxed ${
+              reply.isDeleted ? 'text-content-faint italic' : ''
+            }`}>
+              <span className="font-medium text-content-secondary text-ui-xs">
+                {authorName}
+              </span>{' '}
+              <span className={reply.isDeleted ? 'text-content-faint' : 'text-content-primary'}>
+                {reply.content}
+              </span>
+            </p>
 
-        {/* Content */}
-        <p className={`text-sm leading-relaxed whitespace-pre-wrap ${
-          reply.isDeleted ? 'text-ink-400 italic' : 'text-ink-700'
-        }`}>
-          {reply.content}
-        </p>
-
-        {/* Actions */}
-        {!reply.isDeleted && (
-          <div className="mt-1.5 flex items-center gap-3">
-            {currentUserId && onReply && depth < 2 && (
-              <button
-                onClick={() => onReply(reply.id, reply.nostrEventId, authorName)}
-                className="text-xs text-ink-400 hover:text-ink-600 transition-colors"
-              >
-                Reply
-              </button>
+            {/* Meta row: time + actions */}
+            {!reply.isDeleted && (
+              <div className="mt-0.5 flex items-center gap-2 text-ui-xs text-content-faint">
+                <time dateTime={reply.publishedAt}>
+                  {formatRelativeTime(reply.publishedAt)}
+                </time>
+                {currentUserId && onReply && depth < 2 && (
+                  <button
+                    onClick={() => onReply(reply.id, reply.nostrEventId, authorName)}
+                    className="hover:text-content-muted transition-colors"
+                  >
+                    Reply
+                  </button>
+                )}
+                {canDelete && (
+                  <button
+                    onClick={handleDelete}
+                    className={`transition-colors ${
+                      confirmDelete
+                        ? 'text-red-500 font-medium'
+                        : 'hover:text-red-500'
+                    }`}
+                  >
+                    {confirmDelete ? 'Confirm?' : 'Delete'}
+                  </button>
+                )}
+                <ReportButton targetNostrEventId={reply.nostrEventId} />
+              </div>
             )}
-            {canDelete && (
-              <button
-                onClick={handleDelete}
-                className={`text-xs transition-colors ${
-                  confirmDelete
-                    ? 'text-red-600 font-medium'
-                    : 'text-ink-400 hover:text-red-600'
-                }`}
-              >
-                {confirmDelete ? 'Confirm delete' : 'Delete'}
-              </button>
-            )}
-            <ReportButton targetNostrEventId={reply.nostrEventId} />
           </div>
-        )}
+        </div>
       </div>
 
       {/* Nested replies */}
@@ -164,11 +166,11 @@ function formatRelativeTime(isoString: string): string {
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return `${diffDays}d ago`
+  if (diffMins < 1) return 'now'
+  if (diffMins < 60) return `${diffMins}m`
+  if (diffHours < 24) return `${diffHours}h`
+  if (diffDays === 1) return '1d'
+  if (diffDays < 7) return `${diffDays}d`
 
   return date.toLocaleDateString('en-GB', {
     day: 'numeric',

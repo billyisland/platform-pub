@@ -33,18 +33,20 @@ export function ReplyComposer({
   const [publishing, setPublishing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [focused, setFocused] = useState(false)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  // Auto-resize textarea
   useEffect(() => {
-    const el = textareaRef.current
+    const el = inputRef.current
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }, [content])
 
   useEffect(() => {
-    if (parentCommentId && textareaRef.current) {
-      textareaRef.current.focus()
+    if (parentCommentId && inputRef.current) {
+      inputRef.current.focus()
     }
   }, [parentCommentId])
 
@@ -53,7 +55,6 @@ export function ReplyComposer({
   const charCount = content.length
   const isOverLimit = charCount > REPLY_CHAR_LIMIT
   const canPost = content.trim().length > 0 && !isOverLimit && !publishing
-  const initial = user.displayName?.[0]?.toUpperCase() ?? user.username?.[0]?.toUpperCase() ?? '?'
 
   async function handlePost() {
     if (!canPost || !user) return
@@ -106,63 +107,77 @@ export function ReplyComposer({
     input.click()
   }
 
+  const isExpanded = focused || content.length > 0
+
   return (
-    <div className="flex gap-3 pt-2">
-      {/* Avatar */}
-      {user.avatar ? (
-        <img src={user.avatar} alt="" className="h-7 w-7 rounded-full object-cover flex-shrink-0 mt-1" />
-      ) : (
-        <span className="flex h-7 w-7 items-center justify-center bg-surface-sunken text-[10px] font-medium text-content-muted flex-shrink-0 mt-1 rounded-full">
-          {initial}
-        </span>
+    <div className="pt-2">
+      {replyingToName && (
+        <p className="text-ui-xs text-content-faint mb-1.5 flex items-center gap-1">
+          Replying to <span className="font-medium text-content-muted">{replyingToName}</span>
+          {onCancel && (
+            <button onClick={onCancel} className="text-content-faint hover:text-content-muted ml-1">×</button>
+          )}
+        </p>
       )}
 
-      <div className="flex-1 min-w-0">
-        {replyingToName && (
-          <p className="text-xs text-content-faint mb-1">Replying to {replyingToName}</p>
-        )}
+      <div className="flex items-end gap-2">
+        <div className="flex-1 min-w-0">
+          <textarea
+            ref={inputRef}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
+            placeholder="Reply..."
+            rows={1}
+            className={`w-full resize-none text-ui-sm text-content-primary placeholder:text-content-faint focus:outline-none leading-relaxed transition-all ${
+              isExpanded
+                ? 'bg-surface-raised px-3.5 py-2 rounded-xl border border-surface-strong/50 focus:border-surface-strong'
+                : 'bg-surface-sunken/60 px-3.5 py-2 rounded-full'
+            }`}
+          />
+        </div>
 
-        <textarea
-          ref={textareaRef}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
-          placeholder="Write a reply..."
-          rows={1}
-          className="w-full resize-none bg-surface-sunken text-ui-sm text-content-primary placeholder:text-content-faint focus:bg-white focus:outline-none leading-relaxed transition-colors px-3 py-2"
-        />
-
-        {error && (
-          <div className="mt-1 bg-surface-sunken px-3 py-1.5 text-ui-xs text-content-primary flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="ml-2 text-content-faint hover:text-ink-900">×</button>
-          </div>
-        )}
-
-        <div className="mt-1.5 flex items-center justify-between">
-          <span className={`text-ui-xs transition-colors ${
-            isOverLimit ? 'text-red-600 font-medium'
-              : charCount > REPLY_CHAR_LIMIT - 100 ? 'text-red-500'
-              : 'text-content-faint'
-          }`}>
-            {charCount > 0 && `${charCount}/${REPLY_CHAR_LIMIT}`}
-          </span>
-
-          <div className="flex items-center gap-2">
-            {onCancel && (
-              <button onClick={onCancel} className="text-ui-xs text-content-faint hover:text-content-secondary transition-colors">
-                Cancel
-              </button>
-            )}
-            <button onClick={handleImageUpload} disabled={uploading} className="btn-soft disabled:opacity-40 py-1 px-2.5 text-ui-xs">
-              {uploading ? '...' : 'Image'}
+        <div className="flex items-center gap-1.5 pb-0.5">
+          {isExpanded && (
+            <button
+              onClick={handleImageUpload}
+              disabled={uploading}
+              className="text-content-faint hover:text-content-muted disabled:opacity-40 transition-colors p-1.5"
+              title="Add image"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+                <circle cx="5.5" cy="5.5" r="1" />
+                <path d="M14.5 10.5L11 7L3.5 14.5" />
+              </svg>
             </button>
-            <button onClick={handlePost} disabled={!canPost} className="btn disabled:opacity-40 py-1 px-3 text-ui-xs">
-              {publishing ? 'Posting...' : 'Reply'}
-            </button>
-          </div>
+          )}
+          <button
+            onClick={handlePost}
+            disabled={!canPost}
+            className="bg-ink text-white disabled:opacity-30 rounded-full px-3.5 py-1.5 text-ui-xs font-medium transition-opacity"
+          >
+            {publishing ? '...' : 'Post'}
+          </button>
         </div>
       </div>
+
+      {error && (
+        <div className="mt-1.5 bg-accent-50 text-accent-700 px-3 py-1.5 text-ui-xs rounded-lg flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="ml-2 text-accent-400 hover:text-accent-700">×</button>
+        </div>
+      )}
+
+      {isExpanded && charCount > REPLY_CHAR_LIMIT - 200 && (
+        <p className={`text-ui-xs mt-1 transition-colors ${
+          isOverLimit ? 'text-red-600 font-medium' : 'text-content-faint'
+        }`}>
+          {charCount}/{REPLY_CHAR_LIMIT}
+        </p>
+      )}
     </div>
   )
 }

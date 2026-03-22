@@ -68,87 +68,97 @@ export function NoteCard({ note, onDeleted, onQuote }: NoteCardProps) {
   }
 
   return (
-    <div className="py-4 px-5 bg-surface-sunken border border-surface-strong">
-      <div className="flex items-start gap-3">
-        {writerInfo?.avatar ? (
-          <img src={writerInfo.avatar} alt="" className="h-8 w-8 rounded-full object-cover flex-shrink-0 mt-0.5" />
-        ) : (
-          <span className="flex h-8 w-8 items-center justify-center bg-surface-strong text-[10px] font-medium text-content-muted flex-shrink-0 mt-0.5 rounded-full">
-            {(writerInfo?.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
-          </span>
-        )}
-
-        <div className="flex-1 min-w-0">
-          {/* Name + time row */}
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-ui-sm font-medium text-content-primary">
-              {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
-            </span>
-            <span className="text-ui-xs text-content-muted">
-              {formatDate(note.publishedAt)}
-            </span>
-            {isAuthor && (
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className={`ml-auto text-ui-xs transition-colors disabled:opacity-40 ${
-                  confirmDelete
-                    ? 'text-red-500 font-medium'
-                    : 'text-content-faint hover:text-content-muted'
-                }`}
-              >
-                {deleting ? '...' : confirmDelete ? 'Confirm delete?' : 'Delete'}
-              </button>
-            )}
-          </div>
-
-          {/* Content */}
-          {displayContent && (
-            <p className="text-sm text-content-secondary leading-relaxed whitespace-pre-wrap">{displayContent}</p>
-          )}
-
-          {/* Images */}
-          {imageUrls.length > 0 && (
-            <div className="mt-2 space-y-2">
-              {imageUrls.map((url, i) => (
-                <img key={i} src={url} alt="" className="max-w-full max-h-80 object-cover rounded" loading="lazy" />
-              ))}
-            </div>
-          )}
-
-          {/* Embeds */}
-          {embedUrls.length > 0 && (
-            <div className="mt-2 space-y-2">
-              {embedUrls.map((url, i) => <EmbedPreview key={i} url={url} />)}
-            </div>
-          )}
-
-          {/* Quoted content — inset tile */}
-          {note.quotedEventId && <QuoteCard eventId={note.quotedEventId} />}
-
-          {/* Actions row */}
-          <div className="mt-3 flex items-center gap-4">
-            <button
-              onClick={() => setShowReplies(!showReplies)}
-              className="text-ui-xs text-content-muted hover:text-content-primary transition-colors"
+    <div className="bg-surface-raised rounded-xl border border-surface-strong/50 hover:border-surface-strong transition-colors">
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          {/* Avatar — warm gradient for fallback */}
+          {writerInfo?.avatar ? (
+            <img src={writerInfo.avatar} alt="" className="h-9 w-9 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <span
+              className="flex h-9 w-9 items-center justify-center text-xs font-medium text-accent-700 flex-shrink-0 rounded-full"
+              style={{ background: 'linear-gradient(135deg, #F5D5D6, #E8A5A7)' }}
             >
-              {showReplies ? 'Hide replies' : replyCount !== null && replyCount > 0 ? `${replyCount} ${replyCount !== 1 ? 'replies' : 'reply'}` : 'Reply'}
-            </button>
-            {user && onQuote && (
-              <button
-                onClick={handleQuote}
-                className="text-ui-xs text-content-muted hover:text-content-primary transition-colors"
-              >
-                Quote
-              </button>
+              {(writerInfo?.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
+            </span>
+          )}
+
+          <div className="flex-1 min-w-0">
+            {/* Name + time */}
+            <div className="flex items-center gap-2">
+              <span className="text-ui-sm font-medium text-content-primary">
+                {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
+              </span>
+              <span className="text-ui-xs text-content-faint">
+                {formatDate(note.publishedAt)}
+              </span>
+              {isAuthor && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className={`ml-auto text-ui-xs rounded-full px-2.5 py-0.5 transition-colors disabled:opacity-40 ${
+                    confirmDelete
+                      ? 'text-red-500 bg-red-50 font-medium'
+                      : 'text-content-faint hover:text-content-muted hover:bg-surface-sunken'
+                  }`}
+                >
+                  {deleting ? '...' : confirmDelete ? 'Confirm?' : 'Delete'}
+                </button>
+              )}
+            </div>
+
+            {/* Content — full size, primary colour for immediacy */}
+            {displayContent && (
+              <p className="text-[0.9375rem] text-content-primary leading-relaxed whitespace-pre-wrap mt-1">{displayContent}</p>
             )}
+
+            {/* Images */}
+            {imageUrls.length > 0 && (
+              <div className="mt-2.5 space-y-2">
+                {imageUrls.map((url, i) => (
+                  <img key={i} src={url} alt="" className="max-w-full max-h-80 object-cover rounded-lg" loading="lazy" />
+                ))}
+              </div>
+            )}
+
+            {/* Embeds */}
+            {embedUrls.length > 0 && (
+              <div className="mt-2.5 space-y-2">
+                {embedUrls.map((url, i) => <EmbedPreview key={i} url={url} />)}
+              </div>
+            )}
+
+            {/* Quoted content */}
+            {note.quotedEventId && <QuoteCard eventId={note.quotedEventId} />}
+
+            {/* Action pills — invisible at rest, fill on hover */}
+            <div className="mt-2.5 flex items-center gap-1">
+              <button
+                onClick={() => setShowReplies(!showReplies)}
+                className="text-ui-xs text-content-faint hover:text-content-primary hover:bg-surface-sunken rounded-full px-2.5 py-1 transition-colors"
+              >
+                {showReplies
+                  ? 'Hide replies'
+                  : replyCount !== null && replyCount > 0
+                    ? <><span className="font-medium text-content-muted">{replyCount}</span>{' '}{replyCount !== 1 ? 'replies' : 'reply'}</>
+                    : 'Reply'}
+              </button>
+              {user && onQuote && (
+                <button
+                  onClick={handleQuote}
+                  className="text-ui-xs text-content-faint hover:text-content-primary hover:bg-surface-sunken rounded-full px-2.5 py-1 transition-colors"
+                >
+                  Quote
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Replies — flush panel at tile bottom */}
+      {/* Replies — inside the card, just a thin rule separating them */}
       {showReplies && (
-        <div className="-mx-5 -mb-4 mt-3 px-5 pb-3 bg-surface-raised border-t border-surface-strong">
+        <div className="border-t border-surface-strong/50 px-4 pb-3">
           <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact />
         </div>
       )}
@@ -158,8 +168,8 @@ export function NoteCard({ note, onDeleted, onQuote }: NoteCardProps) {
 
 function EmbedPreview({ url }: { url: string }) {
   const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/)
-  if (yt) return <div className="relative overflow-hidden rounded" style={{ paddingBottom: '56.25%' }}><iframe src={`https://www.youtube.com/embed/${yt[1]}`} className="absolute inset-0 w-full h-full" frameBorder="0" allowFullScreen loading="lazy" /></div>
-  return <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-surface-strong p-3 rounded hover:opacity-80 transition-opacity"><p className="text-ui-xs text-content-muted truncate">{url}</p></a>
+  if (yt) return <div className="relative overflow-hidden rounded-lg" style={{ paddingBottom: '56.25%' }}><iframe src={`https://www.youtube.com/embed/${yt[1]}`} className="absolute inset-0 w-full h-full" frameBorder="0" allowFullScreen loading="lazy" /></div>
+  return <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-surface-sunken/60 p-3 rounded-lg hover:bg-surface-sunken transition-colors"><p className="text-ui-xs text-content-muted truncate">{url}</p></a>
 }
 
 function formatDate(ts: number) {

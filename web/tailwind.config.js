@@ -14,8 +14,8 @@ module.exports = {
         surface: {
           DEFAULT: '#F5F0E8',
           raised: '#FFFFFF',
-          sunken: '#EAE5DC',
-          strong: '#D4D1CC',
+          sunken: 'rgb(234 229 220 / <alpha-value>)',
+          strong: 'rgb(212 209 204 / <alpha-value>)',
         },
         crimson: {
           DEFAULT: '#9B1C20',

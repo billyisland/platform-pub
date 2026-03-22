@@ -68,9 +68,9 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
 
   if (loading) {
     return (
-      <div className="mt-3 border border-surface-strong bg-surface-sunken p-3 animate-pulse">
-        <div className="h-3 bg-surface-strong rounded w-1/3 mb-2" />
-        <div className="h-3 bg-surface-strong rounded w-2/3" />
+      <div className="mt-2.5 bg-surface-sunken/60 rounded-lg border-l-[2.5px] border-accent p-3 animate-pulse">
+        <div className="h-3 bg-surface-strong/50 rounded w-1/3 mb-2" />
+        <div className="h-3 bg-surface-strong/50 rounded w-2/3" />
       </div>
     )
   }
@@ -82,17 +82,14 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
       <Link
         href={`/article/${data.dTag}`}
         onClick={e => e.stopPropagation()}
-        className="block mt-3 border border-surface-strong bg-surface-sunken hover:bg-surface-raised transition-colors overflow-hidden"
+        className="block mt-2.5 bg-surface-sunken/60 hover:bg-surface-sunken rounded-lg border-l-[2.5px] border-accent transition-colors overflow-hidden"
       >
-        <div className="flex items-stretch">
-          <div className="w-[3px] bg-accent flex-shrink-0" />
-          <div className="p-3">
-            <p className="label-ui text-content-muted mb-1">{data.author.displayName}</p>
-            <p className="text-ui-sm font-medium text-content-primary leading-snug mb-1">{data.title}</p>
-            {data.content && (
-              <p className="text-ui-xs text-content-secondary leading-relaxed line-clamp-2">{data.content}</p>
-            )}
-          </div>
+        <div className="p-3">
+          <p className="text-ui-xs font-medium text-content-muted">{data.author.displayName}</p>
+          <p className="text-ui-sm font-medium text-content-primary leading-snug mt-0.5 mb-0.5">{data.title}</p>
+          {data.content && (
+            <p className="text-ui-xs text-content-secondary leading-relaxed line-clamp-2">{data.content}</p>
+          )}
         </div>
       </Link>
     )
@@ -104,17 +101,20 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
     <Link
       href={noteHref ?? '#'}
       onClick={e => { e.stopPropagation(); if (!noteHref) e.preventDefault() }}
-      className="block mt-3 border border-surface-strong bg-surface-sunken hover:bg-surface-raised transition-colors p-3"
+      className="block mt-2.5 bg-surface-sunken/60 hover:bg-surface-sunken rounded-lg border-l-[2.5px] border-accent transition-colors p-3"
     >
-      <div className="flex items-center gap-2 mb-1.5">
+      <div className="flex items-center gap-2 mb-1">
         {data.author.avatar ? (
           <img src={data.author.avatar} alt="" className="h-4 w-4 rounded-full object-cover flex-shrink-0" />
         ) : (
-          <span className="flex h-4 w-4 items-center justify-center bg-surface-strong text-[8px] font-medium text-content-muted flex-shrink-0 rounded-full">
+          <span
+            className="flex h-4 w-4 items-center justify-center text-[8px] font-medium text-accent-700 flex-shrink-0 rounded-full"
+            style={{ background: 'linear-gradient(135deg, #F5D5D6, #E8A5A7)' }}
+          >
             {(data.author.displayName?.[0] ?? '?').toUpperCase()}
           </span>
         )}
-        <span className="text-ui-xs font-medium text-content-primary">{data.author.displayName}</span>
+        <span className="text-ui-xs font-medium text-content-muted">{data.author.displayName}</span>
       </div>
       <p className="text-ui-xs text-content-secondary leading-relaxed line-clamp-3">{data.content}</p>
     </Link>
