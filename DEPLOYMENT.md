@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.1.7
+# platform.pub — Deployment Reference v3.1.8
 
-**Date:** 21 March 2026
-**Replaces:** v3.1.6 (see bottom for change log)
+**Date:** 22 March 2026
+**Replaces:** v3.1.7 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,28 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.1.7
+
+No schema changes. Bug fixes in key-service and web. Rebuild both:
+
+```bash
+cd /root/platform-pub
+git pull origin master
+docker compose build --no-cache keyservice web
+docker compose up -d keyservice web
+```
+
+Verify:
+```bash
+docker logs platform-pub-keyservice-1 --tail 3
+docker logs platform-pub-web-1 --tail 3
+# Publish a paywalled article — the vault call should succeed and the
+# NIP-23 event should contain a ['payload', ciphertext, algorithm] tag.
+# Unlock the article as a reader — content should decrypt correctly.
+```
+
+---
 
 ### From v3.1.6
 
