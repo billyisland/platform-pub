@@ -33,13 +33,18 @@ export function FeedView() {
         if (activeTab === 'following') {
           const pks = await fetchFollowedPubkeys(user!.id)
           const af = pks.length > 0 ? { authors: pks } : {}
-          const [articleEvents, noteEvents, deletionEvents] = await Promise.all([
+          const [articleEvents, noteEvents, deletionEvents, dbDeleted] = await Promise.all([
             ndk.fetchEvents({ kinds: [KIND_ARTICLE as NDKKind], limit: 30, ...af }),
             ndk.fetchEvents({ kinds: [KIND_NOTE as NDKKind], limit: 30, ...af }),
             ndk.fetchEvents({ kinds: [KIND_DELETION as NDKKind], limit: 100, ...af }),
+            pks.length > 0
+              ? fetch(`/api/v1/articles/deleted?pubkeys=${pks.join(',')}`, { credentials: 'include' })
+                  .then(r => r.ok ? r.json() : { deletedEventIds: [], deletedCoords: [] })
+                  .catch(() => ({ deletedEventIds: [], deletedCoords: [] }))
+              : Promise.resolve({ deletedEventIds: [], deletedCoords: [] }),
           ])
-          const deletedIds = new Set<string>()
-          const deletedCoords = new Set<string>()
+          const deletedIds = new Set<string>(dbDeleted.deletedEventIds)
+          const deletedCoords = new Set<string>(dbDeleted.deletedCoords)
           for (const d of deletionEvents) for (const t of d.tags) {
             if (t[0] === 'e') deletedIds.add(t[1])
             if (t[0] === 'a') deletedCoords.add(t[1])

@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../shared/src/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
+import { signEvent } from '../lib/key-custody-client.js'
+import { publishToRelay } from '../lib/nostr-publisher.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -75,9 +77,9 @@ export async function noteRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // DELETE /notes/:nostrEventId — delete a note
   //
-  // Only the note's author can delete it. Removes from the platform DB index.
-  // The relay event is not deleted here (that would require a kind 5 deletion
-  // event, which the feed code already filters for).
+  // Only the note's author can delete it. Removes from the platform DB index
+  // and publishes a kind 5 deletion event to the relay so the note is filtered
+  // from Nostr feeds.
   // ---------------------------------------------------------------------------
 
   app.delete<{ Params: { nostrEventId: string } }>(
@@ -100,6 +102,22 @@ export async function noteRoutes(app: FastifyInstance) {
         }
 
         logger.info({ nostrEventId, authorId }, 'Note deleted')
+
+        // Publish kind 5 deletion event so the relay filters the note from feeds
+        try {
+          const deletionEvent = await signEvent(authorId, {
+            kind: 5,
+            content: '',
+            tags: [['e', nostrEventId]],
+            created_at: Math.floor(Date.now() / 1000),
+          })
+          await publishToRelay(deletionEvent as any)
+          logger.info({ nostrEventId, deletionEventId: deletionEvent.id }, 'Kind 5 deletion event published for note')
+        } catch (err) {
+          // Non-fatal: note is removed from DB; feed will stop showing it once
+          // strfry's stored event is evicted or the client refreshes past it.
+          logger.error({ err, nostrEventId }, 'Failed to publish kind 5 deletion event for note')
+        }
 
         return reply.status(200).send({ ok: true, deletedNostrEventId: nostrEventId })
       } catch (err) {

@@ -646,6 +646,50 @@ export async function articleRoutes(app: FastifyInstance) {
       })
     }
   )
+
+  // ---------------------------------------------------------------------------
+  // GET /articles/deleted?pubkeys=<hex>,<hex>,…
+  //
+  // Returns recently deleted article identifiers for the given Nostr pubkeys.
+  // Used by the feed to cross-reference the DB's soft-delete state against
+  // events returned from the relay, so feed filtering doesn't rely solely on
+  // kind 5 events having been successfully published.
+  //
+  // Looks back 90 days — long enough that any article a follower could
+  // reasonably encounter in a paginated feed is covered.
+  // ---------------------------------------------------------------------------
+
+  app.get<{ Querystring: { pubkeys?: string } }>(
+    '/articles/deleted',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const raw = req.query.pubkeys ?? ''
+      const pubkeys = raw.split(',').map(s => s.trim()).filter(Boolean)
+
+      if (pubkeys.length === 0) {
+        return reply.status(200).send({ deletedEventIds: [], deletedCoords: [] })
+      }
+
+      const { rows } = await pool.query<{
+        nostr_event_id: string
+        nostr_d_tag: string
+        nostr_pubkey: string
+      }>(
+        `SELECT a.nostr_event_id, a.nostr_d_tag, acc.nostr_pubkey
+         FROM articles a
+         JOIN accounts acc ON acc.id = a.writer_id
+         WHERE acc.nostr_pubkey = ANY($1)
+           AND a.deleted_at IS NOT NULL
+           AND a.deleted_at > now() - interval '90 days'`,
+        [pubkeys]
+      )
+
+      return reply.status(200).send({
+        deletedEventIds: rows.map(r => r.nostr_event_id),
+        deletedCoords: rows.map(r => `30023:${r.nostr_pubkey}:${r.nostr_d_tag}`),
+      })
+    }
+  )
 }
 
 // =============================================================================
