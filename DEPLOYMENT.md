@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.1.6
+# platform.pub — Deployment Reference v3.1.7
 
 **Date:** 21 March 2026
-**Replaces:** v3.1.5 (see bottom for change log)
+**Replaces:** v3.1.6 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,29 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.1.6
+
+No schema changes. Visual redesign only (web service). Rebuild web only:
+
+```bash
+cd /root/platform-pub
+git pull origin master
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker logs platform-pub-web-1 --tail 5
+# Sidebar should be near-black (ink) rather than crimson
+# Buttons should be sentence-case with visible border
+# Article headlines should be font-weight 500 with tighter tracking
+# Feed cards should show top-border rule; left crimson accent only on paywalled articles
+# Drop cap should appear on the first letter of article body text
+```
+
+---
 
 ### From v3.1.5
 

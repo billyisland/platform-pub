@@ -59,7 +59,7 @@ export function PaywallGate({ pricePounds, freeAllowanceRemaining, hasPaymentMet
           </div>
         )}
 
-        <button onClick={onUnlock} disabled={unlocking} className="btn disabled:opacity-50">
+        <button onClick={onUnlock} disabled={unlocking} className="btn-accent disabled:opacity-50">
           {unlocking ? 'Unlocking...' : buttonLabel}
         </button>
 

@@ -11,11 +11,10 @@ module.exports = {
         mono: ['"IBM Plex Mono"', '"Courier New"', 'monospace'],
       },
       colors: {
-        // Cool off-white palette — clean, literary, LRB-influenced
         surface: {
-          DEFAULT: '#F7F5F3',
+          DEFAULT: '#F5F0E8',
           raised: '#FFFFFF',
-          sunken: '#EDECEA',
+          sunken: '#EAE5DC',
           strong: '#D4D1CC',
         },
         crimson: {
@@ -39,7 +38,7 @@ module.exports = {
           300: '#D4D1CC',
           200: '#E8E6E3',
           100: '#F2F0EE',
-          50:  '#F7F5F3',
+          50:  '#F5F0E8',       // match new surface
         },
         // Semantic text colours
         content: {
@@ -63,9 +62,8 @@ module.exports = {
           800: '#5C1013',
           900: '#3D0A0D',
         },
-        // Backward-compat aliases
         brand: {
-          50: '#F7F5F3',
+          50: '#F5F0E8',
           100: '#FFFFFF',
           500: '#B52226',
           600: '#9B1C20',
@@ -80,11 +78,11 @@ module.exports = {
             lineHeight: '1.85',
             color: '#1A1A1A',
             fontFamily: '"Newsreader", "Iowan Old Style", Georgia, serif',
-            h1: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400', letterSpacing: '-0.01em' },
-            h2: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400', letterSpacing: '-0.005em' },
-            h3: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '400' },
+            h1: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '500', letterSpacing: '-0.025em' },
+            h2: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '500', letterSpacing: '-0.015em' },
+            h3: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '500' },
             a: { color: '#9B1C20', textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationThickness: '1px', '&:hover': { color: '#7A1519' } },
-            blockquote: { borderLeftColor: '#D46F72', borderLeftWidth: '2px', fontStyle: 'italic', color: '#4A4845' },
+            blockquote: { borderLeftColor: '#9B1C20', borderLeftWidth: '2px', fontStyle: 'italic', color: '#4A4845' },
             code: { fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.875em' },
             p: { marginTop: '1.5em', marginBottom: '1.5em' },
           },

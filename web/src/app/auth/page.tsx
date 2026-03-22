@@ -62,7 +62,7 @@ export default function AuthPage() {
     return (
       <div className="mx-auto max-w-sm px-6 py-28 text-center">
         <div className="ornament mb-8" />
-        <h1 className="font-serif text-2xl font-light text-ink-900 mb-4 tracking-tight">
+        <h1 className="font-serif text-2xl font-medium text-ink-900 mb-4 tracking-tight">
           Check your email
         </h1>
         <p className="text-mono-sm text-content-secondary leading-relaxed">
@@ -81,7 +81,7 @@ export default function AuthPage() {
 
   return (
     <div className="mx-auto max-w-sm px-6 py-28">
-      <h1 className="font-serif text-2xl font-light text-ink-900 mb-2 tracking-tight">
+      <h1 className="font-serif text-2xl font-medium text-ink-900 mb-2 tracking-tight">
         {mode === 'signup' ? 'Create your account' : 'Welcome back'}
       </h1>
       <p className="text-mono-xs text-content-secondary mb-10">

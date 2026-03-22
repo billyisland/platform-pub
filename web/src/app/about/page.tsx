@@ -3,7 +3,7 @@ import Link from 'next/link'
 export default function AboutPage() {
   return (
     <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8">
-      <h1 className="font-serif text-4xl font-light text-ink-900 mb-4 tracking-tight">
+      <h1 className="font-serif text-4xl font-medium text-ink-900 mb-4" style={{ letterSpacing: '-0.02em' }}>
         Platform
       </h1>
       <p className="text-lg text-content-secondary leading-relaxed mb-16 max-w-lg">
@@ -24,7 +24,7 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-16">
-        <h2 className="font-serif text-2xl font-light text-ink-900 mb-4 tracking-tight">What makes Platform different</h2>
+        <h2 className="font-serif text-2xl font-medium text-ink-900 mb-4" style={{ letterSpacing: '-0.02em' }}>What makes Platform different</h2>
         <div className="space-y-4 text-content-primary leading-relaxed">
           <p>
             The whole thing is built on Nostr. Your identity is a cryptographic key pair, and your proof of purchase for any paywalled content lives with you, not with us. This means your account, your content, your follows, and your reading permissions are all genuinely portable.
@@ -36,7 +36,7 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-16">
-        <h2 className="font-serif text-2xl font-light text-ink-900 mb-4 tracking-tight">You're free to leave</h2>
+        <h2 className="font-serif text-2xl font-medium text-ink-900 mb-4" style={{ letterSpacing: '-0.02em' }}>You're free to leave</h2>
         <div className="space-y-4 text-content-primary leading-relaxed">
           <p>
             Platform hosts your content and manages your Tab by default, and asks that you follow its content policies while it does. But if you'd rather do things differently — move to another host, run your own, manage your own keys — you can. Your private key is held in a secure locker that Platform itself can't read, and you're welcome to move it to another custodian, a browser extension, or a piece of paper whenever you like. Your Platform account is genuinely yours. Take it and do whatever you want with it.

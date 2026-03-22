@@ -189,7 +189,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
                 <p className="text-mono-xs text-white/60">{publishDate}</p>
               </div>
             </div>
-            <h1 className="font-serif text-3xl font-light leading-tight text-white sm:text-4xl tracking-tight">
+            <h1 className="font-serif text-3xl font-medium leading-tight text-white sm:text-4xl" style={{ letterSpacing: '-0.025em' }}>
               {article.title}
             </h1>
           </div>
@@ -213,7 +213,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
             </div>
             <ReportButton targetNostrEventId={article.id} />
           </div>
-          <h1 className="font-serif text-3xl font-light leading-tight text-ink-900 sm:text-4xl mb-10 tracking-tight">{article.title}</h1>
+          <h1 className="font-serif text-3xl font-medium leading-tight text-ink-900 sm:text-4xl mb-10" style={{ letterSpacing: '-0.025em' }}>{article.title}</h1>
           <div className="rule-accent mb-10" />
         </div>
       )}
@@ -227,7 +227,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
           </div>
         )}
 
-        <div ref={articleBodyRef} className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: freeHtml }} />
+        <div ref={articleBodyRef} className="prose prose-lg prose-dropcap max-w-none" dangerouslySetInnerHTML={{ __html: freeHtml }} />
 
         {article.isPaywalled && !isUnlocked && (
           <PaywallGate pricePounds={pricePounds} freeAllowanceRemaining={user?.freeAllowanceRemainingPence ?? 0} hasPaymentMethod={user?.hasPaymentMethod ?? false} isLoggedIn={!!user} onUnlock={handleUnlock} unlocking={unlocking} error={unlockError} />

@@ -10,7 +10,7 @@
     font-family: 'Instrument Sans', 'Inter', system-ui, sans-serif;
     font-size: 0.9375rem;
     line-height: 1.6;
-    padding-top: 60px;
+    padding-top: 0;  /* sidebar is left-only on lg+; mobile offset handled below */
   }
 
   ::selection {
@@ -85,7 +85,7 @@
     font-family: 'IBM Plex Mono', monospace;
     letter-spacing: 0.5em;
     font-size: 0.75rem;
-    color: #9E9B97;
+    color: #9B1C20;
   }
   .ornament::before {
     content: '· · ·';
@@ -96,7 +96,7 @@
     border-top: 0.5px solid #D4D1CC;
   }
   .rule-accent {
-    border-top: 2px solid #9B1C20;
+    border-top: 3px solid #9B1C20;
   }
   .rule-blue {
     border-top: 0.5px solid #D4D1CC;
@@ -106,7 +106,7 @@
   .label-ui {
     font-family: 'Instrument Sans', system-ui, sans-serif;
     font-size: 0.75rem;
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
   }
@@ -114,7 +114,7 @@
   .label-mono {
     font-family: 'Instrument Sans', system-ui, sans-serif;
     font-size: 0.75rem;
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: #7A7774;
@@ -125,8 +125,8 @@
     font-family: 'Instrument Sans', system-ui, sans-serif;
     font-size: 0.8125rem;
     font-weight: 500;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-transform: none;
     padding: 0.5rem 1rem;
     border: none;
     border-radius: 0;
@@ -150,13 +150,13 @@
     background: #111111;
     color: #FFFFFF;
     font-family: 'Instrument Sans', system-ui, sans-serif;
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    border: none;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    border: 1px solid #333333;
     border-radius: 0;
-    padding: 0.625rem 1.5rem;
+    padding: 0.75rem 1.75rem;
     transition: background-color 0.15s ease;
     cursor: pointer;
   }
@@ -167,13 +167,13 @@
     background: #9B1C20;
     color: #FFFFFF;
     font-family: 'Instrument Sans', system-ui, sans-serif;
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    border: none;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    border: 1px solid #7A1519;
     border-radius: 0;
-    padding: 0.625rem 1.5rem;
+    padding: 0.75rem 1.75rem;
     transition: background-color 0.15s ease;
     cursor: pointer;
   }
@@ -183,18 +183,29 @@
   .btn-soft {
     @apply bg-surface-raised text-content-primary;
     font-family: 'Instrument Sans', system-ui, sans-serif;
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    border: none;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    border: 1px solid #D4D1CC;
     border-radius: 0;
-    padding: 0.625rem 1.5rem;
+    padding: 0.75rem 1.75rem;
     transition: background-color 0.15s ease;
     cursor: pointer;
   }
   .btn-soft:hover {
     background: #EDECEA;
+  }
+
+  /* ----- Drop cap ----- */
+  .prose-dropcap > p:first-of-type::first-letter {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 3.5em;
+    float: left;
+    line-height: 0.8;
+    margin: 0.05em 0.08em 0 0;
+    color: #9B1C20;
+    font-weight: 500;
   }
 
   /* ----- Editor selection highlight ----- */
@@ -276,4 +287,8 @@
 
 @layer utilities {
   .sharp { border-radius: 0 !important; }
+
+  @media (max-width: 1023px) {
+    body { padding-top: 56px; }
+  }
 }

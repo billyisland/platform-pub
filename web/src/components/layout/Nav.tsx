@@ -26,8 +26,8 @@ export function Nav() {
   function topLinkClass(path: string) {
     return `font-serif text-sm transition-colors px-2.5 py-1 ${
       isActive(path)
-        ? 'text-surface-raised border-b-2 border-surface-raised/60'
-        : 'text-surface hover:text-surface-raised'
+        ? 'text-white border-b-2 border-crimson'
+        : 'text-ink-400 hover:text-white'
     }`
   }
 
@@ -35,8 +35,8 @@ export function Nav() {
   function sidebarLinkClass(path: string) {
     return `block font-serif text-sm py-2.5 pr-4 transition-colors w-full ${
       isActive(path)
-        ? 'bg-crimson-dark border-l-[3px] border-surface-raised/80 pl-[13px] text-surface-raised font-medium'
-        : 'pl-4 text-surface hover:bg-crimson-dark/50 hover:text-surface-raised'
+        ? 'pl-[13px] border-l-[3px] border-crimson text-white font-medium'
+        : 'pl-4 text-ink-400 hover:bg-white/5 hover:text-white'
     }`
   }
 
@@ -57,12 +57,12 @@ export function Nav() {
   const logoHref = user ? '/feed' : '/'
 
   return (
-    <header className="fixed z-50 bg-crimson top-0 left-0 right-0 lg:right-auto lg:bottom-0 lg:w-[200px] lg:flex lg:flex-col">
+    <header className="fixed z-50 bg-ink-900 top-0 left-0 right-0 lg:right-auto lg:bottom-0 lg:w-[200px] lg:flex lg:flex-col">
 
       {/* ================================================================
           TOP BAR — visible below lg breakpoint
           ================================================================ */}
-      <div className="flex items-center justify-between px-6 py-3 lg:px-5 lg:pt-7 lg:pb-5 lg:justify-center lg:border-b lg:border-crimson-dark">
+      <div className="flex items-center justify-between px-6 py-3 lg:px-5 lg:pt-7 lg:pb-5 lg:justify-center lg:border-b lg:border-ink-800">
         {/* Logo */}
         <Link
           href={logoHref}
@@ -94,7 +94,7 @@ export function Nav() {
         {/* Desktop inline nav (between md and lg) — shown md+ but hidden lg+ */}
         <div className="hidden md:flex lg:hidden items-center gap-4">
           {loading ? (
-            <div className="h-4 w-16 animate-pulse bg-crimson-dark" />
+            <div className="h-4 w-16 animate-pulse bg-ink-800" />
           ) : user ? (
             <>
               <Link href="/write" className={topLinkClass('/write')}>Write</Link>
@@ -110,7 +110,7 @@ export function Nav() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-28 bg-crimson-dark pl-8 pr-2 py-1.5 text-xs text-surface-raised placeholder-surface-sunken focus:w-44 focus:ring-1 focus:ring-surface-raised/40 transition-all"
+                  className="w-28 bg-ink-800 pl-8 pr-2 py-1.5 text-xs text-surface-raised placeholder-surface-sunken focus:w-44 focus:ring-1 focus:ring-surface-raised/40 transition-all"
                 />
               </form>
 
@@ -118,7 +118,7 @@ export function Nav() {
                 {user.avatar ? (
                   <img src={user.avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-6 w-6 items-center justify-center bg-crimson-dark text-[10px] font-medium text-surface-raised rounded-full">
+                  <span className="flex h-6 w-6 items-center justify-center bg-ink-800 text-[10px] font-medium text-surface-raised rounded-full">
                     {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
                   </span>
                 )}
@@ -146,26 +146,26 @@ export function Nav() {
           MOBILE DRAWER — below lg, shown when menuOpen
           ================================================================ */}
       {menuOpen && (
-        <div className="md:hidden bg-crimson px-6 pb-4 border-t border-crimson-dark">
+        <div className="md:hidden bg-ink-900 px-6 pb-4 border-t border-ink-800">
           {loading ? (
-            <div className="h-4 w-16 animate-pulse bg-crimson-dark" />
+            <div className="h-4 w-16 animate-pulse bg-ink-800" />
           ) : user ? (
             <>
-              <Link href="/write" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/write') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Write</Link>
-              <Link href="/dashboard" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/dashboard') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Dashboard</Link>
-              <Link href="/following" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/following') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Following</Link>
-              <Link href="/followers" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/followers') ? 'text-surface-raised font-medium' : 'text-surface'}`}>Followers</Link>
-              <Link href="/about" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-crimson-dark ${isActive('/about') ? 'text-surface-raised font-medium' : 'text-surface'}`}>About</Link>
+              <Link href="/write" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-ink-800 ${isActive('/write') ? 'text-white font-medium' : 'text-ink-400'}`}>Write</Link>
+              <Link href="/dashboard" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-ink-800 ${isActive('/dashboard') ? 'text-white font-medium' : 'text-ink-400'}`}>Dashboard</Link>
+              <Link href="/following" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-ink-800 ${isActive('/following') ? 'text-white font-medium' : 'text-ink-400'}`}>Following</Link>
+              <Link href="/followers" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-ink-800 ${isActive('/followers') ? 'text-white font-medium' : 'text-ink-400'}`}>Followers</Link>
+              <Link href="/about" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-ink-800 ${isActive('/about') ? 'text-white font-medium' : 'text-ink-400'}`}>About</Link>
 
               <form onSubmit={handleSearch} className="mt-3">
-                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full bg-crimson-dark px-3 py-2 text-sm text-surface-raised placeholder-surface-sunken" />
+                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full bg-ink-800 px-3 py-2 text-sm text-surface-raised placeholder-surface-sunken" />
               </form>
 
               <div className="flex items-center gap-2 mt-3">
                 {user.avatar ? (
                   <img src={user.avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-6 w-6 items-center justify-center bg-crimson-dark text-[10px] font-medium text-surface-raised rounded-full">
+                  <span className="flex h-6 w-6 items-center justify-center bg-ink-800 text-[10px] font-medium text-surface-raised rounded-full">
                     {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
                   </span>
                 )}
@@ -191,12 +191,12 @@ export function Nav() {
           ================================================================ */}
       <nav className="hidden lg:flex flex-col flex-1 overflow-y-auto py-2">
         {loading ? (
-          <div className="px-4 py-3 h-4 w-24 animate-pulse bg-crimson-dark rounded" />
+          <div className="px-4 py-3 h-4 w-24 animate-pulse bg-ink-800 rounded" />
         ) : user ? (
           <>
             {/* Search — icon only, expands on click */}
             {searchOpen ? (
-              <form onSubmit={handleSearch} className="mx-3 mb-1 flex items-center gap-2 bg-crimson-dark px-3 py-2">
+              <form onSubmit={handleSearch} className="mx-3 mb-1 flex items-center gap-2 bg-ink-800 px-3 py-2">
                 <svg className="h-3.5 w-3.5 text-surface-sunken flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <circle cx="6.5" cy="6.5" r="5" />
                   <line x1="10" y1="10" x2="14.5" y2="14.5" />
@@ -215,7 +215,7 @@ export function Nav() {
             ) : (
               <button
                 onClick={() => setSearchOpen(true)}
-                className="flex items-center gap-3 pl-4 py-2.5 text-surface hover:bg-crimson-dark/50 hover:text-surface-raised transition-colors w-full"
+                className="flex items-center gap-3 pl-4 py-2.5 text-ink-400 hover:bg-white/5 hover:text-white transition-colors w-full"
                 title="Search"
               >
                 <svg className="h-4 w-4 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -243,13 +243,13 @@ export function Nav() {
 
       {/* Sidebar bottom — user info */}
       {user && (
-        <div className="hidden lg:block border-t border-crimson-dark px-4 py-4 space-y-3">
+        <div className="hidden lg:block border-t border-ink-800 px-4 py-4 space-y-3">
           {/* User */}
           <Link href={`/${user.username}`} className="flex items-center gap-2 group">
             {user.avatar ? (
               <img src={user.avatar} alt="" className="h-7 w-7 rounded-full object-cover flex-shrink-0" />
             ) : (
-              <span className="flex h-7 w-7 items-center justify-center bg-crimson-dark text-[10px] font-medium text-surface-raised rounded-full flex-shrink-0">
+              <span className="flex h-7 w-7 items-center justify-center bg-ink-800 text-[10px] font-medium text-surface-raised rounded-full flex-shrink-0">
                 {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
               </span>
             )}

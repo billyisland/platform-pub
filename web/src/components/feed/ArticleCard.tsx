@@ -65,11 +65,11 @@ export function ArticleCard({ article, onQuote }: ArticleCardProps) {
           </div>
         </div>
       ) : (
-        <div className="bg-surface-raised p-5 border-l-[3px] border-accent">
+        <div className={`py-5 border-t border-ink-300 ${article.isPaywalled ? 'pl-4 border-l-[3px] border-l-accent' : ''}`}>
           <p className="label-ui text-content-muted mb-3">
             {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
           </p>
-          <h2 className="font-serif text-xl font-normal text-content-primary group-hover:opacity-80 transition-opacity mb-2 leading-snug tracking-tight">
+          <h2 className="font-serif text-xl font-medium text-content-primary group-hover:text-accent transition-colors mb-2 leading-snug" style={{ letterSpacing: '-0.015em' }}>
             {article.title}
           </h2>
           <p className="font-serif text-sm text-content-secondary leading-relaxed mb-4" style={{ lineHeight: '1.7' }}>
