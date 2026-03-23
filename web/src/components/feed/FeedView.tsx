@@ -146,7 +146,7 @@ export function FeedView() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3 px-6">
+          <div className="space-y-3 px-6" style={{ background: 'rgb(234,229,220)' }}>
             {feedItems.map(item => item.type === 'article'
               ? <ArticleCard key={item.id} article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
               : <NoteCard key={item.id} note={item} onDeleted={handleNoteDeleted} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />

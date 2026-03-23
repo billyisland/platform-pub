@@ -29,6 +29,12 @@ function getDestUrl(n: Notification): string {
     case 'new_subscriber':
       return n.actor?.username ? `/${n.actor.username}` : '#'
     case 'new_reply':
+      if (n.article?.slug) {
+        return n.comment?.id
+          ? `/article/${n.article.slug}#reply-${n.comment.id}`
+          : `/article/${n.article.slug}`
+      }
+      return '#'
     case 'new_quote':
     case 'new_mention':
       return n.article?.slug ? `/article/${n.article.slug}` : '#'
@@ -114,12 +120,13 @@ export function NotificationBell() {
   const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({})
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const dismissedIds = useRef(new Set<string>())
 
   // Fetch on mount
   useEffect(() => {
     notificationsApi.list()
       .then(({ notifications, unreadCount }) => {
-        setItems(notifications)
+        setItems(notifications.filter(n => !dismissedIds.current.has(n.id)))
         setUnreadCount(unreadCount)
       })
       .catch(() => {})
@@ -161,13 +168,14 @@ export function NotificationBell() {
     setLoading(true)
     try {
       const data = await notificationsApi.list()
-      setItems(data.notifications)
-      setUnreadCount(data.unreadCount)
+      setItems(data.notifications.filter(n => !dismissedIds.current.has(n.id)))
+      setUnreadCount(data.notifications.filter(n => !dismissedIds.current.has(n.id)).length)
     } catch {}
     setLoading(false)
   }
 
   function handleDismiss(id: string) {
+    dismissedIds.current.add(id)
     notificationsApi.markRead(id).catch(() => {})
     setItems((prev) => prev.filter((n) => n.id !== id))
     setUnreadCount((prev) => Math.max(0, prev - 1))

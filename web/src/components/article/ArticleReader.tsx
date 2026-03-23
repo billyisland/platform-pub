@@ -178,6 +178,8 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
                 authorPubkey: article.pubkey,
                 highlightedText: quoteComposerText,
                 previewContent: quoteComposerText,
+                previewTitle: article.title,
+                previewAuthorName: writerName,
               }}
               onPublished={() => setQuoteComposerText(null)}
             />

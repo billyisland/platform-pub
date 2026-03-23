@@ -1,10 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { writers, type WriterProfile } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
 import Link from 'next/link'
+import { ArticleCard } from '../../components/feed/ArticleCard'
+import { NoteCard } from '../../components/feed/NoteCard'
+import { NoteComposer } from '../../components/feed/NoteComposer'
+import type { ArticleEvent, NoteEvent } from '../../lib/ndk'
+import type { QuoteTarget } from '../../lib/publishNote'
 
 interface DbArticle {
   id: string
@@ -58,6 +63,7 @@ export default function WriterProfilePage() {
   const [followLoading, setFollowLoading] = useState(false)
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null)
   const [subLoading, setSubLoading] = useState(false)
+  const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
 
   // Load profile, articles, notes, and replies
   useEffect(() => {
@@ -166,6 +172,15 @@ export default function WriterProfilePage() {
     finally { setSubLoading(false) }
   }
 
+  const handleNoteDeleted = useCallback((id: string) => {
+    setActivity(prev => prev.filter(i => !(i.kind === 'note' && (i.data as DbNote).nostrEventId === id)))
+  }, [])
+
+  const handleQuote = useCallback((target: QuoteTarget) => {
+    setPendingQuote(target)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
   const isOwnProfile = user?.username === username
   const articleCount = activity.filter(i => i.kind === 'article').length
   const hasPaywalledArticles = activity.some(i => i.kind === 'article' && (i.data as DbArticle).isPaywalled)
@@ -267,49 +282,58 @@ export default function WriterProfilePage() {
 
       <div className="rule mb-10" />
 
+      {/* Quote composer modal */}
+      {pendingQuote && (
+        <div
+          className="fixed inset-0 z-50 bg-ink-900/60 flex items-center justify-center p-4"
+          onClick={() => setPendingQuote(null)}
+        >
+          <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <NoteComposer
+              quoteTarget={pendingQuote}
+              onPublished={() => setPendingQuote(null)}
+              onClearQuote={() => setPendingQuote(null)}
+            />
+          </div>
+        </div>
+      )}
+
       {activity.length === 0 ? (
         <p className="text-ui-sm text-content-muted py-10">Looks like {writer?.displayName ?? username} hasn't said anything yet.</p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3" style={{ background: 'rgb(234,229,220)' }}>
           {activity.map(item => {
             if (item.kind === 'article') {
-              return <DbArticleCard key={item.data.id} article={item.data as DbArticle} writerName={writer?.displayName ?? username} />
+              const a = item.data as DbArticle
+              const articleEvent: ArticleEvent & { type: 'article' } = {
+                type: 'article',
+                id: a.nostrEventId,
+                pubkey: writer!.pubkey,
+                dTag: a.dTag,
+                title: a.title,
+                summary: a.summary ?? '',
+                content: '',
+                publishedAt: a.publishedAt ? Math.floor(new Date(a.publishedAt).getTime() / 1000) : 0,
+                tags: [],
+                isPaywalled: a.isPaywalled,
+              }
+              return <ArticleCard key={a.id} article={articleEvent} onQuote={handleQuote} />
             }
             if (item.kind === 'note') {
-              return <DbNoteCard key={item.data.id} note={item.data as DbNote} writerName={writer?.displayName ?? username} />
+              const n = item.data as DbNote
+              const noteEvent: NoteEvent = {
+                type: 'note',
+                id: n.nostrEventId,
+                pubkey: writer!.pubkey,
+                content: n.content,
+                publishedAt: Math.floor(new Date(n.publishedAt).getTime() / 1000),
+              }
+              return <NoteCard key={n.id} note={noteEvent} onDeleted={handleNoteDeleted} onQuote={handleQuote} />
             }
             return <DbReplyCard key={item.data.id} reply={item.data as DbReply} writerName={writer?.displayName ?? username} />
           })}
         </div>
       )}
-    </div>
-  )
-}
-
-function DbArticleCard({ article, writerName }: { article: DbArticle; writerName: string }) {
-  const wordCount = article.wordCount ?? 0
-  const readMinutes = Math.max(1, Math.round(wordCount / 200))
-
-  return (
-    <a href={`/article/${article.dTag}`} className="group block bg-surface-raised p-5 border-l-[3px] border-accent">
-      <p className="label-ui text-content-muted mb-3">{writerName}</p>
-      <h2 className="font-serif text-xl font-normal text-content-primary group-hover:opacity-80 transition-opacity mb-2 leading-snug tracking-tight">{article.title}</h2>
-      {article.summary && <p className="font-serif text-sm text-content-secondary leading-relaxed mb-4" style={{ lineHeight: '1.7' }}>{article.summary}</p>}
-      <div className="flex items-center gap-3 text-ui-xs text-content-muted">
-        {article.publishedAt && <time dateTime={article.publishedAt}>{formatDate(article.publishedAt)}</time>}
-        {wordCount > 0 && <><span className="opacity-40">/</span><span>{readMinutes} min</span></>}
-        {article.isPaywalled && <><span className="opacity-40">/</span><span className="text-accent">£</span></>}
-      </div>
-    </a>
-  )
-}
-
-function DbNoteCard({ note, writerName }: { note: DbNote; writerName: string }) {
-  return (
-    <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong">
-      <p className="label-ui text-content-muted mb-3">{writerName} · Note</p>
-      <p className="font-serif text-sm text-content-primary leading-relaxed" style={{ lineHeight: '1.7' }}>{note.content}</p>
-      <p className="mt-3 text-ui-xs text-content-muted"><time dateTime={note.publishedAt}>{formatDate(note.publishedAt)}</time></p>
     </div>
   )
 }

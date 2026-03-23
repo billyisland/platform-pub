@@ -83,6 +83,10 @@ export interface NoteEvent {
   publishedAt: number
   quotedEventId?: string
   quotedEventKind?: number
+  // Text-excerpt quote fields (set when user quotes highlighted text from an article)
+  quotedExcerpt?: string
+  quotedTitle?: string
+  quotedAuthor?: string
 }
 
 // Discriminated union for mixed-kind feeds
@@ -125,6 +129,9 @@ export function parseArticleEvent(event: NDKEvent): ArticleEvent {
 
 export function parseNoteEvent(event: NDKEvent): NoteEvent {
   const qTag = event.tags.find(t => t[0] === 'q')
+  const excerptTag = event.tags.find(t => t[0] === 'excerpt')
+  const excerptTitleTag = event.tags.find(t => t[0] === 'excerpt-title')
+  const excerptAuthorTag = event.tags.find(t => t[0] === 'excerpt-author')
   return {
     type: 'note',
     id: event.id,
@@ -132,6 +139,9 @@ export function parseNoteEvent(event: NDKEvent): NoteEvent {
     content: event.content,
     publishedAt: event.created_at ?? 0,
     quotedEventId: qTag?.[1],
+    quotedExcerpt: excerptTag?.[1],
+    quotedTitle: excerptTitleTag?.[1],
+    quotedAuthor: excerptAuthorTag?.[1],
   }
 }
 

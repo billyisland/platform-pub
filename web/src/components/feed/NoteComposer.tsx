@@ -17,7 +17,7 @@ interface NoteComposerProps {
 
 export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteComposerProps) {
   const { user } = useAuth()
-  const [content, setContent] = useState(quoteTarget?.highlightedText ? `"${quoteTarget.highlightedText}"\n\n` : '')
+  const [content, setContent] = useState('')
   const [activeQuote, setActiveQuote] = useState<typeof quoteTarget | null>(quoteTarget ?? null)
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,20 +104,35 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
           {activeQuote && (
             <div className="mt-2 bg-surface-sunken/60 rounded-lg border-l-[2.5px] border-accent p-3 flex items-start gap-2">
               <div className="flex-1 min-w-0">
-                <p className="text-ui-xs font-medium text-content-muted">
-                  {activeQuote.previewAuthorName ?? activeQuote.authorPubkey.slice(0, 10) + '…'}
-                </p>
-                {activeQuote.previewTitle && (
-                  <p className="text-ui-sm font-medium text-content-primary leading-snug mt-0.5 line-clamp-1">
-                    {activeQuote.previewTitle}
-                  </p>
-                )}
-                {activeQuote.previewContent ? (
-                  <p className="text-ui-xs text-content-secondary leading-relaxed line-clamp-2 mt-0.5">
-                    {activeQuote.previewContent}
-                  </p>
+                {activeQuote.highlightedText ? (
+                  <>
+                    <p className="font-serif italic text-sm text-content-secondary leading-relaxed line-clamp-3 mt-0.5">
+                      {activeQuote.highlightedText.trim().split(/\s+/).slice(0, 80).join(' ')}
+                    </p>
+                    <p className="text-ui-xs text-content-faint mt-1">
+                      {activeQuote.previewTitle && <span className="font-medium">{activeQuote.previewTitle}</span>}
+                      {activeQuote.previewTitle && activeQuote.previewAuthorName && ' — '}
+                      {activeQuote.previewAuthorName}
+                    </p>
+                  </>
                 ) : (
-                  <p className="text-ui-xs text-content-faint italic mt-0.5">Note</p>
+                  <>
+                    <p className="text-ui-xs font-medium text-content-muted">
+                      {activeQuote.previewAuthorName ?? activeQuote.authorPubkey.slice(0, 10) + '…'}
+                    </p>
+                    {activeQuote.previewTitle && (
+                      <p className="text-ui-sm font-medium text-content-primary leading-snug mt-0.5 line-clamp-1">
+                        {activeQuote.previewTitle}
+                      </p>
+                    )}
+                    {activeQuote.previewContent ? (
+                      <p className="text-ui-xs text-content-secondary leading-relaxed line-clamp-2 mt-0.5">
+                        {activeQuote.previewContent}
+                      </p>
+                    ) : (
+                      <p className="text-ui-xs text-content-faint italic mt-0.5">Note</p>
+                    )}
+                  </>
                 )}
               </div>
               <button

@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.7.0
+# platform.pub — Deployment Reference v3.8.0
 
 **Date:** 23 March 2026
-**Replaces:** v3.6.0 (see bottom for change log)
+**Replaces:** v3.7.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,53 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.7.0
+
+No schema changes. Services changed: **gateway** and **web**. Deploy order: **gateway → web**.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker logs platform-pub-gateway-1 --tail 5
+docker logs platform-pub-web-1 --tail 5
+
+# Fix 1 — Debits page "Failed to load reading tab"
+# Open /debits — the page should load correctly showing tab balance and free allowance
+# GET /api/v1/my/reading-tab should return { tabBalancePence, freeAllowanceRemainingPence }
+
+# Fix 2 — Notification dismiss + reply anchor navigation
+# Open the notification bell — clicking any item should navigate AND remove it from the list
+# Clicking a reply notification should jump to the specific reply (URL ends #reply-<id>)
+# Re-opening the bell should not re-show notifications already dismissed in this session
+
+# Fix 3 — Reply text invisible inside dark note cards
+# Expand replies on a note card — reply text should be cream/light, not black-on-dark
+
+# Fix 4 — Article tile scalloping and background contrast
+# Feed should show article tiles as cream flags (#F5F0E8) with a visible zigzag right edge
+# Tiles must sit on a slightly darker sunken background (rgb(234,229,220)) so the shape reads
+
+# Fix 5 — Profile page uses full feed tiles
+# Visit any /:username profile page — articles should render as ArticleCards (cream flags)
+# Notes should render as NoteCards (dark stone tiles) with reply/quote/vote buttons functional
+# Quoting a note from a profile page should open the quote composer modal
+
+# Fix 6 — Quote-of-article renders in note tile
+# When a note quotes an article, it should show title and standfirst in a pennant inset
+# When a note quotes highlighted text from an article, the inset should show the excerpt
+# in italic Cormorant font with article title and author in small sans-serif subscript
+# The composer should NOT pre-fill the textarea with the highlighted text — it goes in the preview only
+```
+
+---
 
 ### From v3.6.0
 

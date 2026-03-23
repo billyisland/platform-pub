@@ -35,6 +35,7 @@ interface ReplyItemProps {
   contentAuthorId?: string
   depth?: number
   compact?: boolean
+  dark?: boolean
   onReply?: (replyId: string, replyEventId: string, authorName: string) => void
   onDelete?: (replyId: string) => void
   renderComposer?: (replyId: string) => ReactNode
@@ -48,6 +49,7 @@ export function ReplyItem({
   contentAuthorId,
   depth = 0,
   compact = false,
+  dark = false,
   onReply,
   onDelete,
   renderComposer,
@@ -77,8 +79,12 @@ export function ReplyItem({
     setConfirmDelete(false)
   }
 
+  const nameStyle: React.CSSProperties = dark ? { color: 'rgba(245,240,232,0.65)' } : {}
+  const textStyle: React.CSSProperties = dark ? { color: '#EAE5DC' } : {}
+  const metaStyle: React.CSSProperties = dark ? { color: 'rgba(245,240,232,0.4)' } : {}
+
   return (
-    <div className={`${depth > 0 ? 'ml-8 pl-3 border-l-2 border-surface-strong/40' : ''}`}>
+    <div id={`reply-${reply.id}`} className={`${depth > 0 ? 'ml-8 pl-3 border-l-2 border-surface-strong/40' : ''}`}>
       <div className={compact ? 'py-1.5' : 'py-2'}>
         {/* Inline layout: avatar | name text — all on one line for short replies */}
         <div className="flex items-start gap-2.5">
@@ -102,22 +108,22 @@ export function ReplyItem({
               reply.isDeleted ? 'text-content-faint italic' : ''
             }`}>
               {reply.author.username ? (
-                <Link href={`/${reply.author.username}`} className="font-medium text-content-secondary text-ui-xs hover:text-content-primary transition-colors">
+                <Link href={`/${reply.author.username}`} className="font-medium text-content-secondary text-ui-xs hover:text-content-primary transition-colors" style={nameStyle}>
                   {authorName}
                 </Link>
               ) : (
-                <span className="font-medium text-content-secondary text-ui-xs">
+                <span className="font-medium text-content-secondary text-ui-xs" style={nameStyle}>
                   {authorName}
                 </span>
               )}{' '}
-              <span className={reply.isDeleted ? 'text-content-faint' : 'text-content-primary'}>
+              <span className={reply.isDeleted ? 'text-content-faint' : 'text-content-primary'} style={reply.isDeleted ? {} : textStyle}>
                 {reply.content}
               </span>
             </p>
 
             {/* Meta row: time + actions */}
             {!reply.isDeleted && (
-              <div className="mt-0.5 flex items-center gap-2 text-ui-xs text-content-faint">
+              <div className="mt-0.5 flex items-center gap-2 text-ui-xs text-content-faint" style={metaStyle}>
                 <time dateTime={reply.publishedAt}>
                   {formatRelativeTime(reply.publishedAt)}
                 </time>

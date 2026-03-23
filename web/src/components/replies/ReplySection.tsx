@@ -22,6 +22,7 @@ interface ReplySectionProps {
   targetAuthorPubkey: string
   contentAuthorId?: string
   compact?: boolean // For notes: single-level, no threading
+  dark?: boolean    // For notes: dark background context
 }
 
 export function ReplySection({
@@ -30,6 +31,7 @@ export function ReplySection({
   targetAuthorPubkey,
   contentAuthorId,
   compact = false,
+  dark = false,
 }: ReplySectionProps) {
   const { user } = useAuth()
   const [replies, setReplies] = useState<ReplyData[]>([])
@@ -165,6 +167,7 @@ export function ReplySection({
                 currentUserId={user?.id}
                 contentAuthorId={contentAuthorId}
                 compact={compact}
+                dark={dark}
                 onReply={repliesEnabled ? handleReplyTo : undefined}
                 onDelete={handleDelete}
                 voteTally={voteTallies[reply.nostrEventId]}

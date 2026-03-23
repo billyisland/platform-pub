@@ -50,6 +50,14 @@ export async function publishNote(
   // Add q tag for quote-notes (NIP-18)
   if (quoteTarget) {
     noteEvent.tags.push(['q', quoteTarget.eventId, '', quoteTarget.authorPubkey])
+    // For text-excerpt quotes, store the excerpt and attribution as tags
+    // so Platform can render them with special styling
+    if (quoteTarget.highlightedText) {
+      const words = quoteTarget.highlightedText.trim().split(/\s+/).slice(0, 80).join(' ')
+      noteEvent.tags.push(['excerpt', words])
+      if (quoteTarget.previewTitle) noteEvent.tags.push(['excerpt-title', quoteTarget.previewTitle])
+      if (quoteTarget.previewAuthorName) noteEvent.tags.push(['excerpt-author', quoteTarget.previewAuthorName])
+    }
   }
 
   // Sign via gateway (custodial key)

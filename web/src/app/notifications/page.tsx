@@ -31,6 +31,12 @@ function getDestUrl(n: Notification): string {
     case 'new_subscriber':
       return n.actor?.username ? `/${n.actor.username}` : '#'
     case 'new_reply':
+      if (n.article?.slug) {
+        return n.comment?.id
+          ? `/article/${n.article.slug}#reply-${n.comment.id}`
+          : `/article/${n.article.slug}`
+      }
+      return '#'
     case 'new_quote':
     case 'new_mention':
       return n.article?.slug ? `/article/${n.article.slug}` : '#'
@@ -95,6 +101,7 @@ export default function NotificationsPage() {
   const router = useRouter()
   const [items, setItems] = useState<Notification[]>([])
   const [dataLoading, setDataLoading] = useState(true)
+  const [dismissedIds] = useState(() => new Set<string>())
 
   useEffect(() => {
     if (!loading && !user) router.push('/auth?mode=login')
@@ -109,6 +116,7 @@ export default function NotificationsPage() {
   }, [user])
 
   function handleDismiss(id: string) {
+    dismissedIds.add(id)
     notificationsApi.markRead(id).catch(() => {})
     setItems((prev) => prev.filter((n) => n.id !== id))
   }

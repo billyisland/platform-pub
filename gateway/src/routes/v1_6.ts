@@ -8,7 +8,11 @@ export async function v1_6Routes(app: FastifyInstance) {
     const userId = req.session!.sub!
     try {
       const account = await pool.query(
-        `SELECT balance_pence, free_allowance_pence FROM accounts WHERE id = $1`,
+        `SELECT a.free_allowance_remaining_pence,
+                COALESCE(rt.balance_pence, 0) AS balance_pence
+         FROM accounts a
+         LEFT JOIN reading_tabs rt ON rt.reader_id = a.id
+         WHERE a.id = $1`,
         [userId]
       )
       const reads = await pool.query(`
@@ -25,13 +29,10 @@ export async function v1_6Routes(app: FastifyInstance) {
         ORDER BY r.read_at DESC
         LIMIT 100
       `, [userId])
-      const freeAllowance = account.rows[0]?.free_allowance_pence || 500
-      const unsettled = reads.rows.filter((r: any) => !r.settledAt).reduce((sum: number, r: any) => sum + (r.chargePence || 0), 0)
-      const remaining = Math.max(0, freeAllowance - unsettled)
       const settled = reads.rows.find((r: any) => r.settledAt)
       return reply.send({
-        tabBalancePence: account.rows[0]?.balance_pence || 0,
-        freeAllowanceRemainingPence: remaining,
+        tabBalancePence: account.rows[0]?.balance_pence ?? 0,
+        freeAllowanceRemainingPence: account.rows[0]?.free_allowance_remaining_pence ?? 0,
         lastSettledAt: settled?.settledAt || null,
         reads: reads.rows
       })

@@ -208,7 +208,8 @@ export async function noteRoutes(app: FastifyInstance) {
         // Check articles table
         const articleResult = await pool.query(
           `SELECT ar.nostr_event_id, ar.title, ar.nostr_d_tag, ar.summary,
-                  ar.is_paywalled, ar.published_at, a.username, a.display_name, a.avatar
+                  ar.content_free, ar.is_paywalled, ar.published_at,
+                  a.username, a.display_name, a.avatar
            FROM articles ar
            JOIN accounts a ON a.id = ar.writer_id
            WHERE ar.nostr_event_id = $1`,
@@ -217,13 +218,16 @@ export async function noteRoutes(app: FastifyInstance) {
 
         if (articleResult.rows.length > 0) {
           const row = articleResult.rows[0]
+          const contentSnippet = row.summary
+            ? row.summary.slice(0, 200)
+            : (row.content_free ?? '').replace(/^#{1,6}\s+.*/gm, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/\*\*?(.+?)\*\*?/g, '$1').replace(/\n+/g, ' ').trim().slice(0, 200)
           return reply.send({
             type: 'article',
             eventId: row.nostr_event_id,
             title: row.title,
             dTag: row.nostr_d_tag,
             isPaywalled: row.is_paywalled,
-            content: (row.summary || '').slice(0, 200),
+            content: contentSnippet,
             publishedAt: Math.floor(new Date(row.published_at).getTime() / 1000),
             author: {
               username: row.username,
