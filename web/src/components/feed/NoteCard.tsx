@@ -177,7 +177,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
             {/* Quoted content */}
             {note.quotedExcerpt ? (
               <div className="mt-2.5 pl-3" style={{ borderLeft: '2px solid rgba(245,240,232,0.25)' }}>
-                <p style={{ fontFamily: '"Cormorant", Georgia, serif', fontStyle: 'italic', fontSize: '15px', color: '#EAE5DC', lineHeight: 1.6 }}>
+                <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontStyle: 'italic', fontSize: '15px', color: '#EAE5DC', lineHeight: 1.6 }}>
                   {note.quotedExcerpt}
                 </p>
                 {(note.quotedTitle || note.quotedAuthor) && (

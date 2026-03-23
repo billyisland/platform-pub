@@ -7,7 +7,7 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ['"Source Sans 3"', '"Source Sans Pro"', 'system-ui', 'sans-serif'],
-        serif: ['"Cormorant"', 'Georgia', 'serif'],
+        serif: ['"Newsreader"', 'Georgia', 'serif'],
         mono: ['"IBM Plex Mono"', '"Courier New"', 'monospace'],
       },
       colors: {
@@ -77,10 +77,10 @@ module.exports = {
             fontSize: '1.125rem',
             lineHeight: '1.85',
             color: '#1A1A1A',
-            fontFamily: '"Cormorant", Georgia, serif',
-            h1: { fontFamily: '"Cormorant", Georgia, serif', fontWeight: '500', letterSpacing: '-0.025em' },
-            h2: { fontFamily: '"Cormorant", Georgia, serif', fontWeight: '500', letterSpacing: '-0.015em' },
-            h3: { fontFamily: '"Cormorant", Georgia, serif', fontWeight: '500' },
+            fontFamily: '"Newsreader", Georgia, serif',
+            h1: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '500', letterSpacing: '-0.025em' },
+            h2: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '500', letterSpacing: '-0.015em' },
+            h3: { fontFamily: '"Newsreader", Georgia, serif', fontWeight: '500' },
             a: { color: '#9B1C20', textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationThickness: '1px', '&:hover': { color: '#7A1519' } },
             blockquote: { borderLeftColor: '#9B1C20', borderLeftWidth: '2px', fontStyle: 'italic', color: '#4A4845' },
             code: { fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.875em' },

@@ -139,7 +139,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
                 {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
               </p>
             )}
-            <h2 style={{ fontFamily: '"Cormorant", Georgia, serif', fontSize: '28px', fontWeight: 600, color: '#FFFFFF', lineHeight: 1.2, marginBottom: '8px' }}>
+            <h2 style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: '28px', fontWeight: 600, color: '#FFFFFF', lineHeight: 1.2, marginBottom: '8px' }}>
               {article.title}
             </h2>
             <div className="flex items-center gap-3" style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
@@ -180,10 +180,10 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
               {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
             </p>
           )}
-          <h2 style={{ fontFamily: '"Cormorant", Georgia, serif', fontSize: '28px', fontWeight: 600, color: '#111111', lineHeight: 1.2, marginBottom: '8px' }}>
+          <h2 style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: '28px', fontWeight: 600, color: '#111111', lineHeight: 1.2, marginBottom: '8px' }}>
             {article.title}
           </h2>
-          <p style={{ fontFamily: '"Cormorant", Georgia, serif', fontSize: '18px', fontWeight: 400, color: '#4A4845', lineHeight: 1.5, marginBottom: '14px' }}>
+          <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: '18px', fontWeight: 400, color: '#4A4845', lineHeight: 1.5, marginBottom: '14px' }}>
             {excerpt}
           </p>
           <div className="flex items-center gap-3" style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '12px', color: '#7A7774' }}>

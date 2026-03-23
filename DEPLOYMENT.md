@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.8.0
+# platform.pub — Deployment Reference v3.9.0
 
 **Date:** 23 March 2026
-**Replaces:** v3.7.0 (see bottom for change log)
+**Replaces:** v3.8.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,35 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.8.0
+
+No schema changes. Web only. Rebuild and restart `web`.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker logs platform-pub-web-1 --tail 5
+
+# Change 1 — Newsreader serif typeface
+# All serif text (article headings, article body, drop cap, nav links, feed card titles)
+# should render in Newsreader (Google Fonts) rather than Cormorant
+
+# Change 2 — Light left-hand navigation
+# Desktop sidebar (lg+) should have a white background with a subtle right border
+# Inactive nav links should appear in medium grey (#9E9B97)
+# Hovering a nav link should darken the text to near-black (#111111)
+# Active link keeps the crimson left-border indicator with dark text
+```
+
+---
 
 ### From v3.7.0
 
@@ -1201,7 +1230,35 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
-### v3.5.4 — 22 March 2026
+### v3.9.0 — 23 March 2026
+
+**Visual: Newsreader typeface + light navigation sidebar**
+
+**Typeface change — Cormorant → Newsreader**
+
+The platform serif has been switched from Cormorant to Newsreader throughout. Newsreader is a text-optimised variable serif designed specifically for long-form reading; it includes an optical-size axis (`opsz 6..72`) that automatically adjusts stroke contrast and spacing for both display headings and body copy.
+
+- `web/src/app/globals.css`: Google Fonts import updated to Newsreader with optical size axis weights (300–700, italic variants). Drop cap `font-family` updated.
+- `web/tailwind.config.js`: `theme.extend.fontFamily.serif` and all `typography` plugin `fontFamily` overrides updated from `"Cormorant"` to `"Newsreader"`.
+- `web/src/components/layout/Nav.tsx`: Logo inline `fontFamily` updated.
+- `web/src/components/feed/ArticleCard.tsx`, `QuoteCard.tsx`, `NoteCard.tsx`: All inline `fontFamily` strings updated.
+
+**Navigation sidebar redesign — dark → light**
+
+The fixed left sidebar (visible at `lg+` breakpoint) has been redesigned from a dark (`bg-ink-900`, `#111111`) theme to a clean white (`bg-surface-raised`, `#FFFFFF`) theme with a subtle `border-r border-ink-200` separator.
+
+- Inactive nav links: `text-ink-400` (`#9E9B97`, medium-light grey) — unchanged value, now legible on white.
+- Hover: `text-ink-900` (`#111111`, near-black) — was `text-white`.
+- Active link: `text-ink-900 font-medium` with existing crimson left-border indicator — was `text-white`.
+- All supporting elements updated: dividers (`border-ink-200`), avatar placeholder backgrounds (`bg-ink-200`), username / balance / logout text colours, loading skeleton backgrounds, hamburger lines (`bg-ink-900`), mobile drawer background (`bg-surface-raised`), inline search inputs (`bg-ink-100`).
+
+**Files changed:** `web/src/app/globals.css`, `web/tailwind.config.js`, `web/src/components/layout/Nav.tsx`, `web/src/components/feed/ArticleCard.tsx`, `web/src/components/feed/QuoteCard.tsx`, `web/src/components/feed/NoteCard.tsx`
+
+**No schema changes. Rebuild web only.**
+
+---
+
+### v3.8.0 — 23 March 2026
 
 **Fix: paywall decryption fails when v2 NIP-23 event is missing from relay (root-cause fix)**
 

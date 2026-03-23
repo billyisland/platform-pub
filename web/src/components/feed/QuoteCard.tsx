@@ -70,11 +70,11 @@ function ArticlePennant({ data }: { data: ResolvedContent }) {
         <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#7A7774', marginBottom: '3px' }}>
           {data.author.displayName}
         </p>
-        <p style={{ fontFamily: '"Cormorant", Georgia, serif', fontSize: '16px', fontWeight: 600, color: '#111111', lineHeight: 1.2 }}>
+        <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: '16px', fontWeight: 600, color: '#111111', lineHeight: 1.2 }}>
           {data.title}
         </p>
         {data.content && (
-          <p style={{ fontFamily: '"Cormorant", Georgia, serif', fontSize: '13px', color: '#4A4845', lineHeight: 1.4, marginTop: '3px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
+          <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: '13px', color: '#4A4845', lineHeight: 1.4, marginTop: '3px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
             {data.content}
           </p>
         )}
