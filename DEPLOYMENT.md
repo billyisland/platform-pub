@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.6.0
+# platform.pub — Deployment Reference v3.7.0
 
-**Date:** 22 March 2026
-**Replaces:** v3.5.4 (see bottom for change log)
+**Date:** 23 March 2026
+**Replaces:** v3.6.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,47 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.6.0
+
+No schema changes. Services changed: gateway, key-service, web. Deploy order: **key-service → gateway → web** (payment and key-custody are unchanged but rebuilt for consistency).
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Rebuild all app services (no migration needed)
+docker compose build --no-cache gateway keyservice key-custody payment web
+docker compose up -d gateway keyservice key-custody payment web
+```
+
+Verify:
+```bash
+docker logs platform-pub-gateway-1 --tail 5
+docker logs platform-pub-keyservice-1 --tail 5
+docker logs platform-pub-web-1 --tail 5
+
+# Feature 1 — Paywall unlock fix (own content + subscribers)
+# A writer visiting their own paywalled article should unlock immediately — no 502
+# A subscriber visiting a paywalled article from a writer they subscribe to should unlock immediately
+# GET /api/v1/content/resolve?eventId=<nostr_event_id> should return isPaywalled and correct dTag
+
+# Feature 2 — Notification dismiss-on-click
+# Open the notification bell — clicking an item should navigate AND remove it from the list
+# The red counter should decrement by 1 per click; disappear entirely when all are clicked
+# Open /notifications — same per-row dismiss behaviour applies
+
+# Feature 3 — Feed design overhaul
+# Feed cards should use Source Sans 3 (UI) and Cormorant (titles/serif) fonts
+# NoteCards should appear as dark stone tiles (#2A2A2A, 14px radius)
+# ArticleCards should appear as cream flags (#F5F0E8) with a zigzag right edge
+# Paywalled ArticleCards should have a 6px crimson left border
+# Quoted articles inside notes should render as a swallowtail cream pennant
+# Quoted notes inside notes should render as a dark inset (#141414, 10px radius)
+# The "Platform" logotype in the nav should be Cormorant 34px/600
+```
+
+---
 
 ### From v3.5.4
 
