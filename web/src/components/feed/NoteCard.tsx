@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import type { NoteEvent } from '../../lib/ndk'
 import { useWriterName } from '../../hooks/useWriterName'
@@ -32,6 +32,77 @@ const darkPillStyle: React.CSSProperties = {
   padding: '4px 14px',
   cursor: 'pointer',
   transition: 'background 0.15s ease, color 0.15s ease',
+}
+
+function ExcerptPennant({ note }: { note: NoteEvent }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [articleDTag, setArticleDTag] = useState<string | null>(null)
+  const [isPaywalled, setIsPaywalled] = useState(false)
+
+  function applySwallowtail() {
+    const el = ref.current
+    if (!el) return
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    if (w === 0 || h === 0) return
+    const forkDepth = 28
+    const vX = ((w - forkDepth) / w) * 100
+    el.style.clipPath = `polygon(0% 0%, 100% 0%, ${vX}% 50%, 100% 100%, 0% 100%)`
+  }
+
+  useEffect(() => {
+    function run() { applySwallowtail() }
+    if (typeof document !== 'undefined' && document.fonts) {
+      document.fonts.ready.then(run)
+    } else {
+      run()
+    }
+    window.addEventListener('resize', run)
+    return () => window.removeEventListener('resize', run)
+  }, [note.quotedExcerpt])
+
+  useEffect(() => {
+    if (!note.quotedEventId) return
+    fetch(`/api/v1/content/resolve?eventId=${encodeURIComponent(note.quotedEventId)}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.dTag) setArticleDTag(data.dTag)
+        if (data?.isPaywalled) setIsPaywalled(true)
+      })
+      .catch(() => {})
+  }, [note.quotedEventId])
+
+  const inner = (
+    <div
+      ref={ref}
+      style={{
+        background: '#FAF7F2',
+        borderLeft: isPaywalled ? '5px solid #9B1C20' : 'none',
+        paddingTop: '10px',
+        paddingBottom: '10px',
+        paddingLeft: isPaywalled ? '11px' : '14px',
+        paddingRight: '48px',
+      }}
+    >
+      <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontStyle: 'italic', fontSize: '14px', color: '#4A4845', lineHeight: 1.5, marginBottom: note.quotedTitle || note.quotedAuthor ? '5px' : 0 }}>
+        {note.quotedExcerpt}
+      </p>
+      {(note.quotedTitle || note.quotedAuthor) && (
+        <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#7A7774' }}>
+          {note.quotedTitle}{note.quotedTitle && note.quotedAuthor ? ' — ' : ''}{note.quotedAuthor}
+        </p>
+      )}
+    </div>
+  )
+
+  if (articleDTag) {
+    return (
+      <Link href={`/article/${articleDTag}`} onClick={e => e.stopPropagation()} className="block mt-2.5" style={{ marginRight: '-16px' }}>
+        {inner}
+      </Link>
+    )
+  }
+  return <div className="mt-2.5" style={{ marginRight: '-16px' }}>{inner}</div>
 }
 
 export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: NoteCardProps) {
@@ -176,16 +247,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
 
             {/* Quoted content */}
             {note.quotedExcerpt ? (
-              <div className="mt-2.5 pl-3" style={{ borderLeft: '2px solid rgba(245,240,232,0.25)' }}>
-                <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontStyle: 'italic', fontSize: '15px', color: '#EAE5DC', lineHeight: 1.6 }}>
-                  {note.quotedExcerpt}
-                </p>
-                {(note.quotedTitle || note.quotedAuthor) && (
-                  <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', color: 'rgba(245,240,232,0.45)', marginTop: '4px' }}>
-                    {note.quotedTitle}{note.quotedTitle && note.quotedAuthor ? ' — ' : ''}{note.quotedAuthor}
-                  </p>
-                )}
-              </div>
+              <ExcerptPennant note={note} />
             ) : note.quotedEventId ? (
               <QuoteCard eventId={note.quotedEventId} />
             ) : null}

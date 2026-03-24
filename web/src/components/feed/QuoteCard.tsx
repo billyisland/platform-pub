@@ -58,7 +58,7 @@ function ArticlePennant({ data }: { data: ResolvedContent }) {
       <div
         ref={ref}
         style={{
-          background: '#F5F0E8',
+          background: '#FAF7F2',
           borderRadius: 0,
           borderLeft: data.isPaywalled ? '5px solid #9B1C20' : 'none',
           paddingTop: '10px',

@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.11.0
+# platform.pub — Deployment Reference v3.12.0
 
 **Date:** 24 March 2026
-**Replaces:** v3.10.0 (see bottom for change log)
+**Replaces:** v3.11.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,54 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.11.0
+
+No schema changes. Web only. Rebuild and restart `web`.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker logs platform-pub-web-1 --tail 5
+
+# Fix 1 — Brown/beige ribbon behind feed removed
+# The feed content area should now sit directly on the page background (#F5F0E8) with no
+# intermediary coloured wrapper. Previously a hardcoded rgb(234,229,220) background was
+# applied to the feed wrapper div in FeedView.tsx.
+
+# Fix 2 — Article tile colour corrected to warm cream
+# Article tiles should now appear as a distinctly lighter cream (#FAF7F2) that contrasts
+# visibly against the page background. Previously tiles used #F5F0E8 — identical to the
+# page — making them invisible against the background. The new surface.card Tailwind token
+# is available as bg-surface-card for consistent use elsewhere.
+
+# Fix 3 — Article tile right edge is now a swallowtail, not a zigzag
+# Feed article cards should show a single V-notch (pennant/swallowtail) on the right edge,
+# not the previous multi-tooth zigzag. The applyZigzag() function in ArticleCard.tsx has
+# been replaced with applySwallowtail() (40px fork depth for full-width cards), matching
+# the shape already used by quoted-article pennants in QuoteCard.tsx.
+
+# Fix 4 — Quoted article pennant colour corrected
+# When a note embeds a quoted article tile, the pennant now uses the same #FAF7F2 cream
+# as main article tiles (was #F5F0E8 — same as page background, no contrast).
+
+# Fix 5 — Text-excerpt quotes render as cream swallowtail pennant
+# When a user has highlighted text from an article and quoted it into a note, the quoted
+# excerpt now renders as a cream swallowtail card (matching the article tile style) rather
+# than a plain left-bordered italic block. The card shows the excerpt in italic Newsreader,
+# with the article title and author below in small caps. If the article is paywalled a
+# 5px crimson left border is added. Once the component resolves the article's dTag via
+# /api/v1/content/resolve, the card becomes a clickable link to /article/:dTag.
+```
+
+---
 
 ### From v3.10.0
 
@@ -1305,6 +1353,95 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.12.0 — 24 March 2026
+
+**Fix: feed redesign visual regressions (web only)**
+
+Six visual bugs introduced during the feed redesign are corrected. No schema changes. Web only.
+
+**Bug 1 — Brown/beige ribbon behind feed**
+
+`FeedView.tsx` applied a hardcoded `style={{ background: 'rgb(234,229,220)' }}` to the feed wrapper `<div>` in both the "For you" and "Following" tab renders. This painted the `surface-sunken` tone as a solid band behind every card, contradicting the mock-up where cards sit directly on the page background. The inline style has been removed from both wrapper divs.
+
+**Bug 2 — Article tile colour identical to page background**
+
+`ArticleCard.tsx` used `background: '#F5F0E8'` for the card fill — the same value as the page's `bg-surface` body colour, giving zero contrast. The card and the quoted-article `ArticlePennant` in `QuoteCard.tsx` both suffered the same problem. Both are updated to `#FAF7F2` (a visibly lighter warm cream). A new `surface.card` Tailwind token (`'#FAF7F2'`) is added to `tailwind.config.js` under `theme.extend.colors.surface` for consistent reuse as `bg-surface-card`.
+
+**Bug 3 — Article tile right edge is a zigzag instead of a swallowtail**
+
+`ArticleCard.tsx` shaped its right edge with `applyZigzag()` — a function that computed a `clip-path: polygon(...)` with many repeating triangular teeth. The correct shape (a single V-notch pennant, matching the mock-up) already existed as `applySwallowtail()` in `QuoteCard.tsx`. `applyZigzag()` has been replaced entirely with `applySwallowtail()` using a 40px fork depth (slightly deeper than the 28px used on smaller quoted-article pennants, to suit the full-width feed card). The `useEffect` that drives the clip-path update on resize now calls `applySwallowtail`.
+
+**Bug 4 — Quoted article pennant colour wrong**
+
+The `ArticlePennant` sub-component in `QuoteCard.tsx` used the same `#F5F0E8` background as Bug 2. Corrected to `#FAF7F2` alongside the `ArticleCard` fix.
+
+**Bug 5 — Text-excerpt quotes rendered as plain left-bordered text, not a cream pennant**
+
+`NoteCard.tsx` rendered `quotedExcerpt` as a simple `<div>` with a left border and italic text. This path bypassed the cream-pennant styling used by `QuoteCard`. A new `ExcerptPennant` component is added directly in `NoteCard.tsx`. It:
+- Renders immediately with the known data (`quotedExcerpt`, `quotedTitle`, `quotedAuthor`) — no loading state.
+- Applies the same swallowtail `clip-path` and `#FAF7F2` background as the article tile.
+- Shows a 5px crimson left border when the source article is paywalled.
+- On mount, fires a `GET /api/v1/content/resolve?eventId=` request (using `note.quotedEventId`, which is always set on excerpt quotes via the `q` Nostr tag). Once resolved it obtains the article `dTag` and paywall status, wraps the entire card in a `<Link href="/article/:dTag">`, and applies the paywall border.
+- Extends 16px past the NoteCard's right padding (matching the parent's actual padding) so the swallowtail reaches the card edge.
+
+**Bug 6 — Excerpt quote not clickable (partial fix)**
+
+As a consequence of Bug 5: the `ExcerptPennant` becomes a `<Link>` once the article's `dTag` is resolved. The link is not available during the initial render (before the resolve completes) but appears within one request round-trip. Full pre-fetch of `dTag` at publish time (by adding an `excerpt-dtag` tag to the Nostr event) remains a future improvement.
+
+**Files changed:** `web/tailwind.config.js`, `web/src/components/feed/FeedView.tsx`, `web/src/components/feed/ArticleCard.tsx`, `web/src/components/feed/QuoteCard.tsx`, `web/src/components/feed/NoteCard.tsx`
+
+**No schema changes. Rebuild web only.**
+
+---
+
+### v3.11.0 — 24 March 2026
+
+**Fix: notification persist, quoted-note author name, reply-to-article link**
+
+**Fix 1 — Notifications reappear after clicking**
+
+Clicking a notification row navigated immediately via Next.js `router.push()`, which cancelled the in-flight `POST /api/v1/notifications/read-all` request before it could complete. On returning to `/notifications` the clicked rows were still unread on the server and reappeared. Fixed by awaiting the mark-read call before navigating, or firing it with `keepalive: true` so it survives the page unload. No schema change.
+
+**Fix 2 — Quoted note shows truncated pubkey instead of author display name**
+
+`GET /api/v1/content/resolve` was selecting `a.avatar` in its SQL query. The `accounts` table has no `avatar` column — the correct column is `avatar_blossom_url`. PostgreSQL threw a column-not-found error on every note-resolve request; the gateway caught it and returned a 500; `QuoteCard` fell through to the NDK relay fallback, which has no display-name data and used the raw Nostr pubkey truncated to 8 characters. Fixed by correcting the column alias in the SQL query.
+
+**Fix 3 — Reply tiles on user profile pages link to source article**
+
+The `DbReplyCard` component on `/:username` profile pages showed the reply text and timestamp but no link back to the article being replied to. The gateway's `GET /writers/:username/replies` endpoint now joins against the `articles` table to return `articleTitle` and `articleDTag` alongside each reply. The profile page passes these to `DbReplyCard`, which now renders an article title link (`/article/:dTag`) below the reply body for article replies. Note replies (`target_kind = 1`) do not show a link as there is no note permalink route.
+
+**Files changed:** `gateway/src/routes/writers.ts`, `web/src/app/[username]/page.tsx`, `web/src/components/ui/NotificationBell.tsx` (or `web/src/app/notifications/page.tsx`)
+
+**No schema changes. Rebuild gateway and web.**
+
+---
+
+### v3.10.0 — 23 March 2026
+
+**Dark navigation sidebar + "For you" global feed tab**
+
+**Navigation sidebar redesign — light → dark**
+
+The fixed left sidebar (visible at `lg+` breakpoint) has been redesigned from the white (`bg-surface-raised`, `#FFFFFF`) theme introduced in v3.9.0 to a dark grey (`#2A2A2A`) theme matching the note card surface.
+
+- Inactive nav links: `#9E9B97` (muted grey) on dark background.
+- Hover: near-black row fill (`#141414`) with white text.
+- Active link: retains the crimson left-border indicator with white text.
+- The "Platform" logotype switches to white border and white text at `lg+`.
+- Mobile top bar (below `lg`) is unchanged — white background, dark text.
+
+**"For you" global feed tab**
+
+A new "For you" tab is added to the feed page, left of "Following", and active by default. It is backed by a new `GET /api/v1/feed/global` endpoint that returns a mixed timeline of all published articles, notes, and new-user join events from all platform accounts, newest first. The feed respects the same vote-tally and quote/delete pipelines as the Following tab.
+
+New-user join events appear as compact inline cards: avatar (or initial placeholder) + "X joined the platform" + relative timestamp. They are rendered by a new `NewUserCard` sub-component in `FeedView.tsx`.
+
+**Files changed:** `gateway/src/routes/feed.ts` *(new)*, `gateway/src/index.ts`, `web/src/components/feed/FeedView.tsx`, `web/src/components/layout/Nav.tsx`
+
+**No schema changes. Rebuild gateway and web.**
+
+---
 
 ### v3.9.0 — 23 March 2026
 

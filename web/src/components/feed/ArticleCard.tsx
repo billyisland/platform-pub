@@ -19,25 +19,13 @@ interface ArticleCardProps {
   myVoteCounts?: MyVoteCount
 }
 
-function applyZigzag(el: HTMLElement) {
-  const h = el.offsetHeight
+function applySwallowtail(el: HTMLElement) {
   const w = el.offsetWidth
-  if (h === 0 || w === 0) return
-  const toothDepth = 36
-  let teeth = Math.round(h / 28)
-  if (teeth < 2) teeth = 2
-  if (teeth % 2 !== 0) teeth += 1
-  const toothH = h / teeth
-  const baseRight = ((w - toothDepth) / w) * 100
-  const points: string[] = ['0% 0%', `${baseRight}% 0%`]
-  for (let i = 0; i < teeth; i++) {
-    const yMid = ((i * toothH + toothH / 2) / h) * 100
-    const yBot = (((i + 1) * toothH) / h) * 100
-    points.push(`100% ${yMid}%`)
-    points.push(`${baseRight}% ${yBot}%`)
-  }
-  points.push('0% 100%')
-  el.style.clipPath = `polygon(${points.join(', ')})`
+  const h = el.offsetHeight
+  if (w === 0 || h === 0) return
+  const forkDepth = 40
+  const vX = ((w - forkDepth) / w) * 100
+  el.style.clipPath = `polygon(0% 0%, 100% 0%, ${vX}% 50%, 100% 100%, 0% 100%)`
 }
 
 // Ghost pill style for the cream (light) background
@@ -71,7 +59,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
   useEffect(() => {
     const el = cardRef.current
     if (!el) return
-    function run() { applyZigzag(el!) }
+    function run() { applySwallowtail(el!) }
     if (typeof document !== 'undefined' && document.fonts) {
       document.fonts.ready.then(run)
     } else {
@@ -101,7 +89,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
   const authorHref = writerInfo?.username ? `/${writerInfo.username}` : null
 
   const cardStyle: React.CSSProperties = {
-    background: '#F5F0E8',
+    background: '#FAF7F2',
     borderRadius: 0,
     borderLeft: article.isPaywalled ? '6px solid #9B1C20' : 'none',
     cursor: 'pointer',
