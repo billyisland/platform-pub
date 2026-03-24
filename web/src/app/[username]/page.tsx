@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { ArticleCard } from '../../components/feed/ArticleCard'
 import { NoteCard } from '../../components/feed/NoteCard'
 import { NoteComposer } from '../../components/feed/NoteComposer'
+import { VoteControls } from '../../components/ui/VoteControls'
 import type { ArticleEvent, NoteEvent } from '../../lib/ndk'
 import type { QuoteTarget } from '../../lib/publishNote'
 
@@ -40,8 +41,14 @@ interface DbReply {
   nostrEventId: string
   content: string
   publishedAt: string
+  isDeleted: boolean
+  targetKind: number
+  targetEventId: string | null
   articleSlug: string | null
   articleTitle: string | null
+  parentEventId: string | null
+  parentAuthorUsername: string | null
+  parentAuthorDisplayName: string | null
 }
 
 type ActivityItem =
@@ -342,7 +349,7 @@ export default function WriterProfilePage() {
               }
               return <NoteCard key={n.id} note={noteEvent} onDeleted={handleNoteDeleted} onQuote={handleQuote} />
             }
-            return <DbReplyCard key={item.data.id} reply={item.data as DbReply} writerName={writer?.displayName ?? username} />
+            return <DbReplyCard key={item.data.id} reply={item.data as DbReply} writerName={writer?.displayName ?? username} isOwnProfile={isOwnProfile} onQuote={handleQuote} />
           })}
         </div>
       )}
@@ -350,13 +357,78 @@ export default function WriterProfilePage() {
   )
 }
 
-function DbReplyCard({ reply, writerName }: { reply: DbReply; writerName: string }) {
+function DbReplyCard({ reply, writerName, isOwnProfile, onQuote }: { reply: DbReply; writerName: string; isOwnProfile: boolean; onQuote?: (target: QuoteTarget) => void }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [isDeleted, setIsDeleted] = useState(reply.isDeleted)
+  const [content, setContent] = useState(reply.content)
+
+  const articleHref = reply.articleSlug
+    ? `${reply.articleSlug}#reply-${reply.id}`
+    : null
+  const fullArticleHref = articleHref ? `/article/${articleHref}` : null
+
+  async function handleDelete() {
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      setTimeout(() => setConfirmDelete(false), 3000)
+      return
+    }
+    try {
+      const res = await fetch(`/api/v1/replies/${reply.id}`, { method: 'DELETE', credentials: 'include' })
+      if (res.ok) {
+        setIsDeleted(true)
+        setContent('[deleted]')
+      }
+    } catch { /* ignore */ }
+    setConfirmDelete(false)
+  }
+
+  if (isDeleted) {
+    return (
+      <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong">
+        <p className="label-ui text-content-muted mb-2">{writerName} · Reply</p>
+        <p className="text-ui-xs text-content-faint italic">[Deleted]</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong opacity-80">
-      <p className="label-ui text-content-muted mb-3">{writerName} · Reply</p>
-      <p className="font-serif text-sm text-content-primary leading-relaxed" style={{ lineHeight: '1.7' }}>{reply.content}</p>
-      <div className="mt-3 flex items-center gap-3">
-        <time className="text-ui-xs text-content-muted" dateTime={reply.publishedAt}>{formatDate(reply.publishedAt)}</time>
+    <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="label-ui text-content-muted">{writerName} · Reply</span>
+        <time className="text-ui-xs text-content-faint" dateTime={reply.publishedAt}>{formatDate(reply.publishedAt)}</time>
+        {isOwnProfile && (
+          <button
+            onClick={handleDelete}
+            className={`ml-auto text-ui-xs transition-colors ${confirmDelete ? 'text-red-500 font-medium' : 'text-content-faint hover:text-red-500'}`}
+          >
+            {confirmDelete ? 'Confirm?' : 'Delete'}
+          </button>
+        )}
+      </div>
+
+      {/* "Replying to" badge */}
+      {reply.parentAuthorUsername && (
+        <p className="text-ui-xs text-content-faint mb-2">
+          Replying to{' '}
+          <Link href={`/${reply.parentAuthorUsername}`} className="text-content-muted hover:text-content-primary transition-colors underline underline-offset-2">
+            @{reply.parentAuthorDisplayName ?? reply.parentAuthorUsername}
+          </Link>
+        </p>
+      )}
+
+      {/* Content */}
+      {fullArticleHref ? (
+        <Link href={fullArticleHref} className="block hover:opacity-80 transition-opacity">
+          <p className="font-serif text-sm text-content-primary leading-relaxed" style={{ lineHeight: '1.7' }}>{content}</p>
+        </Link>
+      ) : (
+        <p className="font-serif text-sm text-content-primary leading-relaxed" style={{ lineHeight: '1.7' }}>{content}</p>
+      )}
+
+      {/* Footer: article link + actions */}
+      <div className="mt-3 flex items-center gap-3 flex-wrap">
         {reply.articleSlug && (
           <Link
             href={`/article/${reply.articleSlug}`}
@@ -366,6 +438,17 @@ function DbReplyCard({ reply, writerName }: { reply: DbReply; writerName: string
             {reply.articleTitle ?? 'View article'}
           </Link>
         )}
+        <div className="ml-auto flex items-center gap-2">
+          {onQuote && (
+            <button
+              onClick={() => onQuote({ eventId: reply.nostrEventId, eventKind: 1111, authorPubkey: '', previewContent: content.slice(0, 200), previewAuthorName: writerName })}
+              className="text-ui-xs text-content-faint hover:text-content-primary transition-colors"
+            >
+              Quote
+            </button>
+          )}
+          <VoteControls targetEventId={reply.nostrEventId} targetKind={1111} isOwnContent={true} />
+        </div>
       </div>
     </div>
   )

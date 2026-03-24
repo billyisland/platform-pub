@@ -128,6 +128,7 @@
     letter-spacing: 0.01em;
     text-transform: none;
     padding: 0.5rem 1rem;
+    margin-right: 6px;
     border: none;
     border-radius: 0;
     cursor: pointer;

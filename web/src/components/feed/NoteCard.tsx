@@ -9,7 +9,6 @@ import { isImageUrl, isEmbeddableUrl, extractUrls } from '../../lib/media'
 import { ReplySection } from '../replies/ReplySection'
 import { QuoteCard } from './QuoteCard'
 import { VoteControls } from '../ui/VoteControls'
-import { replies as repliesApi } from '../../lib/api'
 import type { VoteTally, MyVoteCount } from '../../lib/api'
 import type { QuoteTarget } from '../../lib/publishNote'
 
@@ -38,6 +37,7 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
   const ref = useRef<HTMLDivElement>(null)
   const [articleDTag, setArticleDTag] = useState<string | null>(null)
   const [isPaywalled, setIsPaywalled] = useState(false)
+  const [authorUsername, setAuthorUsername] = useState<string | null>(null)
 
   function applyZigzag() {
     const el = ref.current
@@ -78,13 +78,18 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
       .then(data => {
         if (data?.dTag) setArticleDTag(data.dTag)
         if (data?.isPaywalled) setIsPaywalled(true)
+        if (data?.author?.username && data.author.username.length < 40) setAuthorUsername(data.author.username)
       })
       .catch(() => {})
   }, [note.quotedEventId])
 
-  const inner = (
+  const excerptStyle: React.CSSProperties = { fontFamily: '"Newsreader", Georgia, serif', fontStyle: 'italic', fontSize: '14px', color: '#4A4845', lineHeight: 1.5, marginBottom: note.quotedTitle || note.quotedAuthor ? '5px' : 0 }
+  const attributionStyle: React.CSSProperties = { fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 400, color: '#9E9B97', marginTop: '4px' }
+
+  return (
     <div
       ref={ref}
+      className="mt-2.5"
       style={{
         background: '#FAFAF0',
         borderLeft: isPaywalled ? '5px solid #9B1C20' : 'none',
@@ -94,39 +99,35 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
         paddingRight: '28px',
       }}
     >
-      <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontStyle: 'italic', fontSize: '14px', color: '#4A4845', lineHeight: 1.5, marginBottom: note.quotedTitle || note.quotedAuthor ? '5px' : 0 }}>
-        {note.quotedExcerpt}
-      </p>
+      {articleDTag ? (
+        <Link href={`/article/${articleDTag}`} onClick={e => e.stopPropagation()} className="block hover:opacity-80 transition-opacity">
+          <p style={excerptStyle}>{note.quotedExcerpt}</p>
+        </Link>
+      ) : (
+        <p style={excerptStyle}>{note.quotedExcerpt}</p>
+      )}
       {(note.quotedTitle || note.quotedAuthor) && (
-        <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 400, color: '#9E9B97', marginTop: '4px' }}>
-          {note.quotedTitle}{note.quotedTitle && note.quotedAuthor ? ' · ' : ''}{note.quotedAuthor}
+        <p style={attributionStyle}>
+          {note.quotedTitle && articleDTag ? (
+            <Link href={`/article/${articleDTag}`} onClick={e => e.stopPropagation()} className="hover:underline underline-offset-2">{note.quotedTitle}</Link>
+          ) : note.quotedTitle}
+          {note.quotedTitle && note.quotedAuthor ? ' · ' : ''}
+          {note.quotedAuthor && authorUsername ? (
+            <Link href={`/${authorUsername}`} onClick={e => e.stopPropagation()} className="hover:underline underline-offset-2">{note.quotedAuthor}</Link>
+          ) : note.quotedAuthor}
         </p>
       )}
     </div>
   )
-
-  if (articleDTag) {
-    return (
-      <Link href={`/article/${articleDTag}`} onClick={e => e.stopPropagation()} className="block mt-2.5">
-        {inner}
-      </Link>
-    )
-  }
-  return <div className="mt-2.5">{inner}</div>
 }
 
 export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: NoteCardProps) {
   const { user } = useAuth()
   const writerInfo = useWriterName(note.pubkey)
-  const [showReplies, setShowReplies] = useState(false)
-  const [replyCount, setReplyCount] = useState<number | null>(null)
+  const [showComposer, setShowComposer] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const isAuthor = user?.pubkey === note.pubkey
-
-  useEffect(() => {
-    repliesApi.getForTarget(note.id).then(d => setReplyCount(d.totalCount)).catch(() => {})
-  }, [note.id])
 
   const urls = extractUrls(note.content)
   const imageUrls = urls.filter(isImageUrl)
@@ -265,7 +266,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
             {/* Action pills */}
             <div className="mt-3 flex items-center gap-1.5">
               <button
-                onClick={() => setShowReplies(!showReplies)}
+                onClick={() => setShowComposer(c => !c)}
                 style={darkPillStyle}
                 onMouseEnter={e => {
                   (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.12)'
@@ -276,11 +277,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
                   ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(250,250,240,0.7)'
                 }}
               >
-                {showReplies
-                  ? 'Hide replies'
-                  : replyCount !== null && replyCount > 0
-                    ? <><span style={{ fontWeight: 500, color: '#FAFAF0' }}>{replyCount}</span>{' '}{replyCount !== 1 ? 'replies' : 'reply'}</>
-                    : 'Reply'}
+                Reply
               </button>
               {user && onQuote && (
                 <button
@@ -311,12 +308,10 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
         </div>
       </div>
 
-      {/* Replies */}
-      {showReplies && (
-        <div style={{ borderTop: '1px solid rgba(250,250,240,0.08)' }} className="px-4 pb-3">
-          <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact dark previewLimit={3} />
-        </div>
-      )}
+      {/* Replies — always visible, composer shown only when Reply is clicked */}
+      <div style={{ borderTop: '1px solid rgba(250,250,240,0.08)' }} className="px-4 pb-3">
+        <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact dark previewLimit={3} composerOpen={showComposer} onComposerClose={() => setShowComposer(false)} />
+      </div>
     </div>
   )
 }

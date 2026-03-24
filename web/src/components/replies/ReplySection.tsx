@@ -24,6 +24,8 @@ interface ReplySectionProps {
   compact?: boolean    // For notes: single-level, no threading
   dark?: boolean       // For notes: dark background context
   previewLimit?: number // Max top-level replies before "show older" truncation
+  composerOpen?: boolean // When set, controls top-level composer visibility (undefined = always show)
+  onComposerClose?: () => void // Called after a reply is published via the controlled composer
 }
 
 export function ReplySection({
@@ -34,6 +36,8 @@ export function ReplySection({
   compact = false,
   dark = false,
   previewLimit,
+  composerOpen,
+  onComposerClose,
 }: ReplySectionProps) {
   const { user } = useAuth()
   const [replies, setReplies] = useState<ReplyData[]>([])
@@ -163,14 +167,14 @@ export function ReplySection({
       {/* Reply list */}
       {replies.length > 0 && (
         <div className={`divide-y divide-ink-100 ${compact ? '' : 'mb-4'}`}>
-          {/* "Show older" button when truncated */}
+          {/* "Show all" button when truncated */}
           {previewLimit && !showAll && replies.length > previewLimit && (
             <button
               onClick={() => setShowAll(true)}
               className="w-full py-1.5 text-left text-ui-xs transition-colors"
               style={{ color: dark ? 'rgba(250,250,240,0.45)' : '#9E9B97' }}
             >
-              {replies.length - previewLimit} older {replies.length - previewLimit === 1 ? 'reply' : 'replies'} — show all
+              Show all {replies.length} replies
             </button>
           )}
           {(showAll || !previewLimit ? replies : replies.slice(-previewLimit)).map((reply) => (
@@ -220,25 +224,27 @@ export function ReplySection({
         </div>
       )}
 
-      {/* Compose box — below existing replies */}
-      {repliesEnabled && user ? (
-        <ReplyComposer
-          targetEventId={targetEventId}
-          targetKind={targetKind}
-          targetAuthorPubkey={targetAuthorPubkey}
-          onPublished={handleNewReply}
-        />
-      ) : !repliesEnabled ? (
-        <p className="text-xs text-ink-400 italic mb-4">
-          The author has closed replies on this piece.
-        </p>
-      ) : (
-        <p className="text-xs text-ink-400 mb-4">
-          <a href="/auth?mode=login" className="text-brand-600 hover:text-brand-700">
-            Log in
-          </a>{' '}
-          to leave a reply.
-        </p>
+      {/* Compose box — below existing replies; hidden when composerOpen is explicitly false */}
+      {(composerOpen === undefined || composerOpen) && (
+        repliesEnabled && user ? (
+          <ReplyComposer
+            targetEventId={targetEventId}
+            targetKind={targetKind}
+            targetAuthorPubkey={targetAuthorPubkey}
+            onPublished={(reply) => { handleNewReply(reply); onComposerClose?.() }}
+          />
+        ) : !repliesEnabled ? (
+          <p className="text-xs text-ink-400 italic mb-4">
+            The author has closed replies on this piece.
+          </p>
+        ) : (
+          <p className="text-xs text-ink-400 mb-4">
+            <a href="/auth?mode=login" className="text-brand-600 hover:text-brand-700">
+              Log in
+            </a>{' '}
+            to leave a reply.
+          </p>
+        )
       )}
     </div>
   )

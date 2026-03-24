@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.16.0
+# platform.pub — Deployment Reference v3.17.0
 
 **Date:** 24 March 2026
-**Replaces:** v3.15.0 (see bottom for change log)
+**Replaces:** v3.16.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -203,6 +203,81 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v3.16.0
+
+No schema changes. Services changed: **gateway** and **web**. Deploy order: **gateway → web**.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker logs platform-pub-gateway-1 --tail 5
+docker logs platform-pub-web-1 --tail 5
+
+# Change 1 — Quote flags: clickable body, linked author, paywall stripe
+# The pale quote pennant on note tiles is now interactive in two independent ways.
+# (a) The quoted excerpt text is wrapped in a Next.js Link that navigates to
+#     /article/[dTag]. When the article's dTag is not yet resolved the excerpt
+#     remains plain text; the dTag is fetched lazily from /api/v1/content/resolve.
+# (b) The attribution line ("Title · Author") has the author's display name as a
+#     separate Link to /[authorUsername]. The article title in the same line also
+#     links to the article independently. The two links do not nest.
+# For full-tile QuoteCard article pennants (used when a note quotes an article by
+# event ID rather than by pasted excerpt) the author attribution (small-caps line)
+# is now a router.push() span with stopPropagation so it navigates to the author
+# profile without triggering the outer article Link.
+# The red left-border paywall stripe was already present; no change to that logic.
+# Files: web/src/components/feed/NoteCard.tsx (ExcerptPennant),
+#        web/src/components/feed/QuoteCard.tsx (ArticlePennant)
+
+# Change 2 — Profile page reply cards: "Replying to", delete, votes, deep links
+# Reply cards on writer profile pages now show richer context and controls.
+# - "Replying to @username" badge (with profile link) is shown when the reply is
+#   nested under another user's comment (parent_comment_id is set).
+# - The reply content is wrapped in a Link to /article/[slug]#reply-[id] so
+#   clicking it jumps directly to the reply in the article thread.
+# - A Delete button appears when the viewer is the profile owner (isOwnProfile).
+#   It uses the standard 3-second confirm pattern and calls DELETE /api/v1/replies/:id.
+#   After deletion the card transitions to an unobtrusive "[Deleted]" placeholder
+#   in-place (no page reload required).
+# - VoteControls are rendered on the reply's nostrEventId (kind 1111).
+# - A Quote button is shown and wired to the existing NoteComposer modal.
+# Backend: GET /writers/:username/replies now LEFT JOINs the parent comment and
+# parent account rows to surface parentEventId, parentAuthorUsername,
+# parentAuthorDisplayName. It also removes the deleted_at IS NULL filter so
+# deleted replies are returned with isDeleted: true and content '[deleted]',
+# enabling the frontend to show the placeholder without a refresh.
+# Files: gateway/src/routes/writers.ts,
+#        web/src/app/[username]/page.tsx
+
+# Change 3 — Feed replies expanded by default; compose input on demand
+# Note tiles in the For You and Following feeds now render with the ReplySection
+# mounted immediately (no click required to see replies). The ReplySection fetches
+# up to the 3 most recent replies on mount; a "Show all N replies" link above them
+# loads all replies when clicked (was previously labelled "X older replies — show all").
+# The top-level reply compose box is hidden by default and only appears when the
+# user clicks the "Reply" action pill. A new composerOpen / onComposerClose prop
+# pair on ReplySection controls this; passing composerOpen={undefined} (the default
+# used by article pages) preserves the existing always-visible behaviour.
+# The per-card reply-count fetch (repliesApi.getForTarget) has been removed since
+# the count is now available directly from the ReplySection.
+# Files: web/src/components/feed/NoteCard.tsx,
+#        web/src/components/replies/ReplySection.tsx
+
+# Change 4 — Feed tab spacing
+# The "For you / Following / Add" tab pills now have 6px right margin between them,
+# making them visually distinct. Previously they were flush-adjacent with no gap.
+# File: web/src/app/globals.css (.tab-pill)
+```
+
+---
 
 ### From v3.15.0
 

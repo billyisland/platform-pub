@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { getNdk } from '../../lib/ndk'
 
 interface ResolvedContent {
@@ -25,6 +26,7 @@ interface QuoteCardProps {
 
 function ArticlePennant({ data }: { data: ResolvedContent }) {
   const ref = useRef<HTMLDivElement>(null)
+  const router = useRouter()
 
   function applyZigzag() {
     const el = ref.current
@@ -58,6 +60,8 @@ function ArticlePennant({ data }: { data: ResolvedContent }) {
     return () => window.removeEventListener('resize', run)
   }, [])
 
+  const authorIsProfile = data.author.username.length < 40
+
   return (
     <Link
       href={`/article/${data.dTag}`}
@@ -77,7 +81,14 @@ function ArticlePennant({ data }: { data: ResolvedContent }) {
         }}
       >
         <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#7A7774', marginBottom: '3px' }}>
-          {data.author.displayName}
+          {authorIsProfile ? (
+            <span
+              className="hover:underline underline-offset-2 cursor-pointer"
+              onClick={e => { e.preventDefault(); e.stopPropagation(); router.push(`/${data.author.username}`) }}
+            >
+              {data.author.displayName}
+            </span>
+          ) : data.author.displayName}
         </p>
         <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: '16px', fontWeight: 600, color: '#111111', lineHeight: 1.2 }}>
           {data.title}

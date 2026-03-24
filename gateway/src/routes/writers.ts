@@ -236,20 +236,30 @@ export async function writerRoutes(app: FastifyInstance) {
         nostr_event_id: string
         content: string
         published_at: Date
+        deleted_at: Date | null
         target_kind: number
+        target_event_id: string
         article_slug: string | null
         article_title: string | null
+        parent_event_id: string | null
+        parent_author_username: string | null
+        parent_author_display_name: string | null
       }>(
-        `SELECT c.id, c.nostr_event_id, c.content, c.published_at,
-                c.target_kind,
+        `SELECT c.id, c.nostr_event_id, c.content, c.published_at, c.deleted_at,
+                c.target_kind, c.target_event_id,
                 ar.nostr_d_tag AS article_slug,
-                ar.title AS article_title
+                ar.title AS article_title,
+                pc.nostr_event_id AS parent_event_id,
+                pa.username AS parent_author_username,
+                pa.display_name AS parent_author_display_name
          FROM comments c
          LEFT JOIN articles ar
            ON ar.nostr_event_id = c.target_event_id
            AND c.target_kind = 30023
            AND ar.deleted_at IS NULL
-         WHERE c.author_id = $1 AND c.deleted_at IS NULL
+         LEFT JOIN comments pc ON pc.id = c.parent_comment_id
+         LEFT JOIN accounts pa ON pa.id = pc.author_id
+         WHERE c.author_id = $1
          ORDER BY c.published_at DESC
          LIMIT $2 OFFSET $3`,
         [authorId, limit, offset]
@@ -258,10 +268,16 @@ export async function writerRoutes(app: FastifyInstance) {
       const replies = rows.map((r) => ({
         id: r.id,
         nostrEventId: r.nostr_event_id,
-        content: r.content,
+        content: r.deleted_at ? '[deleted]' : r.content,
         publishedAt: r.published_at.toISOString(),
+        isDeleted: !!r.deleted_at,
+        targetKind: r.target_kind,
+        targetEventId: r.target_event_id,
         articleSlug: r.article_slug ?? null,
         articleTitle: r.article_title ?? null,
+        parentEventId: r.parent_event_id ?? null,
+        parentAuthorUsername: r.parent_author_username ?? null,
+        parentAuthorDisplayName: r.parent_author_display_name ?? null,
       }))
 
       return reply.status(200).send({ replies, limit, offset })
