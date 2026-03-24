@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.10.0
+# platform.pub — Deployment Reference v3.11.0
 
 **Date:** 24 March 2026
-**Replaces:** v3.9.0 (see bottom for change log)
+**Replaces:** v3.10.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,47 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.10.0
+
+No schema changes. Services changed: **gateway** and **web**. Deploy order: **gateway → web**.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker logs platform-pub-gateway-1 --tail 5
+docker logs platform-pub-web-1 --tail 5
+
+# Fix 1 — Notifications no longer reappear after clicking
+# Open /notifications — clicking a row should immediately remove it from the list,
+# navigate to the destination, and permanently mark it read on the server.
+# Returning to /notifications should not re-show any row that was already clicked.
+# Previously the markRead request was aborted by client-side navigation before it could
+# complete, leaving notifications unread on the server so they reappeared on reload.
+
+# Fix 2 — Quoted note shows author name instead of truncated pubkey
+# Compose a note that quotes another platform note, then view it in the feed.
+# The quoted-note inset card should display the author's display name (e.g. "Eleanor Voss"),
+# not a hex string like "a3f2c8b1…".
+# Root cause: GET /api/v1/content/resolve was selecting a.avatar (non-existent column) instead
+# of a.avatar_blossom_url, causing a Postgres error on every note-resolve request. The fallback
+# path returned the raw Nostr pubkey as the display name. The SQL alias is now corrected.
+
+# Fix 3 — Reply tiles on user profile pages link to the source article
+# Visit any /:username profile page that includes replies.
+# Each reply card should now show a linked article title below the reply text and timestamp.
+# Clicking the link navigates to /article/:slug for the article the reply was posted on.
+# Note replies (target_kind = 1) do not show a link as there is no note permalink page yet.
+```
+
+---
 
 ### From v3.9.0
 

@@ -184,7 +184,7 @@ export async function noteRoutes(app: FastifyInstance) {
         // Check notes table first
         const noteResult = await pool.query(
           `SELECT n.nostr_event_id, n.content, n.published_at,
-                  a.username, a.display_name, a.avatar
+                  a.username, a.display_name, a.avatar_blossom_url AS avatar
            FROM notes n
            JOIN accounts a ON a.id = n.author_id
            WHERE n.nostr_event_id = $1`,

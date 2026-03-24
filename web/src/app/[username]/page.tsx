@@ -35,6 +35,8 @@ interface DbReply {
   nostrEventId: string
   content: string
   publishedAt: string
+  articleSlug: string | null
+  articleTitle: string | null
 }
 
 type ActivityItem =
@@ -343,7 +345,18 @@ function DbReplyCard({ reply, writerName }: { reply: DbReply; writerName: string
     <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong opacity-80">
       <p className="label-ui text-content-muted mb-3">{writerName} · Reply</p>
       <p className="font-serif text-sm text-content-primary leading-relaxed" style={{ lineHeight: '1.7' }}>{reply.content}</p>
-      <p className="mt-3 text-ui-xs text-content-muted"><time dateTime={reply.publishedAt}>{formatDate(reply.publishedAt)}</time></p>
+      <div className="mt-3 flex items-center gap-3">
+        <time className="text-ui-xs text-content-muted" dateTime={reply.publishedAt}>{formatDate(reply.publishedAt)}</time>
+        {reply.articleSlug && (
+          <Link
+            href={`/article/${reply.articleSlug}`}
+            className="text-ui-xs text-content-muted hover:text-content-primary transition-colors underline underline-offset-2"
+            onClick={e => e.stopPropagation()}
+          >
+            {reply.articleTitle ?? 'View article'}
+          </Link>
+        )}
+      </div>
     </div>
   )
 }

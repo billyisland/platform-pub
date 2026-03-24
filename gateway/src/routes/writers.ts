@@ -224,11 +224,21 @@ export async function writerRoutes(app: FastifyInstance) {
         nostr_event_id: string
         content: string
         published_at: Date
+        target_kind: number
+        article_slug: string | null
+        article_title: string | null
       }>(
-        `SELECT id, nostr_event_id, content, published_at
-         FROM comments
-         WHERE author_id = $1 AND deleted_at IS NULL
-         ORDER BY published_at DESC
+        `SELECT c.id, c.nostr_event_id, c.content, c.published_at,
+                c.target_kind,
+                ar.nostr_d_tag AS article_slug,
+                ar.title AS article_title
+         FROM comments c
+         LEFT JOIN articles ar
+           ON ar.nostr_event_id = c.target_event_id
+           AND c.target_kind = 30023
+           AND ar.deleted_at IS NULL
+         WHERE c.author_id = $1 AND c.deleted_at IS NULL
+         ORDER BY c.published_at DESC
          LIMIT $2 OFFSET $3`,
         [authorId, limit, offset]
       )
@@ -238,6 +248,8 @@ export async function writerRoutes(app: FastifyInstance) {
         nostrEventId: r.nostr_event_id,
         content: r.content,
         publishedAt: r.published_at.toISOString(),
+        articleSlug: r.article_slug ?? null,
+        articleTitle: r.article_title ?? null,
       }))
 
       return reply.status(200).send({ replies, limit, offset })

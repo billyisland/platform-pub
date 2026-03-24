@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../stores/auth'
 import { notifications as notificationsApi, type Notification } from '../../lib/api'
@@ -45,7 +44,7 @@ function getDestUrl(n: Notification): string {
   }
 }
 
-function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: string) => void }) {
+function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: string, href: string) => void }) {
   const actorName = n.actor?.displayName ?? n.actor?.username ?? 'Someone'
   const destUrl = getDestUrl(n)
 
@@ -57,10 +56,12 @@ function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: st
   }
 
   return (
-    <Link
-      href={destUrl}
-      onClick={() => onDismiss(n.id)}
-      className="flex items-start gap-3 py-4 border-b border-surface-strong hover:bg-surface-raised transition-colors bg-surface/50"
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => onDismiss(n.id, destUrl)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onDismiss(n.id, destUrl) }}
+      className="flex items-start gap-3 py-4 border-b border-surface-strong hover:bg-surface-raised transition-colors bg-surface/50 cursor-pointer"
     >
       {n.actor?.avatar ? (
         <img src={n.actor.avatar} alt="" className="h-10 w-10 rounded-full object-cover flex-shrink-0 mt-0.5" />
@@ -92,7 +93,7 @@ function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: st
       </div>
 
       <span className="flex-shrink-0 mt-2 h-2 w-2 rounded-full bg-crimson" />
-    </Link>
+    </div>
   )
 }
 
@@ -101,7 +102,6 @@ export default function NotificationsPage() {
   const router = useRouter()
   const [items, setItems] = useState<Notification[]>([])
   const [dataLoading, setDataLoading] = useState(true)
-  const [dismissedIds] = useState(() => new Set<string>())
 
   useEffect(() => {
     if (!loading && !user) router.push('/auth?mode=login')
@@ -115,10 +115,10 @@ export default function NotificationsPage() {
       .finally(() => setDataLoading(false))
   }, [user])
 
-  function handleDismiss(id: string) {
-    dismissedIds.add(id)
-    notificationsApi.markRead(id).catch(() => {})
+  async function handleDismiss(id: string, href: string) {
     setItems((prev) => prev.filter((n) => n.id !== id))
+    await notificationsApi.markRead(id).catch(() => {})
+    router.push(href)
   }
 
   if (loading || !user) {
