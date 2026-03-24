@@ -25,9 +25,9 @@ interface NoteCardProps {
 const darkPillStyle: React.CSSProperties = {
   fontFamily: '"Source Sans 3", system-ui, sans-serif',
   fontSize: '12px',
-  color: 'rgba(245, 240, 232, 0.7)',
-  background: 'rgba(245, 240, 232, 0.05)',
-  border: '1px solid rgba(245, 240, 232, 0.13)',
+  color: 'rgba(250, 250, 240, 0.7)',
+  background: 'rgba(250, 250, 240, 0.05)',
+  border: '1px solid rgba(250, 250, 240, 0.13)',
   borderRadius: '20px',
   padding: '4px 14px',
   cursor: 'pointer',
@@ -76,7 +76,7 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
     <div
       ref={ref}
       style={{
-        background: '#FAF7F2',
+        background: '#FAFAF0',
         borderLeft: isPaywalled ? '5px solid #9B1C20' : 'none',
         paddingTop: '10px',
         paddingBottom: '10px',
@@ -88,8 +88,8 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
         {note.quotedExcerpt}
       </p>
       {(note.quotedTitle || note.quotedAuthor) && (
-        <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#7A7774' }}>
-          {note.quotedTitle}{note.quotedTitle && note.quotedAuthor ? ' — ' : ''}{note.quotedAuthor}
+        <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 400, color: '#9E9B97', marginTop: '4px' }}>
+          {note.quotedTitle}{note.quotedTitle && note.quotedAuthor ? ' · ' : ''}{note.quotedAuthor}
         </p>
       )}
     </div>
@@ -168,7 +168,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
               ) : (
                 <span
                   className="flex h-9 w-9 items-center justify-center text-xs font-medium rounded-full"
-                  style={{ background: 'linear-gradient(135deg, #3A1515, #5A2020)', color: '#EAE5DC' }}
+                  style={{ background: 'linear-gradient(135deg, #3A1515, #5A2020)', color: '#FAFAF0' }}
                 >
                   {(writerInfo.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
                 </span>
@@ -179,7 +179,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
           ) : (
             <span
               className="flex h-9 w-9 items-center justify-center text-xs font-medium flex-shrink-0 rounded-full"
-              style={{ background: 'linear-gradient(135deg, #3A1515, #5A2020)', color: '#EAE5DC' }}
+              style={{ background: 'linear-gradient(135deg, #3A1515, #5A2020)', color: '#FAFAF0' }}
             >
               {(writerInfo?.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
             </span>
@@ -191,13 +191,13 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
               {writerInfo?.username ? (
                 <Link
                   href={`/${writerInfo.username}`}
-                  style={{ fontSize: '15px', fontWeight: 700, color: '#F5F0E8' }}
+                  style={{ fontSize: '15px', fontWeight: 700, color: '#FAFAF0' }}
                   className="hover:opacity-80 transition-opacity"
                 >
                   {writerInfo.displayName ?? note.pubkey.slice(0, 12) + '...'}
                 </Link>
               ) : (
-                <span style={{ fontSize: '15px', fontWeight: 700, color: '#F5F0E8' }}>
+                <span style={{ fontSize: '15px', fontWeight: 700, color: '#FAFAF0' }}>
                   {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
                 </span>
               )}
@@ -211,7 +211,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
                   className="ml-auto rounded-full px-2.5 py-0.5 disabled:opacity-40 transition-colors"
                   style={confirmDelete
                     ? { fontSize: '12px', color: '#ff6b6b', background: 'rgba(255,107,107,0.15)', fontWeight: 500 }
-                    : { fontSize: '12px', color: 'rgba(245,240,232,0.35)' }
+                    : { fontSize: '12px', color: 'rgba(250,250,240,0.35)' }
                   }
                 >
                   {deleting ? '...' : confirmDelete ? 'Confirm?' : 'Delete'}
@@ -223,7 +223,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
             {displayContent && (
               <p
                 className="whitespace-pre-wrap mt-1"
-                style={{ fontSize: '16px', color: '#EAE5DC', lineHeight: '1.55' }}
+                style={{ fontSize: '16px', color: '#FAFAF0', lineHeight: '1.55' }}
               >
                 {displayContent}
               </p>
@@ -258,18 +258,18 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
                 onClick={() => setShowReplies(!showReplies)}
                 style={darkPillStyle}
                 onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,240,232,0.12)'
-                  ;(e.currentTarget as HTMLButtonElement).style.color = '#F5F0E8'
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.12)'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = '#FAFAF0'
                 }}
                 onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,240,232,0.05)'
-                  ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(245,240,232,0.7)'
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.05)'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(250,250,240,0.7)'
                 }}
               >
                 {showReplies
                   ? 'Hide replies'
                   : replyCount !== null && replyCount > 0
-                    ? <><span style={{ fontWeight: 500, color: '#EAE5DC' }}>{replyCount}</span>{' '}{replyCount !== 1 ? 'replies' : 'reply'}</>
+                    ? <><span style={{ fontWeight: 500, color: '#FAFAF0' }}>{replyCount}</span>{' '}{replyCount !== 1 ? 'replies' : 'reply'}</>
                     : 'Reply'}
               </button>
               {user && onQuote && (
@@ -277,12 +277,12 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
                   onClick={handleQuote}
                   style={darkPillStyle}
                   onMouseEnter={e => {
-                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,240,232,0.12)'
-                    ;(e.currentTarget as HTMLButtonElement).style.color = '#F5F0E8'
+                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.12)'
+                    ;(e.currentTarget as HTMLButtonElement).style.color = '#FAFAF0'
                   }}
                   onMouseLeave={e => {
-                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,240,232,0.05)'
-                    ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(245,240,232,0.7)'
+                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.05)'
+                    ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(250,250,240,0.7)'
                   }}
                 >
                   Quote
@@ -303,7 +303,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
 
       {/* Replies */}
       {showReplies && (
-        <div style={{ borderTop: '1px solid rgba(245,240,232,0.08)' }} className="px-4 pb-3">
+        <div style={{ borderTop: '1px solid rgba(250,250,240,0.08)' }} className="px-4 pb-3">
           <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact dark />
         </div>
       )}

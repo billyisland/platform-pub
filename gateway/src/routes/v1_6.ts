@@ -16,7 +16,7 @@ export async function v1_6Routes(app: FastifyInstance) {
         [userId]
       )
       const reads = await pool.query(`
-        SELECT r.id as "readId", a.title as "articleTitle", a.d_tag as "articleDTag",
+        SELECT r.id as "readId", a.title as "articleTitle", a.nostr_d_tag as "articleDTag",
                w.display_name as "writerDisplayName", w.username as "writerUsername",
                r.amount_pence as "chargePence", r.read_at as "readAt",
                ts.settled_at as "settledAt",

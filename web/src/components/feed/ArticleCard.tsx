@@ -19,13 +19,23 @@ interface ArticleCardProps {
   myVoteCounts?: MyVoteCount
 }
 
-function applySwallowtail(el: HTMLElement) {
+function applyZigzag(el: HTMLElement) {
   const w = el.offsetWidth
   const h = el.offsetHeight
   if (w === 0 || h === 0) return
-  const forkDepth = 40
-  const vX = ((w - forkDepth) / w) * 100
-  el.style.clipPath = `polygon(0% 0%, 100% 0%, ${vX}% 50%, 100% 100%, 0% 100%)`
+  const depth = 12 // px inward from right edge
+  const toothPx = 22 // target tooth height
+  const n = Math.max(4, Math.round(h / toothPx))
+  const xInner = (((w - depth) / w) * 100).toFixed(2)
+  const pts: string[] = ['0% 0%', '100% 0%']
+  for (let i = 0; i < n; i++) {
+    const yMid = (((i + 0.5) / n) * 100).toFixed(2)
+    const yBot = (((i + 1) / n) * 100).toFixed(2)
+    pts.push(`${xInner}% ${yMid}%`)
+    pts.push(`100% ${yBot}%`)
+  }
+  pts.push('0% 100%')
+  el.style.clipPath = `polygon(${pts.join(', ')})`
 }
 
 // Ghost pill style for the cream (light) background
@@ -59,7 +69,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
   useEffect(() => {
     const el = cardRef.current
     if (!el) return
-    function run() { applySwallowtail(el!) }
+    function run() { applyZigzag(el!) }
     if (typeof document !== 'undefined' && document.fonts) {
       document.fonts.ready.then(run)
     } else {
@@ -68,6 +78,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
     window.addEventListener('resize', run)
     return () => window.removeEventListener('resize', run)
   }, [excerpt, heroImage])
+
 
   function handleCardClick() {
     router.push(`/article/${article.dTag}`)
@@ -89,7 +100,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
   const authorHref = writerInfo?.username ? `/${writerInfo.username}` : null
 
   const cardStyle: React.CSSProperties = {
-    background: '#FAF7F2',
+    background: '#FAFAF0',
     borderRadius: 0,
     borderLeft: article.isPaywalled ? '6px solid #9B1C20' : 'none',
     cursor: 'pointer',

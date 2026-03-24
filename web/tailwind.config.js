@@ -12,9 +12,9 @@ module.exports = {
       },
       colors: {
         surface: {
-          DEFAULT: '#F5F0E8',
+          DEFAULT: '#FAFAF0',
           raised: '#FFFFFF',
-          card: '#FAF7F2',
+          card: '#FAFAF0',
           sunken: 'rgb(234 229 220 / <alpha-value>)',
           strong: 'rgb(212 209 204 / <alpha-value>)',
         },
@@ -39,7 +39,7 @@ module.exports = {
           300: '#D4D1CC',
           200: '#E8E6E3',
           100: '#F2F0EE',
-          50:  '#F5F0E8',       // match new surface
+          50:  '#FAFAF0',       // match new surface
         },
         // Semantic text colours
         content: {
@@ -64,7 +64,7 @@ module.exports = {
           900: '#3D0A0D',
         },
         brand: {
-          50: '#F5F0E8',
+          50: '#FAFAF0',
           100: '#FFFFFF',
           500: '#B52226',
           600: '#9B1C20',

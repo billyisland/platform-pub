@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.12.0
+# platform.pub — Deployment Reference v3.13.0
 
 **Date:** 24 March 2026
-**Replaces:** v3.11.0 (see bottom for change log)
+**Replaces:** v3.12.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -201,6 +201,73 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ---
 
 ## Upgrading from a previous version
+
+### From v3.12.0
+
+No schema changes. Services changed: **gateway** and **web**. Deploy order: **gateway → web**.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker logs platform-pub-gateway-1 --tail 5
+docker logs platform-pub-web-1 --tail 5
+
+# Fix 1 — Dashboard debit tab no longer fails to load
+# Navigate to /dashboard and open the Debits tab. The reading tab balance, history,
+# and subscriptions should load correctly instead of showing "Failed to load reading tab."
+# Root cause: GET /api/v1/my/tab was selecting a.d_tag in its SQL JOIN against the articles
+# table, but the column is named nostr_d_tag. Postgres raised an unknown-column error on
+# every request, returning a 500 which the frontend displayed as the error message.
+
+# Fix 2 — Notification bell dropdown: notifications no longer reappear after clicking
+# Click a notification in the dropdown panel. It should be removed immediately, the panel
+# should close, and navigating back to the feed should not re-show the dismissed item.
+# Root cause: NotificationBell used a Next.js <Link> element which triggered client-side
+# navigation synchronously on click, aborting the in-flight markRead request before it
+# completed. The notification remained read=false in the database, and reappeared on the
+# next panel open once the in-memory dismissedIds ref was cleared by a page reload.
+# Fix mirrors the pattern applied to /notifications page in v3.11.0: <Link> replaced with
+# a div[role="button"], handleDismiss made async, panel closed, markRead awaited, then
+# router.push() called.
+
+# Change 3 — Ivory palette: palest surface tones unified to #FAFAF0
+# All previously warm-beige "palest" surface colours (#F5F0E8, #FAF7F2, #EAE5DC) are now
+# a single consistent ivory (#FAFAF0) used across article tiles, the note compose box,
+# body background, and all light text rendered on dark note-card backgrounds.
+# Updated: tailwind.config.js (surface.DEFAULT, surface.card, ink.50, brand.50),
+# ArticleCard.tsx, NoteCard.tsx, QuoteCard.tsx, NoteComposer.tsx.
+
+# Change 4 — Article card right edge: multi-tooth zigzag scalloping
+# Main article tiles in the feed now show a repeating sawtooth/zigzag on their right edge
+# (depth 12px, ~22px per tooth, count scales with card height) instead of the single
+# swallowtail V-notch used previously.
+# Swallowtail is now reserved exclusively for quoted-article pennants inside note tiles
+# (QuoteCard.tsx ArticlePennant and NoteCard.tsx ExcerptPennant), which retain their
+# existing 28px fork-depth V-notch.
+
+# Change 5 — Text-excerpt quote attribution rendered as small subscript
+# When a user quotes highlighted article text into a note, the attribution line below the
+# italic excerpt (article title + author) is now rendered as small (11px) normal-weight
+# sans-serif in muted grey (#9E9B97), separated by a · instead of an em-dash.
+# Previously it used the uppercase label style (font-weight 700, letter-spacing 0.05em,
+# text-transform uppercase), which was visually too prominent.
+
+# Change 6 — Mobile and tablet navigation matches desktop dark colour scheme
+# On mobile (hamburger drawer) and tablet (inline top-bar nav), the nav background,
+# links, search input, avatar placeholder, and user info now use the same dark palette
+# as the desktop sidebar: #2A2A2A background, #9E9B97 inactive links, white active/hover,
+# #3a3a3a borders and avatar fills, #333 search input background.
+# Previously mobile/tablet used white (bg-surface-raised) with dark ink text.
+```
+
+---
 
 ### From v3.11.0
 

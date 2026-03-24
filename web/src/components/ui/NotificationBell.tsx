@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { notifications as notificationsApi, type Notification } from '../../lib/api'
 
 // =============================================================================
@@ -43,7 +43,7 @@ function getDestUrl(n: Notification): string {
   }
 }
 
-function NotificationItem({ n, onNavigate, onDismiss }: { n: Notification; onNavigate: () => void; onDismiss: (id: string) => void }) {
+function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: string, href: string) => void }) {
   const actorName = n.actor?.displayName ?? n.actor?.username ?? 'Someone'
   const destUrl = getDestUrl(n)
 
@@ -99,20 +99,23 @@ function NotificationItem({ n, onNavigate, onDismiss }: { n: Notification; onNav
   }
 
   return (
-    <Link
-      href={destUrl}
-      onClick={() => { onDismiss(n.id); onNavigate() }}
-      className="block px-4 py-3 border-b border-ink-800 last:border-0 hover:bg-white/10 transition-colors bg-white/5"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onDismiss(n.id, destUrl)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onDismiss(n.id, destUrl) }}
+      className="block px-4 py-3 border-b border-ink-800 last:border-0 hover:bg-white/10 transition-colors bg-white/5 cursor-pointer text-left w-full"
     >
       <div className="flex items-start gap-2.5">
         {avatar}
         <div className="min-w-0">{body}</div>
       </div>
-    </Link>
+    </div>
   )
 }
 
 export function NotificationBell() {
+  const router = useRouter()
   const [items, setItems] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [open, setOpen] = useState(false)
@@ -174,11 +177,13 @@ export function NotificationBell() {
     setLoading(false)
   }
 
-  function handleDismiss(id: string) {
+  async function handleDismiss(id: string, href: string) {
     dismissedIds.current.add(id)
-    notificationsApi.markRead(id).catch(() => {})
     setItems((prev) => prev.filter((n) => n.id !== id))
     setUnreadCount((prev) => Math.max(0, prev - 1))
+    setOpen(false)
+    await notificationsApi.markRead(id).catch(() => {})
+    router.push(href)
   }
 
   const panel = open ? (
@@ -198,7 +203,7 @@ export function NotificationBell() {
         {items.length === 0 && !loading ? (
           <p className="px-4 py-8 text-center text-xs text-ink-400">No notifications yet</p>
         ) : (
-          items.map((n) => <NotificationItem key={n.id} n={n} onNavigate={() => setOpen(false)} onDismiss={handleDismiss} />)
+          items.map((n) => <NotificationItem key={n.id} n={n} onDismiss={handleDismiss} />)
         )}
       </div>
     </div>
