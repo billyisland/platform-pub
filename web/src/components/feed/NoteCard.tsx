@@ -36,33 +36,32 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
   }, [note.quotedEventId])
 
   return (
-    <div
-      className="mt-2.5"
+    <Link
+      href={articleDTag ? `/article/${articleDTag}` : '#'}
+      onClick={e => { e.stopPropagation(); if (!articleDTag) e.preventDefault() }}
+      className="block mt-2.5 hover:opacity-80 transition-opacity"
       style={{
         background: '#FFFAEF',
         borderLeft: '2.5px solid #B5242A',
         padding: '12px 16px',
       }}
     >
-      {articleDTag ? (
-        <Link href={`/article/${articleDTag}`} onClick={e => e.stopPropagation()} className="block hover:opacity-80 transition-opacity">
-          <p style={{ fontFamily: '"Literata", Georgia, serif', fontStyle: 'italic', fontSize: '13.5px', color: '#263D32', lineHeight: 1.5 }}>{note.quotedExcerpt}</p>
-        </Link>
-      ) : (
-        <p style={{ fontFamily: '"Literata", Georgia, serif', fontStyle: 'italic', fontSize: '13.5px', color: '#263D32', lineHeight: 1.5 }}>{note.quotedExcerpt}</p>
-      )}
+      <p style={{ fontFamily: '"Literata", Georgia, serif', fontStyle: 'italic', fontSize: '13.5px', color: '#263D32', lineHeight: 1.5 }}>{note.quotedExcerpt}</p>
       {(note.quotedTitle || note.quotedAuthor) && (
         <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 400, color: '#ACA69C', marginTop: '4px' }}>
-          {note.quotedTitle && articleDTag ? (
-            <Link href={`/article/${articleDTag}`} onClick={e => e.stopPropagation()} className="hover:underline underline-offset-2">{note.quotedTitle}</Link>
-          ) : note.quotedTitle}
+          {note.quotedTitle ?? ''}
           {note.quotedTitle && note.quotedAuthor ? ' · ' : ''}
           {note.quotedAuthor && authorUsername ? (
-            <Link href={`/${authorUsername}`} onClick={e => e.stopPropagation()} className="hover:underline underline-offset-2">{note.quotedAuthor}</Link>
-          ) : note.quotedAuthor}
+            <span
+              className="hover:underline underline-offset-2 cursor-pointer"
+              onClick={e => { e.preventDefault(); e.stopPropagation(); window.location.href = `/${authorUsername}` }}
+            >
+              {note.quotedAuthor}
+            </span>
+          ) : note.quotedAuthor ?? ''}
         </p>
       )}
-    </div>
+    </Link>
   )
 }
 
@@ -70,6 +69,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
   const { user } = useAuth()
   const writerInfo = useWriterName(note.pubkey)
   const [showComposer, setShowComposer] = useState(false)
+  const [replyCount, setReplyCount] = useState(0)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const isAuthor = user?.pubkey === note.pubkey
@@ -213,7 +213,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
               onClick={() => setShowComposer(c => !c)}
               className="hover:text-ink transition-colors"
             >
-              Reply
+              {replyCount > 0 ? `Replies (${replyCount})` : 'Reply'}
             </button>
             {user && onQuote && (
               <button
@@ -234,12 +234,19 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
         </div>
       </div>
 
-      {/* Replies */}
-      {(showComposer || undefined) && (
-        <div className="ml-[42px] mt-1">
-          <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact previewLimit={3} composerOpen={showComposer} onComposerClose={() => setShowComposer(false)} />
-        </div>
-      )}
+      {/* Replies — always show up to 3 most recent */}
+      <div className="ml-[42px] mt-1">
+        <ReplySection
+          targetEventId={note.id}
+          targetKind={1}
+          targetAuthorPubkey={note.pubkey}
+          compact
+          previewLimit={3}
+          composerOpen={showComposer}
+          onComposerClose={() => setShowComposer(false)}
+          onReplyCountLoaded={setReplyCount}
+        />
+      </div>
     </div>
   )
 }

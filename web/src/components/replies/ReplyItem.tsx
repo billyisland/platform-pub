@@ -72,7 +72,7 @@ export function ReplyItem({
   }
 
   return (
-    <div id={`reply-${reply.id}`} className={`${depth > 0 ? 'ml-8 pl-3 border-l-2 border-ink/25' : ''}`}>
+    <div id={`reply-${reply.id}`} className={`${depth > 0 ? 'ml-8 pl-3 border-l-2 border-ink' : ''}`}>
       <div className={compact ? 'py-1.5' : 'py-2'}>
         <div className="flex items-start gap-2.5">
           {reply.author.avatar ? (

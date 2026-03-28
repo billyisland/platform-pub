@@ -18,6 +18,7 @@ interface ReplySectionProps {
   previewLimit?: number
   composerOpen?: boolean
   onComposerClose?: () => void
+  onReplyCountLoaded?: (count: number) => void
 }
 
 export function ReplySection({
@@ -29,6 +30,7 @@ export function ReplySection({
   previewLimit,
   composerOpen,
   onComposerClose,
+  onReplyCountLoaded,
 }: ReplySectionProps) {
   const { user } = useAuth()
   const [replies, setReplies] = useState<ReplyData[]>([])
@@ -56,8 +58,10 @@ export function ReplySection({
           const data = await res.json()
           const comments: ReplyData[] = data.comments ?? []
           setReplies(comments)
-          setTotalCount(data.totalCount ?? 0)
+          const count = data.totalCount ?? 0
+          setTotalCount(count)
           setRepliesEnabled(data.repliesEnabled ?? data.commentsEnabled ?? true)
+          onReplyCountLoaded?.(count)
 
           const allEventIds = flattenEventIds(comments)
           if (allEventIds.length > 0) {
@@ -155,14 +159,6 @@ export function ReplySection({
 
       {replies.length > 0 && (
         <div className={`space-y-1 ${compact ? '' : 'mb-4'}`}>
-          {previewLimit && !showAll && replies.length > previewLimit && (
-            <button
-              onClick={() => setShowAll(true)}
-              className="w-full py-1.5 text-left text-ui-xs text-content-faint hover:text-content-muted transition-colors"
-            >
-              Show all {replies.length} replies
-            </button>
-          )}
           {(showAll || !previewLimit ? replies : replies.slice(-previewLimit)).map((reply) => (
             <div key={reply.id}>
               <ReplyItem
@@ -175,7 +171,7 @@ export function ReplySection({
                 voteTally={voteTallies[reply.nostrEventId]}
                 myVoteCounts={myVoteCounts[reply.nostrEventId]}
                 renderComposer={(replyId) => replyTarget?.replyId === replyId ? (
-                  <div className="ml-8 pl-4 border-l-2 border-ink/25">
+                  <div className="ml-8 pl-4 border-l-2 border-ink">
                     <ReplyComposer
                       targetEventId={targetEventId}
                       targetKind={targetKind}
@@ -190,7 +186,7 @@ export function ReplySection({
                 ) : null}
               />
               {replyTarget?.replyId === reply.id && (
-                <div className="ml-8 pl-4 border-l-2 border-ink/25">
+                <div className="ml-8 pl-4 border-l-2 border-ink">
                   <ReplyComposer
                     targetEventId={targetEventId}
                     targetKind={targetKind}
@@ -205,6 +201,14 @@ export function ReplySection({
               )}
             </div>
           ))}
+          {previewLimit && !showAll && replies.length > previewLimit && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="mt-2 px-3 py-1.5 text-ui-xs text-content-muted hover:text-white hover:bg-ink transition-colors border border-transparent hover:border-ink"
+            >
+              Read more replies
+            </button>
+          )}
         </div>
       )}
 

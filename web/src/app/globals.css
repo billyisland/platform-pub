@@ -42,7 +42,7 @@
   select:focus {
     @apply outline-none;
     background-color: #FFFAEF;
-    box-shadow: 0 0 0 2px #0F1F18;
+    box-shadow: none;
   }
 
   ::placeholder {
@@ -224,21 +224,22 @@
   .btn-accent:disabled { opacity: 0.5; }
 
   .btn-soft {
-    background: #DDEEE4;
+    background: transparent;
     color: #0F1F18;
     font-family: 'Source Sans 3', system-ui, sans-serif;
     font-size: 0.875rem;
     font-weight: 500;
     letter-spacing: 0.01em;
     text-transform: none;
-    border: 2px solid #0F1F18;
+    border: 2px solid transparent;
     border-radius: 2px;
     padding: 0.75rem 2rem;
-    transition: background-color 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
     cursor: pointer;
   }
   .btn-soft:hover {
-    background: #C2DBC9;
+    background: #263D32;
+    color: #FFFFFF;
   }
   .btn-soft:focus-visible {
     outline: 2px solid #B5242A;

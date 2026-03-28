@@ -108,6 +108,8 @@ export function VoteControls({
           upCount: direction === 'up' ? prev.upCount + 1 : prev.upCount,
           downCount: direction === 'down' ? prev.downCount + 1 : prev.downCount,
         }))
+        // Refresh user balance so the Nav counter updates immediately
+        useAuth.getState().fetchMe()
       }
     } catch { /* silent */ }
     finally {

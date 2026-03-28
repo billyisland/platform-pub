@@ -10,14 +10,14 @@ import { NDKEvent } from '@nostr-dev-kit/ndk'
 import { getNdk, KIND_DELETION } from '../../lib/ndk'
 import { signViaGateway } from '../../lib/sign'
 
-type DashboardTab = 'articles' | 'drafts' | 'credits' | 'debits'
+type DashboardTab = 'articles' | 'drafts' | 'credits' | 'accounts' | 'settings'
 
 export default function DashboardPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const rawTab = searchParams.get('tab')
-  const initialTab: DashboardTab = rawTab === 'earnings' ? 'credits' : (rawTab as DashboardTab) || 'articles'
+  const initialTab: DashboardTab = rawTab === 'earnings' ? 'credits' : rawTab === 'debits' ? 'accounts' : (rawTab as DashboardTab) || 'articles'
   const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab)
   const [hasEarnings, setHasEarnings] = useState<boolean | null>(null)
 
@@ -60,15 +60,15 @@ export default function DashboardPage() {
   if (loading || !user) return <DashboardSkeleton />
 
   const tabs: DashboardTab[] = hasEarnings
-    ? ['articles', 'drafts', 'credits', 'debits']
-    : ['articles', 'drafts', 'debits']
+    ? ['articles', 'drafts', 'credits', 'accounts', 'settings']
+    : ['articles', 'drafts', 'accounts', 'settings']
 
   return (
     <div className="mx-auto max-w-content px-6 py-10">
       <div className="flex items-center justify-between mb-10">
         <div className="flex gap-2">
           {tabs.map(tab => (
-            <button key={tab} onClick={() => switchTab(tab)} className={`tab-pill ${activeTab === tab ? 'tab-pill-active' : 'tab-pill-inactive'}`}>{tab}</button>
+            <button key={tab} onClick={() => switchTab(tab)} className={`tab-pill ${activeTab === tab ? 'tab-pill-active' : 'tab-pill-inactive'}`}>{tab.charAt(0).toUpperCase() + tab.slice(1)}</button>
           ))}
         </div>
         <Link href="/write" className="btn">New article</Link>
@@ -76,7 +76,8 @@ export default function DashboardPage() {
       {activeTab === 'articles' && <ArticlesTab userId={user.id} pubkey={user.pubkey} />}
       {activeTab === 'drafts' && <DraftsTab />}
       {activeTab === 'credits' && hasEarnings && <CreditsTab userId={user.id} stripeReady={user.stripeConnectKycComplete} />}
-      {activeTab === 'debits' && <DebitsTab userId={user.id} freeAllowancePence={user.freeAllowanceRemainingPence} hasCard={user.hasPaymentMethod} />}
+      {activeTab === 'accounts' && <AccountsTab userId={user.id} freeAllowancePence={user.freeAllowanceRemainingPence} hasCard={user.hasPaymentMethod} />}
+      {activeTab === 'settings' && <SettingsTab />}
     </div>
   )
 }
@@ -285,7 +286,7 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
 }
 
 // =============================================================================
-// Debits Tab — itemised reads + subscriptions + value flagging
+// Accounts Tab — unified incomings & outgoings with running balance
 // =============================================================================
 
 interface TabData {
@@ -306,9 +307,19 @@ interface MySubscription {
   status: string; currentPeriodEnd: string
 }
 
-function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; freeAllowancePence: number; hasCard: boolean }) {
+interface LedgerEntry {
+  id: string
+  date: string
+  description: string
+  link?: string
+  amountPence: number  // positive = credit, negative = debit
+  type: 'credit' | 'debit'
+}
+
+function AccountsTab({ userId, freeAllowancePence, hasCard }: { userId: string; freeAllowancePence: number; hasCard: boolean }) {
   const [tabData, setTabData] = useState<TabData | null>(null)
   const [subscriptions, setSubscriptions] = useState<MySubscription[]>([])
+  const [earnings, setEarnings] = useState<WriterEarnings | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -316,131 +327,158 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
     (async () => {
       setLoading(true)
       try {
-        const [tabRes, subRes] = await Promise.all([
-          fetch('/api/v1/my/tab', { credentials: 'include' }),
-          fetch('/api/v1/subscriptions/mine', { credentials: 'include' }),
+        const [tabRes, subRes, earningsRes] = await Promise.all([
+          fetch('/api/v1/my/tab', { credentials: 'include' }).catch(() => null),
+          fetch('/api/v1/subscriptions/mine', { credentials: 'include' }).catch(() => null),
+          payment.getEarnings(userId).catch(() => null),
         ])
-        if (tabRes.ok) setTabData(await tabRes.json())
-        else setError('Failed to load reading tab.')
-        if (subRes.ok) {
+        if (tabRes?.ok) setTabData(await tabRes.json())
+        if (subRes?.ok) {
           const subData = await subRes.json()
           setSubscriptions(subData.subscriptions ?? [])
         }
-      } catch { setError('Failed to load.') }
+        if (earningsRes) setEarnings(earningsRes)
+      } catch { setError('Failed to load account data.') }
       finally { setLoading(false) }
     })()
   }, [userId])
 
-  const unsettled = tabData?.reads.filter(r => !r.settledAt) ?? []
-  const settled = tabData?.reads.filter(r => r.settledAt) ?? []
-  const subscriptionCostPence = subscriptions.filter(s => s.status === 'active').reduce((s, sub) => s + sub.pricePence, 0)
+  // Build unified ledger
+  const ledger: LedgerEntry[] = []
+
+  // Debits: reads
+  if (tabData) {
+    for (const r of tabData.reads) {
+      if (r.isSubscriptionRead || r.chargePence === 0) continue
+      ledger.push({
+        id: `read-${r.readId}`,
+        date: r.readAt,
+        description: r.articleTitle,
+        link: `/article/${r.articleDTag}`,
+        amountPence: -r.chargePence,
+        type: 'debit',
+      })
+    }
+  }
+
+  // Credits: earnings (we show net earnings as a single line if present)
+  if (earnings && earnings.earningsTotalPence > 0) {
+    ledger.push({
+      id: 'earnings-total',
+      date: new Date().toISOString(),
+      description: `Writer earnings (${earnings.readCount} paid reads)`,
+      amountPence: earnings.earningsTotalPence,
+      type: 'credit',
+    })
+  }
+
+  // Sort by date, most recent first
+  ledger.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+  // Compute balance
+  const totalCredits = ledger.filter(e => e.type === 'credit').reduce((s, e) => s + e.amountPence, 0)
+  const totalDebits = ledger.filter(e => e.type === 'debit').reduce((s, e) => s + Math.abs(e.amountPence), 0)
+  const netBalancePence = totalCredits - totalDebits + freeAllowancePence
+
+  if (loading) {
+    return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-card" />)}</div>
+  }
 
   return (
     <div>
-      {/* How it works */}
-      <div className="bg-card p-6 mb-10">
-        <p className="label-ui text-content-muted mb-3">How your reading tab works</p>
-        <div className="space-y-2 text-ui-xs text-content-secondary leading-relaxed">
-          <p>Per-article reads and subscriptions are both debits. Reads of articles by writers you subscribe to show as zero-cost. Your tab settles at £8, or monthly.</p>
-          {!hasCard && freeAllowancePence > 0 && <p className="text-ink">You have £{(freeAllowancePence/100).toFixed(2)} of free credit remaining.</p>}
-          {!hasCard && freeAllowancePence <= 0 && <p className="text-ink">Free allowance used. <a href="/settings" className="underline underline-offset-4">Add a card</a> to keep reading.</p>}
+      {/* Balance summary */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-10">
+        <Card label="Credits" pence={totalCredits + freeAllowancePence} sub={earnings ? `${earnings.readCount} paid reads + free allowance` : 'Free allowance'} primary />
+        <Card label="Debits" pence={totalDebits} sub={`${tabData?.reads.filter(r => !r.isSubscriptionRead && r.chargePence > 0).length ?? 0} paid reads`} accent />
+        <div className="p-6 bg-card border-t-[3px] border-ink">
+          <p className="label-ui mb-2 text-content-muted">Balance</p>
+          <p className={`font-serif text-2xl font-light ${netBalancePence >= 0 ? 'text-ink' : 'text-accent'}`}>
+            {netBalancePence < 0 ? '−' : ''}£{(Math.abs(netBalancePence)/100).toFixed(2)}
+          </p>
+          <p className="mt-1 text-ui-xs text-content-faint">
+            {netBalancePence >= 0 ? 'In credit' : 'Outstanding'}
+          </p>
         </div>
       </div>
 
-      {/* Summary cards */}
-      {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-14">{[1,2,3].map(i => <div key={i} className="bg-card p-6"><div className="h-3 w-20 animate-pulse bg-surface-deep mb-3"/><div className="h-7 w-28 animate-pulse bg-surface-deep"/></div>)}</div>
-      ) : tabData ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-14">
-          <Card label="Current tab" pence={tabData.tabBalancePence} sub={`${unsettled.length} unsettled`} primary />
-          <Card label="Free credit" pence={tabData.freeAllowanceRemainingPence} sub="Of £5.00 welcome" />
-          <Card label="Subscriptions" pence={subscriptionCostPence} sub={`${subscriptions.filter(s=>s.status==='active').length} active`} accent />
-          <Card label="Total settled" pence={settled.reduce((s,r)=>s+r.chargePence,0)} sub={tabData.lastSettledAt ? `Last ${new Date(tabData.lastSettledAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}` : 'None yet'} />
-        </div>
-      ) : null}
-
       {error && <div className="bg-card px-4 py-3 text-ui-xs text-content-primary mb-8">{error}</div>}
 
+      {!hasCard && freeAllowancePence <= 0 && (
+        <div className="mb-8 bg-surface-deep border-l-[3px] border-accent px-6 py-4">
+          <p className="text-ui-xs text-content-primary">Free allowance used. <a href="/settings" className="underline underline-offset-4 text-accent-dark">Add a card</a> to keep reading.</p>
+        </div>
+      )}
+
       {/* Active subscriptions */}
-      {subscriptions.length > 0 && (
-        <div className="mb-12">
-          <p className="label-ui text-content-muted mb-4">Your subscriptions</p>
+      {subscriptions.filter(s => s.status === 'active').length > 0 && (
+        <div className="mb-10">
+          <p className="label-ui text-content-muted mb-4">Active subscriptions</p>
           <div className="space-y-2">
-            {subscriptions.map(sub => (
+            {subscriptions.filter(s => s.status === 'active').map(sub => (
               <div key={sub.id} className="flex items-center justify-between bg-card px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <Link href={`/${sub.writerUsername}`} className="text-ui-sm text-ink hover:opacity-70">{sub.writerDisplayName ?? sub.writerUsername}</Link>
-                    <p className="text-ui-xs text-content-faint mt-0.5">
-                      £{(sub.pricePence/100).toFixed(2)}/mo
-                      {sub.status === 'cancelled' && ` · access until ${new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`}
-                    </p>
-                  </div>
-                </div>
-                <span className={`text-ui-xs ${sub.status === 'active' ? 'text-accent font-medium' : 'text-content-faint'}`}>
-                  {sub.status === 'active' ? 'Active' : 'Cancelled'}
-                </span>
+                <Link href={`/${sub.writerUsername}`} className="text-ui-sm text-ink hover:opacity-70">{sub.writerDisplayName ?? sub.writerUsername}</Link>
+                <span className="text-ui-xs text-accent font-medium tabular-nums">£{(sub.pricePence/100).toFixed(2)}/mo</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Unsettled reads */}
-      {!loading && unsettled.length > 0 && (
+      {/* Unified ledger */}
+      {ledger.length > 0 ? (
         <>
-          <p className="label-ui text-content-muted mb-4">On your tab</p>
-          <div className="overflow-x-auto bg-card mb-12">
-            <table className="w-full text-ui-xs">
-              <thead><tr className="border-b-2 border-ink/20"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
-              <tbody>{unsettled.map(r => (
-                <tr key={r.readId} className="border-b-2 border-ink/20 last:border-b-0">
-                  <td className="px-4 py-3"><a href={`/article/${r.articleDTag}`} className="text-ink hover:opacity-70">{r.articleTitle}</a></td>
-                  <td className="px-4 py-3 text-content-muted">{r.writerDisplayName??r.writerUsername}</td>
-                  <td className="px-4 py-3 text-content-faint">{new Date(r.readAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {r.isSubscriptionRead || r.chargePence === 0 ? (
-                      <span className="text-accent text-ui-xs">Subscribed</span>
-                    ) : (
-                      <span className="text-ink">£{(r.chargePence/100).toFixed(2)}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {/* Settled reads */}
-      {!loading && settled.length > 0 && (
-        <>
-          <p className="label-ui text-content-muted mb-4">Settled</p>
+          <p className="label-ui text-content-muted mb-4">Transaction history</p>
           <div className="overflow-x-auto bg-card">
             <table className="w-full text-ui-xs">
-              <thead><tr className="border-b-2 border-ink/20"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
-              <tbody>{settled.map(r => (
-                <tr key={r.readId} className="border-b-2 border-ink/20 last:border-b-0">
-                  <td className="px-4 py-3"><a href={`/article/${r.articleDTag}`} className="text-ink hover:opacity-70">{r.articleTitle}</a></td>
-                  <td className="px-4 py-3 text-content-muted">{r.writerDisplayName??r.writerUsername}</td>
-                  <td className="px-4 py-3 text-content-faint">{new Date(r.readAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {r.isSubscriptionRead || r.chargePence === 0 ? (
-                      <span className="text-accent text-ui-xs">Subscribed</span>
-                    ) : (
-                      <span className="text-content-faint">£{(r.chargePence/100).toFixed(2)}</span>
-                    )}
-                  </td>
+              <thead>
+                <tr className="border-b-2 border-ink/20">
+                  <th className="px-4 py-3 text-left label-ui text-content-muted">Date</th>
+                  <th className="px-4 py-3 text-left label-ui text-content-muted">Description</th>
+                  <th className="px-4 py-3 text-right label-ui text-content-muted">Amount</th>
                 </tr>
-              ))}</tbody>
+              </thead>
+              <tbody>
+                {ledger.map(entry => (
+                  <tr key={entry.id} className="border-b-2 border-ink/20 last:border-b-0">
+                    <td className="px-4 py-3 text-content-faint whitespace-nowrap">
+                      {new Date(entry.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </td>
+                    <td className="px-4 py-3">
+                      {entry.link ? (
+                        <Link href={entry.link} className="text-ink hover:opacity-70">{entry.description}</Link>
+                      ) : (
+                        <span className="text-ink">{entry.description}</span>
+                      )}
+                    </td>
+                    <td className={`px-4 py-3 text-right tabular-nums font-medium ${entry.type === 'credit' ? 'text-ink' : 'text-accent'}`}>
+                      {entry.type === 'credit' ? '+' : '−'}£{(Math.abs(entry.amountPence)/100).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           </div>
         </>
+      ) : !error && (
+        <div className="py-20 text-center">
+          <p className="text-ui-sm text-content-muted mb-4">No transactions yet.</p>
+          <Link href="/feed" className="text-ui-xs text-ink underline underline-offset-4">Browse the feed</Link>
+        </div>
       )}
+    </div>
+  )
+}
 
-      {!loading && !error && tabData && tabData.reads.length === 0 && subscriptions.length === 0 && (
-        <div className="py-20 text-center"><p className="text-ui-sm text-content-muted mb-4">No paywalled articles read yet.</p><Link href="/feed" className="text-ui-xs text-ink underline underline-offset-4">Browse the feed</Link></div>
-      )}
+// =============================================================================
+// Settings Tab — embeds the settings page
+// =============================================================================
+
+function SettingsTab() {
+  const router = useRouter()
+  useEffect(() => { router.push('/settings') }, [router])
+  return (
+    <div className="py-20 text-center">
+      <p className="text-ui-sm text-content-muted">Redirecting to settings…</p>
     </div>
   )
 }

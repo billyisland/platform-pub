@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.20.0
+# platform.pub — Deployment Reference v3.21.0
 
 **Date:** 28 March 2026
-**Replaces:** v3.19.0 (see bottom for change log)
+**Replaces:** v3.20.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -202,6 +202,92 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v3.20.0
+
+No schema changes. Services changed: **web only**. This is a frontend-only UI polish and feature pass — no backend services need rebuilding.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}" | grep web
+docker logs platform-pub-web-1 --tail 5
+
+# v3.21.0 — UI polish: accounts tab, reply threading, button consistency,
+# nav separator, vote balance refresh, quote clickthrough
+#
+# ── Input focus outline removed ──
+# The 2px black box-shadow on input:focus has been replaced with box-shadow: none.
+# The background-color change to card (#FFFAEF) already signals focus.
+# File: web/src/app/globals.css
+#
+# ── Vote balance updates immediately ──
+# After a successful vote that costs money, useAuth.getState().fetchMe() is
+# called to re-fetch the user profile, so the Nav balance counter updates
+# without a page reload.
+# File: web/src/components/ui/VoteControls.tsx
+#
+# ── Button consistency: .btn-soft now transparent by default ──
+# .btn-soft background changed from #DDEEE4 to transparent, border from
+# 2px solid #0F1F18 to transparent. On hover: bg #263D32 with white text.
+# Buttons are invisible until hovered, matching the site's editorial style.
+# File: web/src/app/globals.css
+#
+# ── Reply keylines solid black ──
+# Reply threading borders changed from border-ink/25 (25% opacity) to
+# border-ink (solid black), matching the weight of other black lines.
+# Files: web/src/components/replies/ReplyItem.tsx,
+#        web/src/components/replies/ReplySection.tsx
+#
+# ── Replies expanded by default (up to 3) ──
+# NoteCard now always renders ReplySection with previewLimit={3} and
+# composerOpen={false}. The three most recent replies are visible without
+# clicking. A "Read more replies" button appears when there are more than 3.
+# The reply button label shows "Reply" when 0 replies, "Replies (N)" when 1+.
+# ReplySection gains an onReplyCountLoaded callback prop.
+# Files: web/src/components/feed/NoteCard.tsx,
+#        web/src/components/replies/ReplySection.tsx
+#
+# ── Nav/feed vertical separator ──
+# A partial-height 2px black vertical line separates the nav from the main
+# content area at the lg+ breakpoint. It uses calc(100% - 8rem) height with
+# mt-16 to create a "modesty screen" effect — not full top-to-bottom.
+# File: web/src/app/layout.tsx
+#
+# ── Dashboard: "Debits" tab renamed to "Accounts" ──
+# The Debits tab has been replaced with a unified Accounts tab that shows
+# all incomings (writer earnings) and outgoings (article reads) in a single
+# chronological ledger. Credits display in black (ink), debits in red (accent)
+# with +/− prefixes. Three summary cards: Credits (primary), Debits (accent),
+# Balance (turns red when negative). The tab gracefully handles individual
+# API failures (each fetch caught independently).
+# Old ?tab=debits URLs redirect to the accounts tab.
+#
+# ── Dashboard: Settings tab added ──
+# A fourth "Settings" tab redirects to the existing /settings page.
+#
+# ── Quote clickthrough: ExcerptPennant ──
+# When a note quotes an article, the entire parchment region is now wrapped
+# in a <Link> to the article. The author name intercepts clicks and navigates
+# to /${authorUsername} for the author's profile page.
+# File: web/src/components/feed/NoteCard.tsx
+#
+# Files changed:
+#   web/src/app/globals.css, web/src/app/layout.tsx,
+#   web/src/app/dashboard/page.tsx, web/src/components/feed/NoteCard.tsx,
+#   web/src/components/replies/ReplyItem.tsx,
+#   web/src/components/replies/ReplySection.tsx,
+#   web/src/components/ui/VoteControls.tsx
+```
+
+---
 
 ### From v3.19.0
 
