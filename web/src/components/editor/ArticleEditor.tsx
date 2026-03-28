@@ -204,21 +204,22 @@ export function ArticleEditor({
   return (
     <div className="mx-auto max-w-article px-6 pt-16 lg:pt-8 pb-8">
       {/* Sticky title + toolbar — stays visible while scrolling the body */}
-      <div className="sticky top-[53px] lg:top-0 z-20 bg-surface pb-4 border-b border-surface-strong mb-6">
+      <div className="sticky top-[53px] lg:top-0 z-20 bg-surface pb-4 border-b border-rule mb-6">
       {/* Title input */}
       <input
         type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Article title"
-        className="w-full border-none bg-transparent font-serif text-3xl font-bold text-ink-900 placeholder:text-ink-300 focus:outline-none mb-3 pt-4 sm:text-4xl"
+        className="w-full border-none bg-transparent font-serif text-3xl font-medium italic text-ink placeholder:text-content-faint focus:outline-none mb-3 pt-4 sm:text-4xl"
+        style={{ letterSpacing: '-0.02em' }}
       />
       <input
         type="text"
         value={dek}
         onChange={(e) => setDek(e.target.value)}
         placeholder="Add a subtitle or standfirst…"
-        className="w-full border-none bg-transparent font-serif text-lg text-content-secondary italic placeholder:text-ink-300 focus:outline-none mb-3"
+        className="w-full border-none bg-transparent font-serif text-lg text-content-secondary italic placeholder:text-content-faint focus:outline-none mb-3"
       />
 
       {/* Editor toolbar */}
@@ -296,7 +297,7 @@ export function ArticleEditor({
         </ToolbarButton>
 
         {/* Paywall gate button */}
-        <span className="mx-1 text-surface-strong">|</span>
+        <span className="mx-1 text-rule">|</span>
         <ToolbarButton
           active={gateInserted}
           accent
@@ -322,7 +323,7 @@ export function ArticleEditor({
 
       {/* Price control — only shown when gate is inserted */}
       {gateInserted && (
-        <div className="mt-10 border-t border-surface-strong pt-6">
+        <div className="mt-10 border-t border-rule pt-6">
           <div className="flex items-center gap-4">
             <label className="block text-sm text-content-secondary">
               Price
@@ -335,7 +336,7 @@ export function ArticleEditor({
                 step={0.01}
                 value={(pricePence / 100).toFixed(2)}
                 onChange={(e) => setPricePence(Math.round(parseFloat(e.target.value) * 100))}
-                className="w-24 border border-surface-strong px-3 py-1.5 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent-200"
+                className="w-24 border border-rule px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
               />
               <span className="text-xs text-content-faint">
                 Suggested: &pound;{priceDisplay} based on {wordCount} words
@@ -418,11 +419,11 @@ function ToolbarButton({
 }) {
   const accentStyles = accent
     ? active
-      ? 'bg-accent-100 text-accent-700 border border-accent-300'
-      : 'text-accent-600 hover:bg-accent-50 hover:text-accent-700 border border-transparent'
+      ? 'bg-surface-deep text-accent border border-accent'
+      : 'text-accent hover:bg-surface-deep border border-transparent'
     : active
-      ? 'bg-surface-sunken text-ink-900'
-      : 'text-content-muted hover:bg-surface-raised hover:text-ink-700'
+      ? 'bg-surface-deep text-ink'
+      : 'text-content-muted hover:bg-surface-deep hover:text-ink'
 
   return (
     <button

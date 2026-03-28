@@ -3,23 +3,6 @@
 import { useState } from 'react'
 import { useAuth } from '../../stores/auth'
 
-// =============================================================================
-// ReportButton
-//
-// Per community standards: "Any reader can report content using the report
-// button present on every article, note, and comment."
-//
-// Report categories per ADR:
-//   - Illegal content
-//   - Targeted harassment
-//   - Non-consensual intimate imagery (mapped to 'harassment' in DB enum)
-//   - Spam or inauthentic behaviour
-//   - Other
-//
-// Submitting a report does not automatically remove content.
-// It places it in a review queue.
-// =============================================================================
-
 interface ReportButtonProps {
   targetNostrEventId?: string
   targetAccountId?: string
@@ -41,7 +24,7 @@ export function ReportButton({ targetNostrEventId, targetAccountId }: ReportButt
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  if (!user) return null // Must be logged in to report
+  if (!user) return null
 
   async function handleSubmit() {
     if (!category) return
@@ -73,7 +56,7 @@ export function ReportButton({ targetNostrEventId, targetAccountId }: ReportButt
 
   if (submitted) {
     return (
-      <div className="text-xs text-ink-400 py-2">
+      <div className="text-xs text-content-faint py-2">
         Report submitted. We'll review it within 48 hours.
       </div>
     )
@@ -83,15 +66,15 @@ export function ReportButton({ targetNostrEventId, targetAccountId }: ReportButt
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="text-xs text-ink-400 hover:text-ink-600 transition-colors"
+        className="text-xs text-content-faint hover:text-content-muted transition-colors"
         aria-label="Report this content"
       >
         Report
       </button>
 
       {open && (
-        <div className="absolute right-0 top-6 z-10 w-80 rounded-lg border border-ink-200 bg-white p-4 shadow-lg">
-          <h3 className="text-sm font-medium text-ink-800 mb-3">Report content</h3>
+        <div className="absolute right-0 top-6 z-10 w-80 border border-rule bg-card p-4 shadow-lg">
+          <h3 className="text-sm font-medium text-content-primary mb-3">Report content</h3>
 
           <div className="space-y-2 mb-3">
             {CATEGORIES.map((cat) => (
@@ -102,9 +85,9 @@ export function ReportButton({ targetNostrEventId, targetAccountId }: ReportButt
                   value={cat.value}
                   checked={category === cat.value}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="mt-0.5 h-3.5 w-3.5 border-ink-300 text-brand-600 focus:ring-brand-500"
+                  className="mt-0.5 h-3.5 w-3.5"
                 />
-                <span className="text-xs text-ink-600 leading-tight">{cat.label}</span>
+                <span className="text-xs text-content-secondary leading-tight">{cat.label}</span>
               </label>
             ))}
           </div>
@@ -115,30 +98,30 @@ export function ReportButton({ targetNostrEventId, targetAccountId }: ReportButt
             placeholder="Additional details (optional)"
             rows={2}
             maxLength={2000}
-            className="w-full rounded-md border border-ink-300 px-2.5 py-1.5 text-xs focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 mb-3"
+            className="w-full border border-rule px-2.5 py-1.5 text-xs bg-card mb-3"
           />
 
           {error && (
-            <p className="text-xs text-red-600 mb-2">{error}</p>
+            <p className="text-xs text-accent mb-2">{error}</p>
           )}
 
           <div className="flex gap-2">
             <button
               onClick={handleSubmit}
               disabled={!category || submitting}
-              className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+              className="btn-accent px-3 py-1.5 text-xs font-medium disabled:opacity-50"
             >
               {submitting ? 'Submitting...' : 'Submit report'}
             </button>
             <button
               onClick={() => setOpen(false)}
-              className="text-xs text-ink-400 hover:text-ink-600 px-2"
+              className="text-xs text-content-faint hover:text-content-muted px-2"
             >
               Cancel
             </button>
           </div>
 
-          <p className="mt-3 text-[10px] text-ink-400 leading-snug">
+          <p className="mt-3 text-[10px] text-content-faint leading-snug">
             Reports are reviewed by a human within 48 hours. Submitting a report does not automatically remove content.
           </p>
         </div>

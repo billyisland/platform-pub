@@ -18,11 +18,10 @@ export interface MyVoteCount {
 
 interface VoteControlsProps {
   targetEventId: string
-  targetKind: number   // 30023 = article, 1 = note, 1111 = reply
+  targetKind: number
   isOwnContent: boolean
-  dark?: boolean
+  dark?: boolean  // kept for API compat but no longer changes styling
 
-  // Optional: pre-fetched by parent batch call — skip individual fetches when provided
   initialTally?: VoteTally
   initialMyVotes?: MyVoteCount
 }
@@ -31,7 +30,6 @@ export function VoteControls({
   targetEventId,
   targetKind,
   isOwnContent,
-  dark,
   initialTally,
   initialMyVotes,
 }: VoteControlsProps) {
@@ -47,7 +45,6 @@ export function VoteControls({
   const [pendingDirection, setPendingDirection] = useState<'up' | 'down' | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Fetch tally and my votes on mount if not pre-supplied by parent
   useEffect(() => {
     if (!initialTally) {
       fetch(`/api/v1/votes/tally?eventIds=${targetEventId}`)
@@ -74,7 +71,6 @@ export function VoteControls({
     }
   }, [targetEventId, initialMyVotes, user])
 
-  // Keep in sync when parent updates batch data
   useEffect(() => { if (initialTally) setTally(initialTally) }, [initialTally])
   useEffect(() => { if (initialMyVotes) setMyVotes(initialMyVotes) }, [initialMyVotes])
 
@@ -90,7 +86,6 @@ export function VoteControls({
     const cost = voteCostPence(direction, seq)
 
     if (cost === 0) {
-      // Free first upvote — no modal, cast immediately
       castVote(direction)
     } else {
       setPendingDirection(direction)
@@ -123,10 +118,8 @@ export function VoteControls({
 
   const disabled = !user || isOwnContent || submitting
 
-  // Compute totals for tooltip and confirm modal
   const totalSpentPence = computeTotalSpent(myVotes)
 
-  // Pending vote details for modal
   const pendingSeq = pendingDirection
     ? (pendingDirection === 'up' ? myVotes.upCount : myVotes.downCount) + 1
     : 1
@@ -135,26 +128,22 @@ export function VoteControls({
   return (
     <>
       <div className="flex items-center gap-0.5">
-        {/* Up arrow */}
         <button
           onClick={() => handleVoteClick('up')}
           disabled={disabled}
           title={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Upvote'}
-          className={`rounded px-1.5 py-0.5 text-ui-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+          className={`px-1.5 py-0.5 text-ui-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed
             ${myVotes.upCount > 0
               ? 'text-accent font-medium'
-              : dark
-                ? 'text-white/50 hover:text-white/90 hover:bg-white/10'
-                : 'text-content-faint hover:text-content-primary hover:bg-surface-sunken'
+              : 'text-content-faint hover:text-content-primary hover:bg-surface-deep'
             }`}
         >
           ▲
         </button>
 
-        {/* Net score with breakdown tooltip */}
         <div className="relative">
           <button
-            className={`text-ui-xs min-w-[1.5rem] text-center transition-colors ${dark ? 'text-white/60 hover:text-white/90' : 'text-content-muted hover:text-content-primary'}`}
+            className="text-ui-xs min-w-[1.5rem] text-center transition-colors text-content-muted hover:text-content-primary"
             onMouseEnter={() => setShowTooltip(true)}
             onMouseLeave={() => setShowTooltip(false)}
           >
@@ -162,24 +151,21 @@ export function VoteControls({
           </button>
 
           {showTooltip && (tally.upvoteCount > 0 || tally.downvoteCount > 0) && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-10 whitespace-nowrap rounded bg-ink-900 px-2 py-1.5 text-[10px] text-white shadow-lg">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-10 whitespace-nowrap bg-ink px-2 py-1.5 text-[10px] text-white shadow-lg" style={{ borderRadius: '2px' }}>
               <div>↑ {tally.upvoteCount} {tally.upvoteCount !== 1 ? 'upvotes' : 'upvote'}</div>
               <div>↓ {tally.downvoteCount} {tally.downvoteCount !== 1 ? 'downvotes' : 'downvote'}</div>
             </div>
           )}
         </div>
 
-        {/* Down arrow */}
         <button
           onClick={() => handleVoteClick('down')}
           disabled={disabled}
           title={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Downvote'}
-          className={`rounded px-1.5 py-0.5 text-ui-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+          className={`px-1.5 py-0.5 text-ui-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed
             ${myVotes.downCount > 0
-              ? 'text-red-500 font-medium'
-              : dark
-                ? 'text-white/50 hover:text-white/90 hover:bg-white/10'
-                : 'text-content-faint hover:text-content-primary hover:bg-surface-sunken'
+              ? 'text-accent font-medium'
+              : 'text-content-faint hover:text-content-primary hover:bg-surface-deep'
             }`}
         >
           ▼
@@ -200,14 +186,11 @@ export function VoteControls({
   )
 }
 
-// Compute total spent across all past votes on this content (for the modal)
 function computeTotalSpent(myVotes: MyVoteCount): number {
   let total = 0
-  // Upvotes: 0 + 10 + 20 + 40 + ... for votes 2..n
   for (let i = 2; i <= myVotes.upCount; i++) {
     total += voteCostPence('up', i)
   }
-  // Downvotes: 10 + 20 + 40 + ... for votes 1..n
   for (let i = 1; i <= myVotes.downCount; i++) {
     total += voteCostPence('down', i)
   }

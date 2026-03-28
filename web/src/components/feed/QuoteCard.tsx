@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getNdk } from '../../lib/ndk'
@@ -25,41 +25,7 @@ interface QuoteCardProps {
 }
 
 function ArticlePennant({ data }: { data: ResolvedContent }) {
-  const ref = useRef<HTMLDivElement>(null)
   const router = useRouter()
-
-  function applyZigzag() {
-    const el = ref.current
-    if (!el) return
-    const w = el.offsetWidth
-    const h = el.offsetHeight
-    if (w === 0 || h === 0) return
-    const depth = 12
-    const toothPx = 22
-    const n = Math.max(4, Math.round(h / toothPx))
-    const xInner = (((w - depth) / w) * 100).toFixed(2)
-    const pts: string[] = ['0% 0%', '100% 0%']
-    for (let i = 0; i < n; i++) {
-      const yMid = (((i + 0.5) / n) * 100).toFixed(2)
-      const yBot = (((i + 1) / n) * 100).toFixed(2)
-      pts.push(`${xInner}% ${yMid}%`)
-      pts.push(`100% ${yBot}%`)
-    }
-    pts.push('0% 100%')
-    el.style.clipPath = `polygon(${pts.join(', ')})`
-  }
-
-  useEffect(() => {
-    function run() { applyZigzag() }
-    if (typeof document !== 'undefined' && document.fonts) {
-      document.fonts.ready.then(run)
-    } else {
-      run()
-    }
-    window.addEventListener('resize', run)
-    return () => window.removeEventListener('resize', run)
-  }, [])
-
   const authorIsProfile = data.author.username.length < 40
 
   return (
@@ -69,18 +35,13 @@ function ArticlePennant({ data }: { data: ResolvedContent }) {
       className="block mt-2.5"
     >
       <div
-        ref={ref}
         style={{
-          background: '#FAFAF0',
-          borderRadius: 0,
-          borderLeft: data.isPaywalled ? '5px solid #9B1C20' : 'none',
-          paddingTop: '10px',
-          paddingBottom: '10px',
-          paddingLeft: data.isPaywalled ? '11px' : '14px',
-          paddingRight: '28px',
+          background: '#FFFAEF',
+          borderLeft: '2.5px solid #B5242A',
+          padding: '12px 16px',
         }}
       >
-        <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#7A7774', marginBottom: '3px' }}>
+        <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#8A8578', marginBottom: '3px' }}>
           {authorIsProfile ? (
             <span
               className="hover:underline underline-offset-2 cursor-pointer"
@@ -90,11 +51,11 @@ function ArticlePennant({ data }: { data: ResolvedContent }) {
             </span>
           ) : data.author.displayName}
         </p>
-        <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: '16px', fontWeight: 600, color: '#111111', lineHeight: 1.2 }}>
+        <p style={{ fontFamily: '"Literata", Georgia, serif', fontSize: '16px', fontWeight: 500, fontStyle: 'italic', color: '#0F1F18', lineHeight: 1.25, letterSpacing: '-0.015em' }}>
           {data.title}
         </p>
         {data.content && (
-          <p style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: '13px', color: '#4A4845', lineHeight: 1.4, marginTop: '3px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
+          <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '13px', color: '#263D32', lineHeight: 1.5, marginTop: '4px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
             {data.content}
           </p>
         )}
@@ -111,7 +72,6 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
     let cancelled = false
 
     async function fetchData() {
-      // Phase 1: try the platform index (richer author info)
       try {
         const r = await fetch(`/api/v1/content/resolve?eventId=${encodeURIComponent(eventId)}`, { credentials: 'include' })
         if (!cancelled && r.ok) {
@@ -121,7 +81,6 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
         }
       } catch { /* fall through */ }
 
-      // Phase 2: fall back to the Nostr relay so external / un-indexed notes render
       try {
         const ndk = getNdk()
         await ndk.connect()
@@ -149,9 +108,9 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
 
   if (loading) {
     return (
-      <div className="mt-2.5 p-3 animate-pulse" style={{ background: '#141414', borderRadius: '10px' }}>
-        <div className="h-3 rounded w-1/3 mb-2" style={{ background: 'rgba(255,255,255,0.08)' }} />
-        <div className="h-3 rounded w-2/3" style={{ background: 'rgba(255,255,255,0.08)' }} />
+      <div className="mt-2.5 p-3 animate-pulse" style={{ background: '#DDEEE4' }}>
+        <div className="h-3 w-1/3 mb-2" style={{ background: '#B8D2C1' }} />
+        <div className="h-3 w-2/3" style={{ background: '#B8D2C1' }} />
       </div>
     )
   }
@@ -162,14 +121,14 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
     return <ArticlePennant data={data} />
   }
 
-  // Quoted note — darker stone inset within the parent note
+  // Quoted note — parchment chip with accent border
   const noteHref = data.author.username.length < 40 ? `/${data.author.username}` : null
   return (
     <Link
       href={noteHref ?? '#'}
       onClick={e => { e.stopPropagation(); if (!noteHref) e.preventDefault() }}
-      className="block mt-2.5 p-3 hover:opacity-90 transition-opacity"
-      style={{ background: '#141414', borderRadius: '10px' }}
+      className="block mt-2.5 hover:opacity-90 transition-opacity"
+      style={{ background: '#FFFAEF', borderLeft: '2.5px solid #B5242A', padding: '12px 16px' }}
     >
       <div className="flex items-center gap-2 mb-1">
         {data.author.avatar ? (
@@ -177,16 +136,16 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
         ) : (
           <span
             className="flex h-4 w-4 items-center justify-center text-[8px] font-medium flex-shrink-0 rounded-full"
-            style={{ background: 'linear-gradient(135deg, #3A1515, #5A2020)', color: '#EAE5DC' }}
+            style={{ background: '#C2DBC9', color: '#4A6B5A' }}
           >
             {(data.author.displayName?.[0] ?? '?').toUpperCase()}
           </span>
         )}
-        <span style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '12px', fontWeight: 700, color: '#9E9B97' }}>
+        <span style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 600, color: '#ACA69C' }}>
           {data.author.displayName}
         </span>
       </div>
-      <p className="line-clamp-3" style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '13px', color: '#EAE5DC', lineHeight: 1.55 }}>
+      <p className="line-clamp-3" style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '13px', color: '#263D32', lineHeight: 1.55 }}>
         {data.content}
       </p>
     </Link>

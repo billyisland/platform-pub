@@ -61,12 +61,12 @@ function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: st
       tabIndex={0}
       onClick={() => onDismiss(n.id, destUrl)}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onDismiss(n.id, destUrl) }}
-      className="flex items-start gap-3 py-4 border-b border-surface-strong hover:bg-surface-raised transition-colors bg-surface/50 cursor-pointer"
+      className="flex items-start gap-3 py-4 border-b border-rule hover:bg-card transition-colors bg-surface/50 cursor-pointer"
     >
       {n.actor?.avatar ? (
         <img src={n.actor.avatar} alt="" className="h-10 w-10 rounded-full object-cover flex-shrink-0 mt-0.5" />
       ) : (
-        <span className="flex h-10 w-10 items-center justify-center bg-surface-sunken text-sm font-medium text-content-muted rounded-full flex-shrink-0 mt-0.5">
+        <span className="flex h-10 w-10 items-center justify-center bg-surface-deep text-sm font-medium text-content-muted rounded-full flex-shrink-0 mt-0.5">
           {(n.actor?.displayName ?? n.actor?.username ?? '?')[0].toUpperCase()}
         </span>
       )}
@@ -92,7 +92,7 @@ function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: st
         <p className="text-xs text-content-muted mt-1">{timeAgo(n.createdAt)}</p>
       </div>
 
-      <span className="flex-shrink-0 mt-2 h-2 w-2 rounded-full bg-crimson" />
+      <span className="flex-shrink-0 mt-2 h-2 w-2 rounded-full bg-accent" />
     </div>
   )
 }
@@ -124,8 +124,8 @@ export default function NotificationsPage() {
   if (loading || !user) {
     return (
       <div className="mx-auto max-w-article pt-16 lg:pt-0 px-6 py-8">
-        <div className="h-7 w-36 animate-pulse bg-surface-sunken mb-2 rounded" />
-        <div className="h-4 w-48 animate-pulse bg-surface-sunken mb-8 rounded" />
+        <div className="h-7 w-36 animate-pulse bg-surface-deep mb-2 rounded" />
+        <div className="h-4 w-48 animate-pulse bg-surface-deep mb-8 rounded" />
       </div>
     )
   }
@@ -138,11 +138,11 @@ export default function NotificationsPage() {
       {dataLoading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="flex items-start gap-3 py-4 border-b border-surface-strong animate-pulse">
-              <div className="h-10 w-10 rounded-full bg-surface-sunken flex-shrink-0" />
+            <div key={i} className="flex items-start gap-3 py-4 border-b border-rule animate-pulse">
+              <div className="h-10 w-10 rounded-full bg-surface-deep flex-shrink-0" />
               <div className="flex-1">
-                <div className="h-3.5 w-48 bg-surface-sunken mb-2 rounded" />
-                <div className="h-3 w-20 bg-surface-sunken rounded" />
+                <div className="h-3.5 w-48 bg-surface-deep mb-2 rounded" />
+                <div className="h-3 w-20 bg-surface-deep rounded" />
               </div>
             </div>
           ))}

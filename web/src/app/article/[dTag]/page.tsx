@@ -94,10 +94,10 @@ export default function ArticlePage() {
   if (notFound || !article || !metadata) {
     return (
       <div className="mx-auto max-w-article px-6 py-24 text-center">
-        <h1 className="font-serif text-2xl font-bold text-ink-900 mb-2">
+        <h1 className="font-serif text-2xl font-bold text-ink mb-2">
           Article not found
         </h1>
-        <p className="text-ink-500">
+        <p className="text-content-muted">
           This article doesn't exist or has been removed.
         </p>
       </div>
@@ -119,22 +119,22 @@ function ArticleSkeleton() {
     <div className="mx-auto max-w-article px-6 py-12">
       {/* Byline */}
       <div className="flex items-center gap-3 mb-8">
-        <div className="h-10 w-10 animate-pulse rounded-full bg-ink-100" />
+        <div className="h-10 w-10 animate-pulse rounded-full bg-surface-deep" />
         <div>
-          <div className="h-4 w-28 animate-pulse rounded bg-ink-100 mb-1" />
-          <div className="h-3 w-20 animate-pulse rounded bg-ink-100" />
+          <div className="h-4 w-28 animate-pulse rounded bg-surface-deep mb-1" />
+          <div className="h-3 w-20 animate-pulse rounded bg-surface-deep" />
         </div>
       </div>
       {/* Title */}
-      <div className="h-10 w-3/4 animate-pulse rounded bg-ink-100 mb-4" />
-      <div className="h-10 w-1/2 animate-pulse rounded bg-ink-100 mb-10" />
+      <div className="h-10 w-3/4 animate-pulse rounded bg-surface-deep mb-4" />
+      <div className="h-10 w-1/2 animate-pulse rounded bg-surface-deep mb-10" />
       {/* Body */}
       <div className="space-y-3">
-        <div className="h-4 w-full animate-pulse rounded bg-ink-100" />
-        <div className="h-4 w-full animate-pulse rounded bg-ink-100" />
-        <div className="h-4 w-5/6 animate-pulse rounded bg-ink-100" />
-        <div className="h-4 w-full animate-pulse rounded bg-ink-100" />
-        <div className="h-4 w-3/4 animate-pulse rounded bg-ink-100" />
+        <div className="h-4 w-full animate-pulse rounded bg-surface-deep" />
+        <div className="h-4 w-full animate-pulse rounded bg-surface-deep" />
+        <div className="h-4 w-5/6 animate-pulse rounded bg-surface-deep" />
+        <div className="h-4 w-full animate-pulse rounded bg-surface-deep" />
+        <div className="h-4 w-3/4 animate-pulse rounded bg-surface-deep" />
       </div>
     </div>
   )

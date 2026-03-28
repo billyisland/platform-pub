@@ -36,7 +36,6 @@ export function ReplyComposer({
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Auto-resize textarea
   useEffect(() => {
     const el = inputRef.current
     if (!el) return
@@ -133,8 +132,8 @@ export function ReplyComposer({
             rows={1}
             className={`w-full resize-none text-ui-sm text-content-primary placeholder:text-content-faint focus:outline-none leading-relaxed transition-all ${
               isExpanded
-                ? 'bg-surface-raised px-3.5 py-2 rounded-xl border border-surface-strong/50 focus:border-surface-strong'
-                : 'bg-surface-sunken/60 px-3.5 py-2 rounded-full'
+                ? 'bg-card px-3.5 py-2 border border-rule/50 focus:border-rule'
+                : 'bg-surface-deep/60 px-3.5 py-2'
             }`}
           />
         </div>
@@ -157,7 +156,7 @@ export function ReplyComposer({
           <button
             onClick={handlePost}
             disabled={!canPost}
-            className="bg-ink text-white disabled:opacity-30 rounded-full px-3.5 py-1.5 text-ui-xs font-medium transition-opacity"
+            className="btn disabled:opacity-30 px-3.5 py-1.5 text-ui-xs font-medium"
           >
             {publishing ? '...' : 'Post'}
           </button>
@@ -165,15 +164,15 @@ export function ReplyComposer({
       </div>
 
       {error && (
-        <div className="mt-1.5 bg-accent-50 text-accent-700 px-3 py-1.5 text-ui-xs rounded-lg flex items-center justify-between">
+        <div className="mt-1.5 bg-surface-deep text-accent px-3 py-1.5 text-ui-xs flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="ml-2 text-accent-400 hover:text-accent-700">×</button>
+          <button onClick={() => setError(null)} className="ml-2 text-content-faint hover:text-accent">×</button>
         </div>
       )}
 
       {isExpanded && charCount > REPLY_CHAR_LIMIT - 200 && (
         <p className={`text-ui-xs mt-1 transition-colors ${
-          isOverLimit ? 'text-red-600 font-medium' : 'text-content-faint'
+          isOverLimit ? 'text-accent font-medium' : 'text-content-faint'
         }`}>
           {charCount}/{REPLY_CHAR_LIMIT}
         </p>

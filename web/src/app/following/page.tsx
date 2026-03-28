@@ -56,11 +56,11 @@ export default function FollowingPage() {
       {dataLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
-            <div key={i} className="flex items-center gap-4 py-4 border-b border-surface-strong animate-pulse">
-              <div className="h-11 w-11 rounded-full bg-surface-sunken flex-shrink-0" />
+            <div key={i} className="flex items-center gap-4 py-4 border-b border-rule animate-pulse">
+              <div className="h-11 w-11 rounded-full bg-surface-deep flex-shrink-0" />
               <div className="flex-1">
-                <div className="h-3.5 w-32 bg-surface-sunken mb-2 rounded" />
-                <div className="h-3 w-20 bg-surface-sunken rounded" />
+                <div className="h-3.5 w-32 bg-surface-deep mb-2 rounded" />
+                <div className="h-3 w-20 bg-surface-deep rounded" />
               </div>
             </div>
           ))}
@@ -71,14 +71,14 @@ export default function FollowingPage() {
           <Link href="/feed" className="btn py-2 px-5 text-ui-sm">Discover writers</Link>
         </div>
       ) : (
-        <div className="divide-y divide-surface-strong">
+        <div className="divide-y divide-rule">
           {writers.map(w => (
             <div key={w.id} className="flex items-center gap-4 py-4">
               <Link href={`/${w.username}`} className="flex-shrink-0">
                 {w.avatar ? (
                   <img src={w.avatar} alt="" className="h-11 w-11 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-11 w-11 items-center justify-center bg-surface-sunken text-sm font-medium text-content-muted rounded-full">
+                  <span className="flex h-11 w-11 items-center justify-center bg-surface-deep text-sm font-medium text-content-muted rounded-full">
                     {(w.displayName ?? w.username)[0].toUpperCase()}
                   </span>
                 )}
@@ -109,15 +109,15 @@ export default function FollowingPage() {
 function PageSkeleton() {
   return (
     <div className="mx-auto max-w-article pt-16 lg:pt-0 px-6 py-8">
-      <div className="h-7 w-36 animate-pulse bg-surface-sunken mb-2 rounded" />
-      <div className="h-4 w-48 animate-pulse bg-surface-sunken mb-8 rounded" />
+      <div className="h-7 w-36 animate-pulse bg-surface-deep mb-2 rounded" />
+      <div className="h-4 w-48 animate-pulse bg-surface-deep mb-8 rounded" />
       <div className="space-y-3">
         {[1, 2, 3].map(i => (
-          <div key={i} className="flex items-center gap-4 py-4 border-b border-surface-strong">
-            <div className="h-11 w-11 rounded-full bg-surface-sunken flex-shrink-0" />
+          <div key={i} className="flex items-center gap-4 py-4 border-b border-rule">
+            <div className="h-11 w-11 rounded-full bg-surface-deep flex-shrink-0" />
             <div className="flex-1">
-              <div className="h-3.5 w-32 bg-surface-sunken mb-2 rounded" />
-              <div className="h-3 w-20 bg-surface-sunken rounded" />
+              <div className="h-3.5 w-32 bg-surface-deep mb-2 rounded" />
+              <div className="h-3 w-20 bg-surface-deep rounded" />
             </div>
           </div>
         ))}

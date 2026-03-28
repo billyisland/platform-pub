@@ -5,13 +5,6 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { notifications as notificationsApi, type Notification } from '../../lib/api'
 
-// =============================================================================
-// NotificationBell
-//
-// Bell icon that shows an unread count badge. Clicking opens a dropdown panel
-// with the 50 most recent notifications. Opening the panel marks all as read.
-// =============================================================================
-
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diff / 60_000)
@@ -50,7 +43,7 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
   const avatar = n.actor?.avatar ? (
     <img src={n.actor.avatar} alt="" className="h-7 w-7 rounded-full object-cover flex-shrink-0 mt-0.5" />
   ) : (
-    <span className="flex h-7 w-7 items-center justify-center bg-ink-800 text-[10px] font-medium text-surface-raised rounded-full flex-shrink-0 mt-0.5">
+    <span className="flex h-7 w-7 items-center justify-center bg-avatar-bg text-[10px] font-medium text-content-muted rounded-full flex-shrink-0 mt-0.5">
       {(n.actor?.displayName ?? n.actor?.username ?? '?')[0].toUpperCase()}
     </span>
   )
@@ -60,24 +53,24 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
   if (n.type === 'new_follower') {
     body = (
       <>
-        <p className="text-xs text-surface-raised leading-snug">
+        <p className="text-xs text-ink leading-snug">
           <span className="font-medium">{actorName}</span>{' '}followed you
         </p>
-        <p className="text-[11px] text-ink-400 mt-0.5">{timeAgo(n.createdAt)}</p>
+        <p className="text-[11px] text-content-faint mt-0.5">{timeAgo(n.createdAt)}</p>
       </>
     )
   } else if (n.type === 'new_reply') {
     body = (
       <>
-        <p className="text-xs text-surface-raised leading-snug">
+        <p className="text-xs text-ink leading-snug">
           <span className="font-medium">{actorName}</span>
           {' replied'}
           {n.article?.title && <>{' to '}<span className="italic">{n.article.title}</span></>}
         </p>
         {n.comment?.content && (
-          <p className="text-[11px] text-ink-400 mt-1 line-clamp-2 leading-snug">{n.comment.content}</p>
+          <p className="text-[11px] text-content-faint mt-1 line-clamp-2 leading-snug">{n.comment.content}</p>
         )}
-        <p className="text-[11px] text-ink-400 mt-0.5">{timeAgo(n.createdAt)}</p>
+        <p className="text-[11px] text-content-faint mt-0.5">{timeAgo(n.createdAt)}</p>
       </>
     )
   } else {
@@ -90,10 +83,10 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
     if (!label) return null
     body = (
       <>
-        <p className="text-xs text-surface-raised leading-snug">
+        <p className="text-xs text-ink leading-snug">
           <span className="font-medium">{actorName}</span>{' '}{label}
         </p>
-        <p className="text-[11px] text-ink-400 mt-0.5">{timeAgo(n.createdAt)}</p>
+        <p className="text-[11px] text-content-faint mt-0.5">{timeAgo(n.createdAt)}</p>
       </>
     )
   }
@@ -104,7 +97,7 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
       tabIndex={0}
       onClick={() => onDismiss(n.id, destUrl)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onDismiss(n.id, destUrl) }}
-      className="block px-4 py-3 border-b border-ink-800 last:border-0 hover:bg-white/10 transition-colors bg-white/5 cursor-pointer text-left w-full"
+      className="block px-4 py-3 border-b border-rule last:border-0 hover:bg-surface-deep transition-colors cursor-pointer text-left w-full"
     >
       <div className="flex items-start gap-2.5">
         {avatar}
@@ -125,7 +118,6 @@ export function NotificationBell() {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const dismissedIds = useRef(new Set<string>())
 
-  // Fetch on mount
   useEffect(() => {
     notificationsApi.list()
       .then(({ notifications, unreadCount }) => {
@@ -135,7 +127,6 @@ export function NotificationBell() {
       .catch(() => {})
   }, [])
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return
     function handler(e: MouseEvent) {
@@ -155,7 +146,6 @@ export function NotificationBell() {
       setOpen(false)
       return
     }
-    // Position the portal panel next to the button
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect()
       setPanelStyle({
@@ -183,7 +173,6 @@ export function NotificationBell() {
     setUnreadCount((prev) => Math.max(0, prev - 1))
     setOpen(false)
 
-    // Use keepalive so the request completes even if the page unloads
     const gateway = process.env.NEXT_PUBLIC_GATEWAY_URL ?? ''
     fetch(`${gateway}/api/v1/notifications/${id}/read`, {
       method: 'POST',
@@ -198,18 +187,18 @@ export function NotificationBell() {
     <div
       ref={panelRef}
       style={panelStyle}
-      className="bg-ink-900 border border-ink-800 shadow-xl overflow-hidden flex flex-col"
+      className="bg-card border border-rule shadow-xl overflow-hidden flex flex-col"
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-ink-800 flex-shrink-0">
-        <span className="font-serif text-sm font-medium text-surface-raised">Notifications</span>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-rule flex-shrink-0">
+        <span className="font-sans text-sm font-medium text-ink">Notifications</span>
         {loading && (
-          <span className="text-[11px] text-ink-400">Loading…</span>
+          <span className="text-[11px] text-content-faint">Loading…</span>
         )}
       </div>
 
       <div className="overflow-y-auto flex-1">
         {items.length === 0 && !loading ? (
-          <p className="px-4 py-8 text-center text-xs text-ink-400">No notifications yet</p>
+          <p className="px-4 py-8 text-center text-xs text-content-faint">No notifications yet</p>
         ) : (
           items.map((n) => <NotificationItem key={n.id} n={n} onDismiss={handleDismiss} />)
         )}
@@ -219,22 +208,20 @@ export function NotificationBell() {
 
   return (
     <div>
-      {/* Notifications button */}
       <button
         ref={buttonRef}
         onClick={handleOpen}
-        className="flex items-center gap-2 pl-4 py-2.5 text-[#9E9B97] hover:bg-[#141414] hover:text-white transition-colors w-full"
+        className="flex items-center gap-2 pl-4 py-2.5 text-content-muted hover:text-ink transition-colors w-full"
         title="Notifications"
       >
-        <span className="font-serif text-sm">Notifications</span>
+        <span className="font-sans text-sm">Notifications</span>
         {unreadCount > 0 && (
-          <span className="font-serif text-sm text-crimson font-medium">
+          <span className="font-sans text-sm text-accent font-medium">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
-      {/* Dropdown panel — rendered via portal to escape overflow:hidden */}
       {typeof document !== 'undefined' && panel
         ? createPortal(panel, document.body)
         : null}

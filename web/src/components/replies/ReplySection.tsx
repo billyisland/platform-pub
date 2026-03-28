@@ -6,14 +6,6 @@ import { ReplyComposer } from './ReplyComposer'
 import { ReplyItem, type ReplyData } from './ReplyItem'
 import type { VoteTally, MyVoteCount } from '../../lib/api'
 
-// =============================================================================
-// ReplySection
-//
-// Fetches and displays threaded replies for an article or note.
-// Includes a top-level compose box and inline nested reply compose boxes.
-// Handles soft-delete for reply authors and content authors.
-// =============================================================================
-
 const API_BASE = '/api/v1'
 
 interface ReplySectionProps {
@@ -21,11 +13,11 @@ interface ReplySectionProps {
   targetKind: number
   targetAuthorPubkey: string
   contentAuthorId?: string
-  compact?: boolean    // For notes: single-level, no threading
-  dark?: boolean       // For notes: dark background context
-  previewLimit?: number // Max top-level replies before "show older" truncation
-  composerOpen?: boolean // When set, controls top-level composer visibility (undefined = always show)
-  onComposerClose?: () => void // Called after a reply is published via the controlled composer
+  compact?: boolean
+  dark?: boolean  // kept for API compat
+  previewLimit?: number
+  composerOpen?: boolean
+  onComposerClose?: () => void
 }
 
 export function ReplySection({
@@ -34,7 +26,6 @@ export function ReplySection({
   targetAuthorPubkey,
   contentAuthorId,
   compact = false,
-  dark = false,
   previewLimit,
   composerOpen,
   onComposerClose,
@@ -68,7 +59,6 @@ export function ReplySection({
           setTotalCount(data.totalCount ?? 0)
           setRepliesEnabled(data.repliesEnabled ?? data.commentsEnabled ?? true)
 
-          // Batch fetch vote tallies for all replies (flatten tree)
           const allEventIds = flattenEventIds(comments)
           if (allEventIds.length > 0) {
             const idsParam = allEventIds.join(',')
@@ -143,10 +133,10 @@ export function ReplySection({
 
   if (loading) {
     return (
-      <div className={compact ? '' : 'mt-8 pt-6 border-t border-ink-200'}>
+      <div className={compact ? '' : 'mt-8 pt-6 border-t border-rule'}>
         <div className="space-y-2 py-2">
           {[1, 2].map(i => (
-            <div key={i} className="h-10 animate-pulse rounded bg-ink-100" />
+            <div key={i} className="h-10 animate-pulse bg-surface-deep" />
           ))}
         </div>
       </div>
@@ -154,25 +144,21 @@ export function ReplySection({
   }
 
   return (
-    <div className={compact ? '' : 'mt-8 pt-6 border-t border-ink-200'}>
-      {/* Header — articles only; compact (note) mode omits it */}
+    <div className={compact ? '' : 'mt-8 pt-6 border-t border-rule'}>
       {!compact && (
-        <h3 className="text-sm font-medium text-ink-700 mb-4">
+        <h3 className="text-sm font-medium text-content-secondary mb-4">
           {totalCount > 0
             ? `${totalCount} ${totalCount !== 1 ? 'replies' : 'reply'}`
             : 'Replies'}
         </h3>
       )}
 
-      {/* Reply list */}
       {replies.length > 0 && (
-        <div className={`divide-y divide-ink-100 ${compact ? '' : 'mb-4'}`}>
-          {/* "Show all" button when truncated */}
+        <div className={`divide-y divide-rule/50 ${compact ? '' : 'mb-4'}`}>
           {previewLimit && !showAll && replies.length > previewLimit && (
             <button
               onClick={() => setShowAll(true)}
-              className="w-full py-1.5 text-left text-ui-xs transition-colors"
-              style={{ color: dark ? 'rgba(250,250,240,0.45)' : '#9E9B97' }}
+              className="w-full py-1.5 text-left text-ui-xs text-content-faint hover:text-content-muted transition-colors"
             >
               Show all {replies.length} replies
             </button>
@@ -184,13 +170,12 @@ export function ReplySection({
                 currentUserId={user?.id}
                 contentAuthorId={contentAuthorId}
                 compact={compact}
-                dark={dark}
                 onReply={repliesEnabled ? handleReplyTo : undefined}
                 onDelete={handleDelete}
                 voteTally={voteTallies[reply.nostrEventId]}
                 myVoteCounts={myVoteCounts[reply.nostrEventId]}
                 renderComposer={(replyId) => replyTarget?.replyId === replyId ? (
-                  <div className="ml-8 pl-4 border-l-2 border-ink-100">
+                  <div className="ml-8 pl-4 border-l-2 border-rule/50">
                     <ReplyComposer
                       targetEventId={targetEventId}
                       targetKind={targetKind}
@@ -204,9 +189,8 @@ export function ReplySection({
                   </div>
                 ) : null}
               />
-              {/* Inline reply composer for top-level replies */}
               {replyTarget?.replyId === reply.id && (
-                <div className="ml-8 pl-4 border-l-2 border-ink-100">
+                <div className="ml-8 pl-4 border-l-2 border-rule/50">
                   <ReplyComposer
                     targetEventId={targetEventId}
                     targetKind={targetKind}
@@ -224,7 +208,6 @@ export function ReplySection({
         </div>
       )}
 
-      {/* Compose box — below existing replies; hidden when composerOpen is explicitly false */}
       {(composerOpen === undefined || composerOpen) && (
         repliesEnabled && user ? (
           <ReplyComposer
@@ -234,12 +217,12 @@ export function ReplySection({
             onPublished={(reply) => { handleNewReply(reply); onComposerClose?.() }}
           />
         ) : !repliesEnabled ? (
-          <p className="text-xs text-ink-400 italic mb-4">
+          <p className="text-xs text-content-faint italic mb-4">
             The author has closed replies on this piece.
           </p>
         ) : (
-          <p className="text-xs text-ink-400 mb-4">
-            <a href="/auth?mode=login" className="text-brand-600 hover:text-brand-700">
+          <p className="text-xs text-content-faint mb-4">
+            <a href="/auth?mode=login" className="text-accent hover:text-accent-dark">
               Log in
             </a>{' '}
             to leave a reply.
@@ -250,7 +233,6 @@ export function ReplySection({
   )
 }
 
-// Recursively mark a reply as deleted
 function markDeleted(replies: ReplyData[], id: string): ReplyData[] {
   return replies.map(r => {
     if (r.id === id) {
@@ -260,7 +242,6 @@ function markDeleted(replies: ReplyData[], id: string): ReplyData[] {
   })
 }
 
-// Collect all nostrEventIds in a reply tree for batch vote fetching
 function flattenEventIds(replies: ReplyData[]): string[] {
   const ids: string[] = []
   for (const r of replies) {

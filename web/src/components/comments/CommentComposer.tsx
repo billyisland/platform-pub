@@ -108,7 +108,7 @@ export function CommentComposer({
   return (
     <div className={compact ? 'mt-2' : 'mb-6'}>
       {replyingToName && (
-        <p className="text-xs text-ink-400 mb-1">
+        <p className="text-xs text-content-faint mb-1">
           Replying to {replyingToName}
         </p>
       )}
@@ -120,7 +120,7 @@ export function CommentComposer({
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
         placeholder={compact ? 'Write a reply...' : 'Write a comment...'}
         rows={compact ? 1 : 2}
-        className="w-full resize-none border border-ink-200 rounded-md bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 leading-relaxed"
+        className="w-full resize-none border border-rule bg-card px-3 py-2 text-sm text-ink placeholder:text-content-faint focus:outline-none focus:border-accent leading-relaxed"
       />
 
       {error && (
@@ -134,7 +134,7 @@ export function CommentComposer({
               ? 'text-red-600 font-medium'
               : charCount > COMMENT_CHAR_LIMIT - 100
                 ? 'text-red-500'
-                : 'text-ink-400'
+                : 'text-content-faint'
           }`}
         >
           {charCount > 0 && `${charCount}/${COMMENT_CHAR_LIMIT}`}
@@ -144,7 +144,7 @@ export function CommentComposer({
           {onCancel && (
             <button
               onClick={onCancel}
-              className="text-xs text-ink-400 hover:text-ink-600 transition-colors"
+              className="text-xs text-content-faint hover:text-content-muted transition-colors"
             >
               Cancel
             </button>
@@ -152,7 +152,7 @@ export function CommentComposer({
           <button
             onClick={handlePost}
             disabled={!canPost}
-            className="rounded-md bg-ink-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-ink-700 disabled:opacity-40 transition-colors"
+            className="btn px-4 py-1.5 text-xs font-medium disabled:opacity-40"
           >
             {publishing ? 'Posting...' : 'Post'}
           </button>

@@ -26,21 +26,12 @@ export function Nav() {
     return false
   }
 
-  // Top bar link style (mobile / tablet)
-  function topLinkClass(path: string) {
-    return `font-serif text-sm transition-colors px-2.5 py-1 ${
-      isActive(path)
-        ? 'text-white border-b-2 border-crimson'
-        : 'text-[#9E9B97] hover:text-white'
-    }`
-  }
-
-  // Left sidebar link style (desktop)
+  // Desktop sidebar link style
   function sidebarLinkClass(path: string) {
-    return `block font-serif text-sm py-2.5 pr-4 transition-colors w-full ${
+    return `block font-sans text-sm py-2.5 pr-4 transition-colors w-full ${
       isActive(path)
-        ? 'pl-[13px] border-l-[3px] border-crimson text-white font-medium hover:bg-[#141414]'
-        : 'pl-4 text-[#9E9B97] hover:text-white hover:bg-[#141414]'
+        ? 'pl-[13px] border-l-2 border-accent text-ink font-semibold'
+        : 'pl-4 text-content-muted hover:text-ink'
     }`
   }
 
@@ -61,23 +52,24 @@ export function Nav() {
   const logoHref = user ? '/feed' : '/'
 
   return (
-    <header className="fixed z-50 bg-[#2A2A2A] top-0 left-0 right-0 lg:right-auto lg:bottom-0 lg:w-[200px] lg:flex lg:flex-col lg:border-r lg:border-[#3a3a3a]">
+    <header className="fixed z-50 bg-surface top-0 left-0 right-0 lg:right-auto lg:bottom-0 lg:w-[180px] lg:flex lg:flex-col lg:border-r border-rule">
 
       {/* ================================================================
           TOP BAR — visible below lg breakpoint
           ================================================================ */}
-      <div className="flex items-center justify-between px-6 py-3 lg:px-5 lg:pt-7 lg:pb-5 lg:justify-center lg:border-b lg:border-[#3a3a3a]">
-        {/* Logo */}
+      <div className="flex items-center justify-between px-6 py-3 lg:px-5 lg:pt-7 lg:pb-5 lg:justify-center lg:border-b lg:border-rule">
+        {/* Logo — Literata in ink box */}
         <Link
           href={logoHref}
           onClick={handleNavClick}
-          className="font-serif tracking-tight flex-shrink-0 border-[3px] border-white text-white"
+          className="flex-shrink-0 border-[2.5px] border-ink text-ink"
           style={{
-            fontFamily: '"Newsreader", Georgia, serif',
-            padding: '2px 14px 4px',
+            fontFamily: '"Literata", Georgia, serif',
+            padding: '3px 14px 5px',
             lineHeight: '1.1',
-            fontSize: '34px',
+            fontSize: '22px',
             fontWeight: '600',
+            letterSpacing: '-0.02em',
           }}
         >
           Platform
@@ -89,20 +81,20 @@ export function Nav() {
           className="flex flex-col justify-center gap-[5px] w-6 h-6 md:hidden"
           aria-label="Menu"
         >
-          <span className="block w-full h-[2px] bg-white" />
-          <span className="block w-full h-[2px] bg-white" />
-          <span className="block w-full h-[2px] bg-white" />
+          <span className="block w-full h-[2px] bg-ink" />
+          <span className="block w-full h-[2px] bg-ink" />
+          <span className="block w-full h-[2px] bg-ink" />
         </button>
 
         {/* Desktop inline nav (between md and lg) — shown md+ but hidden lg+ */}
         <div className="hidden md:flex lg:hidden items-center gap-4">
           {loading ? (
-            <div className="h-4 w-16 animate-pulse bg-[#3a3a3a]" />
+            <div className="h-4 w-16 animate-pulse bg-surface-deep" />
           ) : user ? (
             <>
-              <Link href="/write" className={topLinkClass('/write')}>Write</Link>
-              <Link href="/dashboard" className={topLinkClass('/dashboard')}>Dashboard</Link>
-              <Link href="/about" className={topLinkClass('/about')}>About</Link>
+              <Link href="/write" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/write') ? 'text-ink font-semibold border-b-2 border-accent' : 'text-content-muted hover:text-ink'}`}>Write</Link>
+              <Link href="/dashboard" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/dashboard') ? 'text-ink font-semibold border-b-2 border-accent' : 'text-content-muted hover:text-ink'}`}>Dashboard</Link>
+              <Link href="/about" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/about') ? 'text-ink font-semibold border-b-2 border-accent' : 'text-content-muted hover:text-ink'}`}>About</Link>
 
               <form onSubmit={handleSearch} className="relative flex items-center">
                 <input
@@ -110,32 +102,32 @@ export function Nav() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search…"
-                  className="w-28 bg-[#333] px-3 py-1.5 text-xs text-white placeholder-[#9E9B97] focus:w-44 focus:ring-1 focus:ring-white/20 transition-all"
+                  className="w-28 bg-card px-3 py-1.5 text-xs text-ink placeholder-content-faint focus:w-44 transition-all"
                 />
               </form>
 
-              <Link href={`/profile`} className="flex items-center gap-2 font-serif text-sm text-[#9E9B97] hover:text-white transition-colors">
+              <Link href="/profile" className="flex items-center gap-2 font-sans text-sm text-content-muted hover:text-ink transition-colors">
                 {user.avatar ? (
                   <img src={user.avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-6 w-6 items-center justify-center bg-[#3a3a3a] text-[10px] font-medium text-[#9E9B97] rounded-full">
+                  <span className="flex h-6 w-6 items-center justify-center bg-avatar-bg text-[10px] font-medium text-content-muted rounded-full">
                     {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
                   </span>
                 )}
                 <span>{user.displayName ?? user.username}</span>
-                <span className="text-mono-xs text-[#9E9B97] tabular-nums">
+                <span className="text-mono-xs text-content-faint tabular-nums">
                   £{(user.freeAllowanceRemainingPence / 100).toFixed(2)}
                 </span>
               </Link>
 
-              <button onClick={logout} className="font-serif text-sm text-[#9E9B97] hover:text-white transition-colors">
+              <button onClick={logout} className="font-sans text-sm text-content-muted hover:text-ink transition-colors">
                 Log out
               </button>
             </>
           ) : (
             <>
-              <Link href="/about" className={topLinkClass('/about')}>About</Link>
-              <Link href="/auth?mode=login" className="font-serif text-sm text-[#9E9B97] hover:text-white transition-colors">Log in</Link>
+              <Link href="/about" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/about') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>About</Link>
+              <Link href="/auth?mode=login" className="font-sans text-sm text-content-muted hover:text-ink transition-colors">Log in</Link>
               <Link href="/auth?mode=signup" className="btn">Sign up</Link>
             </>
           )}
@@ -146,42 +138,42 @@ export function Nav() {
           MOBILE DRAWER — below lg, shown when menuOpen
           ================================================================ */}
       {menuOpen && (
-        <div className="md:hidden bg-[#2A2A2A] px-6 pb-4 border-t border-[#3a3a3a]">
+        <div className="md:hidden bg-surface px-6 pb-4 border-t border-rule">
           {loading ? (
-            <div className="h-4 w-16 animate-pulse bg-[#3a3a3a]" />
+            <div className="h-4 w-16 animate-pulse bg-surface-deep" />
           ) : user ? (
             <>
-              <Link href="/write" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-[#3a3a3a] ${isActive('/write') ? 'text-white font-medium' : 'text-[#9E9B97] hover:text-white'}`}>Write</Link>
-              <Link href="/profile" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-[#3a3a3a] ${isActive('/profile') ? 'text-white font-medium' : 'text-[#9E9B97] hover:text-white'}`}>Profile</Link>
-              <Link href="/notifications" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-[#3a3a3a] ${pathname === '/notifications' ? 'text-white font-medium' : 'text-[#9E9B97] hover:text-white'}`}>Notifications</Link>
-              <Link href="/following" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-[#3a3a3a] ${isActive('/following') ? 'text-white font-medium' : 'text-[#9E9B97] hover:text-white'}`}>Following</Link>
-              <Link href="/followers" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-[#3a3a3a] ${isActive('/followers') ? 'text-white font-medium' : 'text-[#9E9B97] hover:text-white'}`}>Followers</Link>
-              <Link href="/dashboard" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-[#3a3a3a] ${isActive('/dashboard') ? 'text-white font-medium' : 'text-[#9E9B97] hover:text-white'}`}>Dashboard</Link>
-              <Link href="/about" onClick={handleNavClick} className={`block font-serif text-sm py-3 border-b border-[#3a3a3a] ${isActive('/about') ? 'text-white font-medium' : 'text-[#9E9B97] hover:text-white'}`}>About</Link>
+              <Link href="/write" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/write') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Write</Link>
+              <Link href="/profile" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/profile') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Profile</Link>
+              <Link href="/notifications" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${pathname === '/notifications' ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Notifications</Link>
+              <Link href="/following" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/following') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Following</Link>
+              <Link href="/followers" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/followers') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Followers</Link>
+              <Link href="/dashboard" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/dashboard') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Dashboard</Link>
+              <Link href="/about" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/about') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>About</Link>
 
               <form onSubmit={handleSearch} className="mt-3">
-                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full bg-[#333] px-3 py-2 text-sm text-white placeholder-[#9E9B97]" />
+                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full bg-card px-3 py-2 text-sm text-ink placeholder-content-faint" />
               </form>
 
               <div className="flex items-center gap-2 mt-3">
                 {user.avatar ? (
                   <img src={user.avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-6 w-6 items-center justify-center bg-[#3a3a3a] text-[10px] font-medium text-[#9E9B97] rounded-full">
+                  <span className="flex h-6 w-6 items-center justify-center bg-avatar-bg text-[10px] font-medium text-content-muted rounded-full">
                     {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
                   </span>
                 )}
-                <span className="font-serif text-sm text-[#9E9B97]">{user.displayName ?? user.username}</span>
+                <span className="font-sans text-sm text-content-muted">{user.displayName ?? user.username}</span>
               </div>
 
-              <button onClick={() => { logout(); setMenuOpen(false) }} className="mt-3 text-sm text-[#9E9B97] hover:text-white transition-colors">
+              <button onClick={() => { logout(); setMenuOpen(false) }} className="mt-3 text-sm text-content-muted hover:text-ink transition-colors">
                 Log out
               </button>
             </>
           ) : (
             <>
-              <Link href="/about" onClick={handleNavClick} className="block font-serif text-sm py-3 text-[#9E9B97] hover:text-white transition-colors">About</Link>
-              <Link href="/auth?mode=login" onClick={handleNavClick} className="block font-serif text-sm py-3 text-[#9E9B97] hover:text-white transition-colors">Log in</Link>
+              <Link href="/about" onClick={handleNavClick} className="block font-sans text-sm py-3 text-content-muted hover:text-ink transition-colors">About</Link>
+              <Link href="/auth?mode=login" onClick={handleNavClick} className="block font-sans text-sm py-3 text-content-muted hover:text-ink transition-colors">Log in</Link>
               <Link href="/auth?mode=signup" onClick={handleNavClick} className="btn inline-block mt-2">Sign up</Link>
             </>
           )}
@@ -193,7 +185,7 @@ export function Nav() {
           ================================================================ */}
       <nav className="hidden lg:flex flex-col flex-1 overflow-y-auto py-2">
         {loading ? (
-          <div className="px-4 py-3 h-4 w-24 animate-pulse bg-[#3a3a3a] rounded" />
+          <div className="px-4 py-3 h-4 w-24 animate-pulse bg-surface-deep rounded" />
         ) : user ? (
           <>
             <Link href="/write" onClick={handleNavClick} className={sidebarLinkClass('/write')}>Write</Link>
@@ -206,7 +198,7 @@ export function Nav() {
 
             {/* Search */}
             {searchOpen ? (
-              <form onSubmit={handleSearch} className="mx-3 mt-1 flex items-center gap-2 bg-[#333] px-3 py-2">
+              <form onSubmit={handleSearch} className="mx-3 mt-1 flex items-center gap-2 bg-card px-3 py-2">
                 <input
                   type="text"
                   value={searchQuery}
@@ -214,15 +206,15 @@ export function Nav() {
                   placeholder="Search..."
                   autoFocus
                   onBlur={() => { if (!searchQuery) setSearchOpen(false) }}
-                  className="flex-1 bg-transparent text-xs text-white placeholder-[#9E9B97] focus:outline-none"
+                  className="flex-1 bg-transparent text-xs text-ink placeholder-content-faint focus:outline-none"
                 />
-                <button type="button" onClick={() => { setSearchOpen(false); setSearchQuery('') }} className="text-[#9E9B97] hover:text-white text-xs">×</button>
+                <button type="button" onClick={() => { setSearchOpen(false); setSearchQuery('') }} className="text-content-faint hover:text-ink text-xs">×</button>
               </form>
             ) : (
               <button
                 onClick={() => setSearchOpen(true)}
-                className={`block font-serif text-sm py-2.5 pl-4 pr-4 transition-colors w-full text-left ${
-                  isActive('/search') ? 'pl-[13px] border-l-[3px] border-crimson text-white font-medium hover:bg-[#141414]' : 'text-[#9E9B97] hover:text-white hover:bg-[#141414]'
+                className={`block font-sans text-sm py-2.5 pl-4 pr-4 transition-colors w-full text-left ${
+                  isActive('/search') ? 'pl-[13px] border-l-2 border-accent text-ink font-semibold' : 'text-content-muted hover:text-ink'
                 }`}
               >
                 Search
@@ -240,27 +232,26 @@ export function Nav() {
 
       {/* Sidebar bottom — user info */}
       {user && (
-        <div className="hidden lg:block border-t border-[#3a3a3a] px-4 py-4 space-y-3">
-          {/* User */}
+        <div className="hidden lg:block border-t border-rule px-4 py-4 space-y-3">
           <Link href="/profile" className="flex items-center gap-2 group">
             {user.avatar ? (
               <img src={user.avatar} alt="" className="h-7 w-7 rounded-full object-cover flex-shrink-0" />
             ) : (
-              <span className="flex h-7 w-7 items-center justify-center bg-[#3a3a3a] text-[10px] font-medium text-[#9E9B97] rounded-full flex-shrink-0">
+              <span className="flex h-7 w-7 items-center justify-center bg-avatar-bg text-[10px] font-medium text-content-muted rounded-full flex-shrink-0">
                 {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
               </span>
             )}
             <div className="min-w-0">
-              <p className="font-serif text-xs text-[#9E9B97] leading-tight truncate group-hover:text-white transition-colors">
+              <p className="font-sans text-xs text-content-muted leading-tight truncate group-hover:text-ink transition-colors">
                 {user.displayName ?? user.username}
               </p>
-              <p className="text-[11px] text-[#9E9B97] tabular-nums">
+              <p className="text-[11px] text-content-faint tabular-nums">
                 £{(user.freeAllowanceRemainingPence / 100).toFixed(2)}
               </p>
             </div>
           </Link>
 
-          <button onClick={logout} className="text-xs text-[#9E9B97] hover:text-white transition-colors">
+          <button onClick={logout} className="text-xs text-content-faint hover:text-ink transition-colors">
             Log out
           </button>
         </div>

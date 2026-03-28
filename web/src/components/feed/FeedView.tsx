@@ -124,8 +124,8 @@ export function FeedView() {
         const ndk = getNdk(); await ndk.connect()
         if (activeTab === 'following') {
           const pks = await fetchFollowedPubkeys(user!.id)
-          pks.push(user!.pubkey)   // include own content
-          const af = { authors: pks }  // always filter — never fall through to {}
+          pks.push(user!.pubkey)
+          const af = { authors: pks }
           const [articleEvents, noteEvents, deletionEvents, dbDeleted] = await Promise.all([
             ndk.fetchEvents({ kinds: [KIND_ARTICLE as NDKKind], limit: 30, ...af }),
             ndk.fetchEvents({ kinds: [KIND_NOTE as NDKKind], limit: 30, ...af }),
@@ -150,7 +150,6 @@ export function FeedView() {
           const allItems = [...articles, ...notes].sort((a, b) => b.publishedAt - a.publishedAt)
           setFeedItems(allItems)
 
-          // Batch fetch vote tallies and user's vote counts
           const eventIds = allItems.map(i => i.id)
           if (eventIds.length > 0) {
             const idsParam = eventIds.join(',')
@@ -188,7 +187,6 @@ export function FeedView() {
   const handleQuote = useCallback((target: QuoteTarget) => {
     setPendingQuote(target)
     window.scrollTo({ top: 0, behavior: 'smooth' })
-    // Focus the composer after scroll
     setTimeout(() => {
       composerRef.current?.querySelector('textarea')?.focus()
     }, 300)
@@ -197,9 +195,9 @@ export function FeedView() {
   if (loading || !user) return <FeedSkeleton />
 
   return (
-    <div className="mx-auto max-w-article pt-16 lg:pt-0">
+    <div className="mx-auto max-w-[600px] pt-16 lg:pt-0">
 
-      {/* ── Sticky zone: composer + tabs ── */}
+      {/* Sticky zone: composer + tabs */}
       <div className="sticky top-[53px] lg:top-0 z-10 bg-surface">
         <div ref={composerRef} className="px-6 pt-4">
           <NoteComposer
@@ -208,30 +206,30 @@ export function FeedView() {
             onClearQuote={() => setPendingQuote(null)}
           />
         </div>
-        <div className="flex px-6 pt-1 border-b border-surface-strong">
+        <div className="flex px-6 pt-1 border-b border-rule">
           <button
             onClick={() => setActiveTab('for-you')}
-            className={`tab-pill ${activeTab === 'for-you' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
+            className={`tab-feed ${activeTab === 'for-you' ? 'tab-feed-active' : ''}`}
           >
             For you
           </button>
           <button
             onClick={() => setActiveTab('following')}
-            className={`tab-pill ${activeTab === 'following' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
+            className={`tab-feed ${activeTab === 'following' ? 'tab-feed-active' : ''}`}
           >
             Following
           </button>
           <button
             onClick={() => setActiveTab('add')}
-            className={`tab-pill ${activeTab === 'add' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
+            className={`tab-feed ${activeTab === 'add' ? 'tab-feed-active' : ''}`}
           >
             Add
           </button>
         </div>
       </div>
 
-      {/* ── Content zone ── */}
-      <div className="pb-10 pt-3">
+      {/* Content zone */}
+      <div className="pb-10 pt-6">
         {activeTab === 'add' ? (
           <AddPanel onFollowed={() => setActiveTab('following')} />
         ) : activeTab === 'for-you' ? (
@@ -240,12 +238,16 @@ export function FeedView() {
               <p className="text-ui-sm text-content-muted">Nothing here yet.</p>
             </div>
           ) : (
-            <div className="space-y-3 px-6">
-              {globalItems.map(item => {
+            <div className="px-6">
+              {globalItems.map((item, idx) => {
                 if (item.type === 'new_user') {
                   return <NewUserCard key={`new-user-${item.username}-${item.joinedAt}`} item={item} />
                 } else if (item.type === 'article') {
-                  return <ArticleCard key={item.id} article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
+                  return (
+                    <div key={item.id} className={idx > 0 ? 'mt-[10px]' : ''}>
+                      <ArticleCard article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
+                    </div>
+                  )
                 } else {
                   return <NoteCard key={item.id} note={item} onDeleted={handleNoteDeleted} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
                 }
@@ -261,9 +263,13 @@ export function FeedView() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3 px-6">
-            {feedItems.map(item => item.type === 'article'
-              ? <ArticleCard key={item.id} article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
+          <div className="px-6">
+            {feedItems.map((item, idx) => item.type === 'article'
+              ? (
+                <div key={item.id} className={idx > 0 ? 'mt-[10px]' : ''}>
+                  <ArticleCard article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
+                </div>
+              )
               : <NoteCard key={item.id} note={item} onDeleted={handleNoteDeleted} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
             )}
           </div>
@@ -274,18 +280,18 @@ export function FeedView() {
 }
 
 // =============================================================================
-// New user card — compact "X joined the platform" feed item
+// New user card
 // =============================================================================
 
 function NewUserCard({ item }: { item: NewUserItem }) {
   const name = item.displayName ?? item.username ?? 'Someone'
   const initial = name[0].toUpperCase()
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-surface-raised">
+    <div className="flex items-center gap-3 py-3">
       {item.avatar ? (
         <img src={item.avatar} alt="" className="h-7 w-7 rounded-full object-cover flex-shrink-0" />
       ) : (
-        <span className="flex h-7 w-7 items-center justify-center bg-surface-sunken text-[10px] font-medium text-content-muted rounded-full flex-shrink-0">
+        <span className="flex h-7 w-7 items-center justify-center bg-avatar-bg text-[10px] font-medium text-content-muted rounded-full flex-shrink-0">
           {initial}
         </span>
       )}
@@ -305,7 +311,7 @@ function NewUserCard({ item }: { item: NewUserItem }) {
 }
 
 // =============================================================================
-// Add panel — search people and feeds
+// Add panel
 // =============================================================================
 
 interface WriterResult {
@@ -357,7 +363,7 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
 
   return (
     <div className="px-6 pt-5">
-      <div className="flex gap-0 mb-4 border-b border-surface-strong">
+      <div className="flex gap-0 mb-4 border-b border-rule">
         <button
           onClick={() => setMode('people')}
           className={`tab-pill ${mode === 'people' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
@@ -380,12 +386,12 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
             onChange={e => setQuery(e.target.value)}
             placeholder="Search for writers..."
             autoFocus
-            className="w-full bg-surface-sunken px-4 py-3 text-ui-sm text-content-primary placeholder:text-content-faint focus:bg-white focus:outline-none transition-colors mb-4"
+            className="w-full bg-card px-4 py-3 text-ui-sm text-content-primary placeholder:text-content-faint focus:outline-none transition-colors mb-4"
           />
 
           {searching && (
             <div className="space-y-2">
-              {[1, 2, 3].map(i => <div key={i} className="h-14 animate-pulse bg-surface-raised" />)}
+              {[1, 2, 3].map(i => <div key={i} className="h-14 animate-pulse bg-surface-deep" />)}
             </div>
           )}
 
@@ -394,11 +400,11 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
           )}
 
           {!searching && results.map(w => (
-            <div key={w.id} className="flex items-center gap-3 py-3 border-b border-surface-strong last:border-b-0">
+            <div key={w.id} className="flex items-center gap-3 py-3 border-b border-rule last:border-b-0">
               {w.avatar ? (
                 <img src={w.avatar} alt="" className="h-9 w-9 rounded-full object-cover flex-shrink-0" />
               ) : (
-                <span className="flex h-9 w-9 items-center justify-center bg-surface-sunken text-xs font-medium text-content-muted flex-shrink-0 rounded-full">
+                <span className="flex h-9 w-9 items-center justify-center bg-avatar-bg text-xs font-medium text-content-muted flex-shrink-0 rounded-full">
                   {(w.displayName ?? w.username)[0].toUpperCase()}
                 </span>
               )}
@@ -424,7 +430,7 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
             onChange={e => setRssUrl(e.target.value)}
             placeholder="Paste an RSS or Atom feed URL..."
             autoFocus
-            className="w-full bg-surface-sunken px-4 py-3 text-ui-sm text-content-primary placeholder:text-content-faint focus:bg-white focus:outline-none transition-colors mb-4"
+            className="w-full bg-card px-4 py-3 text-ui-sm text-content-primary placeholder:text-content-faint focus:outline-none transition-colors mb-4"
           />
           <p className="text-ui-xs text-content-faint mb-4">
             External feed following is coming soon. Paste a feed URL to get notified when it's ready.
@@ -447,12 +453,12 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
 
 function FeedSkeleton() {
   return (
-    <div className="mx-auto max-w-article pt-16 lg:pt-0 px-6 py-10 space-y-3">
+    <div className="mx-auto max-w-[600px] pt-16 lg:pt-0 px-6 py-10 space-y-[10px]">
       {[1, 2, 3].map(i => (
-        <div key={i} className="bg-surface-raised p-5">
-          <div className="h-3 w-24 animate-pulse bg-surface-sunken mb-4" />
-          <div className="h-5 w-3/4 animate-pulse bg-surface-sunken mb-3" />
-          <div className="h-3 w-full animate-pulse bg-surface-sunken" />
+        <div key={i} className="bg-card p-5">
+          <div className="h-3 w-24 animate-pulse bg-surface-deep mb-4" />
+          <div className="h-5 w-3/4 animate-pulse bg-surface-deep mb-3" />
+          <div className="h-3 w-full animate-pulse bg-surface-deep" />
         </div>
       ))}
     </div>
@@ -461,12 +467,12 @@ function FeedSkeleton() {
 
 function InlineSkeleton() {
   return (
-    <div className="px-6 pt-1 space-y-3">
+    <div className="px-6 pt-1 space-y-[10px]">
       {[1, 2, 3].map(i => (
-        <div key={i} className="bg-surface-raised p-5">
-          <div className="h-3 w-24 animate-pulse bg-surface-sunken mb-4" />
-          <div className="h-5 w-3/4 animate-pulse bg-surface-sunken mb-3" />
-          <div className="h-3 w-full animate-pulse bg-surface-sunken" />
+        <div key={i} className="bg-card p-5">
+          <div className="h-3 w-24 animate-pulse bg-surface-deep mb-4" />
+          <div className="h-5 w-3/4 animate-pulse bg-surface-deep mb-3" />
+          <div className="h-3 w-full animate-pulse bg-surface-deep" />
         </div>
       ))}
     </div>

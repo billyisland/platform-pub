@@ -4,13 +4,6 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ReportButton } from '../ui/ReportButton'
 
-// =============================================================================
-// CommentItem
-//
-// Renders a single comment with author info, timestamp, reply button,
-// delete button (for author or content owner), and report button.
-// =============================================================================
-
 export interface CommentData {
   id: string
   nostrEventId: string
@@ -47,7 +40,7 @@ export function CommentItem({
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   if (comment.isMuted && !comment.isDeleted) {
-    return null // Hidden for muters
+    return null
   }
 
   const canDelete =
@@ -68,9 +61,8 @@ export function CommentItem({
   }
 
   return (
-    <div className={`${depth > 0 ? 'ml-8 border-l-2 border-ink-100 pl-4' : ''}`}>
+    <div className={`${depth > 0 ? 'ml-8 border-l-2 border-rule/40 pl-4' : ''}`}>
       <div className="py-3">
-        {/* Author line */}
         <div className="flex items-center gap-2 mb-1.5">
           {comment.author.avatar ? (
             <img
@@ -79,42 +71,40 @@ export function CommentItem({
               className="h-6 w-6 rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-[10px] font-medium text-brand-700">
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-avatar-bg text-[10px] font-medium text-content-muted">
               {initial}
             </div>
           )}
           {comment.author.username ? (
-            <Link href={`/${comment.author.username}`} className="text-xs font-medium text-ink-600 hover:text-ink-900 transition-colors">
+            <Link href={`/${comment.author.username}`} className="text-xs font-medium text-content-secondary hover:text-content-primary transition-colors">
               {authorName}
             </Link>
           ) : (
-            <span className="text-xs font-medium text-ink-600">
+            <span className="text-xs font-medium text-content-secondary">
               {authorName}
             </span>
           )}
-          <span className="text-xs text-ink-300">&middot;</span>
+          <span className="text-xs text-content-faint">&middot;</span>
           <time
             dateTime={comment.publishedAt}
-            className="text-xs text-ink-400"
+            className="text-xs text-content-faint"
           >
             {formatRelativeTime(comment.publishedAt)}
           </time>
         </div>
 
-        {/* Content */}
         <p className={`text-sm leading-relaxed whitespace-pre-wrap ${
-          comment.isDeleted ? 'text-ink-400 italic' : 'text-ink-700'
+          comment.isDeleted ? 'text-content-faint italic' : 'text-content-secondary'
         }`}>
           {comment.content}
         </p>
 
-        {/* Actions */}
         {!comment.isDeleted && (
           <div className="mt-1.5 flex items-center gap-3">
             {currentUserId && onReply && depth < 2 && (
               <button
                 onClick={() => onReply(comment.id, comment.nostrEventId, authorName)}
-                className="text-xs text-ink-400 hover:text-ink-600 transition-colors"
+                className="text-xs text-content-faint hover:text-content-muted transition-colors"
               >
                 Reply
               </button>
@@ -124,8 +114,8 @@ export function CommentItem({
                 onClick={handleDelete}
                 className={`text-xs transition-colors ${
                   confirmDelete
-                    ? 'text-red-600 font-medium'
-                    : 'text-ink-400 hover:text-red-600'
+                    ? 'text-accent font-medium'
+                    : 'text-content-faint hover:text-accent'
                 }`}
               >
                 {confirmDelete ? 'Confirm delete' : 'Delete'}
@@ -136,7 +126,6 @@ export function CommentItem({
         )}
       </div>
 
-      {/* Replies */}
       {comment.replies.length > 0 && (
         <div>
           {comment.replies.map((reply) => (

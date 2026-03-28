@@ -2,28 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-// =============================================================================
-// ShareButton
-//
-// On mobile / browsers that support the Web Share API, delegates to the native
-// share sheet. On desktop, shows a small dropdown with three options:
-//   - Copy link  → clipboard, brief "Copied!" confirmation
-//   - Share on X → opens x.com/intent/tweet in a new tab
-//   - Share via email → opens mailto:
-// =============================================================================
-
 interface ShareButtonProps {
   url: string
   title: string
-  dark?: boolean
+  dark?: boolean  // kept for API compat
 }
 
-export function ShareButton({ url, title, dark }: ShareButtonProps) {
+export function ShareButton({ url, title }: ShareButtonProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return
     function handler(e: MouseEvent) {
@@ -39,12 +28,11 @@ export function ShareButton({ url, title, dark }: ShareButtonProps) {
     e.preventDefault()
     e.stopPropagation()
 
-    // Use native share sheet if available (mobile / supported browsers)
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({ title, url })
       } catch {
-        // User cancelled or share failed — silently ignore
+        // User cancelled
       }
       return
     }
@@ -85,29 +73,29 @@ export function ShareButton({ url, title, dark }: ShareButtonProps) {
     <div ref={containerRef} className="relative">
       <button
         onClick={handleClick}
-        className={`text-ui-xs transition-colors ${dark ? 'text-white/50 hover:text-white/90' : 'text-content-muted hover:text-content-primary'}`}
+        className="text-ui-xs transition-colors text-content-faint hover:text-content-primary"
         aria-label="Share"
       >
         {copied ? 'Copied!' : 'Share'}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-6 z-20 w-44 border border-surface-strong bg-surface shadow-lg py-1">
+        <div className="absolute right-0 top-6 z-20 w-44 border border-rule bg-card shadow-lg py-1">
           <button
             onClick={copyLink}
-            className="w-full text-left px-3 py-2 text-xs text-content-primary hover:bg-surface-raised transition-colors"
+            className="w-full text-left px-3 py-2 text-xs text-content-primary hover:bg-surface-deep transition-colors"
           >
             Copy link
           </button>
           <button
             onClick={openX}
-            className="w-full text-left px-3 py-2 text-xs text-content-primary hover:bg-surface-raised transition-colors"
+            className="w-full text-left px-3 py-2 text-xs text-content-primary hover:bg-surface-deep transition-colors"
           >
             Share on X
           </button>
           <button
             onClick={openEmail}
-            className="w-full text-left px-3 py-2 text-xs text-content-primary hover:bg-surface-raised transition-colors"
+            className="w-full text-left px-3 py-2 text-xs text-content-primary hover:bg-surface-deep transition-colors"
           >
             Share via email
           </button>

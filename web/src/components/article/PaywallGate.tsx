@@ -37,24 +37,26 @@ export function PaywallGate({ pricePounds, freeAllowanceRemaining, hasPaymentMet
   }
 
   return (
-    <div className="my-16">
-      <div className="relative h-24 -mt-24 pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent, #FAF7F5)' }} />
+    <div className="my-16 -mx-[48px]">
+      {/* Gradient fade from parchment to surface-deep */}
+      <div className="relative h-20 -mt-20 pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent, #DDEEE4)' }} />
 
-      <div className="px-8 py-12 text-center bg-surface-sunken">
-        <div className="text-center mb-6 text-content-faint" style={{ fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.5em', fontSize: '0.75rem' }}>· · ·</div>
+      <div className="px-8 py-12 text-center" style={{ background: '#DDEEE4' }}>
+        {/* Ornament */}
+        <div className="text-center mb-6" style={{ fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.5em', fontSize: '0.6875rem', color: '#B5242A', userSelect: 'none' }}>· · ·</div>
 
-        <h2 className="font-serif text-xl font-light mb-3 tracking-tight text-ink-900">{heading}</h2>
-        <p className="text-mono-xs mb-8 max-w-sm mx-auto leading-relaxed text-content-secondary">{subtext}</p>
+        <h2 style={{ fontFamily: '"Literata", Georgia, serif', fontSize: '20px', fontWeight: 400, color: '#0F1F18', marginBottom: '12px' }}>{heading}</h2>
+        <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '13px', color: '#4A6B5A', maxWidth: '24rem', margin: '0 auto 2rem', lineHeight: 1.6 }}>{subtext}</p>
 
         {showPrice && pricePounds && (
-          <p className="font-serif text-2xl font-light mb-6 text-ink-900">£{pricePounds}</p>
+          <p style={{ fontFamily: '"Literata", Georgia, serif', fontSize: '28px', fontWeight: 400, color: '#0F1F18', marginBottom: '1.5rem' }}>£{pricePounds}</p>
         )}
 
         {error && (
-          <div className="mb-6 px-4 py-3 text-mono-xs max-w-sm mx-auto bg-surface-raised text-content-primary">
+          <div className="mb-6 px-4 py-3 text-ui-xs max-w-sm mx-auto bg-card text-content-primary">
             {error}
             {error.includes('Add a card') && (
-              <a href="/settings" className="ml-1 underline text-ink-900">Go to settings</a>
+              <a href="/settings" className="ml-1 underline text-ink">Go to settings</a>
             )}
           </div>
         )}
@@ -63,11 +65,11 @@ export function PaywallGate({ pricePounds, freeAllowanceRemaining, hasPaymentMet
           {unlocking ? 'Unlocking...' : buttonLabel}
         </button>
 
-        <div className="mt-8 flex items-center justify-center gap-4 text-mono-xs text-content-muted">
+        <div className="mt-8 flex items-center justify-center gap-4" style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '12px', color: '#7A9A8A' }}>
           <span>No subscription</span>
-          <span className="opacity-40">/</span>
+          <span style={{ opacity: 0.4 }}>/</span>
           <span>Pay per read</span>
-          <span className="opacity-40">/</span>
+          <span style={{ opacity: 0.4 }}>/</span>
           <span>Cancel anytime</span>
         </div>
       </div>

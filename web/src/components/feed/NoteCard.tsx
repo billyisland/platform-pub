@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { NoteEvent } from '../../lib/ndk'
 import { useWriterName } from '../../hooks/useWriterName'
@@ -20,56 +20,9 @@ interface NoteCardProps {
   myVoteCounts?: MyVoteCount
 }
 
-// Ghost pill button style for dark stone background
-const darkPillStyle: React.CSSProperties = {
-  fontFamily: '"Source Sans 3", system-ui, sans-serif',
-  fontSize: '12px',
-  color: 'rgba(250, 250, 240, 0.7)',
-  background: 'rgba(250, 250, 240, 0.05)',
-  border: '1px solid rgba(250, 250, 240, 0.13)',
-  borderRadius: '20px',
-  padding: '4px 14px',
-  cursor: 'pointer',
-  transition: 'background 0.15s ease, color 0.15s ease',
-}
-
 function ExcerptPennant({ note }: { note: NoteEvent }) {
-  const ref = useRef<HTMLDivElement>(null)
   const [articleDTag, setArticleDTag] = useState<string | null>(null)
-  const [isPaywalled, setIsPaywalled] = useState(false)
   const [authorUsername, setAuthorUsername] = useState<string | null>(null)
-
-  function applyZigzag() {
-    const el = ref.current
-    if (!el) return
-    const w = el.offsetWidth
-    const h = el.offsetHeight
-    if (w === 0 || h === 0) return
-    const depth = 12
-    const toothPx = 22
-    const n = Math.max(4, Math.round(h / toothPx))
-    const xInner = (((w - depth) / w) * 100).toFixed(2)
-    const pts: string[] = ['0% 0%', '100% 0%']
-    for (let i = 0; i < n; i++) {
-      const yMid = (((i + 0.5) / n) * 100).toFixed(2)
-      const yBot = (((i + 1) / n) * 100).toFixed(2)
-      pts.push(`${xInner}% ${yMid}%`)
-      pts.push(`100% ${yBot}%`)
-    }
-    pts.push('0% 100%')
-    el.style.clipPath = `polygon(${pts.join(', ')})`
-  }
-
-  useEffect(() => {
-    function run() { applyZigzag() }
-    if (typeof document !== 'undefined' && document.fonts) {
-      document.fonts.ready.then(run)
-    } else {
-      run()
-    }
-    window.addEventListener('resize', run)
-    return () => window.removeEventListener('resize', run)
-  }, [note.quotedExcerpt])
 
   useEffect(() => {
     if (!note.quotedEventId) return
@@ -77,37 +30,29 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.dTag) setArticleDTag(data.dTag)
-        if (data?.isPaywalled) setIsPaywalled(true)
         if (data?.author?.username && data.author.username.length < 40) setAuthorUsername(data.author.username)
       })
       .catch(() => {})
   }, [note.quotedEventId])
 
-  const excerptStyle: React.CSSProperties = { fontFamily: '"Newsreader", Georgia, serif', fontStyle: 'italic', fontSize: '14px', color: '#4A4845', lineHeight: 1.5, marginBottom: note.quotedTitle || note.quotedAuthor ? '5px' : 0 }
-  const attributionStyle: React.CSSProperties = { fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 400, color: '#9E9B97', marginTop: '4px' }
-
   return (
     <div
-      ref={ref}
       className="mt-2.5"
       style={{
-        background: '#FAFAF0',
-        borderLeft: isPaywalled ? '5px solid #9B1C20' : 'none',
-        paddingTop: '10px',
-        paddingBottom: '10px',
-        paddingLeft: isPaywalled ? '11px' : '14px',
-        paddingRight: '28px',
+        background: '#FFFAEF',
+        borderLeft: '2.5px solid #B5242A',
+        padding: '12px 16px',
       }}
     >
       {articleDTag ? (
         <Link href={`/article/${articleDTag}`} onClick={e => e.stopPropagation()} className="block hover:opacity-80 transition-opacity">
-          <p style={excerptStyle}>{note.quotedExcerpt}</p>
+          <p style={{ fontFamily: '"Literata", Georgia, serif', fontStyle: 'italic', fontSize: '13.5px', color: '#263D32', lineHeight: 1.5 }}>{note.quotedExcerpt}</p>
         </Link>
       ) : (
-        <p style={excerptStyle}>{note.quotedExcerpt}</p>
+        <p style={{ fontFamily: '"Literata", Georgia, serif', fontStyle: 'italic', fontSize: '13.5px', color: '#263D32', lineHeight: 1.5 }}>{note.quotedExcerpt}</p>
       )}
       {(note.quotedTitle || note.quotedAuthor) && (
-        <p style={attributionStyle}>
+        <p style={{ fontFamily: '"Source Sans 3", system-ui, sans-serif', fontSize: '11px', fontWeight: 400, color: '#ACA69C', marginTop: '4px' }}>
           {note.quotedTitle && articleDTag ? (
             <Link href={`/article/${articleDTag}`} onClick={e => e.stopPropagation()} className="hover:underline underline-offset-2">{note.quotedTitle}</Link>
           ) : note.quotedTitle}
@@ -168,160 +113,143 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
   }
 
   return (
-    <div style={{ background: '#2A2A2A', borderRadius: '14px', overflow: 'visible' }}>
-      <div className="p-4">
-        <div className="flex items-start gap-3">
-          {/* Avatar */}
-          {writerInfo?.username ? (
-            <Link href={`/${writerInfo.username}`} className="flex-shrink-0">
-              {writerInfo.avatar ? (
-                <img src={writerInfo.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
-              ) : (
-                <span
-                  className="flex h-9 w-9 items-center justify-center text-xs font-medium rounded-full"
-                  style={{ background: 'linear-gradient(135deg, #3A1515, #5A2020)', color: '#FAFAF0' }}
-                >
-                  {(writerInfo.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
-                </span>
-              )}
-            </Link>
-          ) : writerInfo?.avatar ? (
-            <img src={writerInfo.avatar} alt="" className="h-9 w-9 rounded-full object-cover flex-shrink-0" />
-          ) : (
-            <span
-              className="flex h-9 w-9 items-center justify-center text-xs font-medium flex-shrink-0 rounded-full"
-              style={{ background: 'linear-gradient(135deg, #3A1515, #5A2020)', color: '#FAFAF0' }}
-            >
-              {(writerInfo?.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
+    <div className="py-4">
+      <div className="flex items-start gap-3">
+        {/* Avatar */}
+        {writerInfo?.username ? (
+          <Link href={`/${writerInfo.username}`} className="flex-shrink-0">
+            {writerInfo.avatar ? (
+              <img src={writerInfo.avatar} alt="" className="h-[30px] w-[30px] rounded-full object-cover" />
+            ) : (
+              <span
+                className="flex h-[30px] w-[30px] items-center justify-center text-xs font-medium rounded-full"
+                style={{ background: '#C2DBC9', color: '#4A6B5A' }}
+              >
+                {(writerInfo.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
+              </span>
+            )}
+          </Link>
+        ) : writerInfo?.avatar ? (
+          <img src={writerInfo.avatar} alt="" className="h-[30px] w-[30px] rounded-full object-cover flex-shrink-0" />
+        ) : (
+          <span
+            className="flex h-[30px] w-[30px] items-center justify-center text-xs font-medium flex-shrink-0 rounded-full"
+            style={{ background: '#C2DBC9', color: '#4A6B5A' }}
+          >
+            {(writerInfo?.displayName?.[0] ?? note.pubkey[0]).toUpperCase()}
+          </span>
+        )}
+
+        <div className="flex-1 min-w-0">
+          {/* Name + time */}
+          <div className="flex items-center gap-2">
+            {writerInfo?.username ? (
+              <Link
+                href={`/${writerInfo.username}`}
+                style={{ fontSize: '14px', fontWeight: 600, color: '#0F1F18' }}
+                className="hover:opacity-80 transition-opacity"
+              >
+                {writerInfo.displayName ?? note.pubkey.slice(0, 12) + '...'}
+              </Link>
+            ) : (
+              <span style={{ fontSize: '14px', fontWeight: 600, color: '#0F1F18' }}>
+                {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
+              </span>
+            )}
+            <span style={{ fontSize: '12px', color: '#7A9A8A' }}>
+              {formatDate(note.publishedAt)}
             </span>
+            {isAuthor && (
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="ml-auto px-2.5 py-0.5 disabled:opacity-40 transition-colors"
+                style={confirmDelete
+                  ? { fontSize: '12px', color: '#B5242A', fontWeight: 500 }
+                  : { fontSize: '12px', color: '#7A9A8A' }
+                }
+              >
+                {deleting ? '...' : confirmDelete ? 'Confirm?' : 'Delete'}
+              </button>
+            )}
+          </div>
+
+          {/* Content */}
+          {displayContent && (
+            <p
+              className="whitespace-pre-wrap mt-1"
+              style={{ fontSize: '15px', color: '#0F1F18', lineHeight: '1.55' }}
+            >
+              {displayContent}
+            </p>
           )}
 
-          <div className="flex-1 min-w-0">
-            {/* Name + time */}
-            <div className="flex items-center gap-2">
-              {writerInfo?.username ? (
-                <Link
-                  href={`/${writerInfo.username}`}
-                  style={{ fontSize: '15px', fontWeight: 700, color: '#FAFAF0' }}
-                  className="hover:opacity-80 transition-opacity"
-                >
-                  {writerInfo.displayName ?? note.pubkey.slice(0, 12) + '...'}
-                </Link>
-              ) : (
-                <span style={{ fontSize: '15px', fontWeight: 700, color: '#FAFAF0' }}>
-                  {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
-                </span>
-              )}
-              <span style={{ fontSize: '13px', color: '#9E9B97' }}>
-                {formatDate(note.publishedAt)}
-              </span>
-              {isAuthor && (
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="ml-auto rounded-full px-2.5 py-0.5 disabled:opacity-40 transition-colors"
-                  style={confirmDelete
-                    ? { fontSize: '12px', color: '#ff6b6b', background: 'rgba(255,107,107,0.15)', fontWeight: 500 }
-                    : { fontSize: '12px', color: 'rgba(250,250,240,0.35)' }
-                  }
-                >
-                  {deleting ? '...' : confirmDelete ? 'Confirm?' : 'Delete'}
-                </button>
-              )}
+          {/* Images */}
+          {imageUrls.length > 0 && (
+            <div className="mt-2.5 space-y-2">
+              {imageUrls.map((url, i) => (
+                <img key={i} src={url} alt="" className="max-w-full max-h-80 object-cover" loading="lazy" />
+              ))}
             </div>
+          )}
 
-            {/* Content */}
-            {displayContent && (
-              <p
-                className="whitespace-pre-wrap mt-1"
-                style={{ fontSize: '16px', color: '#FAFAF0', lineHeight: '1.55' }}
-              >
-                {displayContent}
-              </p>
-            )}
+          {/* Embeds */}
+          {embedUrls.length > 0 && (
+            <div className="mt-2.5 space-y-2">
+              {embedUrls.map((url, i) => <EmbedPreview key={i} url={url} />)}
+            </div>
+          )}
 
-            {/* Images */}
-            {imageUrls.length > 0 && (
-              <div className="mt-2.5 space-y-2">
-                {imageUrls.map((url, i) => (
-                  <img key={i} src={url} alt="" className="max-w-full max-h-80 object-cover rounded-lg" loading="lazy" />
-                ))}
-              </div>
-            )}
+          {/* Quoted content */}
+          {note.quotedExcerpt ? (
+            <ExcerptPennant note={note} />
+          ) : note.quotedEventId ? (
+            <QuoteCard eventId={note.quotedEventId} />
+          ) : null}
 
-            {/* Embeds */}
-            {embedUrls.length > 0 && (
-              <div className="mt-2.5 space-y-2">
-                {embedUrls.map((url, i) => <EmbedPreview key={i} url={url} />)}
-              </div>
-            )}
-
-            {/* Quoted content */}
-            {note.quotedExcerpt ? (
-              <ExcerptPennant note={note} />
-            ) : note.quotedEventId ? (
-              <QuoteCard eventId={note.quotedEventId} />
-            ) : null}
-
-            {/* Action pills */}
-            <div className="mt-3 flex items-center gap-1.5">
+          {/* Action labels — plain text */}
+          <div className="mt-3 flex items-center gap-4" style={{ fontSize: '12px', color: '#7A9A8A' }}>
+            <button
+              onClick={() => setShowComposer(c => !c)}
+              className="hover:text-ink transition-colors"
+            >
+              Reply
+            </button>
+            {user && onQuote && (
               <button
-                onClick={() => setShowComposer(c => !c)}
-                style={darkPillStyle}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.12)'
-                  ;(e.currentTarget as HTMLButtonElement).style.color = '#FAFAF0'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.05)'
-                  ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(250,250,240,0.7)'
-                }}
+                onClick={handleQuote}
+                className="hover:text-ink transition-colors"
               >
-                Reply
+                Quote
               </button>
-              {user && onQuote && (
-                <button
-                  onClick={handleQuote}
-                  style={darkPillStyle}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.12)'
-                    ;(e.currentTarget as HTMLButtonElement).style.color = '#FAFAF0'
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(250,250,240,0.05)'
-                    ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(250,250,240,0.7)'
-                  }}
-                >
-                  Quote
-                </button>
-              )}
-              <VoteControls
-                targetEventId={note.id}
-                targetKind={1}
-                isOwnContent={isAuthor}
-                dark={true}
-                initialTally={voteTally}
-                initialMyVotes={myVoteCounts}
-              />
-            </div>
+            )}
+            <VoteControls
+              targetEventId={note.id}
+              targetKind={1}
+              isOwnContent={isAuthor}
+              initialTally={voteTally}
+              initialMyVotes={myVoteCounts}
+            />
           </div>
         </div>
       </div>
 
-      {/* Replies — always visible, composer shown only when Reply is clicked */}
-      <div style={{ borderTop: '1px solid rgba(250,250,240,0.08)' }} className="px-4 pb-3">
-        <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact dark previewLimit={3} composerOpen={showComposer} onComposerClose={() => setShowComposer(false)} />
-      </div>
+      {/* Replies */}
+      {(showComposer || undefined) && (
+        <div className="ml-[42px] mt-1">
+          <ReplySection targetEventId={note.id} targetKind={1} targetAuthorPubkey={note.pubkey} compact previewLimit={3} composerOpen={showComposer} onComposerClose={() => setShowComposer(false)} />
+        </div>
+      )}
     </div>
   )
 }
 
 function EmbedPreview({ url }: { url: string }) {
   const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/)
-  if (yt) return <div className="relative overflow-hidden rounded-lg" style={{ paddingBottom: '56.25%' }}><iframe src={`https://www.youtube.com/embed/${yt[1]}`} className="absolute inset-0 w-full h-full" frameBorder="0" allowFullScreen loading="lazy" /></div>
+  if (yt) return <div className="relative overflow-hidden" style={{ paddingBottom: '56.25%' }}><iframe src={`https://www.youtube.com/embed/${yt[1]}`} className="absolute inset-0 w-full h-full" frameBorder="0" allowFullScreen loading="lazy" /></div>
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-lg hover:opacity-80 transition-opacity" style={{ background: 'rgba(255,255,255,0.06)' }}>
-      <p className="text-ui-xs truncate" style={{ color: '#9E9B97' }}>{url}</p>
+    <a href={url} target="_blank" rel="noopener noreferrer" className="block p-3 hover:opacity-80 transition-opacity" style={{ background: '#DDEEE4' }}>
+      <p className="text-ui-xs truncate" style={{ color: '#4A6B5A' }}>{url}</p>
     </a>
   )
 }

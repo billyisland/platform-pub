@@ -109,22 +109,22 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
     finally { setDeletingId(null) }
   }
 
-  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-surface-raised" />)}</div>
-  if (error) return <div className="bg-surface-raised px-4 py-3 text-ui-xs text-content-primary">{error}</div>
-  if (articles.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-content-muted mb-4">No published articles yet.</p><Link href="/write" className="text-ui-xs text-ink-900 underline underline-offset-4">Write your first article</Link></div>
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-card" />)}</div>
+  if (error) return <div className="bg-card px-4 py-3 text-ui-xs text-content-primary">{error}</div>
+  if (articles.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-content-muted mb-4">No published articles yet.</p><Link href="/write" className="text-ui-xs text-ink underline underline-offset-4">Write your first article</Link></div>
 
   return (
-    <div className="overflow-x-auto bg-surface-raised">
+    <div className="overflow-x-auto bg-card">
       <table className="w-full text-ui-xs">
-        <thead><tr className="border-b border-surface-strong"><th className="px-4 py-3 text-left label-ui text-content-muted">Title</th><th className="px-4 py-3 text-left label-ui text-content-muted">Status</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-center label-ui text-content-muted">Replies</th><th className="px-4 py-3 text-right label-ui text-content-muted">Actions</th></tr></thead>
+        <thead><tr className="border-b border-rule"><th className="px-4 py-3 text-left label-ui text-content-muted">Title</th><th className="px-4 py-3 text-left label-ui text-content-muted">Status</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-center label-ui text-content-muted">Replies</th><th className="px-4 py-3 text-right label-ui text-content-muted">Actions</th></tr></thead>
         <tbody>{articles.map(a => (
-          <tr key={a.id} className="border-b border-surface-strong last:border-b-0">
-            <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-ink-900 hover:opacity-70">{a.title}</Link></td>
+          <tr key={a.id} className="border-b border-rule last:border-b-0">
+            <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-ink hover:opacity-70">{a.title}</Link></td>
             <td className="px-4 py-3">{a.isPaywalled ? <span className="text-content-primary">£{((a.pricePence??0)/100).toFixed(2)}</span> : <span className="text-content-muted">Free</span>}</td>
             <td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td>
-            <td className="px-4 py-3 text-right text-ink-900 tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td>
+            <td className="px-4 py-3 text-right text-ink tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td>
             <td className="px-4 py-3 text-center"><button onClick={() => handleToggleReplies(a.id, !a.repliesEnabled)} className={`text-ui-xs ${a.repliesEnabled ? 'text-accent' : 'text-content-faint'}`}>{a.repliesEnabled ? 'On' : 'Off'}</button></td>
-            <td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-3"><Link href={`/write?edit=${a.nostrEventId}`} className="text-content-muted hover:text-ink-900">Edit</Link><button onClick={() => handleDelete(a.id)} disabled={deletingId===a.id} className="text-content-faint hover:text-ink-900 disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button></div></td>
+            <td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-3"><Link href={`/write?edit=${a.nostrEventId}`} className="text-content-muted hover:text-ink">Edit</Link><button onClick={() => handleDelete(a.id)} disabled={deletingId===a.id} className="text-content-faint hover:text-ink disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button></div></td>
           </tr>
         ))}</tbody>
       </table>
@@ -140,9 +140,9 @@ function DraftsTab() {
   const [drafts, setDrafts] = useState<any[]>([]); const [loading, setLoading] = useState(true)
   useEffect(() => { (async () => { setLoading(true); try { setDrafts(await loadDrafts()) } catch {} finally { setLoading(false) } })() }, [])
   async function handleDelete(id: string) { try { await deleteDraft(id); setDrafts(p => p.filter((d:any) => d.draftId !== id)) } catch {} }
-  if (loading) return <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-8 animate-pulse bg-surface-raised" />)}</div>
-  if (drafts.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-content-muted mb-4">No saved drafts.</p><Link href="/write" className="text-ui-xs text-ink-900 underline underline-offset-4">Start writing</Link></div>
-  return <div className="space-y-2">{drafts.map((d:any) => <div key={d.draftId} className="flex items-center justify-between bg-surface-raised px-4 py-3"><div><p className="text-ui-sm text-ink-900">{d.title||'Untitled'}</p><p className="text-ui-xs text-content-faint mt-0.5">Last saved {new Date(d.autoSavedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p></div><div className="flex items-center gap-4"><Link href={`/write?draft=${d.draftId}`} className="text-ui-xs text-content-primary hover:text-ink-900">Continue</Link><button onClick={() => handleDelete(d.draftId)} className="text-ui-xs text-content-faint hover:text-ink-900">Delete</button></div></div>)}</div>
+  if (loading) return <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-8 animate-pulse bg-card" />)}</div>
+  if (drafts.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-content-muted mb-4">No saved drafts.</p><Link href="/write" className="text-ui-xs text-ink underline underline-offset-4">Start writing</Link></div>
+  return <div className="space-y-2">{drafts.map((d:any) => <div key={d.draftId} className="flex items-center justify-between bg-card px-4 py-3"><div><p className="text-ui-sm text-ink">{d.title||'Untitled'}</p><p className="text-ui-xs text-content-faint mt-0.5">Last saved {new Date(d.autoSavedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p></div><div className="flex items-center gap-4"><Link href={`/write?draft=${d.draftId}`} className="text-ui-xs text-content-primary hover:text-ink">Continue</Link><button onClick={() => handleDelete(d.draftId)} className="text-ui-xs text-content-faint hover:text-ink">Delete</button></div></div>)}</div>
 }
 
 // =============================================================================
@@ -201,21 +201,21 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
   const totalCredits = (earnings?.earningsTotalPence ?? 0) + subscribers.reduce((s, sub) => s + (sub.status === 'active' ? sub.pricePence : 0), 0)
   const activeSubscribers = subscribers.filter(s => s.status === 'active')
 
-  if (error) return <div className="bg-surface-raised px-4 py-3 text-ui-xs text-content-primary">{error}</div>
+  if (error) return <div className="bg-card px-4 py-3 text-ui-xs text-content-primary">{error}</div>
 
   return (
     <div>
       {/* Connect Stripe prompt */}
       {!stripeReady && earnings && earnings.earningsTotalPence > 0 && (
-        <div className="mb-10 bg-accent-50 border-l-[3px] border-accent px-6 py-4">
+        <div className="mb-10 bg-surface-deep border-l-[3px] border-accent px-6 py-4">
           <p className="text-ui-sm text-content-primary">You've earned £{(earnings.earningsTotalPence/100).toFixed(2)} from {earnings.readCount} paid reads. Connect your bank to get paid.</p>
-          <a href="/settings" className="mt-2 inline-block text-ui-xs text-accent-700 underline underline-offset-4">Connect Stripe</a>
+          <a href="/settings" className="mt-2 inline-block text-ui-xs text-accent-dark underline underline-offset-4">Connect Stripe</a>
         </div>
       )}
 
       {/* Summary cards */}
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-14">{[1,2,3].map(i => <div key={i} className="bg-surface-raised p-6"><div className="h-3 w-20 animate-pulse bg-surface-sunken mb-3"/><div className="h-7 w-28 animate-pulse bg-surface-sunken"/></div>)}</div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-14">{[1,2,3].map(i => <div key={i} className="bg-card p-6"><div className="h-3 w-20 animate-pulse bg-surface-deep mb-3"/><div className="h-7 w-28 animate-pulse bg-surface-deep"/></div>)}</div>
       ) : earnings ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-14">
           <Card label="Total earned" pence={earnings.earningsTotalPence} sub={`${earnings.readCount} paid reads`} primary />
@@ -229,9 +229,9 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
       {subscribers.length > 0 && (
         <div className="mb-14">
           <p className="label-ui text-content-muted mb-4">Subscribers</p>
-          <div className="overflow-x-auto bg-surface-raised">
+          <div className="overflow-x-auto bg-card">
             <table className="w-full text-ui-xs">
-              <thead><tr className="border-b border-surface-strong">
+              <thead><tr className="border-b border-rule">
                 <th className="px-4 py-3 text-left label-ui text-content-muted">Reader</th>
                 <th className="px-4 py-3 text-right label-ui text-content-muted">Pays</th>
                 <th className="px-4 py-3 text-right label-ui text-content-muted">Articles read</th>
@@ -240,9 +240,9 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
                 <th className="px-4 py-3 text-left label-ui text-content-muted">Status</th>
               </tr></thead>
               <tbody>{subscribers.map(s => (
-                <tr key={s.subscriptionId} className="border-b border-surface-strong last:border-b-0">
+                <tr key={s.subscriptionId} className="border-b border-rule last:border-b-0">
                   <td className="px-4 py-3">
-                    <Link href={`/${s.readerUsername}`} className="text-ink-900 hover:opacity-70">{s.readerDisplayName ?? s.readerUsername}</Link>
+                    <Link href={`/${s.readerUsername}`} className="text-ink hover:opacity-70">{s.readerDisplayName ?? s.readerUsername}</Link>
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">£{(s.pricePence/100).toFixed(2)}/mo</td>
                   <td className="px-4 py-3 text-right tabular-nums">{s.articlesRead}</td>
@@ -267,7 +267,7 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
       )}
 
       {/* How credits work */}
-      <div className="bg-surface-raised p-6 mb-12">
+      <div className="bg-card p-6 mb-12">
         <p className="label-ui text-content-muted mb-3">How credits work</p>
         <div className="space-y-2 text-ui-xs text-content-secondary leading-relaxed">
           <p>All figures shown after the 8% platform fee. Per-article reads and subscription income are netted against your own reading debits. Payouts trigger monthly when your net balance clears the threshold.</p>
@@ -277,9 +277,9 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
 
       {/* Per-article revenue */}
       <p className="label-ui text-content-muted mb-4">Per-article revenue</p>
-      {loading ? <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-8 animate-pulse bg-surface-raised"/>)}</div>
+      {loading ? <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-8 animate-pulse bg-card"/>)}</div>
       : articleEarnings.length === 0 ? <p className="text-ui-xs text-content-faint">No settled revenue yet.</p>
-      : <div className="overflow-x-auto bg-surface-raised"><table className="w-full text-ui-xs"><thead><tr className="border-b border-surface-strong"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-right label-ui text-content-muted">Pending</th><th className="px-4 py-3 text-right label-ui text-content-muted">Paid</th></tr></thead><tbody>{articleEarnings.map(a => <tr key={a.articleId} className="border-b border-surface-strong last:border-b-0"><td className="px-4 py-3"><a href={`/article/${a.dTag}`} className="text-ink-900 hover:opacity-70">{a.title}</a></td><td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td><td className="px-4 py-3 text-right text-ink-900 tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td><td className="px-4 py-3 text-right text-content-faint tabular-nums">£{(a.pendingPence/100).toFixed(2)}</td><td className="px-4 py-3 text-right text-content-faint tabular-nums">£{(a.paidPence/100).toFixed(2)}</td></tr>)}</tbody></table></div>}
+      : <div className="overflow-x-auto bg-card"><table className="w-full text-ui-xs"><thead><tr className="border-b border-rule"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-right label-ui text-content-muted">Pending</th><th className="px-4 py-3 text-right label-ui text-content-muted">Paid</th></tr></thead><tbody>{articleEarnings.map(a => <tr key={a.articleId} className="border-b border-rule last:border-b-0"><td className="px-4 py-3"><a href={`/article/${a.dTag}`} className="text-ink hover:opacity-70">{a.title}</a></td><td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td><td className="px-4 py-3 text-right text-ink tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td><td className="px-4 py-3 text-right text-content-faint tabular-nums">£{(a.pendingPence/100).toFixed(2)}</td><td className="px-4 py-3 text-right text-content-faint tabular-nums">£{(a.paidPence/100).toFixed(2)}</td></tr>)}</tbody></table></div>}
     </div>
   )
 }
@@ -338,18 +338,18 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
   return (
     <div>
       {/* How it works */}
-      <div className="bg-surface-raised p-6 mb-10">
+      <div className="bg-card p-6 mb-10">
         <p className="label-ui text-content-muted mb-3">How your reading tab works</p>
         <div className="space-y-2 text-ui-xs text-content-secondary leading-relaxed">
           <p>Per-article reads and subscriptions are both debits. Reads of articles by writers you subscribe to show as zero-cost. Your tab settles at £8, or monthly.</p>
-          {!hasCard && freeAllowancePence > 0 && <p className="text-ink-900">You have £{(freeAllowancePence/100).toFixed(2)} of free credit remaining.</p>}
-          {!hasCard && freeAllowancePence <= 0 && <p className="text-ink-900">Free allowance used. <a href="/settings" className="underline underline-offset-4">Add a card</a> to keep reading.</p>}
+          {!hasCard && freeAllowancePence > 0 && <p className="text-ink">You have £{(freeAllowancePence/100).toFixed(2)} of free credit remaining.</p>}
+          {!hasCard && freeAllowancePence <= 0 && <p className="text-ink">Free allowance used. <a href="/settings" className="underline underline-offset-4">Add a card</a> to keep reading.</p>}
         </div>
       </div>
 
       {/* Summary cards */}
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-14">{[1,2,3].map(i => <div key={i} className="bg-surface-raised p-6"><div className="h-3 w-20 animate-pulse bg-surface-sunken mb-3"/><div className="h-7 w-28 animate-pulse bg-surface-sunken"/></div>)}</div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-14">{[1,2,3].map(i => <div key={i} className="bg-card p-6"><div className="h-3 w-20 animate-pulse bg-surface-deep mb-3"/><div className="h-7 w-28 animate-pulse bg-surface-deep"/></div>)}</div>
       ) : tabData ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-14">
           <Card label="Current tab" pence={tabData.tabBalancePence} sub={`${unsettled.length} unsettled`} primary />
@@ -359,7 +359,7 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
         </div>
       ) : null}
 
-      {error && <div className="bg-surface-raised px-4 py-3 text-ui-xs text-content-primary mb-8">{error}</div>}
+      {error && <div className="bg-card px-4 py-3 text-ui-xs text-content-primary mb-8">{error}</div>}
 
       {/* Active subscriptions */}
       {subscriptions.length > 0 && (
@@ -367,10 +367,10 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
           <p className="label-ui text-content-muted mb-4">Your subscriptions</p>
           <div className="space-y-2">
             {subscriptions.map(sub => (
-              <div key={sub.id} className="flex items-center justify-between bg-surface-raised px-4 py-3">
+              <div key={sub.id} className="flex items-center justify-between bg-card px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div>
-                    <Link href={`/${sub.writerUsername}`} className="text-ui-sm text-ink-900 hover:opacity-70">{sub.writerDisplayName ?? sub.writerUsername}</Link>
+                    <Link href={`/${sub.writerUsername}`} className="text-ui-sm text-ink hover:opacity-70">{sub.writerDisplayName ?? sub.writerUsername}</Link>
                     <p className="text-ui-xs text-content-faint mt-0.5">
                       £{(sub.pricePence/100).toFixed(2)}/mo
                       {sub.status === 'cancelled' && ` · access until ${new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`}
@@ -390,19 +390,19 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
       {!loading && unsettled.length > 0 && (
         <>
           <p className="label-ui text-content-muted mb-4">On your tab</p>
-          <div className="overflow-x-auto bg-surface-raised mb-12">
+          <div className="overflow-x-auto bg-card mb-12">
             <table className="w-full text-ui-xs">
-              <thead><tr className="border-b border-surface-strong"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
+              <thead><tr className="border-b border-rule"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
               <tbody>{unsettled.map(r => (
-                <tr key={r.readId} className="border-b border-surface-strong last:border-b-0">
-                  <td className="px-4 py-3"><a href={`/article/${r.articleDTag}`} className="text-ink-900 hover:opacity-70">{r.articleTitle}</a></td>
+                <tr key={r.readId} className="border-b border-rule last:border-b-0">
+                  <td className="px-4 py-3"><a href={`/article/${r.articleDTag}`} className="text-ink hover:opacity-70">{r.articleTitle}</a></td>
                   <td className="px-4 py-3 text-content-muted">{r.writerDisplayName??r.writerUsername}</td>
                   <td className="px-4 py-3 text-content-faint">{new Date(r.readAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
                     {r.isSubscriptionRead || r.chargePence === 0 ? (
                       <span className="text-accent text-ui-xs">Subscribed</span>
                     ) : (
-                      <span className="text-ink-900">£{(r.chargePence/100).toFixed(2)}</span>
+                      <span className="text-ink">£{(r.chargePence/100).toFixed(2)}</span>
                     )}
                   </td>
                 </tr>
@@ -416,12 +416,12 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
       {!loading && settled.length > 0 && (
         <>
           <p className="label-ui text-content-muted mb-4">Settled</p>
-          <div className="overflow-x-auto bg-surface-raised">
+          <div className="overflow-x-auto bg-card">
             <table className="w-full text-ui-xs">
-              <thead><tr className="border-b border-surface-strong"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
+              <thead><tr className="border-b border-rule"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
               <tbody>{settled.map(r => (
-                <tr key={r.readId} className="border-b border-surface-strong last:border-b-0">
-                  <td className="px-4 py-3"><a href={`/article/${r.articleDTag}`} className="text-ink-900 hover:opacity-70">{r.articleTitle}</a></td>
+                <tr key={r.readId} className="border-b border-rule last:border-b-0">
+                  <td className="px-4 py-3"><a href={`/article/${r.articleDTag}`} className="text-ink hover:opacity-70">{r.articleTitle}</a></td>
                   <td className="px-4 py-3 text-content-muted">{r.writerDisplayName??r.writerUsername}</td>
                   <td className="px-4 py-3 text-content-faint">{new Date(r.readAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
@@ -439,7 +439,7 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
       )}
 
       {!loading && !error && tabData && tabData.reads.length === 0 && subscriptions.length === 0 && (
-        <div className="py-20 text-center"><p className="text-ui-sm text-content-muted mb-4">No paywalled articles read yet.</p><Link href="/feed" className="text-ui-xs text-ink-900 underline underline-offset-4">Browse the feed</Link></div>
+        <div className="py-20 text-center"><p className="text-ui-sm text-content-muted mb-4">No paywalled articles read yet.</p><Link href="/feed" className="text-ui-xs text-ink underline underline-offset-4">Browse the feed</Link></div>
       )}
     </div>
   )
@@ -450,10 +450,10 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
 // =============================================================================
 
 function Card({ label, pence, sub, primary=false, accent=false }: { label: string; pence: number; sub: string; primary?: boolean; accent?: boolean }) {
-  const bg = primary ? 'bg-ink-900' : accent ? 'bg-accent-50 border-l-[3px] border-accent' : 'bg-surface-raised'
-  const labelColor = primary ? 'text-ink-400' : accent ? 'text-accent-700' : 'text-content-muted'
-  const valueColor = primary ? 'text-surface' : accent ? 'text-accent-800' : 'text-ink-800'
-  const subColor = primary ? 'text-ink-400' : accent ? 'text-accent-600' : 'text-content-faint'
+  const bg = primary ? 'bg-ink' : accent ? 'bg-surface-deep border-l-[3px] border-accent' : 'bg-card'
+  const labelColor = primary ? 'text-content-faint' : accent ? 'text-accent-dark' : 'text-content-muted'
+  const valueColor = primary ? 'text-surface' : accent ? 'text-accent-dark' : 'text-ink'
+  const subColor = primary ? 'text-content-faint' : accent ? 'text-accent' : 'text-content-faint'
 
   return (
     <div className={`p-6 ${bg}`}>
@@ -465,5 +465,5 @@ function Card({ label, pence, sub, primary=false, accent=false }: { label: strin
 }
 
 function DashboardSkeleton() {
-  return <div className="mx-auto max-w-content px-6 py-10"><div className="flex gap-2 mb-10">{[1,2,3,4].map(i => <div key={i} className="h-9 w-24 animate-pulse bg-surface-raised"/>)}</div><div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{[1,2,3].map(i => <div key={i} className="bg-surface-raised p-6"><div className="h-3 w-20 animate-pulse bg-surface-sunken mb-3"/><div className="h-7 w-28 animate-pulse bg-surface-sunken"/></div>)}</div></div>
+  return <div className="mx-auto max-w-content px-6 py-10"><div className="flex gap-2 mb-10">{[1,2,3,4].map(i => <div key={i} className="h-9 w-24 animate-pulse bg-card"/>)}</div><div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{[1,2,3].map(i => <div key={i} className="bg-card p-6"><div className="h-3 w-20 animate-pulse bg-surface-deep mb-3"/><div className="h-7 w-28 animate-pulse bg-surface-deep"/></div>)}</div></div>
 }

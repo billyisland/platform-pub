@@ -5,14 +5,6 @@ import { useAuth } from '../../stores/auth'
 import { CommentComposer } from './CommentComposer'
 import { CommentItem, type CommentData } from './CommentItem'
 
-// =============================================================================
-// CommentSection
-//
-// Fetches and displays threaded comments for an article or note.
-// Includes a top-level compose box and inline reply compose boxes.
-// Handles soft-delete for comment authors and content authors.
-// =============================================================================
-
 const API_BASE = '/api/v1'
 
 interface CommentSectionProps {
@@ -20,7 +12,7 @@ interface CommentSectionProps {
   targetKind: number
   targetAuthorPubkey: string
   contentAuthorId?: string
-  compact?: boolean // For notes: single-level, no threading
+  compact?: boolean
 }
 
 export function CommentSection({
@@ -72,12 +64,10 @@ export function CommentSection({
 
   const handleNewReply = useCallback((comment: CommentData) => {
     setComments(prev => {
-      // Find the parent and add the reply
       return prev.map(c => {
         if (c.id === replyTarget?.commentId) {
           return { ...c, replies: [...c.replies, comment] }
         }
-        // Check one level deeper
         return {
           ...c,
           replies: c.replies.map(r => {
@@ -100,7 +90,6 @@ export function CommentSection({
         credentials: 'include',
       })
       if (res.ok) {
-        // Mark as deleted in UI
         setComments(prev => markDeleted(prev, commentId))
         setTotalCount(prev => prev - 1)
       }
@@ -115,11 +104,11 @@ export function CommentSection({
 
   if (loading) {
     return (
-      <div className="mt-8 pt-6 border-t border-ink-200">
-        <div className="h-4 w-28 animate-pulse rounded bg-ink-100 mb-4" />
+      <div className="mt-8 pt-6 border-t border-rule">
+        <div className="h-4 w-28 animate-pulse bg-surface-deep mb-4" />
         <div className="space-y-3">
           {[1, 2].map(i => (
-            <div key={i} className="h-16 animate-pulse rounded bg-ink-50" />
+            <div key={i} className="h-16 animate-pulse bg-surface-deep" />
           ))}
         </div>
       </div>
@@ -127,15 +116,13 @@ export function CommentSection({
   }
 
   return (
-    <div className={`${compact ? 'mt-3' : 'mt-8 pt-6 border-t border-ink-200'}`}>
-      {/* Header */}
-      <h3 className={`font-medium mb-4 ${compact ? 'text-xs text-ink-500' : 'text-sm text-ink-700'}`}>
+    <div className={`${compact ? 'mt-3' : 'mt-8 pt-6 border-t border-rule'}`}>
+      <h3 className={`font-medium mb-4 ${compact ? 'text-xs text-content-muted' : 'text-sm text-content-secondary'}`}>
         {totalCount > 0
           ? `${totalCount} comment${totalCount !== 1 ? 's' : ''}`
           : 'Comments'}
       </h3>
 
-      {/* Compose box */}
       {commentsEnabled && user ? (
         <CommentComposer
           targetEventId={targetEventId}
@@ -144,21 +131,20 @@ export function CommentSection({
           onPublished={handleNewComment}
         />
       ) : !commentsEnabled ? (
-        <p className="text-xs text-ink-400 italic mb-4">
+        <p className="text-xs text-content-faint italic mb-4">
           The author has closed comments on this piece.
         </p>
       ) : (
-        <p className="text-xs text-ink-400 mb-4">
-          <a href="/auth?mode=login" className="text-brand-600 hover:text-brand-700">
+        <p className="text-xs text-content-faint mb-4">
+          <a href="/auth?mode=login" className="text-accent hover:text-accent-dark">
             Log in
           </a>{' '}
           to leave a comment.
         </p>
       )}
 
-      {/* Comment list */}
       {comments.length > 0 && (
-        <div className="divide-y divide-ink-100">
+        <div className="divide-y divide-rule/50">
           {comments.map((comment) => (
             <div key={comment.id}>
               <CommentItem
@@ -168,9 +154,8 @@ export function CommentSection({
                 onReply={commentsEnabled ? handleReply : undefined}
                 onDelete={handleDelete}
               />
-              {/* Inline reply composer */}
               {replyTarget?.commentId === comment.id && (
-                <div className="ml-8 pl-4 border-l-2 border-ink-100">
+                <div className="ml-8 pl-4 border-l-2 border-rule/50">
                   <CommentComposer
                     targetEventId={targetEventId}
                     targetKind={targetKind}
@@ -192,7 +177,6 @@ export function CommentSection({
   )
 }
 
-// Recursively mark a comment as deleted
 function markDeleted(comments: CommentData[], id: string): CommentData[] {
   return comments.map(c => {
     if (c.id === id) {

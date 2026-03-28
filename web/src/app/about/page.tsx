@@ -3,7 +3,7 @@ import Link from 'next/link'
 export default function AboutPage() {
   return (
     <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8">
-      <h1 className="font-serif text-4xl font-medium text-ink-900 mb-4" style={{ letterSpacing: '-0.02em' }}>
+      <h1 className="font-serif text-4xl font-medium text-ink mb-4" style={{ letterSpacing: '-0.02em' }}>
         Platform
       </h1>
       <p className="text-lg text-content-secondary leading-relaxed mb-16 max-w-lg">
@@ -18,7 +18,7 @@ export default function AboutPage() {
           Charges accumulate on a Tab (think bar tab) and settle through Stripe. Writers get paid the same way, in batches, once the balance is big enough that transaction fees won&rsquo;t eat it.
         </p>
 
-        <h2 className="font-serif text-xl font-medium text-ink-900 pt-4" style={{ letterSpacing: '-0.01em' }}>
+        <h2 className="font-serif text-xl font-medium text-ink pt-4" style={{ letterSpacing: '-0.01em' }}>
           Built on open ground
         </h2>
         <p>
@@ -28,7 +28,7 @@ export default function AboutPage() {
           By default, Platform hosts your content and manages your payments, taking an 8% cut to cover running costs. But your account, your content, your follows, and your reading permissions are all genuinely portable. Your identity is a cryptographic key pair held in a secure locker that Platform can&rsquo;t read. You can move it to another custodian, a browser extension, or a piece of paper whenever you like. If you don&rsquo;t like what Platform is doing, leave for another host (or run your own) taking your followers, your payment receipts, and your self-respect with you.
         </p>
 
-        <h2 className="font-serif text-xl font-medium text-ink-900 pt-4" style={{ letterSpacing: '-0.01em' }}>
+        <h2 className="font-serif text-xl font-medium text-ink pt-4" style={{ letterSpacing: '-0.01em' }}>
           You don&rsquo;t need to think about any of that
         </h2>
         <p>

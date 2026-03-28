@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,300;1,6..72,400;1,6..72,500;1,6..72,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,300;0,7..72,400;0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,300;1,7..72,400;1,7..72,500;1,7..72,600&family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400&display=swap');
 
 @layer base {
   body {
@@ -10,17 +10,17 @@
     font-family: 'Source Sans 3', 'Source Sans Pro', system-ui, sans-serif;
     font-size: 0.9375rem;
     line-height: 1.6;
-    padding-top: 0;  /* sidebar is left-only on lg+; mobile offset handled below */
+    padding-top: 0;
   }
 
   ::selection {
-    background-color: #9B1C20;
+    background-color: #B5242A;
     color: #FFFFFF;
   }
 
   hr {
-    border-color: #D4D1CC;
-    border-width: 0.5px;
+    border-color: #B8D2C1;
+    border-width: 1px;
   }
 
   input[type="text"],
@@ -29,7 +29,7 @@
   input[type="password"],
   textarea,
   select {
-    @apply bg-surface-raised text-content-primary rounded-none;
+    @apply bg-card text-content-primary rounded-none;
     font-family: 'Source Sans 3', system-ui, sans-serif;
     font-size: 0.9375rem;
     border: none;
@@ -39,8 +39,9 @@
   input:focus,
   textarea:focus,
   select:focus {
-    @apply outline-none ring-0;
-    background-color: #FAFAF0;
+    @apply outline-none;
+    background-color: #FFFAEF;
+    box-shadow: 0 0 0 2px #B8D2C1;
   }
 
   ::placeholder {
@@ -51,30 +52,31 @@
   /* Checkbox and radio styling */
   input[type="checkbox"],
   input[type="radio"] {
-    accent-color: #9B1C20;
+    accent-color: #B5242A;
   }
   input[type="checkbox"] {
-    @apply rounded border-ink-300;
+    @apply rounded;
+    border-color: #B8D2C1;
     width: 1rem;
     height: 1rem;
   }
   input[type="checkbox"]:checked {
-    background-color: #9B1C20;
-    border-color: #9B1C20;
+    background-color: #B5242A;
+    border-color: #B5242A;
   }
   input[type="checkbox"]:focus {
-    box-shadow: 0 0 0 2px #F5D5D6;
+    box-shadow: 0 0 0 2px #B8D2C1;
   }
 
   /* Range slider */
   input[type="range"] {
-    accent-color: #9B1C20;
+    accent-color: #B5242A;
   }
   input[type="range"]::-webkit-slider-thumb {
-    background: #9B1C20;
+    background: #B5242A;
   }
   input[type="range"]::-moz-range-thumb {
-    background: #9B1C20;
+    background: #B5242A;
   }
 }
 
@@ -84,8 +86,8 @@
     @apply text-center select-none;
     font-family: 'IBM Plex Mono', monospace;
     letter-spacing: 0.5em;
-    font-size: 0.75rem;
-    color: #9B1C20;
+    font-size: 0.6875rem;
+    color: #B5242A;
   }
   .ornament::before {
     content: '· · ·';
@@ -93,13 +95,10 @@
 
   /* ----- Rules ----- */
   .rule {
-    border-top: 0.5px solid #D4D1CC;
+    border-top: 1px solid #B8D2C1;
   }
   .rule-accent {
-    border-top: 3px solid #9B1C20;
-  }
-  .rule-blue {
-    border-top: 0.5px solid #D4D1CC;
+    border-top: 3px solid #B5242A;
   }
 
   /* ----- Label styles ----- */
@@ -117,10 +116,33 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #7A7774;
+    color: #4A6B5A;
   }
 
-  /* ----- Tab pills ----- */
+  /* ----- Feed tabs ----- */
+  .tab-feed {
+    font-family: 'Source Sans 3', system-ui, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    padding: 0.5rem 0;
+    margin-right: 1.25rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    transition: color 0.15s ease;
+    color: #7A9A8A;
+  }
+  .tab-feed-active {
+    color: #0F1F18;
+    font-weight: 600;
+    border-bottom-color: #0F1F18;
+  }
+  .tab-feed:hover:not(.tab-feed-active) {
+    color: #4A6B5A;
+  }
+
+  /* ----- Dashboard tab pills ----- */
   .tab-pill {
     font-family: 'Source Sans 3', system-ui, sans-serif;
     font-size: 0.8125rem;
@@ -135,77 +157,97 @@
     transition: background-color 0.15s ease, color 0.15s ease;
   }
   .tab-pill-active {
-    background: #111111;
+    background: #0F1F18;
     color: #FFFFFF;
   }
   .tab-pill-inactive {
-    @apply bg-surface-raised text-content-secondary;
+    background: #DDEEE4;
+    color: #263D32;
   }
   .tab-pill-inactive:hover {
-    @apply text-content-primary;
-    background: #EDECEA;
+    color: #0F1F18;
+    background: #C2DBC9;
   }
 
   /* ----- Buttons ----- */
   .btn {
-    background: #111111;
+    background: #0F1F18;
     color: #FFFFFF;
     font-family: 'Source Sans 3', system-ui, sans-serif;
     font-size: 0.875rem;
     font-weight: 500;
     letter-spacing: 0.01em;
     text-transform: none;
-    border: 1px solid #333333;
-    border-radius: 0;
-    padding: 0.75rem 1.75rem;
+    border: 1px solid #1A3028;
+    border-radius: 2px;
+    padding: 0.75rem 2rem;
     transition: background-color 0.15s ease;
     cursor: pointer;
   }
-  .btn:hover { background: #333333; }
+  .btn:hover { background: #1A3028; }
+  .btn:focus-visible {
+    outline: 2px solid #B5242A;
+    outline-offset: 2px;
+  }
   .btn:disabled { opacity: 0.5; }
 
   .btn-accent {
-    background: #9B1C20;
+    background: #B5242A;
     color: #FFFFFF;
     font-family: 'Source Sans 3', system-ui, sans-serif;
     font-size: 0.875rem;
     font-weight: 500;
     letter-spacing: 0.01em;
     text-transform: none;
-    border: 1px solid #7A1519;
-    border-radius: 0;
-    padding: 0.75rem 1.75rem;
+    border: 1px solid #921D22;
+    border-radius: 2px;
+    padding: 0.75rem 2rem;
     transition: background-color 0.15s ease;
     cursor: pointer;
   }
-  .btn-accent:hover { background: #7A1519; }
+  .btn-accent:hover { background: #921D22; }
+  .btn-accent:focus-visible {
+    outline: 2px solid #0F1F18;
+    outline-offset: 2px;
+  }
   .btn-accent:disabled { opacity: 0.5; }
 
   .btn-soft {
-    @apply bg-surface-raised text-content-primary;
+    background: #DDEEE4;
+    color: #0F1F18;
     font-family: 'Source Sans 3', system-ui, sans-serif;
     font-size: 0.875rem;
     font-weight: 500;
     letter-spacing: 0.01em;
     text-transform: none;
-    border: 1px solid #D4D1CC;
-    border-radius: 0;
-    padding: 0.75rem 1.75rem;
+    border: 1px solid #B8D2C1;
+    border-radius: 2px;
+    padding: 0.75rem 2rem;
     transition: background-color 0.15s ease;
     cursor: pointer;
   }
   .btn-soft:hover {
-    background: #EDECEA;
+    background: #C2DBC9;
+  }
+  .btn-soft:focus-visible {
+    outline: 2px solid #B5242A;
+    outline-offset: 2px;
+  }
+
+  /* ----- Focus ring utility ----- */
+  .focus-ring:focus-visible {
+    outline: 2px solid #B5242A;
+    outline-offset: 2px;
   }
 
   /* ----- Drop cap ----- */
   .prose-dropcap > p:first-of-type::first-letter {
-    font-family: 'Newsreader', Georgia, serif;
+    font-family: 'Literata', Georgia, serif;
     font-size: 3.5em;
     float: left;
     line-height: 0.8;
     margin: 0.05em 0.08em 0 0;
-    color: #9B1C20;
+    color: #B5242A;
     font-weight: 500;
   }
 
@@ -213,11 +255,11 @@
   .ProseMirror ::selection,
   .tiptap ::selection,
   .prose ::selection {
-    background-color: #9B1C20 !important;
+    background-color: #B5242A !important;
     color: #FFFFFF !important;
   }
   .ProseMirror .is-editor-empty:first-child::before {
-    color: #9E9B97;
+    color: #7A9A8A;
   }
 
   /* ----- Paywall gate marker in editor ----- */
@@ -225,8 +267,8 @@
     position: relative;
     margin: 2rem 0;
     padding: 0.75rem 1rem;
-    background: #FDF2F2;
-    border: 1px dashed #D46F72;
+    background: #DDEEE4;
+    border: 1px dashed #B5242A;
     cursor: default;
     user-select: none;
     display: flex;
@@ -241,23 +283,23 @@
     width: 3px;
     height: 60%;
     transform: translateY(-50%);
-    background: #9B1C20;
+    background: #B5242A;
   }
   .paywall-gate-marker .gate-label {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.6875rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: #9B1C20;
+    color: #B5242A;
   }
   .paywall-gate-marker .gate-remove {
     font-size: 0.75rem;
-    color: #9E9B97;
+    color: #7A9A8A;
     cursor: pointer;
     transition: color 0.15s ease;
   }
   .paywall-gate-marker .gate-remove:hover {
-    color: #4A4845;
+    color: #263D32;
   }
 
   /* ----- Article hero image ----- */
@@ -275,7 +317,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(to top, rgba(17, 17, 17, 0.75) 0%, rgba(17, 17, 17, 0.15) 60%, transparent 100%);
+    background: linear-gradient(to top, rgba(15, 31, 24, 0.75) 0%, rgba(15, 31, 24, 0.15) 60%, transparent 100%);
   }
   .article-hero-content {
     position: relative;

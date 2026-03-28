@@ -128,7 +128,7 @@ export default function WritePage() {
   if (loading || !user) {
     return (
       <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8 text-center">
-        <div className="h-8 w-48 mx-auto animate-pulse rounded bg-ink-100" />
+        <div className="h-8 w-48 mx-auto animate-pulse rounded bg-surface-deep" />
       </div>
     )
   }
@@ -137,7 +137,7 @@ export default function WritePage() {
     return (
       <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8 text-center">
         <p className="text-red-600 mb-4">{loadError}</p>
-        <a href="/dashboard" className="text-sm text-brand-600 hover:text-brand-700">
+        <a href="/dashboard" className="text-sm text-accent hover:text-accent-dark">
           Back to dashboard
         </a>
       </div>
@@ -147,8 +147,8 @@ export default function WritePage() {
   if ((editEventId || draftId) && !editorReady) {
     return (
       <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8 text-center">
-        <div className="h-8 w-48 mx-auto animate-pulse rounded bg-ink-100" />
-        <p className="mt-4 text-sm text-ink-400">Loading...</p>
+        <div className="h-8 w-48 mx-auto animate-pulse rounded bg-surface-deep" />
+        <p className="mt-4 text-sm text-content-faint">Loading...</p>
       </div>
     )
   }

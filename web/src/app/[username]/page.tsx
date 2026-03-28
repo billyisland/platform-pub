@@ -203,8 +203,8 @@ export default function WriterProfilePage() {
     return (
       <div className="mx-auto max-w-article px-6 py-12">
         <div className="flex items-center gap-4 mb-12">
-          <div className="h-14 w-14 animate-pulse bg-surface-raised" />
-          <div><div className="h-6 w-36 animate-pulse bg-surface-raised mb-2" /><div className="h-3 w-20 animate-pulse bg-surface-raised" /></div>
+          <div className="h-14 w-14 animate-pulse bg-card" />
+          <div><div className="h-6 w-36 animate-pulse bg-card mb-2" /><div className="h-3 w-20 animate-pulse bg-card" /></div>
         </div>
       </div>
     )
@@ -213,7 +213,7 @@ export default function WriterProfilePage() {
   if (notFound) {
     return (
       <div className="mx-auto max-w-article px-6 py-28 text-center">
-        <h1 className="font-serif text-2xl font-light text-ink-900 mb-2">User not found</h1>
+        <h1 className="font-serif text-2xl font-light text-ink mb-2">User not found</h1>
         <p className="text-ui-sm text-content-muted">No user with the username @{username} exists on Platform.</p>
       </div>
     )
@@ -234,12 +234,12 @@ export default function WriterProfilePage() {
           {writer?.avatar ? (
             <img src={writer.avatar} alt="" className="h-14 w-14 rounded-full object-cover" />
           ) : (
-            <span className="flex h-14 w-14 items-center justify-center bg-surface-sunken text-lg font-medium text-content-primary rounded-full">
+            <span className="flex h-14 w-14 items-center justify-center bg-surface-deep text-lg font-medium text-content-primary rounded-full">
               {(writer?.displayName ?? username)[0].toUpperCase()}
             </span>
           )}
           <div className="flex-1">
-            <h1 className="font-serif text-2xl font-light text-ink-900 tracking-tight">{writer?.displayName ?? username}</h1>
+            <h1 className="font-serif text-2xl font-light text-ink tracking-tight">{writer?.displayName ?? username}</h1>
             <p className="text-ui-xs text-content-faint mt-0.5">@{username}</p>
           </div>
 
@@ -299,7 +299,7 @@ export default function WriterProfilePage() {
       {/* Quote composer modal */}
       {pendingQuote && (
         <div
-          className="fixed inset-0 z-50 bg-ink-900/60 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4"
           onClick={() => setPendingQuote(null)}
         >
           <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
@@ -315,7 +315,7 @@ export default function WriterProfilePage() {
       {activity.length === 0 ? (
         <p className="text-ui-sm text-content-muted py-10">Looks like {writer?.displayName ?? username} hasn't said anything yet.</p>
       ) : (
-        <div className="space-y-3" style={{ background: 'rgb(234,229,220)' }}>
+        <div className="space-y-3" style={{ background: '#EDF5F0' }}>
           {activity.map(item => {
             if (item.kind === 'article') {
               const a = item.data as DbArticle
@@ -385,7 +385,7 @@ function DbReplyCard({ reply, writerName, isOwnProfile, onQuote }: { reply: DbRe
 
   if (isDeleted) {
     return (
-      <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong">
+      <div className="bg-card p-5 border-l-[3px] border-rule">
         <p className="label-ui text-content-muted mb-2">{writerName} · Reply</p>
         <p className="text-ui-xs text-content-faint italic">[Deleted]</p>
       </div>
@@ -393,7 +393,7 @@ function DbReplyCard({ reply, writerName, isOwnProfile, onQuote }: { reply: DbRe
   }
 
   return (
-    <div className="bg-surface-raised p-5 border-l-[3px] border-surface-strong">
+    <div className="bg-card p-5 border-l-[3px] border-rule">
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
         <span className="label-ui text-content-muted">{writerName} · Reply</span>

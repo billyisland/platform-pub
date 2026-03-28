@@ -39,7 +39,7 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-article px-6 py-12">
-        <div className="h-6 w-32 animate-pulse bg-surface-raised mb-8" />
+        <div className="h-6 w-32 animate-pulse bg-card mb-8" />
       </div>
     )
   }
@@ -151,7 +151,7 @@ export default function ProfilePage() {
             onChange={(e) => setDisplayName(e.target.value)}
             maxLength={100}
             placeholder={user.username ?? ''}
-            className="w-full bg-surface-raised border border-surface-strong px-4 py-2.5 text-sm text-content-primary placeholder-content-faint focus:outline-none focus:ring-1 focus:ring-accent/50"
+            className="w-full bg-card border border-rule px-4 py-2.5 text-sm text-content-primary placeholder-content-faint focus:outline-none focus:ring-1 focus:ring-accent/50"
           />
         </div>
 
@@ -167,7 +167,7 @@ export default function ProfilePage() {
             maxLength={500}
             rows={4}
             placeholder="A few words about yourself"
-            className="w-full bg-surface-raised border border-surface-strong px-4 py-2.5 text-sm text-content-primary placeholder-content-faint focus:outline-none focus:ring-1 focus:ring-accent/50 resize-none"
+            className="w-full bg-card border border-rule px-4 py-2.5 text-sm text-content-primary placeholder-content-faint focus:outline-none focus:ring-1 focus:ring-accent/50 resize-none"
           />
           <p className="text-[11px] text-content-faint mt-1 text-right">{bio.length}/500</p>
         </div>

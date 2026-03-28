@@ -33,7 +33,7 @@ function HistoryItemRow({ item }: { item: ReadingHistoryItem }) {
   return (
     <Link
       href={href}
-      className="flex items-start gap-3 py-4 border-b border-surface-strong hover:bg-surface-raised transition-colors"
+      className="flex items-start gap-3 py-4 border-b border-rule hover:bg-card transition-colors"
     >
       <div className="min-w-0 flex-1">
         <p className="font-serif text-base text-content-primary leading-snug mb-1">
@@ -82,8 +82,8 @@ export default function HistoryPage() {
   if (loading || !user) {
     return (
       <div className="mx-auto max-w-article pt-16 lg:pt-0 px-6 py-8">
-        <div className="h-7 w-36 animate-pulse bg-surface-sunken mb-2 rounded" />
-        <div className="h-4 w-48 animate-pulse bg-surface-sunken mb-8 rounded" />
+        <div className="h-7 w-36 animate-pulse bg-surface-deep mb-2 rounded" />
+        <div className="h-4 w-48 animate-pulse bg-surface-deep mb-8 rounded" />
       </div>
     )
   }
@@ -96,9 +96,9 @@ export default function HistoryPage() {
       {dataLoading ? (
         <div className="space-y-1">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="py-4 border-b border-surface-strong animate-pulse">
-              <div className="h-4 w-3/4 bg-surface-sunken mb-2 rounded" />
-              <div className="h-3 w-40 bg-surface-sunken rounded" />
+            <div key={i} className="py-4 border-b border-rule animate-pulse">
+              <div className="h-4 w-3/4 bg-surface-deep mb-2 rounded" />
+              <div className="h-3 w-40 bg-surface-deep rounded" />
             </div>
           ))}
         </div>

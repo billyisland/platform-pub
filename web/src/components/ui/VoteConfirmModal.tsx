@@ -24,27 +24,24 @@ export function VoteConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm"
       onClick={onCancel}
     >
       <div
-        className="mx-4 w-full max-w-sm rounded-xl bg-surface border border-surface-strong shadow-xl p-6"
+        className="mx-4 w-full max-w-sm bg-card border border-rule shadow-xl p-6"
         onClick={e => e.stopPropagation()}
       >
-        {/* Direction icon */}
         <div className="flex justify-center mb-4">
           <span className="text-3xl text-content-muted">
             {direction === 'up' ? '▲' : '▼'}
           </span>
         </div>
 
-        {/* Message */}
         <p className="text-ui-sm text-content-primary text-center mb-1">
           This is your <span className="font-medium">{ordinal} {directionLabel}</span> on this content.
         </p>
 
-        {/* Cost */}
-        <p className="text-2xl font-medium text-content-primary text-center mt-4 mb-1">
+        <p className="text-2xl font-medium text-ink text-center mt-4 mb-1">
           {formatPence(costPence)}
         </p>
 
@@ -54,17 +51,16 @@ export function VoteConfirmModal({
           </p>
         )}
 
-        {/* Buttons */}
         <div className="mt-6 flex gap-3">
           <button
             onClick={onCancel}
-            className="flex-1 rounded-lg border border-surface-strong px-4 py-2.5 text-ui-sm text-content-muted hover:bg-surface-sunken transition-colors"
+            className="btn-soft flex-1 py-2.5 text-ui-sm"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="flex-1 rounded-lg bg-accent px-4 py-2.5 text-ui-sm font-medium text-white hover:bg-accent/90 transition-colors"
+            className="btn-accent flex-1 py-2.5 text-ui-sm font-medium"
           >
             Confirm — {formatPence(costPence)}
           </button>

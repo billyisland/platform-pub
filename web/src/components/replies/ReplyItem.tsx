@@ -6,13 +6,6 @@ import { ReportButton } from '../ui/ReportButton'
 import { VoteControls } from '../ui/VoteControls'
 import type { VoteTally, MyVoteCount } from '../../lib/api'
 
-// =============================================================================
-// ReplyItem — Conversational inline layout
-//
-// Name and text on the same line for short replies, wrapping naturally for
-// longer ones. Compact feel like chat messages, not blog comments.
-// =============================================================================
-
 export interface ReplyData {
   id: string
   nostrEventId: string
@@ -35,7 +28,7 @@ interface ReplyItemProps {
   contentAuthorId?: string
   depth?: number
   compact?: boolean
-  dark?: boolean
+  dark?: boolean  // kept for API compat
   onReply?: (replyId: string, replyEventId: string, authorName: string) => void
   onDelete?: (replyId: string) => void
   renderComposer?: (replyId: string) => ReactNode
@@ -49,7 +42,6 @@ export function ReplyItem({
   contentAuthorId,
   depth = 0,
   compact = false,
-  dark = false,
   onReply,
   onDelete,
   renderComposer,
@@ -59,7 +51,7 @@ export function ReplyItem({
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   if (reply.isMuted && !reply.isDeleted) {
-    return null // Hidden for muters
+    return null
   }
 
   const canDelete =
@@ -79,14 +71,9 @@ export function ReplyItem({
     setConfirmDelete(false)
   }
 
-  const nameStyle: React.CSSProperties = dark ? { color: 'rgba(245,240,232,0.65)' } : {}
-  const textStyle: React.CSSProperties = dark ? { color: '#EAE5DC' } : {}
-  const metaStyle: React.CSSProperties = dark ? { color: 'rgba(245,240,232,0.4)' } : {}
-
   return (
-    <div id={`reply-${reply.id}`} className={`${depth > 0 ? 'ml-8 pl-3 border-l-2 border-surface-strong/40' : ''}`}>
+    <div id={`reply-${reply.id}`} className={`${depth > 0 ? 'ml-8 pl-3 border-l-2 border-rule/40' : ''}`}>
       <div className={compact ? 'py-1.5' : 'py-2'}>
-        {/* Inline layout: avatar | name text — all on one line for short replies */}
         <div className="flex items-start gap-2.5">
           {reply.author.avatar ? (
             <img
@@ -96,34 +83,32 @@ export function ReplyItem({
             />
           ) : (
             <span
-              className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-medium text-accent-700 flex-shrink-0 mt-0.5"
-              style={{ background: 'linear-gradient(135deg, #F5D5D6, #E8A5A7)' }}
+              className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-medium flex-shrink-0 mt-0.5"
+              style={{ background: '#C2DBC9', color: '#4A6B5A' }}
             >
               {initial}
             </span>
           )}
           <div className="flex-1 min-w-0">
-            {/* Name + content inline */}
             <p className={`text-sm leading-relaxed ${
               reply.isDeleted ? 'text-content-faint italic' : ''
             }`}>
               {reply.author.username ? (
-                <Link href={`/${reply.author.username}`} className="font-medium text-content-secondary text-ui-xs hover:text-content-primary transition-colors" style={nameStyle}>
+                <Link href={`/${reply.author.username}`} className="font-medium text-content-secondary text-ui-xs hover:text-content-primary transition-colors">
                   {authorName}
                 </Link>
               ) : (
-                <span className="font-medium text-content-secondary text-ui-xs" style={nameStyle}>
+                <span className="font-medium text-content-secondary text-ui-xs">
                   {authorName}
                 </span>
               )}{' '}
-              <span className={reply.isDeleted ? 'text-content-faint' : 'text-content-primary'} style={reply.isDeleted ? {} : textStyle}>
+              <span className={reply.isDeleted ? 'text-content-faint' : 'text-content-primary'}>
                 {reply.content}
               </span>
             </p>
 
-            {/* Meta row: time + actions */}
             {!reply.isDeleted && (
-              <div className="mt-0.5 flex items-center gap-2 text-ui-xs text-content-faint" style={metaStyle}>
+              <div className="mt-0.5 flex items-center gap-2 text-ui-xs text-content-faint">
                 <time dateTime={reply.publishedAt}>
                   {formatRelativeTime(reply.publishedAt)}
                 </time>
@@ -140,8 +125,8 @@ export function ReplyItem({
                     onClick={handleDelete}
                     className={`transition-colors ${
                       confirmDelete
-                        ? 'text-red-500 font-medium'
-                        : 'hover:text-red-500'
+                        ? 'text-accent font-medium'
+                        : 'hover:text-accent'
                     }`}
                   >
                     {confirmDelete ? 'Confirm?' : 'Delete'}
@@ -161,7 +146,6 @@ export function ReplyItem({
         </div>
       </div>
 
-      {/* Nested replies */}
       {reply.replies.length > 0 && (
         <div>
           {reply.replies.map((nested) => (
