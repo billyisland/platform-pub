@@ -132,7 +132,7 @@ export function ReplyComposer({
             rows={1}
             className={`w-full resize-none text-ui-sm text-content-primary placeholder:text-content-faint focus:outline-none leading-relaxed transition-all ${
               isExpanded
-                ? 'bg-card px-3.5 py-2 border border-rule/50 focus:border-rule'
+                ? 'bg-card px-3.5 py-2 border-2 border-ink/30 focus:border-ink'
                 : 'bg-surface-deep/60 px-3.5 py-2'
             }`}
           />

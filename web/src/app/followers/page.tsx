@@ -38,7 +38,7 @@ export default function FollowersPage() {
 
   return (
     <div className="mx-auto max-w-article pt-16 lg:pt-0 px-6 py-8">
-      <h1 className="font-serif text-2xl font-normal text-content-primary mb-1">Followers</h1>
+      <h1 className="font-serif text-3xl sm:text-4xl font-light text-content-primary mb-1">Followers</h1>
       <p className="text-ui-sm text-content-muted mb-8">
         {followers.length > 0 ? `${followers.length} ${followers.length === 1 ? 'person follows' : 'people follow'} you` : 'People who follow you'}
       </p>
@@ -46,7 +46,7 @@ export default function FollowersPage() {
       {dataLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
-            <div key={i} className="flex items-center gap-4 py-4 border-b border-rule animate-pulse">
+            <div key={i} className="flex items-center gap-4 py-4 mb-1 animate-pulse">
               <div className="h-11 w-11 rounded-full bg-surface-deep flex-shrink-0" />
               <div className="flex-1">
                 <div className="h-3.5 w-32 bg-surface-deep mb-2 rounded" />
@@ -61,7 +61,7 @@ export default function FollowersPage() {
           <p className="text-ui-xs text-content-faint">Share your writing to grow your audience.</p>
         </div>
       ) : (
-        <div className="divide-y divide-rule">
+        <div className="space-y-1">
           {followers.map(f => (
             <div key={f.id} className="flex items-center gap-4 py-4">
               <Link href={`/${f.username}`} className="flex-shrink-0">
@@ -99,7 +99,7 @@ function PageSkeleton() {
       <div className="h-4 w-48 animate-pulse bg-surface-deep mb-8 rounded" />
       <div className="space-y-3">
         {[1, 2, 3].map(i => (
-          <div key={i} className="flex items-center gap-4 py-4 border-b border-rule">
+          <div key={i} className="flex items-center gap-4 py-4 mb-1">
             <div className="h-11 w-11 rounded-full bg-surface-deep flex-shrink-0" />
             <div className="flex-1">
               <div className="h-3.5 w-32 bg-surface-deep mb-2 rounded" />

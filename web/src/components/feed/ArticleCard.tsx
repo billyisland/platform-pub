@@ -73,7 +73,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
       )}
 
       {/* Headline — italic Literata */}
-      <h2 style={{ fontFamily: '"Literata", Georgia, serif', fontSize: '21px', fontWeight: 500, fontStyle: 'italic', color: '#0F1F18', lineHeight: 1.25, letterSpacing: '-0.015em', marginBottom: '8px' }}>
+      <h2 style={{ fontFamily: '"Literata", Georgia, serif', fontSize: '26px', fontWeight: 500, fontStyle: 'italic', color: '#0F1F18', lineHeight: 1.2, letterSpacing: '-0.02em', marginBottom: '10px' }}>
         {article.title}
       </h2>
 

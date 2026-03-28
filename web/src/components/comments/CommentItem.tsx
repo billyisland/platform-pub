@@ -61,7 +61,7 @@ export function CommentItem({
   }
 
   return (
-    <div className={`${depth > 0 ? 'ml-8 border-l-2 border-rule/40 pl-4' : ''}`}>
+    <div className={`${depth > 0 ? 'ml-8 border-l-2 border-ink/25 pl-4' : ''}`}>
       <div className="py-3">
         <div className="flex items-center gap-2 mb-1.5">
           {comment.author.avatar ? (

@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.19.0
+# platform.pub — Deployment Reference v3.20.0
 
 **Date:** 28 March 2026
-**Replaces:** v3.18.0 (see bottom for change log)
+**Replaces:** v3.19.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -202,6 +202,167 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v3.19.0
+
+No schema changes. Services changed: **web only**. This is a frontend-only visual redesign pass — no backend services need rebuilding.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}" | grep web
+docker logs platform-pub-web-1 --tail 5
+
+# v3.20.0 — Graphic editorial redesign: ink rules, heavy borders, wider layouts,
+# dramatic type contrast
+#
+# This release replaces the soft sage keyline system with a bold, graphic editorial
+# language built around heavy black (ink) rules and borders. Every border-rule usage
+# across ~25 component and page files has been either removed or replaced.
+#
+# ── Keylines → thick ink rules or removed ──
+#
+# The 1px #B8D2C1 (sage) keylines that previously divided every list, section, and
+# panel have been systematically replaced. The new treatment uses one of three
+# approaches depending on context:
+#
+# (a) Structural borders (nav sidebar right edge, logo bottom border, mobile drawer
+#     top, sidebar user section top) → 3px solid ink (#0F1F18). These heavy rules
+#     echo the brand logo's 2.5px ink border and give the nav strong presence.
+#
+# (b) Section dividers (feed tab bar, editor toolbar bottom, reply/comment section
+#     tops, price section separator) → 3px solid ink bottom borders. These create
+#     clear visual breaks between content zones.
+#
+# (c) List item separators (notifications, history, following, followers, feed
+#     search results, reply/comment threads) → removed entirely. Items are now
+#     separated by vertical spacing (space-y-1 or similar), producing a cleaner,
+#     less cluttered feed. The divide-y divide-rule pattern has been eliminated.
+#
+# Additionally:
+# - Dashboard table borders: lightened to border-ink/20 (2px) for data readability
+# - Reply/comment thread indentation borders: border-rule/40 → border-ink/25
+# - Modal and dropdown borders (NotificationBell, AllowanceExhaustedModal,
+#   VoteConfirmModal, ShareButton, ReportButton): border-rule → border-ink (2–3px)
+# - Input focus rings: box-shadow changed from #B8D2C1 to #0F1F18
+# - Checkbox borders: changed from #B8D2C1 to #0F1F18
+# - btn-soft border: 1px solid #B8D2C1 → 2px solid #0F1F18
+# - hr elements: 1px solid #B8D2C1 → 3px solid ink bar
+# - .rule CSS class: now renders as a 3px ink bar (height: 3px, bg #0F1F18)
+# - New .rule-inset class: same 3px ink bar but with margin-left/right 1.5rem,
+#   creating rules that stop short of container edges (used on writer profile)
+# - Feed tab active indicator: 2px → 3px with negative margin-bottom alignment
+# - NoteComposer: border-rule/50 → border-2 border-ink
+# - ReplyComposer expanded state: border-rule/50 → border-2 border-ink/30
+# - CommentComposer: border-rule → border-2 border-ink/30
+# - CardSetup (Stripe): border-rule → border-2 border-ink
+# - EmbedNode: border-rule → border-2 border-ink/30
+# - Profile form inputs: border-rule → border-2 border-ink/30
+# - Auth verify spinner: border-rule → border-ink/20
+#
+# Files touched for keyline changes:
+#   web/src/app/globals.css, web/src/components/layout/Nav.tsx,
+#   web/src/components/feed/FeedView.tsx, web/src/components/feed/NoteComposer.tsx,
+#   web/src/components/editor/ArticleEditor.tsx, web/src/components/editor/EmbedNode.ts,
+#   web/src/app/[username]/page.tsx, web/src/app/notifications/page.tsx,
+#   web/src/app/history/page.tsx, web/src/app/following/page.tsx,
+#   web/src/app/followers/page.tsx, web/src/app/dashboard/page.tsx,
+#   web/src/app/profile/page.tsx, web/src/app/auth/verify/page.tsx,
+#   web/src/components/replies/ReplyItem.tsx, web/src/components/replies/ReplySection.tsx,
+#   web/src/components/replies/ReplyComposer.tsx,
+#   web/src/components/comments/CommentItem.tsx,
+#   web/src/components/comments/CommentComposer.tsx,
+#   web/src/components/comments/CommentSection.tsx,
+#   web/src/components/ui/NotificationBell.tsx,
+#   web/src/components/ui/AllowanceExhaustedModal.tsx,
+#   web/src/components/ui/VoteConfirmModal.tsx,
+#   web/src/components/ui/ShareButton.tsx, web/src/components/ui/ReportButton.tsx,
+#   web/src/components/payment/CardSetup.tsx
+#
+# ── Heavy ink border on article card and editor ──
+#
+# The article reader parchment card now has a 3px ink border (border-[3px] border-ink),
+# echoing the logo's boxed treatment and creating a strong "framed page" effect against
+# the sage background. The editor writing area is wrapped in a new bg-card container
+# with the same 3px ink border and generous padding (p-8 sm:p-10), visually separating
+# the composition surface from the surrounding controls.
+#
+# Files: web/src/components/article/ArticleReader.tsx,
+#        web/src/components/editor/ArticleEditor.tsx
+#
+# ── Wider layouts ──
+#
+# New Tailwind max-width tokens added to tailwind.config.js:
+#   max-w-feed: 780px (was 600px hardcoded)
+#   max-w-article-frame: 740px (was max-w-article 640px)
+#   max-w-editor-frame: 780px (was max-w-article 640px)
+#
+# The article prose content remains at 640px (max-w-article) inside the wider card
+# frame, preserving optimal line length for readability. The extra width is taken up
+# by the card's interior padding.
+#
+# Pages widened:
+# - Feed (FeedView + FeedSkeleton): 600px → 780px
+# - Article reader (back link + card): 640px → 740px
+# - Editor: 640px → 780px
+# - Home page: 640px → 740px
+# - Writer profile page ([username]): 640px → 740px (all states including loading/404)
+#
+# Files: web/tailwind.config.js, web/src/components/feed/FeedView.tsx,
+#        web/src/components/article/ArticleReader.tsx,
+#        web/src/components/editor/ArticleEditor.tsx,
+#        web/src/app/page.tsx, web/src/app/[username]/page.tsx
+#
+# ── Dramatic type contrast ──
+#
+# Display headings have been pushed significantly larger to create more dramatic
+# size contrast with body text (1.125rem / 18px):
+#
+# - Article reader title: 36px fixed → clamp(2.25rem, 4vw, 3rem) with tighter
+#   letter-spacing (-0.025em). Scales fluidly from 36px to 48px.
+# - Article card headline: 21px → 26px (24% larger)
+# - Home page headline: text-5xl/6xl → text-6xl/7xl with -0.03em tracking
+# - Editor title input: text-3xl/4xl → text-4xl/5xl
+# - Writer profile display name: text-2xl → text-3xl sm:text-4xl
+# - Page headings (Notifications, Reading History, Following, Followers):
+#   text-2xl font-normal → text-3xl sm:text-4xl font-light
+#
+# Prose typography (tailwind @tailwindcss/typography config):
+# - h1: added fontSize 2.25rem, lineHeight 1.15 (was browser default)
+# - h2: added fontSize 1.75rem, lineHeight 1.2 (was browser default)
+# - h3: added fontSize 1.35rem, lineHeight 1.3 (was browser default)
+# - All three headings retain Literata italic with tighter letter-spacing
+#
+# Files: web/tailwind.config.js, web/src/components/article/ArticleReader.tsx,
+#        web/src/components/feed/ArticleCard.tsx, web/src/app/page.tsx,
+#        web/src/components/editor/ArticleEditor.tsx,
+#        web/src/app/[username]/page.tsx, web/src/app/notifications/page.tsx,
+#        web/src/app/history/page.tsx, web/src/app/following/page.tsx,
+#        web/src/app/followers/page.tsx
+```
+
+---
+
+### From v3.18.0
+
+No schema changes. Services changed: **all five application services** (web, gateway, payment, keyservice, key-custody). Security hardening, race condition fix, data integrity.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache web gateway payment keyservice key-custody
+docker compose up -d web gateway payment keyservice key-custody
+```
+
+---
 
 ### From v3.17.0
 

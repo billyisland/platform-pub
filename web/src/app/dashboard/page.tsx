@@ -116,9 +116,9 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
   return (
     <div className="overflow-x-auto bg-card">
       <table className="w-full text-ui-xs">
-        <thead><tr className="border-b border-rule"><th className="px-4 py-3 text-left label-ui text-content-muted">Title</th><th className="px-4 py-3 text-left label-ui text-content-muted">Status</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-center label-ui text-content-muted">Replies</th><th className="px-4 py-3 text-right label-ui text-content-muted">Actions</th></tr></thead>
+        <thead><tr className="border-b-2 border-ink/20"><th className="px-4 py-3 text-left label-ui text-content-muted">Title</th><th className="px-4 py-3 text-left label-ui text-content-muted">Status</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-center label-ui text-content-muted">Replies</th><th className="px-4 py-3 text-right label-ui text-content-muted">Actions</th></tr></thead>
         <tbody>{articles.map(a => (
-          <tr key={a.id} className="border-b border-rule last:border-b-0">
+          <tr key={a.id} className="border-b-2 border-ink/20 last:border-b-0">
             <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-ink hover:opacity-70">{a.title}</Link></td>
             <td className="px-4 py-3">{a.isPaywalled ? <span className="text-content-primary">£{((a.pricePence??0)/100).toFixed(2)}</span> : <span className="text-content-muted">Free</span>}</td>
             <td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td>
@@ -231,7 +231,7 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
           <p className="label-ui text-content-muted mb-4">Subscribers</p>
           <div className="overflow-x-auto bg-card">
             <table className="w-full text-ui-xs">
-              <thead><tr className="border-b border-rule">
+              <thead><tr className="border-b-2 border-ink/20">
                 <th className="px-4 py-3 text-left label-ui text-content-muted">Reader</th>
                 <th className="px-4 py-3 text-right label-ui text-content-muted">Pays</th>
                 <th className="px-4 py-3 text-right label-ui text-content-muted">Articles read</th>
@@ -240,7 +240,7 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
                 <th className="px-4 py-3 text-left label-ui text-content-muted">Status</th>
               </tr></thead>
               <tbody>{subscribers.map(s => (
-                <tr key={s.subscriptionId} className="border-b border-rule last:border-b-0">
+                <tr key={s.subscriptionId} className="border-b-2 border-ink/20 last:border-b-0">
                   <td className="px-4 py-3">
                     <Link href={`/${s.readerUsername}`} className="text-ink hover:opacity-70">{s.readerDisplayName ?? s.readerUsername}</Link>
                   </td>
@@ -279,7 +279,7 @@ function CreditsTab({ userId, stripeReady }: { userId: string; stripeReady: bool
       <p className="label-ui text-content-muted mb-4">Per-article revenue</p>
       {loading ? <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-8 animate-pulse bg-card"/>)}</div>
       : articleEarnings.length === 0 ? <p className="text-ui-xs text-content-faint">No settled revenue yet.</p>
-      : <div className="overflow-x-auto bg-card"><table className="w-full text-ui-xs"><thead><tr className="border-b border-rule"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-right label-ui text-content-muted">Pending</th><th className="px-4 py-3 text-right label-ui text-content-muted">Paid</th></tr></thead><tbody>{articleEarnings.map(a => <tr key={a.articleId} className="border-b border-rule last:border-b-0"><td className="px-4 py-3"><a href={`/article/${a.dTag}`} className="text-ink hover:opacity-70">{a.title}</a></td><td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td><td className="px-4 py-3 text-right text-ink tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td><td className="px-4 py-3 text-right text-content-faint tabular-nums">£{(a.pendingPence/100).toFixed(2)}</td><td className="px-4 py-3 text-right text-content-faint tabular-nums">£{(a.paidPence/100).toFixed(2)}</td></tr>)}</tbody></table></div>}
+      : <div className="overflow-x-auto bg-card"><table className="w-full text-ui-xs"><thead><tr className="border-b-2 border-ink/20"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-right label-ui text-content-muted">Reads</th><th className="px-4 py-3 text-right label-ui text-content-muted">Earned</th><th className="px-4 py-3 text-right label-ui text-content-muted">Pending</th><th className="px-4 py-3 text-right label-ui text-content-muted">Paid</th></tr></thead><tbody>{articleEarnings.map(a => <tr key={a.articleId} className="border-b-2 border-ink/20 last:border-b-0"><td className="px-4 py-3"><a href={`/article/${a.dTag}`} className="text-ink hover:opacity-70">{a.title}</a></td><td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td><td className="px-4 py-3 text-right text-ink tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td><td className="px-4 py-3 text-right text-content-faint tabular-nums">£{(a.pendingPence/100).toFixed(2)}</td><td className="px-4 py-3 text-right text-content-faint tabular-nums">£{(a.paidPence/100).toFixed(2)}</td></tr>)}</tbody></table></div>}
     </div>
   )
 }
@@ -392,9 +392,9 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
           <p className="label-ui text-content-muted mb-4">On your tab</p>
           <div className="overflow-x-auto bg-card mb-12">
             <table className="w-full text-ui-xs">
-              <thead><tr className="border-b border-rule"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
+              <thead><tr className="border-b-2 border-ink/20"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
               <tbody>{unsettled.map(r => (
-                <tr key={r.readId} className="border-b border-rule last:border-b-0">
+                <tr key={r.readId} className="border-b-2 border-ink/20 last:border-b-0">
                   <td className="px-4 py-3"><a href={`/article/${r.articleDTag}`} className="text-ink hover:opacity-70">{r.articleTitle}</a></td>
                   <td className="px-4 py-3 text-content-muted">{r.writerDisplayName??r.writerUsername}</td>
                   <td className="px-4 py-3 text-content-faint">{new Date(r.readAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>
@@ -418,9 +418,9 @@ function DebitsTab({ userId, freeAllowancePence, hasCard }: { userId: string; fr
           <p className="label-ui text-content-muted mb-4">Settled</p>
           <div className="overflow-x-auto bg-card">
             <table className="w-full text-ui-xs">
-              <thead><tr className="border-b border-rule"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
+              <thead><tr className="border-b-2 border-ink/20"><th className="px-4 py-3 text-left label-ui text-content-muted">Article</th><th className="px-4 py-3 text-left label-ui text-content-muted">Writer</th><th className="px-4 py-3 text-left label-ui text-content-muted">Read</th><th className="px-4 py-3 text-right label-ui text-content-muted">Charge</th></tr></thead>
               <tbody>{settled.map(r => (
-                <tr key={r.readId} className="border-b border-rule last:border-b-0">
+                <tr key={r.readId} className="border-b-2 border-ink/20 last:border-b-0">
                   <td className="px-4 py-3"><a href={`/article/${r.articleDTag}`} className="text-ink hover:opacity-70">{r.articleTitle}</a></td>
                   <td className="px-4 py-3 text-content-muted">{r.writerDisplayName??r.writerUsername}</td>
                   <td className="px-4 py-3 text-content-faint">{new Date(r.readAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>

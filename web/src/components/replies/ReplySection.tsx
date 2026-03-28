@@ -133,7 +133,7 @@ export function ReplySection({
 
   if (loading) {
     return (
-      <div className={compact ? '' : 'mt-8 pt-6 border-t border-rule'}>
+      <div className={compact ? '' : 'mt-8 pt-6 border-t-[3px] border-ink'}>
         <div className="space-y-2 py-2">
           {[1, 2].map(i => (
             <div key={i} className="h-10 animate-pulse bg-surface-deep" />
@@ -144,7 +144,7 @@ export function ReplySection({
   }
 
   return (
-    <div className={compact ? '' : 'mt-8 pt-6 border-t border-rule'}>
+    <div className={compact ? '' : 'mt-8 pt-6 border-t-[3px] border-ink'}>
       {!compact && (
         <h3 className="text-sm font-medium text-content-secondary mb-4">
           {totalCount > 0
@@ -154,7 +154,7 @@ export function ReplySection({
       )}
 
       {replies.length > 0 && (
-        <div className={`divide-y divide-rule/50 ${compact ? '' : 'mb-4'}`}>
+        <div className={`space-y-1 ${compact ? '' : 'mb-4'}`}>
           {previewLimit && !showAll && replies.length > previewLimit && (
             <button
               onClick={() => setShowAll(true)}
@@ -175,7 +175,7 @@ export function ReplySection({
                 voteTally={voteTallies[reply.nostrEventId]}
                 myVoteCounts={myVoteCounts[reply.nostrEventId]}
                 renderComposer={(replyId) => replyTarget?.replyId === replyId ? (
-                  <div className="ml-8 pl-4 border-l-2 border-rule/50">
+                  <div className="ml-8 pl-4 border-l-2 border-ink/25">
                     <ReplyComposer
                       targetEventId={targetEventId}
                       targetKind={targetKind}
@@ -190,7 +190,7 @@ export function ReplySection({
                 ) : null}
               />
               {replyTarget?.replyId === reply.id && (
-                <div className="ml-8 pl-4 border-l-2 border-rule/50">
+                <div className="ml-8 pl-4 border-l-2 border-ink/25">
                   <ReplyComposer
                     targetEventId={targetEventId}
                     targetKind={targetKind}

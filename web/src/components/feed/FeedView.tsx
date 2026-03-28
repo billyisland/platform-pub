@@ -195,7 +195,7 @@ export function FeedView() {
   if (loading || !user) return <FeedSkeleton />
 
   return (
-    <div className="mx-auto max-w-[600px] pt-16 lg:pt-0">
+    <div className="mx-auto max-w-feed pt-16 lg:pt-0">
 
       {/* Sticky zone: composer + tabs */}
       <div className="sticky top-[53px] lg:top-0 z-10 bg-surface">
@@ -206,7 +206,7 @@ export function FeedView() {
             onClearQuote={() => setPendingQuote(null)}
           />
         </div>
-        <div className="flex px-6 pt-1 border-b border-rule">
+        <div className="flex px-6 pt-1 border-b-[3px] border-ink">
           <button
             onClick={() => setActiveTab('for-you')}
             className={`tab-feed ${activeTab === 'for-you' ? 'tab-feed-active' : ''}`}
@@ -363,7 +363,7 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
 
   return (
     <div className="px-6 pt-5">
-      <div className="flex gap-0 mb-4 border-b border-rule">
+      <div className="flex gap-0 mb-4 border-b-[3px] border-ink">
         <button
           onClick={() => setMode('people')}
           className={`tab-pill ${mode === 'people' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
@@ -400,7 +400,7 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
           )}
 
           {!searching && results.map(w => (
-            <div key={w.id} className="flex items-center gap-3 py-3 border-b border-rule last:border-b-0">
+            <div key={w.id} className="flex items-center gap-3 py-3">
               {w.avatar ? (
                 <img src={w.avatar} alt="" className="h-9 w-9 rounded-full object-cover flex-shrink-0" />
               ) : (
@@ -453,7 +453,7 @@ function AddPanel({ onFollowed }: { onFollowed: () => void }) {
 
 function FeedSkeleton() {
   return (
-    <div className="mx-auto max-w-[600px] pt-16 lg:pt-0 px-6 py-10 space-y-[10px]">
+    <div className="mx-auto max-w-feed pt-16 lg:pt-0 px-6 py-10 space-y-[10px]">
       {[1, 2, 3].map(i => (
         <div key={i} className="bg-card p-5">
           <div className="h-3 w-24 animate-pulse bg-surface-deep mb-4" />

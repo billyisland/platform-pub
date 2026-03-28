@@ -73,7 +73,7 @@ export function ReportButton({ targetNostrEventId, targetAccountId }: ReportButt
       </button>
 
       {open && (
-        <div className="absolute right-0 top-6 z-10 w-80 border border-rule bg-card p-4 shadow-lg">
+        <div className="absolute right-0 top-6 z-10 w-80 border-2 border-ink bg-card p-4 shadow-lg">
           <h3 className="text-sm font-medium text-content-primary mb-3">Report content</h3>
 
           <div className="space-y-2 mb-3">
@@ -98,7 +98,7 @@ export function ReportButton({ targetNostrEventId, targetAccountId }: ReportButt
             placeholder="Additional details (optional)"
             rows={2}
             maxLength={2000}
-            className="w-full border border-rule px-2.5 py-1.5 text-xs bg-card mb-3"
+            className="w-full border-2 border-ink px-2.5 py-1.5 text-xs bg-card mb-3"
           />
 
           {error && (

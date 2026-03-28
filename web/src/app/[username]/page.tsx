@@ -223,7 +223,7 @@ export default function WriterProfilePage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-article px-6 py-12">
+      <div className="mx-auto max-w-article-frame px-6 py-12">
         <div className="flex items-center gap-4 mb-12">
           <div className="h-14 w-14 animate-pulse bg-card" />
           <div><div className="h-6 w-36 animate-pulse bg-card mb-2" /><div className="h-3 w-20 animate-pulse bg-card" /></div>
@@ -234,7 +234,7 @@ export default function WriterProfilePage() {
 
   if (notFound) {
     return (
-      <div className="mx-auto max-w-article px-6 py-28 text-center">
+      <div className="mx-auto max-w-article-frame px-6 py-28 text-center">
         <h1 className="font-serif text-2xl font-light text-ink mb-2">User not found</h1>
         <p className="text-ui-sm text-content-muted">No user with the username @{username} exists on Platform.</p>
       </div>
@@ -243,14 +243,14 @@ export default function WriterProfilePage() {
 
   if (profileError) {
     return (
-      <div className="mx-auto max-w-article px-6 py-28 text-center">
+      <div className="mx-auto max-w-article-frame px-6 py-28 text-center">
         <p className="text-ui-sm text-content-muted">Something went wrong loading this profile. Please try again.</p>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-article px-6 py-12">
+    <div className="mx-auto max-w-article-frame px-6 py-12">
       <div className="mb-12">
         <div className="flex items-center gap-4 mb-4">
           {writer?.avatar ? (
@@ -261,7 +261,7 @@ export default function WriterProfilePage() {
             </span>
           )}
           <div className="flex-1">
-            <h1 className="font-serif text-2xl font-light text-ink tracking-tight">{writer?.displayName ?? username}</h1>
+            <h1 className="font-serif text-3xl sm:text-4xl font-light text-ink" style={{ letterSpacing: '-0.02em' }}>{writer?.displayName ?? username}</h1>
             <p className="text-ui-xs text-content-faint mt-0.5">@{username}</p>
           </div>
 
@@ -316,7 +316,7 @@ export default function WriterProfilePage() {
         </p>
       </div>
 
-      <div className="rule mb-10" />
+      <div className="rule-inset mb-10" />
 
       {/* Quote composer modal */}
       {pendingQuote && (
@@ -408,7 +408,7 @@ function DbReplyCard({ reply, writerName, isOwnProfile, onQuote, voteTally, myVo
 
   if (isDeleted) {
     return (
-      <div className="bg-card p-5 border-l-[3px] border-rule">
+      <div className="bg-card p-5 border-l-[3px] border-ink">
         <p className="label-ui text-content-muted mb-2">{writerName} · Reply</p>
         <p className="text-ui-xs text-content-faint italic">[Deleted]</p>
       </div>
@@ -416,7 +416,7 @@ function DbReplyCard({ reply, writerName, isOwnProfile, onQuote, voteTally, myVo
   }
 
   return (
-    <div className="bg-card p-5 border-l-[3px] border-rule">
+    <div className="bg-card p-5 border-l-[3px] border-ink">
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
         <span className="label-ui text-content-muted">{writerName} · Reply</span>

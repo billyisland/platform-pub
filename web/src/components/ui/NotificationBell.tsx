@@ -97,7 +97,7 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
       tabIndex={0}
       onClick={() => onDismiss(n.id, destUrl)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onDismiss(n.id, destUrl) }}
-      className="block px-4 py-3 border-b border-rule last:border-0 hover:bg-surface-deep transition-colors cursor-pointer text-left w-full"
+      className="block px-4 py-3 border-b-2 border-ink/15 last:border-0 hover:bg-surface-deep transition-colors cursor-pointer text-left w-full"
     >
       <div className="flex items-start gap-2.5">
         {avatar}
@@ -187,9 +187,9 @@ export function NotificationBell() {
     <div
       ref={panelRef}
       style={panelStyle}
-      className="bg-card border border-rule shadow-xl overflow-hidden flex flex-col"
+      className="bg-card border-2 border-ink shadow-xl overflow-hidden flex flex-col"
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-rule flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink/15 flex-shrink-0">
         <span className="font-sans text-sm font-medium text-ink">Notifications</span>
         {loading && (
           <span className="text-[11px] text-content-faint">Loading…</span>

@@ -48,9 +48,9 @@ module.exports = {
             lineHeight: '1.8',
             color: '#0F1F18',
             fontFamily: '"Literata", Georgia, serif',
-            h1: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', fontStyle: 'italic', letterSpacing: '-0.02em' },
-            h2: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', fontStyle: 'italic', letterSpacing: '-0.015em' },
-            h3: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', fontStyle: 'italic' },
+            h1: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', fontStyle: 'italic', letterSpacing: '-0.025em', fontSize: '2.25rem', lineHeight: '1.15' },
+            h2: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', fontStyle: 'italic', letterSpacing: '-0.02em', fontSize: '1.75rem', lineHeight: '1.2' },
+            h3: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', fontStyle: 'italic', fontSize: '1.35rem', lineHeight: '1.3' },
             a: { color: '#B5242A', textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationThickness: '1px', '&:hover': { color: '#921D22' } },
             blockquote: { borderLeftColor: '#B5242A', borderLeftWidth: '2.5px', fontStyle: 'italic', color: '#263D32' },
             code: { fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.875em' },
@@ -60,6 +60,9 @@ module.exports = {
       },
       maxWidth: {
         article: '640px',
+        'article-frame': '740px',
+        feed: '780px',
+        'editor-frame': '780px',
         content: '960px',
       },
       letterSpacing: {

@@ -19,8 +19,9 @@
   }
 
   hr {
-    border-color: #B8D2C1;
-    border-width: 1px;
+    border: none;
+    height: 3px;
+    background: #0F1F18;
   }
 
   input[type="text"],
@@ -41,7 +42,7 @@
   select:focus {
     @apply outline-none;
     background-color: #FFFAEF;
-    box-shadow: 0 0 0 2px #B8D2C1;
+    box-shadow: 0 0 0 2px #0F1F18;
   }
 
   ::placeholder {
@@ -56,7 +57,7 @@
   }
   input[type="checkbox"] {
     @apply rounded;
-    border-color: #B8D2C1;
+    border-color: #0F1F18;
     width: 1rem;
     height: 1rem;
   }
@@ -65,7 +66,7 @@
     border-color: #B5242A;
   }
   input[type="checkbox"]:focus {
-    box-shadow: 0 0 0 2px #B8D2C1;
+    box-shadow: 0 0 0 2px #0F1F18;
   }
 
   /* Range slider */
@@ -95,7 +96,16 @@
 
   /* ----- Rules ----- */
   .rule {
-    border-top: 1px solid #B8D2C1;
+    border: none;
+    height: 3px;
+    background: #0F1F18;
+  }
+  .rule-inset {
+    border: none;
+    height: 3px;
+    background: #0F1F18;
+    margin-left: 1.5rem;
+    margin-right: 1.5rem;
   }
   .rule-accent {
     border-top: 3px solid #B5242A;
@@ -127,11 +137,12 @@
     padding: 0.5rem 0;
     margin-right: 1.25rem;
     border: none;
-    border-bottom: 2px solid transparent;
+    border-bottom: 3px solid transparent;
     background: transparent;
     cursor: pointer;
     transition: color 0.15s ease;
     color: #7A9A8A;
+    margin-bottom: -3px;
   }
   .tab-feed-active {
     color: #0F1F18;
@@ -220,7 +231,7 @@
     font-weight: 500;
     letter-spacing: 0.01em;
     text-transform: none;
-    border: 1px solid #B8D2C1;
+    border: 2px solid #0F1F18;
     border-radius: 2px;
     padding: 0.75rem 2rem;
     transition: background-color 0.15s ease;

@@ -52,12 +52,12 @@ export function Nav() {
   const logoHref = user ? '/feed' : '/'
 
   return (
-    <header className="fixed z-50 bg-surface top-0 left-0 right-0 lg:right-auto lg:bottom-0 lg:w-[180px] lg:flex lg:flex-col lg:border-r border-rule">
+    <header className="fixed z-50 bg-surface top-0 left-0 right-0 lg:right-auto lg:bottom-0 lg:w-[180px] lg:flex lg:flex-col lg:border-r-[3px] lg:border-ink">
 
       {/* ================================================================
           TOP BAR — visible below lg breakpoint
           ================================================================ */}
-      <div className="flex items-center justify-between px-6 py-3 lg:px-5 lg:pt-7 lg:pb-5 lg:justify-center lg:border-b lg:border-rule">
+      <div className="flex items-center justify-between px-6 py-3 lg:px-5 lg:pt-7 lg:pb-5 lg:justify-center lg:border-b-[3px] lg:border-ink">
         {/* Logo — Literata in ink box */}
         <Link
           href={logoHref}
@@ -138,18 +138,18 @@ export function Nav() {
           MOBILE DRAWER — below lg, shown when menuOpen
           ================================================================ */}
       {menuOpen && (
-        <div className="md:hidden bg-surface px-6 pb-4 border-t border-rule">
+        <div className="md:hidden bg-surface px-6 pb-4 border-t-[3px] border-ink">
           {loading ? (
             <div className="h-4 w-16 animate-pulse bg-surface-deep" />
           ) : user ? (
             <>
-              <Link href="/write" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/write') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Write</Link>
-              <Link href="/profile" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/profile') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Profile</Link>
-              <Link href="/notifications" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${pathname === '/notifications' ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Notifications</Link>
-              <Link href="/following" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/following') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Following</Link>
-              <Link href="/followers" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/followers') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Followers</Link>
-              <Link href="/dashboard" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/dashboard') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Dashboard</Link>
-              <Link href="/about" onClick={handleNavClick} className={`block font-sans text-sm py-3 border-b border-rule ${isActive('/about') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>About</Link>
+              <Link href="/write" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/write') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Write</Link>
+              <Link href="/profile" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/profile') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Profile</Link>
+              <Link href="/notifications" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${pathname === '/notifications' ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Notifications</Link>
+              <Link href="/following" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/following') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Following</Link>
+              <Link href="/followers" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/followers') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Followers</Link>
+              <Link href="/dashboard" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/dashboard') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>Dashboard</Link>
+              <Link href="/about" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/about') ? 'text-ink font-semibold' : 'text-content-muted hover:text-ink'}`}>About</Link>
 
               <form onSubmit={handleSearch} className="mt-3">
                 <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full bg-card px-3 py-2 text-sm text-ink placeholder-content-faint" />
@@ -232,7 +232,7 @@ export function Nav() {
 
       {/* Sidebar bottom — user info */}
       {user && (
-        <div className="hidden lg:block border-t border-rule px-4 py-4 space-y-3">
+        <div className="hidden lg:block border-t-[3px] border-ink px-4 py-4 space-y-3">
           <Link href="/profile" className="flex items-center gap-2 group">
             {user.avatar ? (
               <img src={user.avatar} alt="" className="h-7 w-7 rounded-full object-cover flex-shrink-0" />

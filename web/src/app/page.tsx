@@ -2,12 +2,12 @@ import Link from 'next/link'
 
 export default function HomePage() {
   return (
-    <div className="mx-auto max-w-article px-6 py-24">
+    <div className="mx-auto max-w-article-frame px-6 py-24">
       <section>
-        <h1 className="font-serif text-5xl font-medium leading-tight text-ink sm:text-6xl" style={{ letterSpacing: '-0.025em' }}>
+        <h1 className="font-serif text-6xl font-medium leading-[1.05] text-ink sm:text-7xl" style={{ letterSpacing: '-0.03em' }}>
           Free authors.
         </h1>
-        <p className="font-serif text-5xl font-normal leading-tight text-content-muted sm:text-6xl mt-1" style={{ letterSpacing: '-0.025em' }}>
+        <p className="font-serif text-6xl font-normal leading-[1.05] text-content-muted sm:text-7xl mt-1" style={{ letterSpacing: '-0.03em' }}>
           Writing that's worth something.
         </p>
 

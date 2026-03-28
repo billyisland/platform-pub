@@ -57,7 +57,7 @@ export default function VerifyPage() {
     <div className="mx-auto max-w-sm px-6 py-24 text-center">
       {status === 'verifying' && (
         <>
-          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-rule border-t-ink" />
+          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-ink/20 border-t-ink" />
           <h1 className="font-serif text-xl font-bold text-ink mb-2">
             Logging you in...
           </h1>

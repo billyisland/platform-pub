@@ -99,7 +99,7 @@ function CardForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="border border-rule px-3 py-3 mb-3">
+      <div className="border-2 border-ink px-3 py-3 mb-3">
         <CardElement
           options={{
             style: {

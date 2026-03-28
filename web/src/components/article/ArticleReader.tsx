@@ -179,15 +179,15 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
       )}
 
       {/* Back link */}
-      <div className="mx-auto max-w-article px-6 pt-16 lg:pt-8 pb-4">
+      <div className="mx-auto max-w-article-frame px-6 pt-16 lg:pt-8 pb-4">
         <Link href="/feed" className="text-[13px] text-content-faint hover:text-content-muted transition-colors">
           ← Back to feed
         </Link>
       </div>
 
       {/* Parchment card containing the article */}
-      <div className="mx-auto max-w-article">
-        <div className="bg-card" style={{ padding: '40px 48px' }}>
+      <div className="mx-auto max-w-article-frame px-6">
+        <div className="bg-card border-[3px] border-ink" style={{ padding: '40px 48px' }}>
           {/* Hero image inside the card if present */}
           {heroImage && (
             <div className="-mx-[48px] -mt-[40px] mb-8">
@@ -221,12 +221,12 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
             className="mb-4"
             style={{
               fontFamily: '"Literata", Georgia, serif',
-              fontSize: '36px',
+              fontSize: 'clamp(2.25rem, 4vw, 3rem)',
               fontWeight: 500,
               fontStyle: 'italic',
               color: '#0F1F18',
-              lineHeight: 1.15,
-              letterSpacing: '-0.02em',
+              lineHeight: 1.1,
+              letterSpacing: '-0.025em',
             }}
           >
             {article.title}

@@ -28,7 +28,7 @@ export function VoteConfirmModal({
       onClick={onCancel}
     >
       <div
-        className="mx-4 w-full max-w-sm bg-card border border-rule shadow-xl p-6"
+        className="mx-4 w-full max-w-sm bg-card border-[3px] border-ink shadow-xl p-6"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex justify-center mb-4">

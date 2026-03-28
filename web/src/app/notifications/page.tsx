@@ -61,7 +61,7 @@ function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: st
       tabIndex={0}
       onClick={() => onDismiss(n.id, destUrl)}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onDismiss(n.id, destUrl) }}
-      className="flex items-start gap-3 py-4 border-b border-rule hover:bg-card transition-colors bg-surface/50 cursor-pointer"
+      className="flex items-start gap-3 py-4 hover:bg-card transition-colors bg-surface/50 cursor-pointer"
     >
       {n.actor?.avatar ? (
         <img src={n.actor.avatar} alt="" className="h-10 w-10 rounded-full object-cover flex-shrink-0 mt-0.5" />
@@ -132,13 +132,13 @@ export default function NotificationsPage() {
 
   return (
     <div className="mx-auto max-w-article pt-16 lg:pt-0 px-6 py-8">
-      <h1 className="font-serif text-2xl font-normal text-content-primary mb-1">Notifications</h1>
+      <h1 className="font-serif text-3xl sm:text-4xl font-light text-content-primary mb-1">Notifications</h1>
       <p className="text-ui-sm text-content-muted mb-8">Your recent activity</p>
 
       {dataLoading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="flex items-start gap-3 py-4 border-b border-rule animate-pulse">
+            <div key={i} className="flex items-start gap-3 py-4 animate-pulse">
               <div className="h-10 w-10 rounded-full bg-surface-deep flex-shrink-0" />
               <div className="flex-1">
                 <div className="h-3.5 w-48 bg-surface-deep mb-2 rounded" />

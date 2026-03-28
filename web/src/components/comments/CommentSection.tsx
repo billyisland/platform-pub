@@ -104,7 +104,7 @@ export function CommentSection({
 
   if (loading) {
     return (
-      <div className="mt-8 pt-6 border-t border-rule">
+      <div className="mt-8 pt-6 border-t-[3px] border-ink">
         <div className="h-4 w-28 animate-pulse bg-surface-deep mb-4" />
         <div className="space-y-3">
           {[1, 2].map(i => (
@@ -116,7 +116,7 @@ export function CommentSection({
   }
 
   return (
-    <div className={`${compact ? 'mt-3' : 'mt-8 pt-6 border-t border-rule'}`}>
+    <div className={`${compact ? 'mt-3' : 'mt-8 pt-6 border-t-[3px] border-ink'}`}>
       <h3 className={`font-medium mb-4 ${compact ? 'text-xs text-content-muted' : 'text-sm text-content-secondary'}`}>
         {totalCount > 0
           ? `${totalCount} comment${totalCount !== 1 ? 's' : ''}`
@@ -144,7 +144,7 @@ export function CommentSection({
       )}
 
       {comments.length > 0 && (
-        <div className="divide-y divide-rule/50">
+        <div className="space-y-1">
           {comments.map((comment) => (
             <div key={comment.id}>
               <CommentItem
@@ -155,7 +155,7 @@ export function CommentSection({
                 onDelete={handleDelete}
               />
               {replyTarget?.commentId === comment.id && (
-                <div className="ml-8 pl-4 border-l-2 border-rule/50">
+                <div className="ml-8 pl-4 border-l-2 border-ink/25">
                   <CommentComposer
                     targetEventId={targetEventId}
                     targetKind={targetKind}

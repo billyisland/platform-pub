@@ -202,16 +202,16 @@ export function ArticleEditor({
   const gateInserted = hasGateMarker()
 
   return (
-    <div className="mx-auto max-w-article px-6 pt-16 lg:pt-8 pb-8">
+    <div className="mx-auto max-w-editor-frame px-6 pt-16 lg:pt-8 pb-8">
       {/* Sticky title + toolbar — stays visible while scrolling the body */}
-      <div className="sticky top-[53px] lg:top-0 z-20 bg-surface pb-4 border-b border-rule mb-6">
+      <div className="sticky top-[53px] lg:top-0 z-20 bg-surface pb-4 border-b-[3px] border-ink mb-6">
       {/* Title input */}
       <input
         type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Article title"
-        className="w-full border-none bg-transparent font-serif text-3xl font-medium italic text-ink placeholder:text-content-faint focus:outline-none mb-3 pt-4 sm:text-4xl"
+        className="w-full border-none bg-transparent font-serif text-4xl font-medium italic text-ink placeholder:text-content-faint focus:outline-none mb-3 pt-4 sm:text-5xl"
         style={{ letterSpacing: '-0.02em' }}
       />
       <input
@@ -297,7 +297,7 @@ export function ArticleEditor({
         </ToolbarButton>
 
         {/* Paywall gate button */}
-        <span className="mx-1 text-rule">|</span>
+        <span className="mx-1 text-content-faint">|</span>
         <ToolbarButton
           active={gateInserted}
           accent
@@ -318,12 +318,14 @@ export function ArticleEditor({
       </div>
       </div>{/* end sticky */}
 
-      {/* Editor content */}
-      <EditorContent editor={editor} />
+      {/* Editor content — ink-bordered writing area */}
+      <div className="bg-card border-[3px] border-ink p-8 sm:p-10">
+        <EditorContent editor={editor} />
+      </div>
 
       {/* Price control — only shown when gate is inserted */}
       {gateInserted && (
-        <div className="mt-10 border-t border-rule pt-6">
+        <div className="mt-10 border-t-[3px] border-ink pt-6">
           <div className="flex items-center gap-4">
             <label className="block text-sm text-content-secondary">
               Price
@@ -336,7 +338,7 @@ export function ArticleEditor({
                 step={0.01}
                 value={(pricePence / 100).toFixed(2)}
                 onChange={(e) => setPricePence(Math.round(parseFloat(e.target.value) * 100))}
-                className="w-24 border border-rule px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+                className="w-24 border-2 border-ink px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
               />
               <span className="text-xs text-content-faint">
                 Suggested: &pound;{priceDisplay} based on {wordCount} words

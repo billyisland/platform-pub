@@ -120,7 +120,7 @@ export function CommentComposer({
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
         placeholder={compact ? 'Write a reply...' : 'Write a comment...'}
         rows={compact ? 1 : 2}
-        className="w-full resize-none border border-rule bg-card px-3 py-2 text-sm text-ink placeholder:text-content-faint focus:outline-none focus:border-accent leading-relaxed"
+        className="w-full resize-none border-2 border-ink/30 bg-card px-3 py-2 text-sm text-ink placeholder:text-content-faint focus:outline-none focus:border-accent leading-relaxed"
       />
 
       {error && (

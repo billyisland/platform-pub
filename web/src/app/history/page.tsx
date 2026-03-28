@@ -33,7 +33,7 @@ function HistoryItemRow({ item }: { item: ReadingHistoryItem }) {
   return (
     <Link
       href={href}
-      className="flex items-start gap-3 py-4 border-b border-rule hover:bg-card transition-colors"
+      className="flex items-start gap-3 py-4 mb-1 hover:bg-card transition-colors"
     >
       <div className="min-w-0 flex-1">
         <p className="font-serif text-base text-content-primary leading-snug mb-1">
@@ -90,13 +90,13 @@ export default function HistoryPage() {
 
   return (
     <div className="mx-auto max-w-article pt-16 lg:pt-0 px-6 py-8">
-      <h1 className="font-serif text-2xl font-normal text-content-primary mb-1">Reading History</h1>
+      <h1 className="font-serif text-3xl sm:text-4xl font-light text-content-primary mb-1">Reading History</h1>
       <p className="text-ui-sm text-content-muted mb-8">Articles you've read</p>
 
       {dataLoading ? (
         <div className="space-y-1">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="py-4 border-b border-rule animate-pulse">
+            <div key={i} className="py-4 mb-1 animate-pulse">
               <div className="h-4 w-3/4 bg-surface-deep mb-2 rounded" />
               <div className="h-3 w-40 bg-surface-deep rounded" />
             </div>

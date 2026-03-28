@@ -80,7 +80,7 @@ export function ShareButton({ url, title }: ShareButtonProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-6 z-20 w-44 border border-rule bg-card shadow-lg py-1">
+        <div className="absolute right-0 top-6 z-20 w-44 border-2 border-ink bg-card shadow-lg py-1">
           <button
             onClick={copyLink}
             className="w-full text-left px-3 py-2 text-xs text-content-primary hover:bg-surface-deep transition-colors"
