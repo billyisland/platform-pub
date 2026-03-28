@@ -120,18 +120,18 @@ export default function AuthPage() {
 
       <form onSubmit={mode === 'signup' ? handleSignup : handleLogin} className="space-y-5">
         <div>
-          <label htmlFor="email" className="label-mono block mb-2">Email</label>
+          <label htmlFor="email" className="label-muted block mb-2">Email</label>
           <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-card px-3 py-2.5 text-mono-sm text-content-primary focus:outline-none" placeholder="you@example.com" />
         </div>
 
         {mode === 'signup' && (
           <>
             <div>
-              <label htmlFor="displayName" className="label-mono block mb-2">Display name</label>
+              <label htmlFor="displayName" className="label-muted block mb-2">Display name</label>
               <input id="displayName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full bg-card px-3 py-2.5 text-mono-sm text-content-primary focus:outline-none" placeholder="Your Name" />
             </div>
             <div>
-              <label htmlFor="username" className="label-mono block mb-2">Username</label>
+              <label htmlFor="username" className="label-muted block mb-2">Username</label>
               <input id="username" type="text" required pattern="^[a-z0-9_-]+$" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} className="w-full bg-card px-3 py-2.5 text-mono-sm text-content-primary focus:outline-none" placeholder="yourname" />
               <p className="mt-2 text-mono-xs text-content-muted">yourname.platform.pub</p>
             </div>

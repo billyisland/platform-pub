@@ -51,10 +51,10 @@ async function start() {
   // Plugins
   await app.register(sensible)
   await app.register(cookie, {
-    secret: process.env.COOKIE_SECRET ?? process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET,
   })
   await app.register(cors, {
-    origin: process.env.APP_URL ?? 'http://localhost:3000',
+    origin: process.env.APP_URL ?? 'http://localhost:3000', // APP_URL required in production
     credentials: true,       // allow cookies
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   })

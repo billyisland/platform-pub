@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { writers, type WriterProfile } from '../../lib/api'
+import { writers, type WriterProfile, type VoteTally, type MyVoteCount } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
 import Link from 'next/link'
 import { ArticleCard } from '../../components/feed/ArticleCard'
@@ -78,6 +78,8 @@ export default function WriterProfilePage() {
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null)
   const [subLoading, setSubLoading] = useState(false)
   const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
+  const [voteTallies, setVoteTallies] = useState<Record<string, VoteTally>>({})
+  const [myVoteCounts, setMyVoteCounts] = useState<Record<string, MyVoteCount>>({})
 
   // Load profile, articles, notes, and replies
   useEffect(() => {
@@ -112,6 +114,26 @@ export default function WriterProfilePage() {
         }
         items.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
         setActivity(items)
+
+        // Batch-fetch vote tallies and user's own vote counts
+        const eventIds = items.map(i => {
+          if (i.kind === 'article') return (i.data as DbArticle).nostrEventId
+          if (i.kind === 'note') return (i.data as DbNote).nostrEventId
+          return (i.data as DbReply).nostrEventId
+        })
+        if (eventIds.length > 0) {
+          const idsParam = eventIds.join(',')
+          const [talliesRes, myVotesRes] = await Promise.all([
+            fetch(`/api/v1/votes/tally?eventIds=${idsParam}`)
+              .then(r => r.ok ? r.json() : { tallies: {} })
+              .catch(() => ({ tallies: {} })),
+            fetch(`/api/v1/votes/mine?eventIds=${idsParam}`, { credentials: 'include' })
+              .then(r => r.ok ? r.json() : { voteCounts: {} })
+              .catch(() => ({ voteCounts: {} })),
+          ])
+          setVoteTallies(talliesRes.tallies ?? {})
+          setMyVoteCounts(myVotesRes.voteCounts ?? {})
+        }
       } catch (err: any) {
         if (err.status === 404) setNotFound(true)
         else setProfileError(true)
@@ -315,7 +337,7 @@ export default function WriterProfilePage() {
       {activity.length === 0 ? (
         <p className="text-ui-sm text-content-muted py-10">Looks like {writer?.displayName ?? username} hasn't said anything yet.</p>
       ) : (
-        <div className="space-y-3" style={{ background: '#EDF5F0' }}>
+        <div className="space-y-3">
           {activity.map(item => {
             if (item.kind === 'article') {
               const a = item.data as DbArticle
@@ -331,7 +353,7 @@ export default function WriterProfilePage() {
                 tags: [],
                 isPaywalled: a.isPaywalled,
               }
-              return <ArticleCard key={a.id} article={articleEvent} onQuote={handleQuote} />
+              return <ArticleCard key={a.id} article={articleEvent} onQuote={handleQuote} voteTally={voteTallies[a.nostrEventId]} myVoteCounts={myVoteCounts[a.nostrEventId]} />
             }
             if (item.kind === 'note') {
               const n = item.data as DbNote
@@ -347,9 +369,10 @@ export default function WriterProfilePage() {
                 quotedTitle: n.quotedTitle,
                 quotedAuthor: n.quotedAuthor,
               }
-              return <NoteCard key={n.id} note={noteEvent} onDeleted={handleNoteDeleted} onQuote={handleQuote} />
+              return <NoteCard key={n.id} note={noteEvent} onDeleted={handleNoteDeleted} onQuote={handleQuote} voteTally={voteTallies[n.nostrEventId]} myVoteCounts={myVoteCounts[n.nostrEventId]} />
             }
-            return <DbReplyCard key={item.data.id} reply={item.data as DbReply} writerName={writer?.displayName ?? username} isOwnProfile={isOwnProfile} onQuote={handleQuote} />
+            const r = item.data as DbReply
+            return <DbReplyCard key={r.id} reply={r} writerName={writer?.displayName ?? username} isOwnProfile={isOwnProfile} onQuote={handleQuote} voteTally={voteTallies[r.nostrEventId]} myVoteCounts={myVoteCounts[r.nostrEventId]} />
           })}
         </div>
       )}
@@ -357,7 +380,7 @@ export default function WriterProfilePage() {
   )
 }
 
-function DbReplyCard({ reply, writerName, isOwnProfile, onQuote }: { reply: DbReply; writerName: string; isOwnProfile: boolean; onQuote?: (target: QuoteTarget) => void }) {
+function DbReplyCard({ reply, writerName, isOwnProfile, onQuote, voteTally, myVoteCounts }: { reply: DbReply; writerName: string; isOwnProfile: boolean; onQuote?: (target: QuoteTarget) => void; voteTally?: VoteTally; myVoteCounts?: MyVoteCount }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [isDeleted, setIsDeleted] = useState(reply.isDeleted)
   const [content, setContent] = useState(reply.content)
@@ -447,7 +470,7 @@ function DbReplyCard({ reply, writerName, isOwnProfile, onQuote }: { reply: DbRe
               Quote
             </button>
           )}
-          <VoteControls targetEventId={reply.nostrEventId} targetKind={1111} isOwnContent={true} />
+          <VoteControls targetEventId={reply.nostrEventId} targetKind={1111} isOwnContent={isOwnProfile} initialTally={voteTally} initialMyVotes={myVoteCounts} />
         </div>
       </div>
     </div>

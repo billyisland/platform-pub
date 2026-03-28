@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.18.0
+# platform.pub — Deployment Reference v3.19.0
 
 **Date:** 28 March 2026
-**Replaces:** v3.17.0 (see bottom for change log)
+**Replaces:** v3.18.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -82,11 +82,10 @@ Key variables:
 
 | Variable | Service | Purpose |
 |----------|---------|---------|
-| `SESSION_SECRET` | gateway | JWT signing key (min 32 chars) |
-| `COOKIE_SECRET` | gateway | Cookie signing (can equal SESSION_SECRET) |
+| `SESSION_SECRET` | gateway | JWT signing key and cookie secret (min 32 chars) |
 | `PLATFORM_SERVICE_PRIVKEY` | gateway, payment, key-service | 64-hex Nostr private key for platform service events |
 | `READER_HASH_KEY` | gateway | HMAC key for reader pubkey privacy hashing |
-| `INTERNAL_SECRET` | gateway, key-custody | Shared secret authenticating gateway→key-custody calls |
+| `INTERNAL_SECRET` | gateway, key-custody, key-service | Shared secret authenticating gateway→key-custody and gateway→key-service calls |
 | `INTERNAL_SERVICE_TOKEN` | payment-service | Shared secret authenticating cron→payment-service calls (`/payout-cycle`, `/settlement-check/monthly`) |
 | `ACCOUNT_KEY_HEX` | key-custody **only** | AES-256 key for encrypting custodial Nostr privkeys at rest |
 | `KMS_MASTER_KEY_HEX` | key-service | AES-256 master key for vault content key envelope encryption |
@@ -140,10 +139,10 @@ cp web/.env.example web/.env
 Generate cryptographic secrets:
 
 ```bash
-openssl rand -hex 32   # SESSION_SECRET, COOKIE_SECRET, READER_HASH_KEY
+openssl rand -hex 32   # SESSION_SECRET, READER_HASH_KEY
 openssl rand -hex 32   # ACCOUNT_KEY_HEX (key-custody only)
 openssl rand -hex 32   # KMS_MASTER_KEY_HEX (key-service only)
-openssl rand -base64 32  # INTERNAL_SECRET (gateway + key-custody)
+openssl rand -base64 32  # INTERNAL_SECRET (gateway + key-custody + key-service)
 openssl rand -base64 32  # INTERNAL_SERVICE_TOKEN (payment-service cron auth)
 # For PLATFORM_SERVICE_PRIVKEY: generate a Nostr keypair — any hex ed25519 privkey
 ```
@@ -1711,6 +1710,53 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.19.0 — 28 March 2026
+
+**Security hardening, consistency fixes, notification dedup, dead code cleanup**
+
+Codebase audit and fix pass. No new features. Migration 014 required.
+
+**Security**
+
+- **Key-service export auth:** `/writers/export-keys` now validates `x-internal-secret` header. Previously any request with a spoofed `x-writer-id` header could export vault content keys without authentication. `INTERNAL_SECRET` env var must now be set on key-service (add to `key-service/.env`).
+- **Vote race condition:** `POST /votes` now acquires a `pg_advisory_xact_lock` before counting existing votes, preventing concurrent votes from receiving the same sequence number and incorrect pricing.
+- **@mention regex hardened:** negative lookbehind `(?<![a-zA-Z0-9.])` prevents matching email addresses (e.g. `user@example.com`) and dotted identifiers as @mentions. Applied to both `notes.ts` and `replies.ts`.
+
+**Consistency**
+
+- **`is_writer` filter relaxed:** search (`GET /search`), RSS (`GET /rss/:username`), and export (`GET /export`) endpoints no longer require `is_writer = TRUE`. Any `status = 'active'` account is now discoverable, consistent with the profile and follow endpoints relaxed in v3.17.0.
+- **Profile page vote controls:** `isOwnContent` was hardcoded to `true` on all reply cards, disabling voting on every profile page. Now correctly computed from whether the viewer is looking at their own profile.
+- **Profile page vote batching:** vote tallies and user vote counts are now batch-fetched for all activity items, eliminating N+1 API calls (previously each card fired 2 individual requests).
+- **Profile page inline background removed:** hardcoded `style={{ background: '#EDF5F0' }}` on the activity container removed; page background handles this via Tailwind.
+
+**Data integrity**
+
+- **Migration 014:** removes duplicate notification rows and adds a unique index `idx_notifications_dedup` on `(recipient_id, actor_id, type, article_id, note_id, comment_id)` to prevent future duplicates.
+- All fire-and-forget notification INSERTs across `follows.ts`, `notes.ts`, `replies.ts`, and `subscriptions.ts` now include `ON CONFLICT DO NOTHING`.
+
+**Config cleanup**
+
+- **`COOKIE_SECRET` removed:** gateway cookie signing now uses `SESSION_SECRET` only (the documented env var). Remove `COOKIE_SECRET` from `gateway/.env` if present — it is no longer read.
+- **`ignoreBuildErrors: true` removed from `next.config.js`:** TypeScript errors are now enforced at build time. `missingSuspenseWithCSRBailout: false` retained — required for 7 CSR-only pages using `useSearchParams()`.
+- **CORS origin comment:** `APP_URL` env var now has a production-required comment in source.
+
+**Cleanup**
+
+- Deleted 5 dead backup files: `gateway/src/routes/v1_6.ts.save`, `gateway/src/routes/media.ts.bak`, `web/tailwind.config.js.bak`, `web/src/app/globals.css.bak`, `migrations/003_comments.sql.bak`.
+- Renamed misleading `.label-mono` CSS class to `.label-muted` (it uses Source Sans 3, not a monospace font).
+- Removed `console.log('Published:', result)` from `web/src/app/write/page.tsx`.
+
+**Upgrade steps:**
+
+1. Add `INTERNAL_SECRET` to `key-service/.env` (same value as gateway and key-custody)
+2. Remove `COOKIE_SECRET` from `gateway/.env` (if present)
+3. Apply migration: `docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/014_notification_dedup.sql`
+4. Rebuild and restart: `docker compose build gateway keyservice web && docker compose up -d gateway keyservice web`
+
+**Services rebuilt: gateway, keyservice, web. Payment-service and key-custody unchanged.**
+
+---
 
 ### v3.18.0 — 28 March 2026
 

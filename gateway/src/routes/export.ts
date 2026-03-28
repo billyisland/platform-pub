@@ -75,7 +75,7 @@ export async function exportRoutes(app: FastifyInstance) {
     }>(
       `SELECT nostr_pubkey, username, display_name
        FROM accounts
-       WHERE id = $1 AND is_writer = TRUE`,
+       WHERE id = $1 AND status = 'active'`,
       [writerId]
     )
 

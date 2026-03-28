@@ -55,7 +55,8 @@ export async function followRoutes(app: FastifyInstance) {
       // Notify the writer they have a new follower (fire-and-forget)
       pool.query(
         `INSERT INTO notifications (recipient_id, actor_id, type)
-         VALUES ($1, $2, 'new_follower')`,
+         VALUES ($1, $2, 'new_follower')
+         ON CONFLICT DO NOTHING`,
         [writerId, followerId]
       ).catch((err) => logger.warn({ err }, 'Failed to insert new_follower notification'))
 

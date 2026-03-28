@@ -95,7 +95,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 
           pool.query(
             `INSERT INTO notifications (recipient_id, actor_id, type)
-             VALUES ($1, $2, 'new_subscriber')`,
+             VALUES ($1, $2, 'new_subscriber')
+             ON CONFLICT DO NOTHING`,
             [writerId, readerId]
           ).catch((err) => logger.warn({ err }, 'Failed to insert new_subscriber notification'))
 
@@ -148,7 +149,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 
         pool.query(
           `INSERT INTO notifications (recipient_id, actor_id, type)
-           VALUES ($1, $2, 'new_subscriber')`,
+           VALUES ($1, $2, 'new_subscriber')
+           ON CONFLICT DO NOTHING`,
           [writerId, readerId]
         ).catch((err) => logger.warn({ err }, 'Failed to insert new_subscriber notification'))
 

@@ -138,8 +138,7 @@ async function searchWriters(
             a.avatar_blossom_url, a.nostr_pubkey,
             (SELECT COUNT(*) FROM articles WHERE writer_id = a.id AND published_at IS NOT NULL AND deleted_at IS NULL) AS article_count
      FROM accounts a
-     WHERE a.is_writer = TRUE
-       AND a.status = 'active'
+     WHERE a.status = 'active'
        AND (
          a.username ILIKE $1
          OR a.display_name ILIKE $1

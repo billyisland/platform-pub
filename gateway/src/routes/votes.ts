@@ -77,7 +77,13 @@ export async function voteRoutes(app: FastifyInstance) {
 
         // ------------------------------------------------------------------
         // 3. Count existing votes in this direction
+        //    Advisory lock serialises concurrent votes for the same
+        //    voter/target/direction to prevent duplicate sequence numbers.
         // ------------------------------------------------------------------
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtext($1 || $2 || $3))`,
+          [voterId, targetEventId, direction]
+        )
         const countRow = await client.query<{ count: string }>(
           `SELECT COUNT(*) AS count FROM votes
            WHERE voter_id = $1 AND target_nostr_event_id = $2 AND direction = $3`,

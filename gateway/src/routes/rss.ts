@@ -37,7 +37,7 @@ export async function rssRoutes(app: FastifyInstance) {
         bio: string | null
       }>(
         `SELECT id, display_name, bio FROM accounts
-         WHERE username = $1 AND is_writer = TRUE AND status = 'active'`,
+         WHERE username = $1 AND status = 'active'`,
         [username]
       )
 

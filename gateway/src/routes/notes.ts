@@ -91,14 +91,15 @@ export async function noteRoutes(app: FastifyInstance) {
         if (quotedAuthorId && quotedAuthorId !== authorId) {
           pool.query(
             `INSERT INTO notifications (recipient_id, actor_id, type)
-             VALUES ($1, $2, 'new_quote')`,
+             VALUES ($1, $2, 'new_quote')
+             ON CONFLICT DO NOTHING`,
             [quotedAuthorId, authorId]
           ).catch((err) => logger.warn({ err }, 'Failed to insert new_quote notification'))
         }
       }
 
       // Notify @mentioned users (fire-and-forget)
-      const mentionMatches = data.content.matchAll(/@([a-zA-Z0-9_]+)/g)
+      const mentionMatches = data.content.matchAll(/(?<![a-zA-Z0-9.])@([a-zA-Z0-9_]+)/g)
       const mentionedUsernames = [...new Set([...mentionMatches].map(m => m[1]))]
       if (mentionedUsernames.length > 0) {
         const { rows: mentionedUsers } = await pool.query<{ id: string }>(
@@ -108,7 +109,8 @@ export async function noteRoutes(app: FastifyInstance) {
         for (const mentioned of mentionedUsers) {
           pool.query(
             `INSERT INTO notifications (recipient_id, actor_id, type)
-             VALUES ($1, $2, 'new_mention')`,
+             VALUES ($1, $2, 'new_mention')
+             ON CONFLICT DO NOTHING`,
             [mentioned.id, authorId]
           ).catch((err) => logger.warn({ err }, 'Failed to insert mention notification'))
         }

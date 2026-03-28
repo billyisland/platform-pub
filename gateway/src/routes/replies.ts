@@ -137,7 +137,8 @@ export async function replyRoutes(app: FastifyInstance) {
           : null
         pool.query(
           `INSERT INTO notifications (recipient_id, actor_id, type, article_id, note_id, comment_id)
-           VALUES ($1, $2, 'new_reply', $3, $4, $5)`,
+           VALUES ($1, $2, 'new_reply', $3, $4, $5)
+           ON CONFLICT DO NOTHING`,
           [contentAuthorId, authorId, articleRow?.id ?? null, noteRow?.id ?? null, result.rows[0].id]
         ).catch((err) => logger.warn({ err }, 'Failed to insert new_reply notification'))
       }
@@ -148,7 +149,7 @@ export async function replyRoutes(app: FastifyInstance) {
       )
 
       // Notify @mentioned users (fire-and-forget)
-      const mentionMatches = data.content.matchAll(/@([a-zA-Z0-9_]+)/g)
+      const mentionMatches = data.content.matchAll(/(?<![a-zA-Z0-9.])@([a-zA-Z0-9_]+)/g)
       const mentionedUsernames = [...new Set([...mentionMatches].map(m => m[1]))]
       if (mentionedUsernames.length > 0) {
         const { rows: mentionedUsers } = await pool.query<{ id: string }>(
@@ -158,7 +159,8 @@ export async function replyRoutes(app: FastifyInstance) {
         for (const mentioned of mentionedUsers) {
           pool.query(
             `INSERT INTO notifications (recipient_id, actor_id, type)
-             VALUES ($1, $2, 'new_mention')`,
+             VALUES ($1, $2, 'new_mention')
+             ON CONFLICT DO NOTHING`,
             [mentioned.id, authorId]
           ).catch((err) => logger.warn({ err }, 'Failed to insert mention notification'))
         }

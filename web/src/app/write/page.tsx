@@ -121,7 +121,6 @@ export default function WritePage() {
       user.pubkey,
       initialData?.editingDTag
     )
-    console.log('Published:', result)
     router.push('/dashboard?tab=articles')
   }
 
