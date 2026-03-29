@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.22.0
+# platform.pub — Deployment Reference v3.23.0
 
 **Date:** 29 March 2026
-**Replaces:** v3.21.0 (see bottom for change log)
+**Replaces:** v3.22.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -203,6 +203,57 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
 
+### From v3.22.0
+
+No schema changes. Services changed: **web only**. Pale green nav colour swap and quote click-through fix.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}" | grep web
+docker logs platform-pub-web-1 --tail 5
+
+# v3.23.0 — Pale green nav, parchment brand logo, quote click-through
+#
+# ── Nav colour swap ──
+# Nav background changed from dark green (#82A890) to pale green
+# (#DDEEE4, previously surface-deep / the nav button hover colour).
+# Nav button hover state changed from pale green (#DDEEE4) to medium
+# green (#82A890, previously the nav background). New Tailwind token:
+# nav.hover (#82A890). Nav text colours adjusted for light background:
+# active links use text-ink, inactive use text-content-faint, hover
+# uses text-content-secondary. Hamburger bars changed from bg-card to
+# bg-ink. Search inputs on nav use bg-surface-deep with text-ink.
+# Feed sticky zone (NoteComposer area) inherits pale green via bg-nav.
+# Files: web/tailwind.config.js, web/src/components/layout/Nav.tsx,
+#   web/src/components/ui/NotificationBell.tsx,
+#   web/src/components/feed/FeedView.tsx, web/src/app/globals.css
+#
+# ── Brand logo restyled ──
+# "Platform" logo: now parchment-coloured text (#FFFAEF) with a
+# parchment-coloured outline border (1.5px solid #FFFAEF), no fill
+# background. Sits against the pale green nav.
+# File: web/src/components/layout/Nav.tsx
+#
+# ── Quote click-through fix ──
+# ExcerptPennant (highlighted-text quotes in notes) now clicks through
+# to the quoted content. Previously, when the quoted item was a note
+# (no dTag), the link was href="#" with preventDefault — a dead link.
+# Now falls back to the quoted author's profile page (/{username})
+# when no article dTag is available. Article quotes continue to link
+# to /article/{dTag} as before.
+# File: web/src/components/feed/NoteCard.tsx
+```
+
+---
+
 ### From v3.21.0
 
 No schema changes. Services changed: **web, gateway**. New backend endpoint `GET /my/account-statement` in gateway; full visual refresh across frontend.
@@ -255,17 +306,17 @@ docker logs platform-pub-gateway-1 --tail 5
 # or /. Both the brand logo and Feed link navigate to /feed.
 # File: web/src/components/layout/Nav.tsx
 #
-# ── Visual refresh: dark nav, soft borders, parchment brand ──
-# Nav background: bg-surface (#EDF5F0) → bg-ink (#0F1F18). All nav
-# text flipped to light colours (text-card for active, text-content-faint
-# for inactive). Hover uses bg-content-secondary (#263D32).
+# ── Visual refresh: dark nav → pale green nav, soft borders ──
+# Nav background: bg-surface (#EDF5F0) → bg-nav (#DDEEE4, pale green).
+# All nav text uses dark colours for light background. Hover uses
+# bg-nav-hover (#82A890). Soft sage borders (border-rule #B8D2C1)
+# replace heavy black borders site-wide.
 #
-# Brand logo: black border removed, now parchment box (bg-card #FFFAEF)
-# with surface-green text (#EDF5F0).
+# Brand logo: parchment text (#FFFAEF) with parchment outline border,
+# no fill background, against pale green nav.
 #
-# Feed sticky area + NoteComposer: background → bg-ink. Feed tabs
-# restyled for dark background (active: parchment, inactive: muted green).
-# NoteComposer border-2 border-ink removed (borderless on dark bg).
+# Feed sticky area + NoteComposer: background → bg-nav (pale green).
+# Feed tabs restyled for light background.
 #
 # All border-ink references removed site-wide (~40 occurrences across
 # 20+ files). Heavy black borders replaced with border-rule (#B8D2C1,
@@ -276,8 +327,7 @@ docker logs platform-pub-gateway-1 --tail 5
 # globals.css: hr and .rule/.rule-inset → 1px #B8D2C1. .rule-accent
 # → 1px #B8D2C1. .btn border removed, hover → #263D32. .btn-accent
 # border removed. .btn-soft border removed. .tab-pill-active bg →
-# #263D32. .tab-feed colours inverted for dark bg. Checkbox border
-# and focus → #7A9A8A / #B5242A.
+# #263D32. Checkbox border and focus → #7A9A8A / #B5242A.
 #
 # Files changed:
 #   gateway/src/routes/v1_6.ts,
@@ -2067,9 +2117,44 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
+### v3.23.0 — 29 March 2026
+
+**Pale green nav, parchment brand logo, quote click-through fix**
+
+No schema changes. Services rebuilt: **web only**.
+
+**Nav colour swap**
+
+Nav background changed from medium green (`#82A890`) to pale green (`#DDEEE4`, previously `surface-deep` / the nav button hover colour). Nav button hover state swapped to medium green (`#82A890`, previously the nav background). New Tailwind token: `nav.hover` (`#82A890`). Nav text colours adjusted for the light background: active links use `text-ink`, inactive use `text-content-faint`, hover uses `text-content-secondary`. Hamburger bars changed from `bg-card` to `bg-ink`. Search inputs on nav use `bg-surface-deep` with `text-ink`. Feed sticky zone (NoteComposer area) inherits the pale green via `bg-nav`.
+
+**Brand logo restyled**
+
+"Platform" logo now uses parchment-coloured text (`#FFFAEF`) with a parchment-coloured outline border (`1.5px solid #FFFAEF`), no fill background. Sits against the pale green nav background.
+
+**Quote click-through fix**
+
+`ExcerptPennant` (highlighted-text quotes displayed in notes) previously dead-linked when the quoted item was a note rather than an article (`href="#"` with `preventDefault`). Now falls back to the quoted author's profile page (`/{username}`) when no article `dTag` is available. Article quotes continue to link to `/article/{dTag}` as before. The `QuoteCard` component (non-excerpt quotes) already handled both cases correctly.
+
+**Files changed:**
+- `web/tailwind.config.js` — added `nav.hover` token, updated `nav.DEFAULT`
+- `web/src/components/layout/Nav.tsx` — pale green nav, parchment brand, hover classes
+- `web/src/components/ui/NotificationBell.tsx` — hover class update for nav
+- `web/src/components/feed/FeedView.tsx` — inherits nav colour via `bg-nav`
+- `web/src/app/globals.css` — feed tab and nav-related style adjustments
+- `web/src/components/feed/NoteCard.tsx` — ExcerptPennant quote click-through fix
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build --no-cache web && docker compose up -d web`
+
+No migrations required.
+
+---
+
 ### v3.22.0 — 29 March 2026
 
-**Account statement API, mobile article fix, Feed nav link, dark nav visual refresh**
+**Account statement API, mobile article fix, Feed nav link, soft borders visual refresh**
 
 No schema changes. Services rebuilt: **web, gateway**.
 
@@ -2089,16 +2174,12 @@ The article card had hardcoded `padding: 40px 72px`, leaving ~183px for text on 
 
 Explicit "Feed" link added to all three nav layouts (desktop sidebar, tablet inline bar, mobile drawer), positioned first below the brand. Highlighted when on `/feed` or `/`. Both the brand logo and Feed link navigate to `/feed`.
 
-**Visual refresh: dark nav, soft borders, parchment brand**
+**Visual refresh: soft borders**
 
-- Nav and feed sticky area background changed from `bg-surface` (#EDF5F0) to `bg-ink` (#0F1F18). All nav text inverted for dark background.
-- Brand logo: black border removed. Now parchment box (`bg-card` #FFFAEF) with surface-green text (#EDF5F0).
-- Hover state across nav items, buttons, and tab pills uses intermediate green `#263D32` (`content-secondary`).
 - All `border-ink` references removed site-wide (~40 occurrences across 20+ files). Heavy black borders replaced with `border-rule` (#B8D2C1, soft sage green). 3px rules thinned to 1px.
 - `.btn` and `.btn-accent` borders removed. `.btn:hover` changed to `#263D32`.
 - `.tab-pill-active` background softened from `#0F1F18` to `#263D32`.
-- Feed tabs restyled for dark background (active: parchment text + underline).
-- NoteComposer border removed (borderless on dark background).
+- NoteComposer border removed (borderless on nav background).
 - globals.css: `hr`, `.rule`, `.rule-inset`, `.rule-accent` all softened to 1px #B8D2C1.
 
 **Upgrade steps:**
