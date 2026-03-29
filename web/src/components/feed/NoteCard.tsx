@@ -35,10 +35,12 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
       .catch(() => {})
   }, [note.quotedEventId])
 
+  const href = articleDTag ? `/article/${articleDTag}` : authorUsername ? `/${authorUsername}` : '#'
+
   return (
     <Link
-      href={articleDTag ? `/article/${articleDTag}` : '#'}
-      onClick={e => { e.stopPropagation(); if (!articleDTag) e.preventDefault() }}
+      href={href}
+      onClick={e => { e.stopPropagation(); if (href === '#') e.preventDefault() }}
       className="block mt-2.5 hover:opacity-80 transition-opacity"
       style={{
         background: '#FFFAEF',
