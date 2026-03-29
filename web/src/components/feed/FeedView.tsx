@@ -198,7 +198,7 @@ export function FeedView() {
     <div className="mx-auto max-w-feed pt-16 lg:pt-0">
 
       {/* Sticky zone: composer + tabs */}
-      <div className="sticky top-[53px] lg:top-0 z-10 bg-ink">
+      <div className="sticky top-[53px] lg:top-0 z-10 bg-nav">
         <div ref={composerRef} className="px-6 pt-4">
           <NoteComposer
             quoteTarget={pendingQuote ?? undefined}
@@ -206,7 +206,7 @@ export function FeedView() {
             onClearQuote={() => setPendingQuote(null)}
           />
         </div>
-        <div className="flex px-6 pt-1 border-b border-content-secondary">
+        <div className="flex px-6 pt-1 border-b border-content-muted">
           <button
             onClick={() => setActiveTab('for-you')}
             className={`tab-feed ${activeTab === 'for-you' ? 'tab-feed-active' : ''}`}

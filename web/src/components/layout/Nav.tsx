@@ -27,12 +27,12 @@ export function Nav() {
     return false
   }
 
-  // Desktop sidebar link style (on dark green background)
+  // Desktop sidebar link style (on nav green background)
   function sidebarLinkClass(path: string) {
     return `block font-sans text-[15px] py-3 pr-5 transition-colors w-full ${
       isActive(path)
-        ? 'pl-[14px] border-l-2 border-accent text-card font-semibold'
-        : 'pl-4 text-content-faint hover:text-surface-deep hover:bg-content-secondary'
+        ? 'pl-[14px] border-l-2 border-accent text-ink font-semibold'
+        : 'pl-4 text-content-faint hover:text-content-secondary hover:bg-nav-hover'
     }`
   }
 
@@ -53,7 +53,7 @@ export function Nav() {
   const logoHref = user ? '/feed' : '/'
 
   return (
-    <header className="fixed z-50 bg-ink top-0 left-0 right-0 lg:right-auto lg:bottom-0 lg:w-[240px] lg:flex lg:flex-col">
+    <header className="fixed z-50 bg-nav top-0 left-0 right-0 lg:right-auto lg:bottom-0 lg:w-[240px] lg:flex lg:flex-col">
 
       {/* ================================================================
           TOP BAR — visible below lg breakpoint
@@ -63,7 +63,7 @@ export function Nav() {
         <Link
           href={logoHref}
           onClick={handleNavClick}
-          className="flex-shrink-0 bg-card"
+          className="flex-shrink-0"
           style={{
             fontFamily: '"Literata", Georgia, serif',
             padding: '5px 14px 7px',
@@ -71,7 +71,8 @@ export function Nav() {
             fontSize: '28px',
             fontWeight: '600',
             letterSpacing: '-0.02em',
-            color: '#EDF5F0',
+            color: '#FFFAEF',
+            border: '1.5px solid #FFFAEF',
           }}
         >
           Platform
@@ -83,9 +84,9 @@ export function Nav() {
           className="flex flex-col justify-center gap-[5px] w-6 h-6 md:hidden"
           aria-label="Menu"
         >
-          <span className="block w-full h-[2px] bg-card" />
-          <span className="block w-full h-[2px] bg-card" />
-          <span className="block w-full h-[2px] bg-card" />
+          <span className="block w-full h-[2px] bg-ink" />
+          <span className="block w-full h-[2px] bg-ink" />
+          <span className="block w-full h-[2px] bg-ink" />
         </button>
 
         {/* Desktop inline nav (between md and lg) — shown md+ but hidden lg+ */}
@@ -94,10 +95,10 @@ export function Nav() {
             <div className="h-4 w-16 animate-pulse bg-content-secondary" />
           ) : user ? (
             <>
-              <Link href="/feed" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/feed') ? 'text-card font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-surface-deep'}`}>Feed</Link>
-              <Link href="/write" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/write') ? 'text-card font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-surface-deep'}`}>Write</Link>
-              <Link href="/dashboard" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/dashboard') ? 'text-card font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-surface-deep'}`}>Dashboard</Link>
-              <Link href="/about" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/about') ? 'text-card font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-surface-deep'}`}>About</Link>
+              <Link href="/feed" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/feed') ? 'text-ink font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-content-secondary'}`}>Feed</Link>
+              <Link href="/write" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/write') ? 'text-ink font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-content-secondary'}`}>Write</Link>
+              <Link href="/dashboard" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/dashboard') ? 'text-ink font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-content-secondary'}`}>Dashboard</Link>
+              <Link href="/about" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/about') ? 'text-ink font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-content-secondary'}`}>About</Link>
 
               <form onSubmit={handleSearch} className="relative flex items-center">
                 <input
@@ -105,33 +106,33 @@ export function Nav() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search…"
-                  className="w-28 bg-content-secondary px-3 py-1.5 text-xs text-card placeholder-content-faint focus:w-44 transition-all"
+                  className="w-28 bg-surface-deep px-3 py-1.5 text-xs text-ink placeholder-content-muted focus:w-44 transition-all"
                 />
               </form>
 
-              <Link href="/profile" className="flex items-center gap-2 font-sans text-sm text-content-faint hover:text-surface-deep transition-colors">
+              <Link href="/profile" className="flex items-center gap-2 font-sans text-sm text-content-faint hover:text-content-secondary transition-colors">
                 {user.avatar ? (
                   <img src={user.avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-6 w-6 items-center justify-center bg-content-secondary text-[10px] font-medium text-content-faint rounded-full">
+                  <span className="flex h-6 w-6 items-center justify-center bg-surface-deep text-[10px] font-medium text-content-secondary rounded-full">
                     {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
                   </span>
                 )}
                 <span>{user.displayName ?? user.username}</span>
-                <span className="text-mono-xs text-content-faint tabular-nums">
+                <span className="text-mono-xs text-content-muted tabular-nums">
                   £{(user.freeAllowanceRemainingPence / 100).toFixed(2)}
                 </span>
               </Link>
 
-              <button onClick={logout} className="font-sans text-sm text-content-faint hover:text-surface-deep transition-colors">
+              <button onClick={logout} className="font-sans text-sm text-content-faint hover:text-content-secondary transition-colors">
                 Log out
               </button>
             </>
           ) : (
             <>
-              <Link href="/feed" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/feed') ? 'text-card font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-surface-deep'}`}>Feed</Link>
-              <Link href="/about" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/about') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>About</Link>
-              <Link href="/auth?mode=login" className="font-sans text-sm text-content-faint hover:text-surface-deep transition-colors">Log in</Link>
+              <Link href="/feed" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/feed') ? 'text-ink font-semibold border-b-2 border-accent' : 'text-content-faint hover:text-content-secondary'}`}>Feed</Link>
+              <Link href="/about" className={`font-sans text-sm transition-colors px-2.5 py-1 ${isActive('/about') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>About</Link>
+              <Link href="/auth?mode=login" className="font-sans text-sm text-content-faint hover:text-content-secondary transition-colors">Log in</Link>
               <Link href="/auth?mode=signup" className="btn">Sign up</Link>
             </>
           )}
@@ -142,44 +143,44 @@ export function Nav() {
           MOBILE DRAWER — below lg, shown when menuOpen
           ================================================================ */}
       {menuOpen && (
-        <div className="md:hidden bg-ink px-6 pb-4">
+        <div className="md:hidden bg-nav px-6 pb-4">
           {loading ? (
             <div className="h-4 w-16 animate-pulse bg-content-secondary" />
           ) : user ? (
             <>
-              <Link href="/feed" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/feed') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>Feed</Link>
-              <Link href="/write" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/write') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>Write</Link>
-              <Link href="/profile" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/profile') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>Profile</Link>
-              <Link href="/notifications" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${pathname === '/notifications' ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>Notifications</Link>
-              <Link href="/following" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/following') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>Following</Link>
-              <Link href="/followers" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/followers') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>Followers</Link>
-              <Link href="/dashboard" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/dashboard') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>Dashboard</Link>
-              <Link href="/about" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/about') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>About</Link>
+              <Link href="/feed" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/feed') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>Feed</Link>
+              <Link href="/write" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/write') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>Write</Link>
+              <Link href="/profile" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/profile') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>Profile</Link>
+              <Link href="/notifications" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${pathname === '/notifications' ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>Notifications</Link>
+              <Link href="/following" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/following') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>Following</Link>
+              <Link href="/followers" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/followers') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>Followers</Link>
+              <Link href="/dashboard" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/dashboard') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>Dashboard</Link>
+              <Link href="/about" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/about') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>About</Link>
 
               <form onSubmit={handleSearch} className="mt-3">
-                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full bg-content-secondary px-3 py-2 text-sm text-card placeholder-content-faint" />
+                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full bg-surface-deep px-3 py-2 text-sm text-ink placeholder-content-muted" />
               </form>
 
               <div className="flex items-center gap-2 mt-3">
                 {user.avatar ? (
                   <img src={user.avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-6 w-6 items-center justify-center bg-content-secondary text-[10px] font-medium text-content-faint rounded-full">
+                  <span className="flex h-6 w-6 items-center justify-center bg-surface-deep text-[10px] font-medium text-content-secondary rounded-full">
                     {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
                   </span>
                 )}
                 <span className="font-sans text-sm text-content-faint">{user.displayName ?? user.username}</span>
               </div>
 
-              <button onClick={() => { logout(); setMenuOpen(false) }} className="mt-3 text-sm text-content-faint hover:text-surface-deep transition-colors">
+              <button onClick={() => { logout(); setMenuOpen(false) }} className="mt-3 text-sm text-content-faint hover:text-content-secondary transition-colors">
                 Log out
               </button>
             </>
           ) : (
             <>
-              <Link href="/feed" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/feed') ? 'text-card font-semibold' : 'text-content-faint hover:text-surface-deep'}`}>Feed</Link>
-              <Link href="/about" onClick={handleNavClick} className="block font-sans text-sm py-3 text-content-faint hover:text-surface-deep transition-colors">About</Link>
-              <Link href="/auth?mode=login" onClick={handleNavClick} className="block font-sans text-sm py-3 text-content-faint hover:text-surface-deep transition-colors">Log in</Link>
+              <Link href="/feed" onClick={handleNavClick} className={`block font-sans text-sm py-3 ${isActive('/feed') ? 'text-ink font-semibold' : 'text-content-faint hover:text-content-secondary'}`}>Feed</Link>
+              <Link href="/about" onClick={handleNavClick} className="block font-sans text-sm py-3 text-content-faint hover:text-content-secondary transition-colors">About</Link>
+              <Link href="/auth?mode=login" onClick={handleNavClick} className="block font-sans text-sm py-3 text-content-faint hover:text-content-secondary transition-colors">Log in</Link>
               <Link href="/auth?mode=signup" onClick={handleNavClick} className="btn inline-block mt-2">Sign up</Link>
             </>
           )}
@@ -205,7 +206,7 @@ export function Nav() {
 
             {/* Search */}
             {searchOpen ? (
-              <form onSubmit={handleSearch} className="mx-3 mt-1 flex items-center gap-2 bg-content-secondary px-3 py-2">
+              <form onSubmit={handleSearch} className="mx-3 mt-1 flex items-center gap-2 bg-surface-deep px-3 py-2">
                 <input
                   type="text"
                   value={searchQuery}
@@ -213,15 +214,15 @@ export function Nav() {
                   placeholder="Search..."
                   autoFocus
                   onBlur={() => { if (!searchQuery) setSearchOpen(false) }}
-                  className="flex-1 bg-transparent text-xs text-card placeholder-content-faint focus:outline-none"
+                  className="flex-1 bg-transparent text-xs text-ink placeholder-content-muted focus:outline-none"
                 />
-                <button type="button" onClick={() => { setSearchOpen(false); setSearchQuery('') }} className="text-content-faint hover:text-surface-deep text-xs">×</button>
+                <button type="button" onClick={() => { setSearchOpen(false); setSearchQuery('') }} className="text-content-muted hover:text-ink text-xs">×</button>
               </form>
             ) : (
               <button
                 onClick={() => setSearchOpen(true)}
                 className={`block font-sans text-[15px] py-3 pl-4 pr-5 transition-colors w-full text-left ${
-                  isActive('/search') ? 'pl-[14px] border-l-2 border-accent text-card font-semibold' : 'text-content-faint hover:text-surface-deep hover:bg-content-secondary'
+                  isActive('/search') ? 'pl-[14px] border-l-2 border-accent text-ink font-semibold' : 'text-content-faint hover:text-content-secondary hover:bg-nav-hover'
                 }`}
               >
                 Search
@@ -245,12 +246,12 @@ export function Nav() {
             {user.avatar ? (
               <img src={user.avatar} alt="" className="h-7 w-7 rounded-full object-cover flex-shrink-0" />
             ) : (
-              <span className="flex h-7 w-7 items-center justify-center bg-content-secondary text-[10px] font-medium text-content-faint rounded-full flex-shrink-0">
+              <span className="flex h-7 w-7 items-center justify-center bg-surface-deep text-[10px] font-medium text-content-faint rounded-full flex-shrink-0">
                 {(user.displayName ?? user.username ?? '?')[0].toUpperCase()}
               </span>
             )}
             <div className="min-w-0">
-              <p className="font-sans text-xs text-content-faint leading-tight truncate group-hover:text-surface-deep transition-colors">
+              <p className="font-sans text-xs text-content-faint leading-tight truncate group-hover:text-content-secondary transition-colors">
                 {user.displayName ?? user.username}
               </p>
               <p className="text-[11px] text-content-muted tabular-nums">
@@ -259,7 +260,7 @@ export function Nav() {
             </div>
           </Link>
 
-          <button onClick={logout} className="text-xs text-content-faint hover:text-surface-deep transition-colors">
+          <button onClick={logout} className="text-xs text-content-faint hover:text-content-secondary transition-colors">
             Log out
           </button>
         </div>

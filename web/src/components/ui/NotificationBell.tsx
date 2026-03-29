@@ -211,10 +211,10 @@ export function NotificationBell() {
       <button
         ref={buttonRef}
         onClick={handleOpen}
-        className="flex items-center gap-2 pl-4 py-2.5 text-content-muted hover:text-ink transition-colors w-full"
+        className="flex items-center gap-2 pl-4 py-3 text-content-faint hover:text-content-secondary hover:bg-nav-hover transition-colors w-full"
         title="Notifications"
       >
-        <span className="font-sans text-sm">Notifications</span>
+        <span className="font-sans text-[15px]">Notifications</span>
         {unreadCount > 0 && (
           <span className="font-sans text-sm text-accent font-medium">
             {unreadCount > 99 ? '99+' : unreadCount}

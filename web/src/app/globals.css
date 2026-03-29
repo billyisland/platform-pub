@@ -129,7 +129,7 @@
     color: #4A6B5A;
   }
 
-  /* ----- Feed tabs (on dark green background) ----- */
+  /* ----- Feed tabs (on nav green background) ----- */
   .tab-feed {
     font-family: 'Source Sans 3', system-ui, sans-serif;
     font-size: 0.8125rem;
@@ -145,12 +145,12 @@
     margin-bottom: -2px;
   }
   .tab-feed-active {
-    color: #FFFAEF;
+    color: #0F1F18;
     font-weight: 600;
-    border-bottom-color: #FFFAEF;
+    border-bottom-color: #0F1F18;
   }
   .tab-feed:hover:not(.tab-feed-active) {
-    color: #DDEEE4;
+    color: #4A6B5A;
   }
 
   /* ----- Dashboard tab pills ----- */

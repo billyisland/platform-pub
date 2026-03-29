@@ -27,6 +27,10 @@ module.exports = {
         ink: {
           DEFAULT: '#0F1F18',
         },
+        nav: {
+          DEFAULT: '#DDEEE4',
+          hover: '#82A890',
+        },
         content: {
           DEFAULT: '#0F1F18',
           primary: '#0F1F18',
