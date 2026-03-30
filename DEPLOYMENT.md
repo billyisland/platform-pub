@@ -225,9 +225,9 @@ docker logs platform-pub-gateway-1 --tail 5
 # v3.24.0 — NoteComposer cleanup, mobile sticky fix, crimson brand, magic link email
 #
 # ── NoteComposer keyline removed ──
-# Removed bg-card background and mb-4 margin from NoteComposer wrapper.
-# The composer now blends into the nav background (bg-nav) with no
-# visible card edge or gap underneath.
+# Removed mb-4 margin from NoteComposer wrapper so the parchment card
+# sits flush against the tabs below, eliminating the visible keyline.
+# bg-card retained for parchment textarea background.
 # File: web/src/components/feed/NoteComposer.tsx
 #
 # ── Mobile sticky fix ──
