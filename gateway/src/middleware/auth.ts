@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from 'fastify'
 import { verifySession, refreshIfNeeded, type SessionPayload } from '../../shared/src/auth/session.js'
+import { pool } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -38,6 +39,16 @@ export async function requireAuth(
 
   if (!session || !session.sub) {
     reply.status(401).send({ error: 'Authentication required' })
+    return
+  }
+
+  // Check account status — suspended users must not retain API access
+  const accountRow = await pool.query<{ status: string }>(
+    'SELECT status FROM accounts WHERE id = $1',
+    [session.sub]
+  )
+  if (accountRow.rowCount === 0 || accountRow.rows[0].status !== 'active') {
+    reply.status(403).send({ error: 'Account suspended or not found' })
     return
   }
 

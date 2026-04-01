@@ -31,7 +31,7 @@ export async function authRoutes(app: FastifyInstance) {
   // POST /auth/signup
   // ---------------------------------------------------------------------------
 
-  app.post('/auth/signup', async (req, reply) => {
+  app.post('/auth/signup', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = SignupSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() })
@@ -66,7 +66,7 @@ export async function authRoutes(app: FastifyInstance) {
     email: z.string().email(),
   })
 
-  app.post('/auth/login', async (req, reply) => {
+  app.post('/auth/login', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = LoginSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() })

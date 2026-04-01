@@ -269,7 +269,7 @@ export async function articleRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { nostrEventId: string } }>(
     '/articles/:nostrEventId/gate-pass',
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const readerId = req.session!.sub!
       const readerPubkey = req.session!.pubkey

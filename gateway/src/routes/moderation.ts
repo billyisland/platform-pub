@@ -33,7 +33,7 @@ async function requireAdmin(req: any, reply: any): Promise<void> {
   if (reply.sent) return
 
   if (!isAdmin(req.session!.sub!)) {
-    reply.status(403).send({ error: 'Admin access required' })
+    return reply.status(403).send({ error: 'Admin access required' })
   }
 }
 

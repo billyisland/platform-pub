@@ -4,6 +4,7 @@ import sensible from '@fastify/sensible'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
+import rateLimit from '@fastify/rate-limit'
 import { authRoutes } from './routes/auth.js'
 import { signingRoutes } from './routes/signing.js'
 import { writerRoutes } from './routes/writers.js'
@@ -65,6 +66,13 @@ async function start() {
     limits: {
       fileSize: 12 * 1024 * 1024, // 12 MB (slightly above 10 MB limit to allow overhead)
     },
+  })
+
+  // Rate limiting — global default + per-route overrides
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: '1 minute',
+    keyGenerator: (req) => req.session?.sub ?? req.ip,
   })
 
   // Auth routes

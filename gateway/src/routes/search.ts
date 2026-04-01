@@ -29,7 +29,7 @@ export async function searchRoutes(app: FastifyInstance) {
     Querystring: { q: string; type?: string; limit?: string; offset?: string }
   }>(
     '/search',
-    { preHandler: optionalAuth },
+    { preHandler: optionalAuth, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const query = (req.query.q ?? '').trim()
       if (query.length < 2) {

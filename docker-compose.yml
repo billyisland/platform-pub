@@ -92,8 +92,6 @@ services:
       context: .
       dockerfile: payment-service/Dockerfile
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3001:3001"
     env_file: payment-service/.env
     depends_on:
       postgres:
@@ -112,8 +110,6 @@ services:
       context: .
       dockerfile: key-service/Dockerfile
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3002:3002"
     env_file: key-service/.env
     depends_on:
       postgres:
@@ -130,8 +126,6 @@ services:
       context: .
       dockerfile: key-custody/Dockerfile
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3004:3004"
     env_file: key-custody/.env
     depends_on:
       postgres:
@@ -183,8 +177,6 @@ services:
   blossom:
     image: ghcr.io/hzrd149/blossom-server:master
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3003:3000"
     volumes:
       - blossom_data:/app/data
       - ./blossom-config.yml:/app/config.yml:ro

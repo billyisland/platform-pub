@@ -207,7 +207,7 @@ export async function messageRoutes(app: FastifyInstance) {
       }
 
       const params: any[] = [conversationId, userId, limit]
-      let whereClause = 'dm.conversation_id = $1 AND dm.recipient_id = $2'
+      let whereClause = 'dm.conversation_id = $1 AND (dm.recipient_id = $2 OR dm.sender_id = $2)'
       if (before) {
         params.push(before)
         whereClause += ` AND dm.created_at < $4`
@@ -256,7 +256,7 @@ export async function messageRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { conversationId: string } }>(
     '/messages/:conversationId',
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const senderId = req.session!.sub!
       const { conversationId } = req.params

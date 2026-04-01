@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.27.2
+# platform.pub — Deployment Reference v3.28.0
 
 **Date:** 1 April 2026
-**Replaces:** v3.27.1 (see bottom for change log)
+**Replaces:** v3.27.2 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -38,12 +38,12 @@ Internal only:
 | postgres | postgres:16-alpine | 5432 (localhost only) | Shared database |
 | strfry | dockurr/strfry:latest | 4848→7777 | Nostr relay |
 | gateway | ./gateway/Dockerfile | 3000 (localhost only) | API gateway, auth, media upload |
-| payment | ./payment-service/Dockerfile | 3001 (localhost only) | Stripe, settlement, payouts |
-| keyservice | ./key-service/Dockerfile | 3002 (localhost only) | Vault encryption, NIP-44 key issuance |
-| key-custody | ./key-custody/Dockerfile | 3004 (localhost only) | Custodial Nostr keypair service |
+| payment | ./payment-service/Dockerfile | 3001 (Docker internal only) | Stripe, settlement, payouts |
+| keyservice | ./key-service/Dockerfile | 3002 (Docker internal only) | Vault encryption, NIP-44 key issuance |
+| key-custody | ./key-custody/Dockerfile | 3004 (Docker internal only) | Custodial Nostr keypair service |
 | web | ./web/Dockerfile | 3010→3000 | Next.js frontend |
 | nginx | nginx:alpine | 80, 443 | Reverse proxy, TLS, static media |
-| blossom | ghcr.io/hzrd149/blossom-server:master | 3003 (localhost only) | Nostr media federation |
+| blossom | ghcr.io/hzrd149/blossom-server:master | 3000 (Docker internal only) | Nostr media federation |
 | certbot | certbot/certbot | — | TLS certificate renewal |
 
 ### Docker volumes
@@ -204,6 +204,133 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v3.27.2
+
+No new migrations. No schema changes. Services changed: **gateway**, **payment-service**, **nginx**, plus all Dockerfiles and docker-compose.yml. Deploy order: **rebuild all services**.
+
+This release implements all high-priority fixes from the codebase audit (`FIXES.md` items 5–12): auth hardening, settlement idempotency, DM visibility, security headers, rate limiting, admin middleware fix, non-root containers, and internal port lockdown.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Install new gateway dependency (@fastify/rate-limit)
+cd gateway && npm install && cd ..
+
+# Rebuild ALL services (Dockerfiles changed for non-root user)
+docker compose build --no-cache
+docker compose up -d
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# All services should be running
+
+curl -s http://localhost:3000/health
+# Should return {"status":"ok","service":"gateway"}
+
+# Verify containers run as non-root
+docker exec platform-pub-gateway-1 whoami
+# Should return "app"
+
+# Verify internal services are not exposed on host
+ss -tlnp | grep -E '3001|3002|3003|3004'
+# Should return nothing (no host port bindings)
+
+# Verify nginx security headers
+curl -sI https://platform.pub | grep -i strict-transport
+# Should return Strict-Transport-Security header
+```
+
+Changes:
+
+```
+# v3.28.0 — High-priority audit fixes: auth, payments, security hardening
+#
+# ── Fix 5: Account status check in auth middleware ──
+# requireAuth now queries accounts.status after JWT verification.
+# Suspended accounts are rejected with 403 immediately, closing the
+# window where a suspended user retained full API access until JWT
+# expiry (up to 7 days).
+# File: gateway/src/middleware/auth.ts
+#
+# ── Fix 6: Settlement confirmation idempotency guard ──
+# confirmSettlement now checks stripe_charge_id before deducting from
+# the tab. Duplicate Stripe webhooks (payment_intent.succeeded) no
+# longer double-debit the reader. The UPDATE uses
+# AND stripe_charge_id IS NULL as a belt-and-braces guard.
+# File: payment-service/src/services/settlement.ts
+#
+# ── Fix 7: DM sender visibility ──
+# GET /messages/:conversationId WHERE clause changed from
+# dm.recipient_id = $2 to (dm.recipient_id = $2 OR dm.sender_id = $2).
+# Senders now see their own sent messages in conversation threads.
+# File: gateway/src/routes/messages.ts
+#
+# ── Fix 8: Nginx security headers ──
+# Added to the HTTPS server block: Strict-Transport-Security (HSTS,
+# 2-year max-age, includeSubDomains), X-Frame-Options DENY,
+# X-Content-Type-Options nosniff, Referrer-Policy
+# strict-origin-when-cross-origin, Permissions-Policy (camera,
+# microphone, geolocation disabled), Content-Security-Policy
+# (default-src 'self', script-src 'self', style-src 'self'
+# 'unsafe-inline', img-src 'self' data: blob:, connect-src 'self' wss:).
+# File: nginx.conf
+#
+# ── Fix 9: Gateway rate limiting ──
+# Installed @fastify/rate-limit. Global default: 100 req/min per
+# user (or IP for unauthenticated). Per-route overrides:
+#   - POST /auth/signup, /auth/login: 5 req/min per IP
+#   - POST /articles/:id/gate-pass: 20 req/min per user
+#   - GET /search: 30 req/min per IP
+#   - POST /messages/:conversationId (DM send): 10 req/min per user
+# Files: gateway/package.json, gateway/src/index.ts,
+#        gateway/src/routes/auth.ts, gateway/src/routes/articles.ts,
+#        gateway/src/routes/search.ts, gateway/src/routes/messages.ts
+#
+# ── Fix 10: requireAdmin return statement ──
+# Added missing return before reply.status(403).send() in requireAdmin.
+# Previously, execution fell through to the route handler after sending
+# the 403 response, allowing non-admin users to execute admin actions.
+# File: gateway/src/routes/moderation.ts
+#
+# ── Fix 11: Non-root Docker containers ──
+# All five Dockerfiles now create an unprivileged "app" user and
+# switch to it before CMD. Container escape no longer grants root
+# on the host.
+# Files: gateway/Dockerfile, payment-service/Dockerfile,
+#        key-service/Dockerfile, key-custody/Dockerfile, web/Dockerfile
+#
+# ── Fix 12: Internal service ports removed from host ──
+# Removed ports: bindings for payment (3001), keyservice (3002),
+# key-custody (3004), and blossom (3003) from docker-compose.yml.
+# These services communicate only via Docker's internal network.
+# Host processes can no longer bypass gateway auth by calling
+# internal services directly.
+# File: docker-compose.yml
+#
+# Files changed:
+#   gateway/src/middleware/auth.ts           — account status check
+#   payment-service/src/services/settlement.ts — idempotency guard
+#   gateway/src/routes/messages.ts           — sender visibility fix
+#   nginx.conf                               — security headers
+#   gateway/package.json                     — @fastify/rate-limit dep
+#   gateway/src/index.ts                     — rate limit registration
+#   gateway/src/routes/auth.ts               — per-route rate limits
+#   gateway/src/routes/articles.ts           — per-route rate limits
+#   gateway/src/routes/search.ts             — per-route rate limits
+#   gateway/src/routes/moderation.ts         — return statement fix
+#   gateway/Dockerfile                       — non-root user
+#   payment-service/Dockerfile               — non-root user
+#   key-service/Dockerfile                   — non-root user
+#   key-custody/Dockerfile                   — non-root user
+#   web/Dockerfile                           — non-root user
+#   docker-compose.yml                       — removed internal port bindings
+```
+
+---
 
 ### From v3.27.0
 

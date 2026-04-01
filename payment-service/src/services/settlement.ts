@@ -236,8 +236,9 @@ export class SettlementService {
         reader_id: string
         tab_id: string
         amount_pence: number
+        stripe_charge_id: string | null
       }>(
-        `SELECT id, reader_id, tab_id, amount_pence
+        `SELECT id, reader_id, tab_id, amount_pence, stripe_charge_id
          FROM tab_settlements
          WHERE stripe_payment_intent_id = $1`,
         [paymentIntentId]
@@ -249,9 +250,18 @@ export class SettlementService {
 
       const settlement = settlementRow.rows[0]
 
+      // Idempotency guard: if already confirmed, skip to prevent double-debit
+      if (settlement.stripe_charge_id !== null) {
+        logger.warn(
+          { settlementId: settlement.id, existingChargeId: settlement.stripe_charge_id, newChargeId: stripeChargeId },
+          'Settlement already confirmed — skipping duplicate webhook'
+        )
+        return
+      }
+
       // Record Stripe charge ID
       await client.query(
-        `UPDATE tab_settlements SET stripe_charge_id = $1 WHERE id = $2`,
+        `UPDATE tab_settlements SET stripe_charge_id = $1 WHERE id = $2 AND stripe_charge_id IS NULL`,
         [stripeChargeId, settlement.id]
       )
 
