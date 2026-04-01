@@ -53,6 +53,13 @@ function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: st
     new_subscriber: 'subscribed to your content',
     new_quote: 'quoted you',
     new_mention: 'mentioned you',
+    commission_request: 'sent you a commission request',
+    drive_funded: 'your pledge drive reached its goal',
+    pledge_fulfilled: 'a pledge drive you backed was published',
+    new_message: 'sent you a message',
+    free_pass_granted: 'granted you a free pass',
+    dm_payment_required: 'requires payment to message',
+    new_user: 'joined the platform',
   }
 
   return (
@@ -86,7 +93,7 @@ function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: st
         ) : (
           <p className="text-sm text-content-primary leading-snug">
             <span className="font-medium">{actorName}</span>
-            {' '}{labels[n.type] ?? n.type}
+            {' '}{labels[n.type] ?? 'sent you a notification'}
           </p>
         )}
         <p className="text-xs text-content-muted mt-1">{timeAgo(n.createdAt)}</p>

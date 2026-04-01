@@ -455,6 +455,31 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 // Helper — log subscription charge and earning events
 // =============================================================================
 
+// =============================================================================
+// Subscription expiry — call from a timer or cron job
+//
+// Transitions active subscriptions past their period end to 'expired'.
+// Stripe recurring billing can be layered on later — for now, subscriptions
+// simply expire and require manual renewal.
+// =============================================================================
+
+export async function expireAndRenewSubscriptions(): Promise<number> {
+  const result = await pool.query(
+    `UPDATE subscriptions
+     SET status = 'expired', updated_at = now()
+     WHERE status = 'active'
+       AND current_period_end < now()
+     RETURNING id`
+  )
+
+  const count = result.rowCount ?? 0
+  if (count > 0) {
+    logger.info({ count }, 'Expired past-due subscriptions')
+  }
+
+  return count
+}
+
 async function logSubscriptionCharge(
   client: any,
   subscriptionId: string,

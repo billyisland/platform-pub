@@ -15,17 +15,24 @@ import logger from '../lib/logger.js'
 //   5. Return the read event — caller (gate route) uses this to issue content key
 // =============================================================================
 
+const CONFIG_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
 export class AccrualService {
   private config: PlatformConfig | null = null
+  private configLoadedAt = 0
 
   async getConfig(): Promise<PlatformConfig> {
-    if (!this.config) this.config = await loadConfig()
+    if (!this.config || Date.now() - this.configLoadedAt > CONFIG_TTL_MS) {
+      this.config = await loadConfig()
+      this.configLoadedAt = Date.now()
+    }
     return this.config
   }
 
   // Call this on config changes rather than restarting the service
   invalidateConfig() {
     this.config = null
+    this.configLoadedAt = 0
   }
 
   // ---------------------------------------------------------------------------

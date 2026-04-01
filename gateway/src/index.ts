@@ -27,7 +27,8 @@ import { voteRoutes } from './routes/votes.js'
 import { historyRoutes } from './routes/history.js'
 import { freePassRoutes } from './routes/free-passes.js'
 import { messageRoutes } from './routes/messages.js'
-import { driveRoutes } from './routes/drives.js'
+import { driveRoutes, expireOverdueDrives } from './routes/drives.js'
+import { expireAndRenewSubscriptions } from './routes/subscriptions.js'
 import { pool } from '../shared/src/db/client.js'
 import logger from '../shared/src/lib/logger.js'
 
@@ -171,6 +172,25 @@ async function start() {
   const port = parseInt(process.env.PORT ?? '3000', 10)
   await app.listen({ port, host: '0.0.0.0' })
   logger.info({ port }, 'Gateway started')
+
+  // Background workers — run periodically after startup
+  const WORKER_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
+  setInterval(() => {
+    expireAndRenewSubscriptions().catch(err =>
+      logger.error({ err }, 'Subscription expiry worker failed')
+    )
+    expireOverdueDrives().catch(err =>
+      logger.error({ err }, 'Drive expiry worker failed')
+    )
+  }, WORKER_INTERVAL_MS)
+
+  // Run once on startup
+  expireAndRenewSubscriptions().catch(err =>
+    logger.error({ err }, 'Subscription expiry worker failed (startup)')
+  )
+  expireOverdueDrives().catch(err =>
+    logger.error({ err }, 'Drive expiry worker failed (startup)')
+  )
 }
 
 start().catch((err) => {

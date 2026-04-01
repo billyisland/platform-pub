@@ -83,6 +83,11 @@ services:
       APP_URL: https://platform.pub
       MEDIA_DIR: /app/media
       PUBLIC_MEDIA_URL: https://platform.pub/media
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ---------------------------------------------------------------------------
   # Payment service
@@ -101,6 +106,11 @@ services:
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ---------------------------------------------------------------------------
   # Key service
@@ -117,6 +127,11 @@ services:
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ---------------------------------------------------------------------------
   # Key custody — custodial Nostr keypair service (sole holder of ACCOUNT_KEY_HEX)
@@ -132,6 +147,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3004/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ---------------------------------------------------------------------------
   # Web client (Next.js)
@@ -149,6 +169,11 @@ services:
     env_file: web/.env
     depends_on:
       - gateway
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ---------------------------------------------------------------------------
   # Nginx — reverse proxy with TLS (Let's Encrypt)
@@ -169,6 +194,11 @@ services:
       - web
       - gateway
       - strfry
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ---------------------------------------------------------------------------
   # Blossom — Nostr media server (kept for future federation/BUD-02 support)
@@ -180,6 +210,11 @@ services:
     volumes:
       - blossom_data:/app/data
       - ./blossom-config.yml:/app/config.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ---------------------------------------------------------------------------
   # Certbot — automatic TLS certificates

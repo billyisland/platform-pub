@@ -23,6 +23,8 @@ import { optionalAuth } from '../middleware/auth.js'
 // GET /search?q=<query>&type=articles|writers&limit=20
 // =============================================================================
 
+const escapeLike = (s: string) => s.replace(/[%_\\]/g, '\\$&')
+
 export async function searchRoutes(app: FastifyInstance) {
 
   app.get<{
@@ -93,7 +95,7 @@ async function searchArticles(
        )
      ORDER BY similarity DESC, a.published_at DESC
      LIMIT $3 OFFSET $4`,
-    [query, `%${query}%`, limit, offset]
+    [query, `%${escapeLike(query)}%`, limit, offset]
   )
 
   const results = rows.map((r) => ({
@@ -148,7 +150,7 @@ async function searchWriters(
        CASE WHEN a.username ILIKE $2 THEN 0 ELSE 1 END,
        a.display_name
      LIMIT $3 OFFSET $4`,
-    [`%${query}%`, `${query}%`, limit, offset]
+    [`%${escapeLike(query)}%`, `${escapeLike(query)}%`, limit, offset]
   )
 
   const results = rows.map((r) => ({

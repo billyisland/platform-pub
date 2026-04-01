@@ -95,7 +95,12 @@ export function renderMarkdownSync(markdown: string): string {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>')
+    .replace(/\[(.+?)\]\((.+?)\)/g, (_match, text, href) => {
+      if (/^https?:\/\//.test(href) || href.startsWith('/') || href.startsWith('#')) {
+        return `<a href="${href}" rel="noopener noreferrer">${text}</a>`
+      }
+      return text // strip links with disallowed protocols (e.g. javascript:)
+    })
     .replace(/!\[(.+?)\]\((.+?)\)/g, '<img src="$2" alt="$1" loading="lazy" />')
     // Nostr URIs — link to njump.me for resolution
     .replace(/nostr:(npub1[a-z0-9]+)/g, '<a href="https://njump.me/$1" rel="noopener noreferrer">@$1</a>')

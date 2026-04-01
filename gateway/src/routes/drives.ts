@@ -222,8 +222,8 @@ export async function driveRoutes(app: FastifyInstance) {
 
       if (data.title) { updates.push(`title = $${idx++}`); params.push(data.title) }
       if (data.description !== undefined) { updates.push(`description = $${idx++}`); params.push(data.description) }
-      if (data.fundingTargetPence) { updates.push(`funding_target_pence = $${idx++}`); params.push(data.fundingTargetPence) }
-      if (data.suggestedPricePence) { updates.push(`suggested_price_pence = $${idx++}`); params.push(data.suggestedPricePence) }
+      if (data.fundingTargetPence !== undefined) { updates.push(`funding_target_pence = $${idx++}`); params.push(data.fundingTargetPence) }
+      if (data.suggestedPricePence !== undefined) { updates.push(`suggested_price_pence = $${idx++}`); params.push(data.suggestedPricePence) }
       if (data.deadline) { updates.push(`deadline = $${idx++}`); params.push(data.deadline) }
 
       if (updates.length === 0) {

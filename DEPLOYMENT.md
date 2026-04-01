@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.28.0
+# platform.pub — Deployment Reference v3.29.0
 
 **Date:** 1 April 2026
-**Replaces:** v3.27.2 (see bottom for change log)
+**Replaces:** v3.28.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -156,7 +156,7 @@ docker compose ps   # wait for postgres to be healthy
 
 ### 4. Apply schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v3.27.0, `schema.sql` includes all tables and columns from migrations 001–017, so a fresh install gets the complete database schema immediately.
+The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v3.27.0, `schema.sql` includes all tables and columns from migrations 001–017, so a fresh install gets the complete database schema immediately. Migration 018 (v3.29.0) adds ON DELETE clauses and must be run separately.
 
 Migrations still need to be run for **existing** databases that were initialised with an earlier `schema.sql`:
 
@@ -204,6 +204,124 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v3.28.0
+
+New migration (018). Services changed: **gateway**, **payment-service**, **web**, plus **docker-compose.yml**. Deploy order: **migrate → rebuild changed services**.
+
+This release implements all medium-priority fixes from the codebase audit (`FIXES.md` items 13–22): subscription expiry, XSS sanitisation, LIKE injection, config cache TTL, notification type sync, drive update truthiness, Docker health checks, auth hydration guard, and FK ON DELETE clauses.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Apply new migration (018 — ON DELETE clauses for FKs in migrations 016-017)
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/018_add_on_delete_clauses.sql
+
+# Rebuild changed services
+docker compose build gateway payment web
+docker compose up -d
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+# All services should show (healthy) after ~30s
+
+curl -s http://localhost:3000/health
+# Should return {"status":"ok","service":"gateway"}
+
+# Verify health checks are active on all services
+docker inspect --format='{{.State.Health.Status}}' platform-pub-gateway-1
+# Should return "healthy"
+
+# Verify subscription expiry worker ran on startup
+docker logs platform-pub-gateway-1 --tail 20 | grep -i "subscript"
+```
+
+Changes:
+
+```
+# v3.29.0 — Medium-priority audit fixes (FIXES.md items 13–22)
+#
+# ── Fix 13: Subscription lifecycle management ──
+# Added expireAndRenewSubscriptions() to transition active subscriptions
+# past their current_period_end to 'expired'. Runs on a 1-hour timer in
+# the gateway (also runs once on startup), alongside expireOverdueDrives.
+# Files: gateway/src/routes/subscriptions.ts, gateway/src/index.ts
+#
+# ── Fix 14: Sanitize renderMarkdownSync links ──
+# Added URL protocol allowlist to the regex-based link replacement.
+# Only http://, https://, /, and # hrefs are rendered as <a> tags.
+# Links with disallowed protocols (e.g. javascript:) are stripped to
+# plain text, closing the XSS vector.
+# File: web/src/lib/markdown.ts
+#
+# ── Fix 15: Escape LIKE metacharacters in search ──
+# Added escapeLike() helper that escapes %, _, and \ before wrapping
+# with % for ILIKE queries. Applied to both article search (title +
+# content_free) and writer search (username + display_name). Searching
+# for "%" no longer matches all rows.
+# File: gateway/src/routes/search.ts
+#
+# ── Fix 17: Config cache TTL in AccrualService ──
+# AccrualService cached platform config forever with no TTL.
+# invalidateConfig() existed but was never called. Added a 5-minute
+# TTL so config reloads automatically. invalidateConfig() also resets
+# the TTL timestamp.
+# File: payment-service/src/services/accrual.ts
+#
+# ── Fix 18: Sync notification types frontend/backend ──
+# Frontend Notification type union expanded from 5 to 12 types, adding:
+# commission_request, drive_funded, pledge_fulfilled, new_message,
+# free_pass_granted, dm_payment_required, new_user. Both NotificationBell
+# and the notifications page now have labels for all types plus a
+# fallback renderer for any future unrecognised types.
+# Files: web/src/lib/api.ts, web/src/components/ui/NotificationBell.tsx,
+#        web/src/app/notifications/page.tsx
+#
+# ── Fix 19: Drive update truthiness fix ──
+# Changed if (data.fundingTargetPence) and if (data.suggestedPricePence)
+# to !== undefined checks. Previously, setting either field to 0 was
+# silently skipped because 0 is falsy.
+# File: gateway/src/routes/drives.ts
+#
+# ── Fix 20: Docker health checks ──
+# Added healthcheck blocks to all 7 services that were missing them:
+# gateway (:3000), payment (:3001), keyservice (:3002), key-custody
+# (:3004), web (:3000), nginx (:80), blossom (:3003). All backend
+# services already had /health endpoints.
+# File: docker-compose.yml
+#
+# ── Fix 21: Auth hydration guard ──
+# AuthProvider now renders a loading spinner until fetchMe() resolves,
+# preventing children from rendering in an indeterminate auth state.
+# Protected routes no longer flash or redirect incorrectly on page load.
+# File: web/src/components/layout/AuthProvider.tsx
+#
+# ── Fix 22: ON DELETE clauses for migrations 016-017 ──
+# New migration 018 drops and re-adds 6 FK constraints with ON DELETE
+# CASCADE: conversations.created_by, dm_pricing.owner_id,
+# dm_pricing.target_id, pledge_drives.creator_id,
+# pledge_drives.target_writer_id, pledges.pledger_id.
+# File: migrations/018_add_on_delete_clauses.sql (new)
+#
+# Files changed:
+#   gateway/src/routes/subscriptions.ts       — subscription expiry function
+#   gateway/src/index.ts                      — expiry workers on timer
+#   gateway/src/routes/search.ts              — escapeLike helper
+#   gateway/src/routes/drives.ts              — truthiness fix
+#   payment-service/src/services/accrual.ts   — config cache TTL
+#   web/src/lib/markdown.ts                   — link sanitisation
+#   web/src/lib/api.ts                        — notification type union
+#   web/src/components/ui/NotificationBell.tsx — notification labels
+#   web/src/app/notifications/page.tsx         — notification labels
+#   web/src/components/layout/AuthProvider.tsx — loading guard
+#   docker-compose.yml                        — health checks
+#   migrations/018_add_on_delete_clauses.sql   — FK ON DELETE clauses (new)
+```
+
+---
 
 ### From v3.27.2
 

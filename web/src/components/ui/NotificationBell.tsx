@@ -78,9 +78,15 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
       new_subscriber: 'subscribed to your content',
       new_quote: 'quoted you',
       new_mention: 'mentioned you',
+      commission_request: 'sent you a commission request',
+      drive_funded: 'your pledge drive reached its goal',
+      pledge_fulfilled: 'a pledge drive you backed was published',
+      new_message: 'sent you a message',
+      free_pass_granted: 'granted you a free pass',
+      dm_payment_required: 'requires payment to message',
+      new_user: 'joined the platform',
     }
-    const label = simpleLabels[n.type]
-    if (!label) return null
+    const label = simpleLabels[n.type] ?? 'sent you a notification'
     body = (
       <>
         <p className="text-xs text-ink leading-snug">

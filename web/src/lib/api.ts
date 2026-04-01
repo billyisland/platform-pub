@@ -353,9 +353,23 @@ export interface NotificationActor {
   avatar: string | null
 }
 
+export type NotificationType =
+  | 'new_follower'
+  | 'new_reply'
+  | 'new_subscriber'
+  | 'new_quote'
+  | 'new_mention'
+  | 'commission_request'
+  | 'drive_funded'
+  | 'pledge_fulfilled'
+  | 'new_message'
+  | 'free_pass_granted'
+  | 'dm_payment_required'
+  | 'new_user'
+
 export interface Notification {
   id: string
-  type: 'new_follower' | 'new_reply' | 'new_subscriber' | 'new_quote' | 'new_mention'
+  type: NotificationType
   read: boolean
   createdAt: string
   actor: NotificationActor | null
