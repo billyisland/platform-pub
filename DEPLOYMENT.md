@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v3.27.1
+# platform.pub — Deployment Reference v3.27.2
 
 **Date:** 1 April 2026
-**Replaces:** v3.27.0 (see bottom for change log)
+**Replaces:** v3.27.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -2517,6 +2517,189 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v3.27.2 — 1 April 2026
+
+**Nav notification button alignment, wordmark parchment background**
+
+No schema changes. Services rebuilt: **web only**.
+
+**Notification bell alignment**
+
+The `NotificationBell` component in the desktop sidebar used different styling from other nav items — smaller font (`text-[15px]` vs `text-[17px]`), tighter padding (`py-3 pl-4` vs `py-[14px] pl-5 pr-5`), and no left border. Updated to match `sidebarLinkClass`: `text-[17px]`, `py-[14px]`, `pl-5 pr-5`, `border-l-4 border-transparent`, `font-medium`.
+
+**Wordmark parchment background**
+
+Added parchment background (`#FFFAEF` / `card` token) to the "Platform" wordmark box in the nav header. The red-bordered wordmark now sits on a warm parchment fill instead of being transparent against the green nav.
+
+**Files changed:**
+- `web/src/components/ui/NotificationBell.tsx` — aligned sidebar button classes with other nav items
+- `web/src/components/layout/Nav.tsx` — added `backgroundColor: '#FFFAEF'` to wordmark style
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build --no-cache web && docker compose up -d web`
+
+No migrations required.
+
+---
+
+### v3.27.1 — 1 April 2026
+
+**Migration 015 — create article_unlocks if missing**
+
+No new schema changes beyond ensuring table existence. Services rebuilt: **gateway, key-service**.
+
+Migration 015 failed on production because `article_unlocks` did not exist. The table should have been created by migration 005, but on databases where 005 was bootstrapped (marked applied without running its SQL), the table was never created. Migration 015 now creates the table with `IF NOT EXISTS` before altering the constraint.
+
+**Files changed:**
+- `migrations/015_access_mode_and_unlock_types.sql` — added `CREATE TABLE IF NOT EXISTS article_unlocks` guard
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build --no-cache gateway && docker compose up -d`
+3. Migrations run automatically on startup
+
+---
+
+### v3.27.0 — 1 April 2026
+
+**Critical audit fixes — schema.sql, drive fulfilment, gate-pass idempotency**
+
+No new migrations. Services rebuilt: **gateway, key-service**.
+
+**schema.sql regenerated**
+
+Regenerated `schema.sql` to include all tables from migrations 001–017. Fresh Docker installs using `schema.sql` for bootstrapping no longer break due to missing tables.
+
+**Drive fulfilment transaction safety**
+
+Wrapped `checkAndTriggerDriveFulfilment` in `withTransaction` so the `FOR UPDATE` lock is held through the subsequent `UPDATE`. Prevents double fulfilment under concurrent pledges.
+
+**Gate-pass idempotency**
+
+Moved `recordPurchaseUnlock` before key issuance in the gate-pass flow. If key issuance fails and the reader retries, the existing unlock record is found and the reader is not re-charged.
+
+**Files changed:**
+- `schema.sql` — regenerated from migrations 001–017
+- `gateway/src/routes/articles.ts` — gate-pass idempotency reorder
+- `gateway/src/routes/drives.ts` — transaction wrapper for fulfilment check
+- `key-service/src/services/verification.ts` — removed misleading comments and dead provisional-check code
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build --no-cache gateway key-service && docker compose up -d`
+
+No new migrations required (schema.sql is for fresh installs only).
+
+---
+
+### v3.26.0 — 31 March 2026
+
+**Design Spec v2 — chunky, robust, spirited refresh**
+
+No schema changes. Services rebuilt: **web only**.
+
+Thicker rules, heavier buttons with typewriter-key depress effect, larger type scale (13px minimum), accent-border article cards, new homepage sections (manifesto, how-it-works, featured writers), crimson-bordered paywall gate, and input field borders on auth.
+
+**Files changed:**
+- `web/tailwind.config.js` — updated design tokens
+- `web/src/app/globals.css` — global style adjustments
+- `web/src/app/page.tsx` — new homepage sections (manifesto, how-it-works, featured writers)
+- `web/src/app/auth/page.tsx` — input field border styling
+- `web/src/components/layout/Nav.tsx` — heavier nav styling
+- `web/src/components/article/ArticleReader.tsx` — thicker rules, larger type
+- `web/src/components/article/PaywallGate.tsx` — crimson-bordered paywall gate
+- `web/src/components/feed/ArticleCard.tsx` — accent-border article cards
+- `web/src/components/feed/FeedView.tsx` — layout adjustments
+- `web/src/components/feed/NoteCard.tsx` — type scale update
+- `web/src/components/feed/NoteComposer.tsx` — heavier button styling
+- `web/src/components/home/FeaturedWriters.tsx` — new featured writers section
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build --no-cache web && docker compose up -d web`
+
+No migrations required.
+
+---
+
+### v3.25.0 — 31 March 2026
+
+**DMs, pledge drives, free passes, invitation-only articles**
+
+Three new migrations (015–017). Services rebuilt: **gateway**.
+
+**Access mode column**
+
+Replaced `is_paywalled` boolean with `access_mode` column (`public`, `paywalled`, `invitation_only`). Migration 015 adds the column and backfills from existing data.
+
+**Free passes**
+
+Authors can grant free article access to specific readers. Creates an `article_unlocks` row with `unlock_type = 'free_pass'` — no revenue event is generated.
+
+**Invitation-only articles**
+
+New access mode where gate-pass returns `403 invitation_required`. Only readers with a free pass can access the content.
+
+**Direct messages**
+
+NIP-17 end-to-end encrypted conversations. New `direct_messages` table (migration 016) and route module. DM pricing is configurable per writer.
+
+**Pledge drives**
+
+Crowdfunding / commission system. New `pledge_drives` and `pledges` tables (migration 017). Fulfilment is async via the existing settlement pipeline.
+
+**Files changed:**
+- `migrations/015_access_mode_and_unlock_types.sql` — access_mode column, unlock_type expansion
+- `migrations/016_direct_messages.sql` — direct_messages table
+- `migrations/017_pledge_drives.sql` — pledge_drives and pledges tables
+- `schema.sql` — regenerated
+- `seed.sql` — updated for new schema
+- `gateway/src/index.ts` — register new route modules
+- `gateway/src/routes/articles.ts` — access_mode logic, free pass support
+- `gateway/src/routes/drives.ts` — pledge drive CRUD and fulfilment
+- `gateway/src/routes/free-passes.ts` — free pass grant/revoke
+- `gateway/src/routes/messages.ts` — DM routes
+- `gateway/src/routes/notes.ts` — minor adjustments
+- `gateway/src/routes/search.ts` — search across new content types
+- `gateway/src/routes/export.ts` — include new data in exports
+- `gateway/src/routes/history.ts` — history for new unlock types
+- `gateway/src/routes/writers.ts` — writer DM pricing config
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build --no-cache gateway && docker compose up -d`
+3. Migrations 015–017 run automatically on startup
+
+---
+
+### v3.24.0 — 30 March 2026
+
+**Composer fixes, crimson brand nav**
+
+No schema changes. Services rebuilt: **web only**.
+
+Removed `NoteComposer` bottom keyline (dropped `mb-4`), fixed mobile sticky positioning alignment, swapped brand logo from parchment to crimson colour scheme. Subsequently restored parchment background (`bg-card`) on `NoteComposer` wrapper to keep the warm textarea background while keeping the keyline removed.
+
+**Files changed:**
+- `web/src/components/layout/Nav.tsx` — crimson brand logo colour
+- `web/src/components/feed/NoteComposer.tsx` — removed keyline, restored bg-card
+- `web/src/components/feed/FeedView.tsx` — sticky offset alignment
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build --no-cache web && docker compose up -d web`
+
+No migrations required.
+
+---
 
 ### v3.23.0 — 29 March 2026
 

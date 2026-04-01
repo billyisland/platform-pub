@@ -72,6 +72,7 @@ export function Nav() {
             fontWeight: '700',
             letterSpacing: '-0.02em',
             color: '#B5242A',
+            backgroundColor: '#FFFAEF',
             border: '3.5px solid #B5242A',
           }}
         >
