@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { ThereforeMark } from '../../components/icons/ThereforeMark'
 
 export default function AboutPage() {
   return (
@@ -36,7 +37,9 @@ export default function AboutPage() {
         </p>
       </div>
 
-      <div className="ornament mb-12" />
+      <div className="ornament mb-12">
+        <ThereforeMark size={24} weight="light" />
+      </div>
 
       <div className="text-center">
         <Link href="/auth?mode=signup" className="btn text-base px-10 py-4">

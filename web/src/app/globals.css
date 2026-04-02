@@ -117,13 +117,10 @@
   /* ----- Ornament divider ----- */
   .ornament {
     @apply text-center select-none;
-    font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-    letter-spacing: 0.5em;
-    font-size: 0.75rem;
-    color: #999999;
-  }
-  .ornament::before {
-    content: '· · ·';
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #B5242A;
   }
 
   /* ----- Rules ----- */

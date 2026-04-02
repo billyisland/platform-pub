@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v4.5.0
+# platform.pub — Deployment Reference v4.6.0
 
 **Date:** 2 April 2026
-**Replaces:** v4.4.0 (see bottom for change log)
+**Replaces:** v4.5.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -3840,6 +3840,48 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v4.6.0 — 2 April 2026
+
+**Logo & mark, bug fixes (quote links, paywall prompts)**
+
+No new migrations. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
+
+**Bug fixes:**
+
+- `gateway/src/routes/notes.ts`: `/content/resolve` article query used `a.avatar` (non-existent column) instead of `a.avatar_blossom_url AS avatar`. This caused all article resolutions to fail with a SQL error, breaking quoted-article links in notes. Fixed.
+- `web/src/components/article/PaywallGate.tsx`: removed "Add a payment method to continue" prompt shown when free allowance is exhausted. Since payment method attachment is not yet implemented, the gate now always shows "Keep reading" / "This will be added to your reading tab" and the tab silently keeps accruing.
+- `web/src/components/article/ArticleReader.tsx`: removed "Add a card" error message from the 402 error handler. Removed "Go to settings" link from PaywallGate error display.
+- `gateway/src/routes/articles.ts`: gate-pass 402 error message no longer references payment methods.
+
+**Therefore mark (∴) — identity and ornament system:**
+
+- New component: `web/src/components/icons/ThereforeMark.tsx` — reusable SVG mark with `heavy` (r=4.0, identity) and `light` (r=2.8, ornament) weights. Accepts `size`, `weight`, `className` props.
+- Platform-mode nav: mark (22×18px, crimson) + "Platform" wordmark lockup replaces plain text logo.
+- Canvas-mode nav: mark only (16×13px, grey-400) replaces plain text logo.
+- Section ornament: `· · ·` text ornament (CSS `::before` pseudo-element) replaced by `<ThereforeMark>` light weight throughout. Ornament colour is crimson in platform mode, grey-400 in canvas mode (article reader).
+- PaywallGate inline `· · ·` replaced with `<ThereforeMark>` component.
+- `web/src/app/globals.css`: `.ornament` class changed from text-based `::before` to a flex container for the SVG component.
+- New favicon: `web/public/favicon.svg` — crimson dots (r=4.8 for legibility at small sizes).
+- `web/src/app/layout.tsx`: added `<link rel="icon" href="/favicon.svg" type="image/svg+xml" />`.
+
+**New files:**
+- `web/src/components/icons/ThereforeMark.tsx`
+- `web/public/favicon.svg`
+
+**Modified files:**
+- `gateway/src/routes/notes.ts` — avatar column fix in content resolve
+- `gateway/src/routes/articles.ts` — gate-pass 402 message cleanup
+- `web/src/components/layout/Nav.tsx` — mark + wordmark lockup (platform mode), mark only (canvas mode)
+- `web/src/app/globals.css` — ornament class rewritten
+- `web/src/components/article/ArticleReader.tsx` — ThereforeMark ornament, error message cleanup
+- `web/src/components/article/PaywallGate.tsx` — ThereforeMark ornament, payment method prompt removed
+- `web/src/app/page.tsx` — ThereforeMark ornament
+- `web/src/app/about/page.tsx` — ThereforeMark ornament
+- `web/src/app/auth/page.tsx` — ThereforeMark ornament
+- `web/src/app/layout.tsx` — favicon link
+
+---
 
 ### v4.5.0 — 2 April 2026
 

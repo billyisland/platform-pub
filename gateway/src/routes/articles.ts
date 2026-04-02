@@ -436,7 +436,7 @@ export async function articleRoutes(app: FastifyInstance) {
           if (status === 402) {
             return reply.status(402).send({
               error: body?.error ?? 'payment_required',
-              message: 'Free allowance exhausted — add a payment method.',
+              message: 'Payment required.',
             })
           }
 

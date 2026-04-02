@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { FeaturedWriters } from '../components/home/FeaturedWriters'
+import { ThereforeMark } from '../components/icons/ThereforeMark'
 
 export default function HomePage() {
   return (
@@ -97,7 +98,9 @@ export default function HomePage() {
       </section>
 
       {/* ── Section 5: Closing ornament ── */}
-      <div className="mt-32 ornament" />
+      <div className="mt-32 ornament">
+        <ThereforeMark size={24} weight="light" />
+      </div>
     </div>
   )
 }

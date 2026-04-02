@@ -233,7 +233,7 @@ export async function noteRoutes(app: FastifyInstance) {
         const articleResult = await pool.query(
           `SELECT ar.nostr_event_id, ar.title, ar.nostr_d_tag, ar.summary,
                   ar.content_free, ar.access_mode, ar.published_at,
-                  a.username, a.display_name, a.avatar
+                  a.username, a.display_name, a.avatar_blossom_url AS avatar
            FROM articles ar
            JOIN accounts a ON a.id = ar.writer_id
            WHERE ar.nostr_event_id = $1`,

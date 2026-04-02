@@ -12,6 +12,7 @@ import { ShareButton } from '../ui/ShareButton'
 import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
 import { NoteComposer } from '../feed/NoteComposer'
+import { ThereforeMark } from '../icons/ThereforeMark'
 import { articles as articlesApi } from '../../lib/api'
 import type { ArticleEvent } from '../../lib/ndk'
 
@@ -121,7 +122,7 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
       try { gatePassResult = await articlesApi.gatePass(article.id) }
       catch (err: any) {
         if (err.status === 402) {
-          setUnlockError(!user.hasPaymentMethod && user.freeAllowanceRemainingPence <= 0 ? 'Your free allowance has been used. Add a card.' : 'Payment required.')
+          setUnlockError('Payment required.')
           return
         }
         throw err
@@ -271,7 +272,9 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
 
               {paywallBody && <div className="prose prose-lg mt-10" dangerouslySetInnerHTML={{ __html: paywallHtml }} />}
 
-              <div className="ornament mt-16 mb-12" />
+              <div className="ornament mt-16 mb-12">
+                <ThereforeMark size={24} weight="light" className="text-grey-400" />
+              </div>
               <ReplySection targetEventId={article.id} targetKind={30023} targetAuthorPubkey={article.pubkey} contentAuthorId={undefined} />
             </article>
 

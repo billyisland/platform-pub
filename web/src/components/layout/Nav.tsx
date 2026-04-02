@@ -7,6 +7,7 @@ import { useAuth } from '../../stores/auth'
 import type { MeResponse } from '../../lib/api'
 import { useLayoutModeContext } from './LayoutShell'
 import { ExportModal } from '../ExportModal'
+import { ThereforeMark } from '../icons/ThereforeMark'
 
 // ─── Nav link styling (Plex Mono, uppercase) ─────────────────────────────────
 
@@ -241,12 +242,16 @@ export function Nav() {
       <>
         <header className="fixed top-0 inset-x-0 z-50 bg-white/95 backdrop-blur-sm border-b border-grey-100">
           <div className="flex items-center justify-between px-6 h-[56px] max-w-content mx-auto">
-            {/* Logo — small, grey */}
+            {/* Logo — mark only, grey */}
             <Link
               href={logoHref}
-              className="font-serif text-[16px] font-medium italic text-grey-400 hover:text-grey-600 transition-colors"
+              className="flex-shrink-0"
             >
-              Platform
+              <ThereforeMark
+                size={16}
+                weight="heavy"
+                className="text-grey-400 hover:text-grey-600 transition-colors"
+              />
             </Link>
 
             {/* Back to feed */}
@@ -292,12 +297,21 @@ export function Nav() {
 
           {/* Left: logo + nav links */}
           <div className="flex items-center gap-6">
-            {/* Logo */}
+            {/* Logo — mark + wordmark lockup */}
             <Link
               href={logoHref}
-              className="font-serif text-[22px] font-medium italic text-crimson hover:text-crimson-dark transition-colors flex-shrink-0"
+              className="flex items-center gap-[7px] flex-shrink-0 group"
             >
-              Platform
+              <ThereforeMark
+                size={22}
+                weight="heavy"
+                className="text-crimson group-hover:text-crimson-dark transition-colors"
+              />
+              <span className="font-serif text-[20px] font-medium italic text-crimson group-hover:text-crimson-dark transition-colors leading-none"
+                style={{ letterSpacing: '-0.01em' }}
+              >
+                Platform
+              </span>
             </Link>
 
             {/* Nav links — hidden on mobile */}
