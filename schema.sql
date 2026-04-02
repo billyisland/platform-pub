@@ -1,6 +1,6 @@
 -- =============================================================================
 -- platform.pub — PostgreSQL Schema
--- Full schema incorporating migrations 001–017.
+-- Full schema incorporating migrations 001–025.
 -- Loaded by Docker initdb.d on first boot.
 -- =============================================================================
 
@@ -835,3 +835,46 @@ CREATE TRIGGER trg_reading_tabs_updated_at
 CREATE TRIGGER trg_pledge_drives_updated_at
   BEFORE UPDATE ON pledge_drives
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- =============================================================================
+-- Migration tracking
+--
+-- Pre-seed the _migrations table so the migration runner knows that a fresh
+-- database initialised from this schema already includes everything through
+-- migration 025. Without this, the runner would attempt to re-apply all
+-- migrations on a fresh deploy.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS _migrations (
+  id SERIAL PRIMARY KEY,
+  filename TEXT NOT NULL UNIQUE,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO _migrations (filename) VALUES
+  ('001_add_email_and_magic_links.sql'),
+  ('002_draft_upsert_index.sql'),
+  ('003_comments.sql'),
+  ('004_media_uploads.sql'),
+  ('005_subscriptions.sql'),
+  ('006_receipt_portability.sql'),
+  ('007_subscription_nostr_event.sql'),
+  ('008_deduplicate_articles.sql'),
+  ('009_notifications.sql'),
+  ('010_votes.sql'),
+  ('011_store_ciphertext.sql'),
+  ('012_notification_note_id.sql'),
+  ('013_note_excerpt_fields.sql'),
+  ('014_notification_dedup.sql'),
+  ('015_access_mode_and_unlock_types.sql'),
+  ('016_direct_messages.sql'),
+  ('017_pledge_drives.sql'),
+  ('018_add_on_delete_clauses.sql'),
+  ('019_fix_notification_dedup.sql'),
+  ('020_notification_routing_columns.sql'),
+  ('021_missing_on_delete_clauses.sql'),
+  ('022_composite_index_read_events.sql'),
+  ('023_subscription_auto_renew.sql'),
+  ('024_annual_subscriptions.sql'),
+  ('025_comp_subscriptions.sql')
+ON CONFLICT (filename) DO NOTHING;
