@@ -64,7 +64,7 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
         <p className="text-xs text-black leading-snug">
           <span className="font-medium">{actorName}</span>{' '}followed you
         </p>
-        <p className="text-[11px] text-grey-300 mt-0.5">{timeAgo(n.createdAt)}</p>
+        <p className="text-[12px] text-grey-300 mt-0.5">{timeAgo(n.createdAt)}</p>
       </>
     )
   } else if (n.type === 'new_reply') {
@@ -76,9 +76,9 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
           {n.article?.title && <>{' to '}<span className="italic">{n.article.title}</span></>}
         </p>
         {n.comment?.content && (
-          <p className="text-[11px] text-grey-300 mt-1 line-clamp-2 leading-snug">{n.comment.content}</p>
+          <p className="text-[12px] text-grey-300 mt-1 line-clamp-2 leading-snug">{n.comment.content}</p>
         )}
-        <p className="text-[11px] text-grey-300 mt-0.5">{timeAgo(n.createdAt)}</p>
+        <p className="text-[12px] text-grey-300 mt-0.5">{timeAgo(n.createdAt)}</p>
       </>
     )
   } else {
@@ -100,7 +100,7 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
         <p className="text-xs text-black leading-snug">
           <span className="font-medium">{actorName}</span>{' '}{label}
         </p>
-        <p className="text-[11px] text-grey-300 mt-0.5">{timeAgo(n.createdAt)}</p>
+        <p className="text-[12px] text-grey-300 mt-0.5">{timeAgo(n.createdAt)}</p>
       </>
     )
   }
@@ -206,7 +206,7 @@ export function NotificationBell() {
       <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grey-200/40 flex-shrink-0">
         <span className="font-sans text-sm font-medium text-black">Notifications</span>
         {loading && (
-          <span className="text-[11px] text-grey-300">Loading…</span>
+          <span className="text-[12px] text-grey-300">Loading…</span>
         )}
       </div>
 

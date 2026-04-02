@@ -65,7 +65,7 @@ function FeaturedCard({ article }: { article: FeaturedArticle }) {
       style={{ borderLeft: article.isPaywalled ? '3px solid #B5242A' : '3px solid transparent' }}
     >
       {article.authorDisplayName && (
-        <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 mb-2.5">
+        <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300 mb-2.5">
           {article.authorDisplayName}
         </p>
       )}
@@ -78,7 +78,7 @@ function FeaturedCard({ article }: { article: FeaturedArticle }) {
         {excerpt}
       </p>
 
-      <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-300">
+      <div className="flex items-center gap-3 font-mono text-[12px] uppercase tracking-[0.02em] text-grey-300">
         <span>{formatDateRelative(article.publishedAt)}</span>
         <span className="opacity-40">/</span>
         <span>{readMinutes} min</span>

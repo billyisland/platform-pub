@@ -20,7 +20,7 @@ export function PaymentSection() {
                 <p className="text-[14px] font-sans text-black">Card connected</p>
                 <p className="text-[13px] font-sans text-grey-300 mt-0.5">Your reading tab settles automatically.</p>
               </div>
-              <span className="font-mono text-[11px] text-grey-400 uppercase tracking-[0.06em]">Active</span>
+              <span className="font-mono text-[12px] text-grey-400 uppercase tracking-[0.06em]">Active</span>
             </div>
           ) : (
             <div>
@@ -39,7 +39,7 @@ export function PaymentSection() {
                 <p className="text-[14px] font-sans text-black">Stripe Connect</p>
                 <p className="text-[13px] font-sans text-grey-300 mt-0.5">Verified — payouts enabled.</p>
               </div>
-              <span className="font-mono text-[11px] text-grey-400 uppercase tracking-[0.06em]">Verified</span>
+              <span className="font-mono text-[12px] text-grey-400 uppercase tracking-[0.06em]">Verified</span>
             </div>
           ) : (
             <div className="flex items-center justify-between">

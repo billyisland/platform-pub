@@ -105,7 +105,7 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
                     <p className="font-serif italic text-sm text-grey-600 leading-relaxed line-clamp-3 mt-0.5">
                       {activeQuote.highlightedText.trim().split(/\s+/).slice(0, 80).join(' ')}
                     </p>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.02em] text-grey-300 mt-1">
+                    <p className="font-mono text-[12px] uppercase tracking-[0.02em] text-grey-300 mt-1">
                       {activeQuote.previewTitle && <span>{activeQuote.previewTitle}</span>}
                       {activeQuote.previewTitle && activeQuote.previewAuthorName && ' — '}
                       {activeQuote.previewAuthorName}
@@ -113,7 +113,7 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
                   </>
                 ) : (
                   <>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.02em] text-grey-400">
+                    <p className="font-mono text-[12px] uppercase tracking-[0.02em] text-grey-400">
                       {activeQuote.previewAuthorName ?? activeQuote.authorPubkey.slice(0, 10) + '…'}
                     </p>
                     {activeQuote.previewTitle && (
@@ -149,7 +149,7 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
           )}
 
           <div className="mt-3 flex items-center justify-between">
-            <span className={`font-mono text-[11px] transition-colors ${isOver ? 'text-crimson font-medium' : charCount > NOTE_CHAR_LIMIT - 50 ? 'text-crimson' : 'text-grey-300'}`}>
+            <span className={`font-mono text-[12px] transition-colors ${isOver ? 'text-crimson font-medium' : charCount > NOTE_CHAR_LIMIT - 50 ? 'text-crimson' : 'text-grey-300'}`}>
               {charCount > 0 && `${charCount}/${NOTE_CHAR_LIMIT}`}
             </span>
             <div className="flex items-center gap-2">

@@ -46,13 +46,13 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300">
+            <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
               {isCommission ? 'Commission' : 'Crowdfund'}
             </span>
             {drive.pinnedOnProfile && (
-              <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-crimson">Pinned</span>
+              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-crimson">Pinned</span>
             )}
-            <span className={`font-mono text-[11px] uppercase tracking-[0.06em] ${
+            <span className={`font-mono text-[12px] uppercase tracking-[0.06em] ${
               drive.status === 'funded' ? 'text-black' : drive.status === 'cancelled' ? 'text-grey-300' : 'text-grey-400'
             }`}>
               {drive.status}
@@ -68,7 +68,7 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
           <p className="font-serif text-lg text-black">
             £{(drive.currentAmountPence / 100).toFixed(2)}
           </p>
-          <p className="font-mono text-[11px] text-grey-300 uppercase tracking-[0.06em]">
+          <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
             of £{(drive.targetAmountPence / 100).toFixed(2)}
           </p>
         </div>
@@ -81,7 +81,7 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
           style={{ width: `${progressPct}%` }}
         />
       </div>
-      <p className="font-mono text-[11px] text-grey-300 mt-1 uppercase tracking-[0.06em]">
+      <p className="font-mono text-[12px] text-grey-300 mt-1 uppercase tracking-[0.06em]">
         {progressPct}% · {drive.pledgeCount} {drive.pledgeCount === 1 ? 'pledge' : 'pledges'}
       </p>
 

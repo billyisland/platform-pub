@@ -56,20 +56,20 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
   return (
     <div
       onClick={handleCardClick}
-      className="py-6 cursor-pointer border-b border-grey-100"
-      style={{ borderLeft: isPaid ? '3px solid #B5242A' : '3px solid transparent', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}
+      className="py-8 cursor-pointer border-b border-grey-200"
+      style={{ borderLeft: isPaid ? '4px solid #B5242A' : '4px solid #E5E5E5', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}
     >
       {/* Byline — Plex Mono caps */}
       {authorHref ? (
         <Link
           href={authorHref}
           onClick={(e) => e.stopPropagation()}
-          className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 hover:text-grey-600 transition-colors mb-2.5 inline-block"
+          className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400 hover:text-grey-600 transition-colors mb-2.5 inline-block"
         >
           {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
         </Link>
       ) : (
-        <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 mb-2.5">
+        <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400 mb-2.5">
           {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
         </p>
       )}
@@ -85,20 +85,20 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
       </p>
 
       {/* Metadata — Plex Mono caps */}
-      <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-300">
+      <div className="flex items-center gap-3 font-mono text-[12px] uppercase tracking-[0.02em] text-grey-400">
         <time dateTime={new Date(article.publishedAt * 1000).toISOString()}>{formatDateRelative(article.publishedAt)}</time>
-        <span className="opacity-40">/</span>
+        <span className="opacity-60">/</span>
         <span>{readMinutes} min</span>
         {replyCount !== null && replyCount > 0 && (
-          <><span className="opacity-40">/</span><span>{replyCount} {replyCount !== 1 ? 'replies' : 'reply'}</span></>
+          <><span className="opacity-60">/</span><span>{replyCount} {replyCount !== 1 ? 'replies' : 'reply'}</span></>
         )}
         {isPaid && article.pricePence && (
-          <><span className="opacity-40">/</span><span className="text-crimson">£{(article.pricePence / 100).toFixed(2)}</span></>
+          <><span className="opacity-60">/</span><span className="text-crimson">£{(article.pricePence / 100).toFixed(2)}</span></>
         )}
         {user && onQuote && (
           <button
             onClick={handleQuote}
-            className="text-grey-300 hover:text-black transition-colors"
+            className="text-grey-400 hover:text-black transition-colors"
           >
             Quote
           </button>

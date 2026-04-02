@@ -31,7 +31,7 @@ export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void
 
   return (
     <form onSubmit={handleSubmit} className="bg-white px-6 py-5 space-y-4">
-      <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400">New drive</p>
+      <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">New drive</p>
 
       <div className="flex gap-3">
         <button

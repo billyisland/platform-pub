@@ -96,9 +96,9 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
   return (
     <div className="overflow-x-auto bg-white">
       <table className="w-full text-ui-xs">
-        <thead><tr className="border-b-2 border-grey-200/50"><th className="px-4 py-3 text-left label-ui text-grey-400">Title</th><th className="px-4 py-3 text-left label-ui text-grey-400">Status</th><th className="px-4 py-3 text-right label-ui text-grey-400">Reads</th><th className="px-4 py-3 text-right label-ui text-grey-400">Earned</th><th className="px-4 py-3 text-center label-ui text-grey-400">Replies</th><th className="px-4 py-3 text-right label-ui text-grey-400">Actions</th></tr></thead>
+        <thead><tr className="border-b-2 border-grey-200"><th className="px-4 py-3 text-left label-ui text-grey-400">Title</th><th className="px-4 py-3 text-left label-ui text-grey-400">Status</th><th className="px-4 py-3 text-right label-ui text-grey-400">Reads</th><th className="px-4 py-3 text-right label-ui text-grey-400">Earned</th><th className="px-4 py-3 text-center label-ui text-grey-400">Replies</th><th className="px-4 py-3 text-right label-ui text-grey-400">Actions</th></tr></thead>
         <tbody>{articles.map(a => (
-          <tr key={a.id} className="border-b-2 border-grey-200/50 last:border-b-0">
+          <tr key={a.id} className="border-b-2 border-grey-200 last:border-b-0">
             <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-black hover:opacity-70">{a.title}</Link></td>
             <td className="px-4 py-3">{a.isPaywalled ? <span className="text-black">£{((a.pricePence??0)/100).toFixed(2)}</span> : <span className="text-grey-400">Free</span>}</td>
             <td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td>

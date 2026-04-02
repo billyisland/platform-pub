@@ -34,15 +34,15 @@ export function ReportCard({ report, onResolved }: { report: Report; onResolved:
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300">
+            <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
               {report.targetType}
             </span>
-            <span className="font-mono text-[11px] text-grey-300">·</span>
-            <span className="font-mono text-[11px] text-grey-300">{timeAgo(report.createdAt)}</span>
+            <span className="font-mono text-[12px] text-grey-300">·</span>
+            <span className="font-mono text-[12px] text-grey-300">{timeAgo(report.createdAt)}</span>
             {isResolved && (
               <>
-                <span className="font-mono text-[11px] text-grey-300">·</span>
-                <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400">
+                <span className="font-mono text-[12px] text-grey-300">·</span>
+                <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">
                   {report.resolution}
                 </span>
               </>

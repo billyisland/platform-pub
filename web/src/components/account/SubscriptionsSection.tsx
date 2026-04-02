@@ -42,7 +42,7 @@ export function SubscriptionsSection() {
               {s.writerAvatar ? (
                 <img src={s.writerAvatar} alt="" className="h-8 w-8 rounded-full object-cover flex-shrink-0" />
               ) : (
-                <span className="flex h-8 w-8 items-center justify-center bg-grey-100 text-[11px] font-mono text-grey-400 rounded-full flex-shrink-0">
+                <span className="flex h-8 w-8 items-center justify-center bg-grey-100 text-[12px] font-mono text-grey-400 rounded-full flex-shrink-0">
                   {(s.writerDisplayName ?? s.writerUsername ?? '?')[0].toUpperCase()}
                 </span>
               )}
@@ -50,7 +50,7 @@ export function SubscriptionsSection() {
                 <Link href={`/${s.writerUsername}`} className="text-[14px] font-sans font-medium text-black hover:opacity-70 truncate block">
                   {s.writerDisplayName ?? s.writerUsername}
                 </Link>
-                <p className="font-mono text-[11px] text-grey-300 uppercase tracking-[0.06em]">@{s.writerUsername}</p>
+                <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">@{s.writerUsername}</p>
               </div>
             </div>
             <div className="flex items-center gap-4 flex-shrink-0">

@@ -40,7 +40,7 @@ function ArticlePennant({ data }: { data: ResolvedContent }) {
           borderLeft: data.isPaywalled ? '3px solid #B5242A' : '3px solid #E5E5E5',
         }}
       >
-        <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 mb-1">
+        <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300 mb-1">
           {authorIsProfile ? (
             <span
               className="hover:underline underline-offset-2 cursor-pointer"
@@ -117,7 +117,7 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
             {(data.author.displayName?.[0] ?? '?').toUpperCase()}
           </span>
         )}
-        <span className="font-sans text-[11px] font-semibold text-grey-300">
+        <span className="font-sans text-[12px] font-semibold text-grey-300">
           {data.author.displayName}
         </span>
       </div>

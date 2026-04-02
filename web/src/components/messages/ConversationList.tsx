@@ -72,7 +72,7 @@ export function ConversationList({
                     )}
                   </div>
                   {conv.lastMessage && (
-                    <span className="font-mono text-[11px] text-grey-300 uppercase flex-shrink-0">
+                    <span className="font-mono text-[12px] text-grey-300 uppercase flex-shrink-0">
                       {timeAgo(conv.lastMessage.createdAt)}
                     </span>
                   )}

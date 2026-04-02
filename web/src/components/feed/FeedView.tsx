@@ -9,9 +9,9 @@ import { NoteCard } from '../feed/NoteCard'
 import { NoteComposer } from '../feed/NoteComposer'
 import type { FeedItem, NoteEvent } from '../../lib/ndk'
 import type { QuoteTarget } from '../../lib/publishNote'
-import { feed as feedApi, votes as votesApi, follows as followsApi, search as searchApi, type VoteTally, type MyVoteCount } from '../../lib/api'
+import { feed as feedApi, votes as votesApi, type VoteTally, type MyVoteCount } from '../../lib/api'
 
-type FeedTab = 'for-you' | 'following' | 'add'
+type FeedTab = 'for-you' | 'following'
 
 interface NewUserItem {
   type: 'new_user'
@@ -207,20 +207,12 @@ export function FeedView() {
           >
             Following
           </button>
-          <button
-            onClick={() => setActiveTab('add')}
-            className={`tab-feed ${activeTab === 'add' ? 'tab-feed-active' : ''}`}
-          >
-            Add
-          </button>
         </div>
       </div>
 
       {/* Content zone */}
       <div className="pb-10 pt-6">
-        {activeTab === 'add' ? (
-          <AddPanel onFollowed={() => setActiveTab('following')} />
-        ) : activeTab === 'for-you' ? (
+        {activeTab === 'for-you' ? (
           globalLoading ? <InlineSkeleton /> : globalItems.length === 0 ? (
             <div className="py-20 text-center px-6">
               <p className="text-ui-sm text-grey-400">Nothing here yet.</p>
@@ -247,7 +239,7 @@ export function FeedView() {
         ) : feedItems.length === 0 ? (
           <div className="py-20 text-center px-6">
             <p className="text-ui-sm text-grey-400">
-              Nothing here yet. Use the Add tab to follow writers.
+              Nothing here yet. Search for writers to follow.
             </p>
           </div>
         ) : (
@@ -298,137 +290,6 @@ function NewUserCard({ item }: { item: NewUserItem }) {
   )
 }
 
-// =============================================================================
-// Add panel
-// =============================================================================
-
-interface WriterResult {
-  id: string
-  username: string
-  displayName: string | null
-  avatar: string | null
-  bio: string | null
-  articleCount: number
-}
-
-function AddPanel({ onFollowed }: { onFollowed: () => void }) {
-  const [mode, setMode] = useState<'people' | 'feeds'>('people')
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<WriterResult[]>([])
-  const [searching, setSearching] = useState(false)
-  const [followed, setFollowed] = useState<Set<string>>(new Set())
-  const [rssUrl, setRssUrl] = useState('')
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (mode !== 'people' || query.trim().length < 2) {
-      setResults([])
-      return
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(async () => {
-      setSearching(true)
-      try {
-        const data = await searchApi.writers(query.trim(), 10)
-        setResults(data.writers ?? [])
-      } catch { /* ignore */ }
-      finally { setSearching(false) }
-    }, 300)
-  }, [query, mode])
-
-  async function handleFollow(writerId: string) {
-    try {
-      await followsApi.follow(writerId)
-      setFollowed(prev => new Set([...prev, writerId]))
-      onFollowed()
-    } catch { /* ignore */ }
-  }
-
-  return (
-    <div className="px-6 pt-5">
-      <div className="flex gap-0 mb-4 border-b border-grey-200">
-        <button
-          onClick={() => setMode('people')}
-          className={`tab-pill ${mode === 'people' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
-        >
-          People
-        </button>
-        <button
-          onClick={() => setMode('feeds')}
-          className={`tab-pill ${mode === 'feeds' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
-        >
-          Feeds
-        </button>
-      </div>
-
-      {mode === 'people' ? (
-        <>
-          <input
-            type="text"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search for writers..."
-            autoFocus
-            className="w-full bg-white border border-grey-100 px-4 py-3 text-ui-sm text-black placeholder:text-grey-300 focus:outline-none transition-colors mb-4"
-          />
-
-          {searching && (
-            <div className="space-y-2">
-              {[1, 2, 3].map(i => <div key={i} className="h-14 animate-pulse bg-grey-100" />)}
-            </div>
-          )}
-
-          {!searching && results.length === 0 && query.trim().length >= 2 && (
-            <p className="text-ui-sm text-grey-400 text-center py-8">No writers found.</p>
-          )}
-
-          {!searching && results.map(w => (
-            <div key={w.id} className="flex items-center gap-3 py-3">
-              {w.avatar ? (
-                <img src={w.avatar} alt="" className="h-9 w-9 rounded-full object-cover flex-shrink-0" />
-              ) : (
-                <span className="flex h-9 w-9 items-center justify-center bg-grey-100 text-xs font-medium text-grey-400 flex-shrink-0 rounded-full">
-                  {(w.displayName ?? w.username)[0].toUpperCase()}
-                </span>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-ui-sm font-medium text-black truncate">{w.displayName ?? w.username}</p>
-                <p className="text-ui-xs text-grey-400">@{w.username} &middot; {w.articleCount} articles</p>
-              </div>
-              <button
-                onClick={() => handleFollow(w.id)}
-                disabled={followed.has(w.id)}
-                className="btn disabled:opacity-50 py-1.5 px-4 text-ui-xs flex-shrink-0"
-              >
-                {followed.has(w.id) ? 'Following' : 'Follow'}
-              </button>
-            </div>
-          ))}
-        </>
-      ) : (
-        <>
-          <input
-            type="url"
-            value={rssUrl}
-            onChange={e => setRssUrl(e.target.value)}
-            placeholder="Paste an RSS or Atom feed URL..."
-            autoFocus
-            className="w-full bg-white border border-grey-100 px-4 py-3 text-ui-sm text-black placeholder:text-grey-300 focus:outline-none transition-colors mb-4"
-          />
-          <p className="text-ui-xs text-grey-300 mb-4">
-            External feed following is coming soon. Paste a feed URL to get notified when it's ready.
-          </p>
-          <button
-            disabled={rssUrl.trim().length < 8}
-            className="btn disabled:opacity-40 py-2 px-5 text-ui-xs"
-          >
-            Follow feed
-          </button>
-        </>
-      )}
-    </div>
-  )
-}
 
 // =============================================================================
 // Skeletons

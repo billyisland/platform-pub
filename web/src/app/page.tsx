@@ -32,7 +32,7 @@ export default function HomePage() {
       {/* ── Section 2: Manifesto ── */}
       <section className="mt-32">
         <div className="rule-accent pt-8">
-          <p className="mb-8 font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
+          <p className="mb-8 font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">
             THE DEAL
           </p>
 
@@ -54,8 +54,8 @@ export default function HomePage() {
 
       {/* ── Section 3: How it works ── */}
       <section className="mt-24">
-        <div className="p-[2.5rem_2rem] bg-grey-50 border border-grey-200">
-          <p className="mb-8 font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
+        <div className="p-[2.5rem_2rem] bg-grey-100 border border-grey-200">
+          <p className="mb-8 font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">
             HOW IT WORKS
           </p>
 
@@ -83,7 +83,7 @@ export default function HomePage() {
 
       {/* ── Section 4: Featured writers ── */}
       <section className="mt-24">
-        <p className="mb-8 font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
+        <p className="mb-8 font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">
           NOW WRITING ON PLATFORM
         </p>
 

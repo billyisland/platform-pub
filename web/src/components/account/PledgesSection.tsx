@@ -28,11 +28,11 @@ export function PledgesSection() {
           <div key={p.id} className="flex items-center justify-between px-6 py-4">
             <div className="min-w-0">
               <p className="text-[14px] font-sans text-black">{p.driveTitle}</p>
-              <p className="font-mono text-[11px] text-grey-300 uppercase tracking-[0.06em]">by @{p.writerUsername}</p>
+              <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">by @{p.writerUsername}</p>
             </div>
             <div className="flex items-center gap-4 flex-shrink-0">
               <span className="font-mono text-[12px] text-black tabular-nums">£{(p.amountPence / 100).toFixed(2)}</span>
-              <span className={`font-mono text-[11px] uppercase tracking-[0.06em] ${
+              <span className={`font-mono text-[12px] uppercase tracking-[0.06em] ${
                 p.status === 'fulfilled' ? 'text-black' : p.status === 'active' ? 'text-grey-400' : 'text-grey-300'
               }`}>
                 {p.status === 'fulfilled' ? 'Funded' : p.status}

@@ -46,7 +46,7 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
     >
       <p className="font-serif italic text-[14px] text-grey-600 leading-[1.5]">{note.quotedExcerpt}</p>
       {(note.quotedTitle || note.quotedAuthor) && (
-        <p className="font-mono text-[11px] uppercase tracking-[0.02em] text-grey-300 mt-1">
+        <p className="font-mono text-[12px] uppercase tracking-[0.02em] text-grey-300 mt-1">
           {note.quotedTitle ?? ''}
           {note.quotedTitle && note.quotedAuthor ? ' · ' : ''}
           {note.quotedAuthor && authorUsername ? (
@@ -147,14 +147,14 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
                 {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
               </span>
             )}
-            <span className="font-mono text-[11px] uppercase text-grey-300">
+            <span className="font-mono text-[12px] uppercase text-grey-400">
               {formatDateRelative(note.publishedAt)}
             </span>
             {isAuthor && (
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="ml-auto px-2.5 py-0.5 disabled:opacity-40 transition-colors font-mono text-[11px] uppercase"
+                className="ml-auto px-2.5 py-0.5 disabled:opacity-40 transition-colors font-mono text-[12px] uppercase"
                 style={confirmDelete
                   ? { color: '#B5242A', fontWeight: 500 }
                   : { color: '#BBBBBB' }
@@ -196,7 +196,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
           ) : null}
 
           {/* Action labels — Plex Mono caps */}
-          <div className="mt-3 flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-300">
+          <div className="mt-3 flex items-center gap-4 font-mono text-[12px] uppercase tracking-[0.02em] text-grey-400">
             <button
               onClick={() => setShowComposer(c => !c)}
               className="hover:text-black transition-colors"
@@ -244,7 +244,7 @@ function EmbedPreview({ url }: { url: string }) {
   if (yt) return <div className="relative overflow-hidden" style={{ paddingBottom: '56.25%' }}><iframe src={`https://www.youtube.com/embed/${yt[1]}`} className="absolute inset-0 w-full h-full" frameBorder="0" allowFullScreen loading="lazy" /></div>
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="block p-3 hover:opacity-80 transition-opacity bg-grey-100">
-      <p className="text-[11px] font-mono truncate text-grey-400">{url}</p>
+      <p className="text-[12px] font-mono truncate text-grey-400">{url}</p>
     </a>
   )
 }

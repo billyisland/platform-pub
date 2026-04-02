@@ -244,7 +244,7 @@ export function Nav() {
             {/* Logo — small, grey */}
             <Link
               href={logoHref}
-              className="font-serif text-[16px] font-medium italic text-grey-300 hover:text-grey-400 transition-colors"
+              className="font-serif text-[16px] font-medium italic text-grey-400 hover:text-grey-600 transition-colors"
             >
               Platform
             </Link>
@@ -287,7 +287,7 @@ export function Nav() {
 
   return (
     <>
-      <header className="fixed top-0 inset-x-0 z-50 bg-white border-b border-grey-200">
+      <header className="fixed top-0 inset-x-0 z-50 bg-white border-b border-grey-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
         <div className="flex items-center justify-between px-6 h-[56px] max-w-content mx-auto">
 
           {/* Left: logo + nav links */}
@@ -295,7 +295,7 @@ export function Nav() {
             {/* Logo */}
             <Link
               href={logoHref}
-              className="font-serif text-[20px] font-medium italic text-crimson hover:text-crimson-dark transition-colors flex-shrink-0"
+              className="font-serif text-[22px] font-medium italic text-crimson hover:text-crimson-dark transition-colors flex-shrink-0"
             >
               Platform
             </Link>

@@ -95,7 +95,7 @@ export function AccountLedger() {
               <tbody>
                 {entries.map(entry => (
                   <tr key={entry.id} className="border-b-2 border-grey-200/50 last:border-b-0">
-                    <td className="px-4 py-3 text-grey-300 whitespace-nowrap font-mono text-[11px]">
+                    <td className="px-4 py-3 text-grey-300 whitespace-nowrap font-mono text-[12px]">
                       {new Date(entry.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">

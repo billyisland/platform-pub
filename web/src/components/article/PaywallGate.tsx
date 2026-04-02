@@ -46,7 +46,7 @@ export function PaywallGate({ pricePounds, freeAllowanceRemaining, hasPaymentMet
         style={{ borderTop: '3px solid #B5242A', borderBottom: '3px solid #B5242A' }}
       >
         {/* Ornament */}
-        <div className="text-center mb-6 font-mono text-[12px] tracking-[0.5em] text-crimson select-none">· · ·</div>
+        <div className="text-center mb-6 font-mono text-[14px] tracking-[0.5em] text-crimson select-none">· · ·</div>
 
         <h2 className="font-serif text-[26px] font-normal text-black mb-3">{heading}</h2>
         <p className="font-sans text-[15px] text-grey-600 max-w-sm mx-auto mb-8 leading-[1.6]">{subtext}</p>
@@ -68,7 +68,7 @@ export function PaywallGate({ pricePounds, freeAllowanceRemaining, hasPaymentMet
           {unlocking ? 'Unlocking...' : buttonLabel}
         </button>
 
-        <div className="mt-8 flex items-center justify-center gap-4 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-400">
+        <div className="mt-8 flex items-center justify-center gap-4 font-mono text-[12px] uppercase tracking-[0.02em] text-grey-600">
           <span>No subscription</span>
           <span className="opacity-40">/</span>
           <span>Pay per read</span>

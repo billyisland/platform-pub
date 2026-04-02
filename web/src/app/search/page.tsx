@@ -6,13 +6,13 @@ import { useSearchParams } from 'next/navigation'
 
 interface ArticleResult { id: string; dTag: string; title: string; summary: string | null; wordCount: number | null; isPaywalled: boolean; publishedAt: string; writer: { username: string; displayName: string | null }; relevance: number }
 interface WriterResult { id: string; username: string; displayName: string | null; bio: string | null; avatar: string | null; articleCount: number }
-type SearchTab = 'articles' | 'writers'
+type SearchTab = 'users' | 'content'
 
 export default function SearchPage() {
   const searchParams = useSearchParams()
   const initialQ = searchParams.get('q') ?? ''
   const [query, setQuery] = useState(initialQ)
-  const [activeTab, setActiveTab] = useState<SearchTab>('articles')
+  const [activeTab, setActiveTab] = useState<SearchTab>('users')
   const [articleResults, setArticleResults] = useState<ArticleResult[]>([])
   const [writerResults, setWriterResults] = useState<WriterResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -36,8 +36,12 @@ export default function SearchPage() {
         writersRes.json(),
       ])
 
-      setArticleResults(articlesData.results ?? [])
-      setWriterResults(writersData.results ?? [])
+      const writers = writersData.results ?? []
+      const articles = articlesData.results ?? []
+      setArticleResults(articles)
+      setWriterResults(writers)
+      // Default to Users; fall back to Content only when no user results
+      setActiveTab(writers.length === 0 && articles.length > 0 ? 'content' : 'users')
     } catch {
       // Silently fail — results just stay empty
     } finally {
@@ -82,16 +86,16 @@ export default function SearchPage() {
       {searched && (
         <div className="flex gap-2 mb-8">
           <button
-            onClick={() => setActiveTab('articles')}
-            className={`tab-pill ${activeTab === 'articles' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
+            onClick={() => setActiveTab('users')}
+            className={`tab-pill ${activeTab === 'users' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
           >
-            Articles{articleCount > 0 ? ` (${articleCount})` : ''}
+            Users{writerCount > 0 ? ` (${writerCount})` : ''}
           </button>
           <button
-            onClick={() => setActiveTab('writers')}
-            className={`tab-pill ${activeTab === 'writers' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
+            onClick={() => setActiveTab('content')}
+            className={`tab-pill ${activeTab === 'content' ? 'tab-pill-active' : 'tab-pill-inactive'}`}
           >
-            Writers{writerCount > 0 ? ` (${writerCount})` : ''}
+            Content{articleCount > 0 ? ` (${articleCount})` : ''}
           </button>
         </div>
       )}
@@ -103,8 +107,8 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* Article results */}
-      {!loading && searched && activeTab === 'articles' && (
+      {/* Content results */}
+      {!loading && searched && activeTab === 'content' && (
         articleResults.length === 0 ? (
           <p className="text-ui-sm text-grey-400 py-10 text-center">
             No articles found for &ldquo;{query}&rdquo;.
@@ -122,8 +126,8 @@ export default function SearchPage() {
         )
       )}
 
-      {/* Writer results */}
-      {!loading && searched && activeTab === 'writers' && (
+      {/* User results */}
+      {!loading && searched && activeTab === 'users' && (
         writerResults.length === 0 ? (
           <p className="text-ui-sm text-grey-400 py-10 text-center">
             No writers found for &ldquo;{query}&rdquo;.

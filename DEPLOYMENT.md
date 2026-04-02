@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v4.3.1
+# platform.pub — Deployment Reference v4.4.0
 
 **Date:** 2 April 2026
-**Replaces:** v4.3.0 (see bottom for change log)
+**Replaces:** v4.3.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -206,6 +206,182 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v4.3.1
+
+No new migrations. Services changed: **web** only. Deploy order: **rebuild web**.
+
+This release contains two feature changes and a UI solidification pass across the frontend.
+
+**Feature: Search redesign**
+
+The search page (`/search`) now fetches both users and articles in a single parallel query and presents results under two tabs: **Users** (left, selected by default) and **Content** (right). Content auto-selects only when there are no user results. Tabs were renamed from "Articles" and "Writers" to "Content" and "Users".
+
+**Feature: Feed — Add tab removed**
+
+The "Add" tab has been removed from the feed view. The `AddPanel` component (people search + RSS feed URL input) is deleted. The empty-following state now reads "Search for writers to follow" instead of referencing the old Add tab.
+
+**UI solidification pass (10 items from UI-SOLIDIFY.md)**
+
+All changes stay within the existing design token system — no new colours, components, or layout grids.
+
+| Change | Before | After |
+|--------|--------|-------|
+| Body font size | 0.9375rem (15px) | 1rem (16px) |
+| Secondary text colour | `grey-300` widespread | `grey-400` minimum |
+| `.label-muted` colour | #BBBBBB | #999999 |
+| `.ornament` colour | #BBBBBB | #999999 |
+| `.rule` background | #F0F0F0 | #E5E5E5 |
+| Card border-bottom | `grey-100` | `grey-200` |
+| Card left border (free) | transparent | #E5E5E5 |
+| Card left border width | 3px | 4px |
+| Card vertical padding | py-6 | py-8 |
+| Mono metadata size | 11px | 12px (all components) |
+| Button padding | 0.875rem 2.25rem | 0.75rem 2rem |
+| Nav logo size | 20px | 22px |
+| Nav header | border only | border + subtle shadow |
+| Canvas-mode logo | grey-300 | grey-400 hover:grey-600 |
+| Homepage "How it works" bg | grey-50 | grey-100 |
+| Paywall trust badges | 11px grey-400 | 12px grey-600 |
+| Paywall ornament | 12px | 14px |
+| Dashboard table borders | grey-200/50 | grey-200 (full opacity) |
+| Separator opacity in metadata | opacity-40 | opacity-60 |
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Rebuild web only
+docker compose build web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# web should show (healthy) after ~30s
+
+# Visual check: open the site in a browser
+# - Body text should be noticeably larger (16px vs 15px)
+# - Feed cards should have a visible left spine (grey on free, crimson on paid)
+# - Metadata text (bylines, timestamps) should be 12px, not 11px
+# - Nav should have a subtle shadow beneath it
+# - Search page should show Users and Content tabs
+# - Feed should have only "For you" and "Following" tabs (no "Add")
+```
+
+Changes:
+
+```
+# v4.4.0 — Search redesign, feed cleanup, UI solidification pass
+#
+# ── Feature: Search redesign ──
+# Search page now fetches users and articles in parallel and shows results
+# under two tabs: Users (left, default) and Content (right). Content tab
+# auto-selects only when no user results exist. Renamed from "Articles"/"Writers".
+# File: web/src/app/search/page.tsx
+#
+# ── Feature: Feed Add tab removed ──
+# Removed "Add" tab from feed, deleted AddPanel component (people search +
+# RSS input). Unused searchApi/followsApi imports removed from FeedView.
+# Empty-following text updated to "Search for writers to follow."
+# File: web/src/components/feed/FeedView.tsx
+#
+# ── UI solidification: body font size ──
+# Body font-size bumped from 0.9375rem (15px) to 1rem (16px). Affects UI
+# chrome only — article prose is already 17px via the typography plugin.
+# File: web/src/app/globals.css
+#
+# ── UI solidification: grey scale promotion ──
+# text-grey-300 promoted to text-grey-400 on: ArticleCard byline + metadata,
+# NoteCard timestamp + action labels, homepage section labels, canvas-mode logo.
+# .label-muted and .ornament colour changed from #BBBBBB to #999999.
+# Separator opacity in metadata rows changed from opacity-40 to opacity-60.
+# Files: web/src/components/feed/ArticleCard.tsx,
+#        web/src/components/feed/NoteCard.tsx,
+#        web/src/app/page.tsx,
+#        web/src/components/layout/Nav.tsx,
+#        web/src/app/globals.css
+#
+# ── UI solidification: keylines thickened ──
+# .rule background #F0F0F0 → #E5E5E5. ArticleCard border-bottom grey-100 →
+# grey-200. Dashboard table row borders removed /50 opacity modifier.
+# Files: web/src/app/globals.css,
+#        web/src/components/feed/ArticleCard.tsx,
+#        web/src/app/dashboard/page.tsx
+#
+# ── UI solidification: nav presence ──
+# Platform-mode header gains shadow-[0_1px_3px_rgba(0,0,0,0.04)].
+# Logo bumped from text-[20px] to text-[22px].
+# Canvas-mode logo promoted from grey-300 to grey-400 hover:grey-600.
+# File: web/src/components/layout/Nav.tsx
+#
+# ── UI solidification: card left accent ──
+# Border-left width 3px → 4px. Free articles now show #E5E5E5 spine
+# instead of transparent — gives every card a consistent left edge.
+# Card vertical padding py-6 → py-8.
+# File: web/src/components/feed/ArticleCard.tsx
+#
+# ── UI solidification: mono metadata 11px → 12px ──
+# All text-[11px] instances across components updated to text-[12px].
+# Files: web/src/components/feed/ArticleCard.tsx,
+#        web/src/components/feed/NoteCard.tsx,
+#        web/src/components/feed/QuoteCard.tsx,
+#        web/src/components/feed/NoteComposer.tsx,
+#        web/src/components/article/PaywallGate.tsx,
+#        web/src/components/home/FeaturedWriters.tsx,
+#        web/src/components/messages/ConversationList.tsx,
+#        web/src/components/account/BalanceHeader.tsx,
+#        web/src/components/account/AccountLedger.tsx,
+#        web/src/components/account/PaymentSection.tsx,
+#        web/src/components/account/PledgesSection.tsx,
+#        web/src/components/account/SubscriptionsSection.tsx,
+#        web/src/components/dashboard/DriveCard.tsx,
+#        web/src/components/dashboard/DriveCreateForm.tsx,
+#        web/src/components/admin/ReportCard.tsx,
+#        web/src/components/ui/NotificationBell.tsx
+#
+# ── UI solidification: button padding ──
+# .btn, .btn-accent, .btn-ghost, .btn-soft padding tightened from
+# 0.875rem 2.25rem to 0.75rem 2rem.
+# File: web/src/app/globals.css
+#
+# ── UI solidification: homepage ──
+# "How it works" container bg-grey-50 → bg-grey-100.
+# Section labels text-grey-300 → text-grey-400.
+# File: web/src/app/page.tsx
+#
+# ── UI solidification: paywall gate ──
+# Trust badges promoted from text-[11px] text-grey-400 to text-[12px] text-grey-600.
+# Ornament size bumped from text-[12px] to text-[14px].
+# File: web/src/components/article/PaywallGate.tsx
+#
+# Modified files (22):
+#   web/src/app/globals.css                          — body font, label-muted, ornament, rule, button padding
+#   web/src/app/page.tsx                             — section labels, how-it-works bg
+#   web/src/app/search/page.tsx                      — search redesign (Users/Content tabs)
+#   web/src/app/dashboard/page.tsx                   — table border opacity
+#   web/src/components/feed/FeedView.tsx              — Add tab + AddPanel removed
+#   web/src/components/feed/ArticleCard.tsx           — grey promotion, keylines, accent, padding, 12px
+#   web/src/components/feed/NoteCard.tsx              — grey promotion, 12px
+#   web/src/components/feed/QuoteCard.tsx             — 12px
+#   web/src/components/feed/NoteComposer.tsx          — 12px
+#   web/src/components/layout/Nav.tsx                 — shadow, logo size, canvas logo colour
+#   web/src/components/article/PaywallGate.tsx        — trust badges, ornament
+#   web/src/components/home/FeaturedWriters.tsx       — 12px
+#   web/src/components/messages/ConversationList.tsx  — 12px
+#   web/src/components/account/BalanceHeader.tsx      — 12px
+#   web/src/components/account/AccountLedger.tsx      — 12px
+#   web/src/components/account/PaymentSection.tsx     — 12px
+#   web/src/components/account/PledgesSection.tsx     — 12px
+#   web/src/components/account/SubscriptionsSection.tsx — 12px
+#   web/src/components/dashboard/DriveCard.tsx        — 12px
+#   web/src/components/dashboard/DriveCreateForm.tsx  — 12px
+#   web/src/components/admin/ReportCard.tsx           — 12px
+#   web/src/components/ui/NotificationBell.tsx        — 12px
+```
+
+---
 
 ### From v4.3.0
 
