@@ -36,6 +36,8 @@ export async function notificationRoutes(app: FastifyInstance) {
       comment_content: string | null
       note_id: string | null
       note_nostr_event_id: string | null
+      conversation_id: string | null
+      drive_id: string | null
     }>(
       `SELECT
          n.id, n.type, n.read, n.created_at,
@@ -50,7 +52,9 @@ export async function notificationRoutes(app: FastifyInstance) {
          n.comment_id,
          LEFT(c.content, 200) AS comment_content,
          n.note_id,
-         no.nostr_event_id    AS note_nostr_event_id
+         no.nostr_event_id    AS note_nostr_event_id,
+         n.conversation_id,
+         n.drive_id
        FROM notifications n
        LEFT JOIN accounts a   ON a.id   = n.actor_id
        LEFT JOIN articles ar  ON ar.id  = n.article_id
@@ -87,6 +91,8 @@ export async function notificationRoutes(app: FastifyInstance) {
       note: r.note_id
         ? { id: r.note_id, nostrEventId: r.note_nostr_event_id }
         : null,
+      conversationId: r.conversation_id ?? undefined,
+      driveId: r.drive_id ?? undefined,
     }))
 
     return reply.status(200).send({ notifications, unreadCount })

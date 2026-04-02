@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../stores/auth'
 import type { MeResponse } from '../../lib/api'
 import { useLayoutModeContext } from './LayoutShell'
+import { ExportModal } from '../ExportModal'
 
 // ─── Nav link styling (Plex Mono, uppercase) ─────────────────────────────────
 
@@ -38,11 +39,12 @@ function Avatar({ user, size = 32 }: { user: { avatar: string | null; displayNam
 // ─── Avatar dropdown (the "me" menu) ─────────────────────────────────────────
 
 function AvatarDropdown({ user, onLogout, onClose }: {
-  user: { avatar: string | null; displayName: string | null; username: string | null; freeAllowanceRemainingPence: number; isWriter: boolean }
+  user: MeResponse
   onLogout: () => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const [showExport, setShowExport] = useState(false)
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -53,40 +55,58 @@ function AvatarDropdown({ user, onLogout, onClose }: {
   }, [onClose])
 
   const linkClass = 'block px-4 py-2 text-[14px] text-black hover:bg-grey-100 transition-colors font-sans'
-  const balance = `£${(user.freeAllowanceRemainingPence / 100).toFixed(2)}`
 
   return (
-    <div ref={ref} className="absolute right-0 top-full mt-2 w-56 bg-white border border-grey-200 shadow-lg z-50">
-      {/* Identity */}
-      <div className="px-4 py-3 border-b border-grey-200">
-        <p className="text-[14px] font-semibold text-black font-sans">{user.displayName ?? user.username}</p>
-        {user.username && (
-          <p className="text-[12px] text-grey-400 font-mono">@{user.username}</p>
-        )}
-      </div>
+    <>
+      <div ref={ref} className="absolute right-0 top-full mt-2 w-56 bg-white border border-grey-200 shadow-lg z-50">
+        {/* Identity */}
+        <div className="px-4 py-3 border-b border-grey-200">
+          <p className="text-[14px] font-semibold text-black font-sans">{user.displayName ?? user.username}</p>
+          {user.username && (
+            <p className="text-[12px] text-grey-400 font-mono">@{user.username}</p>
+          )}
+        </div>
 
-      {/* Navigation group 1 */}
-      <div className="py-1 border-b border-grey-200">
-        <Link href="/profile" onClick={onClose} className={linkClass}>Profile</Link>
-        <Link href="/notifications" onClick={onClose} className={linkClass}>Notifications</Link>
-      </div>
+        {/* Group 1: Identity — who I am, who's talking to me */}
+        <div className="py-1 border-b border-grey-200">
+          <Link href="/profile" onClick={onClose} className={linkClass}>Profile</Link>
+          <Link href="/messages" onClick={onClose} className={linkClass}>Messages</Link>
+          <Link href="/notifications" onClick={onClose} className={linkClass}>Notifications</Link>
+        </div>
 
-      {/* Navigation group 2 — money & content */}
-      <div className="py-1 border-b border-grey-200">
-        <Link href="/history" onClick={onClose} className={linkClass}>Reading history</Link>
-        <div className="px-4 py-2 text-[14px] text-grey-400 font-sans">
-          Balance: <span className="text-black tabular-nums">{balance}</span>
+        {/* Group 2: Money & content */}
+        <div className="py-1 border-b border-grey-200">
+          <Link href="/account" onClick={onClose} className={linkClass}>
+            <span className="flex items-center justify-between">
+              <span>Account</span>
+              <span className="text-[12px] text-grey-400 tabular-nums font-mono">
+                £{(user.freeAllowanceRemainingPence / 100).toFixed(2)}
+              </span>
+            </span>
+          </Link>
+          <Link href="/history" onClick={onClose} className={linkClass}>Reading history</Link>
+        </div>
+
+        {/* Group 3: Meta */}
+        <div className="py-1">
+          <Link href="/settings" onClick={onClose} className={linkClass}>Settings</Link>
+          <button
+            onClick={() => { setShowExport(true); onClose() }}
+            className="block w-full text-left px-4 py-2 text-[14px] text-black hover:bg-grey-100 transition-colors font-sans"
+          >
+            Export my data
+          </button>
+          {user.isAdmin && (
+            <Link href="/admin" onClick={onClose} className={linkClass}>Admin</Link>
+          )}
+          <button onClick={onLogout} className="block w-full text-left px-4 py-2 text-[14px] text-grey-600 hover:bg-grey-100 transition-colors font-sans">
+            Log out
+          </button>
         </div>
       </div>
 
-      {/* Navigation group 3 — meta */}
-      <div className="py-1">
-        <Link href="/settings" onClick={onClose} className={linkClass}>Settings</Link>
-        <button onClick={onLogout} className="block w-full text-left px-4 py-2 text-[14px] text-grey-600 hover:bg-grey-100 transition-colors font-sans">
-          Log out
-        </button>
-      </div>
-    </div>
+      {showExport && <ExportModal onClose={() => setShowExport(false)} />}
+    </>
   )
 }
 
@@ -145,8 +165,13 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
 
           <div className="border-t border-grey-200 my-2" />
 
+          <Link href="/messages" onClick={onClose} className={linkClass('/messages')}>Messages</Link>
           <Link href="/notifications" onClick={onClose} className={linkClass('/notifications')}>Notifications</Link>
+
+          <div className="border-t border-grey-200 my-2" />
+
           <Link href="/profile" onClick={onClose} className={linkClass('/profile')}>Profile</Link>
+          <Link href="/account" onClick={onClose} className={linkClass('/account')}>Account</Link>
           <Link href="/history" onClick={onClose} className={linkClass('/history')}>Reading history</Link>
           <Link href="/settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
 

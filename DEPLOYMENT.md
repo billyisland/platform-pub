@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v4.0.0
+# platform.pub — Deployment Reference v4.1.0
 
 **Date:** 2 April 2026
-**Replaces:** v3.31.0 (see bottom for change log)
+**Replaces:** v4.0.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -156,7 +156,7 @@ docker compose ps   # wait for postgres to be healthy
 
 ### 4. Apply schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v3.31.0, `schema.sql` includes the corrected notification dedup index (partial index on `read = false`). Migrations 018 (v3.29.0, ON DELETE clauses) and 019 (v3.31.0, notification dedup fix) must be run separately on existing databases.
+The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v4.1.0, `schema.sql` includes the notification routing columns (`conversation_id`, `drive_id` on notifications table). Migrations 018–020 must be run separately on existing databases.
 
 Migrations still need to be run for **existing** databases that were initialised with an earlier `schema.sql`:
 
@@ -204,6 +204,208 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v4.0.0
+
+New migration (020). Services changed: **gateway**, **web**. Deploy order: **migrate → rebuild gateway and web**.
+
+This release adds the four frontend feature surfaces described in STEP-4-NEW-PAGES.md. All 29 previously orphaned backend endpoints now have frontend UI. The navigation shell (steps 1–3) was completed in v4.0.0; this release builds the pages that shell was designed to hold.
+
+**New features:**
+
+1. **Messages** (`/messages`) — Two-panel DM inbox consuming all 6 message endpoints. Conversation list with unread indicators, paginated message threads, auto mark-read on view, new conversation via user search, DM pricing (402) handling. Deep-link route `/messages/:conversationId` redirects to inbox with conversation pre-selected.
+
+2. **Account** (`/account`) — Unified financial ledger replacing the scattered credits/accounts/tab views. Balance header with net position and free allowance meter. Chronological transaction ledger with All/Income/Spending filters. Active subscriptions with cancel controls. Pledges backed. Payment method and Stripe Connect status (moved from `/settings`).
+
+3. **Dashboard Drives tab** — New "Drives" tab in the writer dashboard for managing pledge drives and commissions (11 endpoints). Create crowdfund or commission drives, view progress, pin to profile, accept/decline commissions, cancel. Free pass management added to the Articles tab via overflow menu on paywalled articles (3 endpoints). Dashboard tabs changed from `articles | drafts | credits | accounts | settings` to `articles | drafts | drives | settings`. Credits and Accounts tabs removed (functionality moved to `/account`). Writer Settings tab now includes subscription price setting, Stripe Connect status, and DM pricing placeholder.
+
+4. **Admin** (`/admin`) — Moderation dashboard for admin users. Report queue with pending/resolved/all filters. Report cards with content preview, reporter info, and action buttons (remove content, suspend user, dismiss). Access gated by `isAdmin` field on user session.
+
+**Backend changes:**
+
+- `GET /auth/me` now returns `isAdmin: boolean` (derived from `ADMIN_ACCOUNT_IDS` env var)
+- `GET /notifications` response now includes `conversationId` and `driveId` fields for frontend routing
+- New migration 020 adds `conversation_id` and `drive_id` columns to notifications table
+
+**Navigation updates:**
+
+- Avatar dropdown now includes: Messages, Account (with balance), Export my data, and Admin (conditional on `isAdmin`)
+- Mobile sheet promotes Messages alongside Notifications above the divider
+- Notification routing fixed: `commission_request`/`drive_funded`/`pledge_fulfilled` → `/dashboard?tab=drives`, `new_message` → `/messages/:id`, `free_pass_granted` → `/article/:slug`
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Apply new migration (020 — notification routing columns)
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/020_notification_routing_columns.sql
+
+# Rebuild changed services
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# gateway and web should show (healthy) after ~30s
+
+curl -s http://localhost:3000/health
+# Should return {"status":"ok","service":"gateway"}
+
+# Verify migration applied
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "SELECT column_name FROM information_schema.columns WHERE table_name = 'notifications' AND column_name IN ('conversation_id', 'drive_id');"
+# Should return 2 rows
+
+# Visual check: open the site in a browser
+# - Avatar dropdown should show Messages, Account, Export my data
+# - /messages should show the DM inbox (two-panel on desktop)
+# - /account should show unified financial ledger with balance header
+# - /dashboard?tab=drives should show the drives management tab
+# - /admin/reports should show the report queue (admin users only)
+```
+
+Changes:
+
+```
+# v4.1.0 — Step 4: Messages, Account, Dashboard Drives, Admin pages
+#
+# ── Backend: isAdmin on /auth/me ──
+# GET /auth/me response now includes isAdmin: boolean, derived from
+# ADMIN_ACCOUNT_IDS environment variable (comma-separated UUIDs).
+# File: gateway/src/routes/auth.ts
+#
+# ── Backend: Notification routing columns ──
+# Migration 020 adds conversation_id (UUID, FK → conversations) and
+# drive_id (UUID, FK → pledge_drives) to the notifications table.
+# GET /notifications response now includes conversationId and driveId
+# for frontend routing of new_message and drive-related notifications.
+# Files: migrations/020_notification_routing_columns.sql (new),
+#        gateway/src/routes/notifications.ts,
+#        schema.sql
+#
+# ── Frontend: API client extensions ──
+# Added typed API clients for all previously orphaned endpoints:
+#   messages: listConversations, getMessages, send, markRead, createConversation
+#   drives: create, get, update, cancel, pledge, withdrawPledge, accept, decline,
+#           togglePin, listByUser, myPledges
+#   freePasses: list, grant, revoke
+#   admin: listReports, resolveReport, suspendAccount
+#   account: getTab, getMySubscriptions, exportReceipts, exportAccount,
+#            updateSubscriptionPrice
+# MeResponse extended with isAdmin: boolean.
+# Notification interface extended with conversationId?, driveId?.
+# File: web/src/lib/api.ts
+#
+# ── Frontend: Notification routing fix ──
+# getDestUrl in NotificationBell now routes all 12 notification types:
+#   commission_request, drive_funded, pledge_fulfilled → /dashboard?tab=drives
+#   new_message → /messages/:conversationId (fallback: /messages)
+#   free_pass_granted → /article/:slug
+# File: web/src/components/ui/NotificationBell.tsx
+#
+# ── Frontend: Messages page (/messages) ──
+# Two-panel DM inbox: 280px conversation list + message thread.
+# Single-panel on mobile (list → tap → thread with back button).
+# ConversationList: sorted by recency, unread dot, last message preview.
+# MessageThread: paginated messages, auto mark-read, send box, DM pricing
+# 402 handling. New conversation via user search.
+# /messages/:conversationId redirects to /messages#id for deep-linking.
+# Files: web/src/app/messages/page.tsx (new),
+#        web/src/app/messages/[conversationId]/page.tsx (new),
+#        web/src/components/messages/ConversationList.tsx (new),
+#        web/src/components/messages/MessageThread.tsx (new)
+#
+# ── Frontend: Account page (/account) ──
+# Unified financial ledger replacing dashboard credits/accounts tabs.
+# BalanceHeader: net position (Literata 40px), free allowance progress bar.
+# AccountLedger: chronological transaction list from /my/account-statement,
+#   with All/Income/Spending filter tabs and paginated load-more.
+# SubscriptionsSection: active subscriptions with cancel controls.
+# PledgesSection: drives backed with status indicators.
+# PaymentSection: card on file + Stripe Connect status (moved from /settings).
+# Files: web/src/app/account/page.tsx (new),
+#        web/src/components/account/BalanceHeader.tsx (new),
+#        web/src/components/account/AccountLedger.tsx (new),
+#        web/src/components/account/SubscriptionsSection.tsx (new),
+#        web/src/components/account/PledgesSection.tsx (new),
+#        web/src/components/account/PaymentSection.tsx (new)
+#
+# ── Frontend: Dashboard Drives tab ──
+# Dashboard tabs changed: articles | drafts | credits | accounts | settings
+#   → articles | drafts | drives | settings.
+# Credits and Accounts tabs removed (moved to /account).
+# "View account →" link added to dashboard header.
+# DrivesTab: active drives with progress bars, incoming commissions with
+#   accept/decline, completed/cancelled history, "New drive" creation form.
+# DriveCreateForm: crowdfund vs commission radio, target amount, description.
+# DriveCard: progress bar, pin toggle, cancel, accept/decline actions.
+# FreePassManager: inline panel on paywalled articles in Articles tab,
+#   with grant (username input) and revoke controls.
+# WriterSettingsTab: subscription price field (PATCH /settings/subscription-price),
+#   Stripe Connect status, DM pricing placeholder.
+# Files: web/src/app/dashboard/page.tsx (rewritten),
+#        web/src/components/dashboard/DrivesTab.tsx (new),
+#        web/src/components/dashboard/DriveCreateForm.tsx (new),
+#        web/src/components/dashboard/DriveCard.tsx (new),
+#        web/src/components/dashboard/FreePassManager.tsx (new)
+#
+# ── Frontend: Admin pages (/admin) ──
+# /admin redirects to /admin/reports (or /feed if not admin).
+# Report queue with pending/resolved/all filter tabs.
+# ReportCard: content preview, reporter info, action buttons
+#   (remove content → PATCH report, suspend user → POST /admin/suspend,
+#   dismiss → PATCH report). Resolved reports greyed out.
+# Access gated by user.isAdmin on frontend; backend already checks
+#   ADMIN_ACCOUNT_IDS on admin endpoints.
+# Files: web/src/app/admin/page.tsx (new),
+#        web/src/app/admin/reports/page.tsx (new),
+#        web/src/components/admin/ReportCard.tsx (new)
+#
+# ── Frontend: Nav integration ──
+# AvatarDropdown restructured per NAVIGATION-ARCHITECTURE.md:
+#   Group 1 (identity): Profile, Messages, Notifications
+#   Group 2 (money & content): Account (with balance), Reading history
+#   Group 3 (meta): Settings, Export my data, Admin (conditional), Log out
+# MobileSheet: Messages promoted above divider alongside Notifications.
+#   Account added in same group as Reading history.
+# ExportModal: confirmation dialog with Portable receipts download and
+#   Full account export (writer only). Triggers blob download.
+# Files: web/src/components/layout/Nav.tsx,
+#        web/src/components/ExportModal.tsx (new)
+#
+# New files (18):
+#   migrations/020_notification_routing_columns.sql
+#   web/src/app/messages/page.tsx
+#   web/src/app/messages/[conversationId]/page.tsx
+#   web/src/app/account/page.tsx
+#   web/src/app/admin/page.tsx
+#   web/src/app/admin/reports/page.tsx
+#   web/src/components/messages/ConversationList.tsx
+#   web/src/components/messages/MessageThread.tsx
+#   web/src/components/account/BalanceHeader.tsx
+#   web/src/components/account/AccountLedger.tsx
+#   web/src/components/account/SubscriptionsSection.tsx
+#   web/src/components/account/PledgesSection.tsx
+#   web/src/components/account/PaymentSection.tsx
+#   web/src/components/dashboard/DrivesTab.tsx
+#   web/src/components/dashboard/DriveCreateForm.tsx
+#   web/src/components/dashboard/DriveCard.tsx
+#   web/src/components/dashboard/FreePassManager.tsx
+#   web/src/components/ExportModal.tsx
+#
+# Modified files (6):
+#   gateway/src/routes/auth.ts         — isAdmin field
+#   gateway/src/routes/notifications.ts — conversation_id, drive_id in response
+#   schema.sql                         — notification routing columns
+#   web/src/lib/api.ts                 — all new API clients, MeResponse.isAdmin, Notification extensions
+#   web/src/components/ui/NotificationBell.tsx — full notification routing
+#   web/src/components/layout/Nav.tsx   — avatar dropdown, mobile sheet updates
+#   web/src/app/dashboard/page.tsx      — rewritten (drives tab, settings tab, free passes)
+```
+
+---
 
 ### From v3.31.0
 

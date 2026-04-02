@@ -63,6 +63,7 @@ export interface MeResponse {
   hasPaymentMethod: boolean
   stripeConnectKycComplete: boolean
   freeAllowanceRemainingPence: number
+  isAdmin: boolean
 }
 
 export const auth = {
@@ -382,6 +383,8 @@ export interface Notification {
   article: { id: string; title: string | null; slug: string | null; writerUsername: string | null } | null
   note: { id: string; nostrEventId: string | null } | null
   comment: { id: string; content: string | null } | null
+  conversationId?: string
+  driveId?: string
 }
 
 export const notifications = {
@@ -437,4 +440,225 @@ export const votes = {
     request<{ sequenceNumber: number; costPence: number; direction: string }>(
       `/votes/price?eventId=${encodeURIComponent(eventId)}&direction=${direction}`
     ),
+}
+
+// =============================================================================
+// Messages (Direct Messages)
+// =============================================================================
+
+export interface Conversation {
+  id: string
+  lastMessage: { content: string; senderUsername: string; createdAt: string } | null
+  unreadCount: number
+  members: { id: string; username: string; displayName: string | null; avatar: string | null }[]
+}
+
+export interface DirectMessage {
+  id: string
+  conversationId: string
+  senderId: string
+  senderUsername: string
+  senderDisplayName: string | null
+  senderAvatar: string | null
+  content: string
+  createdAt: string
+}
+
+export const messages = {
+  listConversations: () =>
+    request<{ conversations: Conversation[] }>('/messages'),
+
+  getMessages: (conversationId: string, cursor?: string) =>
+    request<{ messages: DirectMessage[]; nextCursor: string | null }>(
+      `/messages/${conversationId}${cursor ? `?cursor=${cursor}` : ''}`
+    ),
+
+  send: (conversationId: string, content: string) =>
+    request<{ messageId: string }>(`/messages/${conversationId}`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+
+  markRead: (messageId: string) =>
+    request<void>(`/messages/${messageId}/read`, { method: 'POST' }),
+
+  createConversation: (memberIds: string[]) =>
+    request<{ conversationId: string }>('/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ memberIds }),
+    }),
+}
+
+// =============================================================================
+// Pledge Drives
+// =============================================================================
+
+export interface PledgeDrive {
+  id: string
+  writerId: string
+  writerUsername: string
+  type: 'crowdfund' | 'commission'
+  title: string
+  description: string
+  targetAmountPence: number
+  currentAmountPence: number
+  pledgeCount: number
+  status: 'active' | 'funded' | 'cancelled' | 'completed'
+  pinnedOnProfile: boolean
+  createdAt: string
+  fundedAt: string | null
+}
+
+export interface Pledge {
+  id: string
+  driveId: string
+  driveTitle: string
+  writerUsername: string
+  amountPence: number
+  status: string
+  createdAt: string
+}
+
+export interface FreePass {
+  userId: string
+  username: string
+  displayName: string | null
+  grantedAt: string
+}
+
+export const drives = {
+  create: (data: { type: 'crowdfund' | 'commission'; title: string; description: string; targetAmountPence: number; targetWriterId?: string }) =>
+    request<{ driveId: string }>('/drives', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  get: (id: string) =>
+    request<PledgeDrive>(`/drives/${id}`),
+
+  update: (id: string, data: { title?: string; description?: string; targetAmountPence?: number }) =>
+    request<{ ok: boolean }>(`/drives/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  cancel: (id: string) =>
+    request<{ ok: boolean }>(`/drives/${id}`, { method: 'DELETE' }),
+
+  pledge: (id: string, amountPence: number) =>
+    request<{ pledgeId: string }>(`/drives/${id}/pledge`, {
+      method: 'POST',
+      body: JSON.stringify({ amountPence }),
+    }),
+
+  withdrawPledge: (id: string) =>
+    request<{ ok: boolean }>(`/drives/${id}/pledge`, { method: 'DELETE' }),
+
+  accept: (id: string) =>
+    request<{ ok: boolean }>(`/drives/${id}/accept`, { method: 'POST' }),
+
+  decline: (id: string) =>
+    request<{ ok: boolean }>(`/drives/${id}/decline`, { method: 'POST' }),
+
+  togglePin: (id: string) =>
+    request<{ ok: boolean }>(`/drives/${id}/pin`, { method: 'POST' }),
+
+  listByUser: (userId: string) =>
+    request<{ drives: PledgeDrive[] }>(`/drives/by-user/${userId}`),
+
+  myPledges: () =>
+    request<{ pledges: Pledge[] }>('/my/pledges'),
+}
+
+// =============================================================================
+// Free Passes
+// =============================================================================
+
+export const freePasses = {
+  list: (articleId: string) =>
+    request<{ passes: FreePass[] }>(`/articles/${articleId}/free-passes`),
+
+  grant: (articleId: string, username: string) =>
+    request<{ ok: boolean }>(`/articles/${articleId}/free-pass`, {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    }),
+
+  revoke: (articleId: string, userId: string) =>
+    request<{ ok: boolean }>(`/articles/${articleId}/free-pass/${userId}`, {
+      method: 'DELETE',
+    }),
+}
+
+// =============================================================================
+// Admin
+// =============================================================================
+
+export interface Report {
+  id: string
+  reporterUsername: string
+  reporterDisplayName: string | null
+  targetType: 'article' | 'note' | 'comment' | 'account'
+  targetId: string
+  reason: string
+  contentPreview: string | null
+  status: 'pending' | 'resolved'
+  resolution: string | null
+  createdAt: string
+  resolvedAt: string | null
+}
+
+export const admin = {
+  listReports: (status?: string) =>
+    request<{ reports: Report[] }>(`/admin/reports${status ? `?status=${status}` : ''}`),
+
+  resolveReport: (reportId: string, action: 'remove' | 'suspend' | 'dismiss') =>
+    request<{ ok: boolean }>(`/admin/reports/${reportId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action }),
+    }),
+
+  suspendAccount: (accountId: string) =>
+    request<{ ok: boolean }>(`/admin/suspend/${accountId}`, { method: 'POST' }),
+}
+
+// =============================================================================
+// Account & Settings
+// =============================================================================
+
+export interface TabOverview {
+  balancePence: number
+  freeAllowanceRemainingPence: number
+  freeAllowanceTotalPence: number
+  recentReads: { articleTitle: string; costPence: number; readAt: string }[]
+}
+
+export interface MySubscription {
+  id: string
+  writerUsername: string
+  writerDisplayName: string | null
+  writerAvatar: string | null
+  pricePence: number
+  status: string
+  startedAt: string
+}
+
+export const account = {
+  getTab: () =>
+    request<TabOverview>('/my/tab'),
+
+  getMySubscriptions: () =>
+    request<{ subscriptions: MySubscription[] }>('/subscriptions/mine'),
+
+  exportReceipts: () =>
+    request<Blob>('/receipts/export'),
+
+  exportAccount: () =>
+    request<Blob>('/account/export'),
+
+  updateSubscriptionPrice: (pricePence: number) =>
+    request<{ ok: boolean }>('/settings/subscription-price', {
+      method: 'PATCH',
+      body: JSON.stringify({ pricePence }),
+    }),
 }

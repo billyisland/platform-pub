@@ -624,9 +624,11 @@ CREATE TABLE notifications (
   type          TEXT        NOT NULL,
   article_id    UUID        REFERENCES articles(id) ON DELETE CASCADE,
   comment_id    UUID        REFERENCES comments(id) ON DELETE CASCADE,
-  note_id       UUID        REFERENCES notes(id) ON DELETE CASCADE,  -- (migration 012)
-  read          BOOLEAN     NOT NULL DEFAULT false,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  note_id          UUID        REFERENCES notes(id) ON DELETE CASCADE,  -- (migration 012)
+  conversation_id  UUID        REFERENCES conversations(id) ON DELETE SET NULL,  -- (migration 020)
+  drive_id         UUID        REFERENCES pledge_drives(id) ON DELETE SET NULL,  -- (migration 020)
+  read             BOOLEAN     NOT NULL DEFAULT false,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_notifications_recipient ON notifications(recipient_id, created_at DESC);

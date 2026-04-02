@@ -195,6 +195,8 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Account not found' })
     }
 
+    const adminIds = (process.env.ADMIN_ACCOUNT_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+
     return reply.status(200).send({
       id: account.id,
       pubkey: account.nostrPubkey,
@@ -206,6 +208,7 @@ export async function authRoutes(app: FastifyInstance) {
       hasPaymentMethod: account.stripeCustomerId !== null,
       stripeConnectKycComplete: account.stripeConnectKycComplete,
       freeAllowanceRemainingPence: account.freeAllowanceRemainingPence,
+      isAdmin: adminIds.includes(account.id),
     })
   })
 

@@ -31,6 +31,14 @@ function getDestUrl(n: Notification): string {
     case 'new_quote':
     case 'new_mention':
       return n.article?.slug ? `/article/${n.article.slug}` : '#'
+    case 'commission_request':
+    case 'drive_funded':
+    case 'pledge_fulfilled':
+      return '/dashboard?tab=drives'
+    case 'new_message':
+      return n.conversationId ? `/messages/${n.conversationId}` : '/messages'
+    case 'free_pass_granted':
+      return n.article?.slug ? `/article/${n.article.slug}` : '#'
     default:
       return '#'
   }
