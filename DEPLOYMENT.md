@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v4.3.0
+# platform.pub — Deployment Reference v4.3.1
 
 **Date:** 2 April 2026
-**Replaces:** v4.2.0 (see bottom for change log)
+**Replaces:** v4.3.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -207,6 +207,52 @@ Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-ren
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
 
+### From v4.3.0
+
+No new migrations. Services changed: **web** only. Deploy order: **rebuild web**.
+
+This is a hotfix for a broken Docker build introduced in v4.3.0. The `web/Dockerfile` had `ENV NODE_ENV=production` set before `npm install`, which caused npm to skip devDependencies. Since `tailwindcss`, `postcss`, and `autoprefixer` are devDependencies required at build time, `npm run build` failed with `Cannot find module 'tailwindcss'`.
+
+**Fix:** `ENV NODE_ENV=production` moved from before `npm install` to after `npm run build`. DevDependencies are now installed, the build succeeds, and the runtime still runs with `NODE_ENV=production`.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Rebuild web only
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# web should show (healthy) after ~30s
+
+# Confirm NODE_ENV is set in the running container
+docker exec platform-pub-web-1 sh -c "echo \$NODE_ENV"
+# Should return "production"
+```
+
+Changes:
+
+```
+# v4.3.1 — Fix web Docker build failure (tailwindcss not found)
+#
+# web/Dockerfile had ENV NODE_ENV=production before npm install, causing
+# npm to skip devDependencies (tailwindcss, postcss, autoprefixer).
+# The Next.js build failed with "Cannot find module 'tailwindcss'".
+#
+# Fix: moved ENV NODE_ENV=production to after RUN npm run build.
+# DevDependencies are installed and available during build; the runtime
+# container still runs with NODE_ENV=production.
+#
+# Files changed:
+#   web/Dockerfile — ENV NODE_ENV=production moved after build step
+```
+
+---
+
 ### From v4.2.0
 
 No new migrations. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
@@ -242,7 +288,8 @@ This release delivers the resilience and hardening work described in `RESILIENCE
 
 **Docker & security:**
 
-- `ENV NODE_ENV=production` added to `web/Dockerfile`, `payment-service/Dockerfile`, `key-service/Dockerfile`
+- `ENV NODE_ENV=production` added to `payment-service/Dockerfile`, `key-service/Dockerfile`
+- `ENV NODE_ENV=production` in `web/Dockerfile` moved to **after** `RUN npm run build` (v4.3.1 fix — setting it before `npm install` caused devDependencies like `tailwindcss` to be skipped, breaking the build)
 - Root `.dockerignore` added (excludes `node_modules`, `dist`, `.git`, `.next`, `*.log`, `.env`)
 - HSTS header now includes `preload` directive
 - `'unsafe-inline'` removed from CSP `style-src`

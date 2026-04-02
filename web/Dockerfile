@@ -1,6 +1,5 @@
 FROM node:20-alpine
 WORKDIR /app
-ENV NODE_ENV=production
 COPY web/ .
 RUN npm install
 ARG NEXT_PUBLIC_RELAY_URL
@@ -8,6 +7,7 @@ ARG NEXT_PUBLIC_GATEWAY_URL
 ENV NEXT_PUBLIC_RELAY_URL=$NEXT_PUBLIC_RELAY_URL
 ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL
 RUN npm run build
+ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
 USER app
 EXPOSE 3000
