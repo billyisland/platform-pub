@@ -56,49 +56,59 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
   return (
     <div
       onClick={handleCardClick}
-      className="py-8 cursor-pointer border-b border-grey-200"
-      style={{ borderLeft: isPaid ? '4px solid #B5242A' : '4px solid #E5E5E5', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}
+      className="group py-7 px-6 cursor-pointer bg-white border border-grey-200 rounded-sm mb-4 transition-all duration-200 hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:border-grey-300"
     >
-      {/* Byline — Plex Mono caps */}
-      {authorHref ? (
-        <Link
-          href={authorHref}
-          onClick={(e) => e.stopPropagation()}
-          className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400 hover:text-grey-600 transition-colors mb-2.5 inline-block"
+      {/* Byline + date */}
+      <div className="flex items-center gap-2 mb-3">
+        {authorHref ? (
+          <Link
+            href={authorHref}
+            onClick={(e) => e.stopPropagation()}
+            className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400 hover:text-grey-600 transition-colors"
+          >
+            {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
+          </Link>
+        ) : (
+          <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">
+            {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
+          </span>
+        )}
+        <span className="font-mono text-[12px] text-grey-300">·</span>
+        <time
+          dateTime={new Date(article.publishedAt * 1000).toISOString()}
+          className="font-mono text-[12px] tracking-[0.02em] text-grey-300"
         >
-          {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
-        </Link>
-      ) : (
-        <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400 mb-2.5">
-          {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
-        </p>
-      )}
+          {formatDateRelative(article.publishedAt)}
+        </time>
+        {isPaid && article.pricePence && (
+          <>
+            <span className="font-mono text-[12px] text-grey-300">·</span>
+            <span className="font-mono text-[12px] tracking-[0.02em] text-crimson">£{(article.pricePence / 100).toFixed(2)}</span>
+          </>
+        )}
+      </div>
 
       {/* Headline — Literata italic */}
-      <h2 className="font-serif text-[24px] font-medium italic text-black leading-[1.2] tracking-[-0.02em] mb-2.5">
+      <h2 className="font-serif text-[22px] font-medium italic text-black leading-[1.25] tracking-[-0.02em] mb-2 group-hover:text-crimson-dark transition-colors">
         {article.title}
       </h2>
 
       {/* Standfirst — Literata roman */}
-      <p className="font-serif text-[15px] text-grey-600 leading-[1.6] mb-3.5">
+      <p className="font-serif text-[15px] text-grey-500 leading-[1.65] mb-4">
         {excerpt}
       </p>
 
-      {/* Metadata — Plex Mono caps */}
-      <div className="flex items-center gap-3 font-mono text-[12px] uppercase tracking-[0.02em] text-grey-400">
-        <time dateTime={new Date(article.publishedAt * 1000).toISOString()}>{formatDateRelative(article.publishedAt)}</time>
-        <span className="opacity-60">/</span>
-        <span>{readMinutes} min</span>
+      {/* Footer — read time, replies, actions */}
+      <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-300">
+        <span>{readMinutes} min read</span>
         {replyCount !== null && replyCount > 0 && (
-          <><span className="opacity-60">/</span><span>{replyCount} {replyCount !== 1 ? 'replies' : 'reply'}</span></>
+          <><span className="opacity-50">·</span><span>{replyCount} {replyCount !== 1 ? 'replies' : 'reply'}</span></>
         )}
-        {isPaid && article.pricePence && (
-          <><span className="opacity-60">/</span><span className="text-crimson">£{(article.pricePence / 100).toFixed(2)}</span></>
-        )}
+        <span className="flex-1" />
         {user && onQuote && (
           <button
             onClick={handleQuote}
-            className="text-grey-400 hover:text-black transition-colors"
+            className="text-grey-300 hover:text-black transition-colors"
           >
             Quote
           </button>

@@ -90,21 +90,19 @@ export function ReplyItem({
             </span>
           )}
           <div className="flex-1 min-w-0">
-            <p className={`text-sm leading-relaxed ${
-              reply.isDeleted ? 'text-grey-300 italic' : ''
-            }`}>
-              {reply.author.username ? (
-                <Link href={`/${reply.author.username}`} className="font-medium text-grey-600 text-ui-xs hover:text-black transition-colors">
-                  {authorName}
-                </Link>
-              ) : (
-                <span className="font-medium text-grey-600 text-ui-xs">
-                  {authorName}
-                </span>
-              )}{' '}
-              <span className={reply.isDeleted ? 'text-grey-300' : 'text-black'}>
-                {reply.content}
+            {reply.author.username ? (
+              <Link href={`/${reply.author.username}`} className="font-medium text-grey-600 text-ui-xs hover:text-black transition-colors block mb-0.5">
+                {authorName}
+              </Link>
+            ) : (
+              <span className="font-medium text-grey-600 text-ui-xs block mb-0.5">
+                {authorName}
               </span>
+            )}
+            <p className={`text-sm leading-relaxed ${
+              reply.isDeleted ? 'text-grey-300 italic' : 'text-black'
+            }`}>
+              {reply.content}
             </p>
 
             {!reply.isDeleted && (

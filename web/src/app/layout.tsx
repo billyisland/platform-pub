@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Nav } from '../components/layout/Nav'
+import { Footer } from '../components/layout/Footer'
 import { AuthProvider } from '../components/layout/AuthProvider'
 import { LayoutShell } from '../components/layout/LayoutShell'
 
@@ -34,6 +35,7 @@ export default function RootLayout({
             <main className="min-h-screen pt-[56px]">
               {children}
             </main>
+            <Footer />
           </LayoutShell>
         </AuthProvider>
       </body>

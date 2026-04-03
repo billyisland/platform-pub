@@ -1,7 +1,12 @@
+'use client'
+
 import Link from 'next/link'
 import { ThereforeMark } from '../../components/icons/ThereforeMark'
+import { useAuth } from '../../stores/auth'
 
 export default function AboutPage() {
+  const { user, loading } = useAuth()
+
   return (
     <div className="mx-auto max-w-article px-6 pt-16 pb-16 lg:pt-8">
       <h1 className="font-serif text-4xl font-medium text-black mb-4" style={{ letterSpacing: '-0.02em' }}>
@@ -41,11 +46,13 @@ export default function AboutPage() {
         <ThereforeMark size={24} weight="light" />
       </div>
 
-      <div className="text-center">
-        <Link href="/auth?mode=signup" className="btn text-base px-10 py-4">
-          Get started: free &pound;5 credit
-        </Link>
-      </div>
+      {!loading && !user && (
+        <div className="text-center">
+          <Link href="/auth?mode=signup" className="btn text-base px-10 py-4">
+            Get started: free &pound;5 credit
+          </Link>
+        </div>
+      )}
     </div>
   )
 }

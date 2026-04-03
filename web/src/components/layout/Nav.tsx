@@ -150,7 +150,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           <Link href="/feed" onClick={onClose} className={linkClass('/feed')}>Feed</Link>
           <Link href="/write" onClick={onClose} className={linkClass('/write')}>Write</Link>
           <Link href="/dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
-          <Link href="/about" onClick={onClose} className={linkClass('/about')}>About</Link>
+          <Link href="/following" onClick={onClose} className={linkClass('/following')}>Following</Link>
 
           <div className="border-t border-grey-200 my-2" />
 
@@ -217,6 +217,7 @@ export function Nav() {
   function isActive(path: string) {
     if (path === '/feed') return pathname === '/feed' || pathname === '/'
     if (path === '/dashboard') return pathname.startsWith('/dashboard')
+    if (path === '/following') return pathname === '/following' || pathname === '/followers'
     return pathname === path
   }
 
@@ -323,7 +324,7 @@ export function Nav() {
                   <Link href="/feed" className={navLinkClass(isActive('/feed'))}>Feed</Link>
                   <Link href="/write" className={navLinkClass(isActive('/write'))}>Write</Link>
                   <Link href="/dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
-                  <Link href="/about" className={navLinkClass(isActive('/about'))}>About</Link>
+                  <Link href="/following" className={navLinkClass(isActive('/following'))}>Following</Link>
                 </>
               ) : (
                 <>

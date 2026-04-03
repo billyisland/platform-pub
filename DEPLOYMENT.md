@@ -1,7 +1,7 @@
-# platform.pub — Deployment Reference v4.7.1
+# platform.pub — Deployment Reference v4.8.0
 
 **Date:** 2 April 2026
-**Replaces:** v4.7.0 (see bottom for change log)
+**Replaces:** v4.7.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating platform.pub.
 
@@ -158,7 +158,7 @@ docker compose ps   # wait for postgres to be healthy
 
 ### 4. Apply schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v4.7.1, `schema.sql` includes all structural changes through migration 025; the `_migrations` table is pre-seeded accordingly. Migrations 026–027 must be run separately on existing databases.
+The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v4.8.0, `schema.sql` includes all structural changes through migration 025; the `_migrations` table is pre-seeded accordingly. Migrations 026–027 must be run separately on existing databases.
 
 For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything.
 
@@ -246,6 +246,38 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v4.7.1
+
+No new migrations. Services changed: **web**. Deploy order: **rebuild web**.
+
+This is a frontend-only release. Article cards redesigned, reply layout fixed, top nav updated, footer added.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+docker compose build web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# web should show (healthy) after ~30s
+
+# Visual check:
+# - Article cards should be bordered rectangles with hover shadow (no coloured left spine)
+# - Headline should tint crimson on hover
+# - Reply content should appear on the line below the username, not inline
+# - Top nav (logged in) should show: Feed / Write / Dashboard / Following (not About)
+# - Top nav (logged out) should still show: Feed / About
+# - Footer should appear at bottom of pages with links to About, Community Guidelines, Privacy, Terms
+# - /following page should have Following / Followers tabs
+# - /about "Get started" button should only appear when logged out
+```
+
+---
 
 ### From v4.7.0
 
@@ -539,7 +571,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 
 # Visual check: open the site in a browser
 # - Body text should be noticeably larger (16px vs 15px)
-# - Feed cards should have a visible left spine (grey on free, crimson on paid)
+# - Feed cards should be bordered cards with hover shadow (no left spine — removed in v4.8.0)
 # - Metadata text (bylines, timestamps) should be 12px, not 11px
 # - Nav should have a subtle shadow beneath it
 # - Search page should show Users and Content tabs
@@ -3987,7 +4019,7 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ---
 
-## Known limitations (v4.7.1)
+## Known limitations (v4.8.0)
 
 - RSS feed ingestion not yet built
 - NIP-07 browser extension support not yet built
@@ -3999,6 +4031,64 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v4.8.0 — 2 April 2026
+
+**Article card redesign, reply layout fix, nav restructure, footer, tabbed following page**
+
+No new migrations. Services changed: **web**. Deploy order: **rebuild web**.
+
+**Article card redesign:**
+
+- Removed coloured left-border spine and bottom `border-b` divider treatment
+- Cards now have full border, rounded corners, and hover shadow (`hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)]`)
+- Byline, date, and price grouped together at top of card with dot separators
+- Headline gains crimson hover colour transition (`group-hover:text-crimson-dark`)
+- Bottom metadata row is lighter (11px, grey-300) with read time and reply count left-aligned, actions (quote, vote, share) pushed right via flex spacer
+
+**Reply layout fix:**
+
+- Username and reply content were inline on the same line; now username is a block element above the content with `mb-0.5` spacing
+
+**Navigation restructure:**
+
+- Logged-in top nav: "About" replaced with "Following" (desktop and mobile)
+- Logged-out top nav: unchanged (Feed, About)
+- Mobile sheet: same change — "Following" replaces "About" for authenticated users
+- `isActive` logic extended for `/following` and `/followers` paths
+
+**Footer:**
+
+- New `Footer` component added to root layout (`web/src/components/layout/Footer.tsx`)
+- Links: About, Community Guidelines, Privacy, Terms
+- Hidden on canvas-mode (article reading) pages
+- Styled in Plex Mono 11px uppercase, grey-300 with hover to grey-600
+
+**Tabbed following page:**
+
+- `/following` page now has **Following** | **Followers** tabs with counts
+- Tab state reflected in URL via `?tab=followers` query param
+- `/followers` page now redirects to `/following?tab=followers`
+- Both lists fetched on mount; tab switching is instant
+
+**About page — conditional CTA:**
+
+- "Get started: free £5 credit" button only renders for unauthenticated users
+- Page converted from server component to client component (`'use client'`) to access auth state
+
+**New files:**
+- `web/src/components/layout/Footer.tsx`
+
+**Modified files:**
+- `web/src/components/replies/ReplyItem.tsx` — username/content split to separate lines
+- `web/src/components/feed/ArticleCard.tsx` — card redesign (border, shadow, layout, hover states)
+- `web/src/components/layout/Nav.tsx` — About→Following in nav, isActive for /following
+- `web/src/app/layout.tsx` — Footer import and render
+- `web/src/app/following/page.tsx` — rewritten as tabbed Following/Followers page
+- `web/src/app/followers/page.tsx` — replaced with redirect to /following?tab=followers
+- `web/src/app/about/page.tsx` — conditional Get Started CTA, converted to client component
+
+---
 
 ### v4.7.1 — 2 April 2026
 
