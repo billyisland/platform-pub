@@ -904,6 +904,67 @@ async function seedPledgeDrives(
   console.log(`  Created ${driveCount} pledge drives, ${pledgeCount} pledges.`);
 }
 
+async function seedVaultKeys(
+  client: pg.PoolClient,
+  articles: Article[]
+) {
+  const KMS_KEY_HEX = process.env.KMS_MASTER_KEY_HEX;
+  if (!KMS_KEY_HEX) {
+    console.log("Skipping vault keys — KMS_MASTER_KEY_HEX not set.");
+    console.log("  (Paywalled articles will not be unlockable until vault keys exist.)");
+    return;
+  }
+
+  const kmsMasterKey = Buffer.from(KMS_KEY_HEX, "hex");
+  if (kmsMasterKey.length !== 32) {
+    console.log("Skipping vault keys — KMS_MASTER_KEY_HEX must be 32 bytes (64 hex chars).");
+    return;
+  }
+
+  const paywalledArticles = articles.filter((a) => a.access_mode === "paywalled");
+  console.log(`Creating vault keys for ${paywalledArticles.length} paywalled articles...`);
+
+  const rows: unknown[][] = [];
+
+  for (const article of paywalledArticles) {
+    // Generate random 32-byte content key
+    const contentKey = crypto.randomBytes(32);
+
+    // Envelope-encrypt content key with KMS master key (AES-256-GCM)
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", kmsMasterKey, iv);
+    const encrypted = Buffer.concat([cipher.update(contentKey), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    const contentKeyEnc = Buffer.concat([iv, authTag, encrypted]).toString("base64");
+
+    // Encrypt a placeholder paywalled body with AES-256-GCM
+    const paywallBody = faker.lorem.paragraphs({ min: 3, max: 8 }, "\n\n");
+    const bodyIv = crypto.randomBytes(12);
+    const bodyCipher = crypto.createCipheriv("aes-256-gcm", contentKey, bodyIv);
+    const bodyEnc = Buffer.concat([bodyCipher.update(Buffer.from(paywallBody, "utf8")), bodyCipher.final()]);
+    const bodyAuthTag = bodyCipher.getAuthTag();
+    const ciphertext = Buffer.concat([bodyIv, bodyAuthTag, bodyEnc]).toString("base64");
+
+    rows.push([
+      article.id,
+      article.nostr_event_id,
+      contentKeyEnc,
+      "aes-256-gcm",
+      ciphertext,
+    ]);
+  }
+
+  await batchInsert(
+    client,
+    "vault_keys",
+    ["article_id", "nostr_article_event_id", "content_key_enc", "algorithm", "ciphertext"],
+    rows,
+    200
+  );
+
+  console.log(`  Created ${rows.length} vault keys.`);
+}
+
 async function seedBlocksAndMutes(
   client: pg.PoolClient,
   everyone: Account[]
@@ -970,6 +1031,7 @@ async function main() {
     const readers = await seedReaders(client);
     const everyone = [...writers, ...readers, ...(myAccount ? [myAccount] : [])];
     const articles = await seedArticles(client, writers);
+    await seedVaultKeys(client, articles);
     await seedNotes(client, writers);
     await seedFollows(client, writers, readers, myAccount);
     await seedSubscriptions(client, writers, readers, myAccount);

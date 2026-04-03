@@ -143,7 +143,11 @@ export function ArticleReader({ article, writerName, writerUsername, writerAvata
       sessionStorage.setItem(`unlocked:${article.id}`, body)
       if (gatePassResult.allowanceJustExhausted) setShowAllowanceModal(true)
     } catch (err: any) {
-      if (!unlockError) setUnlockError('Something went wrong. Please try again.')
+      console.error('Paywall unlock failed:', err)
+      if (!unlockError) {
+        const msg = err?.body?.message ?? err?.body?.error ?? err?.message
+        setUnlockError(msg && msg !== '[object Object]' ? msg : 'Something went wrong. Please try again.')
+      }
     } finally { setUnlocking(false) }
   }
 

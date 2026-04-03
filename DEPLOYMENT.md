@@ -4032,6 +4032,42 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
+### v4.8.1 — 3 April 2026
+
+**Fix: paywall unlock fails with "Something went wrong" on seeded data**
+
+**Root cause:** The seed script (`scripts/seed.ts`) created paywalled articles (with `access_mode = 'paywalled'` and `price_pence` set) but never generated corresponding `vault_keys` rows. When a reader clicked "Continue reading", the gate-pass flow succeeded (payment recorded, permanent unlock created), but the key service's `issueKey()` query — `SELECT ... FROM vault_keys WHERE article_id = $1` — returned zero rows and threw `VAULT_KEY_NOT_FOUND`. The gateway returned this as a 502. The client's catch block swallowed the error and displayed "Something went wrong. Please try again." with no console output.
+
+All 623 paywalled articles on staging were affected (zero had vault keys).
+
+**Changes:**
+
+- `scripts/seed.ts`: new `seedVaultKeys()` function generates vault entries for all paywalled articles when `KMS_MASTER_KEY_HEX` is provided. For each article: generates a random 32-byte content key, envelope-encrypts it with the KMS master key (AES-256-GCM), encrypts a placeholder paywalled body with the content key (AES-256-GCM), and inserts the row into `vault_keys`. Called immediately after `seedArticles()` in `main()`.
+- `scripts/backfill-vault-keys.ts` (new): standalone script to backfill missing vault keys on existing deployments. Usage: `KMS_MASTER_KEY_HEX=... DATABASE_URL=... npx tsx scripts/backfill-vault-keys.ts`
+- `web/src/components/article/ArticleReader.tsx`: the outer catch block in `handleUnlock` now logs the error to `console.error` and surfaces the server's error message (`err.body.message` or `err.body.error`) instead of always showing the generic fallback.
+
+**Seed script usage (new installs):**
+
+```bash
+KMS_MASTER_KEY_HEX=<key-service-kms-key> DATABASE_URL=<db-url> npx tsx scripts/seed.ts
+```
+
+The `KMS_MASTER_KEY_HEX` value must match the key-service's `KMS_MASTER_KEY_HEX` env var. If omitted, vault keys are skipped with a warning.
+
+**Backfill (existing installs with seeded data):**
+
+```bash
+KMS_MASTER_KEY_HEX=<key-service-kms-key> DATABASE_URL=<db-url> npx tsx scripts/backfill-vault-keys.ts
+```
+
+**New files:** `scripts/backfill-vault-keys.ts`
+
+**Modified files:** `scripts/seed.ts`, `web/src/components/article/ArticleReader.tsx`
+
+**No schema changes. No service rebuild required for the backend fix (vault keys are data-only). Rebuild web for the improved error message.**
+
+---
+
 ### v4.8.0 — 2 April 2026
 
 **Article card redesign, reply layout fix, nav restructure, footer, tabbed following page**
