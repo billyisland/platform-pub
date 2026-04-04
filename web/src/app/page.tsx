@@ -8,23 +8,17 @@ export default function HomePage() {
 
       {/* ── Section 1: Hero ── */}
       <section>
-        <h1
-          className="font-sans font-semibold text-black leading-none"
-          style={{ fontSize: 'clamp(52px, 9vw, 92px)', letterSpacing: '-0.035em', lineHeight: '0.92' }}
-        >
+        <h1 className="hero-headline font-sans font-semibold text-black">
           Free authors.
         </h1>
-        <p
-          className="font-sans font-semibold text-grey-600 mt-1 leading-none"
-          style={{ fontSize: 'clamp(52px, 9vw, 92px)', letterSpacing: '-0.035em', lineHeight: '0.92' }}
-        >
+        <p className="hero-headline font-sans font-semibold text-grey-600 mt-1">
           Writing that&apos;s worth something.
         </p>
 
         {/* 6px slab rule */}
         <div className="slab-rule mt-12" />
 
-        <p className="mt-8 font-sans text-[18px] text-black leading-relaxed" style={{ maxWidth: '440px' }}>
+        <p className="mt-8 font-sans text-[18px] text-black leading-relaxed max-w-[440px]">
           At all.haus, you own your identity. Build a profile that
           exists on your terms. Find an audience that pays, from
           day one.
@@ -54,10 +48,7 @@ export default function HomePage() {
               'Leave whenever you want, and take everything with you.',
             ].map((line, i, arr) => (
               <div key={i}>
-                <p
-                  className="font-serif italic text-black py-5"
-                  style={{ fontSize: 'clamp(20px, 3vw, 28px)', fontWeight: 400 }}
-                >
+                <p className="manifesto-line font-serif italic text-black py-5">
                   {line}
                 </p>
                 {i < arr.length - 1 && <div className="slab-rule-4" />}

@@ -1001,7 +1001,7 @@ This release delivers the resilience and hardening work described in `RESILIENCE
 - `ENV NODE_ENV=production` in `web/Dockerfile` moved to **after** `RUN npm run build` (v4.3.1 fix — setting it before `npm install` caused devDependencies like `tailwindcss` to be skipped, breaking the build)
 - Root `.dockerignore` added (excludes `node_modules`, `dist`, `.git`, `.next`, `*.log`, `.env`)
 - HSTS header now includes `preload` directive
-- `'unsafe-inline'` removed from CSP `style-src`
+- `'unsafe-inline'` restored in CSP `style-src` (required by Next.js hydration; landing page inline styles moved to CSS classes to minimise reliance)
 - Article `pricePence` validation capped at 999,999 (£9,999.99)
 
 **Other fixes:**
@@ -1869,8 +1869,8 @@ Changes:
 # X-Content-Type-Options nosniff, Referrer-Policy
 # strict-origin-when-cross-origin, Permissions-Policy (camera,
 # microphone, geolocation disabled), Content-Security-Policy
-# (default-src 'self', script-src 'self', style-src 'self'
-# 'unsafe-inline', img-src 'self' data: blob:, connect-src 'self' wss:).
+# (default-src 'self', script-src 'self', style-src 'self' 'unsafe-inline',
+# img-src 'self' data: blob:, connect-src 'self' wss:).
 # File: nginx.conf
 #
 # ── Fix 9: Gateway rate limiting ──
@@ -4261,6 +4261,27 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
+### v5.0.2 — 4 April 2026
+
+**Fix: landing page hero text renders at body size, buttons unresponsive**
+
+**Root cause:** The CSP header in `nginx.conf` had `style-src 'self'` without `'unsafe-inline'`, which silently blocked all inline `style` attributes. The landing page hero headline used inline styles for `font-size: clamp(52px, 9vw, 92px)`, so browsers dropped them and rendered at the default ~16px. Next.js also injects inline styles during hydration for `<Link>` components and layout — blocking these broke click handling on buttons and navigation links.
+
+**Changes:**
+
+- `nginx.conf`: restored `'unsafe-inline'` in CSP `style-src` — Next.js requires this for hydration
+- `web/src/app/page.tsx`: moved all inline styles to CSS classes (`.hero-headline`, `.manifesto-line`, Tailwind `max-w-[440px]`) so the landing page no longer depends on inline styles
+- `web/src/app/globals.css`: added `.hero-headline` and `.manifesto-line` component classes
+
+**Files changed:** `nginx.conf`, `web/src/app/page.tsx`, `web/src/app/globals.css`
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build web`
+3. Copy updated `nginx.conf` to the nginx container (or rebuild)
+4. `docker compose up -d && docker compose exec nginx nginx -s reload`
+
 ### v4.8.1 — 3 April 2026
 
 **Fix: paywall unlock fails with "Something went wrong" on seeded data**
@@ -4534,7 +4555,7 @@ No new migrations. Services changed: **gateway**, **web**.
 - `ENV NODE_ENV=production` added to web, payment-service, key-service Dockerfiles
 - Root `.dockerignore` created
 - HSTS `preload` directive added
-- `'unsafe-inline'` removed from CSP `style-src`
+- CSP `style-src` includes `'unsafe-inline'` (required by Next.js); landing page inline styles moved to CSS classes
 - Article `pricePence` validation capped at 999,999
 - Config cache TTL (30s) in `loadConfig()`
 - Notification inserts awaited with try/catch

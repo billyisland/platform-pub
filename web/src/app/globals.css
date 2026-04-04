@@ -147,6 +147,17 @@
 
 @layer components {
 
+  /* ----- Landing page headlines ----- */
+  .hero-headline {
+    font-size: clamp(52px, 9vw, 92px);
+    letter-spacing: -0.035em;
+    line-height: 0.92;
+  }
+  .manifesto-line {
+    font-size: clamp(20px, 3vw, 28px);
+    font-weight: 400;
+  }
+
   /* ----- Slab rules ----- */
   .slab-rule {
     border: none;
