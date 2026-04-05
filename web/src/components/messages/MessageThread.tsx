@@ -36,7 +36,7 @@ export function MessageThread({
   const [replyTo, setReplyTo] = useState<DecryptedMessage | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const latestCreatedAt = useRef<string | null>(null)
 
@@ -98,13 +98,12 @@ export function MessageThread({
       }
       setNextCursor(data.nextCursor)
 
-      // Mark all messages in conversation as read (single batch call)
-      const hasUnread = data.messages.some(msg => msg.senderId !== user?.id && !msg.readAt)
-      if (hasUnread) {
-        await messagesApi.markAllRead(conversationId).catch(() => {})
-        refreshUnread()
-        onMessagesRead?.()
-      }
+      // Mark all messages in conversation as read (single batch call).
+      // Always fire — the loaded page may not include the unread messages
+      // (they could be older than the most recent 50).
+      await messagesApi.markAllRead(conversationId).catch(() => {})
+      refreshUnread()
+      onMessagesRead?.()
     } catch {}
     finally { setLoading(false); setLoadingMore(false); setDecrypting(false) }
   }, [conversationId, user?.id])
@@ -205,6 +204,7 @@ export function MessageThread({
     setMsgs(prev => [...prev, optimisticMsg])
     setContent('')
     setReplyTo(null)
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setSending(true)
     setDmPriceError(null)
 
@@ -324,25 +324,32 @@ export function MessageThread({
 
                   {/* Like + Reply buttons */}
                   <div className={`flex items-center gap-2 mt-0.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    {/* Reply — hover-reveal on desktop, always visible on mobile */}
                     <button
                       onClick={() => handleReply(msg)}
                       className="text-[11px] font-sans text-grey-300 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-black"
                     >
                       Reply
                     </button>
-                    <button
-                      onClick={() => handleToggleLike(msg.id)}
-                      className={`text-[12px] transition-colors ${
-                        msg.likedByMe
-                          ? 'text-crimson'
-                          : 'text-grey-300 md:opacity-0 md:group-hover:opacity-100'
-                      }`}
-                      aria-label={msg.likedByMe ? 'Unlike' : 'Like'}
-                    >
-                      {msg.likedByMe ? '\u2665' : '\u2661'}
-                    </button>
-                    {msg.likeCount > 0 && (
-                      <span className="text-[11px] font-mono text-grey-300">{msg.likeCount}</span>
+
+                    {/* Like — always visible when liked; hover-reveal when not */}
+                    {(msg.likedByMe || msg.likeCount > 0) ? (
+                      <button
+                        onClick={() => handleToggleLike(msg.id)}
+                        className="flex items-center gap-1 text-[12px] text-crimson hover:opacity-70 transition-opacity"
+                        aria-label={msg.likedByMe ? 'Unlike' : 'Like'}
+                      >
+                        <span>{msg.likedByMe ? '\u2665' : '\u2661'}</span>
+                        <span className="text-[11px] font-mono">{msg.likeCount}</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleToggleLike(msg.id)}
+                        className="text-[12px] text-grey-300 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-black"
+                        aria-label="Like"
+                      >
+                        {'\u2661'}
+                      </button>
                     )}
                   </div>
                 </div>
@@ -384,14 +391,26 @@ export function MessageThread({
       )}
 
       {/* Send box */}
-      <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 flex-shrink-0">
-        <input
+      <form onSubmit={handleSend} className="flex items-end gap-2 px-4 py-3 flex-shrink-0">
+        <textarea
           ref={inputRef}
-          type="text"
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => {
+            setContent(e.target.value)
+            // Auto-resize: reset then expand to scrollHeight
+            e.target.style.height = 'auto'
+            e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSend(e)
+            }
+          }}
           placeholder={replyTo ? 'Write a reply\u2026' : 'Write a message\u2026'}
-          className="flex-1 bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
+          rows={1}
+          className="flex-1 bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 resize-none overflow-y-auto"
+          style={{ maxHeight: '160px' }}
         />
         <button
           type="submit"
