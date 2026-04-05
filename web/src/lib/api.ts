@@ -200,10 +200,11 @@ export const articles = {
     title: string
     summary?: string
     content: string
-    isPaywalled: boolean
+    accessMode: 'public' | 'paywalled' | 'invitation_only'
     pricePence: number
     gatePositionPct: number
     vaultEventId?: string
+    draftId?: string
   }) =>
     request<{ articleId: string }>('/articles', {
       method: 'POST',

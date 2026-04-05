@@ -18,7 +18,8 @@ import type { PublishData } from '../components/editor/ArticleEditor'
 //      d. Re-index with v2 event ID
 // =============================================================================
 
-const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL ?? ''
+// Use relative URLs so requests go through the Next.js rewrite (same origin).
+const API_BASE = '/api/v1'
 
 interface PublishResult {
   articleEventId: string
@@ -46,7 +47,7 @@ export async function publishArticle(
       title: data.title,
       summary: data.dek?.trim() || undefined,
       content: data.freeContent,
-      isPaywalled: data.isPaywalled,
+      accessMode: data.isPaywalled ? 'paywalled' : 'public',
       pricePence: data.pricePence,
       gatePositionPct: data.gatePositionPct,
     })
@@ -89,7 +90,7 @@ export async function publishArticle(
     title: data.title,
     summary: data.dek?.trim() || undefined,
     content: data.freeContent,
-    isPaywalled: data.isPaywalled,
+    accessMode: data.isPaywalled ? 'paywalled' : 'public',
     pricePence: data.pricePence,
     gatePositionPct: data.gatePositionPct,
   })
@@ -140,7 +141,7 @@ async function encryptPaywallBody(
   dTag: string,
   data: PublishData
 ): Promise<{ ciphertext: string; algorithm: string }> {
-  const res = await fetch(`${GATEWAY_URL}/api/v1/articles/${articleEventId}/vault`, {
+  const res = await fetch(`${API_BASE}/articles/${articleEventId}/vault`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },

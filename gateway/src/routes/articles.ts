@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { createHmac } from 'crypto'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { checkArticleAccess, recordSubscriptionRead, recordPurchaseUnlock } from '../services/access.js'
@@ -24,6 +25,10 @@ import logger from '../../shared/src/lib/logger.js'
 
 const KEY_SERVICE_URL = process.env.KEY_SERVICE_URL ?? 'http://localhost:3002'
 const PAYMENT_SERVICE_URL = process.env.PAYMENT_SERVICE_URL ?? 'http://localhost:3001'
+const READER_HASH_KEY = process.env.READER_HASH_KEY
+if (!READER_HASH_KEY) {
+  logger.warn('READER_HASH_KEY is not set — gate-pass will fail for first-time purchasers')
+}
 
 const IndexArticleSchema = z.object({
   nostrEventId: z.string().min(1),
@@ -444,10 +449,11 @@ export async function articleRoutes(app: FastifyInstance) {
         const tabId = tabRow.rows[0].id
 
         // Compute reader pubkey hash (keyed HMAC for privacy)
-        const { createHmac } = await import('crypto')
-        const hmacKey = process.env.READER_HASH_KEY
-        if (!hmacKey) throw new Error('READER_HASH_KEY not set')
-        const readerPubkeyHash = createHmac('sha256', hmacKey)
+        if (!READER_HASH_KEY) {
+          logger.error('READER_HASH_KEY not set — cannot compute reader pubkey hash')
+          return reply.status(500).send({ error: 'Server misconfiguration: READER_HASH_KEY not set' })
+        }
+        const readerPubkeyHash = createHmac('sha256', READER_HASH_KEY)
           .update(readerPubkey)
           .digest('hex')
 
@@ -532,8 +538,16 @@ export async function articleRoutes(app: FastifyInstance) {
           allowanceJustExhausted: paymentResult.allowanceJustExhausted ?? false,
           ciphertext: keyResult.ciphertext ?? undefined,
         })
-      } catch (err) {
+      } catch (err: any) {
         logger.error({ err, readerId, nostrEventId }, 'Gate pass orchestration failed')
+        // Distinguish service-connectivity errors from other failures
+        const isNetworkError = err?.cause?.code === 'ECONNREFUSED' ||
+          err?.cause?.code === 'ENOTFOUND' ||
+          err?.code === 'ECONNREFUSED' ||
+          err?.message?.includes('fetch failed')
+        if (isNetworkError) {
+          return reply.status(502).send({ error: 'Payment or key service unreachable' })
+        }
         return reply.status(500).send({ error: 'Internal error' })
       }
     }

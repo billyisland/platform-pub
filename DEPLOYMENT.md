@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.5.0
+# all.haus — Deployment Reference v5.5.1
 
 **Date:** 5 April 2026
-**Replaces:** v5.4.1 (see bottom for change log)
+**Replaces:** v5.5.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -4353,6 +4353,58 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.5.1 — 5 April 2026
+
+**Fix: paywalled articles indexed as public + gate-pass error handling**
+
+Three bugs fixed: (1) every paywalled article published since v3.25.0 was silently indexed with `access_mode = 'public'` due to a client/server field name mismatch, (2) the vault encryption call during publish used `NEXT_PUBLIC_GATEWAY_URL` (same cross-origin bug fixed in vault.ts in v5.5.0 but missed in publish.ts), and (3) the gate-pass catch-all handler hid all errors behind a generic "Internal error" with no way to diagnose the cause.
+
+**Bug 1 — Paywalled articles indexed as public**
+
+**Root cause:** In v3.25.0 the server's `IndexArticleSchema` was changed from `isPaywalled: z.boolean()` to `accessMode: z.enum(['public','paywalled','invitation_only']).default('public')`. The client (`publish.ts` / `api.ts`) was never updated — it still sent `isPaywalled: true`. Zod silently stripped the unknown field and defaulted `accessMode` to `'public'`. Every paywalled article was stored with `access_mode = 'public'`, so the paywall gate never rendered and readers saw truncated articles with no way to unlock the encrypted content below the gate.
+
+**Fix:** `publish.ts` now sends `accessMode: data.isPaywalled ? 'paywalled' : 'public'`. The `api.ts` type signature updated to match the server schema.
+
+**Bug 2 — publish.ts cross-origin vault call**
+
+**Root cause:** `publish.ts` used `NEXT_PUBLIC_GATEWAY_URL` for the vault encryption fetch — the same cross-origin pattern fixed in `vault.ts` in v5.5.0. If `NEXT_PUBLIC_GATEWAY_URL` resolved to a cross-origin URL (e.g. `http://localhost:3000` in prod), the vault encryption step during publish would fail, leaving the article without encrypted content.
+
+**Fix:** Replaced with relative `/api/v1` path matching `vault.ts` and `api.ts`.
+
+**Bug 3 — Gate-pass "Internal error" with no diagnostics**
+
+**Root cause:** The gate-pass catch-all caught every exception — missing env vars, service connectivity failures, DB errors — and returned the same `{ error: 'Internal error' }` with no way to tell what actually failed. Additionally, `READER_HASH_KEY` was checked with a `throw` inside the request handler (caught by the generic catch-all), and `createHmac` was dynamically imported on every request.
+
+**Fix:** `READER_HASH_KEY` is now validated at module load with a startup warning. `createHmac` is imported at the top level. The catch-all now distinguishes service-connectivity errors (502 with "Payment or key service unreachable") from other failures. A missing `READER_HASH_KEY` returns a specific error message instead of throwing into the catch-all.
+
+**Changes:**
+
+- `web/src/lib/publish.ts`: `isPaywalled` → `accessMode: 'paywalled' | 'public'` in both index calls. `NEXT_PUBLIC_GATEWAY_URL` replaced with relative `/api/v1` for vault encryption call.
+- `web/src/lib/api.ts`: `articles.index()` type signature updated from `isPaywalled: boolean` to `accessMode: 'public' | 'paywalled' | 'invitation_only'`.
+- `gateway/src/routes/articles.ts`: `createHmac` imported at top level. `READER_HASH_KEY` validated at module load. Gate-pass HMAC section returns a specific 500 instead of throwing. Catch-all distinguishes network errors (502) from other failures.
+
+**Files changed:** `web/src/lib/publish.ts`, `web/src/lib/api.ts`, `gateway/src/routes/articles.ts`
+
+**Data fix for existing articles:**
+
+Articles published between v3.25.0 and this release may have `access_mode = 'public'` when they should be `paywalled`. Run this one-time fix:
+
+```sql
+UPDATE articles SET access_mode = 'paywalled'
+WHERE price_pence IS NOT NULL AND price_pence > 0 AND access_mode = 'public';
+```
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build gateway web`
+3. `docker compose up -d gateway web`
+4. Run the SQL data fix above against the production database
+
+No new env vars. No schema changes.
+
+---
 
 ### v5.5.0 — 5 April 2026
 
