@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.3.1
+# all.haus — Deployment Reference v5.4.0
 
 **Date:** 5 April 2026
-**Replaces:** v5.3.0 (see bottom for change log)
+**Replaces:** v5.3.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -4353,6 +4353,37 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.4.0 — 5 April 2026
+
+**Remove free pass (direct grant) feature — gift links are sufficient**
+
+The "free pass" system let authors grant a named user free access to a paywalled article. This is redundant now that gift links exist (capped, shareable token URLs that grant the same access). Removed all free-pass routes, UI, and notification type. Gift links are unaffected.
+
+**Changes:**
+
+- `gateway/src/routes/free-passes.ts` → renamed to `gateway/src/routes/gift-links.ts`. The three free-pass endpoints (`POST /free-pass`, `DELETE /free-pass/:userId`, `GET /free-passes`) and the `GrantFreePassSchema` are removed. The four gift-link endpoints are retained. Export renamed from `freePassRoutes` to `giftLinkRoutes`.
+- `gateway/src/index.ts`: import and registration updated to `giftLinkRoutes` from `./routes/gift-links.js`.
+- `web/src/lib/api.ts`: removed `FreePass` interface, `freePasses` export, and `'free_pass_granted'` from `NotificationType` union.
+- `web/src/components/dashboard/FreePassManager.tsx`: deleted.
+- `web/src/app/dashboard/page.tsx`: removed `FreePassManager` import, `freePassArticleId`/`menuOpenId` state, the "⋯" overflow menu on paywalled articles, and the inline `FreePassManager` panel.
+- `web/src/components/article/ArticleReader.tsx`: removed `freePasses` and `UserSearch` imports, gift-access state/handler (`showGiftModal`, `handleGiftAccess`), the gift-access modal, and the "Gift" button. The "Gift link" button is retained.
+- `web/src/app/notifications/page.tsx`: removed `free_pass_granted` label.
+- `web/src/components/ui/NotificationBell.tsx`: removed `free_pass_granted` from routing and labels.
+
+**Files changed:** `gateway/src/routes/gift-links.ts` (renamed from `free-passes.ts`), `gateway/src/index.ts`, `web/src/lib/api.ts`, `web/src/app/dashboard/page.tsx`, `web/src/components/article/ArticleReader.tsx`, `web/src/app/notifications/page.tsx`, `web/src/components/ui/NotificationBell.tsx`
+
+**Files deleted:** `web/src/components/dashboard/FreePassManager.tsx`
+
+**Upgrade steps:**
+
+1. `git pull origin master`
+2. `docker compose build gateway web`
+3. `docker compose up -d gateway web`
+
+No new migrations. The `'author_grant'` value in the `unlocked_via` CHECK constraint is retained — gift link redemptions still use it. Existing free-pass unlocks in the database remain valid.
+
+---
 
 ### v5.3.1 — 5 April 2026
 

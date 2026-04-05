@@ -26,7 +26,7 @@ import { exportRoutes } from './routes/export.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { voteRoutes } from './routes/votes.js'
 import { historyRoutes } from './routes/history.js'
-import { freePassRoutes } from './routes/free-passes.js'
+import { giftLinkRoutes } from './routes/gift-links.js'
 import { messageRoutes } from './routes/messages.js'
 import { driveRoutes, expireOverdueDrives } from './routes/drives.js'
 import { expireAndRenewSubscriptions } from './routes/subscriptions.js'
@@ -141,8 +141,8 @@ async function start() {
   // Reading history (list previously-read articles for the current reader)
   await app.register(historyRoutes, { prefix: '/api/v1' })
 
-  // Free passes (author-granted access to paywalled/invitation-only articles)
-  await app.register(freePassRoutes, { prefix: '/api/v1' })
+  // Gift links (capped shareable access tokens for paywalled articles)
+  await app.register(giftLinkRoutes, { prefix: '/api/v1' })
 
   // Direct messages (NIP-17 E2E encrypted conversations)
   await app.register(messageRoutes, { prefix: '/api/v1' })

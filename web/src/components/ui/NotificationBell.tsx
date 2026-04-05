@@ -37,8 +37,6 @@ function getDestUrl(n: Notification): string {
       return '/dashboard?tab=drives'
     case 'new_message':
       return n.conversationId ? `/messages/${n.conversationId}` : '/messages'
-    case 'free_pass_granted':
-      return n.article?.slug ? `/article/${n.article.slug}` : '#'
     default:
       return '#'
   }
@@ -90,7 +88,6 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
       drive_funded: 'your pledge drive reached its goal',
       pledge_fulfilled: 'a pledge drive you backed was published',
       new_message: 'sent you a message',
-      free_pass_granted: 'granted you a free pass',
       dm_payment_required: 'requires payment to message',
       new_user: 'joined the platform',
     }

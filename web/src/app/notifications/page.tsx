@@ -58,7 +58,6 @@ function NotificationRow({ n, onDismiss }: { n: Notification; onDismiss: (id: st
     drive_funded: 'your pledge drive reached its goal',
     pledge_fulfilled: 'a pledge drive you backed was published',
     new_message: 'sent you a message',
-    free_pass_granted: 'granted you a free pass',
     dm_payment_required: 'requires payment to message',
     new_user: 'joined the platform',
   }

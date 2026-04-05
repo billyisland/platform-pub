@@ -13,8 +13,7 @@ import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
 import { NoteComposer } from '../feed/NoteComposer'
 import { ForAllMark } from '../icons/ForAllMark'
-import { UserSearch, type UserSearchResult } from '../ui/UserSearch'
-import { articles as articlesApi, freePasses, giftLinks } from '../../lib/api'
+import { articles as articlesApi, giftLinks } from '../../lib/api'
 import type { ArticleEvent } from '../../lib/ndk'
 
 interface ArticleReaderProps {
@@ -60,25 +59,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [subscribing, setSubscribing] = useState(false)
 
-  // Gift access flow
-  const [showGiftModal, setShowGiftModal] = useState(false)
-  const [giftGranting, setGiftGranting] = useState(false)
-  const [giftSuccess, setGiftSuccess] = useState<string | null>(null)
-  const [giftError, setGiftError] = useState<string | null>(null)
   const isOwnContent = user?.id === writerId
-
-  async function handleGiftAccess(recipient: UserSearchResult) {
-    if (!articleDbId) return
-    setGiftGranting(true); setGiftError(null); setGiftSuccess(null)
-    try {
-      await freePasses.grant(articleDbId, recipient.id)
-      setGiftSuccess(`Access granted to ${recipient.displayName ?? recipient.username}`)
-    } catch {
-      setGiftError('Failed to grant access.')
-    } finally {
-      setGiftGranting(false)
-    }
-  }
 
   // Gift link creation
   const [showGiftLinkModal, setShowGiftLinkModal] = useState(false)
@@ -213,23 +194,6 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
     <div className="min-h-screen bg-white">
       {showAllowanceModal && <AllowanceExhaustedModal onClose={() => setShowAllowanceModal(false)} />}
 
-      {/* Gift access modal */}
-      {showGiftModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowGiftModal(false)}>
-          <div className="bg-white border border-grey-200 shadow-lg w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-serif text-[20px] font-medium text-black mb-1">Gift access</h3>
-            <p className="text-[13px] font-sans text-grey-400 mb-4">Search for a reader to grant free access to this article.</p>
-            <UserSearch onSelect={handleGiftAccess} placeholder="Search readers…" />
-            {giftGranting && <p className="mt-3 text-[12px] font-mono text-grey-400">Granting…</p>}
-            {giftSuccess && <p className="mt-3 text-[12px] font-mono text-green-600">{giftSuccess}</p>}
-            {giftError && <p className="mt-3 text-[12px] font-mono text-crimson">{giftError}</p>}
-            <button onClick={() => setShowGiftModal(false)} className="mt-4 text-[12px] font-mono text-grey-400 hover:text-black transition-colors">
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Text-selection quote popup */}
       {selectionPopup && (
         <div
@@ -344,20 +308,12 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
                 <ShareButton url={articleUrl} title={article.title} />
                 <ReportButton targetNostrEventId={article.id} />
                 {isOwnContent && article.isPaywalled && (
-                  <>
-                    <button
-                      onClick={() => setShowGiftModal(true)}
-                      className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-400 hover:text-black transition-colors"
-                    >
-                      Gift
-                    </button>
-                    <button
-                      onClick={() => { setShowGiftLinkModal(true); setGiftLinkUrl(null) }}
-                      className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-400 hover:text-black transition-colors"
-                    >
-                      Gift link
-                    </button>
-                  </>
+                  <button
+                    onClick={() => { setShowGiftLinkModal(true); setGiftLinkUrl(null) }}
+                    className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-400 hover:text-black transition-colors"
+                  >
+                    Gift link
+                  </button>
                 )}
               </div>
             </div>

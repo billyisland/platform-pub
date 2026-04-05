@@ -485,7 +485,6 @@ export type NotificationType =
   | 'drive_funded'
   | 'pledge_fulfilled'
   | 'new_message'
-  | 'free_pass_granted'
   | 'dm_payment_required'
   | 'new_user'
 
@@ -647,13 +646,6 @@ export interface Pledge {
   createdAt: string
 }
 
-export interface FreePass {
-  userId: string
-  username: string
-  displayName: string | null
-  grantedAt: string
-}
-
 export const drives = {
   create: (data: {
     origin: 'crowdfund' | 'commission'
@@ -707,26 +699,6 @@ export const drives = {
 
   myPledges: () =>
     request<{ pledges: Pledge[] }>('/my/pledges'),
-}
-
-// =============================================================================
-// Free Passes
-// =============================================================================
-
-export const freePasses = {
-  list: (articleId: string) =>
-    request<{ passes: FreePass[] }>(`/articles/${articleId}/free-passes`),
-
-  grant: (articleId: string, recipientId: string) =>
-    request<{ ok: boolean }>(`/articles/${articleId}/free-pass`, {
-      method: 'POST',
-      body: JSON.stringify({ recipientId }),
-    }),
-
-  revoke: (articleId: string, userId: string) =>
-    request<{ ok: boolean }>(`/articles/${articleId}/free-pass/${userId}`, {
-      method: 'DELETE',
-    }),
 }
 
 // =============================================================================

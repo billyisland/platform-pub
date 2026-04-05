@@ -9,7 +9,6 @@ import { loadDrafts, deleteDraft } from '../../lib/drafts'
 import { KIND_DELETION } from '../../lib/ndk'
 import { signAndPublish } from '../../lib/sign'
 import { DrivesTab } from '../../components/dashboard/DrivesTab'
-import { FreePassManager } from '../../components/dashboard/FreePassManager'
 
 type DashboardTab = 'articles' | 'drafts' | 'drives' | 'settings'
 
@@ -65,13 +64,11 @@ export default function DashboardPage() {
 }
 
 // =============================================================================
-// Articles Tab — with free pass overflow menu
+// Articles Tab
 // =============================================================================
 
 function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
   const [articles, setArticles] = useState<MyArticle[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [freePassArticleId, setFreePassArticleId] = useState<string | null>(null)
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
 
   useEffect(() => { (async () => { setLoading(true); try { setArticles((await myArticles.list()).articles) } catch { setError('Failed to load articles.') } finally { setLoading(false) } })() }, [userId])
   async function handleToggleReplies(id: string, on: boolean) { try { await myArticles.update(id, { repliesEnabled: on }); setArticles(p => p.map(a => a.id === id ? { ...a, repliesEnabled: on } : a)) } catch { setError('Failed to update.') } }
@@ -111,38 +108,12 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
               <div className="flex items-center justify-end gap-3">
                 <Link href={`/write?edit=${a.nostrEventId}`} className="text-grey-400 hover:text-black">Edit</Link>
                 <button onClick={() => handleDelete(a.id)} disabled={deletingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button>
-                {a.isPaywalled && (
-                  <div className="relative">
-                    <button
-                      onClick={() => setMenuOpenId(menuOpenId === a.id ? null : a.id)}
-                      className="text-grey-300 hover:text-black text-lg leading-none"
-                      title="More actions"
-                    >
-                      &#8943;
-                    </button>
-                    {menuOpenId === a.id && (
-                      <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-grey-200 shadow-lg z-10">
-                        <button
-                          onClick={() => { setFreePassArticleId(freePassArticleId === a.id ? null : a.id); setMenuOpenId(null) }}
-                          className="block w-full text-left px-3 py-2 text-[13px] font-sans text-black hover:bg-grey-100"
-                        >
-                          Free passes
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </td>
           </tr>
         ))}
         </tbody>
       </table>
-
-      {/* Free pass inline panel */}
-      {freePassArticleId && (
-        <FreePassManager articleId={freePassArticleId} />
-      )}
     </div>
   )
 }
