@@ -233,12 +233,16 @@ export async function messageRoutes(app: FastifyInstance) {
         content_enc: string
         read_at: Date | null
         created_at: Date
+        like_count: string
+        liked_by_me: boolean
       }>(
         `SELECT dm.id, dm.sender_id, sa.username AS sender_username,
                 sa.display_name AS sender_display_name,
                 sa.nostr_pubkey AS sender_pubkey,
                 ra.nostr_pubkey AS recipient_pubkey,
-                dm.content_enc, dm.read_at, dm.created_at
+                dm.content_enc, dm.read_at, dm.created_at,
+                (SELECT COUNT(*) FROM dm_likes dl WHERE dl.message_id = dm.id) AS like_count,
+                EXISTS(SELECT 1 FROM dm_likes dl WHERE dl.message_id = dm.id AND dl.user_id = $2) AS liked_by_me
          FROM direct_messages dm
          JOIN accounts sa ON sa.id = dm.sender_id
          JOIN accounts ra ON ra.id = dm.recipient_id
@@ -254,13 +258,12 @@ export async function messageRoutes(app: FastifyInstance) {
           senderId: r.sender_id,
           senderUsername: r.sender_username,
           senderDisplayName: r.sender_display_name,
-          // For NIP-44 decryption the client needs the counterparty pubkey:
-          // the sender's pubkey when the reader is the recipient, or the
-          // recipient's pubkey when the reader is the sender.
           counterpartyPubkey: r.sender_id === userId ? r.recipient_pubkey : r.sender_pubkey,
           contentEnc: r.content_enc,
           readAt: r.read_at?.toISOString() ?? null,
           createdAt: r.created_at.toISOString(),
+          likeCount: parseInt(r.like_count, 10),
+          likedByMe: r.liked_by_me,
         })),
       })
     }
@@ -355,15 +358,6 @@ export async function messageRoutes(app: FastifyInstance) {
           [conversationId, senderId, recipientId, ciphertext]
         )
         messageIds.push(result.rows[0].id)
-
-        // Create notification
-        await pool.query(
-          `INSERT INTO notifications (recipient_id, actor_id, type)
-           VALUES ($1, $2, 'new_message')`,
-          [recipientId, senderId]
-        ).catch(err => {
-          logger.error({ err, recipientId }, 'Failed to create DM notification')
-        })
       }
 
       // Update conversation last_message_at
@@ -405,6 +399,46 @@ export async function messageRoutes(app: FastifyInstance) {
       return reply.status(200).send({ ok: true })
     }
   )
+  // ---------------------------------------------------------------------------
+  // POST /messages/:messageId/like — toggle like on a message
+  // ---------------------------------------------------------------------------
+
+  app.post<{ Params: { messageId: string } }>(
+    '/messages/:messageId/like',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const userId = req.session!.sub!
+      const { messageId } = req.params
+
+      // Verify user is a participant in this message's conversation
+      const membership = await pool.query(
+        `SELECT 1 FROM direct_messages dm
+         JOIN conversation_members cm ON cm.conversation_id = dm.conversation_id AND cm.user_id = $2
+         WHERE dm.id = $1`,
+        [messageId, userId]
+      )
+      if (membership.rowCount === 0) {
+        return reply.status(403).send({ error: 'Not a participant' })
+      }
+
+      // Toggle: try to insert, if exists delete
+      const existing = await pool.query(
+        'DELETE FROM dm_likes WHERE message_id = $1 AND user_id = $2 RETURNING id',
+        [messageId, userId]
+      )
+
+      if (existing.rowCount! > 0) {
+        return reply.status(200).send({ liked: false })
+      }
+
+      await pool.query(
+        'INSERT INTO dm_likes (message_id, user_id) VALUES ($1, $2)',
+        [messageId, userId]
+      )
+      return reply.status(200).send({ liked: true })
+    }
+  )
+
   // ---------------------------------------------------------------------------
   // POST /dm/decrypt-batch — batch-decrypt messages for the reading client
   //

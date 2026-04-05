@@ -30,6 +30,7 @@ export function MessageThread({
   const [sending, setSending] = useState(false)
   const [dmPriceError, setDmPriceError] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   async function decryptMessages(encrypted: DirectMessage[]): Promise<DecryptedMessage[]> {
     if (encrypted.length === 0) return []
@@ -48,14 +49,28 @@ export function MessageThread({
     const isInitial = !cursor
     if (isInitial) setLoading(true)
     else setLoadingMore(true)
+
+    // Capture scroll position before loading older messages
+    const scrollEl = scrollRef.current
+    const prevScrollHeight = scrollEl?.scrollHeight ?? 0
+
     try {
       const data = await messagesApi.getMessages(conversationId, cursor)
       setDecrypting(true)
       const decrypted = await decryptMessages(data.messages)
+      // API returns newest-first; reverse to chronological (oldest at top, newest at bottom)
+      const chronological = decrypted.reverse()
       if (isInitial) {
-        setMsgs(decrypted)
+        setMsgs(chronological)
       } else {
-        setMsgs(prev => [...decrypted, ...prev])
+        // Prepend older messages at the top
+        setMsgs(prev => [...chronological, ...prev])
+        // Restore scroll position after older messages are prepended
+        requestAnimationFrame(() => {
+          if (scrollEl) {
+            scrollEl.scrollTop = scrollEl.scrollHeight - prevScrollHeight
+          }
+        })
       }
       setNextCursor(data.nextCursor)
 
@@ -85,7 +100,6 @@ export function MessageThread({
     try {
       await messagesApi.send(conversationId, content.trim())
       setContent('')
-      // Refetch to get the new message
       fetchMessages()
     } catch (err: any) {
       if (err?.status === 402) {
@@ -94,6 +108,17 @@ export function MessageThread({
     } finally {
       setSending(false)
     }
+  }
+
+  async function handleToggleLike(messageId: string) {
+    try {
+      const { liked } = await messagesApi.toggleLike(messageId)
+      setMsgs(prev => prev.map(m =>
+        m.id === messageId
+          ? { ...m, likedByMe: liked, likeCount: m.likeCount + (liked ? 1 : -1) }
+          : m
+      ))
+    } catch {}
   }
 
   return (
@@ -109,7 +134,7 @@ export function MessageThread({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {nextCursor && (
           <div className="text-center">
             <button
@@ -131,18 +156,37 @@ export function MessageThread({
             const isMine = msg.senderId === user?.id
             return (
               <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] ${isMine ? 'bg-black text-white' : 'bg-grey-100 text-black'} px-4 py-2.5`}>
-                  {!isMine && (
-                    <p className={`text-[12px] font-sans font-semibold mb-0.5 ${isMine ? 'text-grey-300' : 'text-grey-600'}`}>
-                      {msg.senderDisplayName ?? msg.senderUsername}
+                <div className={`max-w-[75%] group`}>
+                  <div className={`${isMine ? 'bg-black text-white' : 'bg-grey-100 text-black'} px-4 py-2.5`}>
+                    {!isMine && (
+                      <p className={`text-[12px] font-sans font-semibold mb-0.5 text-grey-600`}>
+                        {msg.senderDisplayName ?? msg.senderUsername}
+                      </p>
+                    )}
+                    <p className="text-[14px] font-sans leading-relaxed whitespace-pre-wrap">
+                      {msg.content ?? <span className="italic text-grey-300">Could not decrypt</span>}
                     </p>
-                  )}
-                  <p className="text-[14px] font-sans leading-relaxed whitespace-pre-wrap">
-                    {msg.content ?? <span className="italic text-grey-300">Could not decrypt</span>}
-                  </p>
-                  <p className={`text-[10px] font-mono mt-1 ${isMine ? 'text-grey-400' : 'text-grey-300'}`}>
-                    {timeStamp(msg.createdAt)}
-                  </p>
+                    <p className={`text-[10px] font-mono mt-1 ${isMine ? 'text-grey-400' : 'text-grey-300'}`}>
+                      {timeStamp(msg.createdAt)}
+                    </p>
+                  </div>
+                  {/* Like button */}
+                  <div className={`flex items-center gap-1 mt-0.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <button
+                      onClick={() => handleToggleLike(msg.id)}
+                      className={`text-[12px] transition-colors ${
+                        msg.likedByMe
+                          ? 'text-crimson'
+                          : 'text-grey-200 opacity-0 group-hover:opacity-100'
+                      }`}
+                      aria-label={msg.likedByMe ? 'Unlike' : 'Like'}
+                    >
+                      {msg.likedByMe ? '♥' : '♡'}
+                    </button>
+                    {msg.likeCount > 0 && (
+                      <span className="text-[11px] font-mono text-grey-300">{msg.likeCount}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             )

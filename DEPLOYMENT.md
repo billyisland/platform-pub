@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.5.1
+# all.haus — Deployment Reference v5.6.0
 
 **Date:** 5 April 2026
-**Replaces:** v5.5.0 (see bottom for change log)
+**Replaces:** v5.5.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -158,7 +158,7 @@ docker compose ps   # wait for postgres to be healthy
 
 ### 4. Apply schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v4.9.0, `schema.sql` includes all structural changes through migration 025; the `_migrations` table is pre-seeded accordingly. Migrations 026–030 must be run separately on existing databases.
+The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.6.0, `schema.sql` includes all structural changes through migration 032; the `_migrations` table is pre-seeded accordingly.
 
 For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything.
 
@@ -249,6 +249,57 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.5.1
+
+New migration (032). Services changed: **gateway**, **web**. Deploy order: **migrate → rebuild gateway + web**.
+
+This release adds DM likes, fixes DM message ordering (newest at bottom like text messages), fixes export modal UX issues, adds data export to settings and mobile nav, adds a writer guard on the account export endpoint, and separates DM unread tracking from the notification system (DMs no longer create `new_message` notifications).
+
+**Database migration:**
+
+- Migration 032: Creates `dm_likes` table (message reactions). Marks all existing `new_message` notifications as read (cleanup — DMs now use their own unread tracking exclusively).
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# 1. Apply migration
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub \
+  < migrations/032_dm_likes.sql
+
+# 2. Rebuild and restart
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# gateway and web should show (healthy) after ~30s
+
+# Verify migration applied
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "SELECT name FROM _migrations ORDER BY name" | grep '032'
+
+# Verify dm_likes table exists
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "\d dm_likes"
+
+# Visual checks:
+# - Open a DM conversation — newest messages should appear at the bottom
+# - Hover a message — a heart icon should appear; clicking toggles like
+# - Open the export modal (desktop dropdown) — both download buttons stay
+#   visible after downloading one; errors show inline, not as alerts
+# - Open mobile nav — "Export my data" should appear between Settings and Log out
+# - Open Settings page — "Export my data" section should appear at the bottom
+# - Receive a DM — avatar badge increments; no separate notification appears
+# - Read DMs — avatar badge decrements; notification page is unaffected
+```
+
+No new env vars.
+
+---
 
 ### From v5.0.3
 
@@ -4032,6 +4083,11 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
 | 025_comp_subscriptions.sql | `is_comp` boolean on subscriptions |
 | 026_article_profile_pins.sql | `pinned_on_profile` and `profile_pin_order` on articles |
 | 027_subscription_visibility.sql | `hidden` boolean on subscriptions |
+| 028_subscription_nudge.sql | `subscription_nudge_log` table |
+| 029_gift_links.sql | `gift_links` table |
+| 030_commissions_expansion.sql | Pledge drive expansion columns |
+| 031_fix_media_urls_domain.sql | Media URL domain migration |
+| 032_dm_likes.sql | `dm_likes` table for DM reactions; marks stale `new_message` notifications as read |
 
 Run all pending migrations (requires Node on the host — substitute your `POSTGRES_PASSWORD`):
 ```bash
@@ -4107,8 +4163,22 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 ### Notifications
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | /api/v1/notifications | session | List recent notifications (max 50) with actor info, article title, comment excerpt, and unread count. Types: `new_follower`, `new_reply`, `new_subscriber`, `new_quote`, `new_mention` |
+| GET | /api/v1/notifications | session | List recent notifications (max 50). Excludes `new_message` type (DMs have separate unread tracking). Types: `new_follower`, `new_reply`, `new_subscriber`, `new_quote`, `new_mention` |
 | POST | /api/v1/notifications/read-all | session | Mark all notifications as read |
+| GET | /api/v1/unread-counts | session | Lightweight badge counts: `{ notificationCount, dmCount }`. Notification count excludes DM notifications |
+| POST | /api/v1/notifications/:id/read | session | Mark a single notification as read |
+
+### Messages (DMs)
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | /api/v1/conversations | session | Create a new DM conversation |
+| POST | /api/v1/conversations/:id/members | session | Add members to a conversation |
+| GET | /api/v1/messages | session | List conversations (inbox) with unread counts |
+| GET | /api/v1/messages/:conversationId | session | Load messages in a conversation (newest-first, paginated). Includes `likeCount` and `likedByMe` per message |
+| POST | /api/v1/messages/:conversationId | session | Send a DM (NIP-44 E2E encrypted). Rate limited: 10/min |
+| POST | /api/v1/messages/:messageId/read | session | Mark a message as read |
+| POST | /api/v1/messages/:messageId/like | session | Toggle like on a message (heart reaction) |
+| POST | /api/v1/dm/decrypt-batch | session | Batch-decrypt messages client-side via key-custody |
 
 ### Votes
 | Method | Path | Auth | Purpose |
@@ -4283,7 +4353,8 @@ Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), conver
 | /profile | Edit your display name, bio, and avatar photo |
 | /following | Writers you follow, with unfollow action |
 | /followers | Accounts who follow you |
-| /notifications | Recent notifications (new followers, replies, subscribers, quotes, mentions) — full-page view used on mobile |
+| /notifications | Recent notifications (new followers, replies, subscribers, quotes, mentions) — excludes DM notifications. Full-page view used on mobile |
+| /messages | Two-panel DM inbox: conversation list + message thread. Chronological order (newest at bottom). Like reactions on messages |
 | /write | Article editor with paywall gate marker |
 | /article/:dTag | Article reader with paywall unlock (SSR, ISR 60s) |
 | /:username | Writer profile (SSR, ISR 60s) |
@@ -4291,7 +4362,7 @@ Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), conver
 | /auth/google/callback | Google OAuth callback (handles Google redirect, exchanges code, sets session) |
 | /auth/verify | Magic link verification |
 | /dashboard | Articles, drafts, billing |
-| /settings | Payment, Stripe Connect, account |
+| /settings | Payment, Stripe Connect, account, data export |
 | /search | Article + writer search |
 | /about | About page |
 
@@ -4353,6 +4424,52 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.6.0 — 5 April 2026
+
+**DM improvements, export fixes, notification separation**
+
+**DMs — chronological order + like reactions:**
+
+- Messages now display with newest at the bottom (like iMessage/text messages), reversing the previous newest-at-top order. "Load older messages" at the top loads history above.
+- Like button (heart) on each message bubble. Appears on hover, stays visible when liked. Toggle on/off. Like count shown when > 0.
+- New `dm_likes` table (migration 032) with unique constraint per user per message.
+- New endpoint: `POST /messages/:messageId/like` — toggles like, returns `{ liked: boolean }`. Verifies conversation membership.
+- Message fetch (`GET /messages/:conversationId`) now includes `likeCount` and `likedByMe` per message.
+
+**Notification / DM separation:**
+
+- DMs no longer create `new_message` notification rows. DMs have their own unread tracking via `direct_messages.read_at`.
+- `GET /notifications` and `GET /unread-counts` exclude `type = 'new_message'` (handles any pre-existing rows).
+- Avatar badge in nav shows `dmCount + notificationCount` with no double-counting. Reading DMs decrements only the DM portion; dismissing notifications decrements only the notification portion.
+- Removed `new_message` and `dm_payment_required` labels from the notifications page.
+- Migration 032 marks all existing unread `new_message` notifications as read.
+
+**Export modal fixes:**
+
+1. Modal no longer locks after first download — both buttons stay visible. Per-button "Downloaded" confirmation shown inline.
+2. "Export my data" added to mobile nav (between Settings and Log out).
+3. "Export my data" section added to the bottom of the Settings page.
+4. `GET /account/export` now returns 403 if the user is not a writer (`is_writer = false`), not an empty 200.
+5. Error feedback: generic `alert()` replaced with inline error messages per button. Server error messages (e.g. "Failed to retrieve content keys") surfaced directly.
+
+**Changes:**
+
+- `web/src/components/ExportModal.tsx`: replaced single `done` boolean with per-type `downloaded` Set and `errors` Map. `exporting` tracks which button is active. Errors parsed from response JSON.
+- `web/src/components/layout/Nav.tsx`: added `showExport` state and "Export my data" button to `MobileSheet`.
+- `web/src/app/settings/page.tsx`: added "Export my data" section at bottom with modal trigger.
+- `gateway/src/routes/export.ts`: added `is_writer` check after account fetch, returns 403 for non-writers.
+- `web/src/components/messages/MessageThread.tsx`: messages reversed to chronological order. Added `scrollRef` for scroll position restoration on "load older". Added `handleToggleLike` with optimistic UI update. Like button (heart) rendered below each message bubble.
+- `gateway/src/routes/messages.ts`: removed `new_message` notification insertion from send handler. Added `POST /messages/:messageId/like` toggle endpoint. Message fetch query includes `like_count` and `liked_by_me` subqueries.
+- `gateway/src/routes/notifications.ts`: `GET /notifications` and `GET /unread-counts` filter `type != 'new_message'`.
+- `web/src/lib/api.ts`: added `likeCount`, `likedByMe` to `DirectMessage` interface. Added `messages.toggleLike()` method.
+- `web/src/app/notifications/page.tsx`: removed `new_message` and `dm_payment_required` from notification label map.
+- `schema.sql`: added `dm_likes` table and index.
+- `migrations/032_dm_likes.sql`: creates `dm_likes` table, marks stale `new_message` notifications as read.
+
+**Files changed:** `web/src/components/ExportModal.tsx`, `web/src/components/layout/Nav.tsx`, `web/src/app/settings/page.tsx`, `gateway/src/routes/export.ts`, `web/src/components/messages/MessageThread.tsx`, `gateway/src/routes/messages.ts`, `gateway/src/routes/notifications.ts`, `web/src/lib/api.ts`, `web/src/app/notifications/page.tsx`, `schema.sql`, `migrations/032_dm_likes.sql`
+
+---
 
 ### v5.5.1 — 5 April 2026
 

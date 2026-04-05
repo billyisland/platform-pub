@@ -580,6 +580,8 @@ export interface DirectMessage {
   counterpartyPubkey: string
   contentEnc: string
   createdAt: string
+  likeCount: number
+  likedByMe: boolean
 }
 
 export interface DecryptedMessage extends DirectMessage {
@@ -603,6 +605,9 @@ export const messages = {
 
   markRead: (messageId: string) =>
     request<void>(`/messages/${messageId}/read`, { method: 'POST' }),
+
+  toggleLike: (messageId: string) =>
+    request<{ liked: boolean }>(`/messages/${messageId}/like`, { method: 'POST' }),
 
   createConversation: (memberIds: string[]) =>
     request<{ conversationId: string }>('/conversations', {

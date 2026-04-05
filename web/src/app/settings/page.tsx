@@ -5,6 +5,7 @@ import { useAuth } from '../../stores/auth'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { auth } from '../../lib/api'
 import { CardSetup } from '../../components/payment/CardSetup'
+import { ExportModal } from '../../components/ExportModal'
 
 export default function SettingsPage() {
   const { user, loading, fetchMe } = useAuth()
@@ -12,6 +13,7 @@ export default function SettingsPage() {
   const searchParams = useSearchParams()
   const [upgrading, setUpgrading] = useState(false)
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
+  const [showExport, setShowExport] = useState(false)
   const onboardingComplete = searchParams.get('onboarding') === 'complete'
 
   useEffect(() => { if (!loading && !user) router.push('/auth?mode=login') }, [user, loading, router])
@@ -58,7 +60,7 @@ export default function SettingsPage() {
         </section>
       )}
 
-      <section>
+      <section className="mb-10">
         <p className="label-ui text-grey-400 mb-4">Account</p>
         <div className="bg-white px-6 py-4 space-y-3">
           <div className="flex items-center justify-between"><span className="text-ui-xs text-grey-400">Display name</span><span className="text-ui-sm text-black">{user.displayName}</span></div>
@@ -68,6 +70,16 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between"><span className="text-ui-xs text-grey-400">Public key</span><span className="text-ui-xs text-grey-300 truncate max-w-[200px]">{user.pubkey}</span></div>
         </div>
       </section>
+
+      <section>
+        <p className="label-ui text-grey-400 mb-4">Export my data</p>
+        <div className="bg-white px-6 py-5">
+          <p className="text-ui-xs text-grey-600 mb-4 leading-relaxed">Download your data, receipts, and content keys.</p>
+          <button onClick={() => setShowExport(true)} className="btn">Export</button>
+        </div>
+      </section>
+
+      {showExport && <ExportModal onClose={() => setShowExport(false)} />}
     </div>
   )
 }

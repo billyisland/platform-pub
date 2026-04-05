@@ -763,6 +763,16 @@ CREATE TABLE dm_pricing (
 
 CREATE UNIQUE INDEX idx_dm_pricing_default ON dm_pricing(owner_id) WHERE target_id IS NULL;
 
+CREATE TABLE dm_likes (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id  UUID        NOT NULL REFERENCES direct_messages(id) ON DELETE CASCADE,
+  user_id     UUID        NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (message_id, user_id)
+);
+
+CREATE INDEX idx_dm_likes_message ON dm_likes (message_id);
+
 -- =============================================================================
 -- PLEDGE DRIVES (migration 017)
 -- =============================================================================

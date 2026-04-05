@@ -72,15 +72,20 @@ export async function exportRoutes(app: FastifyInstance) {
       nostr_pubkey: string
       username: string | null
       display_name: string | null
+      is_writer: boolean
     }>(
-      `SELECT nostr_pubkey, username, display_name
+      `SELECT nostr_pubkey, username, display_name, is_writer
        FROM accounts
        WHERE id = $1 AND status = 'active'`,
       [writerId]
     )
 
     if (accountRow.rows.length === 0) {
-      return reply.status(403).send({ error: 'Writer account not found' })
+      return reply.status(403).send({ error: 'Account not found' })
+    }
+
+    if (!accountRow.rows[0].is_writer) {
+      return reply.status(403).send({ error: 'Writer account required' })
     }
 
     const account = accountRow.rows[0]

@@ -153,6 +153,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
 }) {
   const pathname = usePathname()
   const [query, setQuery] = useState('')
+  const [showExport, setShowExport] = useState(false)
   const dmCount = useUnreadCounts((s) => s.dmCount)
   const notificationCount = useUnreadCounts((s) => s.notificationCount)
 
@@ -212,6 +213,12 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           <Link href="/account" onClick={onClose} className={linkClass('/account')}>Account</Link>
           <Link href="/history" onClick={onClose} className={linkClass('/history')}>Reading history</Link>
           <Link href="/settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
+          <button
+            onClick={() => { setShowExport(true); onClose() }}
+            className="block py-3 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-white transition-colors text-left"
+          >
+            Export my data
+          </button>
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
@@ -221,6 +228,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           >
             Log out
           </button>
+          {showExport && <ExportModal onClose={() => setShowExport(false)} />}
         </>
       ) : (
         <>

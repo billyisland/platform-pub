@@ -61,7 +61,7 @@ export async function notificationRoutes(app: FastifyInstance) {
        LEFT JOIN accounts aw  ON aw.id  = ar.writer_id
        LEFT JOIN comments c   ON c.id   = n.comment_id
        LEFT JOIN notes no     ON no.id  = n.note_id
-       WHERE n.recipient_id = $1 AND n.read = false
+       WHERE n.recipient_id = $1 AND n.read = false AND n.type != 'new_message'
        ORDER BY n.created_at DESC
        LIMIT 50`,
       [recipientId]
@@ -107,7 +107,7 @@ export async function notificationRoutes(app: FastifyInstance) {
 
     const { rows } = await pool.query<{ notification_count: string; dm_count: string }>(
       `SELECT
-         (SELECT COUNT(*) FROM notifications WHERE recipient_id = $1 AND read = false) AS notification_count,
+         (SELECT COUNT(*) FROM notifications WHERE recipient_id = $1 AND read = false AND type != 'new_message') AS notification_count,
          (SELECT COUNT(*) FROM direct_messages WHERE recipient_id = $1 AND read_at IS NULL) AS dm_count`,
       [userId]
     )
