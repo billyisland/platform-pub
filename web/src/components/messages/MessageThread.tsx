@@ -101,7 +101,9 @@ export function MessageThread({
       // Mark all messages in conversation as read (single batch call).
       // Always fire — the loaded page may not include the unread messages
       // (they could be older than the most recent 50).
-      await messagesApi.markAllRead(conversationId).catch(() => {})
+      await messagesApi.markAllRead(conversationId).catch(err => {
+        console.error('markAllRead failed:', err)
+      })
       refreshUnread()
       onMessagesRead?.()
     } catch {}
@@ -243,7 +245,8 @@ export function MessageThread({
     ))
     try {
       await messagesApi.toggleLike(messageId)
-    } catch {
+    } catch (err) {
+      console.error('Like toggle failed:', messageId, err)
       // Revert to snapshot
       setMsgs(ms => ms.map(m =>
         m.id === messageId
