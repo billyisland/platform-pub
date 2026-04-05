@@ -71,6 +71,7 @@ const ResolveReportSchema = z.object({
 })
 
 export async function moderationRoutes(app: FastifyInstance) {
+  const adminIds = await getAdminIds()
   if (adminIds.length === 0) {
     logger.warn('ADMIN_ACCOUNT_IDS is not set — all admin routes will return 403')
   }

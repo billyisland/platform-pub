@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.8.0
+# all.haus — Deployment Reference v5.8.1
 
 **Date:** 5 April 2026
-**Replaces:** v5.7.0 (see bottom for change log)
+**Replaces:** v5.8.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -249,6 +249,28 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.8.0
+
+Bug fix: gateway crash on startup due to undefined `adminIds` reference in moderation routes. Services changed: **gateway only**.
+
+```bash
+cd ~/platform-pub
+git pull origin master
+docker compose build gateway
+docker compose up -d gateway
+```
+
+Verify:
+
+```bash
+docker compose logs --tail=5 gateway
+# Should show "Server listening at http://0.0.0.0:3000" with no ReferenceError
+```
+
+No migrations, no env changes.
+
+---
 
 ### From v5.6.0
 
@@ -4509,6 +4531,20 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.8.1 — 5 April 2026
+
+**Fix: gateway crash — undefined `adminIds` in moderation routes**
+
+The v5.7.0 codebase audit introduced `moderationRoutes` with a startup guard that referenced `adminIds` (undefined variable) instead of calling the existing `getAdminIds()` async function. This caused the gateway to crash-loop on boot, producing a 502 Bad Gateway for all API requests.
+
+**Changes:**
+
+- `gateway/src/routes/moderation.ts`: call `await getAdminIds()` into a local `adminIds` const before the length check (line 74).
+
+**Files changed:** `gateway/src/routes/moderation.ts`
+
+---
 
 ### v5.8.0 — 5 April 2026
 
