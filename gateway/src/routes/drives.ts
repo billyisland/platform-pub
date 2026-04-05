@@ -43,7 +43,7 @@ const UpdateDriveSchema = z.object({
   description: z.string().max(5000).optional(),
   fundingTargetPence: z.number().int().min(1).optional(),
   suggestedPricePence: z.number().int().min(1).optional(),
-  deadline: z.string().datetime().optional(),
+  deadline: z.string().datetime().refine(d => new Date(d) > new Date(), { message: 'Deadline must be in the future' }).optional(),
 })
 
 const PledgeSchema = z.object({

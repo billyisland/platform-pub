@@ -11,4 +11,5 @@ export interface PlatformConfig {
   monthlyFallbackMinimumPence: number  // default 200  (£2.00)
   writerPayoutThresholdPence: number   // default 2000 (£20.00)
   platformFeeBps: number               // default 800  (8.00%)
+  monthlyFallbackDays: number          // default 30   (days since last read before monthly settlement)
 }

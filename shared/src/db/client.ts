@@ -25,9 +25,10 @@ export const pool = new Pool({
   statement_timeout: 10_000,
 })
 
-// Log pool errors — a pool error that goes unhandled crashes the process
+// Fatal pool errors mean the connection is broken — exit so the orchestrator restarts us
 pool.on('error', (err) => {
-  logger.error({ err }, 'Unexpected database pool error')
+  logger.error({ err }, 'Unexpected database pool error — exiting')
+  process.exit(1)
 })
 
 // =============================================================================
@@ -89,6 +90,7 @@ export async function loadConfig(forceRefresh = false): Promise<PlatformConfig> 
     monthlyFallbackMinimumPence: int(map, 'monthly_fallback_minimum_pence', 200),
     writerPayoutThresholdPence: int(map, 'writer_payout_threshold_pence', 2000),
     platformFeeBps: int(map, 'platform_fee_bps', 800),
+    monthlyFallbackDays: int(map, 'monthly_fallback_days', 30),
   }
 
   cachedConfig = config

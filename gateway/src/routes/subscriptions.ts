@@ -569,7 +569,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
          VALUES ($1, $2, 'new_subscriber')
          ON CONFLICT DO NOTHING`,
         [writerId, readerId]
-      ).catch(() => {})
+      ).catch(err => logger.warn({ err }, 'Failed to insert new_subscriber notification'))
 
       return reply.status(201).send({ subscriptionId, status: 'active', isComp: true })
     }
@@ -856,7 +856,7 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
       `INSERT INTO subscription_events (subscription_id, event_type, reader_id, writer_id, amount_pence, description)
        VALUES ($1, 'subscription_charge', $2, $3, 0, 'Expiry warning sent')`,
       [sub.id, sub.reader_id, sub.writer_id]
-    ).catch(() => {})
+    ).catch(err => logger.warn({ err }, 'Failed to insert expiry warning subscription_event'))
   }
 
   return processed

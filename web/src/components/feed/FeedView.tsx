@@ -36,6 +36,8 @@ export function FeedView() {
   const router = useRouter()
   const [globalItems, setGlobalItems] = useState<GlobalFeedItem[]>([])
   const [globalLoading, setGlobalLoading] = useState(true)
+  const [globalError, setGlobalError] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
   const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
   const [voteTallies, setVoteTallies] = useState<Record<string, VoteTally>>({})
   const [myVoteCounts, setMyVoteCounts] = useState<Record<string, MyVoteCount>>({})
@@ -48,6 +50,7 @@ export function FeedView() {
     if (!user) return
     async function loadGlobalFeed() {
       setGlobalLoading(true)
+      setGlobalError(false)
       try {
         const data = await feedApi.global()
         const items: GlobalFeedItem[] = (data.items ?? []).map((item: any) => {
@@ -96,11 +99,11 @@ export function FeedView() {
           setVoteTallies(talliesRes.tallies ?? {})
           setMyVoteCounts(myVotesRes.voteCounts ?? {})
         }
-      } catch (err) { console.error('Global feed load error:', err) }
+      } catch (err) { console.error('Global feed load error:', err); setGlobalError(true) }
       finally { setGlobalLoading(false) }
     }
     loadGlobalFeed()
-  }, [user])
+  }, [user, retryKey])
 
   const handleNotePublished = useCallback((note: NoteEvent) => {
     setPendingQuote(null)
@@ -137,7 +140,17 @@ export function FeedView() {
 
       {/* Feed */}
       <div className="pb-10">
-        {globalLoading ? <InlineSkeleton /> : globalItems.length === 0 ? (
+        {globalLoading ? <InlineSkeleton /> : globalError ? (
+          <div className="py-20 text-center px-6">
+            <p className="text-ui-sm text-grey-600 mb-4">Failed to load feed.</p>
+            <button
+              onClick={() => setRetryKey(k => k + 1)}
+              className="text-[13px] font-mono text-black underline hover:opacity-70 transition-opacity"
+            >
+              Try again
+            </button>
+          </div>
+        ) : globalItems.length === 0 ? (
           <div className="py-20 text-center px-6">
             <p className="text-ui-sm text-grey-600">Nothing here yet.</p>
           </div>

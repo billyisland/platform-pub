@@ -1,133 +1,371 @@
-# Codebase Audit Report
+# Codebase Audit — 2026-04-05
 
-Generated 2026-04-01.
+Systematic review of bugs, gaps, dead wood, and organisational issues across all services.
+
+---
+
+## Summary
+
+| Category | Critical | High | Medium | Low |
+|---|---|---|---|---|
+| Bugs & logic errors | 0 | 2 | 3 | 2 |
+| Gaps & missing validation | 1 | 2 | 4 | 1 |
+| Dead wood | 0 | 0 | 2 | 3 |
+| Organisation | 0 | 0 | 3 | 2 |
+| **Total** | **1** | **4** | **12** | **8** |
+
+---
 
 ## Critical
 
-### 1. `schema.sql` is stale — fresh Docker installs break immediately
+### 1. `schema.sql` pre-seed missing migrations 026-032
 
-`schema.sql` is loaded by Docker's `initdb.d` on first boot, but it's frozen at an early state. Tables and columns added by migrations 001–017 are absent: `subscriptions`, `subscription_events`, `article_unlocks`, `notifications`, `votes`, `vote_tallies`, `vote_charges`, `conversations`, `direct_messages`, `pledge_drives`, `pledges`, `dm_pricing`, `magic_links`, plus columns like `subscription_price_pence` and `email` on `accounts`. The DEPLOYMENT.md documents production outages caused by exactly this drift. A `docker compose up` on a fresh checkout will produce a DB that the application code cannot use.
+**File:** `schema.sql:869-895`
 
-### 2. ~~Payment verification includes provisional reads~~ (Retracted)
+The `_migrations` pre-seed only lists 001-025, but 32 migrations exist. A fresh deployment using `schema.sql` (e.g. `docker compose up` on a clean volume) will create the schema from the compiled DDL but then the migration runner will try to re-apply 026-032 on next service start, potentially causing conflicts or duplicate table/column errors.
 
-Originally reported as a bug. The query in `key-service/src/services/verification.ts:35` includes `'provisional'` in the `IN` clause. The accompanying comments and dead fallback code incorrectly stated that provisional reads should not be valid for key issuance. In fact, provisional reads are real purchases paid from the reader's free £5 starting credit and should grant permanent access. The misleading comments and dead code have been cleaned up.
+**Missing:**
+- 026_article_profile_pins
+- 027_subscription_visibility
+- 028_subscription_nudge
+- 029_gift_links
+- 030_commissions_expansion
+- 031_fix_media_urls_domain
+- 032_dm_likes
 
-### 3. `checkAndTriggerDriveFulfilment` uses `FOR UPDATE` outside a transaction
-
-`drives.ts:618-633` — `SELECT ... FOR UPDATE` is issued via the shared `pool` (auto-commit mode). The row lock is released immediately after the SELECT completes, so the subsequent UPDATE is unprotected. A concurrent article publish for the same draft could trigger double fulfilment, creating duplicate `read_events` and double-charging pledgers.
-
-### 4. Gate-pass: payment charged but unlock not recorded atomically
-
-`articles.ts:396-428` — The gate-pass flow calls the payment service (step 2), the key service (step 3), then `recordPurchaseUnlock`. If the process crashes between step 2 and the unlock insert, the reader is charged but has no permanent unlock record. On retry, `checkArticleAccess` won't find an unlock, so the reader is charged again. These should be in the same transaction or the endpoint should be idempotent.
+**Fix:** Append the 7 missing filenames to the `INSERT INTO _migrations` statement, and ensure the compiled DDL above them includes the actual schema changes from those migrations.
 
 ---
 
 ## High
 
-### 5. Suspended accounts can still authenticate
+### 2. Background workers run without distributed locking
 
-The auth middleware (`auth.ts:37-55`) verifies the JWT but never checks if `accounts.status = 'active'`. A suspended user retains their session cookie and can keep making API calls for up to 7 days (the JWT lifetime). `/auth/me` also doesn't check status, so the frontend never knows.
+**File:** `gateway/src/index.ts:183-200`
 
-### 6. Settlement confirmation lacks row-level lock — double-debit on webhook replay
+`expireAndRenewSubscriptions()` and `expireOverdueDrives()` fire on a 1-hour `setInterval`. If the gateway is horizontally scaled (multiple containers), every instance runs these concurrently. Subscription renewals could be charged twice; drives could be expired and re-expired.
 
-`settlement.ts:231-298` — `confirmSettlement` reads the settlement record without `FOR UPDATE`. If Stripe delivers duplicate `payment_intent.succeeded` webhooks (permitted by their SLA), both can subtract the settled amount from the tab, effectively double-debiting the reader.
+```typescript
+setInterval(() => {
+  expireAndRenewSubscriptions().catch(...)
+  expireOverdueDrives().catch(...)
+}, WORKER_INTERVAL_MS)
+```
 
-### 7. DM messages only stored for recipients, not the sender
+**Fix:** Use PostgreSQL advisory locks (`pg_try_advisory_lock`) at the start of each worker, or move these to a dedicated single-instance worker/cron job.
 
-`messages.ts:317-322` — A `direct_messages` row is created per recipient, but none for the sender. `GET /messages/:conversationId` filters by `dm.recipient_id = $1`, so the sender can never see their own sent messages in a conversation thread.
+---
 
-### 8. Nginx missing all security headers
+### 3. `READER_HASH_KEY` only warns at startup — fails at request time
 
-`nginx.conf` lacks `Strict-Transport-Security`, `X-Frame-Options`, `Content-Security-Policy`, `Referrer-Policy`, and `Permissions-Policy` on the HTTPS server block. Only `/media/` has `X-Content-Type-Options: nosniff`. This leaves the application vulnerable to clickjacking, protocol downgrade, and other browser-side attacks.
+**File:** `gateway/src/routes/articles.ts:28-31, 452-454`
 
-### 9. No rate limiting on the public-facing gateway
+The key is checked with `logger.warn` at module load but not enforced. The gate-pass endpoint returns 500 when it's actually needed. Every other critical env var uses `requireEnv()`.
 
-The gateway (the only internet-facing service) has zero rate limiting. Signup, login (magic link email flood), search, gate-pass, voting, and DM sending are all unprotected. The key-service uses `@fastify/rate-limit` internally, but the gateway does not.
+```typescript
+const READER_HASH_KEY = process.env.READER_HASH_KEY
+if (!READER_HASH_KEY) {
+  logger.warn('READER_HASH_KEY is not set — gate-pass will fail...')
+}
+```
 
-### 10. `requireAdmin` doesn't return after sending 403
+**Fix:** Change to `const READER_HASH_KEY = requireEnv('READER_HASH_KEY')` so the gateway fails fast on startup.
 
-`moderation.ts:31-38` — After `reply.status(403).send(...)`, the function doesn't `return`. Execution falls through, and the route handler may still run. Should be `return reply.status(403).send(...)`.
+---
 
-### 11. All Docker containers run as root
+### 4. `STRIPE_SECRET_KEY` not validated at gateway startup
 
-None of the five Dockerfiles (`gateway/`, `payment-service/`, `key-service/`, `key-custody/`, `web/`) specify a `USER` directive. The `node:20-alpine` base image defaults to root. A container escape or RCE gives root privileges.
+**File:** `gateway/src/routes/auth.ts:25`
 
-### 12. Internal service ports exposed on localhost
+Uses non-null assertion (`!`) without startup validation. If the env var is missing, the service starts but every Stripe operation (Connect onboarding, SetupIntent creation) fails at request time.
 
-`docker-compose.yml` binds payment (3001), key-service (3002), key-custody (3004), and blossom (3003) to `127.0.0.1`. These internal services should not be exposed at all — any process on the host can bypass the gateway's auth middleware and call them directly.
+```typescript
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { ... })
+```
+
+**Fix:** Add `const STRIPE_SECRET_KEY = requireEnv('STRIPE_SECRET_KEY')` at module level.
+
+---
+
+### 5. Service URL localhost fallbacks in gateway
+
+**File:** `gateway/src/routes/articles.ts:26-27`
+
+```typescript
+const KEY_SERVICE_URL = process.env.KEY_SERVICE_URL ?? 'http://localhost:3002'
+const PAYMENT_SERVICE_URL = process.env.PAYMENT_SERVICE_URL ?? 'http://localhost:3001'
+```
+
+If these env vars are omitted in production, the gateway silently proxies to localhost instead of the Docker service names, causing silent failures. Other critical env vars use `requireEnv()`.
+
+**Fix:** Use `requireEnv()` for these as well, or at minimum log a clear warning.
 
 ---
 
 ## Medium
 
-### 13. No subscription renewal mechanism
+### 6. `confirmPayout` lacks idempotency guard
 
-Subscriptions are created with a 30-day `current_period_end`, but there's no cron job or worker to renew them. `access.ts:48-52` checks `current_period_end > now()`, so subscriptions silently expire. `expireOverdueDrives` exists for drives but there's no equivalent `renewSubscriptions`.
+**File:** `payment-service/src/services/payout.ts:311-320`
 
-### 14. `renderMarkdownSync` is an XSS vector
+The `transfer.paid` webhook handler unconditionally updates the payout row. If Stripe retries the webhook, `completed_at` is overwritten. Not dangerous (status stays `completed`), but it's inconsistent with the careful idempotency in `confirmSettlement`.
 
-`markdown.ts:85-108` — The synchronous fallback uses regex replacements without sanitization. `[click](javascript:alert(1))` produces a live XSS link. The async `renderMarkdown` is safe (uses `rehype-sanitize`), but `renderMarkdownSync` is exported and available for misuse.
+```typescript
+async confirmPayout(stripeTransferId: string): Promise<void> {
+  await pool.query(
+    `UPDATE writer_payouts
+     SET status = 'completed', completed_at = now()
+     WHERE stripe_transfer_id = $1`,
+    [stripeTransferId]
+  )
+}
+```
 
-### 15. Search ILIKE not escaped for wildcards
+**Fix:** Add `AND status != 'completed'` to the WHERE clause.
 
-`search.ts:96-97` — User input goes directly into `%${query}%` without escaping LIKE metacharacters (`%`, `_`). Searching for `%` matches all articles; `_` matches single characters. Not a security hole (parameterized queries prevent SQL injection) but produces incorrect results.
+---
 
-### 16. Expired subscriptions block re-subscribing
+### 7. Empty `chargeId` can poison settlement records
 
-Migration 005 creates `UNIQUE (reader_id, writer_id)` on `subscriptions`. The code at `subscriptions.ts:61-65` only checks `status IN ('active', 'cancelled')`. Once a subscription expires, the unique constraint prevents creating a new one — the reader can never re-subscribe to that writer.
+**File:** `payment-service/src/routes/webhook.ts:76-84`
 
-### 17. `AccrualService` caches platform config permanently
+If `latest_charge` is null on a PaymentIntent, `chargeId` falls back to empty string. The settlement gets marked with `stripe_charge_id = ''`, which passes the idempotency guard (not NULL) and prevents the real charge from being recorded on retry.
 
-`payment-service/src/services/accrual.ts:19-24` — Config is loaded once into `this.config` and never refreshed. `invalidateConfig()` exists but nothing calls it. Changes to platform fee rate or settlement thresholds require a service restart.
+**Fix:** Throw if `chargeId` is falsy before calling `confirmSettlement`.
 
-### 18. Notification type mismatch between frontend and backend
+---
 
-The web client's `Notification` type (`api.ts:357-358`) only lists `'new_follower' | 'new_reply' | 'new_subscriber' | 'new_quote' | 'new_mention'`. The backend creates many additional types: `'commission_request'`, `'drive_funded'`, `'pledge_fulfilled'`, `'new_message'`, `'free_pass_granted'`. These are silently unrecognized by the frontend.
+### 8. Vault key decryption has no error handling for key rotation
 
-### 19. Drive update skips falsy values (can't set amounts to zero)
+**File:** `key-service/src/services/vault.ts:61`
 
-`drives.ts:225-227` — `if (data.fundingTargetPence)` and `if (data.suggestedPricePence)` use truthiness checks. Since `0` is falsy in JS, these fields can never be set to zero. Should use `!== undefined`.
+When reusing an existing vault key, `decryptContentKey()` is called without a try/catch. If `KMS_MASTER_KEY_HEX` has been rotated since the key was encrypted, this throws an unhandled error and crashes the request with a generic 500.
 
-### 20. Missing health checks on 7 Docker services
+**Fix:** Catch decryption errors and return a specific error code (e.g. `VAULT_KEY_DECRYPT_FAILED`) so the caller can diagnose key rotation issues.
 
-Only `postgres` and `strfry` have health checks. Gateway, payment, key-service, key-custody, web, nginx, and blossom have none. Docker Compose cannot detect or auto-restart broken containers.
+---
 
-### 21. Auth hydration race condition in frontend
+### 9. Weak validation on `readerPubkey` and `readerPubkeyHash`
 
-`AuthProvider.tsx` calls `fetchMe()` in `useEffect`, but children render before it completes. Protected routes see `user === null` during hydration and may redirect to `/auth` even though the user is logged in. The `loading` flag exists but routes check `user` directly.
+**File:** `payment-service/src/routes/payment.ts:25-26`
 
-### 22. Foreign keys in later migrations missing `ON DELETE` clauses
+```typescript
+readerPubkey: z.string().min(1),
+readerPubkeyHash: z.string(),
+```
 
-`vote_charges.vote_id`, `vote_charges.voter_id`, `pledges.pledger_id`, `pledge_drives.creator_id`, `pledge_drives.target_writer_id`, `conversations.created_by`, and `dm_pricing` FKs all default to `NO ACTION`. If accounts are ever deleted, these become orphaned references that break joins.
+Nostr pubkeys must be 64-character hex strings. These fields end up in portable receipt events — accepting arbitrary strings creates malformed Nostr events.
+
+**Fix:** `z.string().regex(/^[0-9a-f]{64}$/)` for both fields.
+
+---
+
+### 10. `useWriterName` hook — setState after unmount
+
+**File:** `web/src/hooks/useWriterName.ts:37-42`
+
+The `.then()` handler calls `setInfo()` without checking whether the component is still mounted. In React 18 strict mode this triggers warnings; in fast navigation scenarios it can cause stale data.
+
+```typescript
+pending.get(pubkey)!.then((result) => {
+  if (result) {
+    cache.set(pubkey, result)
+    setInfo(result)  // component may be unmounted
+  }
+})
+```
+
+**Fix:** Track mounted state via the effect cleanup return, or use an AbortController pattern.
+
+---
+
+### 11. `pk_test_placeholder` Stripe key fallback
+
+**File:** `web/src/components/payment/CardSetup.tsx:27`
+
+```typescript
+process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? 'pk_test_placeholder'
+```
+
+If the env var is missing at build time, Stripe Elements silently initialises with a non-functional key. Card setup appears to work but all operations fail.
+
+**Fix:** Throw at build time or render an error state if the key is missing.
+
+---
+
+### 12. 19 silent `.catch(() => {})` swallowing errors
+
+**Files:** Across gateway and web — `subscriptions.ts`, `comments.ts`, `replies.ts`, `VoteControls.tsx`, `ArticleReader.tsx`, `NoteCard.tsx`, `NotificationBell.tsx`, etc.
+
+Fire-and-forget patterns silently discard errors. Notification inserts, vote tallies, mark-read calls, and relay publishes all fail invisibly. This makes production debugging very difficult.
+
+**Fix:** At minimum `.catch(err => logger.warn(...))` on the backend, `console.error` on the frontend. Better: use a background job queue for non-critical async work on the backend.
+
+---
+
+### 13. Overly large `ArticleReader` component (380 lines)
+
+**File:** `web/src/components/article/ArticleReader.tsx`
+
+Handles paywall gate logic, quote selection UI, gift link generation, subscription state, decryption flow, and reply rendering in a single component. Hard to test and reason about.
+
+**Fix:** Extract `PaywallGateContainer`, `QuoteSelector`, and `GiftLinkSection` as separate components.
+
+---
+
+### 14. Duplicated publish-then-index pattern
+
+**Files:** `web/src/lib/publishNote.ts`, `web/src/lib/comments.ts`, `web/src/lib/replies.ts`
+
+All three implement the same sign -> publish -> index pattern with nearly identical code. Changes to the signing or publishing flow need to be updated in three places.
+
+**Fix:** Extract a shared `signPublishAndIndex()` helper.
+
+---
+
+### 15. Payment service routes lack defence-in-depth auth
+
+**File:** `payment-service/src/routes/payment.ts:42, 72`
+
+`/gate-pass` and `/card-connected` have no `X-Internal-Token` check, unlike `/payout-cycle` and `/settlement-check/monthly`. The comment says "Auth is handled at the gateway; these routes trust the caller" and Docker network isolation prevents public access. But if the network boundary is ever weakened (e.g. service mesh misconfiguration), these endpoints are unprotected.
+
+**Fix:** Add the same `X-Internal-Token` check that the other internal routes use.
+
+---
+
+### 16. Inconsistent error response format across routes
+
+**Files:** Multiple across gateway
+
+Some routes return `{ error: 'string' }`, others `{ error: 'snake_case_code' }`, others detailed objects. The frontend has to guess the shape.
+
+Examples:
+- `auth.ts:55` — `{ error: 'Signup failed' }`
+- `articles.ts:551` — `{ error: 'Internal error' }`
+- `moderation.ts:200` — `{ error: 'Admin access required' }`
+
+**Fix:** Standardise on `{ error: { code: string, message: string } }` or similar.
+
+---
+
+### 17. FeedView shows blank screen on fetch failure
+
+**File:** `web/src/components/feed/FeedView.tsx:99`
+
+Feed fetch catches errors with `console.error` but renders nothing. Users see an empty screen with no indication of what went wrong.
+
+**Fix:** Add error state and a retry button.
 
 ---
 
 ## Low
 
-### 23. Hardcoded 30-day subscription period
+### 18. `stripe` is a dead dependency in `shared/package.json`
 
-`30 * 24 * 60 * 60 * 1000` used directly in two places (`subscriptions.ts:74,127`). Should be a named constant; also not exactly one calendar month.
+**File:** `shared/package.json:19`
 
-### 24. `payment-service` missing `"type": "module"` in `package.json`
+`"stripe": "^14.0.0"` is declared but never imported anywhere in `shared/src/`. Each service that uses Stripe has its own dependency.
 
-Inconsistent with all other backend services.
+**Fix:** Remove from `shared/package.json`.
 
-### 25. Migrations 009, 016, 017 use `CREATE TABLE` without `IF NOT EXISTS`
+---
 
-Non-idempotent; will fail on re-execution.
+### 19. Exported `logger` in `key-custody-client.ts` never imported
 
-### 26. Comment tree building assumes time-ordered input
+**File:** `gateway/src/lib/key-custody-client.ts:75`
 
-`replies.ts:252-279` — A child reply with an earlier timestamp than its parent becomes an orphan at the top level.
+```typescript
+export { logger }
+```
 
-### 27. `proxyToService` swallows non-JSON upstream responses
+No file in the gateway imports this re-export.
 
-`articles.ts:747` — `res.json().catch(() => null)` returns `null` to the client with no useful error context.
+**Fix:** Remove the export.
 
-### 28. 7-day JWT session lifetime is long for a payment platform
+---
 
-Industry standard for financial services is 1–2 hours with refresh-on-use.
+### 20. Unused `onCommission` prop in `ReplyItem`
 
-### 29. `votes/tally` endpoint is public and accepts up to 200 IDs via query string
+**File:** `web/src/components/replies/ReplyItem.tsx:34`
 
-Could exceed URL length limits in some proxies.
+Prop is declared in the interface but never called in the component body.
+
+**Fix:** Remove the prop or implement the handler.
+
+---
+
+### 21. `shared/src/db/client.ts` pool error handler is a no-op
+
+**File:** `shared/src/db/client.ts:29-31`
+
+```typescript
+pool.on('error', (err) => {
+  logger.error({ err }, 'Unexpected database pool error')
+})
+```
+
+Logs the error but takes no recovery action. A broken pool connection will cause all subsequent queries to hang or fail.
+
+**Fix:** Call `process.exit(1)` to let Docker/orchestrator restart the service.
+
+---
+
+### 22. Hardcoded admin list
+
+**File:** `gateway/src/routes/moderation.ts:23-25`
+
+Admin access is checked against a comma-separated env var. Works for now but doesn't scale and requires a redeploy to change.
+
+**Fix:** Move admin account IDs to `platform_config` table.
+
+---
+
+### 23. Drive deadline can be set to the past
+
+**File:** `gateway/src/routes/drives.ts:230`
+
+When updating a pledge drive, the deadline is not validated to be in the future.
+
+**Fix:** Add `z.string().datetime().refine(d => new Date(d) > new Date())` or equivalent.
+
+---
+
+### 24. Missing content length limits on DM content
+
+**File:** `gateway/src/routes/messages.ts`
+
+DM content is validated with `z.string().min(1)` but no max length. An attacker could send extremely large messages.
+
+**Fix:** Add `.max()` matching whatever the UI allows.
+
+---
+
+### 25. Magic number: 30-day settlement fallback
+
+**File:** `payment-service/src/services/settlement.ts:96`
+
+```typescript
+const thirtyDays = 30 * 24 * 60 * 60 * 1000
+```
+
+Should come from `platform_config` for consistency with other tunable parameters.
+
+---
+
+## Not issues (false positives from initial scan)
+
+- **.env files committed to git** — `.gitignore` correctly excludes them; `git ls-files` confirms none are tracked.
+- **`/articles/by-event` endpoint missing** — It exists at `gateway/src/routes/articles.ts:248`.
+- **Settlement TOCTOU race in `confirmSettlement`** — The SELECT at line 254 is an optimisation only; the real guard is the atomic `UPDATE ... WHERE stripe_charge_id IS NULL` at line 264, inside a transaction. Safe as written.
+
+---
+
+## Architecture notes (not bugs, just observations)
+
+1. **Single Postgres, no read replicas.** All services share one database. Fine at current scale but will need connection pooling (PgBouncer) and read replicas as traffic grows.
+
+2. **No structured background job system.** Cron-style `setInterval` workers in the gateway process. Works for single-instance but blocks horizontal scaling (see issue #2). Consider BullMQ or pg-boss.
+
+3. **No distributed tracing.** Individual service logs exist (pino) but there's no request-level correlation ID across gateway -> payment-service -> key-service. Makes cross-service debugging hard.
+
+4. **Blossom container is running but unused.** The `docker-compose.yml` includes a Blossom media server, but media upload/serving goes through the gateway + nginx. Either remove it or wire it up.

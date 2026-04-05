@@ -36,7 +36,7 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
         if (data?.author?.username && data.author.username.length < 40) setAuthorUsername(data.author.username)
         if (data?.isPaywalled) setIsPaid(true)
       })
-      .catch(() => {})
+      .catch(err => console.error('Failed to load quoted article metadata', err))
   }, [note.quotedEventId])
 
   const href = articleDTag ? `/article/${articleDTag}` : authorUsername ? `/${authorUsername}` : '#'

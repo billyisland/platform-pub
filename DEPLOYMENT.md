@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.6.0
+# all.haus — Deployment Reference v5.7.0
 
 **Date:** 5 April 2026
-**Replaces:** v5.5.1 (see bottom for change log)
+**Replaces:** v5.6.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -86,23 +86,23 @@ Key variables:
 | `PLATFORM_SERVICE_PRIVKEY` | gateway, payment, key-service | 64-hex Nostr private key for platform service events |
 | `READER_HASH_KEY` | gateway | HMAC key for reader pubkey privacy hashing |
 | `INTERNAL_SECRET` | gateway, key-custody, key-service | Shared secret authenticating gateway→key-custody and gateway→key-service calls |
-| `INTERNAL_SERVICE_TOKEN` | payment-service | Shared secret authenticating cron→payment-service calls (`/payout-cycle`, `/settlement-check/monthly`) |
+| `INTERNAL_SERVICE_TOKEN` | gateway, payment-service | Shared secret authenticating gateway→payment-service and cron→payment-service calls (all internal endpoints: `/gate-pass`, `/card-connected`, `/payout-cycle`, `/settlement-check/monthly`) |
 | `ACCOUNT_KEY_HEX` | key-custody **only** | AES-256 key for encrypting custodial Nostr privkeys at rest |
 | `KMS_MASTER_KEY_HEX` | key-service | AES-256 master key for vault content key envelope encryption |
-| `STRIPE_SECRET_KEY` | gateway, payment | Stripe API key |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | web | Stripe publishable key |
-| `KEY_SERVICE_URL` | gateway | Internal URL for key-service (default: http://localhost:3002) |
+| `STRIPE_SECRET_KEY` | gateway, payment | Stripe API key (validated at startup — gateway will not boot without it) |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | web | Stripe publishable key (build fails if missing — no placeholder fallback) |
+| `KEY_SERVICE_URL` | gateway | Internal URL for key-service (**required** — no localhost fallback) |
 | `KEY_CUSTODY_URL` | gateway | Internal URL for key-custody (default: http://localhost:3004) |
-| `PAYMENT_SERVICE_URL` | gateway | Internal URL for payment-service (default: http://localhost:3001) |
+| `PAYMENT_SERVICE_URL` | gateway | Internal URL for payment-service (**required** — no localhost fallback) |
 | `PLATFORM_RELAY_WS_URL` | gateway, payment, key-service | strfry WebSocket URL (default: ws://localhost:4848) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth credentials |
 | `APP_URL` | gateway | **Frontend** URL (Next.js). Used for OAuth redirect URIs, Stripe redirects, CORS, and magic links. Dev: `http://localhost:3010`. **Must not be the gateway URL.** |
-| `ADMIN_ACCOUNT_IDS` | gateway | Comma-separated UUIDs for admin access |
+| `ADMIN_ACCOUNT_IDS` | gateway | Comma-separated UUIDs for admin access (fallback; prefer `admin_account_ids` in `platform_config` table — no redeploy needed) |
 | `EMAIL_PROVIDER` | gateway | `postmark`, `resend`, or `console` |
 
 > **Security:** `ACCOUNT_KEY_HEX` must never be set on the gateway — the key-custody service is the sole holder of this key by design. The gateway cannot decrypt user private keys.
 
-> **Startup validation (v4.2.0):** All services now validate required environment variables at startup and refuse to boot if any are missing. `SESSION_SECRET` must be at least 32 characters. `ACCOUNT_KEY_HEX` and `KMS_MASTER_KEY_HEX` must be at least 32 characters. `APP_URL` is now required (no localhost fallback in production). If a service exits immediately on boot, check its logs for `Missing required environment variable:` messages.
+> **Startup validation (v4.2.0, strengthened in v5.7.0):** All services validate required environment variables at startup and refuse to boot if any are missing. `SESSION_SECRET` must be at least 32 characters. `ACCOUNT_KEY_HEX` and `KMS_MASTER_KEY_HEX` must be at least 32 characters. `APP_URL` is now required (no localhost fallback in production). As of v5.7.0, `STRIPE_SECRET_KEY`, `READER_HASH_KEY`, `KEY_SERVICE_URL`, and `PAYMENT_SERVICE_URL` are also validated at gateway startup (previously these had silent fallbacks or warnings). If a service exits immediately on boot, check its logs for `Missing required environment variable:` messages.
 
 ---
 
@@ -158,7 +158,7 @@ docker compose ps   # wait for postgres to be healthy
 
 ### 4. Apply schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.6.0, `schema.sql` includes all structural changes through migration 032; the `_migrations` table is pre-seeded accordingly.
+The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.7.0, `schema.sql` includes all structural changes through migration 033; the `_migrations` table is pre-seeded accordingly.
 
 For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything.
 
@@ -249,6 +249,91 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.6.0
+
+New migration (033). Services changed: **all backend services** (gateway, payment-service, key-service), **web**, **shared**. Deploy order: **migrate → rebuild all → verify env vars**.
+
+This release is a codebase audit hardening pass — 25 fixes across security, reliability, validation, and code quality. No new user-facing features.
+
+**Breaking changes:**
+
+- `KEY_SERVICE_URL` and `PAYMENT_SERVICE_URL` are now **required** on the gateway (previously fell back to `localhost`). If your `.env` already sets these (it should in Docker), no action needed.
+- `STRIPE_SECRET_KEY` is now validated at gateway startup. If missing, the gateway will not boot.
+- `READER_HASH_KEY` is now validated at gateway startup. If missing, the gateway will not boot.
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is now validated at web build time. If missing, the build will fail.
+- `INTERNAL_SERVICE_TOKEN` is now required for `/gate-pass` and `/card-connected` endpoints on payment-service (previously only required for `/payout-cycle` and `/settlement-check/monthly`). Ensure the gateway sends `X-Internal-Token` on these calls.
+
+**Database migration:**
+
+- Migration 033: Adds `admin_account_ids` row to `platform_config` (allows managing admin list without redeploys).
+
+**Key changes:**
+
+- Background workers (`expireAndRenewSubscriptions`, `expireOverdueDrives`) now use PostgreSQL advisory locks — safe for horizontal scaling.
+- `confirmPayout` webhook handler is now idempotent (won't re-update already-completed payouts).
+- Empty `chargeId` on `payment_intent.succeeded` webhook is caught and logged instead of poisoning settlement records.
+- Vault key decryption failures (e.g. after KMS key rotation) return a specific `VAULT_KEY_DECRYPT_FAILED` error instead of a generic 500.
+- `readerPubkey` and `readerPubkeyHash` validated as 64-char hex strings.
+- DM content capped at 10,000 characters.
+- Drive deadlines validated to be in the future.
+- DB pool errors now trigger `process.exit(1)` for orchestrator restart.
+- Admin IDs can now be managed via `platform_config` table (key: `admin_account_ids`) instead of requiring a redeploy.
+- 30-day settlement fallback is now configurable via `platform_config` (key: `monthly_fallback_days`).
+- 19 silent `.catch(() => {})` blocks replaced with error logging across gateway and web.
+- `ArticleReader` refactored into smaller components (`GiftLinkModal`, `QuoteSelector`).
+- Duplicated sign→publish→index pattern extracted into shared `signPublishAndIndex` helper.
+- Feed view now shows an error state with retry button instead of a blank screen on fetch failure.
+- Unused `stripe` dependency removed from `shared/package.json`.
+- Standardised error response helper (`sendError`) created for future gateway route migration.
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# 1. Apply migration
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub \
+  < migrations/033_admin_account_ids_config.sql
+
+# 2. Verify env vars (gateway will refuse to boot if these are missing)
+grep -q 'KEY_SERVICE_URL' gateway/.env && echo "OK" || echo "MISSING: KEY_SERVICE_URL"
+grep -q 'PAYMENT_SERVICE_URL' gateway/.env && echo "OK" || echo "MISSING: PAYMENT_SERVICE_URL"
+grep -q 'READER_HASH_KEY' gateway/.env && echo "OK" || echo "MISSING: READER_HASH_KEY"
+grep -q 'STRIPE_SECRET_KEY' gateway/.env && echo "OK" || echo "MISSING: STRIPE_SECRET_KEY"
+grep -q 'INTERNAL_SERVICE_TOKEN' payment-service/.env && echo "OK" || echo "MISSING: INTERNAL_SERVICE_TOKEN"
+
+# 3. Rebuild and restart all services
+docker compose build gateway payment keyservice web
+docker compose up -d gateway payment keyservice web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# All services should show (healthy) after ~30s
+
+# Verify migration applied
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "SELECT filename FROM _migrations ORDER BY filename" | grep '033'
+
+# Verify admin_account_ids config exists
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "SELECT key, value FROM platform_config WHERE key = 'admin_account_ids'"
+
+# Optional: set admin IDs via DB instead of env var
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "UPDATE platform_config SET value = '<uuid1>,<uuid2>' WHERE key = 'admin_account_ids'"
+
+# Visual checks:
+# - Feed page should show error + retry button if API is unreachable (kill gateway, reload page)
+# - Gift link modal should work on paywalled articles (owner view)
+# - DMs should reject messages over 10,000 chars
+# - Drive deadline update should reject past dates
+```
+
+No new env vars required (all previously existed). The only change is that several env vars are now **strictly required** at startup where they previously had fallbacks.
+
+---
 
 ### From v5.5.1
 

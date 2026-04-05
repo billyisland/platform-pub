@@ -119,7 +119,7 @@ export async function commentRoutes(app: FastifyInstance) {
         `INSERT INTO feed_engagement (actor_id, target_nostr_event_id, target_author_id, engagement_type)
          VALUES ($1, $2, $3, 'reply')`,
         [authorId, data.targetEventId, contentAuthorId]
-      ).catch(() => {}) // Non-critical
+      ).catch(err => logger.warn({ err }, 'Failed to insert comment feed_engagement'))
 
       logger.info(
         { commentId: result.rows[0].id, authorId, targetEventId: data.targetEventId },

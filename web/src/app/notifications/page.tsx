@@ -117,13 +117,13 @@ export default function NotificationsPage() {
     if (!user) return
     notificationsApi.list()
       .then(({ notifications }) => setItems(notifications))
-      .catch(() => {})
+      .catch(err => console.error('Failed to load notifications', err))
       .finally(() => setDataLoading(false))
   }, [user])
 
   async function handleDismiss(id: string, href: string) {
     setItems((prev) => prev.filter((n) => n.id !== id))
-    await notificationsApi.markRead(id).catch(() => {})
+    await notificationsApi.markRead(id).catch(err => console.error('Failed to mark notification read', err))
     refreshUnread()
     router.push(href)
   }

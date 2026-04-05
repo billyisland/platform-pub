@@ -77,7 +77,7 @@ export function MessageThread({
       // Mark unread messages as read
       const unreadMsgs = data.messages.filter(msg => msg.senderId !== user?.id)
       for (const msg of unreadMsgs) {
-        messagesApi.markRead(msg.id).catch(() => {})
+        messagesApi.markRead(msg.id).catch(err => console.error('Failed to mark message read', err))
       }
       if (unreadMsgs.length > 0) refreshUnread()
     } catch {}

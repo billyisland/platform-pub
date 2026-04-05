@@ -312,7 +312,8 @@ export class PayoutService {
     await pool.query(
       `UPDATE writer_payouts
        SET status = 'completed', completed_at = now()
-       WHERE stripe_transfer_id = $1`,
+       WHERE stripe_transfer_id = $1
+         AND status != 'completed'`,
       [stripeTransferId]
     )
 

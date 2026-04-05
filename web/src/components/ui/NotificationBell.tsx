@@ -135,7 +135,7 @@ export function NotificationBell() {
         setItems(notifications.filter(n => !dismissedIds.current.has(n.id)))
         setUnreadCount(unreadCount)
       })
-      .catch(() => {})
+      .catch(err => console.error('Failed to load notifications', err))
   }, [])
 
   useEffect(() => {

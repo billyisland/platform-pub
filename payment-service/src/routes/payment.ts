@@ -22,8 +22,8 @@ const GatePassSchema = z.object({
   articleId: z.string().uuid(),
   writerId: z.string().uuid(),
   amountPence: z.number().int().positive(),
-  readerPubkey: z.string().min(1),
-  readerPubkeyHash: z.string(),
+  readerPubkey: z.string().regex(/^[0-9a-f]{64}$/),
+  readerPubkeyHash: z.string().regex(/^[0-9a-f]{64}$/),
   tabId: z.string().uuid(),
 })
 
@@ -40,6 +40,11 @@ export async function paymentRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.post('/gate-pass', async (req, reply) => {
+    const expectedToken = process.env.INTERNAL_SERVICE_TOKEN
+    if (!expectedToken || req.headers['x-internal-token'] !== expectedToken) {
+      return reply.status(403).send({ error: 'Forbidden' })
+    }
+
     const parsed = GatePassSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() })
@@ -70,6 +75,11 @@ export async function paymentRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.post('/card-connected', async (req, reply) => {
+    const expectedToken = process.env.INTERNAL_SERVICE_TOKEN
+    if (!expectedToken || req.headers['x-internal-token'] !== expectedToken) {
+      return reply.status(403).send({ error: 'Forbidden' })
+    }
+
     const parsed = CardConnectedSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() })

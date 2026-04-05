@@ -27,6 +27,8 @@ export function useWriterName(pubkey: string): WriterInfo | null {
       return
     }
 
+    let cancelled = false
+
     // Deduplicate in-flight requests
     if (!pending.has(pubkey)) {
       const promise = fetchWriterByPubkey(pubkey)
@@ -37,9 +39,11 @@ export function useWriterName(pubkey: string): WriterInfo | null {
     pending.get(pubkey)!.then((result) => {
       if (result) {
         cache.set(pubkey, result)
-        setInfo(result)
+        if (!cancelled) setInfo(result)
       }
     })
+
+    return () => { cancelled = true }
   }, [pubkey])
 
   return info

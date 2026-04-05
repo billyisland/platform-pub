@@ -71,5 +71,3 @@ export async function nip44Decrypt(
 ): Promise<{ plaintext: string }> {
   return post('/api/v1/keypairs/nip44-decrypt', { accountId, senderPubkey, ciphertext })
 }
-
-export { logger }

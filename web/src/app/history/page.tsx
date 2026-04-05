@@ -75,7 +75,7 @@ export default function HistoryPage() {
     if (!user) return
     readingHistory.list()
       .then(({ items }) => setItems(items))
-      .catch(() => {})
+      .catch(err => console.error('Failed to load reading history', err))
       .finally(() => setDataLoading(false))
   }, [user])
 

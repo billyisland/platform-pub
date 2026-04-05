@@ -48,13 +48,13 @@ export default function FollowingPage() {
     fetch('/api/v1/follows', { credentials: 'include' })
       .then(r => r.ok ? r.json() : { writers: [] })
       .then(d => setWriters(d.writers ?? []))
-      .catch(() => {})
+      .catch(err => console.error('Failed to load followed writers', err))
       .finally(() => setWritersLoading(false))
 
     fetch('/api/v1/follows/followers', { credentials: 'include' })
       .then(r => r.ok ? r.json() : { followers: [] })
       .then(d => setFollowers(d.followers ?? []))
-      .catch(() => {})
+      .catch(err => console.error('Failed to load followers', err))
       .finally(() => setFollowersLoading(false))
   }, [user])
 

@@ -9,6 +9,7 @@ import { requireAuth } from '../middleware/auth.js'
 import { generateKeypair } from '../lib/key-custody-client.js'
 import Stripe from 'stripe'
 import logger from '../../shared/src/lib/logger.js'
+import { requireEnv } from '../../shared/src/lib/env.js'
 
 // =============================================================================
 // Auth Routes — mounted on the gateway
@@ -22,7 +23,7 @@ import logger from '../../shared/src/lib/logger.js'
 // POST /auth/connect-card    — save reader payment method
 // =============================================================================
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+const stripe = new Stripe(requireEnv('STRIPE_SECRET_KEY'), {
   apiVersion: '2023-10-16',
 })
 

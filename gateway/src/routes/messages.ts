@@ -24,7 +24,7 @@ const CreateConversationSchema = z.object({
 })
 
 const SendMessageSchema = z.object({
-  content: z.string().min(1),
+  content: z.string().min(1).max(10_000),
 })
 
 const HEX64_RE_NIP = /^[0-9a-f]{64}$/

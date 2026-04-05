@@ -23,9 +23,11 @@ import { auth } from '../../lib/api'
 //   4. Reader can now read paywalled content charged to their tab
 // =============================================================================
 
-const stripePromise = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? 'pk_test_placeholder'
-)
+const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+if (!stripePublishableKey) {
+  throw new Error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set — payment setup will not work')
+}
+const stripePromise = loadStripe(stripePublishableKey)
 
 interface CardSetupProps {
   onSuccess: () => void

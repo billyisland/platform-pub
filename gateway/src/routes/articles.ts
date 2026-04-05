@@ -8,6 +8,7 @@ import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import { checkAndTriggerDriveFulfilment } from './drives.js'
 import logger from '../../shared/src/lib/logger.js'
+import { requireEnv } from '../../shared/src/lib/env.js'
 
 // =============================================================================
 // Article Routes
@@ -23,12 +24,9 @@ import logger from '../../shared/src/lib/logger.js'
 // This is the single surface the web client talks to.
 // =============================================================================
 
-const KEY_SERVICE_URL = process.env.KEY_SERVICE_URL ?? 'http://localhost:3002'
-const PAYMENT_SERVICE_URL = process.env.PAYMENT_SERVICE_URL ?? 'http://localhost:3001'
-const READER_HASH_KEY = process.env.READER_HASH_KEY
-if (!READER_HASH_KEY) {
-  logger.warn('READER_HASH_KEY is not set — gate-pass will fail for first-time purchasers')
-}
+const KEY_SERVICE_URL = requireEnv('KEY_SERVICE_URL')
+const PAYMENT_SERVICE_URL = requireEnv('PAYMENT_SERVICE_URL')
+const READER_HASH_KEY = requireEnv('READER_HASH_KEY')
 
 const IndexArticleSchema = z.object({
   nostrEventId: z.string().min(1),

@@ -54,7 +54,7 @@ export function VoteControls({
             setTally(data.tallies[targetEventId])
           }
         })
-        .catch(() => {})
+        .catch(err => console.error('Failed to load vote tallies', err))
     }
   }, [targetEventId, initialTally])
 
@@ -66,7 +66,7 @@ export function VoteControls({
             setMyVotes(data.voteCounts[targetEventId])
           }
         })
-        .catch(() => {})
+        .catch(err => console.error('Failed to load user votes', err))
     }
   }, [targetEventId, initialMyVotes, user])
 

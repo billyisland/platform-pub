@@ -105,6 +105,7 @@ CREATE TABLE accounts (
   subscription_price_pence INTEGER NOT NULL DEFAULT 500,    -- writer-configurable (migration 005)
   annual_discount_pct INTEGER NOT NULL DEFAULT 15 CHECK (annual_discount_pct BETWEEN 0 AND 30), -- (migration 024)
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  show_commission_button BOOLEAN NOT NULL DEFAULT TRUE,  -- (migration 030) let authors hide commission button
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -215,6 +216,27 @@ CREATE UNIQUE INDEX idx_drafts_writer_dtag
   WHERE nostr_d_tag IS NOT NULL;
 
 -- =============================================================================
+-- GIFT LINKS (migration 029)
+-- Shareable URLs that grant free access to paywalled articles, with a
+-- configurable redemption limit.
+-- =============================================================================
+
+CREATE TABLE gift_links (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  article_id        UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  creator_id        UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  token             TEXT NOT NULL UNIQUE,
+  max_redemptions   INT NOT NULL DEFAULT 5,
+  redemption_count  INT NOT NULL DEFAULT 0,
+  revoked_at        TIMESTAMPTZ,
+  expires_at        TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_gift_links_token ON gift_links(token);
+CREATE INDEX idx_gift_links_article ON gift_links(article_id);
+
+-- =============================================================================
 -- VAULT KEYS
 -- The key service's private store. Never exposed in Nostr events.
 -- =============================================================================
@@ -281,6 +303,21 @@ CREATE INDEX idx_subscriptions_reader ON subscriptions(reader_id);
 CREATE INDEX idx_subscriptions_writer ON subscriptions(writer_id);
 CREATE INDEX idx_subscriptions_status ON subscriptions(status) WHERE status = 'active' OR status = 'cancelled';
 CREATE INDEX idx_subscriptions_period_end ON subscriptions(current_period_end) WHERE status IN ('active', 'cancelled');
+
+-- =============================================================================
+-- SUBSCRIPTION NUDGE LOG (migration 028)
+-- Tracks when the spend-threshold subscription nudge has been shown to a
+-- reader for a given writer in a given calendar month.
+-- =============================================================================
+
+CREATE TABLE subscription_nudge_log (
+  reader_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  writer_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  month     DATE NOT NULL,
+  shown_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  converted BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (reader_id, writer_id, month)
+);
 
 -- =============================================================================
 -- SUBSCRIPTION EVENTS (migration 005)
@@ -578,7 +615,9 @@ INSERT INTO platform_config (key, value, description) VALUES
   ('for_you_revenue_weight',        '0.4',  'Weight of revenue conversion in For You ranking'),
   ('note_char_limit',               '1000', 'Maximum characters for a note (kind 1)'),
   ('comment_char_limit',            '2000', 'Maximum characters for a comment'),
-  ('media_max_size_bytes',          '10485760', 'Maximum upload file size (10 MB)');
+  ('media_max_size_bytes',          '10485760', 'Maximum upload file size (10 MB)'),
+  ('admin_account_ids',             '',         'Comma-separated account UUIDs with admin access'),
+  ('monthly_fallback_days',         '30',       'Days since last read before monthly settlement fires');
 
 -- =============================================================================
 -- COMMENTS
@@ -798,6 +837,9 @@ CREATE TABLE pledge_drives (
   fulfilled_at          TIMESTAMPTZ,
   cancelled_at          TIMESTAMPTZ,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  parent_note_event_id  TEXT,                          -- (migration 030) thread commissions to source note
+  acceptance_terms      TEXT,                          -- (migration 030) terms recorded on acceptance
+  backer_access_mode    TEXT CHECK (backer_access_mode IN ('free', 'paywalled')) DEFAULT 'free', -- (migration 030)
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -805,6 +847,8 @@ CREATE INDEX idx_drives_creator ON pledge_drives(creator_id);
 CREATE INDEX idx_drives_writer ON pledge_drives(target_writer_id);
 CREATE INDEX idx_drives_status ON pledge_drives(status);
 CREATE INDEX idx_drives_nostr ON pledge_drives(nostr_event_id);
+CREATE INDEX idx_drives_parent_note ON pledge_drives(parent_note_event_id)
+  WHERE parent_note_event_id IS NOT NULL;
 
 CREATE TABLE pledges (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -856,7 +900,7 @@ CREATE TRIGGER trg_pledge_drives_updated_at
 --
 -- Pre-seed the _migrations table so the migration runner knows that a fresh
 -- database initialised from this schema already includes everything through
--- migration 025. Without this, the runner would attempt to re-apply all
+-- migration 033. Without this, the runner would attempt to re-apply all
 -- migrations on a fresh deploy.
 -- =============================================================================
 
@@ -891,5 +935,13 @@ INSERT INTO _migrations (filename) VALUES
   ('022_composite_index_read_events.sql'),
   ('023_subscription_auto_renew.sql'),
   ('024_annual_subscriptions.sql'),
-  ('025_comp_subscriptions.sql')
+  ('025_comp_subscriptions.sql'),
+  ('026_article_profile_pins.sql'),
+  ('027_subscription_visibility.sql'),
+  ('028_subscription_nudge.sql'),
+  ('029_gift_links.sql'),
+  ('030_commissions_expansion.sql'),
+  ('031_fix_media_urls_domain.sql'),
+  ('032_dm_likes.sql'),
+  ('033_admin_account_ids_config.sql')
 ON CONFLICT (filename) DO NOTHING;

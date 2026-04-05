@@ -93,10 +93,10 @@ export class SettlementService {
     if (tab.balance_pence < config.monthlyFallbackMinimumPence) return false
 
     const now = Date.now()
-    const thirtyDays = 30 * 24 * 60 * 60 * 1000
+    const fallbackMs = config.monthlyFallbackDays * 24 * 60 * 60 * 1000
     // FIX #3: Use last_read_at, falling back to tab creation (epoch 0 if null)
     const lastActivity = tab.last_read_at?.getTime() ?? 0
-    return now - lastActivity >= thirtyDays
+    return now - lastActivity >= fallbackMs
   }
 
   // ---------------------------------------------------------------------------

@@ -79,6 +79,11 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         ? pi.latest_charge
         : pi.latest_charge?.id ?? ''
 
+      if (!chargeId) {
+        logger.error({ paymentIntentId: pi.id }, 'payment_intent.succeeded missing latest_charge — skipping settlement confirmation')
+        break
+      }
+
       await settlementService.confirmSettlement(pi.id, chargeId)
       break
     }

@@ -181,21 +181,45 @@ async function start() {
   logger.info({ port }, 'Gateway started')
 
   // Background workers — run periodically after startup
+  // Advisory locks prevent duplicate execution when horizontally scaled
   const WORKER_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
+  const LOCK_SUBSCRIPTIONS = 100001
+  const LOCK_DRIVES = 100002
+
+  async function withAdvisoryLock(lockId: number, name: string, fn: () => Promise<unknown>) {
+    const client = await pool.connect()
+    try {
+      const { rows } = await client.query<{ locked: boolean }>(
+        'SELECT pg_try_advisory_lock($1) AS locked', [lockId]
+      )
+      if (!rows[0].locked) {
+        logger.info(`${name}: skipped — another instance holds the lock`)
+        return
+      }
+      try {
+        await fn()
+      } finally {
+        await client.query('SELECT pg_advisory_unlock($1)', [lockId])
+      }
+    } finally {
+      client.release()
+    }
+  }
+
   setInterval(() => {
-    expireAndRenewSubscriptions().catch(err =>
+    withAdvisoryLock(LOCK_SUBSCRIPTIONS, 'Subscription expiry', expireAndRenewSubscriptions).catch(err =>
       logger.error({ err }, 'Subscription expiry worker failed')
     )
-    expireOverdueDrives().catch(err =>
+    withAdvisoryLock(LOCK_DRIVES, 'Drive expiry', expireOverdueDrives).catch(err =>
       logger.error({ err }, 'Drive expiry worker failed')
     )
   }, WORKER_INTERVAL_MS)
 
   // Run once on startup
-  expireAndRenewSubscriptions().catch(err =>
+  withAdvisoryLock(LOCK_SUBSCRIPTIONS, 'Subscription expiry', expireAndRenewSubscriptions).catch(err =>
     logger.error({ err }, 'Subscription expiry worker failed (startup)')
   )
-  expireOverdueDrives().catch(err =>
+  withAdvisoryLock(LOCK_DRIVES, 'Drive expiry', expireOverdueDrives).catch(err =>
     logger.error({ err }, 'Drive expiry worker failed (startup)')
   )
 }

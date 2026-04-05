@@ -58,7 +58,12 @@ export class VaultService {
 
       if (existingKey.rowCount && existingKey.rowCount > 0) {
         // Reuse existing key — re-encrypt body with same key
-        contentKeyBytes = decryptContentKey(existingKey.rows[0].content_key_enc)
+        try {
+          contentKeyBytes = decryptContentKey(existingKey.rows[0].content_key_enc)
+        } catch (err) {
+          logger.error({ err, articleId: params.articleId }, 'Failed to decrypt existing vault key — possible KMS key rotation')
+          throw Object.assign(new Error('VAULT_KEY_DECRYPT_FAILED'), { statusCode: 500 })
+        }
         vaultKeyId = existingKey.rows[0].id
 
         // Keep nostr_article_event_id current for audit purposes;

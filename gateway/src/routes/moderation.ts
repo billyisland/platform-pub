@@ -20,19 +20,40 @@ import logger from '../../shared/src/lib/logger.js'
 // POST   /admin/suspend/:accountId — suspend an account
 // =============================================================================
 
-// Admin check — at launch this is a hardcoded list of account IDs.
-// Replace with a proper role system post-launch.
-const adminIds = (process.env.ADMIN_ACCOUNT_IDS ?? '').split(',').filter(Boolean)
+// Admin check — reads from platform_config, falls back to env var
+let adminIdsCache: string[] | null = null
+let adminIdsCacheExpiry = 0
 
-function isAdmin(accountId: string): boolean {
-  return adminIds.includes(accountId)
+async function getAdminIds(): Promise<string[]> {
+  if (adminIdsCache && Date.now() < adminIdsCacheExpiry) return adminIdsCache
+  try {
+    const { rows } = await pool.query<{ value: string }>(
+      `SELECT value FROM platform_config WHERE key = 'admin_account_ids'`
+    )
+    const dbValue = rows[0]?.value ?? ''
+    const ids = dbValue.split(',').filter(Boolean)
+    if (ids.length > 0) {
+      adminIdsCache = ids
+      adminIdsCacheExpiry = Date.now() + 60_000 // cache for 1 minute
+      return ids
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to read admin_account_ids from platform_config')
+  }
+  // Fallback to env var
+  return (process.env.ADMIN_ACCOUNT_IDS ?? '').split(',').filter(Boolean)
+}
+
+async function isAdmin(accountId: string): Promise<boolean> {
+  const ids = await getAdminIds()
+  return ids.includes(accountId)
 }
 
 async function requireAdmin(req: any, reply: any): Promise<void> {
   await requireAuth(req, reply)
   if (reply.sent) return
 
-  if (!isAdmin(req.session!.sub!)) {
+  if (!(await isAdmin(req.session!.sub!))) {
     return reply.status(403).send({ error: 'Admin access required' })
   }
 }

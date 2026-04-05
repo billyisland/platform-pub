@@ -74,7 +74,7 @@ export function PaywallGate({
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ writerId }),
-      }).catch(() => {})
+      }).catch(err => console.error('Failed to log subscription nudge', err))
     }
   }, [showConversionOffer, writerId])
 

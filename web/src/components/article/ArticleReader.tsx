@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import Link from 'next/link'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../stores/auth'
 import { PaywallGate } from './PaywallGate'
+import { GiftLinkModal } from './GiftLinkModal'
+import { QuoteSelector } from './QuoteSelector'
 import { unwrapContentKey, decryptVaultContent } from '../../lib/vault'
 import { renderMarkdown } from '../../lib/markdown'
 import { Avatar } from '../ui/Avatar'
@@ -11,7 +12,6 @@ import { ReportButton } from '../ui/ReportButton'
 import { ShareButton } from '../ui/ShareButton'
 import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
-import { NoteComposer } from '../feed/NoteComposer'
 import { ForAllMark } from '../icons/ForAllMark'
 import { articles as articlesApi, giftLinks } from '../../lib/api'
 import type { ArticleEvent } from '../../lib/ndk'
@@ -58,24 +58,21 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
   const [paywallHtml, setPaywallHtml] = useState<string>('')
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [subscribing, setSubscribing] = useState(false)
+  const [showGiftLinkModal, setShowGiftLinkModal] = useState(false)
 
   const isOwnContent = user?.id === writerId
+  const articleBodyRef = useRef<HTMLDivElement>(null)
 
-  // Gift link creation
-  const [showGiftLinkModal, setShowGiftLinkModal] = useState(false)
-  const [giftLinkLimit, setGiftLinkLimit] = useState(5)
-  const [giftLinkCreating, setGiftLinkCreating] = useState(false)
-  const [giftLinkUrl, setGiftLinkUrl] = useState<string | null>(null)
+  const heroImage = extractHeroImage(article.content)
+  const contentWithoutHero = heroImage ? stripHeroImage(article.content, heroImage) : article.content
 
-  async function handleCreateGiftLink() {
-    if (!articleDbId) return
-    setGiftLinkCreating(true)
-    try {
-      const result = await giftLinks.create(articleDbId, giftLinkLimit)
-      setGiftLinkUrl(window.location.origin + result.url)
-    } catch { /* ignore */ }
-    finally { setGiftLinkCreating(false) }
-  }
+  useEffect(() => { if (!preRenderedFreeHtml) renderMarkdown(contentWithoutHero).then(setFreeHtml) }, [contentWithoutHero, preRenderedFreeHtml])
+  useEffect(() => { if (paywallBody) renderMarkdown(paywallBody).then(setPaywallHtml) }, [paywallBody])
+  useEffect(() => {
+    if (!article.isPaywalled) return
+    const cached = sessionStorage.getItem(`unlocked:${article.id}`)
+    if (cached) setPaywallBody(cached)
+  }, [article.id, article.isPaywalled])
 
   // Redeem gift token from URL query param
   useEffect(() => {
@@ -85,45 +82,8 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
     if (!giftToken) return
     giftLinks.redeem(articleDbId, giftToken)
       .then(() => { window.location.replace(window.location.pathname) })
-      .catch(() => {})
+      .catch(err => console.error('Failed to redeem gift link', err))
   }, [articleDbId, user])
-
-  // Text-selection quote flow
-  const articleBodyRef = useRef<HTMLDivElement>(null)
-  const [selectionPopup, setSelectionPopup] = useState<{ x: number; y: number; text: string } | null>(null)
-  const [quoteComposerText, setQuoteComposerText] = useState<string | null>(null)
-
-  const handleMouseUp = useCallback(() => {
-    if (!user) return
-    const sel = window.getSelection()
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) { setSelectionPopup(null); return }
-    const body = articleBodyRef.current
-    if (!body) return
-    const range = sel.getRangeAt(0)
-    if (!body.contains(range.commonAncestorContainer)) { setSelectionPopup(null); return }
-    const rect = range.getBoundingClientRect()
-    const words = sel.toString().trim().split(/\s+/).slice(0, 80).join(' ')
-    setSelectionPopup({
-      x: rect.left + rect.width / 2,
-      y: rect.top - 8,
-      text: words,
-    })
-  }, [user])
-
-  const heroImage = extractHeroImage(article.content)
-  const contentWithoutHero = heroImage ? stripHeroImage(article.content, heroImage) : article.content
-
-  useEffect(() => { if (!preRenderedFreeHtml) renderMarkdown(contentWithoutHero).then(setFreeHtml) }, [contentWithoutHero, preRenderedFreeHtml])
-  useEffect(() => { if (paywallBody) renderMarkdown(paywallBody).then(setPaywallHtml) }, [paywallBody])
-  useEffect(() => {
-    document.addEventListener('mouseup', handleMouseUp)
-    return () => document.removeEventListener('mouseup', handleMouseUp)
-  }, [handleMouseUp])
-  useEffect(() => {
-    if (!article.isPaywalled) return
-    const cached = sessionStorage.getItem(`unlocked:${article.id}`)
-    if (cached) setPaywallBody(cached)
-  }, [article.id, article.isPaywalled])
 
   // Check subscription status for paywall gate
   useEffect(() => {
@@ -131,7 +91,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
     fetch(`/api/v1/subscriptions/check/${writerId}`, { credentials: 'include' })
       .then(r => r.json())
       .then(data => { if (data.subscribed) setIsSubscribed(true) })
-      .catch(() => {})
+      .catch(err => console.error('Failed to check subscription status', err))
   }, [user, writerId, article.isPaywalled])
 
   async function handleSubscribe() {
@@ -140,7 +100,6 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
     try {
       await fetch(`/api/v1/subscriptions/${writerId}`, { method: 'POST', credentials: 'include' })
       setIsSubscribed(true)
-      // After subscribing, unlock the article
       handleUnlock()
     } catch { setUnlockError('Failed to subscribe. Try again.') }
     finally { setSubscribing(false) }
@@ -194,92 +153,17 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
     <div className="min-h-screen bg-white">
       {showAllowanceModal && <AllowanceExhaustedModal onClose={() => setShowAllowanceModal(false)} />}
 
-      {/* Text-selection quote popup */}
-      {selectionPopup && (
-        <div
-          className="fixed z-50 bg-black text-white px-3 py-1.5 text-[12px] font-sans shadow-lg"
-          style={{ left: selectionPopup.x, top: selectionPopup.y, transform: 'translate(-50%, -100%)' }}
-        >
-          <button
-            onMouseDown={e => {
-              e.preventDefault()
-              setQuoteComposerText(selectionPopup.text)
-              setSelectionPopup(null)
-            }}
-          >
-            Quote
-          </button>
-        </div>
-      )}
+      <QuoteSelector
+        articleBodyRef={articleBodyRef}
+        articleId={article.id}
+        articleTitle={article.title}
+        articlePubkey={article.pubkey}
+        writerName={writerName}
+        isLoggedIn={!!user}
+      />
 
-      {/* Gift link modal */}
-      {showGiftLinkModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowGiftLinkModal(false)}>
-          <div className="bg-white border border-grey-200 shadow-lg w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-serif text-[20px] font-medium text-black mb-1">Create gift link</h3>
-            <p className="text-[13px] font-sans text-grey-400 mb-4">Generate a shareable link that grants free access.</p>
-            {!giftLinkUrl ? (
-              <>
-                <label className="block text-[12px] font-mono text-grey-400 mb-1">Redemption limit</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={giftLinkLimit}
-                  onChange={(e) => setGiftLinkLimit(parseInt(e.target.value, 10) || 5)}
-                  className="w-20 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black mb-4"
-                />
-                <div>
-                  <button onClick={handleCreateGiftLink} disabled={giftLinkCreating} className="btn text-sm disabled:opacity-50">
-                    {giftLinkCreating ? 'Creating…' : 'Generate link'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <input
-                  type="text"
-                  readOnly
-                  value={giftLinkUrl}
-                  className="w-full border border-grey-200 px-3 py-1.5 text-[13px] font-mono text-black bg-grey-100 mb-3"
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
-                <button
-                  onClick={() => { navigator.clipboard.writeText(giftLinkUrl) }}
-                  className="btn text-sm"
-                >
-                  Copy link
-                </button>
-              </>
-            )}
-            <button onClick={() => setShowGiftLinkModal(false)} className="mt-4 block text-[12px] font-mono text-grey-400 hover:text-black transition-colors">
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Quote composer modal */}
-      {quoteComposerText !== null && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => setQuoteComposerText(null)}
-        >
-          <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <NoteComposer
-              quoteTarget={{
-                eventId: article.id,
-                eventKind: 30023,
-                authorPubkey: article.pubkey,
-                highlightedText: quoteComposerText,
-                previewContent: quoteComposerText,
-                previewTitle: article.title,
-                previewAuthorName: writerName,
-              }}
-              onPublished={() => setQuoteComposerText(null)}
-            />
-          </div>
-        </div>
+      {showGiftLinkModal && articleDbId && (
+        <GiftLinkModal articleDbId={articleDbId} onClose={() => setShowGiftLinkModal(false)} />
       )}
 
       {/* Article content */}
@@ -309,7 +193,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
                 <ReportButton targetNostrEventId={article.id} />
                 {isOwnContent && article.isPaywalled && (
                   <button
-                    onClick={() => { setShowGiftLinkModal(true); setGiftLinkUrl(null) }}
+                    onClick={() => setShowGiftLinkModal(true)}
                     className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-400 hover:text-black transition-colors"
                   >
                     Gift link

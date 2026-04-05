@@ -30,7 +30,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
   const excerpt = article.summary || truncateText(stripMarkdown(article.content), 200)
 
   useEffect(() => {
-    repliesApi.getForTarget(article.id).then(d => setReplyCount(d.totalCount)).catch(() => {})
+    repliesApi.getForTarget(article.id).then(d => setReplyCount(d.totalCount)).catch(err => console.error('Failed to load reply count', err))
   }, [article.id])
 
   function handleCardClick() {

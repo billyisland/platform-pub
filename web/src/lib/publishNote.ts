@@ -1,5 +1,4 @@
-import { KIND_NOTE } from './ndk'
-import { signAndPublish } from './sign'
+import { signPublishAndIndex } from './signPublishAndIndex'
 
 // =============================================================================
 // Note Publishing Service
@@ -7,8 +6,6 @@ import { signAndPublish } from './sign'
 // Publishes a short-form note (Nostr kind 1) via the gateway.
 // No direct relay access needed — signing and publishing happen server-side.
 // =============================================================================
-
-const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL ?? ''
 
 interface PublishNoteResult {
   noteEventId: string
@@ -42,48 +39,23 @@ export async function publishNote(
     }
   }
 
-  // Sign and publish via gateway
-  const signed = await signAndPublish({
-    kind: KIND_NOTE,
+  const result = await signPublishAndIndex({
     content,
     tags,
-  })
-
-  // Index in platform DB
-  await indexNote({
-    nostrEventId: signed.id,
-    content,
-    ...(quoteTarget && {
-      isQuoteComment: true,
-      quotedEventId: quoteTarget.eventId,
-      quotedEventKind: quoteTarget.eventKind,
-      quotedExcerpt: quoteTarget.highlightedText,
-      quotedTitle: quoteTarget.previewTitle,
-      quotedAuthor: quoteTarget.previewAuthorName,
+    indexEndpoint: '/api/v1/notes',
+    indexBody: (eventId) => ({
+      nostrEventId: eventId,
+      content,
+      ...(quoteTarget && {
+        isQuoteComment: true,
+        quotedEventId: quoteTarget.eventId,
+        quotedEventKind: quoteTarget.eventKind,
+        quotedExcerpt: quoteTarget.highlightedText,
+        quotedTitle: quoteTarget.previewTitle,
+        quotedAuthor: quoteTarget.previewAuthorName,
+      }),
     }),
   })
 
-  return { noteEventId: signed.id }
-}
-
-async function indexNote(params: {
-  nostrEventId: string
-  content: string
-  isQuoteComment?: boolean
-  quotedEventId?: string
-  quotedEventKind?: number
-  quotedExcerpt?: string
-  quotedTitle?: string
-  quotedAuthor?: string
-}): Promise<void> {
-  const res = await fetch(`${GATEWAY_URL}/api/v1/notes`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  })
-
-  if (!res.ok) {
-    console.error('Note indexing failed:', res.status)
-  }
+  return { noteEventId: result.eventId }
 }
