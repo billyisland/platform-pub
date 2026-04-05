@@ -27,6 +27,7 @@ import { requireEnv } from '../../shared/src/lib/env.js'
 const KEY_SERVICE_URL = requireEnv('KEY_SERVICE_URL')
 const PAYMENT_SERVICE_URL = requireEnv('PAYMENT_SERVICE_URL')
 const READER_HASH_KEY = requireEnv('READER_HASH_KEY')
+const INTERNAL_SERVICE_TOKEN = requireEnv('INTERNAL_SERVICE_TOKEN')
 
 const IndexArticleSchema = z.object({
   nostrEventId: z.string().min(1),
@@ -458,7 +459,10 @@ export async function articleRoutes(app: FastifyInstance) {
         // Step 2: Record gate pass via payment service
         const paymentRes = await fetch(`${PAYMENT_SERVICE_URL}/api/v1/gate-pass`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-internal-token': INTERNAL_SERVICE_TOKEN,
+          },
           body: JSON.stringify({
             readerId,
             articleId: article.id,

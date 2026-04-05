@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.8.1
+# all.haus — Deployment Reference v5.8.2
 
 **Date:** 5 April 2026
-**Replaces:** v5.8.0 (see bottom for change log)
+**Replaces:** v5.8.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -145,7 +145,7 @@ openssl rand -hex 32   # SESSION_SECRET, READER_HASH_KEY
 openssl rand -hex 32   # ACCOUNT_KEY_HEX (key-custody only)
 openssl rand -hex 32   # KMS_MASTER_KEY_HEX (key-service only)
 openssl rand -base64 32  # INTERNAL_SECRET (gateway + key-custody + key-service)
-openssl rand -base64 32  # INTERNAL_SERVICE_TOKEN (payment-service cron auth)
+openssl rand -base64 32  # INTERNAL_SERVICE_TOKEN (gateway + payment-service)
 # For PLATFORM_SERVICE_PRIVKEY: generate a Nostr keypair — any hex ed25519 privkey
 ```
 
@@ -250,6 +250,36 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
 
+### From v5.8.1
+
+Bug fix: article unlocking broken — gateway was not sending `x-internal-token` header when calling the payment service `/gate-pass` endpoint, causing every first-time unlock to fail with 403/500. Services changed: **gateway only**. New env var required on gateway.
+
+```bash
+cd ~/platform-pub
+git pull origin master
+
+# Add INTERNAL_SERVICE_TOKEN to gateway .env (must match payment-service's value)
+grep -q 'INTERNAL_SERVICE_TOKEN' gateway/.env && echo "OK" || echo "MISSING — copy from payment-service/.env"
+
+docker compose build gateway
+docker compose up -d gateway
+```
+
+Verify:
+
+```bash
+# Health check
+curl -s http://localhost:3000/health | python3 -m json.tool
+
+# Test gate-pass (requires auth cookie — verify from browser that unlocking works)
+docker compose logs --tail=10 gateway | grep -i "gate pass"
+# Should show "Gate pass complete — key issued" instead of "Payment service gate-pass failed"
+```
+
+No migrations. Requires `INTERNAL_SERVICE_TOKEN` in `gateway/.env` (same value as `payment-service/.env`).
+
+---
+
 ### From v5.8.0
 
 Bug fix: gateway crash on startup due to undefined `adminIds` reference in moderation routes. Services changed: **gateway only**.
@@ -322,7 +352,8 @@ grep -q 'KEY_SERVICE_URL' gateway/.env && echo "OK" || echo "MISSING: KEY_SERVIC
 grep -q 'PAYMENT_SERVICE_URL' gateway/.env && echo "OK" || echo "MISSING: PAYMENT_SERVICE_URL"
 grep -q 'READER_HASH_KEY' gateway/.env && echo "OK" || echo "MISSING: READER_HASH_KEY"
 grep -q 'STRIPE_SECRET_KEY' gateway/.env && echo "OK" || echo "MISSING: STRIPE_SECRET_KEY"
-grep -q 'INTERNAL_SERVICE_TOKEN' payment-service/.env && echo "OK" || echo "MISSING: INTERNAL_SERVICE_TOKEN"
+grep -q 'INTERNAL_SERVICE_TOKEN' payment-service/.env && echo "OK" || echo "MISSING: INTERNAL_SERVICE_TOKEN in payment-service"
+grep -q 'INTERNAL_SERVICE_TOKEN' gateway/.env && echo "OK" || echo "MISSING: INTERNAL_SERVICE_TOKEN in gateway"
 
 # 3. Rebuild and restart all services
 docker compose build gateway payment keyservice web
@@ -4531,6 +4562,28 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.8.2 — 5 April 2026
+
+**Fix: article unlocking — missing `x-internal-token` on gateway→payment-service calls**
+
+The gateway's gate-pass orchestration (`POST /articles/:nostrEventId/gate-pass`) calls the payment service to record reads, but was not sending the `x-internal-token` header that the payment service requires for authentication. Every first-time article unlock failed: the payment service returned 403 Forbidden, the gateway mapped this to a 500, and the client surfaced a generic error.
+
+Already-unlocked articles (re-issuance path) were unaffected because that path skips the payment service and calls the key service directly.
+
+**Root cause:** When `INTERNAL_SERVICE_TOKEN` auth was extended to the `/gate-pass` and `/card-connected` endpoints in v5.7.0 (previously only on `/payout-cycle` and `/settlement-check/monthly`), the gateway's outbound `fetch()` call was not updated to include the header.
+
+**Changes:**
+
+- `gateway/src/routes/articles.ts`: read `INTERNAL_SERVICE_TOKEN` via `requireEnv()` at module level; include `'x-internal-token': INTERNAL_SERVICE_TOKEN` in the headers when calling the payment service gate-pass endpoint.
+- `gateway/.env.example`: added `INTERNAL_SERVICE_TOKEN` with documentation.
+- `gateway/.env`: added `INTERNAL_SERVICE_TOKEN` (must match `payment-service/.env` value).
+
+**Files changed:** `gateway/src/routes/articles.ts`, `gateway/.env.example`, `gateway/.env`
+
+**Env change:** `INTERNAL_SERVICE_TOKEN` must now be present in `gateway/.env` (same value as `payment-service/.env`). The gateway will fail to boot if it is missing (enforced by `requireEnv()`).
+
+---
 
 ### v5.8.1 — 5 April 2026
 
