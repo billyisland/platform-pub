@@ -7,6 +7,7 @@ import { useUnreadCounts } from '../../stores/unread'
 import { useMediaAttachments } from '../../hooks/useMediaAttachments'
 import { MediaPreview } from '../ui/MediaPreview'
 import { MediaContent } from '../ui/MediaContent'
+import { CommissionForm } from '../ui/CommissionForm'
 
 const POLL_INTERVAL = 5_000
 
@@ -18,11 +19,13 @@ function timeStamp(iso: string): string {
 export function MessageThread({
   conversationId,
   memberName,
+  memberId,
   onBack,
   onMessagesRead,
 }: {
   conversationId: string
   memberName: string
+  memberId?: string
   onBack?: () => void
   onMessagesRead?: () => void
 }) {
@@ -37,6 +40,7 @@ export function MessageThread({
   const [sending, setSending] = useState(false)
   const [dmPriceError, setDmPriceError] = useState<number | null>(null)
   const [replyTo, setReplyTo] = useState<DecryptedMessage | null>(null)
+  const [showCommission, setShowCommission] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -277,14 +281,39 @@ export function MessageThread({
 
   return (
     <div className="flex flex-col h-full">
+      {/* Commission modal */}
+      {showCommission && memberId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowCommission(false)}>
+          <div className="w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+            <CommissionForm
+              targetWriterId={memberId}
+              targetWriterName={memberName}
+              parentConversationId={conversationId}
+              onCreated={() => setShowCommission(false)}
+              onClose={() => setShowCommission(false)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0">
-        {onBack && (
-          <button onClick={onBack} className="font-mono text-[12px] text-grey-400 hover:text-black uppercase tracking-[0.04em]">
-            &#8592;
+      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button onClick={onBack} className="font-mono text-[12px] text-grey-400 hover:text-black uppercase tracking-[0.04em]">
+              &#8592;
+            </button>
+          )}
+          <p className="text-[14px] font-sans font-semibold text-black">{memberName}</p>
+        </div>
+        {memberId && (
+          <button
+            onClick={() => setShowCommission(true)}
+            className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-400 hover:text-black transition-colors"
+          >
+            Commission
           </button>
         )}
-        <p className="text-[14px] font-sans font-semibold text-black">{memberName}</p>
       </div>
 
       {/* Messages */}

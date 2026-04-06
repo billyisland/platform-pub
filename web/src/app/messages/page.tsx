@@ -70,9 +70,9 @@ export default function MessagesPage() {
   }
 
   const activeConv = conversations.find(c => c.id === activeConvId)
-  const activeMemberName = activeConv
-    ? activeConv.members.filter(m => m.id !== user?.id).map(m => m.displayName ?? m.username).join(', ') || 'Conversation'
-    : ''
+  const otherMembers = activeConv?.members.filter(m => m.id !== user?.id) ?? []
+  const activeMemberName = otherMembers.map(m => m.displayName ?? m.username).join(', ') || 'Conversation'
+  const activeMemberId = otherMembers.length === 1 ? otherMembers[0].id : undefined
 
   if (loading || !user) {
     return (
@@ -129,6 +129,7 @@ export default function MessagesPage() {
             <MessageThread
               conversationId={activeConvId}
               memberName={activeMemberName}
+              memberId={activeMemberId}
               onBack={() => setActiveConvId(null)}
               onMessagesRead={handleMessagesRead}
             />

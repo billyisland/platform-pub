@@ -7,6 +7,7 @@ interface CommissionFormProps {
   targetWriterId: string
   targetWriterName: string
   parentNoteEventId?: string
+  parentConversationId?: string
   initialPitch?: string
   onCreated?: (driveId: string) => void
   onClose?: () => void
@@ -16,6 +17,7 @@ export function CommissionForm({
   targetWriterId,
   targetWriterName,
   parentNoteEventId,
+  parentConversationId,
   initialPitch = '',
   onCreated,
   onClose,
@@ -42,6 +44,7 @@ export function CommissionForm({
         title: pitch.trim(),
         fundingTargetPence: amountPence,
         parentNoteEventId,
+        parentConversationId,
       })
       onCreated?.(result.driveId)
     } catch {

@@ -648,6 +648,39 @@ export const messages = {
 }
 
 // =============================================================================
+// DM Pricing
+// =============================================================================
+
+export interface DmPricingOverride {
+  userId: string
+  username: string
+  displayName: string | null
+  pricePence: number
+}
+
+export const dmPricing = {
+  get: () =>
+    request<{ defaultPricePence: number; overrides: DmPricingOverride[] }>('/settings/dm-pricing'),
+
+  update: (defaultPricePence: number) =>
+    request<{ ok: boolean }>('/settings/dm-pricing', {
+      method: 'PUT',
+      body: JSON.stringify({ defaultPricePence }),
+    }),
+
+  setOverride: (userId: string, pricePence: number) =>
+    request<{ ok: boolean }>(`/settings/dm-pricing/override/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ pricePence }),
+    }),
+
+  removeOverride: (userId: string) =>
+    request<{ ok: boolean }>(`/settings/dm-pricing/override/${userId}`, {
+      method: 'DELETE',
+    }),
+}
+
+// =============================================================================
 // Pledge Drives
 // =============================================================================
 
@@ -686,6 +719,7 @@ export const drives = {
     suggestedPricePence?: number
     targetWriterId?: string
     parentNoteEventId?: string
+    parentConversationId?: string
   }) =>
     request<{ driveId: string }>('/drives', {
       method: 'POST',

@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { myArticles, account as accountApi, type MyArticle } from '../../lib/api'
+import { myArticles, account as accountApi, dmPricing, type MyArticle, type DmPricingOverride } from '../../lib/api'
 import { loadDrafts, deleteDraft } from '../../lib/drafts'
 import { KIND_DELETION } from '../../lib/ndk'
 import { signAndPublish } from '../../lib/sign'
 import { DrivesTab } from '../../components/dashboard/DrivesTab'
+import { GiftLinksPanel } from '../../components/dashboard/GiftLinksPanel'
 
 type DashboardTab = 'articles' | 'drafts' | 'drives' | 'settings'
 
@@ -68,7 +69,7 @@ export default function DashboardPage() {
 // =============================================================================
 
 function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
-  const [articles, setArticles] = useState<MyArticle[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [articles, setArticles] = useState<MyArticle[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [deletingId, setDeletingId] = useState<string | null>(null); const [giftLinksOpenId, setGiftLinksOpenId] = useState<string | null>(null)
 
   useEffect(() => { (async () => { setLoading(true); try { setArticles((await myArticles.list()).articles) } catch { setError('Failed to load articles.') } finally { setLoading(false) } })() }, [userId])
   async function handleToggleReplies(id: string, on: boolean) { try { await myArticles.update(id, { repliesEnabled: on }); setArticles(p => p.map(a => a.id === id ? { ...a, repliesEnabled: on } : a)) } catch { setError('Failed to update.') } }
@@ -98,7 +99,8 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
       <table className="w-full text-ui-xs">
         <thead><tr className="border-b-2 border-grey-200"><th className="px-4 py-3 text-left label-ui text-grey-400">Title</th><th className="px-4 py-3 text-left label-ui text-grey-400">Status</th><th className="px-4 py-3 text-right label-ui text-grey-400">Reads</th><th className="px-4 py-3 text-right label-ui text-grey-400">Earned</th><th className="px-4 py-3 text-center label-ui text-grey-400">Replies</th><th className="px-4 py-3 text-right label-ui text-grey-400">Actions</th></tr></thead>
         <tbody>{articles.map(a => (
-          <tr key={a.id} className="border-b-2 border-grey-200 last:border-b-0">
+          <React.Fragment key={a.id}>
+          <tr className="border-b-2 border-grey-200 last:border-b-0">
             <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-black hover:opacity-70">{a.title}</Link></td>
             <td className="px-4 py-3">{a.isPaywalled ? <span className="text-black">£{((a.pricePence??0)/100).toFixed(2)}</span> : <span className="text-grey-400">Free</span>}</td>
             <td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td>
@@ -106,11 +108,18 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
             <td className="px-4 py-3 text-center"><button onClick={() => handleToggleReplies(a.id, !a.repliesEnabled)} className={`text-ui-xs ${a.repliesEnabled ? 'text-crimson' : 'text-grey-300'}`}>{a.repliesEnabled ? 'On' : 'Off'}</button></td>
             <td className="px-4 py-3 text-right">
               <div className="flex items-center justify-end gap-3">
+                {a.isPaywalled && (
+                  <button onClick={() => setGiftLinksOpenId(giftLinksOpenId === a.id ? null : a.id)} className={`text-grey-300 hover:text-black ${giftLinksOpenId === a.id ? 'text-black' : ''}`}>Gifts</button>
+                )}
                 <Link href={`/write?edit=${a.nostrEventId}`} className="text-grey-400 hover:text-black">Edit</Link>
                 <button onClick={() => handleDelete(a.id)} disabled={deletingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button>
               </div>
             </td>
           </tr>
+          {giftLinksOpenId === a.id && (
+            <tr><td colSpan={6} className="bg-grey-50 border-b-2 border-grey-200"><GiftLinksPanel articleId={a.id} dTag={a.dTag} /></td></tr>
+          )}
+          </React.Fragment>
         ))}
         </tbody>
       </table>
@@ -141,6 +150,23 @@ function WriterSettingsTab({ stripeReady }: { stripeReady: boolean }) {
   const [annualDiscount, setAnnualDiscount] = useState('15')
   const [savingPrice, setSavingPrice] = useState(false)
   const [priceMsg, setPriceMsg] = useState<string | null>(null)
+
+  // DM pricing state
+  const [dmPrice, setDmPrice] = useState('')
+  const [dmOverrides, setDmOverrides] = useState<DmPricingOverride[]>([])
+  const [dmLoading, setDmLoading] = useState(true)
+  const [savingDm, setSavingDm] = useState(false)
+  const [dmMsg, setDmMsg] = useState<string | null>(null)
+  const [overrideUsername, setOverrideUsername] = useState('')
+  const [overridePrice, setOverridePrice] = useState('')
+  const [addingOverride, setAddingOverride] = useState(false)
+
+  useEffect(() => {
+    dmPricing.get().then(data => {
+      setDmPrice(data.defaultPricePence > 0 ? (data.defaultPricePence / 100).toFixed(2) : '')
+      setDmOverrides(data.overrides)
+    }).catch(() => {}).finally(() => setDmLoading(false))
+  }, [])
 
   async function handleSavePrice(e: React.FormEvent) {
     e.preventDefault()
@@ -229,10 +255,127 @@ function WriterSettingsTab({ stripeReady }: { stripeReady: boolean }) {
         )}
       </div>
 
-      {/* DM pricing placeholder */}
+      {/* DM pricing */}
       <div className="bg-white px-6 py-5">
         <p className="label-ui text-grey-400 mb-4">DM pricing</p>
-        <p className="text-ui-xs text-grey-300">Coming soon — set a price for direct messages from non-followers.</p>
+        <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
+          Charge a fee for DMs from people you don&apos;t know. Set to £0 or leave blank for free.
+        </p>
+
+        {dmLoading ? (
+          <div className="h-8 w-48 animate-pulse bg-grey-100" />
+        ) : (
+          <>
+            {/* Default rate */}
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              const pence = dmPrice.trim() ? Math.round(parseFloat(dmPrice) * 100) : 0
+              if (isNaN(pence) || pence < 0) { setDmMsg('Enter a valid price.'); return }
+              setSavingDm(true); setDmMsg(null)
+              try {
+                await dmPricing.update(pence)
+                setDmMsg('DM pricing updated.')
+              } catch { setDmMsg('Failed to update.') }
+              finally { setSavingDm(false) }
+            }} className="space-y-4 mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-[14px] font-sans text-grey-400">£</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={dmPrice}
+                  onChange={(e) => setDmPrice(e.target.value)}
+                  className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                  placeholder="0.00"
+                />
+                <span className="text-[13px] font-sans text-grey-300">per message</span>
+              </div>
+              <button type="submit" disabled={savingDm} className="btn text-sm disabled:opacity-50">
+                {savingDm ? 'Saving…' : 'Save'}
+              </button>
+            </form>
+            {dmMsg && <p className="text-[13px] font-sans text-grey-600 mb-4">{dmMsg}</p>}
+
+            {/* Per-user overrides */}
+            <details className="text-ui-xs">
+              <summary className="text-grey-400 cursor-pointer hover:text-grey-600 mb-3">
+                Per-user overrides ({dmOverrides.length})
+              </summary>
+
+              {dmOverrides.length > 0 && (
+                <div className="space-y-1 mb-4">
+                  {dmOverrides.map(o => (
+                    <div key={o.userId} className="flex items-center justify-between py-1">
+                      <span className="text-black">{o.displayName ?? o.username} <span className="text-grey-300">@{o.username}</span></span>
+                      <div className="flex items-center gap-3">
+                        <span className="tabular-nums">{o.pricePence === 0 ? 'Free' : `£${(o.pricePence / 100).toFixed(2)}`}</span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await dmPricing.removeOverride(o.userId)
+                              setDmOverrides(prev => prev.filter(x => x.userId !== o.userId))
+                            } catch {}
+                          }}
+                          className="text-grey-300 hover:text-black"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add override */}
+              <form onSubmit={async (e) => {
+                e.preventDefault()
+                if (!overrideUsername.trim()) return
+                setAddingOverride(true)
+                try {
+                  const res = await fetch(`/api/v1/search?q=${encodeURIComponent(overrideUsername.trim())}&type=writers`, { credentials: 'include' })
+                  const data = await res.json()
+                  const found = data.results?.[0]
+                  if (!found) { setDmMsg('User not found.'); setAddingOverride(false); return }
+                  const pence = overridePrice.trim() ? Math.round(parseFloat(overridePrice) * 100) : 0
+                  await dmPricing.setOverride(found.id, pence)
+                  setDmOverrides(prev => [...prev.filter(x => x.userId !== found.id), {
+                    userId: found.id,
+                    username: found.username,
+                    displayName: found.displayName,
+                    pricePence: pence,
+                  }])
+                  setOverrideUsername('')
+                  setOverridePrice('')
+                } catch { setDmMsg('Failed to add override.') }
+                finally { setAddingOverride(false) }
+              }} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={overrideUsername}
+                  onChange={(e) => setOverrideUsername(e.target.value)}
+                  placeholder="Username"
+                  className="w-32 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black placeholder-grey-300"
+                />
+                <span className="text-[13px] font-sans text-grey-400">£</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={overridePrice}
+                  onChange={(e) => setOverridePrice(e.target.value)}
+                  placeholder="0.00"
+                  className="w-20 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black placeholder-grey-300"
+                />
+                <button type="submit" disabled={addingOverride} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70 disabled:opacity-50">
+                  {addingOverride ? '…' : 'Add'}
+                </button>
+              </form>
+            </details>
+          </>
+        )}
       </div>
     </div>
   )

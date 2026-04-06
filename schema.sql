@@ -867,6 +867,7 @@ CREATE TABLE pledge_drives (
   parent_note_event_id  TEXT,                          -- (migration 030) thread commissions to source note
   acceptance_terms      TEXT,                          -- (migration 030) terms recorded on acceptance
   backer_access_mode    TEXT CHECK (backer_access_mode IN ('free', 'paywalled')) DEFAULT 'free', -- (migration 030)
+  parent_conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL, -- (migration 036) commission from DM
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -876,6 +877,8 @@ CREATE INDEX idx_drives_status ON pledge_drives(status);
 CREATE INDEX idx_drives_nostr ON pledge_drives(nostr_event_id);
 CREATE INDEX idx_drives_parent_note ON pledge_drives(parent_note_event_id)
   WHERE parent_note_event_id IS NOT NULL;
+CREATE INDEX idx_drives_parent_conv ON pledge_drives(parent_conversation_id)
+  WHERE parent_conversation_id IS NOT NULL;
 
 CREATE TABLE pledges (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

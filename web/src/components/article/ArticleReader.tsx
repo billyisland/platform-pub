@@ -189,16 +189,12 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <ShareButton url={articleUrl} title={article.title} />
+                <ShareButton
+                  url={articleUrl}
+                  title={article.title}
+                  onGiftLink={isOwnContent && article.isPaywalled ? () => setShowGiftLinkModal(true) : undefined}
+                />
                 <ReportButton targetNostrEventId={article.id} />
-                {isOwnContent && article.isPaywalled && (
-                  <button
-                    onClick={() => setShowGiftLinkModal(true)}
-                    className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-400 hover:text-black transition-colors"
-                  >
-                    Gift link
-                  </button>
-                )}
               </div>
             </div>
 

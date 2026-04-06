@@ -6,9 +6,10 @@ interface ShareButtonProps {
   url: string
   title: string
   dark?: boolean  // kept for API compat
+  onGiftLink?: () => void
 }
 
-export function ShareButton({ url, title }: ShareButtonProps) {
+export function ShareButton({ url, title, onGiftLink }: ShareButtonProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -99,6 +100,17 @@ export function ShareButton({ url, title }: ShareButtonProps) {
           >
             Share via email
           </button>
+          {onGiftLink && (
+            <>
+              <div className="border-t border-grey-200 my-1" />
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(false); onGiftLink() }}
+                className="w-full text-left px-3 py-2 text-xs text-black hover:bg-grey-100 transition-colors"
+              >
+                Gift link
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

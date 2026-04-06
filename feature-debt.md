@@ -56,8 +56,7 @@ All high-priority bugs have been resolved:
 **Accessibility gaps** — vote buttons lack aria-labels, paywall indicator is colour-only, dropdowns lack keyboard nav. Not discussed yet.
 *(Source: FIXES-REMAINING.md #13)*
 
-**Reduce JWT session lifetime** — still 7 days (`TOKEN_LIFETIME_SECONDS = 7 * 24 * 60 * 60`) with 3.5-day refresh. Long for a payment platform. Consider 1-2 hours with refresh-on-use (refresh mechanism already exists). Not discussed yet.
-*(Source: FIXES.md #28)*
+~~Reduce JWT session lifetime~~ — **fixed:** reduced from 7 days to 2 hours with 1-hour refresh-on-use half-life. Active users stay logged in; idle sessions expire in 2 hours.
 
 ---
 
@@ -72,13 +71,13 @@ All high-priority bugs have been resolved:
 
 ### Still outstanding
 
-**Free pass management UI** — The original doc claimed "backend exists (3 endpoints)" but **no free_passes table, endpoints, or routes were found in the codebase**. This feature is entirely unbuilt, not just missing UI. Needs: schema, migration, gateway routes, then writer-facing UI. Not discussed yet.
+**Subscription offers system** — Replaces the original "free pass" concept. Decided 2026-04-06: article unlocks are permanent by nature and gift links already cover sharing individual articles, so the actual gap is flexible subscription pricing offers. Design: a single `subscription_offers` table with two modes — `code` (shareable link, anyone redeems) and `grant` (assigned to a specific reader). Fields: `writer_id`, `label`, `mode`, `discount_pct` (0–100), `duration_months` (null = permanent), `code` (unique slug for code mode), `recipient_id` (for grant mode), `max_redemptions`, `redemption_count`, `expires_at`. Covers all cases: discounted first month for everyone, free/cheap subs gifted to specific readers, permanent comp subs. Dashboard UI: "Offers" tab with "New offer code" and "Gift subscription" actions, plus a table of active/expired offers. Subscription renewal logic checks whether the offer period has elapsed and reverts to standard rate. All parameters freely configurable by the writer. Not started.
 
-**Gift link frontend** — ~95% done. `GiftLinkModal.tsx` exists; creation and redemption work via `ArticleReader.tsx`. Missing: dashboard list of created gift links, integration into ShareButton dropdown (ShareButton only has Copy link, X, Email). Not discussed yet.
+~~Gift link frontend~~ — **done:** dashboard GiftLinksPanel (create/list/revoke per article in Articles tab) + "Gift link" option in ShareButton dropdown.
 
-**DM pricing / anti-spam settings** — Schema (`dm_pricing`) and enforcement logic exist in `messages.ts`. No API endpoint to configure it and no frontend settings. Not discussed yet.
+~~DM pricing / anti-spam settings~~ — **done:** GET/PUT `/settings/dm-pricing` + per-user override endpoints. Dashboard settings tab has default rate form + collapsible per-user overrides section with username search.
 
-**Commission social features** — ~60% done. Profile commission button works (`WriterActivity.tsx:184`), `CommissionCard` in feeds works, `ProfileDriveCard` pledge works. Missing: commission from DM/conversation threads. Not discussed yet.
+~~Commission social features~~ — **done:** Commission button in DM thread header opens CommissionForm modal. Migration 036 adds `parent_conversation_id` to `pledge_drives`. Backend and API client pass conversation context through.
 
 ---
 
@@ -152,10 +151,10 @@ Multi-currency support. Option 2 (launch with GBP, display-only conversion) is r
 
 ### Next: complete half-built work
 
-1. Gift link frontend polish (dashboard list + ShareButton integration)
-2. Commission social features (DM/conversation thread context)
-3. Free pass feature (full build — schema, backend, UI)
-4. DM pricing configuration (API endpoint + frontend settings)
+1. ~~Gift link frontend polish~~ — done
+2. ~~Commission social features~~ — done
+3. Subscription offers system (full build — schema, backend, dashboard Offers tab)
+4. ~~DM pricing configuration~~ — done
 
 ### Then: build missing features by impact
 
@@ -166,7 +165,7 @@ Multi-currency support. Option 2 (launch with GBP, display-only conversion) is r
 
 ### Later: strategic work
 
-9. Subscription Phase 2 (free trials, gifts, import/export)
+9. Subscription Phase 2 — now partially covered by offers system; remaining: welcome email, subscriber import/export, subscriber analytics, custom subscribe landing page
 10. Settings rationalisation — see `SETTINGS-RATIONALISATION.md`
 11. Currency strategy — see `platform-pub-currency-strategy.md`
 12. Reposts (needs feed algorithm to be meaningful)
@@ -177,5 +176,5 @@ Multi-currency support. Option 2 (launch with GBP, display-only conversion) is r
 - CI/CD pipeline
 - TypeScript strictness (eliminate remaining ~23 `any` instances)
 - Accessibility pass
-- JWT lifetime reduction
+- ~~JWT lifetime reduction~~ — done (2-hour lifetime with 1-hour refresh)
 - TypeScript target alignment

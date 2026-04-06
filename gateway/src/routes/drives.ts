@@ -36,6 +36,7 @@ const CreateDriveSchema = z.object({
   deadline: z.string().datetime().optional(),
   draftId: z.string().regex(UUID_RE).optional(),
   parentNoteEventId: z.string().max(200).optional(),
+  parentConversationId: z.string().regex(UUID_RE).optional(),
 })
 
 const UpdateDriveSchema = z.object({
@@ -87,8 +88,8 @@ export async function driveRoutes(app: FastifyInstance) {
       `INSERT INTO pledge_drives (
          creator_id, origin, target_writer_id, title, description,
          funding_target_pence, suggested_price_pence, deadline, draft_id,
-         parent_note_event_id
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         parent_note_event_id, parent_conversation_id
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
       [
         creatorId,
@@ -101,6 +102,7 @@ export async function driveRoutes(app: FastifyInstance) {
         data.deadline ?? null,
         data.draftId ?? null,
         data.parentNoteEventId ?? null,
+        data.parentConversationId ?? null,
       ]
     )
 

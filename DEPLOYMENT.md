@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.11.0
+# all.haus — Deployment Reference v5.12.0
 
 **Date:** 6 April 2026
-**Replaces:** v5.10.2 (see bottom for change log)
+**Replaces:** v5.11.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -158,7 +158,7 @@ docker compose ps   # wait for postgres to be healthy
 
 ### 4. Apply schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.9.0, `schema.sql` includes all structural changes through migration 034; the `_migrations` table is pre-seeded accordingly.
+The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.12.0, `schema.sql` includes all structural changes through migration 036; the `_migrations` table is pre-seeded accordingly.
 
 For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything.
 
@@ -249,6 +249,37 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.11.0
+
+New migration (036). Services changed: **gateway**, **web**, **shared**. Deploy order: **migrate → rebuild gateway + web**.
+
+This release completes several half-built features (gift link management, DM commissions, DM pricing configuration), integrates the gift link option into the ShareButton, and reduces JWT session lifetime from 7 days to 2 hours for improved security on a payment platform.
+
+**Database migration:**
+
+- Migration 036: Adds `parent_conversation_id` column to `pledge_drives` (FK to `conversations`, ON DELETE SET NULL) for linking commissions to the DM conversation they originated from.
+
+**Session change (shared):**
+
+- JWT `TOKEN_LIFETIME_SECONDS` reduced from 7 days to 2 hours. `REFRESH_AFTER_SECONDS` reduced from 3.5 days to 1 hour. Active users are seamlessly refreshed; idle sessions now expire after 2 hours. **No action needed** — existing sessions will naturally expire under the old lifetime; new sessions use the shorter lifetime immediately.
+
+**Upgrade steps:**
+```bash
+# 1. Apply migration
+docker compose exec -T postgres psql -U platformpub platformpub \
+  < migrations/036_commission_conversation.sql
+
+# 2. Rebuild and restart
+docker compose build gateway web
+docker compose up -d gateway web
+
+# 3. Verify migration applied
+docker compose exec -T postgres psql -U platformpub platformpub \
+  -c "SELECT filename FROM _migrations ORDER BY filename" | grep '036'
+```
+
+---
 
 ### From v5.10.2
 
@@ -4844,6 +4875,28 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.12.0 — 6 April 2026
+
+**Gift link polish, DM commissions, DM pricing config, JWT hardening**
+
+New migration (036). Services changed: gateway, web, shared.
+
+- **Gift link dashboard management:** Writer dashboard Articles tab shows "Gifts" toggle on paywalled articles, expanding an inline panel to create, list (with redemption counts), copy, and revoke gift links (`GiftLinksPanel.tsx`).
+- **Gift link in ShareButton:** ShareButton dropdown now includes a "Gift link" option (separated by a divider) on the author's own paywalled articles. The standalone "Gift link" button in the article byline has been removed.
+- **Commission from DM threads:** MessageThread header shows a "Commission" button (1:1 conversations only). Opens CommissionForm in a modal, pre-wired with the conversation partner and conversation ID. Migration 036 adds `parent_conversation_id` to `pledge_drives`.
+- **DM pricing configuration:** New endpoints `GET/PUT /settings/dm-pricing` and `PUT/DELETE /settings/dm-pricing/override/:userId`. Dashboard Settings tab replaces "Coming soon" placeholder with a default rate form and collapsible per-user overrides section (with username search + add/remove).
+- **JWT session lifetime reduced:** `TOKEN_LIFETIME_SECONDS` from 7 days → 2 hours, `REFRESH_AFTER_SECONDS` from 3.5 days → 1 hour. Active users refreshed seamlessly; idle sessions expire in 2 hours.
+
+**Upgrade steps:**
+```bash
+docker compose exec -T postgres psql -U platformpub platformpub \
+  < migrations/036_commission_conversation.sql
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+---
 
 ### v5.11.0 — 6 April 2026
 

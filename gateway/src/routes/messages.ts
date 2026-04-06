@@ -524,6 +524,135 @@ export async function messageRoutes(app: FastifyInstance) {
       ),
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // GET /settings/dm-pricing — fetch current DM pricing config
+  // ---------------------------------------------------------------------------
+
+  app.get('/settings/dm-pricing', { preHandler: requireAuth }, async (req, reply) => {
+    const ownerId = req.session!.sub!
+
+    const defaultRow = await pool.query<{ price_pence: number }>(
+      'SELECT price_pence FROM dm_pricing WHERE owner_id = $1 AND target_id IS NULL',
+      [ownerId]
+    )
+
+    const overrides = await pool.query<{ target_id: string; username: string; display_name: string | null; price_pence: number }>(
+      `SELECT dp.target_id, a.username, a.display_name, dp.price_pence
+       FROM dm_pricing dp
+       JOIN accounts a ON a.id = dp.target_id
+       WHERE dp.owner_id = $1 AND dp.target_id IS NOT NULL
+       ORDER BY a.username`,
+      [ownerId]
+    )
+
+    return reply.send({
+      defaultPricePence: defaultRow.rows[0]?.price_pence ?? 0,
+      overrides: overrides.rows.map(r => ({
+        userId: r.target_id,
+        username: r.username,
+        displayName: r.display_name,
+        pricePence: r.price_pence,
+      })),
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // PUT /settings/dm-pricing — set default DM price
+  // ---------------------------------------------------------------------------
+
+  const DmPricingSchema = z.object({
+    defaultPricePence: z.number().int().min(0).max(100_00), // £0–£100
+  })
+
+  app.put('/settings/dm-pricing', { preHandler: requireAuth }, async (req, reply) => {
+    const parsed = DmPricingSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.flatten() })
+    }
+
+    const ownerId = req.session!.sub!
+    const { defaultPricePence } = parsed.data
+
+    if (defaultPricePence === 0) {
+      // Remove the default pricing row (free = no row needed)
+      await pool.query(
+        'DELETE FROM dm_pricing WHERE owner_id = $1 AND target_id IS NULL',
+        [ownerId]
+      )
+    } else {
+      await pool.query(
+        `INSERT INTO dm_pricing (owner_id, target_id, price_pence)
+         VALUES ($1, NULL, $2)
+         ON CONFLICT (owner_id) WHERE target_id IS NULL
+         DO UPDATE SET price_pence = $2`,
+        [ownerId, defaultPricePence]
+      )
+    }
+
+    logger.info({ ownerId, defaultPricePence }, 'DM pricing updated')
+    return reply.send({ ok: true })
+  })
+
+  // ---------------------------------------------------------------------------
+  // PUT /settings/dm-pricing/override/:userId — set per-user DM price override
+  // ---------------------------------------------------------------------------
+
+  const DmOverrideSchema = z.object({
+    pricePence: z.number().int().min(0).max(100_00),
+  })
+
+  app.put('/settings/dm-pricing/override/:userId', { preHandler: requireAuth }, async (req, reply) => {
+    const userId = (req.params as { userId: string }).userId
+    if (!UUID_RE.test(userId)) {
+      return reply.status(400).send({ error: 'Invalid user ID' })
+    }
+
+    const parsed = DmOverrideSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.flatten() })
+    }
+
+    const ownerId = req.session!.sub!
+    const { pricePence } = parsed.data
+
+    if (pricePence === 0) {
+      // Remove override — falls back to default rate
+      await pool.query(
+        'DELETE FROM dm_pricing WHERE owner_id = $1 AND target_id = $2',
+        [ownerId, userId]
+      )
+    } else {
+      await pool.query(
+        `INSERT INTO dm_pricing (owner_id, target_id, price_pence)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (owner_id, target_id)
+         DO UPDATE SET price_pence = $3`,
+        [ownerId, userId, pricePence]
+      )
+    }
+
+    return reply.send({ ok: true })
+  })
+
+  // ---------------------------------------------------------------------------
+  // DELETE /settings/dm-pricing/override/:userId — remove per-user override
+  // ---------------------------------------------------------------------------
+
+  app.delete('/settings/dm-pricing/override/:userId', { preHandler: requireAuth }, async (req, reply) => {
+    const userId = (req.params as { userId: string }).userId
+    if (!UUID_RE.test(userId)) {
+      return reply.status(400).send({ error: 'Invalid user ID' })
+    }
+
+    const ownerId = req.session!.sub!
+    await pool.query(
+      'DELETE FROM dm_pricing WHERE owner_id = $1 AND target_id = $2',
+      [ownerId, userId]
+    )
+
+    return reply.send({ ok: true })
+  })
 }
 
 // =============================================================================
