@@ -28,7 +28,7 @@ export function PledgesSection() {
           <div key={p.id} className="flex items-center justify-between px-6 py-4">
             <div className="min-w-0">
               <p className="text-[14px] font-sans text-black">{p.driveTitle}</p>
-              <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">by @{p.writerUsername}</p>
+              <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">by @{p.writer.username}</p>
             </div>
             <div className="flex items-center gap-4 flex-shrink-0">
               <span className="font-mono text-[12px] text-black tabular-nums">£{(p.amountPence / 100).toFixed(2)}</span>

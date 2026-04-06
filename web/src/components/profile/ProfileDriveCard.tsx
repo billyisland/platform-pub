@@ -14,8 +14,9 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
   const [pledgeError, setPledgeError] = useState<string | null>(null)
   const [pledged, setPledged] = useState(false)
 
-  const progressPct = drive.targetAmountPence > 0
-    ? Math.min(100, Math.round((drive.currentAmountPence / drive.targetAmountPence) * 100))
+  const target = drive.fundingTargetPence ?? 0
+  const progressPct = target > 0
+    ? Math.min(100, Math.round((drive.currentTotalPence / target) * 100))
     : 0
 
   async function handlePledge(e: React.FormEvent) {
@@ -35,7 +36,7 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
     }
   }
 
-  const isActive = drive.status === 'active' || drive.status === 'funded'
+  const isActive = drive.status === 'open' || drive.status === 'funded'
 
   return (
     <div className="bg-white px-6 py-5">
@@ -45,7 +46,7 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
             <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
               Pledge drive
             </span>
-            {drive.pinnedOnProfile && (
+            {drive.pinned && (
               <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-crimson">Pinned</span>
             )}
             <span className={`font-mono text-[12px] uppercase tracking-[0.06em] ${
@@ -62,24 +63,28 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
 
         <div className="text-right flex-shrink-0">
           <p className="font-serif text-lg text-black">
-            £{(drive.currentAmountPence / 100).toFixed(2)}
+            £{(drive.currentTotalPence / 100).toFixed(2)}
           </p>
-          <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
-            of £{(drive.targetAmountPence / 100).toFixed(2)}
-          </p>
+          {target > 0 && (
+            <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
+              of £{(target / 100).toFixed(2)}
+            </p>
+          )}
         </div>
       </div>
 
       {/* Progress bar */}
-      <div className="mt-3 h-1.5 bg-grey-100 w-full">
-        <div
-          className="h-full bg-crimson transition-all"
-          style={{ width: `${progressPct}%` }}
-        />
-      </div>
+      {target > 0 && (
+        <div className="mt-3 h-1.5 bg-grey-100 w-full">
+          <div
+            className="h-full bg-crimson transition-all"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      )}
       <div className="mt-1 flex items-center justify-between">
         <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
-          {progressPct}% · {drive.pledgeCount} {drive.pledgeCount === 1 ? 'pledge' : 'pledges'}
+          {target > 0 ? `${progressPct}% · ` : ''}{drive.pledgeCount} {drive.pledgeCount === 1 ? 'pledge' : 'pledges'}
         </p>
         <time className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
           {formatDateFromISO(drive.createdAt)}

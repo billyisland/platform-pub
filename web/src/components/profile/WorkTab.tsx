@@ -71,7 +71,7 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
             work.push({
               kind: 'drive',
               publishedAt: d.createdAt,
-              pinned: d.pinnedOnProfile,
+              pinned: d.pinned,
               pinOrder: 0,
               data: d,
             })

@@ -726,25 +726,24 @@ export const social = {
 
 export interface PledgeDrive {
   id: string
-  writerId: string
-  writerUsername: string
-  type: 'crowdfund' | 'commission'
+  origin: 'crowdfund' | 'commission'
   title: string
-  description: string
-  targetAmountPence: number
-  currentAmountPence: number
+  description: string | null
+  fundingTargetPence: number | null
+  currentTotalPence: number
   pledgeCount: number
-  status: 'active' | 'funded' | 'cancelled' | 'completed'
-  pinnedOnProfile: boolean
+  status: 'open' | 'funded' | 'published' | 'fulfilled' | 'expired' | 'cancelled'
+  pinned: boolean
+  deadline: string | null
   createdAt: string
-  fundedAt: string | null
 }
 
 export interface Pledge {
   id: string
   driveId: string
   driveTitle: string
-  writerUsername: string
+  driveStatus: string
+  writer: { username: string; displayName: string | null }
   amountPence: number
   status: string
   createdAt: string
@@ -769,7 +768,7 @@ export const drives = {
   get: (id: string) =>
     request<PledgeDrive>(`/drives/${id}`),
 
-  update: (id: string, data: { title?: string; description?: string; targetAmountPence?: number }) =>
+  update: (id: string, data: { title?: string; description?: string; fundingTargetPence?: number }) =>
     request<{ ok: boolean }>(`/drives/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),

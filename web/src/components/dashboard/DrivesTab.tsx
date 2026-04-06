@@ -40,10 +40,8 @@ export function DrivesTab({ userId }: { userId: string }) {
 
   if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
 
-  const active = allDrives.filter(d => d.status === 'active')
-  const commissions = active.filter(d => d.type === 'commission' && d.currentAmountPence === 0)
-  const activeDrives = active.filter(d => !(d.type === 'commission' && d.currentAmountPence === 0))
-  const completed = allDrives.filter(d => d.status !== 'active')
+  const active = allDrives.filter(d => d.status === 'open' || d.status === 'funded')
+  const completed = allDrives.filter(d => d.status !== 'open' && d.status !== 'funded')
 
   return (
     <div>
@@ -62,22 +60,12 @@ export function DrivesTab({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* Incoming commissions */}
-      {commissions.length > 0 && (
-        <div className="mb-8">
-          <p className="label-ui text-grey-400 mb-4">Incoming commissions</p>
-          <div className="space-y-2">
-            {commissions.map(d => <DriveCard key={d.id} drive={d} onUpdate={fetchDrives} />)}
-          </div>
-        </div>
-      )}
-
       {/* Active drives */}
-      {activeDrives.length > 0 && (
+      {active.length > 0 && (
         <div className="mb-8">
           <p className="label-ui text-grey-400 mb-4">Active pledge drives</p>
           <div className="space-y-2">
-            {activeDrives.map(d => <DriveCard key={d.id} drive={d} onUpdate={fetchDrives} />)}
+            {active.map(d => <DriveCard key={d.id} drive={d} onUpdate={fetchDrives} />)}
           </div>
         </div>
       )}

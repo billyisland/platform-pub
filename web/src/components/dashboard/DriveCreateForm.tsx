@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { drives } from '../../lib/api'
 
 export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
-  const [type, setType] = useState<'crowdfund' | 'commission'>('crowdfund')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [targetAmount, setTargetAmount] = useState('')
@@ -20,7 +19,7 @@ export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void
     }
     setSaving(true); setError(null)
     try {
-      await drives.create({ origin: type, title: title.trim(), description: description.trim(), fundingTargetPence: pence })
+      await drives.create({ origin: 'crowdfund', title: title.trim(), description: description.trim(), fundingTargetPence: pence })
       onCreated()
     } catch {
       setError('Failed to create drive.')
@@ -32,27 +31,6 @@ export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void
   return (
     <form onSubmit={handleSubmit} className="bg-white px-6 py-5 space-y-4">
       <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">New pledge drive</p>
-
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={() => setType('crowdfund')}
-          className={`px-3 py-1.5 text-[13px] font-sans border transition-colors ${
-            type === 'crowdfund' ? 'border-black text-black' : 'border-grey-200 text-grey-400 hover:text-black'
-          }`}
-        >
-          Crowdfund
-        </button>
-        <button
-          type="button"
-          onClick={() => setType('commission')}
-          className={`px-3 py-1.5 text-[13px] font-sans border transition-colors ${
-            type === 'commission' ? 'border-black text-black' : 'border-grey-200 text-grey-400 hover:text-black'
-          }`}
-        >
-          Commission
-        </button>
-      </div>
 
       <div>
         <label className="block text-[13px] font-sans font-medium text-grey-600 mb-1">Title</label>

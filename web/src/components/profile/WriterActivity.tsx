@@ -12,7 +12,6 @@ import { FollowersTab } from './FollowersTab'
 import { FollowingTab } from './FollowingTab'
 import type { WriterProfile } from '../../lib/api'
 import type { QuoteTarget } from '../../lib/publishNote'
-import { CommissionForm } from '../ui/CommissionForm'
 
 type ProfileTab = 'work' | 'social' | 'followers' | 'following'
 
@@ -144,7 +143,6 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
 
   const router = useRouter()
   const isOwnProfile = user?.username === username
-  const [showCommissionForm, setShowCommissionForm] = useState(false)
   const [msgLoading, setMsgLoading] = useState(false)
 
   async function handleMessage() {
@@ -180,15 +178,6 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
           >
             {msgLoading ? '...' : 'Message'}
           </button>
-
-          {writer.showCommissionButton && writer.hasPaywalledArticle && (
-            <button
-              onClick={() => setShowCommissionForm(true)}
-              className="btn-ghost py-1.5 px-4 text-ui-xs transition-colors"
-            >
-              Commission
-            </button>
-          )}
 
           {hasPaywall && subStatus && !subStatus.ownContent && (
             subStatus.subscribed ? (
@@ -235,23 +224,6 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
           <Link href="/auth?mode=login" className="text-ui-xs text-grey-400 hover:text-black transition-colors">
             Log in to follow
           </Link>
-        </div>
-      )}
-
-      {/* Commission form modal */}
-      {showCommissionForm && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => setShowCommissionForm(false)}
-        >
-          <div className="w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <CommissionForm
-              targetWriterId={writer.id}
-              targetWriterName={writer.displayName ?? writer.username}
-              onCreated={() => setShowCommissionForm(false)}
-              onClose={() => setShowCommissionForm(false)}
-            />
-          </div>
         </div>
       )}
 

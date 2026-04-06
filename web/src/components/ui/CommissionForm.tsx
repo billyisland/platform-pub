@@ -24,7 +24,6 @@ export function CommissionForm({
 }: CommissionFormProps) {
   const [pitch, setPitch] = useState(initialPitch)
   const [amountPounds, setAmountPounds] = useState('')
-  const [openToBakers, setOpenToBakers] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -86,15 +85,6 @@ export function CommissionForm({
           className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300 bg-white"
         />
       </div>
-
-      <label className="flex items-center gap-2 mb-4 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={openToBakers}
-          onChange={(e) => setOpenToBakers(e.target.checked)}
-        />
-        <span className="text-[13px] font-sans text-grey-600">Open to other backers</span>
-      </label>
 
       {error && <p className="text-[13px] font-sans text-crimson mb-3">{error}</p>}
 

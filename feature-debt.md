@@ -140,6 +140,15 @@ A generic system for user-defined, non-overlapping categories with behavioural r
 
 Multi-currency support. Option 2 (launch with GBP, display-only conversion) is recommended. Not discussed yet.
 
+**Publications — `PUBLICATIONS-SPEC.md`**
+
+Multi-writer federated publications with shared identity, editorial pipeline, and revenue pooling. Phases 1–3 and 5 have a full build plan. Phase 4 (theming and custom domains) is deferred:
+- Wildcard subdomain routing (nginx `*.all.haus` + Next.js middleware rewrite)
+- Custom domain DNS TXT verification flow + TLS provisioning (lua-resty-auto-ssl or Caddy)
+- Theme settings UI (colour picker, font selector, layout mode switcher)
+- Custom CSS editor with live preview + server-side sanitiser (`scopeCSS`)
+- Per-publication favicon from logo
+
 ---
 
 ## Suggested attack order

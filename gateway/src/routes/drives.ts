@@ -555,7 +555,7 @@ export async function driveRoutes(app: FastifyInstance) {
          LEFT JOIN (
            SELECT drive_id, COUNT(*) AS cnt FROM pledges WHERE status != 'void' GROUP BY drive_id
          ) p ON p.drive_id = d.id
-         WHERE d.creator_id = $1 AND d.status != 'cancelled'
+         WHERE d.creator_id = $1 AND d.origin = 'crowdfund' AND d.status != 'cancelled'
          ORDER BY d.pinned DESC, d.created_at DESC
          LIMIT 50`,
         [req.params.userId]

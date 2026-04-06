@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.16.0
+# all.haus — Deployment Reference v5.17.0
 
 **Date:** 6 April 2026
-**Replaces:** v5.15.0 (see bottom for change log)
+**Replaces:** v5.16.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -250,6 +250,80 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
 
+### From v5.16.0
+
+No migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
+
+This release separates crowdfunding drives (public) from commissions (private, DM-only), fixes the `PledgeDrive` frontend types to match the backend API, and refreshes the article editor layout.
+
+**Backend (gateway):**
+
+- `GET /drives/by-user/:userId` — now filters to `origin = 'crowdfund'` only, so commissions never appear on public profiles or in the dashboard drives tab.
+
+**Frontend (web):**
+
+- **`PledgeDrive` type fixed** — interface now matches backend response: `origin` (not `type`), `fundingTargetPence` (not `targetAmountPence`), `currentTotalPence` (not `currentAmountPence`), `pinned` (not `pinnedOnProfile`), status enum aligned to `open | funded | published | fulfilled | expired | cancelled`.
+- **`Pledge` type fixed** — `writer` is now a nested object `{ username, displayName }` matching backend; added `driveStatus` field.
+- **Commissions removed from public surfaces:**
+  - Commission button removed from writer profile pages (`WriterActivity.tsx`) — commissions now start from DMs only.
+  - Commission button removed from note cards (`NoteCard.tsx`) and reply threads (`ReplyItem.tsx`) — `onCommission` prop removed.
+  - `CommissionCard.tsx` deleted (was unused dead code).
+- **Dashboard drives tab simplified:**
+  - `DriveCreateForm` — crowdfund/commission toggle removed; form now creates crowdfund drives only.
+  - `DriveCard` — commission accept/decline UI removed; always labelled "Pledge drive".
+  - `DrivesTab` — "Incoming commissions" section removed; simplified to active vs completed.
+- **CommissionForm cleaned up** — dead `openToBakers` checkbox removed; form retained for its one call site in `MessageThread.tsx` (DM-only commissions).
+- **Article editor** — title and standfirst are now separate grey (`bg-grey-100`) cards with `p-8 sm:p-10` padding, matching the body editor field. No hairlines.
+
+**Modified files:**
+
+- `gateway/src/routes/drives.ts` — `by-user` endpoint filtered to crowdfund only
+- `web/src/lib/api.ts` — `PledgeDrive` and `Pledge` interfaces fixed to match backend
+- `web/src/components/dashboard/DriveCreateForm.tsx` — crowdfund-only, toggle removed
+- `web/src/components/dashboard/DriveCard.tsx` — commission UI removed, field names fixed
+- `web/src/components/dashboard/DrivesTab.tsx` — commission section removed, field names fixed
+- `web/src/components/profile/ProfileDriveCard.tsx` — field names fixed
+- `web/src/components/profile/WorkTab.tsx` — field name fix (`pinned`)
+- `web/src/components/profile/WriterActivity.tsx` — commission button and modal removed
+- `web/src/components/feed/NoteCard.tsx` — `onCommission` prop removed
+- `web/src/components/replies/ReplyItem.tsx` — `onCommission` prop removed
+- `web/src/components/ui/CommissionForm.tsx` — dead `openToBakers` state removed
+- `web/src/components/account/PledgesSection.tsx` — uses `writer.username` (matches backend)
+- `web/src/components/editor/ArticleEditor.tsx` — title and standfirst as separate grey cards
+
+**Deleted files:**
+
+- `web/src/components/feed/CommissionCard.tsx`
+
+**Upgrade steps:**
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# No migration needed — only code changes
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# gateway and web should show (healthy) after ~30s
+
+# Visual checks:
+# - Writer profile: no Commission button (Message button is still present)
+# - Writer profile Work tab: pledge drives display correctly with progress bars
+# - /dashboard?tab=drives: only crowdfund drives shown, no incoming commissions section
+# - /dashboard?tab=drives: "New pledge drive" form has no crowdfund/commission toggle
+# - /messages: Commission button still works in 1:1 DM threads
+# - /write page: title and standfirst are separate grey cards, matching body field
+# - /account: Pledges section shows writer names correctly
+```
+
+No new env vars. No database changes.
+
+---
+
 ### From v5.15.0
 
 No migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
@@ -270,7 +344,7 @@ This release adds inline subscription management to profile Following/Followers 
   - **Cancelled state** — button shows "Cancelled — resubscribe" in red with access-until tooltip; clicking resubscribes.
   - When viewing another user's profile, the tab displays as before (public "Subscribes to" section).
 - **FollowersTab** (own profile) — followers with an active subscription show a "Subscriber" badge next to their name.
-- **Article editor** — title and standfirst inputs wrapped in a single continuous grey (`bg-grey-100`) card with no hairlines between them. Toolbar changed from grey to white (`bg-white`). Gaps between fields eliminated.
+- **Article editor** — title and standfirst inputs wrapped in a single continuous grey (`bg-grey-100`) card with no hairlines between them. Toolbar changed from grey to white (`bg-white`). Gaps between fields eliminated. *(Superseded in v5.17.0 — title and standfirst are now separate cards.)*
 - **API client** (`web/src/lib/api.ts`) — added missing `social.block(userId)` and `social.mute(userId)` POST wrappers to match existing backend endpoints.
 
 **Modified files:**
@@ -1001,7 +1075,7 @@ This release improves empty profile page UX and adds a Message button to writer 
 **Frontend (web):**
 
 - **Work tab hidden on empty profiles**: the Work tab is no longer shown on writer profiles until the writer has published at least one article. Default tab becomes Social.
-- **Subscribe / Commission buttons gated**: Subscribe and Commission buttons only appear once the writer has published a paywalled article (previously they appeared as soon as the writer set a subscription price or enabled commissions, even with no content).
+- **Subscribe button gated**: Subscribe button only appears once the writer has published a paywalled article (previously it appeared as soon as the writer set a subscription price, even with no content). Commission button removed from profiles in v5.17.0 (commissions are now DM-only).
 - **Message button on profiles**: logged-in users now see a "Message" button on writer profile pages. Clicking it creates a DM conversation and navigates to `/messages`.
 - **Empty state text**: "No articles or pledge drives yet." changed to "No articles yet."
 - **Avatar error fallback**: the Avatar component now gracefully falls back to the initial-letter placeholder when an avatar image fails to load (previously showed a broken image).
@@ -1026,7 +1100,7 @@ curl -s http://localhost:3010/favicon.svg | grep -q 'path' && echo "OK" || echo 
 # Visual checks:
 # - Visit a writer profile with no articles — Work tab should be hidden, Social tab active
 # - Visit a writer profile with articles — Work tab should be visible and active
-# - Subscribe/Commission buttons should only appear on profiles with paywalled articles
+# - Subscribe button should only appear on profiles with paywalled articles
 # - Message button should appear next to Follow on other users' profiles
 # - Browser tab should show the crimson ∀ mark, not three dots
 ```
@@ -1241,7 +1315,7 @@ This release implements:
 - Paywall gate: bottom legend removed, subscription price deduplicated, ellipsis animation on scroll-into-view
 - Smart subscription nudge: spend-threshold prompt when reader hits ≥70% of writer's sub price in a month, with conversion flow
 - Author gifting: UserSearch typeahead replaces plain text input in FreePassManager, Gift button on own articles, capped gift links with shareable URLs
-- Commissions architecture: Commission button on writer profiles, commission from reply threads, CommissionCard + CommissionForm, pledge action on ProfileDriveCard, acceptance terms flow in dashboard
+- Commissions architecture: CommissionForm in DM threads, pledge action on ProfileDriveCard, acceptance terms flow via DM conversation
 
 **Database migrations:**
 
@@ -1296,9 +1370,8 @@ docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
 # - Paywall gate: no "Pay per read / Subscribe for more / Cancel anytime" legend
 # - Subscribe button should say "Subscribe" (no price), price is in the legend text
 # - On own paywalled articles: Gift and Gift link buttons in the byline action area
-# - Writer profile pages: Commission button next to Follow/Subscribe
 # - Pledge drives on profiles: Pledge button visible to logged-in readers
-# - Dashboard commissions: Accept shows terms form (description, deadline, access mode)
+# - Commissions: initiated from DM threads only
 ```
 
 ---
@@ -2080,7 +2153,7 @@ This release adds the four frontend feature surfaces described in STEP-4-NEW-PAG
 
 2. **Account** (`/account`) — Unified financial ledger replacing the scattered credits/accounts/tab views. Balance header with net position and free allowance meter. Chronological transaction ledger with All/Income/Spending filters. Active subscriptions with cancel controls. Pledges backed. Payment method and Stripe Connect status (moved from `/settings`).
 
-3. **Dashboard Drives tab** — New "Drives" tab in the writer dashboard for managing pledge drives and commissions (11 endpoints). Create crowdfund or commission drives, view progress, pin to profile, accept/decline commissions, cancel. Free pass management added to the Articles tab via overflow menu on paywalled articles (3 endpoints). Dashboard tabs changed from `articles | drafts | credits | accounts | settings` to `articles | drafts | drives | settings`. Credits and Accounts tabs removed (functionality moved to `/account`). Writer Settings tab now includes subscription price setting, Stripe Connect status, and DM pricing placeholder.
+3. **Dashboard Drives tab** — New "Drives" tab in the writer dashboard for managing crowdfunding pledge drives (11 endpoints). Create drives, view progress, pin to profile, cancel. Commissions are handled separately via DMs. Free pass management added to the Articles tab via overflow menu on paywalled articles (3 endpoints). Dashboard tabs changed from `articles | drafts | credits | accounts | settings` to `articles | drafts | drives | settings`. Credits and Accounts tabs removed (functionality moved to `/account`). Writer Settings tab now includes subscription price setting, Stripe Connect status, and DM pricing placeholder.
 
 4. **Admin** (`/admin`) — Moderation dashboard for admin users. Report queue with pending/resolved/all filters. Report cards with content preview, reporter info, and action buttons (remove content, suspend user, dismiss). Access gated by `isAdmin` field on user session.
 
@@ -2200,10 +2273,10 @@ Changes:
 #   → articles | drafts | drives | settings.
 # Credits and Accounts tabs removed (moved to /account).
 # "View account →" link added to dashboard header.
-# DrivesTab: active drives with progress bars, incoming commissions with
-#   accept/decline, completed/cancelled history, "New drive" creation form.
-# DriveCreateForm: crowdfund vs commission radio, target amount, description.
-# DriveCard: progress bar, pin toggle, cancel, accept/decline actions.
+# DrivesTab: active crowdfund drives with progress bars, completed/cancelled
+#   history, "New pledge drive" creation form. Commissions are DM-only.
+# DriveCreateForm: crowdfund-only, target amount, description.
+# DriveCard: progress bar, pin toggle, cancel.
 # FreePassManager: inline panel on paywalled articles in Articles tab,
 #   with grant (username input) and revoke controls.
 # WriterSettingsTab: subscription price field (PATCH /settings/subscription-price),
@@ -5134,6 +5207,21 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
+### v5.17.0 — 6 April 2026
+
+**Separate crowdfunding drives from commissions, editor card refresh**
+
+No migration. Services changed: gateway, web.
+
+- **Crowdfunding drives are public, commissions are private (DM-only).** The `by-user` endpoint now filters to `origin = 'crowdfund'`, so commissions never appear on profiles or in the dashboard drives tab. Commission creation remains available exclusively in DM message threads via `CommissionForm`.
+- **`PledgeDrive` frontend type fixed** to match backend API response: `origin` (was `type`), `fundingTargetPence` (was `targetAmountPence`), `currentTotalPence` (was `currentAmountPence`), `pinned` (was `pinnedOnProfile`), status enum aligned to backend (`open | funded | published | fulfilled | expired | cancelled`).
+- **`Pledge` frontend type fixed** to match backend: `writer` is now nested `{ username, displayName }` (was flat `writerUsername`), added `driveStatus`.
+- **Commission UI removed from public surfaces:** Commission button removed from writer profiles (`WriterActivity`), note cards (`NoteCard`), and reply threads (`ReplyItem`). `CommissionCard.tsx` deleted (was unused). Dashboard `DriveCreateForm` no longer offers a commission option. Dashboard `DriveCard` no longer shows accept/decline commission UI. Dashboard `DrivesTab` no longer shows an "Incoming commissions" section.
+- **`CommissionForm` cleaned up:** dead `openToBakers` checkbox removed (was never sent to API). Form retained for DM use in `MessageThread.tsx`.
+- **Article editor:** title and standfirst are now separate `bg-grey-100` cards with `p-8 sm:p-10` padding, matching the body editor field. No hairlines between fields.
+
+---
+
 ### v5.13.0 — 6 April 2026
 
 **Subscription offers system (discount codes + gifted subscriptions)**
@@ -5165,7 +5253,7 @@ New migration (036). Services changed: gateway, web, shared.
 
 - **Gift link dashboard management:** Writer dashboard Articles tab shows "Gifts" toggle on paywalled articles, expanding an inline panel to create, list (with redemption counts), copy, and revoke gift links (`GiftLinksPanel.tsx`).
 - **Gift link in ShareButton:** ShareButton dropdown now includes a "Gift link" option (separated by a divider) on the author's own paywalled articles. The standalone "Gift link" button in the article byline has been removed.
-- **Commission from DM threads:** MessageThread header shows a "Commission" button (1:1 conversations only). Opens CommissionForm in a modal, pre-wired with the conversation partner and conversation ID. Migration 036 adds `parent_conversation_id` to `pledge_drives`.
+- **Commission from DM threads:** MessageThread header shows a "Commission" button (1:1 conversations only). Opens CommissionForm in a modal, pre-wired with the conversation partner and conversation ID. Migration 036 adds `parent_conversation_id` to `pledge_drives`. *(As of v5.17.0, this is the only commission entry point — commission buttons were removed from profiles, notes, and replies.)*
 - **DM pricing configuration:** New endpoints `GET/PUT /settings/dm-pricing` and `PUT/DELETE /settings/dm-pricing/override/:userId`. Dashboard Settings tab replaces "Coming soon" placeholder with a default rate form and collapsible per-user overrides section (with username search + add/remove).
 - **JWT session lifetime reduced:** `TOKEN_LIFETIME_SECONDS` from 7 days → 2 hours, `REFRESH_AFTER_SECONDS` from 3.5 days → 1 hour. Active users refreshed seamlessly; idle sessions expire in 2 hours.
 
@@ -5709,7 +5797,7 @@ No new migrations. No new env vars. Existing `INTERNAL_SECRET` and `ACCOUNT_KEY_
 
 - `gateway/src/routes/writers.ts`: writer profile endpoint now returns `hasPaywalledArticle` boolean (queries articles with `access_mode = 'paywalled'`)
 - `web/src/lib/api.ts`: added `hasPaywalledArticle` to `WriterProfile` type
-- `web/src/components/profile/WriterActivity.tsx`: Work tab hidden when `articleCount === 0`; Subscribe button gated on `hasPaywalledArticle`; Commission button gated on `hasPaywalledArticle`; added Message button that creates a DM conversation and navigates to `/messages`
+- `web/src/components/profile/WriterActivity.tsx`: Work tab hidden when `articleCount === 0`; Subscribe button gated on `hasPaywalledArticle`; added Message button that creates a DM conversation and navigates to `/messages`
 - `web/src/components/profile/WorkTab.tsx`: empty state text changed from "No articles or pledge drives yet." to "No articles yet."
 - `web/src/components/ui/Avatar.tsx`: added `onError` fallback — broken avatar images now show the initial-letter placeholder instead of a broken image icon
 - `web/public/favicon.svg`: replaced three-dots design with crimson ∀ (ForAllMark)
@@ -6317,7 +6405,7 @@ NIP-17 end-to-end encrypted conversations. New `direct_messages` table (migratio
 
 **Pledge drives**
 
-Crowdfunding / commission system. New `pledge_drives` and `pledges` tables (migration 017). Fulfilment is async via the existing settlement pipeline.
+Crowdfunding and commission system. New `pledge_drives` and `pledges` tables (migration 017). Crowdfunding drives are public (profiles, feed). Commissions are private (DM-only, via `CommissionForm` in message threads). Fulfilment is async via the existing settlement pipeline.
 
 **Files changed:**
 - `migrations/015_access_mode_and_unlock_types.sql` — access_mode column, unlock_type expansion

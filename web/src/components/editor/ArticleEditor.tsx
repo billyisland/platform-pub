@@ -215,22 +215,26 @@ export function ArticleEditor({
     <div className="mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8">
       {/* Sticky title + toolbar — stays visible while scrolling the body */}
       <div className="sticky top-[53px] lg:top-0 z-20 bg-white pb-4 mb-6">
-      {/* Title + standfirst card */}
-      <div className="bg-grey-100 mb-2">
+      {/* Title card */}
+      <div className="bg-grey-100 p-8 sm:p-10 mb-2">
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Article title"
-          className="w-full border-none bg-transparent px-5 pt-5 pb-2 font-serif text-4xl font-medium italic text-black placeholder:text-grey-300 focus:outline-none sm:text-5xl"
+          className="w-full border-none bg-transparent font-serif text-4xl font-medium italic text-black placeholder:text-grey-300 focus:outline-none sm:text-5xl"
           style={{ letterSpacing: '-0.02em' }}
         />
+      </div>
+
+      {/* Standfirst card */}
+      <div className="bg-grey-100 p-8 sm:p-10 mb-2">
         <input
           type="text"
           value={dek}
           onChange={(e) => setDek(e.target.value)}
           placeholder="Add a subtitle or standfirst…"
-          className="w-full border-none bg-transparent px-5 pt-0 pb-4 font-serif text-lg text-grey-600 italic placeholder:text-grey-300 focus:outline-none"
+          className="w-full border-none bg-transparent font-serif text-lg text-grey-600 italic placeholder:text-grey-300 focus:outline-none"
         />
       </div>
 
