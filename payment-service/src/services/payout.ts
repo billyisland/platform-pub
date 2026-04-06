@@ -361,6 +361,269 @@ export class PayoutService {
       logger.warn({ payoutId, writerId, stripeTransferId, reason }, 'Writer payout failed — reads rolled back')
     })
   }
+
+  // ===========================================================================
+  // Publication Payout Cycle (Phase 5)
+  //
+  // Runs after the individual writer cycle. For each publication with enough
+  // settled revenue:
+  //   1. Compute the pool (gross reads minus platform fee)
+  //   2. Handle per-article overrides (flat fees, article revenue shares)
+  //   3. Distribute remainder by standing member shares
+  //   4. Initiate Stripe transfers to each member's personal Connect account
+  // ===========================================================================
+
+  async runPublicationPayoutCycle(): Promise<{ processed: number; totalPaidPence: number }> {
+    const config = await loadConfig()
+
+    // Find publications with enough settled revenue
+    const { rows: eligiblePubs } = await pool.query<{
+      publication_id: string
+      gross_pence: string
+    }>(
+      `SELECT a.publication_id, SUM(r.amount_pence) AS gross_pence
+       FROM read_events r
+       JOIN articles a ON a.id = r.article_id
+       WHERE a.publication_id IS NOT NULL
+         AND r.state = 'platform_settled'
+         AND r.writer_payout_id IS NULL
+       GROUP BY a.publication_id
+       HAVING SUM(r.amount_pence - FLOOR(r.amount_pence * $1 / 10000)) >= $2`,
+      [config.platformFeeBps, config.writerPayoutThresholdPence]
+    )
+
+    let processed = 0
+    let totalPaidPence = 0
+
+    for (const pub of eligiblePubs) {
+      try {
+        const paidPence = await this.initiatePublicationPayout(
+          pub.publication_id,
+          parseInt(pub.gross_pence, 10),
+          config.platformFeeBps
+        )
+        processed++
+        totalPaidPence += paidPence
+      } catch (err) {
+        logger.error({ err, publicationId: pub.publication_id }, 'Publication payout failed — continuing cycle')
+      }
+    }
+
+    logger.info({ processed, totalPaidPence }, 'Publication payout cycle complete')
+    return { processed, totalPaidPence }
+  }
+
+  private async initiatePublicationPayout(
+    publicationId: string,
+    grossPence: number,
+    feeBps: number
+  ): Promise<number> {
+    return withTransaction(async (client) => {
+      // Lock the publication to prevent concurrent payouts
+      await client.query(
+        'SELECT id FROM publications WHERE id = $1 FOR UPDATE',
+        [publicationId]
+      )
+
+      // Re-check gross inside lock
+      const { rows: [balRow] } = await client.query<{ gross_pence: string }>(
+        `SELECT COALESCE(SUM(r.amount_pence), 0) AS gross_pence
+         FROM read_events r
+         JOIN articles a ON a.id = r.article_id
+         WHERE a.publication_id = $1
+           AND r.state = 'platform_settled'
+           AND r.writer_payout_id IS NULL`,
+        [publicationId]
+      )
+
+      const lockedGross = parseInt(balRow.gross_pence, 10)
+      const platformFeePence = Math.floor(lockedGross * feeBps / 10000)
+      let remainingPool = lockedGross - platformFeePence
+      let flatFeesPaidPence = 0
+      const splits: Array<{
+        accountId: string; amountPence: number; shareType: string;
+        shareBps: number | null; articleId: string | null; stripeTransferId: string | null;
+      }> = []
+
+      // --- Step 1: Per-article overrides ---
+      // Get all article-level shares for this publication's unsettled articles
+      const { rows: articleShares } = await client.query<{
+        id: string; article_id: string; account_id: string;
+        share_type: string; share_value: number; paid_out: boolean;
+      }>(
+        `SELECT pas.id, pas.article_id, pas.account_id, pas.share_type, pas.share_value, pas.paid_out
+         FROM publication_article_shares pas
+         JOIN articles a ON a.id = pas.article_id
+         WHERE pas.publication_id = $1`,
+        [publicationId]
+      )
+
+      // Compute per-article net earnings for articles that have overrides
+      const articleIds = [...new Set(articleShares.map(s => s.article_id))]
+      const articleEarnings = new Map<string, number>()
+
+      if (articleIds.length > 0) {
+        const { rows: artRows } = await client.query<{ article_id: string; net_pence: string }>(
+          `SELECT r.article_id,
+                  COALESCE(SUM(r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)), 0) AS net_pence
+           FROM read_events r
+           WHERE r.article_id = ANY($1)
+             AND r.state = 'platform_settled'
+             AND r.writer_payout_id IS NULL
+           GROUP BY r.article_id`,
+          [articleIds, feeBps]
+        )
+        for (const r of artRows) {
+          articleEarnings.set(r.article_id, parseInt(r.net_pence, 10))
+        }
+      }
+
+      for (const share of articleShares) {
+        if (share.share_type === 'flat_fee_pence' && !share.paid_out) {
+          // Flat fee: deduct from pool, pay contributor
+          const fee = share.share_value
+          if (fee > remainingPool) continue // not enough in pool
+          remainingPool -= fee
+          flatFeesPaidPence += fee
+          splits.push({
+            accountId: share.account_id, amountPence: fee,
+            shareType: 'flat_fee', shareBps: null,
+            articleId: share.article_id, stripeTransferId: null,
+          })
+          // Mark as paid
+          await client.query(
+            `UPDATE publication_article_shares SET paid_out = TRUE WHERE id = $1`,
+            [share.id]
+          )
+        } else if (share.share_type === 'revenue_bps') {
+          // Revenue share on this specific article
+          const articleNet = articleEarnings.get(share.article_id) || 0
+          const payout = Math.floor(articleNet * share.share_value / 10000)
+          if (payout <= 0) continue
+          remainingPool -= payout
+          splits.push({
+            accountId: share.account_id, amountPence: payout,
+            shareType: 'article_revenue', shareBps: share.share_value,
+            articleId: share.article_id, stripeTransferId: null,
+          })
+        }
+      }
+
+      // --- Step 2: Standing shares ---
+      const { rows: standingMembers } = await client.query<{
+        account_id: string; revenue_share_bps: number;
+      }>(
+        `SELECT account_id, revenue_share_bps
+         FROM publication_members
+         WHERE publication_id = $1 AND removed_at IS NULL AND revenue_share_bps > 0`,
+        [publicationId]
+      )
+
+      const totalStandingBps = standingMembers.reduce((sum, m) => sum + m.revenue_share_bps, 0)
+
+      if (totalStandingBps > 0 && remainingPool > 0) {
+        for (const member of standingMembers) {
+          const payout = Math.floor(remainingPool * member.revenue_share_bps / totalStandingBps)
+          if (payout <= 0) continue
+          splits.push({
+            accountId: member.account_id, amountPence: payout,
+            shareType: 'standing', shareBps: member.revenue_share_bps,
+            articleId: null, stripeTransferId: null,
+          })
+        }
+      }
+
+      // --- Step 3: Create publication_payouts record ---
+      const { rows: [payoutRow] } = await client.query<{ id: string }>(
+        `INSERT INTO publication_payouts
+           (publication_id, total_pool_pence, platform_fee_pence, flat_fees_paid_pence, remaining_pool_pence, status)
+         VALUES ($1, $2, $3, $4, $5, 'initiated')
+         RETURNING id`,
+        [publicationId, lockedGross, platformFeePence, flatFeesPaidPence, remainingPool]
+      )
+      const payoutId = payoutRow.id
+
+      // --- Step 4: Stripe transfers + record splits ---
+      let totalTransferred = 0
+
+      for (const split of splits) {
+        if (split.amountPence <= 0) continue
+
+        // Look up member's Stripe Connect account
+        const { rows: accRows } = await client.query<{
+          stripe_connect_id: string | null; stripe_connect_kyc_complete: boolean;
+        }>(
+          `SELECT stripe_connect_id, stripe_connect_kyc_complete FROM accounts WHERE id = $1`,
+          [split.accountId]
+        )
+
+        const acc = accRows[0]
+        let splitStatus: string = 'pending'
+        let stripeTransferId: string | null = null
+
+        if (acc?.stripe_connect_id && acc.stripe_connect_kyc_complete) {
+          try {
+            const transfer = await this.stripe.transfers.create({
+              amount: split.amountPence,
+              currency: 'gbp',
+              destination: acc.stripe_connect_id,
+              metadata: {
+                platform: 'all.haus',
+                publication_payout_id: payoutId,
+                account_id: split.accountId,
+              },
+            })
+            stripeTransferId = transfer.id
+            splitStatus = 'initiated'
+            totalTransferred += split.amountPence
+          } catch (err) {
+            logger.error({ err, accountId: split.accountId, payoutId }, 'Stripe transfer failed for publication split')
+            splitStatus = 'failed'
+          }
+        }
+        // else: pending until KYC completes
+
+        await client.query(
+          `INSERT INTO publication_payout_splits
+             (publication_payout_id, account_id, share_bps, amount_pence, share_type, article_id, stripe_transfer_id, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::payout_status)`,
+          [payoutId, split.accountId, split.shareBps, split.amountPence,
+           split.shareType, split.articleId, stripeTransferId, splitStatus]
+        )
+      }
+
+      // --- Step 5: Mark read_events as writer_paid ---
+      await client.query(
+        `UPDATE read_events
+         SET state = 'writer_paid',
+             writer_payout_id = $1,
+             state_updated_at = now()
+         FROM articles a
+         WHERE read_events.article_id = a.id
+           AND a.publication_id = $2
+           AND read_events.state = 'platform_settled'
+           AND read_events.writer_payout_id IS NULL`,
+        [payoutId, publicationId]
+      )
+
+      // Mark payout as completed if all splits succeeded
+      const allInitiated = splits.every(s => s.amountPence <= 0) ||
+        splits.filter(s => s.amountPence > 0).length === 0
+      if (!allInitiated) {
+        await client.query(
+          `UPDATE publication_payouts SET status = 'initiated' WHERE id = $1`,
+          [payoutId]
+        )
+      }
+
+      logger.info(
+        { payoutId, publicationId, grossPence: lockedGross, platformFeePence, totalTransferred, splits: splits.length },
+        'Publication payout initiated'
+      )
+
+      return totalTransferred
+    })
+  }
 }
 
 export const payoutService = new PayoutService()

@@ -3,7 +3,7 @@
 Consolidated from 19 planning documents, verified against the codebase as of 2026-04-06. The archived specs live in `planning-archive/`. Documents left in the project root are strategic specs that are still entirely ahead of us.
 
 Last audited: 2026-04-06. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-06 (v5.19.0 session). Completed: Publications Phases 1–3 (schema, key-custody signerType, core CRUD, member management, CMS pipeline, server-side publishing, editor integration, dashboard context switcher, invite page, reader surface — homepage/about/masthead/subscribe/archive/article pages, publication subscriptions/follows, RSS, search, feed integration, article page publication awareness, writer profile filtering). Next up: Publications Phase 5 (revenue — rate card, payroll, payouts, earnings) or writer analytics.
+Last worked: 2026-04-06 (v5.20.0 session). Completed: Publications Phase 5 (revenue — rate card routes, payroll routes with standing shares and per-article overrides, publication payout worker integrated into daily cycle, earnings dashboard, three new dashboard tabs: RateCardTab, PayrollTab, PublicationEarningsTab). Next up: Writer analytics or email-on-publish.
 
 ---
 
@@ -156,12 +156,12 @@ Multi-writer federated publications with shared identity, editorial pipeline, an
 - Custom CSS editor with live preview + server-side sanitiser (`scopeCSS`)
 - Per-publication favicon from logo
 
-**Phase 5 TODO (revenue):**
-- Rate card routes (GET/PATCH `/publications/:id/rate-card`) — view/update subscription and per-article pricing
-- Payroll routes (GET/PATCH `/publications/:id/payroll`, PATCH `.../article/:articleId`) — standing revenue shares and per-article overrides
-- Publication payout worker — settlement splits based on revenue shares, minimum threshold enforcement
-- Earnings routes (GET `/publications/:id/earnings`) — revenue dashboard data
-- Revenue UI tabs: `RateCardTab.tsx`, `PayrollTab.tsx`, `PublicationEarningsTab.tsx`
+**Phase 5 DONE (v5.20.0):**
+- Rate card routes (GET/PATCH `/publications/:id/rate-card`) — subscription pricing, annual discount, default article price; `can_manage_finances` gated
+- Payroll routes (GET/PATCH `/publications/:id/payroll`, PATCH `.../article/:articleId`) — standing revenue shares with 10,000 bps cap, per-article overrides (revenue % or flat fee), upsert semantics
+- Publication payout worker — `runPublicationPayoutCycle()` in PayoutService, called after individual writer cycle; handles flat fees first, then article revenue shares, then standing shares; Stripe Connect transfers; pending status for members without KYC
+- Earnings routes (GET `/publications/:id/earnings`) — summary totals (gross/net/pending/paid), per-article breakdown, payout history with splits; uses config-loaded platform fee
+- Revenue UI tabs: `RateCardTab.tsx` (pricing form), `PayrollTab.tsx` (standing share editor with visual bar + per-article overrides table), `PublicationEarningsTab.tsx` (summary cards, article revenue table, payout history); tabs gated on `can_manage_finances` in dashboard
 
 ---
 
@@ -193,13 +193,16 @@ Multi-writer federated publications with shared identity, editorial pipeline, an
 
 - ~~Publications Phases 1–3~~ — schema, core model, key-custody signerType, member management, CMS pipeline, server-side publishing, editor integration, dashboard context switcher, invite page, reader surface (homepage/about/masthead/subscribe/archive/article pages), publication subscriptions/follows, RSS, search, feed integration, article page publication awareness, writer profile filtering.
 
+### Completed (v5.20.0 session, 2026-04-06)
+
+- ~~Publications Phase 5 (revenue)~~ — rate card routes, payroll routes (standing + per-article), publication payout worker, earnings routes, RateCardTab + PayrollTab + PublicationEarningsTab dashboard components, `can_manage_finances` gating throughout
+
 ### Next up
 
-1. **Publications Phase 5 (revenue)** — rate card, payroll, payout worker, earnings dashboard. See `PUBLICATIONS-SPEC.md` §6.3, §10 Phase 5.
-2. **Writer analytics** — writers need numbers to stay. Gateway endpoint joining read_events, votes, comments, revenue; dashboard Analytics tab.
-3. **Email-on-publish** — inbox is the feed, critical for retention. Migration + send logic + settings toggle.
-4. **Tags/topics** — discoverability. Migration, editor input, browse page, card display.
-5. **Bookmarks** — reader engagement. Migration, routes, button, /bookmarks page.
+1. **Writer analytics** — writers need numbers to stay. Gateway endpoint joining read_events, votes, comments, revenue; dashboard Analytics tab.
+2. **Email-on-publish** — inbox is the feed, critical for retention. Migration + send logic + settings toggle.
+3. **Tags/topics** — discoverability. Migration, editor input, browse page, card display.
+4. **Bookmarks** — reader engagement. Migration, routes, button, /bookmarks page.
 
 ### Later: strategic work
 

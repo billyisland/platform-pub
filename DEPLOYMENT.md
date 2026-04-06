@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.19.0
+# all.haus — Deployment Reference v5.20.0
 
 **Date:** 6 April 2026
-**Replaces:** v5.18.0 (see bottom for change log)
+**Replaces:** v5.19.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -249,6 +249,72 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.19.0
+
+No new migration. Services changed: **gateway**, **payment-service**, **web**. Deploy order: **rebuild gateway + payment + web**.
+
+This release implements Publications Phase 5 — revenue management. Publication owners and finance managers can now configure subscription and per-article pricing (rate card), set standing revenue shares and per-article overrides for contributors (payroll), and view earnings dashboards. The daily payout worker now runs a publication payout cycle after the individual writer cycle, distributing revenue to members via Stripe Connect transfers based on their standing shares and article-specific overrides.
+
+**Backend (gateway):**
+
+- **Rate card routes** (`publications.ts`): `GET/PATCH /publications/:id/rate-card` — view and update `subscription_price_pence`, `annual_discount_pct`, `default_article_price_pence`. Requires `can_manage_finances` permission.
+- **Payroll routes** (`publications.ts`): `GET /publications/:id/payroll` — view standing member shares (with user details) and per-article overrides. `PATCH /publications/:id/payroll` — bulk-update standing shares with 10,000 bps (100%) cap validation. `PATCH /publications/:id/payroll/article/:articleId` — upsert per-article share (revenue % or flat fee).
+- **Earnings routes** (`publications.ts`): `GET /publications/:id/earnings` — summary totals (gross/net/pending/paid/readCount), per-article revenue breakdown, payout history with splits. Uses config-loaded `platform_fee_bps`.
+
+**Backend (payment-service):**
+
+- **Publication payout worker** (`payout.ts`): New `runPublicationPayoutCycle()` method on `PayoutService`. Finds publications with settled revenue above the payout threshold, then for each: (1) deducts platform fee, (2) pays flat-fee per-article overrides first, (3) distributes article revenue-share overrides, (4) distributes remaining pool by standing member shares, (5) initiates Stripe Connect transfers to each member's personal account, (6) records `publication_payouts` and `publication_payout_splits` rows, (7) marks `read_events` as `writer_paid`. Members without Stripe KYC get splits recorded as `pending`.
+- **Payout worker** (`workers/payout.ts`): Now calls `runPublicationPayoutCycle()` after the individual writer payout cycle.
+
+**Frontend (web):**
+
+- **RateCardTab** (`RateCardTab.tsx`): Subscription pricing form (monthly price, annual discount %, default per-article price) with live annual price preview.
+- **PayrollTab** (`PayrollTab.tsx`): Standing share editor with visual distribution bar, per-member bps input, 100% cap validation. Per-article overrides table showing article title, contributor, share type, value, and paid status.
+- **PublicationEarningsTab** (`PublicationEarningsTab.tsx`): Summary cards (net earnings, pending, paid, read count), per-article revenue table, payout history with per-member split details.
+- **Dashboard** (`dashboard/page.tsx`): Publication context now shows Rate card, Payroll, and Earnings tabs for members with `can_manage_finances` permission.
+- **API client** (`api.ts`): `getRateCard`, `updateRateCard`, `getPayroll`, `updatePayroll`, `setArticleShare`, `getEarnings` methods on the publications namespace.
+
+**New files:**
+
+- `web/src/components/dashboard/RateCardTab.tsx`
+- `web/src/components/dashboard/PayrollTab.tsx`
+- `web/src/components/dashboard/PublicationEarningsTab.tsx`
+
+**Modified files:**
+
+- `gateway/src/routes/publications.ts` — rate card, payroll, and earnings routes added
+- `payment-service/src/services/payout.ts` — `runPublicationPayoutCycle()` and `initiatePublicationPayout()` methods added
+- `payment-service/src/workers/payout.ts` — calls publication payout cycle after writer cycle
+- `web/src/app/dashboard/page.tsx` — new publication tabs (rate-card, payroll, earnings) with `can_manage_finances` gating
+- `web/src/lib/api.ts` — revenue API client methods
+
+**Upgrade steps:**
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# No new migration — publication schema (038) already in place
+# Rebuild gateway (new routes), payment (payout worker), and web (new tabs)
+docker compose build gateway payment web
+docker compose up -d gateway payment web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# gateway, payment, and web should show (healthy) after ~30s
+
+# Visual checks:
+# - /dashboard?context=<slug>: "Rate card", "Payroll", "Earnings" tabs visible for finance managers
+# - Rate card tab: subscription price, annual discount, default article price fields
+# - Payroll tab: standing shares with visual bar, per-article overrides table
+# - Earnings tab: summary cards, per-article revenue table, payout history
+```
+
+No new env vars. No database changes.
+
+---
 
 ### From v5.18.0
 
@@ -574,50 +640,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 
 No new env vars. No database changes.
 
----
-
-### From v5.14.0
-
-No migration. Services changed: **web**. Deploy order: **rebuild web**.
-
-This release resolves all remaining accessibility gaps identified in the codebase audit. Dropdowns now support keyboard navigation (Escape to close), avatar menu buttons have proper ARIA attributes, and the notification bell panel announces its expanded state to screen readers.
-
-**Frontend (web):**
-
-- **AvatarDropdown** (Nav.tsx): Escape key closes the dropdown. Dropdown panel has `role="menu"`. Both avatar trigger buttons (canvas mode and platform mode) have `aria-label="Account menu"` and `aria-expanded`.
-- **NotificationBell** (NotificationBell.tsx): Escape key closes the notification panel. Trigger button has `aria-expanded`.
-
-**Modified files:**
-
-- `web/src/components/layout/Nav.tsx` — Escape handler, `role="menu"`, `aria-label`, `aria-expanded` on avatar dropdown and triggers
-- `web/src/components/ui/NotificationBell.tsx` — Escape handler, `aria-expanded` on trigger button
-
-**Upgrade steps:**
-```bash
-cd /root/platform-pub
-git pull origin master
-
-# No migration needed — only frontend accessibility changes
-docker compose build web
-docker compose up -d web
-```
-
-Verify:
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# web should show (healthy) after ~30s
-
-# Accessibility checks:
-# - Click avatar in nav — dropdown opens. Press Escape — dropdown closes.
-# - Click notification bell — panel opens. Press Escape — panel closes.
-# - Inspect avatar button — should have aria-label="Account menu" and aria-expanded="true"/"false"
-# - Inspect notification button — should have aria-expanded="true"/"false"
-# - Inspect dropdown panel — should have role="menu"
-```
-
-No new env vars. No database changes.
-
-> **Older versions:** Upgrade instructions for v5.13.0 and earlier are available in this file's git history.
+> **Older versions:** Upgrade instructions for v5.14.0 and earlier are available in this file's git history.
 
 ---
 
@@ -822,6 +845,12 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 | DELETE | /api/v1/subscriptions/publication/:id | session | Cancel publication subscription |
 | POST | /api/v1/follows/publication/:id | session | Follow publication |
 | DELETE | /api/v1/follows/publication/:id | session | Unfollow publication |
+| GET | /api/v1/publications/:id/rate-card | session (manage_finances) | View publication pricing |
+| PATCH | /api/v1/publications/:id/rate-card | session (manage_finances) | Update subscription/article pricing |
+| GET | /api/v1/publications/:id/payroll | session (manage_finances) | View standing shares and per-article overrides |
+| PATCH | /api/v1/publications/:id/payroll | session (manage_finances) | Update standing revenue shares |
+| PATCH | /api/v1/publications/:id/payroll/article/:articleId | session (manage_finances) | Set per-article share override |
+| GET | /api/v1/publications/:id/earnings | session (manage_finances) | Revenue dashboard (totals, per-article, payouts) |
 | GET | /api/v1/pub/:slug/rss | — | Publication RSS feed |
 
 ### Reader account
@@ -1065,6 +1094,21 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
+### v5.20.0 — 6 April 2026
+
+**Publications Phase 5: Revenue — rate card, payroll, payout worker, earnings dashboard**
+
+No new migration. Services changed: gateway, payment-service, web.
+
+- **Rate card routes:** `GET/PATCH /publications/:id/rate-card` for subscription pricing, annual discount, and default per-article pricing. Gated on `can_manage_finances`.
+- **Payroll routes:** `GET/PATCH /publications/:id/payroll` for standing revenue shares (10,000 bps cap); `PATCH /publications/:id/payroll/article/:articleId` for per-article overrides (revenue % or flat fee, upsert semantics).
+- **Publication payout worker:** `runPublicationPayoutCycle()` runs after individual writer payouts. Processes flat fees first, then article revenue shares, then standing shares. Stripe Connect transfers to members; pending status for unverified accounts. Records `publication_payouts` + `publication_payout_splits`.
+- **Earnings dashboard:** `GET /publications/:id/earnings` returns summary totals, per-article breakdown, and payout history with splits. Platform fee loaded from config.
+- **Dashboard tabs:** Rate card (pricing form), Payroll (share editor with visual bar + overrides table), Earnings (summary cards, revenue table, payout history). All gated on `can_manage_finances`.
+- **API client:** `getRateCard`, `updateRateCard`, `getPayroll`, `updatePayroll`, `setArticleShare`, `getEarnings`.
+
+---
+
 ### v5.19.0 — 6 April 2026
 
 **Publications Phases 2 & 3: CMS pipeline, reader surface, feed/search integration**
@@ -1135,46 +1179,5 @@ docker compose build gateway web
 docker compose up -d gateway web
 ```
 
----
 
-### v5.12.0 — 6 April 2026
-
-**Gift link polish, DM commissions, DM pricing config, JWT hardening**
-
-New migration (036). Services changed: gateway, web, shared.
-
-- **Gift link dashboard management:** Writer dashboard Articles tab shows "Gifts" toggle on paywalled articles, expanding an inline panel to create, list (with redemption counts), copy, and revoke gift links (`GiftLinksPanel.tsx`).
-- **Gift link in ShareButton:** ShareButton dropdown now includes a "Gift link" option (separated by a divider) on the author's own paywalled articles. The standalone "Gift link" button in the article byline has been removed.
-- **Commission from DM threads:** MessageThread header shows a "Commission" button (1:1 conversations only). Opens CommissionForm in a modal, pre-wired with the conversation partner and conversation ID. Migration 036 adds `parent_conversation_id` to `pledge_drives`. *(As of v5.17.0, this is the only commission entry point — commission buttons were removed from profiles, notes, and replies.)*
-- **DM pricing configuration:** New endpoints `GET/PUT /settings/dm-pricing` and `PUT/DELETE /settings/dm-pricing/override/:userId`. Dashboard Settings tab replaces "Coming soon" placeholder with a default rate form and collapsible per-user overrides section (with username search + add/remove).
-- **JWT session lifetime reduced:** `TOKEN_LIFETIME_SECONDS` from 7 days → 2 hours, `REFRESH_AFTER_SECONDS` from 3.5 days → 1 hour. Active users refreshed seamlessly; idle sessions expire in 2 hours.
-
-**Upgrade steps:**
-```bash
-docker compose exec -T postgres psql -U platformpub platformpub \
-  < migrations/036_commission_conversation.sql
-docker compose build gateway web
-docker compose up -d gateway web
-```
-
----
-
-### v5.11.0 — 6 April 2026
-
-**Notification centre redesigned as permanent activity log**
-
-No migration. Services changed: gateway, web.
-
-- `GET /notifications` returns read + unread notifications with cursor-based pagination (`?cursor=<ISO>&limit=30`). Response: `{ notifications, unreadCount, nextCursor }`.
-- Notifications page is now a permanent log. Unread items are bold with crimson dot; read items are muted but remain visible. "Load older notifications" for pagination.
-- NotificationBell dropdown shows most recent 10 (read + unread), marks read on click instead of removing. "View all notifications" link to full log.
-- Removed phantom types `dm_payment_required` and `new_user` from frontend `NotificationType` union (backend never creates these).
-
-**Upgrade steps:**
-```bash
-docker compose build gateway web
-docker compose up -d gateway web
-```
-
-
-> **Older versions:** Changelog entries for v5.10.2 and earlier are available in this file's git history.
+> **Older versions:** Changelog entries for v5.12.0 and earlier are available in this file's git history.

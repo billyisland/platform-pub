@@ -1192,6 +1192,67 @@ export const publications = {
   cancelSubscription: (id: string) =>
     request<{ ok: boolean }>(`/subscriptions/publication/${id}`, { method: 'DELETE' }),
 
+  // Revenue (Phase 5)
+  getRateCard: (id: string) =>
+    request<{ subscriptionPricePence: number; annualDiscountPct: number; defaultArticlePricePence: number }>(
+      `/publications/${id}/rate-card`
+    ),
+
+  updateRateCard: (id: string, data: {
+    subscriptionPricePence?: number; annualDiscountPct?: number; defaultArticlePricePence?: number;
+  }) =>
+    request<{ ok: boolean }>(`/publications/${id}/rate-card`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  getPayroll: (id: string) =>
+    request<{
+      members: Array<{
+        memberId: string; accountId: string; username: string; displayName: string;
+        avatarBlossomUrl: string | null; role: string; contributorType: string;
+        title: string | null; isOwner: boolean; revenueShareBps: number | null;
+      }>;
+      articleShares: Array<{
+        id: string; articleId: string; accountId: string; username: string; displayName: string;
+        articleTitle: string; articleSlug: string; shareType: string; shareValue: number; paidOut: boolean;
+      }>;
+      totalStandingBps: number;
+    }>(`/publications/${id}/payroll`),
+
+  updatePayroll: (id: string, shares: Array<{ memberId: string; revenueShareBps: number }>) =>
+    request<{ ok: boolean; totalBps: number }>(`/publications/${id}/payroll`, {
+      method: 'PATCH',
+      body: JSON.stringify({ shares }),
+    }),
+
+  setArticleShare: (id: string, articleId: string, data: {
+    accountId: string; shareType: 'revenue_bps' | 'flat_fee_pence'; shareValue: number;
+  }) =>
+    request<{ ok: boolean }>(`/publications/${id}/payroll/article/${articleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  getEarnings: (id: string) =>
+    request<{
+      summary: {
+        grossPence: number; netPence: number; pendingPence: number; paidPence: number; readCount: number;
+      };
+      articles: Array<{
+        articleId: string; title: string; slug: string; publishedAt: string | null;
+        readCount: number; netPence: number;
+      }>;
+      payouts: Array<{
+        id: string; totalPoolPence: number; platformFeePence: number; flatFeesPaidPence: number;
+        remainingPoolPence: number; status: string; triggeredAt: string; completedAt: string | null;
+        splits: Array<{
+          accountId: string; username: string; displayName: string; amountPence: number;
+          shareType: string; shareBps: number | null; status: string;
+        }>;
+      }>;
+    }>(`/publications/${id}/earnings`),
+
   // Invites
   getInvite: (token: string) =>
     request<PublicationInvite>(`/publications/invites/${token}`),

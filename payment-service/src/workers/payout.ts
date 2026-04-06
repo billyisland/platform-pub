@@ -35,8 +35,11 @@ export function startPayoutWorker(): void {
     setTimeout(async () => {
       try {
         logger.info('Payout cycle starting')
-        const result = await payoutService.runPayoutCycle()
-        logger.info(result, 'Payout cycle complete')
+        const writerResult = await payoutService.runPayoutCycle()
+        logger.info(writerResult, 'Writer payout cycle complete')
+
+        const pubResult = await payoutService.runPublicationPayoutCycle()
+        logger.info(pubResult, 'Publication payout cycle complete')
       } catch (err) {
         logger.error({ err }, 'Payout cycle failed')
       } finally {

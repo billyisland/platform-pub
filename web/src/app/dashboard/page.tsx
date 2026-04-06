@@ -14,9 +14,12 @@ import { GiftLinksPanel } from '../../components/dashboard/GiftLinksPanel'
 import { PublicationArticlesTab } from '../../components/dashboard/PublicationArticlesTab'
 import { MembersTab } from '../../components/dashboard/MembersTab'
 import { PublicationSettingsTab } from '../../components/dashboard/PublicationSettingsTab'
+import { RateCardTab } from '../../components/dashboard/RateCardTab'
+import { PayrollTab } from '../../components/dashboard/PayrollTab'
+import { PublicationEarningsTab } from '../../components/dashboard/PublicationEarningsTab'
 
 type DashboardTab = 'articles' | 'drafts' | 'drives' | 'offers' | 'pricing'
-type PubDashboardTab = 'articles' | 'members' | 'settings'
+type PubDashboardTab = 'articles' | 'members' | 'settings' | 'rate-card' | 'payroll' | 'earnings'
 
 export default function DashboardPage() {
   const { user, loading } = useAuth()
@@ -45,7 +48,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const tab = rawTab === 'settings' ? 'pricing' : rawTab
     if (selectedContext) {
-      if (tab && ['articles', 'members', 'settings'].includes(tab)) {
+      if (tab && ['articles', 'members', 'settings', 'rate-card', 'payroll', 'earnings'].includes(tab)) {
         setPubTab(tab as PubDashboardTab)
       }
     } else {
@@ -93,7 +96,10 @@ export default function DashboardPage() {
   const isPublicationContext = !!selectedPub
 
   const personalTabs: DashboardTab[] = ['articles', 'drafts', 'drives', 'offers', 'pricing']
-  const pubTabs: PubDashboardTab[] = ['articles', 'members', 'settings']
+  const pubTabs: PubDashboardTab[] = [
+    'articles', 'members', 'settings',
+    ...(selectedPub?.can_manage_finances ? ['rate-card', 'payroll', 'earnings'] as PubDashboardTab[] : []),
+  ]
 
   return (
     <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
@@ -125,7 +131,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-10">
             <div className="flex gap-2">
               {pubTabs.map(tab => {
-                const label = tab.charAt(0).toUpperCase() + tab.slice(1)
+                const label = tab === 'rate-card' ? 'Rate card' : tab === 'payroll' ? 'Payroll' : tab === 'earnings' ? 'Earnings' : tab.charAt(0).toUpperCase() + tab.slice(1)
                 return (
                   <button key={tab} onClick={() => switchPubTab(tab)} className={`tab-pill ${pubTab === tab ? 'tab-pill-active' : 'tab-pill-inactive'}`}>{label}</button>
                 )
@@ -152,6 +158,15 @@ export default function DashboardPage() {
               publicationId={selectedPub!.id}
               publicationSlug={selectedPub!.slug}
             />
+          )}
+          {pubTab === 'rate-card' && selectedPub!.can_manage_finances && (
+            <RateCardTab publicationId={selectedPub!.id} />
+          )}
+          {pubTab === 'payroll' && selectedPub!.can_manage_finances && (
+            <PayrollTab publicationId={selectedPub!.id} />
+          )}
+          {pubTab === 'earnings' && selectedPub!.can_manage_finances && (
+            <PublicationEarningsTab publicationId={selectedPub!.id} />
           )}
         </>
       ) : (
