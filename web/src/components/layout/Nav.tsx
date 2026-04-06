@@ -60,18 +60,25 @@ function AvatarDropdown({ user, onLogout, onClose }: {
   const notificationCount = useUnreadCounts((s) => s.notificationCount)
 
   useEffect(() => {
-    function handler(e: MouseEvent) {
+    function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [onClose])
 
   const linkClass = 'block px-4 py-2 text-[14px] text-black hover:bg-grey-100 transition-colors font-sans'
 
   return (
     <>
-      <div ref={ref} className="absolute right-0 top-full mt-2 w-56 bg-white shadow-lg z-50">
+      <div ref={ref} role="menu" className="absolute right-0 top-full mt-2 w-56 bg-white shadow-lg z-50">
         {/* Identity */}
         <div className="px-4 py-3" style={{ borderBottom: '4px solid #111111' }}>
           <div className="flex items-center gap-2">
@@ -295,7 +302,7 @@ export function Nav() {
             <div className="flex items-center">
               {!loading && user && (
                 <div className="relative">
-                  <button onClick={() => setDropdownOpen(!dropdownOpen)} className="relative">
+                  <button onClick={() => setDropdownOpen(!dropdownOpen)} aria-label="Account menu" aria-expanded={dropdownOpen} className="relative">
                     <NavAvatar user={user} size={28} />
                     {totalUnread > 0 && (
                       <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[16px] h-[16px] px-0.5 bg-crimson text-white text-[10px] font-sans font-semibold leading-none rounded-full">
@@ -382,7 +389,7 @@ export function Nav() {
               <div className="h-7 w-7 animate-pulse bg-grey-600" />
             ) : user ? (
               <div className="relative hidden md:block">
-                <button onClick={() => setDropdownOpen(!dropdownOpen)} className="relative flex items-center">
+                <button onClick={() => setDropdownOpen(!dropdownOpen)} aria-label="Account menu" aria-expanded={dropdownOpen} className="relative flex items-center">
                   <NavAvatar user={user} size={28} />
                   {totalUnread > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[16px] h-[16px] px-0.5 bg-crimson text-white text-[10px] font-sans font-semibold leading-none rounded-full">

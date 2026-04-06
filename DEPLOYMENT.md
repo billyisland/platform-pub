@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.14.0
+# all.haus — Deployment Reference v5.15.0
 
 **Date:** 6 April 2026
-**Replaces:** v5.13.0 (see bottom for change log)
+**Replaces:** v5.14.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -249,6 +249,49 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.14.0
+
+No migration. Services changed: **web**. Deploy order: **rebuild web**.
+
+This release resolves all remaining accessibility gaps identified in the codebase audit. Dropdowns now support keyboard navigation (Escape to close), avatar menu buttons have proper ARIA attributes, and the notification bell panel announces its expanded state to screen readers.
+
+**Frontend (web):**
+
+- **AvatarDropdown** (Nav.tsx): Escape key closes the dropdown. Dropdown panel has `role="menu"`. Both avatar trigger buttons (canvas mode and platform mode) have `aria-label="Account menu"` and `aria-expanded`.
+- **NotificationBell** (NotificationBell.tsx): Escape key closes the notification panel. Trigger button has `aria-expanded`.
+
+**Modified files:**
+
+- `web/src/components/layout/Nav.tsx` — Escape handler, `role="menu"`, `aria-label`, `aria-expanded` on avatar dropdown and triggers
+- `web/src/components/ui/NotificationBell.tsx` — Escape handler, `aria-expanded` on trigger button
+
+**Upgrade steps:**
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# No migration needed — only frontend accessibility changes
+docker compose build web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# web should show (healthy) after ~30s
+
+# Accessibility checks:
+# - Click avatar in nav — dropdown opens. Press Escape — dropdown closes.
+# - Click notification bell — panel opens. Press Escape — panel closes.
+# - Inspect avatar button — should have aria-label="Account menu" and aria-expanded="true"/"false"
+# - Inspect notification button — should have aria-expanded="true"/"false"
+# - Inspect dropdown panel — should have role="menu"
+```
+
+No new env vars. No database changes.
+
+---
 
 ### From v5.13.0
 

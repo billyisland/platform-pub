@@ -45,19 +45,15 @@ All high-priority bugs have been resolved:
 
 ### Still outstanding
 
-**~23 instances of `any` across the frontend** — down from 33. Replace incrementally, starting with api.ts and composable types.
-*(Source: FIXES-REMAINING.md #10)*
+*(None — remaining items moved to Infrastructure backlog below.)*
 
-**No CI/CD** — no `.github/` directory exists. Add lint + typecheck + test on PR, build validation on merge.
-*(Source: FIXES-REMAINING.md #15)*
+### Moved to Infrastructure backlog
 
-**TypeScript target mismatch** — web uses ES2017, backend uses ES2022. Not discussed yet.
-*(Source: FIXES-REMAINING.md #12)*
-
-**Accessibility gaps** — vote buttons lack aria-labels, paywall indicator is colour-only, dropdowns lack keyboard nav. Not discussed yet.
-*(Source: FIXES-REMAINING.md #13)*
-
-~~Reduce JWT session lifetime~~ — **fixed:** reduced from 7 days to 2 hours with 1-hour refresh-on-use half-life. Active users stay logged in; idle sessions expire in 2 hours.
+- ~~~23 instances of `any` across the frontend~~ — moved to infrastructure backlog (not a bug, incremental cleanup)
+- ~~No CI/CD~~ — moved to infrastructure backlog
+- ~~TypeScript target mismatch~~ — moved to infrastructure backlog (cosmetic, no runtime impact)
+- ~~Accessibility gaps~~ — **resolved:** vote buttons already had aria-labels; paywall indicator uses price text (not colour-only); dropdown keyboard nav (Escape-to-close, aria-expanded, role="menu") added to AvatarDropdown and NotificationBell.
+- ~~Reduce JWT session lifetime~~ — **fixed:** reduced from 7 days to 2 hours with 1-hour refresh-on-use half-life. Active users stay logged in; idle sessions expire in 2 hours.
 
 ---
 

@@ -142,7 +142,7 @@ export function NotificationBell() {
 
   useEffect(() => {
     if (!open) return
-    function handler(e: MouseEvent) {
+    function handleClick(e: MouseEvent) {
       if (
         panelRef.current && !panelRef.current.contains(e.target as Node) &&
         buttonRef.current && !buttonRef.current.contains(e.target as Node)
@@ -150,8 +150,15 @@ export function NotificationBell() {
         setOpen(false)
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [open])
 
   async function handleOpen() {
@@ -229,6 +236,7 @@ export function NotificationBell() {
       <button
         ref={buttonRef}
         onClick={handleOpen}
+        aria-expanded={open}
         className="flex items-center gap-2 pl-5 py-[14px] pr-5 border-l-4 border-transparent text-grey-300 font-medium hover:text-grey-600 hover:bg-grey-100 transition-colors w-full"
         title="Notifications"
       >
