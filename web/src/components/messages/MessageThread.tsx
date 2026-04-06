@@ -342,7 +342,7 @@ export function MessageThread({
                         className="flex items-center gap-1 text-[12px] text-crimson hover:opacity-70 transition-opacity"
                         aria-label={msg.likedByMe ? 'Unlike' : 'Like'}
                       >
-                        <span>{msg.likedByMe ? '\u2665' : '\u2661'}</span>
+                        <span>{'\u2665'}</span>
                         <span className="text-[11px] font-mono">{msg.likeCount}</span>
                       </button>
                     ) : (

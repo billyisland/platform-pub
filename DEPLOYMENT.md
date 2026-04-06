@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.10.0
+# all.haus — Deployment Reference v5.10.1
 
-**Date:** 5 April 2026
-**Replaces:** v5.9.0 (see bottom for change log)
+**Date:** 6 April 2026
+**Replaces:** v5.10.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -4724,6 +4724,22 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.10.1 — 6 April 2026
+
+**DM like heart always filled when liked**
+
+Services changed: web.
+
+- Liked DM messages now always show a filled heart (♥) instead of sometimes showing an outline (♡) when `likeCount > 0` but `likedByMe` is false.
+
+**Upgrade steps:**
+```bash
+docker compose build web
+docker compose up -d web
+```
+
+---
 
 ### v5.10.0 — 5 April 2026
 
