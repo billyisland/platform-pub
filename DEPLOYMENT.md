@@ -158,7 +158,7 @@ docker compose ps   # wait for postgres to be healthy
 
 ### 4. Apply schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.13.0, `schema.sql` includes all structural changes through migration 037; the `_migrations` table is pre-seeded accordingly.
+The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.13.0, `schema.sql` includes all structural changes through migration 038; the `_migrations` table is pre-seeded accordingly.
 
 For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything.
 
@@ -189,7 +189,7 @@ Verify:
 docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "\dt"
 ```
 
-You should see 34+ tables.
+You should see 45+ tables.
 
 ### 5. Build and start all services
 
@@ -252,28 +252,81 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 
 ### From v5.17.0
 
-No migration. No service changes. **Documentation only.**
+**Migration required (038).** Services changed: **gateway**, **key-custody**, **web**. Deploy order: **migrate → rebuild gateway + key-custody + web**.
 
-This release adds the Publications implementation specification — multi-writer federated publications with shared identity, editorial pipeline, and revenue pooling. No code changes; the spec is a building plan for the next major feature.
+This release implements Publications Phase 1 — the schema and core services for multi-writer federated publications. Publications get their own custodial Nostr keypairs (stored in the `publications` table, managed by key-custody), an editorial membership model, and revenue pooling tables. The key-custody service now accepts a `signerType` parameter (`'account'` or `'publication'`) on all signing and encryption endpoints, allowing articles to be signed by a publication identity rather than an individual writer. The global CSS input reset is also removed, fixing editor field rendering.
+
+**Database (migration 038):**
+
+- **New types:** `publication_role` (`editor_in_chief`, `editor`, `contributor`), `contributor_type` (`permanent`, `one_off`).
+- **New tables:** `publications`, `publication_members`, `publication_invites`, `publication_article_shares`, `publication_follows`, `publication_payouts`, `publication_payout_splits`.
+- **Modified tables:**
+  - `articles` — added `publication_id`, `publication_article_status`, `show_on_writer_profile` columns.
+  - `article_drafts` — added `publication_id` column.
+  - `subscriptions` — `writer_id` now nullable; added `publication_id`; unique constraint replaced with partial unique indexes per target type; added `subscriptions_target_check` constraint (exactly one of `writer_id`/`publication_id` must be set).
+  - `subscription_nudge_log` — added `publication_id` column.
+  - `feed_scores` — added `publication_id` column and index.
+- **New platform config:** `publication_payout_threshold_pence` (default 2000 = £20.00).
+
+**Backend (key-custody):**
+
+- All signing and encryption endpoints (`/sign`, `/unwrap`, `/nip44-encrypt`, `/nip44-decrypt`) now accept `signerId` + `signerType` instead of `accountId`. When `signerType` is `'publication'`, the private key is looked up from the `publications` table. Backwards-compatible: `accountId` still accepted as a fallback.
+
+**Backend (gateway):**
+
+- `key-custody-client.ts` — all functions (`signEvent`, `unwrapKey`, `nip44Encrypt`, `nip44Decrypt`) updated to pass `signerId` and `signerType` parameters.
+- New middleware: `publication-auth.ts` — publication-scoped authorisation for editorial endpoints.
+
+**Frontend (web):**
+
+- **Global input reset removed** (`globals.css`) — the blanket `input[type="text"]`, `textarea`, `select` rule that forced `bg-white` and `border: 1px solid #E5E5E5` on all form fields has been deleted. This fixes the article editor title and standfirst fields, which now render correctly as grey card panels without hairline outlines. Other form fields (auth page, etc.) are unaffected as they have their own inline styles.
 
 **New files:**
 
-- `PUBLICATIONS-SPEC.md` — full implementation specification covering: data model (6 new tables, 5 table modifications), key-custody publication key support, server-side publishing pipeline, Nostr signing model, editorial workflow (submit/approve/publish), revenue pooling with standing shares and per-article overrides, reader-facing publication pages, subscription/follow/search/feed integration. Phased delivery: Phase 1 (schema + core), Phase 2 (CMS + publishing), Phase 3 (reader surface), Phase 4 (theming + custom domains — deferred), Phase 5 (revenue).
-- `OWNER-DASHBOARD-SPEC.md` — owner dashboard specification.
+- `migrations/038_publications.sql` — publications schema migration.
+- `gateway/src/middleware/publication-auth.ts` — publication authorisation middleware.
 
 **Modified files:**
 
-- `feature-debt.md` — added Publications Phase 4 (theming and custom domains) to Strategic Initiatives as deferred work.
+- `schema.sql` — updated to incorporate migrations 001–038 (was 001–037).
+- `key-custody/src/lib/crypto.ts` — `signerType` support on `signEvent`, `unwrapKey`, `nip44Encrypt`, `nip44Decrypt`, and `getDecryptedPrivkey`.
+- `key-custody/src/routes/keypairs.ts` — schemas accept `signerId`/`signerType`, backwards-compatible with `accountId`.
+- `gateway/src/lib/key-custody-client.ts` — passes `signerId`/`signerType` to key-custody.
+- `web/src/app/globals.css` — global input/textarea/select reset removed.
 
 **Upgrade steps:**
 ```bash
 cd /root/platform-pub
 git pull origin master
 
-# No migration, no rebuild needed — documentation only
+# Apply migration
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/038_publications.sql
+
+# Rebuild changed services
+docker compose build gateway key-custody web
+docker compose up -d gateway key-custody web
 ```
 
-No new env vars. No database changes.
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# gateway, key-custody, and web should show (healthy) after ~30s
+
+# Schema check:
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"
+# Should be 45+
+
+# Publications table exists:
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+  -c "\d publications"
+
+# Visual checks:
+# - /write page: title and standfirst fields are grey card panels, no hairline outlines
+# - /write page: no white-box-with-outline artefact on title/subtitle inputs
+```
+
+No new env vars.
 
 ---
 

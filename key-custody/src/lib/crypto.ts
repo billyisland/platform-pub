@@ -34,10 +34,11 @@ export function generateKeypair(): GeneratedKeypair {
 // ---------------------------------------------------------------------------
 
 export async function signEvent(
-  accountId: string,
-  eventTemplate: EventTemplate
+  signerId: string,
+  eventTemplate: EventTemplate,
+  signerType: 'account' | 'publication' = 'account'
 ): Promise<ReturnType<typeof finalizeEvent>> {
-  const privkeyBytes = await getDecryptedPrivkey(accountId)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
   try {
     return finalizeEvent(eventTemplate, new Uint8Array(privkeyBytes))
   } finally {
@@ -53,10 +54,11 @@ export async function signEvent(
 // ---------------------------------------------------------------------------
 
 export async function unwrapKey(
-  accountId: string,
-  encryptedKey: string
+  signerId: string,
+  encryptedKey: string,
+  signerType: 'account' | 'publication' = 'account'
 ): Promise<string> {
-  const privkeyBytes = await getDecryptedPrivkey(accountId)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
   try {
     const readerPrivkey = new Uint8Array(privkeyBytes)
     const servicePubkey = getServicePubkey()
@@ -71,14 +73,18 @@ export async function unwrapKey(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-async function getDecryptedPrivkey(accountId: string): Promise<Buffer> {
+async function getDecryptedPrivkey(
+  signerId: string,
+  signerType: 'account' | 'publication' = 'account'
+): Promise<Buffer> {
+  const table = signerType === 'publication' ? 'publications' : 'accounts'
   const { rows } = await pool.query<{ nostr_privkey_enc: string | null }>(
-    'SELECT nostr_privkey_enc FROM accounts WHERE id = $1',
-    [accountId]
+    `SELECT nostr_privkey_enc FROM ${table} WHERE id = $1`,
+    [signerId]
   )
-  if (rows.length === 0) throw new Error(`Account not found: ${accountId}`)
+  if (rows.length === 0) throw new Error(`${signerType} not found: ${signerId}`)
   const enc = rows[0].nostr_privkey_enc
-  if (!enc) throw new Error(`Account ${accountId} has no custodial keypair`)
+  if (!enc) throw new Error(`${signerType} ${signerId} has no custodial keypair`)
   return decryptPrivkey(enc)
 }
 
@@ -124,11 +130,12 @@ function getServicePubkey(): string {
 // ---------------------------------------------------------------------------
 
 export async function nip44Encrypt(
-  accountId: string,
+  signerId: string,
   recipientPubkeyHex: string,
-  plaintext: string
+  plaintext: string,
+  signerType: 'account' | 'publication' = 'account'
 ): Promise<string> {
-  const privkeyBytes = await getDecryptedPrivkey(accountId)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
   try {
     const senderPrivkey = new Uint8Array(privkeyBytes)
     const conversationKey = nip44.getConversationKey(senderPrivkey, recipientPubkeyHex)
@@ -139,11 +146,12 @@ export async function nip44Encrypt(
 }
 
 export async function nip44Decrypt(
-  accountId: string,
+  signerId: string,
   senderPubkeyHex: string,
-  ciphertext: string
+  ciphertext: string,
+  signerType: 'account' | 'publication' = 'account'
 ): Promise<string> {
-  const privkeyBytes = await getDecryptedPrivkey(accountId)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
   try {
     const readerPrivkey = new Uint8Array(privkeyBytes)
     const conversationKey = nip44.getConversationKey(readerPrivkey, senderPubkeyHex)

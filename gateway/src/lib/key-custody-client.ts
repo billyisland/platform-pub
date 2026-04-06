@@ -43,31 +43,35 @@ export async function generateKeypair(): Promise<{ pubkeyHex: string; privkeyEnc
 }
 
 export async function signEvent(
-  accountId: string,
-  eventTemplate: EventTemplate
+  signerId: string,
+  eventTemplate: EventTemplate,
+  signerType: 'account' | 'publication' = 'account'
 ): Promise<{ id: string; pubkey: string; sig: string; kind: number; content: string; tags: string[][]; created_at: number }> {
-  return post('/api/v1/keypairs/sign', { accountId, event: eventTemplate })
+  return post('/api/v1/keypairs/sign', { signerId, signerType, event: eventTemplate })
 }
 
 export async function unwrapKey(
-  accountId: string,
-  encryptedKey: string
+  signerId: string,
+  encryptedKey: string,
+  signerType: 'account' | 'publication' = 'account'
 ): Promise<{ contentKeyBase64: string }> {
-  return post('/api/v1/keypairs/unwrap', { accountId, encryptedKey })
+  return post('/api/v1/keypairs/unwrap', { signerId, signerType, encryptedKey })
 }
 
 export async function nip44Encrypt(
-  accountId: string,
+  signerId: string,
   recipientPubkey: string,
-  plaintext: string
+  plaintext: string,
+  signerType: 'account' | 'publication' = 'account'
 ): Promise<{ ciphertext: string }> {
-  return post('/api/v1/keypairs/nip44-encrypt', { accountId, recipientPubkey, plaintext })
+  return post('/api/v1/keypairs/nip44-encrypt', { signerId, signerType, recipientPubkey, plaintext })
 }
 
 export async function nip44Decrypt(
-  accountId: string,
+  signerId: string,
   senderPubkey: string,
-  ciphertext: string
+  ciphertext: string,
+  signerType: 'account' | 'publication' = 'account'
 ): Promise<{ plaintext: string }> {
-  return post('/api/v1/keypairs/nip44-decrypt', { accountId, senderPubkey, ciphertext })
+  return post('/api/v1/keypairs/nip44-decrypt', { signerId, signerType, senderPubkey, ciphertext })
 }

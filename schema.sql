@@ -1,6 +1,6 @@
 -- =============================================================================
 -- all.haus — PostgreSQL Schema
--- Full schema incorporating migrations 001–025.
+-- Full schema incorporating migrations 001–038.
 -- Loaded by Docker initdb.d on first boot.
 -- =============================================================================
 
@@ -42,6 +42,17 @@ CREATE TYPE payout_status AS ENUM (
   'initiated',         -- Stripe Connect transfer initiated
   'completed',         -- funds reached writer's bank
   'failed'
+);
+
+CREATE TYPE publication_role AS ENUM (
+  'editor_in_chief',
+  'editor',
+  'contributor'
+);
+
+CREATE TYPE contributor_type AS ENUM (
+  'permanent',
+  'one_off'
 );
 
 CREATE TYPE report_category AS ENUM (
@@ -167,6 +178,12 @@ CREATE TABLE articles (
   pinned_on_profile     BOOLEAN NOT NULL DEFAULT FALSE,
   profile_pin_order     INTEGER NOT NULL DEFAULT 0,
 
+  -- Publication (migration 038)
+  publication_id        UUID,                   -- NULL for personal articles
+  publication_article_status TEXT
+    CHECK (publication_article_status IN ('submitted', 'approved', 'published', 'unpublished')),
+  show_on_writer_profile BOOLEAN NOT NULL DEFAULT TRUE,
+
   -- Publishing state
   published_at          TIMESTAMPTZ,
   deleted_at            TIMESTAMPTZ,            -- soft-delete; NULL if live
@@ -184,6 +201,7 @@ CREATE INDEX idx_articles_writer_id ON articles (writer_id);
 CREATE INDEX idx_articles_nostr_d_tag ON articles (writer_id, nostr_d_tag);
 CREATE INDEX idx_articles_published_at ON articles (published_at DESC) WHERE published_at IS NOT NULL;
 CREATE INDEX idx_articles_title_trgm ON articles USING gin (title gin_trgm_ops);
+CREATE INDEX idx_articles_publication ON articles (publication_id) WHERE publication_id IS NOT NULL;
 
 -- One live article per (writer, d-tag). Deleted rows are excluded. (migration 008)
 CREATE UNIQUE INDEX idx_articles_unique_live
@@ -204,6 +222,7 @@ CREATE TABLE article_drafts (
   content_raw           TEXT,                   -- full unsplit draft content
   gate_position_pct     INT,
   price_pence           INT,
+  publication_id        UUID,                   -- (migration 038) publication context
   auto_saved_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -308,7 +327,8 @@ CREATE INDEX idx_sub_offers_recipient ON subscription_offers(recipient_id) WHERE
 CREATE TABLE subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   reader_id UUID NOT NULL REFERENCES accounts(id),
-  writer_id UUID NOT NULL REFERENCES accounts(id),
+  writer_id UUID REFERENCES accounts(id),          -- NULL for publication subscriptions (migration 038)
+  publication_id UUID,                              -- (migration 038) NULL for writer subscriptions
   price_pence INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'expired')),
   auto_renew BOOLEAN NOT NULL DEFAULT TRUE,      -- (migration 023) FALSE = expires at period end
@@ -324,13 +344,15 @@ CREATE TABLE subscriptions (
   cancelled_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (reader_id, writer_id)
+  CONSTRAINT subscriptions_target_check CHECK (num_nonnulls(writer_id, publication_id) = 1)
 );
 
 CREATE INDEX idx_subscriptions_reader ON subscriptions(reader_id);
 CREATE INDEX idx_subscriptions_writer ON subscriptions(writer_id);
 CREATE INDEX idx_subscriptions_status ON subscriptions(status) WHERE status = 'active' OR status = 'cancelled';
 CREATE INDEX idx_subscriptions_period_end ON subscriptions(current_period_end) WHERE status IN ('active', 'cancelled');
+CREATE UNIQUE INDEX idx_subscriptions_reader_writer ON subscriptions (reader_id, writer_id) WHERE writer_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_subscriptions_reader_publication ON subscriptions (reader_id, publication_id) WHERE publication_id IS NOT NULL;
 
 -- =============================================================================
 -- SUBSCRIPTION NUDGE LOG (migration 028)
@@ -341,6 +363,7 @@ CREATE INDEX idx_subscriptions_period_end ON subscriptions(current_period_end) W
 CREATE TABLE subscription_nudge_log (
   reader_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   writer_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  publication_id UUID,                              -- (migration 038) publication nudges
   month     DATE NOT NULL,
   shown_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   converted BOOLEAN NOT NULL DEFAULT FALSE,
@@ -613,6 +636,7 @@ CREATE TABLE feed_scores (
   nostr_event_id  TEXT PRIMARY KEY,
   author_id       UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
   content_type    content_type NOT NULL,
+  publication_id  UUID,                             -- (migration 038) publication article scoring
   score           FLOAT NOT NULL DEFAULT 0,
   engagement_count INT NOT NULL DEFAULT 0,
   gate_pass_count INT NOT NULL DEFAULT 0,
@@ -623,6 +647,8 @@ CREATE TABLE feed_scores (
 CREATE INDEX idx_feed_scores_score ON feed_scores (score DESC);
 CREATE INDEX idx_feed_scores_author ON feed_scores (author_id, score DESC);
 CREATE INDEX idx_feed_scores_published ON feed_scores (published_at DESC);
+CREATE INDEX idx_feed_scores_publication ON feed_scores (publication_id, score DESC)
+  WHERE publication_id IS NOT NULL;
 
 -- =============================================================================
 -- MODERATION REPORTS
@@ -670,7 +696,8 @@ INSERT INTO platform_config (key, value, description) VALUES
   ('comment_char_limit',            '2000', 'Maximum characters for a comment'),
   ('media_max_size_bytes',          '10485760', 'Maximum upload file size (10 MB)'),
   ('admin_account_ids',             '',         'Comma-separated account UUIDs with admin access'),
-  ('monthly_fallback_days',         '30',       'Days since last read before monthly settlement fires');
+  ('monthly_fallback_days',         '30',       'Days since last read before monthly settlement fires'),
+  ('publication_payout_threshold_pence', '2000', 'Publication payout threshold (£20.00)');
 
 -- =============================================================================
 -- COMMENTS
@@ -925,6 +952,155 @@ CREATE INDEX idx_pledges_pledger ON pledges(pledger_id);
 CREATE INDEX idx_pledges_status ON pledges(status);
 
 -- =============================================================================
+-- PUBLICATIONS (migration 038)
+-- Federated groups of writers with shared identity, paywall, and revenue pool.
+-- =============================================================================
+
+CREATE TABLE publications (
+  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug                        TEXT NOT NULL UNIQUE,
+  name                        TEXT NOT NULL,
+  tagline                     TEXT,
+  about                       TEXT,
+  logo_blossom_url            TEXT,
+  cover_blossom_url           TEXT,
+  nostr_pubkey                TEXT NOT NULL UNIQUE,
+  nostr_privkey_enc           TEXT NOT NULL,
+  subscription_price_pence    INTEGER NOT NULL DEFAULT 800,
+  annual_discount_pct         INTEGER NOT NULL DEFAULT 15,
+  default_article_price_pence INTEGER NOT NULL DEFAULT 20,
+  custom_domain               TEXT UNIQUE,
+  custom_domain_verified      BOOLEAN NOT NULL DEFAULT FALSE,
+  theme_config                JSONB NOT NULL DEFAULT '{}'::jsonb,
+  custom_css                  TEXT,
+  stripe_connect_id           TEXT UNIQUE,
+  stripe_connect_kyc_complete BOOLEAN NOT NULL DEFAULT FALSE,
+  status                      TEXT NOT NULL DEFAULT 'active'
+                              CHECK (status IN ('active', 'suspended', 'archived')),
+  founded_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_publications_slug ON publications (slug);
+CREATE INDEX idx_publications_custom_domain ON publications (custom_domain)
+  WHERE custom_domain IS NOT NULL;
+CREATE INDEX idx_publications_nostr_pubkey ON publications (nostr_pubkey);
+CREATE INDEX idx_publications_name_trgm ON publications USING gin (name gin_trgm_ops);
+
+-- Add FK now that publications table exists
+ALTER TABLE articles ADD CONSTRAINT fk_articles_publication
+  FOREIGN KEY (publication_id) REFERENCES publications(id);
+ALTER TABLE article_drafts ADD CONSTRAINT fk_article_drafts_publication
+  FOREIGN KEY (publication_id) REFERENCES publications(id);
+ALTER TABLE subscriptions ADD CONSTRAINT fk_subscriptions_publication
+  FOREIGN KEY (publication_id) REFERENCES publications(id);
+
+CREATE TABLE publication_members (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  publication_id        UUID NOT NULL REFERENCES publications(id) ON DELETE CASCADE,
+  account_id            UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  role                  publication_role NOT NULL,
+  contributor_type      contributor_type NOT NULL DEFAULT 'permanent',
+  title                 TEXT,
+  is_owner              BOOLEAN NOT NULL DEFAULT FALSE,
+  revenue_share_bps     INTEGER,
+  can_publish           BOOLEAN NOT NULL DEFAULT FALSE,
+  can_edit_others       BOOLEAN NOT NULL DEFAULT FALSE,
+  can_manage_members    BOOLEAN NOT NULL DEFAULT FALSE,
+  can_manage_finances   BOOLEAN NOT NULL DEFAULT FALSE,
+  can_manage_settings   BOOLEAN NOT NULL DEFAULT FALSE,
+  invited_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  accepted_at           TIMESTAMPTZ,
+  removed_at            TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT unique_active_member UNIQUE (publication_id, account_id)
+);
+
+CREATE INDEX idx_pub_members_publication ON publication_members (publication_id)
+  WHERE removed_at IS NULL;
+CREATE INDEX idx_pub_members_account ON publication_members (account_id)
+  WHERE removed_at IS NULL;
+CREATE UNIQUE INDEX idx_pub_members_one_owner
+  ON publication_members (publication_id)
+  WHERE is_owner = TRUE AND removed_at IS NULL;
+
+CREATE TABLE publication_invites (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  publication_id    UUID NOT NULL REFERENCES publications(id) ON DELETE CASCADE,
+  invited_by        UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  invited_email     TEXT,
+  invited_account_id UUID REFERENCES accounts(id),
+  role              publication_role NOT NULL DEFAULT 'contributor',
+  contributor_type  contributor_type NOT NULL DEFAULT 'permanent',
+  token             TEXT NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(32), 'hex'),
+  message           TEXT,
+  expires_at        TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '14 days'),
+  accepted_at       TIMESTAMPTZ,
+  declined_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_pub_invites_token ON publication_invites (token)
+  WHERE accepted_at IS NULL AND declined_at IS NULL;
+CREATE INDEX idx_pub_invites_email ON publication_invites (invited_email)
+  WHERE accepted_at IS NULL AND declined_at IS NULL;
+
+CREATE TABLE publication_article_shares (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  publication_id    UUID NOT NULL REFERENCES publications(id) ON DELETE CASCADE,
+  article_id        UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  account_id        UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  share_type        TEXT NOT NULL CHECK (share_type IN ('revenue_bps', 'flat_fee_pence')),
+  share_value       INTEGER NOT NULL,
+  paid_out          BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (article_id, account_id)
+);
+
+CREATE TABLE publication_follows (
+  follower_id     UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  publication_id  UUID NOT NULL REFERENCES publications(id) ON DELETE CASCADE,
+  followed_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (follower_id, publication_id)
+);
+
+CREATE INDEX idx_pub_follows_publication ON publication_follows (publication_id);
+
+CREATE TABLE publication_payouts (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  publication_id      UUID NOT NULL REFERENCES publications(id),
+  total_pool_pence    INTEGER NOT NULL,
+  platform_fee_pence  INTEGER NOT NULL,
+  flat_fees_paid_pence INTEGER NOT NULL DEFAULT 0,
+  remaining_pool_pence INTEGER NOT NULL,
+  status              payout_status NOT NULL DEFAULT 'pending',
+  triggered_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at        TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_pub_payouts_publication ON publication_payouts (publication_id);
+CREATE INDEX idx_pub_payouts_status ON publication_payouts (status);
+
+CREATE TABLE publication_payout_splits (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  publication_payout_id UUID NOT NULL REFERENCES publication_payouts(id) ON DELETE CASCADE,
+  account_id            UUID NOT NULL REFERENCES accounts(id),
+  share_bps             INTEGER,
+  amount_pence          INTEGER NOT NULL,
+  share_type            TEXT NOT NULL CHECK (share_type IN ('standing', 'article_revenue', 'flat_fee')),
+  article_id            UUID REFERENCES articles(id),
+  stripe_transfer_id    TEXT,
+  status                payout_status NOT NULL DEFAULT 'pending',
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_pub_payout_splits_payout ON publication_payout_splits (publication_payout_id);
+CREATE INDEX idx_pub_payout_splits_account ON publication_payout_splits (account_id);
+
+-- =============================================================================
 -- UPDATED_AT TRIGGERS
 -- Auto-update updated_at on mutation for key tables.
 -- =============================================================================
@@ -951,6 +1127,14 @@ CREATE TRIGGER trg_reading_tabs_updated_at
 
 CREATE TRIGGER trg_pledge_drives_updated_at
   BEFORE UPDATE ON pledge_drives
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_publications_updated_at
+  BEFORE UPDATE ON publications
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_publication_members_updated_at
+  BEFORE UPDATE ON publication_members
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =============================================================================
@@ -1002,5 +1186,9 @@ INSERT INTO _migrations (filename) VALUES
   ('031_fix_media_urls_domain.sql'),
   ('032_dm_likes.sql'),
   ('033_admin_account_ids_config.sql'),
-  ('034_dm_replies.sql')
+  ('034_dm_replies.sql'),
+  ('035_feed_scores.sql'),
+  ('036_commission_conversation.sql'),
+  ('037_subscription_offers.sql'),
+  ('038_publications.sql')
 ON CONFLICT (filename) DO NOTHING;

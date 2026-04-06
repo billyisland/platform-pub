@@ -31,34 +31,49 @@ function requireInternalSecret(req: any, reply: any, done: () => void) {
   done()
 }
 
+const signerTypeEnum = z.enum(['account', 'publication']).default('account')
+
 const SignEventSchema = z.object({
-  accountId: z.string().uuid(),
+  signerId: z.string().uuid().optional(),
+  signerType: signerTypeEnum,
+  accountId: z.string().uuid().optional(),  // backwards compat
   event: z.object({
     kind: z.number().int(),
     content: z.string(),
     tags: z.array(z.array(z.string())),
     created_at: z.number().int().optional(),
   }),
-})
+}).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
 
 const UnwrapKeySchema = z.object({
-  accountId: z.string().uuid(),
+  signerId: z.string().uuid().optional(),
+  signerType: signerTypeEnum,
+  accountId: z.string().uuid().optional(),  // backwards compat
   encryptedKey: z.string().min(1),
-})
+}).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
 
 const HEX64_RE = /^[0-9a-f]{64}$/
 
 const Nip44EncryptSchema = z.object({
-  accountId: z.string().uuid(),
+  signerId: z.string().uuid().optional(),
+  signerType: signerTypeEnum,
+  accountId: z.string().uuid().optional(),  // backwards compat
   recipientPubkey: z.string().regex(HEX64_RE),
   plaintext: z.string().min(1),
-})
+}).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
 
 const Nip44DecryptSchema = z.object({
-  accountId: z.string().uuid(),
+  signerId: z.string().uuid().optional(),
+  signerType: signerTypeEnum,
+  accountId: z.string().uuid().optional(),  // backwards compat
   senderPubkey: z.string().regex(HEX64_RE),
   ciphertext: z.string().min(1),
-})
+}).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
+
+/** Resolve signerId from either signerId or legacy accountId */
+function resolveSignerId(data: { signerId?: string; accountId?: string }): string {
+  return data.signerId || data.accountId!
+}
 
 export async function keypairRoutes(app: FastifyInstance) {
 
@@ -91,7 +106,8 @@ export async function keypairRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const { accountId, event } = parsed.data
+    const { event, signerType } = parsed.data
+    const signerId = resolveSignerId(parsed.data)
 
     try {
       const eventTemplate = {
@@ -101,9 +117,9 @@ export async function keypairRoutes(app: FastifyInstance) {
         created_at: event.created_at ?? Math.floor(Date.now() / 1000),
       }
 
-      const signed = await signEvent(accountId, eventTemplate)
+      const signed = await signEvent(signerId, eventTemplate, signerType)
 
-      logger.info({ accountId, eventKind: event.kind, eventId: signed.id }, 'Event signed')
+      logger.info({ signerId, signerType, eventKind: event.kind, eventId: signed.id }, 'Event signed')
 
       return reply.status(200).send({
         id: signed.id,
@@ -115,7 +131,7 @@ export async function keypairRoutes(app: FastifyInstance) {
         created_at: signed.created_at,
       })
     } catch (err) {
-      logger.error({ err, accountId }, 'Event signing failed')
+      logger.error({ err, signerId, signerType }, 'Event signing failed')
       return reply.status(500).send({ error: 'Signing failed' })
     }
   })
@@ -134,16 +150,17 @@ export async function keypairRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const { accountId, encryptedKey } = parsed.data
+    const { encryptedKey, signerType } = parsed.data
+    const signerId = resolveSignerId(parsed.data)
 
     try {
-      const contentKeyBase64 = await unwrapKey(accountId, encryptedKey)
+      const contentKeyBase64 = await unwrapKey(signerId, encryptedKey, signerType)
 
-      logger.debug({ accountId }, 'Content key unwrapped for reader')
+      logger.debug({ signerId, signerType }, 'Content key unwrapped')
 
       return reply.status(200).send({ contentKeyBase64 })
     } catch (err) {
-      logger.error({ err, accountId }, 'Key unwrapping failed')
+      logger.error({ err, signerId, signerType }, 'Key unwrapping failed')
       return reply.status(500).send({ error: 'Key unwrapping failed' })
     }
   })
@@ -161,14 +178,15 @@ export async function keypairRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const { accountId, recipientPubkey, plaintext } = parsed.data
+    const { recipientPubkey, plaintext, signerType } = parsed.data
+    const signerId = resolveSignerId(parsed.data)
 
     try {
-      const ciphertext = await nip44Encrypt(accountId, recipientPubkey, plaintext)
-      logger.debug({ accountId }, 'NIP-44 encrypted for DM')
+      const ciphertext = await nip44Encrypt(signerId, recipientPubkey, plaintext, signerType)
+      logger.debug({ signerId, signerType }, 'NIP-44 encrypted')
       return reply.status(200).send({ ciphertext })
     } catch (err) {
-      logger.error({ err, accountId }, 'NIP-44 encryption failed')
+      logger.error({ err, signerId, signerType }, 'NIP-44 encryption failed')
       return reply.status(500).send({ error: 'Encryption failed' })
     }
   })
@@ -186,14 +204,15 @@ export async function keypairRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const { accountId, senderPubkey, ciphertext } = parsed.data
+    const { senderPubkey, ciphertext, signerType } = parsed.data
+    const signerId = resolveSignerId(parsed.data)
 
     try {
-      const plaintext = await nip44Decrypt(accountId, senderPubkey, ciphertext)
-      logger.debug({ accountId }, 'NIP-44 decrypted for DM')
+      const plaintext = await nip44Decrypt(signerId, senderPubkey, ciphertext, signerType)
+      logger.debug({ signerId, signerType }, 'NIP-44 decrypted')
       return reply.status(200).send({ plaintext })
     } catch (err) {
-      logger.error({ err, accountId }, 'NIP-44 decryption failed')
+      logger.error({ err, signerId, signerType }, 'NIP-44 decryption failed')
       return reply.status(500).send({ error: 'Decryption failed' })
     }
   })

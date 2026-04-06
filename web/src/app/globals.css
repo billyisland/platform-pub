@@ -88,26 +88,6 @@
     background: #111111;
   }
 
-  input[type="text"],
-  input[type="email"],
-  input[type="number"],
-  input[type="password"],
-  textarea,
-  select {
-    @apply bg-white text-black font-sans;
-    font-size: 0.9375rem;
-    border: 1px solid #E5E5E5;
-    border-radius: 0;
-    transition: border-color 0.15s ease;
-  }
-
-  input:focus,
-  textarea:focus,
-  select:focus {
-    @apply outline-none;
-    border-color: #BBBBBB;
-    box-shadow: none;
-  }
 
   ::placeholder {
     color: #999999;
