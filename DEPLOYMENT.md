@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.10.2
+# all.haus — Deployment Reference v5.11.0
 
 **Date:** 6 April 2026
-**Replaces:** v5.10.1 (see bottom for change log)
+**Replaces:** v5.10.2 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -249,6 +249,62 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.10.2
+
+No migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
+
+This release redesigns the notification system. Notifications are now a permanent activity log — marking a notification as read keeps it visible (muted styling) instead of deleting it. The backend returns both read and unread notifications with cursor-based pagination. The notification bell dropdown shows a quick-glance preview of the most recent 10 items with a "View all" link to the full log. Phantom notification types (`dm_payment_required`, `new_user`) that were never created by the backend have been removed from the frontend type union.
+
+**Backend (gateway):**
+
+- `GET /notifications` now returns both read and unread notifications (previously filtered to unread only)
+- Cursor-based pagination: `?cursor=<ISO timestamp>&limit=30` (max 50 per page)
+- Response shape: `{ notifications, unreadCount, nextCursor }` — `nextCursor` is null when no more pages
+- `unreadCount` is always the global unread total (separate COUNT query), not page length
+
+**Frontend (web):**
+
+- **Notifications page (`/notifications`):** permanent log with read/unread styling. Unread items are bold with a crimson dot; read items are muted. Clicking an unread item marks it read (bold→normal) but keeps it visible. "Load older notifications" button at the bottom for pagination.
+- **NotificationBell dropdown:** shows most recent 10 (read + unread) with same bold/muted styling. Clicking marks read instead of removing. "View all notifications" link at the bottom to `/notifications`. Badge count reads from the `useUnreadCounts` store.
+- **Type cleanup:** removed `dm_payment_required` and `new_user` from `NotificationType` union and renderer labels (backend never created these). Fallback label `'sent you a notification'` covers any future type.
+- **API client:** `notifications.list()` accepts optional `cursor` parameter.
+
+**Modified files:**
+
+- `gateway/src/routes/notifications.ts` — paginated query returning read + unread
+- `web/src/lib/api.ts` — `NotificationType` trimmed, `notifications.list()` cursor param
+- `web/src/app/notifications/page.tsx` — rewritten as permanent log with pagination
+- `web/src/components/ui/NotificationBell.tsx` — rewritten with read/unread styling, "View all" link
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# No migration needed — only code changes
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# gateway and web should show (healthy) after ~30s
+
+# Visual checks:
+# - Open the notification bell dropdown — should show recent items, unread in bold
+# - Click an unread notification — it should mark as read (bold→normal), navigate to target
+# - Re-open the bell — the clicked item should still be visible but muted
+# - Click "View all notifications" — should navigate to /notifications
+# - /notifications page should show full history, unread bold, read muted
+# - Scroll to bottom — "Load older notifications" button should load more
+# - Avatar badge should show combined DM + notification count
+# - DM badge in dropdown should be separate from notification badge
+```
+
+No new env vars. No database changes.
+
+---
 
 ### From v5.10.1
 
@@ -4788,6 +4844,43 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.11.0 — 6 April 2026
+
+**Notification centre redesigned as permanent activity log**
+
+No migration. Services changed: gateway, web.
+
+- `GET /notifications` returns read + unread notifications with cursor-based pagination (`?cursor=<ISO>&limit=30`). Response: `{ notifications, unreadCount, nextCursor }`.
+- Notifications page is now a permanent log. Unread items are bold with crimson dot; read items are muted but remain visible. "Load older notifications" for pagination.
+- NotificationBell dropdown shows most recent 10 (read + unread), marks read on click instead of removing. "View all notifications" link to full log.
+- Removed phantom types `dm_payment_required` and `new_user` from frontend `NotificationType` union (backend never creates these).
+
+**Upgrade steps:**
+```bash
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+---
+
+### v5.10.2 — 6 April 2026
+
+**Rich media in composers + media rendering in replies and DMs**
+
+Services changed: web.
+
+- Images uploaded in composers appear as visual thumbnails instead of raw URLs.
+- Embeddable URLs (YouTube, Vimeo, Twitter/X, Spotify) detected as you type and shown as preview cards.
+- Replies and DMs now support image uploads and render media in their content.
+
+**Upgrade steps:**
+```bash
+docker compose build web
+docker compose up -d web
+```
+
+---
 
 ### v5.10.1 — 6 April 2026
 

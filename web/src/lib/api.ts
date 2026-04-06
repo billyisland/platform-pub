@@ -494,8 +494,6 @@ export type NotificationType =
   | 'drive_funded'
   | 'pledge_fulfilled'
   | 'new_message'
-  | 'dm_payment_required'
-  | 'new_user'
 
 export interface Notification {
   id: string
@@ -511,8 +509,14 @@ export interface Notification {
 }
 
 export const notifications = {
-  list: () =>
-    request<{ notifications: Notification[]; unreadCount: number }>('/notifications'),
+  list: (cursor?: string) => {
+    const params = new URLSearchParams()
+    if (cursor) params.set('cursor', cursor)
+    const qs = params.toString()
+    return request<{ notifications: Notification[]; unreadCount: number; nextCursor: string | null }>(
+      `/notifications${qs ? `?${qs}` : ''}`
+    )
+  },
 
   markRead: (id: string) =>
     request<{ ok: boolean }>(`/notifications/${id}/read`, { method: 'POST' }),

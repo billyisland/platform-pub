@@ -3,7 +3,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { useUnreadCounts } from '../../stores/unread'
 import { notifications as notificationsApi, type Notification } from '../../lib/api'
+
+// =============================================================================
+// NotificationBell — sidebar dropdown (desktop) for quick-glance notifications
+//
+// Shows the most recent ~10 notifications (read and unread). Unread items are
+// bold with a crimson dot. Clicking an unread item marks it read. A "View all"
+// link points to the full /notifications log.
+// =============================================================================
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -36,20 +45,21 @@ function getDestUrl(n: Notification): string {
     case 'pledge_fulfilled':
       return '/dashboard?tab=drives'
     case 'new_message':
-      return n.conversationId ? `/messages/${n.conversationId}` : '/messages'
+      return n.conversationId ? `/messages#${n.conversationId}` : '/messages'
     default:
       return '#'
   }
 }
 
-function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: string, href: string) => void }) {
+function NotificationItem({ n, onRead }: { n: Notification; onRead: (id: string, href: string) => void }) {
   const actorName = n.actor?.displayName ?? n.actor?.username ?? 'Someone'
   const destUrl = getDestUrl(n)
+  const isUnread = !n.read
 
   const avatar = n.actor?.avatar ? (
-    <img src={n.actor.avatar} alt="" className="h-7 w-7  object-cover flex-shrink-0 mt-0.5" />
+    <img src={n.actor.avatar} alt="" className="h-7 w-7 object-cover flex-shrink-0 mt-0.5" />
   ) : (
-    <span className="flex h-7 w-7 items-center justify-center bg-grey-100 text-[10px] font-medium text-grey-400  flex-shrink-0 mt-0.5">
+    <span className="flex h-7 w-7 items-center justify-center bg-grey-100 text-[10px] font-medium text-grey-400 flex-shrink-0 mt-0.5">
       {(n.actor?.displayName ?? n.actor?.username ?? '?')[0].toUpperCase()}
     </span>
   )
@@ -59,8 +69,8 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
   if (n.type === 'new_follower') {
     body = (
       <>
-        <p className="text-xs text-black leading-snug">
-          <span className="font-medium">{actorName}</span>{' '}followed you
+        <p className={`text-xs leading-snug ${isUnread ? 'text-black font-semibold' : 'text-grey-500'}`}>
+          <span className={isUnread ? 'font-semibold' : 'font-medium'}>{actorName}</span>{' '}followed you
         </p>
         <p className="text-[12px] text-grey-300 mt-0.5">{timeAgo(n.createdAt)}</p>
       </>
@@ -68,8 +78,8 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
   } else if (n.type === 'new_reply') {
     body = (
       <>
-        <p className="text-xs text-black leading-snug">
-          <span className="font-medium">{actorName}</span>
+        <p className={`text-xs leading-snug ${isUnread ? 'text-black font-semibold' : 'text-grey-500'}`}>
+          <span className={isUnread ? 'font-semibold' : 'font-medium'}>{actorName}</span>
           {' replied'}
           {n.article?.title && <>{' to '}<span className="italic">{n.article.title}</span></>}
         </p>
@@ -88,14 +98,12 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
       drive_funded: 'your pledge drive reached its goal',
       pledge_fulfilled: 'a pledge drive you backed was published',
       new_message: 'sent you a message',
-      dm_payment_required: 'requires payment to message',
-      new_user: 'joined the platform',
     }
     const label = simpleLabels[n.type] ?? 'sent you a notification'
     body = (
       <>
-        <p className="text-xs text-black leading-snug">
-          <span className="font-medium">{actorName}</span>{' '}{label}
+        <p className={`text-xs leading-snug ${isUnread ? 'text-black font-semibold' : 'text-grey-500'}`}>
+          <span className={isUnread ? 'font-semibold' : 'font-medium'}>{actorName}</span>{' '}{label}
         </p>
         <p className="text-[12px] text-grey-300 mt-0.5">{timeAgo(n.createdAt)}</p>
       </>
@@ -106,13 +114,16 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
     <div
       role="button"
       tabIndex={0}
-      onClick={() => onDismiss(n.id, destUrl)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onDismiss(n.id, destUrl) }}
+      onClick={() => onRead(n.id, destUrl)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onRead(n.id, destUrl) }}
       className="block px-4 py-3 border-b-2 border-grey-200/40 last:border-0 hover:bg-grey-100 transition-colors cursor-pointer text-left w-full"
     >
       <div className="flex items-start gap-2.5">
         {avatar}
-        <div className="min-w-0">{body}</div>
+        <div className="min-w-0 flex-1">{body}</div>
+        {isUnread && (
+          <span className="flex-shrink-0 mt-1.5 h-1.5 w-1.5 bg-crimson rounded-full" />
+        )}
       </div>
     </div>
   )
@@ -120,23 +131,14 @@ function NotificationItem({ n, onDismiss }: { n: Notification; onDismiss: (id: s
 
 export function NotificationBell() {
   const router = useRouter()
+  const notificationCount = useUnreadCounts((s) => s.notificationCount)
+  const refreshUnread = useUnreadCounts((s) => s.fetch)
   const [items, setItems] = useState<Notification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({})
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  const dismissedIds = useRef(new Set<string>())
-
-  useEffect(() => {
-    notificationsApi.list()
-      .then(({ notifications, unreadCount }) => {
-        setItems(notifications.filter(n => !dismissedIds.current.has(n.id)))
-        setUnreadCount(unreadCount)
-      })
-      .catch(err => console.error('Failed to load notifications', err))
-  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -172,26 +174,22 @@ export function NotificationBell() {
     setLoading(true)
     try {
       const data = await notificationsApi.list()
-      setItems(data.notifications.filter(n => !dismissedIds.current.has(n.id)))
-      setUnreadCount(data.notifications.filter(n => !dismissedIds.current.has(n.id)).length)
+      // Show the most recent 10 in the dropdown
+      setItems(data.notifications.slice(0, 10))
     } catch {}
     setLoading(false)
   }
 
-  function handleDismiss(id: string, href: string) {
-    dismissedIds.current.add(id)
-    setItems((prev) => prev.filter((n) => n.id !== id))
-    setUnreadCount((prev) => Math.max(0, prev - 1))
+  async function handleRead(id: string, href: string) {
+    // Mark as read locally (bold → normal)
+    setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
     setOpen(false)
 
-    const gateway = process.env.NEXT_PUBLIC_GATEWAY_URL ?? ''
-    fetch(`${gateway}/api/v1/notifications/${id}/read`, {
-      method: 'POST',
-      credentials: 'include',
-      keepalive: true,
-    })
+    // Persist and refresh badge
+    notificationsApi.markRead(id).catch(() => {})
+    refreshUnread()
 
-    router.push(href)
+    if (href !== '#') router.push(href)
   }
 
   const panel = open ? (
@@ -211,8 +209,17 @@ export function NotificationBell() {
         {items.length === 0 && !loading ? (
           <p className="px-4 py-8 text-center text-xs text-grey-300">No notifications yet</p>
         ) : (
-          items.map((n) => <NotificationItem key={n.id} n={n} onDismiss={handleDismiss} />)
+          items.map((n) => <NotificationItem key={n.id} n={n} onRead={handleRead} />)
         )}
+      </div>
+
+      <div className="border-t border-grey-200/40 px-4 py-2.5 flex-shrink-0">
+        <button
+          onClick={() => { setOpen(false); router.push('/notifications') }}
+          className="text-[12px] font-sans text-grey-400 hover:text-black transition-colors w-full text-center"
+        >
+          View all notifications
+        </button>
       </div>
     </div>
   ) : null
@@ -226,9 +233,9 @@ export function NotificationBell() {
         title="Notifications"
       >
         <span className="font-sans text-[17px]">Notifications</span>
-        {unreadCount > 0 && (
+        {notificationCount > 0 && (
           <span className="font-sans text-sm text-crimson font-medium">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {notificationCount > 99 ? '99+' : notificationCount}
           </span>
         )}
       </button>

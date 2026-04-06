@@ -13,11 +13,20 @@ import logger from '../../shared/src/lib/logger.js'
 export async function notificationRoutes(app: FastifyInstance) {
 
   // ---------------------------------------------------------------------------
-  // GET /notifications — list recent notifications (newest first, max 50)
+  // GET /notifications — paginated notification log (newest first)
+  //   ?cursor=<ISO timestamp>&limit=30
+  // Returns both read and unread. Unread count is always the global total.
   // ---------------------------------------------------------------------------
 
-  app.get('/notifications', { preHandler: requireAuth }, async (req, reply) => {
+  app.get<{ Querystring: { cursor?: string; limit?: string } }>(
+    '/notifications', { preHandler: requireAuth }, async (req, reply) => {
     const recipientId = req.session!.sub!
+    const limit = Math.min(parseInt(req.query.limit ?? '30', 10) || 30, 50)
+    const cursor = req.query.cursor ?? null
+
+    const cursorClause = cursor ? 'AND n.created_at < $3' : ''
+    const params: (string | number)[] = [recipientId, limit + 1]
+    if (cursor) params.push(cursor)
 
     const { rows } = await pool.query<{
       id: string
@@ -61,15 +70,25 @@ export async function notificationRoutes(app: FastifyInstance) {
        LEFT JOIN accounts aw  ON aw.id  = ar.writer_id
        LEFT JOIN comments c   ON c.id   = n.comment_id
        LEFT JOIN notes no     ON no.id  = n.note_id
-       WHERE n.recipient_id = $1 AND n.read = false AND n.type != 'new_message'
+       WHERE n.recipient_id = $1 AND n.type != 'new_message'
+       ${cursorClause}
        ORDER BY n.created_at DESC
-       LIMIT 50`,
-      [recipientId]
+       LIMIT $2`,
+      params
     )
 
-    const unreadCount = rows.length
+    const hasMore = rows.length > limit
+    const page = hasMore ? rows.slice(0, limit) : rows
+    const nextCursor = hasMore ? page[page.length - 1].created_at.toISOString() : null
 
-    const notifications = rows.map((r) => ({
+    // Global unread count (cheap index scan)
+    const { rows: countRows } = await pool.query<{ cnt: string }>(
+      `SELECT COUNT(*) AS cnt FROM notifications WHERE recipient_id = $1 AND read = false AND type != 'new_message'`,
+      [recipientId]
+    )
+    const unreadCount = parseInt(countRows[0].cnt, 10)
+
+    const notifications = page.map((r) => ({
       id: r.id,
       type: r.type,
       read: r.read,
@@ -95,7 +114,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       driveId: r.drive_id ?? undefined,
     }))
 
-    return reply.status(200).send({ notifications, unreadCount })
+    return reply.status(200).send({ notifications, unreadCount, nextCursor })
   })
 
   // ---------------------------------------------------------------------------
