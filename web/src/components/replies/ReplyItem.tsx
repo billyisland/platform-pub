@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { ReportButton } from '../ui/ReportButton'
+import { MediaContent } from '../ui/MediaContent'
 import { VoteControls } from '../ui/VoteControls'
 import type { VoteTally, MyVoteCount } from '../../lib/api'
 
@@ -101,11 +102,15 @@ export function ReplyItem({
                 {authorName}
               </span>
             )}
-            <p className={`text-sm leading-relaxed ${
-              reply.isDeleted ? 'text-grey-300 italic' : 'text-black'
-            }`}>
-              {reply.content}
-            </p>
+            {reply.isDeleted ? (
+              <p className="text-sm leading-relaxed text-grey-300 italic">{reply.content}</p>
+            ) : (
+              <MediaContent
+                content={reply.content}
+                variant="reply"
+                textClassName="text-sm leading-relaxed text-black"
+              />
+            )}
 
             {!reply.isDeleted && (
               <div className="mt-0.5 flex items-center gap-2 text-ui-xs text-grey-300">

@@ -5,7 +5,8 @@ import Link from 'next/link'
 import type { NoteEvent } from '../../lib/ndk'
 import { useWriterName } from '../../hooks/useWriterName'
 import { useAuth } from '../../stores/auth'
-import { isImageUrl, isEmbeddableUrl, extractUrls } from '../../lib/media'
+import { stripMediaUrls } from '../../lib/media'
+import { MediaContent } from '../ui/MediaContent'
 import { ReplySection } from '../replies/ReplySection'
 import { QuoteCard } from './QuoteCard'
 import { VoteControls } from '../ui/VoteControls'
@@ -77,12 +78,7 @@ export function NoteCard({ note, onDeleted, onQuote, onCommission, voteTally, my
   const [confirmDelete, setConfirmDelete] = useState(false)
   const isAuthor = user?.pubkey === note.pubkey
 
-  const urls = extractUrls(note.content)
-  const imageUrls = urls.filter(isImageUrl)
-  const embedUrls = urls.filter(isEmbeddableUrl)
-  let displayContent = note.content
-  displayContent = displayContent.replace(/nostr:nevent1[a-z0-9]+/gi, '').trim()
-  for (const url of [...imageUrls, ...embedUrls]) displayContent = displayContent.replace(url, '').trim()
+  const { displayText: displayContent } = stripMediaUrls(note.content)
 
   async function handleDelete() {
     if (!confirmDelete) {
@@ -170,28 +166,14 @@ export function NoteCard({ note, onDeleted, onQuote, onCommission, voteTally, my
             )}
           </div>
 
-          {/* Content — Jost 15px */}
-          {displayContent && (
-            <p className="whitespace-pre-wrap mt-1 font-sans text-[15px] text-black leading-[1.55]">
-              {displayContent}
-            </p>
-          )}
-
-          {/* Images */}
-          {imageUrls.length > 0 && (
-            <div className="mt-2.5 space-y-2">
-              {imageUrls.map((url, i) => (
-                <img key={i} src={url} alt="" className="max-w-full max-h-80 object-cover" loading="lazy" />
-              ))}
-            </div>
-          )}
-
-          {/* Embeds */}
-          {embedUrls.length > 0 && (
-            <div className="mt-2.5 space-y-2">
-              {embedUrls.map((url, i) => <EmbedPreview key={i} url={url} />)}
-            </div>
-          )}
+          {/* Content + media */}
+          <div className="mt-1">
+            <MediaContent
+              content={note.content}
+              variant="note"
+              textClassName="whitespace-pre-wrap font-sans text-[15px] text-black leading-[1.55]"
+            />
+          </div>
 
           {/* Quoted content */}
           {note.quotedExcerpt ? (
@@ -252,12 +234,3 @@ export function NoteCard({ note, onDeleted, onQuote, onCommission, voteTally, my
   )
 }
 
-function EmbedPreview({ url }: { url: string }) {
-  const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/)
-  if (yt) return <div className="relative overflow-hidden" style={{ paddingBottom: '56.25%' }}><iframe src={`https://www.youtube.com/embed/${yt[1]}`} className="absolute inset-0 w-full h-full" frameBorder="0" allowFullScreen loading="lazy" /></div>
-  return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="block p-3 hover:opacity-80 transition-opacity bg-grey-100">
-      <p className="text-[11px] font-mono truncate text-grey-600 uppercase tracking-[0.02em]">{url}</p>
-    </a>
-  )
-}

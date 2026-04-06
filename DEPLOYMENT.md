@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.10.1
+# all.haus — Deployment Reference v5.10.2
 
 **Date:** 6 April 2026
-**Replaces:** v5.10.0 (see bottom for change log)
+**Replaces:** v5.10.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -249,6 +249,70 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.10.1
+
+No migration. Services changed: **web**. Deploy order: **rebuild web**.
+
+This release improves media handling across all composer and display components. Images uploaded in composers now appear as visual thumbnails instead of raw URLs. Embeddable URLs (YouTube, Vimeo, Twitter/X, Spotify) are detected as you type and shown as preview cards. Replies and DMs now support image uploads and render media (images + embeds) in their content — previously these were plain-text only.
+
+**Frontend (web):**
+
+- **Shared media hook:** New `useMediaAttachments` hook manages image uploads, embed URL detection, and attachment state for all composers. Uploaded images are tracked in a separate array (not appended as raw URLs into the textarea), shown as thumbnails, and appended to the published content on post.
+- **Composer image previews:** NoteComposer, ReplyComposer, and MessageThread composer all show a horizontal strip of 64×64 image thumbnails with remove buttons. Multiple images can be uploaded per post.
+- **Embed detection in composers:** Typing or pasting a YouTube/Vimeo/Twitter/Spotify URL into any composer shows a small preview card below the textarea (enriched via oEmbed when available).
+- **DM image uploads:** The MessageThread composer now has an image upload button between the textarea and Send button.
+- **Shared display renderer:** New `MediaContent` component extracts image and embeddable URLs from text content, strips them from the displayed text, and renders images + embeds below the text. Used by NoteCard, ReplyItem, and MessageThread message bubbles.
+- **Media in replies:** ReplyItem now renders images and embeds from reply content (was raw text only).
+- **Media in DMs:** Message bubbles now render images and embeds from message content (was raw text only).
+- **NoteCard refactor:** Inline URL extraction, image rendering, and the local `EmbedPreview` function have been replaced by the shared `MediaContent` component. Functionally identical output.
+- **Utility addition:** `stripMediaUrls()` added to `web/src/lib/media.ts` — consolidates URL extraction and stripping logic previously inline in NoteCard.
+
+**New files:**
+
+- `web/src/hooks/useMediaAttachments.ts` — shared composer media hook
+- `web/src/components/ui/MediaPreview.tsx` — composer attachment thumbnail strip
+- `web/src/components/ui/MediaContent.tsx` — display-side media renderer (images + embeds)
+
+**Modified files:**
+
+- `web/src/lib/media.ts` — added `stripMediaUrls()` export
+- `web/src/components/feed/NoteComposer.tsx` — uses media hook + preview
+- `web/src/components/replies/ReplyComposer.tsx` — uses media hook + preview
+- `web/src/components/messages/MessageThread.tsx` — upload button + preview in composer, `MediaContent` in message bubbles
+- `web/src/components/feed/NoteCard.tsx` — uses shared `MediaContent` + `stripMediaUrls`
+- `web/src/components/replies/ReplyItem.tsx` — uses `MediaContent` for reply content
+
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Rebuild and restart web only (no migration, no backend changes)
+docker compose build web
+docker compose up -d web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# web should show (healthy) after ~30s
+
+# Visual checks:
+# - Upload an image in the note composer — should appear as a thumbnail, not a raw URL
+# - Upload multiple images — all show as thumbnails in a horizontal strip
+# - Remove a thumbnail by clicking the × button — it should disappear
+# - Paste a YouTube URL — small preview card should appear below the textarea
+# - Post the note — NoteCard should render the image and YouTube embed correctly
+# - Reply to a note and attach an image — thumbnail in composer, image renders in the reply
+# - Open a DM conversation — image upload button should appear next to Send
+# - Send a DM with an image — thumbnail in composer, image renders in the message bubble
+# - Paste a YouTube URL in a DM — should render as an embedded player in the message
+# - Existing notes/replies/DMs with image URLs should continue to render correctly
+```
+
+No new env vars. No database changes.
+
+---
 
 ### From v5.9.0
 

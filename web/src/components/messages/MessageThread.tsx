@@ -4,6 +4,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { messages as messagesApi, type DirectMessage, type DecryptedMessage } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
 import { useUnreadCounts } from '../../stores/unread'
+import { useMediaAttachments } from '../../hooks/useMediaAttachments'
+import { MediaPreview } from '../ui/MediaPreview'
+import { MediaContent } from '../ui/MediaContent'
 
 const POLL_INTERVAL = 5_000
 
@@ -39,6 +42,7 @@ export function MessageThread({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const latestCreatedAt = useRef<string | null>(null)
+  const media = useMediaAttachments()
 
   async function decryptMessages(encrypted: DirectMessage[]): Promise<DecryptedMessage[]> {
     if (encrypted.length === 0) return []
@@ -175,8 +179,8 @@ export function MessageThread({
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault()
-    if (!content.trim() || sending) return
-    const text = content.trim()
+    const finalContent = media.buildContent(content)
+    if (!finalContent.trim() || sending) return
     const replyToId = replyTo?.id
 
     // Optimistic update: add the message to the UI immediately
@@ -195,7 +199,7 @@ export function MessageThread({
         contentEnc: null,
         counterpartyPubkey: null,
       } : null,
-      content: text,
+      content: finalContent,
       replyToContent: replyTo?.content ?? null,
       readAt: null,
       createdAt: new Date().toISOString(),
@@ -205,13 +209,14 @@ export function MessageThread({
 
     setMsgs(prev => [...prev, optimisticMsg])
     setContent('')
+    media.reset()
     setReplyTo(null)
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setSending(true)
     setDmPriceError(null)
 
     try {
-      const result = await messagesApi.send(conversationId, text, replyToId)
+      const result = await messagesApi.send(conversationId, finalContent, replyToId)
       // Replace optimistic message with real ID
       if (result.messageIds?.[0]) {
         setMsgs(prev => prev.map(m =>
@@ -222,7 +227,7 @@ export function MessageThread({
     } catch (err: any) {
       // Remove optimistic message on failure
       setMsgs(prev => prev.filter(m => m.id !== optimisticId))
-      setContent(text) // Restore the text so user doesn't lose it
+      setContent(finalContent) // Restore the text so user doesn't lose it
       if (replyToId && replyTo) setReplyTo(replyTo)
       if (err?.status === 402) {
         setDmPriceError(err.body?.pricePence ?? 0)
@@ -259,6 +264,15 @@ export function MessageThread({
   function handleReply(msg: DecryptedMessage) {
     setReplyTo(msg)
     inputRef.current?.focus()
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value
+    setContent(val)
+    media.detectEmbeds(val)
+    // Auto-resize: reset then expand to scrollHeight
+    e.target.style.height = 'auto'
+    e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'
   }
 
   return (
@@ -317,9 +331,17 @@ export function MessageThread({
                         {msg.senderDisplayName ?? msg.senderUsername}
                       </p>
                     )}
-                    <p className="text-[14px] font-sans leading-relaxed whitespace-pre-wrap">
-                      {msg.content ?? <span className="italic text-grey-300">Could not decrypt</span>}
-                    </p>
+                    {msg.content ? (
+                      <MediaContent
+                        content={msg.content}
+                        variant="message"
+                        textClassName={`text-[14px] font-sans leading-relaxed whitespace-pre-wrap ${isMine ? 'text-white' : 'text-black'}`}
+                      />
+                    ) : (
+                      <p className="text-[14px] font-sans leading-relaxed whitespace-pre-wrap italic text-grey-300">
+                        Could not decrypt
+                      </p>
+                    )}
                     <p className={`text-[10px] font-mono mt-1 ${isMine ? 'text-grey-400' : 'text-grey-300'}`}>
                       {timeStamp(msg.createdAt)}
                     </p>
@@ -393,17 +415,31 @@ export function MessageThread({
         </div>
       )}
 
+      {/* Media preview strip */}
+      {(media.attachments.length > 0 || media.uploading) && (
+        <div className="px-4 border-t border-grey-200">
+          <MediaPreview
+            attachments={media.attachments}
+            onRemove={media.removeAttachment}
+            uploading={media.uploading}
+          />
+        </div>
+      )}
+
+      {/* Media error */}
+      {media.error && (
+        <div className="px-4 py-1.5 bg-grey-100 text-crimson text-[12px] font-sans flex items-center justify-between">
+          <span>{media.error}</span>
+          <button onClick={media.clearError} className="ml-2 text-grey-300 hover:text-crimson">×</button>
+        </div>
+      )}
+
       {/* Send box */}
       <form onSubmit={handleSend} className="flex items-end gap-2 px-4 py-3 flex-shrink-0">
         <textarea
           ref={inputRef}
           value={content}
-          onChange={(e) => {
-            setContent(e.target.value)
-            // Auto-resize: reset then expand to scrollHeight
-            e.target.style.height = 'auto'
-            e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'
-          }}
+          onChange={handleChange}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
@@ -416,8 +452,21 @@ export function MessageThread({
           style={{ maxHeight: '160px' }}
         />
         <button
+          type="button"
+          onClick={media.triggerImageUpload}
+          disabled={media.uploading}
+          className="text-grey-300 hover:text-grey-400 disabled:opacity-40 transition-colors p-1.5"
+          title="Add image"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+            <circle cx="5.5" cy="5.5" r="1" />
+            <path d="M14.5 10.5L11 7L3.5 14.5" />
+          </svg>
+        </button>
+        <button
           type="submit"
-          disabled={sending || !content.trim()}
+          disabled={sending || (!content.trim() && media.attachments.length === 0)}
           className="btn text-sm disabled:opacity-50"
         >
           {sending ? '\u2026' : 'Send'}

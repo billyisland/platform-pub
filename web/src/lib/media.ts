@@ -99,3 +99,24 @@ export function extractUrls(text: string): string[] {
   const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g
   return text.match(urlRegex) ?? []
 }
+
+/**
+ * Strip image and embeddable URLs from text, returning the cleaned text
+ * and the extracted URLs grouped by type.
+ */
+export function stripMediaUrls(text: string): {
+  displayText: string
+  imageUrls: string[]
+  embedUrls: string[]
+} {
+  const urls = extractUrls(text)
+  const imageUrls = urls.filter(isImageUrl)
+  const embedUrls = urls.filter(isEmbeddableUrl)
+  let displayText = text
+  // Also strip nostr event references
+  displayText = displayText.replace(/nostr:nevent1[a-z0-9]+/gi, '').trim()
+  for (const url of [...imageUrls, ...embedUrls]) {
+    displayText = displayText.replace(url, '').trim()
+  }
+  return { displayText, imageUrls, embedUrls }
+}

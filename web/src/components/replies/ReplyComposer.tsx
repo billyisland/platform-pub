@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { publishReply } from '../../lib/replies'
-import { uploadImage } from '../../lib/media'
+import { useMediaAttachments } from '../../hooks/useMediaAttachments'
+import { MediaPreview } from '../ui/MediaPreview'
 
 const REPLY_CHAR_LIMIT = 2000
 
@@ -31,10 +32,10 @@ export function ReplyComposer({
   const { user } = useAuth()
   const [content, setContent] = useState('')
   const [publishing, setPublishing] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const media = useMediaAttachments()
 
   useEffect(() => {
     const el = inputRef.current
@@ -51,17 +52,19 @@ export function ReplyComposer({
 
   if (!user) return null
 
-  const charCount = content.length
+  const charCount = media.totalCharCount(content)
   const isOverLimit = charCount > REPLY_CHAR_LIMIT
-  const canPost = content.trim().length > 0 && !isOverLimit && !publishing
+  const isEmpty = content.trim().length === 0 && media.attachments.filter(a => a.type === 'image').length === 0
+  const canPost = !isEmpty && !isOverLimit && !publishing
 
   async function handlePost() {
     if (!canPost || !user) return
     setPublishing(true)
     setError(null)
     try {
+      const finalContent = media.buildContent(content)
       const result = await publishReply({
-        content: content.trim(),
+        content: finalContent,
         targetEventId,
         targetKind,
         targetAuthorPubkey,
@@ -69,11 +72,12 @@ export function ReplyComposer({
         parentCommentEventId,
       })
       setContent('')
+      media.reset()
       onPublished?.({
         id: result.replyId,
         nostrEventId: result.replyEventId,
         author: { id: user.id, username: user.username, displayName: user.displayName, avatar: user.avatar },
-        content: content.trim(),
+        content: finalContent,
         publishedAt: new Date().toISOString(),
         isDeleted: false,
         isMuted: false,
@@ -86,27 +90,14 @@ export function ReplyComposer({
     }
   }
 
-  async function handleImageUpload() {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/jpeg,image/png,image/gif,image/webp'
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
-      setUploading(true)
-      try {
-        const r = await uploadImage(file)
-        setContent(prev => prev + (prev ? '\n' : '') + r.url)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Upload failed')
-      } finally {
-        setUploading(false)
-      }
-    }
-    input.click()
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value
+    setContent(val)
+    media.detectEmbeds(val)
   }
 
-  const isExpanded = focused || content.length > 0
+  const isExpanded = focused || content.length > 0 || media.attachments.length > 0
+  const displayError = error ?? media.error
 
   return (
     <div className="pt-2">
@@ -124,7 +115,7 @@ export function ReplyComposer({
           <textarea
             ref={inputRef}
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={handleChange}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
@@ -141,8 +132,8 @@ export function ReplyComposer({
         <div className="flex items-center gap-1.5 pb-0.5">
           {isExpanded && (
             <button
-              onClick={handleImageUpload}
-              disabled={uploading}
+              onClick={media.triggerImageUpload}
+              disabled={media.uploading}
               className="text-grey-300 hover:text-grey-400 disabled:opacity-40 transition-colors p-1.5"
               title="Add image"
             >
@@ -163,10 +154,19 @@ export function ReplyComposer({
         </div>
       </div>
 
-      {error && (
+      {/* Media previews */}
+      {isExpanded && (
+        <MediaPreview
+          attachments={media.attachments}
+          onRemove={media.removeAttachment}
+          uploading={media.uploading}
+        />
+      )}
+
+      {displayError && (
         <div className="mt-1.5 bg-grey-100 text-crimson px-3 py-1.5 text-ui-xs flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="ml-2 text-grey-300 hover:text-crimson">×</button>
+          <span>{displayError}</span>
+          <button onClick={() => { setError(null); media.clearError() }} className="ml-2 text-grey-300 hover:text-crimson">×</button>
         </div>
       )}
 

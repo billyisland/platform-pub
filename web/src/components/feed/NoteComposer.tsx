@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { publishNote } from '../../lib/publishNote'
 import type { QuoteTarget } from '../../lib/publishNote'
-import { uploadImage } from '../../lib/media'
+import { useMediaAttachments } from '../../hooks/useMediaAttachments'
+import { MediaPreview } from '../ui/MediaPreview'
 import type { NoteEvent } from '../../lib/ndk'
 
 const NOTE_CHAR_LIMIT = 1000
@@ -21,9 +22,9 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
   const [activeQuote, setActiveQuote] = useState<typeof quoteTarget | null>(quoteTarget ?? null)
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const prevQuoteIdRef = useRef(quoteTarget?.eventId)
+  const media = useMediaAttachments()
 
   useEffect(() => {
     const el = ref.current
@@ -40,16 +41,19 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
 
   if (!user) return null
 
-  const charCount = content.length
+  const charCount = media.totalCharCount(content)
   const isOver = charCount > NOTE_CHAR_LIMIT
-  const isEmpty = content.trim().length === 0
+  const isEmpty = content.trim().length === 0 && media.attachments.filter(a => a.type === 'image').length === 0
   const canPost = !isEmpty && !isOver && !publishing
+
   async function handlePost() {
     if (!canPost || !user) return
     setPublishing(true); setError(null)
     try {
-      const result = await publishNote(content.trim(), user.pubkey, activeQuote ?? undefined)
+      const finalContent = media.buildContent(content)
+      const result = await publishNote(finalContent, user.pubkey, activeQuote ?? undefined)
       setContent('')
+      media.reset()
       setActiveQuote(null)
       prevQuoteIdRef.current = undefined
       onClearQuote?.()
@@ -57,7 +61,7 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
         type: 'note',
         id: result.noteEventId,
         pubkey: user.pubkey,
-        content: content.trim(),
+        content: finalContent,
         publishedAt: Math.floor(Date.now() / 1000),
         quotedEventId: activeQuote?.eventId,
       })
@@ -74,6 +78,14 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
     onClearQuote?.()
   }
 
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value
+    setContent(val)
+    media.detectEmbeds(val)
+  }
+
+  const displayError = error ?? media.error
+
   return (
     <div className="bg-grey-100 p-[0.875rem_1.25rem]">
       <div>
@@ -81,11 +93,18 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
           <textarea
             ref={ref}
             value={content}
-            onChange={e => setContent(e.target.value)}
+            onChange={handleChange}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
             placeholder={activeQuote ? 'Add your thoughts...' : "What's on your mind?"}
             rows={2}
             className="w-full resize-none bg-transparent text-[15px] font-sans text-black placeholder:text-grey-600 focus:outline-none leading-relaxed border-none"
+          />
+
+          {/* Media previews */}
+          <MediaPreview
+            attachments={media.attachments}
+            onRemove={media.removeAttachment}
+            uploading={media.uploading}
           />
 
           {/* Quote preview */}
@@ -133,10 +152,10 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
             </div>
           )}
 
-          {error && (
+          {displayError && (
             <div className="mt-2 bg-grey-100 text-crimson px-3 py-2 text-[12px] font-sans flex items-center justify-between">
-              <span>{error}</span>
-              <button onClick={() => setError(null)} className="ml-2 text-grey-600 hover:text-crimson">×</button>
+              <span>{displayError}</span>
+              <button onClick={() => { setError(null); media.clearError() }} className="ml-2 text-grey-600 hover:text-crimson">×</button>
             </div>
           )}
 
@@ -146,26 +165,8 @@ export function NoteComposer({ onPublished, onClearQuote, quoteTarget }: NoteCom
             </span>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  const input = document.createElement('input')
-                  input.type = 'file'
-                  input.accept = 'image/jpeg,image/png,image/gif,image/webp'
-                  input.onchange = async (e) => {
-                    const file = (e.target as HTMLInputElement).files?.[0]
-                    if (!file) return
-                    setUploading(true)
-                    try {
-                      const r = await uploadImage(file)
-                      setContent(p => p + (p ? '\n' : '') + r.url)
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : 'Upload failed')
-                    } finally {
-                      setUploading(false)
-                    }
-                  }
-                  input.click()
-                }}
-                disabled={uploading}
+                onClick={media.triggerImageUpload}
+                disabled={media.uploading}
                 className="text-grey-600 hover:text-grey-400 disabled:opacity-40 transition-colors p-1.5 hover:bg-grey-100"
                 title="Add image"
               >
