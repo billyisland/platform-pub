@@ -3,6 +3,7 @@
 Consolidated from 19 planning documents, verified against the codebase as of 2026-04-06. The archived specs live in `planning-archive/`. Documents left in the project root are strategic specs that are still entirely ahead of us.
 
 Last audited: 2026-04-06. Items marked DONE were verified against the codebase in that audit.
+Last worked: 2026-04-06 (v5.12.0 session). Completed: gift link polish, DM commissions, DM pricing config, JWT hardening. Next up: subscription offers system (#3 in attack order).
 
 ---
 
@@ -149,32 +150,32 @@ Multi-currency support. Option 2 (launch with GBP, display-only conversion) is r
 
 ## Suggested attack order
 
-### Next: complete half-built work
+### Completed (v5.12.0 session, 2026-04-06)
 
-1. ~~Gift link frontend polish~~ — done
-2. ~~Commission social features~~ — done
-3. Subscription offers system (full build — schema, backend, dashboard Offers tab)
-4. ~~DM pricing configuration~~ — done
+- ~~Gift link frontend polish~~ — dashboard GiftLinksPanel + ShareButton integration
+- ~~Commission social features~~ — commission from DM threads, migration 036
+- ~~DM pricing configuration~~ — API endpoints + dashboard settings UI
+- ~~JWT lifetime reduction~~ — 2-hour lifetime with 1-hour refresh
 
-### Then: build missing features by impact
+### Next up
 
-5. Writer analytics (writers need numbers to stay)
-6. Email-on-publish (inbox is the feed — critical for retention)
-7. Tags/topics (discoverability)
-8. Bookmarks (reader engagement)
+1. **Subscription offers system** (full build — schema, backend, dashboard Offers tab). Design agreed: single `subscription_offers` table, two modes (`code`/`grant`), writer-configurable discount_pct + duration_months + max_redemptions. See §2 "Incomplete Features" for full spec.
+2. **Writer analytics** — writers need numbers to stay. Gateway endpoint joining read_events, votes, comments, revenue; dashboard Analytics tab.
+3. **Email-on-publish** — inbox is the feed, critical for retention. Migration + send logic + settings toggle.
+4. **Tags/topics** — discoverability. Migration, editor input, browse page, card display.
+5. **Bookmarks** — reader engagement. Migration, routes, button, /bookmarks page.
 
 ### Later: strategic work
 
-9. Subscription Phase 2 — now partially covered by offers system; remaining: welcome email, subscriber import/export, subscriber analytics, custom subscribe landing page
-10. Settings rationalisation — see `SETTINGS-RATIONALISATION.md`
-11. Currency strategy — see `platform-pub-currency-strategy.md`
-12. Reposts (needs feed algorithm to be meaningful)
-13. Bucket system — see `platform-bucket-system-design.md`
+6. Subscription Phase 2 — now partially covered by offers system; remaining: welcome email, subscriber import/export, subscriber analytics, custom subscribe landing page
+7. Settings rationalisation — see `SETTINGS-RATIONALISATION.md`
+8. Currency strategy — see `platform-pub-currency-strategy.md`
+9. Reposts (needs feed algorithm to be meaningful)
+10. Bucket system — see `platform-bucket-system-design.md`
 
 ### Infrastructure (fit in as time allows)
 
 - CI/CD pipeline
 - TypeScript strictness (eliminate remaining ~23 `any` instances)
 - Accessibility pass
-- ~~JWT lifetime reduction~~ — done (2-hour lifetime with 1-hour refresh)
 - TypeScript target alignment
