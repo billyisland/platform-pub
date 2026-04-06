@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.17.0
+# all.haus — Deployment Reference v5.18.0
 
 **Date:** 6 April 2026
-**Replaces:** v5.16.0 (see bottom for change log)
+**Replaces:** v5.17.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -249,6 +249,33 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.17.0
+
+No migration. No service changes. **Documentation only.**
+
+This release adds the Publications implementation specification — multi-writer federated publications with shared identity, editorial pipeline, and revenue pooling. No code changes; the spec is a building plan for the next major feature.
+
+**New files:**
+
+- `PUBLICATIONS-SPEC.md` — full implementation specification covering: data model (6 new tables, 5 table modifications), key-custody publication key support, server-side publishing pipeline, Nostr signing model, editorial workflow (submit/approve/publish), revenue pooling with standing shares and per-article overrides, reader-facing publication pages, subscription/follow/search/feed integration. Phased delivery: Phase 1 (schema + core), Phase 2 (CMS + publishing), Phase 3 (reader surface), Phase 4 (theming + custom domains — deferred), Phase 5 (revenue).
+- `OWNER-DASHBOARD-SPEC.md` — owner dashboard specification.
+
+**Modified files:**
+
+- `feature-debt.md` — added Publications Phase 4 (theming and custom domains) to Strategic Initiatives as deferred work.
+
+**Upgrade steps:**
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# No migration, no rebuild needed — documentation only
+```
+
+No new env vars. No database changes.
+
+---
 
 ### From v5.16.0
 
