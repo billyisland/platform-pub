@@ -197,7 +197,7 @@ async function exploreFeed(readerId: string, cursor: number | undefined, limit: 
         AND ${MUTE_FILTER('acc.id', 1)}
         ${newUserCursorClause}
       ORDER BY acc.created_at DESC
-      LIMIT 5
+      LIMIT $2
     `, params),
   ])
 
