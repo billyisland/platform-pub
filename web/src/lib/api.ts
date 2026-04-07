@@ -281,16 +281,6 @@ export const feed = {
     request<{ items: any[]; reach: FeedReach }>(
       `/feed?reach=${reach}${cursor ? `&cursor=${cursor}` : ''}${limit ? `&limit=${limit}` : ''}`
     ),
-
-  // Legacy endpoints (kept for backwards compat during migration)
-  global: () =>
-    request<{ items: any[] }>('/feed/global'),
-
-  following: () =>
-    request<{ items: any[] }>('/feed/following'),
-
-  featured: () =>
-    request<{ articles: any[] }>('/feed/featured'),
 }
 
 // =============================================================================

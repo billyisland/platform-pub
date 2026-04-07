@@ -326,8 +326,8 @@ CREATE INDEX idx_sub_offers_recipient ON subscription_offers(recipient_id) WHERE
 
 CREATE TABLE subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  reader_id UUID NOT NULL REFERENCES accounts(id),
-  writer_id UUID REFERENCES accounts(id),          -- NULL for publication subscriptions (migration 038)
+  reader_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  writer_id UUID REFERENCES accounts(id) ON DELETE CASCADE, -- NULL for publication subscriptions (migration 038)
   publication_id UUID,                              -- (migration 038) NULL for writer subscriptions
   price_pence INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'expired')),
@@ -379,8 +379,8 @@ CREATE TABLE subscription_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   subscription_id UUID NOT NULL REFERENCES subscriptions(id),
   event_type TEXT NOT NULL CHECK (event_type IN ('subscription_charge', 'subscription_earning', 'subscription_read')),
-  reader_id UUID NOT NULL REFERENCES accounts(id),
-  writer_id UUID NOT NULL REFERENCES accounts(id),
+  reader_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  writer_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   article_id UUID REFERENCES articles(id),
   amount_pence INTEGER NOT NULL DEFAULT 0,
   period_start TIMESTAMPTZ,
@@ -503,13 +503,13 @@ ALTER TABLE read_events
 
 CREATE TABLE article_unlocks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  reader_id UUID NOT NULL REFERENCES accounts(id),
-  article_id UUID NOT NULL REFERENCES articles(id),
+  reader_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   unlocked_via TEXT NOT NULL CHECK (unlocked_via IN (
     'purchase', 'subscription', 'own_content', 'free_allowance',
     'author_grant', 'pledge', 'invitation'
   )),
-  subscription_id UUID REFERENCES subscriptions(id),
+  subscription_id UUID REFERENCES subscriptions(id) ON DELETE SET NULL,
   unlocked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (reader_id, article_id)
 );
@@ -816,9 +816,9 @@ CREATE TABLE vote_tallies (
 -- Vote charges — billing records for paid votes.
 CREATE TABLE vote_charges (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  vote_id           UUID NOT NULL REFERENCES votes(id),
-  voter_id          UUID NOT NULL REFERENCES accounts(id),
-  recipient_id      UUID REFERENCES accounts(id),  -- NULL for downvotes (platform revenue)
+  vote_id           UUID NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
+  voter_id          UUID NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  recipient_id      UUID REFERENCES accounts(id) ON DELETE RESTRICT, -- NULL for downvotes (platform revenue)
   amount_pence      BIGINT NOT NULL,
   tab_id            UUID REFERENCES reading_tabs(id) ON DELETE SET NULL,
   on_free_allowance BOOLEAN NOT NULL DEFAULT FALSE,
@@ -843,7 +843,7 @@ CREATE INDEX idx_vote_charges_tab_id ON vote_charges(tab_id) WHERE tab_id IS NOT
 
 CREATE TABLE conversations (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_by      UUID NOT NULL REFERENCES accounts(id),
+  created_by      UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   last_message_at TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -938,7 +938,7 @@ CREATE INDEX idx_drives_parent_conv ON pledge_drives(parent_conversation_id)
 CREATE TABLE pledges (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   drive_id      UUID NOT NULL REFERENCES pledge_drives(id),
-  pledger_id    UUID NOT NULL REFERENCES accounts(id),
+  pledger_id    UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   amount_pence  INT NOT NULL,
   status        pledge_status NOT NULL DEFAULT 'active',
   read_event_id UUID REFERENCES read_events(id),
@@ -1070,7 +1070,7 @@ CREATE INDEX idx_pub_follows_publication ON publication_follows (publication_id)
 
 CREATE TABLE publication_payouts (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  publication_id      UUID NOT NULL REFERENCES publications(id),
+  publication_id      UUID NOT NULL REFERENCES publications(id) ON DELETE CASCADE,
   total_pool_pence    INTEGER NOT NULL,
   platform_fee_pence  INTEGER NOT NULL,
   flat_fees_paid_pence INTEGER NOT NULL DEFAULT 0,

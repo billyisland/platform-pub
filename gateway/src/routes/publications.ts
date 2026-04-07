@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { pool } from '../../shared/src/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { requirePublicationPermission, requirePublicationOwner } from '../middleware/publication-auth.js'
-import { generateKeypair } from '../lib/key-custody-client.js'
+import { generateKeypair, signEvent } from '../lib/key-custody-client.js'
+import { publishToRelay } from '../lib/nostr-publisher.js'
 import { publishToPublication, approveAndPublishArticle } from '../services/publication-publisher.js'
 import logger from '../../shared/src/lib/logger.js'
 
@@ -202,6 +203,7 @@ export async function publicationRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'No fields to update' })
       }
 
+      setClauses.push(`updated_at = now()`)
       values.push(id)
       await pool.query(
         `UPDATE publications SET ${setClauses.join(', ')} WHERE id = $${idx}`,
@@ -756,11 +758,41 @@ export async function publicationRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id, articleId } = req.params
 
-      await pool.query(
+      const articleResult = await pool.query<{
+        nostr_event_id: string
+        nostr_d_tag: string
+        nostr_pubkey: string
+      }>(
         `UPDATE articles SET deleted_at = now(), publication_article_status = 'unpublished'
-         WHERE id = $1 AND publication_id = $2`,
+         WHERE id = $1 AND publication_id = $2
+         RETURNING nostr_event_id, nostr_d_tag,
+           (SELECT nostr_pubkey FROM publications WHERE id = $2) AS nostr_pubkey`,
         [articleId, id]
       )
+
+      if (articleResult.rows.length === 0) {
+        return reply.status(404).send({ error: 'Article not found' })
+      }
+
+      const article = articleResult.rows[0]
+
+      // Publish kind 5 deletion event to the relay
+      try {
+        const deletionEvent = await signEvent(id, {
+          kind: 5,
+          content: '',
+          tags: [
+            ['e', article.nostr_event_id],
+            ['a', `30023:${article.nostr_pubkey}:${article.nostr_d_tag}`],
+          ],
+          created_at: Math.floor(Date.now() / 1000),
+        }, 'publication')
+        await publishToRelay(deletionEvent as any)
+        logger.info({ articleId, deletionEventId: deletionEvent.id }, 'Kind 5 deletion event published for publication article')
+      } catch (err) {
+        // Non-fatal: DB is source of truth; feed will still exclude via deleted_at
+        logger.error({ err, articleId }, 'Failed to publish kind 5 deletion event for publication article')
+      }
 
       return reply.send({ ok: true })
     }

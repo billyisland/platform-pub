@@ -215,6 +215,7 @@ Multi-writer federated publications with shared identity, editorial pipeline, an
 ### Infrastructure (fit in as time allows)
 
 - CI/CD pipeline
+- Standardise gateway error response shapes — 222 error responses across 24 route files use 4 different shapes (`{ error: string }`, `{ error: { code, message } }`, `{ error: ZodFlattenedError }`, `{ error: string, message: string }`). `gateway/src/lib/errors.ts` has an unused `sendError` helper ready to adopt. Mechanical refactor, no runtime bugs.
 - TypeScript strictness (eliminate remaining ~23 `any` instances)
 - Accessibility pass
 - TypeScript target alignment

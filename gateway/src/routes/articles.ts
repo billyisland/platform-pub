@@ -377,8 +377,9 @@ export async function articleRoutes(app: FastifyInstance) {
           writer_id: string
           price_pence: number
           access_mode: string
+          publication_id: string | null
         }>(
-          `SELECT id, writer_id, price_pence, access_mode
+          `SELECT id, writer_id, price_pence, access_mode, publication_id
            FROM articles WHERE nostr_event_id = $1`,
           [nostrEventId]
         )
@@ -393,7 +394,7 @@ export async function articleRoutes(app: FastifyInstance) {
         }
 
         // Check for free access (own content, permanent unlock, subscription)
-        const access = await checkArticleAccess(readerId, article.id, article.writer_id)
+        const access = await checkArticleAccess(readerId, article.id, article.writer_id, article.publication_id)
         if (access.hasAccess) {
           // If subscription read, record the zero-cost read + permanent unlock
           if (access.reason === 'subscription' && access.subscriptionId) {

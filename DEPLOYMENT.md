@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.21.0
+# all.haus — Deployment Reference v5.22.0
 
 **Date:** 7 April 2026
-**Replaces:** v5.20.0 (see bottom for change log)
+**Replaces:** v5.21.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -1086,6 +1086,21 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
+### v5.22.0 — 7 April 2026
+
+**Audit fixes: critical bugs, dead code removal, editor polish**
+
+No new migration. Services changed: gateway, web. Schema updated: `schema.sql`.
+
+- **Gate-pass publication access fix (critical):** The gate-pass handler now SELECTs `publication_id` from the article and passes it to `checkArticleAccess()`. Previously publication members and subscribers were incorrectly charged for reading their own publication's paywalled articles.
+- **schema.sql ON DELETE clauses:** Synced `schema.sql` with migration 021 — added missing `ON DELETE CASCADE`, `ON DELETE RESTRICT`, and `ON DELETE SET NULL` clauses to FK constraints on `subscriptions`, `subscription_events`, `article_unlocks`, `vote_charges`, `pledges`, `conversations`, and `publication_payouts`. Fresh database instances from `schema.sql` now match migrated databases.
+- **Publication article kind 5 deletion:** `DELETE /publications/:id/articles/:articleId` now publishes a Nostr kind 5 deletion event to the relay (matching the personal article delete behaviour). Previously deleted publication articles lingered on the relay.
+- **Publication PATCH updated_at:** `PATCH /publications/:id` now sets `updated_at = now()`.
+- **Dead code removal:** Deleted dead comment system (gateway route, 3 frontend components, lib file — never registered or imported). Removed legacy `/feed/global` and `/feed/following` endpoints from `notes.ts` (broken column name, no block/mute filtering, duplicated by `feed.ts`). Removed unused `feed.global()`, `feed.following()`, `feed.featured()` API client wrappers.
+- **Editor title/subtitle sizing:** Reduced title card padding from `p-8 sm:p-10` to `px-5 py-4` and title font from `text-4xl sm:text-5xl` to `text-2xl sm:text-3xl`. Subtitle card padding similarly reduced. Fields now match the proportions of surrounding controls.
+
+---
+
 ### v5.21.0 — 7 April 2026
 
 **Fix: gateway crash — duplicate route collision on publication articles**
@@ -1143,20 +1158,5 @@ New migration (038). Services changed: gateway, key-custody, web.
 - **Gateway:** `key-custody-client.ts` updated for `signerId`/`signerType`. New `publication-auth.ts` middleware. New `publications.ts` route file.
 - **CSS fix:** Removed global input/textarea/select reset (`bg-white` + `border: 1px solid`) from `globals.css` that was overriding editor field styling.
 
----
 
-### v5.17.0 — 6 April 2026
-
-**Separate crowdfunding drives from commissions, editor card refresh**
-
-No migration. Services changed: gateway, web.
-
-- **Crowdfunding drives are public, commissions are private (DM-only).** The `by-user` endpoint now filters to `origin = 'crowdfund'`, so commissions never appear on profiles or in the dashboard drives tab. Commission creation remains available exclusively in DM message threads via `CommissionForm`.
-- **`PledgeDrive` frontend type fixed** to match backend API response: `origin` (was `type`), `fundingTargetPence` (was `targetAmountPence`), `currentTotalPence` (was `currentAmountPence`), `pinned` (was `pinnedOnProfile`), status enum aligned to backend (`open | funded | published | fulfilled | expired | cancelled`).
-- **`Pledge` frontend type fixed** to match backend: `writer` is now nested `{ username, displayName }` (was flat `writerUsername`), added `driveStatus`.
-- **Commission UI removed from public surfaces:** Commission button removed from writer profiles (`WriterActivity`), note cards (`NoteCard`), and reply threads (`ReplyItem`). `CommissionCard.tsx` deleted (was unused). Dashboard `DriveCreateForm` no longer offers a commission option. Dashboard `DriveCard` no longer shows accept/decline commission UI. Dashboard `DrivesTab` no longer shows an "Incoming commissions" section.
-- **`CommissionForm` cleaned up:** dead `openToBakers` checkbox removed (was never sent to API). Form retained for DM use in `MessageThread.tsx`.
-- **Article editor:** title and standfirst are now separate `bg-grey-100` cards with `p-8 sm:p-10` padding, matching the body editor field. No hairlines between fields.
-
-
-> **Older versions:** Changelog entries for v5.13.0 and earlier are available in this file's git history.
+> **Older versions:** Changelog entries for v5.17.0 and earlier are available in this file's git history.

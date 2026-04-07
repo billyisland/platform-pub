@@ -262,19 +262,19 @@ export function ArticleEditor({
       {/* Sticky title + toolbar — stays visible while scrolling the body */}
       <div className="sticky top-[53px] lg:top-0 z-20 bg-white pb-4 mb-6">
       {/* Title card */}
-      <div className="bg-grey-100 p-8 sm:p-10 mb-2">
+      <div className="bg-grey-100 px-5 py-4 mb-2">
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Article title"
-          className="w-full border-none bg-transparent font-serif text-4xl font-medium italic text-black placeholder:text-grey-300 focus:outline-none sm:text-5xl"
+          className="w-full border-none bg-transparent font-serif text-2xl font-medium italic text-black placeholder:text-grey-300 focus:outline-none sm:text-3xl"
           style={{ letterSpacing: '-0.02em' }}
         />
       </div>
 
       {/* Standfirst card */}
-      <div className="bg-grey-100 p-8 sm:p-10 mb-2">
+      <div className="bg-grey-100 px-5 py-4 mb-2">
         <input
           type="text"
           value={dek}
