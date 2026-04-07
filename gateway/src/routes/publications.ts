@@ -859,11 +859,11 @@ export async function publicationRoutes(app: FastifyInstance) {
   )
 
   // ---------------------------------------------------------------------------
-  // GET /publications/:slug/articles — Published articles (paginated)
+  // GET /publications/by-slug/:slug/articles — Published articles (paginated)
   // ---------------------------------------------------------------------------
 
   app.get<{ Params: { slug: string }; Querystring: { limit?: string; offset?: string } }>(
-    '/publications/:slug/articles',
+    '/publications/by-slug/:slug/articles',
     async (req, reply) => {
       const { slug } = req.params
       const limit = Math.min(parseInt((req.query as any).limit ?? '20', 10), 50)

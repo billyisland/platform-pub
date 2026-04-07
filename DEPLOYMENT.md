@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.20.0
+# all.haus — Deployment Reference v5.21.0
 
-**Date:** 6 April 2026
-**Replaces:** v5.19.0 (see bottom for change log)
+**Date:** 7 April 2026
+**Replaces:** v5.20.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -250,6 +250,57 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
 
+### From v5.20.0
+
+No new migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
+
+This release fixes a Fastify duplicate-route crash that prevented the gateway from starting. The public published-articles endpoint (`GET /publications/:slug/articles`) collided with the CMS article-list endpoint (`GET /publications/:id/articles`) because Fastify treats path parameters at the same position as identical regardless of name. The public route is now at `/publications/by-slug/:slug/articles`.
+
+**Backend (gateway):**
+
+- **Route path change** (`publications.ts`): `GET /publications/:slug/articles` → `GET /publications/by-slug/:slug/articles`. Resolves `FST_ERR_DUPLICATED_ROUTE` crash on startup.
+
+**Frontend (web):**
+
+- **API client** (`api.ts`): `getPublicArticles()` updated to call `/publications/by-slug/${slug}/articles`.
+- **Publication homepage** (`pub/[slug]/page.tsx`): SSR fetch updated to new route path.
+- **Publication archive** (`pub/[slug]/archive/page.tsx`): SSR fetch updated to new route path.
+
+**Modified files:**
+
+- `gateway/src/routes/publications.ts` — public articles route path changed
+- `web/src/lib/api.ts` — `getPublicArticles` path updated
+- `web/src/app/pub/[slug]/page.tsx` — SSR fetch path updated
+- `web/src/app/pub/[slug]/archive/page.tsx` — SSR fetch path updated
+
+**Upgrade steps:**
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# No migration — route path fix only
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# gateway and web should show (healthy) after ~30s
+
+# Critical check — gateway must not be crash-looping:
+docker compose logs gateway --tail=5
+# Should show "Server listening" — not FST_ERR_DUPLICATED_ROUTE
+
+# Visual checks:
+# - /pub/<slug>: publication homepage loads with articles
+# - /pub/<slug>/archive: archive page loads with full article list
+```
+
+No new env vars. No database changes.
+
+---
+
 ### From v5.19.0
 
 No new migration. Services changed: **gateway**, **payment-service**, **web**. Deploy order: **rebuild gateway + payment + web**.
@@ -332,7 +383,7 @@ No changes beyond Phase 1 (signerType support already in place).
 - **Server-side publishing pipeline** (`publication-publisher.ts`): New service that orchestrates article submission — generates d-tags, builds NIP-23 events with author/publisher p-tags, signs with publication key via key-custody, publishes to relay, indexes in DB. Contributors without `can_publish` save as 'submitted'; editors approve and trigger full pipeline.
 - **Signing routes** (`signing.ts`): `/sign` and `/sign-and-publish` accept optional `publicationId` — checks `can_publish` permission, signs with publication key.
 - **Draft routes** (`drafts.ts`): drafts can be associated with a publication via `publicationId`.
-- **Public reader routes** (`publications.ts`): `GET /:slug/public` (full profile with follower/member/article counts, isFollowing, isSubscribed), `GET /:slug/articles` (paginated), `GET /:slug/masthead`.
+- **Public reader routes** (`publications.ts`): `GET /:slug/public` (full profile with follower/member/article counts, isFollowing, isSubscribed), `GET /by-slug/:slug/articles` (paginated), `GET /:slug/masthead`.
 - **Publication subscriptions** (`subscriptions.ts`): `POST/DELETE /subscriptions/publication/:id`.
 - **Publication follows** (`follows.ts`): `POST/DELETE /follows/publication/:id`. `GET /follows/pubkeys` includes followed publication pubkeys.
 - **Publication RSS** (`rss.ts`): `GET /api/v1/pub/:slug/rss`.
@@ -581,66 +632,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 
 No new env vars. No database changes.
 
----
-
-### From v5.15.0
-
-No migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
-
-This release adds inline subscription management to profile Following/Followers tabs and cleans up the article editor chrome.
-
-**Backend (gateway):**
-
-- `GET /writers/:username/following` — now returns `subscriptionPricePence` and `hasPaywalledArticle` for each followed writer, enabling the frontend to show subscribe buttons inline.
-- `GET /writers/:username/followers` — when the authenticated user is the profile owner, each follower includes `subscriptionStatus` (`'active'` or `'cancelled'`) if they are a subscriber.
-
-**Frontend (web):**
-
-- **FollowingTab** (own profile) — each followed writer now shows:
-  - **Unfollow button** — removes the follow immediately.
-  - **Subscribe button** — shown if the writer sells subscriptions and you're not subscribed; displays price (e.g. "Subscribe £5.00/mo").
-  - **Subscribed button** — for active subscriptions; clicking opens a confirmation modal explaining that access continues until the end of the paid billing period. "Keep subscription" / "Cancel subscription" actions.
-  - **Cancelled state** — button shows "Cancelled — resubscribe" in red with access-until tooltip; clicking resubscribes.
-  - When viewing another user's profile, the tab displays as before (public "Subscribes to" section).
-- **FollowersTab** (own profile) — followers with an active subscription show a "Subscriber" badge next to their name.
-- **Article editor** — title and standfirst inputs wrapped in a single continuous grey (`bg-grey-100`) card with no hairlines between them. Toolbar changed from grey to white (`bg-white`). Gaps between fields eliminated. *(Superseded in v5.17.0 — title and standfirst are now separate cards.)*
-- **API client** (`web/src/lib/api.ts`) — added missing `social.block(userId)` and `social.mute(userId)` POST wrappers to match existing backend endpoints.
-
-**Modified files:**
-
-- `gateway/src/routes/writers.ts` — enriched following/followers responses
-- `web/src/components/profile/WriterActivity.tsx` — passes `isOwnProfile` to FollowersTab and FollowingTab
-- `web/src/components/profile/FollowingTab.tsx` — rewritten: subscription management, unfollow, confirmation modal
-- `web/src/components/profile/FollowersTab.tsx` — subscriber badge for own-profile view
-- `web/src/components/editor/ArticleEditor.tsx` — grey card for title/standfirst, white toolbar, hairlines removed
-- `web/src/lib/api.ts` — added `social.block()` and `social.mute()` methods
-
-**Upgrade steps:**
-```bash
-cd /root/platform-pub
-git pull origin master
-
-# No migration needed — only code changes
-docker compose build gateway web
-docker compose up -d gateway web
-```
-
-Verify:
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# gateway and web should show (healthy) after ~30s
-
-# Visual checks:
-# - Visit own profile → Following tab: each writer should have Unfollow button + Subscribe/Subscribed
-# - Click "Subscribed" → modal asks to confirm cancellation with period-end date
-# - Confirm → button changes to "Cancelled — resubscribe"
-# - Visit own profile → Followers tab: subscribers show "Subscriber" badge
-# - /write page: title + standfirst are one continuous grey card, toolbar is white
-```
-
-No new env vars. No database changes.
-
-> **Older versions:** Upgrade instructions for v5.14.0 and earlier are available in this file's git history.
+> **Older versions:** Upgrade instructions for v5.16.0 and earlier are available in this file's git history.
 
 ---
 
@@ -839,7 +831,7 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 | POST | /api/v1/publications/:id/articles/:articleId/publish | session (can_publish) | Approve and publish article |
 | POST | /api/v1/publications/:id/articles/:articleId/unpublish | session (can_publish) | Unpublish article |
 | GET | /api/v1/publications/:slug/public | optional | Public publication profile |
-| GET | /api/v1/publications/:slug/articles | optional | Published articles (paginated) |
+| GET | /api/v1/publications/by-slug/:slug/articles | optional | Published articles (paginated) |
 | GET | /api/v1/publications/:slug/masthead | optional | Public member list |
 | POST | /api/v1/subscriptions/publication/:id | session | Subscribe to publication |
 | DELETE | /api/v1/subscriptions/publication/:id | session | Cancel publication subscription |
@@ -1094,6 +1086,16 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ## Change log
 
+### v5.21.0 — 7 April 2026
+
+**Fix: gateway crash — duplicate route collision on publication articles**
+
+No migration. Services changed: gateway, web.
+
+- **Route collision fix:** `GET /publications/:slug/articles` (public) and `GET /publications/:id/articles` (CMS) registered identical Fastify route patterns, causing `FST_ERR_DUPLICATED_ROUTE` and a gateway crash loop. Public route moved to `GET /publications/by-slug/:slug/articles`. Frontend callers (`api.ts`, `pub/[slug]/page.tsx`, `pub/[slug]/archive/page.tsx`) updated.
+
+---
+
 ### v5.20.0 — 6 April 2026
 
 **Publications Phase 5: Revenue — rate card, payroll, payout worker, earnings dashboard**
@@ -1156,28 +1158,5 @@ No migration. Services changed: gateway, web.
 - **`CommissionForm` cleaned up:** dead `openToBakers` checkbox removed (was never sent to API). Form retained for DM use in `MessageThread.tsx`.
 - **Article editor:** title and standfirst are now separate `bg-grey-100` cards with `p-8 sm:p-10` padding, matching the body editor field. No hairlines between fields.
 
----
 
-### v5.13.0 — 6 April 2026
-
-**Subscription offers system (discount codes + gifted subscriptions)**
-
-New migration (037). Services changed: gateway, web.
-
-- **Subscription offers table:** `subscription_offers` with two modes — `code` (shareable link, anyone redeems) and `grant` (assigned to a specific reader). Writer-configurable: label, discount % (0–100), duration in months (or permanent), max redemptions, expiry date.
-- **Offer-aware subscribe:** `POST /subscriptions/:writerId` accepts optional `offerCode`. Validates offer (not revoked, not expired, under redemption cap, grant recipient matches), applies discount to price, sets `offer_id` and `offer_periods_remaining` on the subscription row, increments redemption count.
-- **Offer period expiry in renewal:** `expireAndRenewSubscriptions()` decrements `offer_periods_remaining` on each renewal. When it reaches 0, the subscription reverts to the writer's current standard price and the offer columns are cleared.
-- **Dashboard Offers tab:** New tab between "Pledge drives" and "Settings". "New offer code" and "Gift subscription" inline forms. Offers table with mode badge, discount, duration, redemption count, copy-link, and revoke actions. Collapsible revoked section.
-- **Redeem page (`/subscribe/:code`):** Public landing page for offer codes. Shows writer name, offer label, standard vs discounted price, duration info. Auth gate with redirect-back. Subscribe button with success redirect to writer profile.
-- **Editor bug fixes:** Fixed stale closure in auto-save (title/dek/price now use refs), fixed price auto-suggestion overwriting manual edits (tracks `userSetPrice`), applied grey-card styling refresh to editor surfaces.
-
-**Upgrade steps:**
-```bash
-docker compose exec -T postgres psql -U platformpub platformpub \
-  < migrations/037_subscription_offers.sql
-docker compose build gateway web
-docker compose up -d gateway web
-```
-
-
-> **Older versions:** Changelog entries for v5.12.0 and earlier are available in this file's git history.
+> **Older versions:** Changelog entries for v5.13.0 and earlier are available in this file's git history.

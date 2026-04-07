@@ -1174,7 +1174,7 @@ export const publications = {
     if (opts?.limit) params.set('limit', String(opts.limit))
     if (opts?.offset) params.set('offset', String(opts.offset))
     const qs = params.toString()
-    return request<{ articles: any[] }>(`/publications/${slug}/articles${qs ? `?${qs}` : ''}`)
+    return request<{ articles: any[] }>(`/publications/by-slug/${slug}/articles${qs ? `?${qs}` : ''}`)
   },
 
   getMasthead: (slug: string) =>

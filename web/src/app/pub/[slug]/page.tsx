@@ -14,7 +14,7 @@ async function getPublication(slug: string) {
 }
 
 async function getArticles(slug: string) {
-  const res = await fetch(`${GATEWAY}/api/v1/publications/${slug}/articles?limit=20`, {
+  const res = await fetch(`${GATEWAY}/api/v1/publications/by-slug/${slug}/articles?limit=20`, {
     next: { revalidate: 60 },
   })
   if (!res.ok) return { articles: [] }
