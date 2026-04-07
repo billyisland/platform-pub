@@ -76,6 +76,7 @@ export async function noteRoutes(app: FastifyInstance) {
       )
 
       // Notify quoted content author (fire-and-forget)
+      const noteId = result.rows[0].id
       if (data.isQuoteComment && data.quotedEventId) {
         const quotedNote = await pool.query<{ author_id: string }>(
           `SELECT author_id FROM notes WHERE nostr_event_id = $1`,
@@ -91,10 +92,10 @@ export async function noteRoutes(app: FastifyInstance) {
         if (quotedAuthorId && quotedAuthorId !== authorId) {
           try {
             await pool.query(
-              `INSERT INTO notifications (recipient_id, actor_id, type)
-               VALUES ($1, $2, 'new_quote')
+              `INSERT INTO notifications (recipient_id, actor_id, type, note_id)
+               VALUES ($1, $2, 'new_quote', $3)
                ON CONFLICT DO NOTHING`,
-              [quotedAuthorId, authorId]
+              [quotedAuthorId, authorId, noteId]
             )
           } catch (err) {
             logger.warn({ err }, 'Failed to insert new_quote notification')
@@ -112,14 +113,14 @@ export async function noteRoutes(app: FastifyInstance) {
         )
         if (mentionedUsers.length > 0) {
           const values: string[] = []
-          const params: string[] = []
+          const params: string[] = [noteId]
           mentionedUsers.forEach((mentioned, i) => {
-            values.push(`($${i * 2 + 1}, $${i * 2 + 2}, 'new_mention')`)
+            values.push(`($${i * 2 + 2}, $${i * 2 + 3}, 'new_mention', $1)`)
             params.push(mentioned.id, authorId)
           })
           try {
             await pool.query(
-              `INSERT INTO notifications (recipient_id, actor_id, type)
+              `INSERT INTO notifications (recipient_id, actor_id, type, note_id)
                VALUES ${values.join(', ')}
                ON CONFLICT DO NOTHING`,
               params

@@ -36,16 +36,28 @@ function getDestUrl(n: Notification): string {
           ? `/article/${n.article.slug}#reply-${n.comment.id}`
           : `/article/${n.article.slug}`
       }
-      return '#'
+      // Reply to a note — go to the actor's profile
+      return n.actor?.username ? `/${n.actor.username}` : '#'
     case 'new_quote':
     case 'new_mention':
-      return n.article?.slug ? `/article/${n.article.slug}` : '#'
+      if (n.article?.slug) return `/article/${n.article.slug}`
+      // Note-based quote/mention — go to the actor's profile
+      return n.actor?.username ? `/${n.actor.username}` : '#'
     case 'commission_request':
     case 'drive_funded':
     case 'pledge_fulfilled':
       return '/dashboard?tab=drives'
     case 'new_message':
       return n.conversationId ? `/messages#${n.conversationId}` : '/messages'
+    case 'pub_article_submitted':
+    case 'pub_article_published':
+      return n.article?.slug ? `/article/${n.article.slug}` : '#'
+    case 'pub_invite_received':
+      return '/dashboard'
+    case 'pub_new_subscriber':
+    case 'pub_member_joined':
+    case 'pub_member_left':
+      return n.actor?.username ? `/${n.actor.username}` : '#'
     default:
       return '#'
   }
@@ -98,6 +110,12 @@ function NotificationItem({ n, onRead }: { n: Notification; onRead: (id: string,
       drive_funded: 'your pledge drive reached its goal',
       pledge_fulfilled: 'a pledge drive you backed was published',
       new_message: 'sent you a message',
+      pub_article_submitted: 'submitted an article for review',
+      pub_article_published: 'published your article',
+      pub_new_subscriber: 'subscribed to your publication',
+      pub_invite_received: 'invited you to a publication',
+      pub_member_joined: 'joined your publication',
+      pub_member_left: 'left your publication',
     }
     const label = simpleLabels[n.type] ?? 'sent you a notification'
     body = (

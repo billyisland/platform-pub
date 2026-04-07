@@ -492,6 +492,12 @@ export type NotificationType =
   | 'drive_funded'
   | 'pledge_fulfilled'
   | 'new_message'
+  | 'pub_article_submitted'
+  | 'pub_article_published'
+  | 'pub_new_subscriber'
+  | 'pub_invite_received'
+  | 'pub_member_joined'
+  | 'pub_member_left'
 
 export interface Notification {
   id: string

@@ -122,20 +122,22 @@ export async function replyRoutes(app: FastifyInstance) {
         [authorId, data.targetEventId, contentAuthorId]
       ).catch(err => logger.warn({ err }, 'Failed to insert reply feed_engagement'))
 
+      // Resolve target article/note for notification context
+      const articleRow = data.targetKind === 30023
+        ? await pool.query<{ id: string }>(
+            `SELECT id FROM articles WHERE nostr_event_id = $1 AND deleted_at IS NULL`,
+            [data.targetEventId]
+          ).then((r) => r.rows[0] ?? null)
+        : null
+      const noteRow = data.targetKind === 1
+        ? await pool.query<{ id: string }>(
+            `SELECT id FROM notes WHERE nostr_event_id = $1`,
+            [data.targetEventId]
+          ).then((r) => r.rows[0] ?? null)
+        : null
+
       // Notify content author of new reply (skip if replying to own content)
       if (authorId !== contentAuthorId) {
-        const articleRow = data.targetKind === 30023
-          ? await pool.query<{ id: string }>(
-              `SELECT id FROM articles WHERE nostr_event_id = $1 AND deleted_at IS NULL`,
-              [data.targetEventId]
-            ).then((r) => r.rows[0] ?? null)
-          : null
-        const noteRow = data.targetKind === 1
-          ? await pool.query<{ id: string }>(
-              `SELECT id FROM notes WHERE nostr_event_id = $1`,
-              [data.targetEventId]
-            ).then((r) => r.rows[0] ?? null)
-          : null
         pool.query(
           `INSERT INTO notifications (recipient_id, actor_id, type, article_id, note_id, comment_id)
            VALUES ($1, $2, 'new_reply', $3, $4, $5)
@@ -159,10 +161,10 @@ export async function replyRoutes(app: FastifyInstance) {
         )
         for (const mentioned of mentionedUsers) {
           pool.query(
-            `INSERT INTO notifications (recipient_id, actor_id, type)
-             VALUES ($1, $2, 'new_mention')
+            `INSERT INTO notifications (recipient_id, actor_id, type, article_id, note_id)
+             VALUES ($1, $2, 'new_mention', $3, $4)
              ON CONFLICT DO NOTHING`,
-            [mentioned.id, authorId]
+            [mentioned.id, authorId, articleRow?.id ?? null, noteRow?.id ?? null]
           ).catch((err) => logger.warn({ err }, 'Failed to insert mention notification'))
         }
       }
