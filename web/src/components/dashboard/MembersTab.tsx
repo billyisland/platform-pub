@@ -102,7 +102,7 @@ export function MembersTab({ publicationId, canManageMembers }: Props) {
                 type="email"
                 value={inviteEmail}
                 onChange={e => setInviteEmail(e.target.value)}
-                className="border border-grey-200 px-3 py-1.5 text-sm text-black w-60"
+                className="bg-grey-100 px-3 py-1.5 text-sm text-black w-60"
                 placeholder="writer@example.com"
               />
             </div>
@@ -111,7 +111,7 @@ export function MembersTab({ publicationId, canManageMembers }: Props) {
               <select
                 value={inviteRole}
                 onChange={e => setInviteRole(e.target.value)}
-                className="border border-grey-200 px-3 py-1.5 text-sm text-black"
+                className="bg-grey-100 px-3 py-1.5 text-sm text-black"
               >
                 <option value="contributor">Contributor</option>
                 <option value="editor">Editor</option>

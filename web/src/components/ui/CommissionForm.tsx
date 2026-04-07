@@ -54,7 +54,7 @@ export function CommissionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white border border-grey-200 p-5">
+    <form onSubmit={handleSubmit} className="bg-white p-5">
       <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400 mb-3">
         Commission {targetWriterName}
       </p>
@@ -66,7 +66,7 @@ export function CommissionForm({
         value={pitch}
         onChange={(e) => setPitch(e.target.value)}
         placeholder="Describe the piece you'd like to see…"
-        className="w-full border border-grey-200 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 bg-white mb-4 resize-none"
+        className="w-full bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 mb-4 resize-none"
         rows={3}
       />
 
@@ -82,7 +82,7 @@ export function CommissionForm({
           value={amountPounds}
           onChange={(e) => setAmountPounds(e.target.value)}
           placeholder="0.00"
-          className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300 bg-white"
+          className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
         />
       </div>
 

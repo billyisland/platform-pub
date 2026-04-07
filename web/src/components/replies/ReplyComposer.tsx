@@ -123,7 +123,7 @@ export function ReplyComposer({
             rows={1}
             className={`w-full resize-none text-ui-sm text-black placeholder:text-grey-300 focus:outline-none leading-relaxed transition-all ${
               isExpanded
-                ? 'bg-white px-3.5 py-2 border border-grey-200 focus:border-grey-400'
+                ? 'bg-grey-100 px-3.5 py-2'
                 : 'bg-grey-100/60 px-3.5 py-2'
             }`}
           />

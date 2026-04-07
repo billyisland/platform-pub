@@ -173,7 +173,7 @@ export default function DashboardPage() {
               }}
               maxLength={80}
               placeholder="The Daily Dispatch"
-              className="w-full border border-grey-200 px-3 py-2 text-sm text-black placeholder-grey-300 focus:outline-none focus:ring-1 focus:ring-crimson/50"
+              className="w-full bg-grey-100 px-3 py-2 text-sm text-black placeholder-grey-300 focus:outline-none"
             />
           </div>
           <div>
@@ -187,7 +187,7 @@ export default function DashboardPage() {
                 onChange={(e) => setNewPubSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                 maxLength={60}
                 placeholder="daily-dispatch"
-                className="flex-1 border border-grey-200 px-3 py-2 text-sm text-black placeholder-grey-300 focus:outline-none focus:ring-1 focus:ring-crimson/50"
+                className="flex-1 bg-grey-100 px-3 py-2 text-sm text-black placeholder-grey-300 focus:outline-none"
               />
             </div>
           </div>
@@ -352,12 +352,19 @@ function DraftsTab() {
 }
 
 // =============================================================================
-// Pricing Tab — subscription price, Stripe status
+// Pricing Tab — subscription price, per-article pricing, Stripe status
 // =============================================================================
 
 function PricingTab({ stripeReady }: { stripeReady: boolean }) {
+  const { user, fetchMe } = useAuth()
   const [subPrice, setSubPrice] = useState('')
   const [annualDiscount, setAnnualDiscount] = useState('15')
+  const [articlePriceMode, setArticlePriceMode] = useState<'auto' | 'fixed'>(
+    user?.defaultArticlePricePence != null ? 'fixed' : 'auto'
+  )
+  const [fixedArticlePrice, setFixedArticlePrice] = useState(
+    user?.defaultArticlePricePence != null ? (user.defaultArticlePricePence / 100).toFixed(2) : ''
+  )
   const [savingPrice, setSavingPrice] = useState(false)
   const [priceMsg, setPriceMsg] = useState<string | null>(null)
 
@@ -367,10 +374,17 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
     const discount = parseInt(annualDiscount, 10)
     if (isNaN(pence) || pence < 0) { setPriceMsg('Enter a valid price.'); return }
     if (isNaN(discount) || discount < 0 || discount > 30) { setPriceMsg('Discount must be 0–30%.'); return }
+    const defaultArticlePricePence = articlePriceMode === 'fixed'
+      ? Math.round(parseFloat(fixedArticlePrice || '0') * 100)
+      : null
+    if (articlePriceMode === 'fixed' && (isNaN(defaultArticlePricePence!) || defaultArticlePricePence! < 0)) {
+      setPriceMsg('Enter a valid per-article price.'); return
+    }
     setSavingPrice(true); setPriceMsg(null)
     try {
-      await accountApi.updateSubscriptionPrice(pence, discount)
-      setPriceMsg('Subscription price updated.')
+      await accountApi.updateSubscriptionPrice(pence, discount, defaultArticlePricePence)
+      await fetchMe()
+      setPriceMsg('Pricing updated.')
     } catch { setPriceMsg('Failed to update.') }
     finally { setSavingPrice(false) }
   }
@@ -382,50 +396,108 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
 
   return (
     <div className="space-y-8">
-      {/* Subscription price */}
-      <div className="bg-white px-6 py-5">
-        <p className="label-ui text-grey-400 mb-4">Subscription pricing</p>
-        <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
-          Set the monthly price readers pay to subscribe to your content. Readers can also choose an annual plan at a discount you configure.
-        </p>
-        <form onSubmit={handleSavePrice} className="space-y-4">
-          <div className="flex items-center gap-3">
-            <span className="text-[14px] font-sans text-grey-400">£</span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={subPrice}
-              onChange={(e) => setSubPrice(e.target.value)}
-              className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
-              placeholder="3.00"
-            />
-            <span className="text-[13px] font-sans text-grey-300">/month</span>
+      <form onSubmit={handleSavePrice} className="space-y-8">
+        {/* Subscription price */}
+        <div className="bg-white px-6 py-5">
+          <p className="label-ui text-grey-400 mb-4">Subscription pricing</p>
+          <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
+            Set the monthly price readers pay to subscribe to your content. Readers can also choose an annual plan at a discount you configure.
+          </p>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-[14px] font-sans text-grey-400">£</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={subPrice}
+                onChange={(e) => setSubPrice(e.target.value)}
+                className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                placeholder="3.00"
+              />
+              <span className="text-[13px] font-sans text-grey-300">/month</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[14px] font-sans text-grey-400 w-[13px]">%</span>
+              <input
+                type="number"
+                min="0"
+                max="30"
+                value={annualDiscount}
+                onChange={(e) => setAnnualDiscount(e.target.value)}
+                className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                placeholder="15"
+              />
+              <span className="text-[13px] font-sans text-grey-300">annual discount</span>
+            </div>
+            {monthlyPence > 0 && (
+              <p className="text-[13px] font-sans text-grey-400">
+                Readers pay £{subPrice}/mo or £{annualPounds}/year{discountPct > 0 ? ` (save ${discountPct}%)` : ''}
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-[14px] font-sans text-grey-400 w-[13px]">%</span>
-            <input
-              type="number"
-              min="0"
-              max="30"
-              value={annualDiscount}
-              onChange={(e) => setAnnualDiscount(e.target.value)}
-              className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
-              placeholder="15"
-            />
-            <span className="text-[13px] font-sans text-grey-300">annual discount</span>
+        </div>
+
+        {/* Per-article pricing */}
+        <div className="bg-white px-6 py-5">
+          <p className="label-ui text-grey-400 mb-4">Per-article pricing</p>
+          <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
+            Default price for paywalled articles. You can override this per article in the editor. Free articles are always free.
+          </p>
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => setArticlePriceMode('auto')}
+              className={`w-full text-left px-4 py-3 transition-colors ${
+                articlePriceMode === 'auto' ? 'bg-black text-white' : 'bg-grey-100 text-black hover:bg-grey-200/60'
+              }`}
+            >
+              <p className={`text-ui-sm font-medium ${articlePriceMode === 'auto' ? 'text-white' : 'text-black'}`}>
+                Auto
+              </p>
+              <p className={`text-ui-xs mt-0.5 ${articlePriceMode === 'auto' ? 'text-grey-300' : 'text-grey-400'}`}>
+                Price scales with article length
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setArticlePriceMode('fixed')}
+              className={`w-full text-left px-4 py-3 transition-colors ${
+                articlePriceMode === 'fixed' ? 'bg-black text-white' : 'bg-grey-100 text-black hover:bg-grey-200/60'
+              }`}
+            >
+              <p className={`text-ui-sm font-medium ${articlePriceMode === 'fixed' ? 'text-white' : 'text-black'}`}>
+                Fixed default
+              </p>
+              <p className={`text-ui-xs mt-0.5 ${articlePriceMode === 'fixed' ? 'text-grey-300' : 'text-grey-400'}`}>
+                Same starting price for every paywalled article
+              </p>
+            </button>
+            {articlePriceMode === 'fixed' && (
+              <div className="flex items-center gap-3 pt-1">
+                <span className="text-[14px] font-sans text-grey-400">£</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={fixedArticlePrice}
+                  onChange={(e) => setFixedArticlePrice(e.target.value)}
+                  className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                  placeholder="0.20"
+                />
+                <span className="text-[13px] font-sans text-grey-300">per read</span>
+              </div>
+            )}
           </div>
-          {monthlyPence > 0 && (
-            <p className="text-[13px] font-sans text-grey-400">
-              Readers pay £{subPrice}/mo or £{annualPounds}/year{discountPct > 0 ? ` (save ${discountPct}%)` : ''}
-            </p>
-          )}
+        </div>
+
+        <div className="px-6">
           <button type="submit" disabled={savingPrice} className="btn text-sm disabled:opacity-50">
-            {savingPrice ? 'Saving…' : 'Save'}
+            {savingPrice ? 'Saving…' : 'Save pricing'}
           </button>
-        </form>
-        {priceMsg && <p className="text-[13px] font-sans text-grey-600 mt-2">{priceMsg}</p>}
-      </div>
+          {priceMsg && <p className="text-[13px] font-sans text-grey-600 mt-2">{priceMsg}</p>}
+        </div>
+      </form>
 
       {/* Stripe Connect status */}
       <div className="bg-white px-6 py-5">

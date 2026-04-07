@@ -32,8 +32,8 @@ function timeAgo(unixSeconds: number): string {
 }
 
 function getStoredReach(): FeedReach {
-  if (typeof window === 'undefined') return 'following'
-  return (localStorage.getItem('feedReach') as FeedReach) || 'following'
+  if (typeof window === 'undefined') return 'explore'
+  return (localStorage.getItem('feedReach') as FeedReach) || 'explore'
 }
 
 export function FeedView() {
@@ -149,23 +149,7 @@ export function FeedView() {
           />
         </div>
 
-        {/* Reach selector */}
-        <div className="px-6 pb-3 flex gap-1">
-          {(['following', 'explore'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => handleReachChange(mode)}
-              className={[
-                'font-mono text-[11px] uppercase tracking-[0.06em] px-3 py-1.5 transition-colors',
-                reach === mode
-                  ? 'bg-black text-white'
-                  : 'bg-grey-100 text-grey-400 hover:text-black',
-              ].join(' ')}
-            >
-              {mode === 'following' ? 'Following' : 'Explore'}
-            </button>
-          ))}
-        </div>
+        <div className="h-3" />
       </div>
 
       {/* Feed */}

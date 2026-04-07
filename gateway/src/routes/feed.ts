@@ -10,7 +10,7 @@ import logger from '../../shared/src/lib/logger.js'
 //
 // Single endpoint with a "reach" dial:
 //   following — chronological feed from followed authors (+ own content)
-//   explore   — platform-wide trending, scored by engagement velocity
+//   explore   — everything published on the platform, chronological
 //
 // Blocks and mutes are excluded at every level.
 // =============================================================================
@@ -155,48 +155,63 @@ async function followingFeed(readerId: string, cursor: number | undefined, limit
 }
 
 // =============================================================================
-// explore — platform-wide, ranked by engagement score
+// explore — everything published on the platform, chronological
 // =============================================================================
 
 async function exploreFeed(readerId: string, cursor: number | undefined, limit: number) {
-  // Score-based cursor: items with score < cursor value
-  const cursorClause = cursor ? `AND fs.score < $3` : ''
+  const cursorClause = cursor ? `AND EXTRACT(EPOCH FROM a.published_at)::bigint < $3` : ''
+  const noteCursorClause = cursor ? `AND EXTRACT(EPOCH FROM n.published_at)::bigint < $3` : ''
+  const newUserCursorClause = cursor ? `AND EXTRACT(EPOCH FROM acc.created_at)::bigint < $3` : ''
   const params: any[] = cursor ? [readerId, limit, cursor] : [readerId, limit]
 
-  const { rows } = await pool.query(`
-    SELECT
-      fs.nostr_event_id, fs.content_type, fs.score, fs.published_at,
-      CASE WHEN fs.content_type = 'article' THEN a.nostr_d_tag END AS nostr_d_tag,
-      CASE WHEN fs.content_type = 'article' THEN a.title END AS title,
-      CASE WHEN fs.content_type = 'article' THEN a.summary END AS summary,
-      CASE WHEN fs.content_type = 'article' THEN a.content_free END AS content_free,
-      CASE WHEN fs.content_type = 'article' THEN a.access_mode END AS access_mode,
-      CASE WHEN fs.content_type = 'article' THEN a.price_pence END AS price_pence,
-      CASE WHEN fs.content_type = 'article' THEN a.gate_position_pct END AS gate_position_pct,
-      CASE WHEN fs.content_type = 'note' THEN n.content END AS content,
-      CASE WHEN fs.content_type = 'note' THEN n.is_quote_comment END AS is_quote_comment,
-      CASE WHEN fs.content_type = 'note' THEN n.quoted_event_id END AS quoted_event_id,
-      CASE WHEN fs.content_type = 'note' THEN n.quoted_event_kind END AS quoted_event_kind,
-      CASE WHEN fs.content_type = 'note' THEN n.quoted_excerpt END AS quoted_excerpt,
-      CASE WHEN fs.content_type = 'note' THEN n.quoted_title END AS quoted_title,
-      CASE WHEN fs.content_type = 'note' THEN n.quoted_author END AS quoted_author,
-      acc.nostr_pubkey,
-      EXTRACT(EPOCH FROM fs.published_at)::bigint AS published_at_epoch
-    FROM feed_scores fs
-    LEFT JOIN articles a ON a.nostr_event_id = fs.nostr_event_id AND fs.content_type = 'article'
-    LEFT JOIN notes n ON n.nostr_event_id = fs.nostr_event_id AND fs.content_type = 'note'
-    JOIN accounts acc ON acc.id = fs.author_id
-    WHERE fs.published_at > now() - interval '48 hours'
-      AND ${BLOCK_FILTER('fs.author_id', 1)}
-      AND ${MUTE_FILTER('fs.author_id', 1)}
-      ${cursorClause}
-    ORDER BY fs.score DESC
-    LIMIT $2
-  `, params)
+  const [articlesRes, notesRes, newUsersRes] = await Promise.all([
+    pool.query(`
+      SELECT ${ARTICLE_COLS}
+      FROM articles a
+      JOIN accounts acc ON acc.id = a.writer_id
+      WHERE a.deleted_at IS NULL
+        AND a.published_at IS NOT NULL
+        AND ${BLOCK_FILTER('a.writer_id', 1)}
+        AND ${MUTE_FILTER('a.writer_id', 1)}
+        ${cursorClause}
+      ORDER BY a.published_at DESC
+      LIMIT $2
+    `, params),
+    pool.query(`
+      SELECT ${NOTE_COLS}
+      FROM notes n
+      JOIN accounts acc ON acc.id = n.author_id
+      WHERE n.reply_to_event_id IS NULL
+        AND ${BLOCK_FILTER('n.author_id', 1)}
+        AND ${MUTE_FILTER('n.author_id', 1)}
+        ${noteCursorClause}
+      ORDER BY n.published_at DESC
+      LIMIT $2
+    `, params),
+    pool.query(`
+      SELECT acc.username, acc.display_name, acc.avatar,
+        EXTRACT(EPOCH FROM acc.created_at)::bigint AS joined_at
+      FROM accounts acc
+      WHERE acc.id != $1
+        AND ${BLOCK_FILTER('acc.id', 1)}
+        AND ${MUTE_FILTER('acc.id', 1)}
+        ${newUserCursorClause}
+      ORDER BY acc.created_at DESC
+      LIMIT 5
+    `, params),
+  ])
 
-  return rows.map(row => {
-    // Normalise published_at to the epoch column
-    const base = { ...row, published_at: row.published_at_epoch }
-    return row.content_type === 'article' ? articleToItem(base) : noteToItem(base)
-  })
+  const items: any[] = [
+    ...articlesRes.rows.map(articleToItem),
+    ...notesRes.rows.map(noteToItem),
+    ...newUsersRes.rows.map(row => ({
+      type: 'new_user' as const,
+      username: row.username,
+      displayName: row.display_name,
+      avatar: row.avatar,
+      joinedAt: Number(row.joined_at),
+    })),
+  ]
+  items.sort((a: any, b: any) => (b.publishedAt ?? b.joinedAt) - (a.publishedAt ?? a.joinedAt))
+  return items.slice(0, limit)
 }

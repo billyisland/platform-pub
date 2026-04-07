@@ -38,7 +38,7 @@ export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="w-full border border-grey-200 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
+          className="w-full bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
           placeholder="e.g. Essays on Light"
           required
         />
@@ -49,7 +49,7 @@ export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          className="w-full border border-grey-200 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 resize-y"
+          className="w-full bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 resize-y"
           rows={3}
           placeholder="What will supporters be funding?"
         />
@@ -63,7 +63,7 @@ export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void
           min="0.01"
           value={targetAmount}
           onChange={(e) => setTargetAmount(e.target.value)}
-          className="w-48 border border-grey-200 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
+          className="w-48 bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
           placeholder="50.00"
           required
         />

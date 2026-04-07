@@ -51,7 +51,7 @@ export function DmFeeSettings() {
                 max="100"
                 value={dmPrice}
                 onChange={(e) => setDmPrice(e.target.value)}
-                className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
                 placeholder="0.00"
               />
               <span className="text-[13px] font-sans text-grey-300">per message</span>
@@ -118,7 +118,7 @@ export function DmFeeSettings() {
                 value={overrideUsername}
                 onChange={(e) => setOverrideUsername(e.target.value)}
                 placeholder="Username"
-                className="w-32 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black placeholder-grey-300"
+                className="w-32 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black placeholder-grey-300"
               />
               <span className="text-[13px] font-sans text-grey-400">£</span>
               <input
@@ -129,7 +129,7 @@ export function DmFeeSettings() {
                 value={overridePrice}
                 onChange={(e) => setOverridePrice(e.target.value)}
                 placeholder="0.00"
-                className="w-20 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black placeholder-grey-300"
+                className="w-20 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black placeholder-grey-300"
               />
               <button type="submit" disabled={addingOverride} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70 disabled:opacity-50">
                 {addingOverride ? '...' : 'Add'}

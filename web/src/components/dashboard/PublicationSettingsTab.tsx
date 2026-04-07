@@ -56,7 +56,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug }: Props
             type="text"
             value={name}
             onChange={e => setName(e.target.value)}
-            className="border border-grey-200 px-3 py-1.5 text-sm text-black w-full max-w-md"
+            className="bg-grey-100 px-3 py-1.5 text-sm text-black w-full max-w-md"
           />
         </div>
         <div>
@@ -65,7 +65,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug }: Props
             type="text"
             value={tagline}
             onChange={e => setTagline(e.target.value)}
-            className="border border-grey-200 px-3 py-1.5 text-sm text-black w-full max-w-md"
+            className="bg-grey-100 px-3 py-1.5 text-sm text-black w-full max-w-md"
             placeholder="A short description"
           />
         </div>
@@ -75,7 +75,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug }: Props
             value={about}
             onChange={e => setAbout(e.target.value)}
             rows={6}
-            className="border border-grey-200 px-3 py-1.5 text-sm text-black w-full max-w-md"
+            className="bg-grey-100 px-3 py-1.5 text-sm text-black w-full max-w-md"
             placeholder="Mission statement, editorial focus, etc."
           />
         </div>

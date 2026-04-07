@@ -167,7 +167,7 @@ export default function ProfilePage() {
             onChange={(e) => setDisplayName(e.target.value)}
             maxLength={100}
             placeholder={user.username ?? ''}
-            className="w-full bg-white border border-grey-200 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none focus:ring-1 focus:ring-crimson/50"
+            className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none"
           />
         </div>
 
@@ -183,7 +183,7 @@ export default function ProfilePage() {
             maxLength={500}
             rows={4}
             placeholder="A few words about yourself"
-            className="w-full bg-white border border-grey-200 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none focus:ring-1 focus:ring-crimson/50 resize-none"
+            className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none resize-none"
           />
           <p className="text-[11px] text-grey-300 mt-1 text-right">{bio.length}/500</p>
         </div>

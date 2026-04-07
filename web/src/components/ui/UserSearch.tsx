@@ -71,7 +71,7 @@ export function UserSearch({ onSelect, placeholder = 'Search users…', classNam
         onChange={(e) => setQuery(e.target.value)}
         onFocus={() => { if (results.length > 0) setOpen(true) }}
         placeholder={placeholder}
-        className="w-full border border-grey-200 px-3 py-1.5 text-[13px] font-sans text-black placeholder-grey-300 bg-white"
+        className="w-full bg-grey-100 px-3 py-1.5 text-[13px] font-sans text-black placeholder-grey-300"
       />
       {loading && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2">

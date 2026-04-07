@@ -98,7 +98,7 @@ export function ReportButton({ targetNostrEventId, targetAccountId }: ReportButt
             placeholder="Additional details (optional)"
             rows={2}
             maxLength={2000}
-            className="w-full border border-grey-200 px-2.5 py-1.5 text-xs bg-white mb-3"
+            className="w-full bg-grey-100 px-2.5 py-1.5 text-xs mb-3"
           />
 
           {error && (

@@ -209,6 +209,7 @@ export async function authRoutes(app: FastifyInstance) {
       hasPaymentMethod: account.stripeCustomerId !== null,
       stripeConnectKycComplete: account.stripeConnectKycComplete,
       freeAllowanceRemainingPence: account.freeAllowanceRemainingPence,
+      defaultArticlePricePence: account.defaultArticlePricePence,
       isAdmin: adminIds.includes(account.id),
     })
   })

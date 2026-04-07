@@ -87,7 +87,7 @@ export function GiftLinksPanel({ articleId, dTag }: GiftLinksPanelProps) {
           max={1000}
           value={limit}
           onChange={(e) => setLimit(parseInt(e.target.value, 10) || 5)}
-          className="w-16 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black"
+          className="w-16 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black"
         />
         <button
           onClick={handleCreate}

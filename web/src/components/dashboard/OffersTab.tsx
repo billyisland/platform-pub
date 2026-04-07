@@ -136,7 +136,7 @@ export function OffersTab() {
                 value={label}
                 onChange={e => setLabel(e.target.value)}
                 placeholder={formMode === 'code' ? 'e.g. Launch discount' : 'e.g. Comp for Jane'}
-                className="w-full border border-grey-200 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+                className="w-full bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
               />
             </div>
 
@@ -149,7 +149,7 @@ export function OffersTab() {
                   max={100}
                   value={discountPct}
                   onChange={e => setDiscountPct(parseInt(e.target.value, 10) || 0)}
-                  className="w-20 border border-grey-200 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+                  className="w-20 bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
                 />
               </div>
               <div>
@@ -162,7 +162,7 @@ export function OffersTab() {
                     value={durationMonths ?? ''}
                     onChange={e => setDurationMonths(e.target.value ? parseInt(e.target.value, 10) : null)}
                     placeholder="—"
-                    className="w-16 border border-grey-200 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+                    className="w-16 bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
                   />
                   <span className="text-ui-xs text-grey-400">months (blank = permanent)</span>
                 </div>
@@ -181,7 +181,7 @@ export function OffersTab() {
                       value={maxRedemptions ?? ''}
                       onChange={e => setMaxRedemptions(e.target.value ? parseInt(e.target.value, 10) : null)}
                       placeholder="—"
-                      className="w-20 border border-grey-200 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+                      className="w-20 bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
                     />
                     <span className="text-ui-xs text-grey-400">blank = unlimited</span>
                   </div>
@@ -192,7 +192,7 @@ export function OffersTab() {
                     type="date"
                     value={expiresAt}
                     onChange={e => setExpiresAt(e.target.value)}
-                    className="border border-grey-200 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+                    className="bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
                   />
                 </div>
               </div>
@@ -206,7 +206,7 @@ export function OffersTab() {
                   value={recipientUsername}
                   onChange={e => setRecipientUsername(e.target.value)}
                   placeholder="username"
-                  className="w-48 border border-grey-200 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+                  className="w-48 bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
                 />
               </div>
             )}

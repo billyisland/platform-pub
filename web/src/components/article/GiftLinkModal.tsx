@@ -36,7 +36,7 @@ export function GiftLinkModal({ articleDbId, onClose }: GiftLinkModalProps) {
               max={1000}
               value={limit}
               onChange={(e) => setLimit(parseInt(e.target.value, 10) || 5)}
-              className="w-20 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black mb-4"
+              className="w-20 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black mb-4"
             />
             <div>
               <button onClick={handleCreate} disabled={creating} className="btn text-sm disabled:opacity-50">
@@ -50,7 +50,7 @@ export function GiftLinkModal({ articleDbId, onClose }: GiftLinkModalProps) {
               type="text"
               readOnly
               value={url}
-              className="w-full border border-grey-200 px-3 py-1.5 text-[13px] font-mono text-black bg-grey-100 mb-3"
+              className="w-full bg-grey-100 px-3 py-1.5 text-[13px] font-mono text-black mb-3"
               onClick={(e) => (e.target as HTMLInputElement).select()}
             />
             <button

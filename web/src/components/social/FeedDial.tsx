@@ -5,12 +5,12 @@ import type { FeedReach } from '../../lib/api'
 
 const MODES: { value: FeedReach; label: string; description: string }[] = [
   { value: 'following', label: 'Following', description: 'Articles and notes from writers you follow' },
-  { value: 'explore', label: 'Explore', description: 'Trending content from across the platform' },
+  { value: 'explore', label: 'Explore', description: 'Content from across the site' },
 ]
 
 function getStoredReach(): FeedReach {
-  if (typeof window === 'undefined') return 'following'
-  return (localStorage.getItem('feedReach') as FeedReach) || 'following'
+  if (typeof window === 'undefined') return 'explore'
+  return (localStorage.getItem('feedReach') as FeedReach) || 'explore'
 }
 
 export function FeedDial() {
@@ -25,7 +25,7 @@ export function FeedDial() {
     <div>
       <p className="label-ui text-grey-400 mb-4">Feed reach</p>
       <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
-        Choose what appears in your feed. This setting also applies on the feed page.
+        Choose what appears in your feed.
       </p>
       <div className="space-y-2">
         {MODES.map(mode => (

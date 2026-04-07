@@ -63,6 +63,7 @@ export interface MeResponse {
   hasPaymentMethod: boolean
   stripeConnectKycComplete: boolean
   freeAllowanceRemainingPence: number
+  defaultArticlePricePence: number | null
   isAdmin: boolean
 }
 
@@ -981,10 +982,14 @@ export const account = {
   exportAccount: () =>
     request<Blob>('/account/export'),
 
-  updateSubscriptionPrice: (pricePence: number, annualDiscountPct?: number) =>
+  updateSubscriptionPrice: (pricePence: number, annualDiscountPct?: number, defaultArticlePricePence?: number | null) =>
     request<{ ok: boolean }>('/settings/subscription-price', {
       method: 'PATCH',
-      body: JSON.stringify({ pricePence, ...(annualDiscountPct !== undefined ? { annualDiscountPct } : {}) }),
+      body: JSON.stringify({
+        pricePence,
+        ...(annualDiscountPct !== undefined ? { annualDiscountPct } : {}),
+        ...(defaultArticlePricePence !== undefined ? { defaultArticlePricePence } : {}),
+      }),
     }),
 
   toggleSubscriptionVisibility: (writerId: string, hidden: boolean) =>

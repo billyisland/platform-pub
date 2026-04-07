@@ -63,7 +63,7 @@ export function RateCardTab({ publicationId }: Props) {
             <input
               type="number" step="0.01" min="0" value={subPrice}
               onChange={e => setSubPrice(e.target.value)}
-              className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+              className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
               placeholder="8.00"
             />
             <span className="text-[13px] font-sans text-grey-300">/month</span>
@@ -73,7 +73,7 @@ export function RateCardTab({ publicationId }: Props) {
             <input
               type="number" min="0" max="100" value={annualDiscount}
               onChange={e => setAnnualDiscount(e.target.value)}
-              className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+              className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
               placeholder="15"
             />
             <span className="text-[13px] font-sans text-grey-300">annual discount</span>
@@ -91,7 +91,7 @@ export function RateCardTab({ publicationId }: Props) {
               <input
                 type="number" step="0.01" min="0" value={defaultArticlePrice}
                 onChange={e => setDefaultArticlePrice(e.target.value)}
-                className="w-28 border border-grey-200 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
                 placeholder="0.20"
               />
               <span className="text-[13px] font-sans text-grey-300">per read</span>

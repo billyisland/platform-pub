@@ -81,7 +81,8 @@ export function ArticleEditor({
 
   const [title, setTitle] = useState(initialTitle)
   const [dek, setDek] = useState(initialDek)
-  const [pricePence, setPricePence] = useState(initialPrice ?? 0)
+  const defaultPrice = initialPrice ?? user?.defaultArticlePricePence ?? 0
+  const [pricePence, setPricePence] = useState(defaultPrice)
   const [commentsEnabled, setCommentsEnabled] = useState(initialCommentsEnabled)
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
@@ -92,7 +93,7 @@ export function ArticleEditor({
   const [showOnWriterProfile, setShowOnWriterProfile] = useState(true)
 
   const isEditing = !!editingEventId
-  const userSetPrice = useRef(!!initialPrice)
+  const userSetPrice = useRef(!!initialPrice || user?.defaultArticlePricePence != null)
   const selectedPub = publicationMemberships.find(p => p.id === selectedPublicationId)
 
   // Refs so the onUpdate closure always sees current values
@@ -239,7 +240,7 @@ export function ArticleEditor({
           <select
             value={selectedPublicationId ?? ''}
             onChange={(e) => setSelectedPublicationId(e.target.value || null)}
-            className="bg-white border border-grey-200 px-3 py-1.5 text-sm text-black"
+            className="bg-grey-100 px-3 py-1.5 text-sm text-black"
           >
             <option value="">Yourself</option>
             {publicationMemberships.map(pub => (

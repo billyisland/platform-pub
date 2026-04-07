@@ -127,7 +127,7 @@ export function PayrollTab({ publicationId }: Props) {
                   type="number" min="0" max="10000" step="100"
                   value={editShares[m.memberId] ?? '0'}
                   onChange={e => setEditShares(prev => ({ ...prev, [m.memberId]: e.target.value }))}
-                  className="w-20 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black text-right tabular-nums"
+                  className="w-20 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black text-right tabular-nums"
                 />
                 <span className="text-[12px] font-sans text-grey-300 w-12">
                   {((parseInt(editShares[m.memberId] || '0', 10)) / 100).toFixed(1)}%

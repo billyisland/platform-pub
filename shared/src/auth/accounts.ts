@@ -144,6 +144,7 @@ export interface AccountInfo {
   stripeConnectId: string | null
   stripeConnectKycComplete: boolean
   freeAllowanceRemainingPence: number
+  defaultArticlePricePence: number | null
 }
 
 export async function getAccount(accountId: string): Promise<AccountInfo | null> {
@@ -161,10 +162,12 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     stripe_connect_id: string | null
     stripe_connect_kyc_complete: boolean
     free_allowance_remaining_pence: number
+    default_article_price_pence: number | null
   }>(
     `SELECT id, nostr_pubkey, username, display_name, bio, avatar_blossom_url,
             is_writer, is_reader, status, stripe_customer_id, stripe_connect_id,
-            stripe_connect_kyc_complete, free_allowance_remaining_pence
+            stripe_connect_kyc_complete, free_allowance_remaining_pence,
+            default_article_price_pence
      FROM accounts WHERE id = $1`,
     [accountId]
   )
@@ -186,6 +189,7 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     stripeConnectId: r.stripe_connect_id,
     stripeConnectKycComplete: r.stripe_connect_kyc_complete,
     freeAllowanceRemainingPence: r.free_allowance_remaining_pence,
+    defaultArticlePricePence: r.default_article_price_pence,
   }
 }
 

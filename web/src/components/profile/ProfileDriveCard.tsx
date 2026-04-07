@@ -111,7 +111,7 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
                 value={pledgeAmount}
                 onChange={(e) => setPledgeAmount(e.target.value)}
                 placeholder="0.00"
-                className="w-24 border border-grey-200 px-2 py-1 text-[13px] font-sans text-black bg-white"
+                className="w-24 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black"
                 autoFocus
               />
               <button type="submit" disabled={pledging} className="btn text-sm disabled:opacity-50">

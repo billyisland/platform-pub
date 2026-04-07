@@ -115,6 +115,7 @@ CREATE TABLE accounts (
   free_allowance_remaining_pence INT NOT NULL DEFAULT 500,  -- £5.00 in pence
   subscription_price_pence INTEGER NOT NULL DEFAULT 500,    -- writer-configurable (migration 005)
   annual_discount_pct INTEGER NOT NULL DEFAULT 15 CHECK (annual_discount_pct BETWEEN 0 AND 30), -- (migration 024)
+  default_article_price_pence INT,  -- NULL = auto-suggest by word count (migration 039)
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   show_commission_button BOOLEAN NOT NULL DEFAULT TRUE,  -- (migration 030) let authors hide commission button
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()

@@ -58,7 +58,7 @@ module.exports = {
       fontSize: {
         'mono-xs': ['0.6875rem', { lineHeight: '1.5', letterSpacing: '0.06em' }],
         'mono-sm': ['0.9375rem', { lineHeight: '1.5', letterSpacing: '0.01em' }],
-        'ui-xs': ['0.75rem', { lineHeight: '1.5' }],
+        'ui-xs': ['0.8125rem', { lineHeight: '1.5' }],
         'ui-sm': ['0.875rem', { lineHeight: '1.5' }],
       },
     },
