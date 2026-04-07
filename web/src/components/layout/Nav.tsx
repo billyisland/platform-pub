@@ -6,7 +6,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../stores/auth'
 import type { MeResponse } from '../../lib/api'
 import { useLayoutModeContext } from './LayoutShell'
-import { ExportModal } from '../ExportModal'
 import { ForAllMark } from '../icons/ForAllMark'
 import { useUnreadCounts } from '../../stores/unread'
 
@@ -55,7 +54,6 @@ function AvatarDropdown({ user, onLogout, onClose }: {
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [showExport, setShowExport] = useState(false)
   const dmCount = useUnreadCounts((s) => s.dmCount)
   const notificationCount = useUnreadCounts((s) => s.notificationCount)
 
@@ -128,12 +126,6 @@ function AvatarDropdown({ user, onLogout, onClose }: {
 
         {/* Group 3 */}
         <div className="py-1">
-          <button
-            onClick={() => { setShowExport(true); onClose() }}
-            className="block w-full text-left px-4 py-2 text-[14px] text-black hover:bg-grey-100 transition-colors font-sans"
-          >
-            Export my data
-          </button>
           {user.isAdmin && (
             <Link href="/admin" onClick={onClose} className={linkClass}>Admin</Link>
           )}
@@ -142,8 +134,6 @@ function AvatarDropdown({ user, onLogout, onClose }: {
           </button>
         </div>
       </div>
-
-      {showExport && <ExportModal onClose={() => setShowExport(false)} />}
     </>
   )
 }
@@ -159,7 +149,6 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
 }) {
   const pathname = usePathname()
   const [query, setQuery] = useState('')
-  const [showExport, setShowExport] = useState(false)
   const dmCount = useUnreadCounts((s) => s.dmCount)
   const notificationCount = useUnreadCounts((s) => s.notificationCount)
 
@@ -218,12 +207,6 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           <Link href="/profile" onClick={onClose} className={linkClass('/profile')}>Profile</Link>
           <Link href="/account" onClick={onClose} className={linkClass('/account')}>Account</Link>
           <Link href="/social" onClick={onClose} className={linkClass('/social')}>Social</Link>
-          <button
-            onClick={() => { setShowExport(true); onClose() }}
-            className="block py-3 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-white transition-colors text-left"
-          >
-            Export my data
-          </button>
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
@@ -233,7 +216,6 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           >
             Log out
           </button>
-          {showExport && <ExportModal onClose={() => setShowExport(false)} />}
         </>
       ) : (
         <>

@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.23.0
+# all.haus — Deployment Reference v5.25.0
 
 **Date:** 7 April 2026
-**Replaces:** v5.22.0 (see bottom for change log)
+**Replaces:** v5.24.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -249,6 +249,69 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.24.0
+
+No migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
+
+This release adds paywall gating on article comments, fixes DM scroll-to-bottom on conversation open, fixes the data export download, removes the redundant "Export my data" button from the nav, and adds a publication creation flow to the dashboard.
+
+**Backend (gateway):**
+
+- **Paywall-gated comments** (`replies.ts`): `GET /replies/:targetEventId` now checks whether the target article is paywalled. If it is and the requesting user has not unlocked it (via ownership, purchase, or subscription), the endpoint returns `{ comments: [], totalCount: 0, paywallLocked: true }` — comment data never leaves the server for locked articles. Uses the existing `checkArticleAccess()` service.
+
+**Frontend (web):**
+
+- **Paywall-gated comments** (`ReplySection.tsx`, `ArticleReader.tsx`, `api.ts`): `ReplySection` accepts a new `isUnlocked` prop and handles the `paywallLocked` API response. When locked, displays "Unlock the article to read and leave replies." instead of the comment thread. Re-fetches comments automatically when the article is unlocked. `ReplyResponse` type extended with optional `paywallLocked` field.
+- **DM scroll-to-bottom fix** (`MessageThread.tsx`): Conversations now scroll to the most recent message on open. Previously, the auto-scroll effect only fired when the user was already near the bottom (within 150px), which never applied on initial load when scroll position is 0. Added an `initialScrollDone` ref — first load jumps instantly to the bottom; subsequent new messages still use the near-bottom guard. The ref resets when switching conversations.
+- **Export download fix** (`ExportModal.tsx`): The dynamically created `<a>` element is now appended to `document.body` before calling `.click()` and removed afterwards. Without DOM attachment, some browsers silently ignore programmatic download clicks.
+- **Nav export button removed** (`Nav.tsx`): Removed "Export my data" button from both the desktop avatar dropdown and the mobile navigation sheet. Export remains accessible from the Profile settings page. Cleaned up unused `ExportModal` import and `showExport` state.
+- **Publication creation UI** (`dashboard/page.tsx`): Added a "+ New publication" button to the dashboard context switcher. Clicking it reveals an inline form with name and auto-generated URL slug fields. On creation, the dashboard switches to the new publication's context. The button is always visible so users without existing publications can discover it.
+
+**Modified files:**
+
+- `gateway/src/routes/replies.ts` — paywall access check on comment fetch
+- `web/src/components/replies/ReplySection.tsx` — `isUnlocked` prop, `paywallLocked` handling
+- `web/src/components/article/ArticleReader.tsx` — passes `isUnlocked` to ReplySection
+- `web/src/lib/api.ts` — `paywallLocked` field on ReplyResponse
+- `web/src/components/messages/MessageThread.tsx` — initial scroll-to-bottom fix
+- `web/src/components/ExportModal.tsx` — DOM-attached download anchor
+- `web/src/components/layout/Nav.tsx` — export button removed from desktop + mobile nav
+- `web/src/app/dashboard/page.tsx` — publication creation form
+
+**Upgrade steps:**
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# No migration — no schema changes
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# gateway and web should show (healthy) after ~30s
+
+# Paywall comment gating:
+# - Open a paywalled article (logged out or without access): comments section shows lock message
+# - Unlock the article: comments appear immediately
+
+# DM scroll:
+# - Open /messages, select a conversation with history: should scroll to latest message
+
+# Export:
+# - /profile → Data → Export → "Portable receipts" button triggers a JSON download
+
+# Publication creation:
+# - /dashboard → click "+ New publication" → fill name → Create
+# - Dashboard switches to the new publication context
+```
+
+No new env vars. No database changes.
+
+---
 
 ### From v5.22.0
 

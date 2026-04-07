@@ -33,6 +33,11 @@ export default function DashboardPage() {
   const [pubTab, setPubTab] = useState<PubDashboardTab>((rawTab as PubDashboardTab) || 'articles')
   const [pubMemberships, setPubMemberships] = useState<PublicationMembership[]>([])
   const [selectedContext, setSelectedContext] = useState<string | null>(contextSlug)
+  const [showNewPub, setShowNewPub] = useState(false)
+  const [newPubName, setNewPubName] = useState('')
+  const [newPubSlug, setNewPubSlug] = useState('')
+  const [newPubSaving, setNewPubSaving] = useState(false)
+  const [newPubError, setNewPubError] = useState<string | null>(null)
 
   useEffect(() => { if (!loading && !user) router.push('/auth?mode=login') }, [user, loading, router])
 
@@ -90,6 +95,23 @@ export default function DashboardPage() {
     window.history.replaceState({}, '', url.toString())
   }
 
+  async function handleCreatePublication(e: React.FormEvent) {
+    e.preventDefault()
+    const name = newPubName.trim()
+    const slug = newPubSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
+    if (!name || !slug) return
+    setNewPubSaving(true); setNewPubError(null)
+    try {
+      const result = await pubApi.create({ name, slug })
+      const memberships = await pubApi.myMemberships()
+      setPubMemberships(memberships.publications)
+      setShowNewPub(false); setNewPubName(''); setNewPubSlug('')
+      switchContext(result.slug)
+    } catch (err: any) {
+      setNewPubError(err?.body?.error ?? err?.message ?? 'Failed to create publication.')
+    } finally { setNewPubSaving(false) }
+  }
+
   if (loading || !user) return <DashboardSkeleton />
 
   const selectedPub = pubMemberships.find(p => p.slug === selectedContext)
@@ -104,25 +126,81 @@ export default function DashboardPage() {
   return (
     <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
       {/* Context switcher */}
-      {pubMemberships.length > 0 && (
-        <div className="flex items-center gap-2 mb-6 text-ui-xs">
-          <span className="text-grey-400">Dashboard:</span>
-          <button
-            onClick={() => switchContext(null)}
-            className={`px-2 py-1 ${!isPublicationContext ? 'text-black font-medium' : 'text-grey-400 hover:text-black'}`}
-          >
-            Personal
-          </button>
-          {pubMemberships.map(p => (
+      <div className="flex items-center gap-2 mb-6 text-ui-xs flex-wrap">
+        {pubMemberships.length > 0 && (
+          <>
+            <span className="text-grey-400">Dashboard:</span>
             <button
-              key={p.slug}
-              onClick={() => switchContext(p.slug)}
-              className={`px-2 py-1 ${selectedContext === p.slug ? 'text-black font-medium' : 'text-grey-400 hover:text-black'}`}
+              onClick={() => switchContext(null)}
+              className={`px-2 py-1 ${!isPublicationContext ? 'text-black font-medium' : 'text-grey-400 hover:text-black'}`}
             >
-              {p.name}
+              Personal
             </button>
-          ))}
-        </div>
+            {pubMemberships.map(p => (
+              <button
+                key={p.slug}
+                onClick={() => switchContext(p.slug)}
+                className={`px-2 py-1 ${selectedContext === p.slug ? 'text-black font-medium' : 'text-grey-400 hover:text-black'}`}
+              >
+                {p.name}
+              </button>
+            ))}
+            <span className="text-grey-200">|</span>
+          </>
+        )}
+        <button
+          onClick={() => setShowNewPub(v => !v)}
+          className="px-2 py-1 text-grey-400 hover:text-black transition-colors"
+        >
+          + New publication
+        </button>
+      </div>
+
+      {showNewPub && (
+        <form onSubmit={handleCreatePublication} className="mb-8 bg-white px-6 py-5 max-w-md space-y-4">
+          <p className="label-ui text-grey-400">Create a publication</p>
+          <div>
+            <label htmlFor="pub-name" className="block text-ui-xs text-grey-300 mb-1">Name</label>
+            <input
+              id="pub-name"
+              type="text"
+              value={newPubName}
+              onChange={(e) => {
+                setNewPubName(e.target.value)
+                if (!newPubSlug || newPubSlug === newPubName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')) {
+                  setNewPubSlug(e.target.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+                }
+              }}
+              maxLength={80}
+              placeholder="The Daily Dispatch"
+              className="w-full border border-grey-200 px-3 py-2 text-sm text-black placeholder-grey-300 focus:outline-none focus:ring-1 focus:ring-crimson/50"
+            />
+          </div>
+          <div>
+            <label htmlFor="pub-slug" className="block text-ui-xs text-grey-300 mb-1">URL slug</label>
+            <div className="flex items-center text-sm text-grey-300">
+              <span className="mr-1">/pub/</span>
+              <input
+                id="pub-slug"
+                type="text"
+                value={newPubSlug}
+                onChange={(e) => setNewPubSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                maxLength={60}
+                placeholder="daily-dispatch"
+                className="flex-1 border border-grey-200 px-3 py-2 text-sm text-black placeholder-grey-300 focus:outline-none focus:ring-1 focus:ring-crimson/50"
+              />
+            </div>
+          </div>
+          {newPubError && <p className="text-ui-xs text-red-600">{newPubError}</p>}
+          <div className="flex items-center gap-3">
+            <button type="submit" disabled={newPubSaving || !newPubName.trim() || !newPubSlug.trim()} className="btn disabled:opacity-50">
+              {newPubSaving ? 'Creating...' : 'Create'}
+            </button>
+            <button type="button" onClick={() => { setShowNewPub(false); setNewPubError(null) }} className="text-ui-xs text-grey-400 hover:text-black">
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
 
       {isPublicationContext ? (

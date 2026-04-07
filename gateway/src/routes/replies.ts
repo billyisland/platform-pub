@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../shared/src/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
+import { checkArticleAccess } from '../services/access.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -197,6 +198,37 @@ export async function replyRoutes(app: FastifyInstance) {
           )
 
       const repliesEnabled = noteCheck.rows[0]?.comments_enabled ?? true
+
+      // If target is a paywalled article, check that the reader has access
+      if (articleCheck.rows.length > 0) {
+        const articleRow = await pool.query<{
+          id: string
+          access_mode: string
+          writer_id: string
+          publication_id: string | null
+        }>(
+          `SELECT id, access_mode, writer_id, publication_id
+           FROM articles WHERE nostr_event_id = $1 AND deleted_at IS NULL`,
+          [targetEventId]
+        )
+        const art = articleRow.rows[0]
+        if (art && art.access_mode === 'paywalled') {
+          let hasAccess = false
+          if (currentUserId) {
+            const access = await checkArticleAccess(currentUserId, art.id, art.writer_id, art.publication_id)
+            hasAccess = access.hasAccess
+          }
+          if (!hasAccess) {
+            return reply.status(200).send({
+              comments: [],
+              totalCount: 0,
+              repliesEnabled,
+              commentsEnabled: repliesEnabled,
+              paywallLocked: true,
+            })
+          }
+        }
+      }
 
       // Fetch all replies for this target
       const { rows } = await pool.query<{

@@ -386,6 +386,7 @@ export interface ReplyResponse {
   totalCount: number
   repliesEnabled: boolean
   commentsEnabled: boolean // backwards-compat alias
+  paywallLocked?: boolean
 }
 
 export const replies = {

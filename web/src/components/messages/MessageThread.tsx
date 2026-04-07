@@ -160,6 +160,7 @@ export function MessageThread({
     setMsgs([])
     setReplyTo(null)
     latestCreatedAt.current = null
+    initialScrollDone.current = false
     fetchMessages()
 
     pollRef.current = setInterval(pollForNew, POLL_INTERVAL)
@@ -169,15 +170,23 @@ export function MessageThread({
   }, [conversationId])
 
   // Auto-scroll when new messages appear
+  const initialScrollDone = useRef(false)
   useEffect(() => {
-    if (!loading) {
-      const el = scrollRef.current
-      if (!el) return
-      // Only auto-scroll if user is near the bottom (within 150px)
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150
-      if (isNearBottom) {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-      }
+    if (loading) return
+    const el = scrollRef.current
+    if (!el) return
+
+    if (!initialScrollDone.current) {
+      // First load: jump straight to the bottom (no smooth animation)
+      initialScrollDone.current = true
+      el.scrollTop = el.scrollHeight
+      return
+    }
+
+    // Subsequent messages: only auto-scroll if user is near the bottom (within 150px)
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150
+    if (isNearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [msgs.length, loading])
 

@@ -17,6 +17,7 @@ interface ReplySectionProps {
   composerOpen?: boolean
   onComposerClose?: () => void
   onReplyCountLoaded?: (count: number) => void
+  isUnlocked?: boolean
 }
 
 export function ReplySection({
@@ -29,11 +30,13 @@ export function ReplySection({
   composerOpen,
   onComposerClose,
   onReplyCountLoaded,
+  isUnlocked,
 }: ReplySectionProps) {
   const { user } = useAuth()
   const [replies, setReplies] = useState<ReplyData[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [repliesEnabled, setRepliesEnabled] = useState(true)
+  const [paywallLocked, setPaywallLocked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showAll, setShowAll] = useState(false)
   const [voteTallies, setVoteTallies] = useState<Record<string, VoteTally>>({})
@@ -49,6 +52,15 @@ export function ReplySection({
       setLoading(true)
       try {
         const data = await repliesApi.getForTarget(targetEventId)
+        if (data.paywallLocked) {
+          setPaywallLocked(true)
+          setReplies([])
+          setTotalCount(0)
+          setRepliesEnabled(data.repliesEnabled ?? true)
+          onReplyCountLoaded?.(0)
+          return
+        }
+        setPaywallLocked(false)
         const comments: ReplyData[] = data.comments ?? []
         setReplies(comments)
         const count = data.totalCount ?? 0
@@ -75,7 +87,7 @@ export function ReplySection({
     }
 
     loadReplies()
-  }, [targetEventId])
+  }, [targetEventId, isUnlocked])
 
   const handleNewReply = useCallback((reply: ReplyData) => {
     setReplies(prev => [...prev, reply])
@@ -125,6 +137,16 @@ export function ReplySection({
             <div key={i} className="h-10 animate-pulse bg-grey-100" />
           ))}
         </div>
+      </div>
+    )
+  }
+
+  if (paywallLocked) {
+    return (
+      <div className={compact ? '' : 'mt-8 pt-6 border-t border-grey-200'}>
+        <p className="text-xs text-grey-300 italic mb-4">
+          Unlock the article to read and leave replies.
+        </p>
       </div>
     )
   }

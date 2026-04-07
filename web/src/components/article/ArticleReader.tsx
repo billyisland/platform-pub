@@ -256,7 +256,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
               <div className="flex justify-center mt-16 mb-12">
                 <ForAllMark size={24} className="text-grey-300" />
               </div>
-              <ReplySection targetEventId={article.id} targetKind={30023} targetAuthorPubkey={article.pubkey} contentAuthorId={undefined} />
+              <ReplySection targetEventId={article.id} targetKind={30023} targetAuthorPubkey={article.pubkey} contentAuthorId={undefined} isUnlocked={isUnlocked} />
             </article>
 
           </div>

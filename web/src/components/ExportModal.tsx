@@ -26,7 +26,9 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
       const a = document.createElement('a')
       a.href = url
       a.download = type === 'receipts' ? 'platform-receipts.json' : 'platform-account-export.json'
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
       setDownloaded(prev => new Set(prev).add(type))
     } catch (err) {
