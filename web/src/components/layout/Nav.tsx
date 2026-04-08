@@ -404,9 +404,14 @@ export function Nav() {
             {/* Hamburger — mobile only */}
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="flex flex-col justify-center gap-[5px] w-6 h-6 md:hidden"
+              className="relative flex flex-col justify-center gap-[5px] w-6 h-6 md:hidden"
               aria-label="Menu"
             >
+              {totalUnread > 0 && (
+                <span className="absolute -top-1.5 -right-2 flex items-center justify-center min-w-[16px] h-[16px] px-0.5 bg-crimson text-white text-[10px] font-sans font-semibold leading-none rounded-full">
+                  {totalUnread > 99 ? '99+' : totalUnread}
+                </span>
+              )}
               <span className={`block w-full h-[2px] bg-white transition-transform ${menuOpen ? 'rotate-45 translate-y-[7px]' : ''}`} />
               <span className={`block w-full h-[2px] bg-white transition-opacity ${menuOpen ? 'opacity-0' : ''}`} />
               <span className={`block w-full h-[2px] bg-white transition-transform ${menuOpen ? '-rotate-45 -translate-y-[7px]' : ''}`} />

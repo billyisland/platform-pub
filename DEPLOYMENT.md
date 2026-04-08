@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.26.0
+# all.haus — Deployment Reference v5.27.1
 
-**Date:** 7 April 2026
-**Replaces:** v5.25.0 (see bottom for change log)
+**Date:** 8 April 2026
+**Replaces:** v5.27.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -944,6 +944,19 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.27.1 — 8 April 2026
+
+**Fix: notification/DM badge reliability — missed messages, mobile indicator, stale counts**
+
+No migration. Services changed: web.
+
+- **Polling interval reduced:** Unread-count polling interval reduced from 60s to 15s (`AuthProvider.tsx`). The 60-second window meant new DMs and notifications could go unnoticed for up to a minute.
+- **Mobile hamburger badge:** The mobile hamburger menu icon now displays the combined unread count badge (matching the desktop PFP avatar badge). Previously mobile users had no visual indicator until they opened the menu.
+- **Mark-read race condition:** All `refreshUnread()` calls in `MessageThread.tsx`, `NotificationBell.tsx`, and `notifications/page.tsx` now `await` the preceding `markRead`/`markAllRead` call. Previously the badge count query could race the write and return a stale (still-unread) count.
+- **Rebrand cleanup:** RSS feed titles/descriptions, export modal copy, and docs updated from "Platform" / "platform.pub" to "all.haus".
+
+---
 
 ### v5.26.0 — 7 April 2026
 

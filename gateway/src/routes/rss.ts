@@ -67,8 +67,8 @@ export async function rssRoutes(app: FastifyInstance) {
       const writerUrl = `${SITE_URL}/${username}`
 
       const xml = buildRssFeed({
-        title: `${displayName} — Platform`,
-        description: writer.bio ?? `Articles by ${displayName} on Platform`,
+        title: `${displayName} — all.haus`,
+        description: writer.bio ?? `Articles by ${displayName} on all.haus`,
         link: writerUrl,
         feedUrl,
         items: articles.map((a) => ({
@@ -172,8 +172,8 @@ export async function rssRoutes(app: FastifyInstance) {
     )
 
     const xml = buildRssFeed({
-      title: 'Platform — recent articles',
-      description: 'Recent articles from writers on Platform',
+      title: 'all.haus — recent articles',
+      description: 'Recent articles from writers on all.haus',
       link: SITE_URL,
       feedUrl: `${SITE_URL}/rss`,
       items: articles.map((a) => ({
@@ -237,7 +237,7 @@ function buildRssFeed(params: RssFeedParams): string {
     <link>${escapeXml(params.link)}</link>
     <atom:link href="${escapeXml(params.feedUrl)}" rel="self" type="application/rss+xml"/>
     <language>en</language>
-    <generator>Platform</generator>
+    <generator>all.haus</generator>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
     ${items}
   </channel>

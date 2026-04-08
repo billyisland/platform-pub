@@ -211,8 +211,8 @@ export function NotificationBell() {
     setOpen(false)
 
     // Persist and refresh badge
-    notificationsApi.markRead(id).catch(() => {})
-    refreshUnread()
+    await notificationsApi.markRead(id).catch(() => {})
+    await refreshUnread()
 
     if (href !== '#') router.push(href)
   }

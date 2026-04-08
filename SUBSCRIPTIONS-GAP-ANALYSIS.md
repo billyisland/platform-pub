@@ -75,7 +75,7 @@ These are capabilities Substack has that we entirely lack, grouped by how much t
 | **Group/team subscriptions** | Institutional pricing for companies buying seats. |
 | **Multiple tiers** | More than one subscription tier per writer (e.g. "supporter" and "patron"). Substack supports this. |
 | **Subscriber-only community** | Chat or discussion space exclusive to paying subscribers. |
-| **Custom domains** | `writer.com` instead of `platform.pub/writer`. |
+| **Custom domains** | `writer.com` instead of `all.haus/writer`. |
 
 ---
 

@@ -174,8 +174,8 @@ export default function NotificationsPage() {
     setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
 
     // Persist and refresh badge
-    notificationsApi.markRead(id).catch(err => console.error('Failed to mark notification read', err))
-    refreshUnread()
+    await notificationsApi.markRead(id).catch(err => console.error('Failed to mark notification read', err))
+    await refreshUnread()
 
     if (href !== '#') router.push(href)
   }

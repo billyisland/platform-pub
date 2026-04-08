@@ -1,6 +1,6 @@
 # Owner Dashboard — Design Specification
 
-**Platform:** all.haus (platform.pub)
+**Platform:** all.haus
 **Version:** 0.1 — April 2026
 **Status:** Draft
 

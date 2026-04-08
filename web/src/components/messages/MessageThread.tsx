@@ -112,7 +112,7 @@ export function MessageThread({
       await messagesApi.markAllRead(conversationId).catch(err => {
         console.error('markAllRead failed:', err)
       })
-      refreshUnread()
+      await refreshUnread()
       onMessagesRead?.()
     } catch {}
     finally { setLoading(false); setLoadingMore(false); setDecrypting(false) }
@@ -149,7 +149,7 @@ export function MessageThread({
       const hasUnread = newMsgs.some(msg => msg.senderId !== user?.id)
       if (hasUnread) {
         await messagesApi.markAllRead(conversationId).catch(() => {})
-        refreshUnread()
+        await refreshUnread()
         onMessagesRead?.()
       }
     } catch {}

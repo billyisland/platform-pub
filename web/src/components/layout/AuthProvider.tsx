@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useUnreadCounts } from '../../stores/unread'
 
-const POLL_INTERVAL = 60_000
+const POLL_INTERVAL = 15_000
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchMe = useAuth((s) => s.fetchMe)

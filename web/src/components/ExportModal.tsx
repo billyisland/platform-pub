@@ -45,7 +45,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
         <p className="font-serif text-lg font-medium text-black mb-4">Export your data</p>
 
         <p className="text-[14px] font-sans text-grey-600 mb-6">
-          Download your data from Platform. Receipt tokens are portable across Nostr.
+          Download your data from all.haus. Receipt tokens are portable across Nostr.
         </p>
 
         <div className="space-y-3 mb-6">

@@ -1,4 +1,4 @@
-# Platform
+# all.haus
 
 A publishing and social platform for writers and readers, built on Nostr. Writers own their identity, audience, and content. Readers pay across all the writers they read via a shared reading tab.
 
