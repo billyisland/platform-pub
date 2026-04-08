@@ -121,7 +121,7 @@ const EMBED_PATTERNS: Array<{ pattern: RegExp; getEmbed: (m: RegExpMatchArray) =
   { pattern: /https?:\/\/youtu\.be\/([a-zA-Z0-9_-]+)/, getEmbed: m => `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${m[1]}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>` },
 ]
 
-function enhanceEmbedUrls(html: string): string {
+export function enhanceEmbedUrls(html: string): string {
   // Find paragraphs that contain only a URL
   return html.replace(/<p><a href="(https?:\/\/[^"]+)"[^>]*>\1<\/a><\/p>/g, (match, url) => {
     for (const { pattern, getEmbed } of EMBED_PATTERNS) {

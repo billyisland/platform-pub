@@ -127,7 +127,7 @@ export async function unwrapContentKey(
 // Helpers
 // =============================================================================
 
-function base64ToUint8Array(base64: string): Uint8Array {
+export function base64ToUint8Array(base64: string): Uint8Array {
   const normalized = base64.replace(/-/g, '+').replace(/_/g, '/')
   const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4)
   const binary = atob(padded)

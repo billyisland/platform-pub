@@ -18,6 +18,97 @@ import logger from '../lib/logger.js'
 // Earnings accrue and are held until verification completes.
 // =============================================================================
 
+// =============================================================================
+// Publication split computation — extracted as a pure function for testability
+// =============================================================================
+
+export interface ArticleShare {
+  id: string
+  articleId: string
+  accountId: string
+  shareType: 'flat_fee_pence' | 'revenue_bps'
+  shareValue: number
+  paidOut: boolean
+}
+
+export interface StandingMember {
+  accountId: string
+  revenueShareBps: number
+}
+
+export interface Split {
+  accountId: string
+  amountPence: number
+  shareType: string
+  shareBps: number | null
+  articleId: string | null
+}
+
+export interface SplitResult {
+  platformFeePence: number
+  splits: Split[]
+  remainingPool: number
+  flatFeesPaidPence: number
+  flatFeeShareIds: string[]
+}
+
+export function computePublicationSplits(
+  grossPence: number,
+  feeBps: number,
+  articleShares: ArticleShare[],
+  articleEarnings: Map<string, number>,
+  standingMembers: StandingMember[],
+): SplitResult {
+  const platformFeePence = Math.floor(grossPence * feeBps / 10000)
+  let remainingPool = grossPence - platformFeePence
+  let flatFeesPaidPence = 0
+  const splits: Split[] = []
+  const flatFeeShareIds: string[] = []
+
+  // Step 1: Per-article overrides
+  for (const share of articleShares) {
+    if (share.shareType === 'flat_fee_pence' && !share.paidOut) {
+      const fee = share.shareValue
+      if (fee > remainingPool) continue
+      remainingPool -= fee
+      flatFeesPaidPence += fee
+      flatFeeShareIds.push(share.id)
+      splits.push({
+        accountId: share.accountId, amountPence: fee,
+        shareType: 'flat_fee', shareBps: null,
+        articleId: share.articleId,
+      })
+    } else if (share.shareType === 'revenue_bps') {
+      const articleNet = articleEarnings.get(share.articleId) || 0
+      const payout = Math.floor(articleNet * share.shareValue / 10000)
+      if (payout <= 0) continue
+      remainingPool -= payout
+      splits.push({
+        accountId: share.accountId, amountPence: payout,
+        shareType: 'article_revenue', shareBps: share.shareValue,
+        articleId: share.articleId,
+      })
+    }
+  }
+
+  // Step 2: Standing shares
+  const totalStandingBps = standingMembers.reduce((sum, m) => sum + m.revenueShareBps, 0)
+
+  if (totalStandingBps > 0 && remainingPool > 0) {
+    for (const member of standingMembers) {
+      const payout = Math.floor(remainingPool * member.revenueShareBps / totalStandingBps)
+      if (payout <= 0) continue
+      splits.push({
+        accountId: member.accountId, amountPence: payout,
+        shareType: 'standing', shareBps: member.revenueShareBps,
+        articleId: null,
+      })
+    }
+  }
+
+  return { platformFeePence, splits, remainingPool, flatFeesPaidPence, flatFeeShareIds }
+}
+
 export class PayoutService {
   private stripe: Stripe
 

@@ -284,7 +284,7 @@ export async function approveAndPublishArticle(
   return { nostrEventId: signed.id }
 }
 
-function generateDTag(title: string): string {
+export function generateDTag(title: string): string {
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')

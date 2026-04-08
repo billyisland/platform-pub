@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "next": "^14.2.0",
@@ -39,6 +41,7 @@
     "rehype-stringify": "^10.0.0"
   },
   "devDependencies": {
+    "vitest": "^1.4.0",
     "typescript": "^5.4.0",
     "@types/node": "^20.11.0",
     "@types/react": "^18.3.0",

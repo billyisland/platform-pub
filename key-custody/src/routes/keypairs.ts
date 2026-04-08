@@ -33,7 +33,7 @@ function requireInternalSecret(req: any, reply: any, done: () => void) {
 
 const signerTypeEnum = z.enum(['account', 'publication']).default('account')
 
-const SignEventSchema = z.object({
+export const SignEventSchema = z.object({
   signerId: z.string().uuid().optional(),
   signerType: signerTypeEnum,
   accountId: z.string().uuid().optional(),  // backwards compat
@@ -45,7 +45,7 @@ const SignEventSchema = z.object({
   }),
 }).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
 
-const UnwrapKeySchema = z.object({
+export const UnwrapKeySchema = z.object({
   signerId: z.string().uuid().optional(),
   signerType: signerTypeEnum,
   accountId: z.string().uuid().optional(),  // backwards compat
@@ -71,7 +71,7 @@ const Nip44DecryptSchema = z.object({
 }).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
 
 /** Resolve signerId from either signerId or legacy accountId */
-function resolveSignerId(data: { signerId?: string; accountId?: string }): string {
+export function resolveSignerId(data: { signerId?: string; accountId?: string }): string {
   return data.signerId || data.accountId!
 }
 

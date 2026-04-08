@@ -11,8 +11,8 @@ import logger from './logger.js'
 
 const APP_URL = process.env.APP_URL ?? 'http://localhost:3010'
 
-// Shared email wrapper
-function emailHtml(heading: string, body: string): string {
+// Shared email wrapper — exported for unit testing
+export function emailHtml(heading: string, body: string): string {
   return `
     <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 0;">
       <h2 style="font-size: 20px; font-weight: 600; color: #1c1917; margin-bottom: 16px;">
@@ -26,19 +26,19 @@ function emailHtml(heading: string, body: string): string {
   `.trim()
 }
 
-function paragraph(text: string): string {
+export function paragraph(text: string): string {
   return `<p style="font-size: 15px; color: #57534e; line-height: 1.6; margin-bottom: 16px;">${text}</p>`
 }
 
-function button(href: string, label: string): string {
+export function button(href: string, label: string): string {
   return `<a href="${href}" style="display: inline-block; background: #1c1917; color: #ffffff; font-size: 14px; font-weight: 500; padding: 12px 28px; border-radius: 6px; text-decoration: none; margin-bottom: 16px;">${label}</a>`
 }
 
-function formatPounds(pence: number): string {
+export function formatPounds(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`
 }
 
-function formatDate(date: Date): string {
+export function formatDate(date: Date): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 

@@ -5,6 +5,32 @@ import { publishReceiptEvent, createPortableReceipt } from '../lib/nostr.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
+// Read classification — extracted as a pure function for testability
+// =============================================================================
+
+export interface ReadClassification {
+  readState: 'provisional' | 'accrued'
+  onFreeAllowance: boolean
+  allowanceJustExhausted: boolean
+}
+
+export function classifyRead(
+  hasCard: boolean,
+  freeAllowanceRemainingPence: number,
+  amountPence: number,
+): ReadClassification {
+  const allowanceJustExhausted = !hasCard &&
+    freeAllowanceRemainingPence > 0 &&
+    freeAllowanceRemainingPence - amountPence <= 0
+
+  return {
+    readState: hasCard ? 'accrued' : 'provisional',
+    onFreeAllowance: !hasCard && freeAllowanceRemainingPence > 0,
+    allowanceJustExhausted,
+  }
+}
+
+// =============================================================================
 // AccrualService — Stage 1 of the three-stage money flow
 //
 // When a reader passes a paywall gate:
@@ -61,18 +87,15 @@ export class AccrualService {
       const reader = readerRow.rows[0]
       const hasCard = reader.stripe_customer_id !== null
 
-      // Decide whether this read comes out of the free allowance
-      let onFreeAllowance = false
-      let readState: ReadEvent['state']
-
-      const allowanceJustExhausted = !hasCard &&
-        reader.free_allowance_remaining_pence > 0 &&
-        reader.free_allowance_remaining_pence - event.amountPence <= 0
+      const classification = classifyRead(
+        hasCard,
+        reader.free_allowance_remaining_pence,
+        event.amountPence,
+      )
+      const { readState, onFreeAllowance, allowanceJustExhausted } = classification
 
       if (!hasCard) {
         // Provisional: reader has no card — debit against free allowance (can go negative)
-        onFreeAllowance = reader.free_allowance_remaining_pence > 0
-        readState = 'provisional'
 
         await client.query(
           `UPDATE accounts
