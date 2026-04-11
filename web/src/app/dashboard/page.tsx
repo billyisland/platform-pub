@@ -260,6 +260,7 @@ export default function DashboardPage() {
               })}
             </div>
             <div className="flex items-center gap-4">
+              <Link href="/traffology" className="text-ui-xs text-grey-400 hover:text-black underline underline-offset-4">Analytics</Link>
               <Link href="/account" className="text-ui-xs text-grey-400 hover:text-black underline underline-offset-4">View account</Link>
               <Link href="/write" className="btn">New article</Link>
             </div>
