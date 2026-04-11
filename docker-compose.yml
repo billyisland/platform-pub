@@ -175,6 +175,20 @@ services:
       retries: 3
 
   # ---------------------------------------------------------------------------
+  # Traffology Worker — background jobs (aggregation, source resolution)
+  # ---------------------------------------------------------------------------
+  traffology-worker:
+    build:
+      context: .
+      dockerfile: traffology-worker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+
+  # ---------------------------------------------------------------------------
   # Web client (Next.js)
   # ---------------------------------------------------------------------------
   web:
