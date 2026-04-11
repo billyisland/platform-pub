@@ -1,6 +1,6 @@
 # Traffology Build Status
 
-**Last updated:** 11 April 2026
+**Last updated:** 11 April 2026 (Phase 1 complete)
 **ADR:** `TRAFFOLOGY-MASTER-ADR-2.md`
 **UI prototype:** `provenance-ikb.jsx` (Piece view with op-art IKB bars)
 
@@ -8,7 +8,7 @@
 
 ## What's done
 
-### Phase 1, Step 3 — Interpretation layer + feed
+### Phase 1, Step 3 — Interpretation layer + feed (commits `26bf47b`, `4b8bf34`)
 
 The observation engine and all three UI screens are complete. Traffology now generates observations from aggregated data and presents them to writers.
 
@@ -38,7 +38,7 @@ The observation engine and all three UI screens are complete. Traffology now gen
 - `FeedItem` — observation card with temporal anchor and HTML template rendering
 - `TraffologyLayout` — Feed/Overview tab nav with all.haus design language
 
-### Phase 1, Step 2 — Data model and aggregation
+### Phase 1, Step 2 — Data model and aggregation (commit `35fa118`)
 
 The aggregation layer is complete. Background jobs materialise session data into stats tables, resolve traffic sources, and compute baselines.
 
