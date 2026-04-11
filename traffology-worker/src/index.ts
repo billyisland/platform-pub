@@ -6,6 +6,7 @@ import { aggregateHourly } from './tasks/aggregate-hourly.js'
 import { aggregateDaily } from './tasks/aggregate-daily.js'
 import { aggregateWeekly } from './tasks/aggregate-weekly.js'
 import { resolveSource } from './tasks/resolve-source.js'
+import { interpret } from './tasks/interpret.js'
 
 // =============================================================================
 // Traffology Worker
@@ -17,6 +18,7 @@ import { resolveSource } from './tasks/resolve-source.js'
 //   aggregate_hourly  — piece_stats, source_stats, half_day_buckets
 //   aggregate_daily   — writer_baselines, publication_baselines
 //   aggregate_weekly  — topic_performance
+//   interpret         — generate observations from aggregated data
 //
 // Reactive jobs (queued by triggers or other jobs):
 //   resolve_source    — resolve a session's referrer into a traffology.sources row
@@ -42,6 +44,8 @@ async function start() {
         '15 0 * * * aggregate_daily',
         // Weekly on Monday at 01:00 UTC
         '0 1 * * 1 aggregate_weekly',
+        // Interpret: run at :20 (after hourly aggregation completes)
+        '20 * * * * interpret',
       ].join('\n')
     ),
     taskList: {
@@ -49,6 +53,7 @@ async function start() {
       aggregate_daily: aggregateDaily,
       aggregate_weekly: aggregateWeekly,
       resolve_source: resolveSource,
+      interpret,
     },
   })
 

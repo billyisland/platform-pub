@@ -8,6 +8,36 @@
 
 ## What's done
 
+### Phase 1, Step 3 — Interpretation layer + feed
+
+The observation engine and all three UI screens are complete. Traffology now generates observations from aggregated data and presents them to writers.
+
+**Interpreter (`traffology-worker/src/tasks/interpret.ts`):**
+- Runs hourly at :20 (after aggregation completes)
+- Generates observation types: `FIRST_DAY_SUMMARY`, `ANOMALY_HIGH`, `ANOMALY_LOW`, `SOURCE_NEW`, `SOURCE_BREAKDOWN`, `MILESTONE_READERS`
+- Respects suppression rules (one per piece per type, threshold-based dedup)
+- Each observation stores structured `values` JSON for template rendering
+
+**Feed API (`gateway/src/routes/traffology.ts`):**
+- `GET /traffology/feed` — paginated observation stream (cursor-based, max 50 per page)
+- `GET /traffology/piece/:pieceId` — piece stats + source stats with half-day buckets + observations
+- `GET /traffology/overview` — writer baseline + all pieces with miniature buckets + topic performance
+
+**Observation templates (`web/src/lib/traffology-templates.ts`):**
+- Fixed-template renderer for all Phase 1 observation types per ADR Section 6
+- Formatting: numbers below 10 as words, piece titles in `<em>`, no emoji, no advice
+- Temporal anchors: Right now / This morning / Yesterday / N days ago / Last week
+
+**Feed UI — three Next.js pages:**
+- `/traffology` — The Feed: reverse-chronological observation stream with live reader count banner, infinite scroll via cursor pagination, click-through to piece view
+- `/traffology/piece/[pieceId]` — The Piece: summary strip (readers, rank, top source, conversions), provenance diagram (interactive IKB op-art bars converted from prototype), expandable source detail, filtered observation feed
+- `/traffology/overview` — The Overview: baseline stats, sortable piece grid (date/readers/source diversity) with miniature provenance bars, topic performance table
+
+**Shared components:**
+- `ProvenanceBar` — canvas-rendered half-day bucket bars with hover date readout
+- `FeedItem` — observation card with temporal anchor and HTML template rendering
+- `TraffologyLayout` — Feed/Overview tab nav with all.haus design language
+
 ### Phase 1, Step 2 — Data model and aggregation
 
 The aggregation layer is complete. Background jobs materialise session data into stats tables, resolve traffic sources, and compute baselines.
@@ -63,31 +93,7 @@ The collection layer is complete. Everything needed to start generating session 
 
 ## What's next
 
-### Phase 1, Step 3 — Interpretation layer + feed
-
-Build together (per ADR Section 0):
-
-1. **Interpreter job (`interpret`).** Runs after each aggregation cycle. Reads aggregated data, applies trigger conditions from ADR Section 5.2 (the observation taxonomy), and writes `traffology.observations` records. Start with the highest-value observation types:
-   - `ARRIVAL_CURRENT` / `ARRIVAL_NONE` (live reader counts)
-   - `FIRST_DAY_SUMMARY` (end of first calendar day)
-   - `SOURCE_NEW` (new source detected)
-   - `SOURCE_BREAKDOWN` (first-day source split)
-   - `ANOMALY_HIGH` / `ANOMALY_LOW` (first-day readers vs baseline)
-   - `MILESTONE_READERS` (100, 500, 1k, 5k, 10k thresholds)
-
-2. **Feed API.** New gateway routes:
-   - `GET /traffology/feed` — paginated observations for the authenticated writer
-   - `GET /traffology/piece/:pieceId` — piece detail (stats + filtered observations)
-   - `GET /traffology/overview` — publication-level summary
-
-3. **Feed UI.** Three new pages in the Next.js app (per ADR Section 7.1):
-   - `/traffology` — The Feed (reverse-chronological observation stream)
-   - `/traffology/piece/:pieceId` — The Piece (summary strip + provenance diagram + filtered feed)
-   - `/traffology/overview` — The Overview (dense grid of miniature provenance bars)
-
-   The `provenance-ikb.jsx` prototype already demonstrates the Piece view — it needs to be converted from sample data to live API data and integrated into the Next.js app with the all.haus design system (Jost font, IKB blue, Bauhaus geometry).
-
-4. **Observation templates.** Render observations from fixed templates (ADR Section 6). Each observation type maps to a template with values slotted in. No LLM involved — the voice is precise, calm, and mechanical.
+Phase 1 is complete. The collection layer, aggregation layer, interpretation layer, and feed UI are all functional.
 
 ---
 
