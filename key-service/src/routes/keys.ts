@@ -141,6 +141,9 @@ export async function keyRoutes(app: FastifyInstance) {
       if (!readerPubkey || typeof readerPubkey !== 'string') {
         return reply.status(401).send({ error: 'Missing x-reader-pubkey' })
       }
+      if (!/^[0-9a-f]{64}$/.test(readerPubkey)) {
+        return reply.status(400).send({ error: 'Invalid x-reader-pubkey format' })
+      }
 
       try {
         const keyResponse = await vaultService.issueKey({

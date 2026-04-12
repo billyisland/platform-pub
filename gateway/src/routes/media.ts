@@ -159,6 +159,7 @@ export async function mediaRoutes(app: FastifyInstance) {
 
       const res = await fetch(oembedUrl, {
         headers: { 'User-Agent': 'Platform/1.6 (+https://all.haus)' },
+        signal: AbortSignal.timeout(5000),
       })
 
       if (!res.ok) {

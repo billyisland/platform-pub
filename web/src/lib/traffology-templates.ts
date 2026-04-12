@@ -87,7 +87,7 @@ export function renderObservation(obs: Observation): RenderedObservation {
       html = subscriberConversion(v)
       break
     default:
-      html = `<span>${obs.observation_type}: ${JSON.stringify(v)}</span>`
+      html = `<span>${escapeHtml(obs.observation_type)}: ${escapeHtml(JSON.stringify(v))}</span>`
   }
 
   return {
@@ -122,12 +122,12 @@ function anomaly(v: Record<string, any>): string {
 }
 
 function sourceNew(v: Record<string, any>): string {
-  return `A new source appeared \u2014 ${v.sourceName} has sent ${fmtNum(v.readers)} readers to ${em(v.title)}.`
+  return `A new source appeared \u2014 ${escapeHtml(v.sourceName)} has sent ${fmtNum(v.readers)} readers to ${em(v.title)}.`
 }
 
 function sourceBreakdown(v: Record<string, any>): string {
   const parts = (v.breakdown as Array<{ name: string; pct: number }>)
-    .map(s => `${s.name} (${s.pct}%)`)
+    .map(s => `${escapeHtml(s.name)} (${s.pct}%)`)
   const list = parts.length <= 2
     ? parts.join(' and ')
     : parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1]
@@ -135,12 +135,12 @@ function sourceBreakdown(v: Record<string, any>): string {
 }
 
 function sourceShift(v: Record<string, any>): string {
-  return `The main source of readers for ${em(v.title)} has shifted from ${v.fromSource} to ${v.toSource}. ${v.toSource} now accounts for ${v.pct}% of all readers.`
+  return `The main source of readers for ${em(v.title)} has shifted from ${escapeHtml(v.fromSource)} to ${escapeHtml(v.toSource)}. ${escapeHtml(v.toSource)} now accounts for ${v.pct}% of all readers.`
 }
 
 function sourceFamiliar(v: Record<string, any>): string {
   const above = v.aboveUsual ? ' That\u2019s higher than usual from this source.' : ''
-  return `${v.sourceName} sent ${fmtNum(v.readers)} readers to ${em(v.title)}.${above}`
+  return `${escapeHtml(v.sourceName)} sent ${fmtNum(v.readers)} readers to ${em(v.title)}.${above}`
 }
 
 function milestoneReaders(v: Record<string, any>): string {
@@ -150,7 +150,7 @@ function milestoneReaders(v: Record<string, any>): string {
 }
 
 function milestoneGeo(v: Record<string, any>): string {
-  return `${em(v.title)} has been read in ${v.country} \u2014 that\u2019s a first for you.`
+  return `${em(v.title)} has been read in ${escapeHtml(v.country)} \u2014 that\u2019s a first for you.`
 }
 
 function milestoneLongevity(v: Record<string, any>): string {
@@ -158,7 +158,7 @@ function milestoneLongevity(v: Record<string, any>): string {
 }
 
 function anomalyLateSpike(v: Record<string, any>): string {
-  const source = v.topSource ? `, mostly from ${v.topSource}` : ''
+  const source = v.topSource ? `, mostly from ${escapeHtml(v.topSource)}` : ''
   return `${em(v.title)}, published ${fmtNum(v.daysAgo)} days ago, is getting traffic again \u2014 ${fmtNum(v.readers)} readers today${source}.`
 }
 

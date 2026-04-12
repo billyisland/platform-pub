@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.27.1
+# all.haus — Deployment Reference v5.28.0
 
-**Date:** 8 April 2026
-**Replaces:** v5.27.0 (see bottom for change log)
+**Date:** 12 April 2026
+**Replaces:** v5.27.1 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -14,6 +14,7 @@ Internet
   │
   ├─ :443 ─→ nginx (TLS termination)
   │            ├─ /api/*      → gateway:3000
+  │            ├─ /ingest/*   → traffology-ingest:3005
   │            ├─ /relay      → strfry:7777  (WebSocket upgrade)
   │            ├─ /media/*    → static files from media_data volume
   │            └─ /*          → web:3000     (Next.js)
@@ -25,10 +26,13 @@ Internal only:
                   ─→ payment:3001
                   ─→ keyservice:3002
                   ─→ key-custody:3004
+                  ─→ traffology-ingest:3005
                   ─→ writes to /app/media/ (shared volume)
   payment:3001    ─→ postgres:5432, strfry:7777, Stripe API
   keyservice:3002 ─→ postgres:5432, strfry:7777
   key-custody:3004 → postgres:5432
+  traffology-ingest:3005 → postgres:5432
+  traffology-worker      → postgres:5432 (Graphile Worker, no port)
 ```
 
 ### Services
@@ -43,6 +47,8 @@ Internal only:
 | key-custody | ./key-custody/Dockerfile | 3004 (Docker internal only) | Custodial Nostr keypair service |
 | web | ./web/Dockerfile | 3010→3000 | Next.js frontend |
 | nginx | nginx:alpine | 80, 443 | Reverse proxy, TLS, static media |
+| traffology-ingest | ./traffology-ingest/Dockerfile | 3005 (Docker internal only) | Analytics beacon receiver, session tracking |
+| traffology-worker | ./traffology-worker/Dockerfile | — (background) | Graphile Worker: hourly/daily/weekly aggregation, source resolution, interpretation |
 | blossom | ghcr.io/hzrd149/blossom-server:master | 3000 (Docker internal only) | Nostr media federation |
 | certbot | certbot/certbot | — | TLS certificate renewal |
 
@@ -99,6 +105,8 @@ Key variables:
 | `APP_URL` | gateway | **Frontend** URL (Next.js). Used for OAuth redirect URIs, Stripe redirects, CORS, and magic links. Dev: `http://localhost:3010`. **Must not be the gateway URL.** |
 | `ADMIN_ACCOUNT_IDS` | gateway | Comma-separated UUIDs for admin access (fallback; prefer `admin_account_ids` in `platform_config` table — no redeploy needed) |
 | `EMAIL_PROVIDER` | gateway | `postmark`, `resend`, or `console` |
+| `TRAFFOLOGY_INGEST_URL` | gateway | Internal URL for traffology-ingest (default: http://localhost:3005) |
+| `TRAFFOLOGY_IP_HASH_SALT` | traffology-ingest | Salt for SHA-256 IP hashing (must override default in production) |
 
 > **Security:** `ACCOUNT_KEY_HEX` must never be set on the gateway — the key-custody service is the sole holder of this key by design. The gateway cannot decrypt user private keys.
 
@@ -160,7 +168,7 @@ docker compose ps   # wait for postgres to be healthy
 
 The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.13.0, `schema.sql` includes all structural changes through migration 038; the `_migrations` table is pre-seeded accordingly.
 
-For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything.
+For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything. As of v5.28.0, `schema.sql` includes all structural changes through migration 041.
 
 For **existing** databases that were initialised with an earlier `schema.sql`, use the migration runner:
 
@@ -249,6 +257,104 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.27.1
+
+**Migration required (041).** Services changed: **gateway**, **payment-service**, **key-service**, **web**, **traffology-ingest** (new), **traffology-worker** (new). Deploy order: **migrate → rebuild all changed services**.
+
+This release adds the Traffology analytics system (writer-facing traffic insights) and applies security hardening found during a full codebase audit.
+
+**New services:**
+
+- **traffology-ingest** (`traffology-ingest/Dockerfile`, port 3005): Receives page script beacons, tracks sessions, maintains live reader counts. Proxied by nginx at `/ingest/`.
+- **traffology-worker** (`traffology-worker/Dockerfile`, background): Graphile Worker running hourly/daily/weekly aggregation, source resolution, and observation generation.
+
+**Backend changes:**
+
+- **Stripe idempotency keys** (`settlement.ts`, `payout.ts`): All Stripe mutating calls (`paymentIntents.create`, `transfers.create`) now include `idempotencyKey` to prevent duplicate charges on network retries.
+- **Webhook event deduplication** (`webhook.ts`): `stripe_webhook_events` table prevents reprocessing of duplicate Stripe webhook events. Failed processing rolls back the dedup record so Stripe can retry.
+- **oEmbed fetch timeout** (`media.ts`): Added 5-second `AbortSignal.timeout` to the oEmbed proxy fetch.
+- **Key service pubkey validation** (`keys.ts`): `x-reader-pubkey` header now validated as 64-char hex string.
+
+**Frontend changes:**
+
+- **Traffology UI**: Feed view (`/traffology`), piece detail (`/traffology/piece/:pieceId`), overview (`/traffology/overview`).
+- **Template HTML escaping** (`traffology-templates.ts`): All interpolated values (source names, country names, fallback data) now escaped via `escapeHtml()`.
+
+**Schema:**
+
+- **Migration 039**: Default article price config.
+- **Migration 040**: Traffology analytics schema (13 tables in `traffology` schema + Graphile Worker queue).
+- **Migration 041**: `stripe_webhook_events` dedup table; `ON DELETE CASCADE` on `subscription_events.subscription_id`.
+- **schema.sql**: Synced with all migrations through 041. ON DELETE clauses from migrations 018/021/041 applied. `stripe_webhook_events` and migration tracking list updated.
+
+**Modified files:**
+
+- `payment-service/src/services/settlement.ts` — Stripe idempotency key
+- `payment-service/src/services/payout.ts` — Stripe idempotency keys (2 calls)
+- `payment-service/src/routes/webhook.ts` — event deduplication
+- `gateway/src/routes/media.ts` — oEmbed timeout
+- `gateway/src/routes/traffology.ts` — Traffology API routes
+- `key-service/src/routes/keys.ts` — pubkey format validation
+- `web/src/lib/traffology-templates.ts` — HTML escaping
+- `web/src/lib/traffology-api.ts` — API client
+- `web/src/app/traffology/` — all Traffology pages
+- `web/src/components/traffology/` — FeedItem, ProvenanceBar, TraffologyMeta
+- `web/public/traffology.js` — page tracking script
+- `traffology-ingest/` — new service
+- `traffology-worker/` — new service
+- `migrations/039_default_article_price.sql` — new
+- `migrations/040_traffology_schema.sql` — new
+- `migrations/041_webhook_dedup_and_fk_fixes.sql` — new
+- `schema.sql` — synced with migrations, dedup table added
+- `nginx.conf` — `/ingest/` proxy block for traffology-ingest
+- `docker-compose.yml` — traffology-ingest and traffology-worker services
+
+**New env vars:**
+
+| Variable | Service | Purpose |
+|----------|---------|---------|
+| `TRAFFOLOGY_INGEST_URL` | gateway | Internal URL for traffology-ingest (default: http://localhost:3005) |
+| `TRAFFOLOGY_IP_HASH_SALT` | traffology-ingest | Salt for IP hashing (**must override in production**) |
+
+**Upgrade steps:**
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Apply migrations (039, 040, 041)
+DATABASE_URL=postgresql://platformpub:$POSTGRES_PASSWORD@127.0.0.1:5432/platformpub \
+  npx tsx shared/src/db/migrate.ts
+
+# Add Traffology env vars
+echo 'TRAFFOLOGY_IP_HASH_SALT=<generate with: openssl rand -hex 32>' >> traffology-ingest/.env
+# gateway/.env already has TRAFFOLOGY_INGEST_URL defaulting to http://localhost:3005
+# (use http://traffology-ingest:3005 in Docker)
+
+# Build and deploy
+docker compose build gateway payment web key-service traffology-ingest traffology-worker
+docker compose up -d
+```
+
+Verify:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# All services should show (healthy) after ~30s
+# traffology-ingest and traffology-worker should be running
+
+# Traffology check:
+# - Open an article page: network tab should show POST to /ingest/beacon
+# - /traffology: observation feed should load (empty until aggregation runs)
+# - Wait for :05 past the hour: aggregation populates piece_stats
+
+# Webhook deduplication check:
+# - Stripe test webhook: should process once, second delivery returns 200 (skipped)
+
+# oEmbed check:
+# - Paste a YouTube URL in the editor: embed should resolve within 5 seconds
+```
+
+---
 
 ### From v5.25.0
 
@@ -543,6 +649,9 @@ No new env vars. No database changes.
 | 036_commission_conversation.sql | `parent_conversation_id` on `pledge_drives` for DM-linked commissions |
 | 037_subscription_offers.sql | `subscription_offers` table; `offer_id` + `offer_periods_remaining` on `subscriptions` |
 | 038_publications.sql | Publications schema: 7 new tables, 2 enums, publication columns on articles/drafts/subscriptions/feed_scores |
+| 039_default_article_price.sql | Default article price config |
+| 040_traffology_schema.sql | Traffology analytics: 13 tables in `traffology` schema (pieces, sessions, sources, piece_stats, source_stats, half_day_buckets, writer_baselines, publication_baselines, topic_performance, observations) + Graphile Worker queue |
+| 041_webhook_dedup_and_fk_fixes.sql | `stripe_webhook_events` dedup table; `ON DELETE CASCADE` on `subscription_events.subscription_id` FK |
 
 Run all pending migrations (requires Node on the host — substitute your `POSTGRES_PASSWORD`):
 ```bash
@@ -703,6 +812,16 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 | PATCH | /api/v1/publications/:id/payroll/article/:articleId | session (manage_finances) | Set per-article share override |
 | GET | /api/v1/publications/:id/earnings | session (manage_finances) | Revenue dashboard (totals, per-article, payouts) |
 | GET | /api/v1/pub/:slug/rss | — | Publication RSS feed |
+
+### Traffology (writer analytics)
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | /api/v1/traffology/feed | session | Paginated observation feed (cursor-based, max 50/page) |
+| GET | /api/v1/traffology/piece/:pieceId | session | Piece detail: stats, source breakdown, half-day buckets, observations |
+| GET | /api/v1/traffology/overview | session | Writer baseline, all pieces with provenance, topic performance |
+| GET | /api/v1/traffology/concurrent/:pieceId | session | Live reader count for a single piece (proxied from traffology-ingest) |
+| GET | /api/v1/traffology/concurrent | session | Aggregated live reader counts across all writer's pieces |
+| POST | /ingest/beacon | — | Page script beacon (init/heartbeat/unload). Rate limited: 120/min/IP. Proxied by nginx to traffology-ingest |
 
 ### Reader account
 | Method | Path | Auth | Purpose |
@@ -884,6 +1003,9 @@ Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), conver
 | /pub/:slug/:articleSlug | Article under publication branding |
 | /invite/:token | Publication invite acceptance page |
 | /search | Article, writer, and publication search |
+| /traffology | Traffology feed: observation stream, live reader banner |
+| /traffology/piece/:pieceId | Piece detail: summary strip, provenance bars, source breakdown |
+| /traffology/overview | Writer overview: baseline stats, sortable piece grid, topic performance |
 | /about | About page |
 
 ---
@@ -944,6 +1066,23 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.28.0 — 12 April 2026
+
+**Traffology analytics + security audit hardening**
+
+Migration required (039, 040, 041). Services changed: gateway, payment-service, key-service, web, traffology-ingest (new), traffology-worker (new).
+
+- **Traffology Phase 1:** Complete writer analytics system — page tracking script, ingest service, hourly/daily/weekly aggregation, source resolution (170+ known domains, shortener following), observation generation (first-day summary, anomalies, milestones, source breakdown), feed UI, piece detail with provenance bars, overview with baseline stats and topic performance.
+- **Stripe idempotency keys:** `paymentIntents.create` and `transfers.create` calls now include idempotency keys to prevent duplicate charges on network retries.
+- **Webhook deduplication:** `stripe_webhook_events` table prevents reprocessing of Stripe events delivered more than once. Failed handler rolls back dedup record for retry.
+- **oEmbed timeout:** External oEmbed fetch now has 5-second timeout (was unbounded).
+- **Key service pubkey validation:** `x-reader-pubkey` validated as 64-char hex (defence in depth).
+- **Template HTML escaping:** All Traffology template values now pass through `escapeHtml()`.
+- **FK fix:** `subscription_events.subscription_id` gets `ON DELETE CASCADE` (missed by migration 021).
+- **schema.sql synced:** All ON DELETE clauses from migrations 018/021/041, dedup table, migration tracking updated through 041.
+
+---
 
 ### v5.27.1 — 8 April 2026
 

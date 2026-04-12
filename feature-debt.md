@@ -2,8 +2,8 @@
 
 Consolidated from 19 planning documents, verified against the codebase as of 2026-04-06. The archived specs live in `planning-archive/`. Documents left in the project root are strategic specs that are still entirely ahead of us.
 
-Last audited: 2026-04-06. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-06 (v5.20.0 session). Completed: Publications Phase 5 (revenue — rate card routes, payroll routes with standing shares and per-article overrides, publication payout worker integrated into daily cycle, earnings dashboard, three new dashboard tabs: RateCardTab, PayrollTab, PublicationEarningsTab). Next up: Writer analytics or email-on-publish.
+Last audited: 2026-04-12. Items marked DONE were verified against the codebase in that audit.
+Last worked: 2026-04-12 (v5.28.0 session). Completed: Traffology Phase 1 (writer analytics), security audit hardening (Stripe idempotency keys, webhook dedup, oEmbed timeout, template escaping, pubkey validation, FK fixes, schema sync). Next up: Email-on-publish or tags/topics.
 
 ---
 
@@ -92,10 +92,9 @@ Requires: migration (bookmarks table), gateway routes (toggle, list, batch check
 Requires: migration (article_tags table), editor tag input, gateway tag routes, tag browse page (/tag/:tag), tag display on cards and articles.
 *(Source: FEATURES.md feature 6)*
 
-### Writer analytics
+### ~~Writer analytics~~
 
-Requires: gateway analytics endpoint joining read_events, vote_tallies, comments, and revenue; dashboard Analytics tab with a sortable table.
-*(Source: FEATURES.md feature 7)*
+**Done (v5.28.0 — Traffology Phase 1):** Complete analytics system with page tracking script, ingest service, hourly/daily/weekly aggregation, source resolution, observation generation, feed UI, piece detail with provenance bars, and overview with baseline stats. See `TRAFFOLOGY-BUILD-STATUS.md` and `TRAFFOLOGY-MASTER-ADR-2.md`.
 
 ### Reposts / reshares
 
@@ -199,10 +198,9 @@ Multi-writer federated publications with shared identity, editorial pipeline, an
 
 ### Next up
 
-1. **Writer analytics** — writers need numbers to stay. Gateway endpoint joining read_events, votes, comments, revenue; dashboard Analytics tab.
-2. **Email-on-publish** — inbox is the feed, critical for retention. Migration + send logic + settings toggle.
-3. **Tags/topics** — discoverability. Migration, editor input, browse page, card display.
-4. **Bookmarks** — reader engagement. Migration, routes, button, /bookmarks page.
+1. **Email-on-publish** — inbox is the feed, critical for retention. Migration + send logic + settings toggle.
+2. **Tags/topics** — discoverability. Migration, editor input, browse page, card display.
+3. **Bookmarks** — reader engagement. Migration, routes, button, /bookmarks page.
 
 ### Later: strategic work
 
@@ -212,6 +210,17 @@ Multi-writer federated publications with shared identity, editorial pipeline, an
 9. Bucket system — see `platform-bucket-system-design.md`
 10. Publications Phase 4 (theming/custom domains) — see `PUBLICATIONS-SPEC.md` §10 Phase 4
 
+### Completed (v5.28.0 session, 2026-04-12)
+
+- ~~Writer analytics~~ — Traffology Phase 1: page tracking, ingest service, aggregation pipeline, source resolution, observation engine, feed UI, piece detail, overview
+- ~~Stripe idempotency keys~~ — all mutating Stripe calls (paymentIntents.create, transfers.create) now include idempotencyKey
+- ~~Webhook event deduplication~~ — stripe_webhook_events table prevents reprocessing
+- ~~oEmbed fetch timeout~~ — 5-second AbortSignal.timeout added
+- ~~Template HTML escaping~~ — all Traffology template values escaped
+- ~~Key service pubkey validation~~ — 64-char hex format check
+- ~~subscription_events FK fix~~ — ON DELETE CASCADE added via migration 041
+- ~~schema.sql sync~~ — all ON DELETE clauses from migrations 018/021/041 applied
+
 ### Infrastructure (fit in as time allows)
 
 - CI/CD pipeline
@@ -219,3 +228,5 @@ Multi-writer federated publications with shared identity, editorial pipeline, an
 - TypeScript strictness (eliminate remaining ~23 `any` instances)
 - Accessibility pass
 - TypeScript target alignment
+- **Session invalidation on logout** — JWTs remain valid for 30 days after logout (cookie is cleared client-side, but the token itself works until natural expiry). Requires a server-side token blacklist table checked in `requireAuth`, or migrating to shorter-lived tokens with a refresh token pattern. Flagged in v5.28.0 audit.
+- **CSP nonce middleware** — `nginx.conf` CSP uses `'unsafe-inline'` for `script-src`, which undermines XSS protection. Removing it requires Next.js middleware to generate per-request nonces and inject them into both the CSP header and inline `<script>` tags. Needs careful testing to avoid breaking hydration. Flagged in v5.28.0 audit.

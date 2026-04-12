@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import Stripe from 'stripe'
 import type { PoolClient } from 'pg'
 import type { TabSettlement, PlatformConfig } from '../types/index.js'
@@ -173,6 +174,8 @@ export class SettlementService {
     triggerType: 'threshold' | 'monthly_fallback'
   ): Promise<string> {
     // Create Stripe PaymentIntent — off-session (card already on file)
+    // Idempotency key protects against duplicate charges on network retries
+    const settlementIdempotencyKey = randomUUID()
     const paymentIntent = await this.stripe.paymentIntents.create({
       amount: amountPence,
       currency: 'gbp',
@@ -186,6 +189,8 @@ export class SettlementService {
         tab_id: tabId,
         trigger_type: triggerType,
       },
+    }, {
+      idempotencyKey: settlementIdempotencyKey,
     })
 
     // Write settlement record (pending Stripe confirmation)

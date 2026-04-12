@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import Stripe from 'stripe'
 import type { WriterEarnings, ArticleEarnings } from '../types/index.js'
 import { pool, withTransaction, loadConfig } from '../db/client.js'
@@ -337,6 +338,7 @@ export class PayoutService {
       }
 
       // Create Stripe Connect transfer (net amount — platform fee already deducted)
+      // Idempotency key protects against duplicate transfers on network retries
       const transfer = await this.stripe.transfers.create({
         amount: lockedAmountPence,
         currency: 'gbp',
@@ -345,6 +347,8 @@ export class PayoutService {
           platform: 'all.haus',
           writer_id: writerId,
         },
+      }, {
+        idempotencyKey: `payout-${writerId}-${randomUUID()}`,
       })
 
       // Write payout record
@@ -663,6 +667,8 @@ export class PayoutService {
                 publication_payout_id: payoutId,
                 account_id: split.accountId,
               },
+            }, {
+              idempotencyKey: `pub-split-${payoutId}-${split.accountId}-${randomUUID()}`,
             })
             stripeTransferId = transfer.id
             splitStatus = 'initiated'

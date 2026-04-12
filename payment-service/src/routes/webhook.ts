@@ -50,9 +50,28 @@ export async function webhookRoutes(app: FastifyInstance) {
     }
 
     try {
+      // Deduplicate: skip events we've already processed successfully.
+      // Stripe guarantees at-least-once delivery, so the same event can
+      // arrive multiple times.
+      const { rowCount } = await pool.query(
+        `INSERT INTO stripe_webhook_events (event_id, event_type)
+         VALUES ($1, $2)
+         ON CONFLICT (event_id) DO NOTHING`,
+        [event.id, event.type]
+      )
+      if (rowCount === 0) {
+        logger.info({ eventId: event.id }, 'Duplicate webhook event — skipping')
+        return reply.status(200).send({ received: true })
+      }
+
       await handleStripeEvent(event)
       return reply.status(200).send({ received: true })
     } catch (err) {
+      // Roll back the dedup record so Stripe can retry this event
+      await pool.query(
+        'DELETE FROM stripe_webhook_events WHERE event_id = $1',
+        [event.id]
+      ).catch(() => {}) // best-effort cleanup
       // Return 500 so Stripe retries — do not ack events we failed to process
       logger.error({ err, eventType: event.type, eventId: event.id }, 'Webhook handler failed')
       return reply.status(500).send({ error: 'Processing failed' })

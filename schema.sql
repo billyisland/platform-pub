@@ -378,7 +378,7 @@ CREATE TABLE subscription_nudge_log (
 
 CREATE TABLE subscription_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  subscription_id UUID NOT NULL REFERENCES subscriptions(id),
+  subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
   event_type TEXT NOT NULL CHECK (event_type IN ('subscription_charge', 'subscription_earning', 'subscription_read')),
   reader_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   writer_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -877,8 +877,8 @@ CREATE INDEX idx_dm_reply_to ON direct_messages(reply_to_id) WHERE reply_to_id I
 
 CREATE TABLE dm_pricing (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id      UUID NOT NULL REFERENCES accounts(id),
-  target_id     UUID REFERENCES accounts(id),  -- NULL = default rate for all senders
+  owner_id      UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  target_id     UUID REFERENCES accounts(id) ON DELETE CASCADE,  -- NULL = default rate for all senders
   price_pence   INT NOT NULL,
   UNIQUE (owner_id, target_id)
 );
@@ -901,9 +901,9 @@ CREATE INDEX idx_dm_likes_message ON dm_likes (message_id);
 
 CREATE TABLE pledge_drives (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  creator_id            UUID NOT NULL REFERENCES accounts(id),
+  creator_id            UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   origin                drive_origin NOT NULL,
-  target_writer_id      UUID NOT NULL REFERENCES accounts(id),
+  target_writer_id      UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   title                 TEXT NOT NULL,
   description           TEXT,
   funding_target_pence  INT,
@@ -1102,6 +1102,20 @@ CREATE INDEX idx_pub_payout_splits_payout ON publication_payout_splits (publicat
 CREATE INDEX idx_pub_payout_splits_account ON publication_payout_splits (account_id);
 
 -- =============================================================================
+-- STRIPE WEBHOOK DEDUPLICATION
+-- Prevents reprocessing of duplicate webhook events (Stripe at-least-once delivery).
+-- =============================================================================
+
+CREATE TABLE stripe_webhook_events (
+  event_id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_stripe_webhook_events_processed
+  ON stripe_webhook_events(processed_at);
+
+-- =============================================================================
 -- UPDATED_AT TRIGGERS
 -- Auto-update updated_at on mutation for key tables.
 -- =============================================================================
@@ -1191,5 +1205,8 @@ INSERT INTO _migrations (filename) VALUES
   ('035_feed_scores.sql'),
   ('036_commission_conversation.sql'),
   ('037_subscription_offers.sql'),
-  ('038_publications.sql')
+  ('038_publications.sql'),
+  ('039_default_article_price.sql'),
+  ('040_traffology_schema.sql'),
+  ('041_webhook_dedup_and_fk_fixes.sql')
 ON CONFLICT (filename) DO NOTHING;
