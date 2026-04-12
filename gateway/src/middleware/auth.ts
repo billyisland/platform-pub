@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from 'fastify'
-import { verifySession, refreshIfNeeded, type SessionPayload } from '../../shared/src/auth/session.js'
+import { verifySession, refreshIfNeeded, destroySession, type SessionPayload } from '../../shared/src/auth/session.js'
 import { pool } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
 
@@ -43,12 +43,20 @@ export async function requireAuth(
   }
 
   // Check account status — suspended users must not retain API access
-  const accountRow = await pool.query<{ status: string }>(
-    'SELECT status FROM accounts WHERE id = $1',
+  const accountRow = await pool.query<{ status: string; sessions_invalidated_at: Date | null }>(
+    'SELECT status, sessions_invalidated_at FROM accounts WHERE id = $1',
     [session.sub]
   )
   if (accountRow.rowCount === 0 || accountRow.rows[0].status !== 'active') {
     reply.status(403).send({ error: 'Account suspended or not found' })
+    return
+  }
+
+  // Reject tokens issued before the last session invalidation (logout-all-devices)
+  const invalidatedAt = accountRow.rows[0].sessions_invalidated_at
+  if (invalidatedAt && session.iat && session.iat < Math.floor(invalidatedAt.getTime() / 1000)) {
+    destroySession(reply)
+    reply.status(401).send({ error: 'Session expired' })
     return
   }
 

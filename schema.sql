@@ -118,6 +118,7 @@ CREATE TABLE accounts (
   default_article_price_pence INT,  -- NULL = auto-suggest by word count (migration 039)
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   show_commission_button BOOLEAN NOT NULL DEFAULT TRUE,  -- (migration 030) let authors hide commission button
+  sessions_invalidated_at TIMESTAMPTZ,                  -- (migration 043) NULL = no invalidation; set on logout to reject older JWTs
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -336,6 +337,7 @@ CREATE TABLE subscriptions (
   subscription_period TEXT NOT NULL DEFAULT 'monthly' CHECK (subscription_period IN ('monthly', 'annual')), -- (migration 024)
   is_comp BOOLEAN NOT NULL DEFAULT FALSE,        -- (migration 025) complimentary sub granted by writer
   hidden BOOLEAN NOT NULL DEFAULT FALSE,          -- (migration 027) hide from public profile
+  notify_on_publish BOOLEAN NOT NULL DEFAULT TRUE, -- (migration 042) email when writer publishes
   nostr_event_id TEXT,                           -- kind 7003 subscription attestation (migration 007)
   offer_id UUID REFERENCES subscription_offers(id), -- (migration 037) offer used at subscribe time
   offer_periods_remaining INTEGER,               -- (migration 037) NULL = permanent or no offer

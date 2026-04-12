@@ -973,6 +973,7 @@ export interface MySubscription {
   startedAt: string
   cancelledAt: string | null
   hidden: boolean
+  notifyOnPublish: boolean
 }
 
 export const account = {
@@ -981,6 +982,12 @@ export const account = {
 
   getMySubscriptions: () =>
     request<{ subscriptions: MySubscription[] }>('/subscriptions/mine'),
+
+  toggleSubscriptionNotifications: (subscriptionId: string, notifyOnPublish: boolean) =>
+    request<{ ok: boolean; notifyOnPublish: boolean }>(`/subscriptions/${subscriptionId}/notifications`, {
+      method: 'PATCH',
+      body: JSON.stringify({ notifyOnPublish }),
+    }),
 
   exportReceipts: () =>
     request<Blob>('/receipts/export'),

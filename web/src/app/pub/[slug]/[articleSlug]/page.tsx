@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import { renderMarkdown } from '../../../../lib/markdown'
 import { ArticleReader } from '../../../../components/article/ArticleReader'
 import type { ArticleMetadata } from '../../../../lib/api'
@@ -18,6 +19,49 @@ async function getArticle(dTag: string): Promise<ArticleMetadata | null> {
   })
   if (!res.ok) return null
   return res.json()
+}
+
+function extractFirstImage(markdown: string | null): string | undefined {
+  if (!markdown) return undefined
+  const match = markdown.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/)
+  return match?.[1] ?? undefined
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string; articleSlug: string }
+}): Promise<Metadata> {
+  const article = await getArticle(params.articleSlug)
+  if (!article) return {}
+
+  const title = article.title
+  const description = article.summary || `By ${article.writer.displayName ?? article.writer.username}`
+  const authorName = article.writer.displayName ?? article.writer.username
+  const pubName = article.publication?.name
+  const url = `https://all.haus/pub/${params.slug}/${article.dTag}`
+  const image = extractFirstImage(article.contentFree)
+
+  return {
+    title,
+    description,
+    authors: [{ name: authorName }],
+    openGraph: {
+      title,
+      description,
+      type: 'article',
+      url,
+      siteName: pubName ?? 'all.haus',
+      publishedTime: article.publishedAt ?? undefined,
+      authors: [authorName],
+      ...(image && { images: [{ url: image }] }),
+    },
+    twitter: {
+      card: image ? 'summary_large_image' : 'summary',
+      title,
+      description,
+    },
+  }
 }
 
 export default async function PublicationArticlePage({

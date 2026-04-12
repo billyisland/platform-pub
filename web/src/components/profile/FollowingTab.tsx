@@ -118,6 +118,7 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
           startedAt: new Date().toISOString(),
           cancelledAt: null,
           hidden: false,
+          notifyOnPublish: true,
         })
         return next
       })
@@ -164,6 +165,7 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
           startedAt: new Date().toISOString(),
           cancelledAt: null,
           hidden: false,
+          notifyOnPublish: true,
         })
         return next
       })

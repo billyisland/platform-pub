@@ -9,6 +9,7 @@ export function SubscriptionsSection() {
   const [loading, setLoading] = useState(true)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [togglingVisibility, setTogglingVisibility] = useState<string | null>(null)
+  const [togglingNotify, setTogglingNotify] = useState<string | null>(null)
 
   useEffect(() => {
     (async () => {
@@ -63,6 +64,21 @@ export function SubscriptionsSection() {
             </div>
             <div className="flex items-center gap-4 flex-shrink-0">
               <span className="font-mono text-[12px] text-black tabular-nums">£{(s.pricePence / 100).toFixed(2)}/mo</span>
+              <button
+                onClick={async () => {
+                  setTogglingNotify(s.id)
+                  try {
+                    await accountApi.toggleSubscriptionNotifications(s.id, !s.notifyOnPublish)
+                    setSubs(prev => prev.map(sub => sub.id === s.id ? { ...sub, notifyOnPublish: !sub.notifyOnPublish } : sub))
+                  } catch { alert('Failed to update notifications.') }
+                  finally { setTogglingNotify(null) }
+                }}
+                disabled={togglingNotify === s.id || s.status !== 'active'}
+                className="text-[13px] font-sans text-grey-300 hover:text-black disabled:opacity-50"
+                title={s.notifyOnPublish ? 'Email me when they publish' : 'Email notifications muted'}
+              >
+                {togglingNotify === s.id ? '...' : s.notifyOnPublish ? 'Notify' : 'Muted'}
+              </button>
               <button
                 onClick={async () => {
                   setTogglingVisibility(s.writerId)

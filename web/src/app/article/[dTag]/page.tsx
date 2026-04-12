@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import Script from 'next/script'
+import type { Metadata } from 'next'
 import { renderMarkdown } from '../../../lib/markdown'
 import { ArticleReader } from '../../../components/article/ArticleReader'
 import { TraffologyMeta } from '../../../components/traffology/TraffologyMeta'
@@ -24,6 +25,44 @@ async function getArticle(dTag: string): Promise<ArticleMetadata | null> {
   })
   if (!res.ok) return null
   return res.json()
+}
+
+function extractFirstImage(markdown: string | null): string | undefined {
+  if (!markdown) return undefined
+  const match = markdown.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/)
+  return match?.[1] ?? undefined
+}
+
+export async function generateMetadata({ params }: { params: { dTag: string } }): Promise<Metadata> {
+  const article = await getArticle(params.dTag)
+  if (!article) return {}
+
+  const title = article.title
+  const description = article.summary || `By ${article.writer.displayName ?? article.writer.username}`
+  const authorName = article.writer.displayName ?? article.writer.username
+  const url = `https://all.haus/article/${article.dTag}`
+  const image = extractFirstImage(article.contentFree)
+
+  return {
+    title,
+    description,
+    authors: [{ name: authorName }],
+    openGraph: {
+      title,
+      description,
+      type: 'article',
+      url,
+      siteName: article.publication?.name ?? 'all.haus',
+      publishedTime: article.publishedAt ?? undefined,
+      authors: [authorName],
+      ...(image && { images: [{ url: image }] }),
+    },
+    twitter: {
+      card: image ? 'summary_large_image' : 'summary',
+      title,
+      description,
+    },
+  }
 }
 
 export default async function ArticlePage({ params }: { params: { dTag: string } }) {

@@ -346,12 +346,13 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         started_at: Date
         cancelled_at: Date | null
         hidden: boolean
+        notify_on_publish: boolean
       }>(
         `SELECT s.id, s.writer_id, w.username AS writer_username,
                 w.display_name AS writer_display_name,
                 w.avatar_blossom_url AS writer_avatar,
                 s.price_pence, s.status, s.auto_renew, s.current_period_end,
-                s.started_at, s.cancelled_at, s.hidden
+                s.started_at, s.cancelled_at, s.hidden, s.notify_on_publish
          FROM subscriptions s
          JOIN accounts w ON w.id = s.writer_id
          WHERE s.reader_id = $1 AND s.status IN ('active', 'cancelled')
@@ -373,6 +374,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           startedAt: s.started_at.toISOString(),
           cancelledAt: s.cancelled_at?.toISOString() ?? null,
           hidden: s.hidden,
+          notifyOnPublish: s.notify_on_publish,
         })),
       })
     }
@@ -879,6 +881,41 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       }
 
       return reply.send({ ok: true })
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // PATCH /subscriptions/:id/notifications — toggle email-on-publish
+  // ---------------------------------------------------------------------------
+
+  const NotifySchema = z.object({
+    notifyOnPublish: z.boolean(),
+  })
+
+  app.patch<{ Params: { id: string } }>(
+    '/subscriptions/:id/notifications',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const readerId = req.session!.sub!
+      const { id: subscriptionId } = req.params
+      const parsed = NotifySchema.safeParse(req.body)
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() })
+      }
+
+      const result = await pool.query(
+        `UPDATE subscriptions
+         SET notify_on_publish = $1, updated_at = now()
+         WHERE id = $2 AND reader_id = $3 AND status = 'active'
+         RETURNING id`,
+        [parsed.data.notifyOnPublish, subscriptionId, readerId]
+      )
+
+      if (result.rowCount === 0) {
+        return reply.status(404).send({ error: 'Subscription not found' })
+      }
+
+      return reply.send({ ok: true, notifyOnPublish: parsed.data.notifyOnPublish })
     }
   )
 }

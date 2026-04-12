@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { signup, SignupSchema, getAccount, updateProfile, connectStripeAccount, connectPaymentMethod } from '../../shared/src/auth/accounts.js'
-import { createSession, destroySession } from '../../shared/src/auth/session.js'
+import { createSession, destroySession, verifySession } from '../../shared/src/auth/session.js'
 import { requestMagicLink, verifyMagicLink } from '../../shared/src/auth/magic-links.js'
 import { pool } from '../../shared/src/db/client.js'
 import { sendMagicLinkEmail } from '../../shared/src/lib/email.js'
@@ -180,6 +180,14 @@ export async function authRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.post('/auth/logout', async (req, reply) => {
+    // If we have a valid session, invalidate all sessions for this account
+    const session = await verifySession(req)
+    if (session?.sub) {
+      await pool.query(
+        'UPDATE accounts SET sessions_invalidated_at = now() WHERE id = $1',
+        [session.sub]
+      )
+    }
     destroySession(reply)
     return reply.status(200).send({ ok: true })
   })

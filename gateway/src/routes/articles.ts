@@ -7,6 +7,7 @@ import { checkArticleAccess, recordSubscriptionRead, recordPurchaseUnlock } from
 import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import { checkAndTriggerDriveFulfilment } from './drives.js'
+import { sendPublishNotifications } from '../../shared/src/lib/publish-emails.js'
 import logger from '../../shared/src/lib/logger.js'
 import { requireEnv } from '../../shared/src/lib/env.js'
 
@@ -74,7 +75,7 @@ export async function articleRoutes(app: FastifyInstance) {
     try {
       const isGated = data.accessMode === 'paywalled'
 
-      const result = await pool.query<{ id: string }>(
+      const result = await pool.query<{ id: string; is_new: boolean }>(
         `INSERT INTO articles (
            writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
            content_free, word_count, tier,
@@ -93,7 +94,7 @@ export async function articleRoutes(app: FastifyInstance) {
            gate_position_pct = EXCLUDED.gate_position_pct,
            vault_event_id = EXCLUDED.vault_event_id,
            updated_at = now()
-         RETURNING id`,
+         RETURNING id, (xmax = 0) AS is_new`,
         [
           writerId,
           data.nostrEventId,
@@ -111,9 +112,10 @@ export async function articleRoutes(app: FastifyInstance) {
       )
 
       const articleId = result.rows[0].id
+      const isNew = result.rows[0].is_new
 
       logger.info(
-        { articleId, writerId, nostrEventId: data.nostrEventId },
+        { articleId, writerId, nostrEventId: data.nostrEventId, isNew },
         'Article indexed'
       )
 
@@ -121,6 +123,13 @@ export async function articleRoutes(app: FastifyInstance) {
       checkAndTriggerDriveFulfilment(writerId, articleId, data.draftId ?? null).catch(err => {
         logger.error({ err, articleId, writerId }, 'Drive fulfilment trigger failed')
       })
+
+      // Notify subscribers via email on first publish (not on edits)
+      if (isNew) {
+        sendPublishNotifications(writerId, articleId, data.title, data.dTag).catch(err => {
+          logger.error({ err, articleId, writerId }, 'Publish notification emails failed')
+        })
+      }
 
       return reply.status(201).send({ articleId })
     } catch (err) {
