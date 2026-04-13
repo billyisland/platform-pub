@@ -1204,12 +1204,12 @@ export const publications = {
 
   // Revenue (Phase 5)
   getRateCard: (id: string) =>
-    request<{ subscriptionPricePence: number; annualDiscountPct: number; defaultArticlePricePence: number }>(
+    request<{ subscriptionPricePence: number; annualDiscountPct: number; defaultArticlePricePence: number; articlePriceMode: string }>(
       `/publications/${id}/rate-card`
     ),
 
   updateRateCard: (id: string, data: {
-    subscriptionPricePence?: number; annualDiscountPct?: number; defaultArticlePricePence?: number;
+    subscriptionPricePence?: number; annualDiscountPct?: number; defaultArticlePricePence?: number; articlePriceMode?: string;
   }) =>
     request<{ ok: boolean }>(`/publications/${id}/rate-card`, {
       method: 'PATCH',

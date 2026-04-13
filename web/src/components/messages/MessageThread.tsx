@@ -427,7 +427,7 @@ export function MessageThread({
       {dmPriceError !== null && (
         <div className="px-4 py-2 bg-grey-100">
           <p className="text-[13px] font-sans text-crimson">
-            This user charges \u00a3{(dmPriceError / 100).toFixed(2)} for DMs. Send anyway?
+            This user charges £{(dmPriceError / 100).toFixed(2)} for DMs. Send anyway?
           </p>
         </div>
       )}

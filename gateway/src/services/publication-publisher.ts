@@ -43,20 +43,28 @@ export async function publishToPublication(
 ): Promise<PublishToPublicationResult> {
   const dTag = input.existingDTag ?? generateDTag(input.title)
 
-  // Fetch publication for its nostr pubkey
-  const { rows: pubs } = await pool.query<{ nostr_pubkey: string; default_article_price_pence: number }>(
-    'SELECT nostr_pubkey, default_article_price_pence FROM publications WHERE id = $1',
+  // Fetch publication for its nostr pubkey and pricing config
+  const { rows: pubs } = await pool.query<{ nostr_pubkey: string; default_article_price_pence: number; article_price_mode: string }>(
+    'SELECT nostr_pubkey, default_article_price_pence, article_price_mode FROM publications WHERE id = $1',
     [input.publicationId]
   )
   if (pubs.length === 0) throw new Error('Publication not found')
   const pub = pubs[0]
 
-  const pricePence = input.pricePence ?? (input.accessMode === 'paywalled' ? pub.default_article_price_pence : null)
+  const wordCount = input.fullContent.split(/\s+/).length
+
+  function resolveDefaultPrice(): number {
+    if (pub.article_price_mode === 'per_1000_words') {
+      return Math.floor(wordCount / 1000) * pub.default_article_price_pence
+    }
+    return pub.default_article_price_pence
+  }
+
+  const pricePence = input.pricePence ?? (input.accessMode === 'paywalled' ? resolveDefaultPrice() : null)
 
   // If the author can't publish, save as submitted (no Nostr event)
   if (!input.canPublish) {
     const slug = dTag
-    const wordCount = input.fullContent.split(/\s+/).length
 
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO articles (
@@ -137,7 +145,6 @@ export async function publishToPublication(
 
   // Index in DB
   const slug = dTag
-  const wordCount = input.fullContent.split(/\s+/).length
 
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO articles (

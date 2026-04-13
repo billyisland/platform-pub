@@ -967,6 +967,7 @@ export async function publicationRoutes(app: FastifyInstance) {
     subscriptionPricePence: z.number().int().min(0).max(999999).optional(),
     annualDiscountPct: z.number().int().min(0).max(100).optional(),
     defaultArticlePricePence: z.number().int().min(0).max(999999).optional(),
+    articlePriceMode: z.enum(['per_article', 'per_1000_words']).optional(),
   })
 
   const UpdatePayrollSchema = z.object({
@@ -995,8 +996,9 @@ export async function publicationRoutes(app: FastifyInstance) {
         subscription_price_pence: number
         annual_discount_pct: number
         default_article_price_pence: number
+        article_price_mode: string
       }>(
-        `SELECT subscription_price_pence, annual_discount_pct, default_article_price_pence
+        `SELECT subscription_price_pence, annual_discount_pct, default_article_price_pence, article_price_mode
          FROM publications WHERE id = $1`,
         [id]
       )
@@ -1006,6 +1008,7 @@ export async function publicationRoutes(app: FastifyInstance) {
         subscriptionPricePence: r.subscription_price_pence,
         annualDiscountPct: r.annual_discount_pct,
         defaultArticlePricePence: r.default_article_price_pence,
+        articlePriceMode: r.article_price_mode,
       })
     }
   )
@@ -1020,7 +1023,7 @@ export async function publicationRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const parsed = RateCardSchema.safeParse(req.body)
       if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
-      const { subscriptionPricePence, annualDiscountPct, defaultArticlePricePence } = parsed.data
+      const { subscriptionPricePence, annualDiscountPct, defaultArticlePricePence, articlePriceMode } = parsed.data
 
       const sets: string[] = []
       const vals: any[] = []
@@ -1029,6 +1032,7 @@ export async function publicationRoutes(app: FastifyInstance) {
       if (subscriptionPricePence !== undefined) { sets.push(`subscription_price_pence = $${idx++}`); vals.push(subscriptionPricePence) }
       if (annualDiscountPct !== undefined) { sets.push(`annual_discount_pct = $${idx++}`); vals.push(annualDiscountPct) }
       if (defaultArticlePricePence !== undefined) { sets.push(`default_article_price_pence = $${idx++}`); vals.push(defaultArticlePricePence) }
+      if (articlePriceMode !== undefined) { sets.push(`article_price_mode = $${idx++}`); vals.push(articlePriceMode) }
 
       if (sets.length === 0) return reply.status(400).send({ error: 'No fields to update' })
 

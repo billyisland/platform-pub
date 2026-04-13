@@ -303,7 +303,7 @@ export function ArticleEditor({
       </div>
 
       {/* Editor toolbar */}
-      <div className="flex items-center gap-1 flex-wrap bg-white px-4 py-2.5">
+      <div className="flex items-center gap-0.5 sm:gap-1 bg-white px-2 sm:px-4 py-2.5">
         <ToolbarButton
           active={editor.isActive('bold')}
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -316,30 +316,36 @@ export function ArticleEditor({
         >
           I
         </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive('heading', { level: 2 })}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-        >
-          H2
-        </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive('heading', { level: 3 })}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-        >
-          H3
-        </ToolbarButton>
+        <span className="contents max-[479px]:hidden">
+          <ToolbarButton
+            active={editor.isActive('heading', { level: 2 })}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          >
+            H2
+          </ToolbarButton>
+        </span>
+        <span className="hidden sm:contents">
+          <ToolbarButton
+            active={editor.isActive('heading', { level: 3 })}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          >
+            H3
+          </ToolbarButton>
+        </span>
         <ToolbarButton
           active={editor.isActive('blockquote')}
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
         >
           &ldquo;
         </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive('bulletList')}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-        >
-          &bull;
-        </ToolbarButton>
+        <span className="contents max-[479px]:hidden">
+          <ToolbarButton
+            active={editor.isActive('bulletList')}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+          >
+            &bull;
+          </ToolbarButton>
+        </span>
         <ToolbarButton
           active={false}
           onClick={() => {
@@ -392,7 +398,7 @@ export function ArticleEditor({
           {gateInserted ? 'Paywall ✓' : 'Paywall'}
         </ToolbarButton>
 
-        <div className="ml-auto text-xs text-grey-300">
+        <div className="ml-auto shrink-0 text-xs text-grey-300 max-[479px]:hidden">
           {wordCount} words &middot; {readMinutes} min read
         </div>
       </div>
@@ -553,7 +559,7 @@ function ToolbarButton({
   return (
     <button
       onClick={onClick}
-      className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${accentStyles}`}
+      className={`rounded px-1.5 sm:px-2.5 py-1 text-xs font-medium transition-colors ${accentStyles}`}
     >
       {children}
     </button>

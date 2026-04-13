@@ -975,6 +975,8 @@ CREATE TABLE publications (
   subscription_price_pence    INTEGER NOT NULL DEFAULT 800,
   annual_discount_pct         INTEGER NOT NULL DEFAULT 15,
   default_article_price_pence INTEGER NOT NULL DEFAULT 20,
+  article_price_mode          TEXT NOT NULL DEFAULT 'per_article'
+                              CHECK (article_price_mode IN ('per_article', 'per_1000_words')),
   custom_domain               TEXT UNIQUE,
   custom_domain_verified      BOOLEAN NOT NULL DEFAULT FALSE,
   theme_config                JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -1213,5 +1215,9 @@ INSERT INTO _migrations (filename) VALUES
   ('038_publications.sql'),
   ('039_default_article_price.sql'),
   ('040_traffology_schema.sql'),
-  ('041_webhook_dedup_and_fk_fixes.sql')
+  ('041_webhook_dedup_and_fk_fixes.sql'),
+  ('042_email_on_publish.sql'),
+  ('043_session_invalidation.sql'),
+  ('044_email_on_publish_v2.sql'),
+  ('045_article_price_mode.sql')
 ON CONFLICT (filename) DO NOTHING;

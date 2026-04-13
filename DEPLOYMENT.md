@@ -171,7 +171,7 @@ docker compose ps   # wait for postgres to be healthy
 
 The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.13.0, `schema.sql` includes all structural changes through migration 038; the `_migrations` table is pre-seeded accordingly.
 
-For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything. As of v5.28.0, `schema.sql` includes all structural changes through migration 041.
+For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything. As of v5.30.0, `schema.sql` includes all structural changes through migration 045.
 
 For **existing** databases that were initialised with an earlier `schema.sql`, use the migration runner:
 
@@ -260,6 +260,66 @@ The script generates: accounts, articles, notes, follows, subscriptions (monthly
 ## Upgrading from a previous version
 
 > **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
+
+### From v5.29.0
+
+**Migration required (045).** Services changed: **gateway**, **web**. Deploy order: **migrate → rebuild gateway + web**.
+
+This release adds per-1000-words article pricing mode, fixes £ symbol rendering, and makes the editor toolbar responsive on mobile.
+
+**Backend (gateway):**
+
+- **Article price mode** (`publications.ts`, `publication-publisher.ts`): Publications can now set article pricing to "per article" (flat, existing behaviour) or "per 1,000 words" (price scales with word count, floored to full 1000-word multiples). Rate card GET/PATCH endpoints include the new `articlePriceMode` field.
+
+**Frontend (web):**
+
+- **Rate card pricing mode** (`RateCardTab.tsx`): Toggle between "Per article" and "Per 1,000 words" pricing with a live preview showing the floored calculation.
+- **£ symbol fix** (`RateCardTab.tsx`, `MessageThread.tsx`): Fixed `\u00a3` rendering as literal text in JSX — replaced with actual `£` character.
+- **Editor toolbar responsive** (`ArticleEditor.tsx`): Toolbar buttons now use tighter padding on mobile. H3 hides below 640px; H2, bullet list, and word count hide below 480px. Paywall button always visible.
+
+**Schema:**
+
+- **Migration 045**: Adds `article_price_mode` column to `publications` (default: `'per_article'`).
+- **schema.sql**: Synced with all migrations through 045. Migration tracking list updated.
+
+**Modified files:**
+
+- `gateway/src/routes/publications.ts` — rate card schema, GET, PATCH
+- `gateway/src/services/publication-publisher.ts` — word-count-based price resolution
+- `web/src/components/dashboard/RateCardTab.tsx` — pricing mode toggle, £ fix
+- `web/src/components/messages/MessageThread.tsx` — £ fix
+- `web/src/components/editor/ArticleEditor.tsx` — responsive toolbar
+- `web/src/lib/api.ts` — rate card type updated
+- `migrations/045_article_price_mode.sql` — new
+- `schema.sql` — synced with migrations through 045
+
+**Upgrade steps:**
+```bash
+cd /root/platform-pub
+git pull origin master
+
+# Apply migration (045)
+DATABASE_URL=postgresql://platformpub:$POSTGRES_PASSWORD@127.0.0.1:5432/platformpub \
+  npx tsx shared/src/db/migrate.ts
+
+# Build and deploy
+docker compose build gateway web
+docker compose up -d gateway web
+```
+
+Verify:
+```bash
+# Rate card: Dashboard → publication → Rate Card tab
+# - £ symbols should display correctly (not \u00a3)
+# - "Per article" / "Per 1,000 words" toggle should appear
+# - Switching to per-1000-words shows floored price preview
+
+# Editor toolbar: open article composer on a mobile device
+# - Paywall button should be visible without scrolling or wrapping
+# - H3 hidden on tablets, H2/bullet/word count hidden on phones
+```
+
+---
 
 ### From v5.27.1
 
@@ -1071,6 +1131,18 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 ---
 
 ## Change log
+
+### v5.30.0 — 13 April 2026
+
+**Per-1000-words article pricing, £ fix, responsive editor toolbar**
+
+Migration required (045). Services changed: gateway, web.
+
+- **Per-1000-words pricing mode:** Publications can now price paywalled articles per 1,000 words instead of a flat per-article rate. Price floors to the last full 1,000-word threshold (e.g. 3,800 words at £0.10/1k = £0.30). Rate card UI includes a toggle and live preview.
+- **£ symbol fix:** `\u00a3` Unicode escapes in JSX text content rendered as literal strings instead of the pound sign. Replaced with actual `£` characters in `RateCardTab.tsx` (3 instances) and `MessageThread.tsx` (1 instance).
+- **Responsive editor toolbar:** Toolbar buttons use tighter padding on mobile. Less essential buttons (H3, H2, bullet list, word count) progressively hide at narrow widths. Paywall button is always visible.
+
+---
 
 ### v5.29.0 — 13 April 2026
 
