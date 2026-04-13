@@ -7,10 +7,12 @@ import logger from '../../shared/src/lib/logger.js'
 // =============================================================================
 // Draft Routes
 //
-// POST   /drafts          — Save or update a draft
-// GET    /drafts          — List writer's drafts
-// GET    /drafts/:id      — Load a single draft
-// DELETE /drafts/:id      — Delete a draft
+// POST   /drafts              — Save or update a draft
+// GET    /drafts              — List writer's drafts
+// GET    /drafts/:id          — Load a single draft
+// DELETE /drafts/:id          — Delete a draft
+// POST   /drafts/:id/schedule — Schedule a draft for future publication
+// DELETE /drafts/:id/schedule — Unschedule a draft
 //
 // Drafts are stored in the article_drafts table. One draft per d-tag
 // (for edits of existing articles) or one auto-created per new article.
@@ -116,8 +118,9 @@ export async function draftRoutes(app: FastifyInstance) {
       nostr_d_tag: string | null
       publication_id: string | null
       auto_saved_at: string
+      scheduled_at: string | null
     }>(
-      `SELECT id, title, nostr_d_tag, publication_id, auto_saved_at
+      `SELECT id, title, nostr_d_tag, publication_id, auto_saved_at, scheduled_at
        FROM article_drafts
        WHERE writer_id = $1
        ORDER BY auto_saved_at DESC
@@ -132,6 +135,7 @@ export async function draftRoutes(app: FastifyInstance) {
         dTag: r.nostr_d_tag,
         publicationId: r.publication_id,
         autoSavedAt: r.auto_saved_at,
+        scheduledAt: r.scheduled_at,
       })),
     })
   })
@@ -152,8 +156,9 @@ export async function draftRoutes(app: FastifyInstance) {
         price_pence: number | null
         publication_id: string | null
         auto_saved_at: string
+        scheduled_at: string | null
       }>(
-        `SELECT id, title, content_raw, nostr_d_tag, gate_position_pct, price_pence, publication_id, auto_saved_at
+        `SELECT id, title, content_raw, nostr_d_tag, gate_position_pct, price_pence, publication_id, auto_saved_at, scheduled_at
          FROM article_drafts
          WHERE id = $1 AND writer_id = $2`,
         [req.params.id, writerId]
@@ -173,6 +178,7 @@ export async function draftRoutes(app: FastifyInstance) {
         pricePence: r.price_pence,
         publicationId: r.publication_id,
         autoSavedAt: r.auto_saved_at,
+        scheduledAt: r.scheduled_at,
       })
     }
   )
@@ -188,6 +194,67 @@ export async function draftRoutes(app: FastifyInstance) {
         'DELETE FROM article_drafts WHERE id = $1 AND writer_id = $2',
         [req.params.id, writerId]
       )
+
+      return reply.status(200).send({ ok: true })
+    }
+  )
+
+  // POST /drafts/:id/schedule — schedule a draft for future publication
+  app.post<{ Params: { id: string } }>(
+    '/drafts/:id/schedule',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const writerId = req.session!.sub!
+      const body = z.object({
+        scheduledAt: z.string().refine(s => !isNaN(Date.parse(s)), 'Invalid date'),
+      }).safeParse(req.body)
+
+      if (!body.success) {
+        return reply.status(400).send({ error: body.error.flatten() })
+      }
+
+      const scheduledAt = new Date(body.data.scheduledAt)
+      if (scheduledAt <= new Date()) {
+        return reply.status(400).send({ error: 'Scheduled time must be in the future.' })
+      }
+
+      const result = await pool.query<{ id: string; scheduled_at: string }>(
+        `UPDATE article_drafts
+         SET scheduled_at = $1
+         WHERE id = $2 AND writer_id = $3
+         RETURNING id, scheduled_at`,
+        [scheduledAt.toISOString(), req.params.id, writerId]
+      )
+
+      if (result.rows.length === 0) {
+        return reply.status(404).send({ error: 'Draft not found' })
+      }
+
+      return reply.status(200).send({
+        ok: true,
+        scheduledAt: result.rows[0].scheduled_at,
+      })
+    }
+  )
+
+  // DELETE /drafts/:id/schedule — unschedule a draft
+  app.delete<{ Params: { id: string } }>(
+    '/drafts/:id/schedule',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const writerId = req.session!.sub!
+
+      const result = await pool.query(
+        `UPDATE article_drafts
+         SET scheduled_at = NULL
+         WHERE id = $1 AND writer_id = $2
+         RETURNING id`,
+        [req.params.id, writerId]
+      )
+
+      if (result.rowCount === 0) {
+        return reply.status(404).send({ error: 'Draft not found' })
+      }
 
       return reply.status(200).send({ ok: true })
     }

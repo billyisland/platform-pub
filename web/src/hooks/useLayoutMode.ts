@@ -24,6 +24,10 @@ const PLATFORM_PREFIXES = [
   '/messages',
   '/account',
   '/admin',
+  '/ledger',
+  '/network',
+  '/library',
+  '/social',
 ]
 
 export function useLayoutMode(): LayoutMode {

@@ -70,7 +70,7 @@ export function CommissionsTab() {
   )
 }
 
-function CommissionCard({ commission: c, onUpdate }: { commission: Commission; onUpdate: () => void }) {
+export function CommissionCard({ commission: c, onUpdate }: { commission: Commission; onUpdate: () => void }) {
   const [acting, setActing] = useState(false)
   const [confirmDecline, setConfirmDecline] = useState(false)
 

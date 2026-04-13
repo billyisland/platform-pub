@@ -3,7 +3,7 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-13 (v5.33.0 session). Completed: Reading history, commission accept/decline, drive editing, doc audit of cancel sub / note deletion / pin drive.
+Last worked: 2026-04-13 (v5.34.0 session). Completed: Page restructure (/ledger, /settings, /library, /network), dashboard consolidation (7→4 tabs, proposals hub), article scheduling, editor layout cleanup.
 
 ---
 
@@ -150,7 +150,7 @@ Phase 1 is done (auto-renewal, annual pricing, subscribe at paywall, spend-thres
 
 **Resilience & performance** — complete. Article/profile pages are Server Components, fonts self-hosted, NDK removed from client bundle, shared Avatar component, print stylesheet, error boundaries. Spec archived: `planning-archive/RESILIENCE.md`.
 
-**Settings rationalisation** — done (v5.14.0). Four hubs: Profile, Account, Social, Pricing. `/settings` and `/history` replaced with redirects. Spec archived: `planning-archive/SETTINGS-RATIONALISATION.md`.
+**Settings rationalisation** — done (v5.14.0), restructured again (v5.34.0). Six pages: Profile (public identity), Settings (email, payment, notifications, export, danger zone), Ledger (balance, earnings, subscriptions, pledges), Library (bookmarks, reading history), Network (following, followers, blocked, muted, feed dial, DM fees), Dashboard (articles+drafts, subscribers, proposals, pricing). Old URLs (/account, /bookmarks, /following, /social, /followers, /history, /reading-history) redirect to new locations. Spec archived: `planning-archive/SETTINGS-RATIONALISATION.md`.
 
 **Publications Phases 1–3 + Phase 5** — done (v5.18.0–v5.20.0). Schema, CMS pipeline, reader surface, subscriptions/follows, RSS, search, feed integration, revenue (rate card, payroll, earnings).
 
@@ -189,7 +189,7 @@ Phase 1 complete (build status archived: `planning-archive/TRAFFOLOGY-BUILD-STAT
 - #7: CSP header blocking external images
 - #8: Import tooling (no Substack/Ghost/WordPress import)
 - #9: Frontend test coverage (zero tests in web/)
-- #10: Dashboard architecture (single ~530-line component)
+- ~~#10: Dashboard architecture (single ~530-line component)~~ — **done (v5.34.0):** reduced from 7 to 4 tabs, ProposalsTab extracted to own component, drafts merged into ArticlesTab
 - #11: Dark mode
 - Item #4 (writer analytics) resolved by Traffology Phase 1
 
@@ -352,6 +352,13 @@ Features any user would reasonably expect given the platform's existing capabili
 - ~~Cancel subscription button~~ — verified already existed in SubscriptionsSection
 - ~~Note deletion from profile~~ — verified already existed in NoteCard
 - ~~Pin drive to profile~~ — verified already existed in DriveCard
+
+### Completed (v5.34.0 session, 2026-04-13)
+
+- **Page restructure** — `/account` → `/ledger` (financial ledger), `/settings` (email, payment, notifications, export, danger zone), `/library` (bookmarks + reading history tabs), `/network` (following, followers, blocked, muted + feed dial + DM fees). `/profile` slimmed to public identity only. Old URLs redirect to new locations.
+- **Dashboard consolidation** — 7 tabs → 4 (Articles, Subscribers, Proposals, Pricing). Drafts merged into Articles tab as unified content list. Commissions + Pledge drives + Offers consolidated into single Proposals tab with filter bar. Backwards-compatible tab aliases for deep-linked URLs.
+- **Article scheduling** — migration 051 (`scheduled_at` column on `article_drafts`). Gateway schedule/unschedule endpoints. Background scheduler worker (60s poll, advisory lock, `FOR UPDATE SKIP LOCKED`). Full pipeline: publication articles via `publishToPublication()`, personal articles via key-custody signing + vault encryption for paywalled. Dashboard schedule/reschedule/unschedule actions with datetime picker. Editor "Schedule" button alongside Publish.
+- **Editor layout cleanup** — tags and publication selector moved from above editor to below content area.
 
 ### Later: strategic work
 

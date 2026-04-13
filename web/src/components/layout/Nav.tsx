@@ -111,17 +111,16 @@ function AvatarDropdown({ user, onLogout, onClose }: {
 
         {/* Group 2 */}
         <div className="py-1">
-          <Link href="/account" onClick={onClose} className={linkClass}>
+          <Link href="/ledger" onClick={onClose} className={linkClass}>
             <span className="flex items-center justify-between">
-              <span>Account</span>
+              <span>Ledger</span>
               <span className="text-[11px] text-grey-600 tabular-nums font-mono uppercase tracking-[0.02em]">
                 £{(user.freeAllowanceRemainingPence / 100).toFixed(2)}
               </span>
             </span>
           </Link>
-          <Link href="/social" onClick={onClose} className={linkClass}>Social</Link>
-          <Link href="/bookmarks" onClick={onClose} className={linkClass}>Bookmarks</Link>
-          <Link href="/reading-history" onClick={onClose} className={linkClass}>Reading history</Link>
+          <Link href="/settings" onClick={onClose} className={linkClass}>Settings</Link>
+          <Link href="/library" onClick={onClose} className={linkClass}>Library</Link>
         </div>
 
         <div style={{ height: '4px', background: '#F0F0F0' }} />
@@ -181,7 +180,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           <Link href="/feed" onClick={onClose} className={linkClass('/feed')}>Feed</Link>
           <Link href="/write" onClick={onClose} className={linkClass('/write')}>Write</Link>
           <Link href="/dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
-          <Link href="/following" onClick={onClose} className={linkClass('/following')}>Following</Link>
+          <Link href="/network" onClick={onClose} className={linkClass('/network')}>Network</Link>
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
@@ -207,8 +206,9 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
           <Link href="/profile" onClick={onClose} className={linkClass('/profile')}>Profile</Link>
-          <Link href="/account" onClick={onClose} className={linkClass('/account')}>Account</Link>
-          <Link href="/social" onClick={onClose} className={linkClass('/social')}>Social</Link>
+          <Link href="/ledger" onClick={onClose} className={linkClass('/ledger')}>Ledger</Link>
+          <Link href="/settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
+          <Link href="/library" onClick={onClose} className={linkClass('/library')}>Library</Link>
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
@@ -253,7 +253,7 @@ export function Nav() {
   function isActive(path: string) {
     if (path === '/feed') return pathname === '/feed' || pathname === '/'
     if (path === '/dashboard') return pathname.startsWith('/dashboard')
-    if (path === '/following') return pathname === '/following' || pathname === '/followers'
+    if (path === '/network') return pathname.startsWith('/network')
     return pathname === path
   }
 
@@ -346,7 +346,7 @@ export function Nav() {
                   <Link href="/feed" className={navLinkClass(isActive('/feed'))}>Feed</Link>
                   <Link href="/write" className={navLinkClass(isActive('/write'))}>Write</Link>
                   <Link href="/dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
-                  <Link href="/following" className={navLinkClass(isActive('/following'))}>Following</Link>
+                  <Link href="/network" className={navLinkClass(isActive('/network'))}>Network</Link>
                 </>
               ) : (
                 <>

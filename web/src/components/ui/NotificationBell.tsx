@@ -46,7 +46,7 @@ function getDestUrl(n: Notification): string {
     case 'commission_request':
     case 'drive_funded':
     case 'pledge_fulfilled':
-      return '/dashboard?tab=drives'
+      return '/dashboard?tab=proposals'
     case 'new_message':
       return n.conversationId ? `/messages#${n.conversationId}` : '/messages'
     case 'pub_article_submitted':

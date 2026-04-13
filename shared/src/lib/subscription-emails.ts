@@ -179,12 +179,12 @@ export async function sendNewSubscriberEmail(
     textBody: [
       `${readerName} just subscribed to your writing for ${formatPounds(pricePence)}/mo.`,
       '',
-      `View your subscribers: ${APP_URL}/dashboard?tab=settings`,
+      `View your subscribers: ${APP_URL}/dashboard?tab=subscribers`,
     ].join('\n'),
     htmlBody: emailHtml(
       'New subscriber',
       paragraph(`<strong>${readerName}</strong> just subscribed to your writing for ${formatPounds(pricePence)}/mo.`) +
-      button(`${APP_URL}/dashboard?tab=settings`, 'View subscribers')
+      button(`${APP_URL}/dashboard?tab=subscribers`, 'View subscribers')
     ),
   })
 }

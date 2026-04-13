@@ -26,6 +26,7 @@ export interface DraftData {
 export interface SavedDraft {
   draftId: string
   autoSavedAt: string
+  scheduledAt: string | null
 }
 
 export async function saveDraft(data: DraftData): Promise<SavedDraft> {
@@ -68,6 +69,34 @@ export async function deleteDraft(draftId: string): Promise<void> {
     method: 'DELETE',
     credentials: 'include',
   })
+}
+
+export async function scheduleDraft(draftId: string, scheduledAt: string): Promise<{ ok: boolean; scheduledAt: string }> {
+  const res = await fetch(`${API_BASE}/drafts/${draftId}/schedule`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scheduledAt }),
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(`Schedule failed: ${res.status} — ${body?.error ?? 'unknown'}`)
+  }
+
+  return res.json()
+}
+
+export async function unscheduleDraft(draftId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/drafts/${draftId}/schedule`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(`Unschedule failed: ${res.status} — ${body?.error ?? 'unknown'}`)
+  }
 }
 
 // =============================================================================

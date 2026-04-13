@@ -38,6 +38,7 @@ import { unsubscribeRoutes } from './routes/unsubscribe.js'
 import { bookmarkRoutes } from './routes/bookmarks.js'
 import { tagRoutes } from './routes/tags.js'
 import { refreshFeedScores } from './workers/feed-scorer.js'
+import { publishScheduledDrafts } from './workers/scheduler.js'
 import { pool } from '../shared/src/db/client.js'
 import logger from '../shared/src/lib/logger.js'
 
@@ -219,6 +220,8 @@ async function start() {
   const LOCK_SUBSCRIPTIONS = 100001
   const LOCK_DRIVES = 100002
   const LOCK_FEED_SCORES = 100003
+  const LOCK_SCHEDULER = 100004
+  const SCHEDULER_INTERVAL_MS = 60 * 1000 // 1 minute
 
   async function withAdvisoryLock(lockId: number, name: string, fn: () => Promise<unknown>) {
     const client = await pool.connect()
@@ -255,6 +258,12 @@ async function start() {
     )
   }, FEED_SCORE_INTERVAL_MS)
 
+  setInterval(() => {
+    withAdvisoryLock(LOCK_SCHEDULER, 'Scheduled publishing', publishScheduledDrafts).catch(err =>
+      logger.error({ err }, 'Scheduler worker failed')
+    )
+  }, SCHEDULER_INTERVAL_MS)
+
   // Run once on startup
   withAdvisoryLock(LOCK_SUBSCRIPTIONS, 'Subscription expiry', expireAndRenewSubscriptions).catch(err =>
     logger.error({ err }, 'Subscription expiry worker failed (startup)')
@@ -264,6 +273,9 @@ async function start() {
   )
   withAdvisoryLock(LOCK_FEED_SCORES, 'Feed score refresh', refreshFeedScores).catch(err =>
     logger.error({ err }, 'Feed score worker failed (startup)')
+  )
+  withAdvisoryLock(LOCK_SCHEDULER, 'Scheduled publishing', publishScheduledDrafts).catch(err =>
+    logger.error({ err }, 'Scheduler worker failed (startup)')
   )
 }
 

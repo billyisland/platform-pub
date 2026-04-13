@@ -1,12 +1,27 @@
 'use client'
 
-import Link from 'next/link'
+import { useState } from 'react'
 import { useAuth } from '../../stores/auth'
+import { auth } from '../../lib/api'
 import { CardSetup } from '../payment/CardSetup'
 
 export function PaymentSection() {
   const { user, fetchMe } = useAuth()
+  const [connecting, setConnecting] = useState(false)
+  const [connectError, setConnectError] = useState<string | null>(null)
+
   if (!user) return null
+
+  async function handleConnectStripe() {
+    setConnecting(true); setConnectError(null)
+    try {
+      const result = await auth.connectStripe()
+      window.location.href = result.stripeConnectUrl
+    } catch {
+      setConnectError('Failed to start Stripe setup.')
+      setConnecting(false)
+    }
+  }
 
   return (
     <div className="mb-10">
@@ -42,14 +57,21 @@ export function PaymentSection() {
               <span className="font-mono text-[12px] text-grey-400 uppercase tracking-[0.06em]">Verified</span>
             </div>
           ) : (
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[14px] font-sans text-black">Stripe Connect</p>
-                <p className="text-[13px] font-sans text-grey-300 mt-0.5">Connect to receive payouts.</p>
+            <div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[14px] font-sans text-black">Stripe Connect</p>
+                  <p className="text-[13px] font-sans text-grey-300 mt-0.5">Connect to receive payouts.</p>
+                </div>
+                <button
+                  onClick={handleConnectStripe}
+                  disabled={connecting}
+                  className="text-[13px] font-sans text-crimson hover:text-crimson-dark underline underline-offset-4 disabled:opacity-50"
+                >
+                  {connecting ? 'Setting up…' : 'Set up'}
+                </button>
               </div>
-              <Link href="/profile" className="text-[13px] font-sans text-crimson hover:text-crimson-dark underline underline-offset-4">
-                Set up
-              </Link>
+              {connectError && <p className="text-[13px] font-sans text-red-600 mt-2">{connectError}</p>}
             </div>
           )}
         </div>

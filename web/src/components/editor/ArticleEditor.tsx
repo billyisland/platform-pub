@@ -42,6 +42,7 @@ interface EditorProps {
   publicationMemberships?: PublicationContext[]
   initialPublicationId?: string | null
   onPublish?: (data: PublishData) => void
+  onSchedule?: (data: PublishData, scheduledAt: string) => Promise<void>
 }
 
 export interface PublicationContext {
@@ -81,6 +82,7 @@ export function ArticleEditor({
   publicationMemberships = [],
   initialPublicationId = null,
   onPublish,
+  onSchedule,
 }: EditorProps) {
   const { user } = useAuth()
 
@@ -99,6 +101,8 @@ export function ArticleEditor({
   const [showOnWriterProfile, setShowOnWriterProfile] = useState(true)
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
   const [sendEmail, setSendEmail] = useState(true)
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false)
+  const [scheduleDateTime, setScheduleDateTime] = useState('')
 
   const isEditing = !!editingEventId
   const userSetPrice = useRef(!!initialPrice || user?.defaultArticlePricePence != null)
@@ -247,6 +251,55 @@ export function ArticleEditor({
     }
   }, [isEditing, selectedPub, handlePublish])
 
+  const handleScheduleSubmit = useCallback(async () => {
+    if (!editor || !title.trim() || !scheduleDateTime || !onSchedule) return
+
+    setPublishing(true)
+    setPublishError(null)
+
+    try {
+      const fullContent = editor.storage.markdown.getMarkdown()
+      const isPaywalled = hasGateMarker()
+
+      let freeContent = fullContent
+      let paywallContent = ''
+      let gatePositionPct = 0
+
+      if (isPaywalled) {
+        const splitResult = splitAtGateMarker(fullContent)
+        freeContent = splitResult.free
+        paywallContent = splitResult.paywall
+        const totalLen = freeContent.length + paywallContent.length
+        gatePositionPct = totalLen > 0 ? Math.min(99, Math.max(1, Math.round((freeContent.length / totalLen) * 100))) : 50
+      }
+
+      const data: PublishData = {
+        title: title.trim(),
+        dek: dek.trim(),
+        content: fullContent.replace(PAYWALL_GATE_MARKER, '').trim(),
+        freeContent,
+        paywallContent,
+        isPaywalled,
+        pricePence: isPaywalled ? pricePence : 0,
+        gatePositionPct,
+        commentsEnabled,
+        publicationId: selectedPublicationId,
+        showOnWriterProfile,
+        sendEmail: false,
+        tags: articleTags,
+      }
+
+      await onSchedule(data, new Date(scheduleDateTime).toISOString())
+    } catch (err) {
+      console.error('Schedule error:', err)
+      setPublishError(err instanceof Error ? err.message : 'Scheduling failed — please try again.')
+    } finally {
+      setPublishing(false)
+      setShowSchedulePicker(false)
+      setScheduleDateTime('')
+    }
+  }, [editor, title, dek, pricePence, onSchedule, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, articleTags, scheduleDateTime])
+
   if (!editor) return null
 
   const wordCount = editor.storage.characterCount.words()
@@ -256,33 +309,6 @@ export function ArticleEditor({
 
   return (
     <div className="mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8">
-      {/* Publication selector — shown when user is a member of publications */}
-      {publicationMemberships.length > 0 && (
-        <div className="mb-4 bg-grey-100 px-5 py-3 flex items-center gap-3 flex-wrap">
-          <label className="label-ui text-grey-400">Publishing as</label>
-          <select
-            value={selectedPublicationId ?? ''}
-            onChange={(e) => setSelectedPublicationId(e.target.value || null)}
-            className="bg-grey-100 px-3 py-1.5 text-sm text-black"
-          >
-            <option value="">Yourself</option>
-            {publicationMemberships.map(pub => (
-              <option key={pub.id} value={pub.id}>{pub.name}</option>
-            ))}
-          </select>
-          {selectedPublicationId && (
-            <label className="flex items-center gap-2 ml-auto cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showOnWriterProfile}
-                onChange={(e) => setShowOnWriterProfile(e.target.checked)}
-              />
-              <span className="text-sm text-grey-600">Also show on your personal profile</span>
-            </label>
-          )}
-        </div>
-      )}
-
       {/* Sticky title + toolbar — stays visible while scrolling the body */}
       <div className="sticky top-[53px] lg:top-0 z-20 bg-white pb-4 mb-6">
       {/* Title card */}
@@ -306,11 +332,6 @@ export function ArticleEditor({
           placeholder="Add a subtitle or standfirst…"
           className="w-full border-none bg-transparent font-serif text-lg text-grey-600 italic placeholder:text-grey-300 focus:outline-none"
         />
-      </div>
-
-      {/* Tags */}
-      <div className="mb-2">
-        <TagInput value={articleTags} onChange={setArticleTags} />
       </div>
 
       {/* Editor toolbar */}
@@ -420,6 +441,38 @@ export function ArticleEditor({
         <EditorContent editor={editor} />
       </div>
 
+      {/* Tags */}
+      <div className="mt-3">
+        <TagInput value={articleTags} onChange={setArticleTags} />
+      </div>
+
+      {/* Publication selector — shown when user is a member of publications */}
+      {publicationMemberships.length > 0 && (
+        <div className="mt-3 bg-grey-100 px-5 py-3 flex items-center gap-3 flex-wrap">
+          <label className="label-ui text-grey-400">Publishing as</label>
+          <select
+            value={selectedPublicationId ?? ''}
+            onChange={(e) => setSelectedPublicationId(e.target.value || null)}
+            className="bg-grey-100 px-3 py-1.5 text-sm text-black"
+          >
+            <option value="">Yourself</option>
+            {publicationMemberships.map(pub => (
+              <option key={pub.id} value={pub.id}>{pub.name}</option>
+            ))}
+          </select>
+          {selectedPublicationId && (
+            <label className="flex items-center gap-2 ml-auto cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showOnWriterProfile}
+                onChange={(e) => setShowOnWriterProfile(e.target.checked)}
+              />
+              <span className="text-sm text-grey-600">Also show on your personal profile</span>
+            </label>
+          )}
+        </div>
+      )}
+
       {/* Price control — only shown when gate is inserted */}
       {gateInserted && (
         <div className="mt-6 bg-grey-100 px-5 py-4">
@@ -515,6 +568,15 @@ export function ArticleEditor({
                 ? 'Submit for review'
                 : 'Publish'}
         </button>
+        {!isEditing && onSchedule && (
+          <button
+            onClick={() => setShowSchedulePicker(!showSchedulePicker)}
+            disabled={publishing || !title.trim() || wordCount < 10}
+            className="text-sm text-grey-400 hover:text-black transition-colors disabled:opacity-50"
+          >
+            Schedule
+          </button>
+        )}
         <button
           className="text-sm text-grey-300 hover:text-grey-600 transition-colors"
           onClick={async () => {
@@ -539,6 +601,32 @@ export function ArticleEditor({
           <span className="text-xs text-grey-300">{draftStatus}</span>
         )}
       </div>
+      )}
+
+      {/* Schedule picker */}
+      {showSchedulePicker && (
+        <div className="mt-3 flex items-center gap-3">
+          <input
+            type="datetime-local"
+            value={scheduleDateTime}
+            onChange={e => setScheduleDateTime(e.target.value)}
+            min={new Date().toISOString().slice(0, 16)}
+            className="bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
+          />
+          <button
+            onClick={handleScheduleSubmit}
+            disabled={publishing || !scheduleDateTime}
+            className="btn text-sm disabled:opacity-50"
+          >
+            {publishing ? 'Scheduling...' : 'Confirm schedule'}
+          </button>
+          <button
+            onClick={() => { setShowSchedulePicker(false); setScheduleDateTime('') }}
+            className="text-sm text-grey-300 hover:text-black"
+          >
+            Cancel
+          </button>
+        </div>
       )}
     </div>
   )

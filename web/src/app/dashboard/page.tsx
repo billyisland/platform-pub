@@ -4,13 +4,12 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { myArticles, account as accountApi, publications as pubApi, type MyArticle, type PublicationMembership } from '../../lib/api'
-import { loadDrafts, deleteDraft } from '../../lib/drafts'
+import { myArticles, account as accountApi, auth, publications as pubApi, type MyArticle, type PublicationMembership } from '../../lib/api'
+import { loadDrafts, deleteDraft, scheduleDraft, unscheduleDraft } from '../../lib/drafts'
 import { KIND_DELETION } from '../../lib/ndk'
 import { signAndPublish } from '../../lib/sign'
-import { DrivesTab } from '../../components/dashboard/DrivesTab'
-import { OffersTab } from '../../components/dashboard/OffersTab'
 import { GiftLinksPanel } from '../../components/dashboard/GiftLinksPanel'
+import { ProposalsTab } from '../../components/dashboard/ProposalsTab'
 import { PublicationArticlesTab } from '../../components/dashboard/PublicationArticlesTab'
 import { MembersTab } from '../../components/dashboard/MembersTab'
 import { PublicationSettingsTab } from '../../components/dashboard/PublicationSettingsTab'
@@ -18,9 +17,17 @@ import { RateCardTab } from '../../components/dashboard/RateCardTab'
 import { PayrollTab } from '../../components/dashboard/PayrollTab'
 import { PublicationEarningsTab } from '../../components/dashboard/PublicationEarningsTab'
 import { SubscribersTab } from '../../components/dashboard/SubscribersTab'
-import { CommissionsTab } from '../../components/dashboard/CommissionsTab'
 
-type DashboardTab = 'articles' | 'drafts' | 'subscribers' | 'drives' | 'commissions' | 'offers' | 'pricing'
+type DashboardTab = 'articles' | 'subscribers' | 'proposals' | 'pricing'
+
+// Backwards-compatible aliases for old URLs / deep links
+const tabAliases: Record<string, DashboardTab> = {
+  drafts: 'articles',
+  drives: 'proposals',
+  commissions: 'proposals',
+  offers: 'proposals',
+  settings: 'pricing',
+}
 type PubDashboardTab = 'articles' | 'members' | 'settings' | 'rate-card' | 'payroll' | 'earnings'
 
 export default function DashboardPage() {
@@ -29,7 +36,7 @@ export default function DashboardPage() {
   const searchParams = useSearchParams()
   const rawTab = searchParams.get('tab')
   const contextSlug = searchParams.get('context')
-  const resolvedTab = rawTab === 'settings' ? 'pricing' : rawTab
+  const resolvedTab = rawTab ? (tabAliases[rawTab] ?? rawTab) : null
   const initialTab: DashboardTab = (resolvedTab as DashboardTab) || 'articles'
   const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab)
   const [pubTab, setPubTab] = useState<PubDashboardTab>((rawTab as PubDashboardTab) || 'articles')
@@ -53,13 +60,13 @@ export default function DashboardPage() {
 
   // Sync tab from URL (for notification deep-linking)
   useEffect(() => {
-    const tab = rawTab === 'settings' ? 'pricing' : rawTab
+    const tab = rawTab ? (tabAliases[rawTab] ?? rawTab) : null
     if (selectedContext) {
       if (tab && ['articles', 'members', 'settings', 'rate-card', 'payroll', 'earnings'].includes(tab)) {
         setPubTab(tab as PubDashboardTab)
       }
     } else {
-      if (tab && ['articles', 'drafts', 'drives', 'offers', 'pricing'].includes(tab)) {
+      if (tab && ['articles', 'subscribers', 'proposals', 'pricing'].includes(tab)) {
         setActiveTab(tab as DashboardTab)
       }
     }
@@ -119,7 +126,7 @@ export default function DashboardPage() {
   const selectedPub = pubMemberships.find(p => p.slug === selectedContext)
   const isPublicationContext = !!selectedPub
 
-  const personalTabs: DashboardTab[] = ['articles', 'drafts', ...(user.isWriter ? ['subscribers' as DashboardTab, 'commissions' as DashboardTab] : []), 'drives', 'offers', 'pricing']
+  const personalTabs: DashboardTab[] = ['articles', ...(user.isWriter ? ['subscribers' as DashboardTab, 'proposals' as DashboardTab] : []), 'pricing']
   const pubTabs: PubDashboardTab[] = [
     'articles', 'members', 'settings',
     ...(selectedPub?.can_manage_finances ? ['rate-card', 'payroll', 'earnings'] as PubDashboardTab[] : []),
@@ -258,7 +265,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-10">
             <div className="flex gap-2">
               {personalTabs.map(tab => {
-                const label = tab === 'drives' ? 'Pledge drives' : tab === 'commissions' ? 'Commissions' : tab === 'pricing' ? 'Pricing' : tab === 'offers' ? 'Offers' : tab === 'subscribers' ? 'Subscribers' : tab.charAt(0).toUpperCase() + tab.slice(1)
+                const label = tab === 'proposals' ? 'Proposals' : tab === 'pricing' ? 'Pricing' : tab === 'subscribers' ? 'Subscribers' : tab.charAt(0).toUpperCase() + tab.slice(1)
                 return (
                   <button key={tab} onClick={() => switchTab(tab)} className={`tab-pill ${activeTab === tab ? 'tab-pill-active' : 'tab-pill-inactive'}`}>{label}</button>
                 )
@@ -266,16 +273,13 @@ export default function DashboardPage() {
             </div>
             <div className="flex items-center gap-4">
               <Link href="/traffology" className="text-ui-xs text-grey-400 hover:text-black underline underline-offset-4">Analytics</Link>
-              <Link href="/account" className="text-ui-xs text-grey-400 hover:text-black underline underline-offset-4">View account</Link>
+              <Link href="/ledger" className="text-ui-xs text-grey-400 hover:text-black underline underline-offset-4">View ledger</Link>
               <Link href="/write" className="btn">New article</Link>
             </div>
           </div>
           {activeTab === 'articles' && <ArticlesTab userId={user.id} pubkey={user.pubkey} />}
-          {activeTab === 'drafts' && <DraftsTab />}
           {activeTab === 'subscribers' && <SubscribersTab />}
-          {activeTab === 'drives' && <DrivesTab userId={user.id} />}
-          {activeTab === 'commissions' && <CommissionsTab />}
-          {activeTab === 'offers' && <OffersTab />}
+          {activeTab === 'proposals' && <ProposalsTab userId={user.id} />}
           {activeTab === 'pricing' && <PricingTab stripeReady={user.stripeConnectKycComplete} />}
         </>
       )}
@@ -284,19 +288,58 @@ export default function DashboardPage() {
 }
 
 // =============================================================================
-// Articles Tab
+// Articles Tab (published + drafts unified)
 // =============================================================================
 
-function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
-  const [articles, setArticles] = useState<MyArticle[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [deletingId, setDeletingId] = useState<string | null>(null); const [giftLinksOpenId, setGiftLinksOpenId] = useState<string | null>(null); const [unpublishingId, setUnpublishingId] = useState<string | null>(null); const [unpublishedMsg, setUnpublishedMsg] = useState<string | null>(null)
+type ContentItem =
+  | { kind: 'published'; data: MyArticle }
+  | { kind: 'draft'; data: { draftId: string; title: string; autoSavedAt: string; scheduledAt: string | null } }
 
-  useEffect(() => { (async () => { setLoading(true); try { setArticles((await myArticles.list()).articles) } catch { setError('Failed to load articles.') } finally { setLoading(false) } })() }, [userId])
-  async function handleToggleReplies(id: string, on: boolean) { try { await myArticles.update(id, { repliesEnabled: on }); setArticles(p => p.map(a => a.id === id ? { ...a, repliesEnabled: on } : a)) } catch { setError('Failed to update.') } }
-  async function handleDelete(id: string) {
+function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
+  const [items, setItems] = useState<ContentItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [giftLinksOpenId, setGiftLinksOpenId] = useState<string | null>(null)
+  const [unpublishingId, setUnpublishingId] = useState<string | null>(null)
+  const [unpublishedMsg, setUnpublishedMsg] = useState<string | null>(null)
+  const [schedulingId, setSchedulingId] = useState<string | null>(null)
+  const [schedulePickerDraftId, setSchedulePickerDraftId] = useState<string | null>(null)
+  const [scheduleDateTime, setScheduleDateTime] = useState('')
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      try {
+        const [articleRes, drafts] = await Promise.all([
+          myArticles.list(),
+          loadDrafts(),
+        ])
+        const published: ContentItem[] = articleRes.articles.map(a => ({ kind: 'published', data: a }))
+        const draftItems: ContentItem[] = drafts.map((d: any) => ({ kind: 'draft', data: d }))
+        // Drafts first, then published
+        setItems([...draftItems, ...published])
+      } catch { setError('Failed to load articles.') }
+      finally { setLoading(false) }
+    })()
+  }, [userId])
+
+  async function handleToggleReplies(id: string, on: boolean) {
+    try {
+      await myArticles.update(id, { repliesEnabled: on })
+      setItems(p => p.map(item =>
+        item.kind === 'published' && item.data.id === id
+          ? { ...item, data: { ...item.data, repliesEnabled: on } }
+          : item
+      ))
+    } catch { setError('Failed to update.') }
+  }
+
+  async function handleDeleteArticle(id: string) {
     setDeletingId(id)
     try {
       const result = await myArticles.remove(id)
-      setArticles(p => p.filter(a => a.id !== id))
+      setItems(p => p.filter(item => !(item.kind === 'published' && item.data.id === id)))
       try {
         await signAndPublish({
           kind: KIND_DELETION,
@@ -308,68 +351,157 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
     catch { setError('Failed to delete.') }
     finally { setDeletingId(null) }
   }
+
+  async function handleDeleteDraft(draftId: string) {
+    setDeletingId(draftId)
+    try {
+      await deleteDraft(draftId)
+      setItems(p => p.filter(item => !(item.kind === 'draft' && item.data.draftId === draftId)))
+    } catch { setError('Failed to delete draft.') }
+    finally { setDeletingId(null) }
+  }
+
   async function handleUnpublish(id: string) {
     if (!confirm('Revert this article to draft? It will be removed from your public profile but not deleted.')) return
     setUnpublishingId(id)
     try {
       await myArticles.unpublish(id)
-      setArticles(p => p.filter(a => a.id !== id))
+      setItems(p => p.filter(item => !(item.kind === 'published' && item.data.id === id)))
       setUnpublishedMsg('Moved to drafts.')
       setTimeout(() => setUnpublishedMsg(null), 3000)
     } catch { setError('Failed to unpublish.') }
     finally { setUnpublishingId(null) }
   }
 
+  async function handleSchedule(draftId: string) {
+    if (!scheduleDateTime) return
+    setSchedulingId(draftId)
+    try {
+      const result = await scheduleDraft(draftId, new Date(scheduleDateTime).toISOString())
+      setItems(p => p.map(item =>
+        item.kind === 'draft' && item.data.draftId === draftId
+          ? { ...item, data: { ...item.data, scheduledAt: result.scheduledAt } }
+          : item
+      ))
+      setSchedulePickerDraftId(null)
+      setScheduleDateTime('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to schedule.')
+    } finally { setSchedulingId(null) }
+  }
+
+  async function handleUnschedule(draftId: string) {
+    setSchedulingId(draftId)
+    try {
+      await unscheduleDraft(draftId)
+      setItems(p => p.map(item =>
+        item.kind === 'draft' && item.data.draftId === draftId
+          ? { ...item, data: { ...item.data, scheduledAt: null } }
+          : item
+      ))
+    } catch { setError('Failed to unschedule.') }
+    finally { setSchedulingId(null) }
+  }
+
   if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
   if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
-  if (articles.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No published articles yet.</p><Link href="/write" className="text-ui-xs text-black underline underline-offset-4">Write your first article</Link></div>
+  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No articles or drafts yet.</p><Link href="/write" className="text-ui-xs text-black underline underline-offset-4">Write your first article</Link></div>
 
   return (
     <div className="overflow-x-auto bg-white">
       <table className="w-full text-ui-xs">
         <thead><tr className="border-b-2 border-grey-200"><th className="px-4 py-3 text-left label-ui text-grey-400">Title</th><th className="px-4 py-3 text-left label-ui text-grey-400">Status</th><th className="px-4 py-3 text-right label-ui text-grey-400">Reads</th><th className="px-4 py-3 text-right label-ui text-grey-400">Earned</th><th className="px-4 py-3 text-center label-ui text-grey-400">Replies</th><th className="px-4 py-3 text-right label-ui text-grey-400">Actions</th></tr></thead>
-        <tbody>{articles.map(a => (
-          <React.Fragment key={a.id}>
-          <tr className="border-b-2 border-grey-200 last:border-b-0">
-            <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-black hover:opacity-70">{a.title}</Link></td>
-            <td className="px-4 py-3">{a.isPaywalled ? <span className="text-black">£{((a.pricePence??0)/100).toFixed(2)}</span> : <span className="text-grey-400">Free</span>}</td>
-            <td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td>
-            <td className="px-4 py-3 text-right text-black tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td>
-            <td className="px-4 py-3 text-center"><button onClick={() => handleToggleReplies(a.id, !a.repliesEnabled)} className={`text-ui-xs ${a.repliesEnabled ? 'text-crimson' : 'text-grey-300'}`}>{a.repliesEnabled ? 'On' : 'Off'}</button></td>
-            <td className="px-4 py-3 text-right">
-              <div className="flex items-center justify-end gap-3">
-                {a.isPaywalled && (
-                  <button onClick={() => setGiftLinksOpenId(giftLinksOpenId === a.id ? null : a.id)} className={`text-grey-300 hover:text-black ${giftLinksOpenId === a.id ? 'text-black' : ''}`}>Gifts</button>
-                )}
-                <Link href={`/write?edit=${a.nostrEventId}`} className="text-grey-400 hover:text-black">Edit</Link>
-                <button onClick={() => handleUnpublish(a.id)} disabled={unpublishingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{unpublishingId===a.id ? '...' : 'Unpublish'}</button>
-                <button onClick={() => handleDelete(a.id)} disabled={deletingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button>
-              </div>
-            </td>
-          </tr>
-          {giftLinksOpenId === a.id && (
-            <tr><td colSpan={6} className="bg-grey-50 border-b-2 border-grey-200"><GiftLinksPanel articleId={a.id} dTag={a.dTag} /></td></tr>
-          )}
-          </React.Fragment>
-        ))}
+        <tbody>{items.map(item => {
+          if (item.kind === 'draft') {
+            const d = item.data
+            const isScheduled = !!d.scheduledAt
+            return (
+              <React.Fragment key={`draft-${d.draftId}`}>
+              <tr className="border-b-2 border-grey-200 last:border-b-0">
+                <td className="px-4 py-3">
+                  <Link href={`/write?draft=${d.draftId}`} className="text-black hover:opacity-70">{d.title || 'Untitled'}</Link>
+                  <p className="text-[11px] text-grey-300 mt-0.5">Saved {new Date(d.autoSavedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                </td>
+                <td className="px-4 py-3">
+                  {isScheduled ? (
+                    <span className="text-black">Scheduled {new Date(d.scheduledAt!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  ) : (
+                    <span className="text-grey-400">Draft</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums text-grey-300">&mdash;</td>
+                <td className="px-4 py-3 text-right tabular-nums text-grey-300">&mdash;</td>
+                <td className="px-4 py-3 text-center text-grey-300">&mdash;</td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex items-center justify-end gap-3">
+                    <Link href={`/write?draft=${d.draftId}`} className="text-grey-400 hover:text-black">Edit</Link>
+                    {isScheduled ? (
+                      <>
+                        <button onClick={() => { setSchedulePickerDraftId(d.draftId); setScheduleDateTime(d.scheduledAt!.slice(0, 16)) }} className="text-grey-400 hover:text-black">Reschedule</button>
+                        <button onClick={() => handleUnschedule(d.draftId)} disabled={schedulingId === d.draftId} className="text-grey-300 hover:text-black disabled:opacity-50">{schedulingId === d.draftId ? '...' : 'Unschedule'}</button>
+                      </>
+                    ) : (
+                      <button onClick={() => setSchedulePickerDraftId(schedulePickerDraftId === d.draftId ? null : d.draftId)} className="text-grey-400 hover:text-black">Schedule</button>
+                    )}
+                    <button onClick={() => handleDeleteDraft(d.draftId)} disabled={deletingId === d.draftId} className="text-grey-300 hover:text-black disabled:opacity-50">{deletingId === d.draftId ? '...' : 'Delete'}</button>
+                  </div>
+                </td>
+              </tr>
+              {schedulePickerDraftId === d.draftId && (
+                <tr><td colSpan={6} className="bg-grey-50 border-b-2 border-grey-200 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="datetime-local"
+                      value={scheduleDateTime}
+                      onChange={e => setScheduleDateTime(e.target.value)}
+                      min={new Date().toISOString().slice(0, 16)}
+                      className="bg-white px-3 py-1.5 text-sm focus:outline-none border border-grey-200"
+                    />
+                    <button
+                      onClick={() => handleSchedule(d.draftId)}
+                      disabled={schedulingId === d.draftId || !scheduleDateTime}
+                      className="btn text-sm disabled:opacity-50"
+                    >
+                      {schedulingId === d.draftId ? '...' : isScheduled ? 'Update schedule' : 'Confirm schedule'}
+                    </button>
+                    <button onClick={() => { setSchedulePickerDraftId(null); setScheduleDateTime('') }} className="text-ui-xs text-grey-300 hover:text-black">Cancel</button>
+                  </div>
+                </td></tr>
+              )}
+              </React.Fragment>
+            )
+          }
+          const a = item.data
+          return (
+            <React.Fragment key={a.id}>
+            <tr className="border-b-2 border-grey-200 last:border-b-0">
+              <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-black hover:opacity-70">{a.title}</Link></td>
+              <td className="px-4 py-3">{a.isPaywalled ? <span className="text-black">£{((a.pricePence??0)/100).toFixed(2)}</span> : <span className="text-grey-400">Free</span>}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td>
+              <td className="px-4 py-3 text-right text-black tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td>
+              <td className="px-4 py-3 text-center"><button onClick={() => handleToggleReplies(a.id, !a.repliesEnabled)} className={`text-ui-xs ${a.repliesEnabled ? 'text-crimson' : 'text-grey-300'}`}>{a.repliesEnabled ? 'On' : 'Off'}</button></td>
+              <td className="px-4 py-3 text-right">
+                <div className="flex items-center justify-end gap-3">
+                  {a.isPaywalled && (
+                    <button onClick={() => setGiftLinksOpenId(giftLinksOpenId === a.id ? null : a.id)} className={`text-grey-300 hover:text-black ${giftLinksOpenId === a.id ? 'text-black' : ''}`}>Gifts</button>
+                  )}
+                  <Link href={`/write?edit=${a.nostrEventId}`} className="text-grey-400 hover:text-black">Edit</Link>
+                  <button onClick={() => handleUnpublish(a.id)} disabled={unpublishingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{unpublishingId===a.id ? '...' : 'Unpublish'}</button>
+                  <button onClick={() => handleDeleteArticle(a.id)} disabled={deletingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button>
+                </div>
+              </td>
+            </tr>
+            {giftLinksOpenId === a.id && (
+              <tr><td colSpan={6} className="bg-grey-50 border-b-2 border-grey-200"><GiftLinksPanel articleId={a.id} dTag={a.dTag} /></td></tr>
+            )}
+            </React.Fragment>
+          )
+        })}
         </tbody>
       </table>
       {unpublishedMsg && <p className="text-ui-xs text-grey-600 px-4 py-2">{unpublishedMsg}</p>}
     </div>
   )
-}
-
-// =============================================================================
-// Drafts Tab
-// =============================================================================
-
-function DraftsTab() {
-  const [drafts, setDrafts] = useState<any[]>([]); const [loading, setLoading] = useState(true)
-  useEffect(() => { (async () => { setLoading(true); try { setDrafts(await loadDrafts()) } catch {} finally { setLoading(false) } })() }, [])
-  async function handleDelete(id: string) { try { await deleteDraft(id); setDrafts(p => p.filter((d:any) => d.draftId !== id)) } catch {} }
-  if (loading) return <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-8 animate-pulse bg-white" />)}</div>
-  if (drafts.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No saved drafts.</p><Link href="/write" className="text-ui-xs text-black underline underline-offset-4">Start writing</Link></div>
-  return <div className="space-y-2">{drafts.map((d:any) => <div key={d.draftId} className="flex items-center justify-between bg-white px-4 py-3"><div><p className="text-ui-sm text-black">{d.title||'Untitled'}</p><p className="text-ui-xs text-grey-300 mt-0.5">Last saved {new Date(d.autoSavedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p></div><div className="flex items-center gap-4"><Link href={`/write?draft=${d.draftId}`} className="text-ui-xs text-black hover:text-black">Continue</Link><button onClick={() => handleDelete(d.draftId)} className="text-ui-xs text-grey-300 hover:text-black">Delete</button></div></div>)}</div>
 }
 
 // =============================================================================
@@ -532,15 +664,40 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
             <span className="text-ui-xs text-grey-400">Active</span>
           </div>
         ) : (
-          <div>
-            <p className="text-ui-xs text-grey-600 mb-3">Connect Stripe to receive payouts from articles and subscriptions.</p>
-            <Link href="/profile" className="text-ui-xs text-crimson underline underline-offset-4">
-              Set up Stripe Connect
-            </Link>
-          </div>
+          <StripeConnectSetup />
         )}
       </div>
 
+    </div>
+  )
+}
+
+// =============================================================================
+// Stripe Connect Setup (inline)
+// =============================================================================
+
+function StripeConnectSetup() {
+  const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleConnect() {
+    setConnecting(true); setError(null)
+    try {
+      const result = await auth.connectStripe()
+      window.location.href = result.stripeConnectUrl
+    } catch {
+      setError('Failed to start Stripe setup.')
+      setConnecting(false)
+    }
+  }
+
+  return (
+    <div>
+      <p className="text-ui-xs text-grey-600 mb-3">Connect Stripe to receive payouts from articles and subscriptions.</p>
+      {error && <p className="text-ui-xs text-red-600 mb-3">{error}</p>}
+      <button onClick={handleConnect} disabled={connecting} className="btn disabled:opacity-50">
+        {connecting ? 'Setting up…' : 'Connect Stripe'}
+      </button>
     </div>
   )
 }

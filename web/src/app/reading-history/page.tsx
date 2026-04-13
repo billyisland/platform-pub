@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function HistoryRedirect() {
+export default function ReadingHistoryRedirect() {
   redirect('/library?tab=history')
 }

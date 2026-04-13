@@ -19,7 +19,7 @@ const ArticleEditor = dynamic(
   }
 )
 import { publishArticle, publishToPublication } from '../../lib/publish'
-import { loadDraft } from '../../lib/drafts'
+import { loadDraft, saveDraft, scheduleDraft } from '../../lib/drafts'
 import { articles as articlesApi, publications as publicationsApi, tags as tagsApi } from '../../lib/api'
 import type { PublicationContext } from '../../components/editor/ArticleEditor'
 
@@ -170,6 +170,24 @@ export default function WritePage() {
     }
   }
 
+  async function handleSchedule(data: PublishData, scheduledAt: string) {
+    if (!user) return
+
+    // Save the draft first, then schedule it
+    const content = data.content
+    const saved = await saveDraft({
+      title: data.title,
+      dek: data.dek,
+      content,
+      gatePositionPct: data.gatePositionPct,
+      pricePence: data.pricePence,
+      dTag: initialData?.editingDTag,
+    })
+
+    await scheduleDraft(saved.draftId, scheduledAt)
+    router.push('/dashboard?tab=articles')
+  }
+
   if (loading || !user) {
     return (
       <div className="mx-auto max-w-article px-4 sm:px-6 pt-16 pb-16 lg:pt-8 text-center">
@@ -212,6 +230,7 @@ export default function WritePage() {
       publicationMemberships={pubMemberships}
       initialPublicationId={initialPubId}
       onPublish={handlePublish}
+      onSchedule={!editEventId ? handleSchedule : undefined}
     />
   )
 }

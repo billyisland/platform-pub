@@ -1,0 +1,391 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { drives as drivesApi, subscriptionOffers, type Commission, type PledgeDrive, type SubscriptionOffer } from '../../lib/api'
+import { CommissionCard } from './CommissionsTab'
+import { DriveCard } from './DriveCard'
+import { DriveCreateForm } from './DriveCreateForm'
+
+type ProposalFilter = 'all' | 'commissions' | 'drives' | 'offers'
+
+export function ProposalsTab({ userId }: { userId: string }) {
+  const [commissions, setCommissions] = useState<Commission[]>([])
+  const [drives, setDrives] = useState<PledgeDrive[]>([])
+  const [offers, setOffers] = useState<SubscriptionOffer[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<ProposalFilter>('all')
+
+  // Creation forms
+  const [showDriveForm, setShowDriveForm] = useState(false)
+  const [offerFormMode, setOfferFormMode] = useState<null | 'code' | 'grant'>(null)
+
+  async function fetchAll() {
+    setLoading(true)
+    setError(null)
+    try {
+      const [commRes, driveRes, offerRes] = await Promise.all([
+        drivesApi.myCommissions().catch(() => ({ commissions: [] })),
+        drivesApi.listByUser(userId).catch(() => ({ drives: [] })),
+        subscriptionOffers.list().catch(() => ({ offers: [] })),
+      ])
+      setCommissions(commRes.commissions)
+      setDrives(driveRes.drives)
+      setOffers(offerRes.offers)
+    } catch {
+      setError('Failed to load proposals.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchAll() }, [userId])
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map(i => <div key={i} className="h-24 animate-pulse bg-white" />)}
+      </div>
+    )
+  }
+
+  if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
+
+  const showCommissions = filter === 'all' || filter === 'commissions'
+  const showDrives = filter === 'all' || filter === 'drives'
+  const showOffers = filter === 'all' || filter === 'offers'
+
+  const totalCount = commissions.length + drives.length + offers.length
+  const isEmpty = totalCount === 0 && !showDriveForm && !offerFormMode
+
+  const filters: { key: ProposalFilter; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'commissions', label: `Commissions (${commissions.length})` },
+    { key: 'drives', label: `Pledge drives (${drives.length})` },
+    { key: 'offers', label: `Offers (${offers.length})` },
+  ]
+
+  return (
+    <div>
+      {/* Filter bar + creation actions */}
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div className="flex gap-1">
+          {filters.map(f => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`tab-pill ${filter === f.key ? 'tab-pill-active' : 'tab-pill-inactive'}`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          {!showDriveForm && (
+            <button onClick={() => { setShowDriveForm(true); setFilter('drives') }} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70">
+              New pledge drive
+            </button>
+          )}
+          {!offerFormMode && (
+            <>
+              <button onClick={() => { setOfferFormMode('code'); setFilter('offers') }} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70">
+                New offer code
+              </button>
+              <button onClick={() => { setOfferFormMode('grant'); setFilter('offers') }} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70">
+                Gift subscription
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Drive creation form */}
+      {showDriveForm && (
+        <div className="mb-8">
+          <DriveCreateForm onCreated={() => { setShowDriveForm(false); fetchAll() }} onCancel={() => setShowDriveForm(false)} />
+        </div>
+      )}
+
+      {/* Offer creation form */}
+      {offerFormMode && (
+        <div className="mb-8">
+          <OfferCreateForm mode={offerFormMode} onCreated={() => { setOfferFormMode(null); fetchAll() }} onCancel={() => setOfferFormMode(null)} />
+        </div>
+      )}
+
+      {isEmpty && (
+        <div className="py-20 text-center">
+          <p className="text-ui-sm text-grey-400 mb-4">No proposals yet.</p>
+          <p className="text-ui-xs text-grey-300">Commission requests from readers, your pledge drives, and subscription offers will appear here.</p>
+        </div>
+      )}
+
+      {/* Commissions section */}
+      {showCommissions && commissions.length > 0 && (
+        <div className="mb-8">
+          <p className="label-ui text-grey-400 mb-4">Commissions</p>
+          <div className="space-y-2">
+            {commissions.map(c => <CommissionCard key={c.id} commission={c} onUpdate={fetchAll} />)}
+          </div>
+        </div>
+      )}
+
+      {/* Pledge drives section */}
+      {showDrives && drives.length > 0 && (
+        <div className="mb-8">
+          <p className="label-ui text-grey-400 mb-4">Pledge drives</p>
+          <div className="space-y-2">
+            {drives.map(d => <DriveCard key={d.id} drive={d} onUpdate={fetchAll} />)}
+          </div>
+        </div>
+      )}
+
+      {/* Offers section */}
+      {showOffers && offers.length > 0 && (
+        <OffersSection offers={offers} onUpdate={fetchAll} />
+      )}
+    </div>
+  )
+}
+
+// =============================================================================
+// Offers Section (table rendering from OffersTab)
+// =============================================================================
+
+function OffersSection({ offers, onUpdate }: { offers: SubscriptionOffer[]; onUpdate: () => void }) {
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  async function handleRevoke(offerId: string) {
+    setRevokingId(offerId)
+    try {
+      await subscriptionOffers.revoke(offerId)
+      onUpdate()
+    } catch {}
+    finally { setRevokingId(null) }
+  }
+
+  function copyUrl(code: string, offerId: string) {
+    const url = `${window.location.origin}/subscribe/${code}`
+    navigator.clipboard.writeText(url)
+    setCopiedId(offerId)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const active = offers.filter(o => !o.revoked)
+  const revoked = offers.filter(o => o.revoked)
+
+  return (
+    <div className="mb-8">
+      <p className="label-ui text-grey-400 mb-4">Offers</p>
+
+      {active.length > 0 && (
+        <div className="overflow-x-auto bg-white">
+          <table className="w-full text-ui-xs">
+            <thead>
+              <tr className="border-b-2 border-grey-200">
+                <th className="px-4 py-3 text-left label-ui text-grey-400">Label</th>
+                <th className="px-4 py-3 text-left label-ui text-grey-400">Type</th>
+                <th className="px-4 py-3 text-right label-ui text-grey-400">Discount</th>
+                <th className="px-4 py-3 text-right label-ui text-grey-400">Duration</th>
+                <th className="px-4 py-3 text-right label-ui text-grey-400">Redeemed</th>
+                <th className="px-4 py-3 text-right label-ui text-grey-400">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {active.map(offer => (
+                <tr key={offer.id} className="border-b-2 border-grey-200 last:border-b-0">
+                  <td className="px-4 py-3">{offer.label}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-block px-2 py-0.5 text-[11px] font-mono ${offer.mode === 'code' ? 'bg-grey-100 text-grey-600' : 'bg-grey-100 text-crimson'}`}>
+                      {offer.mode === 'code' ? 'code' : `grant → ${offer.recipientUsername ?? '?'}`}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {offer.discountPct}%{offer.discountPct === 100 ? ' (free)' : ''}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-grey-400">
+                    {offer.durationMonths ? `${offer.durationMonths}mo` : 'permanent'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {offer.redemptionCount}{offer.maxRedemptions ? `/${offer.maxRedemptions}` : ''}
+                  </td>
+                  <td className="px-4 py-3 text-right space-x-3">
+                    {offer.code && (
+                      <button onClick={() => copyUrl(offer.code!, offer.id)} className="text-grey-400 hover:text-black">
+                        {copiedId === offer.id ? 'Copied!' : 'Copy link'}
+                      </button>
+                    )}
+                    <button onClick={() => handleRevoke(offer.id)} disabled={revokingId === offer.id} className="text-grey-300 hover:text-black disabled:opacity-50">
+                      {revokingId === offer.id ? '...' : 'Revoke'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {revoked.length > 0 && (
+        <details className="text-ui-xs mt-3">
+          <summary className="text-grey-300 cursor-pointer hover:text-grey-600">
+            {revoked.length} revoked
+          </summary>
+          <div className="mt-2 space-y-1">
+            {revoked.map(offer => (
+              <div key={offer.id} className="flex items-center gap-3 text-grey-300 py-1">
+                <span className="line-through">{offer.label}</span>
+                <span className="font-mono text-[11px]">{offer.mode}</span>
+                <span>{offer.discountPct}%</span>
+                <span className="tabular-nums">{offer.redemptionCount} redeemed</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+// =============================================================================
+// Offer Create Form (extracted from OffersTab)
+// =============================================================================
+
+function OfferCreateForm({ mode, onCreated, onCancel }: { mode: 'code' | 'grant'; onCreated: () => void; onCancel: () => void }) {
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [label, setLabel] = useState('')
+  const [discountPct, setDiscountPct] = useState(100)
+  const [durationMonths, setDurationMonths] = useState<number | null>(null)
+  const [maxRedemptions, setMaxRedemptions] = useState<number | null>(null)
+  const [expiresAt, setExpiresAt] = useState('')
+  const [recipientUsername, setRecipientUsername] = useState('')
+
+  async function handleCreate() {
+    if (!label.trim()) return
+    setCreating(true)
+    setError(null)
+    try {
+      await subscriptionOffers.create({
+        label: label.trim(),
+        mode,
+        discountPct,
+        durationMonths,
+        maxRedemptions: mode === 'code' ? maxRedemptions : 1,
+        expiresAt: expiresAt || null,
+        recipientUsername: mode === 'grant' ? recipientUsername : undefined,
+      })
+      onCreated()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create offer.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="bg-white px-5 py-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="label-ui text-black">
+          {mode === 'code' ? 'New offer code' : 'Gift subscription'}
+        </h3>
+        <button onClick={onCancel} className="text-ui-xs text-grey-300 hover:text-black">Cancel</button>
+      </div>
+
+      {error && <p className="text-ui-xs text-red-600">{error}</p>}
+
+      <div className="space-y-3">
+        <div>
+          <label className="label-ui text-grey-400 mb-1 block">Label</label>
+          <input
+            type="text"
+            value={label}
+            onChange={e => setLabel(e.target.value)}
+            placeholder={mode === 'code' ? 'e.g. Launch discount' : 'e.g. Comp for Jane'}
+            className="w-full bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
+          />
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div>
+            <label className="label-ui text-grey-400 mb-1 block">Discount %</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={discountPct}
+              onChange={e => setDiscountPct(parseInt(e.target.value, 10) || 0)}
+              className="w-20 bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="label-ui text-grey-400 mb-1 block">Duration</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={durationMonths ?? ''}
+                onChange={e => setDurationMonths(e.target.value ? parseInt(e.target.value, 10) : null)}
+                placeholder="—"
+                className="w-16 bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
+              />
+              <span className="text-ui-xs text-grey-400">months (blank = permanent)</span>
+            </div>
+          </div>
+        </div>
+
+        {mode === 'code' && (
+          <div className="flex items-center gap-4">
+            <div>
+              <label className="label-ui text-grey-400 mb-1 block">Max redemptions</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={100000}
+                  value={maxRedemptions ?? ''}
+                  onChange={e => setMaxRedemptions(e.target.value ? parseInt(e.target.value, 10) : null)}
+                  placeholder="—"
+                  className="w-20 bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
+                />
+                <span className="text-ui-xs text-grey-400">blank = unlimited</span>
+              </div>
+            </div>
+            <div>
+              <label className="label-ui text-grey-400 mb-1 block">Expires</label>
+              <input
+                type="date"
+                value={expiresAt}
+                onChange={e => setExpiresAt(e.target.value)}
+                className="bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
+              />
+            </div>
+          </div>
+        )}
+
+        {mode === 'grant' && (
+          <div>
+            <label className="label-ui text-grey-400 mb-1 block">Recipient username</label>
+            <input
+              type="text"
+              value={recipientUsername}
+              onChange={e => setRecipientUsername(e.target.value)}
+              placeholder="username"
+              className="w-48 bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
+            />
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={handleCreate}
+        disabled={creating || !label.trim() || (mode === 'grant' && !recipientUsername.trim())}
+        className="btn disabled:opacity-50"
+      >
+        {creating ? 'Creating...' : mode === 'code' ? 'Create offer code' : 'Grant subscription'}
+      </button>
+    </div>
+  )
+}
