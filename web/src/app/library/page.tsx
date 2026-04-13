@@ -44,7 +44,7 @@ export default function LibraryPage() {
         Library
       </h1>
 
-      <div className="flex gap-2 mb-10">
+      <div className="flex gap-2 mb-8">
         {(['bookmarks', 'history'] as LibraryTab[]).map(t => (
           <button
             key={t}
@@ -96,7 +96,7 @@ function BookmarksTab() {
     return (
       <div className="py-20 text-center">
         <p className="text-ui-sm text-grey-400 mb-4">No bookmarks yet.</p>
-        <Link href="/feed" className="text-ui-xs text-black underline underline-offset-4">
+        <Link href="/feed" className="btn-text underline underline-offset-4">
           Browse the feed
         </Link>
       </div>
@@ -116,7 +116,7 @@ function BookmarksTab() {
         <div className="py-6 text-center">
           <button
             onClick={() => loadBookmarks(offset)}
-            className="text-ui-xs text-black underline underline-offset-4"
+            className="btn-text underline underline-offset-4"
           >
             Load more
           </button>
@@ -138,7 +138,7 @@ function BookmarkCard({
 
   return (
     <Link href={`/article/${a.nostr_d_tag}`} className="block bg-white px-6 py-4 hover:bg-grey-50 transition-colors">
-      <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 mb-1">
+      <p className="label-ui text-grey-300 mb-1">
         {a.author_display_name ?? a.author_username}
         {publishedAt > 0 && (
           <> · {formatDateRelative(publishedAt)}</>
@@ -148,7 +148,7 @@ function BookmarkCard({
         {a.title}
       </h2>
       {excerpt && (
-        <p className="text-[14px] font-sans text-grey-600 mt-1 leading-relaxed">
+        <p className="text-ui-sm text-grey-600 mt-1 leading-relaxed">
           {excerpt}
         </p>
       )}

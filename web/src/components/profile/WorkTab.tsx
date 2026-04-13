@@ -163,7 +163,7 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
             <div className="px-6 pb-3 -mt-1">
               <button
                 onClick={() => handleTogglePin(a.id)}
-                className="text-ui-xs text-grey-300 hover:text-black transition-colors"
+                className="btn-text-muted transition-colors"
               >
                 {a.pinnedOnProfile ? 'Unpin from profile' : 'Pin to profile'}
               </button>

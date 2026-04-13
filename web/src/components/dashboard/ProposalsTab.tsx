@@ -82,16 +82,16 @@ export function ProposalsTab({ userId }: { userId: string }) {
         </div>
         <div className="flex items-center gap-3">
           {!showDriveForm && (
-            <button onClick={() => { setShowDriveForm(true); setFilter('drives') }} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70">
+            <button onClick={() => { setShowDriveForm(true); setFilter('drives') }} className="btn-text underline underline-offset-4">
               New pledge drive
             </button>
           )}
           {!offerFormMode && (
             <>
-              <button onClick={() => { setOfferFormMode('code'); setFilter('offers') }} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70">
+              <button onClick={() => { setOfferFormMode('code'); setFilter('offers') }} className="btn-text underline underline-offset-4">
                 New offer code
               </button>
-              <button onClick={() => { setOfferFormMode('grant'); setFilter('offers') }} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70">
+              <button onClick={() => { setOfferFormMode('grant'); setFilter('offers') }} className="btn-text underline underline-offset-4">
                 Gift subscription
               </button>
             </>

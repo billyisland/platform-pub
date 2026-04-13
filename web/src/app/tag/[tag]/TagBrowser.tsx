@@ -87,7 +87,7 @@ export function TagBrowser({ tagName }: { tagName: string }) {
             <div className="py-8 text-center">
               <button
                 onClick={() => load(offset)}
-                className="text-ui-xs text-black underline underline-offset-4"
+                className="btn-text underline underline-offset-4"
               >
                 Load more
               </button>

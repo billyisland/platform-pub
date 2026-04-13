@@ -16,12 +16,12 @@ export default function TraffologyLayout({ children }: { children: React.ReactNo
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-ui-xs font-bold uppercase tracking-[0.14em] text-black">
+          <span className="label-ui font-bold text-black">
             ∀ Traffology
           </span>
           <Link
             href="/dashboard"
-            className="text-ui-xs text-grey-400 hover:text-black transition-colors"
+            className="btn-text-muted"
           >
             Dashboard
           </Link>

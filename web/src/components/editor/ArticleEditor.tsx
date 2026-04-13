@@ -446,42 +446,41 @@ export function ArticleEditor({
         <TagInput value={articleTags} onChange={setArticleTags} />
       </div>
 
-      {/* Publication selector — shown when user is a member of publications */}
-      {publicationMemberships.length > 0 && (
-        <div className="mt-3 bg-grey-100 px-5 py-3 flex items-center gap-3 flex-wrap">
-          <label className="label-ui text-grey-400">Publishing as</label>
-          <select
-            value={selectedPublicationId ?? ''}
-            onChange={(e) => setSelectedPublicationId(e.target.value || null)}
-            className="bg-grey-100 px-3 py-1.5 text-sm text-black"
-          >
-            <option value="">Yourself</option>
-            {publicationMemberships.map(pub => (
-              <option key={pub.id} value={pub.id}>{pub.name}</option>
-            ))}
-          </select>
-          {selectedPublicationId && (
-            <label className="flex items-center gap-2 ml-auto cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showOnWriterProfile}
-                onChange={(e) => setShowOnWriterProfile(e.target.checked)}
-              />
-              <span className="text-sm text-grey-600">Also show on your personal profile</span>
-            </label>
-          )}
-        </div>
-      )}
+      {/* Article settings card — publishing, price, replies */}
+      <div className="mt-3 bg-grey-100 px-5 py-4 space-y-3">
+        {/* Publishing as */}
+        {publicationMemberships.length > 0 && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="label-ui text-grey-400">Publishing as</label>
+            <select
+              value={selectedPublicationId ?? ''}
+              onChange={(e) => setSelectedPublicationId(e.target.value || null)}
+              className="bg-grey-100 px-3 py-1.5 text-sm text-black"
+            >
+              <option value="">Yourself</option>
+              {publicationMemberships.map(pub => (
+                <option key={pub.id} value={pub.id}>{pub.name}</option>
+              ))}
+            </select>
+            {selectedPublicationId && (
+              <label className="flex items-center gap-2 ml-auto cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOnWriterProfile}
+                  onChange={(e) => setShowOnWriterProfile(e.target.checked)}
+                />
+                <span className="text-ui-xs text-grey-400">Also show on personal profile</span>
+              </label>
+            )}
+          </div>
+        )}
 
-      {/* Price control — only shown when gate is inserted */}
-      {gateInserted && (
-        <div className="mt-6 bg-grey-100 px-5 py-4">
+        {/* Price — only when paywall gate is inserted */}
+        {gateInserted && (
           <div className="flex items-center gap-4">
-            <label className="label-ui text-grey-400">
-              Price
-            </label>
+            <label className="label-ui text-grey-400">Price</label>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-grey-400">&pound;</span>
+              <span className="text-ui-xs text-grey-400">&pound;</span>
               <input
                 type="number"
                 min={0.01}
@@ -493,24 +492,22 @@ export function ArticleEditor({
                 }}
                 className="w-24 bg-white border-none px-3 py-1.5 text-sm focus:outline-none"
               />
-              <span className="text-xs text-grey-300">
+              <span className="text-mono-xs text-grey-300">
                 Suggested: &pound;{priceDisplay} based on {wordCount} words
               </span>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Replies toggle */}
-      <div className="mt-3 bg-grey-100 px-5 py-4">
+        {/* Replies toggle */}
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={commentsEnabled}
             onChange={(e) => setCommentsEnabled(e.target.checked)}
           />
-          <span className="text-sm text-grey-600">
-            Allow replies on this article
+          <span className="text-ui-xs text-grey-400">
+            Allow replies
           </span>
         </label>
       </div>

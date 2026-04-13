@@ -17,8 +17,9 @@ import { RateCardTab } from '../../components/dashboard/RateCardTab'
 import { PayrollTab } from '../../components/dashboard/PayrollTab'
 import { PublicationEarningsTab } from '../../components/dashboard/PublicationEarningsTab'
 import { SubscribersTab } from '../../components/dashboard/SubscribersTab'
+import { AnalyticsTab } from '../../components/dashboard/AnalyticsTab'
 
-type DashboardTab = 'articles' | 'subscribers' | 'proposals' | 'pricing'
+type DashboardTab = 'articles' | 'subscribers' | 'proposals' | 'pricing' | 'analytics'
 
 // Backwards-compatible aliases for old URLs / deep links
 const tabAliases: Record<string, DashboardTab> = {
@@ -28,7 +29,7 @@ const tabAliases: Record<string, DashboardTab> = {
   offers: 'proposals',
   settings: 'pricing',
 }
-type PubDashboardTab = 'articles' | 'members' | 'settings' | 'rate-card' | 'payroll' | 'earnings'
+type PubDashboardTab = 'articles' | 'members' | 'settings' | 'rate-card' | 'payroll' | 'earnings' | 'analytics'
 
 export default function DashboardPage() {
   const { user, loading } = useAuth()
@@ -62,11 +63,11 @@ export default function DashboardPage() {
   useEffect(() => {
     const tab = rawTab ? (tabAliases[rawTab] ?? rawTab) : null
     if (selectedContext) {
-      if (tab && ['articles', 'members', 'settings', 'rate-card', 'payroll', 'earnings'].includes(tab)) {
+      if (tab && ['articles', 'members', 'settings', 'rate-card', 'payroll', 'earnings', 'analytics'].includes(tab)) {
         setPubTab(tab as PubDashboardTab)
       }
     } else {
-      if (tab && ['articles', 'subscribers', 'proposals', 'pricing'].includes(tab)) {
+      if (tab && ['articles', 'subscribers', 'proposals', 'pricing', 'analytics'].includes(tab)) {
         setActiveTab(tab as DashboardTab)
       }
     }
@@ -126,10 +127,11 @@ export default function DashboardPage() {
   const selectedPub = pubMemberships.find(p => p.slug === selectedContext)
   const isPublicationContext = !!selectedPub
 
-  const personalTabs: DashboardTab[] = ['articles', ...(user.isWriter ? ['subscribers' as DashboardTab, 'proposals' as DashboardTab] : []), 'pricing']
+  const personalTabs: DashboardTab[] = ['articles', ...(user.isWriter ? ['subscribers' as DashboardTab, 'proposals' as DashboardTab] : []), 'pricing', 'analytics']
   const pubTabs: PubDashboardTab[] = [
     'articles', 'members', 'settings',
     ...(selectedPub?.can_manage_finances ? ['rate-card', 'payroll', 'earnings'] as PubDashboardTab[] : []),
+    'analytics',
   ]
 
   return (
@@ -169,7 +171,7 @@ export default function DashboardPage() {
         <form onSubmit={handleCreatePublication} className="mb-8 bg-white px-6 py-5 max-w-md space-y-4">
           <p className="label-ui text-grey-400">Create a publication</p>
           <div>
-            <label htmlFor="pub-name" className="block text-ui-xs text-grey-300 mb-1">Name</label>
+            <label htmlFor="pub-name" className="block label-ui text-grey-400 mb-1">Name</label>
             <input
               id="pub-name"
               type="text"
@@ -186,7 +188,7 @@ export default function DashboardPage() {
             />
           </div>
           <div>
-            <label htmlFor="pub-slug" className="block text-ui-xs text-grey-300 mb-1">URL slug</label>
+            <label htmlFor="pub-slug" className="block label-ui text-grey-400 mb-1">URL slug</label>
             <div className="flex items-center text-sm text-grey-300">
               <span className="mr-1">/pub/</span>
               <input
@@ -205,7 +207,7 @@ export default function DashboardPage() {
             <button type="submit" disabled={newPubSaving || !newPubName.trim() || !newPubSlug.trim()} className="btn disabled:opacity-50">
               {newPubSaving ? 'Creating...' : 'Create'}
             </button>
-            <button type="button" onClick={() => { setShowNewPub(false); setNewPubError(null) }} className="text-ui-xs text-grey-400 hover:text-black">
+            <button type="button" onClick={() => { setShowNewPub(false); setNewPubError(null) }} className="btn-text-muted">
               Cancel
             </button>
           </div>
@@ -258,6 +260,7 @@ export default function DashboardPage() {
           {pubTab === 'earnings' && selectedPub!.can_manage_finances && (
             <PublicationEarningsTab publicationId={selectedPub!.id} />
           )}
+          {pubTab === 'analytics' && <AnalyticsTab />}
         </>
       ) : (
         /* Personal dashboard */
@@ -272,8 +275,7 @@ export default function DashboardPage() {
               })}
             </div>
             <div className="flex items-center gap-4">
-              <Link href="/traffology" className="text-ui-xs text-grey-400 hover:text-black underline underline-offset-4">Analytics</Link>
-              <Link href="/ledger" className="text-ui-xs text-grey-400 hover:text-black underline underline-offset-4">View ledger</Link>
+              <Link href="/ledger" className="btn-text-muted underline underline-offset-4">View ledger</Link>
               <Link href="/write" className="btn">New article</Link>
             </div>
           </div>
@@ -281,6 +283,7 @@ export default function DashboardPage() {
           {activeTab === 'subscribers' && <SubscribersTab />}
           {activeTab === 'proposals' && <ProposalsTab userId={user.id} />}
           {activeTab === 'pricing' && <PricingTab stripeReady={user.stripeConnectKycComplete} />}
+          {activeTab === 'analytics' && <AnalyticsTab />}
         </>
       )}
     </div>
@@ -405,7 +408,7 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
 
   if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
   if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
-  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No articles or drafts yet.</p><Link href="/write" className="text-ui-xs text-black underline underline-offset-4">Write your first article</Link></div>
+  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No articles or drafts yet.</p><Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link></div>
 
   return (
     <div className="overflow-x-auto bg-white">

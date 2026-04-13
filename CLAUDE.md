@@ -137,6 +137,12 @@ Always use `.label-ui text-grey-400` for form labels. Do not use `text-ui-xs upp
 ### Buttons
 Use the defined button classes: `.btn` (primary), `.btn-accent` (crimson), `.btn-ghost` (background), `.btn-soft` (secondary/soft action). Do not hand-roll button styles with inline classes.
 
+### Text-link actions
+Use `.btn-text` for inline text-link actions (13px sans, black, medium weight). Use `.btn-text-muted` for secondary actions (grey, hover:black). Use `.btn-text-danger` for destructive actions (crimson). Do not hand-roll text button styles with `text-ui-xs text-black font-medium` or similar.
+
+### Toggle chips
+Use `.toggle-chip` + `.toggle-chip-active` / `.toggle-chip-inactive` (combined with `.label-ui`) for On/Off style selectors. Do not hand-roll toggle styling with inline conditional classes.
+
 ### Dividers
 Use `.slab-rule-4` for major section dividers. Do not use `h-[4px] bg-black` inline.
 

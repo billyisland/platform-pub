@@ -92,7 +92,7 @@ export function GiftLinksPanel({ articleId, dTag }: GiftLinksPanelProps) {
         <button
           onClick={handleCreate}
           disabled={creating}
-          className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70 disabled:opacity-50"
+          className="btn-text underline underline-offset-4"
         >
           {creating ? 'Creating…' : 'New gift link'}
         </button>

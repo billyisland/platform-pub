@@ -88,11 +88,11 @@ export default function NetworkPage() {
   const tabs: NetworkTab[] = ['following', 'followers', 'blocked', 'muted']
 
   return (
-    <div className="mx-auto max-w-article pt-16 lg:pt-0 px-4 sm:px-6 py-8">
+    <div className="mx-auto max-w-feed pt-16 lg:pt-0 px-4 sm:px-6 py-8">
       <h1 className="font-sans text-2xl font-medium text-black tracking-tight mb-6">Network</h1>
 
       {/* Always-visible settings */}
-      <div className="space-y-6 mb-10">
+      <div className="space-y-8 mb-8">
         <section className="bg-white px-6 py-5">
           <FeedDial />
         </section>
@@ -236,7 +236,7 @@ function ListSkeleton() {
 
 function PageSkeleton() {
   return (
-    <div className="mx-auto max-w-article pt-16 lg:pt-0 px-4 sm:px-6 py-8">
+    <div className="mx-auto max-w-feed pt-16 lg:pt-0 px-4 sm:px-6 py-8">
       <div className="h-7 w-36 animate-pulse bg-grey-100 mb-6 rounded" />
       <div className="flex gap-2 mb-8">
         {[1, 2, 3, 4].map(i => <div key={i} className="h-9 w-24 animate-pulse bg-white" />)}

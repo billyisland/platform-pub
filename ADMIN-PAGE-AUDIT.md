@@ -222,19 +222,28 @@ It's also only available on the personal dashboard. Publication owners have no w
 | 2 | Swap page titles to sans | **Done** | Wrong voice on every admin page | Small — 6 files, one line each |
 | 3 | Replace longhand `.label-ui` rewrites | **Done** | Inconsistency, code bloat | Small — find-and-replace in ~20 components |
 | 4 | Replace inline `text-[Npx]` with tokens | **Done** | ~15 components using ad-hoc sizes | Medium — many files, mechanical |
-| 5 | Consolidate editor settings panel | Open | Wasteful layout, mixed voices | Medium — restructure ArticleEditor.tsx |
+| 5 | Consolidate editor settings panel | **Done** | Wasteful layout, mixed voices | Medium — restructure ArticleEditor.tsx |
 | 6 | Standardise form labels | **Done** | Profile page uses different voice | Small — profile/page.tsx labels |
-| 7 | Normalise section spacing | Open | No grid rhythm | Medium — touch all admin pages |
-| 8 | Normalise container widths | Open | Inconsistent page widths | Small — decide rule, update ~3 pages |
-| 9 | Create `.btn-text` class | Open | Every text-action is bespoke | Small-medium — define class, migrate usages |
-| 10 | Align Traffology typography | Open | Ad-hoc typographic register | Medium — overview + feed pages |
-| 11 | Extract toggle/selection pattern | Open | Hand-rolled in multiple components | Medium — design pattern, refactor |
+| 7 | Normalise section spacing | **Done** | No grid rhythm | Medium — touch all admin pages |
+| 8 | Normalise container widths | **Done** | Inconsistent page widths | Small — decide rule, update ~3 pages |
+| 9 | Create `.btn-text` class | **Done** | Every text-action is bespoke | Small-medium — define class, migrate usages |
+| 10 | Align Traffology typography | **Done** | Ad-hoc typographic register | Medium — overview + feed pages |
+| 11 | Extract toggle/selection pattern | **Done** | Hand-rolled in multiple components | Medium — design pattern, refactor |
 | 12 | Use `.slab-rule-4` for dividers | **Done** | Minor inconsistency | Small — DangerZone + PublicationSettingsTab |
-| 13 | Promote Analytics to dashboard tab | Open | Hidden link, missing from publication view | Medium — add tab to both dashboard contexts, scope Traffology views |
+| 13 | Promote Analytics to dashboard tab | **Done** | Hidden link, missing from publication view | Medium — add tab to both dashboard contexts, scope Traffology views |
 
 ### Notes on completed work
 
-Issues 1–4, 6, 10, 12 were resolved together. The label-ui sweep was broader than the original audit scope — ~20 components fixed vs the ~6 originally identified. Inline size token replacements also extended beyond the audited components into dashboard sub-components (DriveCard, DriveCreateForm, CommissionsTab, PublicationEarningsTab, etc.). Design system rules codified in CLAUDE.md to prevent drift.
+**Batch 1 (Issues 1–4, 6, 10, 12):** Resolved together. The label-ui sweep was broader than the original audit scope — ~20 components fixed vs the ~6 originally identified. Inline size token replacements also extended beyond the audited components into dashboard sub-components (DriveCard, DriveCreateForm, CommissionsTab, PublicationEarningsTab, etc.). Design system rules codified in CLAUDE.md to prevent drift.
+
+**Batch 2 (Issues 5, 7–11, 13):** All remaining issues resolved.
+- **Issue 5:** Publishing-as, price, and replies merged into a single settings card in ArticleEditor.tsx. Mixed voices fixed (checkbox labels now use `text-ui-xs text-grey-400`).
+- **Issue 7:** Section spacing standardised to `space-y-8` on settings, network; `mb-8` on library tabs. Dashboard and ledger kept existing rhythm (already close).
+- **Issue 8:** Network page widened from `max-w-article` to `max-w-feed` (780px) for list content.
+- **Issue 9:** New `.btn-text`, `.btn-text-muted`, `.btn-text-danger` classes defined in globals.css. Migrated ~25 components from bespoke inline text-link styles. Also caught straggler inline sizes in BookmarkCard (`label-ui`, `text-ui-sm`) and dashboard form labels (`label-ui text-grey-400`).
+- **Issue 10:** Traffology overview baseline labels → `label-ui`, stat values → `font-mono text-lg font-bold tabular-nums`, section headers → `label-ui font-bold`. Feed "Right now" label → `label-ui`. Layout header → `label-ui font-bold`.
+- **Issue 11:** `.toggle-chip`, `.toggle-chip-active`, `.toggle-chip-inactive` classes defined. Applied in NotificationPreferences.
+- **Issue 13:** `AnalyticsTab` component created, wrapping traffology feed + overview with sub-tab navigation. Added to both personal (`articles | subscribers | proposals | pricing | analytics`) and publication (`articles | members | settings | ... | analytics`) tab sets. Analytics toolbar link removed.
 
 ---
 

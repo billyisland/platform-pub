@@ -75,7 +75,7 @@ export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void
         <button type="submit" disabled={saving} className="btn text-sm disabled:opacity-50">
           {saving ? 'Creating…' : 'Create drive'}
         </button>
-        <button type="button" onClick={onCancel} className="text-ui-xs text-grey-400 hover:text-black">
+        <button type="button" onClick={onCancel} className="btn-text-muted">
           Cancel
         </button>
       </div>

@@ -105,13 +105,13 @@ export function OffersTab() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => setFormMode('code')}
-            className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70"
+            className="btn-text underline underline-offset-4"
           >
             New offer code
           </button>
           <button
             onClick={() => setFormMode('grant')}
-            className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70"
+            className="btn-text underline underline-offset-4"
           >
             Gift subscription
           </button>

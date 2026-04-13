@@ -43,7 +43,7 @@ export function BlockList() {
               <button
                 onClick={() => handleUnblock(b.userId)}
                 disabled={unblocking === b.userId}
-                className="text-ui-xs text-grey-300 hover:text-black disabled:opacity-50"
+                className="btn-text-muted disabled:opacity-50"
               >
                 {unblocking === b.userId ? '...' : 'Unblock'}
               </button>

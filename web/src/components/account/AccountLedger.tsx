@@ -136,7 +136,7 @@ export function AccountLedger({ initialIncludeFreeReads = false }: { initialIncl
               <button
                 onClick={() => fetchEntries(filter, entries.length, true)}
                 disabled={loadingMore}
-                className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70 disabled:opacity-50"
+                className="btn-text underline underline-offset-4"
               >
                 {loadingMore ? 'Loading…' : `Show more (${totalEntries - entries.length} remaining)`}
               </button>

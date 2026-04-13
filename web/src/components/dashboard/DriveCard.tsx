@@ -162,7 +162,7 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
           <button onClick={handlePin} disabled={acting} className="text-ui-xs text-grey-400 hover:text-black disabled:opacity-50">
             {drive.pinned ? 'Unpin' : 'Pin to profile'}
           </button>
-          <button onClick={handleCancel} disabled={acting} className="text-ui-xs text-grey-300 hover:text-black disabled:opacity-50">
+          <button onClick={handleCancel} disabled={acting} className="btn-text-muted disabled:opacity-50">
             Cancel
           </button>
         </div>

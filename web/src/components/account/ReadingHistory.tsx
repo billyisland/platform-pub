@@ -78,7 +78,7 @@ export function ReadingHistory() {
           <button
             onClick={() => fetchItems(items.length, true)}
             disabled={loadingMore}
-            className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70 disabled:opacity-50"
+            className="btn-text underline underline-offset-4"
           >
             {loadingMore ? 'Loading\u2026' : 'Show more'}
           </button>

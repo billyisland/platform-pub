@@ -47,7 +47,7 @@ export default function TraffologyPiecePage() {
       {/* Back link */}
       <Link
         href="/traffology"
-        className="text-ui-xs text-grey-400 hover:text-black mb-6 inline-block"
+        className="btn-text-muted mb-6 inline-block"
       >
         &larr; Feed
       </Link>

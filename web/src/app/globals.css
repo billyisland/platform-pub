@@ -339,6 +339,65 @@
     padding: 0.625rem 1.5rem;
   }
 
+  /* ----- Text-link action buttons ----- */
+  .btn-text {
+    font-family: 'Jost', system-ui, sans-serif;
+    font-size: 0.8125rem; /* 13px — matches text-ui-xs */
+    font-weight: 500;
+    color: #111111;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+  .btn-text:hover { opacity: 0.65; }
+  .btn-text:disabled { opacity: 0.5; }
+
+  .btn-text-muted {
+    font-family: 'Jost', system-ui, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: #999999;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+  .btn-text-muted:hover { color: #111111; }
+
+  .btn-text-danger {
+    font-family: 'Jost', system-ui, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: #B5242A;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+  .btn-text-danger:hover { color: #8B1B1F; }
+  .btn-text-danger:disabled { opacity: 0.5; }
+
+  /* ----- Toggle chips (On/Off selectors) ----- */
+  .toggle-chip {
+    padding: 0.25rem 0.625rem;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .toggle-chip-active {
+    background: #111111;
+    color: #FFFFFF;
+  }
+  .toggle-chip-inactive {
+    background: #F0F0F0;
+    color: #666666;
+  }
+  .toggle-chip-inactive:hover {
+    color: #111111;
+  }
+
   /* ----- Focus ring utility ----- */
   .focus-ring:focus-visible {
     outline: 2px solid #B5242A;

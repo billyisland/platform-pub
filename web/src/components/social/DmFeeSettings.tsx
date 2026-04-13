@@ -131,7 +131,7 @@ export function DmFeeSettings() {
                 placeholder="0.00"
                 className="w-20 bg-grey-100 px-2 py-1 text-ui-xs text-black placeholder-grey-300"
               />
-              <button type="submit" disabled={addingOverride} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70 disabled:opacity-50">
+              <button type="submit" disabled={addingOverride} className="btn-text underline underline-offset-4">
                 {addingOverride ? '...' : 'Add'}
               </button>
             </form>

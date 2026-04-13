@@ -58,20 +58,16 @@ export function NotificationPreferences() {
             <div className="flex">
               <button
                 onClick={() => { if (!prefs[cat.key]) return; toggle(cat.key) }}
-                className={`px-2.5 py-1 label-ui transition-colors ${
-                  prefs[cat.key]
-                    ? 'bg-black text-white'
-                    : 'bg-grey-100 text-grey-400 hover:text-black'
+                className={`label-ui toggle-chip ${
+                  prefs[cat.key] ? 'toggle-chip-active' : 'toggle-chip-inactive'
                 }`}
               >
                 On
               </button>
               <button
                 onClick={() => { if (prefs[cat.key] === false) return; toggle(cat.key) }}
-                className={`px-2.5 py-1 label-ui transition-colors ${
-                  prefs[cat.key] === false
-                    ? 'bg-black text-white'
-                    : 'bg-grey-100 text-grey-400 hover:text-black'
+                className={`label-ui toggle-chip ${
+                  prefs[cat.key] === false ? 'toggle-chip-active' : 'toggle-chip-inactive'
                 }`}
               >
                 Off

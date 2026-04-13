@@ -33,7 +33,8 @@ export default function SettingsPage() {
         Settings
       </h1>
 
-      <div className="space-y-10 max-w-md">
+
+      <div className="space-y-8 max-w-md">
         <EmailChange />
 
         <PaymentSection />

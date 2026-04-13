@@ -70,7 +70,7 @@ export default function RedeemOfferPage() {
       <div className="mx-auto max-w-article px-4 sm:px-6 py-20 text-center">
         <h1 className="font-serif text-2xl italic mb-4">Offer unavailable</h1>
         <p className="text-ui-sm text-grey-400 mb-6">{error}</p>
-        <Link href="/" className="text-ui-xs text-black underline underline-offset-4">Back to home</Link>
+        <Link href="/" className="btn-text underline underline-offset-4">Back to home</Link>
       </div>
     )
   }

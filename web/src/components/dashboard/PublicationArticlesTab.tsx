@@ -59,7 +59,7 @@ export function PublicationArticlesTab({ publicationId, publicationSlug, canPubl
       {articles.length === 0 ? (
         <div className="py-20 text-center">
           <p className="text-ui-sm text-grey-400 mb-4">No articles found.</p>
-          <Link href={`/write?pub=${publicationSlug}`} className="text-ui-xs text-black underline underline-offset-4">
+          <Link href={`/write?pub=${publicationSlug}`} className="btn-text underline underline-offset-4">
             Write an article
           </Link>
         </div>

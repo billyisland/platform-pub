@@ -83,7 +83,7 @@ export function DrivesTab({ userId }: { userId: string }) {
       {allDrives.length === 0 && !showCreate && (
         <div className="py-20 text-center">
           <p className="text-ui-sm text-grey-400 mb-4">No pledge drives yet.</p>
-          <button onClick={() => setShowCreate(true)} className="text-ui-xs text-black underline underline-offset-4">
+          <button onClick={() => setShowCreate(true)} className="btn-text underline underline-offset-4">
             Create your first pledge drive
           </button>
         </div>

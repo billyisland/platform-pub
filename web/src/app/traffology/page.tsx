@@ -74,10 +74,10 @@ export default function TraffologyFeedPage() {
       {/* Live reader count banner */}
       {concurrent && concurrent.total > 0 && (
         <div className="mb-6 py-3 border-t-[4px] border-b-[4px] border-black">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-grey-300 mb-1">
+          <div className="label-ui text-grey-300 mb-1">
             Right now
           </div>
-          <div className="text-[13.5px] leading-relaxed text-black">
+          <div className="text-ui-xs leading-relaxed text-black">
             {concurrent.total} {concurrent.total === 1 ? 'person' : 'readers'} on your site right now.
           </div>
         </div>
@@ -100,7 +100,7 @@ export default function TraffologyFeedPage() {
             <button
               onClick={loadMore}
               disabled={loadingMore}
-              className="mt-6 text-ui-xs text-grey-400 hover:text-black transition-colors disabled:opacity-50"
+              className="mt-6 btn-text-muted"
             >
               {loadingMore ? 'Loading...' : 'Load more'}
             </button>

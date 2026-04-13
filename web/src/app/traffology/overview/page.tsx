@@ -73,10 +73,10 @@ export default function TraffologyOverviewPage() {
               key={i}
               className={`py-3.5 px-2.5 ${i > 0 ? 'border-l-2 border-black' : ''}`}
             >
-              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-grey-400 mb-0.5">
+              <div className="label-ui text-grey-400 mb-0.5">
                 {item.label}
               </div>
-              <div className="text-[17px] font-bold text-black tracking-tight">
+              <div className="font-mono text-lg font-bold text-black tracking-tight tabular-nums">
                 {item.value}
               </div>
             </div>
@@ -119,7 +119,7 @@ export default function TraffologyOverviewPage() {
       {topics.length > 0 && (
         <div className="mt-10">
           <div className="border-t-[4px] border-black pt-2.5 mb-4">
-            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-black">
+            <div className="label-ui font-bold text-black">
               Topic performance
             </div>
           </div>
@@ -153,7 +153,7 @@ function PieceTile({ piece }: { piece: OverviewPiece }) {
         {piece.title}
       </div>
       {piece.published_at && (
-        <div className="text-[11px] text-grey-300 mb-3">
+        <div className="text-mono-xs text-grey-300 mb-3">
           {new Date(piece.published_at).toLocaleDateString('en-GB', {
             day: 'numeric', month: 'short', year: 'numeric',
           })}
@@ -169,7 +169,7 @@ function PieceTile({ piece }: { piece: OverviewPiece }) {
         )}
       </div>
 
-      <div className="flex items-center justify-between text-[11px] text-grey-400 tabular-nums">
+      <div className="flex items-center justify-between text-mono-xs text-grey-400 tabular-nums">
         <span>{(piece.total_readers ?? 0).toLocaleString()} readers</span>
         <span>
           {piece.top_source_name

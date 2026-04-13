@@ -58,11 +58,11 @@ export function EmailChange() {
               <button
                 onClick={handleSave}
                 disabled={saving || !newEmail.trim()}
-                className="text-ui-xs text-black font-medium disabled:opacity-50"
+                className="btn-text"
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
-              <button onClick={handleCancel} className="text-ui-xs text-grey-300 hover:text-black">
+              <button onClick={handleCancel} className="btn-text-muted">
                 Cancel
               </button>
             </div>
@@ -72,7 +72,7 @@ export function EmailChange() {
             <p className="text-sm text-black">{user.email ?? '(no email)'}</p>
             <button
               onClick={() => setEditing(true)}
-              className="text-ui-xs text-grey-300 hover:text-black"
+              className="btn-text-muted"
             >
               Change
             </button>

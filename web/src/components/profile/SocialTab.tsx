@@ -307,7 +307,7 @@ function ReplyCard({
           {onQuote && (
             <button
               onClick={() => onQuote({ eventId: reply.nostrEventId, eventKind: 1111, authorPubkey: '', previewContent: content.slice(0, 200), previewAuthorName: writerName })}
-              className="text-ui-xs text-grey-300 hover:text-black transition-colors"
+              className="btn-text-muted transition-colors"
             >
               Quote
             </button>

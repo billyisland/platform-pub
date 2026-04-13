@@ -67,21 +67,21 @@ export function ReportCard({ report, onResolved }: { report: Report; onResolved:
           <button
             onClick={() => handleAction('remove')}
             disabled={acting}
-            className="text-ui-xs text-crimson hover:text-crimson-dark disabled:opacity-50"
+            className="btn-text-danger"
           >
             Remove content
           </button>
           <button
             onClick={() => handleAction('suspend')}
             disabled={acting}
-            className="text-ui-xs text-grey-600 hover:text-black disabled:opacity-50"
+            className="btn-text-muted"
           >
             Suspend user
           </button>
           <button
             onClick={() => handleAction('dismiss')}
             disabled={acting}
-            className="text-ui-xs text-grey-300 hover:text-black disabled:opacity-50"
+            className="btn-text-muted"
           >
             Dismiss
           </button>

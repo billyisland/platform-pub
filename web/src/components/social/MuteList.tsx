@@ -43,7 +43,7 @@ export function MuteList() {
               <button
                 onClick={() => handleUnmute(m.userId)}
                 disabled={unmuting === m.userId}
-                className="text-ui-xs text-grey-300 hover:text-black disabled:opacity-50"
+                className="btn-text-muted disabled:opacity-50"
               >
                 {unmuting === m.userId ? '...' : 'Unmute'}
               </button>
