@@ -34,25 +34,25 @@ export function ReportCard({ report, onResolved }: { report: Report; onResolved:
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
+            <span className="label-ui text-grey-300">
               {report.targetType}
             </span>
-            <span className="font-mono text-[12px] text-grey-300">·</span>
-            <span className="font-mono text-[12px] text-grey-300">{timeAgo(report.createdAt)}</span>
+            <span className="font-mono text-mono-xs text-grey-300">·</span>
+            <span className="font-mono text-mono-xs text-grey-300">{timeAgo(report.createdAt)}</span>
             {isResolved && (
               <>
-                <span className="font-mono text-[12px] text-grey-300">·</span>
-                <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">
+                <span className="font-mono text-mono-xs text-grey-300">·</span>
+                <span className="label-ui text-grey-400">
                   {report.resolution}
                 </span>
               </>
             )}
           </div>
 
-          <p className="text-[14px] font-sans text-black mb-1">
+          <p className="text-ui-sm text-black mb-1">
             Reported by <span className="font-semibold">{report.reporterDisplayName ?? report.reporterUsername}</span>
           </p>
-          <p className="text-[13px] font-sans text-grey-600 mb-2">{report.reason}</p>
+          <p className="text-ui-xs text-grey-600 mb-2">{report.reason}</p>
 
           {report.contentPreview && (
             <div className="border-l-2 border-grey-200 pl-3 py-1">
@@ -67,21 +67,21 @@ export function ReportCard({ report, onResolved }: { report: Report; onResolved:
           <button
             onClick={() => handleAction('remove')}
             disabled={acting}
-            className="text-[13px] font-sans text-crimson hover:text-crimson-dark disabled:opacity-50"
+            className="text-ui-xs text-crimson hover:text-crimson-dark disabled:opacity-50"
           >
             Remove content
           </button>
           <button
             onClick={() => handleAction('suspend')}
             disabled={acting}
-            className="text-[13px] font-sans text-grey-600 hover:text-black disabled:opacity-50"
+            className="text-ui-xs text-grey-600 hover:text-black disabled:opacity-50"
           >
             Suspend user
           </button>
           <button
             onClick={() => handleAction('dismiss')}
             disabled={acting}
-            className="text-[13px] font-sans text-grey-300 hover:text-black disabled:opacity-50"
+            className="text-ui-xs text-grey-300 hover:text-black disabled:opacity-50"
           >
             Dismiss
           </button>

@@ -320,7 +320,7 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
       {!isOwnProfile && subscriptions.length > 0 && (
         <>
           <div className="rule-inset my-8" />
-          <h3 className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300 mb-4">
+          <h3 className="label-ui text-grey-300 mb-4">
             Subscribes to
           </h3>
           <div className="space-y-1">

@@ -40,7 +40,7 @@ export default function LibraryPage() {
 
   return (
     <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">
-      <h1 className="font-serif text-2xl font-light tracking-tight text-black mb-8">
+      <h1 className="font-sans text-2xl font-medium tracking-tight text-black mb-8">
         Library
       </h1>
 

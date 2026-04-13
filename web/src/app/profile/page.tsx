@@ -95,14 +95,14 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-article px-4 sm:px-6 py-12">
-      <h1 className="font-serif text-2xl font-light text-black tracking-tight mb-8">
+      <h1 className="font-sans text-2xl font-medium text-black tracking-tight mb-8">
         Profile
       </h1>
 
       <form onSubmit={handleSave} className="space-y-8 max-w-md">
         {/* Avatar */}
         <div>
-          <label className="block text-ui-xs text-grey-300 mb-3 uppercase tracking-wider">
+          <label className="block label-ui text-grey-400 mb-3">
             Photo
           </label>
           <div className="flex items-center gap-4">
@@ -147,7 +147,7 @@ export default function ProfilePage() {
 
         {/* Display name */}
         <div>
-          <label htmlFor="displayName" className="block text-ui-xs text-grey-300 mb-2 uppercase tracking-wider">
+          <label htmlFor="displayName" className="block label-ui text-grey-400 mb-2">
             Display name
           </label>
           <input
@@ -163,7 +163,7 @@ export default function ProfilePage() {
 
         {/* Bio */}
         <div>
-          <label htmlFor="bio" className="block text-ui-xs text-grey-300 mb-2 uppercase tracking-wider">
+          <label htmlFor="bio" className="block label-ui text-grey-400 mb-2">
             Bio
           </label>
           <textarea
@@ -183,7 +183,7 @@ export default function ProfilePage() {
 
         {/* Public key (read-only) */}
         <div>
-          <label className="block text-ui-xs text-grey-300 mb-2 uppercase tracking-wider">
+          <label className="block label-ui text-grey-400 mb-2">
             Public key
           </label>
           <p className="text-ui-xs text-grey-300 truncate">{user.pubkey}</p>

@@ -284,7 +284,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
                   </>
                 )}
               </div>
-              <p className="font-sans text-[14px] text-black">{l.label}</p>
+              <p className="text-ui-sm text-black">{l.label}</p>
             </button>
           ))}
         </div>
@@ -293,7 +293,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
       {/* Danger zone — owner only */}
       {isOwner && (
         <>
-          <div className="h-[4px] bg-black my-10" />
+          <div className="slab-rule-4 my-10" />
 
           <div className="mb-10">
             <p className="label-ui text-crimson mb-6">Danger zone</p>

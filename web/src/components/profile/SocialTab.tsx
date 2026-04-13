@@ -122,7 +122,7 @@ export function SocialTab({ username, writer, isOwnProfile, onQuote }: SocialTab
       {/* Notes section */}
       {hasNotes && (
         <>
-          <h3 className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300 mb-4">
+          <h3 className="label-ui text-grey-300 mb-4">
             Notes
           </h3>
           <div className="space-y-3">
@@ -158,7 +158,7 @@ export function SocialTab({ username, writer, isOwnProfile, onQuote }: SocialTab
       {hasReplies && (
         <>
           {hasNotes && <div className="rule-inset my-8" />}
-          <h3 className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300 mb-4">
+          <h3 className="label-ui text-grey-300 mb-4">
             Replies
           </h3>
           <div className="space-y-3">

@@ -55,7 +55,7 @@ export function CommissionForm({
 
   return (
     <form onSubmit={handleSubmit} className="bg-white p-5">
-      <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400 mb-3">
+      <p className="label-ui text-grey-400 mb-3">
         Commission {targetWriterName}
       </p>
 

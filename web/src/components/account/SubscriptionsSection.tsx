@@ -52,7 +52,7 @@ export function SubscriptionsSection() {
                 <Link href={`/${s.writerUsername}`} className="text-[14px] font-sans font-medium text-black hover:opacity-70 truncate block">
                   {s.writerDisplayName ?? s.writerUsername}
                 </Link>
-                <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
+                <p className="label-ui text-grey-300">
                   {s.status === 'cancelled'
                     ? `Access until ${new Date(s.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
                     : s.autoRenew

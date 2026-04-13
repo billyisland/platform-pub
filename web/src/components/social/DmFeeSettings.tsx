@@ -43,7 +43,7 @@ export function DmFeeSettings() {
             finally { setSaving(false) }
           }} className="space-y-4 mb-6">
             <div className="flex items-center gap-3">
-              <span className="text-[14px] font-sans text-grey-400">£</span>
+              <span className="text-ui-sm text-grey-400">£</span>
               <input
                 type="number"
                 step="0.01"
@@ -51,16 +51,16 @@ export function DmFeeSettings() {
                 max="100"
                 value={dmPrice}
                 onChange={(e) => setDmPrice(e.target.value)}
-                className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                className="w-28 bg-grey-100 px-3 py-1.5 text-ui-sm text-black placeholder-grey-300"
                 placeholder="0.00"
               />
-              <span className="text-[13px] font-sans text-grey-300">per message</span>
+              <span className="text-ui-xs text-grey-300">per message</span>
             </div>
             <button type="submit" disabled={saving} className="btn text-sm disabled:opacity-50">
               {saving ? 'Saving...' : 'Save'}
             </button>
           </form>
-          {msg && <p className="text-[13px] font-sans text-grey-600 mb-4">{msg}</p>}
+          {msg && <p className="text-ui-xs text-grey-600 mb-4">{msg}</p>}
 
           <details className="text-ui-xs">
             <summary className="text-grey-400 cursor-pointer hover:text-grey-600 mb-3">
@@ -118,9 +118,9 @@ export function DmFeeSettings() {
                 value={overrideUsername}
                 onChange={(e) => setOverrideUsername(e.target.value)}
                 placeholder="Username"
-                className="w-32 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black placeholder-grey-300"
+                className="w-32 bg-grey-100 px-2 py-1 text-ui-xs text-black placeholder-grey-300"
               />
-              <span className="text-[13px] font-sans text-grey-400">£</span>
+              <span className="text-ui-xs text-grey-400">£</span>
               <input
                 type="number"
                 step="0.01"
@@ -129,7 +129,7 @@ export function DmFeeSettings() {
                 value={overridePrice}
                 onChange={(e) => setOverridePrice(e.target.value)}
                 placeholder="0.00"
-                className="w-20 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black placeholder-grey-300"
+                className="w-20 bg-grey-100 px-2 py-1 text-ui-xs text-black placeholder-grey-300"
               />
               <button type="submit" disabled={addingOverride} className="text-ui-xs text-black underline underline-offset-4 hover:opacity-70 disabled:opacity-50">
                 {addingOverride ? '...' : 'Add'}

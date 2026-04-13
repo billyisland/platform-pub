@@ -44,7 +44,7 @@ export default function AdminReportsPage() {
 
   return (
     <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
-      <h1 className="font-serif text-2xl font-light text-black mb-8 tracking-tight">Reports</h1>
+      <h1 className="font-sans text-2xl font-medium text-black mb-8 tracking-tight">Reports</h1>
 
       {/* Filter tabs */}
       <div className="flex gap-2 mb-6">

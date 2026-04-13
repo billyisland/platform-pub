@@ -57,47 +57,47 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
   if (editing) {
     return (
       <div className="bg-white px-6 py-5 space-y-4">
-        <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">Edit pledge drive</p>
+        <p className="label-ui text-grey-400">Edit pledge drive</p>
 
         <div>
-          <label className="block text-[13px] font-sans font-medium text-grey-600 mb-1">Title</label>
+          <label className="block text-ui-xs font-medium text-grey-600 mb-1">Title</label>
           <input
             type="text"
             value={editTitle}
             onChange={e => setEditTitle(e.target.value)}
-            className="w-full bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
+            className="w-full bg-grey-100 px-3 py-2 text-ui-sm text-black placeholder-grey-300"
           />
         </div>
 
         <div>
-          <label className="block text-[13px] font-sans font-medium text-grey-600 mb-1">Description</label>
+          <label className="block text-ui-xs font-medium text-grey-600 mb-1">Description</label>
           <textarea
             value={editDescription}
             onChange={e => setEditDescription(e.target.value)}
-            className="w-full bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 resize-y"
+            className="w-full bg-grey-100 px-3 py-2 text-ui-sm text-black placeholder-grey-300 resize-y"
             rows={3}
           />
         </div>
 
         <div>
-          <label className="block text-[13px] font-sans font-medium text-grey-600 mb-1">Target amount (£)</label>
+          <label className="block text-ui-xs font-medium text-grey-600 mb-1">Target amount (£)</label>
           <input
             type="number"
             step="0.01"
             min="0.01"
             value={editTarget}
             onChange={e => setEditTarget(e.target.value)}
-            className="w-48 bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
+            className="w-48 bg-grey-100 px-3 py-2 text-ui-sm text-black placeholder-grey-300"
           />
         </div>
 
-        {editError && <p className="text-[13px] font-sans text-crimson">{editError}</p>}
+        {editError && <p className="text-ui-xs text-crimson">{editError}</p>}
 
         <div className="flex gap-3 pt-2">
           <button onClick={handleSaveEdit} disabled={acting} className="btn text-sm disabled:opacity-50">
             {acting ? 'Saving...' : 'Save'}
           </button>
-          <button onClick={() => { setEditing(false); setEditError(null) }} className="text-[13px] font-sans text-grey-400 hover:text-black">
+          <button onClick={() => { setEditing(false); setEditError(null) }} className="text-ui-xs text-grey-400 hover:text-black">
             Cancel
           </button>
         </div>
@@ -110,13 +110,13 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
+            <span className="label-ui text-grey-300">
               Pledge drive
             </span>
             {drive.pinned && (
-              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-crimson">Pinned</span>
+              <span className="label-ui text-crimson">Pinned</span>
             )}
-            <span className={`font-mono text-[12px] uppercase tracking-[0.06em] ${
+            <span className={`label-ui ${
               drive.status === 'funded' ? 'text-black' : drive.status === 'cancelled' ? 'text-grey-300' : 'text-grey-400'
             }`}>
               {drive.status}
@@ -124,7 +124,7 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
           </div>
           <p className="font-serif text-lg font-medium text-black">{drive.title}</p>
           {drive.description && (
-            <p className="text-[14px] text-grey-600 font-sans mt-1 line-clamp-2">{drive.description}</p>
+            <p className="text-ui-sm text-grey-600 font-sans mt-1 line-clamp-2">{drive.description}</p>
           )}
         </div>
 
@@ -133,7 +133,7 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
             £{(drive.currentTotalPence / 100).toFixed(2)}
           </p>
           {target > 0 && (
-            <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
+            <p className="font-mono text-mono-xs text-grey-300 uppercase tracking-[0.06em]">
               of £{(target / 100).toFixed(2)}
             </p>
           )}
@@ -149,20 +149,20 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
           />
         </div>
       )}
-      <p className="font-mono text-[12px] text-grey-300 mt-1 uppercase tracking-[0.06em]">
+      <p className="font-mono text-mono-xs text-grey-300 mt-1 uppercase tracking-[0.06em]">
         {target > 0 ? `${progressPct}% · ` : ''}{drive.pledgeCount} {drive.pledgeCount === 1 ? 'pledge' : 'pledges'}
       </p>
 
       {/* Actions */}
       {isActive && (
         <div className="mt-4 flex items-center gap-3">
-          <button onClick={() => setEditing(true)} className="text-[13px] font-sans text-grey-400 hover:text-black">
+          <button onClick={() => setEditing(true)} className="text-ui-xs text-grey-400 hover:text-black">
             Edit
           </button>
-          <button onClick={handlePin} disabled={acting} className="text-[13px] font-sans text-grey-400 hover:text-black disabled:opacity-50">
+          <button onClick={handlePin} disabled={acting} className="text-ui-xs text-grey-400 hover:text-black disabled:opacity-50">
             {drive.pinned ? 'Unpin' : 'Pin to profile'}
           </button>
-          <button onClick={handleCancel} disabled={acting} className="text-[13px] font-sans text-grey-300 hover:text-black disabled:opacity-50">
+          <button onClick={handleCancel} disabled={acting} className="text-ui-xs text-grey-300 hover:text-black disabled:opacity-50">
             Cancel
           </button>
         </div>

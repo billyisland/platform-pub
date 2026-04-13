@@ -89,7 +89,7 @@ export default function NetworkPage() {
 
   return (
     <div className="mx-auto max-w-article pt-16 lg:pt-0 px-4 sm:px-6 py-8">
-      <h1 className="font-serif text-3xl sm:text-4xl font-light text-black mb-6">Network</h1>
+      <h1 className="font-sans text-2xl font-medium text-black tracking-tight mb-6">Network</h1>
 
       {/* Always-visible settings */}
       <div className="space-y-6 mb-10">
@@ -143,7 +143,7 @@ export default function NetworkPage() {
                 </Link>
                 <div className="flex-1 min-w-0">
                   <Link href={`/${w.username}`} className="group">
-                    <p className="font-serif text-base text-black group-hover:opacity-75 transition-opacity truncate">
+                    <p className="font-sans text-base font-medium text-black group-hover:opacity-75 transition-opacity truncate">
                       {w.displayName ?? w.username}
                     </p>
                     <p className="text-ui-xs text-grey-400">@{w.username}</p>
@@ -186,7 +186,7 @@ export default function NetworkPage() {
                 </Link>
                 <div className="flex-1 min-w-0">
                   <Link href={`/${f.username}`} className="group">
-                    <p className="font-serif text-base text-black group-hover:opacity-75 transition-opacity truncate">
+                    <p className="font-sans text-base font-medium text-black group-hover:opacity-75 transition-opacity truncate">
                       {f.displayName ?? f.username}
                     </p>
                     <p className="text-ui-xs text-grey-400">

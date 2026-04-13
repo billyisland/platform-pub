@@ -54,13 +54,13 @@ export function ReadingHistory() {
               )}
               <div className="min-w-0 flex-1">
                 {href ? (
-                  <Link href={href} className="text-[14px] font-sans text-black hover:opacity-70 line-clamp-1">
+                  <Link href={href} className="text-ui-sm text-black hover:opacity-70 line-clamp-1">
                     {item.title || 'Untitled'}
                   </Link>
                 ) : (
-                  <p className="text-[14px] font-sans text-black line-clamp-1">{item.title || 'Untitled'}</p>
+                  <p className="text-ui-sm text-black line-clamp-1">{item.title || 'Untitled'}</p>
                 )}
-                <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
+                <p className="label-ui text-grey-300">
                   {item.writer.displayName || item.writer.username ? `by @${item.writer.username}` : 'Unknown writer'}
                   {' \u00b7 '}
                   {new Date(item.readAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}

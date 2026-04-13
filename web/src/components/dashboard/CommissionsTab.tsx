@@ -106,20 +106,20 @@ export function CommissionCard({ commission: c, onUpdate }: { commission: Commis
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
+            <span className="label-ui text-grey-300">
               Commission from @{c.commissioner.username}
             </span>
             {isAccepted && (
-              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-black">Accepted</span>
+              <span className="label-ui text-black">Accepted</span>
             )}
             {c.status === 'cancelled' && (
-              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">Declined</span>
+              <span className="label-ui text-grey-300">Declined</span>
             )}
             {c.status === 'published' && (
-              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-black">Published</span>
+              <span className="label-ui text-black">Published</span>
             )}
             {c.status === 'fulfilled' && (
-              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-black">Fulfilled</span>
+              <span className="label-ui text-black">Fulfilled</span>
             )}
           </div>
           <p className="font-serif text-lg font-medium text-black">{c.title}</p>
@@ -133,7 +133,7 @@ export function CommissionCard({ commission: c, onUpdate }: { commission: Commis
             £{(c.currentTotalPence / 100).toFixed(2)}
           </p>
           {target > 0 && (
-            <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
+            <p className="label-ui text-grey-300">
               of £{(target / 100).toFixed(2)}
             </p>
           )}
@@ -149,7 +149,7 @@ export function CommissionCard({ commission: c, onUpdate }: { commission: Commis
           />
         </div>
       )}
-      <p className="font-mono text-[12px] text-grey-300 mt-1 uppercase tracking-[0.06em]">
+      <p className="label-ui text-grey-300 mt-1">
         {target > 0 ? `${progressPct}% · ` : ''}{c.pledgeCount} {c.pledgeCount === 1 ? 'pledge' : 'pledges'}
         {c.deadline && ` · due ${new Date(c.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
       </p>

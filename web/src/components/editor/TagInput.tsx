@@ -80,7 +80,7 @@ export function TagInput({ value, onChange, max = 5 }: Props) {
         {value.map(tag => (
           <span
             key={tag}
-            className="bg-white px-2 py-0.5 font-mono text-[12px] uppercase tracking-[0.06em] text-black flex items-center gap-1"
+            className="bg-white px-2 py-0.5 label-ui text-black flex items-center gap-1"
           >
             {tag}
             <button
@@ -101,7 +101,7 @@ export function TagInput({ value, onChange, max = 5 }: Props) {
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Add tag..."
-            className="flex-1 min-w-[80px] border-none bg-transparent font-mono text-[12px] uppercase tracking-[0.06em] placeholder:text-grey-300 focus:outline-none"
+            className="flex-1 min-w-[80px] border-none bg-transparent label-ui placeholder:text-grey-300 focus:outline-none"
           />
         )}
       </div>

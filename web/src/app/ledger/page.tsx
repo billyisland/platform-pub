@@ -48,7 +48,7 @@ export default function LedgerPage() {
 
   return (
     <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
-      <h1 className="font-serif text-2xl font-light text-black mb-8 tracking-tight">Ledger</h1>
+      <h1 className="font-sans text-2xl font-medium text-black mb-8 tracking-tight">Ledger</h1>
 
       {dataLoading ? (
         <div className="h-32 animate-pulse bg-white mb-8" />

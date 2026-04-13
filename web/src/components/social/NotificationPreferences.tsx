@@ -54,11 +54,11 @@ export function NotificationPreferences() {
       <div className="bg-white divide-y divide-grey-200/50">
         {CATEGORIES.map(cat => (
           <div key={cat.key} className="flex items-center justify-between px-4 py-3">
-            <span className="text-[14px] font-sans text-black">{cat.label}</span>
+            <span className="text-ui-sm text-black">{cat.label}</span>
             <div className="flex">
               <button
                 onClick={() => { if (!prefs[cat.key]) return; toggle(cat.key) }}
-                className={`px-2.5 py-1 text-[12px] font-mono uppercase tracking-[0.06em] transition-colors ${
+                className={`px-2.5 py-1 label-ui transition-colors ${
                   prefs[cat.key]
                     ? 'bg-black text-white'
                     : 'bg-grey-100 text-grey-400 hover:text-black'
@@ -68,7 +68,7 @@ export function NotificationPreferences() {
               </button>
               <button
                 onClick={() => { if (prefs[cat.key] === false) return; toggle(cat.key) }}
-                className={`px-2.5 py-1 text-[12px] font-mono uppercase tracking-[0.06em] transition-colors ${
+                className={`px-2.5 py-1 label-ui transition-colors ${
                   prefs[cat.key] === false
                     ? 'bg-black text-white'
                     : 'bg-grey-100 text-grey-400 hover:text-black'

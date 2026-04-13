@@ -44,7 +44,7 @@ export function DangerZone() {
 
   return (
     <>
-      <div className="h-[4px] bg-black my-10" />
+      <div className="slab-rule-4 my-10" />
 
       <div className="mb-10">
         <p className="label-ui text-crimson mb-6">Close your account</p>

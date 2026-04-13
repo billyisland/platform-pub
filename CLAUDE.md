@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+When conversation produces a rule or piece of design philosophy that is intended to apply universally across the site, check it for consistency with the existing rules in this file. If it's consistent and non-redundant, add it here. This file is the canonical source of sitewide standards — if a rule isn't here, it will be forgotten between sessions.
+
 ## What This Is
 
 A publishing and social platform for writers and readers, built on the Nostr protocol. Writers own their identity, audience, and content via custodial Nostr keypairs. Readers pay via a shared "reading tab" (Stripe-based accrual → payout flow).
@@ -20,6 +22,10 @@ A publishing and social platform for writers and readers, built on the Nostr pro
 | PostgreSQL | — | 5432 | Postgres 16 |
 
 All backend services share a single PostgreSQL database. `shared/` contains the DB client, migration runner, auth helpers, and shared types used by all services.
+
+## Development & deployment
+
+This is a local dev directory on the developer's laptop. Test features at `localhost:3010` (web) and `localhost:3000` (API). To deploy to production: push to git, then the developer SSHs to a remote server and rebuilds there. Claude Code has no direct access to the production server.
 
 ## Commands
 
@@ -100,7 +106,39 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 
 ## Design tokens (Tailwind)
 
-Custom semantic tokens in `web/tailwind.config.js`: `surface`, `card`, `rule`, `accent`, `ink`, `nav`, `content-*`, `avatar`. Fonts: Source Sans 3 (sans), Literata (serif), IBM Plex Mono (mono). Key max-widths: `article: 640px`, `feed: 780px`, `editor-frame: 780px`.
+Custom semantic tokens in `web/tailwind.config.js`. Fonts: Jost (sans), Literata (serif), IBM Plex Mono (mono). Key max-widths: `article: 640px`, `feed: 780px`, `editor-frame: 780px`, `content: 960px`.
+
+## Design system rules
+
+These rules apply to all frontend code. Follow them when writing or modifying components.
+
+### Three-voice typeface system
+| Voice | Typeface | Use for |
+|---|---|---|
+| **Literary** (serif) | Literata | Article prose, publication names, content previews, the reading experience |
+| **Platform** (sans) | Jost | UI copy, page titles, body text, descriptions, buttons, display names |
+| **Infrastructure** (mono) | IBM Plex Mono | Labels, metadata, system status, data values, tab pills |
+
+Never use serif for platform UI elements (page titles, settings, admin headings, user display names in lists). Never use sans for infrastructure labels. When in doubt, prefer sans over serif for non-literary content.
+
+### Use design tokens, not inline sizes
+| Token | Size | Use for |
+|---|---|---|
+| `text-ui-xs` | 13px sans | Small UI text, descriptions, secondary copy |
+| `text-ui-sm` | 14px sans | Standard UI text, form values, list items |
+| `text-mono-xs` | 11px mono | Small mono data (dates, amounts, tabular values) |
+| `.label-ui` | 11px mono, uppercase, 0.06em tracking | All infrastructure labels and metadata tags |
+
+Never hand-roll `font-mono text-[12px] uppercase tracking-[0.06em]` — that is `.label-ui`. Never use `text-[13px] font-sans` — that is `text-ui-xs`. Never use `text-[14px] font-sans` — that is `text-ui-sm`.
+
+### Form labels
+Always use `.label-ui text-grey-400` for form labels. Do not use `text-ui-xs uppercase tracking-wider` or `text-sm text-grey-600` for labels.
+
+### Buttons
+Use the defined button classes: `.btn` (primary), `.btn-accent` (crimson), `.btn-ghost` (background), `.btn-soft` (secondary/soft action). Do not hand-roll button styles with inline classes.
+
+### Dividers
+Use `.slab-rule-4` for major section dividers. Do not use `h-[4px] bg-black` inline.
 
 ## Key docs
 

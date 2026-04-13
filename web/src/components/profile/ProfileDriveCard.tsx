@@ -43,13 +43,13 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300">
+            <span className="label-ui text-grey-300">
               Pledge drive
             </span>
             {drive.pinned && (
-              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-crimson">Pinned</span>
+              <span className="label-ui text-crimson">Pinned</span>
             )}
-            <span className={`font-mono text-[12px] uppercase tracking-[0.06em] ${
+            <span className={`label-ui ${
               drive.status === 'funded' ? 'text-black' : drive.status === 'cancelled' ? 'text-grey-300' : 'text-grey-400'
             }`}>
               {drive.status}
@@ -66,7 +66,7 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
             £{(drive.currentTotalPence / 100).toFixed(2)}
           </p>
           {target > 0 && (
-            <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
+            <p className="label-ui text-grey-300">
               of £{(target / 100).toFixed(2)}
             </p>
           )}
@@ -83,10 +83,10 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
         </div>
       )}
       <div className="mt-1 flex items-center justify-between">
-        <p className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
+        <p className="label-ui text-grey-300">
           {target > 0 ? `${progressPct}% · ` : ''}{drive.pledgeCount} {drive.pledgeCount === 1 ? 'pledge' : 'pledges'}
         </p>
-        <time className="font-mono text-[12px] text-grey-300 uppercase tracking-[0.06em]">
+        <time className="label-ui text-grey-300">
           {formatDateFromISO(drive.createdAt)}
         </time>
       </div>

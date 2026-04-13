@@ -106,7 +106,7 @@ export function AccountLedger({ initialIncludeFreeReads = false }: { initialIncl
               <tbody>
                 {entries.map(entry => (
                   <tr key={entry.id} className="border-b-2 border-grey-200/50 last:border-b-0">
-                    <td className="px-4 py-3 text-grey-300 whitespace-nowrap font-mono text-[12px]">
+                    <td className="px-4 py-3 text-grey-300 whitespace-nowrap font-mono text-mono-xs">
                       {new Date(entry.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -121,7 +121,7 @@ export function AccountLedger({ initialIncludeFreeReads = false }: { initialIncl
                         <span className="text-black">{entry.description}</span>
                       )}
                     </td>
-                    <td className={`px-4 py-3 text-right tabular-nums font-medium font-mono text-[12px] ${
+                    <td className={`px-4 py-3 text-right tabular-nums font-medium font-mono text-mono-xs ${
                       entry.category === 'free_read' ? 'text-grey-300' : entry.type === 'credit' ? 'text-crimson' : 'text-black'
                     }`}>
                       {entry.category === 'free_read' ? 'Free' : `${entry.type === 'credit' ? '+' : '−'}£${(Math.abs(entry.amount_pence) / 100).toFixed(2)}`}

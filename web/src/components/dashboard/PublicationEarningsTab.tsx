@@ -76,20 +76,20 @@ export function PublicationEarningsTab({ publicationId }: Props) {
                     <p className="text-ui-xs text-black">
                       {fmt(p.totalPoolPence - p.platformFeePence)} distributed
                     </p>
-                    <p className="text-[12px] font-sans text-grey-300">
+                    <p className="text-ui-xs text-grey-300">
                       {new Date(p.triggeredAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                       {' \u00b7 '}Platform fee: {fmt(p.platformFeePence)}
                       {p.flatFeesPaidPence > 0 && ` \u00b7 Flat fees: ${fmt(p.flatFeesPaidPence)}`}
                     </p>
                   </div>
-                  <span className={`text-[12px] font-sans ${p.status === 'completed' ? 'text-grey-400' : 'text-black'}`}>
+                  <span className={`text-ui-xs ${p.status === 'completed' ? 'text-grey-400' : 'text-black'}`}>
                     {p.status}
                   </span>
                 </div>
                 {p.splits.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {p.splits.map((s, i) => (
-                      <div key={i} className="flex items-center justify-between text-[12px] font-sans">
+                      <div key={i} className="flex items-center justify-between text-ui-xs">
                         <span className="text-grey-600">
                           {s.displayName || s.username}
                           <span className="text-grey-300 ml-1">
@@ -113,7 +113,7 @@ export function PublicationEarningsTab({ publicationId }: Props) {
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-white p-4">
-      <p className="text-[12px] font-sans text-grey-300 mb-1">{label}</p>
+      <p className="text-ui-xs text-grey-300 mb-1">{label}</p>
       <p className="text-[20px] font-sans text-black tabular-nums">{value}</p>
     </div>
   )

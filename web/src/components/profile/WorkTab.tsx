@@ -182,7 +182,7 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
       {/* Pinned section */}
       {pinned.length > 0 && (
         <>
-          <h3 className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-300 mb-4">
+          <h3 className="label-ui text-grey-300 mb-4">
             Pinned
           </h3>
           <div className="space-y-3 mb-8">

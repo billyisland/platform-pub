@@ -310,6 +310,30 @@
     outline-offset: 2px;
   }
 
+  .btn-soft {
+    background: #F0F0F0;
+    color: #666666;
+    font-family: 'Jost', system-ui, sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    border: none;
+    border-radius: 0;
+    padding: 0.5rem 1.25rem;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    cursor: pointer;
+  }
+  .btn-soft:hover {
+    background: #E5E5E5;
+    color: #111111;
+  }
+  .btn-soft:focus-visible {
+    outline: 2px solid #B5242A;
+    outline-offset: 2px;
+  }
+  .btn-soft:disabled { opacity: 0.5; }
+
   .btn-sm {
     font-size: 0.875rem;
     padding: 0.625rem 1.5rem;

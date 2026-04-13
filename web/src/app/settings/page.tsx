@@ -29,7 +29,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-article px-4 sm:px-6 py-12">
-      <h1 className="font-serif text-2xl font-light text-black tracking-tight mb-10">
+      <h1 className="font-sans text-2xl font-medium text-black tracking-tight mb-10">
         Settings
       </h1>
 

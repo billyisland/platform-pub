@@ -32,15 +32,15 @@ export function PaymentSection() {
           {user.hasPaymentMethod ? (
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[14px] font-sans text-black">Card connected</p>
-                <p className="text-[13px] font-sans text-grey-300 mt-0.5">Your reading tab settles automatically.</p>
+                <p className="text-ui-sm text-black">Card connected</p>
+                <p className="text-ui-xs text-grey-300 mt-0.5">Your reading tab settles automatically.</p>
               </div>
-              <span className="font-mono text-[12px] text-grey-400 uppercase tracking-[0.06em]">Active</span>
+              <span className="label-ui text-grey-400">Active</span>
             </div>
           ) : (
             <div>
-              <p className="text-[14px] font-sans text-black mb-2">Add a payment method</p>
-              <p className="text-[13px] font-sans text-grey-400 mb-3">Required to keep reading after your free allowance.</p>
+              <p className="text-ui-sm text-black mb-2">Add a payment method</p>
+              <p className="text-ui-xs text-grey-400 mb-3">Required to keep reading after your free allowance.</p>
               <CardSetup onSuccess={() => fetchMe()} />
             </div>
           )}
@@ -51,27 +51,27 @@ export function PaymentSection() {
           {user.stripeConnectKycComplete ? (
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[14px] font-sans text-black">Stripe Connect</p>
-                <p className="text-[13px] font-sans text-grey-300 mt-0.5">Verified — payouts enabled.</p>
+                <p className="text-ui-sm text-black">Stripe Connect</p>
+                <p className="text-ui-xs text-grey-300 mt-0.5">Verified — payouts enabled.</p>
               </div>
-              <span className="font-mono text-[12px] text-grey-400 uppercase tracking-[0.06em]">Verified</span>
+              <span className="label-ui text-grey-400">Verified</span>
             </div>
           ) : (
             <div>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[14px] font-sans text-black">Stripe Connect</p>
-                  <p className="text-[13px] font-sans text-grey-300 mt-0.5">Connect to receive payouts.</p>
+                  <p className="text-ui-sm text-black">Stripe Connect</p>
+                  <p className="text-ui-xs text-grey-300 mt-0.5">Connect to receive payouts.</p>
                 </div>
                 <button
                   onClick={handleConnectStripe}
                   disabled={connecting}
-                  className="text-[13px] font-sans text-crimson hover:text-crimson-dark underline underline-offset-4 disabled:opacity-50"
+                  className="text-ui-xs text-crimson hover:text-crimson-dark underline underline-offset-4 disabled:opacity-50"
                 >
                   {connecting ? 'Setting up…' : 'Set up'}
                 </button>
               </div>
-              {connectError && <p className="text-[13px] font-sans text-red-600 mt-2">{connectError}</p>}
+              {connectError && <p className="text-ui-xs text-red-600 mt-2">{connectError}</p>}
             </div>
           )}
         </div>
