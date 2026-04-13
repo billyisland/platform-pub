@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { HomepageBlog } from '../../../components/publication/HomepageBlog'
 import { HomepageMagazine } from '../../../components/publication/HomepageMagazine'
 import { HomepageMinimal } from '../../../components/publication/HomepageMinimal'
+import { PubFollowButton } from '../../../components/publication/PubFollowButton'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
 
@@ -32,10 +33,18 @@ export default async function PublicationHomepage({ params }: { params: { slug: 
 
   return (
     <div>
-      {/* Header */}
-      {pub.tagline && (
-        <p className="text-grey-500 text-sm mb-8 text-center">{pub.tagline}</p>
-      )}
+      {/* Masthead */}
+      <div className="text-center mb-10">
+        <h1 className="font-serif text-2xl font-light tracking-tight text-black">
+          {pub.name}
+        </h1>
+        {pub.tagline && (
+          <p className="text-grey-500 text-sm mt-2">{pub.tagline}</p>
+        )}
+        <div className="mt-4">
+          <PubFollowButton publicationId={pub.id} initialFollowing={pub.isFollowing ?? false} />
+        </div>
+      </div>
 
       {/* Articles in chosen layout */}
       {layout === 'magazine' && (

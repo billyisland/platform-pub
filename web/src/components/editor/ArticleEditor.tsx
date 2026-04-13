@@ -10,6 +10,7 @@ import { Markdown } from 'tiptap-markdown'
 import { useAuth } from '../../stores/auth'
 import { createAutoSaver, saveDraft, type SavedDraft } from '../../lib/drafts'
 import { ImageUpload } from './ImageUpload'
+import { TagInput } from './TagInput'
 import { EmbedNode } from './EmbedNode'
 import { PaywallGateNode, PAYWALL_GATE_MARKER } from './PaywallGateNode'
 import { uploadImage } from '../../lib/media'
@@ -35,6 +36,7 @@ interface EditorProps {
   initialGatePosition?: number
   initialPrice?: number
   initialCommentsEnabled?: boolean
+  initialTags?: string[]
   editingEventId?: string
   editingDTag?: string
   publicationMemberships?: PublicationContext[]
@@ -63,6 +65,7 @@ export interface PublishData {
   publicationId?: string | null
   showOnWriterProfile: boolean
   sendEmail?: boolean
+  tags: string[]
 }
 
 export function ArticleEditor({
@@ -72,6 +75,7 @@ export function ArticleEditor({
   initialGatePosition = 50,
   initialPrice,
   initialCommentsEnabled = true,
+  initialTags = [],
   editingEventId,
   editingDTag,
   publicationMemberships = [],
@@ -85,6 +89,7 @@ export function ArticleEditor({
   const defaultPrice = initialPrice ?? user?.defaultArticlePricePence ?? 0
   const [pricePence, setPricePence] = useState(defaultPrice)
   const [commentsEnabled, setCommentsEnabled] = useState(initialCommentsEnabled)
+  const [articleTags, setArticleTags] = useState<string[]>(initialTags)
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [draftStatus, setDraftStatus] = useState<string | null>(null)
@@ -216,6 +221,7 @@ export function ArticleEditor({
         publicationId: selectedPublicationId,
         showOnWriterProfile,
         sendEmail: isEditing ? false : sendEmail,
+        tags: articleTags,
       }
 
       if (onPublish) {
@@ -227,7 +233,7 @@ export function ArticleEditor({
     } finally {
       setPublishing(false)
     }
-  }, [editor, title, dek, pricePence, onPublish, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, sendEmail, isEditing])
+  }, [editor, title, dek, pricePence, onPublish, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, sendEmail, isEditing, articleTags])
 
   // Show the publish confirmation panel for new personal articles;
   // submit-for-review and edits skip confirmation and go straight through.
@@ -300,6 +306,11 @@ export function ArticleEditor({
           placeholder="Add a subtitle or standfirst…"
           className="w-full border-none bg-transparent font-serif text-lg text-grey-600 italic placeholder:text-grey-300 focus:outline-none"
         />
+      </div>
+
+      {/* Tags */}
+      <div className="mb-2">
+        <TagInput value={articleTags} onChange={setArticleTags} />
       </div>
 
       {/* Editor toolbar */}

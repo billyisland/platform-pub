@@ -30,6 +30,7 @@ export interface ArticleEvent {
   content: string
   publishedAt: number
   tags: string[][]
+  topicTags?: string[]
   pricePence?: number
   gatePositionPct?: number
   isPaywalled?: boolean

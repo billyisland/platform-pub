@@ -1,6 +1,6 @@
 import { KIND_ARTICLE, KIND_DELETION } from './ndk'
 import { signAndPublish, signViaGateway } from './sign'
-import { articles as articlesApi, publications as publicationsApi } from './api'
+import { articles as articlesApi, publications as publicationsApi, tags as tagsApi } from './api'
 import type { PublishData } from '../components/editor/ArticleEditor'
 
 // =============================================================================
@@ -66,6 +66,11 @@ export async function publishArticle(
       })
     } catch { /* best-effort */ }
     throw indexErr
+  }
+
+  // Save tags (non-fatal)
+  if (data.tags && data.tags.length > 0) {
+    try { await tagsApi.setForArticle(articleId, data.tags) } catch { /* non-fatal */ }
   }
 
   if (!data.isPaywalled || !data.paywallContent) {
@@ -175,7 +180,7 @@ export async function publishToPublication(
   data: PublishData & { showOnWriterProfile: boolean },
   existingDTag?: string
 ): Promise<{ articleId: string; status: string; dTag: string }> {
-  return publicationsApi.submitArticle(publicationId, {
+  const result = await publicationsApi.submitArticle(publicationId, {
     title: data.title,
     summary: data.dek?.trim() || undefined,
     content: data.isPaywalled ? data.freeContent : data.content,
@@ -186,6 +191,12 @@ export async function publishToPublication(
     showOnWriterProfile: data.showOnWriterProfile,
     existingDTag,
   })
+
+  if (data.tags && data.tags.length > 0) {
+    try { await tagsApi.setForArticle(result.articleId, data.tags) } catch { /* non-fatal */ }
+  }
+
+  return result
 }
 
 export function generateDTag(title: string): string {

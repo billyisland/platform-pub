@@ -35,6 +35,8 @@ import { publicationRoutes } from './routes/publications.js'
 import { driveRoutes, expireOverdueDrives } from './routes/drives.js'
 import { traffologyRoutes } from './routes/traffology.js'
 import { unsubscribeRoutes } from './routes/unsubscribe.js'
+import { bookmarkRoutes } from './routes/bookmarks.js'
+import { tagRoutes } from './routes/tags.js'
 import { refreshFeedScores } from './workers/feed-scorer.js'
 import { pool } from '../shared/src/db/client.js'
 import logger from '../shared/src/lib/logger.js'
@@ -173,6 +175,12 @@ async function start() {
 
   // Traffology (writer analytics — concurrent reader counts)
   await app.register(traffologyRoutes, { prefix: '/api/v1' })
+
+  // Bookmarks
+  await app.register(bookmarkRoutes, { prefix: '/api/v1' })
+
+  // Tags
+  await app.register(tagRoutes, { prefix: '/api/v1' })
 
   // ---------------------------------------------------------------------------
   // Service proxies

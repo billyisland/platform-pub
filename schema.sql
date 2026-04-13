@@ -782,6 +782,41 @@ CREATE UNIQUE INDEX idx_notifications_dedup
   )
   WHERE read = false;
 
+-- Notification preferences (migration 046)
+CREATE TABLE notification_preferences (
+  user_id     UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  category    TEXT NOT NULL,
+  enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, category)
+);
+
+-- Bookmarks (migration 047)
+CREATE TABLE bookmarks (
+  user_id       UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  article_id    UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, article_id)
+);
+
+CREATE INDEX idx_bookmarks_user ON bookmarks(user_id, created_at DESC);
+
+-- Tags (migration 048)
+CREATE TABLE tags (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT NOT NULL UNIQUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE article_tags (
+  article_id  UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  tag_id      UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (article_id, tag_id)
+);
+
+CREATE INDEX idx_article_tags_tag ON article_tags(tag_id);
+CREATE INDEX idx_tags_name ON tags(name);
+
 -- =============================================================================
 -- VOTES (migration 010)
 -- Individual vote events for upvoting/downvoting content.
@@ -1219,5 +1254,8 @@ INSERT INTO _migrations (filename) VALUES
   ('042_email_on_publish.sql'),
   ('043_session_invalidation.sql'),
   ('044_email_on_publish_v2.sql'),
-  ('045_article_price_mode.sql')
+  ('045_article_price_mode.sql'),
+  ('046_notification_preferences.sql'),
+  ('047_bookmarks.sql'),
+  ('048_tags.sql')
 ON CONFLICT (filename) DO NOTHING;

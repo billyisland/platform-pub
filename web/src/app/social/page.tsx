@@ -7,6 +7,7 @@ import { FeedDial } from '../../components/social/FeedDial'
 import { BlockList } from '../../components/social/BlockList'
 import { MuteList } from '../../components/social/MuteList'
 import { DmFeeSettings } from '../../components/social/DmFeeSettings'
+import { NotificationPreferences } from '../../components/social/NotificationPreferences'
 
 export default function SocialPage() {
   const { user, loading } = useAuth()
@@ -35,6 +36,11 @@ export default function SocialPage() {
         {/* Feed reach */}
         <section className="bg-white px-6 py-5">
           <FeedDial />
+        </section>
+
+        {/* Notification preferences */}
+        <section className="bg-white px-6 py-5">
+          <NotificationPreferences />
         </section>
 
         {/* Boundaries */}

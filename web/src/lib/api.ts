@@ -446,6 +446,75 @@ export const myArticles = {
       `/articles/${articleId}`,
       { method: 'DELETE' }
     ),
+
+  unpublish: (articleId: string) =>
+    request<{ ok: boolean }>(`/articles/${articleId}/unpublish`, { method: 'POST' }),
+}
+
+// =============================================================================
+// Bookmarks
+// =============================================================================
+
+export interface BookmarkedArticle {
+  id: string
+  nostr_event_id: string
+  nostr_d_tag: string
+  title: string
+  slug: string
+  summary: string | null
+  word_count: number | null
+  access_mode: string
+  price_pence: number | null
+  published_at: string
+  author_username: string
+  author_display_name: string | null
+  author_pubkey: string
+  author_avatar: string | null
+  bookmarked_at: string
+}
+
+export const bookmarks = {
+  add: (nostrEventId: string) =>
+    request<{ ok: boolean }>(`/bookmarks/${nostrEventId}`, { method: 'POST' }),
+
+  remove: (nostrEventId: string) =>
+    request<{ ok: boolean }>(`/bookmarks/${nostrEventId}`, { method: 'DELETE' }),
+
+  list: (limit = 20, offset = 0) =>
+    request<{ articles: BookmarkedArticle[]; hasMore: boolean }>(
+      `/bookmarks?limit=${limit}&offset=${offset}`
+    ),
+
+  ids: () =>
+    request<{ eventIds: string[] }>('/bookmarks/ids'),
+}
+
+// =============================================================================
+// Tags
+// =============================================================================
+
+export interface TagSuggestion {
+  name: string
+  count: number
+}
+
+export const tags = {
+  search: (q: string) =>
+    request<{ tags: TagSuggestion[] }>(`/tags/search?q=${encodeURIComponent(q)}`),
+
+  getByName: (name: string, limit = 20, offset = 0) =>
+    request<{ tag: string; articles: any[]; total: number }>(
+      `/tags/${encodeURIComponent(name)}?limit=${limit}&offset=${offset}`
+    ),
+
+  getForArticle: (articleId: string) =>
+    request<{ tags: string[] }>(`/articles/${articleId}/tags`),
+
+  setForArticle: (articleId: string, tagNames: string[]) =>
+    request<{ ok: boolean; tags: string[] }>(`/articles/${articleId}/tags`, {
+      method: 'PUT',
+      body: JSON.stringify({ tags: tagNames }),
+    }),
 }
 
 // =============================================================================
@@ -531,6 +600,15 @@ export const notifications = {
 
   unreadCounts: () =>
     request<{ dmCount: number; notificationCount: number }>('/unread-counts'),
+
+  getPreferences: () =>
+    request<{ preferences: Record<string, boolean> }>('/notifications/preferences'),
+
+  setPreference: (category: string, enabled: boolean) =>
+    request<{ ok: boolean }>(`/notifications/preferences/${category}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
 }
 
 // =============================================================================

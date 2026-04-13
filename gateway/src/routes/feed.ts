@@ -26,7 +26,13 @@ const ARTICLE_COLS = `
   a.nostr_event_id, a.nostr_d_tag, a.title, a.summary, a.content_free,
   a.access_mode, a.price_pence, a.gate_position_pct,
   EXTRACT(EPOCH FROM a.published_at)::bigint AS published_at,
-  acc.nostr_pubkey
+  acc.nostr_pubkey,
+  COALESCE(
+    (SELECT array_agg(t.name ORDER BY t.name)
+     FROM article_tags at2 JOIN tags t ON t.id = at2.tag_id
+     WHERE at2.article_id = a.id),
+    '{}'
+  ) AS tag_names
 `
 
 // Shared SELECT columns for notes
@@ -53,6 +59,7 @@ function articleToItem(row: any) {
     gatePositionPct: row.gate_position_pct ?? undefined,
     publishedAt: Number(row.published_at),
     score: row.score != null ? Number(row.score) : undefined,
+    tags: row.tag_names ?? [],
   }
 }
 

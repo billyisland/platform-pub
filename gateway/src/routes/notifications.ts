@@ -172,4 +172,63 @@ export async function notificationRoutes(app: FastifyInstance) {
     logger.info({ recipientId }, 'Notifications marked as read')
     return reply.status(200).send({ ok: true })
   })
+
+  // ---------------------------------------------------------------------------
+  // GET /notifications/preferences — get notification preference toggles
+  // ---------------------------------------------------------------------------
+
+  const NOTIFICATION_CATEGORIES = [
+    'new_follower',
+    'new_reply',
+    'new_mention',
+    'new_quote',
+    'commission_request',
+    'pub_events',
+    'subscription_activity',
+  ] as const
+
+  app.get('/notifications/preferences', { preHandler: requireAuth }, async (req, reply) => {
+    const userId = req.session!.sub!
+
+    const { rows } = await pool.query<{ category: string; enabled: boolean }>(
+      'SELECT category, enabled FROM notification_preferences WHERE user_id = $1',
+      [userId]
+    )
+
+    const prefs: Record<string, boolean> = {}
+    for (const cat of NOTIFICATION_CATEGORIES) prefs[cat] = true
+    for (const row of rows) prefs[row.category] = row.enabled
+
+    return reply.send({ preferences: prefs })
+  })
+
+  // ---------------------------------------------------------------------------
+  // PUT /notifications/preferences/:category — toggle a single category
+  // ---------------------------------------------------------------------------
+
+  app.put<{ Params: { category: string }; Body: { enabled: boolean } }>(
+    '/notifications/preferences/:category',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const userId = req.session!.sub!
+      const { category } = req.params
+      const { enabled } = req.body as { enabled: boolean }
+
+      if (!NOTIFICATION_CATEGORIES.includes(category as any)) {
+        return reply.status(400).send({ error: 'Invalid category' })
+      }
+      if (typeof enabled !== 'boolean') {
+        return reply.status(400).send({ error: 'enabled must be a boolean' })
+      }
+
+      await pool.query(
+        `INSERT INTO notification_preferences (user_id, category, enabled, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (user_id, category) DO UPDATE SET enabled = $3, updated_at = now()`,
+        [userId, category, enabled]
+      )
+
+      return reply.send({ ok: true })
+    }
+  )
 }

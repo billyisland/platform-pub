@@ -841,6 +841,39 @@ export async function articleRoutes(app: FastifyInstance) {
   )
 
   // ---------------------------------------------------------------------------
+  // POST /articles/:id/unpublish — revert a personal article to draft
+  //
+  // Sets published_at = NULL so the article disappears from the writer's
+  // public profile and the feed, but remains accessible as a draft.
+  // ---------------------------------------------------------------------------
+
+  app.post<{ Params: { id: string } }>(
+    '/articles/:id/unpublish',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!req.params.id.match(UUID_RE)) {
+        return reply.status(400).send({ error: 'Invalid article ID' })
+      }
+
+      const writerId = req.session!.sub!
+
+      const result = await pool.query<{ id: string }>(
+        `UPDATE articles SET published_at = NULL, updated_at = now()
+         WHERE id = $1 AND writer_id = $2 AND deleted_at IS NULL AND published_at IS NOT NULL
+           AND publication_id IS NULL
+         RETURNING id`,
+        [req.params.id, writerId]
+      )
+
+      if (result.rowCount === 0) {
+        return reply.status(404).send({ error: 'Article not found or already unpublished' })
+      }
+
+      return reply.status(200).send({ ok: true })
+    }
+  )
+
+  // ---------------------------------------------------------------------------
   // GET /articles/deleted?pubkeys=<hex>,<hex>,…
   //
   // Returns recently deleted article identifiers for the given Nostr pubkeys.

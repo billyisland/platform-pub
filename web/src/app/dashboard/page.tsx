@@ -281,7 +281,7 @@ export default function DashboardPage() {
 // =============================================================================
 
 function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
-  const [articles, setArticles] = useState<MyArticle[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [deletingId, setDeletingId] = useState<string | null>(null); const [giftLinksOpenId, setGiftLinksOpenId] = useState<string | null>(null)
+  const [articles, setArticles] = useState<MyArticle[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [deletingId, setDeletingId] = useState<string | null>(null); const [giftLinksOpenId, setGiftLinksOpenId] = useState<string | null>(null); const [unpublishingId, setUnpublishingId] = useState<string | null>(null); const [unpublishedMsg, setUnpublishedMsg] = useState<string | null>(null)
 
   useEffect(() => { (async () => { setLoading(true); try { setArticles((await myArticles.list()).articles) } catch { setError('Failed to load articles.') } finally { setLoading(false) } })() }, [userId])
   async function handleToggleReplies(id: string, on: boolean) { try { await myArticles.update(id, { repliesEnabled: on }); setArticles(p => p.map(a => a.id === id ? { ...a, repliesEnabled: on } : a)) } catch { setError('Failed to update.') } }
@@ -300,6 +300,17 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
     }
     catch { setError('Failed to delete.') }
     finally { setDeletingId(null) }
+  }
+  async function handleUnpublish(id: string) {
+    if (!confirm('Revert this article to draft? It will be removed from your public profile but not deleted.')) return
+    setUnpublishingId(id)
+    try {
+      await myArticles.unpublish(id)
+      setArticles(p => p.filter(a => a.id !== id))
+      setUnpublishedMsg('Moved to drafts.')
+      setTimeout(() => setUnpublishedMsg(null), 3000)
+    } catch { setError('Failed to unpublish.') }
+    finally { setUnpublishingId(null) }
   }
 
   if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
@@ -324,6 +335,7 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
                   <button onClick={() => setGiftLinksOpenId(giftLinksOpenId === a.id ? null : a.id)} className={`text-grey-300 hover:text-black ${giftLinksOpenId === a.id ? 'text-black' : ''}`}>Gifts</button>
                 )}
                 <Link href={`/write?edit=${a.nostrEventId}`} className="text-grey-400 hover:text-black">Edit</Link>
+                <button onClick={() => handleUnpublish(a.id)} disabled={unpublishingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{unpublishingId===a.id ? '...' : 'Unpublish'}</button>
                 <button onClick={() => handleDelete(a.id)} disabled={deletingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button>
               </div>
             </td>
@@ -335,6 +347,7 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
         ))}
         </tbody>
       </table>
+      {unpublishedMsg && <p className="text-ui-xs text-grey-600 px-4 py-2">{unpublishedMsg}</p>}
     </div>
   )
 }

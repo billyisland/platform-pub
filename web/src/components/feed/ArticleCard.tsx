@@ -8,6 +8,7 @@ import { useWriterName } from '../../hooks/useWriterName'
 import { useAuth } from '../../stores/auth'
 import { replies as repliesApi } from '../../lib/api'
 import { VoteControls } from '../ui/VoteControls'
+import { BookmarkButton } from '../ui/BookmarkButton'
 import { ShareButton } from '../ui/ShareButton'
 import type { VoteTally, MyVoteCount } from '../../lib/api'
 import type { QuoteTarget } from '../../lib/publishNote'
@@ -18,9 +19,10 @@ interface ArticleCardProps {
   onQuote?: (target: QuoteTarget) => void
   voteTally?: VoteTally
   myVoteCounts?: MyVoteCount
+  isBookmarked?: boolean
 }
 
-export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: ArticleCardProps) {
+export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookmarked }: ArticleCardProps) {
   const { user } = useAuth()
   const router = useRouter()
   const writerInfo = useWriterName(article.pubkey)
@@ -100,6 +102,24 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
         {excerpt}
       </p>
 
+      {/* Tags */}
+      {article.topicTags && article.topicTags.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-3 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300">
+          {article.topicTags.map((tag, i) => (
+            <span key={tag} className="flex items-center gap-1.5">
+              {i > 0 && <span>&middot;</span>}
+              <Link
+                href={`/tag/${tag}`}
+                onClick={e => e.stopPropagation()}
+                className="hover:text-black transition-colors"
+              >
+                {tag}
+              </Link>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Footer — mono-caps, grey-600 */}
       <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600">
         <span>{readMinutes} min read</span>
@@ -123,6 +143,9 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts }: Artic
             initialTally={voteTally}
             initialMyVotes={myVoteCounts}
           />
+        </span>
+        <span onClick={e => e.stopPropagation()}>
+          <BookmarkButton articleId={article.id} initialBookmarked={isBookmarked} />
         </span>
         <span onClick={e => e.stopPropagation()}>
           <ShareButton url={`/article/${article.dTag}`} title={article.title} />

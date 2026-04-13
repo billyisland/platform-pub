@@ -9,7 +9,7 @@ import { NoteCard } from '../feed/NoteCard'
 import { NoteComposer } from '../feed/NoteComposer'
 import type { FeedItem, NoteEvent } from '../../lib/ndk'
 import type { QuoteTarget } from '../../lib/publishNote'
-import { feed as feedApi, votes as votesApi, type VoteTally, type MyVoteCount, type FeedReach } from '../../lib/api'
+import { feed as feedApi, votes as votesApi, bookmarks as bookmarksApi, type VoteTally, type MyVoteCount, type FeedReach } from '../../lib/api'
 
 interface NewUserItem {
   type: 'new_user'
@@ -47,6 +47,7 @@ export function FeedView() {
   const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
   const [voteTallies, setVoteTallies] = useState<Record<string, VoteTally>>({})
   const [myVoteCounts, setMyVoteCounts] = useState<Record<string, MyVoteCount>>({})
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set())
   const composerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (!loading && !user) router.push('/auth?mode=login') }, [user, loading, router])
@@ -80,6 +81,7 @@ export function FeedView() {
               gatePositionPct: item.gatePositionPct,
               publishedAt: item.publishedAt,
               tags: [],
+              topicTags: item.tags ?? [],
             }
           } else if (item.type === 'note') {
             return {
@@ -104,12 +106,14 @@ export function FeedView() {
           .filter((i): i is FeedItem => i.type !== 'new_user')
           .map(i => i.id)
         if (feedOnlyIds.length > 0) {
-          const [talliesRes, myVotesRes] = await Promise.all([
+          const [talliesRes, myVotesRes, bmRes] = await Promise.all([
             votesApi.getTallies(feedOnlyIds).catch(() => ({ tallies: {} })),
             votesApi.getMyVotes(feedOnlyIds).catch(() => ({ voteCounts: {} })),
+            bookmarksApi.ids().catch(() => ({ eventIds: [] })),
           ])
           setVoteTallies(talliesRes.tallies ?? {})
           setMyVoteCounts(myVotesRes.voteCounts ?? {})
+          setBookmarkedIds(new Set(bmRes.eventIds ?? []))
         }
       } catch (err) { console.error('Feed load error:', err); setGlobalError(true) }
       finally { setGlobalLoading(false) }
@@ -174,7 +178,7 @@ export function FeedView() {
               if (item.type === 'new_user') {
                 return <NewUserCard key={`new-user-${item.username}-${item.joinedAt}`} item={item} />
               } else if (item.type === 'article') {
-                return <ArticleCard key={item.id} article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
+                return <ArticleCard key={item.id} article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} isBookmarked={bookmarkedIds.has(item.id)} />
               } else {
                 return <NoteCard key={item.id} note={item} onDeleted={handleNoteDeleted} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
               }

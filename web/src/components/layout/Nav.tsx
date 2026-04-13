@@ -120,6 +120,8 @@ function AvatarDropdown({ user, onLogout, onClose }: {
             </span>
           </Link>
           <Link href="/social" onClick={onClose} className={linkClass}>Social</Link>
+          <Link href="/bookmarks" onClick={onClose} className={linkClass}>Bookmarks</Link>
+          <Link href="/reading-history" onClick={onClose} className={linkClass}>Reading history</Link>
         </div>
 
         <div style={{ height: '4px', background: '#F0F0F0' }} />

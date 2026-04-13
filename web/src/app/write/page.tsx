@@ -20,7 +20,7 @@ const ArticleEditor = dynamic(
 )
 import { publishArticle, publishToPublication } from '../../lib/publish'
 import { loadDraft } from '../../lib/drafts'
-import { articles as articlesApi, publications as publicationsApi } from '../../lib/api'
+import { articles as articlesApi, publications as publicationsApi, tags as tagsApi } from '../../lib/api'
 import type { PublicationContext } from '../../components/editor/ArticleEditor'
 
 // =============================================================================
@@ -49,6 +49,7 @@ export default function WritePage() {
     gatePosition: number
     price: number
     commentsEnabled: boolean
+    tags?: string[]
     editingEventId?: string
     editingDTag?: string
     publicationId?: string | null
@@ -97,6 +98,11 @@ export default function WritePage() {
           }
           const meta = await res.json()
 
+          let existingTags: string[] = []
+          if (meta.id) {
+            try { existingTags = (await tagsApi.getForArticle(meta.id)).tags } catch { /* non-fatal */ }
+          }
+
           setInitialData({
             title: meta.title ?? '',
             dek: meta.summary ?? '',
@@ -104,6 +110,7 @@ export default function WritePage() {
             gatePosition: meta.gatePositionPct ?? 50,
             price: meta.pricePence ?? 0,
             commentsEnabled: true,
+            tags: existingTags,
             editingEventId: editEventId,
             editingDTag: meta.dTag ?? '',
           })
@@ -199,6 +206,7 @@ export default function WritePage() {
       initialGatePosition={initialData?.gatePosition}
       initialPrice={initialData?.price}
       initialCommentsEnabled={initialData?.commentsEnabled}
+      initialTags={initialData?.tags}
       editingEventId={initialData?.editingEventId}
       editingDTag={initialData?.editingDTag}
       publicationMemberships={pubMemberships}
