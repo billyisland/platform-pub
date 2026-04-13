@@ -186,6 +186,9 @@ CREATE TABLE articles (
     CHECK (publication_article_status IN ('submitted', 'approved', 'published', 'unpublished')),
   show_on_writer_profile BOOLEAN NOT NULL DEFAULT TRUE,
 
+  -- Email
+  email_sent_at         TIMESTAMPTZ,            -- when publish email was sent (NULL if never)
+
   -- Publishing state
   published_at          TIMESTAMPTZ,
   deleted_at            TIMESTAMPTZ,            -- soft-delete; NULL if live

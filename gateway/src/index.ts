@@ -34,6 +34,7 @@ import { socialRoutes } from './routes/social.js'
 import { publicationRoutes } from './routes/publications.js'
 import { driveRoutes, expireOverdueDrives } from './routes/drives.js'
 import { traffologyRoutes } from './routes/traffology.js'
+import { unsubscribeRoutes } from './routes/unsubscribe.js'
 import { refreshFeedScores } from './workers/feed-scorer.js'
 import { pool } from '../shared/src/db/client.js'
 import logger from '../shared/src/lib/logger.js'
@@ -127,6 +128,9 @@ async function start() {
 
   // Subscriptions (subscribe, unsubscribe, check, list, pricing)
   await app.register(subscriptionRoutes, { prefix: '/api/v1' })
+
+  // Email unsubscribe (signed token — no auth required)
+  await app.register(unsubscribeRoutes, { prefix: '/api/v1' })
 
   // v1.6 additional routes (reading tab)
   await app.register(v1_6Routes, { prefix: '/api/v1' })

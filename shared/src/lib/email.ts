@@ -83,6 +83,29 @@ export async function sendMagicLinkEmail(
   })
 }
 
+// ---------------------------------------------------------------------------
+// Broadcast email — for publish notifications (separate Postmark stream)
+// ---------------------------------------------------------------------------
+
+interface BroadcastEmailParams extends EmailParams {
+  /** Override the From address (defaults to EMAIL_FROM_BROADCAST) */
+  from?: string
+}
+
+export async function sendBroadcastEmail(params: BroadcastEmailParams): Promise<void> {
+  const provider = process.env.EMAIL_PROVIDER ?? 'console'
+
+  switch (provider) {
+    case 'postmark':
+      return sendBroadcastViaPostmark(params)
+    case 'resend':
+      return sendViaResend(params) // Resend has no separate broadcast concept
+    case 'console':
+    default:
+      return sendBroadcastViaConsole(params)
+  }
+}
+
 // =============================================================================
 // Provider implementations
 // =============================================================================
@@ -157,5 +180,49 @@ async function sendViaConsole(params: EmailParams): Promise<void> {
       body: params.textBody,
     },
     '📧 Email (console provider — dev mode)'
+  )
+}
+
+async function sendBroadcastViaPostmark(params: BroadcastEmailParams): Promise<void> {
+  const apiKey = process.env.POSTMARK_API_KEY
+  if (!apiKey) throw new Error('POSTMARK_API_KEY not set')
+
+  const fromAddress = params.from ?? process.env.EMAIL_FROM_BROADCAST ?? 'posts@all.haus'
+  const stream = process.env.POSTMARK_BROADCAST_STREAM ?? 'broadcast'
+
+  const res = await fetch('https://api.postmarkapp.com/email', {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'X-Postmark-Server-Token': apiKey,
+    },
+    body: JSON.stringify({
+      From: fromAddress,
+      To: params.to,
+      Subject: params.subject,
+      TextBody: params.textBody,
+      HtmlBody: params.htmlBody,
+      MessageStream: stream,
+    }),
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    logger.error({ status: res.status, body }, 'Postmark broadcast email failed')
+    throw new Error(`Postmark API error: ${res.status}`)
+  }
+
+  logger.info({ to: params.to, subject: params.subject, stream }, 'Broadcast email sent via Postmark')
+}
+
+async function sendBroadcastViaConsole(params: BroadcastEmailParams): Promise<void> {
+  logger.info(
+    {
+      to: params.to,
+      subject: params.subject,
+      body: params.textBody,
+    },
+    '📧 Broadcast email (console provider — dev mode)'
   )
 }

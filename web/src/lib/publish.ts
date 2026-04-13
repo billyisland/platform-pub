@@ -50,6 +50,7 @@ export async function publishArticle(
       accessMode: data.isPaywalled ? 'paywalled' : 'public',
       pricePence: data.pricePence,
       gatePositionPct: data.gatePositionPct,
+      sendEmail: data.sendEmail,
     })
     articleId = result.articleId
   } catch (indexErr) {

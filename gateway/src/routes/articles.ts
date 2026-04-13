@@ -41,6 +41,7 @@ const IndexArticleSchema = z.object({
   gatePositionPct: z.number().int().min(0).max(99),
   vaultEventId: z.string().optional(),
   draftId: z.string().optional(),
+  sendEmail: z.boolean().optional(),  // writer opt-in/out for publish notification email
 })
 
 export async function articleRoutes(app: FastifyInstance) {
@@ -125,8 +126,8 @@ export async function articleRoutes(app: FastifyInstance) {
       })
 
       // Notify subscribers via email on first publish (not on edits)
-      if (isNew) {
-        sendPublishNotifications(writerId, articleId, data.title, data.dTag).catch(err => {
+      if (isNew && data.sendEmail !== false) {
+        sendPublishNotifications(writerId, articleId, data.title, data.dTag, data.summary, data.content).catch(err => {
           logger.error({ err, articleId, writerId }, 'Publish notification emails failed')
         })
       }

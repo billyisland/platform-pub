@@ -212,6 +212,7 @@ export const articles = {
     gatePositionPct: number
     vaultEventId?: string
     draftId?: string
+    sendEmail?: boolean
   }) =>
     request<{ articleId: string }>('/articles', {
       method: 'POST',

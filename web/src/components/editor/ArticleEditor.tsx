@@ -62,6 +62,7 @@ export interface PublishData {
   commentsEnabled: boolean
   publicationId?: string | null
   showOnWriterProfile: boolean
+  sendEmail?: boolean
 }
 
 export function ArticleEditor({
@@ -91,6 +92,8 @@ export function ArticleEditor({
   const [uploading, setUploading] = useState(false)
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(initialPublicationId)
   const [showOnWriterProfile, setShowOnWriterProfile] = useState(true)
+  const [showPublishConfirm, setShowPublishConfirm] = useState(false)
+  const [sendEmail, setSendEmail] = useState(true)
 
   const isEditing = !!editingEventId
   const userSetPrice = useRef(!!initialPrice || user?.defaultArticlePricePence != null)
@@ -181,6 +184,7 @@ export function ArticleEditor({
 
     setPublishing(true)
     setPublishError(null)
+    setShowPublishConfirm(false)
 
     try {
       const fullContent = editor.storage.markdown.getMarkdown()
@@ -211,6 +215,7 @@ export function ArticleEditor({
         commentsEnabled,
         publicationId: selectedPublicationId,
         showOnWriterProfile,
+        sendEmail: isEditing ? false : sendEmail,
       }
 
       if (onPublish) {
@@ -222,7 +227,19 @@ export function ArticleEditor({
     } finally {
       setPublishing(false)
     }
-  }, [editor, title, pricePence, onPublish, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile])
+  }, [editor, title, dek, pricePence, onPublish, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, sendEmail, isEditing])
+
+  // Show the publish confirmation panel for new personal articles;
+  // submit-for-review and edits skip confirmation and go straight through.
+  const handlePublishClick = useCallback(() => {
+    const isSubmitForReview = selectedPub && !selectedPub.can_publish
+    if (isEditing || isSubmitForReview) {
+      handlePublish()
+    } else {
+      setSendEmail(true)
+      setShowPublishConfirm(true)
+    }
+  }, [isEditing, selectedPub, handlePublish])
 
   if (!editor) return null
 
@@ -428,15 +445,48 @@ export function ArticleEditor({
         </label>
       </div>
 
+      {/* Publish confirmation panel */}
+      {showPublishConfirm && (
+        <div className="mt-6 bg-grey-100 px-5 py-4 rounded">
+          <p className="text-sm text-grey-600 mb-3">Your article will be published.</p>
+          <label className="flex items-center gap-2 mb-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sendEmail}
+              onChange={(e) => setSendEmail(e.target.checked)}
+            />
+            <span className="text-sm text-grey-600">
+              Email subscribers
+            </span>
+          </label>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handlePublish}
+              disabled={publishing}
+              className="btn disabled:opacity-50"
+            >
+              {publishing ? 'Publishing...' : 'Publish'}
+            </button>
+            <button
+              onClick={() => setShowPublishConfirm(false)}
+              className="text-sm text-grey-300 hover:text-grey-600 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Publish button */}
       {publishError && (
         <div className="mt-6 bg-red-50 px-5 py-3 text-sm text-red-700">
           {publishError}
         </div>
       )}
+      {!showPublishConfirm && (
       <div className="mt-6 flex items-center gap-4">
         <button
-          onClick={handlePublish}
+          onClick={handlePublishClick}
           disabled={publishing || !title.trim() || wordCount < 10}
           className="btn disabled:opacity-50"
         >
@@ -472,6 +522,7 @@ export function ArticleEditor({
           <span className="text-xs text-grey-300">{draftStatus}</span>
         )}
       </div>
+      )}
     </div>
   )
 }

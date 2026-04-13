@@ -1,7 +1,7 @@
-# all.haus — Deployment Reference v5.28.0
+# all.haus — Deployment Reference v5.29.0
 
-**Date:** 12 April 2026
-**Replaces:** v5.27.1 (see bottom for change log)
+**Date:** 13 April 2026
+**Replaces:** v5.28.0 (see bottom for change log)
 
 This is the single source of truth for deploying and operating all.haus.
 
@@ -105,6 +105,9 @@ Key variables:
 | `APP_URL` | gateway | **Frontend** URL (Next.js). Used for OAuth redirect URIs, Stripe redirects, CORS, and magic links. Dev: `http://localhost:3010`. **Must not be the gateway URL.** |
 | `ADMIN_ACCOUNT_IDS` | gateway | Comma-separated UUIDs for admin access (fallback; prefer `admin_account_ids` in `platform_config` table — no redeploy needed) |
 | `EMAIL_PROVIDER` | gateway | `postmark`, `resend`, or `console` |
+| `POSTMARK_BROADCAST_STREAM` | gateway | Postmark broadcast message stream ID (default: `broadcast`) |
+| `EMAIL_FROM_BROADCAST` | gateway | From address for publish notification emails (default: `posts@all.haus`) |
+| `BROADCAST_DAILY_SEND_LIMIT` | gateway | Daily send cap for broadcast warm-up; `0` = unlimited (default: `50`) |
 | `TRAFFOLOGY_INGEST_URL` | gateway | Internal URL for traffology-ingest (default: http://localhost:3005) |
 | `TRAFFOLOGY_IP_HASH_SALT` | traffology-ingest | Salt for SHA-256 IP hashing (must override default in production) |
 
@@ -1061,11 +1064,30 @@ Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 - Cash-out-at-will (writer-initiated payout) not yet implemented
 - Stripe payment collection not yet live — free allowance goes negative as a testing workaround
 - Email sending requires configuring `EMAIL_PROVIDER` — defaults to console logging
+- Broadcast stream warm-up: new Postmark broadcast streams start rate-limited; raise `BROADCAST_DAILY_SEND_LIMIT` gradually over 2-4 weeks
+- Publish email audience is paid subscribers only (Phase 2 adds followers)
 - Docker healthchecks on some Alpine containers report "unhealthy" due to missing `wget`/`curl` in the image, despite services running correctly
 
 ---
 
 ## Change log
+
+### v5.29.0 — 13 April 2026
+
+**Email-on-publish v2 (Phase 1)**
+
+Migration required (044). Services changed: gateway, web. New env vars: `POSTMARK_BROADCAST_STREAM`, `EMAIL_FROM_BROADCAST`, `BROADCAST_DAILY_SEND_LIMIT`.
+
+**Postmark setup:** Before deploying, create a broadcast message stream named `broadcast` in the Postmark server dashboard and verify sender signature for `posts@all.haus` (or use domain-level DKIM). The broadcast stream manages List-Unsubscribe headers and bounce/complaint suppression automatically.
+
+- **Broadcast stream:** Publish notification emails now use Postmark's broadcast message stream (separate IP reputation from transactional emails). Configurable via `POSTMARK_BROADCAST_STREAM` env var.
+- **Writer email control:** Publish button is now two-step — confirmation panel with "Email subscribers" checkbox (checked by default). Writers opt out per article. Edits never re-send.
+- **Improved email template:** Publish emails now include writer avatar, article title, summary/excerpt (~150 words), "Read on all.haus" CTA button, and branded footer.
+- **Signed unsubscribe:** Email footer contains HMAC-signed unsubscribe link (`GET /api/v1/email/unsubscribe`). Readers unsubscribe without logging in. Endpoint is rate-limited (10 req/min per IP).
+- **Daily send cap:** `BROADCAST_DAILY_SEND_LIMIT` (default 50) caps broadcast emails per day for stream warm-up. Set to `0` once Postmark stream is warm (typically 2-4 weeks). Skipped recipients are not retried.
+- **email_sent_at tracking:** Articles table tracks when publish email was sent; prevents duplicate sends on edits.
+
+---
 
 ### v5.28.0 — 12 April 2026
 
