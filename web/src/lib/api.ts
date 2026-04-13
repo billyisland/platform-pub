@@ -842,6 +842,8 @@ export const social = {
 export interface PledgeDrive {
   id: string
   origin: 'crowdfund' | 'commission'
+  creatorId: string
+  targetWriterId: string
   title: string
   description: string | null
   fundingTargetPence: number | null
@@ -849,6 +851,7 @@ export interface PledgeDrive {
   pledgeCount: number
   status: 'open' | 'funded' | 'published' | 'fulfilled' | 'expired' | 'cancelled'
   pinned: boolean
+  acceptedAt: string | null
   deadline: string | null
   createdAt: string
 }
@@ -918,6 +921,24 @@ export const drives = {
 
   myPledges: () =>
     request<{ pledges: Pledge[] }>('/my/pledges'),
+
+  myCommissions: () =>
+    request<{ commissions: Commission[] }>('/my/commissions'),
+}
+
+export interface Commission {
+  id: string
+  origin: 'commission'
+  title: string
+  description: string | null
+  fundingTargetPence: number | null
+  currentTotalPence: number
+  status: string
+  acceptedAt: string | null
+  deadline: string | null
+  createdAt: string
+  pledgeCount: number
+  commissioner: { username: string; displayName: string | null }
 }
 
 // =============================================================================

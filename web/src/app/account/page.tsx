@@ -10,6 +10,7 @@ import { SubscriptionsSection } from '../../components/account/SubscriptionsSect
 import { PledgesSection } from '../../components/account/PledgesSection'
 import { EmailChange } from '../../components/account/EmailChange'
 import { DangerZone } from '../../components/account/DangerZone'
+import { ReadingHistory } from '../../components/account/ReadingHistory'
 
 export default function AccountPage() {
   const { user, loading } = useAuth()
@@ -66,6 +67,8 @@ export default function AccountPage() {
       )}
 
       <AccountLedger initialIncludeFreeReads={showAllReads} />
+
+      <ReadingHistory />
 
       <SubscriptionsSection />
       <PledgesSection />

@@ -3,7 +3,7 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-13 (v5.32.0 session). Completed: Open Graph metadata across all public pages.
+Last worked: 2026-04-13 (v5.33.0 session). Completed: Reading history, commission accept/decline, drive editing, doc audit of cancel sub / note deletion / pin drive.
 
 ---
 
@@ -75,17 +75,17 @@ These endpoints are fully wired but have no way to trigger them from the fronten
 
 ~~Transfer publication ownership~~ — **done (v5.31.0):** Modal with radio-button selector for eligible Editor-in-Chief members. Redirects to personal dashboard after transfer.
 
-**Reading history page** — `GET /my/reading-history` returns deduplicated previously-read articles. API client exists (`api.readingHistory.list`). No page or component renders it.
+~~Reading history page~~ — **done (v5.33.0):** ReadingHistory component on /account page. Paginated list showing article title (linked), writer avatar/name, date read, and Free/Paid label. Uses existing `GET /my/reading-history` endpoint.
 
 ~~Subscriber list for writers~~ — **done (v5.30.0):** SubscribersTab component with summary stats (active count, est. MRR, new this month) and full subscriber table. Conditional tab in personal dashboard (writer-only). Uses existing `GET /subscribers` endpoint.
 
 ~~Edit publication member role~~ — **done (v5.31.0):** Inline "Change role" action in MembersTab. Clicking replaces role cell with select dropdown + Save/Cancel. Uses existing PATCH endpoint.
 
-**Accept / decline commission** — `POST /drives/:id/accept` and `POST /drives/:id/decline` let the target writer respond to a commission drive. No UI for this — commission requests land in notifications but the writer has no accept/decline controls.
+~~Accept / decline commission~~ — **done (v5.33.0):** New `GET /my/commissions` endpoint. CommissionsTab in dashboard (writer-only) with pending/accepted/completed sections. Accept button and Decline with confirm pattern.
 
-**Pin drive to profile** — `POST /drives/:id/pin` toggles a drive's visibility on the writer's public profile. API client exists, no pin toggle in DrivesTab or profile.
+~~Pin drive to profile~~ — **already existed:** DriveCard had Pin/Unpin toggle calling `POST /drives/:id/pin`. Verified working.
 
-**Edit existing drive** — `PUT /drives/:id` updates a live pledge drive. DrivesTab has a create form but no edit form for existing drives.
+~~Edit existing drive~~ — **done (v5.33.0):** Inline edit mode on DriveCard — Edit button swaps card to form with title, description, target amount fields. Uses existing `PUT /drives/:id` endpoint.
 
 **Admin direct suspend** — `POST /admin/suspend/:accountId` suspends an account outside the report flow. Admin reports page has resolve/reject, but no standalone suspend action.
 
@@ -257,7 +257,7 @@ Features any user would reasonably expect given the platform's existing capabili
 
 ### Reader & subscriber experience
 
-**Cancel subscription button** — `DELETE /subscriptions/:writerId` exists on the backend and `SubscriptionsSection` lists active subs, but there's no cancel button rendered in the list.
+~~Cancel subscription button~~ — **already existed:** SubscriptionsSection had Cancel button with `handleCancel` calling `DELETE /subscriptions/:writerId`. Verified working.
 
 ~~Notification preferences~~ — **done (v5.29.0):** Migration 046 (notification_preferences table), GET/PUT endpoints for 7 categories, NotificationPreferences component on /social page with On/Off toggles using FeedDial pattern, saves immediately on click.
 
@@ -267,7 +267,7 @@ Features any user would reasonably expect given the platform's existing capabili
 
 **Subscriber / follower dashboard metrics** — writers see earnings but have no view of subscriber growth, churn, or follower trends over time. `GET /subscribers` returns the raw list but there's no dashboard visualisation.
 
-**Note deletion from profile** — `DELETE /notes/:nostrEventId` works on the backend, but the WriterActivity Notes tab has no delete action on individual notes.
+~~Note deletion from profile~~ — **already existed:** NoteCard has Delete button with confirm pattern, SocialTab passes `onDeleted` callback. Verified working.
 
 ### Social & safety
 
@@ -343,6 +343,15 @@ Features any user would reasonably expect given the platform's existing capabili
 ### Completed (v5.32.0 session, 2026-04-13)
 
 - ~~OG metadata~~ — Open Graph + Twitter Card tags on all public pages: root layout (fallback defaults + metadataBase), homepage, about (split to server component), writer profiles (avatar image, bio description), publication homepage/about/masthead, tag browse (split to server component). Article pages already had OG tags. Fixed publication page snake_case field name for logo URL.
+
+### Completed (v5.33.0 session, 2026-04-13)
+
+- ~~Reading history~~ — ReadingHistory component on /account page with paginated article list (title, writer, date, Free/Paid label)
+- ~~Accept/decline commission~~ — `GET /my/commissions` endpoint, CommissionsTab in dashboard (writer-only), Accept + Decline with confirm
+- ~~Edit existing drive~~ — inline edit mode on DriveCard (title, description, target amount), uses existing PUT endpoint
+- ~~Cancel subscription button~~ — verified already existed in SubscriptionsSection
+- ~~Note deletion from profile~~ — verified already existed in NoteCard
+- ~~Pin drive to profile~~ — verified already existed in DriveCard
 
 ### Later: strategic work
 

@@ -5,6 +5,13 @@ import { drives, type PledgeDrive } from '../../lib/api'
 
 export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: () => void }) {
   const [acting, setActing] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(drive.title)
+  const [editDescription, setEditDescription] = useState(drive.description ?? '')
+  const [editTarget, setEditTarget] = useState(
+    drive.fundingTargetPence ? (drive.fundingTargetPence / 100).toFixed(2) : ''
+  )
+  const [editError, setEditError] = useState<string | null>(null)
 
   const target = drive.fundingTargetPence ?? 0
   const progressPct = target > 0
@@ -26,7 +33,77 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
     finally { setActing(false) }
   }
 
+  async function handleSaveEdit() {
+    const trimmedTitle = editTitle.trim()
+    if (!trimmedTitle) { setEditError('Title is required.'); return }
+    const pence = editTarget ? Math.round(parseFloat(editTarget) * 100) : undefined
+    if (editTarget && (isNaN(pence!) || pence! <= 0)) { setEditError('Enter a valid target amount.'); return }
+
+    setActing(true); setEditError(null)
+    try {
+      await drives.update(drive.id, {
+        title: trimmedTitle,
+        description: editDescription.trim() || undefined,
+        fundingTargetPence: pence,
+      })
+      setEditing(false)
+      onUpdate()
+    } catch { setEditError('Failed to save changes.') }
+    finally { setActing(false) }
+  }
+
   const isActive = drive.status === 'open' || drive.status === 'funded'
+
+  if (editing) {
+    return (
+      <div className="bg-white px-6 py-5 space-y-4">
+        <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-grey-400">Edit pledge drive</p>
+
+        <div>
+          <label className="block text-[13px] font-sans font-medium text-grey-600 mb-1">Title</label>
+          <input
+            type="text"
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            className="w-full bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
+          />
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-sans font-medium text-grey-600 mb-1">Description</label>
+          <textarea
+            value={editDescription}
+            onChange={e => setEditDescription(e.target.value)}
+            className="w-full bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 resize-y"
+            rows={3}
+          />
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-sans font-medium text-grey-600 mb-1">Target amount (£)</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            value={editTarget}
+            onChange={e => setEditTarget(e.target.value)}
+            className="w-48 bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
+          />
+        </div>
+
+        {editError && <p className="text-[13px] font-sans text-crimson">{editError}</p>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={handleSaveEdit} disabled={acting} className="btn text-sm disabled:opacity-50">
+            {acting ? 'Saving...' : 'Save'}
+          </button>
+          <button onClick={() => { setEditing(false); setEditError(null) }} className="text-[13px] font-sans text-grey-400 hover:text-black">
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-white px-6 py-5">
@@ -79,6 +156,9 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
       {/* Actions */}
       {isActive && (
         <div className="mt-4 flex items-center gap-3">
+          <button onClick={() => setEditing(true)} className="text-[13px] font-sans text-grey-400 hover:text-black">
+            Edit
+          </button>
           <button onClick={handlePin} disabled={acting} className="text-[13px] font-sans text-grey-400 hover:text-black disabled:opacity-50">
             {drive.pinned ? 'Unpin' : 'Pin to profile'}
           </button>

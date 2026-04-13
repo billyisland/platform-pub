@@ -580,6 +580,61 @@ export async function driveRoutes(app: FastifyInstance) {
   )
 
   // ---------------------------------------------------------------------------
+  // GET /my/commissions — incoming commissions for the current writer
+  // ---------------------------------------------------------------------------
+
+  app.get('/my/commissions', { preHandler: requireAuth }, async (req, reply) => {
+    const writerId = req.session!.sub!
+
+    const { rows } = await pool.query<{
+      id: string
+      title: string
+      description: string | null
+      funding_target_pence: number | null
+      current_total_pence: number
+      status: string
+      accepted_at: Date | null
+      deadline: Date | null
+      created_at: Date
+      pledge_count: number
+      creator_username: string
+      creator_display_name: string | null
+    }>(
+      `SELECT d.id, d.title, d.description,
+              d.funding_target_pence, d.current_total_pence,
+              d.status, d.accepted_at, d.deadline, d.created_at,
+              COALESCE(p.cnt, 0)::int AS pledge_count,
+              c.username AS creator_username, c.display_name AS creator_display_name
+       FROM pledge_drives d
+       JOIN accounts c ON c.id = d.creator_id
+       LEFT JOIN (
+         SELECT drive_id, COUNT(*) AS cnt FROM pledges WHERE status != 'void' GROUP BY drive_id
+       ) p ON p.drive_id = d.id
+       WHERE d.target_writer_id = $1 AND d.origin = 'commission'
+       ORDER BY d.created_at DESC
+       LIMIT 50`,
+      [writerId]
+    )
+
+    return reply.status(200).send({
+      commissions: rows.map(d => ({
+        id: d.id,
+        origin: 'commission' as const,
+        title: d.title,
+        description: d.description,
+        fundingTargetPence: d.funding_target_pence,
+        currentTotalPence: d.current_total_pence,
+        status: d.status,
+        acceptedAt: d.accepted_at?.toISOString() ?? null,
+        deadline: d.deadline?.toISOString() ?? null,
+        createdAt: d.created_at.toISOString(),
+        pledgeCount: d.pledge_count,
+        commissioner: { username: d.creator_username, displayName: d.creator_display_name },
+      })),
+    })
+  })
+
+  // ---------------------------------------------------------------------------
   // GET /my/pledges — list my active pledges
   // ---------------------------------------------------------------------------
 
