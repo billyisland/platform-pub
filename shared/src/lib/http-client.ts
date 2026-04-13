@@ -144,7 +144,7 @@ export async function safeFetch(
         if (done) break
         totalBytes += value.byteLength
         if (totalBytes > maxBytes) {
-          reader.cancel()
+          await reader.cancel()
           throw new Error(`Response exceeds ${maxBytes} byte limit`)
         }
         chunks.push(value)
