@@ -8,6 +8,19 @@ import { LayoutShell } from '../components/layout/LayoutShell'
 export const metadata: Metadata = {
   title: 'all.haus',
   description: 'A publishing platform for writers and readers',
+  metadataBase: new URL('https://all.haus'),
+  openGraph: {
+    title: 'all.haus',
+    description: 'A publishing platform for writers and readers',
+    siteName: 'all.haus',
+    type: 'website',
+    url: 'https://all.haus',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'all.haus',
+    description: 'A publishing platform for writers and readers',
+  },
 }
 
 export default function RootLayout({

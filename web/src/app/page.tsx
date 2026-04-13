@@ -1,4 +1,21 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
+
+export const metadata: Metadata = {
+  title: 'all.haus — Free authors. Writing that\'s worth something.',
+  description: 'Own your identity. Build a profile that exists on your terms. Find an audience that pays, from day one.',
+  openGraph: {
+    title: 'all.haus — Free authors. Writing that\'s worth something.',
+    description: 'Own your identity. Build a profile that exists on your terms. Find an audience that pays, from day one.',
+    type: 'website',
+    siteName: 'all.haus',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'all.haus — Free authors. Writing that\'s worth something.',
+    description: 'Own your identity. Build a profile that exists on your terms. Find an audience that pays, from day one.',
+  },
+}
 
 export default function HomePage() {
   return (

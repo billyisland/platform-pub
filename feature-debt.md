@@ -3,7 +3,7 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-13 (v5.31.0 session). Completed: UI Design Spec Batch 3 — publication management (archive/delete/transfer, edit member role, logo upload, layout template picker, leave publication).
+Last worked: 2026-04-13 (v5.32.0 session). Completed: Open Graph metadata across all public pages.
 
 ---
 
@@ -181,7 +181,7 @@ Phase 1 complete (build status archived: `planning-archive/TRAFFOLOGY-BUILD-STAT
 **Frontend audit — `all-haus-frontend-audit.md`**
 
 12-item ranked audit. Outstanding items:
-- #1: Open Graph / social sharing metadata (no OG tags on article pages — critical for growth)
+- ~~#1: Open Graph / social sharing metadata~~ — **done (v5.32.0):** OG + Twitter Card tags on all public pages
 - #2: Email / newsletter delivery (no email-on-publish — critical for writer retention)
 - #3: Landing page (minimal — no social proof, no screenshots, no tab model explanation)
 - #5: Publication homepage templates (wireframe-quality, no visual customisation)
@@ -340,9 +340,13 @@ Features any user would reasonably expect given the platform's existing capabili
 - ~~Layout template picker~~ — migration 050, 3-card grid in pub settings (blog/magazine/minimal), saves immediately
 - ~~Leave publication~~ — POST /publications/:id/leave endpoint + text link in MembersTab for non-owner members
 
+### Completed (v5.32.0 session, 2026-04-13)
+
+- ~~OG metadata~~ — Open Graph + Twitter Card tags on all public pages: root layout (fallback defaults + metadataBase), homepage, about (split to server component), writer profiles (avatar image, bio description), publication homepage/about/masthead, tag browse (split to server component). Article pages already had OG tags. Fixed publication page snake_case field name for logo URL.
+
 ### Later: strategic work
 
-5. **OG metadata** — article pages need Open Graph tags for social sharing (see `all-haus-frontend-audit.md` #1)
+5. ~~OG metadata~~ — **done (v5.32.0):** Open Graph + Twitter Card tags on all public pages (root layout defaults, homepage, about, writer profiles, publication homepage/about/masthead, tag browse). Article pages already had OG tags.
 6. **Owner dashboard** — entirely unbuilt, see `OWNER-DASHBOARD-SPEC.md`
 7. Subscription Phase 2 — free trials, gift subs, welcome email, import/export, analytics, custom landing page (see `SUBSCRIPTIONS-GAP-ANALYSIS.md`)
 8. Currency strategy — see `platform-pub-currency-strategy.md`

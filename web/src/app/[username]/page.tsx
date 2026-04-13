@@ -28,12 +28,30 @@ export async function generateMetadata({ params }: { params: { username: string 
   const writer = await getWriter(params.username)
   if (!writer) return {}
 
+  const title = `${writer.displayName ?? params.username} — all.haus`
+  const description = writer.bio || `Articles by ${writer.displayName ?? params.username} on all.haus`
+  const url = `${SITE_URL}/${params.username}`
+
   return {
-    title: `${writer.displayName ?? params.username} — all.haus`,
+    title,
+    description,
     alternates: {
       types: {
         'application/rss+xml': `${SITE_URL}/rss/${params.username}`,
       },
+    },
+    openGraph: {
+      title,
+      description,
+      type: 'profile',
+      url,
+      siteName: 'all.haus',
+      ...(writer.avatar && { images: [{ url: writer.avatar }] }),
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description,
     },
   }
 }

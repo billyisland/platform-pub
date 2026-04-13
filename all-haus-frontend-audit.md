@@ -20,11 +20,11 @@ Ranked by priority: what matters most to converting writers and readers at launc
 
 ## What needs fixing — ranked by priority
 
-### 1. Open Graph / social sharing metadata
+### ~~1. Open Graph / social sharing metadata~~ — RESOLVED (v5.32.0)
 
 **Impact: critical — determines whether articles spread.**
 
-The root layout metadata is `title: 'all.haus'` and `description: 'A publishing platform for writers and readers'`. No Open Graph tags, no Twitter cards, no per-article dynamic metadata. When a writer shares an article on social media, it unfurls as a generic link with no image, no title, no excerpt. For a publishing platform, shareability is the primary growth mechanism. This is the single highest-leverage fix.
+~~The root layout metadata is `title: 'all.haus'` and `description: 'A publishing platform for writers and readers'`. No Open Graph tags, no Twitter cards, no per-article dynamic metadata.~~ **Fixed:** OG + Twitter Card metadata on all public pages — root layout (fallback defaults + `metadataBase`), homepage, about, writer profiles (with avatar + bio), publication homepage/about/masthead (with logo image), tag browse pages. Article pages already had dynamic OG tags with image extraction.
 
 ### 2. Email / newsletter delivery
 

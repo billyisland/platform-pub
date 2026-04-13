@@ -28,13 +28,31 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const pub = await getPublication(params.slug)
   if (!pub) return {}
 
+  const title = `${pub.name} — all.haus`
+  const description = pub.tagline || `${pub.name} on all.haus`
+  const url = `${SITE_URL}/pub/${params.slug}`
+  const image = pub.logo_blossom_url ?? pub.cover_blossom_url
+
   return {
-    title: `${pub.name} — all.haus`,
-    description: pub.tagline ?? undefined,
+    title,
+    description,
     alternates: {
       types: {
         'application/rss+xml': `${SITE_URL}/api/v1/pub/${params.slug}/rss`,
       },
+    },
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      url,
+      siteName: 'all.haus',
+      ...(image && { images: [{ url: image }] }),
+    },
+    twitter: {
+      card: image ? 'summary_large_image' : 'summary',
+      title,
+      description,
     },
   }
 }

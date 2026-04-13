@@ -1,7 +1,16 @@
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
+
+async function getPublication(slug: string) {
+  const res = await fetch(`${GATEWAY}/api/v1/publications/${slug}/public`, {
+    next: { revalidate: 60 },
+  })
+  if (!res.ok) return null
+  return res.json()
+}
 
 async function getMasthead(slug: string) {
   const res = await fetch(`${GATEWAY}/api/v1/publications/${slug}/masthead`, {
@@ -9,6 +18,30 @@ async function getMasthead(slug: string) {
   })
   if (!res.ok) return null
   return res.json()
+}
+
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  const pub = await getPublication(params.slug)
+  if (!pub) return {}
+
+  const title = `Masthead — ${pub.name} — all.haus`
+  const description = `The team behind ${pub.name}`
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      siteName: 'all.haus',
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description,
+    },
+  }
 }
 
 export default async function MastheadPage({ params }: { params: { slug: string } }) {
