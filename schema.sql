@@ -34,7 +34,8 @@ CREATE TYPE content_tier AS ENUM (
 CREATE TYPE account_status AS ENUM (
   'active',
   'suspended',
-  'moderated'          -- content removed from surface; identity intact
+  'moderated',         -- content removed from surface; identity intact
+  'deactivated'        -- self-service deactivation; reversible by logging in
 );
 
 CREATE TYPE payout_status AS ENUM (
@@ -119,6 +120,11 @@ CREATE TABLE accounts (
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   show_commission_button BOOLEAN NOT NULL DEFAULT TRUE,  -- (migration 030) let authors hide commission button
   sessions_invalidated_at TIMESTAMPTZ,                  -- (migration 043) NULL = no invalidation; set on logout to reject older JWTs
+  username_changed_at   TIMESTAMPTZ,                    -- (migration 049) 30-day cooldown tracking
+  previous_username     TEXT,                           -- (migration 049) for 90-day redirect
+  username_redirect_until TIMESTAMPTZ,                  -- (migration 049) redirect expiry
+  pending_email         TEXT,                           -- (migration 049) email change in progress
+  email_verification_token TEXT,                        -- (migration 049) token for email change verification
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

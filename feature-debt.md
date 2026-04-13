@@ -3,7 +3,7 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-13 (v5.29.0 session). Completed: UI Design Spec Batch 1 — unpublish article, publication follow button, notification preferences, bookmarks (full stack), tags/topics (full stack). Next up: Batch 2 (subscriber list, account deletion, change email/username, RSS discovery).
+Last worked: 2026-04-13 (v5.30.0 session). Completed: UI Design Spec Batch 2 — subscriber list, account deletion/deactivation, change email, change username, RSS discovery links. Next up: Batch 3 (publication management).
 
 ---
 
@@ -77,7 +77,7 @@ These endpoints are fully wired but have no way to trigger them from the fronten
 
 **Reading history page** — `GET /my/reading-history` returns deduplicated previously-read articles. API client exists (`api.readingHistory.list`). No page or component renders it.
 
-**Subscriber list for writers** — `GET /subscribers` returns a writer's paying subscribers. No subscribers tab in dashboard — writers cannot see who subscribes to them.
+~~Subscriber list for writers~~ — **done (v5.30.0):** SubscribersTab component with summary stats (active count, est. MRR, new this month) and full subscriber table. Conditional tab in personal dashboard (writer-only). Uses existing `GET /subscribers` endpoint.
 
 **Edit publication member role** — `PATCH /publications/:id/members/:memberId` updates role and permissions. MembersTab shows invite and remove, but no way to change an existing member's role.
 
@@ -239,11 +239,11 @@ Features any user would reasonably expect given the platform's existing capabili
 
 ### Account lifecycle
 
-**Account deletion / deactivation** — no way to close an account. Requires: Stripe cleanup (cancel subs, settle tab), Nostr event tombstoning (kind 5 for all authored events), content orphaning policy (delete vs. anonymise), confirmation flow with re-auth. GDPR relevance if the platform ever has EU users.
+~~Account deletion / deactivation~~ — **done (v5.30.0):** Migration 049, `POST /auth/deactivate` (reversible) + `POST /auth/delete-account` (cancels subs, soft-deletes articles with kind-5 events, hard-deletes account). DangerZone component on /account page with confirm dialog (deactivate) and type-to-confirm modal (delete).
 
-**Change email address** — profile page edits display name and bio, but email is immutable after signup. Requires: verification flow (send link to new email, confirm), update across sessions, re-auth gate.
+~~Change email address~~ — **done (v5.30.0):** `POST /auth/change-email` stores pending email + sends verification link, `POST /auth/verify-email-change` swaps email on confirmation. EmailChange component on /account page with inline editing pattern.
 
-**Change username** — username is read-only on the profile page. Requires: uniqueness check, URL redirect from old username, cooldown period to prevent abuse, Nostr profile event update.
+~~Change username~~ — **done (v5.30.0):** `POST /auth/change-username` with format validation, availability check, 30-day cooldown, 90-day redirect from old username. `GET /auth/check-username/:username` for debounced availability. UsernameChange component on /profile page replaces read-only display.
 
 ### Publication management
 
@@ -279,7 +279,7 @@ Features any user would reasonably expect given the platform's existing capabili
 
 ### Discovery & distribution
 
-**RSS discovery links** — three RSS endpoints exist (`/rss/:username`, `/api/v1/pub/:slug/rss`, `/rss`) but there are no visible RSS icons or `<link rel="alternate">` tags on any profile or publication page.
+~~RSS discovery links~~ — **done (v5.30.0):** `generateMetadata` with `<link rel="alternate" type="application/rss+xml">` on writer profile and publication homepage. Visible "RSS" text links in writer stats line and pub masthead.
 
 ---
 
@@ -323,13 +323,22 @@ Features any user would reasonably expect given the platform's existing capabili
 - ~~Bookmarks~~ — migration 047, full gateway routes, BookmarkButton, /bookmarks page, feed integration
 - ~~Tags/topics~~ — migration 048, full gateway routes, TagInput in editor, TagDisplay on cards, /tag/[tag] page
 
-### Next up
+### Completed (v5.30.0 session, 2026-04-13)
 
-1. **Subscriber list for writers** — new Subscribers dashboard tab with summary stats and table
-2. **Account deletion / deactivation** — regulatory necessity, Stripe cleanup, Nostr tombstoning
-3. **Change email address** — verification flow with magic link to new email
-4. **Change username** — availability check, old URL redirect, cooldown
-5. **RSS discovery links** — visible links + `<link rel="alternate">` tags on profile/pub pages
+- ~~Subscriber list~~ — SubscribersTab with summary stats + table, conditional writer-only dashboard tab
+- ~~Account deletion / deactivation~~ — migration 049, deactivate + delete routes, DangerZone component with type-to-confirm modal
+- ~~Change email~~ — change-email + verify-email-change routes, EmailChange component on /account
+- ~~Change username~~ — change-username + check-username routes, UsernameChange component on /profile with debounced availability + 30-day cooldown
+- ~~RSS discovery links~~ — generateMetadata with RSS alternate link + visible RSS links on writer profile and pub homepage
+
+### Next up — Batch 3 (publication management)
+
+1. **Delete / archive publication** — danger zone in pub settings, archive (confirm) + delete (type-to-confirm modal)
+2. **Transfer publication ownership** — modal with eligible member selector
+3. **Edit member role** — inline dropdown in MembersTab
+4. **Publication logo upload** — image upload in pub settings (reuse profile avatar pattern)
+5. **Layout template picker** — 3-card grid in pub settings (blog/magazine/minimal)
+6. **Leave publication** — text link for non-owner members
 
 ### Later: strategic work
 

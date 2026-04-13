@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import { WriterActivity } from '../../components/profile/WriterActivity'
 import { Avatar } from '../../components/ui/Avatar'
 import type { WriterProfile } from '../../lib/api'
@@ -13,6 +14,7 @@ import type { WriterProfile } from '../../lib/api'
 // =============================================================================
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
+const SITE_URL = process.env.APP_URL ?? 'https://all.haus'
 
 async function getWriter(username: string): Promise<WriterProfile | null> {
   const res = await fetch(`${GATEWAY}/api/v1/writers/${username}`, {
@@ -20,6 +22,20 @@ async function getWriter(username: string): Promise<WriterProfile | null> {
   })
   if (!res.ok) return null
   return res.json()
+}
+
+export async function generateMetadata({ params }: { params: { username: string } }): Promise<Metadata> {
+  const writer = await getWriter(params.username)
+  if (!writer) return {}
+
+  return {
+    title: `${writer.displayName ?? params.username} — all.haus`,
+    alternates: {
+      types: {
+        'application/rss+xml': `${SITE_URL}/rss/${params.username}`,
+      },
+    },
+  }
 }
 
 export default async function WriterProfilePage({ params }: { params: { username: string } }) {
@@ -57,6 +73,13 @@ export default async function WriterProfilePage({ params }: { params: { username
           {writer.followerCount} follower{writer.followerCount !== 1 ? 's' : ''}
           {' · '}
           {writer.followingCount} following
+          {' · '}
+          <a
+            href={`/rss/${params.username}`}
+            className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 hover:text-black"
+          >
+            RSS
+          </a>
         </p>
       </div>
 

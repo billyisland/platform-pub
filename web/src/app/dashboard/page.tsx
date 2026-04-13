@@ -17,8 +17,9 @@ import { PublicationSettingsTab } from '../../components/dashboard/PublicationSe
 import { RateCardTab } from '../../components/dashboard/RateCardTab'
 import { PayrollTab } from '../../components/dashboard/PayrollTab'
 import { PublicationEarningsTab } from '../../components/dashboard/PublicationEarningsTab'
+import { SubscribersTab } from '../../components/dashboard/SubscribersTab'
 
-type DashboardTab = 'articles' | 'drafts' | 'drives' | 'offers' | 'pricing'
+type DashboardTab = 'articles' | 'drafts' | 'subscribers' | 'drives' | 'offers' | 'pricing'
 type PubDashboardTab = 'articles' | 'members' | 'settings' | 'rate-card' | 'payroll' | 'earnings'
 
 export default function DashboardPage() {
@@ -117,7 +118,7 @@ export default function DashboardPage() {
   const selectedPub = pubMemberships.find(p => p.slug === selectedContext)
   const isPublicationContext = !!selectedPub
 
-  const personalTabs: DashboardTab[] = ['articles', 'drafts', 'drives', 'offers', 'pricing']
+  const personalTabs: DashboardTab[] = ['articles', 'drafts', ...(user.isWriter ? ['subscribers' as DashboardTab] : []), 'drives', 'offers', 'pricing']
   const pubTabs: PubDashboardTab[] = [
     'articles', 'members', 'settings',
     ...(selectedPub?.can_manage_finances ? ['rate-card', 'payroll', 'earnings'] as PubDashboardTab[] : []),
@@ -253,7 +254,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-10">
             <div className="flex gap-2">
               {personalTabs.map(tab => {
-                const label = tab === 'drives' ? 'Pledge drives' : tab === 'pricing' ? 'Pricing' : tab === 'offers' ? 'Offers' : tab.charAt(0).toUpperCase() + tab.slice(1)
+                const label = tab === 'drives' ? 'Pledge drives' : tab === 'pricing' ? 'Pricing' : tab === 'offers' ? 'Offers' : tab === 'subscribers' ? 'Subscribers' : tab.charAt(0).toUpperCase() + tab.slice(1)
                 return (
                   <button key={tab} onClick={() => switchTab(tab)} className={`tab-pill ${activeTab === tab ? 'tab-pill-active' : 'tab-pill-inactive'}`}>{label}</button>
                 )
@@ -267,6 +268,7 @@ export default function DashboardPage() {
           </div>
           {activeTab === 'articles' && <ArticlesTab userId={user.id} pubkey={user.pubkey} />}
           {activeTab === 'drafts' && <DraftsTab />}
+          {activeTab === 'subscribers' && <SubscribersTab />}
           {activeTab === 'drives' && <DrivesTab userId={user.id} />}
           {activeTab === 'offers' && <OffersTab />}
           {activeTab === 'pricing' && <PricingTab stripeReady={user.stripeConnectKycComplete} />}

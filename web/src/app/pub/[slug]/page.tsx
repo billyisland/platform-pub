@@ -1,10 +1,12 @@
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import { HomepageBlog } from '../../../components/publication/HomepageBlog'
 import { HomepageMagazine } from '../../../components/publication/HomepageMagazine'
 import { HomepageMinimal } from '../../../components/publication/HomepageMinimal'
 import { PubFollowButton } from '../../../components/publication/PubFollowButton'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
+const SITE_URL = process.env.APP_URL ?? 'https://all.haus'
 
 async function getPublication(slug: string) {
   const res = await fetch(`${GATEWAY}/api/v1/publications/${slug}/public`, {
@@ -20,6 +22,21 @@ async function getArticles(slug: string) {
   })
   if (!res.ok) return { articles: [] }
   return res.json()
+}
+
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  const pub = await getPublication(params.slug)
+  if (!pub) return {}
+
+  return {
+    title: `${pub.name} — all.haus`,
+    description: pub.tagline ?? undefined,
+    alternates: {
+      types: {
+        'application/rss+xml': `${SITE_URL}/api/v1/pub/${params.slug}/rss`,
+      },
+    },
+  }
 }
 
 export default async function PublicationHomepage({ params }: { params: { slug: string } }) {
@@ -41,8 +58,14 @@ export default async function PublicationHomepage({ params }: { params: { slug: 
         {pub.tagline && (
           <p className="text-grey-500 text-sm mt-2">{pub.tagline}</p>
         )}
-        <div className="mt-4">
+        <div className="mt-4 flex items-center justify-center gap-4">
           <PubFollowButton publicationId={pub.id} initialFollowing={pub.isFollowing ?? false} />
+          <a
+            href={`/api/v1/pub/${pub.slug}/rss`}
+            className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 hover:text-black"
+          >
+            RSS
+          </a>
         </div>
       </div>
 

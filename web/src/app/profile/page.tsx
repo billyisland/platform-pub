@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../../stores/auth'
 import { auth } from '../../lib/api'
 import { uploadImage } from '../../lib/media'
+import { UsernameChange } from '../../components/profile/UsernameChange'
 import { CardSetup } from '../../components/payment/CardSetup'
 import { ExportModal } from '../../components/ExportModal'
 
@@ -188,14 +189,8 @@ export default function ProfilePage() {
           <p className="text-[11px] text-grey-300 mt-1 text-right">{bio.length}/500</p>
         </div>
 
-        {/* Username (read-only) */}
-        <div>
-          <label className="block text-ui-xs text-grey-300 mb-2 uppercase tracking-wider">
-            Username
-          </label>
-          <p className="text-sm text-grey-600">@{user.username}</p>
-          <p className="text-[11px] text-grey-300 mt-1">Username cannot be changed.</p>
-        </div>
+        {/* Username */}
+        <UsernameChange />
 
         {/* Public key (read-only) */}
         <div>

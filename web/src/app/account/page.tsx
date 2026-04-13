@@ -8,6 +8,8 @@ import { BalanceHeader } from '../../components/account/BalanceHeader'
 import { AccountLedger } from '../../components/account/AccountLedger'
 import { SubscriptionsSection } from '../../components/account/SubscriptionsSection'
 import { PledgesSection } from '../../components/account/PledgesSection'
+import { EmailChange } from '../../components/account/EmailChange'
+import { DangerZone } from '../../components/account/DangerZone'
 
 export default function AccountPage() {
   const { user, loading } = useAuth()
@@ -67,6 +69,8 @@ export default function AccountPage() {
 
       <SubscriptionsSection />
       <PledgesSection />
+      <EmailChange />
+      <DangerZone />
     </div>
   )
 }

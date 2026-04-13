@@ -59,12 +59,14 @@ export interface MeResponse {
   displayName: string | null
   bio: string | null
   avatar: string | null
+  email: string
   isWriter: boolean
   hasPaymentMethod: boolean
   stripeConnectKycComplete: boolean
   freeAllowanceRemainingPence: number
   defaultArticlePricePence: number | null
   isAdmin: boolean
+  usernameChangedAt: string | null
 }
 
 export const auth = {
@@ -112,6 +114,36 @@ export const auth = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+
+  deactivate: () =>
+    request<{ ok: boolean }>('/auth/deactivate', { method: 'POST' }),
+
+  deleteAccount: (emailConfirmation: string) =>
+    request<{ ok: boolean }>('/auth/delete-account', {
+      method: 'POST',
+      body: JSON.stringify({ emailConfirmation }),
+    }),
+
+  changeEmail: (newEmail: string) =>
+    request<{ ok: boolean }>('/auth/change-email', {
+      method: 'POST',
+      body: JSON.stringify({ newEmail }),
+    }),
+
+  verifyEmailChange: (token: string) =>
+    request<{ ok: boolean }>('/auth/verify-email-change', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+
+  changeUsername: (newUsername: string) =>
+    request<{ ok: boolean; username: string }>('/auth/change-username', {
+      method: 'POST',
+      body: JSON.stringify({ newUsername }),
+    }),
+
+  checkUsername: (username: string) =>
+    request<{ available: boolean; reason?: string }>(`/auth/check-username/${encodeURIComponent(username)}`),
 }
 
 // =============================================================================
@@ -1089,6 +1121,28 @@ export const account = {
       method: 'PATCH',
       body: JSON.stringify({ hidden }),
     }),
+
+  getSubscribers: () =>
+    request<{ subscribers: Subscriber[] }>('/subscribers'),
+}
+
+export interface Subscriber {
+  subscriptionId: string
+  readerId: string
+  readerUsername: string
+  readerDisplayName: string | null
+  readerAvatar: string | null
+  pricePence: number
+  status: string
+  isComp: boolean
+  autoRenew: boolean
+  subscriptionPeriod: string
+  startedAt: string
+  currentPeriodEnd: string
+  cancelledAt: string | null
+  articlesRead: number
+  totalArticleValuePence: number
+  gettingMoneysworth: boolean
 }
 
 // =============================================================================

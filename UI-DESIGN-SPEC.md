@@ -2,7 +2,7 @@
 
 Design specification for all unbuilt UI features listed in `feature-debt.md`, consistent with all.haus's established design philosophy. Each feature describes where it lives, how it looks, how it behaves, and what states it has.
 
-Last updated: 2026-04-13. Batch 1 completed in v5.29.0.
+Last updated: 2026-04-13. Batch 1 completed in v5.29.0. Batch 2 completed in v5.30.0.
 
 ---
 
@@ -1203,12 +1203,12 @@ Consistent with the attack order in `feature-debt.md`:
 - ~~3.7 Notification preferences~~ — migration, endpoints, NotificationPreferences component on /social
 - ~~3.8 Publication follow button~~ — PubFollowButton on publication homepage masthead
 
-**Batch 2 — table-stakes completeness:**
-- 1.3 Subscriber list (new dashboard tab, writer visibility)
-- 3.1 Account deletion (regulatory necessity)
-- 3.2 Change email (basic account management)
-- 3.3 Change username (basic account management)
-- 3.13 RSS discovery (zero-effort growth via feed readers)
+**Batch 2 — table-stakes completeness: DONE (v5.30.0)**
+- ~~1.3 Subscriber list~~ — SubscribersTab with summary stats + table, conditional writer-only dashboard tab
+- ~~3.1 Account deletion~~ — migration 049, deactivate + delete routes, DangerZone component with type-to-confirm modal
+- ~~3.2 Change email~~ — change-email + verify-email-change routes, EmailChange component on /account
+- ~~3.3 Change username~~ — change-username + check-username routes, UsernameChange component on /profile
+- ~~3.13 RSS discovery~~ — generateMetadata with RSS alternate link + visible RSS links on writer profile and pub homepage
 
 **Batch 3 — publication management:**
 - 1.4 Delete/archive publication
