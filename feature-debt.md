@@ -3,7 +3,7 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-13 (v5.30.0 session). Completed: UI Design Spec Batch 2 — subscriber list, account deletion/deactivation, change email, change username, RSS discovery links. Next up: Batch 3 (publication management).
+Last worked: 2026-04-13 (v5.31.0 session). Completed: UI Design Spec Batch 3 — publication management (archive/delete/transfer, edit member role, logo upload, layout template picker, leave publication).
 
 ---
 
@@ -71,15 +71,15 @@ All high-priority bugs have been resolved:
 
 These endpoints are fully wired but have no way to trigger them from the frontend. Audited 2026-04-13.
 
-**Delete / archive publication** — `DELETE /publications/:id` archives a publication (owner only). No delete button in PublicationSettingsTab or anywhere else. Needs confirmation dialog with safeguards for content, members, and subscribers.
+~~Delete / archive publication~~ — **done (v5.31.0):** Danger zone in PublicationSettingsTab with archive (confirm dialog), transfer ownership (modal with EiC member selector), and delete (type-to-confirm modal matching publication name). Owner-only visibility.
 
-**Transfer publication ownership** — `POST /publications/:id/transfer-ownership` exists, API client wired. No UI to invoke it. Needs a settings panel with member selector and confirmation flow.
+~~Transfer publication ownership~~ — **done (v5.31.0):** Modal with radio-button selector for eligible Editor-in-Chief members. Redirects to personal dashboard after transfer.
 
 **Reading history page** — `GET /my/reading-history` returns deduplicated previously-read articles. API client exists (`api.readingHistory.list`). No page or component renders it.
 
 ~~Subscriber list for writers~~ — **done (v5.30.0):** SubscribersTab component with summary stats (active count, est. MRR, new this month) and full subscriber table. Conditional tab in personal dashboard (writer-only). Uses existing `GET /subscribers` endpoint.
 
-**Edit publication member role** — `PATCH /publications/:id/members/:memberId` updates role and permissions. MembersTab shows invite and remove, but no way to change an existing member's role.
+~~Edit publication member role~~ — **done (v5.31.0):** Inline "Change role" action in MembersTab. Clicking replaces role cell with select dropdown + Save/Cancel. Uses existing PATCH endpoint.
 
 **Accept / decline commission** — `POST /drives/:id/accept` and `POST /drives/:id/decline` let the target writer respond to a commission drive. No UI for this — commission requests land in notifications but the writer has no accept/decline controls.
 
@@ -247,13 +247,13 @@ Features any user would reasonably expect given the platform's existing capabili
 
 ### Publication management
 
-**Publication logo / avatar upload** — publications have a `logo_url` column (rendered on masthead, invite page, pub nav), but PublicationSettingsTab has no image upload — only name, tagline, and about.
+~~Publication logo / avatar upload~~ — **done (v5.31.0):** Image upload in PublicationSettingsTab above name field. Reuses profile avatar upload pattern with uploadImage + pubApi.update for logo_blossom_url. Upload/remove controls.
 
-**Publication layout template picker** — pub homepage renders three templates (blog, magazine, minimal) but there's no settings UI to choose between them. The `layout_template` column exists but is never set from the frontend.
+~~Publication layout template picker~~ — **done (v5.31.0):** Migration 050 adds `homepage_layout` column. 3-card picker (blog/magazine/minimal) with wireframe illustrations in PublicationSettingsTab. Saves immediately on click. Gateway updated to include homepage_layout in all publication queries.
 
-**Publication delete safeguards** — even once the archive button exists (section 2), there's no flow for what happens to content, members, and subscribers. Needs: archive vs. hard-delete choice, content migration/export, subscriber notification, grace period.
+~~Publication delete safeguards~~ — **done (v5.31.0):** Danger zone in PublicationSettingsTab with archive (confirm), transfer ownership (EiC modal), and delete (type-to-confirm). Covered by the archive/delete feature above.
 
-**Leave publication** — a member can be removed by the owner, but there's no "leave" button for a member to voluntarily exit a publication they belong to.
+~~Leave publication~~ — **done (v5.31.0):** `POST /publications/:id/leave` endpoint (self-remove, non-owner only, notifies managers). "Leave this publication" text link in MembersTab for non-owner members. Confirm dialog, redirects to personal dashboard.
 
 ### Reader & subscriber experience
 
@@ -331,14 +331,14 @@ Features any user would reasonably expect given the platform's existing capabili
 - ~~Change username~~ — change-username + check-username routes, UsernameChange component on /profile with debounced availability + 30-day cooldown
 - ~~RSS discovery links~~ — generateMetadata with RSS alternate link + visible RSS links on writer profile and pub homepage
 
-### Next up — Batch 3 (publication management)
+### Completed (v5.31.0 session, 2026-04-13)
 
-1. **Delete / archive publication** — danger zone in pub settings, archive (confirm) + delete (type-to-confirm modal)
-2. **Transfer publication ownership** — modal with eligible member selector
-3. **Edit member role** — inline dropdown in MembersTab
-4. **Publication logo upload** — image upload in pub settings (reuse profile avatar pattern)
-5. **Layout template picker** — 3-card grid in pub settings (blog/magazine/minimal)
-6. **Leave publication** — text link for non-owner members
+- ~~Delete / archive publication~~ — danger zone in pub settings: archive (confirm), transfer ownership (EiC modal), delete (type-to-confirm)
+- ~~Transfer publication ownership~~ — modal with eligible EiC member selector
+- ~~Edit member role~~ — inline dropdown in MembersTab with Save/Cancel
+- ~~Publication logo upload~~ — image upload in pub settings (reuses profile avatar pattern)
+- ~~Layout template picker~~ — migration 050, 3-card grid in pub settings (blog/magazine/minimal), saves immediately
+- ~~Leave publication~~ — POST /publications/:id/leave endpoint + text link in MembersTab for non-owner members
 
 ### Later: strategic work
 

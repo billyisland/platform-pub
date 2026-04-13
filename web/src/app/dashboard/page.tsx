@@ -229,13 +229,16 @@ export default function DashboardPage() {
           {pubTab === 'members' && (
             <MembersTab
               publicationId={selectedPub!.id}
+              publicationName={selectedPub!.name}
               canManageMembers={selectedPub!.can_manage_members}
+              isOwner={selectedPub!.is_owner}
             />
           )}
           {pubTab === 'settings' && selectedPub!.can_manage_settings && (
             <PublicationSettingsTab
               publicationId={selectedPub!.id}
               publicationSlug={selectedPub!.slug}
+              isOwner={selectedPub!.is_owner}
             />
           )}
           {pubTab === 'rate-card' && selectedPub!.can_manage_finances && (

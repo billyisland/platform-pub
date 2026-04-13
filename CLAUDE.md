@@ -89,7 +89,7 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Markdown serialization via `tiptap-markdown`
 
 ### Feed & search
-- Feed ranking spec in `FEED_DESIGN_SPEC.md`
+- Feed ranking spec in `planning-archive/FEED-ALGORITHM.md` (Phase 1 implemented)
 - Full-text search uses PostgreSQL trigrams (`pg_trgm`), see `gateway/src/routes/search.ts`
 
 ## TypeScript setup
@@ -104,8 +104,7 @@ Custom semantic tokens in `web/tailwind.config.js`: `surface`, `card`, `rule`, `
 
 ## Key docs
 
-- `FEATURES.md` — feature specs and implementation tier order
+- `feature-debt.md` — consolidated feature debt, outstanding work, and attack order
 - `DEPLOYMENT.md` — full production deployment guide
-- `DESIGN-BRIEF.md` — UX/design spec
-- `FEED_DESIGN_SPEC.md` — feed ranking algorithm
 - `schema.sql` — full PostgreSQL schema (source of truth for DB structure)
+- `planning-archive/` — completed specs (FEATURES.md, DESIGN-BRIEF.md, FEED-ALGORITHM.md, RESILIENCE.md, etc.)

@@ -1018,6 +1018,7 @@ CREATE TABLE publications (
   default_article_price_pence INTEGER NOT NULL DEFAULT 20,
   article_price_mode          TEXT NOT NULL DEFAULT 'per_article'
                               CHECK (article_price_mode IN ('per_article', 'per_1000_words')),
+  homepage_layout             TEXT NOT NULL DEFAULT 'blog' CHECK (homepage_layout IN ('blog', 'magazine', 'minimal')),
   custom_domain               TEXT UNIQUE,
   custom_domain_verified      BOOLEAN NOT NULL DEFAULT FALSE,
   theme_config                JSONB NOT NULL DEFAULT '{}'::jsonb,

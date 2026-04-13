@@ -1226,7 +1226,7 @@ export const publications = {
     name: string; tagline: string | null; about: string | null;
     logo_blossom_url: string | null; cover_blossom_url: string | null;
     subscription_price_pence: number; annual_discount_pct: number;
-    default_article_price_pence: number;
+    default_article_price_pence: number; homepage_layout: string;
   }>) =>
     request<{ ok: boolean }>(`/publications/${id}`, {
       method: 'PATCH',
@@ -1274,6 +1274,12 @@ export const publications = {
     request<{ ok: boolean }>(`/publications/${publicationId}/transfer-ownership`, {
       method: 'POST',
       body: JSON.stringify({ newOwnerId }),
+    }),
+
+  leave: (publicationId: string) =>
+    request<{ ok: boolean }>(`/publications/${publicationId}/leave`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     }),
 
   // CMS

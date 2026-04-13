@@ -47,6 +47,7 @@ const UpdatePublicationSchema = z.object({
   subscription_price_pence: z.number().int().min(0).optional(),
   annual_discount_pct: z.number().int().min(0).max(100).optional(),
   default_article_price_pence: z.number().int().min(0).optional(),
+  homepage_layout: z.enum(['blog', 'magazine', 'minimal']).optional(),
 })
 
 const InviteMemberSchema = z.object({
@@ -158,7 +159,7 @@ export async function publicationRoutes(app: FastifyInstance) {
     const { rows } = await pool.query(
       `SELECT id, slug, name, tagline, about, logo_blossom_url, cover_blossom_url,
               nostr_pubkey, subscription_price_pence, annual_discount_pct,
-              default_article_price_pence, theme_config, status, founded_at
+              default_article_price_pence, homepage_layout, theme_config, status, founded_at
        FROM publications
        WHERE slug = $1 AND status = 'active'`,
       [slug]
@@ -547,6 +548,51 @@ export async function publicationRoutes(app: FastifyInstance) {
   )
 
   // ---------------------------------------------------------------------------
+  // POST /publications/:id/leave — Self-remove (non-owner)
+  // ---------------------------------------------------------------------------
+
+  app.post<{ Params: { id: string } }>(
+    '/publications/:id/leave',
+    { preHandler: [requireAuth] },
+    async (req, reply) => {
+      const { id } = req.params
+      const accountId = req.session!.sub!
+
+      const { rows } = await pool.query(
+        `SELECT id, is_owner FROM publication_members
+         WHERE publication_id = $1 AND account_id = $2 AND removed_at IS NULL`,
+        [id, accountId]
+      )
+
+      if (rows.length === 0) {
+        return reply.status(404).send({ error: 'You are not a member of this publication' })
+      }
+      if (rows[0].is_owner) {
+        return reply.status(403).send({ error: 'The owner cannot leave — transfer ownership first' })
+      }
+
+      await pool.query(
+        `UPDATE publication_members SET removed_at = now() WHERE id = $1`,
+        [rows[0].id]
+      )
+
+      // Notify managers
+      await pool.query(
+        `INSERT INTO notifications (recipient_id, actor_id, type)
+         SELECT pm.account_id, $1, 'pub_member_left'
+         FROM publication_members pm
+         WHERE pm.publication_id = $2 AND pm.can_manage_members = TRUE
+           AND pm.removed_at IS NULL AND pm.account_id != $1
+         ON CONFLICT DO NOTHING`,
+        [accountId, id]
+      )
+
+      logger.info({ publicationId: id, accountId }, 'Member left publication')
+      return reply.send({ ok: true })
+    }
+  )
+
+  // ---------------------------------------------------------------------------
   // GET /publications/invites/:token — Public invite info
   // ---------------------------------------------------------------------------
 
@@ -851,7 +897,7 @@ export async function publicationRoutes(app: FastifyInstance) {
       const { rows } = await pool.query(
         `SELECT p.id, p.slug, p.name, p.tagline, p.about, p.logo_blossom_url, p.cover_blossom_url,
                 p.nostr_pubkey, p.subscription_price_pence, p.annual_discount_pct,
-                p.default_article_price_pence, p.theme_config, p.status, p.founded_at,
+                p.default_article_price_pence, p.homepage_layout, p.theme_config, p.status, p.founded_at,
                 (SELECT COUNT(*) FROM publication_follows WHERE publication_id = p.id) AS follower_count,
                 (SELECT COUNT(*) FROM publication_members WHERE publication_id = p.id AND removed_at IS NULL) AS member_count,
                 (SELECT COUNT(*) FROM articles WHERE publication_id = p.id AND published_at IS NOT NULL AND deleted_at IS NULL) AS article_count
