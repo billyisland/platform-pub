@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { publications as pubApi, type PublicationMember } from '../../lib/api'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { publications as pubApi, resolver, type PublicationMember, type ResolverMatch } from '../../lib/api'
 
 interface Props {
   publicationId: string
@@ -15,11 +15,14 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Invite form
-  const [inviteEmail, setInviteEmail] = useState('')
+  // Invite form (resolver-backed omnivorous input)
+  const [inviteQuery, setInviteQuery] = useState('')
   const [inviteRole, setInviteRole] = useState<string>('contributor')
   const [inviting, setInviting] = useState(false)
   const [inviteMsg, setInviteMsg] = useState<string | null>(null)
+  const [resolvedMatch, setResolvedMatch] = useState<ResolverMatch | null>(null)
+  const [resolving, setResolving] = useState(false)
+  const resolveDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Inline role editing
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -36,15 +39,55 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
       .finally(() => setLoading(false))
   }, [publicationId])
 
+  // Resolve the invite input as the user types
+  function handleInviteQueryChange(value: string) {
+    setInviteQuery(value)
+    setResolvedMatch(null)
+    setInviteMsg(null)
+
+    if (resolveDebounce.current) clearTimeout(resolveDebounce.current)
+    if (!value.trim()) return
+
+    resolveDebounce.current = setTimeout(async () => {
+      setResolving(true)
+      try {
+        const res = await resolver.resolve(value.trim(), 'invite')
+        // Find the best native account match
+        const accountMatch = res.matches.find(m => m.type === 'native_account')
+        setResolvedMatch(accountMatch ?? null)
+        if (!accountMatch && res.matches.length === 0 && !res.error) {
+          setInviteMsg('No platform account found for this identifier')
+        } else if (res.error) {
+          setInviteMsg(res.error)
+        }
+      } catch {
+        setInviteMsg('Resolution failed')
+      } finally {
+        setResolving(false)
+      }
+    }, 300)
+  }
+
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
-    if (!inviteEmail.trim()) return
+    if (!inviteQuery.trim()) return
     setInviting(true)
     setInviteMsg(null)
+
     try {
-      const result = await pubApi.invite(publicationId, { email: inviteEmail, role: inviteRole })
-      setInviteMsg(`Invite sent. Token: ${result.token}`)
-      setInviteEmail('')
+      // If we have a resolved account, use accountId; otherwise try as email
+      const inviteData: { email?: string; accountId?: string; role?: string } = { role: inviteRole }
+      if (resolvedMatch?.account) {
+        inviteData.accountId = resolvedMatch.account.id
+      } else {
+        // Fall back to treating input as email
+        inviteData.email = inviteQuery.trim()
+      }
+
+      const result = await pubApi.invite(publicationId, inviteData)
+      setInviteMsg(`Invite sent${resolvedMatch?.account ? ` to ${resolvedMatch.account.displayName}` : ''}. Token: ${result.token}`)
+      setInviteQuery('')
+      setResolvedMatch(null)
     } catch {
       setInviteMsg('Failed to send invite.')
     } finally {
@@ -195,14 +238,26 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
           <p className="label-ui text-grey-400 mb-4">Invite a member</p>
           <form onSubmit={handleInvite} className="flex items-end gap-3 flex-wrap">
             <div>
-              <label className="text-ui-xs text-grey-400 block mb-1">Email</label>
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
-                className="bg-grey-100 px-3 py-1.5 text-sm text-black w-60"
-                placeholder="writer@example.com"
-              />
+              <label className="label-ui text-grey-400 block mb-1">Email, username, or npub</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={inviteQuery}
+                  onChange={e => handleInviteQueryChange(e.target.value)}
+                  className="bg-grey-100 px-3 py-1.5 text-sm text-black w-60"
+                  placeholder="writer@example.com or @username"
+                />
+                {resolving && (
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <div className="w-3 h-3 border-2 border-grey-300 border-t-black rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
+              {resolvedMatch?.account && (
+                <p className="text-mono-xs text-black mt-1">
+                  Resolved: {resolvedMatch.account.displayName} (@{resolvedMatch.account.username})
+                </p>
+              )}
             </div>
             <div>
               <label className="text-ui-xs text-grey-400 block mb-1">Role</label>

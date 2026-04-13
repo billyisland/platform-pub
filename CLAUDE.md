@@ -18,6 +18,7 @@ A publishing and social platform for writers and readers, built on the Nostr pro
 | Key service | `key-service/` | 3002 | Fastify 4 |
 | Blossom media | external | 3003 | Blossom |
 | Key custody | `key-custody/` | 3004 | Fastify 4 |
+| Feed ingest | `feed-ingest/` | — | Graphile Worker |
 | Nostr relay | `relay/` | 4848 | strfry |
 | PostgreSQL | — | 5432 | Postgres 16 |
 
@@ -98,6 +99,23 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Feed ranking spec in `planning-archive/FEED-ALGORITHM.md` (Phase 1 implemented)
 - Full-text search uses PostgreSQL trigrams (`pg_trgm`), see `gateway/src/routes/search.ts`
 
+### External feeds (Universal Feed Phase 1)
+- External content (RSS) is ingested by `feed-ingest/` (Graphile Worker service, no HTTP port)
+- `external_sources` (shared canonical feeds), `external_subscriptions` (per-user), `external_items` (normalised content) — see migration 052
+- Feed query uses a three-stream merge: articles + notes + external items in `gateway/src/routes/feed.ts`
+- External items appear in the following feed only (excluded from explore until scoring worker ships)
+- Daily cap per source enforced at query time via windowed `ROW_NUMBER()` over a rolling 24h window
+- Universal resolver (`gateway/src/lib/resolver.ts`) provides identity resolution for subscribe, invite, and other input fields — see `POST /api/v1/resolve`
+- Subscription CRUD: `gateway/src/routes/feeds.ts` — subscribe, list, remove, mute, refresh
+- `ExternalCard` component renders external items with provenance badge (`VIA RSS`), sanitised HTML, media
+- `/subscriptions` page manages external feed subscriptions
+- SSRF-hardened HTTP client in `shared/src/lib/http-client.ts` — used by both feed-ingest and gateway
+- Full spec: `UNIVERSAL-FEED-ADR.md` (Phases 2–5 cover feed_items table, Nostr, Bluesky, Mastodon, outbound)
+
+## Omnivorous input (identity resolution)
+
+Wherever all.haus asks a user to identify a person, feed, or resource, the receiving field should be omnivorous: accept a URL, a handle, an email, an npub, a DID, a username — whatever the user has — and resolve it. Do not build narrow single-format inputs (email-only, username-only) for identity fields. Use the universal resolver (`POST /api/resolve`, specced in `UNIVERSAL-FEED-ADR.md` §V.5) as the shared resolution backend. The resolver classifies input by pattern matching and dispatches to protocol-specific resolution chains. Context parameter (`subscribe`, `invite`, `dm`, `general`) controls priority and filtering.
+
 ## TypeScript setup
 
 - Backend services extend `tsconfig.base.json` (ES2022, NodeNext module resolution, strict)
@@ -149,6 +167,7 @@ Use `.slab-rule-4` for major section dividers. Do not use `h-[4px] bg-black` inl
 ## Key docs
 
 - `feature-debt.md` — consolidated feature debt, outstanding work, and attack order
+- `UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)
 - `DEPLOYMENT.md` — full production deployment guide
 - `schema.sql` — full PostgreSQL schema (source of truth for DB structure)
 - `planning-archive/` — completed specs (FEATURES.md, DESIGN-BRIEF.md, FEED-ALGORITHM.md, RESILIENCE.md, etc.)

@@ -59,4 +59,32 @@ export interface VaultEvent {
   algorithm: string
 }
 
-export type FeedItem = (ArticleEvent & { type: 'article' }) | NoteEvent
+export interface ExternalFeedItem {
+  type: 'external'
+  id: string
+  sourceProtocol: string
+  sourceItemUri: string
+  authorName: string | null
+  authorHandle: string | null
+  authorAvatarUrl: string | null
+  authorUri: string | null
+  contentText: string | null
+  contentHtml: string | null
+  title: string | null
+  summary: string | null
+  media: Array<{
+    type: 'image' | 'video' | 'audio' | 'link'
+    url: string
+    thumbnail?: string
+    alt?: string
+    width?: number
+    height?: number
+    title?: string
+    description?: string
+  }>
+  publishedAt: number
+  sourceName: string | null
+  sourceAvatar: string | null
+}
+
+export type FeedItem = (ArticleEvent & { type: 'article' }) | NoteEvent | ExternalFeedItem

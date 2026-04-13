@@ -80,6 +80,27 @@ function noteToItem(row: any) {
   }
 }
 
+function externalToItem(row: any) {
+  return {
+    type: 'external' as const,
+    id: row.id,
+    sourceProtocol: row.protocol,
+    sourceItemUri: row.source_item_uri,
+    authorName: row.author_name,
+    authorHandle: row.author_handle,
+    authorAvatarUrl: row.author_avatar_url,
+    authorUri: row.author_uri,
+    contentText: row.content_text,
+    contentHtml: row.content_html,
+    title: row.title,
+    summary: row.summary,
+    media: row.media,
+    publishedAt: Number(row.published_at),
+    sourceName: row.source_display_name,
+    sourceAvatar: row.source_avatar_url,
+  }
+}
+
 // Block + mute exclusion subqueries (parameterised on reader ID)
 const BLOCK_FILTER = (col: string, paramIdx: number) =>
   `${col} NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = $${paramIdx})`
@@ -119,9 +140,10 @@ export async function feedRoutes(app: FastifyInstance) {
 async function followingFeed(readerId: string, cursor: number | undefined, limit: number) {
   const cursorClause = cursor ? `AND EXTRACT(EPOCH FROM a.published_at)::bigint < $3` : ''
   const noteCursorClause = cursor ? `AND EXTRACT(EPOCH FROM n.published_at)::bigint < $3` : ''
+  const extCursorClause = cursor ? `AND EXTRACT(EPOCH FROM ei.published_at)::bigint < $3` : ''
   const params: any[] = cursor ? [readerId, limit, cursor] : [readerId, limit]
 
-  const [articlesRes, notesRes] = await Promise.all([
+  const [articlesRes, notesRes, externalRes] = await Promise.all([
     pool.query(`
       SELECT ${ARTICLE_COLS}
       FROM articles a
@@ -151,11 +173,43 @@ async function followingFeed(readerId: string, cursor: number | undefined, limit
       ORDER BY n.published_at DESC
       LIMIT $2
     `, params),
+    // Stream 3: external items from subscribed sources (with daily cap)
+    pool.query(`
+      WITH capped AS (
+        SELECT ei.id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY ei.source_id
+                 ORDER BY ei.published_at DESC
+               ) AS rn,
+               COALESCE(es.daily_cap, 100) AS cap
+        FROM external_items ei
+        JOIN external_subscriptions es
+          ON es.source_id = ei.source_id
+         AND es.subscriber_id = $1
+         AND es.is_muted = FALSE
+        WHERE ei.deleted_at IS NULL
+          AND ei.published_at >= now() - INTERVAL '24 hours'
+      )
+      SELECT ei.id, ei.protocol, ei.source_item_uri,
+             ei.author_name, ei.author_handle, ei.author_avatar_url, ei.author_uri,
+             ei.content_text, ei.content_html, ei.title, ei.summary, ei.media,
+             EXTRACT(EPOCH FROM ei.published_at)::bigint AS published_at,
+             xs.display_name AS source_display_name,
+             xs.avatar_url AS source_avatar_url
+      FROM external_items ei
+      JOIN capped c ON c.id = ei.id AND c.rn <= c.cap
+      JOIN external_sources xs ON xs.id = ei.source_id
+      WHERE ei.deleted_at IS NULL
+        ${extCursorClause}
+      ORDER BY ei.published_at DESC
+      LIMIT $2
+    `, params),
   ])
 
   const items = [
     ...articlesRes.rows.map(articleToItem),
     ...notesRes.rows.map(noteToItem),
+    ...externalRes.rows.map(externalToItem),
   ]
   items.sort((a, b) => b.publishedAt - a.publishedAt)
   return items.slice(0, limit)

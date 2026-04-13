@@ -6,8 +6,9 @@ import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
 import { ArticleCard } from '../feed/ArticleCard'
 import { NoteCard } from '../feed/NoteCard'
+import { ExternalCard } from '../feed/ExternalCard'
 import { NoteComposer } from '../feed/NoteComposer'
-import type { FeedItem, NoteEvent } from '../../lib/ndk'
+import type { FeedItem, NoteEvent, ExternalFeedItem } from '../../lib/ndk'
 import type { QuoteTarget } from '../../lib/publishNote'
 import { feed as feedApi, votes as votesApi, bookmarks as bookmarksApi, type VoteTally, type MyVoteCount, type FeedReach } from '../../lib/api'
 
@@ -19,7 +20,7 @@ interface NewUserItem {
   joinedAt: number
 }
 
-type GlobalFeedItem = FeedItem | NewUserItem
+type GlobalFeedItem = FeedItem | NewUserItem | ExternalFeedItem
 
 function timeAgo(unixSeconds: number): string {
   const diff = Date.now() - unixSeconds * 1000
@@ -96,6 +97,25 @@ export function FeedView() {
               quotedTitle: item.quotedTitle,
               quotedAuthor: item.quotedAuthor,
             }
+          } else if (item.type === 'external') {
+            return {
+              type: 'external' as const,
+              id: item.id,
+              sourceProtocol: item.sourceProtocol,
+              sourceItemUri: item.sourceItemUri,
+              authorName: item.authorName,
+              authorHandle: item.authorHandle,
+              authorAvatarUrl: item.authorAvatarUrl,
+              authorUri: item.authorUri,
+              contentText: item.contentText,
+              contentHtml: item.contentHtml,
+              title: item.title,
+              summary: item.summary,
+              media: item.media ?? [],
+              publishedAt: item.publishedAt,
+              sourceName: item.sourceName,
+              sourceAvatar: item.sourceAvatar,
+            } as ExternalFeedItem
           } else {
             return item as NewUserItem
           }
@@ -103,7 +123,7 @@ export function FeedView() {
         setGlobalItems(items)
 
         const feedOnlyIds = items
-          .filter((i): i is FeedItem => i.type !== 'new_user')
+          .filter((i): i is FeedItem | ExternalFeedItem => i.type !== 'new_user')
           .map(i => i.id)
         if (feedOnlyIds.length > 0) {
           const [talliesRes, myVotesRes, bmRes] = await Promise.all([
@@ -179,6 +199,8 @@ export function FeedView() {
                 return <NewUserCard key={`new-user-${item.username}-${item.joinedAt}`} item={item} />
               } else if (item.type === 'article') {
                 return <ArticleCard key={item.id} article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} isBookmarked={bookmarkedIds.has(item.id)} />
+              } else if (item.type === 'external') {
+                return <ExternalCard key={item.id} item={item as ExternalFeedItem} />
               } else {
                 return <NoteCard key={item.id} note={item} onDeleted={handleNoteDeleted} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
               }

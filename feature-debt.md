@@ -3,7 +3,7 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-13 (v5.34.0 session). Completed: Page restructure (/ledger, /settings, /library, /network), dashboard consolidation (7→4 tabs, proposals hub), article scheduling, editor layout cleanup.
+Last worked: 2026-04-13 (v5.35.0 session). Completed: Universal Feed Phase 1 — RSS ingestion, universal resolver, external items in feed, subscription management, publication invite migration.
 
 ---
 
@@ -227,6 +227,14 @@ A generic system for user-defined, non-overlapping categories with behavioural r
 
 Multi-currency support. Option 2 (launch with GBP, display-only conversion) recommended. Entirely unbuilt.
 
+**Universal Feed Phases 2–5 — `UNIVERSAL-FEED-ADR.md`**
+
+Phase 1 complete (RSS ingestion, universal resolver, three-stream feed merge, ExternalCard, subscription UI). Remaining phases:
+- Phase 2: `feed_items` denormalised table + external Nostr ingestion + outbound Nostr replies
+- Phase 3: Bluesky ingestion (Jetstream listener, read-only)
+- Phase 4: Mastodon ingestion (outbox polling, read-only)
+- Phase 5: Outbound reply router (OAuth flows, linked accounts, cross-posting)
+
 **UI prototype — `provenance-ikb.jsx`**
 
 Design prototype for Traffology piece view with IKB op-art bars. Kept as reference; the production implementation is in `web/src/app/traffology/`.
@@ -359,6 +367,10 @@ Features any user would reasonably expect given the platform's existing capabili
 - **Dashboard consolidation** — 7 tabs → 4 (Articles, Subscribers, Proposals, Pricing). Drafts merged into Articles tab as unified content list. Commissions + Pledge drives + Offers consolidated into single Proposals tab with filter bar. Backwards-compatible tab aliases for deep-linked URLs.
 - **Article scheduling** — migration 051 (`scheduled_at` column on `article_drafts`). Gateway schedule/unschedule endpoints. Background scheduler worker (60s poll, advisory lock, `FOR UPDATE SKIP LOCKED`). Full pipeline: publication articles via `publishToPublication()`, personal articles via key-custody signing + vault encryption for paywalled. Dashboard schedule/reschedule/unschedule actions with datetime picker. Editor "Schedule" button alongside Publish.
 - **Editor layout cleanup** — tags and publication selector moved from above editor to below content area.
+
+### Completed (v5.35.0 session, 2026-04-13)
+
+- **Universal Feed Phase 1** — RSS ingestion + universal resolver + external items in feed. Migration 052 (external_sources, external_subscriptions, external_items). New `feed-ingest` Graphile Worker service (poll, RSS fetch, prune, metadata refresh). Universal resolver (`gateway/src/lib/resolver.ts`) with URL/RSS discovery, npub/nprofile, NIP-05, platform username, free-text search. Feed route extended to three-stream merge (articles + notes + external items with daily cap). ExternalCard component with provenance badges. SubscribeInput omnivorous input. `/subscriptions` management page. Publication invite migrated from email-only to resolver-backed. SSRF-hardened HTTP client in shared/. See `UNIVERSAL-FEED-ADR.md` for full spec (Phases 2–5 outstanding).
 
 ### Later: strategic work
 

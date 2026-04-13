@@ -1430,3 +1430,97 @@ export const publications = {
   myMemberships: () =>
     request<{ publications: PublicationMembership[] }>('/my/publications'),
 }
+
+// =============================================================================
+// Universal Resolver
+// =============================================================================
+
+export interface ResolverMatch {
+  type: 'native_account' | 'external_source' | 'rss_feed'
+  confidence: 'exact' | 'probable' | 'speculative'
+  account?: {
+    id: string
+    username: string
+    displayName: string
+    avatar?: string
+  }
+  externalSource?: {
+    protocol: string
+    sourceUri: string
+    displayName?: string
+    avatar?: string
+    description?: string
+    relayUrls?: string[]
+  }
+  rssFeed?: {
+    feedUrl: string
+    title?: string
+    description?: string
+  }
+}
+
+export interface ResolverResult {
+  inputType: string
+  matches: ResolverMatch[]
+  error?: string
+  requestId?: string
+  pendingResolutions?: string[]
+}
+
+export const resolver = {
+  resolve: (query: string, context?: 'subscribe' | 'invite' | 'dm' | 'general') =>
+    request<ResolverResult>('/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ query, context }),
+    }),
+
+  poll: (requestId: string) =>
+    request<ResolverResult>(`/resolve/${requestId}`),
+}
+
+// =============================================================================
+// External Feed Subscriptions
+// =============================================================================
+
+export interface ExternalSubscription {
+  id: string
+  isMuted: boolean
+  dailyCap: number | null
+  subscribedAt: string
+  source: {
+    id: string
+    protocol: string
+    sourceUri: string
+    displayName: string | null
+    avatarUrl: string | null
+    description: string | null
+    isActive: boolean
+    errorCount: number
+    lastError: string | null
+    lastFetchedAt: string | null
+    itemCount: number
+  }
+}
+
+export const feeds = {
+  subscribe: (data: { protocol: string; sourceUri: string; displayName?: string; description?: string }) =>
+    request<{ subscriptionId: string; sourceId: string }>('/feeds/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  list: () =>
+    request<{ subscriptions: ExternalSubscription[] }>('/feeds'),
+
+  remove: (id: string) =>
+    request<{ ok: boolean }>(`/feeds/${id}`, { method: 'DELETE' }),
+
+  update: (id: string, data: { isMuted?: boolean; dailyCap?: number | null }) =>
+    request<{ ok: boolean }>(`/feeds/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  refresh: (id: string) =>
+    request<{ ok: boolean }>(`/feeds/${id}/refresh`, { method: 'POST' }),
+}

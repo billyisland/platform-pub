@@ -1,0 +1,56 @@
+import type { FastifyInstance } from 'fastify'
+import { requireAuth } from '../middleware/auth.js'
+import { resolve, getAsyncResult } from '../lib/resolver.js'
+import logger from '../../shared/src/lib/logger.js'
+
+// =============================================================================
+// Universal Resolver endpoints
+//
+// POST /resolve          — Resolve any identifier to candidate identities
+// GET  /resolve/:id      — Poll for async remote resolution results
+// =============================================================================
+
+export async function resolveRoutes(app: FastifyInstance) {
+
+  // POST /resolve — resolve an arbitrary input string
+  app.post<{
+    Body: { query: string; context?: 'subscribe' | 'invite' | 'dm' | 'general' }
+  }>('/resolve', {
+    preHandler: requireAuth,
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
+    const { query, context } = req.body ?? {}
+
+    if (!query || typeof query !== 'string') {
+      return reply.status(400).send({ error: 'query is required' })
+    }
+
+    if (query.length > 500) {
+      return reply.status(400).send({ error: 'query too long (max 500 characters)' })
+    }
+
+    try {
+      const result = await resolve(query.trim(), context ?? 'general')
+      return reply.send(result)
+    } catch (err) {
+      logger.error({ err, query }, 'Resolver error')
+      return reply.status(500).send({ error: 'Resolution failed' })
+    }
+  })
+
+  // GET /resolve/:requestId — poll for async resolution results
+  app.get<{
+    Params: { requestId: string }
+  }>('/resolve/:requestId', {
+    preHandler: requireAuth,
+  }, async (req, reply) => {
+    const { requestId } = req.params
+
+    const result = getAsyncResult(requestId)
+    if (!result) {
+      return reply.status(404).send({ error: 'Resolution request not found or expired' })
+    }
+
+    return reply.send(result)
+  })
+}

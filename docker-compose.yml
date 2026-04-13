@@ -189,6 +189,20 @@ services:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
 
   # ---------------------------------------------------------------------------
+  # Feed Ingest — external content ingestion (RSS, Nostr, AT Protocol, ActivityPub)
+  # ---------------------------------------------------------------------------
+  feed-ingest:
+    build:
+      context: .
+      dockerfile: feed-ingest/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+
+  # ---------------------------------------------------------------------------
   # Web client (Next.js)
   # ---------------------------------------------------------------------------
   web:

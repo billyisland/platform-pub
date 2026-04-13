@@ -37,6 +37,8 @@ import { traffologyRoutes } from './routes/traffology.js'
 import { unsubscribeRoutes } from './routes/unsubscribe.js'
 import { bookmarkRoutes } from './routes/bookmarks.js'
 import { tagRoutes } from './routes/tags.js'
+import { resolveRoutes } from './routes/resolve.js'
+import { feedsRoutes } from './routes/feeds.js'
 import { refreshFeedScores } from './workers/feed-scorer.js'
 import { publishScheduledDrafts } from './workers/scheduler.js'
 import { pool } from '../shared/src/db/client.js'
@@ -182,6 +184,12 @@ async function start() {
 
   // Tags
   await app.register(tagRoutes, { prefix: '/api/v1' })
+
+  // Universal resolver (omnivorous identity input)
+  await app.register(resolveRoutes, { prefix: '/api/v1' })
+
+  // External feed subscriptions (RSS, Nostr, Bluesky, Mastodon)
+  await app.register(feedsRoutes, { prefix: '/api/v1' })
 
   // ---------------------------------------------------------------------------
   // Service proxies
