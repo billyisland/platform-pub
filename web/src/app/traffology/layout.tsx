@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { PageShell } from '../../components/ui/PageShell'
 
 export default function TraffologyLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -12,7 +13,7 @@ export default function TraffologyLayout({ children }: { children: React.ReactNo
   ]
 
   return (
-    <div className="mx-auto max-w-feed px-4 sm:px-6 py-10">
+    <PageShell width="content">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-1">
@@ -53,6 +54,6 @@ export default function TraffologyLayout({ children }: { children: React.ReactNo
       </div>
 
       {children}
-    </div>
+    </PageShell>
   )
 }

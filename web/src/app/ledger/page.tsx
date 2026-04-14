@@ -8,6 +8,7 @@ import { BalanceHeader } from '../../components/account/BalanceHeader'
 import { AccountLedger } from '../../components/account/AccountLedger'
 import { SubscriptionsSection } from '../../components/account/SubscriptionsSection'
 import { PledgesSection } from '../../components/account/PledgesSection'
+import { PageShell } from '../../components/ui/PageShell'
 
 export default function LedgerPage() {
   const { user, loading } = useAuth()
@@ -35,10 +36,10 @@ export default function LedgerPage() {
 
   if (loading || !user) {
     return (
-      <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
+      <PageShell width="content">
         <div className="h-32 animate-pulse bg-white mb-8" />
         <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
-      </div>
+      </PageShell>
     )
   }
 
@@ -47,9 +48,7 @@ export default function LedgerPage() {
   const netBalance = earningsPence - tabBalance
 
   return (
-    <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
-      <h1 className="font-sans text-2xl font-medium text-black mb-8 tracking-tight">Ledger</h1>
-
+    <PageShell width="content" title="Ledger">
       {dataLoading ? (
         <div className="h-32 animate-pulse bg-white mb-8" />
       ) : (
@@ -64,6 +63,6 @@ export default function LedgerPage() {
 
       <SubscriptionsSection />
       <PledgesSection />
-    </div>
+    </PageShell>
   )
 }

@@ -8,6 +8,7 @@ import { bookmarks as bookmarksApi, type BookmarkedArticle } from '../../lib/api
 import { BookmarkButton } from '../../components/ui/BookmarkButton'
 import { ReadingHistory } from '../../components/account/ReadingHistory'
 import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
+import { PageShell } from '../../components/ui/PageShell'
 
 type LibraryTab = 'bookmarks' | 'history'
 
@@ -29,21 +30,17 @@ export default function LibraryPage() {
 
   if (authLoading || !user) {
     return (
-      <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">
+      <PageShell width="feed">
         <div className="h-8 w-40 animate-pulse bg-white mb-10" />
         <div className="space-y-3">
           {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse bg-white" />)}
         </div>
-      </div>
+      </PageShell>
     )
   }
 
   return (
-    <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">
-      <h1 className="font-sans text-2xl font-medium tracking-tight text-black mb-8">
-        Library
-      </h1>
-
+    <PageShell width="feed" title="Library">
       <div className="flex gap-2 mb-8">
         {(['bookmarks', 'history'] as LibraryTab[]).map(t => (
           <button
@@ -58,7 +55,7 @@ export default function LibraryPage() {
 
       {tab === 'bookmarks' && <BookmarksTab />}
       {tab === 'history' && <ReadingHistory />}
-    </div>
+    </PageShell>
   )
 }
 

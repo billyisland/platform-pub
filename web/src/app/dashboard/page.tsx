@@ -18,6 +18,7 @@ import { PayrollTab } from '../../components/dashboard/PayrollTab'
 import { PublicationEarningsTab } from '../../components/dashboard/PublicationEarningsTab'
 import { SubscribersTab } from '../../components/dashboard/SubscribersTab'
 import { AnalyticsTab } from '../../components/dashboard/AnalyticsTab'
+import { PageShell } from '../../components/ui/PageShell'
 
 type DashboardTab = 'articles' | 'subscribers' | 'proposals' | 'pricing' | 'analytics'
 
@@ -135,7 +136,7 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
+    <PageShell width="content">
       {/* Context switcher */}
       <div className="flex items-center gap-2 mb-6 text-ui-xs flex-wrap">
         {pubMemberships.length > 0 && (
@@ -286,7 +287,7 @@ export default function DashboardPage() {
           {activeTab === 'analytics' && <AnalyticsTab />}
         </>
       )}
-    </div>
+    </PageShell>
   )
 }
 
@@ -710,5 +711,5 @@ function StripeConnectSetup() {
 // =============================================================================
 
 function DashboardSkeleton() {
-  return <div className="mx-auto max-w-content px-4 sm:px-6 py-10"><div className="flex gap-2 mb-10">{[1,2,3,4].map(i => <div key={i} className="h-9 w-24 animate-pulse bg-white"/>)}</div><div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{[1,2,3].map(i => <div key={i} className="bg-white p-6"><div className="h-3 w-20 animate-pulse bg-grey-100 mb-3"/><div className="h-7 w-28 animate-pulse bg-grey-100"/></div>)}</div></div>
+  return <PageShell width="content"><div className="flex gap-2 mb-10">{[1,2,3,4].map(i => <div key={i} className="h-9 w-24 animate-pulse bg-white"/>)}</div><div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{[1,2,3].map(i => <div key={i} className="bg-white p-6"><div className="h-3 w-20 animate-pulse bg-grey-100 mb-3"/><div className="h-7 w-28 animate-pulse bg-grey-100"/></div>)}</div></PageShell>
 }

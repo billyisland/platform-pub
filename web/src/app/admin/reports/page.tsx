@@ -5,6 +5,7 @@ import { useAuth } from '../../../stores/auth'
 import { useRouter } from 'next/navigation'
 import { admin as adminApi, type Report } from '../../../lib/api'
 import { ReportCard } from '../../../components/admin/ReportCard'
+import { PageShell } from '../../../components/ui/PageShell'
 
 type ReportFilter = 'pending' | 'resolved' | 'all'
 
@@ -36,18 +37,16 @@ export default function AdminReportsPage() {
 
   if (loading || !user?.isAdmin) {
     return (
-      <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
+      <PageShell width="feed">
         <div className="h-32 animate-pulse bg-white" />
-      </div>
+      </PageShell>
     )
   }
 
   return (
-    <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
-      <h1 className="font-sans text-2xl font-medium text-black mb-8 tracking-tight">Reports</h1>
-
+    <PageShell width="feed" title="Reports">
       {/* Filter tabs */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-8">
         {(['pending', 'resolved', 'all'] as ReportFilter[]).map(f => (
           <button
             key={f}
@@ -72,6 +71,6 @@ export default function AdminReportsPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

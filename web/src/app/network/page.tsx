@@ -8,6 +8,7 @@ import { FeedDial } from '../../components/social/FeedDial'
 import { DmFeeSettings } from '../../components/social/DmFeeSettings'
 import { BlockList } from '../../components/social/BlockList'
 import { MuteList } from '../../components/social/MuteList'
+import { PageShell } from '../../components/ui/PageShell'
 
 interface Writer {
   id: string
@@ -88,9 +89,7 @@ export default function NetworkPage() {
   const tabs: NetworkTab[] = ['following', 'followers', 'blocked', 'muted']
 
   return (
-    <div className="mx-auto max-w-feed pt-16 lg:pt-0 px-4 sm:px-6 py-8">
-      <h1 className="font-sans text-2xl font-medium text-black tracking-tight mb-6">Network</h1>
-
+    <PageShell width="feed" title="Network">
       {/* Always-visible settings */}
       <div className="space-y-8 mb-8">
         <section className="bg-white px-6 py-5">
@@ -214,7 +213,7 @@ export default function NetworkPage() {
           <MuteList />
         </section>
       )}
-    </div>
+    </PageShell>
   )
 }
 
@@ -236,12 +235,12 @@ function ListSkeleton() {
 
 function PageSkeleton() {
   return (
-    <div className="mx-auto max-w-feed pt-16 lg:pt-0 px-4 sm:px-6 py-8">
-      <div className="h-7 w-36 animate-pulse bg-grey-100 mb-6 rounded" />
+    <PageShell width="feed">
+      <div className="h-7 w-36 animate-pulse bg-grey-100 mb-8 rounded" />
       <div className="flex gap-2 mb-8">
         {[1, 2, 3, 4].map(i => <div key={i} className="h-9 w-24 animate-pulse bg-white" />)}
       </div>
       <ListSkeleton />
-    </div>
+    </PageShell>
   )
 }

@@ -6,6 +6,7 @@ import { useAuth } from '../../stores/auth'
 import { auth } from '../../lib/api'
 import { uploadImage } from '../../lib/media'
 import { UsernameChange } from '../../components/profile/UsernameChange'
+import { PageShell } from '../../components/ui/PageShell'
 
 // =============================================================================
 // Profile Settings Page
@@ -44,9 +45,9 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-article px-4 sm:px-6 py-12">
+      <PageShell width="article">
         <div className="h-6 w-32 animate-pulse bg-white mb-8" />
-      </div>
+      </PageShell>
     )
   }
 
@@ -94,11 +95,7 @@ export default function ProfilePage() {
   const initial = (displayName || user.username || '?')[0].toUpperCase()
 
   return (
-    <div className="mx-auto max-w-article px-4 sm:px-6 py-12">
-      <h1 className="font-sans text-2xl font-medium text-black tracking-tight mb-8">
-        Profile
-      </h1>
-
+    <PageShell width="article" title="Profile">
       <form onSubmit={handleSave} className="space-y-8 max-w-md">
         {/* Avatar */}
         <div>
@@ -208,6 +205,6 @@ export default function ProfilePage() {
           )}
         </div>
       </form>
-    </div>
+    </PageShell>
   )
 }
