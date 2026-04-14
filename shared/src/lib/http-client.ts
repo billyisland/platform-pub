@@ -1,5 +1,6 @@
 import { URL } from 'node:url'
 import dns from 'node:dns/promises'
+import { Agent, fetch as undiciFetch } from 'undici'
 import logger from './logger.js'
 
 // =============================================================================
@@ -49,27 +50,82 @@ function isPrivateIp(ip: string): boolean {
   return false
 }
 
-async function validateHost(hostname: string): Promise<void> {
-  // Resolve hostname to IPs and check each one
+interface ResolvedHost {
+  address: string
+  family: 4 | 6
+}
+
+async function resolveAndValidateHost(hostname: string): Promise<ResolvedHost> {
+  // Short-circuit literal IPs so safeFetch('http://10.0.0.1') still gets
+  // caught — dns.resolve* only works on hostnames.
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    if (isPrivateIp(hostname)) {
+      throw new Error(`Hostname ${hostname} resolves to private IP ${hostname}`)
+    }
+    return { address: hostname, family: 4 }
+  }
+  if (hostname.includes(':') && hostname !== 'localhost') {
+    if (isPrivateIp(hostname)) {
+      throw new Error(`Hostname ${hostname} resolves to private IP ${hostname}`)
+    }
+    return { address: hostname, family: 6 }
+  }
+
   try {
     const addresses = await dns.resolve4(hostname).catch(() => [] as string[])
     const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[])
-    const allAddrs = [...addresses, ...addresses6]
+    const allAddrs = [
+      ...addresses.map(a => ({ address: a, family: 4 as const })),
+      ...addresses6.map(a => ({ address: a, family: 6 as const })),
+    ]
 
     if (allAddrs.length === 0) {
       throw new Error(`Could not resolve hostname: ${hostname}`)
     }
 
-    for (const addr of allAddrs) {
-      if (isPrivateIp(addr)) {
-        throw new Error(`Hostname ${hostname} resolves to private IP ${addr}`)
+    for (const { address } of allAddrs) {
+      if (isPrivateIp(address)) {
+        throw new Error(`Hostname ${hostname} resolves to private IP ${address}`)
       }
     }
+    // Return the first validated address — undici pins to this one via the
+    // custom lookup hook in buildPinnedAgent(), so the OS resolver never
+    // gets a second chance to return a hostile answer.
+    return allAddrs[0]
   } catch (err) {
     if (err instanceof Error && err.message.includes('private IP')) throw err
     if (err instanceof Error && err.message.includes('Could not resolve')) throw err
     throw new Error(`DNS resolution failed for ${hostname}: ${err}`)
   }
+}
+
+// Back-compat wrapper used by validateWebSocketUrl — callers outside safeFetch
+// just need the allow/reject decision, not the pinned address.
+async function validateHost(hostname: string): Promise<void> {
+  await resolveAndValidateHost(hostname)
+}
+
+// Build an undici Agent whose connect() is pinned to the already-validated
+// address. Closes the DNS-rebinding TOCTOU gap: the OS resolver will be
+// called again for the hostname once the HTTP client tries to open the
+// socket, and a hostile authoritative DNS server could return a different
+// (private) IP the second time. Undici's `connect.lookup` hook intercepts
+// that second lookup and forces the address we already cleared.
+function buildPinnedAgent(expectedHost: string, resolved: ResolvedHost): Agent {
+  return new Agent({
+    connect: {
+      lookup(hostname, _opts, cb) {
+        if (hostname !== expectedHost) {
+          // Should never happen — the agent is built for a specific hostname
+          // and only used for a single request — but guard anyway so we
+          // never resolve an attacker-supplied CNAME.
+          cb(new Error(`Unexpected host ${hostname} in pinned agent for ${expectedHost}`), '', 0)
+          return
+        }
+        cb(null, resolved.address, resolved.family)
+      },
+    },
+  })
 }
 
 export interface SafeFetchOptions {
@@ -105,14 +161,16 @@ export async function safeFetch(
       throw new Error(`Unsupported scheme: ${parsed.protocol}`)
     }
 
-    // Validate hostname against private IPs
-    await validateHost(parsed.hostname)
+    // Validate hostname AND pin the resolved IP so undici can't be tricked by
+    // a second DNS lookup into connecting to a different (private) address.
+    const resolved = await resolveAndValidateHost(parsed.hostname)
+    const agent = buildPinnedAgent(parsed.hostname, resolved)
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeout)
 
     try {
-      const response = await fetch(currentUrl, {
+      const response = await undiciFetch(currentUrl, {
         method: options.method ?? 'GET',
         headers: {
           'User-Agent': USER_AGENT,
@@ -122,6 +180,7 @@ export async function safeFetch(
         body: options.body,
         signal: controller.signal,
         redirect: 'manual',
+        dispatcher: agent,
       })
 
       // Handle redirects manually so we can re-validate each hop
@@ -142,7 +201,7 @@ export async function safeFetch(
       // Read body with size limit
       const reader = response.body?.getReader()
       if (!reader) {
-        return { ok: response.ok, status: response.status, headers: response.headers, text: '', url: currentUrl }
+        return { ok: response.ok, status: response.status, headers: response.headers as unknown as Headers, text: '', url: currentUrl }
       }
 
       const chunks: Uint8Array[] = []
@@ -162,7 +221,7 @@ export async function safeFetch(
       const decoder = new TextDecoder()
       const text = chunks.map(c => decoder.decode(c, { stream: true })).join('') + decoder.decode()
 
-      return { ok: response.ok, status: response.status, headers: response.headers, text, url: currentUrl }
+      return { ok: response.ok, status: response.status, headers: response.headers as unknown as Headers, text, url: currentUrl }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(`Request timed out after ${timeout}ms: ${currentUrl}`)
@@ -170,6 +229,8 @@ export async function safeFetch(
       throw err
     } finally {
       clearTimeout(timer)
+      // Release the per-request Agent — we build a fresh one per redirect hop.
+      agent.close().catch(() => { /* best-effort */ })
     }
   }
 }

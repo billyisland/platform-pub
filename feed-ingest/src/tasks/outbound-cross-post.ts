@@ -37,6 +37,8 @@ interface OutboundRow {
   status: string
   retry_count: number
   max_retries: number
+  // Poster username — used to build the all.haus permalink for truncated posts.
+  author_username: string | null
   // Linked account fields (NULL for nostr_external)
   la_external_id: string | null
   la_instance_url: string | null
@@ -74,6 +76,7 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
       op.id, op.account_id, op.linked_account_id, op.protocol,
       op.nostr_event_id, op.action_type, op.source_item_id, op.body_text,
       op.signed_event, op.status, op.retry_count, op.max_retries,
+      acc.username         AS author_username,
       la.external_id       AS la_external_id,
       la.instance_url      AS la_instance_url,
       la.credentials_enc   AS la_credentials_enc,
@@ -82,6 +85,7 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
       ei.interaction_data  AS ei_interaction_data,
       xs.relay_urls        AS ei_source_relay_urls
     FROM outbound_posts op
+    LEFT JOIN accounts acc       ON acc.id = op.account_id
     LEFT JOIN linked_accounts la ON la.id = op.linked_account_id
     LEFT JOIN external_items ei  ON ei.id = op.source_item_id
     LEFT JOIN external_sources xs ON xs.id = ei.source_id
@@ -151,10 +155,15 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
         quote = { uri: interaction.uri, cid: interaction.cid }
       }
 
+      const appUrl = process.env.APP_URL?.replace(/\/$/, '')
+      const allHausUrl = appUrl && row.author_username
+        ? `${appUrl}/${row.author_username}`
+        : undefined
       const result = await postBlueskyRecord({
         did,
         text: row.body_text ?? '',
         maxGraphemes: cfg.bluesky_max,
+        allHausUrl,
         reply,
         quote,
       })

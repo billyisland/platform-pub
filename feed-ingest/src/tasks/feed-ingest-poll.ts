@@ -33,13 +33,14 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
     SELECT id, protocol, source_uri, relay_urls
     FROM external_sources
     WHERE is_active = TRUE
+      AND (protocol != 'atproto' OR $1::boolean = FALSE)
       AND (
         last_fetched_at IS NULL
         OR last_fetched_at + (fetch_interval_seconds || ' seconds')::interval <= now()
       )
     ORDER BY last_fetched_at ASC NULLS FIRST
     LIMIT 100
-  `)
+  `, [jetstreamHealthy])
 
   if (sources.length === 0) return
 

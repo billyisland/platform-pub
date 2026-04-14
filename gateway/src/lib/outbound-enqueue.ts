@@ -1,4 +1,4 @@
-import { pool } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
 
 // =============================================================================
 // Outbound cross-post enqueue helper
@@ -49,31 +49,35 @@ export async function enqueueCrossPost(input: EnqueueCrossPostInput): Promise<vo
   if (la.length === 0) throw new Error('Linked account not found')
   if (!la[0].is_valid) throw new Error('Linked account is marked invalid')
 
-  const { rows: [op] } = await pool.query<{ id: string }>(`
-    INSERT INTO outbound_posts (
-      account_id, linked_account_id, protocol,
-      nostr_event_id, action_type, source_item_id, body_text,
-      status
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-    RETURNING id
-  `, [
-    input.accountId,
-    input.linkedAccountId,
-    la[0].protocol,
-    input.nostrEventId,
-    input.actionType,
-    input.sourceItemId,
-    input.bodyText,
-  ])
+  // Wrap the audit INSERT + add_job in a single transaction so a crash between
+  // them can't leave a 'pending' outbound_posts row with no matching worker job.
+  await withTransaction(async (client) => {
+    const { rows: [op] } = await client.query<{ id: string }>(`
+      INSERT INTO outbound_posts (
+        account_id, linked_account_id, protocol,
+        nostr_event_id, action_type, source_item_id, body_text,
+        status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+      RETURNING id
+    `, [
+      input.accountId,
+      input.linkedAccountId,
+      la[0].protocol,
+      input.nostrEventId,
+      input.actionType,
+      input.sourceItemId,
+      input.bodyText,
+    ])
 
-  await pool.query(`
-    SELECT graphile_worker.add_job(
-      'outbound_cross_post',
-      json_build_object('outboundPostId', $1::text),
-      job_key := 'outbound_cross_post_' || $1::text,
-      max_attempts := 1
-    )
-  `, [op.id])
+    await client.query(`
+      SELECT graphile_worker.add_job(
+        'outbound_cross_post',
+        json_build_object('outboundPostId', $1::text),
+        job_key := 'outbound_cross_post_' || $1::text,
+        max_attempts := 1
+      )
+    `, [op.id])
+  })
 }
 
 // =============================================================================
@@ -82,28 +86,30 @@ export async function enqueueCrossPost(input: EnqueueCrossPostInput): Promise<vo
 // =============================================================================
 
 export async function enqueueNostrOutbound(input: EnqueueNostrOutboundInput): Promise<void> {
-  const { rows: [op] } = await pool.query<{ id: string }>(`
-    INSERT INTO outbound_posts (
-      account_id, linked_account_id, protocol,
-      nostr_event_id, action_type, source_item_id, body_text,
-      signed_event, status
-    ) VALUES ($1, NULL, 'nostr_external', $2, $3, $4, $5, $6::jsonb, 'pending')
-    RETURNING id
-  `, [
-    input.accountId,
-    input.nostrEventId,
-    input.actionType,
-    input.sourceItemId,
-    input.bodyText,
-    JSON.stringify(input.signedEvent),
-  ])
+  await withTransaction(async (client) => {
+    const { rows: [op] } = await client.query<{ id: string }>(`
+      INSERT INTO outbound_posts (
+        account_id, linked_account_id, protocol,
+        nostr_event_id, action_type, source_item_id, body_text,
+        signed_event, status
+      ) VALUES ($1, NULL, 'nostr_external', $2, $3, $4, $5, $6::jsonb, 'pending')
+      RETURNING id
+    `, [
+      input.accountId,
+      input.nostrEventId,
+      input.actionType,
+      input.sourceItemId,
+      input.bodyText,
+      JSON.stringify(input.signedEvent),
+    ])
 
-  await pool.query(`
-    SELECT graphile_worker.add_job(
-      'outbound_cross_post',
-      json_build_object('outboundPostId', $1::text),
-      job_key := 'outbound_cross_post_' || $1::text,
-      max_attempts := 1
-    )
-  `, [op.id])
+    await client.query(`
+      SELECT graphile_worker.add_job(
+        'outbound_cross_post',
+        json_build_object('outboundPostId', $1::text),
+        job_key := 'outbound_cross_post_' || $1::text,
+        max_attempts := 1
+      )
+    `, [op.id])
+  })
 }

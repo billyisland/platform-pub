@@ -30,7 +30,7 @@ export async function resolveRoutes(app: FastifyInstance) {
     }
 
     try {
-      const result = await resolve(query.trim(), context ?? 'general')
+      const result = await resolve(query.trim(), context ?? 'general', req.session!.sub!)
       return reply.send(result)
     } catch (err) {
       logger.error({ err, query }, 'Resolver error')
@@ -46,8 +46,10 @@ export async function resolveRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const { requestId } = req.params
 
-    const result = getAsyncResult(requestId)
+    const result = await getAsyncResult(requestId, req.session!.sub!)
     if (!result) {
+      // Don't distinguish "not yours" from "expired/missing" — both leak timing
+      // signal that the requestId is real.
       return reply.status(404).send({ error: 'Resolution request not found or expired' })
     }
 

@@ -193,7 +193,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
 
       // Signed state cookie — ties the callback to this user + instance + protocol.
       const nonce = crypto.randomBytes(16).toString('hex')
-      reply.setCookie('oauth_state', JSON.stringify({
+      reply.setCookie('oauth_state_mastodon', JSON.stringify({
         protocol: 'activitypub',
         instance: instanceOrigin,
         nonce,
@@ -240,11 +240,11 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       }
 
       // Verify signed state cookie
-      const rawCookie = req.cookies.oauth_state
+      const rawCookie = req.cookies.oauth_state_mastodon
       if (!rawCookie) return redirectOk('error')
       const unsigned = reply.unsignCookie(rawCookie)
       if (!unsigned.valid || !unsigned.value) return redirectOk('error')
-      reply.clearCookie('oauth_state', { path: '/' })
+      reply.clearCookie('oauth_state_mastodon', { path: '/' })
 
       let statePayload: { protocol: string; instance: string; nonce: string }
       try {
@@ -342,7 +342,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       // (State also flows through NodeOAuthClient, but the callback needs to
       // know which all.haus account to attach the DID to.)
       const nonce = crypto.randomBytes(16).toString('hex')
-      reply.setCookie('oauth_state', JSON.stringify({
+      reply.setCookie('oauth_state_bluesky', JSON.stringify({
         protocol: 'atproto',
         userId,
         nonce,
@@ -378,16 +378,17 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
 
   app.get<{ Querystring: Record<string, string> }>(
     '/linked-accounts/bluesky/callback',
+    { preHandler: requireAuth },
     async (req, reply) => {
       const redirectOk = (flag: string) =>
         reply.redirect(`${APP_URL}/settings?linked=${encodeURIComponent(flag)}`)
 
       // Read + verify our cookie first — it carries the all.haus user id.
-      const rawCookie = req.cookies.oauth_state
+      const rawCookie = req.cookies.oauth_state_bluesky
       if (!rawCookie) return redirectOk('error')
       const unsigned = reply.unsignCookie(rawCookie)
       if (!unsigned.valid || !unsigned.value) return redirectOk('error')
-      reply.clearCookie('oauth_state', { path: '/' })
+      reply.clearCookie('oauth_state_bluesky', { path: '/' })
 
       let statePayload: { protocol: string; userId: string; nonce: string }
       try {

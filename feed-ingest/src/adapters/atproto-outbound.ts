@@ -27,6 +27,8 @@ export interface AtprotoPostInput {
   did: string
   text: string
   maxGraphemes: number
+  /** all.haus canonical link appended when the body has to be truncated. */
+  allHausUrl?: string
   reply?: {
     root: AtprotoReplyRef
     parent: AtprotoReplyRef
@@ -43,7 +45,7 @@ export async function postBlueskyRecord(input: AtprotoPostInput): Promise<Atprot
   const client = await getAtprotoClient()
   const session = await client.restore(input.did)
 
-  const text = truncateGraphemes(input.text, input.maxGraphemes)
+  const text = truncateWithLink(input.text, input.maxGraphemes, input.allHausUrl)
   const record: Record<string, unknown> = {
     $type: 'app.bsky.feed.post',
     text,
@@ -86,17 +88,39 @@ export async function postBlueskyRecord(input: AtprotoPostInput): Promise<Atprot
   return { externalPostUri: json.uri, cid: json.cid }
 }
 
-function truncateGraphemes(text: string, max: number): string {
-  if (!text) return ''
-  // @ts-expect-error Intl.Segmenter exists in Node ≥16 but TS lib may lag
+function countGraphemes(text: string): string[] | null {
+  // @ts-expect-error Intl.Segmenter runtime-available but TS lib may omit it
   const seg = typeof Intl !== 'undefined' && Intl.Segmenter
-    // @ts-expect-error Intl.Segmenter runtime-available but TS lib ES2022 omits it
+    // @ts-expect-error same
     ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
     : null
-  if (!seg) return text.length > max ? text.slice(0, max - 1) + '…' : text
-
+  if (!seg) return null
   const parts: string[] = []
   for (const s of seg.segment(text)) parts.push(s.segment)
+  return parts
+}
+
+// Truncate body to fit `max` graphemes; if truncation is needed and an
+// all.haus link was supplied, leave room for "\n\n<url>" at the tail so the
+// Bluesky reader can reach the full reply on all.haus.
+function truncateWithLink(text: string, max: number, allHausUrl?: string): string {
+  if (!text) return ''
+  const parts = countGraphemes(text)
+
+  if (!parts) {
+    // Fallback: no Intl.Segmenter — assume 1 code unit ≈ 1 grapheme.
+    if (text.length <= max) return text
+    if (!allHausUrl) return text.slice(0, max - 1) + '…'
+    const tail = `\n\n${allHausUrl}`
+    const budget = Math.max(0, max - tail.length - 1)
+    return text.slice(0, budget) + '…' + tail
+  }
+
   if (parts.length <= max) return text
-  return parts.slice(0, max - 1).join('') + '…'
+  if (!allHausUrl) return parts.slice(0, max - 1).join('') + '…'
+
+  const tail = `\n\n${allHausUrl}`
+  const tailParts = countGraphemes(tail) ?? [tail]
+  const budget = Math.max(0, max - tailParts.length - 1) // -1 for ellipsis
+  return parts.slice(0, budget).join('') + '…' + tail
 }

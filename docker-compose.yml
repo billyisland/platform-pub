@@ -203,6 +203,7 @@ services:
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
       LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX}
+      APP_URL: https://all.haus
 
   # ---------------------------------------------------------------------------
   # Web client (Next.js)

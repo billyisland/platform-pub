@@ -68,9 +68,13 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
       return
     }
 
-    // Insert items (capped at maxItems) — dual-write to external_items + feed_items
+    // Insert items (capped at maxItems) — dual-write to external_items + feed_items.
+    // Sort newest-first so first-poll truncation drops oldest history, not new content.
+    const sortedItems = [...result.items].sort(
+      (a, b) => b.publishedAt.getTime() - a.publishedAt.getTime()
+    )
     let inserted = 0
-    for (const item of result.items.slice(0, maxItems)) {
+    for (const item of sortedItems.slice(0, maxItems)) {
       const didInsert = await withTransaction(async (client) => {
         const { rowCount, rows } = await client.query<{ id: string }>(`
           INSERT INTO external_items (

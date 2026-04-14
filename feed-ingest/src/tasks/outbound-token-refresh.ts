@@ -61,13 +61,17 @@ export const outboundTokenRefresh: Task = async () => {
   // own TTL heuristics.
   // ---------------------------------------------------------------------------
 
-  const { rows: atpRows } = await pool.query<{ id: string; external_id: string }>(`
-    SELECT id, external_id
-    FROM linked_accounts
-    WHERE protocol = 'atproto'
-      AND is_valid = TRUE
-      AND (last_refreshed_at IS NULL OR last_refreshed_at < now() - INTERVAL '7 days')
-    ORDER BY last_refreshed_at ASC NULLS FIRST
+  // Only touch rows that actually have a stored session — rows whose session
+  // was deleted out-of-band would otherwise throw inside restore() on every
+  // tick and produce alarming-looking warn logs.
+  const { rows: atpRows } = await pool.query<{ id: string; external_id: string; has_session: boolean }>(`
+    SELECT la.id, la.external_id,
+           EXISTS (SELECT 1 FROM atproto_oauth_sessions s WHERE s.did = la.external_id) AS has_session
+    FROM linked_accounts la
+    WHERE la.protocol = 'atproto'
+      AND la.is_valid = TRUE
+      AND (la.last_refreshed_at IS NULL OR la.last_refreshed_at < now() - INTERVAL '7 days')
+    ORDER BY la.last_refreshed_at ASC NULLS FIRST
     LIMIT 50
   `)
 
@@ -75,6 +79,14 @@ export const outboundTokenRefresh: Task = async () => {
 
   const client = await getAtprotoClient()
   for (const row of atpRows) {
+    if (!row.has_session) {
+      logger.info({ id: row.id, did: row.external_id }, 'atproto session missing; marking invalid')
+      await pool.query(
+        `UPDATE linked_accounts SET is_valid = FALSE, updated_at = now() WHERE id = $1`,
+        [row.id]
+      )
+      continue
+    }
     try {
       await client.restore(row.external_id, 'auto')
       await pool.query(

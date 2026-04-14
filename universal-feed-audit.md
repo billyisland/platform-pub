@@ -4,7 +4,7 @@ Deep code audit of Phases 1–5B (migrations 052–059, feed-ingest service, gat
 
 Issues are grouped by severity. Each entry has a problem description, file/line reference, and a concrete fix.
 
-**Status (2026-04-14):** Priority triage complete — C1, C2, C3, C4, S2, S3, S5, S6, D1, D2 landed, plus partial S1 hardening (IP range list extended; DNS pinning still outstanding) and the RSS `last_error` minor. Remaining: S1 pinning, S4, K1–K6, D3–D6, other minors — tracked as Task #9.
+**Status (2026-04-14, pass 2):** All audit items resolved. Pass 1 closed C1–C4, S2, S3, S5, S6, D1, D2, and partial S1. Pass 2 closed S1 pinning (undici Agent with `connect.lookup` hook), S4 (initiator binding via new `resolver_async_results` table), K1–K6, D3 (DB-backed resolver results, migration 061 + 5-min prune cron), D4 (protocol-specific OAuth state cookies), D5 (requireAuth on Bluesky callback), D6 (key version byte with multi-key decryption), and the remaining minors (Nostr last_error truncation, resolver ILIKE escape, enqueueCrossPost transactional).
 
 ---
 
@@ -82,7 +82,7 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 
 ## Security
 
-### S1. DNS-rebinding TOCTOU in `safeFetch` — ⚠️ PARTIAL (IP ranges extended; DNS pinning outstanding)
+### S1. DNS-rebinding TOCTOU in `safeFetch` — ✅ FIXED (IP ranges extended + DNS pinned)
 
 **Problem:** `validateHost()` resolves a hostname to IPs and checks against private ranges, then `fetch()` performs its own independent DNS lookup. A hostile DNS server can return a public IP during validation and a private IP for the actual request. The IP-range check doesn't cover:
 - IPv4-mapped IPv6 (`::ffff:127.0.0.1`)
@@ -122,7 +122,7 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 
 ---
 
-### S4. `GET /resolve/:requestId` has no user binding
+### S4. `GET /resolve/:requestId` has no user binding — ✅ FIXED
 
 **Problem:** The Phase B poll endpoint looks up `asyncResults` by requestId alone. UUID guessing is impractical, but nothing prevents user A from polling user B's resolve request if the UUID leaks (logs, referrer header, etc.). A resolver result may include emails, handles, or profile data the initiator wouldn't want exposed.
 
@@ -163,7 +163,7 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 
 ## Correctness
 
-### K1. Kind 5 deletion matching breaks if relay list changes
+### K1. Kind 5 deletion matching breaks if relay list changes — ✅ FIXED
 
 **Problem:** Deletions are matched by recomputing the nevent URI from `{id, relays: source.relay_urls}`. But the original ingest stored a nevent using whatever `relay_urls` was at insert time. If `relay_urls` has since changed, the new nevent doesn't match the stored one, and the deletion is silently dropped.
 
@@ -180,7 +180,7 @@ WHERE source_id = $1 AND protocol = 'nostr_external'
 
 ---
 
-### K2. RSS items beyond `maxItems` lost forever on first poll
+### K2. RSS items beyond `maxItems` lost forever on first poll — ✅ FIXED
 
 **Problem:** `result.items.slice(0, maxItems)` truncates before any item is stored, then the etag/lastModified are saved. A feed returning 200 items on its first poll will have items 51–200 permanently skipped — they'll never appear even on subsequent polls, because etag-gating jumps straight past them.
 
@@ -192,7 +192,7 @@ WHERE source_id = $1 AND protocol = 'nostr_external'
 
 ---
 
-### K3. Bluesky truncation drops content without an all.haus link
+### K3. Bluesky truncation drops content without an all.haus link — ✅ FIXED
 
 **Problem:** The truncator appends `…` when a reply exceeds 300 graphemes. Migration 057's `platform_config` description says "replies longer than the limit are truncated with an all.haus link" — the all.haus link is missing, so the Bluesky audience sees a cropped preview with no way to reach the full reply on all.haus.
 
@@ -211,7 +211,7 @@ Pipe `ALL_HAUS_BASE` into the adapter via env or `platform_config`.
 
 ---
 
-### K4. `feed-ingest-poll` wastes slots on atproto sources when Jetstream is healthy
+### K4. `feed-ingest-poll` wastes slots on atproto sources when Jetstream is healthy — ✅ FIXED
 
 **Problem:** The poll task selects up to 100 "due" sources each tick, then resolves a `taskName` for each. When `platform_config.jetstream_healthy=true`, atproto sources resolve to `null` (no polling needed) and are discarded — but they still consumed a slot in the `LIMIT 100`. High-volume deployments see RSS/ActivityPub sources starved while atproto rows are repeatedly picked and dropped.
 
@@ -227,7 +227,7 @@ Read `jetstream_healthy` from `platform_config` once per poll tick and pass it a
 
 ---
 
-### K5. `AMBIGUOUS_AT` regex rejects valid emails with `+` addressing
+### K5. `AMBIGUOUS_AT` regex rejects valid emails with `+` addressing — ✅ FIXED
 
 **Problem:** The regex `^[\w.-]+@[\w.-]+\.[\w]+$` excludes `+`, so inputs like `alice+tag@site.com` fall through to `free_text` classification and never trigger the ambiguous-identifier chain. `+` addressing is common (Gmail, Fastmail, etc.).
 
@@ -243,7 +243,7 @@ While you're there, consider extending the TLD match beyond `[\w]+` to handle mu
 
 ---
 
-### K6. `outbound_token_refresh` logs noise for missing sessions
+### K6. `outbound_token_refresh` logs noise for missing sessions — ✅ FIXED
 
 **Problem:** The cron selects dormant atproto `linked_accounts` rows and calls `client.restore(did, 'auto')`. If `atproto_oauth_sessions` was deleted out-of-band (or never existed), `restore()` throws and the row is flipped to `is_valid=false`. End state is correct, but each missing session produces a `warn`-level log entry that looks alarming.
 
@@ -310,7 +310,7 @@ export function getAtprotoClient(): Promise<NodeOAuthClient> {
 
 ---
 
-### D3. `asyncResults` cache is per-replica
+### D3. `asyncResults` cache is per-replica — ✅ FIXED
 
 **Problem:** Same shape as D1: Phase B of the universal resolver stores results in a per-process `Map`, so a poll hitting a different replica returns a cache miss.
 
@@ -324,7 +324,7 @@ Recommend the DB-backed option if D1 lands, because the plumbing becomes trivial
 
 ---
 
-### D4. `oauth_state` cookie name collides between Mastodon and Bluesky flows
+### D4. `oauth_state` cookie name collides between Mastodon and Bluesky flows — ✅ FIXED
 
 **Problem:** Both flows write a cookie called `oauth_state`. If a user starts the Mastodon flow, leaves the tab, starts a Bluesky flow in another tab, then returns to the Mastodon tab and completes it, the Mastodon callback sees the Bluesky state and rejects.
 
@@ -343,7 +343,7 @@ Update both callback handlers to read the matching cookie.
 
 ---
 
-### D5. Bluesky callback has no `requireAuth` preHandler
+### D5. Bluesky callback has no `requireAuth` preHandler — ✅ FIXED
 
 **Problem:** Mastodon callback has `{ preHandler: requireAuth }`, Bluesky callback doesn't. Bluesky derives userId from the signed cookie, so it works — but a logged-out user with a still-valid signed cookie could complete the link, and the inconsistency makes auth audits harder.
 
@@ -355,7 +355,7 @@ Update both callback handlers to read the matching cookie.
 
 ---
 
-### D6. AES-256-GCM has no key rotation path
+### D6. AES-256-GCM has no key rotation path — ✅ FIXED
 
 **Problem:** Ciphertext is `base64url(iv || tag || ct)` — no key version byte. Rotating `LINKED_ACCOUNT_KEY_HEX` requires re-encrypting every `linked_accounts.credentials_enc` and `atproto_oauth_sessions.session_data_enc` row in a single deploy, with no way to run two keys concurrently during rollover.
 
@@ -376,15 +376,15 @@ Not urgent, but worth scheduling before the first real rotation event.
 
 ## Minor
 
-- **`external_sources.last_error` not truncated** (`feed-ingest/src/tasks/feed-ingest-rss.ts:172`, `feed-ingest/src/tasks/feed-ingest-nostr.ts:221`). A multi-MB stack trace from a weird upstream goes straight into `TEXT`. Slice to 1000 chars before the UPDATE.
+- ✅ FIXED **`external_sources.last_error` not truncated** (`feed-ingest/src/tasks/feed-ingest-rss.ts:172`, `feed-ingest/src/tasks/feed-ingest-nostr.ts:221`). A multi-MB stack trace from a weird upstream goes straight into `TEXT`. Slice to 1000 chars before the UPDATE.
 
 - **Sanitizer strips `target` attribute** (`feed-ingest/src/lib/sanitize.ts`). External links open in the same tab, breaking scroll position. Either allow `target` in `allowedAttributes.a` (with a forced `rel="noopener noreferrer nofollow"` transform) or inject `target="_blank"` at render time in `ExternalCard`.
 
 - **`ExternalCard` hides sanitised images** (`web/src/components/feed/ExternalCard.tsx:173`, `[&_img]:hidden`). Intentional per the scroll-feed design, but RSS articles with embedded media render as near-empty previews. Product decision: allow one lead image, or keep hidden?
 
-- **Resolver ILIKE special chars not escaped** (`gateway/src/lib/resolver.ts`). A query containing `%` or `_` is treated as a wildcard. Escape both before interpolating into ILIKE patterns.
+- ✅ FIXED **Resolver ILIKE special chars not escaped** (`gateway/src/lib/resolver.ts`). A query containing `%` or `_` is treated as a wildcard. Escape both before interpolating into ILIKE patterns.
 
-- **`enqueueCrossPost` is not a single transaction** (`gateway/src/lib/outbound-enqueue.ts:52-76`). INSERT into `outbound_posts` and the `graphile_worker.add_job` call are separate statements. If the process crashes between them, the `outbound_posts` row stays `pending` forever with no job to process it. Wrap both in `withTransaction`.
+- ✅ FIXED **`enqueueCrossPost` is not a single transaction** (`gateway/src/lib/outbound-enqueue.ts:52-76`). INSERT into `outbound_posts` and the `graphile_worker.add_job` call are separate statements. If the process crashes between them, the `outbound_posts` row stays `pending` forever with no job to process it. Wrap both in `withTransaction`.
 
 ---
 

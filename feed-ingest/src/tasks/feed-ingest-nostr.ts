@@ -188,21 +188,24 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
         .map(t => t[1])
 
       for (const deletedId of deletedIds) {
-        // Build the nevent URI to match against source_item_uri
-        const neventUri = nip19.neventEncode({ id: deletedId, relays: source.relay_urls! })
+        // Match on the raw event id stored in interaction_data — source_item_uri
+        // is a nevent that bakes in relay_urls at insert time, so a subsequent
+        // relay-list change would silently break URI-based matching.
         await pool.query(
           `UPDATE external_items SET deleted_at = now()
-           WHERE source_id = $1 AND protocol = 'nostr_external' AND source_item_uri = $2
+           WHERE source_id = $1 AND protocol = 'nostr_external'
+             AND interaction_data->>'id' = $2
              AND deleted_at IS NULL`,
-          [sourceId, neventUri]
+          [sourceId, deletedId]
         )
         await pool.query(
           `UPDATE feed_items SET deleted_at = now()
            WHERE external_item_id IN (
              SELECT id FROM external_items
-             WHERE source_id = $1 AND protocol = 'nostr_external' AND source_item_uri = $2
+             WHERE source_id = $1 AND protocol = 'nostr_external'
+               AND interaction_data->>'id' = $2
            ) AND deleted_at IS NULL`,
-          [sourceId, neventUri]
+          [sourceId, deletedId]
         )
       }
     }
@@ -238,7 +241,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
         fetch_interval_seconds = $5,
         updated_at = now()
       WHERE id = $1
-    `, [sourceId, newErrorCount, errorMessage, shouldDeactivate, Math.round(backoffInterval)])
+    `, [sourceId, newErrorCount, errorMessage.slice(0, 1000), shouldDeactivate, Math.round(backoffInterval)])
 
     if (shouldDeactivate) {
       logger.warn({ sourceId, errorCount: newErrorCount }, 'Nostr source deactivated after too many errors')

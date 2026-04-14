@@ -60,26 +60,40 @@ export interface ResolverResult {
   pendingResolutions?: string[]
 }
 
-// In-memory cache for async resolution results (Phase B)
-const asyncResults = new Map<string, { result: ResolverResult; expiresAt: number }>()
+// Phase B results are stored in `resolver_async_results` (migration 061) so
+// the initial resolve and the subsequent poll can land on different gateway
+// replicas. Each row is bound to the initiator so a leaked request_id can't
+// be used by another account to read someone else's lookup output.
 const ASYNC_TTL_MS = 60_000
 
-// Cleanup stale entries every 30 seconds
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of asyncResults) {
-    if (entry.expiresAt < now) asyncResults.delete(key)
-  }
-}, 30_000)
+export async function getAsyncResult(
+  requestId: string,
+  initiatorId: string
+): Promise<ResolverResult | null> {
+  // UUID type mismatches throw on older Postgres versions — guard explicitly.
+  if (!/^[0-9a-f-]{36}$/i.test(requestId)) return null
+  const { rows } = await pool.query<{ result: ResolverResult }>(
+    `SELECT result FROM resolver_async_results
+      WHERE request_id = $1 AND initiator_id = $2 AND expires_at > now()`,
+    [requestId, initiatorId]
+  )
+  if (rows.length === 0) return null
+  return rows[0].result
+}
 
-export function getAsyncResult(requestId: string): ResolverResult | null {
-  const entry = asyncResults.get(requestId)
-  if (!entry) return null
-  if (entry.expiresAt < Date.now()) {
-    asyncResults.delete(requestId)
-    return null
-  }
-  return entry.result
+async function storeAsyncResult(
+  requestId: string,
+  initiatorId: string,
+  result: ResolverResult
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO resolver_async_results (request_id, initiator_id, result, expires_at)
+     VALUES ($1, $2, $3::jsonb, now() + make_interval(secs => $4))
+     ON CONFLICT (request_id) DO UPDATE SET
+       result = EXCLUDED.result,
+       expires_at = EXCLUDED.expires_at`,
+    [requestId, initiatorId, JSON.stringify(result), ASYNC_TTL_MS / 1000]
+  )
 }
 
 // =============================================================================
@@ -92,8 +106,8 @@ const HEX_64 = /^[0-9a-f]{64}$/i
 // platform_username (single-label alphanumerics). This also matches arbitrary
 // domain-like strings; resolution via the AppView will reject non-handles.
 const BLUESKY_HANDLE = /^@?[\w-]+(\.[\w-]+)+$/
-const FEDIVERSE_HANDLE = /^@[\w.-]+@[\w.-]+\.[\w]+$/  // @user@instance.tld
-const AMBIGUOUS_AT = /^[\w.-]+@[\w.-]+\.[\w]+$/  // user@domain.tld (no @ prefix)
+const FEDIVERSE_HANDLE = /^@[\w.+-]+@[\w.-]+\.[\w.]+$/  // @user@instance.tld
+const AMBIGUOUS_AT = /^[\w.+-]+@[\w.-]+\.[\w.]+$/  // user@domain.tld (no @ prefix)
 const PLATFORM_USERNAME = /^[\w]+$/  // alphanumeric, no @, no .
 
 function classifyInput(query: string): InputType {
@@ -118,7 +132,8 @@ function classifyInput(query: string): InputType {
 
 export async function resolve(
   query: string,
-  context: ResolveContext = 'general'
+  context: ResolveContext = 'general',
+  initiatorId?: string
 ): Promise<ResolverResult> {
   const trimmed = query.trim()
   if (!trimmed) {
@@ -234,25 +249,29 @@ export async function resolve(
     }
   }
 
-  // If there are pending async resolutions, start them in background
-  const requestId = pendingResolutions.length > 0 ? randomUUID() : undefined
+  // Phase B lookups require DB persistence (see getAsyncResult). Callers that
+  // don't have an initiator can't start async work — skip the pending chain
+  // and return only the Phase A matches.
+  const requestId = pendingResolutions.length > 0 && initiatorId
+    ? randomUUID()
+    : undefined
 
   const result: ResolverResult = {
     inputType,
     matches,
     requestId,
-    pendingResolutions: pendingResolutions.length > 0 ? pendingResolutions : undefined,
+    pendingResolutions: requestId ? pendingResolutions : undefined,
   }
 
-  if (requestId) {
-    // Store initial result and kick off async resolutions
-    asyncResults.set(requestId, {
-      result: { ...result },
-      expiresAt: Date.now() + ASYNC_TTL_MS,
+  if (requestId && initiatorId) {
+    // Seed the initial partial result so a poll arriving before Phase B
+    // completes still gets a meaningful response.
+    await storeAsyncResult(requestId, initiatorId, { ...result }).catch(err => {
+      logger.warn({ err, requestId }, 'Failed to seed resolver_async_results row')
     })
 
     // Fire-and-forget async Phase B
-    resolveAsync(requestId, trimmed, inputType, matches, context).catch(err => {
+    resolveAsync(requestId, initiatorId, trimmed, inputType, matches, context).catch(err => {
       logger.warn({ err, requestId }, 'Async resolution failed')
     })
   }
@@ -266,6 +285,7 @@ export async function resolve(
 
 async function resolveAsync(
   requestId: string,
+  initiatorId: string,
   query: string,
   inputType: InputType,
   existingMatches: ResolverMatch[],
@@ -303,15 +323,12 @@ async function resolveAsync(
     if (atprotoMatch) matches.push(atprotoMatch)
   }
 
-  // Update async cache with complete results
-  const entry = asyncResults.get(requestId)
-  if (entry) {
-    entry.result = {
-      inputType,
-      matches,
-      pendingResolutions: [],  // all done
-    }
-  }
+  // Persist the fully-resolved result; overwrites the partial row seeded by resolve().
+  await storeAsyncResult(requestId, initiatorId, {
+    inputType,
+    matches,
+    pendingResolutions: [],
+  })
 }
 
 // =============================================================================
@@ -648,7 +665,9 @@ async function lookupByEmail(email: string): Promise<ResolverMatch | null> {
 
 async function searchPlatform(query: string): Promise<ResolverMatch[]> {
   const matches: ResolverMatch[] = []
-  const pattern = `%${query}%`
+  // Escape LIKE metacharacters so a `%` in user input isn't treated as wildcard.
+  const escaped = query.replace(/[%_\\]/g, '\\$&')
+  const pattern = `%${escaped}%`
 
   // Search writers
   const { rows: writers } = await pool.query<{
@@ -661,7 +680,7 @@ async function searchPlatform(query: string): Promise<ResolverMatch[]> {
        CASE WHEN username ILIKE $2 THEN 0 ELSE 1 END,
        display_name
      LIMIT 5`,
-    [pattern, query]
+    [pattern, escaped]
   )
 
   for (const row of writers) {
