@@ -1,4 +1,4 @@
-import { pool } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import logger from '../../shared/src/lib/logger.js'
@@ -143,61 +143,97 @@ export async function publishToPublication(
   // Publish to relay
   await publishToRelay(signed as any)
 
-  // Index in DB
+  // Index in DB + dual-write feed_items
   const slug = dTag
 
-  const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO articles (
-       writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
-       content_free, word_count, tier,
-       access_mode, price_pence, gate_position_pct,
-       publication_id, publication_article_status, show_on_writer_profile,
-       published_at
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, 'tier1',
-       $9, $10, $11, $12, 'published', $13, now()
-     )
-     ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
-       nostr_event_id = EXCLUDED.nostr_event_id,
-       title = EXCLUDED.title,
-       summary = EXCLUDED.summary,
-       content_free = EXCLUDED.content_free,
-       word_count = EXCLUDED.word_count,
-       access_mode = EXCLUDED.access_mode,
-       price_pence = EXCLUDED.price_pence,
-       gate_position_pct = EXCLUDED.gate_position_pct,
-       publication_article_status = 'published',
-       published_at = now()
-     RETURNING id`,
-    [
-      input.authorId,
-      signed.id,
-      dTag,
-      input.title,
-      slug,
-      input.summary || null,
-      input.content,
-      wordCount,
-      input.accessMode,
-      pricePence,
-      input.gatePositionPct || null,
-      input.publicationId,
-      input.showOnWriterProfile,
-    ]
-  )
+  const articleId = await withTransaction(async (client) => {
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO articles (
+         writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
+         content_free, word_count, tier,
+         access_mode, price_pence, gate_position_pct,
+         publication_id, publication_article_status, show_on_writer_profile,
+         published_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, 'tier1',
+         $9, $10, $11, $12, 'published', $13, now()
+       )
+       ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
+         nostr_event_id = EXCLUDED.nostr_event_id,
+         title = EXCLUDED.title,
+         summary = EXCLUDED.summary,
+         content_free = EXCLUDED.content_free,
+         word_count = EXCLUDED.word_count,
+         access_mode = EXCLUDED.access_mode,
+         price_pence = EXCLUDED.price_pence,
+         gate_position_pct = EXCLUDED.gate_position_pct,
+         publication_article_status = 'published',
+         published_at = now()
+       RETURNING id`,
+      [
+        input.authorId,
+        signed.id,
+        dTag,
+        input.title,
+        slug,
+        input.summary || null,
+        input.content,
+        wordCount,
+        input.accessMode,
+        pricePence,
+        input.gatePositionPct || null,
+        input.publicationId,
+        input.showOnWriterProfile,
+      ]
+    )
 
-  // Notify author if different from the publishing editor
-  // (the author submitted, an editor publishes)
+    const artId = rows[0].id
+
+    // Dual-write: upsert feed_items
+    const { rows: [author] } = await client.query<{ display_name: string | null; avatar_blossom_url: string | null; username: string | null }>(
+      `SELECT display_name, avatar_blossom_url, username FROM accounts WHERE id = $1`,
+      [input.authorId]
+    )
+    await client.query(`
+      INSERT INTO feed_items (
+        item_type, article_id, author_id,
+        author_name, author_avatar, author_username,
+        title, content_preview, nostr_event_id,
+        tier, published_at
+      ) VALUES (
+        'article', $1, $2,
+        $3, $4, $5,
+        $6, $7, $8,
+        'tier1', now()
+      )
+      ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
+        title = EXCLUDED.title,
+        content_preview = EXCLUDED.content_preview,
+        nostr_event_id = EXCLUDED.nostr_event_id,
+        author_name = EXCLUDED.author_name,
+        author_avatar = EXCLUDED.author_avatar
+    `, [
+      artId, input.authorId,
+      author?.display_name ?? author?.username ?? 'Unknown',
+      author?.avatar_blossom_url ?? null,
+      author?.username ?? null,
+      input.title,
+      input.content.slice(0, 200),
+      signed.id,
+    ])
+
+    return artId
+  })
 
   logger.info({
     publicationId: input.publicationId,
-    articleId: rows[0].id,
+    articleId,
     nostrEventId: signed.id,
     author: input.authorId,
   }, 'Publication article published')
 
   return {
-    articleId: rows[0].id,
+    articleId,
     status: 'published',
     nostrEventId: signed.id,
     dTag,
@@ -239,11 +275,12 @@ export async function approveAndPublishArticle(
   )
   const pub = pubs[0]
 
-  const { rows: authors } = await pool.query<{ nostr_pubkey: string }>(
-    'SELECT nostr_pubkey FROM accounts WHERE id = $1',
+  const { rows: authors } = await pool.query<{ nostr_pubkey: string; display_name: string | null; avatar_blossom_url: string | null; username: string | null }>(
+    'SELECT nostr_pubkey, display_name, avatar_blossom_url, username FROM accounts WHERE id = $1',
     [article.writer_id]
   )
-  const authorPubkey = authors[0].nostr_pubkey
+  const authorAccount = authors[0]
+  const authorPubkey = authorAccount.nostr_pubkey
 
   // Build and sign event
   const tags: string[][] = [
@@ -271,21 +308,53 @@ export async function approveAndPublishArticle(
 
   await publishToRelay(signed as any)
 
-  // Update DB
-  await pool.query(
-    `UPDATE articles
-     SET nostr_event_id = $1, publication_article_status = 'published', published_at = now()
-     WHERE id = $2`,
-    [signed.id, articleId]
-  )
+  // Update DB + dual-write feed_items
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE articles
+       SET nostr_event_id = $1, publication_article_status = 'published', published_at = now()
+       WHERE id = $2`,
+      [signed.id, articleId]
+    )
 
-  // Notify the author
-  await pool.query(
-    `INSERT INTO notifications (recipient_id, actor_id, type, article_id)
-     VALUES ($1, $2, 'pub_article_published', $3)
-     ON CONFLICT DO NOTHING`,
-    [article.writer_id, editorId, articleId]
-  )
+    // Dual-write: upsert feed_items
+    await client.query(`
+      INSERT INTO feed_items (
+        item_type, article_id, author_id,
+        author_name, author_avatar, author_username,
+        title, content_preview, nostr_event_id,
+        tier, published_at
+      ) VALUES (
+        'article', $1, $2,
+        $3, $4, $5,
+        $6, $7, $8,
+        'tier1', now()
+      )
+      ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
+        title = EXCLUDED.title,
+        content_preview = EXCLUDED.content_preview,
+        nostr_event_id = EXCLUDED.nostr_event_id,
+        author_name = EXCLUDED.author_name,
+        author_avatar = EXCLUDED.author_avatar,
+        published_at = EXCLUDED.published_at
+    `, [
+      articleId, article.writer_id,
+      authorAccount.display_name ?? authorAccount.username ?? 'Unknown',
+      authorAccount.avatar_blossom_url ?? null,
+      authorAccount.username ?? null,
+      article.title,
+      (article.content_free ?? '').slice(0, 200),
+      signed.id,
+    ])
+
+    // Notify the author
+    await client.query(
+      `INSERT INTO notifications (recipient_id, actor_id, type, article_id)
+       VALUES ($1, $2, 'pub_article_published', $3)
+       ON CONFLICT DO NOTHING`,
+      [article.writer_id, editorId, articleId]
+    )
+  })
 
   logger.info({ publicationId, articleId, nostrEventId: signed.id, editor: editorId }, 'Submitted article approved and published')
   return { nostrEventId: signed.id }

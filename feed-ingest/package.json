@@ -14,15 +14,18 @@
   "dependencies": {
     "dotenv": "^17.3.1",
     "graphile-worker": "^0.16.0",
+    "nostr-tools": "^2.3.0",
     "pg": "^8.20.0",
     "pino": "^8.19.0",
     "rss-parser": "^3.13.0",
-    "sanitize-html": "^2.13.0"
+    "sanitize-html": "^2.13.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/pg": "^8.11.0",
     "@types/sanitize-html": "^2.11.0",
+    "@types/ws": "^8.5.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
     "vitest": "^1.4.0"

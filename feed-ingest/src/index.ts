@@ -4,8 +4,11 @@ import { pool } from '../shared/src/db/client.js'
 import logger from '../shared/src/lib/logger.js'
 import { feedIngestPoll } from './tasks/feed-ingest-poll.js'
 import { feedIngestRss } from './tasks/feed-ingest-rss.js'
+import { feedIngestNostr } from './tasks/feed-ingest-nostr.js'
 import { externalItemsPrune } from './tasks/external-items-prune.js'
 import { sourceMetadataRefresh } from './tasks/source-metadata-refresh.js'
+import { feedItemsReconcile } from './tasks/feed-items-reconcile.js'
+import { feedItemsAuthorRefresh } from './tasks/feed-items-author-refresh.js'
 
 // =============================================================================
 // Feed Ingest Worker
@@ -42,13 +45,20 @@ async function start() {
         '0 2 * * * external_items_prune',
         // Refresh source metadata — daily at 03:00 UTC
         '0 3 * * * source_metadata_refresh',
+        // Refresh denormalised author metadata in feed_items — daily at 04:00 UTC
+        '0 4 * * * feed_items_author_refresh',
+        // Reconcile feed_items with source tables — daily at 05:00 UTC
+        '0 5 * * * feed_items_reconcile',
       ].join('\n')
     ),
     taskList: {
       feed_ingest_poll: feedIngestPoll,
       feed_ingest_rss: feedIngestRss,
+      feed_ingest_nostr: feedIngestNostr,
       external_items_prune: externalItemsPrune,
       source_metadata_refresh: sourceMetadataRefresh,
+      feed_items_reconcile: feedItemsReconcile,
+      feed_items_author_refresh: feedItemsAuthorRefresh,
     },
   })
 

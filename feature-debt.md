@@ -227,10 +227,9 @@ A generic system for user-defined, non-overlapping categories with behavioural r
 
 Multi-currency support. Option 2 (launch with GBP, display-only conversion) recommended. Entirely unbuilt.
 
-**Universal Feed Phases 2–5 — `UNIVERSAL-FEED-ADR.md`**
+**Universal Feed Phases 3–5 — `UNIVERSAL-FEED-ADR.md`**
 
-Phase 1 complete (RSS ingestion, universal resolver, three-stream feed merge, ExternalCard, subscription UI). Remaining phases:
-- Phase 2: `feed_items` denormalised table + external Nostr ingestion + outbound Nostr replies
+Phases 1–2 complete. Remaining phases:
 - Phase 3: Bluesky ingestion (Jetstream listener, read-only)
 - Phase 4: Mastodon ingestion (outbox polling, read-only)
 - Phase 5: Outbound reply router (OAuth flows, linked accounts, cross-posting)
@@ -371,6 +370,10 @@ Features any user would reasonably expect given the platform's existing capabili
 ### Completed (v5.35.0 session, 2026-04-13)
 
 - **Universal Feed Phase 1** — RSS ingestion + universal resolver + external items in feed. Migration 052 (external_sources, external_subscriptions, external_items). New `feed-ingest` Graphile Worker service (poll, RSS fetch, prune, metadata refresh). Universal resolver (`gateway/src/lib/resolver.ts`) with URL/RSS discovery, npub/nprofile, NIP-05, platform username, free-text search. Feed route extended to three-stream merge (articles + notes + external items with daily cap). ExternalCard component with provenance badges. SubscribeInput omnivorous input. `/subscriptions` management page. Publication invite migrated from email-only to resolver-backed. SSRF-hardened HTTP client in shared/. See `UNIVERSAL-FEED-ADR.md` for full spec (Phases 2–5 outstanding).
+
+### Completed (v5.36.0 session, 2026-04-14)
+
+- **Universal Feed Phase 2** — `feed_items` unified timeline table + external Nostr ingestion. Migrations 053–054 (feed_items table + backfill from articles/notes/external_items). Feed route rewritten from three-stream merge to single-table query with LEFT JOINs. Transactional dual-write paths in all article/note/external item creation flows. Feed scorer updated to write `feed_items.score` directly. Article soft-delete and unpublish set `feed_items.deleted_at`. New `feed_ingest_nostr` task for external Nostr relay ingestion (kinds 1, 30023, kind 5 deletions). Poll task routes `nostr_external` sources with relay-hostname rate limiting. `publishToExternalRelays()` helper for outbound Nostr replies. Daily `feed_items_reconcile` (05:00 UTC) and `feed_items_author_refresh` (04:00 UTC) cron jobs. POST /notes accepts optional `signedEvent` for outbound relay publishing. See `UNIVERSAL-FEED-ADR.md` (Phases 3–5 outstanding).
 
 ### Later: strategic work
 

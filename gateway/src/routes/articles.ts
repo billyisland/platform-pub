@@ -76,44 +76,80 @@ export async function articleRoutes(app: FastifyInstance) {
     try {
       const isGated = data.accessMode === 'paywalled'
 
-      const result = await pool.query<{ id: string; is_new: boolean }>(
-        `INSERT INTO articles (
-           writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
-           content_free, word_count, tier,
-           access_mode, price_pence, gate_position_pct, vault_event_id,
-           published_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tier1', $9, $10, $11, $12, now())
-         ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
-           nostr_event_id = EXCLUDED.nostr_event_id,
-           title = EXCLUDED.title,
-           slug = EXCLUDED.slug,
-           summary = EXCLUDED.summary,
-           content_free = EXCLUDED.content_free,
-           word_count = EXCLUDED.word_count,
-           access_mode = EXCLUDED.access_mode,
-           price_pence = EXCLUDED.price_pence,
-           gate_position_pct = EXCLUDED.gate_position_pct,
-           vault_event_id = EXCLUDED.vault_event_id,
-           updated_at = now()
-         RETURNING id, (xmax = 0) AS is_new`,
-        [
-          writerId,
-          data.nostrEventId,
-          data.dTag,
-          data.title,
-          slug,
-          data.summary ?? null,
-          data.content,
-          wordCount,
-          data.accessMode,
-          isGated ? data.pricePence : null,
-          isGated ? data.gatePositionPct : null,
-          data.vaultEventId ?? null,
-        ]
-      )
+      const { articleId, isNew } = await withTransaction(async (client) => {
+        const result = await client.query<{ id: string; is_new: boolean }>(
+          `INSERT INTO articles (
+             writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
+             content_free, word_count, tier,
+             access_mode, price_pence, gate_position_pct, vault_event_id,
+             published_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tier1', $9, $10, $11, $12, now())
+           ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
+             nostr_event_id = EXCLUDED.nostr_event_id,
+             title = EXCLUDED.title,
+             slug = EXCLUDED.slug,
+             summary = EXCLUDED.summary,
+             content_free = EXCLUDED.content_free,
+             word_count = EXCLUDED.word_count,
+             access_mode = EXCLUDED.access_mode,
+             price_pence = EXCLUDED.price_pence,
+             gate_position_pct = EXCLUDED.gate_position_pct,
+             vault_event_id = EXCLUDED.vault_event_id,
+             updated_at = now()
+           RETURNING id, (xmax = 0) AS is_new`,
+          [
+            writerId,
+            data.nostrEventId,
+            data.dTag,
+            data.title,
+            slug,
+            data.summary ?? null,
+            data.content,
+            wordCount,
+            data.accessMode,
+            isGated ? data.pricePence : null,
+            isGated ? data.gatePositionPct : null,
+            data.vaultEventId ?? null,
+          ]
+        )
 
-      const articleId = result.rows[0].id
-      const isNew = result.rows[0].is_new
+        const artId = result.rows[0].id
+
+        // Dual-write: upsert feed_items row in same transaction
+        const { rows: [author] } = await client.query<{ display_name: string | null; avatar_blossom_url: string | null; username: string | null }>(
+          `SELECT display_name, avatar_blossom_url, username FROM accounts WHERE id = $1`,
+          [writerId]
+        )
+        await client.query(`
+          INSERT INTO feed_items (
+            item_type, article_id, author_id,
+            author_name, author_avatar, author_username,
+            title, content_preview, nostr_event_id,
+            tier, published_at
+          ) VALUES (
+            'article', $1, $2,
+            $3, $4, $5,
+            $6, $7, $8,
+            'tier1', now()
+          )
+          ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
+            title = EXCLUDED.title,
+            content_preview = EXCLUDED.content_preview,
+            nostr_event_id = EXCLUDED.nostr_event_id,
+            author_name = EXCLUDED.author_name,
+            author_avatar = EXCLUDED.author_avatar
+        `, [
+          artId, writerId,
+          author?.display_name ?? author?.username ?? 'Unknown',
+          author?.avatar_blossom_url ?? null,
+          author?.username ?? null,
+          data.title,
+          data.content.slice(0, 200),
+          data.nostrEventId,
+        ])
+
+        return { articleId: artId, isNew: result.rows[0].is_new }
+      })
 
       logger.info(
         { articleId, writerId, nostrEventId: data.nostrEventId, isNew },
@@ -769,8 +805,15 @@ export async function articleRoutes(app: FastifyInstance) {
 
       // Soft-delete all live rows for this d-tag (there may be duplicates from
       // previous publishes/edits that pre-date the unique-live-row constraint).
+      // Also set deleted_at on feed_items so they're excluded from feeds.
       await pool.query(
         'UPDATE articles SET deleted_at = now() WHERE writer_id = $1 AND nostr_d_tag = $2 AND deleted_at IS NULL',
+        [writerId, article.nostr_d_tag]
+      )
+      await pool.query(
+        `UPDATE feed_items SET deleted_at = now()
+         WHERE article_id IN (SELECT id FROM articles WHERE writer_id = $1 AND nostr_d_tag = $2)
+           AND deleted_at IS NULL`,
         [writerId, article.nostr_d_tag]
       )
 
@@ -868,6 +911,12 @@ export async function articleRoutes(app: FastifyInstance) {
       if (result.rowCount === 0) {
         return reply.status(404).send({ error: 'Article not found or already unpublished' })
       }
+
+      // Remove from feed (unpublished articles are drafts, not in the feed)
+      await pool.query(
+        `DELETE FROM feed_items WHERE article_id = $1`,
+        [req.params.id]
+      )
 
       return reply.status(200).send({ ok: true })
     }

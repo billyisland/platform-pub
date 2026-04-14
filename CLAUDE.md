@@ -99,18 +99,21 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Feed ranking spec in `planning-archive/FEED-ALGORITHM.md` (Phase 1 implemented)
 - Full-text search uses PostgreSQL trigrams (`pg_trgm`), see `gateway/src/routes/search.ts`
 
-### External feeds (Universal Feed Phase 1)
-- External content (RSS) is ingested by `feed-ingest/` (Graphile Worker service, no HTTP port)
+### External feeds (Universal Feed Phases 1–2)
+- External content (RSS + external Nostr) is ingested by `feed-ingest/` (Graphile Worker service, no HTTP port)
 - `external_sources` (shared canonical feeds), `external_subscriptions` (per-user), `external_items` (normalised content) — see migration 052
-- Feed query uses a three-stream merge: articles + notes + external items in `gateway/src/routes/feed.ts`
-- External items appear in the following feed only (excluded from explore until scoring worker ships)
+- `feed_items` (migration 053) is the denormalised unified timeline — articles, notes, and external items all land here via transactional dual-write from their source tables
+- Feed query (`gateway/src/routes/feed.ts`) is a single-table scan on `feed_items` with LEFT JOINs for type-specific fields (article price/gate, note quote tags, external HTML). Compound `(published_at, id)` cursor
+- External items appear in the following feed only (excluded from explore until scoring worker ships for external content)
 - Daily cap per source enforced at query time via windowed `ROW_NUMBER()` over a rolling 24h window
 - Universal resolver (`gateway/src/lib/resolver.ts`) provides identity resolution for subscribe, invite, and other input fields — see `POST /api/v1/resolve`
 - Subscription CRUD: `gateway/src/routes/feeds.ts` — subscribe, list, remove, mute, refresh
-- `ExternalCard` component renders external items with provenance badge (`VIA RSS`), sanitised HTML, media
+- `ExternalCard` component renders external items with provenance badge (`VIA RSS` / `VIA NOSTR`), sanitised HTML, media
 - `/subscriptions` page manages external feed subscriptions
 - SSRF-hardened HTTP client in `shared/src/lib/http-client.ts` — used by both feed-ingest and gateway
-- Full spec: `UNIVERSAL-FEED-ADR.md` (Phases 2–5 cover feed_items table, Nostr, Bluesky, Mastodon, outbound)
+- External Nostr: `feed-ingest-nostr.ts` opens temporary WebSockets to source relays, REQ for kinds 1/30023/5, NIP-19 encoding. Outbound replies: `publishToExternalRelays()` in `gateway/src/lib/nostr-publisher.ts` — `POST /notes` accepts optional `signedEvent` and fires to source relays
+- Daily cron jobs: `feed_items_reconcile` (05:00) catches dual-write drift, `feed_items_author_refresh` (04:00) propagates author metadata changes
+- Full spec: `UNIVERSAL-FEED-ADR.md` (Phases 3–5 cover Bluesky, Mastodon, outbound OAuth)
 
 ## Omnivorous input (identity resolution)
 

@@ -36,7 +36,38 @@ async function loadFeedWeights(): Promise<FeedWeights> {
 export async function refreshFeedScores(): Promise<void> {
   const weights = await loadFeedWeights()
 
+  // Phase 2: write scores directly to feed_items.score
   const result = await pool.query(
+    `
+    WITH engagement_counts AS (
+      SELECT
+        target_nostr_event_id,
+        COUNT(*) FILTER (WHERE engagement_type = 'reaction')      AS reactions,
+        COUNT(*) FILTER (WHERE engagement_type = 'reply')          AS replies,
+        COUNT(*) FILTER (WHERE engagement_type = 'quote_comment')  AS quotes,
+        COUNT(*) FILTER (WHERE engagement_type = 'gate_pass')      AS gate_passes
+      FROM feed_engagement
+      WHERE engaged_at > now() - interval '48 hours'
+      GROUP BY target_nostr_event_id
+    ),
+    scored AS (
+      SELECT
+        fi.id AS feed_item_id,
+        (ec.reactions * $1 + ec.replies * $2 + ec.quotes * $3 + ec.gate_passes * $4)
+          / POWER(GREATEST(EXTRACT(EPOCH FROM (now() - fi.published_at)) / 3600, 0) + 2, $5)
+          AS score
+      FROM engagement_counts ec
+      JOIN feed_items fi ON fi.nostr_event_id = ec.target_nostr_event_id
+        AND fi.deleted_at IS NULL
+    )
+    UPDATE feed_items fi SET score = scored.score
+    FROM scored WHERE fi.id = scored.feed_item_id
+    `,
+    [weights.reaction, weights.reply, weights.quoteComment, weights.gatePass, weights.gravity]
+  )
+
+  // Also keep feed_scores in sync for backwards compatibility
+  await pool.query(
     `
     WITH engagement_counts AS (
       SELECT
@@ -85,5 +116,16 @@ export async function refreshFeedScores(): Promise<void> {
     `DELETE FROM feed_scores WHERE published_at < now() - interval '7 days' AND score < 0.1`
   )
 
-  logger.info({ upserted: result.rowCount }, 'Feed scores refreshed')
+  // Reset scores on old feed_items that no longer have engagement
+  await pool.query(
+    `UPDATE feed_items SET score = 0
+     WHERE score > 0
+       AND published_at < now() - interval '7 days'
+       AND nostr_event_id NOT IN (
+         SELECT target_nostr_event_id FROM feed_engagement
+         WHERE engaged_at > now() - interval '48 hours'
+       )`
+  )
+
+  logger.info({ updated: result.rowCount }, 'Feed scores refreshed')
 }

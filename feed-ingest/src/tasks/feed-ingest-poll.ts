@@ -24,8 +24,9 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
     id: string
     protocol: string
     source_uri: string
+    relay_urls: string[] | null
   }>(`
-    SELECT id, protocol, source_uri
+    SELECT id, protocol, source_uri, relay_urls
     FROM external_sources
     WHERE is_active = TRUE
       AND (
@@ -39,13 +40,23 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
   if (sources.length === 0) return
 
   // Group by hostname for rate limiting
+  // RSS: group by feed URL hostname
+  // Nostr: group by first relay URL hostname (rate limit per relay, not per pubkey)
   const byHost = new Map<string, typeof sources>()
   for (const source of sources) {
     let hostname: string
-    try {
-      hostname = new URL(source.source_uri).hostname
-    } catch {
-      hostname = source.source_uri  // non-URL identifiers (pubkeys, DIDs)
+    if (source.protocol === 'nostr_external' && source.relay_urls && source.relay_urls.length > 0) {
+      try {
+        hostname = new URL(source.relay_urls[0]).hostname
+      } catch {
+        hostname = source.source_uri
+      }
+    } else {
+      try {
+        hostname = new URL(source.source_uri).hostname
+      } catch {
+        hostname = source.source_uri
+      }
     }
     const group = byHost.get(hostname) ?? []
     group.push(source)
@@ -54,13 +65,15 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
 
   // Enqueue jobs respecting per-host and global limits
   let totalEnqueued = 0
-  for (const [hostname, hostSources] of byHost) {
+  for (const [_hostname, hostSources] of byHost) {
     const toEnqueue = hostSources.slice(0, maxPerHost)
     for (const source of toEnqueue) {
       if (totalEnqueued >= maxConcurrent) break
 
-      const taskName = source.protocol === 'rss' ? 'feed_ingest_rss' : null
-      if (!taskName) continue  // Only RSS in Phase 1
+      const taskName = source.protocol === 'rss' ? 'feed_ingest_rss'
+                     : source.protocol === 'nostr_external' ? 'feed_ingest_nostr'
+                     : null
+      if (!taskName) continue
 
       await helpers.addJob(taskName, { sourceId: source.id }, {
         jobKey: `feed_ingest_${source.id}`,

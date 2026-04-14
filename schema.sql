@@ -1202,11 +1202,141 @@ CREATE TRIGGER trg_publication_members_updated_at
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =============================================================================
+-- Universal Feed — external sources, subscriptions, items (migration 052)
+-- =============================================================================
+
+CREATE TYPE external_protocol AS ENUM (
+  'atproto',
+  'activitypub',
+  'rss',
+  'nostr_external'
+);
+
+CREATE TABLE external_sources (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  protocol        external_protocol NOT NULL,
+  source_uri      TEXT NOT NULL,
+  display_name    TEXT,
+  avatar_url      TEXT,
+  description     TEXT,
+  relay_urls      TEXT[],
+  last_fetched_at TIMESTAMPTZ,
+  cursor          TEXT,
+  fetch_interval_seconds INT NOT NULL DEFAULT 300,
+  error_count     INT NOT NULL DEFAULT 0,
+  last_error      TEXT,
+  is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT unique_source UNIQUE (protocol, source_uri)
+);
+
+CREATE INDEX idx_ext_sources_protocol   ON external_sources(protocol) WHERE is_active = TRUE;
+CREATE INDEX idx_ext_sources_next_fetch ON external_sources(last_fetched_at) WHERE is_active = TRUE;
+
+CREATE TABLE external_subscriptions (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscriber_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  source_id     UUID NOT NULL REFERENCES external_sources(id) ON DELETE CASCADE,
+  is_muted      BOOLEAN NOT NULL DEFAULT FALSE,
+  daily_cap     INT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT unique_subscription UNIQUE (subscriber_id, source_id)
+);
+
+CREATE INDEX idx_ext_subs_subscriber ON external_subscriptions(subscriber_id);
+CREATE INDEX idx_ext_subs_source     ON external_subscriptions(source_id);
+
+CREATE TABLE external_items (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_id         UUID NOT NULL REFERENCES external_sources(id) ON DELETE CASCADE,
+  protocol          external_protocol NOT NULL,
+  tier              content_tier NOT NULL,
+  CONSTRAINT protocol_tier_consistency CHECK (
+    (protocol = 'nostr_external' AND tier = 'tier2') OR
+    (protocol IN ('atproto', 'activitypub') AND tier = 'tier3') OR
+    (protocol = 'rss' AND tier = 'tier4')
+  ),
+  source_item_uri   TEXT NOT NULL,
+  author_name       TEXT,
+  author_handle     TEXT,
+  author_avatar_url TEXT,
+  author_uri        TEXT,
+  content_text      TEXT,
+  content_html      TEXT,
+  summary           TEXT,
+  title             TEXT,
+  language          TEXT,
+  media             JSONB DEFAULT '[]',
+  source_reply_uri  TEXT,
+  source_quote_uri  TEXT,
+  is_repost         BOOLEAN NOT NULL DEFAULT FALSE,
+  original_item_uri TEXT,
+  interaction_data  JSONB DEFAULT '{}',
+  published_at      TIMESTAMPTZ NOT NULL,
+  fetched_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at        TIMESTAMPTZ,
+  CONSTRAINT unique_source_item UNIQUE (protocol, source_item_uri)
+);
+
+CREATE INDEX idx_ext_items_source_id    ON external_items(source_id);
+CREATE INDEX idx_ext_items_published_at ON external_items(published_at DESC);
+CREATE INDEX idx_ext_items_author_uri   ON external_items(author_uri);
+CREATE INDEX idx_ext_items_source_reply ON external_items(source_reply_uri) WHERE source_reply_uri IS NOT NULL;
+
+-- =============================================================================
+-- Unified timeline — feed_items (migration 053)
+-- =============================================================================
+
+CREATE TABLE feed_items (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_type         TEXT NOT NULL CHECK (item_type IN ('article', 'note', 'external')),
+  article_id        UUID REFERENCES articles(id) ON DELETE CASCADE,
+  note_id           UUID REFERENCES notes(id) ON DELETE CASCADE,
+  external_item_id  UUID REFERENCES external_items(id) ON DELETE CASCADE,
+  author_id         UUID REFERENCES accounts(id) ON DELETE SET NULL,
+  author_name       TEXT NOT NULL,
+  author_avatar     TEXT,
+  author_username   TEXT,
+  title             TEXT,
+  content_preview   TEXT,
+  nostr_event_id    TEXT,
+  tier              content_tier NOT NULL DEFAULT 'tier1',
+  published_at      TIMESTAMPTZ NOT NULL,
+  source_protocol   TEXT,
+  source_item_uri   TEXT,
+  source_id         UUID REFERENCES external_sources(id) ON DELETE CASCADE,
+  media             JSONB,
+  score             FLOAT NOT NULL DEFAULT 0,
+  deleted_at        TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT exactly_one_source CHECK (
+    (article_id IS NOT NULL)::int +
+    (note_id IS NOT NULL)::int +
+    (external_item_id IS NOT NULL)::int = 1
+  ),
+  CONSTRAINT tier_consistency CHECK (
+    (item_type IN ('article', 'note') AND tier = 'tier1') OR
+    (item_type = 'external')
+  )
+);
+
+CREATE INDEX idx_feed_items_cursor  ON feed_items(published_at DESC, id DESC) WHERE deleted_at IS NULL;
+CREATE INDEX idx_feed_items_author  ON feed_items(author_id, published_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX idx_feed_items_source  ON feed_items(source_id, published_at DESC) WHERE source_id IS NOT NULL AND deleted_at IS NULL;
+CREATE INDEX idx_feed_items_score   ON feed_items(score DESC, published_at DESC) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_feed_items_article  ON feed_items(article_id) WHERE article_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_feed_items_note     ON feed_items(note_id) WHERE note_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_feed_items_external ON feed_items(external_item_id) WHERE external_item_id IS NOT NULL;
+CREATE INDEX idx_feed_items_type    ON feed_items(item_type, published_at DESC) WHERE deleted_at IS NULL;
+
+-- =============================================================================
 -- Migration tracking
 --
 -- Pre-seed the _migrations table so the migration runner knows that a fresh
 -- database initialised from this schema already includes everything through
--- migration 033. Without this, the runner would attempt to re-apply all
+-- migration 054. Without this, the runner would attempt to re-apply all
 -- migrations on a fresh deploy.
 -- =============================================================================
 
@@ -1264,5 +1394,11 @@ INSERT INTO _migrations (filename) VALUES
   ('045_article_price_mode.sql'),
   ('046_notification_preferences.sql'),
   ('047_bookmarks.sql'),
-  ('048_tags.sql')
+  ('048_tags.sql'),
+  ('049_account_lifecycle.sql'),
+  ('050_publication_layout.sql'),
+  ('051_article_scheduling.sql'),
+  ('052_universal_feed_external.sql'),
+  ('053_feed_items.sql'),
+  ('054_feed_items_backfill.sql')
 ON CONFLICT (filename) DO NOTHING;

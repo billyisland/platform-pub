@@ -1,0 +1,123 @@
+import type { Task } from 'graphile-worker'
+import { pool } from '../../shared/src/db/client.js'
+import logger from '../../shared/src/lib/logger.js'
+
+// =============================================================================
+// feed_items_reconcile — daily integrity check
+//
+// Detects and repairs drift between source tables and feed_items:
+//   1. Published articles/notes with no feed_items row → INSERT
+//   2. External items with no feed_items row → INSERT
+//   3. feed_items pointing to deleted/missing sources → clean up
+//
+// Runs daily at 05:00 UTC. See UNIVERSAL-FEED-ADR.md §XV.7.
+// =============================================================================
+
+export const feedItemsReconcile: Task = async (_payload, _helpers) => {
+  let added = 0
+  let removed = 0
+
+  // 1. Articles missing from feed_items
+  const articlesResult = await pool.query(`
+    INSERT INTO feed_items (
+      item_type, article_id, author_id,
+      author_name, author_avatar, author_username,
+      title, content_preview, nostr_event_id,
+      tier, published_at
+    )
+    SELECT
+      'article', a.id, a.writer_id,
+      COALESCE(acc.display_name, acc.username, 'Unknown'),
+      acc.avatar_blossom_url,
+      acc.username,
+      a.title,
+      LEFT(a.content_free, 200),
+      a.nostr_event_id,
+      'tier1',
+      a.published_at
+    FROM articles a
+    JOIN accounts acc ON acc.id = a.writer_id
+    WHERE a.published_at IS NOT NULL
+      AND a.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.article_id = a.id)
+    ON CONFLICT DO NOTHING
+  `)
+  added += articlesResult.rowCount ?? 0
+
+  // 2. Notes missing from feed_items
+  const notesResult = await pool.query(`
+    INSERT INTO feed_items (
+      item_type, note_id, author_id,
+      author_name, author_avatar, author_username,
+      content_preview, nostr_event_id,
+      tier, published_at
+    )
+    SELECT
+      'note', n.id, n.author_id,
+      COALESCE(acc.display_name, acc.username, 'Unknown'),
+      acc.avatar_blossom_url,
+      acc.username,
+      LEFT(n.content, 200),
+      n.nostr_event_id,
+      'tier1',
+      n.published_at
+    FROM notes n
+    JOIN accounts acc ON acc.id = n.author_id
+    WHERE NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.note_id = n.id)
+    ON CONFLICT DO NOTHING
+  `)
+  added += notesResult.rowCount ?? 0
+
+  // 3. External items missing from feed_items
+  const externalResult = await pool.query(`
+    INSERT INTO feed_items (
+      item_type, external_item_id,
+      author_name, author_avatar,
+      title, content_preview,
+      tier, published_at,
+      source_protocol, source_item_uri, source_id, media
+    )
+    SELECT
+      'external', ei.id,
+      COALESCE(ei.author_name, xs.display_name, 'Unknown'),
+      COALESCE(ei.author_avatar_url, xs.avatar_url),
+      ei.title,
+      LEFT(COALESCE(ei.content_text, ei.summary), 200),
+      ei.tier,
+      ei.published_at,
+      ei.protocol::text,
+      ei.source_item_uri,
+      ei.source_id,
+      ei.media
+    FROM external_items ei
+    JOIN external_sources xs ON xs.id = ei.source_id
+    WHERE ei.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.external_item_id = ei.id)
+    ON CONFLICT DO NOTHING
+  `)
+  added += externalResult.rowCount ?? 0
+
+  // 4. feed_items with soft-deleted articles that weren't caught
+  const staleArticlesResult = await pool.query(`
+    UPDATE feed_items fi SET deleted_at = now()
+    FROM articles a
+    WHERE fi.article_id = a.id
+      AND a.deleted_at IS NOT NULL
+      AND fi.deleted_at IS NULL
+  `)
+  removed += staleArticlesResult.rowCount ?? 0
+
+  // 5. feed_items for external items that were soft-deleted
+  const staleExternalResult = await pool.query(`
+    UPDATE feed_items fi SET deleted_at = now()
+    FROM external_items ei
+    WHERE fi.external_item_id = ei.id
+      AND ei.deleted_at IS NOT NULL
+      AND fi.deleted_at IS NULL
+  `)
+  removed += staleExternalResult.rowCount ?? 0
+
+  if (added > 0 || removed > 0) {
+    logger.info({ added, removed }, 'feed_items reconciliation complete')
+  }
+}

@@ -1,5 +1,5 @@
 import type { Task } from 'graphile-worker'
-import { pool } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
 import { fetchRssFeed } from '../adapters/rss.js'
 
@@ -19,7 +19,8 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
     source_uri: string
     cursor: string | null
     error_count: number
-  }>(`SELECT id, source_uri, cursor, error_count FROM external_sources WHERE id = $1`, [sourceId])
+    display_name: string | null
+  }>(`SELECT id, source_uri, cursor, error_count, display_name FROM external_sources WHERE id = $1`, [sourceId])
 
   if (!source) {
     logger.warn({ sourceId }, 'Source not found — skipping')
@@ -66,37 +67,72 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
       return
     }
 
-    // Insert items (capped at maxItems)
+    // Insert items (capped at maxItems) — dual-write to external_items + feed_items
     let inserted = 0
     for (const item of result.items.slice(0, maxItems)) {
-      const { rowCount } = await pool.query(`
-        INSERT INTO external_items (
-          source_id, protocol, tier,
-          source_item_uri, author_name, author_handle, author_uri,
-          content_text, content_html, summary, title, language,
-          media, published_at
-        ) VALUES (
-          $1, 'rss', 'tier4',
-          $2, $3, $4, $5,
-          $6, $7, $8, $9, $10,
-          $11, $12
-        )
-        ON CONFLICT (protocol, source_item_uri) DO NOTHING
-      `, [
-        sourceId,
-        item.sourceItemUri,
-        item.authorName,
-        item.authorHandle,
-        item.authorUri,
-        item.contentText,
-        item.contentHtml,
-        item.summary,
-        item.title,
-        item.language,
-        JSON.stringify(item.media),
-        item.publishedAt,
-      ])
-      if (rowCount && rowCount > 0) inserted++
+      const didInsert = await withTransaction(async (client) => {
+        const { rowCount, rows } = await client.query<{ id: string }>(`
+          INSERT INTO external_items (
+            source_id, protocol, tier,
+            source_item_uri, author_name, author_handle, author_uri,
+            content_text, content_html, summary, title, language,
+            media, published_at
+          ) VALUES (
+            $1, 'rss', 'tier4',
+            $2, $3, $4, $5,
+            $6, $7, $8, $9, $10,
+            $11, $12
+          )
+          ON CONFLICT (protocol, source_item_uri) DO NOTHING
+          RETURNING id
+        `, [
+          sourceId,
+          item.sourceItemUri,
+          item.authorName,
+          item.authorHandle,
+          item.authorUri,
+          item.contentText,
+          item.contentHtml,
+          item.summary,
+          item.title,
+          item.language,
+          JSON.stringify(item.media),
+          item.publishedAt,
+        ])
+
+        if (!rowCount || rowCount === 0) return false
+
+        // Dual-write: insert feed_items row
+        await client.query(`
+          INSERT INTO feed_items (
+            item_type, external_item_id,
+            author_name, author_avatar,
+            title, content_preview,
+            tier, published_at,
+            source_protocol, source_item_uri, source_id, media
+          ) VALUES (
+            'external', $1,
+            $2, $3,
+            $4, $5,
+            'tier4', $6,
+            'rss', $7, $8, $9
+          )
+          ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING
+        `, [
+          rows[0].id,
+          item.authorName ?? source.display_name ?? 'Unknown',
+          null,
+          item.title,
+          (item.contentText ?? item.summary ?? '').slice(0, 200),
+          item.publishedAt,
+          item.sourceItemUri,
+          sourceId,
+          JSON.stringify(item.media),
+        ])
+
+        return true
+      })
+      if (didInsert) inserted++
     }
 
     // Update source: cursor, metadata, reset errors
