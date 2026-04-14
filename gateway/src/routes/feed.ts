@@ -96,6 +96,8 @@ function feedItemToResponse(row: any) {
     contentHtml: row.ei_content_html,
     title: row.ei_title,
     summary: row.ei_summary,
+    sourceReplyUri: row.ei_source_reply_uri,
+    sourceQuoteUri: row.ei_source_quote_uri,
     media: row.media,
     publishedAt: Number(row.published_at_epoch),
     sourceName: row.source_display_name,
@@ -129,6 +131,8 @@ const FEED_SELECT = `
   ei.author_avatar_url AS ei_author_avatar_url, ei.author_uri AS ei_author_uri,
   ei.content_text AS ei_content_text, ei.content_html AS ei_content_html,
   ei.title AS ei_title, ei.summary AS ei_summary,
+  ei.source_reply_uri AS ei_source_reply_uri,
+  ei.source_quote_uri AS ei_source_quote_uri,
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url
 `
 

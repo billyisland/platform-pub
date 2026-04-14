@@ -34,6 +34,8 @@ export interface ExternalFeedItem {
   contentHtml: string | null
   title: string | null
   summary: string | null
+  sourceReplyUri?: string | null
+  sourceQuoteUri?: string | null
   media: MediaAttachment[]
   publishedAt: number
   sourceName: string | null
@@ -51,11 +53,45 @@ const PROTOCOL_LABELS: Record<string, string> = {
   nostr_external: 'VIA NOSTR',
 }
 
+// Turn an at:// URI into the Bluesky web URL so "View original" actually
+// opens something. The canonical identifier is the AT URI, but browsers
+// can't follow it. Same treatment for author DIDs.
+function atprotoWebUri(atUri: string): string | null {
+  const match = atUri.match(/^at:\/\/([^/]+)\/app\.bsky\.feed\.post\/([^/]+)$/)
+  if (!match) return null
+  return `https://bsky.app/profile/${match[1]}/post/${match[2]}`
+}
+
+function atprotoProfileUri(authorUri: string): string {
+  return `https://bsky.app/profile/${authorUri}`
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
 export function ExternalCard({ item }: ExternalCardProps) {
   const authorDisplay = item.authorName ?? item.sourceName ?? 'Unknown source'
   const avatarUrl = item.authorAvatarUrl ?? item.sourceAvatar ?? null
   const initial = authorDisplay[0]?.toUpperCase() ?? '?'
   const badge = PROTOCOL_LABELS[item.sourceProtocol] ?? 'EXTERNAL'
+
+  const isAtproto = item.sourceProtocol === 'atproto'
+  const viewOriginalUri = isAtproto
+    ? atprotoWebUri(item.sourceItemUri) ?? item.sourceItemUri
+    : item.sourceItemUri
+  const authorWebUri = isAtproto && item.authorUri
+    ? atprotoProfileUri(item.authorUri)
+    : item.authorUri
+
+  const imageMedia = item.media.filter(m => m.type === 'image')
+  const linkEmbed = item.media.find(m => m.type === 'link')
+  const videoMedia = item.media.find(m => m.type === 'video')
+  const quoteWebUri = isAtproto && item.sourceQuoteUri ? atprotoWebUri(item.sourceQuoteUri) : null
 
   return (
     <div className="py-5 border-b border-grey-200">
@@ -81,9 +117,9 @@ export function ExternalCard({ item }: ExternalCardProps) {
         <div className="flex-1 min-w-0">
           {/* Author name + timestamp */}
           <div className="flex items-baseline gap-2">
-            {item.authorUri ? (
+            {authorWebUri ? (
               <a
-                href={item.authorUri}
+                href={authorWebUri}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-sans text-[14px] font-semibold text-black hover:opacity-70 transition-opacity truncate"
@@ -122,28 +158,79 @@ export function ExternalCard({ item }: ExternalCardProps) {
             </p>
           ) : null}
 
-          {/* Media */}
-          {item.media && item.media.length > 0 && (
+          {/* Images */}
+          {imageMedia.length > 0 && (
             <div className="mt-2.5 flex gap-2 overflow-x-auto">
-              {item.media
-                .filter(m => m.type === 'image')
-                .slice(0, 4)
-                .map((m, i) => (
-                  <img
-                    key={i}
-                    src={m.url}
-                    alt={m.alt ?? ''}
-                    className="max-h-48 object-cover bg-grey-100"
-                    loading="lazy"
-                  />
-                ))}
+              {imageMedia.slice(0, 4).map((m, i) => (
+                <img
+                  key={i}
+                  src={m.url}
+                  alt={m.alt ?? ''}
+                  className="max-h-48 object-cover bg-grey-100"
+                  loading="lazy"
+                />
+              ))}
             </div>
+          )}
+
+          {/* Video (HLS — link out to source since browsers can't play it natively) */}
+          {videoMedia && (
+            <a
+              href={viewOriginalUri}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2.5 flex items-center gap-2 border border-grey-200 hover:border-grey-300 transition-colors px-3 py-2 no-underline"
+            >
+              <span className="label-ui text-grey-400">VIDEO</span>
+              <span className="text-ui-xs text-grey-600">Watch on {isAtproto ? 'Bluesky' : 'source'}</span>
+            </a>
+          )}
+
+          {/* Quoted post (Bluesky only for now) */}
+          {quoteWebUri && (
+            <a
+              href={quoteWebUri}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2.5 block border-l-2 border-grey-300 pl-3 py-1 hover:border-black transition-colors no-underline"
+            >
+              <span className="label-ui text-grey-400">QUOTING</span>
+              <span className="text-ui-xs text-grey-600 ml-2">View quoted post →</span>
+            </a>
+          )}
+
+          {/* Link embed (Bluesky external card / Mastodon link preview) */}
+          {linkEmbed && (
+            <a
+              href={linkEmbed.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2.5 flex gap-3 border border-grey-200 hover:border-grey-300 transition-colors p-2.5 no-underline"
+            >
+              {linkEmbed.thumbnail && (
+                <img
+                  src={linkEmbed.thumbnail}
+                  alt=""
+                  className="w-16 h-16 object-cover bg-grey-100 flex-shrink-0"
+                  loading="lazy"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                {linkEmbed.title && (
+                  <p className="text-ui-sm font-semibold text-black truncate">{linkEmbed.title}</p>
+                )}
+                {linkEmbed.description && (
+                  <p className="text-ui-xs text-grey-600 line-clamp-2 mt-0.5">{linkEmbed.description}</p>
+                )}
+                <p className="text-mono-xs text-grey-400 truncate mt-0.5">{hostOf(linkEmbed.url)}</p>
+              </div>
+            </a>
           )}
 
           {/* Footer — view original link */}
           <div className="mt-3 flex items-center gap-4">
             <a
-              href={item.sourceItemUri}
+              href={viewOriginalUri}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-text-muted hover:text-black transition-colors"

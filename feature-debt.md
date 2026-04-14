@@ -3,7 +3,8 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-13 (v5.35.0 session). Completed: Universal Feed Phase 1 — RSS ingestion, universal resolver, external items in feed, subscription management, publication invite migration.
+Last worked: 2026-04-14. Completed: Universal Feed Phase 3 — Bluesky ingestion via Jetstream listener, AT Protocol resolver (DIDs, handles, bsky.app URLs), getAuthorFeed backfill on subscribe, jetstream_healthy polling fallback, atproto-specific ExternalCard rendering (quotes, videos, link embeds).
+Previously: 2026-04-13 (v5.35.0 session) — Universal Feed Phase 1 (RSS) + Phase 2 (feed_items unified timeline, external Nostr).
 
 ---
 
@@ -227,10 +228,9 @@ A generic system for user-defined, non-overlapping categories with behavioural r
 
 Multi-currency support. Option 2 (launch with GBP, display-only conversion) recommended. Entirely unbuilt.
 
-**Universal Feed Phases 3–5 — `UNIVERSAL-FEED-ADR.md`**
+**Universal Feed Phases 4–5 — `UNIVERSAL-FEED-ADR.md`**
 
-Phases 1–2 complete. Remaining phases:
-- Phase 3: Bluesky ingestion (Jetstream listener, read-only)
+Phases 1–3 complete. Remaining phases:
 - Phase 4: Mastodon ingestion (outbox polling, read-only)
 - Phase 5: Outbound reply router (OAuth flows, linked accounts, cross-posting)
 

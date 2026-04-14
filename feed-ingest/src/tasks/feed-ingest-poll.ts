@@ -13,11 +13,15 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
   // Load config values
   const { rows: configRows } = await pool.query<{ key: string; value: string }>(
     `SELECT key, value FROM platform_config
-     WHERE key IN ('feed_ingest_max_per_host', 'feed_ingest_max_concurrent')`
+     WHERE key IN ('feed_ingest_max_per_host', 'feed_ingest_max_concurrent', 'jetstream_healthy')`
   )
-  const config = new Map(configRows.map(r => [r.key, parseInt(r.value, 10)]))
-  const maxPerHost = config.get('feed_ingest_max_per_host') ?? 2
-  const maxConcurrent = config.get('feed_ingest_max_concurrent') ?? 10
+  const config = new Map(configRows.map(r => [r.key, r.value]))
+  const maxPerHost = parseInt(config.get('feed_ingest_max_per_host') ?? '', 10) || 2
+  const maxConcurrent = parseInt(config.get('feed_ingest_max_concurrent') ?? '', 10) || 10
+  // atproto sources are normally pushed by the Jetstream listener. Only
+  // fall back to polling via getAuthorFeed if the listener has reported
+  // itself unhealthy — otherwise we'd duplicate work.
+  const jetstreamHealthy = config.get('jetstream_healthy') !== 'false'
 
   // Find sources due for polling
   const { rows: sources } = await pool.query<{
@@ -72,6 +76,7 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
 
       const taskName = source.protocol === 'rss' ? 'feed_ingest_rss'
                      : source.protocol === 'nostr_external' ? 'feed_ingest_nostr'
+                     : source.protocol === 'atproto' && !jetstreamHealthy ? 'feed_ingest_atproto_backfill'
                      : null
       if (!taskName) continue
 

@@ -95,6 +95,8 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
       let sourceUri: string
       let displayName: string | undefined
       let description: string | undefined
+      let avatarUrl: string | undefined
+      let relayUrls: string[] | undefined
 
       if (match.rssFeed) {
         protocol = 'rss'
@@ -106,13 +108,15 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
         sourceUri = match.externalSource.sourceUri
         displayName = match.externalSource.displayName
         description = match.externalSource.description
+        avatarUrl = match.externalSource.avatar
+        relayUrls = match.externalSource.relayUrls
       } else {
         setError('Cannot subscribe to this type of result')
         setSubscribing(null)
         return
       }
 
-      await feeds.subscribe({ protocol, sourceUri, displayName, description })
+      await feeds.subscribe({ protocol, sourceUri, displayName, description, avatarUrl, relayUrls })
       setSuccess(`Subscribed to ${displayName ?? sourceUri}`)
       setQuery('')
       setResult(null)

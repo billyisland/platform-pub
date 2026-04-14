@@ -1503,7 +1503,7 @@ export interface ExternalSubscription {
 }
 
 export const feeds = {
-  subscribe: (data: { protocol: string; sourceUri: string; displayName?: string; description?: string }) =>
+  subscribe: (data: { protocol: string; sourceUri: string; displayName?: string; description?: string; avatarUrl?: string; relayUrls?: string[] }) =>
     request<{ subscriptionId: string; sourceId: string }>('/feeds/subscribe', {
       method: 'POST',
       body: JSON.stringify(data),

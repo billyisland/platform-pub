@@ -9,6 +9,8 @@ import { externalItemsPrune } from './tasks/external-items-prune.js'
 import { sourceMetadataRefresh } from './tasks/source-metadata-refresh.js'
 import { feedItemsReconcile } from './tasks/feed-items-reconcile.js'
 import { feedItemsAuthorRefresh } from './tasks/feed-items-author-refresh.js'
+import { feedIngestAtprotoBackfill } from './tasks/feed-ingest-atproto-backfill.js'
+import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
 // Feed Ingest Worker
@@ -59,13 +61,20 @@ async function start() {
       source_metadata_refresh: sourceMetadataRefresh,
       feed_items_reconcile: feedItemsReconcile,
       feed_items_author_refresh: feedItemsAuthorRefresh,
+      feed_ingest_atproto_backfill: feedIngestAtprotoBackfill,
     },
   })
 
   logger.info('Feed ingest worker started')
 
+  // Start the Bluesky Jetstream listener alongside the Graphile runner.
+  // It maintains its own WebSocket; nothing to await on startup.
+  const jetstream = new JetstreamListener()
+  await jetstream.start()
+
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down feed-ingest worker')
+    await jetstream.stop()
     await runner.stop()
     await pool.end()
     process.exit(0)

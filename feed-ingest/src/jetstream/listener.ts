@@ -1,0 +1,318 @@
+import { WebSocket } from 'ws'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
+import logger from '../../shared/src/lib/logger.js'
+import { normaliseAtprotoCommit, buildAtUri, type JetstreamCommit } from '../adapters/atproto.js'
+import { insertAtprotoItem } from '../lib/atproto-ingest.js'
+
+// =============================================================================
+// Jetstream listener
+//
+// A long-lived WebSocket subscriber to the Bluesky Jetstream firehose. See
+// UNIVERSAL-FEED-ADR.md §V.3 and §VI.3.
+//
+// Responsibilities:
+//   - Maintain a persistent connection filtered to the set of DIDs we have
+//     active external_sources for, and to app.bsky.feed.post events only.
+//   - Re-check the DID set every 60s; reconnect with updated filter when it
+//     changes. Jetstream does not support dynamic subscription updates.
+//   - Persist per-source time_us cursors so restarts resume without gaps.
+//   - Dual-write ingested posts into external_items + feed_items in one
+//     transaction, using ON CONFLICT DO NOTHING for idempotency.
+//   - Set deleted_at on posts that receive a delete commit.
+//   - Update platform_config.jetstream_healthy so the RSS-style polling
+//     fallback can kick in if the listener is wedged.
+//
+// Connection lifecycle:
+//   - No active DIDs → no connection. Poll loop keeps checking.
+//   - New DID appears → connect.
+//   - DID set changes while connected → reconnect with new filter.
+//   - WebSocket error/close → exponential backoff, reconnect.
+// =============================================================================
+
+const DEFAULT_JETSTREAM_URL = 'wss://jetstream1.us-east.bsky.network/subscribe'
+const WANTED_COLLECTIONS = ['app.bsky.feed.post']
+const DID_REFRESH_INTERVAL_MS = 60_000
+const INITIAL_BACKOFF_MS = 1000
+
+type SourceRow = {
+  id: string
+  source_uri: string
+  cursor: string | null
+  display_name: string | null
+  avatar_url: string | null
+}
+
+export class JetstreamListener {
+  private readonly url: string
+  private ws: WebSocket | null = null
+  private currentDids: Set<string> = new Set()
+  private sourceByDid: Map<string, SourceRow> = new Map()
+  private reconnectTimer: NodeJS.Timeout | null = null
+  private didRefreshTimer: NodeJS.Timeout | null = null
+  private backoffMs = INITIAL_BACKOFF_MS
+  private maxBackoffMs = 30_000
+  private stopping = false
+  private healthy = false
+
+  constructor(url?: string) {
+    this.url = url ?? process.env.JETSTREAM_URL ?? DEFAULT_JETSTREAM_URL
+  }
+
+  async start(): Promise<void> {
+    logger.info({ url: this.url }, 'Jetstream listener starting')
+    await this.loadMaxBackoff()
+    await this.refreshDids()
+    this.didRefreshTimer = setInterval(() => {
+      this.refreshDids().catch((err) =>
+        logger.warn({ err: err.message }, 'DID refresh failed')
+      )
+    }, DID_REFRESH_INTERVAL_MS)
+  }
+
+  async stop(): Promise<void> {
+    this.stopping = true
+    if (this.didRefreshTimer) clearInterval(this.didRefreshTimer)
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    if (this.ws) {
+      try {
+        this.ws.close()
+      } catch {
+        // ignore
+      }
+    }
+    await this.setHealthy(false)
+    logger.info('Jetstream listener stopped')
+  }
+
+  private async loadMaxBackoff(): Promise<void> {
+    const { rows } = await pool.query<{ value: string }>(
+      `SELECT value FROM platform_config WHERE key = 'feed_ingest_atproto_reconnect_max_seconds'`
+    )
+    const parsed = parseInt(rows[0]?.value ?? '30', 10)
+    if (!isNaN(parsed) && parsed > 0) this.maxBackoffMs = parsed * 1000
+  }
+
+  // --- DID set management -----------------------------------------------------
+
+  private async refreshDids(): Promise<void> {
+    const { rows } = await pool.query<SourceRow>(`
+      SELECT id, source_uri, cursor, display_name, avatar_url
+      FROM external_sources
+      WHERE protocol = 'atproto' AND is_active = TRUE
+    `)
+
+    const nextDids = new Set<string>()
+    const nextMap = new Map<string, SourceRow>()
+    for (const row of rows) {
+      nextDids.add(row.source_uri)
+      nextMap.set(row.source_uri, row)
+    }
+
+    const changed = !setsEqual(this.currentDids, nextDids)
+    this.currentDids = nextDids
+    this.sourceByDid = nextMap
+
+    if (!changed) return
+
+    logger.info({ didCount: nextDids.size }, 'Jetstream DID set changed — reconnecting')
+
+    if (nextDids.size === 0) {
+      if (this.ws) this.ws.close()
+      this.ws = null
+      await this.setHealthy(false)
+      return
+    }
+
+    // Force a reconnect with the new filter.
+    if (this.ws) {
+      this.ws.close()
+      this.ws = null
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.backoffMs = INITIAL_BACKOFF_MS
+    this.connect()
+  }
+
+  // --- Cursor handling --------------------------------------------------------
+
+  // Jetstream's ?cursor= param is time_us (microseconds since epoch). On
+  // reconnect, resume from the oldest cursor across active sources so we do
+  // not lose events from any source, relying on the unique constraint to
+  // dedupe overlap with more recently updated sources.
+  private oldestCursor(): string | null {
+    let oldest: bigint | null = null
+    for (const row of this.sourceByDid.values()) {
+      if (!row.cursor) continue
+      try {
+        const v = BigInt(row.cursor)
+        if (oldest === null || v < oldest) oldest = v
+      } catch {
+        // skip malformed cursors
+      }
+    }
+    return oldest === null ? null : oldest.toString()
+  }
+
+  // --- WebSocket connection ---------------------------------------------------
+
+  private connect(): void {
+    if (this.stopping) return
+    if (this.currentDids.size === 0) return
+
+    const params = new URLSearchParams()
+    for (const c of WANTED_COLLECTIONS) params.append('wantedCollections', c)
+    for (const did of this.currentDids) params.append('wantedDids', did)
+    const cursor = this.oldestCursor()
+    if (cursor) params.set('cursor', cursor)
+
+    const fullUrl = `${this.url}?${params.toString()}`
+    logger.debug({ didCount: this.currentDids.size, cursor }, 'Opening Jetstream WebSocket')
+
+    const ws = new WebSocket(fullUrl)
+    this.ws = ws
+
+    ws.on('open', () => {
+      this.backoffMs = INITIAL_BACKOFF_MS
+      this.setHealthy(true).catch(() => {})
+      logger.info({ didCount: this.currentDids.size }, 'Jetstream connected')
+    })
+
+    ws.on('message', (data) => {
+      this.handleMessage(data.toString()).catch((err) =>
+        logger.warn({ err: err.message }, 'Jetstream message handling failed')
+      )
+    })
+
+    ws.on('error', (err) => {
+      logger.warn({ err: err.message }, 'Jetstream WebSocket error')
+    })
+
+    ws.on('close', (code) => {
+      this.ws = null
+      this.setHealthy(false).catch(() => {})
+      if (this.stopping) return
+      logger.info({ code, backoffMs: this.backoffMs }, 'Jetstream closed — scheduling reconnect')
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null
+        this.connect()
+      }, this.backoffMs)
+      this.backoffMs = Math.min(this.backoffMs * 2, this.maxBackoffMs)
+    })
+  }
+
+  // --- Event handling ---------------------------------------------------------
+
+  private async handleMessage(raw: string): Promise<void> {
+    let event: JetstreamCommit
+    try {
+      event = JSON.parse(raw)
+    } catch {
+      return
+    }
+
+    if (event.kind !== 'commit') return
+    if (!event.commit) return
+    if (event.commit.collection !== 'app.bsky.feed.post') return
+
+    const source = this.sourceByDid.get(event.did)
+    if (!source) return // post by a DID we no longer subscribe to; ignore
+
+    if (event.commit.operation === 'delete') {
+      await this.handleDelete(source.id, event.did, event.commit.rkey, event.time_us)
+      return
+    }
+
+    const item = normaliseAtprotoCommit(event)
+    if (!item) return
+
+    await this.ingest(source, item, event.time_us)
+  }
+
+  private async ingest(
+    source: SourceRow,
+    item: ReturnType<typeof normaliseAtprotoCommit> & {},
+    timeUs: number
+  ): Promise<void> {
+    try {
+      await withTransaction(async (client) => {
+        await insertAtprotoItem(client, source, item)
+      })
+
+      // Advance this source's cursor. Use max(existing, timeUs) so
+      // out-of-order delivery does not regress the cursor.
+      await pool.query(`
+        UPDATE external_sources
+        SET cursor = GREATEST(COALESCE(cursor::BIGINT, 0), $2)::TEXT,
+            last_fetched_at = now(),
+            error_count = 0,
+            last_error = NULL,
+            updated_at = now()
+        WHERE id = $1
+      `, [source.id, timeUs])
+
+      // Keep in-memory source cursor in sync for oldestCursor() on reconnect.
+      source.cursor = String(timeUs)
+    } catch (err) {
+      logger.warn(
+        { sourceId: source.id, uri: item.sourceItemUri, err: err instanceof Error ? err.message : String(err) },
+        'Failed to ingest atproto item'
+      )
+    }
+  }
+
+  private async handleDelete(sourceId: string, did: string, rkey: string, timeUs: number): Promise<void> {
+    const uri = buildAtUri(did, 'app.bsky.feed.post', rkey)
+    try {
+      await withTransaction(async (client) => {
+        await client.query(
+          `UPDATE external_items SET deleted_at = now()
+           WHERE source_id = $1 AND protocol = 'atproto' AND source_item_uri = $2
+             AND deleted_at IS NULL`,
+          [sourceId, uri]
+        )
+        await client.query(
+          `UPDATE feed_items SET deleted_at = now()
+           WHERE source_id = $1 AND source_protocol = 'atproto' AND source_item_uri = $2
+             AND deleted_at IS NULL`,
+          [sourceId, uri]
+        )
+      })
+      await pool.query(
+        `UPDATE external_sources
+         SET cursor = GREATEST(COALESCE(cursor::BIGINT, 0), $2)::TEXT,
+             updated_at = now()
+         WHERE id = $1`,
+        [sourceId, timeUs]
+      )
+    } catch (err) {
+      logger.warn(
+        { sourceId, uri, err: err instanceof Error ? err.message : String(err) },
+        'Failed to apply atproto delete'
+      )
+    }
+  }
+
+  // --- Health flag ------------------------------------------------------------
+
+  private async setHealthy(healthy: boolean): Promise<void> {
+    if (this.healthy === healthy) return
+    this.healthy = healthy
+    try {
+      await pool.query(
+        `UPDATE platform_config SET value = $1, updated_at = now() WHERE key = 'jetstream_healthy'`,
+        [healthy ? 'true' : 'false']
+      )
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Failed to write jetstream_healthy flag')
+    }
+  }
+}
+
+function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
+  if (a.size !== b.size) return false
+  for (const v of a) if (!b.has(v)) return false
+  return true
+}

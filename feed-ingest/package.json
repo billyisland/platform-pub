@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@atproto/api": "^0.13.0",
     "dotenv": "^17.3.1",
     "graphile-worker": "^0.16.0",
     "nostr-tools": "^2.3.0",

@@ -22,20 +22,21 @@ export async function feedsRoutes(app: FastifyInstance) {
       sourceUri: string
       displayName?: string
       description?: string
+      avatarUrl?: string
+      relayUrls?: string[]
     }
   }>('/feeds/subscribe', {
     preHandler: requireAuth,
   }, async (req, reply) => {
     const readerId = req.session!.sub!
-    const { protocol, sourceUri, displayName, description } = req.body ?? {}
+    const { protocol, sourceUri, displayName, description, avatarUrl, relayUrls } = req.body ?? {}
 
     if (!protocol || !sourceUri) {
       return reply.status(400).send({ error: 'protocol and sourceUri are required' })
     }
 
-    // Phase 1: only RSS supported
-    if (protocol !== 'rss') {
-      return reply.status(400).send({ error: `Protocol "${protocol}" is not yet supported. RSS feeds are available now.` })
+    if (protocol !== 'rss' && protocol !== 'atproto' && protocol !== 'nostr_external') {
+      return reply.status(400).send({ error: `Protocol "${protocol}" is not yet supported.` })
     }
 
     // Check subscription limit
@@ -55,15 +56,23 @@ export async function feedsRoutes(app: FastifyInstance) {
       const result = await withTransaction(async (client) => {
         // Upsert external_sources (shared across subscribers)
         const { rows: [source] } = await client.query<{ id: string }>(`
-          INSERT INTO external_sources (protocol, source_uri, display_name, description)
-          VALUES ($1, $2, $3, $4)
+          INSERT INTO external_sources (protocol, source_uri, display_name, description, avatar_url, relay_urls)
+          VALUES ($1, $2, $3, $4, $5, $6)
           ON CONFLICT (protocol, source_uri) DO UPDATE SET
             display_name = COALESCE(NULLIF($3, ''), external_sources.display_name),
             description = COALESCE(NULLIF($4, ''), external_sources.description),
+            avatar_url  = COALESCE(NULLIF($5, ''), external_sources.avatar_url),
+            relay_urls  = COALESCE($6, external_sources.relay_urls),
             is_active = TRUE,
             updated_at = now()
           RETURNING id
-        `, [protocol, sourceUri, displayName ?? null, description ?? null])
+        `, [
+          protocol, sourceUri,
+          displayName ?? null,
+          description ?? null,
+          avatarUrl ?? null,
+          protocol === 'nostr_external' && relayUrls && relayUrls.length > 0 ? relayUrls : null,
+        ])
 
         // Create subscription (idempotent)
         const { rows: [sub] } = await client.query<{ id: string }>(`
@@ -77,16 +86,27 @@ export async function feedsRoutes(app: FastifyInstance) {
         return { sourceId: source.id, subscriptionId: sub.id }
       })
 
-      // Enqueue immediate fetch job via direct insert into Graphile Worker
-      // This avoids needing graphile-worker as a gateway dependency
-      await pool.query(`
-        SELECT graphile_worker.add_job(
-          'feed_ingest_rss',
-          json_build_object('sourceId', $1::text),
-          job_key := 'feed_ingest_' || $1::text,
-          max_attempts := 1
-        )
-      `, [result.sourceId])
+      // Enqueue an immediate fetch job for protocols that poll. atproto
+      // sources are picked up by the Jetstream listener's next 60s DID
+      // refresh — no per-subscribe job needed (backfill of prior history
+      // is a separate, out-of-band concern).
+      const fetchTask = protocol === 'rss'
+        ? 'feed_ingest_rss'
+        : protocol === 'nostr_external'
+          ? 'feed_ingest_nostr'
+          : protocol === 'atproto'
+            ? 'feed_ingest_atproto_backfill'
+            : null
+      if (fetchTask) {
+        await pool.query(`
+          SELECT graphile_worker.add_job(
+            $2,
+            json_build_object('sourceId', $1::text),
+            job_key := 'feed_ingest_' || $1::text,
+            max_attempts := 1
+          )
+        `, [result.sourceId, fetchTask])
+      }
 
       return reply.status(201).send({
         subscriptionId: result.subscriptionId,

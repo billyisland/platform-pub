@@ -3,6 +3,7 @@ import { nip19 } from 'nostr-tools'
 import { pool } from '../../shared/src/db/client.js'
 import { safeFetch } from '../../shared/src/lib/http-client.js'
 import logger from '../../shared/src/lib/logger.js'
+import { getProfile as atprotoGetProfile, resolveHandle as atprotoResolveHandle, extractFromBskyUrl, isDid as isAtprotoDid } from './atproto-resolve.js'
 
 // =============================================================================
 // Universal Resolver
@@ -85,7 +86,11 @@ export function getAsyncResult(requestId: string): ResolverResult | null {
 // =============================================================================
 
 const HEX_64 = /^[0-9a-f]{64}$/i
-const BLUESKY_HANDLE = /^@[\w.-]+\.[\w.-]+$/  // @handle.bsky.social or @handle.tld
+// AT Protocol handles are any domain — @jay.bsky.team, jay.bsky.team, paul.gilkes.me.
+// Leading @ is optional. Requires at least one dot so we don't collide with
+// platform_username (single-label alphanumerics). This also matches arbitrary
+// domain-like strings; resolution via the AppView will reject non-handles.
+const BLUESKY_HANDLE = /^@?[\w-]+(\.[\w-]+)+$/
 const FEDIVERSE_HANDLE = /^@[\w.-]+@[\w.-]+\.[\w]+$/  // @user@instance.tld
 const AMBIGUOUS_AT = /^[\w.-]+@[\w.-]+\.[\w]+$/  // user@domain.tld (no @ prefix)
 const PLATFORM_USERNAME = /^[\w]+$/  // alphanumeric, no @, no .
@@ -191,20 +196,13 @@ export async function resolve(
     }
 
     case 'did': {
-      // Phase 1 stub — Bluesky DID resolution not yet implemented
-      return {
-        inputType,
-        matches: [],
-        error: 'Bluesky (AT Protocol) support is coming soon. Try pasting an RSS feed URL for now.',
-      }
+      pendingResolutions.push('atproto_profile')
+      break
     }
 
     case 'bluesky_handle': {
-      return {
-        inputType,
-        matches: [],
-        error: 'Bluesky handle resolution is coming soon. Try pasting an RSS feed URL for now.',
-      }
+      pendingResolutions.push('atproto_profile')
+      break
     }
 
     case 'fediverse_handle': {
@@ -287,6 +285,11 @@ async function resolveAsync(
     matches.push(...nip05Matches)
   }
 
+  if (inputType === 'did' || inputType === 'bluesky_handle') {
+    const atprotoMatch = await resolveAtproto(query)
+    if (atprotoMatch) matches.push(atprotoMatch)
+  }
+
   // Update async cache with complete results
   const entry = asyncResults.get(requestId)
   if (entry) {
@@ -309,17 +312,10 @@ async function resolveUrl(url: string): Promise<ResolverMatch[]> {
     const parsed = new URL(url)
 
     // 1. Known social platform patterns
-    if (parsed.hostname === 'bsky.app' || parsed.hostname === 'staging.bsky.app') {
-      return [{
-        type: 'external_source',
-        confidence: 'exact',
-        externalSource: {
-          protocol: 'atproto',
-          sourceUri: url,
-          displayName: 'Bluesky profile',
-        },
-      }]
-      // Note: actual DID resolution is Phase 3
+    const bskyIdent = extractFromBskyUrl(parsed)
+    if (bskyIdent !== null) {
+      const match = await resolveAtproto(bskyIdent)
+      return match ? [match] : []
     }
 
     if (parsed.hostname === 'twitter.com' || parsed.hostname === 'x.com') {
@@ -481,6 +477,52 @@ async function resolveNip05(identifier: string): Promise<ResolverMatch[]> {
   }
 
   return matches
+}
+
+// =============================================================================
+// AT Protocol (Bluesky) resolution — DIDs, handles, bsky.app URLs all land
+// here. We always end up with a DID as the canonical source_uri, plus
+// profile metadata from the AppView.
+// =============================================================================
+
+async function resolveAtproto(identifier: string): Promise<ResolverMatch | null> {
+  const trimmed = identifier.trim().replace(/^@/, '')
+  if (!trimmed) return null
+
+  // Handles and DIDs both go through getProfile, which accepts either.
+  const profile = await atprotoGetProfile(trimmed)
+  if (profile) {
+    return {
+      type: 'external_source',
+      confidence: 'exact',
+      externalSource: {
+        protocol: 'atproto',
+        sourceUri: profile.did,
+        displayName: profile.displayName ?? `@${profile.handle}`,
+        description: profile.description,
+        avatar: profile.avatar,
+      },
+    }
+  }
+
+  // getProfile failed. If we started with a handle, try resolveHandle as a
+  // fallback — some accounts resolve but their profile endpoint 404s.
+  if (!isAtprotoDid(trimmed)) {
+    const did = await atprotoResolveHandle(trimmed)
+    if (did) {
+      return {
+        type: 'external_source',
+        confidence: 'probable',
+        externalSource: {
+          protocol: 'atproto',
+          sourceUri: did,
+          displayName: `@${trimmed}`,
+        },
+      }
+    }
+  }
+
+  return null
 }
 
 // =============================================================================
