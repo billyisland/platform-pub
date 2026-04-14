@@ -8,7 +8,8 @@ export function LinkedAccountsPanel() {
   const [error, setError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [instanceUrl, setInstanceUrl] = useState('')
-  const [showConnect, setShowConnect] = useState(false)
+  const [blueskyHandle, setBlueskyHandle] = useState('')
+  const [showConnect, setShowConnect] = useState<null | 'mastodon' | 'bluesky'>(null)
 
   async function load() {
     try {
@@ -28,6 +29,20 @@ export function LinkedAccountsPanel() {
     setError(null)
     try {
       const { authorizeUrl } = await linkedAccounts.connectMastodon(`https://${trimmed}`)
+      window.location.href = authorizeUrl
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to start connection')
+      setConnecting(false)
+    }
+  }
+
+  async function handleConnectBluesky() {
+    const trimmed = blueskyHandle.trim().replace(/^@/, '')
+    if (!trimmed) return
+    setConnecting(true)
+    setError(null)
+    try {
+      const { authorizeUrl } = await linkedAccounts.connectBluesky(trimmed)
       window.location.href = authorizeUrl
     } catch (err: any) {
       setError(err.message ?? 'Failed to start connection')
@@ -96,7 +111,7 @@ export function LinkedAccountsPanel() {
           </ul>
         )}
 
-        {showConnect ? (
+        {showConnect === 'mastodon' ? (
           <div className="border-t border-grey-100 pt-4">
             <p className="label-ui text-grey-400 mb-2">Mastodon instance</p>
             <input
@@ -112,15 +127,41 @@ export function LinkedAccountsPanel() {
               <button onClick={handleConnectMastodon} disabled={connecting || !instanceUrl.trim()} className="btn-text">
                 {connecting ? 'Redirecting…' : 'Continue'}
               </button>
-              <button onClick={() => { setShowConnect(false); setInstanceUrl('') }} className="btn-text-muted">
+              <button onClick={() => { setShowConnect(null); setInstanceUrl('') }} className="btn-text-muted">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : showConnect === 'bluesky' ? (
+          <div className="border-t border-grey-100 pt-4">
+            <p className="label-ui text-grey-400 mb-2">Bluesky handle</p>
+            <input
+              type="text"
+              value={blueskyHandle}
+              onChange={e => setBlueskyHandle(e.target.value)}
+              placeholder="alice.bsky.social"
+              autoFocus
+              className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
+              onKeyDown={e => { if (e.key === 'Enter') handleConnectBluesky() }}
+            />
+            <div className="flex gap-3 mt-3">
+              <button onClick={handleConnectBluesky} disabled={connecting || !blueskyHandle.trim()} className="btn-text">
+                {connecting ? 'Redirecting…' : 'Continue'}
+              </button>
+              <button onClick={() => { setShowConnect(null); setBlueskyHandle('') }} className="btn-text-muted">
                 Cancel
               </button>
             </div>
           </div>
         ) : (
-          <button onClick={() => setShowConnect(true)} className="btn-text">
-            + Connect Mastodon
-          </button>
+          <div className="flex gap-4">
+            <button onClick={() => setShowConnect('mastodon')} className="btn-text">
+              + Connect Mastodon
+            </button>
+            <button onClick={() => setShowConnect('bluesky')} className="btn-text">
+              + Connect Bluesky
+            </button>
+          </div>
         )}
 
         {error && <p className="text-ui-xs text-red-600 mt-3">{error}</p>}

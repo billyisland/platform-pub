@@ -4,6 +4,7 @@ import { decryptJson } from '../../shared/src/lib/crypto.js'
 import logger from '../../shared/src/lib/logger.js'
 import { postMastodonStatus, type MastodonCredentials } from '../adapters/activitypub-outbound.js'
 import { publishNostrToRelays, type NostrSignedEvent } from '../adapters/nostr-outbound.js'
+import { postBlueskyRecord } from '../adapters/atproto-outbound.js'
 
 // =============================================================================
 // outbound_cross_post — per-event job, dispatches a queued outbound_posts row
@@ -43,8 +44,19 @@ interface OutboundRow {
   la_is_valid: boolean | null
   // Source item fields (nullable — NULL for top-level posts)
   ei_source_item_uri: string | null
+  // atproto strong-ref data from external_items.interaction_data
+  ei_interaction_data: AtprotoInteractionData | null
   // Source relay URLs (nostr_external only)
   ei_source_relay_urls: string[] | null
+}
+
+interface AtprotoInteractionData {
+  uri?: string
+  cid?: string
+  rootUri?: string
+  rootCid?: string
+  parentUri?: string
+  parentCid?: string
 }
 
 interface AllHausMeta {
@@ -67,6 +79,7 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
       la.credentials_enc   AS la_credentials_enc,
       la.is_valid          AS la_is_valid,
       ei.source_item_uri   AS ei_source_item_uri,
+      ei.interaction_data  AS ei_interaction_data,
       xs.relay_urls        AS ei_source_relay_urls
     FROM outbound_posts op
     LEFT JOIN linked_accounts la ON la.id = op.linked_account_id
@@ -102,6 +115,38 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
         maxChars: cfg.mastodon_max,
         replyToStatusUri: row.action_type === 'reply' ? (row.ei_source_item_uri ?? undefined) : undefined,
       }, creds)
+      externalPostUri = result.externalPostUri
+    } else if (row.protocol === 'atproto') {
+      if (!row.la_external_id) throw new Error('Linked account has no DID')
+      const did = row.la_external_id
+      const interaction = row.ei_interaction_data ?? null
+      let reply: { root: { uri: string; cid: string }; parent: { uri: string; cid: string } } | undefined
+      let quote: { uri: string; cid: string } | undefined
+
+      if (row.action_type === 'reply') {
+        if (!interaction?.uri || !interaction.cid) {
+          throw new Error('Source atproto item is missing uri/cid — cannot reply')
+        }
+        const rootUri = interaction.rootUri ?? interaction.uri
+        const rootCid = interaction.rootCid ?? interaction.cid
+        reply = {
+          root: { uri: rootUri, cid: rootCid },
+          parent: { uri: interaction.uri, cid: interaction.cid },
+        }
+      } else if (row.action_type === 'quote') {
+        if (!interaction?.uri || !interaction.cid) {
+          throw new Error('Source atproto item is missing uri/cid — cannot quote')
+        }
+        quote = { uri: interaction.uri, cid: interaction.cid }
+      }
+
+      const result = await postBlueskyRecord({
+        did,
+        text: row.body_text ?? '',
+        maxGraphemes: cfg.bluesky_max,
+        reply,
+        quote,
+      })
       externalPostUri = result.externalPostUri
     } else if (row.protocol === 'nostr_external') {
       if (!row.signed_event) throw new Error('outbound_posts.signed_event missing for nostr_external job')

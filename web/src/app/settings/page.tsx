@@ -21,6 +21,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (linked === 'mastodon') setBanner({ kind: 'ok', msg: 'Mastodon account connected.' })
+    else if (linked === 'bluesky') setBanner({ kind: 'ok', msg: 'Bluesky account connected.' })
     else if (linked === 'error') setBanner({ kind: 'error', msg: 'Connection failed. Please try again.' })
     if (linked) {
       const t = setTimeout(() => {

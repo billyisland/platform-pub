@@ -40,6 +40,7 @@ import { tagRoutes } from './routes/tags.js'
 import { resolveRoutes } from './routes/resolve.js'
 import { feedsRoutes } from './routes/feeds.js'
 import { linkedAccountsRoutes } from './routes/linked-accounts.js'
+import { atprotoClientMetadata, atprotoJwks } from '../shared/src/lib/atproto-oauth.js'
 import { refreshFeedScores } from './workers/feed-scorer.js'
 import { publishScheduledDrafts } from './workers/scheduler.js'
 import { pool } from '../shared/src/db/client.js'
@@ -194,6 +195,12 @@ async function start() {
 
   // Linked accounts for outbound cross-posting (Phase 5)
   await app.register(linkedAccountsRoutes, { prefix: '/api/v1' })
+
+  // AT Protocol OAuth client metadata (discovered by Bluesky PDSes).
+  // Mounted at the root so the canonical URL is
+  //   https://${APP_URL}/.well-known/oauth-client-metadata.json
+  app.get('/.well-known/oauth-client-metadata.json', () => atprotoClientMetadata())
+  app.get('/.well-known/jwks.json', () => atprotoJwks())
 
   // ---------------------------------------------------------------------------
   // Service proxies

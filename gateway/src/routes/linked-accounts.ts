@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { pool } from '../../shared/src/db/client.js'
 import { safeFetch } from '../../shared/src/lib/http-client.js'
 import { encryptJson, decryptJson } from '../../shared/src/lib/crypto.js'
+import { getAtprotoClient } from '../../shared/src/lib/atproto-oauth.js'
+import { getProfile, isDid, normaliseHandle } from '../lib/atproto-resolve.js'
 import { requireAuth } from '../middleware/auth.js'
 import { requireEnv } from '../../shared/src/lib/env.js'
 import logger from '../../shared/src/lib/logger.js'
@@ -15,12 +17,16 @@ import logger from '../../shared/src/lib/logger.js'
 // DELETE /linked-accounts/:id          — disconnect one
 // PATCH  /linked-accounts/:id          — update cross_post_default
 // POST   /linked-accounts/mastodon     — begin Mastodon OAuth flow (returns authorize URL)
-// GET    /linked-accounts/callback     — OAuth callback (redirects back to /settings)
+// GET    /linked-accounts/callback     — Mastodon OAuth callback
+// POST   /linked-accounts/bluesky      — begin AT Protocol OAuth flow (returns authorize URL)
+// GET    /linked-accounts/bluesky/callback — AT Protocol OAuth callback
 //
-// Bluesky OAuth ships in the next session — needs PKCE/DPoP + client metadata.
+// Bluesky uses @atproto/oauth-client-node (PKCE + DPoP + PAR). The library
+// handles all crypto and stores session state in atproto_oauth_sessions via
+// our DB-backed SimpleStore (see shared/src/lib/atproto-oauth.ts).
+//
 // External Nostr outbound uses the user's custodial key via key-custody (no
-// OAuth, and the existing notes.ts flow handles relay publishing directly;
-// a linked_accounts row is not required for that path today).
+// OAuth; enqueueNostrOutbound handles relay publishing directly).
 // =============================================================================
 
 const APP_URL = requireEnv('APP_URL')
@@ -296,6 +302,135 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         return redirectOk('mastodon')
       } catch (err) {
         logger.warn({ err, userId }, 'Mastodon OAuth callback failed')
+        return redirectOk('error')
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // POST /linked-accounts/bluesky — begin AT Protocol OAuth flow
+  //
+  // Body: { handle }  — a Bluesky handle or DID (bsky.app/profile/... accepted)
+  // Returns: { authorizeUrl } — frontend redirects the user.
+  //
+  // NodeOAuthClient.authorize() takes an identifier (handle or DID), resolves
+  // it to a PDS + authorization server, does PAR + PKCE + DPoP, and returns
+  // the URL to send the user to.
+  // ---------------------------------------------------------------------------
+
+  app.post<{ Body: { handle: string } }>(
+    '/linked-accounts/bluesky',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const userId = req.session!.sub!
+      const parsed = z.object({ handle: z.string().min(1).max(256) }).safeParse(req.body)
+      if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+
+      let identifier = parsed.data.handle.trim()
+      try {
+        const asUrl = new URL(identifier)
+        if (asUrl.hostname === 'bsky.app' || asUrl.hostname === 'staging.bsky.app') {
+          const m = asUrl.pathname.match(/^\/profile\/([^\/]+)/)
+          if (m) identifier = decodeURIComponent(m[1])
+        }
+      } catch {
+        // not a URL, treat as handle
+      }
+      if (!isDid(identifier)) identifier = normaliseHandle(identifier)
+
+      // Stash the user id in a signed cookie so the callback can find them.
+      // (State also flows through NodeOAuthClient, but the callback needs to
+      // know which all.haus account to attach the DID to.)
+      const nonce = crypto.randomBytes(16).toString('hex')
+      reply.setCookie('oauth_state', JSON.stringify({
+        protocol: 'atproto',
+        userId,
+        nonce,
+      }), {
+        signed: true,
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: APP_URL.startsWith('https://'),
+        maxAge: 600,
+      })
+
+      try {
+        const client = await getAtprotoClient()
+        const url = await client.authorize(identifier, { state: nonce, scope: 'atproto transition:generic' })
+        return { authorizeUrl: url.toString() }
+      } catch (err) {
+        logger.warn({ err, identifier }, 'Bluesky OAuth authorize() failed')
+        return reply.status(502).send({ error: 'Could not start Bluesky OAuth — check the handle is valid' })
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // GET /linked-accounts/bluesky/callback — AT Protocol OAuth return
+  //
+  // NodeOAuthClient.callback(params) verifies state, exchanges code (with DPoP
+  // proof), stores the session via our SessionStore, and returns the OAuthSession.
+  // We then look up the user from the signed cookie and insert a linked_accounts
+  // row with external_id = did, credentials_enc = NULL (the @atproto lib owns
+  // the token storage in atproto_oauth_sessions).
+  // ---------------------------------------------------------------------------
+
+  app.get<{ Querystring: Record<string, string> }>(
+    '/linked-accounts/bluesky/callback',
+    async (req, reply) => {
+      const redirectOk = (flag: string) =>
+        reply.redirect(`${APP_URL}/settings?linked=${encodeURIComponent(flag)}`)
+
+      // Read + verify our cookie first — it carries the all.haus user id.
+      const rawCookie = req.cookies.oauth_state
+      if (!rawCookie) return redirectOk('error')
+      const unsigned = reply.unsignCookie(rawCookie)
+      if (!unsigned.valid || !unsigned.value) return redirectOk('error')
+      reply.clearCookie('oauth_state', { path: '/' })
+
+      let statePayload: { protocol: string; userId: string; nonce: string }
+      try {
+        statePayload = JSON.parse(unsigned.value)
+      } catch {
+        return redirectOk('error')
+      }
+      if (statePayload.protocol !== 'atproto') return redirectOk('error')
+      if (req.query.state !== statePayload.nonce) return redirectOk('error')
+
+      try {
+        const client = await getAtprotoClient()
+        const params = new URLSearchParams(req.query as Record<string, string>)
+        const { session } = await client.callback(params)
+        const did = session.did
+
+        // Pull handle/display name from the AppView for a nicer external_handle.
+        let handle: string = did
+        try {
+          const profile = await getProfile(did)
+          if (profile?.handle) handle = profile.handle
+        } catch {
+          // non-fatal
+        }
+
+        await pool.query(`
+          INSERT INTO linked_accounts (
+            account_id, protocol, external_id, external_handle,
+            instance_url, credentials_enc, is_valid,
+            last_refreshed_at, updated_at
+          ) VALUES ($1, 'atproto', $2, $3, NULL, NULL, TRUE, now(), now())
+          ON CONFLICT (account_id, protocol, external_id)
+          DO UPDATE SET
+            external_handle   = EXCLUDED.external_handle,
+            is_valid          = TRUE,
+            last_refreshed_at = now(),
+            updated_at        = now()
+        `, [statePayload.userId, did, handle])
+
+        logger.info({ userId: statePayload.userId, did, handle }, 'Bluesky account linked')
+        return redirectOk('bluesky')
+      } catch (err) {
+        logger.warn({ err }, 'Bluesky OAuth callback failed')
         return redirectOk('error')
       }
     }

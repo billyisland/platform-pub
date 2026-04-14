@@ -1,5 +1,6 @@
 import type { Task } from 'graphile-worker'
 import { pool } from '../../shared/src/db/client.js'
+import { getAtprotoClient } from '../../shared/src/lib/atproto-oauth.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -44,29 +45,45 @@ export const outboundTokenRefresh: Task = async () => {
     LIMIT 100
   `, [windowPct])
 
-  if (rows.length === 0) return
-
   for (const row of rows) {
-    try {
-      switch (row.protocol) {
-        case 'atproto':
-          // Bluesky refresh ships alongside the AT Protocol outbound adapter.
-          // Until then, leave the row alone — token is still inside its
-          // declared lifetime; the cron will retry on the next tick.
-          logger.debug({ id: row.id }, 'atproto refresh handler not yet implemented; skipping')
-          break
+    // credentials_enc-based OAuth refresh isn't wired up yet — Mastodon tokens
+    // don't expire, so nothing currently lands here. Future protocols with
+    // refresh_token semantics can branch on row.protocol below.
+    logger.debug({ id: row.id, protocol: row.protocol }, 'no credentials_enc refresh handler; skipping')
+  }
 
-        default:
-          // Mastodon / nostr_external / rss have no refresh contract at this
-          // layer (Mastodon tokens don't expire; nostr/rss have no OAuth).
-          logger.debug({ id: row.id, protocol: row.protocol }, 'no refresh handler for protocol; skipping')
-          break
-      }
-    } catch (err) {
-      logger.warn(
-        { err, id: row.id, protocol: row.protocol },
-        'token refresh failed; marking account invalid'
+  // ---------------------------------------------------------------------------
+  // AT Protocol: tokens live in atproto_oauth_sessions (credentials_enc IS NULL
+  // in linked_accounts). The @atproto/oauth-client-node lib auto-refreshes on
+  // use, but dormant accounts risk letting the refresh token expire. We
+  // proactively touch each atproto session once a week by calling restore()
+  // with refresh='auto' — the lib decides whether to refresh based on its
+  // own TTL heuristics.
+  // ---------------------------------------------------------------------------
+
+  const { rows: atpRows } = await pool.query<{ id: string; external_id: string }>(`
+    SELECT id, external_id
+    FROM linked_accounts
+    WHERE protocol = 'atproto'
+      AND is_valid = TRUE
+      AND (last_refreshed_at IS NULL OR last_refreshed_at < now() - INTERVAL '7 days')
+    ORDER BY last_refreshed_at ASC NULLS FIRST
+    LIMIT 50
+  `)
+
+  if (atpRows.length === 0) return
+
+  const client = await getAtprotoClient()
+  for (const row of atpRows) {
+    try {
+      await client.restore(row.external_id, 'auto')
+      await pool.query(
+        `UPDATE linked_accounts SET last_refreshed_at = now(), updated_at = now() WHERE id = $1`,
+        [row.id]
       )
+      logger.debug({ did: row.external_id }, 'atproto session touched')
+    } catch (err) {
+      logger.warn({ err, id: row.id, did: row.external_id }, 'atproto session restore failed; marking invalid')
       await pool.query(
         `UPDATE linked_accounts SET is_valid = FALSE, updated_at = now() WHERE id = $1`,
         [row.id]

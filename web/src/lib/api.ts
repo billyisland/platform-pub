@@ -1558,4 +1558,10 @@ export const linkedAccounts = {
       method: 'POST',
       body: JSON.stringify({ instanceUrl }),
     }),
+
+  connectBluesky: (handle: string) =>
+    request<{ authorizeUrl: string }>('/linked-accounts/bluesky', {
+      method: 'POST',
+      body: JSON.stringify({ handle }),
+    }),
 }
