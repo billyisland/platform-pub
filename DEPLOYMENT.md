@@ -110,6 +110,9 @@ Key variables:
 | `BROADCAST_DAILY_SEND_LIMIT` | gateway | Daily send cap for broadcast warm-up; `0` = unlimited (default: `50`) |
 | `TRAFFOLOGY_INGEST_URL` | gateway | Internal URL for traffology-ingest (default: http://localhost:3005) |
 | `TRAFFOLOGY_IP_HASH_SALT` | traffology-ingest | Salt for SHA-256 IP hashing (must override default in production) |
+| `LINKED_ACCOUNT_KEY_HEX` | gateway, feed-ingest | AES-256 key (64 hex chars) for encrypting linked-account OAuth credentials and `atproto_oauth_sessions.session_data_enc`. Must be identical across gateway and feed-ingest |
+| `ATPROTO_CLIENT_BASE_URL` | gateway, feed-ingest | Public origin for the AT Protocol OAuth client metadata (e.g. `https://all.haus`). When unset or pointing at localhost, the code falls back to the loopback `client_id` (dev only) |
+| `ATPROTO_PRIVATE_JWK` | gateway, feed-ingest | ES256 signing JWK (JSON string) used for `private_key_jwt` confidential-client auth. **Required in prod** whenever `ATPROTO_CLIENT_BASE_URL` is a public origin |
 
 > **Security:** `ACCOUNT_KEY_HEX` must never be set on the gateway — the key-custody service is the sole holder of this key by design. The gateway cannot decrypt user private keys.
 

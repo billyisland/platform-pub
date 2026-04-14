@@ -230,7 +230,9 @@ Multi-currency support. Option 2 (launch with GBP, display-only conversion) reco
 
 **Universal Feed Phase 5 — `UNIVERSAL-FEED-ADR.md`**
 
-Phases 1–4 complete. Phase 5 session A shipped — Mastodon OAuth outbound + foundation:
+Phases 1–5 complete. Phase 5A (Mastodon outbound) + Phase 5B (cross-post UI, Nostr queue migration, token refresh, Bluesky OAuth outbound) both shipped.
+
+Shipped in Phase 5A:
 - Migration 057 (`linked_accounts`, `outbound_posts`, `oauth_app_registrations`)
 - `shared/src/lib/crypto.ts` (AES-256-GCM credential encryption via `LINKED_ACCOUNT_KEY_HEX`)
 - Gateway `/api/v1/linked-accounts/*` (list/remove/update, Mastodon OAuth start + callback with dynamic client registration)
@@ -238,11 +240,16 @@ Phases 1–4 complete. Phase 5 session A shipped — Mastodon OAuth outbound + f
 - feed-ingest `outbound_cross_post` task with `activitypub-outbound` adapter (Idempotency-Key, `/api/v2/search?resolve=true` for federated reply targets, exponential backoff retries)
 - `LinkedAccountsPanel` on `/settings` with connect/disconnect + per-account `cross_post_default` toggle
 
-Remaining for Phase 5 session B:
-- Cross-post toggle in the reply/quote composer on `ExternalCard` (hidden when no linked account for the item's protocol)
-- Bluesky outbound adapter (AT Protocol confidential client OAuth + `createRecord` for posts/replies/quotes)
-- Token refresh cron (`outbound_token_refresh_window_pct`)
-- External Nostr outbound migration to the job queue (currently inline in `notes.ts`, works but inconsistent)
+Shipped in Phase 5B:
+- Migration 058 (`outbound_posts.linked_account_id` nullable + `signed_event` jsonb) so external Nostr outbound can ride the same queue
+- Migration 059 (`atproto_oauth_sessions` — DB-backed `NodeSavedSessionStore` for `@atproto/oauth-client-node`, AES-256-GCM encrypted)
+- Cross-post toggle in `ExternalCard` reply/quote composer, hidden when no linked account for the item's protocol; `useLinkedAccounts` module-level cache
+- External Nostr outbound moved out of inline `publishToExternalRelays` in `notes.ts` into `enqueueNostrOutbound` → `outbound_cross_post` job → `nostr-outbound.ts` adapter (publishes to source relays from `external_sources.relay_urls`)
+- `outbound_token_refresh` cron (every 30m) — atproto branch calls `client.restore(did, 'auto')` once a week on dormant accounts; credentials_enc-based branch is a stub (Mastodon tokens don't expire)
+- `shared/src/lib/atproto-oauth.ts` — singleton `NodeOAuthClient` factory (confidential client, `private_key_jwt`, PKCE + DPoP + PAR); loopback client_id fallback for local dev, `ATPROTO_CLIENT_BASE_URL` + `ATPROTO_PRIVATE_JWK` for prod
+- Gateway `/.well-known/oauth-client-metadata.json` + `/.well-known/jwks.json` (nginx-routed to gateway), `POST /linked-accounts/bluesky` (handle → authorize URL), `GET /linked-accounts/bluesky/callback`
+- feed-ingest `atproto-outbound.ts` adapter — DPoP-bound `com.atproto.repo.createRecord` via `OAuthSession.fetchHandler`; 300-grapheme truncation via `Intl.Segmenter`; reply strong-refs (root + parent from `interaction_data`) and `app.bsky.embed.record` quote refs
+- Bluesky handle input in `LinkedAccountsPanel`
 
 **UI prototype — `provenance-ikb.jsx`**
 

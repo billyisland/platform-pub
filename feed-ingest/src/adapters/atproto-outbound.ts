@@ -90,7 +90,7 @@ function truncateGraphemes(text: string, max: number): string {
   if (!text) return ''
   // @ts-expect-error Intl.Segmenter exists in Node ≥16 but TS lib may lag
   const seg = typeof Intl !== 'undefined' && Intl.Segmenter
-    // @ts-expect-error
+    // @ts-expect-error Intl.Segmenter runtime-available but TS lib ES2022 omits it
     ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
     : null
   if (!seg) return text.length > max ? text.slice(0, max - 1) + '…' : text

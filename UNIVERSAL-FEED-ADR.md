@@ -1353,12 +1353,16 @@ Split into two sessions to match the "one coherent commit per phase" rhythm.
 - feed-ingest `outbound_cross_post` task + `activitypub-outbound` adapter — `POST /api/v1/statuses` with `Idempotency-Key`, federated reply target resolution via `/api/v2/search?resolve=true`, exponential backoff retries, terminal `status = 'failed'`
 - `LinkedAccountsPanel` on `/settings` — connect/disconnect + per-account `cross_post_default` toggle; `?linked=mastodon|error` callback banner
 
-**Session B (remaining):**
-- Cross-post toggle UI in `ExternalCard` reply/quote composer (hidden when no linked account for the item's protocol)
-- Bluesky OAuth flow (AT Protocol confidential client, §VI.3) + AT Protocol outbound adapter (`createRecord` for posts/replies/quotes, 300-grapheme limit)
-- `outbound_token_refresh` cron job (uses `outbound_token_refresh_window_pct`)
-- Migrate external Nostr outbound from the inline `publishToExternalRelays` path (added in Phase 2) into the job queue for consistency
-- Text transformation/truncation polish
+**Session B (shipped):**
+- Migration 058 — `outbound_posts.linked_account_id` nullable + `signed_event jsonb` so external-Nostr outbound rides the unified queue without an OAuth linked account
+- Migration 059 — `atproto_oauth_sessions (did PK, session_data_enc)` as the DB-backed `NodeSavedSessionStore` for `@atproto/oauth-client-node`, AES-256-GCM encrypted under `LINKED_ACCOUNT_KEY_HEX`
+- Cross-post toggle UI in `ExternalCard` reply/quote composer (hidden when no linked account for the item's protocol); `useLinkedAccounts` module-level cache so multiple cards share one fetch
+- `shared/src/lib/atproto-oauth.ts` — singleton `NodeOAuthClient` factory, confidential client with `private_key_jwt` (ES256), PKCE + DPoP + PAR; loopback `client_id` fallback for local dev, `ATPROTO_CLIENT_BASE_URL` + `ATPROTO_PRIVATE_JWK` in prod
+- Gateway `/.well-known/oauth-client-metadata.json` + `/.well-known/jwks.json` (nginx-routed to the gateway), `POST /linked-accounts/bluesky` (handle → authorize URL), `GET /linked-accounts/bluesky/callback` (session → `linked_accounts` row with `external_id = did`, `credentials_enc = NULL`)
+- feed-ingest `atproto-outbound.ts` — `com.atproto.repo.createRecord` via `OAuthSession.fetchHandler`, DPoP-bound; 300-grapheme truncation via `Intl.Segmenter`; reply strong-refs (root + parent from `external_items.interaction_data`), `app.bsky.embed.record` quotes; extended `outbound_cross_post` with an atproto branch
+- External Nostr outbound moved out of the inline `publishToExternalRelays` path into `enqueueNostrOutbound` → `outbound_cross_post` → `nostr-outbound.ts` WS publisher (uses `external_sources.relay_urls`); `POST /notes` signs on the client, the worker just replays
+- `outbound_token_refresh` cron (every 30m) — atproto branch proactively calls `client.restore(did, 'auto')` on dormant accounts weekly so refresh tokens don't lapse; Mastodon/`credentials_enc`-based branch is a stub (Mastodon tokens don't expire)
+- `LinkedAccountsPanel` gains a Bluesky handle input; `?linked=bluesky` callback banner on `/settings`
 
 **Why last:** This is the highest-complexity, highest-trust feature. By this point, all four ingestion pipelines are battle-tested, the feed UI handles all external content types cleanly, and the outbound adapters can build on the same protocol-specific code and libraries used for ingestion. Consolidating all credential management (OAuth flows, token refresh, encrypted storage, linked account UI) into a single phase avoids scattering security-sensitive code across multiple releases. Credential management and outbound error handling are the hardest parts of the system — they benefit from the most runway.
 
