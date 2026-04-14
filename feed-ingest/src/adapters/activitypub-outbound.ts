@@ -1,0 +1,126 @@
+import { safeFetch } from '../../shared/src/lib/http-client.js'
+
+// =============================================================================
+// ActivityPub (Mastodon) outbound adapter
+//
+// Posts a status via POST /api/v1/statuses on the user's home instance. For
+// replies, we need in_reply_to_id — a local status identifier on the user's
+// instance. When the source item lives on a different instance, we first call
+// /api/v2/search to have the user's instance federate it, then reply to the
+// resulting local status id. Mastodon instances return a `statuses[0].id`
+// from the search result.
+//
+// Posts longer than the instance's status limit are truncated with a trailing
+// link back to all.haus (the canonical, full-length version).
+// =============================================================================
+
+export interface MastodonCredentials {
+  accessToken: string
+  tokenType?: string
+  scope?: string
+}
+
+export interface MastodonOutboundInput {
+  instanceUrl: string
+  text: string
+  maxChars: number
+  sourceHomeUrl?: string        // canonical all.haus URL for truncation fallback
+  replyToStatusUri?: string     // external_items.source_item_uri when action=reply
+}
+
+export interface MastodonOutboundResult {
+  externalPostUri: string
+}
+
+const ELLIPSIS = '…'
+
+export async function postMastodonStatus(
+  input: MastodonOutboundInput,
+  credentials: MastodonCredentials
+): Promise<MastodonOutboundResult> {
+  let inReplyToId: string | undefined
+  if (input.replyToStatusUri) {
+    inReplyToId = await resolveRemoteStatus(input.instanceUrl, input.replyToStatusUri, credentials)
+  }
+
+  const body: Record<string, unknown> = {
+    status: truncate(input.text, input.maxChars, input.sourceHomeUrl),
+    visibility: 'public',
+  }
+  if (inReplyToId) body.in_reply_to_id = inReplyToId
+
+  const res = await safeFetch(`${input.instanceUrl}/api/v1/statuses`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${credentials.accessToken}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Idempotency-Key': hashIdempotency(input.text, inReplyToId),
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`Mastodon statuses HTTP ${res.status}: ${res.text.slice(0, 200)}`)
+
+  const parsed = JSON.parse(res.text) as { id: string; uri: string; url?: string }
+  return { externalPostUri: parsed.uri ?? parsed.url ?? `${input.instanceUrl}/statuses/${parsed.id}` }
+}
+
+// -----------------------------------------------------------------------------
+// Resolve an external status URI to a status id local to the user's instance.
+// Mastodon's /api/v2/search with `resolve=true` triggers federation-fetch.
+// -----------------------------------------------------------------------------
+
+async function resolveRemoteStatus(
+  instance: string,
+  uri: string,
+  credentials: MastodonCredentials
+): Promise<string | undefined> {
+  // If the URI is already on the same instance, extract the trailing id.
+  try {
+    const u = new URL(uri)
+    const home = new URL(instance)
+    if (u.hostname === home.hostname) {
+      const m = u.pathname.match(/(?:statuses|notes)\/([a-zA-Z0-9]+)\/?$/)
+      if (m) return m[1]
+    }
+  } catch { /* fall through */ }
+
+  const search = new URL(`${instance}/api/v2/search`)
+  search.searchParams.set('q', uri)
+  search.searchParams.set('resolve', 'true')
+  search.searchParams.set('limit', '1')
+  search.searchParams.set('type', 'statuses')
+
+  const res = await safeFetch(search.toString(), {
+    headers: {
+      'Authorization': `Bearer ${credentials.accessToken}`,
+      'Accept': 'application/json',
+    },
+  })
+  if (!res.ok) return undefined
+
+  const parsed = JSON.parse(res.text) as { statuses?: { id: string }[] }
+  return parsed.statuses?.[0]?.id
+}
+
+// -----------------------------------------------------------------------------
+// Text truncation — keep room for the all.haus fallback link if provided.
+// -----------------------------------------------------------------------------
+
+function truncate(text: string, max: number, sourceHomeUrl?: string): string {
+  if (text.length <= max) return text
+  const suffix = sourceHomeUrl ? `${ELLIPSIS} ${sourceHomeUrl}` : ELLIPSIS
+  const budget = Math.max(0, max - suffix.length - 1)
+  return `${text.slice(0, budget)} ${suffix}`.trim()
+}
+
+function hashIdempotency(text: string, replyTo?: string): string {
+  // Cheap, stable key from content — Mastodon dedupes retries for 24h.
+  const src = `${replyTo ?? ''}::${text}`
+  let h = 0x811c9dc5
+  for (let i = 0; i < src.length; i++) {
+    h ^= src.charCodeAt(i)
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}

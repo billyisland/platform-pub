@@ -84,6 +84,7 @@ services:
       APP_URL: https://all.haus
       MEDIA_DIR: /app/media
       PUBLIC_MEDIA_URL: https://all.haus/media
+      LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 10s
@@ -201,6 +202,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+      LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX}
 
   # ---------------------------------------------------------------------------
   # Web client (Next.js)

@@ -230,8 +230,19 @@ Multi-currency support. Option 2 (launch with GBP, display-only conversion) reco
 
 **Universal Feed Phase 5 — `UNIVERSAL-FEED-ADR.md`**
 
-Phases 1–4 complete. Remaining:
-- Phase 5: Outbound reply router — Bluesky OAuth (AT Protocol confidential client), Mastodon OAuth (dynamic client registration), `linked_accounts` / `outbound_posts` / `oauth_app_registrations` tables, `LINKED_ACCOUNT_KEY_HEX` token encryption, token refresh cron, outbound adapters, cross-post toggle in reply/quote composers, linked-account management UI.
+Phases 1–4 complete. Phase 5 session A shipped — Mastodon OAuth outbound + foundation:
+- Migration 057 (`linked_accounts`, `outbound_posts`, `oauth_app_registrations`)
+- `shared/src/lib/crypto.ts` (AES-256-GCM credential encryption via `LINKED_ACCOUNT_KEY_HEX`)
+- Gateway `/api/v1/linked-accounts/*` (list/remove/update, Mastodon OAuth start + callback with dynamic client registration)
+- Gateway `enqueueCrossPost` helper called from `POST /notes` when `crossPost` payload present
+- feed-ingest `outbound_cross_post` task with `activitypub-outbound` adapter (Idempotency-Key, `/api/v2/search?resolve=true` for federated reply targets, exponential backoff retries)
+- `LinkedAccountsPanel` on `/settings` with connect/disconnect + per-account `cross_post_default` toggle
+
+Remaining for Phase 5 session B:
+- Cross-post toggle in the reply/quote composer on `ExternalCard` (hidden when no linked account for the item's protocol)
+- Bluesky outbound adapter (AT Protocol confidential client OAuth + `createRecord` for posts/replies/quotes)
+- Token refresh cron (`outbound_token_refresh_window_pct`)
+- External Nostr outbound migration to the job queue (currently inline in `notes.ts`, works but inconsistent)
 
 **UI prototype — `provenance-ikb.jsx`**
 

@@ -70,6 +70,7 @@ export interface SafeFetchOptions {
   timeout?: number
   maxBytes?: number
   method?: string
+  body?: string | Uint8Array
 }
 
 export interface SafeFetchResult {
@@ -111,6 +112,7 @@ export async function safeFetch(
           'Accept': '*/*',
           ...options.headers,
         },
+        body: options.body,
         signal: controller.signal,
         redirect: 'manual',
       })

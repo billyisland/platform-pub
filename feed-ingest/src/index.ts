@@ -11,6 +11,7 @@ import { feedItemsReconcile } from './tasks/feed-items-reconcile.js'
 import { feedItemsAuthorRefresh } from './tasks/feed-items-author-refresh.js'
 import { feedIngestAtprotoBackfill } from './tasks/feed-ingest-atproto-backfill.js'
 import { feedIngestActivityPub } from './tasks/feed-ingest-activitypub.js'
+import { outboundCrossPost } from './tasks/outbound-cross-post.js'
 import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
@@ -64,6 +65,7 @@ async function start() {
       feed_items_author_refresh: feedItemsAuthorRefresh,
       feed_ingest_atproto_backfill: feedIngestAtprotoBackfill,
       feed_ingest_activitypub: feedIngestActivityPub,
+      outbound_cross_post: outboundCrossPost,
     },
   })
 

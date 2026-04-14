@@ -39,6 +39,7 @@ import { bookmarkRoutes } from './routes/bookmarks.js'
 import { tagRoutes } from './routes/tags.js'
 import { resolveRoutes } from './routes/resolve.js'
 import { feedsRoutes } from './routes/feeds.js'
+import { linkedAccountsRoutes } from './routes/linked-accounts.js'
 import { refreshFeedScores } from './workers/feed-scorer.js'
 import { publishScheduledDrafts } from './workers/scheduler.js'
 import { pool } from '../shared/src/db/client.js'
@@ -190,6 +191,9 @@ async function start() {
 
   // External feed subscriptions (RSS, Nostr, Bluesky, Mastodon)
   await app.register(feedsRoutes, { prefix: '/api/v1' })
+
+  // Linked accounts for outbound cross-posting (Phase 5)
+  await app.register(linkedAccountsRoutes, { prefix: '/api/v1' })
 
   // ---------------------------------------------------------------------------
   // Service proxies

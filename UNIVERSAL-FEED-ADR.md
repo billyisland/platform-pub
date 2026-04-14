@@ -1343,21 +1343,24 @@ The Phase 2 gateway code changes (dual-write paths for articles/notes, edit prop
 
 ### Phase 5 — Outbound reply router (the piracy)
 
-**Scope:**
-- `linked_accounts` table (ships here, not in Phases 3–4)
-- `outbound_posts` table
-- `oauth_app_registrations` table (for Mastodon per-instance app credentials, §IV.8)
-- Bluesky OAuth flow in gateway (AT Protocol confidential client, §VI.3)
-- Mastodon OAuth flow in gateway (dynamic client registration, §VI.4)
-- Outbound adapters for AT Protocol, ActivityPub, and external Nostr
-- `outbound_token_refresh` cron job
-- Cross-post toggle UI in reply/quote composers
-- Full linked account management UI (connected accounts, health status, disconnect)
-- Text transformation and truncation logic
+Split into two sessions to match the "one coherent commit per phase" rhythm.
+
+**Session A (shipped):** Mastodon OAuth outbound + foundation.
+- Migration 057 — `linked_accounts`, `outbound_posts`, `oauth_app_registrations` tables + `outbound_*` `platform_config` keys
+- `shared/src/lib/crypto.ts` — AES-256-GCM credential encryption via `LINKED_ACCOUNT_KEY_HEX`
+- Gateway `/api/v1/linked-accounts/*` — list/remove/update + Mastodon OAuth start + callback; dynamic client registration cached per instance in `oauth_app_registrations`
+- `POST /notes` accepts optional `crossPost: { linkedAccountId, sourceItemId, actionType }` and calls `enqueueCrossPost` (best-effort)
+- feed-ingest `outbound_cross_post` task + `activitypub-outbound` adapter — `POST /api/v1/statuses` with `Idempotency-Key`, federated reply target resolution via `/api/v2/search?resolve=true`, exponential backoff retries, terminal `status = 'failed'`
+- `LinkedAccountsPanel` on `/settings` — connect/disconnect + per-account `cross_post_default` toggle; `?linked=mastodon|error` callback banner
+
+**Session B (remaining):**
+- Cross-post toggle UI in `ExternalCard` reply/quote composer (hidden when no linked account for the item's protocol)
+- Bluesky OAuth flow (AT Protocol confidential client, §VI.3) + AT Protocol outbound adapter (`createRecord` for posts/replies/quotes, 300-grapheme limit)
+- `outbound_token_refresh` cron job (uses `outbound_token_refresh_window_pct`)
+- Migrate external Nostr outbound from the inline `publishToExternalRelays` path (added in Phase 2) into the job queue for consistency
+- Text transformation/truncation polish
 
 **Why last:** This is the highest-complexity, highest-trust feature. By this point, all four ingestion pipelines are battle-tested, the feed UI handles all external content types cleanly, and the outbound adapters can build on the same protocol-specific code and libraries used for ingestion. Consolidating all credential management (OAuth flows, token refresh, encrypted storage, linked account UI) into a single phase avoids scattering security-sensitive code across multiple releases. Credential management and outbound error handling are the hardest parts of the system — they benefit from the most runway.
-
-**Estimated effort:** 4–5 weeks.
 
 ### Future — ActivityPub inbox delivery
 

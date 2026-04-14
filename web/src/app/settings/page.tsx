@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { EmailChange } from '../../components/account/EmailChange'
 import { PaymentSection } from '../../components/account/PaymentSection'
+import { LinkedAccountsPanel } from '../../components/account/LinkedAccountsPanel'
 import { NotificationPreferences } from '../../components/social/NotificationPreferences'
 import { ExportModal } from '../../components/ExportModal'
 import { DangerZone } from '../../components/account/DangerZone'
@@ -13,7 +14,22 @@ import { PageShell } from '../../components/ui/PageShell'
 export default function SettingsPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [showExport, setShowExport] = useState(false)
+  const linked = searchParams.get('linked')
+  const [banner, setBanner] = useState<{ kind: 'ok' | 'error'; msg: string } | null>(null)
+
+  useEffect(() => {
+    if (linked === 'mastodon') setBanner({ kind: 'ok', msg: 'Mastodon account connected.' })
+    else if (linked === 'error') setBanner({ kind: 'error', msg: 'Connection failed. Please try again.' })
+    if (linked) {
+      const t = setTimeout(() => {
+        setBanner(null)
+        router.replace('/settings')
+      }, 5000)
+      return () => clearTimeout(t)
+    }
+  }, [linked, router])
 
   useEffect(() => { if (!loading && !user) router.push('/auth?mode=login') }, [user, loading, router])
 
@@ -31,9 +47,17 @@ export default function SettingsPage() {
   return (
     <PageShell width="article" title="Settings">
       <div className="space-y-8 max-w-md">
+        {banner && (
+          <div className={`px-4 py-3 text-ui-sm ${banner.kind === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+            {banner.msg}
+          </div>
+        )}
+
         <EmailChange />
 
         <PaymentSection />
+
+        <LinkedAccountsPanel />
 
         <section className="bg-white px-6 py-5">
           <NotificationPreferences />

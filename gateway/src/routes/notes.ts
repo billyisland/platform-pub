@@ -4,6 +4,7 @@ import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay, publishToExternalRelays } from '../lib/nostr-publisher.js'
+import { enqueueCrossPost } from '../lib/outbound-enqueue.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -35,6 +36,12 @@ const IndexNoteSchema = z.object({
     tags: z.array(z.array(z.string())),
     content: z.string(),
     sig: z.string(),
+  }).optional(),
+  // Optional: cross-post this note to a linked external account (Phase 5)
+  crossPost: z.object({
+    linkedAccountId: z.string().uuid(),
+    sourceItemId: z.string().uuid(),
+    actionType: z.enum(['reply', 'quote']),
   }).optional(),
 })
 
@@ -201,6 +208,22 @@ export async function noteRoutes(app: FastifyInstance) {
         }).catch(err => {
           logger.warn({ err }, 'Failed to check outbound Nostr relay publish')
         })
+      }
+
+      // Outbound: enqueue cross-post job if requested (Phase 5)
+      if (data.crossPost && noteId) {
+        try {
+          await enqueueCrossPost({
+            accountId: authorId,
+            linkedAccountId: data.crossPost.linkedAccountId,
+            sourceItemId: data.crossPost.sourceItemId,
+            actionType: data.crossPost.actionType,
+            nostrEventId: data.nostrEventId,
+            bodyText: data.content,
+          })
+        } catch (err) {
+          logger.warn({ err, noteId }, 'Failed to enqueue outbound cross-post')
+        }
       }
 
       return reply.status(201).send({ noteId })
