@@ -13,6 +13,7 @@ import { feedIngestAtprotoBackfill } from './tasks/feed-ingest-atproto-backfill.
 import { feedIngestActivityPub } from './tasks/feed-ingest-activitypub.js'
 import { outboundCrossPost } from './tasks/outbound-cross-post.js'
 import { outboundTokenRefresh } from './tasks/outbound-token-refresh.js'
+import { atprotoOauthStatesPrune } from './tasks/atproto-oauth-states-prune.js'
 import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
@@ -56,6 +57,8 @@ async function start() {
         '0 5 * * * feed_items_reconcile',
         // Refresh expiring OAuth tokens for linked accounts — every 30 min
         '*/30 * * * * outbound_token_refresh',
+        // Prune expired atproto OAuth pending states — every 5 min
+        '*/5 * * * * atproto_oauth_states_prune',
       ].join('\n')
     ),
     taskList: {
@@ -70,6 +73,7 @@ async function start() {
       feed_ingest_activitypub: feedIngestActivityPub,
       outbound_cross_post: outboundCrossPost,
       outbound_token_refresh: outboundTokenRefresh,
+      atproto_oauth_states_prune: atprotoOauthStatesPrune,
     },
   })
 

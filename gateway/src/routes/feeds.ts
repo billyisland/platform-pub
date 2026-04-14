@@ -4,6 +4,79 @@ import { requireAuth } from '../middleware/auth.js'
 import { requireAdmin } from './moderation.js'
 import logger from '../../shared/src/lib/logger.js'
 
+// Per-protocol validation for subscribe input. Returns null if valid, or a
+// human-readable error message.
+function validateSubscribeInput(input: {
+  protocol: string
+  sourceUri: string
+  displayName?: string
+  description?: string
+  avatarUrl?: string
+  relayUrls?: string[]
+}): string | null {
+  const { protocol, sourceUri, displayName, description, avatarUrl, relayUrls } = input
+
+  if (typeof sourceUri !== 'string' || sourceUri.length === 0 || sourceUri.length > 2048) {
+    return 'sourceUri must be 1–2048 chars'
+  }
+
+  if (protocol === 'rss') {
+    try {
+      const u = new URL(sourceUri)
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return 'rss sourceUri must be http(s)'
+    } catch { return 'rss sourceUri must be a valid URL' }
+  } else if (protocol === 'activitypub') {
+    try {
+      const u = new URL(sourceUri)
+      if (u.protocol !== 'https:') return 'activitypub sourceUri must be https'
+    } catch { return 'activitypub sourceUri must be a valid URL' }
+  } else if (protocol === 'atproto') {
+    if (!/^did:(plc|web):[a-zA-Z0-9.:_-]+$/.test(sourceUri)) {
+      return 'atproto sourceUri must be a DID (did:plc:… or did:web:…)'
+    }
+  } else if (protocol === 'nostr_external') {
+    if (!/^[0-9a-f]{64}$/i.test(sourceUri)) {
+      return 'nostr_external sourceUri must be a 64-char hex pubkey'
+    }
+  }
+
+  // Strip control chars and cap free-text fields
+  if (displayName != null && (typeof displayName !== 'string' || displayName.length > 200)) {
+    return 'displayName exceeds 200 chars'
+  }
+  if (description != null && (typeof description !== 'string' || description.length > 1000)) {
+    return 'description exceeds 1000 chars'
+  }
+  if (avatarUrl != null && avatarUrl.length > 0) {
+    if (typeof avatarUrl !== 'string' || avatarUrl.length > 2048) return 'avatarUrl exceeds 2048 chars'
+    try {
+      const u = new URL(avatarUrl)
+      if (u.protocol !== 'https:') return 'avatarUrl must be https'
+    } catch { return 'avatarUrl must be a valid URL' }
+  }
+
+  if (relayUrls != null) {
+    if (!Array.isArray(relayUrls)) return 'relayUrls must be an array'
+    if (relayUrls.length > 10) return 'relayUrls exceeds 10 entries'
+    for (const r of relayUrls) {
+      if (typeof r !== 'string' || r.length === 0 || r.length > 2048) {
+        return 'each relayUrl must be a 1–2048 char string'
+      }
+      try {
+        const u = new URL(r)
+        if (u.protocol !== 'ws:' && u.protocol !== 'wss:') return 'relayUrls must use ws:// or wss://'
+      } catch { return `invalid relayUrl: ${r}` }
+    }
+  }
+
+  return null
+}
+
+function stripControlChars(s: string | undefined | null): string | null {
+  if (s == null) return null
+  return s.replace(/[\x00-\x1f\x7f]/g, '').trim() || null
+}
+
 // =============================================================================
 // External Feed Subscription routes
 //
@@ -40,6 +113,11 @@ export async function feedsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: `Protocol "${protocol}" is not yet supported.` })
     }
 
+    const validationError = validateSubscribeInput({ protocol, sourceUri, displayName, description, avatarUrl, relayUrls })
+    if (validationError) {
+      return reply.status(400).send({ error: validationError })
+    }
+
     // Check subscription limit
     const { rows: [{ count: subCount }] } = await pool.query<{ count: string }>(
       `SELECT COUNT(*) AS count FROM external_subscriptions WHERE subscriber_id = $1`,
@@ -69,8 +147,8 @@ export async function feedsRoutes(app: FastifyInstance) {
           RETURNING id
         `, [
           protocol, sourceUri,
-          displayName ?? null,
-          description ?? null,
+          stripControlChars(displayName),
+          stripControlChars(description),
           avatarUrl ?? null,
           protocol === 'nostr_external' && relayUrls && relayUrls.length > 0 ? relayUrls : null,
         ])

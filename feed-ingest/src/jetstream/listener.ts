@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws'
+import type { PoolClient } from 'pg'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
 import { normaliseAtprotoCommit, buildAtUri, type JetstreamCommit } from '../adapters/atproto.js'
@@ -33,6 +34,11 @@ const DEFAULT_JETSTREAM_URL = 'wss://jetstream1.us-east.bsky.network/subscribe'
 const WANTED_COLLECTIONS = ['app.bsky.feed.post']
 const DID_REFRESH_INTERVAL_MS = 60_000
 const INITIAL_BACKOFF_MS = 1000
+// Session-scoped advisory lock key. Only one feed-ingest replica at a time
+// runs the Jetstream WebSocket; others poll for the lock. The number is
+// arbitrary but must be stable across deploys.
+const JETSTREAM_LOCK_KEY = 0x4a455453  // "JETS"
+const LEADER_POLL_MS = 30_000
 
 type SourceRow = {
   id: string
@@ -53,6 +59,9 @@ export class JetstreamListener {
   private maxBackoffMs = 30_000
   private stopping = false
   private healthy = false
+  private leaderClient: PoolClient | null = null
+  private leaderPollTimer: NodeJS.Timeout | null = null
+  private isLeader = false
 
   constructor(url?: string) {
     this.url = url ?? process.env.JETSTREAM_URL ?? DEFAULT_JETSTREAM_URL
@@ -61,17 +70,15 @@ export class JetstreamListener {
   async start(): Promise<void> {
     logger.info({ url: this.url }, 'Jetstream listener starting')
     await this.loadMaxBackoff()
-    await this.refreshDids()
-    this.didRefreshTimer = setInterval(() => {
-      this.refreshDids().catch((err) =>
-        logger.warn({ err: err.message }, 'DID refresh failed')
-      )
-    }, DID_REFRESH_INTERVAL_MS)
+    // Try to claim leadership immediately; if another replica holds the lock,
+    // poll periodically until it's released.
+    await this.tryBecomeLeader()
   }
 
   async stop(): Promise<void> {
     this.stopping = true
-    if (this.didRefreshTimer) clearInterval(this.didRefreshTimer)
+    if (this.didRefreshTimer) clearTimeout(this.didRefreshTimer)
+    if (this.leaderPollTimer) clearTimeout(this.leaderPollTimer)
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     if (this.ws) {
       try {
@@ -80,8 +87,82 @@ export class JetstreamListener {
         // ignore
       }
     }
+    await this.releaseLeadership()
     await this.setHealthy(false)
     logger.info('Jetstream listener stopped')
+  }
+
+  // --- Leader election --------------------------------------------------------
+  //
+  // Jetstream state (cursor, DID filter) is global; running it on >1 replica
+  // produces duplicate ingestion and cursor contention. Use a session-scoped
+  // advisory lock: whichever replica holds it is the sole listener. Others
+  // poll until the holder dies and releases.
+
+  private async tryBecomeLeader(): Promise<void> {
+    if (this.stopping || this.isLeader) return
+    let client: PoolClient
+    try {
+      client = await pool.connect()
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Leader election: pool.connect failed')
+      this.schedulePollRetry()
+      return
+    }
+    try {
+      const { rows } = await client.query<{ locked: boolean }>(
+        'SELECT pg_try_advisory_lock($1) AS locked',
+        [JETSTREAM_LOCK_KEY]
+      )
+      if (rows[0]?.locked) {
+        this.leaderClient = client
+        this.isLeader = true
+        logger.info('Jetstream leader elected — starting listener')
+        await this.refreshDids()
+        this.scheduleDidRefresh()
+        return
+      }
+      // Lock held elsewhere — release the client and poll again later.
+      client.release()
+      this.schedulePollRetry()
+    } catch (err) {
+      try { client.release() } catch { /* ignore */ }
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Leader election attempt failed')
+      this.schedulePollRetry()
+    }
+  }
+
+  private schedulePollRetry(): void {
+    if (this.stopping) return
+    this.leaderPollTimer = setTimeout(() => {
+      this.leaderPollTimer = null
+      this.tryBecomeLeader().catch((err) =>
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Leader election poll failed')
+      )
+    }, LEADER_POLL_MS)
+  }
+
+  private async releaseLeadership(): Promise<void> {
+    if (!this.leaderClient) return
+    try {
+      await this.leaderClient.query('SELECT pg_advisory_unlock($1)', [JETSTREAM_LOCK_KEY])
+    } catch { /* ignore — the session is going away anyway */ }
+    try { this.leaderClient.release() } catch { /* ignore */ }
+    this.leaderClient = null
+    this.isLeader = false
+  }
+
+  // Self-scheduling DID refresh. Using setTimeout (rather than setInterval)
+  // guarantees the next tick only fires after the previous one resolves, so a
+  // slow DB query cannot stack up overlapping reconnects.
+  private scheduleDidRefresh(): void {
+    if (this.stopping || !this.isLeader) return
+    this.didRefreshTimer = setTimeout(() => {
+      this.didRefreshTimer = null
+      this.refreshDids()
+        .catch((err) => logger.warn({ err: err.message }, 'DID refresh failed'))
+        .finally(() => this.scheduleDidRefresh())
+    }, DID_REFRESH_INTERVAL_MS)
   }
 
   private async loadMaxBackoff(): Promise<void> {

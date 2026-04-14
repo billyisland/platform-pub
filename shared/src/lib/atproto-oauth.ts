@@ -54,34 +54,50 @@ class DbSessionStore implements NodeSavedSessionStore {
   }
 }
 
-class MemoryStateStore implements NodeSavedStateStore {
-  private map = new Map<string, { value: NodeSavedState; expiresAt: number }>()
+// DB-backed state store. The authorize→callback round-trip may land on a
+// different gateway replica than the one that issued the authorize URL, so
+// the PKCE verifier + DPoP key must be persisted centrally.
+class DbStateStore implements NodeSavedStateStore {
   private ttlMs = 10 * 60 * 1000
   async get(key: string): Promise<NodeSavedState | undefined> {
-    const entry = this.map.get(key)
-    if (!entry) return undefined
-    if (entry.expiresAt < Date.now()) {
-      this.map.delete(key)
+    const { rows } = await pool.query<{ state_data_enc: string }>(
+      'SELECT state_data_enc FROM atproto_oauth_pending_states WHERE key = $1 AND expires_at > now()',
+      [key]
+    )
+    if (rows.length === 0) return undefined
+    try {
+      return decryptJson<NodeSavedState>(rows[0].state_data_enc)
+    } catch (err) {
+      logger.error({ err, key }, 'Failed to decrypt atproto OAuth pending state')
       return undefined
     }
-    return entry.value
   }
   async set(key: string, value: NodeSavedState): Promise<void> {
-    this.map.set(key, { value, expiresAt: Date.now() + this.ttlMs })
-    if (this.map.size > 100) {
-      const now = Date.now()
-      for (const [k, v] of this.map) if (v.expiresAt < now) this.map.delete(k)
-    }
+    const enc = encryptJson(value)
+    const expiresAt = new Date(Date.now() + this.ttlMs)
+    await pool.query(
+      `INSERT INTO atproto_oauth_pending_states (key, state_data_enc, expires_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (key) DO UPDATE SET state_data_enc = EXCLUDED.state_data_enc, expires_at = EXCLUDED.expires_at`,
+      [key, enc, expiresAt]
+    )
   }
   async del(key: string): Promise<void> {
-    this.map.delete(key)
+    await pool.query('DELETE FROM atproto_oauth_pending_states WHERE key = $1', [key])
   }
 }
 
 let clientPromise: Promise<NodeOAuthClient> | null = null
 
 export function getAtprotoClient(): Promise<NodeOAuthClient> {
-  if (!clientPromise) clientPromise = buildClient()
+  if (!clientPromise) {
+    // Null the cache on rejection so a transient init failure (e.g. DB blip,
+    // JWK parse error) doesn't lock out every subsequent caller until restart.
+    clientPromise = buildClient().catch((err) => {
+      clientPromise = null
+      throw err
+    })
+  }
   return clientPromise
 }
 
@@ -90,7 +106,7 @@ async function buildClient(): Promise<NodeOAuthClient> {
   const privateJwkRaw = process.env.ATPROTO_PRIVATE_JWK?.trim() || ''
 
   const sessionStore = new DbSessionStore()
-  const stateStore = new MemoryStateStore()
+  const stateStore = new DbStateStore()
 
   const useLoopback = !baseUrl || /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(baseUrl)
 

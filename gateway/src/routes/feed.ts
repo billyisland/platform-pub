@@ -288,16 +288,26 @@ async function exploreFeed(readerId: string, cursor: CursorParts | undefined, li
     `, params),
   ])
 
-  const items: any[] = [
-    ...contentRes.rows.map(feedItemToResponse),
-    ...newUsersRes.rows.map(row => ({
-      type: 'new_user' as const,
-      username: row.username,
-      displayName: row.display_name,
-      avatar: row.avatar,
-      joinedAt: Number(row.joined_at),
-    })),
-  ]
-  items.sort((a: any, b: any) => (b.publishedAt ?? b.joinedAt) - (a.publishedAt ?? a.joinedAt))
+  // Preserve SQL score ordering for content; interleave new-user cards at fixed
+  // positions (every NEW_USER_INTERVAL items) so scoring is not silently discarded.
+  const content = contentRes.rows.map(feedItemToResponse)
+  const newUsers = newUsersRes.rows.map(row => ({
+    type: 'new_user' as const,
+    username: row.username,
+    displayName: row.display_name,
+    avatar: row.avatar,
+    joinedAt: Number(row.joined_at),
+  }))
+
+  const NEW_USER_INTERVAL = 5
+  const items: any[] = []
+  let nuIdx = 0
+  for (let i = 0; i < content.length; i++) {
+    items.push(content[i])
+    if ((i + 1) % NEW_USER_INTERVAL === 0 && nuIdx < newUsers.length) {
+      items.push(newUsers[nuIdx++])
+    }
+  }
+  while (nuIdx < newUsers.length) items.push(newUsers[nuIdx++])
   return items.slice(0, limit)
 }

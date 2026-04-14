@@ -3,6 +3,11 @@ import { WebSocket } from 'ws'
 import { nip19 } from 'nostr-tools'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
+import { validateWebSocketUrl } from '../../shared/src/lib/http-client.js'
+
+// Reject events claiming timestamps more than this far in the future — prevents
+// a hostile relay from poisoning the cursor into year 2100.
+const FUTURE_DRIFT_WINDOW_SECONDS = 10 * 60 // 10 minutes
 
 // =============================================================================
 // feed_ingest_nostr — per-source external Nostr relay fetch job
@@ -74,10 +79,20 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     const eventsMap = new Map<string, NostrEvent>()
     const deletionEvents: NostrEvent[] = []
 
+    const nowSecs = Math.floor(Date.now() / 1000)
+    const maxCreatedAt = nowSecs + FUTURE_DRIFT_WINDOW_SECONDS
+
     for (const relayUrl of source.relay_urls) {
       try {
+        await validateWebSocketUrl(relayUrl)
         const events = await fetchFromRelay(relayUrl, hexPubkey, since)
         for (const event of events) {
+          // Reject events claiming timestamps far in the future (cursor poisoning)
+          if (event.created_at > maxCreatedAt) {
+            logger.warn({ sourceId, relayUrl, eventId: event.id, createdAt: event.created_at },
+              'Rejecting Nostr event with future timestamp')
+            continue
+          }
           if (event.kind === 5) {
             deletionEvents.push(event)
           } else {

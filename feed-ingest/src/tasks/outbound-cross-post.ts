@@ -108,10 +108,21 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
     if (row.protocol === 'activitypub') {
       if (!row.la_instance_url) throw new Error('Linked account has no instance_url')
       if (!row.la_credentials_enc) throw new Error('Linked account has no credentials')
+      if (row.action_type !== 'reply' && row.action_type !== 'quote') {
+        throw new Error(`Unsupported activitypub action_type: ${row.action_type}`)
+      }
       const creds = decryptJson<MastodonCredentials>(row.la_credentials_enc)
+      // Mastodon has no native quote semantics — append the source URL so the
+      // cross-posted status isn't a naked, context-free top-level post.
+      let text = row.body_text ?? ''
+      if (row.action_type === 'quote') {
+        if (!row.ei_source_item_uri) throw new Error('Quote target missing source URL')
+        const sep = text.endsWith('\n') ? '' : '\n\n'
+        text = `${text}${sep}${row.ei_source_item_uri}`
+      }
       const result = await postMastodonStatus({
         instanceUrl: row.la_instance_url,
-        text: row.body_text ?? '',
+        text,
         maxChars: cfg.mastodon_max,
         replyToStatusUri: row.action_type === 'reply' ? (row.ei_source_item_uri ?? undefined) : undefined,
       }, creds)

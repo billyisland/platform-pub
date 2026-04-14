@@ -36,10 +36,17 @@ const PRIVATE_RANGES = [
   /^fe80:/i,                        // IPv6 link-local
   /^fc00:/i,                        // IPv6 ULA
   /^fd/i,                           // IPv6 ULA
+  /^::ffff:/i,                      // IPv4-mapped IPv6 — re-validated via embedded v4
+  /^(22[4-9]|23\d)\./,             // 224.0.0.0/4 IPv4 multicast
+  /^ff/i,                           // IPv6 multicast
 ]
 
 function isPrivateIp(ip: string): boolean {
-  return PRIVATE_RANGES.some(re => re.test(ip))
+  if (PRIVATE_RANGES.some(re => re.test(ip))) return true
+  // IPv4-mapped IPv6 ("::ffff:10.0.0.1") — extract and re-check the embedded v4
+  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i)
+  if (mapped && PRIVATE_RANGES.some(re => re.test(mapped[1]))) return true
+  return false
 }
 
 async function validateHost(hostname: string): Promise<void> {
@@ -165,4 +172,26 @@ export async function safeFetch(
       clearTimeout(timer)
     }
   }
+}
+
+// Validate a WebSocket URL for SSRF: scheme must be ws:/wss:, hostname must not
+// resolve to a private/reserved IP. Call before `new WebSocket(url)`.
+// Note: does NOT pin the resolved IP — there is still a TOCTOU gap between
+// this check and the WS library's own DNS lookup. Pinning (Dispatcher-style)
+// is tracked separately (S1). This still blocks the obvious user-supplied
+// `ws://169.254.169.254/…` and `ws://localhost/…` attacks.
+export async function validateWebSocketUrl(url: string, maxLength = 2048): Promise<void> {
+  if (url.length > maxLength) {
+    throw new Error(`WebSocket URL exceeds ${maxLength} chars`)
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error(`Invalid WebSocket URL: ${url}`)
+  }
+  if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+    throw new Error(`Unsupported WebSocket scheme: ${parsed.protocol}`)
+  }
+  await validateHost(parsed.hostname)
 }

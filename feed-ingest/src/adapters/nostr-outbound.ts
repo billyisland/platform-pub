@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws'
 import logger from '../../shared/src/lib/logger.js'
+import { validateWebSocketUrl } from '../../shared/src/lib/http-client.js'
 
 // =============================================================================
 // External Nostr outbound adapter
@@ -50,7 +51,8 @@ export async function publishNostrToRelays(
   return event.id
 }
 
-function publishOne(relayUrl: string, event: NostrSignedEvent): Promise<void> {
+async function publishOne(relayUrl: string, event: NostrSignedEvent): Promise<void> {
+  await validateWebSocketUrl(relayUrl)
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(relayUrl)
     const timeout = setTimeout(() => {

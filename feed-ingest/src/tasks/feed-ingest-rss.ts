@@ -37,6 +37,7 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
   const maxItems = parseInt(config.get('feed_ingest_max_items_per_fetch') ?? '50', 10)
   const maxErrors = parseInt(config.get('feed_ingest_max_error_count') ?? '10', 10)
   const backoffFactor = parseInt(config.get('feed_ingest_error_backoff_factor') ?? '2', 10)
+  const DEFAULT_INTERVAL = 300
 
   // Parse cursor: we store etag and last-modified as JSON
   let etag: string | null = null
@@ -61,8 +62,8 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
     if (result.notModified) {
       // Feed hasn't changed — update last_fetched_at only
       await pool.query(
-        `UPDATE external_sources SET last_fetched_at = now(), error_count = 0, last_error = NULL, updated_at = now() WHERE id = $1`,
-        [sourceId]
+        `UPDATE external_sources SET last_fetched_at = now(), error_count = 0, last_error = NULL, fetch_interval_seconds = $2, updated_at = now() WHERE id = $1`,
+        [sourceId, DEFAULT_INTERVAL]
       )
       return
     }
@@ -149,9 +150,10 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
         description = COALESCE($4, description),
         error_count = 0,
         last_error = NULL,
+        fetch_interval_seconds = $5,
         updated_at = now()
       WHERE id = $1
-    `, [sourceId, newCursor, result.feedTitle ?? null, result.feedDescription ?? null])
+    `, [sourceId, newCursor, result.feedTitle ?? null, result.feedDescription ?? null, DEFAULT_INTERVAL])
 
     if (inserted > 0) {
       logger.info({ sourceId, inserted, total: result.items.length }, 'RSS items ingested')
@@ -174,7 +176,7 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
         fetch_interval_seconds = $5,
         updated_at = now()
       WHERE id = $1
-    `, [sourceId, newErrorCount, errorMessage, shouldDeactivate, Math.round(backoffInterval)])
+    `, [sourceId, newErrorCount, errorMessage.slice(0, 1000), shouldDeactivate, Math.round(backoffInterval)])
 
     if (shouldDeactivate) {
       logger.warn({ sourceId, errorCount: newErrorCount }, 'Source deactivated after too many errors')
