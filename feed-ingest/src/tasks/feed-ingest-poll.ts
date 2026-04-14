@@ -76,6 +76,7 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
 
       const taskName = source.protocol === 'rss' ? 'feed_ingest_rss'
                      : source.protocol === 'nostr_external' ? 'feed_ingest_nostr'
+                     : source.protocol === 'activitypub' ? 'feed_ingest_activitypub'
                      : source.protocol === 'atproto' && !jetstreamHealthy ? 'feed_ingest_atproto_backfill'
                      : null
       if (!taskName) continue

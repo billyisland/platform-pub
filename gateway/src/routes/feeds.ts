@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
+import { requireAdmin } from './moderation.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -35,7 +36,7 @@ export async function feedsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'protocol and sourceUri are required' })
     }
 
-    if (protocol !== 'rss' && protocol !== 'atproto' && protocol !== 'nostr_external') {
+    if (protocol !== 'rss' && protocol !== 'atproto' && protocol !== 'nostr_external' && protocol !== 'activitypub') {
       return reply.status(400).send({ error: `Protocol "${protocol}" is not yet supported.` })
     }
 
@@ -96,7 +97,9 @@ export async function feedsRoutes(app: FastifyInstance) {
           ? 'feed_ingest_nostr'
           : protocol === 'atproto'
             ? 'feed_ingest_atproto_backfill'
-            : null
+            : protocol === 'activitypub'
+              ? 'feed_ingest_activitypub'
+              : null
       if (fetchTask) {
         await pool.query(`
           SELECT graphile_worker.add_job(
@@ -231,6 +234,62 @@ export async function feedsRoutes(app: FastifyInstance) {
     return reply.send({ ok: true })
   })
 
+  // GET /admin/activitypub/instance-health — per-instance ingest stats
+  //
+  // Exposes the counters maintained by feed_ingest_activitypub so admins can
+  // spot unreliable Mastodon instances and inform the ADR's §XII.5 decision
+  // on whether to accelerate inbox delivery.
+  app.get('/admin/activitypub/instance-health', {
+    preHandler: requireAdmin,
+  }, async (_req, reply) => {
+    const { rows } = await pool.query<{
+      host: string
+      success_count: string
+      failure_count: string
+      last_success_at: Date | null
+      last_failure_at: Date | null
+      last_error: string | null
+      subscribed_sources: string
+    }>(`
+      SELECT
+        h.host,
+        h.success_count,
+        h.failure_count,
+        h.last_success_at,
+        h.last_failure_at,
+        h.last_error,
+        (
+          SELECT COUNT(*)::text FROM external_sources s
+          WHERE s.protocol = 'activitypub'
+            AND s.is_active = TRUE
+            AND split_part(
+              replace(replace(s.source_uri, 'https://', ''), 'http://', ''),
+              '/', 1
+            ) = h.host
+        ) AS subscribed_sources
+      FROM activitypub_instance_health h
+      ORDER BY (h.success_count + h.failure_count) DESC
+      LIMIT 200
+    `)
+    return reply.send({
+      instances: rows.map(r => {
+        const s = parseInt(r.success_count, 10)
+        const f = parseInt(r.failure_count, 10)
+        const total = s + f
+        return {
+          host: r.host,
+          successCount: s,
+          failureCount: f,
+          successRate: total === 0 ? null : s / total,
+          lastSuccessAt: r.last_success_at,
+          lastFailureAt: r.last_failure_at,
+          lastError: r.last_error,
+          subscribedSources: parseInt(r.subscribed_sources, 10),
+        }
+      }),
+    })
+  })
+
   // POST /feeds/:id/refresh — force immediate re-fetch
   app.post<{ Params: { id: string } }>('/feeds/:id/refresh', {
     preHandler: requireAuth,
@@ -252,15 +311,20 @@ export async function feedsRoutes(app: FastifyInstance) {
 
     const { source_id, protocol } = rows[0]
 
-    if (protocol === 'rss') {
+    const refreshTask = protocol === 'rss' ? 'feed_ingest_rss'
+                      : protocol === 'nostr_external' ? 'feed_ingest_nostr'
+                      : protocol === 'activitypub' ? 'feed_ingest_activitypub'
+                      : protocol === 'atproto' ? 'feed_ingest_atproto_backfill'
+                      : null
+    if (refreshTask) {
       await pool.query(`
         SELECT graphile_worker.add_job(
-          'feed_ingest_rss',
+          $2,
           json_build_object('sourceId', $1::text),
           job_key := 'feed_ingest_' || $1::text,
           max_attempts := 1
         )
-      `, [source_id])
+      `, [source_id, refreshTask])
     }
 
     return reply.send({ ok: true })

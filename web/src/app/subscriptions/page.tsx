@@ -146,6 +146,9 @@ function SubscriptionRow({
               {src.displayName ?? src.sourceUri}
             </span>
             <span className="label-ui text-grey-400">{badge}</span>
+            {src.protocol === 'activitypub' && (
+              <span className="label-ui text-amber-600" title="Mastodon outbox polling is best-effort — some posts may be missing depending on the instance">BETA</span>
+            )}
             {sub.isMuted && <span className="label-ui text-grey-300">MUTED</span>}
           </div>
 

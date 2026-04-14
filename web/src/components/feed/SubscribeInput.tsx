@@ -221,7 +221,10 @@ function MatchRow({
   } else if (match.externalSource) {
     name = match.externalSource.displayName ?? match.externalSource.sourceUri
     detail = match.externalSource.sourceUri
-    badge = match.externalSource.protocol.toUpperCase()
+    badge = match.externalSource.protocol === 'atproto' ? 'BLUESKY'
+          : match.externalSource.protocol === 'activitypub' ? 'MASTODON'
+          : match.externalSource.protocol === 'nostr_external' ? 'NOSTR'
+          : match.externalSource.protocol.toUpperCase()
   } else if (match.account) {
     name = match.account.displayName
     detail = `@${match.account.username}`
@@ -236,6 +239,9 @@ function MatchRow({
         <div className="flex items-center gap-2">
           <span className="text-ui-sm font-semibold text-black truncate">{name}</span>
           <span className="label-ui text-grey-400 flex-shrink-0">{badge}</span>
+          {match.externalSource?.protocol === 'activitypub' && (
+            <span className="label-ui text-amber-600 flex-shrink-0" title="Mastodon outbox polling is best-effort — some posts may be missing depending on the instance">BETA</span>
+          )}
         </div>
         <p className="text-mono-xs text-grey-400 truncate">{detail}</p>
       </div>

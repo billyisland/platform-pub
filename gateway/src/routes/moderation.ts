@@ -49,7 +49,7 @@ async function isAdmin(accountId: string): Promise<boolean> {
   return ids.includes(accountId)
 }
 
-async function requireAdmin(req: any, reply: any): Promise<void> {
+export async function requireAdmin(req: any, reply: any): Promise<void> {
   await requireAuth(req, reply)
   if (reply.sent) return
 

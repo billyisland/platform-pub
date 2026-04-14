@@ -1332,6 +1332,25 @@ CREATE UNIQUE INDEX idx_feed_items_external ON feed_items(external_item_id) WHER
 CREATE INDEX idx_feed_items_type    ON feed_items(item_type, published_at DESC) WHERE deleted_at IS NULL;
 
 -- =============================================================================
+-- ActivityPub instance health (migration 056)
+-- Per-host outbox-poll success/failure tallies, surfaced via the admin route
+-- GET /admin/activitypub/instance-health.
+-- =============================================================================
+
+CREATE TABLE activitypub_instance_health (
+  host            TEXT PRIMARY KEY,
+  success_count   BIGINT NOT NULL DEFAULT 0,
+  failure_count   BIGINT NOT NULL DEFAULT 0,
+  last_success_at TIMESTAMPTZ,
+  last_failure_at TIMESTAMPTZ,
+  last_error      TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_ap_instance_health_updated ON activitypub_instance_health(updated_at DESC);
+
+-- =============================================================================
 -- Migration tracking
 --
 -- Pre-seed the _migrations table so the migration runner knows that a fresh
@@ -1400,5 +1419,7 @@ INSERT INTO _migrations (filename) VALUES
   ('051_article_scheduling.sql'),
   ('052_universal_feed_external.sql'),
   ('053_feed_items.sql'),
-  ('054_feed_items_backfill.sql')
+  ('054_feed_items_backfill.sql'),
+  ('055_universal_feed_atproto.sql'),
+  ('056_universal_feed_activitypub.sql')
 ON CONFLICT (filename) DO NOTHING;

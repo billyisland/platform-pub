@@ -4,6 +4,7 @@ import { pool } from '../../shared/src/db/client.js'
 import { safeFetch } from '../../shared/src/lib/http-client.js'
 import logger from '../../shared/src/lib/logger.js'
 import { getProfile as atprotoGetProfile, resolveHandle as atprotoResolveHandle, extractFromBskyUrl, isDid as isAtprotoDid } from './atproto-resolve.js'
+import { resolveWebFinger, fetchActorProfile, extractFromMastodonUrl } from './activitypub-resolve.js'
 
 // =============================================================================
 // Universal Resolver
@@ -206,11 +207,8 @@ export async function resolve(
     }
 
     case 'fediverse_handle': {
-      return {
-        inputType,
-        matches: [],
-        error: 'Fediverse handle resolution is coming soon. Try pasting an RSS feed URL for now.',
-      }
+      pendingResolutions.push('activitypub_profile')
+      break
     }
 
     case 'url': {
@@ -221,11 +219,11 @@ export async function resolve(
     }
 
     case 'ambiguous_at': {
-      // Try email lookup locally (instant), NIP-05 and WebFinger are Phase B
+      // Try email lookup locally (instant); NIP-05 + WebFinger are Phase B.
       const account = await lookupByEmail(trimmed)
       if (account) matches.push(account)
       pendingResolutions.push('nip05_resolution')
-      // WebFinger is a stub in Phase 1
+      pendingResolutions.push('webfinger_resolution')
       break
     }
 
@@ -283,6 +281,21 @@ async function resolveAsync(
   if (inputType === 'ambiguous_at') {
     const nip05Matches = await resolveNip05(query)
     matches.push(...nip05Matches)
+    // Also try WebFinger — many fediverse accounts take the bare `user@host`
+    // form (no @ prefix) and the ambiguous chain is the only place to catch
+    // them. Dedupe against any existing activitypub match by actor URI.
+    const apMatch = await resolveActivityPubHandle(query)
+    if (apMatch && !matches.some(m =>
+      m.externalSource?.protocol === 'activitypub' &&
+      m.externalSource?.sourceUri === apMatch.externalSource?.sourceUri
+    )) {
+      matches.push(apMatch)
+    }
+  }
+
+  if (inputType === 'fediverse_handle') {
+    const apMatch = await resolveActivityPubHandle(query)
+    if (apMatch) matches.push(apMatch)
   }
 
   if (inputType === 'did' || inputType === 'bluesky_handle') {
@@ -316,6 +329,18 @@ async function resolveUrl(url: string): Promise<ResolverMatch[]> {
     if (bskyIdent !== null) {
       const match = await resolveAtproto(bskyIdent)
       return match ? [match] : []
+    }
+
+    const mastoHint = extractFromMastodonUrl(parsed)
+    if (mastoHint) {
+      const match = mastoHint.acct
+        ? await resolveActivityPubHandle(mastoHint.acct)
+        : mastoHint.actorUri
+          ? await resolveActivityPubByActor(mastoHint.actorUri)
+          : null
+      if (match) return [match]
+      // Fall through to RSS discovery if AP resolution fails — the URL may
+      // still be something we can subscribe to.
     }
 
     if (parsed.hostname === 'twitter.com' || parsed.hostname === 'x.com') {
@@ -523,6 +548,32 @@ async function resolveAtproto(identifier: string): Promise<ResolverMatch | null>
   }
 
   return null
+}
+
+// =============================================================================
+// ActivityPub (fediverse/Mastodon) resolution
+// =============================================================================
+
+async function resolveActivityPubHandle(handle: string): Promise<ResolverMatch | null> {
+  const actorUri = await resolveWebFinger(handle)
+  if (!actorUri) return null
+  return resolveActivityPubByActor(actorUri)
+}
+
+async function resolveActivityPubByActor(actorUri: string): Promise<ResolverMatch | null> {
+  const profile = await fetchActorProfile(actorUri)
+  if (!profile) return null
+  return {
+    type: 'external_source',
+    confidence: 'exact',
+    externalSource: {
+      protocol: 'activitypub',
+      sourceUri: profile.actorUri,
+      displayName: profile.displayName ?? profile.handle ?? profile.actorUri,
+      description: profile.description ?? undefined,
+      avatar: profile.avatar ?? undefined,
+    },
+  }
 }
 
 // =============================================================================

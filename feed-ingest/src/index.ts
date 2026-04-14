@@ -10,6 +10,7 @@ import { sourceMetadataRefresh } from './tasks/source-metadata-refresh.js'
 import { feedItemsReconcile } from './tasks/feed-items-reconcile.js'
 import { feedItemsAuthorRefresh } from './tasks/feed-items-author-refresh.js'
 import { feedIngestAtprotoBackfill } from './tasks/feed-ingest-atproto-backfill.js'
+import { feedIngestActivityPub } from './tasks/feed-ingest-activitypub.js'
 import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
@@ -62,6 +63,7 @@ async function start() {
       feed_items_reconcile: feedItemsReconcile,
       feed_items_author_refresh: feedItemsAuthorRefresh,
       feed_ingest_atproto_backfill: feedIngestAtprotoBackfill,
+      feed_ingest_activitypub: feedIngestActivityPub,
     },
   })
 
