@@ -21,6 +21,25 @@ export interface EnqueueCrossPostInput {
   bodyText: string
 }
 
+export interface SignedNostrEvent {
+  id: string
+  pubkey: string
+  created_at: number
+  kind: number
+  tags: string[][]
+  content: string
+  sig: string
+}
+
+export interface EnqueueNostrOutboundInput {
+  accountId: string
+  sourceItemId: string         // external_items.id (carries the source's relay_urls)
+  nostrEventId: string
+  bodyText: string
+  signedEvent: SignedNostrEvent
+  actionType: 'reply' | 'quote'
+}
+
 export async function enqueueCrossPost(input: EnqueueCrossPostInput): Promise<void> {
   const { rows: la } = await pool.query<{ protocol: string; is_valid: boolean }>(
     `SELECT protocol, is_valid FROM linked_accounts
@@ -45,6 +64,38 @@ export async function enqueueCrossPost(input: EnqueueCrossPostInput): Promise<vo
     input.actionType,
     input.sourceItemId,
     input.bodyText,
+  ])
+
+  await pool.query(`
+    SELECT graphile_worker.add_job(
+      'outbound_cross_post',
+      json_build_object('outboundPostId', $1::text),
+      job_key := 'outbound_cross_post_' || $1::text,
+      max_attempts := 1
+    )
+  `, [op.id])
+}
+
+// =============================================================================
+// Nostr-external variant — no linked_accounts row, signed event ships with the
+// audit row so the worker can replay it onto the source's relays.
+// =============================================================================
+
+export async function enqueueNostrOutbound(input: EnqueueNostrOutboundInput): Promise<void> {
+  const { rows: [op] } = await pool.query<{ id: string }>(`
+    INSERT INTO outbound_posts (
+      account_id, linked_account_id, protocol,
+      nostr_event_id, action_type, source_item_id, body_text,
+      signed_event, status
+    ) VALUES ($1, NULL, 'nostr_external', $2, $3, $4, $5, $6::jsonb, 'pending')
+    RETURNING id
+  `, [
+    input.accountId,
+    input.nostrEventId,
+    input.actionType,
+    input.sourceItemId,
+    input.bodyText,
+    JSON.stringify(input.signedEvent),
   ])
 
   await pool.query(`

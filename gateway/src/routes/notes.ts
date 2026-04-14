@@ -3,8 +3,8 @@ import { z } from 'zod'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
-import { publishToRelay, publishToExternalRelays } from '../lib/nostr-publisher.js'
-import { enqueueCrossPost } from '../lib/outbound-enqueue.js'
+import { publishToRelay } from '../lib/nostr-publisher.js'
+import { enqueueCrossPost, enqueueNostrOutbound } from '../lib/outbound-enqueue.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -184,30 +184,36 @@ export async function noteRoutes(app: FastifyInstance) {
         }
       }
 
-      // Outbound: if this note references external Nostr content and the frontend
-      // passed the signed event, publish to the source's external relays (fire-and-forget)
+      // Outbound: if this note references an external Nostr item and the
+      // frontend passed the signed event, enqueue an outbound publish job.
+      // The worker (feed-ingest/outbound_cross_post) replays the signed event
+      // onto the source's relays and writes the result to outbound_posts.
       if (data.signedEvent && data.quotedEventId) {
-        pool.query<{ relay_urls: string[] }>(
-          `SELECT xs.relay_urls
-           FROM external_items ei
-           JOIN external_sources xs ON xs.id = ei.source_id
-           WHERE xs.protocol = 'nostr_external'
-             AND ei.interaction_data->>'id' = $1
-             AND xs.relay_urls IS NOT NULL`,
-          [data.quotedEventId]
-        ).then(({ rows }) => {
-          if (rows.length > 0 && rows[0].relay_urls.length > 0) {
-            publishToExternalRelays(data.signedEvent as any, rows[0].relay_urls).catch(err => {
-              logger.warn({ err, noteId }, 'Outbound Nostr relay publish failed')
+        try {
+          const { rows } = await pool.query<{ id: string }>(
+            `SELECT ei.id
+             FROM external_items ei
+             JOIN external_sources xs ON xs.id = ei.source_id
+             WHERE xs.protocol = 'nostr_external'
+               AND ei.interaction_data->>'id' = $1
+               AND xs.relay_urls IS NOT NULL
+               AND array_length(xs.relay_urls, 1) > 0
+             LIMIT 1`,
+            [data.quotedEventId]
+          )
+          if (rows.length > 0) {
+            await enqueueNostrOutbound({
+              accountId: authorId,
+              sourceItemId: rows[0].id,
+              nostrEventId: data.nostrEventId,
+              bodyText: data.content,
+              signedEvent: data.signedEvent,
+              actionType: 'quote',
             })
-            logger.info(
-              { noteId, relayCount: rows[0].relay_urls.length },
-              'Note published to external Nostr relays'
-            )
           }
-        }).catch(err => {
-          logger.warn({ err }, 'Failed to check outbound Nostr relay publish')
-        })
+        } catch (err) {
+          logger.warn({ err, noteId }, 'Failed to enqueue outbound Nostr publish')
+        }
       }
 
       // Outbound: enqueue cross-post job if requested (Phase 5)

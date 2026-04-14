@@ -12,6 +12,7 @@ import { feedItemsAuthorRefresh } from './tasks/feed-items-author-refresh.js'
 import { feedIngestAtprotoBackfill } from './tasks/feed-ingest-atproto-backfill.js'
 import { feedIngestActivityPub } from './tasks/feed-ingest-activitypub.js'
 import { outboundCrossPost } from './tasks/outbound-cross-post.js'
+import { outboundTokenRefresh } from './tasks/outbound-token-refresh.js'
 import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
@@ -53,6 +54,8 @@ async function start() {
         '0 4 * * * feed_items_author_refresh',
         // Reconcile feed_items with source tables — daily at 05:00 UTC
         '0 5 * * * feed_items_reconcile',
+        // Refresh expiring OAuth tokens for linked accounts — every 30 min
+        '*/30 * * * * outbound_token_refresh',
       ].join('\n')
     ),
     taskList: {
@@ -66,6 +69,7 @@ async function start() {
       feed_ingest_atproto_backfill: feedIngestAtprotoBackfill,
       feed_ingest_activitypub: feedIngestActivityPub,
       outbound_cross_post: outboundCrossPost,
+      outbound_token_refresh: outboundTokenRefresh,
     },
   })
 

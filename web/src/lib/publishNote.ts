@@ -21,10 +21,17 @@ export interface QuoteTarget {
   highlightedText?: string
 }
 
+export interface CrossPostTarget {
+  linkedAccountId: string
+  sourceItemId: string         // external_items.id
+  actionType: 'reply' | 'quote'
+}
+
 export async function publishNote(
   content: string,
   authorPubkey: string,
-  quoteTarget?: QuoteTarget
+  quoteTarget?: QuoteTarget,
+  crossPost?: CrossPostTarget
 ): Promise<PublishNoteResult> {
   const tags: string[][] = []
 
@@ -54,6 +61,7 @@ export async function publishNote(
         quotedTitle: quoteTarget.previewTitle,
         quotedAuthor: quoteTarget.previewAuthorName,
       }),
+      ...(crossPost && { crossPost }),
     }),
   })
 

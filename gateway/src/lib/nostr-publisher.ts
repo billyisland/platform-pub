@@ -85,36 +85,6 @@ export async function publishToRelay(event: ReturnType<typeof finalizeEvent>): P
   return publishToRelayUrl(relayUrl, event)
 }
 
-// ---------------------------------------------------------------------------
-// Outbound: publish an already-signed event to external relay URLs
-//
-// Used for Phase 2 external Nostr replies — the event is already signed by
-// the user's custodial key and published to the platform relay. This
-// additionally pushes it to the source's external relays.
-//
-// Fire-and-forget: failures are logged but never thrown. The event already
-// exists on the platform relay regardless.
-// ---------------------------------------------------------------------------
-
-export async function publishToExternalRelays(
-  event: ReturnType<typeof finalizeEvent>,
-  relayUrls: string[]
-): Promise<void> {
-  const results = await Promise.allSettled(
-    relayUrls.map(url => publishToRelayUrl(url, event))
-  )
-
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i]
-    if (result.status === 'rejected') {
-      logger.warn(
-        { relayUrl: relayUrls[i], eventId: event.id, err: result.reason?.message ?? String(result.reason) },
-        'Failed to publish to external relay'
-      )
-    }
-  }
-}
-
 function publishToRelayUrl(relayUrl: string, event: ReturnType<typeof finalizeEvent>): Promise<void> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(relayUrl)

@@ -1,6 +1,11 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { formatDateRelative } from '../../lib/format'
+import { useAuth } from '../../stores/auth'
+import { useLinkedAccounts } from '../../hooks/useLinkedAccounts'
+import { publishNote } from '../../lib/publishNote'
+import type { LinkedAccount } from '../../lib/api'
 
 // =============================================================================
 // ExternalCard — renders external feed items (RSS, Nostr, Bluesky, Mastodon)
@@ -74,7 +79,23 @@ function hostOf(url: string): string {
   }
 }
 
+const PROTOCOL_PLATFORM_NAME: Record<string, string> = {
+  rss: 'RSS',
+  atproto: 'Bluesky',
+  activitypub: 'Mastodon',
+  nostr_external: 'Nostr',
+}
+
 export function ExternalCard({ item }: ExternalCardProps) {
+  const { user } = useAuth()
+  const linkedAccounts = useLinkedAccounts()
+  const [composerMode, setComposerMode] = useState<null | 'reply' | 'quote'>(null)
+  const [composerText, setComposerText] = useState('')
+  const [crossPost, setCrossPost] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const [postError, setPostError] = useState<string | null>(null)
+  const [postedFlash, setPostedFlash] = useState(false)
+
   const authorDisplay = item.authorName ?? item.sourceName ?? 'Unknown source'
   const avatarUrl = item.authorAvatarUrl ?? item.sourceAvatar ?? null
   const initial = authorDisplay[0]?.toUpperCase() ?? '?'
@@ -227,7 +248,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
             </a>
           )}
 
-          {/* Footer — view original link */}
+          {/* Footer — actions */}
           <div className="mt-3 flex items-center gap-4">
             <a
               href={viewOriginalUri}
@@ -237,9 +258,157 @@ export function ExternalCard({ item }: ExternalCardProps) {
             >
               View original
             </a>
+            {user && composerMode === null && (
+              <>
+                <button
+                  onClick={() => { setComposerMode('reply'); setComposerText('') }}
+                  className="btn-text-muted hover:text-black transition-colors"
+                >
+                  Reply
+                </button>
+                <button
+                  onClick={() => { setComposerMode('quote'); setComposerText('') }}
+                  className="btn-text-muted hover:text-black transition-colors"
+                >
+                  Quote
+                </button>
+              </>
+            )}
+            {postedFlash && (
+              <span className="label-ui text-grey-400">Posted</span>
+            )}
           </div>
+
+          {/* Inline composer */}
+          {composerMode !== null && (
+            <ExternalReplyComposer
+              mode={composerMode}
+              text={composerText}
+              onTextChange={setComposerText}
+              crossPost={crossPost}
+              onCrossPostChange={setCrossPost}
+              linkedAccount={matchingLinkedAccount(linkedAccounts, item.sourceProtocol)}
+              platformName={PROTOCOL_PLATFORM_NAME[item.sourceProtocol] ?? 'source'}
+              posting={posting}
+              error={postError}
+              onCancel={() => { setComposerMode(null); setComposerText(''); setPostError(null) }}
+              onPost={async () => {
+                if (!user || posting) return
+                setPosting(true); setPostError(null)
+                try {
+                  const matched = matchingLinkedAccount(linkedAccounts, item.sourceProtocol)
+                  await publishNote(
+                    composerText,
+                    user.pubkey,
+                    undefined,
+                    crossPost && matched
+                      ? { linkedAccountId: matched.id, sourceItemId: item.id, actionType: composerMode }
+                      : undefined
+                  )
+                  setComposerMode(null)
+                  setComposerText('')
+                  setPostedFlash(true)
+                  setTimeout(() => setPostedFlash(false), 2500)
+                } catch (err) {
+                  setPostError(err instanceof Error ? err.message : 'Failed to post')
+                } finally {
+                  setPosting(false)
+                }
+              }}
+            />
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Inline composer — opens beneath an external card when the user clicks
+// Reply or Quote. Cross-post toggle is shown only when the user has a linked
+// account for the item's source protocol; for protocols we can't yet post
+// back to (RSS), the toggle is hidden.
+// -----------------------------------------------------------------------------
+
+function matchingLinkedAccount(
+  accounts: LinkedAccount[] | null,
+  protocol: string
+): LinkedAccount | null {
+  if (!accounts) return null
+  return accounts.find(a => a.protocol === protocol && a.isValid) ?? null
+}
+
+interface ComposerProps {
+  mode: 'reply' | 'quote'
+  text: string
+  onTextChange: (v: string) => void
+  crossPost: boolean
+  onCrossPostChange: (v: boolean) => void
+  linkedAccount: LinkedAccount | null
+  platformName: string
+  posting: boolean
+  error: string | null
+  onPost: () => void
+  onCancel: () => void
+}
+
+function ExternalReplyComposer(props: ComposerProps) {
+  const { mode, text, onTextChange, crossPost, onCrossPostChange, linkedAccount,
+    platformName, posting, error, onPost, onCancel } = props
+
+  // Initialise cross-post toggle from the linked account's default once,
+  // when a linked account is first available.
+  useEffect(() => {
+    if (linkedAccount) onCrossPostChange(linkedAccount.crossPostDefault)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedAccount?.id])
+
+  const placeholder = mode === 'reply'
+    ? `Reply on all.haus${linkedAccount && crossPost ? ` and ${platformName}` : ''}…`
+    : 'Add your thoughts…'
+
+  return (
+    <div className="mt-3 bg-grey-100 p-3">
+      <textarea
+        value={text}
+        onChange={e => onTextChange(e.target.value)}
+        placeholder={placeholder}
+        rows={3}
+        autoFocus
+        className="w-full resize-none bg-transparent text-[14px] font-sans text-black placeholder:text-grey-400 focus:outline-none leading-relaxed"
+      />
+      <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+        {linkedAccount ? (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={crossPost}
+              onChange={e => onCrossPostChange(e.target.checked)}
+              className="cursor-pointer"
+            />
+            <span className="label-ui text-grey-500">
+              Also post to {platformName} as {linkedAccount.externalHandle ?? linkedAccount.externalId}
+            </span>
+          </label>
+        ) : (
+          <span className="label-ui text-grey-300">
+            Posts to all.haus only
+          </span>
+        )}
+        <div className="flex items-center gap-3 ml-auto">
+          <button onClick={onCancel} className="btn-text-muted">Cancel</button>
+          <button
+            onClick={onPost}
+            disabled={posting || text.trim().length === 0}
+            className="btn disabled:opacity-30 py-1.5 px-4 text-[12px] font-sans font-semibold"
+          >
+            {posting ? 'Posting…' : (mode === 'reply' ? 'Reply' : 'Post')}
+          </button>
+        </div>
+      </div>
+      {error && (
+        <p className="mt-2 text-ui-xs text-crimson">{error}</p>
+      )}
     </div>
   )
 }

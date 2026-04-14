@@ -3,6 +3,7 @@ import { pool } from '../../shared/src/db/client.js'
 import { decryptJson } from '../../shared/src/lib/crypto.js'
 import logger from '../../shared/src/lib/logger.js'
 import { postMastodonStatus, type MastodonCredentials } from '../adapters/activitypub-outbound.js'
+import { publishNostrToRelays, type NostrSignedEvent } from '../adapters/nostr-outbound.js'
 
 // =============================================================================
 // outbound_cross_post — per-event job, dispatches a queued outbound_posts row
@@ -25,22 +26,25 @@ import { postMastodonStatus, type MastodonCredentials } from '../adapters/activi
 interface OutboundRow {
   id: string
   account_id: string
-  linked_account_id: string
+  linked_account_id: string | null
   protocol: string
   nostr_event_id: string
   action_type: string
   source_item_id: string | null
   body_text: string | null
+  signed_event: NostrSignedEvent | null
   status: string
   retry_count: number
   max_retries: number
-  // Linked account fields
-  la_external_id: string
+  // Linked account fields (NULL for nostr_external)
+  la_external_id: string | null
   la_instance_url: string | null
   la_credentials_enc: string | null
-  la_is_valid: boolean
+  la_is_valid: boolean | null
   // Source item fields (nullable — NULL for top-level posts)
   ei_source_item_uri: string | null
+  // Source relay URLs (nostr_external only)
+  ei_source_relay_urls: string[] | null
 }
 
 interface AllHausMeta {
@@ -57,15 +61,17 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
     SELECT
       op.id, op.account_id, op.linked_account_id, op.protocol,
       op.nostr_event_id, op.action_type, op.source_item_id, op.body_text,
-      op.status, op.retry_count, op.max_retries,
+      op.signed_event, op.status, op.retry_count, op.max_retries,
       la.external_id       AS la_external_id,
       la.instance_url      AS la_instance_url,
       la.credentials_enc   AS la_credentials_enc,
       la.is_valid          AS la_is_valid,
-      ei.source_item_uri   AS ei_source_item_uri
+      ei.source_item_uri   AS ei_source_item_uri,
+      xs.relay_urls        AS ei_source_relay_urls
     FROM outbound_posts op
-    JOIN linked_accounts la ON la.id = op.linked_account_id
-    LEFT JOIN external_items ei ON ei.id = op.source_item_id
+    LEFT JOIN linked_accounts la ON la.id = op.linked_account_id
+    LEFT JOIN external_items ei  ON ei.id = op.source_item_id
+    LEFT JOIN external_sources xs ON xs.id = ei.source_id
     WHERE op.id = $1
   `, [outboundPostId])
   const row = rows[0]
@@ -75,7 +81,8 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
   }
   if (row.status === 'sent') return
   if (row.status === 'failed') return
-  if (!row.la_is_valid) {
+  // Linked account is required for OAuth-backed protocols only.
+  if (row.protocol !== 'nostr_external' && !row.la_is_valid) {
     await markFailed(row.id, 'Linked account invalid — reconnect in settings')
     return
   }
@@ -96,6 +103,11 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
         replyToStatusUri: row.action_type === 'reply' ? (row.ei_source_item_uri ?? undefined) : undefined,
       }, creds)
       externalPostUri = result.externalPostUri
+    } else if (row.protocol === 'nostr_external') {
+      if (!row.signed_event) throw new Error('outbound_posts.signed_event missing for nostr_external job')
+      const relays = row.ei_source_relay_urls ?? []
+      if (relays.length === 0) throw new Error('Source has no relay URLs configured')
+      externalPostUri = await publishNostrToRelays(row.signed_event, relays)
     } else {
       throw new Error(`Outbound protocol not yet supported: ${row.protocol}`)
     }
