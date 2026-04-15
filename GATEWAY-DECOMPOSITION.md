@@ -20,7 +20,11 @@ The gateway is currently responsible for authentication and session management, 
 
 ### 2. Messaging → messaging-service
 
-**What:** `messages.ts` (693 lines), `replies.ts` (438 lines), `social.ts`, `follows.ts`, and the DM-related routes.
+**Status:** Hedged — `routes/messages.ts` service-layer extraction done 2026-04-15 (see §3). Full service-extraction not yet started.
+
+**Scope note:** `replies.ts` is article/note threading (Nostr-indexed comments), not DMs. It touches `checkArticleAccess` and the article data model — it should stay in the gateway and not be bundled into this extraction.
+
+**What:** `messages.ts` (business logic now in `services/messages.ts`), plus DM-related slices of `social.ts` and `follows.ts`.
 
 **Why:** This is a real-time, high-write, user-to-user subsystem that has almost nothing to do with publishing or payments. It touches its own cluster of tables (`conversations`, `conversation_members`, `direct_messages`, `dm_likes`, `dm_pricing`) and its failure modes are distinct — if messaging goes down, publishing should keep working. It is also the part most likely to need WebSocket support or long-polling in future, which would make it a poor fit for the gateway's request-response Fastify process.
 
@@ -33,6 +37,8 @@ The gateway is currently responsible for authentication and session management, 
 ## What to restructure internally
 
 ### Large route files → service layer extraction
+
+**Status:** `messages.ts` done 2026-04-15 — 693-line route file split into `routes/messages.ts` (202 lines, thin dispatchers) + `services/messages.ts` (563 lines, business logic). Service uses a `ServiceResult<T>` discriminated union so handlers map errors to HTTP statuses without throws. The extracted service is self-contained — future extraction to `messaging-service` becomes a mechanical swap of direct imports for HTTP client calls.
 
 **What:** `publications.ts` (1,353 lines), `subscriptions.ts` (1,138 lines), `articles.ts` (1,149 lines), `auth.ts` (725 lines).
 
@@ -55,8 +61,10 @@ Routes like `rss.ts`, `search.ts`, `tags.ts`, `bookmarks.ts`, `votes.ts`, `expor
 | Order | Action | Risk | Payoff |
 |-------|--------|------|--------|
 | 1 | Extract feed scorer to feed-ingest (done) | Low | Operational hygiene — separates job failures from API availability |
-| 2 | Extract messaging-service | Medium | Domain isolation — decouples real-time messaging from publishing |
-| 3 | Internal service layer refactoring | Low | Code navigability and testability; makes future extractions cheaper |
+| 2 | Internal service layer refactoring (messages done, others outstanding) | Low | Code navigability and testability; makes future extractions cheaper |
+| 3 | Extract messaging-service | Medium | Domain isolation — decouples real-time messaging from publishing |
+
+Order 2 and 3 were swapped from the original plan: extracting the service layer first de-risks the cross-process move by letting the cutover be a mechanical import→HTTP-client swap rather than a combined factor+extract.
 
 ## Guiding principle
 

@@ -1,0 +1,563 @@
+import { pool } from '../../shared/src/db/client.js'
+import { signEvent, nip44Encrypt, nip44Decrypt } from '../lib/key-custody-client.js'
+import { publishToRelay } from '../lib/nostr-publisher.js'
+import logger from '../../shared/src/lib/logger.js'
+
+// =============================================================================
+// Messages Service
+//
+// Business logic for direct messages, conversations, DM likes, decryption, and
+// DM pricing. Route handlers in routes/messages.ts are thin dispatchers that
+// parse/validate input and translate these results into HTTP responses.
+//
+// Functions return discriminated unions so callers can map error cases to
+// HTTP statuses without throws.
+// =============================================================================
+
+export type ServiceResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; status: number; error: string; details?: Record<string, unknown> }
+
+// -----------------------------------------------------------------------------
+// Conversations
+// -----------------------------------------------------------------------------
+
+export async function createConversation(
+  creatorId: string,
+  memberIds: string[]
+): Promise<ServiceResult<{ conversationId: string }>> {
+  const allMembers = [creatorId, ...memberIds.filter(id => id !== creatorId)]
+
+  const blockCheck = await pool.query<{ blocked_id: string }>(
+    `SELECT blocked_id FROM blocks
+     WHERE (blocker_id = $1 AND blocked_id = ANY($2))
+        OR (blocked_id = $1 AND blocker_id = ANY($2))`,
+    [creatorId, memberIds]
+  )
+  if (blockCheck.rows.length > 0) {
+    return { ok: false, status: 403, error: 'Cannot create conversation with blocked users' }
+  }
+
+  const conv = await pool.query<{ id: string }>(
+    'INSERT INTO conversations (created_by) VALUES ($1) RETURNING id',
+    [creatorId]
+  )
+  const conversationId = conv.rows[0].id
+
+  const memberValues = allMembers
+    .map((_, i) => `($1, $${i + 2})`)
+    .join(', ')
+  await pool.query(
+    `INSERT INTO conversation_members (conversation_id, user_id) VALUES ${memberValues}`,
+    [conversationId, ...allMembers]
+  )
+
+  logger.info({ conversationId, creatorId, memberCount: allMembers.length }, 'Conversation created')
+  return { ok: true, data: { conversationId } }
+}
+
+export async function addConversationMembers(
+  conversationId: string,
+  actorId: string,
+  memberIds: string[]
+): Promise<ServiceResult<{ ok: true }>> {
+  const membership = await pool.query(
+    'SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
+    [conversationId, actorId]
+  )
+  if (membership.rowCount === 0) {
+    return { ok: false, status: 403, error: 'Not a member of this conversation' }
+  }
+
+  const blockCheck = await pool.query(
+    `SELECT blocked_id FROM blocks
+     WHERE (blocker_id = $1 AND blocked_id = ANY($2))
+        OR (blocked_id = $1 AND blocker_id = ANY($2))`,
+    [actorId, memberIds]
+  )
+  if (blockCheck.rows.length > 0) {
+    return { ok: false, status: 403, error: 'Cannot add blocked users' }
+  }
+
+  for (const memberId of memberIds) {
+    await pool.query(
+      `INSERT INTO conversation_members (conversation_id, user_id)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [conversationId, memberId]
+    )
+  }
+
+  return { ok: true, data: { ok: true } }
+}
+
+export interface InboxConversation {
+  id: string
+  lastMessageAt: string | null
+  createdAt: string
+  unreadCount: number
+  members: { id: string; username: string; displayName: string | null; avatar: string | null }[]
+}
+
+export async function listInbox(userId: string): Promise<InboxConversation[]> {
+  const { rows } = await pool.query<{
+    conversation_id: string
+    last_message_at: Date | null
+    created_at: Date
+    unread_count: number
+    member_ids: string[]
+    member_usernames: string[]
+    member_display_names: (string | null)[]
+    member_avatars: (string | null)[]
+  }>(
+    `SELECT c.id AS conversation_id, c.last_message_at, c.created_at,
+            COALESCE(unread.cnt, 0)::int AS unread_count,
+            array_agg(a.id) AS member_ids,
+            array_agg(a.username) AS member_usernames,
+            array_agg(a.display_name) AS member_display_names,
+            array_agg(a.avatar_blossom_url) AS member_avatars
+     FROM conversations c
+     JOIN conversation_members cm ON cm.conversation_id = c.id
+     JOIN conversation_members my ON my.conversation_id = c.id AND my.user_id = $1
+     JOIN accounts a ON a.id = cm.user_id AND a.id != $1
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*) AS cnt FROM direct_messages
+       WHERE conversation_id = c.id AND recipient_id = $1 AND read_at IS NULL
+     ) unread ON true
+     LEFT JOIN mutes m ON m.muter_id = $1 AND m.muted_id = cm.user_id
+     WHERE m.muter_id IS NULL
+     GROUP BY c.id, unread.cnt
+     ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
+     LIMIT 50`,
+    [userId]
+  )
+
+  return rows.map(r => ({
+    id: r.conversation_id,
+    lastMessageAt: r.last_message_at?.toISOString() ?? null,
+    createdAt: r.created_at.toISOString(),
+    unreadCount: r.unread_count,
+    members: r.member_ids.map((id, i) => ({
+      id,
+      username: r.member_usernames[i],
+      displayName: r.member_display_names[i],
+      avatar: r.member_avatars[i],
+    })),
+  }))
+}
+
+export interface ConversationMessage {
+  id: string
+  senderId: string
+  senderUsername: string | null
+  senderDisplayName: string | null
+  counterpartyPubkey: string
+  contentEnc: string
+  replyTo: {
+    id: string
+    senderUsername: string | null
+    contentEnc: string | null
+    counterpartyPubkey: string | null
+  } | null
+  readAt: string | null
+  createdAt: string
+  likeCount: number
+  likedByMe: boolean
+}
+
+export async function loadConversationMessages(
+  conversationId: string,
+  userId: string,
+  limit: number,
+  before?: string
+): Promise<ServiceResult<{ messages: ConversationMessage[]; nextCursor: string | null }>> {
+  const membership = await pool.query(
+    'SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
+    [conversationId, userId]
+  )
+  if (membership.rowCount === 0) {
+    return { ok: false, status: 403, error: 'Not a member of this conversation' }
+  }
+
+  const params: any[] = [conversationId, userId, limit]
+  let whereClause = 'dm.conversation_id = $1 AND (dm.recipient_id = $2 OR dm.sender_id = $2)'
+  if (before) {
+    params.push(before)
+    whereClause += ` AND dm.created_at < $4`
+  }
+
+  const { rows } = await pool.query<{
+    id: string
+    sender_id: string
+    sender_username: string | null
+    sender_display_name: string | null
+    sender_pubkey: string
+    recipient_pubkey: string
+    content_enc: string
+    reply_to_id: string | null
+    reply_to_sender_username: string | null
+    reply_to_content_enc: string | null
+    reply_to_counterparty_pubkey: string | null
+    read_at: Date | null
+    created_at: Date
+    like_count: string
+    liked_by_me: boolean
+  }>(
+    `SELECT dm.id, dm.sender_id, sa.username AS sender_username,
+            sa.display_name AS sender_display_name,
+            sa.nostr_pubkey AS sender_pubkey,
+            ra.nostr_pubkey AS recipient_pubkey,
+            dm.content_enc, dm.reply_to_id, dm.read_at, dm.created_at,
+            rsa.username AS reply_to_sender_username,
+            rdm.content_enc AS reply_to_content_enc,
+            CASE WHEN rdm.sender_id = $2 THEN rra.nostr_pubkey ELSE rsa2.nostr_pubkey END AS reply_to_counterparty_pubkey,
+            (SELECT COUNT(*) FROM dm_likes dl WHERE dl.message_id = dm.id) AS like_count,
+            EXISTS(SELECT 1 FROM dm_likes dl WHERE dl.message_id = dm.id AND dl.user_id = $2) AS liked_by_me
+     FROM direct_messages dm
+     JOIN accounts sa ON sa.id = dm.sender_id
+     JOIN accounts ra ON ra.id = dm.recipient_id
+     LEFT JOIN direct_messages rdm ON rdm.id = dm.reply_to_id
+     LEFT JOIN accounts rsa ON rsa.id = rdm.sender_id
+     LEFT JOIN accounts rra ON rra.id = rdm.recipient_id
+     LEFT JOIN accounts rsa2 ON rsa2.id = rdm.sender_id
+     WHERE ${whereClause}
+     ORDER BY dm.created_at DESC
+     LIMIT $3`,
+    params
+  )
+
+  const nextCursor = rows.length === limit
+    ? rows[rows.length - 1].created_at.toISOString()
+    : null
+
+  const messages = rows.map<ConversationMessage>(r => ({
+    id: r.id,
+    senderId: r.sender_id,
+    senderUsername: r.sender_username,
+    senderDisplayName: r.sender_display_name,
+    counterpartyPubkey: r.sender_id === userId ? r.recipient_pubkey : r.sender_pubkey,
+    contentEnc: r.content_enc,
+    replyTo: r.reply_to_id ? {
+      id: r.reply_to_id,
+      senderUsername: r.reply_to_sender_username,
+      contentEnc: r.reply_to_content_enc,
+      counterpartyPubkey: r.reply_to_counterparty_pubkey,
+    } : null,
+    readAt: r.read_at?.toISOString() ?? null,
+    createdAt: r.created_at.toISOString(),
+    likeCount: parseInt(r.like_count, 10),
+    likedByMe: r.liked_by_me,
+  }))
+
+  return { ok: true, data: { messages, nextCursor } }
+}
+
+// -----------------------------------------------------------------------------
+// Send / read / like
+// -----------------------------------------------------------------------------
+
+export type SendMessageResult =
+  | { ok: true; data: { messageIds: string[] } }
+  | { ok: false; status: 403 | 400; error: string }
+  | { ok: false; status: 402; error: 'dm_payment_required'; pricePence: number; message: string }
+
+export async function sendMessage(
+  conversationId: string,
+  senderId: string,
+  content: string,
+  replyToId: string | null
+): Promise<SendMessageResult> {
+  const membership = await pool.query(
+    'SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
+    [conversationId, senderId]
+  )
+  if (membership.rowCount === 0) {
+    return { ok: false, status: 403, error: 'Not a member of this conversation' }
+  }
+
+  const members = await pool.query<{ user_id: string }>(
+    'SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND user_id != $2',
+    [conversationId, senderId]
+  )
+  if (members.rows.length === 0) {
+    return { ok: false, status: 400, error: 'No recipients in conversation' }
+  }
+
+  const recipientIds = members.rows.map(r => r.user_id)
+
+  const blockCheck = await pool.query(
+    `SELECT blocker_id FROM blocks
+     WHERE blocker_id = ANY($1) AND blocked_id = $2`,
+    [recipientIds, senderId]
+  )
+  if (blockCheck.rows.length > 0) {
+    return { ok: false, status: 403, error: 'You are blocked by one or more recipients' }
+  }
+
+  // DM pricing: reject if any recipient charges. Full per-recipient charging is a fast-follow.
+  for (const recipientId of recipientIds) {
+    const pricing = await getDmPrice(recipientId, senderId)
+    if (pricing > 0) {
+      return {
+        ok: false,
+        status: 402,
+        error: 'dm_payment_required',
+        pricePence: pricing,
+        message: 'This user requires payment to receive DMs.',
+      }
+    }
+  }
+
+  const pubkeyRows = await pool.query<{ id: string; nostr_pubkey: string }>(
+    'SELECT id, nostr_pubkey FROM accounts WHERE id = ANY($1)',
+    [recipientIds]
+  )
+  const pubkeyMap = new Map(pubkeyRows.rows.map(r => [r.id, r.nostr_pubkey]))
+
+  const messageIds: string[] = []
+  for (const recipientId of recipientIds) {
+    const recipientPubkey = pubkeyMap.get(recipientId)
+    if (!recipientPubkey) {
+      logger.error({ recipientId }, 'Recipient has no pubkey — skipping')
+      continue
+    }
+
+    const { ciphertext } = await nip44Encrypt(senderId, recipientPubkey, content)
+
+    const result = await pool.query<{ id: string }>(
+      `INSERT INTO direct_messages (conversation_id, sender_id, recipient_id, content_enc, reply_to_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [conversationId, senderId, recipientId, ciphertext, replyToId]
+    )
+    messageIds.push(result.rows[0].id)
+  }
+
+  await pool.query(
+    'UPDATE conversations SET last_message_at = now() WHERE id = $1',
+    [conversationId]
+  )
+
+  publishNip17Async(senderId, conversationId).catch(err => {
+    logger.error({ err, conversationId }, 'NIP-17 publish failed (non-fatal)')
+  })
+
+  return { ok: true, data: { messageIds } }
+}
+
+export async function markMessageRead(
+  messageId: string,
+  userId: string
+): Promise<ServiceResult<{ ok: true }>> {
+  const result = await pool.query(
+    `UPDATE direct_messages SET read_at = now()
+     WHERE id = $1 AND recipient_id = $2 AND read_at IS NULL
+     RETURNING id`,
+    [messageId, userId]
+  )
+  if (result.rowCount === 0) {
+    return { ok: false, status: 404, error: 'Message not found' }
+  }
+  return { ok: true, data: { ok: true } }
+}
+
+export async function markConversationReadAll(
+  conversationId: string,
+  userId: string
+): Promise<ServiceResult<{ markedRead: number }>> {
+  const membership = await pool.query(
+    'SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
+    [conversationId, userId]
+  )
+  if (membership.rowCount === 0) {
+    return { ok: false, status: 403, error: 'Not a member of this conversation' }
+  }
+
+  const result = await pool.query(
+    `UPDATE direct_messages SET read_at = now()
+     WHERE conversation_id = $1 AND recipient_id = $2 AND read_at IS NULL`,
+    [conversationId, userId]
+  )
+  return { ok: true, data: { markedRead: result.rowCount ?? 0 } }
+}
+
+export async function toggleMessageLike(
+  messageId: string,
+  userId: string
+): Promise<ServiceResult<{ liked: boolean }>> {
+  const membership = await pool.query(
+    `SELECT 1 FROM direct_messages dm
+     JOIN conversation_members cm ON cm.conversation_id = dm.conversation_id AND cm.user_id = $2
+     WHERE dm.id = $1`,
+    [messageId, userId]
+  )
+  if (membership.rowCount === 0) {
+    return { ok: false, status: 403, error: 'Not a participant' }
+  }
+
+  const existing = await pool.query(
+    'DELETE FROM dm_likes WHERE message_id = $1 AND user_id = $2 RETURNING id',
+    [messageId, userId]
+  )
+  if ((existing.rowCount ?? 0) > 0) {
+    return { ok: true, data: { liked: false } }
+  }
+
+  await pool.query(
+    'INSERT INTO dm_likes (message_id, user_id) VALUES ($1, $2)',
+    [messageId, userId]
+  )
+  return { ok: true, data: { liked: true } }
+}
+
+// -----------------------------------------------------------------------------
+// Decrypt
+// -----------------------------------------------------------------------------
+
+export interface DecryptRequest {
+  id: string
+  counterpartyPubkey: string
+  ciphertext: string
+}
+
+export interface DecryptResult {
+  id: string
+  plaintext: string | null
+  error?: string
+}
+
+export async function decryptBatch(
+  readerId: string,
+  messages: DecryptRequest[]
+): Promise<DecryptResult[]> {
+  const results = await Promise.allSettled(
+    messages.map(async (msg) => {
+      const { plaintext } = await nip44Decrypt(readerId, msg.counterpartyPubkey, msg.ciphertext)
+      return { id: msg.id, plaintext }
+    })
+  )
+  return results.map((r, i) =>
+    r.status === 'fulfilled'
+      ? r.value
+      : { id: messages[i].id, plaintext: null, error: 'Decryption failed' }
+  )
+}
+
+// -----------------------------------------------------------------------------
+// DM pricing
+// -----------------------------------------------------------------------------
+
+export interface DmPricingSummary {
+  defaultPricePence: number
+  overrides: {
+    userId: string
+    username: string
+    displayName: string | null
+    pricePence: number
+  }[]
+}
+
+export async function getDmPricing(ownerId: string): Promise<DmPricingSummary> {
+  const defaultRow = await pool.query<{ price_pence: number }>(
+    'SELECT price_pence FROM dm_pricing WHERE owner_id = $1 AND target_id IS NULL',
+    [ownerId]
+  )
+
+  const overrides = await pool.query<{ target_id: string; username: string; display_name: string | null; price_pence: number }>(
+    `SELECT dp.target_id, a.username, a.display_name, dp.price_pence
+     FROM dm_pricing dp
+     JOIN accounts a ON a.id = dp.target_id
+     WHERE dp.owner_id = $1 AND dp.target_id IS NOT NULL
+     ORDER BY a.username`,
+    [ownerId]
+  )
+
+  return {
+    defaultPricePence: defaultRow.rows[0]?.price_pence ?? 0,
+    overrides: overrides.rows.map(r => ({
+      userId: r.target_id,
+      username: r.username,
+      displayName: r.display_name,
+      pricePence: r.price_pence,
+    })),
+  }
+}
+
+export async function setDefaultDmPrice(ownerId: string, defaultPricePence: number): Promise<void> {
+  if (defaultPricePence === 0) {
+    await pool.query(
+      'DELETE FROM dm_pricing WHERE owner_id = $1 AND target_id IS NULL',
+      [ownerId]
+    )
+  } else {
+    await pool.query(
+      `INSERT INTO dm_pricing (owner_id, target_id, price_pence)
+       VALUES ($1, NULL, $2)
+       ON CONFLICT (owner_id) WHERE target_id IS NULL
+       DO UPDATE SET price_pence = $2`,
+      [ownerId, defaultPricePence]
+    )
+  }
+  logger.info({ ownerId, defaultPricePence }, 'DM pricing updated')
+}
+
+export async function setDmPriceOverride(
+  ownerId: string,
+  targetUserId: string,
+  pricePence: number
+): Promise<void> {
+  if (pricePence === 0) {
+    await pool.query(
+      'DELETE FROM dm_pricing WHERE owner_id = $1 AND target_id = $2',
+      [ownerId, targetUserId]
+    )
+  } else {
+    await pool.query(
+      `INSERT INTO dm_pricing (owner_id, target_id, price_pence)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (owner_id, target_id)
+       DO UPDATE SET price_pence = $3`,
+      [ownerId, targetUserId, pricePence]
+    )
+  }
+}
+
+export async function removeDmPriceOverride(ownerId: string, targetUserId: string): Promise<void> {
+  await pool.query(
+    'DELETE FROM dm_pricing WHERE owner_id = $1 AND target_id = $2',
+    [ownerId, targetUserId]
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Internal helpers
+// -----------------------------------------------------------------------------
+
+async function getDmPrice(recipientId: string, senderId: string): Promise<number> {
+  const specific = await pool.query<{ price_pence: number }>(
+    'SELECT price_pence FROM dm_pricing WHERE owner_id = $1 AND target_id = $2',
+    [recipientId, senderId]
+  )
+  if (specific.rows.length > 0) return specific.rows[0].price_pence
+
+  const defaultRate = await pool.query<{ price_pence: number }>(
+    'SELECT price_pence FROM dm_pricing WHERE owner_id = $1 AND target_id IS NULL',
+    [recipientId]
+  )
+  if (defaultRate.rows.length > 0) return defaultRate.rows[0].price_pence
+
+  return 0
+}
+
+async function publishNip17Async(senderId: string, conversationId: string): Promise<void> {
+  try {
+    const event = await signEvent(senderId, {
+      kind: 14,
+      content: '',
+      tags: [['conversation', conversationId]],
+      created_at: Math.floor(Date.now() / 1000),
+    })
+    await publishToRelay(event as any)
+    logger.debug({ conversationId, eventId: event.id }, 'NIP-17 event published')
+  } catch (err) {
+    logger.error({ err, conversationId }, 'Failed to publish NIP-17 event')
+  }
+}
