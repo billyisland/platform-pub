@@ -1,14 +1,13 @@
+import type { Task } from 'graphile-worker'
 import { pool } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
-// Feed Scoring Worker
+// feed_scores_refresh — HN-style gravity scoring for feed_items
 //
-// Refreshes the feed_scores table using an HN-style gravity formula.
-// Reads engagement data from feed_engagement (last 48 hours) and computes
-// a time-decayed score per content item.
-//
-// Designed to run on a 5-minute interval via advisory lock in gateway/index.ts.
+// Reads engagement from feed_engagement (last 48 hours), computes a
+// time-decayed score per content item, and writes to feed_items.score.
+// Also maintains the legacy feed_scores table for backwards compatibility.
 // =============================================================================
 
 interface FeedWeights {
@@ -33,10 +32,9 @@ async function loadFeedWeights(): Promise<FeedWeights> {
   }
 }
 
-export async function refreshFeedScores(): Promise<void> {
+export const feedScoresRefresh: Task = async () => {
   const weights = await loadFeedWeights()
 
-  // Phase 2: write scores directly to feed_items.score
   const result = await pool.query(
     `
     WITH engagement_counts AS (
@@ -66,7 +64,6 @@ export async function refreshFeedScores(): Promise<void> {
     [weights.reaction, weights.reply, weights.quoteComment, weights.gatePass, weights.gravity]
   )
 
-  // Also keep feed_scores in sync for backwards compatibility
   await pool.query(
     `
     WITH engagement_counts AS (
@@ -111,12 +108,10 @@ export async function refreshFeedScores(): Promise<void> {
     [weights.reaction, weights.reply, weights.quoteComment, weights.gatePass, weights.gravity]
   )
 
-  // Prune stale low-score entries older than 7 days
   await pool.query(
     `DELETE FROM feed_scores WHERE published_at < now() - interval '7 days' AND score < 0.1`
   )
 
-  // Reset scores on old feed_items that no longer have engagement
   await pool.query(
     `UPDATE feed_items SET score = 0
      WHERE score > 0
