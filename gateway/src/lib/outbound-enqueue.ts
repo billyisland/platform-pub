@@ -51,14 +51,26 @@ export async function enqueueCrossPost(input: EnqueueCrossPostInput): Promise<vo
 
   // Wrap the audit INSERT + add_job in a single transaction so a crash between
   // them can't leave a 'pending' outbound_posts row with no matching worker job.
+  // ON CONFLICT handles the dedup index from migration 062: a second enqueue
+  // for the same (account, nostr_event, target, action_type) returns the
+  // existing row instead of raising, and we skip re-enqueueing the job.
   await withTransaction(async (client) => {
-    const { rows: [op] } = await client.query<{ id: string }>(`
-      INSERT INTO outbound_posts (
-        account_id, linked_account_id, protocol,
-        nostr_event_id, action_type, source_item_id, body_text,
-        status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-      RETURNING id
+    const { rows } = await client.query<{ id: string; existed: boolean }>(`
+      WITH ins AS (
+        INSERT INTO outbound_posts (
+          account_id, linked_account_id, protocol,
+          nostr_event_id, action_type, source_item_id, body_text,
+          status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+        ON CONFLICT DO NOTHING
+        RETURNING id
+      )
+      SELECT id, FALSE AS existed FROM ins
+      UNION ALL
+      SELECT id, TRUE FROM outbound_posts
+       WHERE account_id = $1 AND linked_account_id IS NOT DISTINCT FROM $2
+         AND nostr_event_id = $4 AND action_type = $5
+      LIMIT 1
     `, [
       input.accountId,
       input.linkedAccountId,
@@ -69,6 +81,8 @@ export async function enqueueCrossPost(input: EnqueueCrossPostInput): Promise<vo
       input.bodyText,
     ])
 
+    const op = rows[0]
+    if (!op || op.existed) return
     await client.query(`
       SELECT graphile_worker.add_job(
         'outbound_cross_post',
@@ -87,13 +101,22 @@ export async function enqueueCrossPost(input: EnqueueCrossPostInput): Promise<vo
 
 export async function enqueueNostrOutbound(input: EnqueueNostrOutboundInput): Promise<void> {
   await withTransaction(async (client) => {
-    const { rows: [op] } = await client.query<{ id: string }>(`
-      INSERT INTO outbound_posts (
-        account_id, linked_account_id, protocol,
-        nostr_event_id, action_type, source_item_id, body_text,
-        signed_event, status
-      ) VALUES ($1, NULL, 'nostr_external', $2, $3, $4, $5, $6::jsonb, 'pending')
-      RETURNING id
+    const { rows } = await client.query<{ id: string; existed: boolean }>(`
+      WITH ins AS (
+        INSERT INTO outbound_posts (
+          account_id, linked_account_id, protocol,
+          nostr_event_id, action_type, source_item_id, body_text,
+          signed_event, status
+        ) VALUES ($1, NULL, 'nostr_external', $2, $3, $4, $5, $6::jsonb, 'pending')
+        ON CONFLICT DO NOTHING
+        RETURNING id
+      )
+      SELECT id, FALSE AS existed FROM ins
+      UNION ALL
+      SELECT id, TRUE FROM outbound_posts
+       WHERE account_id = $1 AND linked_account_id IS NULL
+         AND nostr_event_id = $2 AND action_type = $3
+      LIMIT 1
     `, [
       input.accountId,
       input.nostrEventId,
@@ -103,6 +126,8 @@ export async function enqueueNostrOutbound(input: EnqueueNostrOutboundInput): Pr
       JSON.stringify(input.signedEvent),
     ])
 
+    const op = rows[0]
+    if (!op || op.existed) return
     await client.query(`
       SELECT graphile_worker.add_job(
         'outbound_cross_post',

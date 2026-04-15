@@ -118,21 +118,29 @@ export async function feedsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: validationError })
     }
 
-    // Check subscription limit
-    const { rows: [{ count: subCount }] } = await pool.query<{ count: string }>(
-      `SELECT COUNT(*) AS count FROM external_subscriptions WHERE subscriber_id = $1`,
-      [readerId]
-    )
     const { rows: [limitRow] } = await pool.query<{ value: string }>(
       `SELECT value FROM platform_config WHERE key = 'max_subscriptions_per_user'`
     )
     const maxSubs = parseInt(limitRow?.value ?? '200', 10)
-    if (parseInt(subCount, 10) >= maxSubs) {
-      return reply.status(429).send({ error: `Subscription limit reached (max ${maxSubs})` })
-    }
 
     try {
       const result = await withTransaction(async (client) => {
+        // Serialize concurrent subscribe requests from the same user so the
+        // count-then-insert below is atomic w.r.t. other replicas. Without
+        // this, two racing requests both observe count < max and both insert,
+        // letting a user slip past the cap.
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext('feed_sub:' || $1::text))`, [readerId])
+        const { rows: [{ count: subCount }] } = await client.query<{ count: string }>(
+          `SELECT COUNT(*) AS count FROM external_subscriptions WHERE subscriber_id = $1`,
+          [readerId]
+        )
+        if (parseInt(subCount, 10) >= maxSubs) {
+          // Tagged error so the outer handler can return a proper 429.
+          const err: Error & { code?: string } = new Error('limit_exceeded')
+          err.code = 'SUB_LIMIT_EXCEEDED'
+          throw err
+        }
+
         // Upsert external_sources (shared across subscribers)
         const { rows: [source] } = await client.query<{ id: string }>(`
           INSERT INTO external_sources (protocol, source_uri, display_name, description, avatar_url, relay_urls)
@@ -143,6 +151,7 @@ export async function feedsRoutes(app: FastifyInstance) {
             avatar_url  = COALESCE(NULLIF($5, ''), external_sources.avatar_url),
             relay_urls  = COALESCE($6, external_sources.relay_urls),
             is_active = TRUE,
+            orphaned_at = NULL,
             updated_at = now()
           RETURNING id
         `, [
@@ -194,6 +203,9 @@ export async function feedsRoutes(app: FastifyInstance) {
         sourceId: result.sourceId,
       })
     } catch (err) {
+      if ((err as { code?: string } | null)?.code === 'SUB_LIMIT_EXCEEDED') {
+        return reply.status(429).send({ error: `Subscription limit reached (max ${maxSubs})` })
+      }
       logger.error({ err, protocol, sourceUri }, 'Subscribe failed')
       return reply.status(500).send({ error: 'Subscription failed' })
     }
@@ -258,14 +270,31 @@ export async function feedsRoutes(app: FastifyInstance) {
     const readerId = req.session!.sub!
     const { id } = req.params
 
-    const { rowCount } = await pool.query(
-      `DELETE FROM external_subscriptions WHERE id = $1 AND subscriber_id = $2`,
+    // Capture source_id so we can opportunistically mark the source as
+    // orphaned in the same transaction. external_sources_gc also catches
+    // missed stamps via its Phase 0, so a race that skips this update
+    // only delays deactivation by one GC cycle.
+    const { rows } = await pool.query<{ source_id: string }>(
+      `DELETE FROM external_subscriptions
+        WHERE id = $1 AND subscriber_id = $2
+        RETURNING source_id`,
       [id, readerId]
     )
 
-    if (!rowCount || rowCount === 0) {
+    if (rows.length === 0) {
       return reply.status(404).send({ error: 'Subscription not found' })
     }
+
+    await pool.query(
+      `UPDATE external_sources
+          SET orphaned_at = now()
+        WHERE id = $1
+          AND orphaned_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM external_subscriptions WHERE source_id = $1
+          )`,
+      [rows[0].source_id]
+    )
 
     return reply.send({ ok: true })
   })
@@ -369,8 +398,14 @@ export async function feedsRoutes(app: FastifyInstance) {
   })
 
   // POST /feeds/:id/refresh — force immediate re-fetch
+  //
+  // Rate-limited: manual refresh is a nice-to-have, but unbounded it's a
+  // cheap way to pin a feed-ingest worker doing back-to-back RSS/Mastodon/
+  // Nostr fetches against the same upstream. 6/min/user gives reasonable
+  // interactive feel (refresh a few tabs in a row) without allowing abuse.
   app.post<{ Params: { id: string } }>('/feeds/:id/refresh', {
     preHandler: requireAuth,
+    config: { rateLimit: { max: 6, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     const readerId = req.session!.sub!
     const { id } = req.params

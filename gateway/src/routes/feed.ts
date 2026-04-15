@@ -26,17 +26,30 @@ const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50
 
 interface CursorParts {
+  score?: number // explore-feed ranking score — undefined on legacy cursors
   ts: number
   id: string
 }
 
+// A sentinel higher than any realistic feed_items.score so a legacy 2-part
+// cursor treated as compound still admits every row whose published_at <= ts.
+// (Scores are seconds-based time+engagement signals; 1e18 is ~3×10^10 years.)
+const UNBOUNDED_SCORE = 1e18
+
 function parseCursor(raw: string | undefined): CursorParts | undefined {
   if (!raw) return undefined
-  // Compound cursor: "unix_seconds:uuid"
-  const colonIdx = raw.indexOf(':')
-  if (colonIdx > 0 && raw.length > colonIdx + 1) {
-    const ts = parseInt(raw.slice(0, colonIdx), 10)
-    const id = raw.slice(colonIdx + 1)
+  const parts = raw.split(':')
+  // 3-part: "score:unix_seconds:uuid" — explore-feed compound cursor
+  if (parts.length === 3) {
+    const score = Number(parts[0])
+    const ts = parseInt(parts[1], 10)
+    const id = parts[2]
+    if (!isNaN(score) && !isNaN(ts) && id.length >= 36) return { score, ts, id }
+  }
+  // 2-part: "unix_seconds:uuid" — following-feed cursor (legacy for explore too)
+  if (parts.length === 2) {
+    const ts = parseInt(parts[0], 10)
+    const id = parts[1]
     if (!isNaN(ts) && id.length >= 36) return { ts, id }
   }
   // Legacy: plain unix seconds (no id component — use max uuid for stable ordering)
@@ -158,11 +171,11 @@ export async function feedRoutes(app: FastifyInstance) {
     }
 
     try {
-      const items = reach === 'following'
+      const { items, nextCursor } = reach === 'following'
         ? await followingFeed(readerId, cursor, limit)
         : await exploreFeed(readerId, cursor, limit)
 
-      return reply.send({ items, reach })
+      return reply.send({ items, reach, nextCursor })
     } catch (err) {
       logger.error({ err, reach }, 'Feed fetch failed')
       return reply.status(500).send({ error: 'Feed fetch failed' })
@@ -182,7 +195,7 @@ async function followingFeed(readerId: string, cursor: CursorParts | undefined, 
     ? [readerId, limit, cursor.ts, cursor.id]
     : [readerId, limit]
 
-  const result = await pool.query(`
+  const result = await pool.query<any>(`
     WITH capped_external AS (
       SELECT fi_inner.id AS feed_item_id,
              ROW_NUMBER() OVER (
@@ -235,7 +248,12 @@ async function followingFeed(readerId: string, cursor: CursorParts | undefined, 
     LIMIT $2
   `, params)
 
-  return result.rows.map(feedItemToResponse)
+  const items = result.rows.map(feedItemToResponse)
+  const lastRow = result.rows[result.rows.length - 1]
+  const nextCursor = lastRow
+    ? `${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
+    : undefined
+  return { items, nextCursor }
 }
 
 // =============================================================================
@@ -244,19 +262,26 @@ async function followingFeed(readerId: string, cursor: CursorParts | undefined, 
 // =============================================================================
 
 async function exploreFeed(readerId: string, cursor: CursorParts | undefined, limit: number) {
-  // Explore uses score-based ordering for content, plus new users
-  const cursorClause = cursor
-    ? `AND EXTRACT(EPOCH FROM fi.published_at)::bigint < $3`
+  // Keyset pagination on (score, published_at, id). Legacy cursors without a
+  // score component use UNBOUNDED_SCORE so page 1 still admits every row.
+  const scoreCursor = cursor?.score ?? UNBOUNDED_SCORE
+  const contentCursorClause = cursor
+    ? `AND (fi.score, fi.published_at, fi.id) < ($3::numeric, to_timestamp($4), $5::uuid)`
     : ''
+  const contentParams: any[] = cursor
+    ? [readerId, limit, scoreCursor, cursor.ts, cursor.id]
+    : [readerId, limit]
+
+  // New users have no score; cursor them on account.created_at only.
   const newUserCursorClause = cursor
     ? `AND EXTRACT(EPOCH FROM acc2.created_at)::bigint < $3`
     : ''
-  const params: any[] = cursor
+  const newUsersParams: any[] = cursor
     ? [readerId, limit, cursor.ts]
     : [readerId, limit]
 
   const [contentRes, newUsersRes] = await Promise.all([
-    pool.query(`
+    pool.query<any>(`
       SELECT ${FEED_SELECT}
       FROM feed_items fi
       ${FEED_JOINS}
@@ -271,10 +296,10 @@ async function exploreFeed(readerId: string, cursor: CursorParts | undefined, li
           SELECT 1 FROM mutes WHERE muter_id = $1 AND muted_id = fi.author_id
         )
         AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
-        ${cursorClause}
-      ORDER BY fi.score DESC, fi.published_at DESC
+        ${contentCursorClause}
+      ORDER BY fi.score DESC, fi.published_at DESC, fi.id DESC
       LIMIT $2
-    `, params),
+    `, contentParams),
     pool.query(`
       SELECT acc2.username, acc2.display_name, acc2.avatar_blossom_url AS avatar,
         EXTRACT(EPOCH FROM acc2.created_at)::bigint AS joined_at
@@ -285,7 +310,7 @@ async function exploreFeed(readerId: string, cursor: CursorParts | undefined, li
         ${newUserCursorClause}
       ORDER BY acc2.created_at DESC
       LIMIT $2
-    `, params),
+    `, newUsersParams),
   ])
 
   // Preserve SQL score ordering for content; interleave new-user cards at fixed
@@ -309,5 +334,13 @@ async function exploreFeed(readerId: string, cursor: CursorParts | undefined, li
     }
   }
   while (nuIdx < newUsers.length) items.push(newUsers[nuIdx++])
-  return items.slice(0, limit)
+
+  // Next-page cursor is built from the last content row, NOT the last item in
+  // the rendered list — new_user cards are padding and have no score.
+  const lastContentRow = contentRes.rows[contentRes.rows.length - 1]
+  const nextCursor = lastContentRow
+    ? `${lastContentRow.score ?? 0}:${Number(lastContentRow.published_at_epoch)}:${lastContentRow.fi_id}`
+    : undefined
+
+  return { items: items.slice(0, limit), nextCursor }
 }

@@ -11,12 +11,14 @@ import logger from '../../shared/src/lib/logger.js'
 //   3. feed_items pointing to deleted/missing sources → clean up
 //
 // Runs daily at 05:00 UTC. See UNIVERSAL-FEED-ADR.md §XV.7.
+//
+// Any non-zero count means a dual-write path leaked — transactional writes
+// should keep feed_items in lockstep with the source tables. We log WARN
+// (not INFO) with per-case counts so on-call sees *which* path regressed,
+// rather than noticing only that "something" drifted.
 // =============================================================================
 
 export const feedItemsReconcile: Task = async (_payload, _helpers) => {
-  let added = 0
-  let removed = 0
-
   // 1. Articles missing from feed_items
   const articlesResult = await pool.query(`
     INSERT INTO feed_items (
@@ -42,7 +44,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.article_id = a.id)
     ON CONFLICT DO NOTHING
   `)
-  added += articlesResult.rowCount ?? 0
+  const articlesInserted = articlesResult.rowCount ?? 0
 
   // 2. Notes missing from feed_items
   const notesResult = await pool.query(`
@@ -66,7 +68,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
     WHERE NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.note_id = n.id)
     ON CONFLICT DO NOTHING
   `)
-  added += notesResult.rowCount ?? 0
+  const notesInserted = notesResult.rowCount ?? 0
 
   // 3. External items missing from feed_items
   const externalResult = await pool.query(`
@@ -95,7 +97,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.external_item_id = ei.id)
     ON CONFLICT DO NOTHING
   `)
-  added += externalResult.rowCount ?? 0
+  const externalsInserted = externalResult.rowCount ?? 0
 
   // 4. feed_items with soft-deleted articles that weren't caught
   const staleArticlesResult = await pool.query(`
@@ -105,7 +107,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       AND a.deleted_at IS NOT NULL
       AND fi.deleted_at IS NULL
   `)
-  removed += staleArticlesResult.rowCount ?? 0
+  const staleArticlesFixed = staleArticlesResult.rowCount ?? 0
 
   // 5. feed_items for external items that were soft-deleted
   const staleExternalResult = await pool.query(`
@@ -115,9 +117,26 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       AND ei.deleted_at IS NOT NULL
       AND fi.deleted_at IS NULL
   `)
-  removed += staleExternalResult.rowCount ?? 0
+  const staleExternalsFixed = staleExternalResult.rowCount ?? 0
 
-  if (added > 0 || removed > 0) {
-    logger.info({ added, removed }, 'feed_items reconciliation complete')
+  const anyDrift =
+    articlesInserted + notesInserted + externalsInserted +
+    staleArticlesFixed + staleExternalsFixed
+
+  // Any non-zero case means a dual-write path leaked. Log at WARN so the
+  // on-call dashboard surfaces it — reconcile existing at all is a safety
+  // net, not a routine cleanup. Per-case counts point at which path.
+  if (anyDrift > 0) {
+    logger.warn(
+      {
+        articlesInserted,
+        notesInserted,
+        externalsInserted,
+        staleArticlesFixed,
+        staleExternalsFixed,
+        totalDrift: anyDrift,
+      },
+      'feed_items reconcile repaired dual-write drift'
+    )
   }
 }

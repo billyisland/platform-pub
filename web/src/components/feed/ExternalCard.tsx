@@ -125,6 +125,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
             alt={authorDisplay}
             className="w-7 h-7 object-cover flex-shrink-0 bg-grey-200"
             loading="lazy"
+            referrerPolicy="no-referrer"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none'
             }}
@@ -189,6 +190,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
                   alt={m.alt ?? ''}
                   className="max-h-48 object-cover bg-grey-100"
                   loading="lazy"
+                  referrerPolicy="no-referrer"
                 />
               ))}
             </div>
@@ -234,6 +236,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
                   alt=""
                   className="w-16 h-16 object-cover bg-grey-100 flex-shrink-0"
                   loading="lazy"
+                  referrerPolicy="no-referrer"
                 />
               )}
               <div className="min-w-0 flex-1">

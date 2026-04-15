@@ -107,7 +107,11 @@ export async function noteRoutes(app: FastifyInstance) {
             $6, $7,
             'tier1', now()
           )
-          ON CONFLICT (note_id) WHERE note_id IS NOT NULL DO NOTHING
+          ON CONFLICT (note_id) WHERE note_id IS NOT NULL DO UPDATE SET
+            content_preview = EXCLUDED.content_preview,
+            author_name = EXCLUDED.author_name,
+            author_avatar = EXCLUDED.author_avatar,
+            author_username = EXCLUDED.author_username
         `, [
           nId, authorId,
           author?.display_name ?? author?.username ?? 'Unknown',

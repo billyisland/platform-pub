@@ -1,9 +1,9 @@
 import type { Task } from 'graphile-worker'
 import { WebSocket } from 'ws'
-import { nip19 } from 'nostr-tools'
+import { nip19, verifyEvent } from 'nostr-tools'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
-import { validateWebSocketUrl } from '../../shared/src/lib/http-client.js'
+import { pinnedWebSocketOptions, type PinnedWebSocketOptions } from '../../shared/src/lib/http-client.js'
 
 // Reject events claiming timestamps more than this far in the future — prevents
 // a hostile relay from poisoning the cursor into year 2100.
@@ -74,18 +74,21 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
 
   const hexPubkey = source.source_uri
 
+  const expectedPubkey = hexPubkey.toLowerCase()
+
   try {
     // Fetch events from all relay URLs, deduplicate by event ID
     const eventsMap = new Map<string, NostrEvent>()
     const deletionEvents: NostrEvent[] = []
+    let latestProfile: NostrEvent | null = null
 
     const nowSecs = Math.floor(Date.now() / 1000)
     const maxCreatedAt = nowSecs + FUTURE_DRIFT_WINDOW_SECONDS
 
     for (const relayUrl of source.relay_urls) {
       try {
-        await validateWebSocketUrl(relayUrl)
-        const events = await fetchFromRelay(relayUrl, hexPubkey, since)
+        const wsOpts = await pinnedWebSocketOptions(relayUrl)
+        const events = await fetchFromRelay(relayUrl, hexPubkey, since, wsOpts)
         for (const event of events) {
           // Reject events claiming timestamps far in the future (cursor poisoning)
           if (event.created_at > maxCreatedAt) {
@@ -93,8 +96,25 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
               'Rejecting Nostr event with future timestamp')
             continue
           }
+          // A hostile relay can ship events claiming any pubkey, including
+          // the source's own. Verify the signature and the author before
+          // treating the payload as authoritative.
+          if (event.pubkey?.toLowerCase() !== expectedPubkey) {
+            logger.warn({ sourceId, relayUrl, eventId: event.id, eventPubkey: event.pubkey },
+              'Rejecting Nostr event: pubkey mismatch')
+            continue
+          }
+          if (!verifyEvent(event as any)) {
+            logger.warn({ sourceId, relayUrl, eventId: event.id },
+              'Rejecting Nostr event: invalid signature')
+            continue
+          }
           if (event.kind === 5) {
             deletionEvents.push(event)
+          } else if (event.kind === 0) {
+            if (!latestProfile || event.created_at > latestProfile.created_at) {
+              latestProfile = event
+            }
           } else {
             eventsMap.set(event.id, event)
           }
@@ -107,6 +127,12 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
 
     // Sort by created_at DESC, cap at maxItems
     const events = [...eventsMap.values()]
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, maxItems)
+
+    // Cap deletions too — a chatty relay with long delete history can otherwise
+    // ship thousands of kind-5s per fetch cycle.
+    const cappedDeletes = deletionEvents
       .sort((a, b) => b.created_at - a.created_at)
       .slice(0, maxItems)
 
@@ -181,8 +207,9 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
       if (event.created_at > newestCreatedAt) newestCreatedAt = event.created_at
     }
 
-    // Handle kind 5 deletions
-    for (const delEvent of deletionEvents) {
+    // Handle kind 5 deletions. Pubkey + signature were already verified above,
+    // so by the time we get here delEvent.pubkey === source.source_uri.
+    for (const delEvent of cappedDeletes) {
       const deletedIds = delEvent.tags
         .filter(t => t[0] === 'e')
         .map(t => t[1])
@@ -210,19 +237,38 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
       }
     }
 
-    // Update source: cursor, reset errors
+    // Apply kind-0 profile update if we received a newer one than the stored
+    // metadata. Lets readers see the source's latest name/avatar/NIP-05 without
+    // waiting for the daily metadata-refresh cron.
+    let profileName: string | null | undefined
+    let profileAvatar: string | null | undefined
+    if (latestProfile) {
+      try {
+        const profile = JSON.parse(latestProfile.content)
+        profileName = typeof profile?.display_name === 'string' ? profile.display_name
+                    : typeof profile?.name === 'string' ? profile.name
+                    : undefined
+        profileAvatar = typeof profile?.picture === 'string' ? profile.picture : undefined
+      } catch {
+        // Malformed profile — ignore
+      }
+    }
+
+    // Update source: cursor, reset errors, optionally refresh display metadata.
     await pool.query(`
       UPDATE external_sources SET
         last_fetched_at = now(),
         cursor = $2,
         error_count = 0,
         last_error = NULL,
+        display_name = COALESCE($3, display_name),
+        avatar_url = COALESCE($4, avatar_url),
         updated_at = now()
       WHERE id = $1
-    `, [sourceId, String(newestCreatedAt)])
+    `, [sourceId, String(newestCreatedAt), profileName ?? null, profileAvatar ?? null])
 
     if (inserted > 0) {
-      logger.info({ sourceId, inserted, total: events.length, deletions: deletionEvents.length },
+      logger.info({ sourceId, inserted, total: events.length, deletions: cappedDeletes.length },
         'Nostr events ingested')
     }
 
@@ -255,10 +301,15 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
 // Fetch events from a single Nostr relay
 // =============================================================================
 
-function fetchFromRelay(relayUrl: string, pubkey: string, since: number): Promise<NostrEvent[]> {
+function fetchFromRelay(
+  relayUrl: string,
+  pubkey: string,
+  since: number,
+  wsOpts: PinnedWebSocketOptions,
+): Promise<NostrEvent[]> {
   return new Promise((resolve, reject) => {
     const events: NostrEvent[] = []
-    const ws = new WebSocket(relayUrl)
+    const ws = new WebSocket(relayUrl, wsOpts)
     const subId = `feed-ingest-${Date.now()}`
 
     const timeout = setTimeout(() => {
@@ -268,12 +319,20 @@ function fetchFromRelay(relayUrl: string, pubkey: string, since: number): Promis
     }, 10_000)
 
     ws.on('open', () => {
+      // Kind 0 pulls the latest profile metadata without a `since` filter; the
+      // ingest loop keeps only the newest one received. Regular/deletion events
+      // use the per-source cursor.
       ws.send(JSON.stringify([
         'REQ', subId,
         {
           kinds: [1, 5, 30023],
           authors: [pubkey],
           since,
+        },
+        {
+          kinds: [0],
+          authors: [pubkey],
+          limit: 1,
         },
       ]))
     })

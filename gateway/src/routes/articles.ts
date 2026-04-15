@@ -805,17 +805,21 @@ export async function articleRoutes(app: FastifyInstance) {
 
       // Soft-delete all live rows for this d-tag (there may be duplicates from
       // previous publishes/edits that pre-date the unique-live-row constraint).
-      // Also set deleted_at on feed_items so they're excluded from feeds.
-      await pool.query(
-        'UPDATE articles SET deleted_at = now() WHERE writer_id = $1 AND nostr_d_tag = $2 AND deleted_at IS NULL',
-        [writerId, article.nostr_d_tag]
-      )
-      await pool.query(
-        `UPDATE feed_items SET deleted_at = now()
-         WHERE article_id IN (SELECT id FROM articles WHERE writer_id = $1 AND nostr_d_tag = $2)
-           AND deleted_at IS NULL`,
-        [writerId, article.nostr_d_tag]
-      )
+      // Dual-write to feed_items in the same transaction so a crash between
+      // the two UPDATEs can't leave a live feed_items row pointing at a
+      // deleted article — the daily reconcile cron used to paper over this.
+      await withTransaction(async (client) => {
+        await client.query(
+          'UPDATE articles SET deleted_at = now() WHERE writer_id = $1 AND nostr_d_tag = $2 AND deleted_at IS NULL',
+          [writerId, article.nostr_d_tag]
+        )
+        await client.query(
+          `UPDATE feed_items SET deleted_at = now()
+           WHERE article_id IN (SELECT id FROM articles WHERE writer_id = $1 AND nostr_d_tag = $2)
+             AND deleted_at IS NULL`,
+          [writerId, article.nostr_d_tag]
+        )
+      })
 
       logger.info(
         { articleId: article.id, nostrEventId: article.nostr_event_id, writerId },

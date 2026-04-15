@@ -81,6 +81,11 @@ export async function getAsyncResult(
   return rows[0].result
 }
 
+// Cap per-initiator rows so a spammy client can't bloat the table between
+// the 5-min prune cycles. 100 is ~100× the normal concurrent-lookup working
+// set; anything above that is either abuse or a leaking client.
+const MAX_ROWS_PER_INITIATOR = 100
+
 async function storeAsyncResult(
   requestId: string,
   initiatorId: string,
@@ -94,6 +99,28 @@ async function storeAsyncResult(
        expires_at = EXCLUDED.expires_at`,
     [requestId, initiatorId, JSON.stringify(result), ASYNC_TTL_MS / 1000]
   )
+
+  // Trim older rows for this initiator beyond the cap. OFFSET N LIMIT 1
+  // returns the Nth-newest row's created_at; rows older than that are
+  // dropped. Uses the (initiator_id, created_at DESC) index from
+  // migration 064. Best-effort — a failure here shouldn't surface to the
+  // resolve caller.
+  try {
+    await pool.query(
+      `DELETE FROM resolver_async_results
+        WHERE initiator_id = $1
+          AND created_at < (
+            SELECT created_at
+              FROM resolver_async_results
+             WHERE initiator_id = $1
+             ORDER BY created_at DESC
+             OFFSET $2 LIMIT 1
+          )`,
+      [initiatorId, MAX_ROWS_PER_INITIATOR]
+    )
+  } catch (err) {
+    logger.warn({ err, initiatorId }, 'Failed to enforce resolver_async_results per-initiator cap')
+  }
 }
 
 // =============================================================================

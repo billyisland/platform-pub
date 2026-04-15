@@ -22,11 +22,32 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 
 const IV_LEN = 12
 const TAG_LEN = 16
-const CURRENT_KEY_VERSION = 1
+
+// Range of version bytes we treat as "plausibly versioned" in decrypt(). 1–8
+// is plenty: one key rotation per deploy cycle for a few years, while still
+// leaving most of the 0–255 byte space to be safely treated as "this is a v0
+// random IV, not a version marker".
+const MAX_KNOWN_VERSION = 8
 
 function parseHexKey(hex: string): Buffer {
   if (hex.length !== 64) throw new Error('Key material must be 64 hex chars (32 bytes)')
   return Buffer.from(hex, 'hex')
+}
+
+// Current write-side key version. Controlled by LINKED_ACCOUNT_KEY_VERSION so
+// an operator can rotate without a code deploy: add LINKED_ACCOUNT_KEY_HEX_V{n}
+// for the old key, set LINKED_ACCOUNT_KEY_HEX to the new material, bump the
+// version env var, restart. Reads still fall back to any configured _V{n}.
+function getCurrentKeyVersion(): number {
+  const raw = process.env.LINKED_ACCOUNT_KEY_VERSION
+  if (!raw) return 1
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 1 || n > MAX_KNOWN_VERSION) {
+    throw new Error(
+      `LINKED_ACCOUNT_KEY_VERSION must be an integer between 1 and ${MAX_KNOWN_VERSION}; got "${raw}"`
+    )
+  }
+  return n
 }
 
 function getCurrentKey(): Buffer {
@@ -35,12 +56,12 @@ function getCurrentKey(): Buffer {
   return parseHexKey(hex)
 }
 
-// Resolve the key for a given version byte. Version 1 == current key.
-// Older versions pull from LINKED_ACCOUNT_KEY_HEX_V{n} so an operator can
-// keep a previous key active during a rollover window without rewriting
-// every encrypted row in a single deploy.
+// Resolve the key for a given version byte. The version matching the current
+// write-side version always uses LINKED_ACCOUNT_KEY_HEX; other versions pull
+// from LINKED_ACCOUNT_KEY_HEX_V{n} so an operator can keep previous keys
+// active during a rollover window without rewriting every encrypted row.
 function getKeyForVersion(version: number): Buffer {
-  if (version === CURRENT_KEY_VERSION) return getCurrentKey()
+  if (version === getCurrentKeyVersion()) return getCurrentKey()
   const env = process.env[`LINKED_ACCOUNT_KEY_HEX_V${version}`]
   if (!env) throw new Error(`No key material available for version ${version}`)
   return parseHexKey(env)
@@ -52,7 +73,7 @@ export function encryptCredentials(plaintext: string): string {
   const cipher = createCipheriv('aes-256-gcm', key, iv)
   const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
   const tag = cipher.getAuthTag()
-  const versionByte = Buffer.from([CURRENT_KEY_VERSION])
+  const versionByte = Buffer.from([getCurrentKeyVersion()])
   return Buffer.concat([versionByte, iv, tag, ct]).toString('base64url')
 }
 
@@ -71,7 +92,7 @@ export function decryptCredentials(blob: string): string {
   // a known version *and* whose remainder is long enough as versioned; any
   // blob without a known version is decrypted with the current key (legacy).
   const maybeVersion = buf[0]
-  const isVersioned = (maybeVersion >= 1 && maybeVersion <= 8) &&
+  const isVersioned = (maybeVersion >= 1 && maybeVersion <= MAX_KNOWN_VERSION) &&
     buf.length >= 1 + IV_LEN + TAG_LEN + 1
 
   if (isVersioned) {

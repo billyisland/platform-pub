@@ -15,6 +15,7 @@ import { outboundCrossPost } from './tasks/outbound-cross-post.js'
 import { outboundTokenRefresh } from './tasks/outbound-token-refresh.js'
 import { atprotoOauthStatesPrune } from './tasks/atproto-oauth-states-prune.js'
 import { resolverResultsPrune } from './tasks/resolver-results-prune.js'
+import { externalSourcesGc } from './tasks/external-sources-gc.js'
 import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
@@ -62,6 +63,8 @@ async function start() {
         '*/5 * * * * atproto_oauth_states_prune',
         // Prune expired resolver Phase B results — every 5 min
         '*/5 * * * * resolver_results_prune',
+        // Garbage-collect orphaned external_sources — daily at 06:00 UTC
+        '0 6 * * * external_sources_gc',
       ].join('\n')
     ),
     taskList: {
@@ -78,6 +81,7 @@ async function start() {
       outbound_token_refresh: outboundTokenRefresh,
       atproto_oauth_states_prune: atprotoOauthStatesPrune,
       resolver_results_prune: resolverResultsPrune,
+      external_sources_gc: externalSourcesGc,
     },
   })
 

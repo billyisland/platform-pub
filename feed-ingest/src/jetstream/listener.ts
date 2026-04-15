@@ -2,6 +2,7 @@ import { WebSocket } from 'ws'
 import type { PoolClient } from 'pg'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
+import { pinnedWebSocketOptions } from '../../shared/src/lib/http-client.js'
 import { normaliseAtprotoCommit, buildAtUri, type JetstreamCommit } from '../adapters/atproto.js'
 import { insertAtprotoItem } from '../lib/atproto-ingest.js'
 
@@ -214,7 +215,7 @@ export class JetstreamListener {
       this.reconnectTimer = null
     }
     this.backoffMs = INITIAL_BACKOFF_MS
-    this.connect()
+    void this.connect()
   }
 
   // --- Cursor handling --------------------------------------------------------
@@ -239,7 +240,7 @@ export class JetstreamListener {
 
   // --- WebSocket connection ---------------------------------------------------
 
-  private connect(): void {
+  private async connect(): Promise<void> {
     if (this.stopping) return
     if (this.currentDids.size === 0) return
 
@@ -252,7 +253,30 @@ export class JetstreamListener {
     const fullUrl = `${this.url}?${params.toString()}`
     logger.debug({ didCount: this.currentDids.size, cursor }, 'Opening Jetstream WebSocket')
 
-    const ws = new WebSocket(fullUrl)
+    // Pin the resolved IP so the WS library can't be tricked by a second
+    // DNS lookup into connecting to a different (private) address — same
+    // defense undici gets from buildPinnedAgent. Failure here (DNS error,
+    // private-IP resolution) is logged and treated as a transient error;
+    // the reconnect backoff loop will try again.
+    let wsOpts
+    try {
+      wsOpts = await pinnedWebSocketOptions(fullUrl)
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) },
+        'Jetstream pinned WS resolution failed — will retry after backoff')
+      if (!this.stopping) {
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null
+          void this.connect()
+        }, this.backoffMs)
+        this.backoffMs = Math.min(this.backoffMs * 2, this.maxBackoffMs)
+      }
+      return
+    }
+    // DID set or stop flag may have changed while we awaited DNS.
+    if (this.stopping || this.currentDids.size === 0) return
+
+    const ws = new WebSocket(fullUrl, wsOpts)
     this.ws = ws
 
     ws.on('open', () => {
@@ -278,7 +302,7 @@ export class JetstreamListener {
       logger.info({ code, backoffMs: this.backoffMs }, 'Jetstream closed — scheduling reconnect')
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null
-        this.connect()
+        void this.connect()
       }, this.backoffMs)
       this.backoffMs = Math.min(this.backoffMs * 2, this.maxBackoffMs)
     })
@@ -335,7 +359,11 @@ export class JetstreamListener {
       `, [source.id, timeUs])
 
       // Keep in-memory source cursor in sync for oldestCursor() on reconnect.
-      source.cursor = String(timeUs)
+      // Mirror the DB's GREATEST guard: Jetstream can deliver out-of-order
+      // (e.g. after a reconnect that resumed from an older cursor), and we
+      // must not regress and re-admit already-ingested events.
+      const existing = source.cursor ? BigInt(source.cursor) : 0n
+      if (BigInt(timeUs) > existing) source.cursor = String(timeUs)
     } catch (err) {
       logger.warn(
         { sourceId: source.id, uri: item.sourceItemUri, err: err instanceof Error ? err.message : String(err) },

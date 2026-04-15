@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import { safeFetch } from '../../shared/src/lib/http-client.js'
+import { truncateWithLink } from '../lib/text.js'
 
 // =============================================================================
 // ActivityPub (Mastodon) outbound adapter
@@ -32,8 +34,6 @@ export interface MastodonOutboundResult {
   externalPostUri: string
 }
 
-const ELLIPSIS = '…'
-
 export async function postMastodonStatus(
   input: MastodonOutboundInput,
   credentials: MastodonCredentials
@@ -43,8 +43,9 @@ export async function postMastodonStatus(
     inReplyToId = await resolveRemoteStatus(input.instanceUrl, input.replyToStatusUri, credentials)
   }
 
+  const status = truncateWithLink(input.text, { max: input.maxChars, linkSuffix: input.sourceHomeUrl, separator: ' ' })
   const body: Record<string, unknown> = {
-    status: truncate(input.text, input.maxChars, input.sourceHomeUrl),
+    status,
     visibility: 'public',
   }
   if (inReplyToId) body.in_reply_to_id = inReplyToId
@@ -55,7 +56,7 @@ export async function postMastodonStatus(
       'Authorization': `Bearer ${credentials.accessToken}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Idempotency-Key': hashIdempotency(input.text, inReplyToId),
+      'Idempotency-Key': hashIdempotency(status, inReplyToId),
     },
     body: JSON.stringify(body),
   })
@@ -103,24 +104,11 @@ async function resolveRemoteStatus(
   return parsed.statuses?.[0]?.id
 }
 
-// -----------------------------------------------------------------------------
-// Text truncation — keep room for the all.haus fallback link if provided.
-// -----------------------------------------------------------------------------
-
-function truncate(text: string, max: number, sourceHomeUrl?: string): string {
-  if (text.length <= max) return text
-  const suffix = sourceHomeUrl ? `${ELLIPSIS} ${sourceHomeUrl}` : ELLIPSIS
-  const budget = Math.max(0, max - suffix.length - 1)
-  return `${text.slice(0, budget)} ${suffix}`.trim()
-}
-
+// SHA-256 keyed on (reply target + body) so two independent replies with the
+// same text to the same thread still dedupe cleanly, but replies with the
+// same text to different threads don't collide. 32-bit FNV-1a was previously
+// used here and collides within minutes at moderate load — Mastodon's 24h
+// Idempotency-Key window makes that a write-loss risk.
 function hashIdempotency(text: string, replyTo?: string): string {
-  // Cheap, stable key from content — Mastodon dedupes retries for 24h.
-  const src = `${replyTo ?? ''}::${text}`
-  let h = 0x811c9dc5
-  for (let i = 0; i < src.length; i++) {
-    h ^= src.charCodeAt(i)
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0
-  }
-  return h.toString(16).padStart(8, '0')
+  return createHash('sha256').update(`${replyTo ?? ''}::${text}`).digest('hex')
 }

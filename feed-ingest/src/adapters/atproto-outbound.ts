@@ -1,5 +1,6 @@
 import { getAtprotoClient } from '../../shared/src/lib/atproto-oauth.js'
 import logger from '../../shared/src/lib/logger.js'
+import { truncateWithLink } from '../lib/text.js'
 
 // =============================================================================
 // AT Protocol outbound — creates a post record via the linked user's PDS.
@@ -45,7 +46,7 @@ export async function postBlueskyRecord(input: AtprotoPostInput): Promise<Atprot
   const client = await getAtprotoClient()
   const session = await client.restore(input.did)
 
-  const text = truncateWithLink(input.text, input.maxGraphemes, input.allHausUrl)
+  const text = truncateWithLink(input.text, { max: input.maxGraphemes, linkSuffix: input.allHausUrl })
   const record: Record<string, unknown> = {
     $type: 'app.bsky.feed.post',
     text,
@@ -88,39 +89,3 @@ export async function postBlueskyRecord(input: AtprotoPostInput): Promise<Atprot
   return { externalPostUri: json.uri, cid: json.cid }
 }
 
-function countGraphemes(text: string): string[] | null {
-  // @ts-expect-error Intl.Segmenter runtime-available but TS lib may omit it
-  const seg = typeof Intl !== 'undefined' && Intl.Segmenter
-    // @ts-expect-error same
-    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-    : null
-  if (!seg) return null
-  const parts: string[] = []
-  for (const s of seg.segment(text)) parts.push(s.segment)
-  return parts
-}
-
-// Truncate body to fit `max` graphemes; if truncation is needed and an
-// all.haus link was supplied, leave room for "\n\n<url>" at the tail so the
-// Bluesky reader can reach the full reply on all.haus.
-function truncateWithLink(text: string, max: number, allHausUrl?: string): string {
-  if (!text) return ''
-  const parts = countGraphemes(text)
-
-  if (!parts) {
-    // Fallback: no Intl.Segmenter — assume 1 code unit ≈ 1 grapheme.
-    if (text.length <= max) return text
-    if (!allHausUrl) return text.slice(0, max - 1) + '…'
-    const tail = `\n\n${allHausUrl}`
-    const budget = Math.max(0, max - tail.length - 1)
-    return text.slice(0, budget) + '…' + tail
-  }
-
-  if (parts.length <= max) return text
-  if (!allHausUrl) return parts.slice(0, max - 1).join('') + '…'
-
-  const tail = `\n\n${allHausUrl}`
-  const tailParts = countGraphemes(tail) ?? [tail]
-  const budget = Math.max(0, max - tailParts.length - 1) // -1 for ellipsis
-  return parts.slice(0, budget).join('') + '…' + tail
-}
