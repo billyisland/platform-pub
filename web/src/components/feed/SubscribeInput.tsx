@@ -148,8 +148,8 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
           type="text"
           value={query}
           onChange={(e) => handleChange(e.target.value)}
-          placeholder="Follow a feed — paste a URL, handle, or npub"
-          className="w-full bg-grey-100 px-4 py-2.5 text-ui-sm text-black placeholder:text-grey-400 focus:outline-none focus:ring-2 focus:ring-crimson"
+          placeholder="Follow a URL, handle, or npub"
+          className="w-full bg-transparent px-0 py-2.5 text-ui-sm text-black placeholder:text-grey-400 focus:outline-none border-b-4 border-black"
         />
         {resolving && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">

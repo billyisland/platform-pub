@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '../../stores/auth'
 import { messages as messagesApi, trust as trustApi, type TrustProfileResponse } from '../../lib/api'
-import { NoteComposer } from '../feed/NoteComposer'
+import { useCompose } from '../../stores/compose'
 import { WorkTab } from './WorkTab'
 import { SocialTab } from './SocialTab'
 import { FollowersTab } from './FollowersTab'
@@ -50,7 +50,7 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
   const [followLoading, setFollowLoading] = useState(false)
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null)
   const [subLoading, setSubLoading] = useState(false)
-  const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
+  const openCompose = useCompose((s) => s.open)
   const [showVouchModal, setShowVouchModal] = useState(false)
   const [trustData, setTrustData] = useState<TrustProfileResponse | null>(null)
   const [trustKey, setTrustKey] = useState(0)
@@ -150,9 +150,8 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
   }
 
   const handleQuote = useCallback((target: QuoteTarget) => {
-    setPendingQuote(target)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [])
+    openCompose('reply', target)
+  }, [openCompose])
 
   const router = useRouter()
   const isOwnProfile = user?.username === username
@@ -265,22 +264,6 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
       {writer && (
         <div className="mb-8">
           <TrustProfile userId={writer.id} key={trustKey} compact />
-        </div>
-      )}
-
-      {/* Quote composer modal */}
-      {pendingQuote && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-          onClick={() => setPendingQuote(null)}
-        >
-          <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <NoteComposer
-              quoteTarget={pendingQuote}
-              onPublished={() => setPendingQuote(null)}
-              onClearQuote={() => setPendingQuote(null)}
-            />
-          </div>
         </div>
       )}
 

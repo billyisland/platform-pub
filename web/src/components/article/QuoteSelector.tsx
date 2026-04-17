@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, type RefObject } from 'react'
-import { NoteComposer } from '../feed/NoteComposer'
+import { useCompose } from '../../stores/compose'
 
 interface QuoteSelectorProps {
   articleBodyRef: RefObject<HTMLDivElement | null>
@@ -14,7 +14,7 @@ interface QuoteSelectorProps {
 
 export function QuoteSelector({ articleBodyRef, articleId, articleTitle, articlePubkey, writerName, isLoggedIn }: QuoteSelectorProps) {
   const [selectionPopup, setSelectionPopup] = useState<{ x: number; y: number; text: string } | null>(null)
-  const [quoteComposerText, setQuoteComposerText] = useState<string | null>(null)
+  const openCompose = useCompose((s) => s.open)
 
   const handleMouseUp = useCallback(() => {
     if (!isLoggedIn) return
@@ -48,34 +48,20 @@ export function QuoteSelector({ articleBodyRef, articleId, articleTitle, article
           <button
             onMouseDown={e => {
               e.preventDefault()
-              setQuoteComposerText(selectionPopup.text)
+              openCompose('reply', {
+                eventId: articleId,
+                eventKind: 30023,
+                authorPubkey: articlePubkey,
+                highlightedText: selectionPopup.text,
+                previewContent: selectionPopup.text,
+                previewTitle: articleTitle,
+                previewAuthorName: writerName,
+              })
               setSelectionPopup(null)
             }}
           >
             Quote
           </button>
-        </div>
-      )}
-
-      {quoteComposerText !== null && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => setQuoteComposerText(null)}
-        >
-          <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <NoteComposer
-              quoteTarget={{
-                eventId: articleId,
-                eventKind: 30023,
-                authorPubkey: articlePubkey,
-                highlightedText: quoteComposerText,
-                previewContent: quoteComposerText,
-                previewTitle: articleTitle,
-                previewAuthorName: writerName,
-              }}
-              onPublished={() => setQuoteComposerText(null)}
-            />
-          </div>
         </div>
       )}
     </>

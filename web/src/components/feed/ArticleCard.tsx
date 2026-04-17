@@ -14,6 +14,7 @@ import type { VoteTally, MyVoteCount } from '../../lib/api'
 import type { QuoteTarget } from '../../lib/publishNote'
 import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
 import { TrustPip } from '../ui/TrustPip'
+import { useCompose } from '../../stores/compose'
 
 interface ArticleCardProps {
   article: ArticleEvent
@@ -27,6 +28,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
   const { user } = useAuth()
   const router = useRouter()
   const writerInfo = useWriterName(article.pubkey)
+  const openCompose = useCompose((s) => s.open)
   const [replyCount, setReplyCount] = useState<number | null>(null)
   const wordCount = article.content.split(/\s+/).length
   const readMinutes = Math.max(1, Math.round(wordCount / 200))
@@ -49,7 +51,20 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
       authorPubkey: article.pubkey,
       previewTitle: article.title,
       previewContent: article.summary,
-      previewAuthorName: writerInfo?.displayName ?? article.pubkey.slice(0, 8) + '…',
+      previewAuthorName: writerInfo?.displayName ?? article.pubkey.slice(0, 8) + '\u2026',
+    })
+  }
+
+  function handleReply(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    openCompose('reply', {
+      eventId: article.id,
+      eventKind: 30023,
+      authorPubkey: article.pubkey,
+      previewTitle: article.title,
+      previewContent: article.summary,
+      previewAuthorName: writerInfo?.displayName ?? article.pubkey.slice(0, 8) + '\u2026',
     })
   }
 
@@ -60,8 +75,8 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
   return (
     <div
       onClick={handleCardClick}
-      className="group mt-9 cursor-pointer"
-      style={{ borderLeft: `6px solid ${barColor}`, paddingLeft: '28px' }}
+      className="group cursor-pointer"
+      style={{ borderLeft: `4px solid ${barColor}`, paddingLeft: '24px' }}
     >
       {/* Byline — mono-caps, grey-600 */}
       <div className="flex items-center gap-2 mb-3">
@@ -129,6 +144,14 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
           <><span className="opacity-50">·</span><span>{replyCount} {replyCount !== 1 ? 'replies' : 'reply'}</span></>
         )}
         <span className="flex-1" />
+        {user && (
+          <button
+            onClick={handleReply}
+            className="text-grey-600 hover:text-black transition-colors"
+          >
+            Reply
+          </button>
+        )}
         {user && onQuote && (
           <button
             onClick={handleQuote}

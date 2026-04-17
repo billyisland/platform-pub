@@ -95,6 +95,15 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Supports a paywall gate node — content below the gate requires payment to unlock
 - Markdown serialization via `tiptap-markdown`
 
+### Compose overlay
+- `ComposeOverlay` (`web/src/components/compose/ComposeOverlay.tsx`) is the single compose surface for short-form content, mounted globally in `app/layout.tsx`
+- Two modes: *note* (default, from topbar COMPOSE button or `⌘K`) and *reply* (from Reply on any card, or QuoteSelector)
+- State managed by Zustand store `web/src/stores/compose.ts` — `useCompose().open(mode, replyTarget)` opens from anywhere
+- Overlay sits above content with 40% scrim, topbar stays visible and interactive
+- Mobile: full-screen bottom sheet
+- NoteComposer (`web/src/components/feed/NoteComposer.tsx`) is deprecated — kept in codebase but no longer imported anywhere
+- Full spec: `ALLHAUS-REDESIGN-SPEC.md` §3
+
 ### Feed & search
 - Feed ranking spec in `planning-archive/FEED-ALGORITHM.md` (Phase 1 implemented)
 - Full-text search uses PostgreSQL trigrams (`pg_trgm`), see `gateway/src/routes/search.ts`
@@ -184,9 +193,19 @@ All top-level admin/settings/dashboard pages use `<PageShell>` from `web/src/com
 ### Dividers
 Use `.slab-rule-4` for major section dividers. Do not use `h-[4px] bg-black` inline.
 
+### Feed card chassis
+All three feed card types (`ArticleCard`, `NoteCard`, `ExternalCard`) share a unified visual grammar:
+- **Left bar**: 4px solid, full card height. Black (`#111111`) for native, crimson (`#B5242A`) for paid, grey-300 (`#BBBBBB`) for external. Applied via `borderLeft` inline style + `paddingLeft: '24px'`.
+- **Byline row**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600`). Order: TrustPip · Author name · middle-dot · timestamp · (optional price or protocol badge).
+- **Action row**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600`). `Reply` opens the compose overlay; `Quote`, `VoteControls`, `BookmarkButton`, `ShareButton` as appropriate per type.
+- **No avatars** in card bodies. The left bar + pip + mono-caps name carry identity.
+- **Feed rhythm**: 40px gap between all items (`space-y-[40px]`), no horizontal rules between cards.
+
 ## Key docs
 
 - `feature-debt.md` — consolidated feature debt, outstanding work, and attack order
+- `ALLHAUS-REDESIGN-SPEC.md` — redesign spec for topbar, feed, compose overlay, card family (Steps 1–3 shipped, remaining: article tiers, playscript threads, compose article mode, polish states)
+- `REDESIGN-SCOPE.md` — product scope document arguing what the product is (companion to the redesign spec)
 - `UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)
 - `DEPLOYMENT.md` — full production deployment guide
 - `schema.sql` — full PostgreSQL schema (source of truth for DB structure)

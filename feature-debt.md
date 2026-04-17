@@ -3,7 +3,8 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-17. Completed: Trust graph Build Phase 4 (epoch aggregation and decay) — migration 067 (trust_epochs table, vouch decay tracking columns), pure library functions for attestor weighting (Phase A formula: age × payment × readership × activity) and aggregation (freshness decay, graduated small-scale protection, normalised scoring), trust_epoch_aggregate cron task (quarterly full epochs + Mon/Thu mop-ups, small-subject rule, threshold gate, dry-run mode, monitoring logs), 42 unit tests, gateway trust endpoint updated to prefer epoch scores over live counts, frontend dimension bars updated to use real scores. See `ALLHAUS-OMNIBUS.md` §II.8 + Build Phase 4.
+Last worked: 2026-04-17. Completed: Redesign Steps 1–3 (the swap, compose overlay, card chassis refactor) per `ALLHAUS-REDESIGN-SPEC.md`.
+Previously: 2026-04-17. Completed: Trust graph Build Phase 4 (epoch aggregation and decay) — migration 067 (trust_epochs table, vouch decay tracking columns), pure library functions for attestor weighting (Phase A formula: age × payment × readership × activity) and aggregation (freshness decay, graduated small-scale protection, normalised scoring), trust_epoch_aggregate cron task (quarterly full epochs + Mon/Thu mop-ups, small-subject rule, threshold gate, dry-run mode, monitoring logs), 42 unit tests, gateway trust endpoint updated to prefer epoch scores over live counts, frontend dimension bars updated to use real scores. See `ALLHAUS-OMNIBUS.md` §II.8 + Build Phase 4.
 Previously: 2026-04-17. Completed: Trust graph Build Phase 2 (vouching CRUD) — migration 066 (vouches + trust_profiles tables), POST /vouches (upsert with dimension/value/visibility), DELETE /vouches/:id (soft-delete withdrawal), GET /trust/:userId extended with Layer 2 dimension scores + public endorsements + Layer 4 relational data + viewer's existing vouches, GET /my/vouches for own vouch list. Frontend: TrustProfile component (dimension bars, endorsements, "your network says"), VouchModal (dimension checkboxes, visibility radio, aggregate disclaimer), vouch button on writer profiles, VouchList withdrawal UI on /network?tab=vouches. See `ALLHAUS-OMNIBUS.md`.
 Previously: 2026-04-17. Completed: Trust graph Build Phase 1 (Layer 1 enrichment) — migration 065, trust_layer1_refresh cron, GET /trust/:userId, pip rendering on all feed cards. See `ALLHAUS-OMNIBUS.md`.
 Previously: 2026-04-15. Completed: Gateway decomposition — service-layer extraction for `routes/messages.ts`. 693-line route file split into `routes/messages.ts` (202 lines, thin dispatchers) + `services/messages.ts` (563 lines, business logic). `ServiceResult<T>` discriminated union for HTTP error mapping without throws. All 13 DM endpoints covered (conversations, messages, likes, read-state, decrypt batch, pricing). Per `GATEWAY-DECOMPOSITION.md`, this hedges the eventual messaging-service extraction — the cutover becomes a mechanical import→HTTP-client swap rather than a combined factor+extract. `replies.ts` deliberately left in the gateway (article/note threading, not DMs). Build + 52 tests green.
@@ -257,9 +258,9 @@ Shipped in Phase 5B:
 - feed-ingest `atproto-outbound.ts` adapter — DPoP-bound `com.atproto.repo.createRecord` via `OAuthSession.fetchHandler`; 300-grapheme truncation via `Intl.Segmenter`; reply strong-refs (root + parent from `interaction_data`) and `app.bsky.embed.record` quote refs
 - Bluesky handle input in `LinkedAccountsPanel`
 
-**Trust Graph & READER Workspace — `ALLHAUS-OMNIBUS.md`**
+**Trust Graph — `ALLHAUS-OMNIBUS.md`**
 
-Eight build phases specified in the omnibus. Spec covers trust graph (Layer 1 automatic signals, Layer 2 attestations, Layer 3 graph analysis, Layer 4 relational presentation), panel-based workspace UI, and Phase A/B anonymity strategy. Full spec in `ALLHAUS-OMNIBUS.md` (Books I–IV).
+Eight build phases specified in the omnibus. Spec covers trust graph (Layer 1 automatic signals, Layer 2 attestations, Layer 3 graph analysis, Layer 4 relational presentation) and Phase A/B anonymity strategy. Full spec in `ALLHAUS-OMNIBUS.md` (Books I, II, IV). Book III (workspace specification) was removed — the panel-based workspace was retired in favour of the single-surface model in `REDESIGN-SCOPE.md`.
 
 Build Phase 1 (Layer 1 enrichment) — **DONE (2026-04-17):**
 - Migration 065 (`trust_layer1` table — per-user precomputed signals + pip_status)
@@ -281,12 +282,12 @@ Build Phase 2 (vouching CRUD) — **DONE (2026-04-17):**
 - VouchModal (dimension checkboxes, visibility radio, aggregate disclaimer)
 - Vouch button on writer profiles, VouchList on /network?tab=vouches with withdrawal
 
-Build Phase 3 (workspace shell and panels) — outstanding, largest phase:
-- **3a: Shell and flex layout** — topbar (∀ all.haus + READ/WRITE/DASHBOARD mode tabs + search + avatar), panel toggles bar, status bar, four-panel flex container with open/close transitions. `localStorage` state persistence. This is a rewrite of the authenticated shell — current LayoutShell + Nav.tsx replaced. **Transition path not yet specced** — need to decide: feature flag, parallel routes, or hard cutover. Current routes (/feed, /article/[dTag], /subscriptions, /dashboard, /write) all assume full viewport.
-- **3b: Feed panel** — port FeedView into panel. Feed item structure, crimson active-item left edge, filter pills (ALL/ARTICLES/SOCIAL), infinite scroll, pip rendering. Feed panel navigates to existing article page until Reading panel ships.
-- **3c: Reading panel** — port article page rendering into panel. Byline, headline, body, paywall gate. Feed→Reading handoff (click loads in panel, pushState to /read/[slug]). Dual rendering needed: articles must work as standalone page (/read/[slug] unauthenticated) AND as panel-embedded component. Link-out fallback card for external content.
-- **3d: Sources panel** — from existing subscription data. Protocol indicators (8px square, protocol colours), pinned/all sections, source filtering, context menu (pin/unpin/mute/unsubscribe), add-source modal.
-- **3e: Trust panel** — dimension bars from trust_profiles, Layer 1 stats from trust_layer1, Layer 4 "YOUR NETWORK SAYS" from public endorsements, vouch button integration. Depends on Phases 1+2.
+Build Phase 3 (reader-side product work) — **superseded by `REDESIGN-SCOPE.md` + `ALLHAUS-REDESIGN-SPEC.md`:**
+- The four-panel workspace originally specified here was retired in favour of a single-surface product model
+- Frontend work is now `REDESIGN-SCOPE.md` Phase A — ten incremental changes to the existing codebase
+- `ALLHAUS-REDESIGN-SPEC.md` specifies the four core surfaces: topbar, feed, compose overlay, card family
+- Redesign Steps 1–3 shipped (2026-04-17): the swap, compose overlay (note mode), card chassis refactor
+- Remaining from the spec: article tiers (lead/standard/brief + two-up pairing), playscript thread rendering, compose article mode, end-of-feed/zero/error states, filter bar, dark mode
 
 Build Phase 4 (epoch aggregation and decay) — **DONE (2026-04-17):**
 - Migration 067 (`trust_epochs` table for audit trail, `last_reaffirmed_at` + `epochs_since_reaffirm` columns on vouches)
@@ -309,23 +310,22 @@ Build Phase 6 (anonymity Phase B) — future, gated on scale:
 - Credibility brackets, periodic re-keying, week-long prompt batching with jitter
 - private_graph PostgreSQL schema
 
-Build Phase 7 (responsive workspace) — future:
-- Tablet: Sources/Trust as slide-in overlays
-- Mobile: full-screen panel views, bottom tab bar, swipe navigation, morning-edition model
-- Pixel specs to be written during this phase
+Build Phase 7 (mobile responsive) — **superseded by `REDESIGN-SCOPE.md`:**
+- Single-column responsive view on narrow viewports, not a panel-swipe workspace
+- Compose surface on mobile needs its own design pass (see `REDESIGN-SCOPE.md` Q7)
 
 Build Phase 8 (external content rendering) — future, gated on legal review:
 - Server-side readability extraction (Mozilla Readability / Mercury Parser)
 - Per-user cache with short TTL, exclusion list, robots.txt respect
 - DMCA response process needed before shipping
-- Link-out fallback card ships with Phase 3c
+- Link-out fallback card for external content works without readability extraction
 
-Known gaps in the spec (identified during Phase 1 build):
-- Transition path from current single-column layout to workspace not addressed — need Book 0
+Known gaps (identified during earlier build phases, some now resolved by `REDESIGN-SCOPE.md`):
+- ~~Transition path from current layout to workspace~~ — dissolved (no workspace to transition to)
 - Layer 4 "valued set" includes "pin as sources" (localStorage) and "quote-post approvingly" (undefined signal) — hand-waved
 - Layer 1 signals for external authors (follower count, account age) not stored in external_sources/external_items — feed-ingest adapters would need to persist these
-- Current nav features (Messages, Notifications, Network, Library, Bookmarks, Settings) not accounted for in spec's three-tab topbar
-- Dual rendering for article page (standalone + panel-embedded) not addressed
+- ~~Current nav features not accounted for in spec's three-tab topbar~~ — dissolved (avatar dropdown keeps existing nav)
+- ~~Dual rendering for article page (standalone + panel-embedded)~~ — dissolved (articles stay on their own route)
 
 **UI prototype — `provenance-ikb.jsx`**
 
@@ -477,6 +477,12 @@ Features any user would reasonably expect given the platform's existing capabili
 - **Trust graph Build Phase 1 (Layer 1 enrichment)** — migration 065 (`trust_layer1` table), `trust-layer1-refresh` daily cron in feed-ingest, `GET /api/v1/trust/:userId` gateway endpoint, trust pip (5px circle, three-state: known/partial/unknown) on ArticleCard, NoteCard, ExternalCard. `PipStatus` type in `ndk.ts`, `.trust-pip` CSS class. `pipStatus` flows through feed API → FeedView mapping → card components. NIP-05 verification stubbed (no table yet). See `ALLHAUS-OMNIBUS.md` Build Phase 1.
 - **Trust graph Build Phase 2 (vouching CRUD)** — migration 066 (`vouches` + `trust_profiles` tables with CHECK constraints). Gateway: `POST /vouches` (upsert per attestor/subject/dimension), `DELETE /vouches/:id` (soft-delete withdrawal), `GET /my/vouches` (own vouch list), `GET /trust/:userId` extended with Layer 2 dimension scores, public endorsements with attestor profiles, Layer 4 relational data (viewer's network intersection), viewer's existing vouches. Frontend: `TrustProfile` component (dimension bars, endorsements, "your network says"), `VouchModal` (dimension checkboxes, visibility radio, aggregate disclaimer), vouch button on writer profile action bar, `VouchList` on `/network?tab=vouches` with withdrawal. See `ALLHAUS-OMNIBUS.md` Build Phase 2.
 - **Trust graph Build Phase 4 (epoch aggregation and decay)** — migration 067 (`trust_epochs` + vouch decay columns). Pure library functions: attestor weighting (Phase A formula), aggregation (freshness, decay, scoring). Cron task: quarterly full epochs + Mon/Thu mop-ups with small-subject rule and threshold gate. Dry-run mode. 42 unit tests. Gateway prefers epoch scores; frontend dimension bars use real scores. See `ALLHAUS-OMNIBUS.md` §II.8 + Build Phase 4.
+
+### Completed (2026-04-17, redesign steps 1–3)
+
+- **Redesign Step 1 (the swap)** — Nav reduced from `Feed | Write | Dashboard | Network` to `Feed | Dashboard`. `COMPOSE ⌘K` button added to topbar (text on desktop, ∀ mark on mobile). Global `⌘K`/`Ctrl+K` hotkey opens compose overlay. Canvas mode ∀ mark changed from white to crimson. Sticky NoteComposer in FeedView replaced with sticky SubscribeInput (transparent bg, slab-rule border, shorter placeholder). See `ALLHAUS-REDESIGN-SPEC.md` §1–2.
+- **Redesign Step 2 (compose overlay, note mode)** — New `ComposeOverlay` component mounted globally in layout. Three-zone slab: top zone (mode label or reply preview), editing zone (auto-grow textarea, Jost 16px), controls zone (image upload, cross-post pills per linked account, character counter, Post button). Reply mode with pinned quote preview. Double-escape dismiss with confirmation. Mobile full-screen sheet variant. Zustand store (`stores/compose.ts`) coordinates overlay state. QuoteSelector and WriterActivity updated to use overlay instead of inline NoteComposer modals. See `ALLHAUS-REDESIGN-SPEC.md` §3.
+- **Redesign Step 3 (card chassis refactor)** — All three feed card types unified around shared visual grammar: 4px left bar (black for native, crimson for paid, grey-300 for external), mono-caps 11px byline row (TrustPip · Author · Timestamp), mono-caps action row. NoteCard: avatar removed, byline changed from sans 14px to mono-caps 11px, left bar added, Reply routes through overlay. ExternalCard: avatar removed, byline unified, provenance badge moved into byline row (grey-400, was crimson), inline ExternalReplyComposer removed, Reply routes through overlay. ArticleCard: bar narrowed 6px→4px, padding 28px→24px, Reply button added. Feed vertical rhythm unified to 40px gap via `space-y-[40px]`. See `ALLHAUS-REDESIGN-SPEC.md` §4.
 
 ### Later: strategic work
 

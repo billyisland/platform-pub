@@ -8,6 +8,7 @@ import type { MeResponse } from '../../lib/api'
 import { useLayoutModeContext } from './LayoutShell'
 import { ForAllMark } from '../icons/ForAllMark'
 import { useUnreadCounts } from '../../stores/unread'
+import { useCompose } from '../../stores/compose'
 
 function Badge({ count, className = '' }: { count: number; className?: string }) {
   if (count <= 0) return null
@@ -178,9 +179,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
       ) : user ? (
         <>
           <Link href="/feed" onClick={onClose} className={linkClass('/feed')}>Feed</Link>
-          <Link href="/write" onClick={onClose} className={linkClass('/write')}>Write</Link>
           <Link href="/dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
-          <Link href="/network" onClick={onClose} className={linkClass('/network')}>Network</Link>
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
@@ -270,6 +269,22 @@ export function Nav() {
     setMenuOpen(false)
   }
 
+  const openCompose = useCompose((s) => s.open)
+
+  // Global ⌘K / Ctrl+K hotkey to open compose overlay
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        // No-op inside the full editor
+        if (pathname.startsWith('/write/')) return
+        e.preventDefault()
+        openCompose()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [pathname, openCompose])
+
   const logoHref = user ? '/feed' : '/'
 
   // ── Canvas mode: minimal black bar, white ∀ ────────────────────────────────
@@ -280,7 +295,7 @@ export function Nav() {
         <header className="fixed top-0 inset-x-0 z-50 bg-black">
           <div className="flex items-center justify-between px-6 h-[60px] max-w-content mx-auto">
             <Link href={logoHref} className="flex-shrink-0 logo-spin">
-              <ForAllMark size={18} className="text-white hover:text-grey-300 transition-colors" />
+              <ForAllMark size={18} className="text-crimson hover:text-crimson-dark transition-colors" />
             </Link>
 
             <div className="flex items-center">
@@ -344,9 +359,7 @@ export function Nav() {
               ) : user ? (
                 <>
                   <Link href="/feed" className={navLinkClass(isActive('/feed'))}>Feed</Link>
-                  <Link href="/write" className={navLinkClass(isActive('/write'))}>Write</Link>
                   <Link href="/dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
-                  <Link href="/network" className={navLinkClass(isActive('/network'))}>Network</Link>
                 </>
               ) : (
                 <>
@@ -368,6 +381,26 @@ export function Nav() {
                 className="w-36 bg-white/10 px-3 py-1.5 text-[11px] text-white placeholder-grey-400 font-mono uppercase tracking-[0.06em] focus:w-52 transition-all border-none"
               />
             </form>
+
+            {/* Compose button — desktop: text, mobile: ∀ mark */}
+            {!loading && user && (
+              <>
+                <button
+                  onClick={() => openCompose()}
+                  className="hidden md:flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-white transition-colors group"
+                >
+                  <span className="group-hover:border-b group-hover:border-crimson pb-px">Compose</span>
+                  <span className="text-grey-600">&nbsp;&#8984;K</span>
+                </button>
+                <button
+                  onClick={() => openCompose()}
+                  className="md:hidden"
+                  aria-label="Compose"
+                >
+                  <ForAllMark size={14} className="text-white hover:text-grey-300 transition-colors" />
+                </button>
+              </>
+            )}
 
             {loading ? (
               <div className="h-7 w-7 animate-pulse bg-grey-600" />

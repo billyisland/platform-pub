@@ -1,16 +1,17 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
 import { ArticleCard } from '../feed/ArticleCard'
 import { NoteCard } from '../feed/NoteCard'
 import { ExternalCard } from '../feed/ExternalCard'
-import { NoteComposer } from '../feed/NoteComposer'
+import { SubscribeInput } from '../feed/SubscribeInput'
 import type { FeedItem, NoteEvent, ExternalFeedItem } from '../../lib/ndk'
 import type { QuoteTarget } from '../../lib/publishNote'
 import { feed as feedApi, votes as votesApi, bookmarks as bookmarksApi, type VoteTally, type MyVoteCount, type FeedReach } from '../../lib/api'
+import { useCompose } from '../../stores/compose'
 
 interface NewUserItem {
   type: 'new_user'
@@ -45,11 +46,11 @@ export function FeedView() {
   const [globalLoading, setGlobalLoading] = useState(true)
   const [globalError, setGlobalError] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
-  const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
   const [voteTallies, setVoteTallies] = useState<Record<string, VoteTally>>({})
   const [myVoteCounts, setMyVoteCounts] = useState<Record<string, MyVoteCount>>({})
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set())
-  const composerRef = useRef<HTMLDivElement>(null)
+  const openCompose = useCompose((s) => s.open)
+  const setOnPublished = useCompose((s) => s.setOnPublished)
 
   useEffect(() => { if (!loading && !user) router.push('/auth?mode=login') }, [user, loading, router])
 
@@ -145,38 +146,33 @@ export function FeedView() {
   }, [user, reach, retryKey])
 
   const handleNotePublished = useCallback((note: NoteEvent) => {
-    setPendingQuote(null)
     setGlobalItems(prev => [note, ...prev])
   }, [])
+
+  // Register the callback so the compose overlay can prepend notes to this feed
+  useEffect(() => {
+    setOnPublished(handleNotePublished)
+    return () => setOnPublished(null)
+  }, [handleNotePublished, setOnPublished])
 
   const handleNoteDeleted = useCallback((id: string) => {
     setGlobalItems(prev => prev.filter(i => i.type === 'new_user' || i.id !== id))
   }, [])
 
   const handleQuote = useCallback((target: QuoteTarget) => {
-    setPendingQuote(target)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-    setTimeout(() => {
-      composerRef.current?.querySelector('textarea')?.focus()
-    }, 300)
-  }, [])
+    openCompose('reply', target)
+  }, [openCompose])
 
   if (loading || !user) return <FeedSkeleton />
 
   return (
     <div className="mx-auto max-w-feed pt-0">
 
-      {/* Composer */}
+      {/* Subscribe input */}
       <div className="sticky top-[60px] z-10 bg-white">
-        <div ref={composerRef} className="px-6 pt-4 pb-4">
-          <NoteComposer
-            quoteTarget={pendingQuote ?? undefined}
-            onPublished={handleNotePublished}
-            onClearQuote={() => setPendingQuote(null)}
-          />
+        <div className="px-6 pt-4 pb-4">
+          <SubscribeInput onSubscribed={() => setRetryKey(k => k + 1)} />
         </div>
-
-        <div className="h-3" />
       </div>
 
       {/* Feed */}
@@ -196,7 +192,7 @@ export function FeedView() {
             <p className="text-ui-sm text-grey-600">Nothing here yet.</p>
           </div>
         ) : (
-          <div className="px-6">
+          <div className="px-6 space-y-[40px] pt-[48px]">
             {globalItems.map((item) => {
               if (item.type === 'new_user') {
                 return <NewUserCard key={`new-user-${item.username}-${item.joinedAt}`} item={item} />
