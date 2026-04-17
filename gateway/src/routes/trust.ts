@@ -58,6 +58,8 @@ export async function trustRoutes(app: FastifyInstance) {
         [userId]
       )
 
+      const hasEpochScores = dimRows.length > 0
+
       const dimensions: Record<string, { score: number; attestationCount: number }> = {}
       for (const d of DIMENSIONS) {
         const row = dimRows.find(r => r.dimension === d)
@@ -67,20 +69,22 @@ export async function trustRoutes(app: FastifyInstance) {
         }
       }
 
-      // Live vouch counts (until Phase 4 epoch aggregation populates trust_profiles)
-      const { rows: liveRows } = await pool.query(
-        `SELECT dimension,
-                COUNT(*) FILTER (WHERE value = 'affirm') AS affirm_count,
-                COUNT(*) FILTER (WHERE value = 'contest') AS contest_count
-         FROM vouches
-         WHERE subject_id = $1 AND withdrawn_at IS NULL
-         GROUP BY dimension`,
-        [userId]
-      )
-      for (const row of liveRows) {
-        if (dimensions[row.dimension]) {
-          dimensions[row.dimension].attestationCount =
-            parseInt(row.affirm_count, 10) + parseInt(row.contest_count, 10)
+      // Live vouch counts as fallback when epoch aggregation hasn't run yet
+      if (!hasEpochScores) {
+        const { rows: liveRows } = await pool.query(
+          `SELECT dimension,
+                  COUNT(*) FILTER (WHERE value = 'affirm') AS affirm_count,
+                  COUNT(*) FILTER (WHERE value = 'contest') AS contest_count
+           FROM vouches
+           WHERE subject_id = $1 AND withdrawn_at IS NULL
+           GROUP BY dimension`,
+          [userId]
+        )
+        for (const row of liveRows) {
+          if (dimensions[row.dimension]) {
+            dimensions[row.dimension].attestationCount =
+              parseInt(row.affirm_count, 10) + parseInt(row.contest_count, 10)
+          }
         }
       }
 
@@ -241,12 +245,14 @@ export async function trustRoutes(app: FastifyInstance) {
       }
 
       // Upsert: one vouch per attestor/subject/dimension
+      // Reaffirmation resets decay counters (epochs_since_reaffirm, last_reaffirmed_at)
       const { rows } = await pool.query(
         `INSERT INTO vouches (attestor_id, subject_id, dimension, value, visibility)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (attestor_id, subject_id, dimension)
          DO UPDATE SET value = $4, visibility = $5,
-                       created_at = now(), withdrawn_at = NULL
+                       created_at = now(), withdrawn_at = NULL,
+                       last_reaffirmed_at = now(), epochs_since_reaffirm = 0
          RETURNING id, attestor_id, subject_id, dimension, value, visibility, created_at`,
         [attestorId, subjectId, dimension, value, visibility]
       )

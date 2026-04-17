@@ -25,11 +25,17 @@ const DIMENSION_LABELS: Record<VouchDimension, { name: string; description: stri
 const DIMENSION_ORDER: VouchDimension[] = ['humanity', 'encounter', 'identity', 'integrity']
 
 function barColor(count: number, score: number): string {
-  // Until Phase 4 ships scores, use count as a proxy
   if (count === 0) return '#b0b0ab'  // grey — no attestations
-  if (score > 0.7 || count >= 5) return '#1d9e75'  // green — strong
-  if (score > 0.3 || count >= 2) return '#ef9f27'  // amber — moderate
-  return '#b0b0ab'  // grey — thin
+  if (score > 0) {
+    // Epoch scores available — use score thresholds
+    if (score > 0.7) return '#1d9e75'  // green — strong
+    if (score > 0.3) return '#ef9f27'  // amber — moderate
+    return '#b0b0ab'  // grey — thin
+  }
+  // Pre-epoch fallback: count-based proxy
+  if (count >= 5) return '#1d9e75'
+  if (count >= 2) return '#ef9f27'
+  return '#b0b0ab'
 }
 
 function glossText(count: number): string {
@@ -82,10 +88,12 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
         {DIMENSION_ORDER.map(dim => {
           const d = data.dimensions[dim]
           const label = DIMENSION_LABELS[dim]
-          // Bar fill: use score if available, otherwise rough count-based proxy
+          // Bar fill: use epoch score when available, count-based proxy as fallback
           const fillPct = d.score > 0
             ? Math.round(d.score * 100)
-            : Math.min(d.attestationCount * 20, 100) // 5 attestations = full bar
+            : d.attestationCount > 0
+              ? Math.min(d.attestationCount * 20, 100)
+              : 0
           const color = barColor(d.attestationCount, d.score)
 
           return (

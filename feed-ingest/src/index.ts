@@ -18,6 +18,7 @@ import { resolverResultsPrune } from './tasks/resolver-results-prune.js'
 import { externalSourcesGc } from './tasks/external-sources-gc.js'
 import { feedScoresRefresh } from './tasks/feed-scores-refresh.js'
 import { trustLayer1Refresh } from './tasks/trust-layer1-refresh.js'
+import { trustEpochAggregate } from './tasks/trust-epoch-aggregate.js'
 import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
@@ -71,6 +72,10 @@ async function start() {
         '*/5 * * * * feed_scores_refresh',
         // Recompute Layer 1 trust signals — daily at 01:00 UTC
         '0 1 * * * trust_layer1_refresh',
+        // Trust epoch aggregation — quarterly full epoch (1 Jan/Apr/Jul/Oct)
+        '0 2 1 1,4,7,10 * trust_epoch_aggregate',
+        // Trust mop-up scoring — Mon/Thu at 02:00 UTC
+        '0 2 * * 1,4 trust_epoch_aggregate',
       ].join('\n')
     ),
     taskList: {
@@ -90,6 +95,7 @@ async function start() {
       external_sources_gc: externalSourcesGc,
       feed_scores_refresh: feedScoresRefresh,
       trust_layer1_refresh: trustLayer1Refresh,
+      trust_epoch_aggregate: trustEpochAggregate,
     },
   })
 
