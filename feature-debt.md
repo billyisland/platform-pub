@@ -3,7 +3,8 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-17. Completed: Trust graph Build Phase 1 (Layer 1 enrichment) — migration 065, trust_layer1_refresh cron, GET /trust/:userId, pip rendering on all feed cards. See `ALLHAUS-OMNIBUS.md`.
+Last worked: 2026-04-17. Completed: Trust graph Build Phase 2 (vouching CRUD) — migration 066 (vouches + trust_profiles tables), POST /vouches (upsert with dimension/value/visibility), DELETE /vouches/:id (soft-delete withdrawal), GET /trust/:userId extended with Layer 2 dimension scores + public endorsements + Layer 4 relational data + viewer's existing vouches, GET /my/vouches for own vouch list. Frontend: TrustProfile component (dimension bars, endorsements, "your network says"), VouchModal (dimension checkboxes, visibility radio, aggregate disclaimer), vouch button on writer profiles, VouchList withdrawal UI on /network?tab=vouches. See `ALLHAUS-OMNIBUS.md`.
+Previously: 2026-04-17. Completed: Trust graph Build Phase 1 (Layer 1 enrichment) — migration 065, trust_layer1_refresh cron, GET /trust/:userId, pip rendering on all feed cards. See `ALLHAUS-OMNIBUS.md`.
 Previously: 2026-04-15. Completed: Gateway decomposition — service-layer extraction for `routes/messages.ts`. 693-line route file split into `routes/messages.ts` (202 lines, thin dispatchers) + `services/messages.ts` (563 lines, business logic). `ServiceResult<T>` discriminated union for HTTP error mapping without throws. All 13 DM endpoints covered (conversations, messages, likes, read-state, decrypt batch, pricing). Per `GATEWAY-DECOMPOSITION.md`, this hedges the eventual messaging-service extraction — the cutover becomes a mechanical import→HTTP-client swap rather than a combined factor+extract. `replies.ts` deliberately left in the gateway (article/note threading, not DMs). Build + 52 tests green.
 Previously: 2026-04-14. Universal Feed audit triage pass 2 — all remaining items from `universal-feed-audit.md` landed. Security: S1 (DNS-rebinding TOCTOU closed — undici Agent with `connect.lookup` hook pins the validated IP through the socket layer), S4 (`GET /resolve/:requestId` now binds results to the initiating session). Correctness: K1 (Nostr kind 5 deletions match on raw event id via `interaction_data->>'id'`, not recomputed nevent), K2 (RSS sorts by publishedAt DESC before `maxItems` slice so recent content wins), K3 (Bluesky truncation appends `/{username}` all.haus link within the 300-grapheme budget), K4 (feed poll filters atproto rows when Jetstream is healthy), K5 (resolver regexes accept `+` addressing and multi-label TLDs), K6 (`outbound_token_refresh` skips rows with no session). Design: D3 (migration 061 — `resolver_async_results` table + 5m prune cron replaces per-replica Map), D4 (protocol-specific OAuth state cookies), D5 (`requireAuth` on Bluesky callback), D6 (versioned ciphertext with multi-key decryption for rollover). Minors: Nostr `last_error` truncated to 1000 chars, resolver ILIKE special chars escaped, `enqueueCrossPost`/`enqueueNostrOutbound` INSERT + add_job wrapped in `withTransaction`.
 Previous: 2026-04-14 earlier — Universal Feed audit triage pass 1 — C1 (explore-feed score ordering preserved, new-user cards interleaved), C2 (Jetstream leader-elected via `pg_try_advisory_lock`), C3 (RSS `fetch_interval_seconds` resets on recovery), C4 (Mastodon quote appends source URL), S2/S3/S5/S6 (Nostr WS SSRF, future-timestamp rejection, subscribe input validation), partial S1 (IP range list extended), D1 (migration 060 `DbStateStore`), D2 (`clientPromise` cache clears on rejection).
@@ -269,13 +270,15 @@ Build Phase 1 (Layer 1 enrichment) — **DONE (2026-04-17):**
 - Thresholds: known = >1yr + >50 paying readers + Stripe KYC; partial = >90d + any readers or articles; unknown = everything else
 - NIP-05 verification defaults false (no NIP-05 table yet — wire up when that ships)
 
-Build Phase 2 (vouching CRUD) — outstanding:
-- Migration for `vouches` table + `trust_profiles` table (schema in §IV.3)
-- `POST /api/v1/vouches` — create vouch (attestor from auth, body: subject_id, dimension, value, visibility)
-- `DELETE /api/v1/vouches/:id` — withdraw (soft-delete via withdrawn_at)
-- Extend `GET /api/v1/trust/:userId` with dimension scores from trust_profiles + public endorsements + Layer 4 relational data (public endorsements filtered by viewer's valued set)
-- Vouching UI: "Vouch" button on Trust panel / user profiles, dimension selector (humanity/encounter/identity/integrity), visibility selector (public default, aggregate-only with disclaimer modal)
-- Withdrawal UI: list of own vouches on profile settings page
+Build Phase 2 (vouching CRUD) — **DONE (2026-04-17):**
+- Migration 066 (`vouches` + `trust_profiles` tables). Vouches: attestor/subject/dimension unique, CHECK constraints (no self-vouch, contests must be aggregate)
+- `POST /api/v1/vouches` — upsert vouch (one per attestor/subject/dimension)
+- `DELETE /api/v1/vouches/:id` — withdraw (soft-delete via withdrawn_at, attestor-only)
+- `GET /api/v1/my/vouches` — list of authenticated user's active vouches
+- `GET /api/v1/trust/:userId` extended with Layer 2 dimension scores, public endorsements, Layer 4 relational data (viewer's followed/subscribed intersected with public endorsements), viewer's existing vouches
+- TrustProfile component (dimension bars, endorsements, Layer 4 "your network says")
+- VouchModal (dimension checkboxes, visibility radio, aggregate disclaimer)
+- Vouch button on writer profiles, VouchList on /network?tab=vouches with withdrawal
 
 Build Phase 3 (workspace shell and panels) — outstanding, largest phase:
 - **3a: Shell and flex layout** — topbar (∀ all.haus + READ/WRITE/DASHBOARD mode tabs + search + avatar), panel toggles bar, status bar, four-panel flex container with open/close transitions. `localStorage` state persistence. This is a rewrite of the authenticated shell — current LayoutShell + Nav.tsx replaced. **Transition path not yet specced** — need to decide: feature flag, parallel routes, or hard cutover. Current routes (/feed, /article/[dTag], /subscriptions, /dashboard, /write) all assume full viewport.
@@ -468,6 +471,7 @@ Features any user would reasonably expect given the platform's existing capabili
 ### Completed (2026-04-17)
 
 - **Trust graph Build Phase 1 (Layer 1 enrichment)** — migration 065 (`trust_layer1` table), `trust-layer1-refresh` daily cron in feed-ingest, `GET /api/v1/trust/:userId` gateway endpoint, trust pip (5px circle, three-state: known/partial/unknown) on ArticleCard, NoteCard, ExternalCard. `PipStatus` type in `ndk.ts`, `.trust-pip` CSS class. `pipStatus` flows through feed API → FeedView mapping → card components. NIP-05 verification stubbed (no table yet). See `ALLHAUS-OMNIBUS.md` Build Phase 1.
+- **Trust graph Build Phase 2 (vouching CRUD)** — migration 066 (`vouches` + `trust_profiles` tables with CHECK constraints). Gateway: `POST /vouches` (upsert per attestor/subject/dimension), `DELETE /vouches/:id` (soft-delete withdrawal), `GET /my/vouches` (own vouch list), `GET /trust/:userId` extended with Layer 2 dimension scores, public endorsements with attestor profiles, Layer 4 relational data (viewer's network intersection), viewer's existing vouches. Frontend: `TrustProfile` component (dimension bars, endorsements, "your network says"), `VouchModal` (dimension checkboxes, visibility radio, aggregate disclaimer), vouch button on writer profile action bar, `VouchList` on `/network?tab=vouches` with withdrawal. See `ALLHAUS-OMNIBUS.md` Build Phase 2.
 
 ### Later: strategic work
 

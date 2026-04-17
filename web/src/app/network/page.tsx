@@ -8,6 +8,7 @@ import { FeedDial } from '../../components/social/FeedDial'
 import { DmFeeSettings } from '../../components/social/DmFeeSettings'
 import { BlockList } from '../../components/social/BlockList'
 import { MuteList } from '../../components/social/MuteList'
+import { VouchList } from '../../components/trust/VouchList'
 import { PageShell } from '../../components/ui/PageShell'
 
 interface Writer {
@@ -29,15 +30,16 @@ interface Follower {
   followedAt: string
 }
 
-type NetworkTab = 'following' | 'followers' | 'blocked' | 'muted'
+type NetworkTab = 'following' | 'followers' | 'blocked' | 'muted' | 'vouches'
 
 export default function NetworkPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as NetworkTab) || 'following'
+  const allTabs: NetworkTab[] = ['following', 'followers', 'blocked', 'muted', 'vouches']
   const [tab, setTab] = useState<NetworkTab>(
-    ['following', 'followers', 'blocked', 'muted'].includes(initialTab) ? initialTab : 'following'
+    allTabs.includes(initialTab) ? initialTab : 'following'
   )
 
   const [writers, setWriters] = useState<Writer[]>([])
@@ -86,7 +88,7 @@ export default function NetworkPage() {
 
   if (loading || !user) return <PageSkeleton />
 
-  const tabs: NetworkTab[] = ['following', 'followers', 'blocked', 'muted']
+  const tabs: NetworkTab[] = allTabs
 
   return (
     <PageShell width="feed" title="Network">
@@ -212,6 +214,11 @@ export default function NetworkPage() {
         <section className="bg-white px-6 py-5">
           <MuteList />
         </section>
+      )}
+
+      {/* Vouches tab */}
+      {tab === 'vouches' && (
+        <VouchList />
       )}
     </PageShell>
   )

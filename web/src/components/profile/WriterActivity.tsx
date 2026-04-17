@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '../../stores/auth'
-import { messages as messagesApi } from '../../lib/api'
+import { messages as messagesApi, trust as trustApi, type TrustProfileResponse } from '../../lib/api'
 import { NoteComposer } from '../feed/NoteComposer'
 import { WorkTab } from './WorkTab'
 import { SocialTab } from './SocialTab'
 import { FollowersTab } from './FollowersTab'
 import { FollowingTab } from './FollowingTab'
+import { TrustProfile } from '../trust/TrustProfile'
+import { VouchModal } from '../trust/VouchModal'
 import type { WriterProfile } from '../../lib/api'
 import type { QuoteTarget } from '../../lib/publishNote'
 
@@ -49,6 +51,9 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null)
   const [subLoading, setSubLoading] = useState(false)
   const [pendingQuote, setPendingQuote] = useState<QuoteTarget | null>(null)
+  const [showVouchModal, setShowVouchModal] = useState(false)
+  const [trustData, setTrustData] = useState<TrustProfileResponse | null>(null)
+  const [trustKey, setTrustKey] = useState(0)
 
   // Sync tab from URL changes
   useEffect(() => {
@@ -88,6 +93,14 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
     }
     checkStatus()
   }, [user, writer])
+
+  // Fetch trust data for vouch modal (viewer's existing vouches)
+  useEffect(() => {
+    if (!writer) return
+    trustApi.getProfile(writer.id)
+      .then(d => setTrustData(d))
+      .catch(() => {})
+  }, [writer, trustKey])
 
   async function handleToggleFollow() {
     if (!user || !writer) return
@@ -179,6 +192,13 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
             {msgLoading ? '...' : 'Message'}
           </button>
 
+          <button
+            onClick={() => setShowVouchModal(true)}
+            className="btn-ghost py-1.5 px-4 text-ui-xs transition-colors"
+          >
+            Vouch
+          </button>
+
           {hasPaywall && subStatus && !subStatus.ownContent && (
             subStatus.subscribed ? (
               <button
@@ -224,6 +244,27 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
           <Link href="/auth?mode=login" className="btn-text-muted transition-colors">
             Log in to follow
           </Link>
+        </div>
+      )}
+
+      {/* Vouch modal */}
+      {showVouchModal && writer && (
+        <VouchModal
+          subjectId={writer.id}
+          subjectName={writer.displayName ?? username}
+          existingVouches={trustData?.viewerVouches ?? []}
+          onClose={() => setShowVouchModal(false)}
+          onVouched={() => {
+            setShowVouchModal(false)
+            setTrustKey(k => k + 1)
+          }}
+        />
+      )}
+
+      {/* Trust profile section */}
+      {writer && (
+        <div className="mb-8">
+          <TrustProfile userId={writer.id} key={trustKey} compact />
         </div>
       )}
 
