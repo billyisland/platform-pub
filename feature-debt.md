@@ -3,7 +3,8 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-15. Completed: Gateway decomposition — service-layer extraction for `routes/messages.ts`. 693-line route file split into `routes/messages.ts` (202 lines, thin dispatchers) + `services/messages.ts` (563 lines, business logic). `ServiceResult<T>` discriminated union for HTTP error mapping without throws. All 13 DM endpoints covered (conversations, messages, likes, read-state, decrypt batch, pricing). Per `GATEWAY-DECOMPOSITION.md`, this hedges the eventual messaging-service extraction — the cutover becomes a mechanical import→HTTP-client swap rather than a combined factor+extract. `replies.ts` deliberately left in the gateway (article/note threading, not DMs). Build + 52 tests green.
+Last worked: 2026-04-17. Completed: Trust graph Build Phase 1 (Layer 1 enrichment) — migration 065, trust_layer1_refresh cron, GET /trust/:userId, pip rendering on all feed cards. See `ALLHAUS-OMNIBUS.md`.
+Previously: 2026-04-15. Completed: Gateway decomposition — service-layer extraction for `routes/messages.ts`. 693-line route file split into `routes/messages.ts` (202 lines, thin dispatchers) + `services/messages.ts` (563 lines, business logic). `ServiceResult<T>` discriminated union for HTTP error mapping without throws. All 13 DM endpoints covered (conversations, messages, likes, read-state, decrypt batch, pricing). Per `GATEWAY-DECOMPOSITION.md`, this hedges the eventual messaging-service extraction — the cutover becomes a mechanical import→HTTP-client swap rather than a combined factor+extract. `replies.ts` deliberately left in the gateway (article/note threading, not DMs). Build + 52 tests green.
 Previously: 2026-04-14. Universal Feed audit triage pass 2 — all remaining items from `universal-feed-audit.md` landed. Security: S1 (DNS-rebinding TOCTOU closed — undici Agent with `connect.lookup` hook pins the validated IP through the socket layer), S4 (`GET /resolve/:requestId` now binds results to the initiating session). Correctness: K1 (Nostr kind 5 deletions match on raw event id via `interaction_data->>'id'`, not recomputed nevent), K2 (RSS sorts by publishedAt DESC before `maxItems` slice so recent content wins), K3 (Bluesky truncation appends `/{username}` all.haus link within the 300-grapheme budget), K4 (feed poll filters atproto rows when Jetstream is healthy), K5 (resolver regexes accept `+` addressing and multi-label TLDs), K6 (`outbound_token_refresh` skips rows with no session). Design: D3 (migration 061 — `resolver_async_results` table + 5m prune cron replaces per-replica Map), D4 (protocol-specific OAuth state cookies), D5 (`requireAuth` on Bluesky callback), D6 (versioned ciphertext with multi-key decryption for rollover). Minors: Nostr `last_error` truncated to 1000 chars, resolver ILIKE special chars escaped, `enqueueCrossPost`/`enqueueNostrOutbound` INSERT + add_job wrapped in `withTransaction`.
 Previous: 2026-04-14 earlier — Universal Feed audit triage pass 1 — C1 (explore-feed score ordering preserved, new-user cards interleaved), C2 (Jetstream leader-elected via `pg_try_advisory_lock`), C3 (RSS `fetch_interval_seconds` resets on recovery), C4 (Mastodon quote appends source URL), S2/S3/S5/S6 (Nostr WS SSRF, future-timestamp rejection, subscribe input validation), partial S1 (IP range list extended), D1 (migration 060 `DbStateStore`), D2 (`clientPromise` cache clears on rejection).
 Previously: 2026-04-14 earlier — Universal Feed Phase 4 — Mastodon ingestion (ActivityPub outbox polling + WebFinger resolution).
@@ -254,6 +255,71 @@ Shipped in Phase 5B:
 - feed-ingest `atproto-outbound.ts` adapter — DPoP-bound `com.atproto.repo.createRecord` via `OAuthSession.fetchHandler`; 300-grapheme truncation via `Intl.Segmenter`; reply strong-refs (root + parent from `interaction_data`) and `app.bsky.embed.record` quote refs
 - Bluesky handle input in `LinkedAccountsPanel`
 
+**Trust Graph & READER Workspace — `ALLHAUS-OMNIBUS.md`**
+
+Eight build phases specified in the omnibus. Spec covers trust graph (Layer 1 automatic signals, Layer 2 attestations, Layer 3 graph analysis, Layer 4 relational presentation), panel-based workspace UI, and Phase A/B anonymity strategy. Full spec in `ALLHAUS-OMNIBUS.md` (Books I–IV).
+
+Build Phase 1 (Layer 1 enrichment) — **DONE (2026-04-17):**
+- Migration 065 (`trust_layer1` table — per-user precomputed signals + pip_status)
+- `feed-ingest/src/tasks/trust-layer1-refresh.ts` — daily cron (01:00 UTC) computing signals from accounts, articles, read_events, stripe status
+- `GET /api/v1/trust/:userId` — gateway endpoint returning Layer 1 signals
+- Trust pip (5px circle) rendering on all feed cards (ArticleCard, NoteCard, ExternalCard)
+- `PipStatus` type (`known`/`partial`/`unknown`) added to feed item types
+- `.trust-pip` CSS class in globals.css
+- Thresholds: known = >1yr + >50 paying readers + Stripe KYC; partial = >90d + any readers or articles; unknown = everything else
+- NIP-05 verification defaults false (no NIP-05 table yet — wire up when that ships)
+
+Build Phase 2 (vouching CRUD) — outstanding:
+- Migration for `vouches` table + `trust_profiles` table (schema in §IV.3)
+- `POST /api/v1/vouches` — create vouch (attestor from auth, body: subject_id, dimension, value, visibility)
+- `DELETE /api/v1/vouches/:id` — withdraw (soft-delete via withdrawn_at)
+- Extend `GET /api/v1/trust/:userId` with dimension scores from trust_profiles + public endorsements + Layer 4 relational data (public endorsements filtered by viewer's valued set)
+- Vouching UI: "Vouch" button on Trust panel / user profiles, dimension selector (humanity/encounter/identity/integrity), visibility selector (public default, aggregate-only with disclaimer modal)
+- Withdrawal UI: list of own vouches on profile settings page
+
+Build Phase 3 (workspace shell and panels) — outstanding, largest phase:
+- **3a: Shell and flex layout** — topbar (∀ all.haus + READ/WRITE/DASHBOARD mode tabs + search + avatar), panel toggles bar, status bar, four-panel flex container with open/close transitions. `localStorage` state persistence. This is a rewrite of the authenticated shell — current LayoutShell + Nav.tsx replaced. **Transition path not yet specced** — need to decide: feature flag, parallel routes, or hard cutover. Current routes (/feed, /article/[dTag], /subscriptions, /dashboard, /write) all assume full viewport.
+- **3b: Feed panel** — port FeedView into panel. Feed item structure, crimson active-item left edge, filter pills (ALL/ARTICLES/SOCIAL), infinite scroll, pip rendering. Feed panel navigates to existing article page until Reading panel ships.
+- **3c: Reading panel** — port article page rendering into panel. Byline, headline, body, paywall gate. Feed→Reading handoff (click loads in panel, pushState to /read/[slug]). Dual rendering needed: articles must work as standalone page (/read/[slug] unauthenticated) AND as panel-embedded component. Link-out fallback card for external content.
+- **3d: Sources panel** — from existing subscription data. Protocol indicators (8px square, protocol colours), pinned/all sections, source filtering, context menu (pin/unpin/mute/unsubscribe), add-source modal.
+- **3e: Trust panel** — dimension bars from trust_profiles, Layer 1 stats from trust_layer1, Layer 4 "YOUR NETWORK SAYS" from public endorsements, vouch button integration. Depends on Phases 1+2.
+
+Build Phase 4 (epoch aggregation and decay) — outstanding:
+- Epoch aggregation cron in feed-ingest — turns raw vouches into trust_profiles dimension scores
+- Phase A attestor weighting formula: `weight = age × payment × readership × activity` (caps: 365d, 50 readers, 10 articles)
+- Freshness decay with graduated small-scale protection (paused at 1-3 attestations, quarter-speed at 4-6, half at 7-9, full at 10+)
+- Mon/Thu mopping-up rounds for acute changes; small-subject rule (under-10-attestations scored every round)
+- Dry-run mode for pre-production verification
+
+Build Phase 5 (graph analysis hardening) — outstanding:
+- Sybil detection, diversity weighting, cluster discounting (Layer 3)
+- Weak at small scale — meaningful once graph densifies past ~500 attestors
+
+Build Phase 6 (anonymity Phase B) — future, gated on scale:
+- Standalone attestation-service (port 3005, separate Docker network, separate DB user)
+- Blind-signature registration (RSA, RFC 9474), NIP-44 encrypted attestation submission
+- Client-side anonymous Nostr key generation + IndexedDB storage + BIP-39 seed phrase
+- Credibility brackets, periodic re-keying, week-long prompt batching with jitter
+- private_graph PostgreSQL schema
+
+Build Phase 7 (responsive workspace) — future:
+- Tablet: Sources/Trust as slide-in overlays
+- Mobile: full-screen panel views, bottom tab bar, swipe navigation, morning-edition model
+- Pixel specs to be written during this phase
+
+Build Phase 8 (external content rendering) — future, gated on legal review:
+- Server-side readability extraction (Mozilla Readability / Mercury Parser)
+- Per-user cache with short TTL, exclusion list, robots.txt respect
+- DMCA response process needed before shipping
+- Link-out fallback card ships with Phase 3c
+
+Known gaps in the spec (identified during Phase 1 build):
+- Transition path from current single-column layout to workspace not addressed — need Book 0
+- Layer 4 "valued set" includes "pin as sources" (localStorage) and "quote-post approvingly" (undefined signal) — hand-waved
+- Layer 1 signals for external authors (follower count, account age) not stored in external_sources/external_items — feed-ingest adapters would need to persist these
+- Current nav features (Messages, Notifications, Network, Library, Bookmarks, Settings) not accounted for in spec's three-tab topbar
+- Dual rendering for article page (standalone + panel-embedded) not addressed
+
 **UI prototype — `provenance-ikb.jsx`**
 
 Design prototype for Traffology piece view with IKB op-art bars. Kept as reference; the production implementation is in `web/src/app/traffology/`.
@@ -398,6 +464,10 @@ Features any user would reasonably expect given the platform's existing capabili
 ### Completed (v5.36.0 session, 2026-04-14)
 
 - **Universal Feed Phase 2** — `feed_items` unified timeline table + external Nostr ingestion. Migrations 053–054 (feed_items table + backfill from articles/notes/external_items). Feed route rewritten from three-stream merge to single-table query with LEFT JOINs. Transactional dual-write paths in all article/note/external item creation flows. Feed scorer updated to write `feed_items.score` directly. Article soft-delete and unpublish set `feed_items.deleted_at`. New `feed_ingest_nostr` task for external Nostr relay ingestion (kinds 1, 30023, kind 5 deletions). Poll task routes `nostr_external` sources with relay-hostname rate limiting. `publishToExternalRelays()` helper for outbound Nostr replies. Daily `feed_items_reconcile` (05:00 UTC) and `feed_items_author_refresh` (04:00 UTC) cron jobs. POST /notes accepts optional `signedEvent` for outbound relay publishing. See `UNIVERSAL-FEED-ADR.md` (Phases 3–5 outstanding).
+
+### Completed (2026-04-17)
+
+- **Trust graph Build Phase 1 (Layer 1 enrichment)** — migration 065 (`trust_layer1` table), `trust-layer1-refresh` daily cron in feed-ingest, `GET /api/v1/trust/:userId` gateway endpoint, trust pip (5px circle, three-state: known/partial/unknown) on ArticleCard, NoteCard, ExternalCard. `PipStatus` type in `ndk.ts`, `.trust-pip` CSS class. `pipStatus` flows through feed API → FeedView mapping → card components. NIP-05 verification stubbed (no table yet). See `ALLHAUS-OMNIBUS.md` Build Phase 1.
 
 ### Later: strategic work
 

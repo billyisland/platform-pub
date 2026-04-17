@@ -83,6 +83,7 @@ export function FeedView() {
               publishedAt: item.publishedAt,
               tags: [],
               topicTags: item.tags ?? [],
+              pipStatus: item.pipStatus,
             }
           } else if (item.type === 'note') {
             return {
@@ -96,6 +97,7 @@ export function FeedView() {
               quotedExcerpt: item.quotedExcerpt,
               quotedTitle: item.quotedTitle,
               quotedAuthor: item.quotedAuthor,
+              pipStatus: item.pipStatus,
             }
           } else if (item.type === 'external') {
             return {
@@ -115,6 +117,7 @@ export function FeedView() {
               publishedAt: item.publishedAt,
               sourceName: item.sourceName,
               sourceAvatar: item.sourceAvatar,
+              pipStatus: item.pipStatus ?? 'unknown',
             } as ExternalFeedItem
           } else {
             return item as NewUserItem

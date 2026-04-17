@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { formatDateRelative } from '../../lib/format'
+import { TrustPip } from '../ui/TrustPip'
 import { useAuth } from '../../stores/auth'
 import { useLinkedAccounts } from '../../hooks/useLinkedAccounts'
 import { publishNote } from '../../lib/publishNote'
@@ -45,6 +46,7 @@ export interface ExternalFeedItem {
   publishedAt: number
   sourceName: string | null
   sourceAvatar: string | null
+  pipStatus?: 'known' | 'partial' | 'unknown'
 }
 
 interface ExternalCardProps {
@@ -138,7 +140,8 @@ export function ExternalCard({ item }: ExternalCardProps) {
 
         <div className="flex-1 min-w-0">
           {/* Author name + timestamp */}
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-center gap-2">
+            <TrustPip status={item.pipStatus} />
             {authorWebUri ? (
               <a
                 href={authorWebUri}

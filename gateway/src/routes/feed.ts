@@ -75,6 +75,7 @@ function feedItemToResponse(row: any) {
       publishedAt: Number(row.published_at_epoch),
       score: row.score != null ? Number(row.score) : undefined,
       tags: row.tag_names ?? [],
+      pipStatus: row.pip_status ?? 'unknown',
     }
   }
 
@@ -92,10 +93,11 @@ function feedItemToResponse(row: any) {
       quotedAuthor: row.quoted_author ?? undefined,
       publishedAt: Number(row.published_at_epoch),
       score: row.score != null ? Number(row.score) : undefined,
+      pipStatus: row.pip_status ?? 'unknown',
     }
   }
 
-  // external
+  // external — no native author, always 'unknown'
   return {
     type: 'external' as const,
     id: row.external_item_id,
@@ -115,6 +117,7 @@ function feedItemToResponse(row: any) {
     publishedAt: Number(row.published_at_epoch),
     sourceName: row.source_display_name,
     sourceAvatar: row.source_avatar_url,
+    pipStatus: 'unknown' as const,
   }
 }
 
@@ -146,7 +149,9 @@ const FEED_SELECT = `
   ei.title AS ei_title, ei.summary AS ei_summary,
   ei.source_reply_uri AS ei_source_reply_uri,
   ei.source_quote_uri AS ei_source_quote_uri,
-  xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url
+  xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
+  -- Trust Layer 1 pip (NULL for external items — they default to 'unknown')
+  tl.pip_status
 `
 
 const FEED_JOINS = `
@@ -155,6 +160,7 @@ const FEED_JOINS = `
   LEFT JOIN accounts acc ON acc.id = fi.author_id
   LEFT JOIN external_items ei ON ei.id = fi.external_item_id
   LEFT JOIN external_sources xs ON xs.id = fi.source_id
+  LEFT JOIN trust_layer1 tl ON tl.user_id = fi.author_id
 `
 
 export async function feedRoutes(app: FastifyInstance) {

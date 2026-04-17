@@ -14,6 +14,7 @@ import type { VoteTally, MyVoteCount } from '../../lib/api'
 import type { QuoteTarget } from '../../lib/publishNote'
 import { formatDateRelative } from '../../lib/format'
 import { content as contentApi } from '../../lib/api'
+import { TrustPip } from '../ui/TrustPip'
 
 interface NoteCardProps {
   note: NoteEvent
@@ -135,6 +136,7 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
         <div className="flex-1 min-w-0">
           {/* Name (Jost semibold) + time (Plex Mono) */}
           <div className="flex items-center gap-2">
+            <TrustPip status={note.pipStatus} />
             {writerInfo?.username ? (
               <Link
                 href={`/${writerInfo.username}`}

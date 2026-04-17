@@ -20,6 +20,8 @@ export const KIND_REACTION = 7
 // App-level event interfaces
 // =============================================================================
 
+export type PipStatus = 'known' | 'partial' | 'unknown'
+
 export interface ArticleEvent {
   type?: 'article'
   id: string
@@ -36,6 +38,7 @@ export interface ArticleEvent {
   isPaywalled?: boolean
   encryptedPayload?: string
   payloadAlgorithm?: string
+  pipStatus?: PipStatus
 }
 
 export interface NoteEvent {
@@ -49,6 +52,7 @@ export interface NoteEvent {
   quotedExcerpt?: string
   quotedTitle?: string
   quotedAuthor?: string
+  pipStatus?: PipStatus
 }
 
 export interface VaultEvent {
@@ -85,6 +89,7 @@ export interface ExternalFeedItem {
   publishedAt: number
   sourceName: string | null
   sourceAvatar: string | null
+  pipStatus?: PipStatus
 }
 
 export type FeedItem = (ArticleEvent & { type: 'article' }) | NoteEvent | ExternalFeedItem

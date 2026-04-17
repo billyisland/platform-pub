@@ -17,6 +17,7 @@ import { atprotoOauthStatesPrune } from './tasks/atproto-oauth-states-prune.js'
 import { resolverResultsPrune } from './tasks/resolver-results-prune.js'
 import { externalSourcesGc } from './tasks/external-sources-gc.js'
 import { feedScoresRefresh } from './tasks/feed-scores-refresh.js'
+import { trustLayer1Refresh } from './tasks/trust-layer1-refresh.js'
 import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
@@ -68,6 +69,8 @@ async function start() {
         '0 6 * * * external_sources_gc',
         // Refresh feed_items.score from engagement — every 5 minutes
         '*/5 * * * * feed_scores_refresh',
+        // Recompute Layer 1 trust signals — daily at 01:00 UTC
+        '0 1 * * * trust_layer1_refresh',
       ].join('\n')
     ),
     taskList: {
@@ -86,6 +89,7 @@ async function start() {
       resolver_results_prune: resolverResultsPrune,
       external_sources_gc: externalSourcesGc,
       feed_scores_refresh: feedScoresRefresh,
+      trust_layer1_refresh: trustLayer1Refresh,
     },
   })
 

@@ -13,6 +13,7 @@ import { ShareButton } from '../ui/ShareButton'
 import type { VoteTally, MyVoteCount } from '../../lib/api'
 import type { QuoteTarget } from '../../lib/publishNote'
 import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
+import { TrustPip } from '../ui/TrustPip'
 
 interface ArticleCardProps {
   article: ArticleEvent
@@ -64,6 +65,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
     >
       {/* Byline — mono-caps, grey-600 */}
       <div className="flex items-center gap-2 mb-3">
+        <TrustPip status={article.pipStatus} />
         {authorHref ? (
           <Link
             href={authorHref}

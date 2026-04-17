@@ -158,6 +158,15 @@
     width: 100%;
   }
 
+  /* ----- Trust pip — 5px circle, three-state legibility indicator ----- */
+  .trust-pip {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
   /* ----- Legacy rule aliases (map to slab rules) ----- */
   .rule {
     border: none;

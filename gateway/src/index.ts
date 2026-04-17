@@ -40,6 +40,7 @@ import { tagRoutes } from './routes/tags.js'
 import { resolveRoutes } from './routes/resolve.js'
 import { feedsRoutes } from './routes/feeds.js'
 import { linkedAccountsRoutes } from './routes/linked-accounts.js'
+import { trustRoutes } from './routes/trust.js'
 import { atprotoClientMetadata, atprotoJwks } from '../shared/src/lib/atproto-oauth.js'
 import { publishScheduledDrafts } from './workers/scheduler.js'
 import { pool } from '../shared/src/db/client.js'
@@ -194,6 +195,9 @@ async function start() {
 
   // Linked accounts for outbound cross-posting (Phase 5)
   await app.register(linkedAccountsRoutes, { prefix: '/api/v1' })
+
+  // Trust Layer 1 signals (Phase 1)
+  await app.register(trustRoutes, { prefix: '/api/v1' })
 
   // AT Protocol OAuth client metadata (discovered by Bluesky PDSes).
   // Mounted at the root so the canonical URL is
