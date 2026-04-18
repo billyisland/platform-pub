@@ -8,12 +8,13 @@ import { useMediaAttachments } from '../../hooks/useMediaAttachments'
 import { useLinkedAccounts } from '../../hooks/useLinkedAccounts'
 import { MediaPreview } from '../ui/MediaPreview'
 import type { LinkedAccount } from '../../lib/api'
+import { ArticleComposePanel } from './ArticleComposePanel'
 
 const NOTE_CHAR_LIMIT = 1000
 
 export function ComposeOverlay() {
   const { user } = useAuth()
-  const { isOpen, mode, replyTarget, close, onPublished } = useCompose()
+  const { isOpen, mode, replyTarget, close, onPublished, setMode } = useCompose()
   const [content, setContent] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,9 +43,9 @@ export function ComposeOverlay() {
     }
   }, [isOpen])
 
-  // Escape key handling
+  // Escape key handling (note/reply only — article mode manages its own dismiss via the ×)
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || mode === 'article') return
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -53,7 +54,7 @@ export function ComposeOverlay() {
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, content, confirmDismiss])
+  }, [isOpen, mode, content, confirmDismiss])
 
   const hasContent = content.trim().length > 0 || media.attachments.filter(a => a.type === 'image').length > 0
 
@@ -152,12 +153,16 @@ export function ComposeOverlay() {
 
         {/* Desktop overlay */}
         <div
-          className="hidden md:flex flex-col bg-white pointer-events-auto w-full max-w-[640px] mt-[20px]"
+          className={`hidden md:flex flex-col bg-white pointer-events-auto w-full mt-[20px] ${mode === 'article' ? 'max-w-[760px]' : 'max-w-[640px]'}`}
           style={{
             borderTop: '6px solid #111111',
             maxHeight: 'calc(100vh - 140px)',
           }}
         >
+          {mode === 'article' ? (
+            <ArticleComposePanel />
+          ) : (
+          <>
           {/* Top zone */}
           <div className="px-6 py-3" style={{ borderBottom: '4px solid #F0F0F0' }}>
             {mode === 'reply' && replyTarget ? (
@@ -225,15 +230,15 @@ export function ComposeOverlay() {
               </span>
             )}
 
-            {/* Write article link */}
+            {/* Mode switch: escalate a note-in-progress into an article */}
             {mode === 'note' && (
-              <a
-                href="/write/new"
-                onClick={() => close()}
-                className="btn-text-muted font-mono text-[11px] uppercase tracking-[0.06em] hover:text-black transition-colors"
+              <button
+                type="button"
+                onClick={() => setMode('article')}
+                className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-black transition-colors"
               >
                 Write an article &rarr;
-              </a>
+              </button>
             )}
 
             {/* Post button */}
@@ -260,11 +265,13 @@ export function ComposeOverlay() {
               )}
             </div>
           )}
+          </>
+          )}
 
           {/* Close button */}
           <button
-            onClick={handleDismiss}
-            className="absolute top-[66px] right-[calc(50%-308px)] text-grey-400 hover:text-black transition-colors text-lg leading-none z-50"
+            onClick={mode === 'article' ? close : handleDismiss}
+            className={`absolute top-[66px] text-grey-400 hover:text-black transition-colors text-lg leading-none z-50 ${mode === 'article' ? 'right-[calc(50%-368px)]' : 'right-[calc(50%-308px)]'}`}
             aria-label="Close compose"
           >
             &times;
@@ -288,6 +295,17 @@ export function ComposeOverlay() {
             <div className="w-8 h-1 bg-black rounded-full" />
           </div>
 
+          {mode === 'article' ? (
+            <>
+              <div className="flex items-center justify-between px-4 pb-2" style={{ borderBottom: '4px solid #F0F0F0' }}>
+                <button onClick={close} className="text-grey-600 hover:text-black text-lg">&times;</button>
+                <span className="label-ui text-grey-400">ARTICLE</span>
+                <span className="w-6" />
+              </div>
+              <ArticleComposePanel />
+            </>
+          ) : (
+          <>
           {/* Mobile chrome */}
           <div className="flex items-center justify-between px-4 pb-2" style={{ borderBottom: '4px solid #F0F0F0' }}>
             <button onClick={handleDismiss} className="text-grey-600 hover:text-black text-lg">&times;</button>
@@ -358,6 +376,8 @@ export function ComposeOverlay() {
                 <p className="text-ui-xs text-crimson">{displayError}</p>
               )}
             </div>
+          )}
+          </>
           )}
         </div>
       </div>

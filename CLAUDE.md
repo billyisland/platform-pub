@@ -96,9 +96,10 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Markdown serialization via `tiptap-markdown`
 
 ### Compose overlay
-- `ComposeOverlay` (`web/src/components/compose/ComposeOverlay.tsx`) is the single compose surface for short-form content, mounted globally in `app/layout.tsx`
-- Two modes: *note* (default, from topbar COMPOSE button or `⌘K`) and *reply* (from Reply on any card, or QuoteSelector)
-- State managed by Zustand store `web/src/stores/compose.ts` — `useCompose().open(mode, replyTarget)` opens from anywhere
+- `ComposeOverlay` (`web/src/components/compose/ComposeOverlay.tsx`) is the single compose surface for all composing, mounted globally in `app/layout.tsx`
+- Three modes: *note* (default, from topbar COMPOSE button or `⌘K`), *reply* (from Reply on any card, or QuoteSelector), and *article* (from the `Write an article →` link in note mode, or `useCompose().openArticle({ draftId?, publicationSlug? })`)
+- State managed by Zustand store `web/src/stores/compose.ts` — `useCompose().open(mode, replyTarget)` for note/reply, `openArticle(opts)` for article, `setMode(mode)` to escalate mid-compose
+- Article mode is a dedicated panel (`web/src/components/compose/ArticleComposePanel.tsx`) with its own Tiptap instance, title input (Literata 22px italic), `PUBLISH AS: …` selector, paywall gate + price, autosave to the drafts table via the existing `createAutoSaver`, `OPEN IN FULL EDITOR ↗` (flushes draft, navigates to `/write?draft=<id>[&pub=<slug>]`), `SCHEDULE`, and crimson Publish. Desktop overlay widens from 640→760px in article mode. V1 defers dek/tags/email-toggle/comments-toggle/show-on-writer-profile to the full editor
 - Overlay sits above content with 40% scrim, topbar stays visible and interactive
 - Mobile: full-screen bottom sheet
 - NoteComposer (`web/src/components/feed/NoteComposer.tsx`) is deprecated — kept in codebase but no longer imported anywhere

@@ -424,6 +424,39 @@
     font-weight: 500;
   }
 
+  /* ----- Article compose body — Literata 17px/1.8 per spec §3 ----- */
+  .article-compose-body {
+    font-family: 'Literata', Georgia, serif;
+    font-size: 17px;
+    line-height: 1.8;
+    color: #111111;
+  }
+  .article-compose-body p {
+    margin-top: 1em;
+    margin-bottom: 1em;
+  }
+  .article-compose-body h2 {
+    font-family: 'Literata', Georgia, serif;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin-top: 1.2em;
+    margin-bottom: 0.4em;
+  }
+  .article-compose-body h3 {
+    font-family: 'Literata', Georgia, serif;
+    font-size: 18px;
+    font-weight: 500;
+    margin-top: 1em;
+    margin-bottom: 0.4em;
+  }
+  .article-compose-body blockquote {
+    border-left: 2px solid #BBBBBB;
+    padding-left: 16px;
+    color: #666666;
+    font-style: italic;
+  }
+
   /* ----- Mobile prose scaling ----- */
   @media (max-width: 767px) {
     .prose, .prose-lg {

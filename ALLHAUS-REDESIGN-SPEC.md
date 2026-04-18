@@ -1,6 +1,6 @@
 # all.haus Redesign Spec — Chrome, Feed Surface, Compose, Cards
 
-> **Implementation status as of 2026-04-18:** Steps 1–3¾ from §6 are shipped — the nav swap, compose overlay (note + reply modes), card chassis unification, article tiers (lead/standard/brief with two-up pairing), and reading-history resumption. Annotations throughout mark what's done vs. what remains. Search for `✅ SHIPPED` and `⏳ TODO` to scan status.
+> **Implementation status as of 2026-04-18:** Steps 1–5 from §6 are shipped — the nav swap, compose overlay (note + reply + article modes), card chassis unification, article tiers (lead/standard/brief with two-up pairing), reading-history resumption, and playscript threads. Remaining: Step 6 polish (end-of-feed / zero / error states), focus-preference nav filtering, reading-history surface, mobile compose gestures. Annotations throughout mark what's done vs. what remains. Search for `✅ SHIPPED` and `⏳ TODO` to scan status.
 
 Companion to `REDESIGN-SCOPE.md`. Where the scope doc argues what the product is, this doc specifies how four surfaces should look and behave: the topbar, the feed, the compose overlay, and the three card types that live in the feed. These four are the chrome of the product — what a user sees in the first three seconds, and where the register of the whole thing is set. Phase A's remaining items (filter bar, for-you model, cliquey primitive, trust drill-down, comments-on-externals, readability extraction) are not specced here; they become additive work once these four surfaces are locked.
 
@@ -118,7 +118,7 @@ The feed is already single-column, so the mobile treatment is largely the same a
 
 ---
 
-## 3. The compose surface (note + reply modes shipped)
+## 3. The compose surface (note + reply + article modes shipped)
 
 ### What it is
 
@@ -156,7 +156,11 @@ The recipient semantics of the overlay determine the reply's behaviour:
 
 The editing zone is identical to note mode. The controls zone loses the `WRITE AN ARTICLE →` link (replies are never articles) and shows the cross-post controls more prominently.
 
-### Composition — article mode ⏳ TODO
+### Composition — article mode ✅ SHIPPED (core); ⏳ TODO (dek, tags, email toggle, FLOWING/CUSTOM)
+
+Shipped as `ArticleComposePanel.tsx` (2026-04-18). Top zone: title (Literata 22px italic) + `PUBLISH AS: PERSONAL ▾` or `PUBLISH AS: [PUBLICATION] ▾` selector. Inline toolbar: bold/italic/H2/H3/quote/image/paywall. Body: Tiptap with `.article-compose-body` (Literata 17px / 1.8) — paywall gate, embeds, image upload all work. Controls: autosave timestamp (`SAVED · HH:MM`), `OPEN IN FULL EDITOR ↗` (flushes draft, navigates to `/write?draft=<id>[&pub=<slug>]`), `SCHEDULE` (inline datetime picker), crimson Publish (`btn-accent`). V1 defers dek/tags/email-subscribers/comments-toggle/show-on-writer-profile to the full editor; the `FLOWING · CUSTOM` toggle is unspecified beyond its name and is not built. Desktop overlay widens from 640→760px in article mode.
+
+The original spec text below documents the intended composition for reference:
 
 The top zone becomes a three-row stack at 80px combined height: subject field (the article's title, plain input, Literata 22px italic — a small but deliberate typographic cue that the user is writing something serious, carrying the editorial voice into the compose surface itself), publication selector (a mono-caps dropdown: `PUBLISH AS: PERSONAL ▾` or `PUBLISH AS: [PUBLICATION NAME] ▾`), and the presentation mode toggle (a single-line segmented control: `FLOWING · CUSTOM`).
 
@@ -386,7 +390,7 @@ Not a phased roadmap — that's the scope doc's job. Just a practical sequencing
 
 *Fourth: the playscript thread treatment.* ✅ SHIPPED (2026-04-18) — `ReplyItem.tsx` deleted. New `PlayscriptReply.tsx` + `PlayscriptThread.tsx` pair replaces it; `ReplySection.tsx` flattens the nested reply tree into a chronological list and derives a `replyingTo` hint when the parent isn't the immediately-previous entry (drives the `→ NAME:` arrow). Gateway now joins `trust_layer1` on the comments query and emits `parentCommentId` on each node. No feature flag — rip-and-replace. Visual spec: 32px thread step-in, 32px inter-entry rhythm, mono-caps speaker line (pip · bold Jost name · colon; `YOU:` with no pip for self), Jost 14.5px/1.55 dialogue line, interactive vote pinned top-right, action row revealed on hover/focus with `#fafaf7` tint. Pagination: first 10 + `SHOW N MORE REPLIES`.
 
-*Fifth: compose overlay — article mode.* ⏳ TODO — Extend overlay to handle articles with title field, publication selector, Tiptap editor, and state-preservation across overlay ↔ full-editor transition. Currently the overlay's "Write an article" link navigates to `/write/new` as a workaround.
+*Fifth: compose overlay — article mode.* ✅ SHIPPED (2026-04-18) — New `ArticleComposePanel.tsx` renders inside `ComposeOverlay` when `mode === 'article'`. Its own Tiptap instance (StarterKit + Markdown + Image + ImageUpload + EmbedNode + PaywallGateNode + Placeholder + CharacterCount). Title input (Literata 22px italic), `PUBLISH AS: …` selector populated from `publications.myMemberships()`, inline toolbar, paywall gate toggle with price input that appears when gated, autosave via the existing `createAutoSaver` (3s debounce) to the drafts table. State preservation: `OPEN IN FULL EDITOR ↗` flushes the draft and navigates to `/write?draft=<id>[&pub=<slug>]`; the `/write` page loads the same draft, so the editor picks up exactly where the overlay left off. Publish paths call `publishArticle` / `publishToPublication` directly. `stores/compose.ts` gains `openArticle({ draftId?, publicationSlug? })` and `setMode(mode)` for mid-compose escalation; the previous broken `/write/new` escape link is now a `Write an article →` mode switch in note mode. Desktop overlay widens from 640→760px. V1 deferred items (dek, tags, email-subscribers toggle, comments toggle, show-on-writer-profile, FLOWING/CUSTOM): stay in the full editor — opening a draft there preserves everything typed in the overlay.
 
 *Sixth: the end-of-feed affordance, the zero state, the error state.* ⏳ TODO — Small polish items, ship together once chassis is stable.
 
