@@ -75,6 +75,7 @@ function feedItemToResponse(row: any) {
       publishedAt: Number(row.published_at_epoch),
       score: row.score != null ? Number(row.score) : undefined,
       tags: row.tag_names ?? [],
+      sizeTier: row.size_tier ?? 'standard',
       pipStatus: row.pip_status ?? 'unknown',
     }
   }
@@ -131,7 +132,7 @@ const FEED_SELECT = `
   acc.nostr_pubkey AS nostr_pubkey,
   -- Article-specific (NULL for non-articles)
   a.nostr_d_tag, a.access_mode, a.price_pence, a.gate_position_pct,
-  a.content_free, a.summary AS a_summary,
+  a.content_free, a.summary AS a_summary, a.size_tier,
   COALESCE(
     (SELECT array_agg(t.name ORDER BY t.name)
      FROM article_tags at2 JOIN tags t ON t.id = at2.tag_id

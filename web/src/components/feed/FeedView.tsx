@@ -8,7 +8,7 @@ import { ArticleCard } from '../feed/ArticleCard'
 import { NoteCard } from '../feed/NoteCard'
 import { ExternalCard } from '../feed/ExternalCard'
 import { SubscribeInput } from '../feed/SubscribeInput'
-import type { FeedItem, NoteEvent, ExternalFeedItem } from '../../lib/ndk'
+import type { FeedItem, NoteEvent, ExternalFeedItem, ArticleEvent } from '../../lib/ndk'
 import type { QuoteTarget } from '../../lib/publishNote'
 import { feed as feedApi, votes as votesApi, bookmarks as bookmarksApi, type VoteTally, type MyVoteCount, type FeedReach } from '../../lib/api'
 import { useCompose } from '../../stores/compose'
@@ -22,6 +22,44 @@ interface NewUserItem {
 }
 
 type GlobalFeedItem = FeedItem | NewUserItem | ExternalFeedItem
+
+// Layout block — either a single full-width item or a side-by-side pair of
+// brief articles. `leadsBriefRun` marks the first block in a contiguous run
+// of briefs so we can insert the spec's 72px zone-break above it.
+type FeedBlock =
+  | { kind: 'single'; item: GlobalFeedItem; leadsBriefRun: boolean }
+  | { kind: 'brief-pair'; items: [ArticleEvent & { type: 'article' }, ArticleEvent & { type: 'article' }]; leadsBriefRun: boolean }
+
+function isBrief(item: GlobalFeedItem): item is ArticleEvent & { type: 'article' } {
+  return item.type === 'article' && (item as ArticleEvent).sizeTier === 'brief'
+}
+
+function layoutBlocks(items: GlobalFeedItem[]): FeedBlock[] {
+  const blocks: FeedBlock[] = []
+  let i = 0
+  while (i < items.length) {
+    if (isBrief(items[i])) {
+      // Collect contiguous brief run, then pair them two-up with remainder full-width.
+      const run: (ArticleEvent & { type: 'article' })[] = []
+      while (i < items.length && isBrief(items[i])) {
+        run.push(items[i] as ArticleEvent & { type: 'article' })
+        i++
+      }
+      for (let k = 0; k < run.length; k += 2) {
+        const leadsRun = k === 0
+        if (k + 1 < run.length) {
+          blocks.push({ kind: 'brief-pair', items: [run[k], run[k + 1]], leadsBriefRun: leadsRun })
+        } else {
+          blocks.push({ kind: 'single', item: run[k], leadsBriefRun: leadsRun })
+        }
+      }
+    } else {
+      blocks.push({ kind: 'single', item: items[i], leadsBriefRun: false })
+      i++
+    }
+  }
+  return blocks
+}
 
 function timeAgo(unixSeconds: number): string {
   const diff = Date.now() - unixSeconds * 1000
@@ -85,6 +123,7 @@ export function FeedView() {
               tags: [],
               topicTags: item.tags ?? [],
               pipStatus: item.pipStatus,
+              sizeTier: item.sizeTier,
             }
           } else if (item.type === 'note') {
             return {
@@ -192,17 +231,37 @@ export function FeedView() {
             <p className="text-ui-sm text-grey-600">Nothing here yet.</p>
           </div>
         ) : (
-          <div className="px-6 space-y-[40px] pt-[48px]">
-            {globalItems.map((item) => {
-              if (item.type === 'new_user') {
-                return <NewUserCard key={`new-user-${item.username}-${item.joinedAt}`} item={item} />
-              } else if (item.type === 'article') {
-                return <ArticleCard key={item.id} article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} isBookmarked={bookmarkedIds.has(item.id)} />
-              } else if (item.type === 'external') {
-                return <ExternalCard key={item.id} item={item as ExternalFeedItem} />
-              } else {
-                return <NoteCard key={item.id} note={item} onDeleted={handleNoteDeleted} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
+          <div className="px-6 pt-[48px]">
+            {layoutBlocks(globalItems).map((block, blockIdx) => {
+              const marginTop = blockIdx === 0 ? 0 : (block.leadsBriefRun ? 72 : 40)
+              if (block.kind === 'brief-pair') {
+                const [a, b] = block.items
+                return (
+                  <div key={`pair-${a.id}-${b.id}`} style={{ marginTop }} className="grid grid-cols-2 gap-x-[40px]">
+                    <ArticleCard article={a} onQuote={handleQuote} voteTally={voteTallies[a.id]} myVoteCounts={myVoteCounts[a.id]} isBookmarked={bookmarkedIds.has(a.id)} twoUp />
+                    <ArticleCard article={b} onQuote={handleQuote} voteTally={voteTallies[b.id]} myVoteCounts={myVoteCounts[b.id]} isBookmarked={bookmarkedIds.has(b.id)} twoUp />
+                  </div>
+                )
               }
+              const item = block.item
+              if (item.type === 'new_user') {
+                return (
+                  <div key={`new-user-${item.username}-${item.joinedAt}`} style={{ marginTop }}>
+                    <NewUserCard item={item} />
+                  </div>
+                )
+              }
+              return (
+                <div key={item.id} style={{ marginTop }}>
+                  {item.type === 'article' ? (
+                    <ArticleCard article={item} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} isBookmarked={bookmarkedIds.has(item.id)} />
+                  ) : item.type === 'external' ? (
+                    <ExternalCard item={item as ExternalFeedItem} />
+                  ) : (
+                    <NoteCard note={item} onDeleted={handleNoteDeleted} onQuote={handleQuote} voteTally={voteTallies[item.id]} myVoteCounts={myVoteCounts[item.id]} />
+                  )}
+                </div>
+              )
             })}
           </div>
         )}

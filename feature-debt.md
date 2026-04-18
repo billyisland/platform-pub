@@ -3,7 +3,8 @@
 Consolidated from planning documents, verified against the codebase as of 2026-04-13. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
 Last audited: 2026-04-13. Items marked DONE were verified against the codebase in that audit.
-Last worked: 2026-04-17. Completed: Redesign Steps 1–3 (the swap, compose overlay, card chassis refactor) per `ALLHAUS-REDESIGN-SPEC.md`.
+Last worked: 2026-04-18. Completed: Redesign Step 3½ (article tiers — lead/standard/brief) per `ALLHAUS-REDESIGN-SPEC.md` §4a. Migration 068 (`size_tier` column + BEFORE INSERT trigger that derives from word_count while preserving editorial overrides). Backfill: <1000 → brief, 1000–3000 → standard, ≥3000 → lead. Gateway feed route emits `sizeTier`. `ArticleCard` branches headline (30/22/20px) and skips excerpt+tags for briefs; new `twoUp` prop shrinks byline/action to 10.5px and drops Quote/Bookmark/Share. `FeedView.layoutBlocks()` pairs adjacent briefs two-up (40px gutter) with a 72px zone-break before each contiguous run.
+Previously: 2026-04-17. Completed: Redesign Steps 1–3 (the swap, compose overlay, card chassis refactor) per `ALLHAUS-REDESIGN-SPEC.md`.
 Previously: 2026-04-17. Completed: Trust graph Build Phase 4 (epoch aggregation and decay) — migration 067 (trust_epochs table, vouch decay tracking columns), pure library functions for attestor weighting (Phase A formula: age × payment × readership × activity) and aggregation (freshness decay, graduated small-scale protection, normalised scoring), trust_epoch_aggregate cron task (quarterly full epochs + Mon/Thu mop-ups, small-subject rule, threshold gate, dry-run mode, monitoring logs), 42 unit tests, gateway trust endpoint updated to prefer epoch scores over live counts, frontend dimension bars updated to use real scores. See `ALLHAUS-OMNIBUS.md` §II.8 + Build Phase 4.
 Previously: 2026-04-17. Completed: Trust graph Build Phase 2 (vouching CRUD) — migration 066 (vouches + trust_profiles tables), POST /vouches (upsert with dimension/value/visibility), DELETE /vouches/:id (soft-delete withdrawal), GET /trust/:userId extended with Layer 2 dimension scores + public endorsements + Layer 4 relational data + viewer's existing vouches, GET /my/vouches for own vouch list. Frontend: TrustProfile component (dimension bars, endorsements, "your network says"), VouchModal (dimension checkboxes, visibility radio, aggregate disclaimer), vouch button on writer profiles, VouchList withdrawal UI on /network?tab=vouches. See `ALLHAUS-OMNIBUS.md`.
 Previously: 2026-04-17. Completed: Trust graph Build Phase 1 (Layer 1 enrichment) — migration 065, trust_layer1_refresh cron, GET /trust/:userId, pip rendering on all feed cards. See `ALLHAUS-OMNIBUS.md`.
@@ -287,7 +288,8 @@ Build Phase 3 (reader-side product work) — **superseded by `REDESIGN-SCOPE.md`
 - Frontend work is now `REDESIGN-SCOPE.md` Phase A — ten incremental changes to the existing codebase
 - `ALLHAUS-REDESIGN-SPEC.md` specifies the four core surfaces: topbar, feed, compose overlay, card family
 - Redesign Steps 1–3 shipped (2026-04-17): the swap, compose overlay (note mode), card chassis refactor
-- Remaining from the spec: article tiers (lead/standard/brief + two-up pairing), playscript thread rendering, compose article mode, end-of-feed/zero/error states, filter bar, dark mode
+- Redesign Step 3½ shipped (2026-04-18): article tiers (lead/standard/brief) with two-up brief pairing and 72px zone-break before contiguous brief runs
+- Remaining from the spec: reading-history resumption, playscript thread rendering, compose article mode, end-of-feed/zero/error states, filter bar, dark mode
 
 Build Phase 4 (epoch aggregation and decay) — **DONE (2026-04-17):**
 - Migration 067 (`trust_epochs` table for audit trail, `last_reaffirmed_at` + `epochs_since_reaffirm` columns on vouches)

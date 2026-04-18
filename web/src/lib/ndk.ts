@@ -22,6 +22,8 @@ export const KIND_REACTION = 7
 
 export type PipStatus = 'known' | 'partial' | 'unknown'
 
+export type SizeTier = 'lead' | 'standard' | 'brief'
+
 export interface ArticleEvent {
   type?: 'article'
   id: string
@@ -39,6 +41,7 @@ export interface ArticleEvent {
   encryptedPayload?: string
   payloadAlgorithm?: string
   pipStatus?: PipStatus
+  sizeTier?: SizeTier
 }
 
 export interface NoteEvent {

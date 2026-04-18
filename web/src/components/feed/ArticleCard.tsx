@@ -22,9 +22,10 @@ interface ArticleCardProps {
   voteTally?: VoteTally
   myVoteCounts?: MyVoteCount
   isBookmarked?: boolean
+  twoUp?: boolean
 }
 
-export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookmarked }: ArticleCardProps) {
+export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookmarked, twoUp = false }: ArticleCardProps) {
   const { user } = useAuth()
   const router = useRouter()
   const writerInfo = useWriterName(article.pubkey)
@@ -32,7 +33,9 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
   const [replyCount, setReplyCount] = useState<number | null>(null)
   const wordCount = article.content.split(/\s+/).length
   const readMinutes = Math.max(1, Math.round(wordCount / 200))
-  const excerpt = article.summary || truncateText(stripMarkdown(article.content), 200)
+  const sizeTier = article.sizeTier ?? 'standard'
+  const isBrief = sizeTier === 'brief'
+  const excerpt = isBrief ? '' : (article.summary || truncateText(stripMarkdown(article.content), 200))
 
   useEffect(() => {
     repliesApi.getForTarget(article.id).then(d => setReplyCount(d.totalCount)).catch(err => console.error('Failed to load reply count', err))
@@ -72,6 +75,15 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
   const isPaid = article.isPaywalled
   const barColor = isPaid ? '#B5242A' : '#111111'
 
+  // Per-tier typography. Two-up briefs shrink byline/action to 10.5px per spec §4a.
+  const headlineClass =
+    sizeTier === 'lead'     ? 'text-[30px]' :
+    sizeTier === 'brief'    ? 'text-[20px]' :
+                              'text-[22px]'
+  const excerptSize = sizeTier === 'lead' ? 'text-[16px]' : 'text-[15px]'
+  const metaSize = twoUp ? 'text-[10.5px]' : 'text-[11px]'
+  const showExtendedActions = !twoUp // share, bookmark, quote only on full-width cards
+
   return (
     <div
       onClick={handleCardClick}
@@ -79,48 +91,48 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
       style={{ borderLeft: `4px solid ${barColor}`, paddingLeft: '24px' }}
     >
       {/* Byline — mono-caps, grey-600 */}
-      <div className="flex items-center gap-2 mb-3">
+      <div className={`flex items-center gap-2 mb-3 font-mono ${metaSize} uppercase tracking-[0.06em] text-grey-600`}>
         <TrustPip status={article.pipStatus} />
         {authorHref ? (
           <Link
             href={authorHref}
             onClick={(e) => e.stopPropagation()}
-            className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-black transition-colors"
+            className="hover:text-black transition-colors"
           >
             {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
           </Link>
         ) : (
-          <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600">
-            {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
-          </span>
+          <span>{writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}</span>
         )}
-        <span className="font-mono text-[11px] text-grey-600">·</span>
+        <span>·</span>
         <time
           dateTime={new Date(article.publishedAt * 1000).toISOString()}
-          className="font-mono text-[11px] tracking-[0.02em] text-grey-600"
+          className="tracking-[0.02em]"
         >
           {formatDateRelative(article.publishedAt)}
         </time>
         {isPaid && article.pricePence && (
           <>
-            <span className="font-mono text-[11px] text-grey-600">·</span>
-            <span className="font-mono text-[11px] tracking-[0.02em] text-crimson">£{(article.pricePence / 100).toFixed(2)}</span>
+            <span>·</span>
+            <span className="tracking-[0.02em] text-crimson">£{(article.pricePence / 100).toFixed(2)}</span>
           </>
         )}
       </div>
 
-      {/* Headline — Literata italic, 28px */}
-      <h2 className="font-serif text-[28px] font-medium italic text-black leading-[1.18] tracking-[-0.02em] mb-2 group-hover:text-crimson-dark transition-colors">
+      {/* Headline — Literata italic */}
+      <h2 className={`font-serif ${headlineClass} font-medium italic text-black leading-[1.18] tracking-[-0.02em] ${isBrief ? 'mb-3' : 'mb-2'} group-hover:text-crimson-dark transition-colors`}>
         {article.title}
       </h2>
 
-      {/* Excerpt — Literata roman, 15.5px */}
-      <p className="font-serif text-[15.5px] text-grey-600 leading-[1.65] mb-4" style={{ maxWidth: '540px' }}>
-        {excerpt}
-      </p>
+      {/* Excerpt — Literata roman (omitted for briefs) */}
+      {!isBrief && (
+        <p className={`font-serif ${excerptSize} text-grey-600 leading-[1.65] mb-4`} style={{ maxWidth: '540px' }}>
+          {excerpt}
+        </p>
+      )}
 
-      {/* Tags */}
-      {article.topicTags && article.topicTags.length > 0 && (
+      {/* Tags — omitted for briefs */}
+      {!isBrief && article.topicTags && article.topicTags.length > 0 && (
         <div className="flex items-center gap-1.5 mb-3 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300">
           {article.topicTags.map((tag, i) => (
             <span key={tag} className="flex items-center gap-1.5">
@@ -137,8 +149,8 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
         </div>
       )}
 
-      {/* Footer — mono-caps, grey-600 */}
-      <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600">
+      {/* Action row — mono-caps, grey-600 */}
+      <div className={`flex items-center gap-3 font-mono ${metaSize} uppercase tracking-[0.02em] text-grey-600`}>
         <span>{readMinutes} min read</span>
         {replyCount !== null && replyCount > 0 && (
           <><span className="opacity-50">·</span><span>{replyCount} {replyCount !== 1 ? 'replies' : 'reply'}</span></>
@@ -152,7 +164,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
             Reply
           </button>
         )}
-        {user && onQuote && (
+        {showExtendedActions && user && onQuote && (
           <button
             onClick={handleQuote}
             className="text-grey-600 hover:text-black transition-colors"
@@ -169,12 +181,16 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
             initialMyVotes={myVoteCounts}
           />
         </span>
-        <span onClick={e => e.stopPropagation()}>
-          <BookmarkButton articleId={article.id} initialBookmarked={isBookmarked} />
-        </span>
-        <span onClick={e => e.stopPropagation()}>
-          <ShareButton url={`/article/${article.dTag}`} title={article.title} />
-        </span>
+        {showExtendedActions && (
+          <>
+            <span onClick={e => e.stopPropagation()}>
+              <BookmarkButton articleId={article.id} initialBookmarked={isBookmarked} />
+            </span>
+            <span onClick={e => e.stopPropagation()}>
+              <ShareButton url={`/article/${article.dTag}`} title={article.title} />
+            </span>
+          </>
+        )}
       </div>
     </div>
   )

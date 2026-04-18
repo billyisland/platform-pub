@@ -172,6 +172,7 @@ CREATE TABLE articles (
   content_free          TEXT,                   -- plaintext free section (pre-gate)
   word_count            INT,
   tier                  content_tier NOT NULL DEFAULT 'tier1',
+  size_tier             TEXT CHECK (size_tier IS NULL OR size_tier IN ('lead', 'standard', 'brief')), -- migration 068
 
   -- Access control
   access_mode           TEXT NOT NULL DEFAULT 'public',  -- 'public' | 'paywalled' | 'invitation_only'
@@ -1200,6 +1201,25 @@ CREATE TRIGGER trg_publications_updated_at
 CREATE TRIGGER trg_publication_members_updated_at
   BEFORE UPDATE ON publication_members
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Derive articles.size_tier from word_count on INSERT when not explicitly set
+-- (editorial overrides survive re-publish). See migration 068.
+CREATE FUNCTION articles_derive_size_tier() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.size_tier IS NULL THEN
+    NEW.size_tier := CASE
+      WHEN NEW.word_count IS NULL OR NEW.word_count < 1000 THEN 'brief'
+      WHEN NEW.word_count >= 3000                          THEN 'lead'
+      ELSE 'standard'
+    END;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER articles_size_tier_default
+  BEFORE INSERT ON articles
+  FOR EACH ROW EXECUTE FUNCTION articles_derive_size_tier();
 
 -- =============================================================================
 -- Universal Feed — external sources, subscriptions, items (migration 052)
