@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '../../stores/auth'
 import { ReplyComposer } from './ReplyComposer'
-import { ReplyItem, type ReplyData } from './ReplyItem'
+import { PlayscriptThread } from './PlayscriptThread'
+import type { ReplyData, PlayscriptEntry } from './types'
 import { replies as repliesApi, votes as votesApi, type VoteTally, type MyVoteCount } from '../../lib/api'
 
 interface ReplySectionProps {
@@ -38,7 +39,6 @@ export function ReplySection({
   const [repliesEnabled, setRepliesEnabled] = useState(true)
   const [paywallLocked, setPaywallLocked] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [showAll, setShowAll] = useState(false)
   const [voteTallies, setVoteTallies] = useState<Record<string, VoteTally>>({})
   const [myVoteCounts, setMyVoteCounts] = useState<Record<string, MyVoteCount>>({})
   const [replyTarget, setReplyTarget] = useState<{
@@ -95,25 +95,10 @@ export function ReplySection({
   }, [])
 
   const handleNewNestedReply = useCallback((reply: ReplyData) => {
-    setReplies(prev => {
-      return prev.map(r => {
-        if (r.id === replyTarget?.replyId) {
-          return { ...r, replies: [...r.replies, reply] }
-        }
-        return {
-          ...r,
-          replies: r.replies.map(nested => {
-            if (nested.id === replyTarget?.replyId) {
-              return { ...nested, replies: [...nested.replies, reply] }
-            }
-            return nested
-          }),
-        }
-      })
-    })
+    setReplies(prev => appendNested(prev, reply))
     setTotalCount(prev => prev + 1)
     setReplyTarget(null)
-  }, [replyTarget])
+  }, [])
 
   const handleDelete = useCallback(async (replyId: string) => {
     try {
@@ -129,10 +114,16 @@ export function ReplySection({
     setReplyTarget({ replyId, replyEventId, authorName })
   }, [])
 
+  const entries = useMemo(() => flattenToPlayscript(replies), [replies])
+  const visibleEntries = useMemo(() => {
+    if (!previewLimit || entries.length <= previewLimit) return entries
+    return entries.slice(-previewLimit)
+  }, [entries, previewLimit])
+
   if (loading) {
     return (
       <div className={compact ? '' : 'mt-8 pt-6 border-t border-grey-200'}>
-        <div className="space-y-2 py-2">
+        <div className="ml-8 space-y-[32px] py-2">
           {[1, 2].map(i => (
             <div key={i} className="h-10 animate-pulse bg-grey-100" />
           ))}
@@ -151,68 +142,48 @@ export function ReplySection({
     )
   }
 
+  const targetForComposer =
+    replyTarget && replies.some(r => containsReply(r, replyTarget.replyId))
+      ? replyTarget
+      : null
+
   return (
     <div className={compact ? '' : 'mt-8 pt-6 border-t border-grey-200'}>
       {!compact && (
-        <h3 className="text-sm font-medium text-grey-600 mb-4">
+        <h3 className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 mb-6">
           {totalCount > 0
             ? `${totalCount} ${totalCount !== 1 ? 'replies' : 'reply'}`
             : 'Replies'}
         </h3>
       )}
 
-      {replies.length > 0 && (
-        <div className={`space-y-1 ${compact ? '' : 'mb-4'}`}>
-          {(showAll || !previewLimit ? replies : replies.slice(-previewLimit)).map((reply) => (
-            <div key={reply.id}>
-              <ReplyItem
-                reply={reply}
-                currentUserId={user?.id}
-                contentAuthorId={contentAuthorId}
-                compact={compact}
-                onReply={repliesEnabled ? handleReplyTo : undefined}
-                onDelete={handleDelete}
-                voteTally={voteTallies[reply.nostrEventId]}
-                myVoteCounts={myVoteCounts[reply.nostrEventId]}
-                renderComposer={(replyId) => replyTarget?.replyId === replyId ? (
-                  <div className="ml-8 pl-4 border-l border-grey-200">
-                    <ReplyComposer
-                      targetEventId={targetEventId}
-                      targetKind={targetKind}
-                      targetAuthorPubkey={targetAuthorPubkey}
-                      parentCommentId={replyId}
-                      parentCommentEventId={replyTarget.replyEventId}
-                      replyingToName={replyTarget.authorName}
-                      onPublished={handleNewNestedReply}
-                      onCancel={() => setReplyTarget(null)}
-                    />
-                  </div>
-                ) : null}
-              />
-              {replyTarget?.replyId === reply.id && (
-                <div className="ml-8 pl-4 border-l border-grey-200">
-                  <ReplyComposer
-                    targetEventId={targetEventId}
-                    targetKind={targetKind}
-                    targetAuthorPubkey={targetAuthorPubkey}
-                    parentCommentId={reply.id}
-                    parentCommentEventId={reply.nostrEventId}
-                    replyingToName={replyTarget.authorName}
-                    onPublished={handleNewNestedReply}
-                    onCancel={() => setReplyTarget(null)}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
-          {previewLimit && !showAll && replies.length > previewLimit && (
-            <button
-              onClick={() => setShowAll(true)}
-              className="mt-2 px-3 py-1.5 text-ui-xs text-grey-400 hover:text-white hover:bg-grey-600 transition-colors"
-            >
-              Read more replies
-            </button>
-          )}
+      {entries.length > 0 && (
+        <div className={compact ? '' : 'mb-6'}>
+          <PlayscriptThread
+            entries={visibleEntries}
+            currentUserId={user?.id}
+            contentAuthorId={contentAuthorId}
+            repliesEnabled={repliesEnabled}
+            activeReplyId={targetForComposer?.replyId ?? null}
+            voteTallies={voteTallies}
+            myVoteCounts={myVoteCounts}
+            onReply={repliesEnabled ? handleReplyTo : undefined}
+            onDelete={handleDelete}
+            renderComposer={(replyId) =>
+              targetForComposer && targetForComposer.replyId === replyId ? (
+                <ReplyComposer
+                  targetEventId={targetEventId}
+                  targetKind={targetKind}
+                  targetAuthorPubkey={targetAuthorPubkey}
+                  parentCommentId={replyId}
+                  parentCommentEventId={targetForComposer.replyEventId}
+                  replyingToName={targetForComposer.authorName}
+                  onPublished={handleNewNestedReply}
+                  onCancel={() => setReplyTarget(null)}
+                />
+              ) : null
+            }
+          />
         </div>
       )}
 
@@ -241,18 +212,73 @@ export function ReplySection({
   )
 }
 
-function markDeleted(replies: ReplyData[], id: string): ReplyData[] {
-  return replies.map(r => {
+// ---------------------------------------------------------------------------
+// Tree helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk the nested reply tree and produce a flat chronological list. Each entry
+ * carries an optional replyingTo hint, which we set only when the parent is
+ * NOT the immediately-previous chronological entry — in that case the → arrow
+ * in the speaker line disambiguates a non-adjacent parent.
+ */
+function flattenToPlayscript(tree: ReplyData[]): PlayscriptEntry[] {
+  const flat: ReplyData[] = []
+  const walk = (nodes: ReplyData[]) => {
+    for (const n of nodes) {
+      flat.push(n)
+      if (n.replies.length > 0) walk(n.replies)
+    }
+  }
+  walk(tree)
+
+  flat.sort((a, b) => {
+    const t = new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime()
+    return t !== 0 ? t : a.id.localeCompare(b.id)
+  })
+
+  const byId = new Map(flat.map(r => [r.id, r]))
+
+  return flat.map((reply, i) => {
+    if (!reply.parentCommentId) return { reply, replyingTo: null }
+    const prev = i > 0 ? flat[i - 1] : null
+    if (prev && prev.id === reply.parentCommentId) {
+      return { reply, replyingTo: null }
+    }
+    const parent = byId.get(reply.parentCommentId)
+    if (!parent) return { reply, replyingTo: null }
+    const name = parent.author.displayName ?? parent.author.username ?? 'Anonymous'
+    return { reply, replyingTo: { name, id: parent.id } }
+  })
+}
+
+function appendNested(tree: ReplyData[], reply: ReplyData): ReplyData[] {
+  return tree.map(node => {
+    if (node.id === reply.parentCommentId) {
+      return { ...node, replies: [...node.replies, reply] }
+    }
+    if (node.replies.length === 0) return node
+    return { ...node, replies: appendNested(node.replies, reply) }
+  })
+}
+
+function containsReply(node: ReplyData, id: string): boolean {
+  if (node.id === id) return true
+  return node.replies.some(c => containsReply(c, id))
+}
+
+function markDeleted(tree: ReplyData[], id: string): ReplyData[] {
+  return tree.map(r => {
     if (r.id === id) {
-      return { ...r, content: '[deleted]', isDeleted: true }
+      return { ...r, content: '[content deleted]', isDeleted: true }
     }
     return { ...r, replies: markDeleted(r.replies, id) }
   })
 }
 
-function flattenEventIds(replies: ReplyData[]): string[] {
+function flattenEventIds(tree: ReplyData[]): string[] {
   const ids: string[] = []
-  for (const r of replies) {
+  for (const r of tree) {
     if (r.nostrEventId) ids.push(r.nostrEventId)
     if (r.replies.length > 0) ids.push(...flattenEventIds(r.replies))
   }

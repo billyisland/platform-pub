@@ -201,10 +201,22 @@ All three feed card types (`ArticleCard`, `NoteCard`, `ExternalCard`) share a un
 - **No avatars** in card bodies. The left bar + pip + mono-caps name carry identity.
 - **Feed rhythm**: 40px gap between all items (`space-y-[40px]`), no horizontal rules between cards.
 
+### Reply threads (playscripts)
+Threads never use nested indentation, left borders between nested replies, quote-of-parent blockquotes, or avatars. They render flat and chronological as a transcript.
+- **Thread step-in**: the thread container is indented 32px once (`ml-8`) from the parent card's content column. This is the only indentation in the thread system.
+- **Inter-entry rhythm**: 32px (`space-y-[32px]`). No hairline rules between entries.
+- **Speaker line**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600`). Structure: `TrustPip` · bold Jost name · colon. Own replies read `YOU:` with no pip (the asymmetric 16px left-jog is deliberate — `YOU:` is the reader, not a named speaker).
+- **Non-adjacent parent**: when the reply's parent isn't the immediately-previous entry, prefix the speaker line with `→ PARENT:` in `grey-400` + 16px gap, then the speaker's own `NAME:`.
+- **Dialogue line**: Jost 14.5px (`text-[14.5px]`), 1.55 line height (`leading-[1.55]`), black. Directly under the speaker line at `mt-1`.
+- **Vote count**: `VoteControls` pinned top-right of the entry, aligned to the first line of dialogue.
+- **Action row**: `time · REPLY · DELETE · REPORT` at mono-caps 11px `text-grey-400`, revealed on hover/focus with an optional `#fafaf7` background tint on the entry.
+- **Pagination**: first 10 entries + `SHOW N MORE REPLIES` (mono-caps, grey-400, underlined on hover).
+- **Component surface**: `PlayscriptReply` + `PlayscriptThread` in `web/src/components/replies/`. `ReplySection.tsx` flattens the nested tree into `PlayscriptEntry[]`; the API still returns a nested tree with `parentCommentId` on each node.
+
 ## Key docs
 
 - `feature-debt.md` — consolidated feature debt, outstanding work, and attack order
-- `ALLHAUS-REDESIGN-SPEC.md` — redesign spec for topbar, feed, compose overlay, card family (Steps 1–3 shipped, remaining: article tiers, playscript threads, compose article mode, polish states)
+- `ALLHAUS-REDESIGN-SPEC.md` — redesign spec for topbar, feed, compose overlay, card family (Steps 1–4 shipped including article tiers, reading-history resumption, playscript threads; remaining: compose article mode, polish states)
 - `REDESIGN-SCOPE.md` — product scope document arguing what the product is (companion to the redesign spec)
 - `UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)
 - `DEPLOYMENT.md` — full production deployment guide

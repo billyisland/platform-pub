@@ -76,7 +76,14 @@ export function ReplyComposer({
       onPublished?.({
         id: result.replyId,
         nostrEventId: result.replyEventId,
-        author: { id: user.id, username: user.username, displayName: user.displayName, avatar: user.avatar },
+        author: {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          avatar: user.avatar,
+          pipStatus: 'unknown',
+        },
+        parentCommentId: parentCommentId ?? null,
         content: finalContent,
         publishedAt: new Date().toISOString(),
         isDeleted: false,

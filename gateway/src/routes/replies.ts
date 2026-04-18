@@ -244,15 +244,18 @@ export async function replyRoutes(app: FastifyInstance) {
         author_username: string | null
         author_display_name: string | null
         author_avatar: string | null
+        author_pip_status: 'known' | 'partial' | 'unknown' | null
       }>(
         `SELECT c.id, c.nostr_event_id, c.parent_comment_id,
                 c.content, c.published_at, c.deleted_at,
                 c.author_id,
                 a.username AS author_username,
                 a.display_name AS author_display_name,
-                a.avatar_blossom_url AS author_avatar
+                a.avatar_blossom_url AS author_avatar,
+                tl.pip_status AS author_pip_status
          FROM comments c
          JOIN accounts a ON a.id = c.author_id
+         LEFT JOIN trust_layer1 tl ON tl.user_id = c.author_id
          WHERE c.target_event_id = $1
          ORDER BY c.published_at ASC`,
         [targetEventId]
@@ -272,7 +275,14 @@ export async function replyRoutes(app: FastifyInstance) {
       interface ReplyNode {
         id: string
         nostrEventId: string
-        author: { id: string; username: string | null; displayName: string | null; avatar: string | null }
+        author: {
+          id: string
+          username: string | null
+          displayName: string | null
+          avatar: string | null
+          pipStatus: 'known' | 'partial' | 'unknown'
+        }
+        parentCommentId: string | null
         content: string
         publishedAt: string
         isDeleted: boolean
@@ -292,7 +302,9 @@ export async function replyRoutes(app: FastifyInstance) {
             username: r.author_username,
             displayName: r.author_display_name,
             avatar: r.author_avatar,
+            pipStatus: r.author_pip_status ?? 'unknown',
           },
+          parentCommentId: r.parent_comment_id,
           content: r.deleted_at ? '[deleted]' : r.content,
           publishedAt: r.published_at.toISOString(),
           isDeleted: !!r.deleted_at,
