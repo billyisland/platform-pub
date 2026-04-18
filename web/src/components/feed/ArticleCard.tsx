@@ -80,7 +80,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
     sizeTier === 'lead'     ? 'text-[30px]' :
     sizeTier === 'brief'    ? 'text-[20px]' :
                               'text-[22px]'
-  const excerptSize = sizeTier === 'lead' ? 'text-[16px]' : 'text-[15px]'
+  const excerptSize = sizeTier === 'lead' ? 'text-[16px]' : 'text-[15.5px]'
   const metaSize = twoUp ? 'text-[10.5px]' : 'text-[11px]'
   const showExtendedActions = !twoUp // share, bookmark, quote only on full-width cards
 

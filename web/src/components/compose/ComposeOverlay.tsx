@@ -164,7 +164,7 @@ export function ComposeOverlay() {
           ) : (
           <>
           {/* Top zone */}
-          <div className="px-6 py-3" style={{ borderBottom: '4px solid #F0F0F0' }}>
+          <div className="px-6 py-3" style={{ borderBottom: '4px solid #E5E5E5' }}>
             {mode === 'reply' && replyTarget ? (
               <ReplyPreview target={replyTarget} onClear={() => close()} />
             ) : (
@@ -191,7 +191,7 @@ export function ComposeOverlay() {
           </div>
 
           {/* Controls zone */}
-          <div className="px-6 py-3 flex items-center gap-4" style={{ borderTop: '4px solid #F0F0F0' }}>
+          <div className="px-6 py-3 flex items-center gap-4" style={{ borderTop: '4px solid #E5E5E5' }}>
             {/* Image upload */}
             <button
               onClick={media.triggerImageUpload}
@@ -297,7 +297,7 @@ export function ComposeOverlay() {
 
           {mode === 'article' ? (
             <>
-              <div className="flex items-center justify-between px-4 pb-2" style={{ borderBottom: '4px solid #F0F0F0' }}>
+              <div className="flex items-center justify-between px-4 pb-2" style={{ borderBottom: '4px solid #E5E5E5' }}>
                 <button onClick={close} className="text-grey-600 hover:text-black text-lg">&times;</button>
                 <span className="label-ui text-grey-400">ARTICLE</span>
                 <span className="w-6" />
@@ -307,7 +307,7 @@ export function ComposeOverlay() {
           ) : (
           <>
           {/* Mobile chrome */}
-          <div className="flex items-center justify-between px-4 pb-2" style={{ borderBottom: '4px solid #F0F0F0' }}>
+          <div className="flex items-center justify-between px-4 pb-2" style={{ borderBottom: '4px solid #E5E5E5' }}>
             <button onClick={handleDismiss} className="text-grey-600 hover:text-black text-lg">&times;</button>
             <span className="label-ui text-grey-400">{mode === 'reply' ? 'REPLY' : 'NOTE'}</span>
             <button
@@ -321,7 +321,7 @@ export function ComposeOverlay() {
 
           {/* Reply preview (mobile) */}
           {mode === 'reply' && replyTarget && (
-            <div className="px-4 py-2" style={{ borderBottom: '4px solid #F0F0F0' }}>
+            <div className="px-4 py-2" style={{ borderBottom: '4px solid #E5E5E5' }}>
               <ReplyPreview target={replyTarget} onClear={() => close()} />
             </div>
           )}
@@ -345,7 +345,7 @@ export function ComposeOverlay() {
           </div>
 
           {/* Controls (mobile) */}
-          <div className="px-4 py-3 flex items-center gap-3" style={{ borderTop: '4px solid #F0F0F0' }}>
+          <div className="px-4 py-3 flex items-center gap-3" style={{ borderTop: '4px solid #E5E5E5' }}>
             <button
               onClick={media.triggerImageUpload}
               disabled={media.uploading}

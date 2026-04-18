@@ -282,7 +282,7 @@ export function ArticleComposePanel() {
   return (
     <>
       {/* Top zone: title + publication selector */}
-      <div className="px-6 py-4 space-y-2" style={{ borderBottom: '4px solid #F0F0F0' }}>
+      <div className="px-6 py-4 space-y-2" style={{ borderBottom: '4px solid #E5E5E5' }}>
         <input
           type="text"
           value={title}
@@ -384,7 +384,7 @@ export function ArticleComposePanel() {
       </div>
 
       {/* Controls zone */}
-      <div className="px-6 py-3 flex items-center gap-4" style={{ borderTop: '4px solid #F0F0F0' }}>
+      <div className="px-6 py-3 flex items-center gap-4" style={{ borderTop: '4px solid #E5E5E5' }}>
         <span className="font-mono text-[11px] text-grey-400 min-w-[80px]">
           {saveStatus ?? (loadingDraft ? 'LOADING…' : draftId ? 'DRAFT' : '')}
         </span>

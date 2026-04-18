@@ -128,11 +128,10 @@ export function PlayscriptReply({
         )}
       </div>
 
-      {/* Action row — hover/focus reveal */}
-      {!reply.isDeleted && (
+      {/* Action row — hover/focus reveal (conditional mount so layout collapses) */}
+      {!reply.isDeleted && showActions && (
         <div
-          className="mt-2 flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-400 transition-opacity"
-          style={{ opacity: showActions ? 1 : 0, pointerEvents: showActions ? 'auto' : 'none' }}
+          className="mt-2 flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-400"
         >
           <time dateTime={reply.publishedAt}>
             {formatRelativeTime(reply.publishedAt)}

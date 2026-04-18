@@ -114,7 +114,7 @@ If the feed fails to load, the existing treatment (`"Failed to load feed."` + `T
 
 ### Mobile
 
-The feed is already single-column, so the mobile treatment is largely the same as desktop: the 780px `max-w-feed` becomes 100% width below 768px, and horizontal padding reduces from 24px to 16px. The subscribe input's sticky behaviour stays (120px chrome is acceptable on mobile; the filter bar, when specced, will need to decide whether to stay sticky at mobile sizes or collapse into a dropdown — that's a Q1 decision). The compose button in the topbar replaces the `COMPOSE ⌘K` cluster with the crimson ∀ mark at 14px, as noted in §1.
+The feed is already single-column, so the mobile treatment is largely the same as desktop: the 780px `max-w-feed` becomes 100% width below 768px, and horizontal padding reduces from 24px to 16px. The subscribe input's sticky behaviour stays (120px chrome is acceptable on mobile; the filter bar, when specced, will need to decide whether to stay sticky at mobile sizes or collapse into a dropdown — that's a Q1 decision). The compose button in the topbar replaces the `COMPOSE ⌘K` cluster with the white ∀ mark at 14px, as noted in §1.
 
 ---
 

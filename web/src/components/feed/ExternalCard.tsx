@@ -141,24 +141,38 @@ export function ExternalCard({ item }: ExternalCardProps) {
         )}
       </div>
 
-      {/* Title (RSS items often have one) */}
+      {/* Title — Literata roman (italic is reserved for native articles) */}
       {item.title && (
-        <h3 className="font-serif italic text-[20px] leading-[1.4] mt-1 text-black">
+        <h3 className="font-serif text-[20px] leading-[1.4] mt-1 text-black">
           {item.title}
         </h3>
       )}
 
-      {/* Content */}
-      {item.contentHtml ? (
-        <div
-          className="text-ui-sm text-grey-600 mt-1.5 line-clamp-4 [&_a]:text-black [&_a]:underline [&_img]:hidden"
-          dangerouslySetInnerHTML={{ __html: item.contentHtml }}
-        />
-      ) : item.contentText ? (
-        <p className="text-ui-sm text-grey-600 mt-1.5 line-clamp-4">
-          {item.contentText}
-        </p>
-      ) : null}
+      {/* Content — Literata summary when paired with a title (RSS-like),
+          else Jost body matching NoteCard (Bluesky / Mastodon-like) */}
+      {item.title ? (
+        item.contentHtml ? (
+          <div
+            className="font-serif text-[14.5px] text-grey-600 leading-[1.5] mt-1.5 line-clamp-4 [&_a]:text-black [&_a]:underline [&_img]:hidden"
+            dangerouslySetInnerHTML={{ __html: item.contentHtml }}
+          />
+        ) : item.contentText ? (
+          <p className="font-serif text-[14.5px] text-grey-600 leading-[1.5] mt-1.5 line-clamp-4">
+            {item.contentText}
+          </p>
+        ) : null
+      ) : (
+        item.contentHtml ? (
+          <div
+            className="font-sans text-[15px] text-black leading-[1.55] mt-1.5 [&_a]:text-black [&_a]:underline [&_img]:hidden"
+            dangerouslySetInnerHTML={{ __html: item.contentHtml }}
+          />
+        ) : item.contentText ? (
+          <p className="font-sans text-[15px] text-black leading-[1.55] mt-1.5 whitespace-pre-wrap">
+            {item.contentText}
+          </p>
+        ) : null
+      )}
 
       {/* Images */}
       {imageMedia.length > 0 && (
