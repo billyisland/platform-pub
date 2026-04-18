@@ -145,6 +145,7 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
     <div>
       <div className="relative">
         <input
+          id="feed-subscribe-input"
           type="text"
           value={query}
           onChange={(e) => handleChange(e.target.value)}

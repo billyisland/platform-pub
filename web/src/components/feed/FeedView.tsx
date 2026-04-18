@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
@@ -84,6 +84,8 @@ export function FeedView() {
   const [globalLoading, setGlobalLoading] = useState(true)
   const [globalError, setGlobalError] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
+  const failureTimestampsRef = useRef<number[]>([])
+  const [showGatewayHint, setShowGatewayHint] = useState(false)
   const [voteTallies, setVoteTallies] = useState<Record<string, VoteTally>>({})
   const [myVoteCounts, setMyVoteCounts] = useState<Record<string, MyVoteCount>>({})
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set())
@@ -178,7 +180,15 @@ export function FeedView() {
           setMyVoteCounts(myVotesRes.voteCounts ?? {})
           setBookmarkedIds(new Set(bmRes.eventIds ?? []))
         }
-      } catch (err) { console.error('Feed load error:', err); setGlobalError(true) }
+      } catch (err) {
+        console.error('Feed load error:', err)
+        setGlobalError(true)
+        const now = Date.now()
+        const recent = failureTimestampsRef.current.filter(t => now - t < 60_000)
+        recent.push(now)
+        failureTimestampsRef.current = recent
+        setShowGatewayHint(recent.length >= 3)
+      }
       finally { setGlobalLoading(false) }
     }
     loadFeed()
@@ -217,19 +227,13 @@ export function FeedView() {
       {/* Feed */}
       <div className="pb-10">
         {globalLoading ? <InlineSkeleton /> : globalError ? (
-          <div className="py-20 text-center px-6">
-            <p className="text-ui-sm text-grey-600 mb-4">Failed to load feed.</p>
-            <button
-              onClick={() => setRetryKey(k => k + 1)}
-              className="text-[13px] font-mono text-black underline hover:opacity-70 transition-opacity"
-            >
-              Try again
-            </button>
-          </div>
+          <FeedErrorState onRetry={() => setRetryKey(k => k + 1)} showGatewayHint={showGatewayHint} />
         ) : globalItems.length === 0 ? (
-          <div className="py-20 text-center px-6">
-            <p className="text-ui-sm text-grey-600">Nothing here yet.</p>
-          </div>
+          reach === 'following' ? (
+            <FilteredEmptyState onClear={() => handleReachChange('explore')} />
+          ) : (
+            <ZeroState />
+          )
         ) : (
           <div className="px-6 pt-[48px]">
             {layoutBlocks(globalItems).map((block, blockIdx) => {
@@ -263,6 +267,7 @@ export function FeedView() {
                 </div>
               )
             })}
+            <EndOfFeed />
           </div>
         )}
       </div>
@@ -330,6 +335,95 @@ function InlineSkeleton() {
           <div className="h-3 w-full animate-pulse bg-grey-100" />
         </div>
       ))}
+    </div>
+  )
+}
+
+// =============================================================================
+// End-of-feed / zero / empty-filter / error states
+// =============================================================================
+
+function scrollToSubscribe() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  // Focus the input after the scroll settles.
+  window.setTimeout(() => {
+    document.getElementById('feed-subscribe-input')?.focus()
+  }, 300)
+}
+
+function EndOfFeed() {
+  return (
+    <div className="pt-12 pb-12 text-center">
+      <p className="label-ui text-grey-400">END OF FEED</p>
+      <div className="mx-auto mt-3 h-[4px] w-12 bg-crimson" />
+      <button
+        onClick={scrollToSubscribe}
+        className="mt-6 label-ui text-grey-600 hover:text-black transition-colors"
+      >
+        SUBSCRIBE TO MORE →
+      </button>
+    </div>
+  )
+}
+
+function ZeroState() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center px-6">
+      <div className="max-w-[60%] text-center">
+        <p className="font-serif italic text-[32px] leading-[1.15] tracking-tight text-black">
+          Nothing here yet — which is fine.
+        </p>
+        <p className="mt-6 text-[15px] text-grey-600 leading-[1.55]">
+          The feed fills up as you follow people and publications. Start{' '}
+          <button
+            onClick={scrollToSubscribe}
+            className="underline hover:text-black transition-colors"
+          >
+            above
+          </button>
+          .
+        </p>
+        <p className="mt-9 label-ui text-grey-400">
+          TRY: A BLUESKY HANDLE · AN RSS URL · AN NPUB · A PUBLICATION NAME
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function FilteredEmptyState({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center px-6">
+      <div className="text-center">
+        <p className="label-ui text-grey-600">NO ITEMS MATCH THIS FILTER</p>
+        <button
+          onClick={onClear}
+          className="mt-4 label-ui text-grey-600 hover:text-black underline transition-colors"
+        >
+          CLEAR FILTER
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function FeedErrorState({ onRetry, showGatewayHint }: { onRetry: () => void; showGatewayHint: boolean }) {
+  return (
+    <div className="flex items-start justify-center px-6 pt-[33vh] pb-20">
+      <div className="text-center">
+        <p className="text-[15px] text-black leading-[1.55]">Couldn&rsquo;t load the feed.</p>
+        <button
+          onClick={onRetry}
+          className="mt-6 label-ui text-grey-600 hover:text-black underline transition-colors"
+        >
+          RETRY
+        </button>
+        {showGatewayHint && (
+          <p className="mt-6 text-[14px] text-grey-600 leading-[1.55] max-w-[360px] mx-auto">
+            The gateway may be down. This isn&rsquo;t a sync issue on your end.
+          </p>
+        )}
+      </div>
     </div>
   )
 }
