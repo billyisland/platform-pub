@@ -125,6 +125,7 @@ CREATE TABLE accounts (
   username_redirect_until TIMESTAMPTZ,                  -- (migration 049) redirect expiry
   pending_email         TEXT,                           -- (migration 049) email change in progress
   email_verification_token TEXT,                        -- (migration 049) token for email change verification
+  always_open_articles_at_top BOOLEAN NOT NULL DEFAULT FALSE, -- (migration 069) bypass scroll-resume
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -807,6 +808,17 @@ CREATE TABLE bookmarks (
 );
 
 CREATE INDEX idx_bookmarks_user ON bookmarks(user_id, created_at DESC);
+
+-- Reading positions (migration 069) — per-user, per-article scroll snapshot
+CREATE TABLE reading_positions (
+  user_id       UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  article_id    UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  scroll_ratio  REAL NOT NULL CHECK (scroll_ratio >= 0 AND scroll_ratio <= 1),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, article_id)
+);
+
+CREATE INDEX idx_reading_positions_user ON reading_positions(user_id, updated_at DESC);
 
 -- Tags (migration 048)
 CREATE TABLE tags (

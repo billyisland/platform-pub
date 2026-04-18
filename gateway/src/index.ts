@@ -41,6 +41,7 @@ import { resolveRoutes } from './routes/resolve.js'
 import { feedsRoutes } from './routes/feeds.js'
 import { linkedAccountsRoutes } from './routes/linked-accounts.js'
 import { trustRoutes } from './routes/trust.js'
+import { readingPositionRoutes } from './routes/reading-positions.js'
 import { atprotoClientMetadata, atprotoJwks } from '../shared/src/lib/atproto-oauth.js'
 import { publishScheduledDrafts } from './workers/scheduler.js'
 import { pool } from '../shared/src/db/client.js'
@@ -198,6 +199,9 @@ async function start() {
 
   // Trust Layer 1 signals (Phase 1)
   await app.register(trustRoutes, { prefix: '/api/v1' })
+
+  // Reading-position resumption (per-user, per-article scroll snapshot)
+  await app.register(readingPositionRoutes, { prefix: '/api/v1' })
 
   // AT Protocol OAuth client metadata (discovered by Bluesky PDSes).
   // Mounted at the root so the canonical URL is

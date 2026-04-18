@@ -7,6 +7,7 @@ import { EmailChange } from '../../components/account/EmailChange'
 import { PaymentSection } from '../../components/account/PaymentSection'
 import { LinkedAccountsPanel } from '../../components/account/LinkedAccountsPanel'
 import { NotificationPreferences } from '../../components/social/NotificationPreferences'
+import { ReadingPreferences } from '../../components/account/ReadingPreferences'
 import { ExportModal } from '../../components/ExportModal'
 import { DangerZone } from '../../components/account/DangerZone'
 import { PageShell } from '../../components/ui/PageShell'
@@ -62,6 +63,10 @@ export default function SettingsPage() {
 
         <section className="bg-white px-6 py-5">
           <NotificationPreferences />
+        </section>
+
+        <section className="bg-white px-6 py-5">
+          <ReadingPreferences />
         </section>
 
         <div className="bg-white px-6 py-5">

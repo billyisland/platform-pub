@@ -1,6 +1,6 @@
 # all.haus Redesign Spec — Chrome, Feed Surface, Compose, Cards
 
-> **Implementation status as of 2026-04-17 (commit `0ed389b`):** Steps 1–3 from §6 are shipped — the nav swap, compose overlay (note + reply modes), and card chassis unification. Annotations throughout mark what's done vs. what remains. Search for `✅ SHIPPED` and `⏳ TODO` to scan status.
+> **Implementation status as of 2026-04-18:** Steps 1–3¾ from §6 are shipped — the nav swap, compose overlay (note + reply modes), card chassis unification, article tiers (lead/standard/brief with two-up pairing), and reading-history resumption. Annotations throughout mark what's done vs. what remains. Search for `✅ SHIPPED` and `⏳ TODO` to scan status.
 
 Companion to `REDESIGN-SCOPE.md`. Where the scope doc argues what the product is, this doc specifies how four surfaces should look and behave: the topbar, the feed, the compose overlay, and the three card types that live in the feed. These four are the chrome of the product — what a user sees in the first three seconds, and where the register of the whole thing is set. Phase A's remaining items (filter bar, for-you model, cliquey primitive, trust drill-down, comments-on-externals, readability extraction) are not specced here; they become additive work once these four surfaces are locked.
 
@@ -239,7 +239,7 @@ The content zone for an article has four elements, top to bottom:
 
 Click on the card body (outside of explicit action buttons) navigates to `/article/[dTag]`. This is existing behaviour and should stay; it preserves the card's affordance as "the thing you click to read the article".
 
-### Reading history and resumption ⏳ TODO
+### Reading history and resumption ✅ SHIPPED (mechanism); ⏳ TODO (reading-history surface)
 
 Where a bookmark action previously existed in the card's action row, its work is now done by an ambient mechanism: the article reader page remembers scroll position per-article-per-user and opens at that position on return. There is no explicit "save this for later" gesture; the act of reading is itself the act of marking your place. This is closer in spirit to how a book works than to how a web app works, and it is the right register for this product.
 
@@ -382,7 +382,7 @@ Not a phased roadmap — that's the scope doc's job. Just a practical sequencing
 
 *Third-and-a-half: article tiers.* ✅ SHIPPED (2026-04-18) — Migration 068 adds `size_tier` column to `articles` with a BEFORE INSERT trigger that derives the tier from `word_count` when not explicitly set (editorial overrides survive re-publish). Gateway feed route emits `sizeTier`. `ArticleCard` branches headline size (30/22/20px) and skips excerpt+tags for briefs; new `twoUp` prop shrinks byline/action to 10.5px and drops Quote/Bookmark/Share. `FeedView.layoutBlocks()` pairs adjacent briefs two-up (40px gutter) with a 72px zone-break before each contiguous run.
 
-*Third-and-three-quarters: reading-history resumption.* ⏳ TODO — Build `(user_id, article_id, scroll_ratio, updated_at)` table and reader-page snapshot-and-restore. Note: bookmark button has not yet been removed, so the window-of-no-mechanism risk from the original sequencing doesn't apply yet.
+*Third-and-three-quarters: reading-history resumption.* ✅ SHIPPED — Migration 069 (`reading_positions` table + `always_open_articles_at_top` preference). Gateway `PUT /reading-positions/:nostrEventId` (upsert), `GET /reading-positions/:nostrEventId`, `GET/PUT /me/reading-preferences`. Client `useReadingPosition` hook wired into `ArticleReader` — debounced scroll snapshot (~500ms), `pagehide`/`visibilitychange` flush via `fetch keepalive`, 10% grace-zone skip, tail-of-article skip. Settings page gains a "Reading preferences" section with the always-open-at-top toggle. Bookmark button retained for now.
 
 *Fourth: the playscript thread treatment.* ⏳ TODO — Rewrite `ReplyItem.tsx` with flat speaker-line structure. Ship behind feature flag recommended.
 

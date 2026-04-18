@@ -574,6 +574,37 @@ export const readingHistory = {
 }
 
 // =============================================================================
+// Reading positions (per-article scroll resumption)
+// =============================================================================
+
+export interface ReadingPosition {
+  scrollRatio: number
+  updatedAt: string
+}
+
+export const readingPositions = {
+  get: (nostrEventId: string) =>
+    request<{ position: ReadingPosition | null }>(`/reading-positions/${nostrEventId}`),
+
+  upsert: (nostrEventId: string, scrollRatio: number) =>
+    request<{ ok: boolean }>(`/reading-positions/${nostrEventId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ scrollRatio }),
+    }),
+}
+
+export const readingPreferences = {
+  get: () =>
+    request<{ alwaysOpenAtTop: boolean }>('/me/reading-preferences'),
+
+  update: (alwaysOpenAtTop: boolean) =>
+    request<{ ok: boolean; alwaysOpenAtTop: boolean }>('/me/reading-preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ alwaysOpenAtTop }),
+    }),
+}
+
+// =============================================================================
 // Notifications
 // =============================================================================
 

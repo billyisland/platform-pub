@@ -14,6 +14,7 @@ import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
 import { ForAllMark } from '../icons/ForAllMark'
 import { articles as articlesApi, giftLinks } from '../../lib/api'
+import { useReadingPosition } from '../../hooks/useReadingPosition'
 import type { ArticleEvent } from '../../lib/ndk'
 
 interface ArticleReaderProps {
@@ -64,6 +65,8 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
 
   const isOwnContent = user?.id === writerId
   const articleBodyRef = useRef<HTMLDivElement>(null)
+
+  useReadingPosition({ nostrEventId: article.id, enabled: !!user })
 
   const heroImage = extractHeroImage(article.content)
   const contentWithoutHero = heroImage ? stripHeroImage(article.content, heroImage) : article.content
