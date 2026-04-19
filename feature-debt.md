@@ -113,7 +113,7 @@ These endpoints are fully wired but have no way to trigger them from the fronten
 
 ~~Gift link frontend~~ — **done:** dashboard GiftLinksPanel (create/list/revoke per article in Articles tab) + "Gift link" option in ShareButton dropdown.
 
-~~DM pricing / anti-spam settings~~ — **done:** GET/PUT `/settings/dm-pricing` + per-user override endpoints. Moved from dashboard settings tab to `/social` page (v5.14.0 settings rationalisation).
+~~DM pricing / anti-spam settings~~ — **done:** GET/PUT `/settings/dm-pricing` + per-user override endpoints. Moved from dashboard settings tab to `/social` page (v5.14.0 settings rationalisation). **Note (2026-04-19):** pricing config persists, but the send-side 402 enforcement branch was pulled in FIX-PROGRAMME §12 because no endpoint existed to take payment and unblock the send. DMs are effectively free until a charge-and-unblock endpoint is built — the stored prices will start enforcing again the day that ships.
 
 ~~Commission social features~~ — **done:** Commission button in DM thread header opens CommissionForm modal. Migration 036 adds `parent_conversation_id` to `pledge_drives`. Backend and API client pass conversation context through.
 
