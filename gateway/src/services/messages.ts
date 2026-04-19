@@ -1,4 +1,5 @@
-import { pool } from '../../shared/src/db/client.js'
+import { randomUUID } from 'node:crypto'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { signEvent, nip44Encrypt, nip44Decrypt } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import logger from '../../shared/src/lib/logger.js'
@@ -178,6 +179,11 @@ export async function loadConversationMessages(
     return { ok: false, status: 403, error: 'Not a member of this conversation' }
   }
 
+  // Group-DM shape: one logical send produces N rows (one per recipient). The
+  // outer WHERE matches any row where the viewer is sender or recipient, which
+  // for the sender's own group message hits N rows. DISTINCT ON (send_id)
+  // collapses that to one row per logical send, preferring the row addressed
+  // to the viewer so their key can decrypt content_enc via NIP-44.
   const params: any[] = [conversationId, userId, limit]
   let whereClause = 'dm.conversation_id = $1 AND (dm.recipient_id = $2 OR dm.sender_id = $2)'
   if (before) {
@@ -202,25 +208,31 @@ export async function loadConversationMessages(
     like_count: string
     liked_by_me: boolean
   }>(
-    `SELECT dm.id, dm.sender_id, sa.username AS sender_username,
-            sa.display_name AS sender_display_name,
-            sa.nostr_pubkey AS sender_pubkey,
-            ra.nostr_pubkey AS recipient_pubkey,
-            dm.content_enc, dm.reply_to_id, dm.read_at, dm.created_at,
-            rsa.username AS reply_to_sender_username,
-            rdm.content_enc AS reply_to_content_enc,
-            CASE WHEN rdm.sender_id = $2 THEN rra.nostr_pubkey ELSE rsa2.nostr_pubkey END AS reply_to_counterparty_pubkey,
-            (SELECT COUNT(*) FROM dm_likes dl WHERE dl.message_id = dm.id) AS like_count,
-            EXISTS(SELECT 1 FROM dm_likes dl WHERE dl.message_id = dm.id AND dl.user_id = $2) AS liked_by_me
-     FROM direct_messages dm
-     JOIN accounts sa ON sa.id = dm.sender_id
-     JOIN accounts ra ON ra.id = dm.recipient_id
-     LEFT JOIN direct_messages rdm ON rdm.id = dm.reply_to_id
-     LEFT JOIN accounts rsa ON rsa.id = rdm.sender_id
-     LEFT JOIN accounts rra ON rra.id = rdm.recipient_id
-     LEFT JOIN accounts rsa2 ON rsa2.id = rdm.sender_id
-     WHERE ${whereClause}
-     ORDER BY dm.created_at DESC
+    `SELECT * FROM (
+       SELECT DISTINCT ON (dm.send_id)
+              dm.id, dm.sender_id, sa.username AS sender_username,
+              sa.display_name AS sender_display_name,
+              sa.nostr_pubkey AS sender_pubkey,
+              ra.nostr_pubkey AS recipient_pubkey,
+              dm.content_enc, dm.reply_to_id, dm.read_at, dm.created_at,
+              rsa.username AS reply_to_sender_username,
+              rdm.content_enc AS reply_to_content_enc,
+              CASE WHEN rdm.sender_id = $2 THEN rra.nostr_pubkey ELSE rsa2.nostr_pubkey END AS reply_to_counterparty_pubkey,
+              (SELECT COUNT(*) FROM dm_likes dl WHERE dl.message_id = dm.id) AS like_count,
+              EXISTS(SELECT 1 FROM dm_likes dl WHERE dl.message_id = dm.id AND dl.user_id = $2) AS liked_by_me
+       FROM direct_messages dm
+       JOIN accounts sa ON sa.id = dm.sender_id
+       JOIN accounts ra ON ra.id = dm.recipient_id
+       LEFT JOIN direct_messages rdm ON rdm.id = dm.reply_to_id
+       LEFT JOIN accounts rsa ON rsa.id = rdm.sender_id
+       LEFT JOIN accounts rra ON rra.id = rdm.recipient_id
+       LEFT JOIN accounts rsa2 ON rsa2.id = rdm.sender_id
+       WHERE ${whereClause}
+       ORDER BY dm.send_id,
+                CASE WHEN dm.recipient_id = $2 THEN 0 ELSE 1 END,
+                dm.id
+     ) m
+     ORDER BY m.created_at DESC
      LIMIT $3`,
     params
   )
@@ -258,7 +270,6 @@ export async function loadConversationMessages(
 export type SendMessageResult =
   | { ok: true; data: { messageIds: string[] } }
   | { ok: false; status: 403 | 400; error: string }
-  | { ok: false; status: 402; error: 'dm_payment_required'; pricePence: number; message: string }
 
 export async function sendMessage(
   conversationId: string,
@@ -293,51 +304,48 @@ export async function sendMessage(
     return { ok: false, status: 403, error: 'You are blocked by one or more recipients' }
   }
 
-  // DM pricing: reject if any recipient charges. Full per-recipient charging is a fast-follow.
-  for (const recipientId of recipientIds) {
-    const pricing = await getDmPrice(recipientId, senderId)
-    if (pricing > 0) {
-      return {
-        ok: false,
-        status: 402,
-        error: 'dm_payment_required',
-        pricePence: pricing,
-        message: 'This user requires payment to receive DMs.',
-      }
-    }
-  }
-
   const pubkeyRows = await pool.query<{ id: string; nostr_pubkey: string }>(
     'SELECT id, nostr_pubkey FROM accounts WHERE id = ANY($1)',
     [recipientIds]
   )
   const pubkeyMap = new Map(pubkeyRows.rows.map(r => [r.id, r.nostr_pubkey]))
 
-  const messageIds: string[] = []
-  for (const recipientId of recipientIds) {
-    const recipientPubkey = pubkeyMap.get(recipientId)
-    if (!recipientPubkey) {
-      logger.error({ recipientId }, 'Recipient has no pubkey — skipping')
-      continue
+  // One send_id per logical send, shared across all N per-recipient rows, so
+  // the sender's own view can DISTINCT ON (send_id) and see their message
+  // once rather than N times. All INSERTs + the conversation bump go in a
+  // single transaction so a partial send never leaves some recipients with
+  // the message and others without.
+  const sendId = randomUUID()
+  const messageIds = await withTransaction(async (client) => {
+    const ids: string[] = []
+    for (const recipientId of recipientIds) {
+      const recipientPubkey = pubkeyMap.get(recipientId)
+      if (!recipientPubkey) {
+        logger.error({ recipientId }, 'Recipient has no pubkey — skipping')
+        continue
+      }
+
+      const { ciphertext } = await nip44Encrypt(senderId, recipientPubkey, content)
+
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO direct_messages
+           (conversation_id, sender_id, recipient_id, content_enc, reply_to_id, send_id)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [conversationId, senderId, recipientId, ciphertext, replyToId, sendId]
+      )
+      ids.push(result.rows[0].id)
     }
 
-    const { ciphertext } = await nip44Encrypt(senderId, recipientPubkey, content)
-
-    const result = await pool.query<{ id: string }>(
-      `INSERT INTO direct_messages (conversation_id, sender_id, recipient_id, content_enc, reply_to_id)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [conversationId, senderId, recipientId, ciphertext, replyToId]
+    await client.query(
+      'UPDATE conversations SET last_message_at = now() WHERE id = $1',
+      [conversationId]
     )
-    messageIds.push(result.rows[0].id)
-  }
 
-  await pool.query(
-    'UPDATE conversations SET last_message_at = now() WHERE id = $1',
-    [conversationId]
-  )
+    return ids
+  })
 
-  publishNip17Async(senderId, conversationId).catch(err => {
-    logger.error({ err, conversationId }, 'NIP-17 publish failed (non-fatal)')
+  publishConversationPulse(senderId, conversationId).catch(err => {
+    logger.error({ err, conversationId }, 'Conversation-pulse publish failed (non-fatal)')
   })
 
   return { ok: true, data: { messageIds } }
@@ -527,27 +535,15 @@ export async function removeDmPriceOverride(ownerId: string, targetUserId: strin
   )
 }
 
-// -----------------------------------------------------------------------------
-// Internal helpers
-// -----------------------------------------------------------------------------
-
-async function getDmPrice(recipientId: string, senderId: string): Promise<number> {
-  const specific = await pool.query<{ price_pence: number }>(
-    'SELECT price_pence FROM dm_pricing WHERE owner_id = $1 AND target_id = $2',
-    [recipientId, senderId]
-  )
-  if (specific.rows.length > 0) return specific.rows[0].price_pence
-
-  const defaultRate = await pool.query<{ price_pence: number }>(
-    'SELECT price_pence FROM dm_pricing WHERE owner_id = $1 AND target_id IS NULL',
-    [recipientId]
-  )
-  if (defaultRate.rows.length > 0) return defaultRate.rows[0].price_pence
-
-  return 0
-}
-
-async function publishNip17Async(senderId: string, conversationId: string): Promise<void> {
+// Publishes a "conversation pulse" — an empty kind-14 carrying only the
+// internal conversation id. This is NOT NIP-17. Real NIP-17 requires a
+// kind-13 seal around the content and a kind-1059 gift-wrap per recipient
+// (content remains encrypted at rest on the relay). The pulse exists only
+// so clients watching the relay can see "this conversation had activity at
+// time T" without content; real message content lives in `direct_messages`
+// as NIP-44 ciphertexts. If/when proper gift-wrap ships it should be a
+// separate function — do not expand this one.
+async function publishConversationPulse(senderId: string, conversationId: string): Promise<void> {
   try {
     const event = await signEvent(senderId, {
       kind: 14,
@@ -556,8 +552,8 @@ async function publishNip17Async(senderId: string, conversationId: string): Prom
       created_at: Math.floor(Date.now() / 1000),
     })
     await publishToRelay(event as any)
-    logger.debug({ conversationId, eventId: event.id }, 'NIP-17 event published')
+    logger.debug({ conversationId, eventId: event.id }, 'Conversation pulse published')
   } catch (err) {
-    logger.error({ err, conversationId }, 'Failed to publish NIP-17 event')
+    logger.error({ err, conversationId }, 'Failed to publish conversation pulse')
   }
 }

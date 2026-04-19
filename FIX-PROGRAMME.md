@@ -23,6 +23,19 @@ starts.
 
 ## Progress
 
+- **2026-04-19** — Day 2 remainder shipped: §11 (group-DM duplicates
+  confirmed; migration 073 adds `send_id UUID` to `direct_messages`,
+  `sendMessage` emits one UUID per logical send across all N rows and
+  wraps the inserts + conversation bump in a transaction,
+  `loadConversationMessages` uses `DISTINCT ON (send_id)` preferring the
+  row addressed to the viewer so NIP-44 decryption stays correct).
+  §12 (pulled the DM 402 path entirely — removed `dm_payment_required`
+  branch from `sendMessage`, the route handler, and `MessageThread.tsx`;
+  `dm_pricing` table + admin CRUD kept so config persists for when a real
+  charge-and-unblock endpoint ships; dead `getDmPrice` helper removed).
+  §5 (renamed `publishNip17Async` → `publishConversationPulse` with a
+  docstring explaining it is a conversation-activity beacon, not real
+  NIP-17; real gift-wrap remains a separate, deferred feature).
 - **2026-04-19** — Day 2 P0 Stripe orphans shipped: §3 (writer payout split
   into reserve→Stripe→complete with stable idempotency key `payout-${payoutId}`;
   new `resumePendingWriterPayouts` recovers crashed mid-flight payouts on the
@@ -33,8 +46,7 @@ starts.
   in finalisation) and, as a bonus, gives KYC-waiting splits a retry
   mechanism — previously they sat pending forever with no path forward. No
   migrations: schema already allowed `stripe_transfer_id NULL` and
-  `'pending'` status for both tables. Still TODO for Day 2: §11 group-DM
-  duplicate verify, §12 DM 402 decision, §5 NIP-17 naming decision.
+  `'pending'` status for both tables.
 - **2026-04-19** — Day 1 P0 shipped: §1 (scheduler vault ordering), §2 (Stripe
   webhook `processed_at` nullable dedup), §7 (`recordSubscriptionRead` wrapped
   in transaction), §8 (await the expiry-warning insert), §9 (new

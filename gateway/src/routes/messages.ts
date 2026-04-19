@@ -116,16 +116,7 @@ export async function messageRoutes(app: FastifyInstance) {
         parsed.data.content,
         parsed.data.replyToId ?? null
       )
-      if (!result.ok) {
-        if (result.status === 402) {
-          return reply.status(402).send({
-            error: result.error,
-            pricePence: result.pricePence,
-            message: result.message,
-          })
-        }
-        return reply.status(result.status).send({ error: result.error })
-      }
+      if (!result.ok) return sendServiceError(reply, result)
       return reply.status(201).send(result.data)
     }
   )

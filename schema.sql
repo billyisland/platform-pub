@@ -925,6 +925,10 @@ CREATE TABLE direct_messages (
   content_enc      TEXT NOT NULL,  -- NIP-44 encrypted to recipient's pubkey
   nostr_event_id   TEXT UNIQUE,
   reply_to_id      UUID REFERENCES direct_messages(id) ON DELETE SET NULL,
+  -- send_id groups the N per-recipient rows produced by a single logical
+  -- send. Read path uses DISTINCT ON (send_id) so the sender of a group DM
+  -- doesn't see their own message once per recipient.
+  send_id          UUID NOT NULL DEFAULT gen_random_uuid(),
   read_at          TIMESTAMPTZ,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -933,6 +937,7 @@ CREATE INDEX idx_dm_conversation ON direct_messages(conversation_id, created_at 
 CREATE INDEX idx_dm_sender ON direct_messages(sender_id);
 CREATE INDEX idx_dm_recipient ON direct_messages(recipient_id);
 CREATE INDEX idx_dm_reply_to ON direct_messages(reply_to_id) WHERE reply_to_id IS NOT NULL;
+CREATE INDEX idx_dm_send_id ON direct_messages (send_id);
 
 CREATE TABLE dm_pricing (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

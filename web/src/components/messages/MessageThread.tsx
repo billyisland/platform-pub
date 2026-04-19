@@ -38,7 +38,6 @@ export function MessageThread({
   const [loadingMore, setLoadingMore] = useState(false)
   const [content, setContent] = useState('')
   const [sending, setSending] = useState(false)
-  const [dmPriceError, setDmPriceError] = useState<number | null>(null)
   const [replyTo, setReplyTo] = useState<DecryptedMessage | null>(null)
   const [showCommission, setShowCommission] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -226,7 +225,6 @@ export function MessageThread({
     setReplyTo(null)
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setSending(true)
-    setDmPriceError(null)
 
     try {
       const result = await messagesApi.send(conversationId, finalContent, replyToId)
@@ -242,9 +240,6 @@ export function MessageThread({
       setMsgs(prev => prev.filter(m => m.id !== optimisticId))
       setContent(finalContent) // Restore the text so user doesn't lose it
       if (replyToId && replyTo) setReplyTo(replyTo)
-      if (err?.status === 402) {
-        setDmPriceError(err.body?.pricePence ?? 0)
-      }
     } finally {
       setSending(false)
     }
@@ -422,15 +417,6 @@ export function MessageThread({
         )}
         <div ref={bottomRef} />
       </div>
-
-      {/* DM pricing warning */}
-      {dmPriceError !== null && (
-        <div className="px-4 py-2 bg-grey-100">
-          <p className="text-[13px] font-sans text-crimson">
-            This user charges £{(dmPriceError / 100).toFixed(2)} for DMs. Send anyway?
-          </p>
-        </div>
-      )}
 
       {/* Reply preview bar */}
       {replyTo && (
