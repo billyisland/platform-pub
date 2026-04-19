@@ -392,7 +392,7 @@ CREATE TABLE subscription_nudge_log (
 CREATE TABLE subscription_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
-  event_type TEXT NOT NULL CHECK (event_type IN ('subscription_charge', 'subscription_earning', 'subscription_read')),
+  event_type TEXT NOT NULL CHECK (event_type IN ('subscription_charge', 'subscription_earning', 'subscription_read', 'expiry_warning_sent')),
   reader_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   writer_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   article_id UUID REFERENCES articles(id),
@@ -1171,7 +1171,11 @@ CREATE INDEX idx_pub_payout_splits_account ON publication_payout_splits (account
 CREATE TABLE stripe_webhook_events (
   event_id TEXT PRIMARY KEY,
   event_type TEXT NOT NULL,
-  processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- NULL until the handler has run to completion. Dedup checks
+  -- processed_at IS NOT NULL so a crashed handler is re-attempted on
+  -- Stripe's next retry rather than silently acked.
+  processed_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_stripe_webhook_events_processed

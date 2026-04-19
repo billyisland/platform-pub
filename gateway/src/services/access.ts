@@ -1,4 +1,4 @@
-import { pool } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
 
 // =============================================================================
 // Article Access Checker
@@ -103,21 +103,21 @@ export async function recordSubscriptionRead(
   writerId: string,
   subscriptionId: string,
 ): Promise<void> {
-  // Record permanent unlock
-  await pool.query(
-    `INSERT INTO article_unlocks (reader_id, article_id, unlocked_via, subscription_id)
-     VALUES ($1, $2, 'subscription', $3)
-     ON CONFLICT (reader_id, article_id) DO NOTHING`,
-    [readerId, articleId, subscriptionId]
-  )
+  await withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO article_unlocks (reader_id, article_id, unlocked_via, subscription_id)
+       VALUES ($1, $2, 'subscription', $3)
+       ON CONFLICT (reader_id, article_id) DO NOTHING`,
+      [readerId, articleId, subscriptionId]
+    )
 
-  // Log zero-cost subscription read event
-  await pool.query(
-    `INSERT INTO subscription_events
-       (subscription_id, event_type, reader_id, writer_id, article_id, amount_pence, description)
-     VALUES ($1, 'subscription_read', $2, $3, $4, 0, 'Article read via subscription')`,
-    [subscriptionId, readerId, writerId, articleId]
-  )
+    await client.query(
+      `INSERT INTO subscription_events
+         (subscription_id, event_type, reader_id, writer_id, article_id, amount_pence, description)
+       VALUES ($1, 'subscription_read', $2, $3, $4, 0, 'Article read via subscription')`,
+      [subscriptionId, readerId, writerId, articleId]
+    )
+  })
 }
 
 // =============================================================================

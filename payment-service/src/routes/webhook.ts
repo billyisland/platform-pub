@@ -50,29 +50,37 @@ export async function webhookRoutes(app: FastifyInstance) {
     }
 
     try {
-      // Deduplicate: skip events we've already processed successfully.
-      // Stripe guarantees at-least-once delivery, so the same event can
-      // arrive multiple times.
-      const { rowCount } = await pool.query(
+      // Claim the event: insert a receipt row (processed_at stays NULL) or
+      // read an existing one. If processed_at IS NOT NULL the handler has
+      // already completed for this event — skip. If NULL, either this is a
+      // fresh event or a prior attempt crashed mid-handler, and we should
+      // run the handler (handlers are expected to be idempotent because
+      // Stripe delivers at least once). The processed_at timestamp is set
+      // only after the handler returns successfully, so a crash between
+      // claim and completion leaves the row claimable by the next retry.
+      const { rows } = await pool.query<{ processed_at: Date | null }>(
         `INSERT INTO stripe_webhook_events (event_id, event_type)
          VALUES ($1, $2)
-         ON CONFLICT (event_id) DO NOTHING`,
+         ON CONFLICT (event_id) DO UPDATE SET event_type = stripe_webhook_events.event_type
+         RETURNING processed_at`,
         [event.id, event.type]
       )
-      if (rowCount === 0) {
+      if (rows[0].processed_at !== null) {
         logger.info({ eventId: event.id }, 'Duplicate webhook event — skipping')
         return reply.status(200).send({ received: true })
       }
 
       await handleStripeEvent(event)
+
+      await pool.query(
+        `UPDATE stripe_webhook_events SET processed_at = now() WHERE event_id = $1`,
+        [event.id]
+      )
       return reply.status(200).send({ received: true })
     } catch (err) {
-      // Roll back the dedup record so Stripe can retry this event
-      await pool.query(
-        'DELETE FROM stripe_webhook_events WHERE event_id = $1',
-        [event.id]
-      ).catch(() => {}) // best-effort cleanup
-      // Return 500 so Stripe retries — do not ack events we failed to process
+      // Leave processed_at NULL so Stripe's retry can re-attempt. The claim
+      // row stays as proof of receipt; only the completion marker is
+      // conditional.
       logger.error({ err, eventType: event.type, eventId: event.id }, 'Webhook handler failed')
       return reply.status(500).send({ error: 'Processing failed' })
     }

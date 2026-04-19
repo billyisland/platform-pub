@@ -130,35 +130,6 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
 
   const dTag = draft.nostr_d_tag ?? generateDTag(draft.title || 'untitled')
   const wordCount = fullContent.split(/\s+/).filter(Boolean).length
-
-  // Build NIP-23 event (v1 — free content only for paywalled, full for free)
-  const tags: string[][] = [
-    ['d', dTag],
-    ['title', draft.title || 'Untitled'],
-    ['published_at', String(Math.floor(Date.now() / 1000))],
-  ]
-
-  if (isPaywalled) {
-    tags.push(
-      ['price', String(draft.price_pence), 'GBP'],
-      ['gate', String(draft.gate_position_pct ?? 50)],
-    )
-  }
-
-  const eventContent = isPaywalled ? freeContent : fullContent
-
-  // Sign with the writer's custodial key
-  const signed = await signEvent(draft.writer_id, {
-    kind: 30023,
-    content: eventContent,
-    tags,
-    created_at: Math.floor(Date.now() / 1000),
-  }, 'account')
-
-  // Publish to relay
-  await publishToRelay(signed as any)
-
-  // Index in DB
   const slug = (draft.title || 'untitled')
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
@@ -166,6 +137,37 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
     .replace(/-+/g, '-')
     .slice(0, 120)
 
+  const baseTags: string[][] = [
+    ['d', dTag],
+    ['title', draft.title || 'Untitled'],
+    ['published_at', String(Math.floor(Date.now() / 1000))],
+  ]
+
+  if (isPaywalled) {
+    baseTags.push(
+      ['price', String(draft.price_pence), 'GBP'],
+      ['gate', String(draft.gate_position_pct ?? 50)],
+    )
+  }
+
+  const eventContent = isPaywalled ? freeContent : fullContent
+
+  // Sign v1. For free articles this is the canonical event. For paywalled
+  // articles v1 is a template used only to mint an event id that the key
+  // service accepts as the ownership-check target — v1 is never published,
+  // because a paywalled event without a payload tag is a broken reader state.
+  const v1 = await signEvent(draft.writer_id, {
+    kind: 30023,
+    content: eventContent,
+    tags: baseTags,
+    created_at: Math.floor(Date.now() / 1000),
+  }, 'account')
+
+  // Upsert the articles row so vault creation — which checks the writer
+  // owns a row with this nostr_event_id — has something to match against.
+  // If any subsequent step throws, the outer catch retains the draft for
+  // retry; the upsert is idempotent and retries converge via the key
+  // service's re-publish path (which reuses the existing content key).
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO articles (
        writer_id, nostr_event_id, nostr_d_tag, title, slug,
@@ -186,7 +188,7 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
      RETURNING id`,
     [
       draft.writer_id,
-      signed.id,
+      v1.id,
       dTag,
       draft.title || 'Untitled',
       slug,
@@ -197,47 +199,36 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
       isPaywalled ? (draft.gate_position_pct ?? null) : null,
     ],
   )
-
   const articleId = rows[0].id
 
-  // For paywalled articles: encrypt paywall body and re-publish with payload tag
   if (isPaywalled && paywallContent) {
-    try {
-      const vault = await createVault(signed.id, articleId, dTag, draft, paywallContent)
+    // Build the canonical v2 (with payload tag) and publish that. v1 is
+    // discarded — it was only needed to mint an event id the key service
+    // would accept for the ownership check.
+    const vault = await createVault(v1.id, articleId, dTag, draft, paywallContent)
 
-      // Build v2 with payload tag
-      const v2Tags = [...tags, ['payload', vault.ciphertext, vault.algorithm]]
-      const v2 = await signEvent(draft.writer_id, {
-        kind: 30023,
-        content: freeContent,
-        tags: v2Tags,
-        created_at: (signed as any).created_at + 1,
-      }, 'account')
+    const v2 = await signEvent(draft.writer_id, {
+      kind: 30023,
+      content: freeContent,
+      tags: [...baseTags, ['payload', vault.ciphertext, vault.algorithm]],
+      created_at: (v1 as any).created_at + 1,
+    }, 'account')
 
-      await publishToRelay(v2 as any)
+    await publishToRelay(v2 as any)
 
-      // Re-index with v2 event ID
-      await pool.query(
-        'UPDATE articles SET nostr_event_id = $1 WHERE id = $2',
-        [v2.id, articleId],
-      )
-    } catch (err) {
-      // v1 is already published and indexed — paywall encryption failed but
-      // the article is live as free content. Log and continue.
-      logger.error(
-        { err, draftId: draft.id, articleId },
-        'Scheduler: vault encryption failed — article published without paywall',
-      )
-    }
+    await pool.query(
+      'UPDATE articles SET nostr_event_id = $1 WHERE id = $2',
+      [v2.id, articleId],
+    )
+  } else {
+    await publishToRelay(v1 as any)
   }
 
-  // Send notification emails
   sendPublishNotifications(
     draft.writer_id, articleId, draft.title || 'Untitled',
     dTag, undefined, eventContent,
   ).catch(err => logger.error({ err, draftId: draft.id }, 'Scheduler: publish email failed'))
 
-  // Check drive fulfilment
   checkAndTriggerDriveFulfilment(draft.writer_id, articleId, draft.id).catch(err =>
     logger.error({ err, draftId: draft.id }, 'Scheduler: drive fulfilment check failed'),
   )

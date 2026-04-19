@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool, withTransaction } from '../../shared/src/db/client.js'
+import { pool, withTransaction, loadConfig } from '../../shared/src/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
 import { publishSubscriptionEvent } from '../lib/nostr-publisher.js'
 import {
@@ -1085,8 +1085,7 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
        AND NOT EXISTS (
          SELECT 1 FROM subscription_events se
          WHERE se.subscription_id = s.id
-           AND se.event_type = 'subscription_charge'
-           AND se.description = 'Expiry warning sent'
+           AND se.event_type = 'expiry_warning_sent'
            AND se.created_at > now() - INTERVAL '4 days'
        )`
   )
@@ -1095,12 +1094,13 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
     sendSubscriptionExpiryWarningEmail(sub.reader_id, sub.writer_id, sub.current_period_end).catch(err =>
       logger.warn({ err, subscriptionId: sub.id }, 'Expiry warning email failed')
     )
-    // Mark that we sent the warning (prevents re-sending)
-    pool.query(
+    // Mark that we sent the warning (prevents re-sending). Await: a missing
+    // insert after a successful email send means the next cycle re-sends.
+    await pool.query(
       `INSERT INTO subscription_events (subscription_id, event_type, reader_id, writer_id, amount_pence, description)
-       VALUES ($1, 'subscription_charge', $2, $3, 0, 'Expiry warning sent')`,
+       VALUES ($1, 'expiry_warning_sent', $2, $3, 0, 'Expiry warning sent')`,
       [sub.id, sub.reader_id, sub.writer_id]
-    ).catch(err => logger.warn({ err }, 'Failed to insert expiry warning subscription_event'))
+    )
   }
 
   return processed
@@ -1115,8 +1115,10 @@ async function logSubscriptionCharge(
   periodStart: Date,
   periodEnd: Date,
 ) {
-  const platformFeePence = Math.round(pricePence * 0.08)
+  const { platformFeeBps } = await loadConfig()
+  const platformFeePence = Math.round((pricePence * platformFeeBps) / 10000)
   const writerEarningPence = pricePence - platformFeePence
+  const feePct = (platformFeeBps / 100).toFixed(platformFeeBps % 100 === 0 ? 0 : 2)
 
   // Debit event for reader
   await client.query(
@@ -1133,6 +1135,6 @@ async function logSubscriptionCharge(
        (subscription_id, event_type, reader_id, writer_id, amount_pence, period_start, period_end, description)
      VALUES ($1, 'subscription_earning', $2, $3, $4, $5, $6, $7)`,
     [subscriptionId, readerId, writerId, writerEarningPence, periodStart, periodEnd,
-     `Subscriber income (after 8% fee)`]
+     `Subscriber income (after ${feePct}% fee)`]
   )
 }
