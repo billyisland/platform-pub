@@ -23,6 +23,18 @@ starts.
 
 ## Progress
 
+- **2026-04-19** — Day 2 P0 Stripe orphans shipped: §3 (writer payout split
+  into reserve→Stripe→complete with stable idempotency key `payout-${payoutId}`;
+  new `resumePendingWriterPayouts` recovers crashed mid-flight payouts on the
+  next cycle), §4 (publication payout same shape, N-multiplied — per-split
+  `pub-split-${payoutId}-${accountId}` stable keys, per-split independent
+  status updates so one Stripe failure no longer rolls back the others). §4
+  subsumes §33 (dead "mark completed" block replaced by deterministic flip
+  in finalisation) and, as a bonus, gives KYC-waiting splits a retry
+  mechanism — previously they sat pending forever with no path forward. No
+  migrations: schema already allowed `stripe_transfer_id NULL` and
+  `'pending'` status for both tables. Still TODO for Day 2: §11 group-DM
+  duplicate verify, §12 DM 402 decision, §5 NIP-17 naming decision.
 - **2026-04-19** — Day 1 P0 shipped: §1 (scheduler vault ordering), §2 (Stripe
   webhook `processed_at` nullable dedup), §7 (`recordSubscriptionRead` wrapped
   in transaction), §8 (await the expiry-warning insert), §9 (new
