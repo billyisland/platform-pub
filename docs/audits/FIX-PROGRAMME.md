@@ -23,6 +23,36 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — §61 gate-pass orchestration shipped. New
+  `gateway/src/services/article-access/` directory with three modules:
+  `access-check.ts` (the `checkArticleAccess` function + `AccessCheckResult`
+  interface, lifted unchanged from the old `services/access.ts`),
+  `unlock-records.ts` (`recordSubscriptionRead` + `recordPurchaseUnlock`,
+  also lifted unchanged), and `gate-pass.ts` (the new `performGatePass`
+  orchestrator). Barrel `index.ts` re-exports `checkArticleAccess` (used
+  by `routes/replies.ts`) and `performGatePass` (used by the route
+  handler). Old `services/access.ts` deleted; gateway test path updated
+  to import directly from `./access-check.js` so the orchestrator's
+  module-load `requireEnv` calls don't fire in unit tests.
+  `routes/articles/gate-pass.ts` is now a thin HTTP wrapper: it builds
+  the input, calls `performGatePass`, and a `switch` over the
+  discriminated `GatePassResult` translates each `kind` to the same
+  status + body the inline handler used to send (200/400/402/403/404/
+  500/502). The orchestrator catches `ECONNREFUSED`/`ENOTFOUND`/
+  `fetch failed`-shape errors itself and returns
+  `{ kind: 'service_unreachable' }`; anything else propagates so the
+  route's outer try/catch can log + return 500. Side cleanups:
+  `READER_HASH_KEY` and `INTERNAL_SERVICE_TOKEN` dropped from
+  `routes/articles/shared.ts` (only the orchestrator needs them now —
+  `PAYMENT_SERVICE_URL` stays because `routes/articles/earnings.ts`
+  still uses it for proxying); the get-or-create-tab dance and the
+  HMAC reader-pubkey-hash computation moved into private helpers
+  (`getOrCreateTab`, `isNetworkError`) inside `gate-pass.ts`; the
+  key-service POST collapsed into one `fetchContentKey` helper used
+  by both the free-access and post-payment branches (was duplicated
+  inline before). CLAUDE.md "Article access logic lives in…" pointer
+  updated to the new directory layout. Gateway 24/24 tests + web
+  75/75 tests + build green; knip clean.
 - **2026-04-20** — stragglers §21, §36, §57 shipped; §37 deferred.
   §21 — `sendMessage` now returns `{ messageIds, skippedRecipientIds }`
   instead of silently dropping recipients whose `nostr_pubkey` is null.

@@ -3,8 +3,6 @@ import logger from '@platform-pub/shared/lib/logger.js'
 
 export const KEY_SERVICE_URL = requireEnv('KEY_SERVICE_URL')
 export const PAYMENT_SERVICE_URL = requireEnv('PAYMENT_SERVICE_URL')
-export const READER_HASH_KEY = requireEnv('READER_HASH_KEY')
-export const INTERNAL_SERVICE_TOKEN = requireEnv('INTERNAL_SERVICE_TOKEN')
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 

@@ -83,7 +83,7 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Readers accumulate a tab (Stripe PaymentIntent) as they read gated articles
 - `payment-service/src/services/` contains accrual, settlement, and payout logic
 - Payouts go to writers via Stripe Connect
-- Article access logic lives in `gateway/src/services/access.ts`
+- Article access logic lives in `gateway/src/services/article-access/` (`access-check.ts`, `unlock-records.ts`, `gate-pass.ts` orchestrator + `index.ts` barrel). The `/articles/:id/gate-pass` route in `gateway/src/routes/articles/gate-pass.ts` is a thin HTTP wrapper that translates `performGatePass()`'s typed result into status codes
 
 ### Media
 - Uploaded via gateway (`gateway/src/routes/media.ts`), stored in a Docker volume, served via Nginx at `/media/`

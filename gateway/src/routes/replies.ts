@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
-import { checkArticleAccess } from '../services/access.js'
+import { checkArticleAccess } from '../services/article-access/index.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================

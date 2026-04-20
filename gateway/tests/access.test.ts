@@ -6,7 +6,7 @@ vi.mock('@platform-pub/shared/db/client.js', () => ({
   pool: { query: (...args: any[]) => mockQuery(...args) },
 }))
 
-import { checkArticleAccess } from '../src/services/access.js'
+import { checkArticleAccess } from '../src/services/article-access/access-check.js'
 
 describe('checkArticleAccess', () => {
   beforeEach(() => {

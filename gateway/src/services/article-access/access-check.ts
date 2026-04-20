@@ -1,15 +1,16 @@
-import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 
 // =============================================================================
 // Article Access Checker
 //
 // Determines whether a reader has free access to a paywalled article.
-// Checked before the payment flow in the gate-pass handler.
+// Checked before the payment flow in the gate-pass orchestrator.
 //
 // Free access granted if:
 //   1. Reader is the article's author (own content)
-//   2. Reader has a permanent unlock (previous purchase or subscription read)
-//   3. Reader has an active/valid subscription to the writer
+//   2. Reader is a member of the article's Publication
+//   3. Reader has a permanent unlock (previous purchase or subscription read)
+//   4. Reader has an active/valid subscription to the writer/publication
 //
 // Returns { hasAccess: true, reason: '...' } or { hasAccess: false }
 // =============================================================================
@@ -89,49 +90,4 @@ export async function checkArticleAccess(
   }
 
   return { hasAccess: false }
-}
-
-// =============================================================================
-// Record a subscription read — called when a subscriber accesses an article
-// they haven't unlocked yet. Logs the zero-cost read and creates a permanent
-// unlock record.
-// =============================================================================
-
-export async function recordSubscriptionRead(
-  readerId: string,
-  articleId: string,
-  writerId: string,
-  subscriptionId: string,
-): Promise<void> {
-  await withTransaction(async (client) => {
-    await client.query(
-      `INSERT INTO article_unlocks (reader_id, article_id, unlocked_via, subscription_id)
-       VALUES ($1, $2, 'subscription', $3)
-       ON CONFLICT (reader_id, article_id) DO NOTHING`,
-      [readerId, articleId, subscriptionId]
-    )
-
-    await client.query(
-      `INSERT INTO subscription_events
-         (subscription_id, event_type, reader_id, writer_id, article_id, amount_pence, description)
-       VALUES ($1, 'subscription_read', $2, $3, $4, 0, 'Article read via subscription')`,
-      [subscriptionId, readerId, writerId, articleId]
-    )
-  })
-}
-
-// =============================================================================
-// Record a purchase unlock — called after a successful gate-pass payment
-// =============================================================================
-
-export async function recordPurchaseUnlock(
-  readerId: string,
-  articleId: string,
-): Promise<void> {
-  await pool.query(
-    `INSERT INTO article_unlocks (reader_id, article_id, unlocked_via)
-     VALUES ($1, $2, 'purchase')
-     ON CONFLICT (reader_id, article_id) DO NOTHING`,
-    [readerId, articleId]
-  )
 }
