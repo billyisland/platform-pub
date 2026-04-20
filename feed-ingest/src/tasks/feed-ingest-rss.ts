@@ -2,6 +2,7 @@ import type { Task } from 'graphile-worker'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { fetchRssFeed } from '../adapters/rss.js'
+import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 
 // =============================================================================
 // feed_ingest_rss — per-source RSS fetch job
@@ -128,7 +129,7 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
           item.authorName ?? source.display_name ?? 'Unknown',
           null,
           item.title,
-          (item.contentText ?? item.summary ?? '').slice(0, 200),
+          truncatePreview(item.contentText),
           item.publishedAt,
           item.sourceItemUri,
           sourceId,

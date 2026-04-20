@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg'
 import type { NormalisedAtprotoItem } from '../adapters/atproto.js'
+import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 
 // =============================================================================
 // Shared atproto ingest write path — used by both the Jetstream listener and
@@ -83,7 +84,7 @@ export async function insertAtprotoItem(
     rows[0].id,
     source.display_name ?? 'Bluesky user',
     source.avatar_url,
-    (item.contentText ?? '').slice(0, 200),
+    truncatePreview(item.contentText),
     item.publishedAt,
     item.sourceItemUri,
     source.id,

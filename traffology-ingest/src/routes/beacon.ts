@@ -6,6 +6,7 @@ import { lookupGeo } from '../lib/geo.js'
 import { parseUA } from '../lib/ua-parser.js'
 import { touch, remove } from '../lib/concurrent-tracker.js'
 import { pool } from '@platform-pub/shared/db/client.js'
+import { requireEnv } from '@platform-pub/shared/lib/env.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -18,7 +19,7 @@ import logger from '@platform-pub/shared/lib/logger.js'
 //   unload    — final beacon on page leave
 // =============================================================================
 
-const IP_HASH_SALT = process.env.IP_HASH_SALT ?? 'traffology-default-salt'
+const IP_HASH_SALT = requireEnv('IP_HASH_SALT')
 
 function hashIp(ip: string): string {
   return crypto.createHash('sha256').update(ip + IP_HASH_SALT).digest('hex')

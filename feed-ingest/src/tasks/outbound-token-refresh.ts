@@ -95,13 +95,43 @@ export const outboundTokenRefresh: Task = async () => {
       )
       logger.debug({ did: row.external_id }, 'atproto session touched')
     } catch (err) {
-      logger.warn({ err, id: row.id, did: row.external_id }, 'atproto session restore failed; marking invalid')
-      await pool.query(
-        `UPDATE linked_accounts SET is_valid = FALSE, updated_at = now() WHERE id = $1`,
-        [row.id]
-      )
+      // Don't log the raw err — we don't want a library that one day
+      // embeds DPoP proof or access-token fragments in its error
+      // message to smuggle them into our logs.
+      const errName = err instanceof Error ? err.name : 'Unknown'
+      const errMessage = err instanceof Error ? err.message?.slice(0, 200) : String(err).slice(0, 200)
+      // A PDS outage or network blip looks identical to a revoked refresh
+      // token at the top level. Flipping is_valid on a transient 5xx
+      // prompts the user to reconnect for no reason — walk the cause chain
+      // and look for a signature of something that will clear on its own.
+      if (isTransientAtprotoError(err)) {
+        logger.warn({ errName, errMessage, id: row.id, did: row.external_id }, 'atproto session refresh hit transient error; will retry next cycle')
+      } else {
+        logger.warn({ errName, errMessage, id: row.id, did: row.external_id }, 'atproto session restore failed; marking invalid')
+        await pool.query(
+          `UPDATE linked_accounts SET is_valid = FALSE, updated_at = now() WHERE id = $1`,
+          [row.id]
+        )
+      }
     }
   }
+}
+
+const TRANSIENT_NET_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND',
+  'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT',
+])
+
+function isTransientAtprotoError(err: unknown): boolean {
+  let cur: unknown = err
+  for (let i = 0; i < 4 && cur instanceof Error; i++) {
+    const code = (cur as { code?: string }).code
+    if (typeof code === 'string' && TRANSIENT_NET_CODES.has(code)) return true
+    const statusCode = (cur as { statusCode?: number }).statusCode
+    if (typeof statusCode === 'number' && statusCode >= 500) return true
+    cur = (cur as { cause?: unknown }).cause
+  }
+  return false
 }
 
 async function loadRefreshWindowPct(): Promise<number> {

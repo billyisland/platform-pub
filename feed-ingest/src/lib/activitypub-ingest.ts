@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg'
 import type { NormalisedActivityPubItem } from '../adapters/activitypub.js'
+import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 
 // =============================================================================
 // ActivityPub dual-write — external_items + feed_items.
@@ -78,7 +79,7 @@ export async function insertActivityPubItem(
     rows[0].id,
     item.authorName ?? source.display_name ?? 'Mastodon user',
     item.authorAvatarUrl ?? source.avatar_url,
-    (item.contentText ?? '').slice(0, 200),
+    truncatePreview(item.contentText),
     item.publishedAt,
     item.sourceItemUri,
     source.id,

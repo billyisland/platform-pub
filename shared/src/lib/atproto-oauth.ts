@@ -58,7 +58,10 @@ class DbSessionStore implements NodeSavedSessionStore {
 // different gateway replica than the one that issued the authorize URL, so
 // the PKCE verifier + DPoP key must be persisted centrally.
 class DbStateStore implements NodeSavedStateStore {
-  private ttlMs = 10 * 60 * 1000
+  // 15min TTL gives a margin over the 5min prune cadence so a callback
+  // arriving right at its notional expiry can't lose to a prune that
+  // fires in the same window.
+  private ttlMs = 15 * 60 * 1000
   async get(key: string): Promise<NodeSavedState | undefined> {
     const { rows } = await pool.query<{ state_data_enc: string }>(
       'SELECT state_data_enc FROM atproto_oauth_pending_states WHERE key = $1 AND expires_at > now()',
@@ -113,7 +116,8 @@ async function buildClient(): Promise<NodeOAuthClient> {
   if (useLoopback) {
     // Loopback client: clientId is constructed from scope + redirect_uri query
     // params; no JWKS required. Use for local dev only.
-    const redirectUri = `http://127.0.0.1:3000${CALLBACK_PATH}`
+    const port = process.env.PORT ?? '3000'
+    const redirectUri = `http://127.0.0.1:${port}${CALLBACK_PATH}`
     const clientId = `http://localhost?redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(SCOPE)}`
     return new NodeOAuthClient({
       clientMetadata: {
@@ -134,6 +138,9 @@ async function buildClient(): Promise<NodeOAuthClient> {
 
   if (!privateJwkRaw) {
     throw new Error('ATPROTO_PRIVATE_JWK must be set when ATPROTO_CLIENT_BASE_URL is a public origin')
+  }
+  if (!baseUrl.startsWith('https://')) {
+    throw new Error(`ATPROTO_CLIENT_BASE_URL must use https:// in production (got: ${baseUrl})`)
   }
   const key = await JoseKey.fromJWK(privateJwkRaw, 'atproto-signing-key')
 
@@ -161,10 +168,3 @@ async function buildClient(): Promise<NodeOAuthClient> {
   })
 }
 
-export function atprotoClientMetadata(): Promise<unknown> {
-  return getAtprotoClient().then((c) => c.clientMetadata)
-}
-
-export function atprotoJwks(): Promise<unknown> {
-  return getAtprotoClient().then((c) => c.jwks)
-}

@@ -14,6 +14,7 @@ import { feedIngestActivityPub } from './tasks/feed-ingest-activitypub.js'
 import { outboundCrossPost } from './tasks/outbound-cross-post.js'
 import { outboundTokenRefresh } from './tasks/outbound-token-refresh.js'
 import { atprotoOauthStatesPrune } from './tasks/atproto-oauth-states-prune.js'
+import { activityPubInstanceHealthPrune } from './tasks/activitypub-instance-health-prune.js'
 import { resolverResultsPrune } from './tasks/resolver-results-prune.js'
 import { externalSourcesGc } from './tasks/external-sources-gc.js'
 import { feedScoresRefresh } from './tasks/feed-scores-refresh.js'
@@ -68,6 +69,8 @@ async function start() {
         '*/5 * * * * resolver_results_prune',
         // Garbage-collect orphaned external_sources — daily at 06:00 UTC
         '0 6 * * * external_sources_gc',
+        // Prune dormant activitypub_instance_health rows — weekly Sun 07:00 UTC
+        '0 7 * * 0 activitypub_instance_health_prune',
         // Refresh feed_items.score from engagement — every 5 minutes
         '*/5 * * * * feed_scores_refresh',
         // Recompute Layer 1 trust signals — daily at 01:00 UTC
@@ -91,6 +94,7 @@ async function start() {
       outbound_cross_post: outboundCrossPost,
       outbound_token_refresh: outboundTokenRefresh,
       atproto_oauth_states_prune: atprotoOauthStatesPrune,
+      activitypub_instance_health_prune: activityPubInstanceHealthPrune,
       resolver_results_prune: resolverResultsPrune,
       external_sources_gc: externalSourcesGc,
       feed_scores_refresh: feedScoresRefresh,

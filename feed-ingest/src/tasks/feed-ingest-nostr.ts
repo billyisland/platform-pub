@@ -5,6 +5,7 @@ import { nip19, verifyEvent } from 'nostr-tools'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { pinnedWebSocketOptions, type PinnedWebSocketOptions } from '@platform-pub/shared/lib/http-client.js'
+import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 
 // Reject events claiming timestamps more than this far in the future — prevents
 // a hostile relay from poisoning the cursor into year 2100.
@@ -234,7 +235,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
           normalised.authorName ?? source.display_name ?? 'Unknown',
           source.avatar_url,
           normalised.title,
-          (normalised.contentText ?? '').slice(0, 200),
+          truncatePreview(normalised.contentText),
           event.created_at,
           normalised.sourceItemUri,
           sourceId,

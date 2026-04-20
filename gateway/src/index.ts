@@ -45,7 +45,7 @@ import { externalFeedsRoutes } from './routes/external-feeds.js'
 import { linkedAccountsRoutes } from './routes/linked-accounts.js'
 import { trustRoutes } from './routes/trust.js'
 import { readingPositionRoutes } from './routes/reading-positions.js'
-import { atprotoClientMetadata, atprotoJwks } from '@platform-pub/shared/lib/atproto-oauth.js'
+import { getAtprotoClient } from '@platform-pub/shared/lib/atproto-oauth.js'
 import { publishScheduledDrafts } from './workers/scheduler.js'
 import { pool } from '@platform-pub/shared/db/client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
@@ -209,8 +209,16 @@ async function start() {
   // AT Protocol OAuth client metadata (discovered by Bluesky PDSes).
   // Mounted at the root so the canonical URL is
   //   https://${APP_URL}/.well-known/oauth-client-metadata.json
-  app.get('/.well-known/oauth-client-metadata.json', () => atprotoClientMetadata())
-  app.get('/.well-known/jwks.json', () => atprotoJwks())
+  app.get('/.well-known/oauth-client-metadata.json', async (_req, reply) => {
+    reply.type('application/json').header('Cache-Control', 'public, max-age=3600')
+    const client = await getAtprotoClient()
+    return client.clientMetadata
+  })
+  app.get('/.well-known/jwks.json', async (_req, reply) => {
+    reply.type('application/json').header('Cache-Control', 'public, max-age=3600')
+    const client = await getAtprotoClient()
+    return client.jwks
+  })
 
   // ---------------------------------------------------------------------------
   // Service proxies
@@ -237,6 +245,17 @@ async function start() {
   }
   process.on('SIGTERM', () => shutdown('SIGTERM'))
   process.on('SIGINT', () => shutdown('SIGINT'))
+
+  // Eagerly construct the AT Protocol OAuth client so a malformed
+  // ATPROTO_PRIVATE_JWK fails the boot instead of the first OAuth-dependent
+  // request. Loopback dev mode doesn't need a JWK, so this is effectively a
+  // no-op there.
+  try {
+    await getAtprotoClient()
+  } catch (err) {
+    logger.error({ err }, 'AT Protocol OAuth client failed to initialise — aborting boot')
+    throw err
+  }
 
   const port = parseInt(process.env.PORT ?? '3000', 10)
   await app.listen({ port, host: '0.0.0.0' })

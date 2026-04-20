@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import { enqueueCrossPost, enqueueNostrOutbound } from '../lib/outbound-enqueue.js'
+import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -117,7 +118,7 @@ export async function noteRoutes(app: FastifyInstance) {
           author?.display_name ?? author?.username ?? 'Unknown',
           author?.avatar_blossom_url ?? null,
           author?.username ?? null,
-          data.content.slice(0, 200),
+          truncatePreview(data.content),
           data.nostrEventId,
         ])
 

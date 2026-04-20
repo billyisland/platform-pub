@@ -119,9 +119,61 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
   `)
   const staleExternalsFixed = staleExternalResult.rowCount ?? 0
 
+  // 6–8. Repair denormalised field drift on rows that already exist. The
+  // ON CONFLICT DO NOTHING inserts above close the "missing row" gap, but
+  // if a title edit path ever misses its feed_items dual-write the row
+  // stays present with a stale title — invisible to both existence checks.
+  // These passes compare the denormalised column to the source-of-truth
+  // and rewrite only the divergent rows.
+  const articleDriftResult = await pool.query(`
+    UPDATE feed_items fi SET
+      title = a.title,
+      content_preview = LEFT(a.content_free, 200)
+    FROM articles a
+    WHERE fi.article_id = a.id
+      AND a.deleted_at IS NULL
+      AND fi.deleted_at IS NULL
+      AND (
+        fi.title IS DISTINCT FROM a.title
+        OR fi.content_preview IS DISTINCT FROM LEFT(a.content_free, 200)
+      )
+  `)
+  const articleDriftFixed = articleDriftResult.rowCount ?? 0
+
+  const noteDriftResult = await pool.query(`
+    UPDATE feed_items fi SET
+      content_preview = LEFT(n.content, 200)
+    FROM notes n
+    WHERE fi.note_id = n.id
+      AND fi.deleted_at IS NULL
+      AND fi.content_preview IS DISTINCT FROM LEFT(n.content, 200)
+  `)
+  const noteDriftFixed = noteDriftResult.rowCount ?? 0
+
+  const externalDriftResult = await pool.query(`
+    UPDATE feed_items fi SET
+      title = ei.title,
+      content_preview = LEFT(COALESCE(ei.content_text, ei.summary), 200),
+      author_name = COALESCE(ei.author_name, xs.display_name, 'Unknown'),
+      author_avatar = COALESCE(ei.author_avatar_url, xs.avatar_url)
+    FROM external_items ei
+    JOIN external_sources xs ON xs.id = ei.source_id
+    WHERE fi.external_item_id = ei.id
+      AND ei.deleted_at IS NULL
+      AND fi.deleted_at IS NULL
+      AND (
+        fi.title IS DISTINCT FROM ei.title
+        OR fi.content_preview IS DISTINCT FROM LEFT(COALESCE(ei.content_text, ei.summary), 200)
+        OR fi.author_name IS DISTINCT FROM COALESCE(ei.author_name, xs.display_name, 'Unknown')
+        OR fi.author_avatar IS DISTINCT FROM COALESCE(ei.author_avatar_url, xs.avatar_url)
+      )
+  `)
+  const externalDriftFixed = externalDriftResult.rowCount ?? 0
+
   const anyDrift =
     articlesInserted + notesInserted + externalsInserted +
-    staleArticlesFixed + staleExternalsFixed
+    staleArticlesFixed + staleExternalsFixed +
+    articleDriftFixed + noteDriftFixed + externalDriftFixed
 
   // Any non-zero case means a dual-write path leaked. Log at WARN so the
   // on-call dashboard surfaces it — reconcile existing at all is a safety
@@ -134,6 +186,9 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
         externalsInserted,
         staleArticlesFixed,
         staleExternalsFixed,
+        articleDriftFixed,
+        noteDriftFixed,
+        externalDriftFixed,
         totalDrift: anyDrift,
       },
       'feed_items reconcile repaired dual-write drift'

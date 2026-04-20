@@ -3,6 +3,7 @@ import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { generateDTag } from '@platform-pub/shared/lib/slug.js'
+import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 export { generateDTag }
 
 // =============================================================================
@@ -220,7 +221,7 @@ export async function publishToPublication(
       author?.avatar_blossom_url ?? null,
       author?.username ?? null,
       input.title,
-      input.content.slice(0, 200),
+      truncatePreview(input.content),
       signed.id,
     ])
 
@@ -345,7 +346,7 @@ export async function approveAndPublishArticle(
       authorAccount.avatar_blossom_url ?? null,
       authorAccount.username ?? null,
       article.title,
-      (article.content_free ?? '').slice(0, 200),
+      truncatePreview(article.content_free),
       signed.id,
     ])
 

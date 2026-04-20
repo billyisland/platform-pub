@@ -134,6 +134,11 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
         text,
         maxChars: cfg.mastodon_max,
         replyToStatusUri: row.action_type === 'reply' ? (row.ei_source_item_uri ?? undefined) : undefined,
+        // outbound_posts.id is stable across retries; the prior SHA of the
+        // truncated body drifted every time the user edited their draft,
+        // which let Mastodon treat post+edit+retry as two separate writes
+        // inside the 24h idempotency window.
+        idempotencyKey: row.id,
       }, creds)
       externalPostUri = result.externalPostUri
     } else if (row.protocol === 'atproto') {
@@ -210,7 +215,11 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
     const delay = cfg.retry_delay * Math.pow(2, newRetry - 1)
     await helpers.addJob('outbound_cross_post', { outboundPostId: row.id }, {
       runAt: new Date(Date.now() + delay * 1000),
-      jobKey: `outbound_cross_post_${row.id}`,
+      // Versioned jobKey — the original enqueue used the unversioned key,
+      // so if we retried with the same one, Graphile Worker's dedup would
+      // collapse the retry into the still-running original and lose the
+      // backoff delay.
+      jobKey: `outbound_cross_post_${row.id}_r${newRetry}`,
       maxAttempts: 1,
     })
     logger.info({ outboundPostId: row.id, retry: newRetry, delay, err: msg }, 'outbound cross-post retrying')

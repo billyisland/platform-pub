@@ -1,4 +1,4 @@
-import { pool } from '@platform-pub/shared/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import { publishToPublication } from '../services/publication-publisher.js'
@@ -6,6 +6,7 @@ import { sendPublishNotifications } from '@platform-pub/shared/lib/publish-email
 import { checkAndTriggerDriveFulfilment } from '../routes/drives.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { slugify, generateDTag } from '@platform-pub/shared/lib/slug.js'
+import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 
 // =============================================================================
 // Scheduled Publishing Worker
@@ -159,43 +160,81 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
     created_at: Math.floor(Date.now() / 1000),
   }, 'account')
 
-  // Upsert the articles row so vault creation — which checks the writer
-  // owns a row with this nostr_event_id — has something to match against.
-  // If any subsequent step throws, the outer catch retains the draft for
-  // retry; the upsert is idempotent and retries converge via the key
-  // service's re-publish path (which reuses the existing content key).
-  const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO articles (
-       writer_id, nostr_event_id, nostr_d_tag, title, slug,
-       content_free, word_count, tier,
-       access_mode, price_pence, gate_position_pct,
-       published_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'tier1', $8, $9, $10, now())
-     ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
-       nostr_event_id = EXCLUDED.nostr_event_id,
-       title = EXCLUDED.title,
-       slug = EXCLUDED.slug,
-       content_free = EXCLUDED.content_free,
-       word_count = EXCLUDED.word_count,
-       access_mode = EXCLUDED.access_mode,
-       price_pence = EXCLUDED.price_pence,
-       gate_position_pct = EXCLUDED.gate_position_pct,
-       published_at = now()
-     RETURNING id`,
-    [
-      draft.writer_id,
-      v1.id,
-      dTag,
+  // Upsert the articles row + dual-write to feed_items so vault creation —
+  // which checks the writer owns a row with this nostr_event_id — has
+  // something to match against, and the feed has a matching row for the
+  // unified timeline. If any subsequent step throws, the outer catch
+  // retains the draft for retry; both upserts are idempotent and retries
+  // converge via the key service's re-publish path (which reuses the
+  // existing content key).
+  const articleId = await withTransaction(async (client) => {
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO articles (
+         writer_id, nostr_event_id, nostr_d_tag, title, slug,
+         content_free, word_count, tier,
+         access_mode, price_pence, gate_position_pct,
+         published_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'tier1', $8, $9, $10, now())
+       ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
+         nostr_event_id = EXCLUDED.nostr_event_id,
+         title = EXCLUDED.title,
+         slug = EXCLUDED.slug,
+         content_free = EXCLUDED.content_free,
+         word_count = EXCLUDED.word_count,
+         access_mode = EXCLUDED.access_mode,
+         price_pence = EXCLUDED.price_pence,
+         gate_position_pct = EXCLUDED.gate_position_pct,
+         published_at = now()
+       RETURNING id`,
+      [
+        draft.writer_id,
+        v1.id,
+        dTag,
+        draft.title || 'Untitled',
+        slug,
+        eventContent,
+        wordCount,
+        isPaywalled ? 'paywalled' : 'public',
+        isPaywalled ? draft.price_pence : null,
+        isPaywalled ? (draft.gate_position_pct ?? null) : null,
+      ],
+    )
+    const artId = rows[0].id
+
+    const { rows: [author] } = await client.query<{ display_name: string | null; avatar_blossom_url: string | null; username: string | null }>(
+      `SELECT display_name, avatar_blossom_url, username FROM accounts WHERE id = $1`,
+      [draft.writer_id]
+    )
+    await client.query(`
+      INSERT INTO feed_items (
+        item_type, article_id, author_id,
+        author_name, author_avatar, author_username,
+        title, content_preview, nostr_event_id,
+        tier, published_at
+      ) VALUES (
+        'article', $1, $2,
+        $3, $4, $5,
+        $6, $7, $8,
+        'tier1', now()
+      )
+      ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
+        title = EXCLUDED.title,
+        content_preview = EXCLUDED.content_preview,
+        nostr_event_id = EXCLUDED.nostr_event_id,
+        author_name = EXCLUDED.author_name,
+        author_avatar = EXCLUDED.author_avatar
+    `, [
+      artId, draft.writer_id,
+      author?.display_name ?? author?.username ?? 'Unknown',
+      author?.avatar_blossom_url ?? null,
+      author?.username ?? null,
       draft.title || 'Untitled',
-      slug,
-      eventContent,
-      wordCount,
-      isPaywalled ? 'paywalled' : 'public',
-      isPaywalled ? draft.price_pence : null,
-      isPaywalled ? (draft.gate_position_pct ?? null) : null,
-    ],
-  )
-  const articleId = rows[0].id
+      truncatePreview(eventContent),
+      v1.id,
+    ])
+
+    return artId
+  })
 
   if (isPaywalled && paywallContent) {
     // Build the canonical v2 (with payload tag) and publish that. v1 is
@@ -212,10 +251,16 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
 
     await publishToRelay(v2 as any)
 
-    await pool.query(
-      'UPDATE articles SET nostr_event_id = $1 WHERE id = $2',
-      [v2.id, articleId],
-    )
+    await withTransaction(async (client) => {
+      await client.query(
+        'UPDATE articles SET nostr_event_id = $1 WHERE id = $2',
+        [v2.id, articleId],
+      )
+      await client.query(
+        'UPDATE feed_items SET nostr_event_id = $1 WHERE article_id = $2',
+        [v2.id, articleId],
+      )
+    })
   } else {
     await publishToRelay(v1 as any)
   }

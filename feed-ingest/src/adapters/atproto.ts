@@ -1,4 +1,5 @@
 import { RichText } from '@atproto/api'
+import { sanitizeContent } from '../lib/sanitize.js'
 
 // =============================================================================
 // AT Protocol (Bluesky) normaliser
@@ -197,7 +198,12 @@ function renderHtml(record: BskyPostRecord): string {
       parts.push(text)
     }
   }
-  return parts.join('').replace(/\n/g, '<br>')
+  // Every element emitted above comes from our allowlist (<a href=…> + <br>),
+  // but run the output through the shared sanitiser so the Bluesky adapter
+  // tracks the same rules as RSS and ActivityPub. If we ever broaden the
+  // RichText walk (embeds, mentions with arbitrary URIs), the sanitiser is
+  // already in the path.
+  return sanitizeContent(parts.join('').replace(/\n/g, '<br>'))
 }
 
 function escapeHtml(s: string): string {

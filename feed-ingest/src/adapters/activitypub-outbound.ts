@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { safeFetch } from '@platform-pub/shared/lib/http-client.js'
 import { truncateWithLink } from '../lib/text.js'
 
@@ -28,6 +27,7 @@ interface MastodonOutboundInput {
   maxChars: number
   sourceHomeUrl?: string        // canonical all.haus URL for truncation fallback
   replyToStatusUri?: string     // external_items.source_item_uri when action=reply
+  idempotencyKey: string        // stable across retries — typically outbound_posts.id
 }
 
 interface MastodonOutboundResult {
@@ -56,7 +56,7 @@ export async function postMastodonStatus(
       'Authorization': `Bearer ${credentials.accessToken}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Idempotency-Key': hashIdempotency(status, inReplyToId),
+      'Idempotency-Key': input.idempotencyKey,
     },
     body: JSON.stringify(body),
   })
@@ -104,11 +104,3 @@ async function resolveRemoteStatus(
   return parsed.statuses?.[0]?.id
 }
 
-// SHA-256 keyed on (reply target + body) so two independent replies with the
-// same text to the same thread still dedupe cleanly, but replies with the
-// same text to different threads don't collide. 32-bit FNV-1a was previously
-// used here and collides within minutes at moderate load — Mastodon's 24h
-// Idempotency-Key window makes that a write-loss risk.
-function hashIdempotency(text: string, replyTo?: string): string {
-  return createHash('sha256').update(`${replyTo ?? ''}::${text}`).digest('hex')
-}

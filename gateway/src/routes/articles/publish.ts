@@ -5,6 +5,7 @@ import { requireAuth, optionalAuth } from '../../middleware/auth.js'
 import { checkAndTriggerDriveFulfilment } from '../drives.js'
 import { sendPublishNotifications } from '@platform-pub/shared/lib/publish-emails.js'
 import { slugify } from '@platform-pub/shared/lib/slug.js'
+import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -122,7 +123,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
           author?.avatar_blossom_url ?? null,
           author?.username ?? null,
           data.title,
-          data.content.slice(0, 200),
+          truncatePreview(data.content),
           data.nostrEventId,
         ])
 

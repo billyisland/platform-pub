@@ -1,6 +1,6 @@
 import { type Task } from 'graphile-worker'
 import { type PoolClient } from 'pg'
-import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
+import { withTransaction } from '@platform-pub/shared/db/client.js'
 
 // =============================================================================
 // aggregate_hourly
@@ -173,35 +173,39 @@ export const aggregateHourly: Task = async (_payload, helpers) => {
       ON CONFLICT (piece_id, source_id, bucket_start) DO UPDATE SET
         reader_count = EXCLUDED.reader_count
     `)
-  })
 
-  // =========================================================================
-  // Ranking pass — compute rank_this_year and rank_all_time
-  // Done outside the main transaction as a lighter update
-  // =========================================================================
-  await pool.query(`
-    WITH ranked AS (
-      SELECT
-        ps.piece_id,
-        ROW_NUMBER() OVER (
-          PARTITION BY p.writer_id
-          ORDER BY ps.total_readers DESC
-        )::int AS rank_all_time,
-        ROW_NUMBER() OVER (
-          PARTITION BY p.writer_id
-          ORDER BY ps.total_readers DESC
-        ) FILTER (
-          WHERE p.published_at >= date_trunc('year', CURRENT_DATE)
-        ) AS rank_this_year_raw
-      FROM traffology.piece_stats ps
-      JOIN traffology.pieces p ON p.id = ps.piece_id
-    )
-    UPDATE traffology.piece_stats ps SET
-      rank_all_time = r.rank_all_time,
-      rank_this_year = r.rank_this_year_raw::int
-    FROM ranked r
-    WHERE ps.piece_id = r.piece_id
-  `)
+    // =========================================================================
+    // Ranking pass — compute rank_this_year and rank_all_time
+    //
+    // Kept inside the transaction so ranks are always consistent with the
+    // piece_stats.total_readers values they're derived from. A crash between
+    // the stats recompute and the rank update used to leave stale ranks
+    // attached to fresh totals.
+    // =========================================================================
+    await client.query(`
+      WITH ranked AS (
+        SELECT
+          ps.piece_id,
+          ROW_NUMBER() OVER (
+            PARTITION BY p.writer_id
+            ORDER BY ps.total_readers DESC
+          )::int AS rank_all_time,
+          ROW_NUMBER() OVER (
+            PARTITION BY p.writer_id
+            ORDER BY ps.total_readers DESC
+          ) FILTER (
+            WHERE p.published_at >= date_trunc('year', CURRENT_DATE)
+          ) AS rank_this_year_raw
+        FROM traffology.piece_stats ps
+        JOIN traffology.pieces p ON p.id = ps.piece_id
+      )
+      UPDATE traffology.piece_stats ps SET
+        rank_all_time = r.rank_all_time,
+        rank_this_year = r.rank_this_year_raw::int
+      FROM ranked r
+      WHERE ps.piece_id = r.piece_id
+    `)
+  })
 
   helpers.logger.info(`aggregate_hourly completed in ${Date.now() - start}ms`)
 }

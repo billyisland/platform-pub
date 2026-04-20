@@ -48,6 +48,12 @@ export async function publishNostrToRelays(
   }
 
   if (succeeded === 0) throw new Error('All relays rejected or timed out')
+  if (succeeded < relayUrls.length) {
+    logger.warn(
+      { eventId: event.id, succeeded, total: relayUrls.length },
+      'Outbound Nostr publish partially succeeded — some relays rejected or timed out'
+    )
+  }
   return event.id
 }
 

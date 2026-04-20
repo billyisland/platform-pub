@@ -23,6 +23,90 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — round-3 batches A–G shipped (§64, §67, §70, §71, §72,
+  §73, §74, §75, §76, §77, §78, §79, §80, §81, §82, §83, §84, §85, §86,
+  §87). §64 — `IP_HASH_SALT` now
+  `requireEnv`'d at module load in `traffology-ingest/src/routes/beacon.ts`
+  instead of defaulting to a hardcoded salt. §67 — ranking UPDATE moved
+  inside `aggregate-hourly.ts`'s `withTransaction`, so ranks can't drift
+  away from the `total_readers` they're derived from (unused `pool` import
+  dropped). §70 — Mastodon `Idempotency-Key` now `outbound_posts.id`
+  instead of `sha256(text + replyTo)`, so draft edits between retries no
+  longer defeat Mastodon's dedup window; `MastodonOutboundInput` gained
+  `idempotencyKey`, caller in `outbound-cross-post.ts` passes `row.id`.
+  §71 — partial-success warn log in `nostr-outbound.ts` when some relays
+  reject (caller still marks `sent` per the one-accepts rule; the log
+  gives us signal without changing semantics). §72 — outbound retry
+  `jobKey` versioned as `outbound_cross_post_${id}_r${retry}` so
+  Graphile Worker's dedup can't collapse the retry into the in-flight
+  job and lose the backoff delay. §78 — `/.well-known/oauth-client-metadata.json`
+  and `/.well-known/jwks.json` now set `Content-Type: application/json`
+  + `Cache-Control: public, max-age=3600` so PDSes polling for JWKS
+  rotation don't hammer origin. §79 — `outbound-token-refresh.ts` logs
+  sanitised `{ errName, errMessage: str.slice(0, 200) }` instead of the
+  raw error object, removing the DPoP/token-leak-through-logs surface.
+  §80 — `atproto_oauth_pending_states` TTL bumped 10min → 15min so a
+  callback arriving at `expires_at` can't race the 5min prune cron.
+  §81 — loopback `redirect_uri` now reads `process.env.PORT ?? '3000'`
+  instead of hardcoding `:3000`, so dev gateways on alternate ports
+  don't silently fail with redirect mismatch. §82 — `atproto-oauth.ts`
+  asserts `baseUrl.startsWith('https://')` before casting in the prod
+  branch; typo'd `ATPROTO_CLIENT_BASE_URL=http://...` fails fast
+  instead of producing malformed client metadata. §83 —
+  `atprotoClientMetadata()` + `atprotoJwks()` single-call helpers
+  deleted; the two well-known route handlers now call `getAtprotoClient()`
+  directly. §84 — publication CMS title edit now dual-writes to
+  `feed_items.title` in the same handler, closing the drift window
+  that relied on the 05:00 reconcile cron. §87 — personal-draft
+  scheduler now dual-writes the `feed_items` row inside a transaction
+  (mirroring `routes/articles/publish.ts`), so scheduled personal
+  articles appear in the unified timeline immediately instead of
+  waiting up to 24h for reconcile. Paywalled branch's v2 event-id
+  rewrite also wrapped in a transaction so articles + feed_items can't
+  end up pointing at different events. §73 — dropped the stray
+  `?? item.summary` fallback on RSS `content_preview` (was always
+  redundant: the RSS adapter's own `rawHtml` fallback already derives
+  `contentText` from `summary` when `contentText` would otherwise be
+  null, so the second fallback in the ingest path just masked what
+  was already happening). §74 — new `activitypub_instance_health_prune`
+  task drops rows whose last_success_at AND last_failure_at are both
+  &gt; 90 days old; weekly Sunday 07:00 UTC cron. §75 — Bluesky adapter's
+  `renderHtml` now runs its output through `sanitizeContent` like RSS
+  and ActivityPub, so if we ever broaden the RichText walk the
+  sanitiser is already in the path. §76 — gateway boot now eagerly
+  calls `getAtprotoClient()` before `app.listen`; a malformed
+  `ATPROTO_PRIVATE_JWK` fails the boot instead of the first
+  OAuth-dependent request. Loopback dev is a no-op there since no
+  JWK is required. §77 — `outbound_token_refresh` now distinguishes
+  transient atproto errors (PDS 5xx, `ECONNRESET`/`ETIMEDOUT` + the
+  rest of the undici transport set, walked through `cause` up to 4
+  levels) from terminal ones; transient errors leave `is_valid=TRUE`
+  and retry next cron tick instead of hassling the user with a
+  reconnect prompt over a 30-second PDS blip. §85 — added three
+  drift-repair UPDATEs to `feed_items_reconcile` (articles: title +
+  content_preview; notes: content_preview; external: title +
+  content_preview + author_name + author_avatar) so the reconcile
+  safety net closes drift as well as missing rows. Per-case counts
+  mirrored in the WARN log. §86 — new
+  `shared/src/lib/text.ts::truncatePreview` that uses
+  `Array.from(text).slice(0, 200).join('')` (code-point-aware) so JS
+  content_preview writes agree with Postgres `LEFT(..., 200)` for
+  emoji/astral-plane content. Swapped in across nine feed_items write
+  paths (gateway publish.ts, notes.ts, publication-publisher.ts ×2,
+  scheduler.ts; feed-ingest feed-ingest-rss.ts, feed-ingest-nostr.ts,
+  atproto-ingest.ts, activitypub-ingest.ts). Error-truncation
+  `.slice(0, 200)` call sites (log messages, HTTP error bodies) kept
+  as-is — not content_preview-producing. Deferred from this round:
+  §65 (observation dedup — needs semantic decision on temporal
+  bucketing), §66 (cron `jobKey` — graphile-worker's `known_crontabs`
+  slot-dedup already blocks duplicate fires for a given minute, so
+  the claimed bug reproduces only on clock skew > 60s; leaving for
+  when that surfaces), §68 (concurrent-reader endpoint auth —
+  docker-internal network mostly contains it; revisit when/if those
+  endpoints get exposed), §69 (JSONB zod validation on
+  observation.values — not load-bearing until a third observation
+  type ships). All 8 workspace builds clean; gateway 24/24 tests +
+  shared 28/28 + feed-ingest 42/42 tests green; knip clean.
 - **2026-04-20** — §61 gate-pass orchestration shipped. New
   `gateway/src/services/article-access/` directory with three modules:
   `access-check.ts` (the `checkArticleAccess` function + `AccessCheckResult`
@@ -942,7 +1026,271 @@ feed-ingest adapters (33 files, 4.7k lines), ATProto OAuth client setup
 (`shared/src/lib/atproto-oauth.ts`), full sweep of `feed_items` insert
 sites (publication-publisher, note ingest, external-feed dual-writes)
 for `content_preview` / truncation consistency, full `ts-prune`
-alongside `knip` across all services.
+alongside `knip` across all services. **Scoped on 2026-04-20 — see
+§64-§87 below for the produced findings.** ts-prune deleted from the
+scope: knip's `types` gate subsumes it.
+
+---
+
+## Round-3 findings — §64-§87 (scoped 2026-04-20)
+
+### Traffology (`traffology-ingest`, `traffology-worker`)
+
+**64. `IP_HASH_SALT` silently defaults to `'traffology-default-salt'`.**
+**Verified:** `traffology-ingest/src/routes/beacon.ts:21` —
+`process.env.IP_HASH_SALT ?? 'traffology-default-salt'`. If the env var
+is missing in prod, every deploy ships with the same hardcoded salt
+baked into source; IP hashes become reversible against a precomputed
+rainbow table of IPv4 space. **Fix:** adopt `requireEnvMinLength` from
+`shared/src/lib/env.ts` (used by all other services per §42), fail fast
+on boot if the salt is missing or too short.
+
+**65. `insertObservation` has no ON CONFLICT — reruns duplicate rows.**
+**Verified:** `traffology-worker/src/tasks/interpret.ts:349-358`.
+Application-level `NOT EXISTS` guards in each `detect*` function at
+`:66-70, :125-129, :183-188, :232-235, :308-313` are racy — interpret
+reruns (worker restart, cron double-fire) can sail past the check
+before the insert lands. **Fix:** add `UNIQUE (piece_id, observation_type)`
+or `ON CONFLICT DO NOTHING` keyed on the same tuple.
+
+**66. Aggregate cron tasks declared without `jobKey`.**
+**Verified:** `traffology-worker/src/index.ts:39-49`. `aggregate_hourly`,
+`aggregate_daily`, `aggregate_weekly` are cron-scheduled without
+Graphile Worker's dedup key. A clock-skew double-fire would run the
+whole pipeline twice; upserts protect final state but intermediate
+queries see inconsistent snapshots mid-run. **Fix:** add
+`jobKey: '${taskName}-${bucketTimestamp}'` so the second fire
+coalesces.
+
+**67. Rank UPDATE runs outside the hourly-aggregate transaction.**
+**Verified:** `traffology-worker/src/tasks/aggregate-hourly.ts:182-204`.
+`piece_stats`/`source_stats`/`half_day_buckets` inserts sit inside
+`withTransaction`; the subsequent ranking UPDATE runs on the outer
+`pool`. A crash between commit and ranking leaves writers seeing stats
+with stale rank until the next hourly tick. **Fix:** move the ranking
+UPDATE inside the same transaction.
+
+**68. Concurrent-reader endpoints accept any `writerId` unauth'd.**
+**Verified:** `traffology-ingest/src/routes/concurrent.ts:12-38`.
+`GET /concurrent/:pieceId` and `GET /concurrent/writer/:writerId`
+have no auth hook. The service is docker-internal today (nginx doesn't
+route to :3005 directly, only the gateway reaches it over the compose
+network), so the practical blast radius is any container inside the
+compose network — not internet. **Fix:** either mirror
+`INTERNAL_SERVICE_TOKEN` (as key-service uses) or push the auth
+decision into the gateway route and keep ingest internal. Scoped to
+P2 because the network boundary mostly contains it today.
+
+**69. Observation `values` column is unvalidated JSONB.**
+**Verified:** `traffology-worker/src/tasks/interpret.ts:349-358` accepts
+`Record<string, unknown>`. Downstream queries cast fields
+back to text/int at `:187, :312` with no guard. A schema drift in one
+detect function silently produces NULLs in dashboards. **Fix:** a
+discriminated union + zod parse at insert would pay for itself the
+first time an observation type is added.
+
+### Feed-ingest adapters
+
+**70. Mastodon `Idempotency-Key` hashes user-editable text.**
+**Verified:** `feed-ingest/src/tasks/activitypub-outbound.ts:112-113`
+— key is `sha256('${replyTo}::${text}')`. If a cross-post fails, the
+user edits the draft, and retry fires, Mastodon sees a new request
+and may double-post. **Fix:** key on `outbound_posts.id` (the row is
+written before the first attempt per §3's row-first idiom) — stable
+across retries, not derived from mutable content.
+
+**71. Nostr outbound treats any-relay-accepts as success.**
+**Verified:** `feed-ingest/src/lib/nostr-outbound.ts:27-51` — returns
+success if ≥1 relay accepts; caller at
+`outbound-cross-post.ts:180` marks the outbound row `sent` and never
+retries. Readers on rejecting relays never see the post. **Fix:**
+return `{ succeeded, failed, total }` and leave retry logic to the
+caller — probably "retry if `failed/total > 0.5`" with a cap.
+
+**72. Outbound retry `jobKey` collides with the original enqueue.**
+**Verified:** `feed-ingest/src/tasks/outbound-cross-post.ts:204-217`.
+The retry enqueue uses `outbound_cross_post_${row.id}` — identical
+to the original. Graphile Worker jobKey dedups, so the retry merges
+with the already-in-flight job and loses the backoff delay. **Fix:**
+versioned key `outbound_cross_post_${row.id}_r${retryCount}`, or drop
+the jobKey entirely and rely on the `outbound_posts.status` FSM.
+
+**73. RSS `content_preview` falls back to `summary` when other
+adapters don't.** **Verified:** `feed-ingest/src/tasks/feed-ingest-rss.ts:131`
+— `(item.contentText ?? item.summary ?? '').slice(0, 200)`. Nostr
+(`feed-ingest-nostr.ts:237`), Mastodon (`activitypub-ingest.ts:81`),
+Bluesky (`atproto-ingest.ts:86`) all use contentText only. RSS items
+with null contentText + non-null summary render previews other
+adapters wouldn't have. **Fix:** pick one — either everyone gets the
+summary fallback or no-one does; most likely summary is the right
+choice everywhere, RSS is just the only one that gets it today.
+
+**74. `activitypub_instance_health` grows without bound.**
+**Verified:** migration 056 defines the table; `activitypub-ingest.ts`
+UPSERTs into it per poll. There's no prune cron for hosts that stopped
+responding months ago. **Fix:** add a cleanup task mirroring
+`resolver_results_prune` — delete rows whose last_success_at and
+last_failure_at are both older than 90 days.
+
+**75. HTML sanitisation lives at different layers per adapter.**
+**Verified:** `adapters/rss.ts:99` runs `sanitizeContent` on raw HTML;
+`adapters/activitypub.ts:266` same; `adapters/atproto.ts:331` builds
+HTML from a RichText walk with no central sanitiser;
+`feed-ingest-nostr.ts:206` has no HTML step at all. If the sanitise
+rules change, RSS + Mastodon track; Bluesky drifts. **Fix:** wrap
+the atproto HTML builder's output in `sanitizeContent` before write
+so the three HTML-producing adapters share one code path.
+
+### ATProto OAuth (`shared/src/lib/atproto-oauth.ts`)
+
+**76. JWK parse happens lazily on first `getAtprotoClient()` call.**
+**Verified:** `shared/src/lib/atproto-oauth.ts:92-162`. `buildClient()`
+is invoked on first use; if `ATPROTO_PRIVATE_JWK` is malformed JSON
+or missing required fields, the failure shows up on the first
+OAuth-dependent request, not at server boot. The catch at `:96-99`
+nulls the cache so subsequent callers hit the same error, which is
+good for recovery but bad for boot-time detection. **Fix:** call
+`getAtprotoClient()` in gateway's startup sequence behind a
+try/catch — the prod branch (non-loopback) needs the JWK valid or
+the server is functionally degraded anyway, so failing boot is
+honest.
+
+**77. DPoP refresh error has no recoverable-vs-terminal split.**
+**Verified:** `feed-ingest/src/tasks/outbound-token-refresh.ts:97-102`
+— any error from `client.restore(did, 'auto')` flips the account to
+`is_valid=FALSE`. A transient PDS outage or DNS blip reads the same
+as a revoked refresh token; users see "reconnect your Bluesky
+account" for what should have been a 30-second dip. **Fix:** parse
+the error — PDS 5xx / network → leave valid, retry next tick;
+`invalid_grant` / `invalid_token` → flip invalid and surface the
+reconnect prompt.
+
+**78. `.well-known/*` endpoints lack explicit `Content-Type` and
+cache headers.** **Verified:** `gateway/src/index.ts:212-213`. Both
+`/.well-known/oauth-client-metadata.json` and `/.well-known/jwks.json`
+rely on Fastify's default serialisation with no `Cache-Control`.
+PDSes polling for JWKS rotation hit origin every request. **Fix:**
+`reply.type('application/json').header('Cache-Control',
+'public, max-age=3600')` on both.
+
+**79. Token-refresh cron logs `{ err }` without sanitisation.**
+**Verified:** `outbound-token-refresh.ts:98` logs the raw error object
+on refresh failure. If the `@atproto/oauth-client-node` error message
+ever embeds partial DPoP proof or token values, those land in logs.
+Not verified in the current library version, but the shape is
+fragile. **Fix:** `logger.warn({ err: { name: err.name, code: err.code,
+message: err.message?.slice(0, 200) }, id, did })` — never pass the
+raw object through.
+
+**80. `atproto_oauth_pending_states` TTL is 10min with no grace window
+before prune.** **Verified:** `shared/src/lib/atproto-oauth.ts:61`
+(`ttlMs = 10 * 60 * 1000`) + `feed-ingest/src/tasks/atproto-oauth-states-prune.ts`.
+A callback that arrives exactly at `expires_at` may race the 5min
+prune cron. Edge-casey but not impossible. **Fix:** make prune
+condition `expires_at < now() - interval '30 seconds'`, or bump TTL
+to 15min.
+
+**81. Loopback dev redirect_uri hardcodes `127.0.0.1:3000`.**
+**Verified:** `atproto-oauth.ts:116`. If the dev gateway runs on a
+different port (e.g. `PORT=3010` override), OAuth loopback silently
+fails with a redirect mismatch. **Fix:** `process.env.PORT ??
+'3000'` — one line.
+
+**82. `baseUrl` cast to `https://${string}` without enforcement.**
+**Verified:** `atproto-oauth.ts:140-141`. The loopback branch accepts
+any `http://localhost…` or `http://127.0.0.1…` URL; the prod branch
+casts `baseUrl` to `https://${string}` without checking the scheme
+actually starts with `https://`. An operator setting
+`ATPROTO_CLIENT_BASE_URL=http://all.haus` (scheme typo) passes the
+non-loopback gate and produces malformed client metadata. **Fix:**
+`if (!baseUrl.startsWith('https://')) throw new Error(…)` before the
+cast.
+
+**83. `atprotoClientMetadata()` + `atprotoJwks()` are single-call
+passthroughs.** **Verified:** `atproto-oauth.ts:164-170`. Both are
+`getAtprotoClient().then((c) => c.clientMetadata | c.jwks)`. The
+only callers are the two well-known route handlers in
+`gateway/src/index.ts`. **Fix:** inline at call sites, delete the
+helpers.
+
+### `feed_items` content-preview consistency
+
+**84. Publication CMS article edit bypasses `feed_items`.**
+**Verified:** `gateway/src/routes/publications/cms.ts:159-163` — PATCH
+builds a dynamic UPDATE over `articles` columns (`title`, `summary`,
+`price_pence`, `show_on_writer_profile`) with no corresponding
+`feed_items` write. `title` is denormalised into `feed_items.title`
+at publish time (`routes/articles/publish.ts:102`), so a title
+edit drifts immediately. Price edits matter too — paywalled-vs-free
+badging reads from the denormalised row. Drift window is bounded by
+`feed_items_reconcile` (daily 05:00) but that's a 24h visible skew.
+**Fix:** add a `feed_items` UPDATE for the changed columns inside
+the same transaction; title, summary, price all map cleanly.
+
+**85. `feed_items_reconcile` inserts missing rows but never repairs
+drifted previews.** **Verified:**
+`feed-ingest/src/tasks/feed-items-reconcile.ts:22-99`. Three INSERT
+blocks use `ON CONFLICT DO NOTHING`. If §84 produced a drifted
+title/preview and the row already exists, reconcile leaves it alone.
+**Fix:** add a fourth pass — UPDATE `feed_items` where the source
+row's `updated_at > feed_items.updated_at`, recompute `content_preview`,
+`title`, `author_name`. Safety net, daily cadence, not hot path.
+
+**86. `.slice(0, 200)` (JS) and `LEFT(…, 200)` (SQL) truncate at
+different boundaries for multibyte content.** **Verified:** seven
+adapters/routes use `.slice(0, 200)`; the reconcile SQL uses
+`LEFT(…, 200)`. `.slice` counts UTF-16 code units, `LEFT` counts
+characters in pg's default encoding. Same content hits different
+truncation points if ingested via one path vs reconciled via another.
+No active data loss today but will produce visible preview drift for
+emoji-heavy / CJK content. **Fix:** one shared
+`truncatePreview(content: string): string` in `shared/src/lib/text.ts`,
+grapheme-aware via `Intl.Segmenter`; use everywhere JS-side and
+either mirror the rule in reconcile or call via a plpython/deno UDF
+(probably overkill — just pick the JS rule as canonical and drop
+reconcile's LEFT).
+
+**87. Scheduler's personal-draft publish skips the `feed_items`
+dual-write.** **Verified:** `gateway/src/workers/scheduler.ts:167-197`
+upserts into `articles` and stops — no corresponding `feed_items`
+INSERT. `routes/articles/publish.ts:96-136` and
+`services/publication-publisher.ts:194-250` both dual-write; the
+scheduler path inlines its own article INSERT and forgot the
+partner write. Scheduled personal articles don't appear in the
+unified timeline until the 05:00 reconcile cron — up to 24h of
+invisibility for the writer's scheduled drop. **Fix:** mirror the
+dual-write from `publish.ts` inside the scheduler transaction;
+since scheduler reuses its own vault-creation dance, extract a
+shared `insertArticleWithFeedItem(tx, …)` helper so the two paths
+don't drift again.
+
+---
+
+## Round-3 rejected claims (held over from §64-§87 audit)
+
+- **feed-ingest `a`-tag split out-of-bounds on kind-5 deletion.**
+  `feed-ingest-nostr.ts:290-298` — `const [kindStr, aPubkey, dTag] =
+  aAddr.split(':')` followed by `kindStr ?? ''`, `!aPubkey`,
+  `Number.isFinite(kind)`, and `dTag ?? ''` — all three destructured
+  values are defensively handled. Not a bug.
+- **RSS dual-write fails silently on feed_items error.** Both
+  INSERTs wrap in `withTransaction`; a feed_items throw rolls back
+  the external_items row too. `if (!rowCount) return false` at
+  `feed-ingest-rss.ts:108` is the ON-CONFLICT-DO-NOTHING dedup
+  exit, not an error-swallow.
+- **ATProto OAuth concurrent-authorize state collision.** The
+  library generates a cryptographically-random `state` per
+  `authorize()` call (`@atproto/oauth-client-node` internals); the
+  `INSERT … ON CONFLICT (key) DO UPDATE` in `DbStateStore.set` never
+  sees a collision between concurrent flows for the same user.
+- **AES-256-GCM "silent garbage on wrong key".** AEAD tag check
+  catches wrong-key decrypt as an authentication failure, not a
+  silent corruption. The versioned-blob ambiguity concern conflates
+  GCM with CTR mode.
+- **ts-prune would catch anything knip misses.** Both use the same
+  AST mark-and-sweep; knip's `types` gate (promoted to default on
+  2026-04-20 per §58 follow-up) covers the exact category ts-prune
+  was added for. Item deleted from the §63 scope.
 
 ---
 

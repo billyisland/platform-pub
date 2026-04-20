@@ -162,6 +162,16 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
         values
       )
 
+      // Dual-write title to feed_items — the only CMS-edited field that
+      // is denormalised into the feed. summary/price/visibility read via
+      // JOIN at query time and don't need mirroring.
+      if (data.title !== undefined) {
+        await pool.query(
+          `UPDATE feed_items SET title = $1 WHERE article_id = $2`,
+          [data.title, articleId]
+        )
+      }
+
       return reply.send({ ok: true })
     }
   )
