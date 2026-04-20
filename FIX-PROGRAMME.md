@@ -23,6 +23,21 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — Day 7 §52 api.ts split shipped: 1,568-line
+  `web/src/lib/api.ts` split into 16 modules under `web/src/lib/api/`
+  (`client.ts` for the shared `request()` + `ApiError` infra, plus
+  `auth`, `account`, `articles`, `feed`, `notifications`, `votes`,
+  `messages`, `social`, `drives`, `admin`, `publications`, `resolver`,
+  `external-feeds`, `linked-accounts`, `trust`, `writers`). `api.ts`
+  is now a 25-line pure-re-export facade with a note flagging it as
+  transitional — all 76 consumers keep working unchanged. Restored a
+  `WriterProfile` type into the new `api/writers.ts` module: §48
+  dropped it alongside the `writers` API grouping, but 4 consumers
+  still import the type (`[username]/page.tsx`, `WriterActivity`,
+  `WorkTab`, `SocialTab`), so the orphan import surfaced as a
+  type-check failure in this session's verify step. Post-fix:
+  type-check clean, 75/75 web tests green.
+  §55 still deferred (LibreOffice lock files on 5 specs).
 - **2026-04-20** — Day 6 P2 deletions + renames shipped: §47
   (deleted 8 orphan components — `NoteComposer.tsx`,
   `NotificationBell.tsx`, `ErrorBoundary.tsx`, `UserSearch.tsx`,
