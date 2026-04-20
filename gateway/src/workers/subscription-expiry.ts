@@ -5,7 +5,7 @@ import {
   sendSubscriptionExpiryWarningEmail,
 } from '@platform-pub/shared/lib/subscription-emails.js'
 import logger from '@platform-pub/shared/lib/logger.js'
-import { logSubscriptionCharge } from '../routes/subscriptions.js'
+import { logSubscriptionCharge } from '../routes/subscriptions/index.js'
 
 // =============================================================================
 // Subscription renewal and expiry — runs hourly from gateway/index.ts under

@@ -23,6 +23,23 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — §53 mega-route-file split shipped: the three largest
+  gateway route modules (`publications.ts` 1,353 lines / 29 routes,
+  `articles.ts` 1,153 / 13 routes, `subscriptions.ts` 959 / 13 routes) now
+  live in directories (`routes/publications/`, `routes/articles/`,
+  `routes/subscriptions/`) composed by an `index.ts` that re-exports the
+  single top-level function each gateway registrar already calls
+  (`publicationRoutes`, `articleRoutes`, `subscriptionRoutes`). Files
+  grouped by concern — publications: core CRUD, members, CMS, public
+  reads, revenue/rate-card; articles: publish/index, gate-pass
+  orchestration, earnings, writer-side manage, subscription-convert;
+  subscriptions: reader↔writer lifecycle, writer's subscriber
+  management, publication subs, event history, pricing settings.
+  `subscriptions/index.ts` re-exports `logSubscriptionCharge` (consumed
+  by `workers/subscription-expiry.ts`) so the API surface beyond the
+  gateway is unchanged. Mechanical split with zero behavioural change.
+  Gateway type-check + 24/24 tests green, web 75/75 tests green, all 8
+  workspace builds clean.
 - **2026-04-20** — §58/59 follow-up: knip `types` strict-gate cleanup.
   Dropped `export` on 45 internal-only type/interface declarations across
   14 files flagged by `knip --include types`: feed-ingest adapters
@@ -922,5 +939,4 @@ DID-cap, §32-35 payment-service tightening.
 markdowns.
 
 **Later**
-§53 mega-route-file split (no behavioural change, but the diff is
-large). §58 knip + CI. §59 workspaces. §60 outbox. §63 round-3 audit.
+§60 outbox. §63 round-3 audit.
