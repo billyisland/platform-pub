@@ -144,6 +144,28 @@ export async function nip44Encrypt(
   }
 }
 
+// Batch variant — decrypts the sender's private key once and encrypts the
+// same plaintext for N recipients. Used by the DM send hot path where N=1
+// is the common case but groups can be 10+; the per-recipient round-trip is
+// the dominant cost at the cluster level.
+export async function nip44EncryptBatch(
+  signerId: string,
+  recipientPubkeysHex: string[],
+  plaintext: string,
+  signerType: 'account' | 'publication' = 'account'
+): Promise<string[]> {
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
+  try {
+    const senderPrivkey = new Uint8Array(privkeyBytes)
+    return recipientPubkeysHex.map(pubkey => {
+      const conversationKey = nip44.getConversationKey(senderPrivkey, pubkey)
+      return nip44.encrypt(plaintext, conversationKey)
+    })
+  } finally {
+    privkeyBytes.fill(0)
+  }
+}
+
 export async function nip44Decrypt(
   signerId: string,
   senderPubkeyHex: string,

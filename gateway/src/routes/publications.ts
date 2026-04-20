@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { requirePublicationPermission, requirePublicationOwner } from '../middleware/publication-auth.js'
 import { generateKeypair, signEvent } from '../lib/key-custody-client.js'
@@ -114,17 +114,14 @@ export async function publicationRoutes(app: FastifyInstance) {
     // Generate custodial Nostr keypair
     const keypair = await generateKeypair()
 
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-
+    const publicationId = await withTransaction(async (client) => {
       const { rows } = await client.query<{ id: string }>(
         `INSERT INTO publications (slug, name, tagline, about, nostr_pubkey, nostr_privkey_enc)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
         [slug, name, tagline || null, about || null, keypair.pubkeyHex, keypair.privkeyEncrypted]
       )
-      const publicationId = rows[0].id
+      const id = rows[0].id
 
       // Creator becomes Owner + EiC with all permissions
       const perms = ROLE_DEFAULTS.editor_in_chief
@@ -133,20 +130,15 @@ export async function publicationRoutes(app: FastifyInstance) {
            (publication_id, account_id, role, is_owner, accepted_at,
             can_publish, can_edit_others, can_manage_members, can_manage_finances, can_manage_settings)
          VALUES ($1, $2, 'editor_in_chief', TRUE, now(), $3, $4, $5, $6, $7)`,
-        [publicationId, userId, perms.can_publish, perms.can_edit_others,
+        [id, userId, perms.can_publish, perms.can_edit_others,
          perms.can_manage_members, perms.can_manage_finances, perms.can_manage_settings]
       )
 
-      await client.query('COMMIT')
+      return id
+    })
 
-      logger.info({ publicationId, slug, userId }, 'Publication created')
-      return reply.status(201).send({ id: publicationId, slug })
-    } catch (err) {
-      await client.query('ROLLBACK')
-      throw err
-    } finally {
-      client.release()
-    }
+    logger.info({ publicationId, slug, userId }, 'Publication created')
+    return reply.status(201).send({ id: publicationId, slug })
   })
 
   // ---------------------------------------------------------------------------
@@ -334,10 +326,7 @@ export async function publicationRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'This invite is for another user' })
       }
 
-      const client = await pool.connect()
-      try {
-        await client.query('BEGIN')
-
+      await withTransaction(async (client) => {
         const perms = ROLE_DEFAULTS[invite.role as keyof typeof ROLE_DEFAULTS]
 
         await client.query(
@@ -357,28 +346,21 @@ export async function publicationRoutes(app: FastifyInstance) {
           `UPDATE publication_invites SET accepted_at = now() WHERE id = $1`,
           [invite.id]
         )
+      })
 
-        await client.query('COMMIT')
+      // Notify members with can_manage_members
+      await pool.query(
+        `INSERT INTO notifications (recipient_id, actor_id, type)
+         SELECT pm.account_id, $1, 'pub_member_joined'
+         FROM publication_members pm
+         WHERE pm.publication_id = $2 AND pm.can_manage_members = TRUE
+           AND pm.removed_at IS NULL AND pm.account_id != $1
+         ON CONFLICT DO NOTHING`,
+        [userId, invite.publication_id]
+      )
 
-        // Notify members with can_manage_members
-        await pool.query(
-          `INSERT INTO notifications (recipient_id, actor_id, type)
-           SELECT pm.account_id, $1, 'pub_member_joined'
-           FROM publication_members pm
-           WHERE pm.publication_id = $2 AND pm.can_manage_members = TRUE
-             AND pm.removed_at IS NULL AND pm.account_id != $1
-           ON CONFLICT DO NOTHING`,
-          [userId, invite.publication_id]
-        )
-
-        logger.info({ publicationId: invite.publication_id, userId, role: invite.role }, 'Invite accepted')
-        return reply.send({ ok: true })
-      } catch (err) {
-        await client.query('ROLLBACK')
-        throw err
-      } finally {
-        client.release()
-      }
+      logger.info({ publicationId: invite.publication_id, userId, role: invite.role }, 'Invite accepted')
+      return reply.send({ ok: true })
     }
   )
 
@@ -516,10 +498,7 @@ export async function publicationRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'New owner must be an active Editor-in-Chief' })
       }
 
-      const client = await pool.connect()
-      try {
-        await client.query('BEGIN')
-
+      await withTransaction(async (client) => {
         // Remove owner flag from current owner
         await client.query(
           `UPDATE publication_members SET is_owner = FALSE
@@ -533,17 +512,10 @@ export async function publicationRoutes(app: FastifyInstance) {
            WHERE publication_id = $1 AND account_id = $2`,
           [id, newOwnerId]
         )
+      })
 
-        await client.query('COMMIT')
-
-        logger.info({ publicationId: id, from: currentOwnerId, to: newOwnerId }, 'Ownership transferred')
-        return reply.send({ ok: true })
-      } catch (err) {
-        await client.query('ROLLBACK')
-        throw err
-      } finally {
-        client.release()
-      }
+      logger.info({ publicationId: id, from: currentOwnerId, to: newOwnerId }, 'Ownership transferred')
+      return reply.send({ ok: true })
     }
   )
 

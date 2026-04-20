@@ -67,6 +67,18 @@ export async function nip44Encrypt(
   return post('/api/v1/keypairs/nip44-encrypt', { signerId, signerType, recipientPubkey, plaintext })
 }
 
+// Batch variant — encrypts the same plaintext for N recipients in one HTTP
+// hop, used by the DM send path. The order of returned ciphertexts mirrors
+// the order of `recipientPubkeys`.
+export async function nip44EncryptBatch(
+  signerId: string,
+  recipientPubkeys: string[],
+  plaintext: string,
+  signerType: 'account' | 'publication' = 'account'
+): Promise<{ ciphertexts: string[] }> {
+  return post('/api/v1/keypairs/nip44-encrypt-batch', { signerId, signerType, recipientPubkeys, plaintext })
+}
+
 export async function nip44Decrypt(
   signerId: string,
   senderPubkey: string,

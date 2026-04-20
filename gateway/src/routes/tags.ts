@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { pool } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 
 // =============================================================================
@@ -154,10 +154,7 @@ export async function tagRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'Article not found' })
       }
 
-      const client = await pool.connect()
-      try {
-        await client.query('BEGIN')
-
+      await withTransaction(async (client) => {
         // Remove existing tags
         await client.query('DELETE FROM article_tags WHERE article_id = $1', [articleId])
 
@@ -184,14 +181,7 @@ export async function tagRoutes(app: FastifyInstance) {
             )
           }
         }
-
-        await client.query('COMMIT')
-      } catch (err) {
-        await client.query('ROLLBACK')
-        throw err
-      } finally {
-        client.release()
-      }
+      })
 
       return reply.send({ ok: true, tags: normalised })
     }

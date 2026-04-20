@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
-import { signEvent, nip44Encrypt, nip44Decrypt } from '../lib/key-custody-client.js'
+import { signEvent, nip44EncryptBatch, nip44Decrypt } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import logger from '../../shared/src/lib/logger.js'
 
@@ -316,11 +316,36 @@ export async function sendMessage(
     return { ok: false, status: 403, error: 'You are blocked by one or more recipients' }
   }
 
-  const pubkeyRows = await pool.query<{ id: string; nostr_pubkey: string }>(
+  const pubkeyRows = await pool.query<{ id: string; nostr_pubkey: string | null }>(
     'SELECT id, nostr_pubkey FROM accounts WHERE id = ANY($1)',
     [recipientIds]
   )
   const pubkeyMap = new Map(pubkeyRows.rows.map(r => [r.id, r.nostr_pubkey]))
+
+  // Filter out recipients with no pubkey before the encrypt round-trip — they
+  // can't receive the message regardless. Preserves the original recipientIds
+  // order so encryption result indices line up with deliverable rows.
+  const deliverable: { recipientId: string; recipientPubkey: string }[] = []
+  for (const recipientId of recipientIds) {
+    const pubkey = pubkeyMap.get(recipientId)
+    if (pubkey) {
+      deliverable.push({ recipientId, recipientPubkey: pubkey })
+    } else {
+      logger.error({ recipientId }, 'Recipient has no pubkey — skipping')
+    }
+  }
+  if (deliverable.length === 0) {
+    return { ok: false, status: 400, error: 'No deliverable recipients' }
+  }
+
+  // One key-custody round-trip for the whole send — the service decrypts the
+  // sender's private key once and encrypts the plaintext for all recipients
+  // in-process.
+  const { ciphertexts } = await nip44EncryptBatch(
+    senderId,
+    deliverable.map(d => d.recipientPubkey),
+    content,
+  )
 
   // One send_id per logical send, shared across all N per-recipient rows, so
   // the sender's own view can DISTINCT ON (send_id) and see their message
@@ -329,31 +354,32 @@ export async function sendMessage(
   // the message and others without.
   const sendId = randomUUID()
   const messageIds = await withTransaction(async (client) => {
-    const ids: string[] = []
-    for (const recipientId of recipientIds) {
-      const recipientPubkey = pubkeyMap.get(recipientId)
-      if (!recipientPubkey) {
-        logger.error({ recipientId }, 'Recipient has no pubkey — skipping')
-        continue
-      }
-
-      const { ciphertext } = await nip44Encrypt(senderId, recipientPubkey, content)
-
-      const result = await client.query<{ id: string }>(
-        `INSERT INTO direct_messages
-           (conversation_id, sender_id, recipient_id, content_enc, reply_to_id, send_id)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [conversationId, senderId, recipientId, ciphertext, replyToId, sendId]
+    // Single multi-row INSERT so N recipients = 1 round-trip instead of N.
+    // Build $1, $2, ... placeholders for each recipient row.
+    const placeholders: string[] = []
+    const values: unknown[] = []
+    deliverable.forEach((d, i) => {
+      const base = i * 6
+      placeholders.push(
+        `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`
       )
-      ids.push(result.rows[0].id)
-    }
+      values.push(conversationId, senderId, d.recipientId, ciphertexts[i], replyToId, sendId)
+    })
+
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO direct_messages
+         (conversation_id, sender_id, recipient_id, content_enc, reply_to_id, send_id)
+       VALUES ${placeholders.join(', ')}
+       RETURNING id`,
+      values,
+    )
 
     await client.query(
       'UPDATE conversations SET last_message_at = now() WHERE id = $1',
       [conversationId]
     )
 
-    return ids
+    return inserted.rows.map(r => r.id)
   })
 
   publishConversationPulse(senderId, conversationId).catch(err => {

@@ -1493,6 +1493,7 @@ export interface ResolverMatch {
 export interface ResolverResult {
   inputType: string
   matches: ResolverMatch[]
+  status?: 'pending' | 'complete'
   error?: string
   requestId?: string
   pendingResolutions?: string[]

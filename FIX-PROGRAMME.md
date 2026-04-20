@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — Day 4 P1 structural shipped: §13 (BLUESKY_HANDLE
+  regex restricted to `.bsky.social`/`.bsky.team`; new `dotted_host`
+  classification handles bare-domain inputs by racing URL/RSS discovery
+  and atproto probe in parallel — RSS hosts no longer burn an AppView
+  round-trip); §14 (`nostr_profile` Phase B chain — temporary WS to
+  relay hints from `nprofile`, falling back to `NOSTR_PROFILE_RELAYS`
+  defaults, REQ kind 0, picks newest by `created_at`, populates
+  displayName/about/picture on the matching `nostr_external` source);
+  §15 (`status: 'pending' | 'complete'` on `ResolverResult` — seed row
+  is `pending`, Phase B overwrites with `complete`; web client polls on
+  status, not pendingResolutions length); §16 (`ResolveContext` wired —
+  `invite`/`dm` skip all external Phase B chains since those surfaces
+  only act on native_account matches, which Phase A already produced);
+  §17 (`tryWellKnownPaths` runs all 7 probes via `Promise.all` and
+  picks first hit by WELL_KNOWN_PATHS order; per-origin memo with 5-min
+  TTL, 1000-entry cap); §18 (migration 074 — pg_trgm GIN indexes on
+  `accounts.username` + `accounts.display_name` so `searchPlatform`
+  ILIKE no longer full-scans); §45 (raw BEGIN/COMMIT/ROLLBACK in
+  `publications.ts` × 3 and `tags.ts` × 1 → `withTransaction`,
+  notifications insert moved out of the transaction so it can't roll
+  back the membership write); §46 (all 7 service Dockerfiles now
+  `npm run build` and `node dist/src/index.js` — type-check happens at
+  image-build time, no per-boot tsx transpile cost); §19 (DM send
+  loop collapsed — new `nip44EncryptBatch` in key-custody decrypts
+  the sender's privkey once and encrypts for all recipients in one
+  HTTP hop; sendMessage drops missing-pubkey recipients before
+  encrypt, then writes all rows via a single multi-row INSERT inside
+  the transaction). All gateway/web/key-custody tests still pass.
 - **2026-04-20** — Day 3 P1 mechanical shipped: §38+§39 (shared
   `slugify`/`generateDTag` in `shared/src/lib/slug.ts`, gateway
   scheduler/publication-publisher/articles now import from it; web keeps its

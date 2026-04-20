@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { generateKeypair, signEvent, unwrapKey, nip44Encrypt, nip44Decrypt } from '../lib/crypto.js'
+import { generateKeypair, signEvent, unwrapKey, nip44Encrypt, nip44EncryptBatch, nip44Decrypt } from '../lib/crypto.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -59,6 +59,14 @@ const Nip44EncryptSchema = z.object({
   signerType: signerTypeEnum,
   accountId: z.string().uuid().optional(),  // backwards compat
   recipientPubkey: z.string().regex(HEX64_RE),
+  plaintext: z.string().min(1),
+}).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
+
+const Nip44EncryptBatchSchema = z.object({
+  signerId: z.string().uuid().optional(),
+  signerType: signerTypeEnum,
+  accountId: z.string().uuid().optional(),  // backwards compat
+  recipientPubkeys: z.array(z.string().regex(HEX64_RE)).min(1).max(64),
   plaintext: z.string().min(1),
 }).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
 
@@ -187,6 +195,33 @@ export async function keypairRoutes(app: FastifyInstance) {
       return reply.status(200).send({ ciphertext })
     } catch (err) {
       logger.error({ err, signerId, signerType }, 'NIP-44 encryption failed')
+      return reply.status(500).send({ error: 'Encryption failed' })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // POST /api/v1/keypairs/nip44-encrypt-batch
+  //
+  // NIP-44 encrypt the same plaintext for N recipients in one call. Used by
+  // the gateway DM send path for group conversations — decrypts the sender's
+  // private key once instead of N times.
+  // ---------------------------------------------------------------------------
+
+  app.post('/keypairs/nip44-encrypt-batch', { preHandler: requireInternalSecret }, async (req, reply) => {
+    const parsed = Nip44EncryptBatchSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.flatten() })
+    }
+
+    const { recipientPubkeys, plaintext, signerType } = parsed.data
+    const signerId = resolveSignerId(parsed.data)
+
+    try {
+      const ciphertexts = await nip44EncryptBatch(signerId, recipientPubkeys, plaintext, signerType)
+      logger.debug({ signerId, signerType, count: recipientPubkeys.length }, 'NIP-44 batch encrypted')
+      return reply.status(200).send({ ciphertexts })
+    } catch (err) {
+      logger.error({ err, signerId, signerType }, 'NIP-44 batch encryption failed')
       return reply.status(500).send({ error: 'Encryption failed' })
     }
   })

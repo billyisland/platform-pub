@@ -576,11 +576,14 @@ The resolver classifies input by pattern matching, then dispatches to the approp
 | `nprofile1...` | Nostr NIP-19 profile | Decode bech32 → hex pubkey + relay hints → same as npub + populate `relay_urls` |
 | 64-char hex string | Nostr hex pubkey | Platform account lookup (by `nostr_pubkey`) + external Nostr source |
 | `did:plc:...` or `did:web:...` | AT Protocol DID | Resolve DID → Bluesky handle → external atproto source |
-| `@handle.bsky.social` (or any `@handle.tld`) | Possible Bluesky handle | Try AT Protocol handle resolution (`com.atproto.identity.resolveHandle`) |
+| `@handle.bsky.social` / `@handle.bsky.team` | Bluesky handle (official suffix) | AT Protocol handle resolution (`com.atproto.identity.resolveHandle`) |
 | `@user@instance.tld` | Fediverse handle | WebFinger resolution → ActivityPub actor URI → external activitypub source |
 | `user@domain.tld` (no `@` prefix) | Ambiguous: email, NIP-05, or fediverse | Ambiguous chain (§V.5.3) |
+| `@handle.tld` / `handle.tld` (no `@` prefix) | Dotted host | Try AT Protocol handle resolution (custom-domain handles), then URL discovery |
 | Alphanumeric, no `@`, no `.` | Platform username | Platform account lookup (by `username`) |
 | Anything else | Free-text | Platform search (writers + publications) |
+
+The `bluesky_handle` classification is restricted to the official `.bsky.social` / `.bsky.team` suffixes so that `@example.com` (a user-controlled atproto handle) is not misclassified as a Bluesky handle when it might also be an RSS-hosting domain. The new `dotted_host` classification captures this case and tries atproto resolution first (for custom-domain handles like `alice.example.com`) before falling through to URL discovery.
 
 #### V.5.2 URL resolver
 
@@ -626,11 +629,17 @@ The resolver returns a structured result, not a single answer:
 interface ResolverResult {
   /** What the resolver understood the input to be */
   inputType: 'url' | 'npub' | 'nprofile' | 'hex_pubkey' | 'did' |
-             'bluesky_handle' | 'fediverse_handle' | 'ambiguous_at' |
+             'bluesky_handle' | 'dotted_host' | 'fediverse_handle' | 'ambiguous_at' |
              'platform_username' | 'free_text';
 
   /** Matches found, ordered by confidence */
   matches: ResolverMatch[];
+
+  /** 'pending' if remote Phase B chains are still running; 'complete' otherwise */
+  status?: 'pending' | 'complete';
+
+  /** Remote resolution chains the client should poll for */
+  pendingResolutions?: PendingResolution[];
 
   /** If no matches, a human-readable explanation */
   error?: string;
@@ -683,7 +692,7 @@ Body: { query: string, context?: 'subscribe' | 'invite' | 'dm' | 'general' }
 Response: ResolverResult
 ```
 
-The `context` parameter controls priority ordering and filtering (e.g., `dm` context filters to native accounts only). The endpoint is authenticated — resolver fetches count toward rate limits to prevent abuse as an open proxy.
+The `context` parameter controls priority ordering and filtering. `invite` and `dm` contexts skip all external Phase B chains (NIP-05 well-known probes, WebFinger, RSS discovery, atproto handle resolution, kind-0 profile fetch) because those flows require a native platform account — external identities can't receive invites or DMs. `subscribe` and `general` run the full chain set. The endpoint is authenticated — resolver fetches count toward rate limits to prevent abuse as an open proxy.
 
 #### V.5.7 Two-phase resolution UX
 
@@ -695,7 +704,9 @@ The resolver classifies the input by pattern matching (§V.5.1) and performs loc
 The frontend renders immediately: "Looks like a Bluesky handle — resolving..." or "Checking for RSS feed..." with the input classification visible and any local matches already shown.
 
 **Phase B — async remote resolution (streaming):**
-The endpoint returns Phase A results immediately. Remote resolutions (NIP-05 fetch, WebFinger, RSS discovery, AT Protocol handle resolution) run asynchronously. The frontend polls a follow-up endpoint (`GET /api/resolve/:requestId`) or the initial response includes all results if remote resolution completes within a short timeout (500ms). For slow resolutions, the frontend polls at 1-second intervals (max 3 polls, then stops and shows whatever results are available plus "couldn't reach [source] — try pasting a direct URL").
+The endpoint returns Phase A results immediately with `status: 'pending'` when any remote chain is scheduled. Remote resolutions (NIP-05 fetch, WebFinger, RSS discovery + well-known path probing, AT Protocol handle resolution, Nostr kind-0 profile fetch) run asynchronously. The frontend polls a follow-up endpoint (`GET /api/resolve/:requestId`) until `status: 'complete'` (or stops after max polls). Clients should drive polling off the `status` field rather than inspecting `pendingResolutions.length` — that array can be non-empty for informational reasons even after Phase B completes.
+
+RSS well-known path probing is parallelised (`Promise.all` across the fixed path list) and results are memoised per-origin with a 5-minute TTL and a 1000-entry cap, so the same domain isn't re-probed on rapid successive resolves (e.g., typing into a subscribe field). Nostr pubkey inputs (npub/nprofile/hex) trigger a Phase B kind-0 profile fetch against a small default relay set with a 4s timeout — this enriches external Nostr matches with display name and avatar without blocking Phase A.
 
 This avoids the worst case (user stares at a spinner for 10 seconds) without requiring WebSockets or SSE. The resolution request ID is ephemeral — stored in memory or a short-TTL cache, not in the database.
 

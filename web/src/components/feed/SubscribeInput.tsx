@@ -48,8 +48,8 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
 
         setResult(res)
 
-        // If there are pending resolutions, poll for them
-        if (res.requestId && res.pendingResolutions && res.pendingResolutions.length > 0) {
+        // Poll while the server reports pending Phase B work.
+        if (res.requestId && res.status === 'pending') {
           pollCountRef.current = 0
           pollForResults(res.requestId)
         } else {
@@ -75,7 +75,7 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
       const res = await resolver.poll(requestId)
       setResult(res)
 
-      if (res.pendingResolutions && res.pendingResolutions.length > 0) {
+      if (res.status === 'pending') {
         pollForResults(requestId)
       } else {
         setResolving(false)
