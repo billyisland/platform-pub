@@ -2,15 +2,19 @@
 # all.haus — Local Development Stack
 #
 # Services:
-#   postgres    — shared database
-#   strfry      — Nostr relay (content + vault events + receipts)
-#   gateway     — API gateway (auth, session, proxy) — port 3000
-#   payment     — payment service — port 3001
-#   keyservice  — key service — port 3002
-#   web         — Next.js frontend — port 3010
-#   nginx       — reverse proxy with TLS
-#   blossom     — Nostr media server (kept for future use, not in upload path)
-#   certbot     — automatic TLS certificates
+#   postgres           — shared database — port 5432
+#   strfry             — Nostr relay (content + vault events + receipts) — port 4848
+#   gateway            — API gateway (auth, session, proxy) — port 3000
+#   payment            — payment service — port 3001
+#   keyservice         — key service — port 3002
+#   key-custody        — key custody service (holds user Nostr private keys) — port 3004
+#   traffology-ingest  — reader-telemetry ingest — port 3005
+#   traffology-worker  — reader-telemetry roll-up worker (no HTTP port)
+#   feed-ingest        — external-feed poller + Jetstream listener (no HTTP port)
+#   web                — Next.js frontend — port 3010
+#   nginx              — reverse proxy with TLS
+#   blossom            — Nostr media server (kept for future use, not in upload path)
+#   certbot            — automatic TLS certificates
 #
 # Usage:
 #   docker compose up -d postgres strfry    # infrastructure first

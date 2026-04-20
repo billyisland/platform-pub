@@ -10,6 +10,7 @@ import { checkAndTriggerDriveFulfilment } from './drives.js'
 import { sendPublishNotifications } from '../../shared/src/lib/publish-emails.js'
 import logger from '../../shared/src/lib/logger.js'
 import { requireEnv } from '../../shared/src/lib/env.js'
+import { slugify } from '../../shared/src/lib/slug.js'
 
 // =============================================================================
 // Article Routes
@@ -62,13 +63,7 @@ export async function articleRoutes(app: FastifyInstance) {
     const writerId = req.session!.sub!
     const data = parsed.data
 
-    // Generate slug from title
-    const slug = data.title
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .slice(0, 120)
+    const slug = slugify(data.title, 120)
 
     // Count words
     const wordCount = data.content.split(/\s+/).filter(Boolean).length

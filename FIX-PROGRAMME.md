@@ -23,6 +23,25 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — Day 3 P1 mechanical shipped: §38+§39 (shared
+  `slugify`/`generateDTag` in `shared/src/lib/slug.ts`, gateway
+  scheduler/publication-publisher/articles now import from it; web keeps its
+  mirror with a comment — test already asserts identical output); §40
+  (`expireAndRenewSubscriptions` → `workers/subscription-expiry.ts`,
+  `expireOverdueDrives` → `workers/drive-expiry.ts`; `logSubscriptionCharge`
+  stays in `routes/subscriptions.ts` and is imported by the worker since the
+  in-process subscribe/renew endpoints also use it); §41 (advisory-lock IDs
+  centralised in `shared/src/lib/advisory-locks.ts`, `JETSTREAM` consolidated
+  with the gateway IDs, 100003 gap documented); §42 (`requireEnv` /
+  `requireEnvMinLength` adopted by key-service, key-custody, payment-service);
+  §43 (five `(req as any).session?.sub` in traffology → `req.session!.sub!`);
+  §44 (deleted `db/client.ts` re-export shims in all three services, imports
+  go directly to `shared/src/db/client.js`); §56 (docker-compose header
+  refreshed to list all 13 services); §20 (dropped duplicate `rsa2` join in
+  `loadConversationMessages`, read `nostr_pubkey` from `rsa`); §6 (`listInbox`
+  mute filter moved inside `array_agg FILTER`, HAVING guards 1:1 DMs with
+  muted counterparty, block check mirrors the send path's "hide if any member
+  has blocked me"). All gateway/web/shared tests still pass (155 total).
 - **2026-04-19** — Day 2 remainder shipped: §11 (group-DM duplicates
   confirmed; migration 073 adds `send_id UUID` to `direct_messages`,
   `sendMessage` emits one UUID per logical send across all N rows and

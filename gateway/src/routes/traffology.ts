@@ -27,7 +27,7 @@ export async function traffologyRoutes(app: FastifyInstance) {
     { preHandler: requireAuth },
     async (req, reply) => {
       const { pieceId } = req.params
-      const writerId = (req as any).session?.sub
+      const writerId = req.session!.sub!
 
       const { rows } = await pool.query(
         'SELECT 1 FROM traffology.pieces WHERE id = $1 AND writer_id = $2',
@@ -55,7 +55,7 @@ export async function traffologyRoutes(app: FastifyInstance) {
     '/traffology/concurrent',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = (req as any).session?.sub
+      const writerId = req.session!.sub!
 
       try {
         const res = await fetch(`${INGEST_URL}/concurrent/writer/${writerId}`)
@@ -77,7 +77,7 @@ export async function traffologyRoutes(app: FastifyInstance) {
     '/traffology/feed',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = (req as any).session?.sub
+      const writerId = req.session!.sub!
       const limit = Math.min(parseInt(req.query.limit ?? '20', 10), 50)
       const cursor = req.query.cursor // ISO timestamp
 
@@ -112,7 +112,7 @@ export async function traffologyRoutes(app: FastifyInstance) {
     { preHandler: requireAuth },
     async (req, reply) => {
       const { pieceId } = req.params
-      const writerId = (req as any).session?.sub
+      const writerId = req.session!.sub!
 
       // Piece info + stats
       const { rows: [piece] } = await pool.query(
@@ -192,7 +192,7 @@ export async function traffologyRoutes(app: FastifyInstance) {
     '/traffology/overview',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = (req as any).session?.sub
+      const writerId = req.session!.sub!
 
       // Writer baseline
       const { rows: [baseline] } = await pool.query(

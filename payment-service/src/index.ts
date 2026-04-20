@@ -4,17 +4,17 @@ import sensible from '@fastify/sensible'
 import { paymentRoutes } from './routes/payment.js'
 import { webhookRoutes } from './routes/webhook.js'
 import { startPayoutWorker } from './workers/payout.js'
-import { pool } from './db/client.js'
+import { pool } from '../shared/src/db/client.js'
 import logger from './lib/logger.js'
+import { requireEnv } from '../shared/src/lib/env.js'
 
 // =============================================================================
 // all.haus — Payment Service
 // =============================================================================
 
 // Validate required env vars at startup — fail fast
-for (const name of ['STRIPE_SECRET_KEY', 'DATABASE_URL']) {
-  if (!process.env[name]) throw new Error(`Missing required environment variable: ${name}`)
-}
+requireEnv('STRIPE_SECRET_KEY')
+requireEnv('DATABASE_URL')
 
 const app = Fastify({ logger })
 

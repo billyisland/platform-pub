@@ -2,8 +2,9 @@ import 'dotenv/config'
 import Fastify from 'fastify'
 import sensible from '@fastify/sensible'
 import { keypairRoutes } from './routes/keypairs.js'
-import { pool } from './db/client.js'
+import { pool } from '../shared/src/db/client.js'
 import logger from './lib/logger.js'
+import { requireEnv, requireEnvMinLength } from '../shared/src/lib/env.js'
 
 // =============================================================================
 // all.haus — Key Custody Service
@@ -25,12 +26,9 @@ import logger from './lib/logger.js'
 // =============================================================================
 
 // Validate required env vars at startup — fail fast
-for (const name of ['INTERNAL_SECRET', 'ACCOUNT_KEY_HEX', 'DATABASE_URL']) {
-  if (!process.env[name]) throw new Error(`Missing required environment variable: ${name}`)
-}
-if (process.env.ACCOUNT_KEY_HEX!.length < 32) {
-  throw new Error('ACCOUNT_KEY_HEX must be at least 32 characters')
-}
+requireEnv('INTERNAL_SECRET')
+requireEnv('DATABASE_URL')
+requireEnvMinLength('ACCOUNT_KEY_HEX', 32)
 
 const app = Fastify({ logger })
 

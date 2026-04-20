@@ -199,14 +199,20 @@ export async function publishToPublication(
   return result
 }
 
-export function generateDTag(title: string): string {
-  const slug = title
+// Mirror of shared/src/lib/slug.ts. Duplicated because Next.js (bundler
+// moduleResolution, no workspace setup) can't cleanly import from shared/.
+// web/tests/publish.test.ts asserts identical output to the gateway version
+// and is how drift is caught.
+function slugify(title: string, maxLen = 80): string {
+  return title
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
-    .slice(0, 80)
+    .slice(0, maxLen)
+}
 
+export function generateDTag(title: string): string {
   const timestamp = Math.floor(Date.now() / 1000).toString(36)
-  return `${slug}-${timestamp}`
+  return `${slugify(title, 80)}-${timestamp}`
 }

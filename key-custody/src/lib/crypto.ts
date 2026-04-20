@@ -1,6 +1,6 @@
 import { generateSecretKey, getPublicKey, finalizeEvent, nip44, type EventTemplate } from 'nostr-tools'
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
-import { pool } from '../db/client.js'
+import { pool } from '../../shared/src/db/client.js'
 
 // =============================================================================
 // Custodial keypair crypto

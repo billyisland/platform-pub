@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool } from '../db/client.js'
+import { pool } from '../../shared/src/db/client.js'
 import { accrualService } from '../services/accrual.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'

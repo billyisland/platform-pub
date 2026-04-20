@@ -110,12 +110,18 @@ export async function listInbox(userId: string): Promise<InboxConversation[]> {
     member_display_names: (string | null)[]
     member_avatars: (string | null)[]
   }>(
+    // Mute filter uses array_agg FILTER so a muted member drops from the
+    // listed members of a group convo without dropping the whole conversation
+    // (the old WHERE m.muter_id IS NULL filtered pre-aggregate and took the
+    // convo with it). HAVING drops 1:1 DMs when the sole counterparty is
+    // muted. Blocks mirror the send path: a convo with any member who has
+    // blocked the viewer disappears, because send would 403 anyway.
     `SELECT c.id AS conversation_id, c.last_message_at, c.created_at,
             COALESCE(unread.cnt, 0)::int AS unread_count,
-            array_agg(a.id) AS member_ids,
-            array_agg(a.username) AS member_usernames,
-            array_agg(a.display_name) AS member_display_names,
-            array_agg(a.avatar_blossom_url) AS member_avatars
+            COALESCE(array_agg(a.id) FILTER (WHERE m.muter_id IS NULL), '{}'::uuid[]) AS member_ids,
+            COALESCE(array_agg(a.username) FILTER (WHERE m.muter_id IS NULL), '{}'::text[]) AS member_usernames,
+            COALESCE(array_agg(a.display_name) FILTER (WHERE m.muter_id IS NULL), '{}'::text[]) AS member_display_names,
+            COALESCE(array_agg(a.avatar_blossom_url) FILTER (WHERE m.muter_id IS NULL), '{}'::text[]) AS member_avatars
      FROM conversations c
      JOIN conversation_members cm ON cm.conversation_id = c.id
      JOIN conversation_members my ON my.conversation_id = c.id AND my.user_id = $1
@@ -125,8 +131,15 @@ export async function listInbox(userId: string): Promise<InboxConversation[]> {
        WHERE conversation_id = c.id AND recipient_id = $1 AND read_at IS NULL
      ) unread ON true
      LEFT JOIN mutes m ON m.muter_id = $1 AND m.muted_id = cm.user_id
-     WHERE m.muter_id IS NULL
+     WHERE NOT EXISTS (
+       SELECT 1 FROM conversation_members cmb
+       JOIN blocks b ON b.blocker_id = cmb.user_id
+       WHERE cmb.conversation_id = c.id
+         AND cmb.user_id != $1
+         AND b.blocked_id = $1
+     )
      GROUP BY c.id, unread.cnt
+     HAVING COUNT(*) FILTER (WHERE m.muter_id IS NULL) > 0
      ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
      LIMIT 50`,
     [userId]
@@ -217,7 +230,7 @@ export async function loadConversationMessages(
               dm.content_enc, dm.reply_to_id, dm.read_at, dm.created_at,
               rsa.username AS reply_to_sender_username,
               rdm.content_enc AS reply_to_content_enc,
-              CASE WHEN rdm.sender_id = $2 THEN rra.nostr_pubkey ELSE rsa2.nostr_pubkey END AS reply_to_counterparty_pubkey,
+              CASE WHEN rdm.sender_id = $2 THEN rra.nostr_pubkey ELSE rsa.nostr_pubkey END AS reply_to_counterparty_pubkey,
               (SELECT COUNT(*) FROM dm_likes dl WHERE dl.message_id = dm.id) AS like_count,
               EXISTS(SELECT 1 FROM dm_likes dl WHERE dl.message_id = dm.id AND dl.user_id = $2) AS liked_by_me
        FROM direct_messages dm
@@ -226,7 +239,6 @@ export async function loadConversationMessages(
        LEFT JOIN direct_messages rdm ON rdm.id = dm.reply_to_id
        LEFT JOIN accounts rsa ON rsa.id = rdm.sender_id
        LEFT JOIN accounts rra ON rra.id = rdm.recipient_id
-       LEFT JOIN accounts rsa2 ON rsa2.id = rdm.sender_id
        WHERE ${whereClause}
        ORDER BY dm.send_id,
                 CASE WHEN dm.recipient_id = $2 THEN 0 ELSE 1 END,

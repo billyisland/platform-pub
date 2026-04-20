@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
 import logger from '../../shared/src/lib/logger.js'
 import { pinnedWebSocketOptions } from '../../shared/src/lib/http-client.js'
+import { ADVISORY_LOCKS } from '../../shared/src/lib/advisory-locks.js'
 import { normaliseAtprotoCommit, buildAtUri, type JetstreamCommit } from '../adapters/atproto.js'
 import { insertAtprotoItem } from '../lib/atproto-ingest.js'
 
@@ -36,9 +37,9 @@ const WANTED_COLLECTIONS = ['app.bsky.feed.post']
 const DID_REFRESH_INTERVAL_MS = 60_000
 const INITIAL_BACKOFF_MS = 1000
 // Session-scoped advisory lock key. Only one feed-ingest replica at a time
-// runs the Jetstream WebSocket; others poll for the lock. The number is
-// arbitrary but must be stable across deploys.
-const JETSTREAM_LOCK_KEY = 0x4a455453  // "JETS"
+// runs the Jetstream WebSocket; others poll for the lock. See
+// shared/src/lib/advisory-locks.ts for the full registry.
+const JETSTREAM_LOCK_KEY = ADVISORY_LOCKS.JETSTREAM
 const LEADER_POLL_MS = 30_000
 
 type SourceRow = {

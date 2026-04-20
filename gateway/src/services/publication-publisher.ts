@@ -2,6 +2,8 @@ import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import logger from '../../shared/src/lib/logger.js'
+import { generateDTag } from '../../shared/src/lib/slug.js'
+export { generateDTag }
 
 // =============================================================================
 // Publication Publisher — server-side article publishing pipeline
@@ -360,13 +362,3 @@ export async function approveAndPublishArticle(
   return { nostrEventId: signed.id }
 }
 
-export function generateDTag(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 80)
-  const timestamp = Math.floor(Date.now() / 1000).toString(36)
-  return `${slug}-${timestamp}`
-}

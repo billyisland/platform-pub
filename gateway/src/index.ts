@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { requireEnv, requireEnvMinLength } from '../shared/src/lib/env.js'
+import { ADVISORY_LOCKS } from '../shared/src/lib/advisory-locks.js'
 import Fastify from 'fastify'
 import sensible from '@fastify/sensible'
 import cookie from '@fastify/cookie'
@@ -19,7 +20,8 @@ import { googleAuthRoutes } from './routes/google-auth.js'
 import { draftRoutes } from './routes/drafts.js'
 import { replyRoutes } from './routes/replies.js'
 import { mediaRoutes } from './routes/media.js'
-import { subscriptionRoutes, expireAndRenewSubscriptions } from './routes/subscriptions.js'
+import { subscriptionRoutes } from './routes/subscriptions.js'
+import { expireAndRenewSubscriptions } from './workers/subscription-expiry.js'
 import { v1_6Routes } from './routes/v1_6.js'
 import { receiptRoutes } from './routes/receipts.js'
 import { exportRoutes } from './routes/export.js'
@@ -32,7 +34,8 @@ import { messageRoutes } from './routes/messages.js'
 import { feedRoutes } from './routes/feed.js'
 import { socialRoutes } from './routes/social.js'
 import { publicationRoutes } from './routes/publications.js'
-import { driveRoutes, expireOverdueDrives } from './routes/drives.js'
+import { driveRoutes } from './routes/drives.js'
+import { expireOverdueDrives } from './workers/drive-expiry.js'
 import { traffologyRoutes } from './routes/traffology.js'
 import { unsubscribeRoutes } from './routes/unsubscribe.js'
 import { bookmarkRoutes } from './routes/bookmarks.js'
@@ -242,9 +245,9 @@ async function start() {
   // Background workers — run periodically after startup
   // Advisory locks prevent duplicate execution when horizontally scaled
   const WORKER_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
-  const LOCK_SUBSCRIPTIONS = 100001
-  const LOCK_DRIVES = 100002
-  const LOCK_SCHEDULER = 100004
+  const LOCK_SUBSCRIPTIONS = ADVISORY_LOCKS.SUBSCRIPTIONS
+  const LOCK_DRIVES = ADVISORY_LOCKS.DRIVES
+  const LOCK_SCHEDULER = ADVISORY_LOCKS.SCHEDULER
   const SCHEDULER_INTERVAL_MS = 60 * 1000 // 1 minute
 
   async function withAdvisoryLock(lockId: number, name: string, fn: () => Promise<unknown>) {

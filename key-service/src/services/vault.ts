@@ -1,4 +1,4 @@
-import { pool, withTransaction } from '../db/client.js'
+import { pool, withTransaction } from '../../shared/src/db/client.js'
 import { generateContentKey, encryptContentKey, decryptContentKey } from '../lib/kms.js'
 import { encryptArticleBodyXChaCha } from '../lib/crypto.js'
 import { wrapKeyForReader } from '../lib/nip44.js'

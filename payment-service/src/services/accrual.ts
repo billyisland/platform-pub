@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg'
 import type { GatePassEvent, ReadEvent, ReadingTab, PlatformConfig } from '../types/index.js'
-import { pool, withTransaction, loadConfig } from '../db/client.js'
+import { pool, withTransaction, loadConfig } from '../../shared/src/db/client.js'
 import { publishReceiptEvent, createPortableReceipt } from '../lib/nostr.js'
 import logger from '../lib/logger.js'
 

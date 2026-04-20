@@ -5,6 +5,7 @@ import { publishToPublication } from '../services/publication-publisher.js'
 import { sendPublishNotifications } from '../../shared/src/lib/publish-emails.js'
 import { checkAndTriggerDriveFulfilment } from '../routes/drives.js'
 import logger from '../../shared/src/lib/logger.js'
+import { slugify, generateDTag } from '../../shared/src/lib/slug.js'
 
 // =============================================================================
 // Scheduled Publishing Worker
@@ -130,12 +131,7 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
 
   const dTag = draft.nostr_d_tag ?? generateDTag(draft.title || 'untitled')
   const wordCount = fullContent.split(/\s+/).filter(Boolean).length
-  const slug = (draft.title || 'untitled')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 120)
+  const slug = slugify(draft.title || 'untitled', 120)
 
   const baseTags: string[][] = [
     ['d', dTag],
@@ -251,17 +247,6 @@ function splitContent(raw: string): { freeContent: string; paywallContent: strin
     paywallContent: raw.slice(markerIndex + PAYWALL_GATE_MARKER.length).trim(),
     fullContent,
   }
-}
-
-function generateDTag(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 80)
-  const timestamp = Math.floor(Date.now() / 1000).toString(36)
-  return `${slug}-${timestamp}`
 }
 
 async function createVault(
