@@ -23,6 +23,38 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — Day 5 feed-ingest shipped: §22 (kind 30023
+  now keyed on `naddr` — pubkey + kind + d-tag — via a new
+  `isParameterizedReplaceable` helper; upsert is a ratchet:
+  `ON CONFLICT (protocol, source_item_uri) DO UPDATE … WHERE
+  external_items.published_at < EXCLUDED.published_at`, returning
+  `(xmax = 0) AS was_insert` so feed_items dual-writes distinguish
+  insert-vs-revision-update; kind-5 deletion now also handles NIP-09
+  `a`-tag addresses, reconstructing the naddr from
+  `kind:pubkey:dtag` and matching source_item_uri); §23 (migration
+  075 adds `external_sources.metadata_updated_at`, kind-0 profile
+  writes gated on strictly-newer `created_at`, ratchet persists via
+  `metadata_updated_at = CASE WHEN $5 IS NOT NULL THEN
+  to_timestamp(…) ELSE metadata_updated_at END`); §24
+  (`fetchFromRelay` sends `['CLOSE', subId]` before socket close on
+  timeout, guarded by `readyState === OPEN`); §25 (sub IDs
+  `fi-${randomUUID()}`); §26 (per-relay validation runs through
+  `Promise.all(rawEvents.map(async …))` — Schnorr verify is sync
+  but the event loop can interleave IO between verifies now
+  instead of pinning for the full batch); §27 (AP `newCursor`
+  advances only past Create/Note/isPublic-passing activities);
+  §28 (AP pagination requires `CUTOFF_STREAK_THRESHOLD=5`
+  consecutive below-cutoff items before stopping, so scheduled
+  posts / per-page ordering jitter don't truncate the run); §29
+  (`WILDCARD_DID_THRESHOLD=150` — above it, Jetstream subscribes
+  without `wantedDids` and `handleMessage` drops events whose DID
+  isn't in `sourceByDid`); §30 (DID-set changes while staying
+  above the wildcard threshold skip the reconnect entirely —
+  filter is in-memory only); §31 (new `appendWithinBudget` in
+  `lib/text.ts` counts graphemes on body + tail, reserves tail
+  length before truncating body; outbound-cross-post uses it so
+  Mastodon quote URLs survive long-body truncation). All feed-ingest
+  type-checks pass; gateway tests still green.
 - **2026-04-20** — Day 4 P1 structural shipped: §13 (BLUESKY_HANDLE
   regex restricted to `.bsky.social`/`.bsky.team`; new `dotted_host`
   classification handles bare-domain inputs by racing URL/RSS discovery

@@ -5,6 +5,7 @@ import logger from '../../shared/src/lib/logger.js'
 import { postMastodonStatus, type MastodonCredentials } from '../adapters/activitypub-outbound.js'
 import { publishNostrToRelays, type NostrSignedEvent } from '../adapters/nostr-outbound.js'
 import { postBlueskyRecord } from '../adapters/atproto-outbound.js'
+import { appendWithinBudget } from '../lib/text.js'
 
 // =============================================================================
 // outbound_cross_post — per-event job, dispatches a queued outbound_posts row
@@ -117,12 +118,16 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
       }
       const creds = decryptJson<MastodonCredentials>(row.la_credentials_enc)
       // Mastodon has no native quote semantics — append the source URL so the
-      // cross-posted status isn't a naked, context-free top-level post.
+      // cross-posted status isn't a naked, context-free top-level post. The
+      // URL carries the quote meaning, so it must survive truncation: budget
+      // the body grapheme count down to make room before joining, rather than
+      // blindly appending and letting the downstream tail-truncation clip the
+      // URL off long posts.
       let text = row.body_text ?? ''
       if (row.action_type === 'quote') {
         if (!row.ei_source_item_uri) throw new Error('Quote target missing source URL')
         const sep = text.endsWith('\n') ? '' : '\n\n'
-        text = `${text}${sep}${row.ei_source_item_uri}`
+        text = appendWithinBudget(text, `${sep}${row.ei_source_item_uri}`, cfg.mastodon_max)
       }
       const result = await postMastodonStatus({
         instanceUrl: row.la_instance_url,

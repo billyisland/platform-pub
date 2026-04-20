@@ -40,6 +40,32 @@ export interface TruncateOptions {
   separator?: string
 }
 
+/**
+ * Compose `body + tail` within a grapheme budget, guaranteeing the tail is
+ * always present. If the body is short enough, both are returned unmodified;
+ * otherwise the body is truncated (with an ellipsis) so the tail still fits.
+ *
+ * Use this when the tail carries meaning that must survive truncation — e.g.
+ * a Mastodon quote URL. `truncateWithLink` drops the tail entirely when no
+ * truncation is needed, which is wrong for quote semantics.
+ */
+export function appendWithinBudget(body: string, tail: string, maxGraphemes: number): string {
+  const bodyParts = countGraphemes(body) ?? [body]
+  const tailParts = countGraphemes(tail) ?? [tail]
+
+  // If the tail alone is over budget, emit as much of it as fits. The caller
+  // is expected to guard this case (shouldn't happen in practice: a status
+  // URL is well under Mastodon's 500-grapheme default).
+  if (tailParts.length >= maxGraphemes) {
+    return tailParts.slice(0, maxGraphemes).join('')
+  }
+
+  const budget = maxGraphemes - tailParts.length
+  if (bodyParts.length <= budget) return `${body}${tail}`
+  // Reserve one grapheme for the ellipsis.
+  return bodyParts.slice(0, Math.max(0, budget - 1)).join('') + '…' + tail
+}
+
 export function truncateWithLink(text: string, opts: TruncateOptions): string {
   if (!text) return ''
   const { max } = opts

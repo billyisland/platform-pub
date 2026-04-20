@@ -1,4 +1,5 @@
 import type { Task } from 'graphile-worker'
+import { randomUUID } from 'node:crypto'
 import { WebSocket } from 'ws'
 import { nip19, verifyEvent } from 'nostr-tools'
 import { pool, withTransaction } from '../../shared/src/db/client.js'
@@ -31,6 +32,14 @@ interface NostrEvent {
 
 const DEFAULT_LOOKBACK_SECONDS = 48 * 60 * 60 // 48 hours
 
+// NIP-01 replaceable-event ranges. Parameterized replaceable events
+// (30000-39999, including kind 30023 long-form) key on (pubkey, kind, d-tag)
+// rather than event id — a new revision with the same d-tag supersedes the
+// old one. Store these under naddr so republishes upsert into one row.
+function isParameterizedReplaceable(kind: number): boolean {
+  return kind >= 30000 && kind < 40000
+}
+
 export const feedIngestNostr: Task = async (payload, _helpers) => {
   const { sourceId } = payload as { sourceId: string }
 
@@ -43,7 +52,8 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     error_count: number
     display_name: string | null
     avatar_url: string | null
-  }>(`SELECT id, source_uri, relay_urls, cursor, error_count, display_name, avatar_url
+    metadata_updated_at: Date | null
+  }>(`SELECT id, source_uri, relay_urls, cursor, error_count, display_name, avatar_url, metadata_updated_at
       FROM external_sources WHERE id = $1`, [sourceId])
 
   if (!source) {
@@ -88,27 +98,34 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     for (const relayUrl of source.relay_urls) {
       try {
         const wsOpts = await pinnedWebSocketOptions(relayUrl)
-        const events = await fetchFromRelay(relayUrl, hexPubkey, since, wsOpts)
-        for (const event of events) {
-          // Reject events claiming timestamps far in the future (cursor poisoning)
+        const rawEvents = await fetchFromRelay(relayUrl, hexPubkey, since, wsOpts)
+
+        // Validate all events from this relay concurrently. A hostile relay
+        // can ship events claiming any pubkey; Schnorr verify is CPU-bound
+        // but running the map through Promise.all lets the event loop
+        // interleave other IO between verifies rather than pinning it for
+        // the full batch. Returns null for rejected events.
+        const validated = await Promise.all(rawEvents.map(async (event) => {
           if (event.created_at > maxCreatedAt) {
             logger.warn({ sourceId, relayUrl, eventId: event.id, createdAt: event.created_at },
               'Rejecting Nostr event with future timestamp')
-            continue
+            return null
           }
-          // A hostile relay can ship events claiming any pubkey, including
-          // the source's own. Verify the signature and the author before
-          // treating the payload as authoritative.
           if (event.pubkey?.toLowerCase() !== expectedPubkey) {
             logger.warn({ sourceId, relayUrl, eventId: event.id, eventPubkey: event.pubkey },
               'Rejecting Nostr event: pubkey mismatch')
-            continue
+            return null
           }
           if (!verifyEvent(event as any)) {
             logger.warn({ sourceId, relayUrl, eventId: event.id },
               'Rejecting Nostr event: invalid signature')
-            continue
+            return null
           }
+          return event
+        }))
+
+        for (const event of validated) {
+          if (!event) continue
           if (event.kind === 5) {
             deletionEvents.push(event)
           } else if (event.kind === 0) {
@@ -140,10 +157,17 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     let inserted = 0
     let newestCreatedAt = since
 
+    let updated = 0
     for (const event of events) {
       const normalised = normaliseNostrEvent(event, source.relay_urls!)
-      const didInsert = await withTransaction(async (client) => {
-        const { rowCount, rows } = await client.query<{ id: string }>(`
+      const outcome = await withTransaction(async (client) => {
+        // Ratchet upsert: keyed on (protocol, source_item_uri). For regular
+        // kinds the URI is an nevent so a re-fetch of the same event has
+        // equal published_at and the WHERE blocks the update. For
+        // parameterized replaceable kinds (30023) the URI is an naddr —
+        // same for every revision — so a newer created_at wins and older
+        // revisions are dropped silently.
+        const { rowCount, rows } = await client.query<{ id: string; was_insert: boolean }>(`
           INSERT INTO external_items (
             source_id, protocol, tier,
             source_item_uri, author_name, author_handle,
@@ -157,8 +181,16 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
             '[]', to_timestamp($7),
             $8, $9
           )
-          ON CONFLICT (protocol, source_item_uri) DO NOTHING
-          RETURNING id
+          ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+            content_text = EXCLUDED.content_text,
+            title = EXCLUDED.title,
+            published_at = EXCLUDED.published_at,
+            source_reply_uri = EXCLUDED.source_reply_uri,
+            interaction_data = EXCLUDED.interaction_data,
+            author_name = EXCLUDED.author_name,
+            deleted_at = NULL
+          WHERE external_items.published_at < EXCLUDED.published_at
+          RETURNING id, (xmax = 0) AS was_insert
         `, [
           sourceId,
           normalised.sourceItemUri,
@@ -171,9 +203,11 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
           JSON.stringify(normalised.interactionData),
         ])
 
-        if (!rowCount || rowCount === 0) return false
+        if (!rowCount || rowCount === 0) return 'skipped'
 
-        // Dual-write: insert feed_items row
+        // Dual-write feed_items. On insert, create the row; on a replaceable-
+        // kind revision update, refresh the denormalised fields so the feed
+        // shows the newest title/preview without waiting for reconcile.
         await client.query(`
           INSERT INTO feed_items (
             item_type, external_item_id,
@@ -188,7 +222,13 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
             'tier2', to_timestamp($6),
             'nostr_external', $7, $8
           )
-          ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING
+          ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO UPDATE SET
+            title = EXCLUDED.title,
+            content_preview = EXCLUDED.content_preview,
+            published_at = EXCLUDED.published_at,
+            source_item_uri = EXCLUDED.source_item_uri,
+            author_name = EXCLUDED.author_name,
+            deleted_at = NULL
         `, [
           rows[0].id,
           normalised.authorName ?? source.display_name ?? 'Unknown',
@@ -200,24 +240,35 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
           sourceId,
         ])
 
-        return true
+        return rows[0].was_insert ? 'inserted' : 'updated'
       })
 
-      if (didInsert) inserted++
+      if (outcome === 'inserted') inserted++
+      else if (outcome === 'updated') updated++
       if (event.created_at > newestCreatedAt) newestCreatedAt = event.created_at
     }
 
     // Handle kind 5 deletions. Pubkey + signature were already verified above,
     // so by the time we get here delEvent.pubkey === source.source_uri.
+    //
+    // NIP-09 supports two targeting forms:
+    //   • 'e' tag: event id — matches a specific nevent-keyed row via
+    //     interaction_data.id (source_item_uri bakes in relay_urls at insert
+    //     time, so URI-based matching can silently break after a relay-list
+    //     change).
+    //   • 'a' tag (replaceable events, "kind:pubkey:d_tag") — matches the
+    //     naddr-keyed row directly. For parameterized-replaceable items we
+    //     only keep the latest revision under one naddr, so 'a' is the only
+    //     form that reliably hits the row after a revision.
     for (const delEvent of cappedDeletes) {
-      const deletedIds = delEvent.tags
-        .filter(t => t[0] === 'e')
+      const eTagIds = delEvent.tags
+        .filter(t => t[0] === 'e' && t[1])
+        .map(t => t[1])
+      const aTagAddrs = delEvent.tags
+        .filter(t => t[0] === 'a' && t[1])
         .map(t => t[1])
 
-      for (const deletedId of deletedIds) {
-        // Match on the raw event id stored in interaction_data — source_item_uri
-        // is a nevent that bakes in relay_urls at insert time, so a subsequent
-        // relay-list change would silently break URI-based matching.
+      for (const deletedId of eTagIds) {
         await pool.query(
           `UPDATE external_items SET deleted_at = now()
            WHERE source_id = $1 AND protocol = 'nostr_external'
@@ -235,26 +286,71 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
           [sourceId, deletedId]
         )
       }
+
+      for (const aAddr of aTagAddrs) {
+        const [kindStr, aPubkey, dTag] = aAddr.split(':')
+        const kind = parseInt(kindStr ?? '', 10)
+        // Only act on addresses the source actually owns — a hostile signer
+        // can't forge the pubkey, but a mis-authored kind-5 could still
+        // carry a foreign 'a' tag. Also gate to replaceable kinds.
+        if (!Number.isFinite(kind)) continue
+        if (!aPubkey || aPubkey.toLowerCase() !== expectedPubkey) continue
+        if (!isParameterizedReplaceable(kind) && !(kind >= 10000 && kind < 20000)) continue
+
+        const naddr = nip19.naddrEncode({
+          identifier: dTag ?? '',
+          pubkey: aPubkey,
+          kind,
+          relays: source.relay_urls!,
+        })
+
+        await pool.query(
+          `UPDATE external_items SET deleted_at = now()
+           WHERE source_id = $1 AND protocol = 'nostr_external'
+             AND source_item_uri = $2
+             AND deleted_at IS NULL`,
+          [sourceId, naddr]
+        )
+        await pool.query(
+          `UPDATE feed_items SET deleted_at = now()
+           WHERE external_item_id IN (
+             SELECT id FROM external_items
+             WHERE source_id = $1 AND protocol = 'nostr_external'
+               AND source_item_uri = $2
+           ) AND deleted_at IS NULL`,
+          [sourceId, naddr]
+        )
+      }
     }
 
-    // Apply kind-0 profile update if we received a newer one than the stored
-    // metadata. Lets readers see the source's latest name/avatar/NIP-05 without
-    // waiting for the daily metadata-refresh cron.
+    // Apply kind-0 profile update only if strictly newer than the last one
+    // we accepted. Guards against a cached/stale kind-0 from a misbehaving
+    // relay clobbering fresher metadata we already saw elsewhere — the
+    // previous COALESCE write had no temporal ratchet.
     let profileName: string | null | undefined
     let profileAvatar: string | null | undefined
+    let profileCreatedAt: number | null = null
     if (latestProfile) {
-      try {
-        const profile = JSON.parse(latestProfile.content)
-        profileName = typeof profile?.display_name === 'string' ? profile.display_name
-                    : typeof profile?.name === 'string' ? profile.name
-                    : undefined
-        profileAvatar = typeof profile?.picture === 'string' ? profile.picture : undefined
-      } catch {
-        // Malformed profile — ignore
+      const storedAtSec = source.metadata_updated_at
+        ? Math.floor(source.metadata_updated_at.getTime() / 1000)
+        : 0
+      if (latestProfile.created_at > storedAtSec) {
+        try {
+          const profile = JSON.parse(latestProfile.content)
+          profileName = typeof profile?.display_name === 'string' ? profile.display_name
+                      : typeof profile?.name === 'string' ? profile.name
+                      : undefined
+          profileAvatar = typeof profile?.picture === 'string' ? profile.picture : undefined
+          profileCreatedAt = latestProfile.created_at
+        } catch {
+          // Malformed profile — ignore
+        }
       }
     }
 
     // Update source: cursor, reset errors, optionally refresh display metadata.
+    // metadata_updated_at only moves forward when we actually apply a profile
+    // write, so the ratchet survives restarts.
     await pool.query(`
       UPDATE external_sources SET
         last_fetched_at = now(),
@@ -263,12 +359,22 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
         last_error = NULL,
         display_name = COALESCE($3, display_name),
         avatar_url = COALESCE($4, avatar_url),
+        metadata_updated_at = CASE
+          WHEN $5::bigint IS NOT NULL THEN to_timestamp($5::bigint)
+          ELSE metadata_updated_at
+        END,
         updated_at = now()
       WHERE id = $1
-    `, [sourceId, String(newestCreatedAt), profileName ?? null, profileAvatar ?? null])
+    `, [
+      sourceId,
+      String(newestCreatedAt),
+      profileName ?? null,
+      profileAvatar ?? null,
+      profileCreatedAt,
+    ])
 
-    if (inserted > 0) {
-      logger.info({ sourceId, inserted, total: events.length, deletions: cappedDeletes.length },
+    if (inserted > 0 || updated > 0) {
+      logger.info({ sourceId, inserted, updated, total: events.length, deletions: cappedDeletes.length },
         'Nostr events ingested')
     }
 
@@ -310,9 +416,21 @@ function fetchFromRelay(
   return new Promise((resolve, reject) => {
     const events: NostrEvent[] = []
     const ws = new WebSocket(relayUrl, wsOpts)
-    const subId = `feed-ingest-${Date.now()}`
+    // Unique per-subscription id — Date.now() collides on busy workers when
+    // two fetches open inside the same millisecond, and some relays reject
+    // or merge the duplicate REQ.
+    const subId = `fi-${randomUUID()}`
 
     const timeout = setTimeout(() => {
+      // Politely close the subscription before tearing the socket down —
+      // some relays flag an abrupt disconnect without a prior CLOSE as abuse.
+      try {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(['CLOSE', subId]))
+        }
+      } catch {
+        // socket may already be draining — ignore
+      }
       ws.close()
       // Return whatever we have even on timeout
       resolve(events)
@@ -380,8 +498,21 @@ interface NormalisedNostrItem {
 }
 
 function normaliseNostrEvent(event: NostrEvent, relayUrls: string[]): NormalisedNostrItem {
-  // NIP-19 nevent encoding for source_item_uri
-  const sourceItemUri = nip19.neventEncode({ id: event.id, relays: relayUrls })
+  // Key parameterized-replaceable events (kind 30023 long-form, etc.) under
+  // naddr so successive revisions of the same (pubkey, kind, d-tag) upsert
+  // into one row. Everything else is keyed on event id via nevent.
+  let sourceItemUri: string
+  if (isParameterizedReplaceable(event.kind)) {
+    const dTag = event.tags.find(t => t[0] === 'd')?.[1] ?? ''
+    sourceItemUri = nip19.naddrEncode({
+      identifier: dTag,
+      pubkey: event.pubkey,
+      kind: event.kind,
+      relays: relayUrls,
+    })
+  } else {
+    sourceItemUri = nip19.neventEncode({ id: event.id, relays: relayUrls })
+  }
 
   // Extract reply target (NIP-10: last 'e' tag with 'reply' marker, or last 'e' tag)
   let sourceReplyUri: string | null = null

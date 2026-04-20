@@ -141,6 +141,13 @@ export async function fetchOutbox(
   let nextUrl: string | null = firstPageUrl
   let newCursor: string | null = null
   let reachedCursor = false
+  // Require this many consecutive below-cutoff items before giving up on the
+  // remaining pages. Mastodon outboxes can contain scheduled (future)
+  // publishes, edited-and-reordered items, or per-page ordering jitter — a
+  // single stray older item at the top of a page shouldn't truncate the
+  // whole run.
+  const CUTOFF_STREAK_THRESHOLD = 5
+  let cutoffStreak = 0
 
   for (let page = 0; page < opts.maxPages && nextUrl && !reachedCursor; page++) {
     const res = await safeFetch(nextUrl, { headers: { 'Accept': AP_ACCEPT } })
@@ -159,7 +166,6 @@ export async function fetchOutbox(
         reachedCursor = true
         break
       }
-      if (newCursor === null && activityId) newCursor = activityId
 
       // We only ingest public Create→Note activities. Everything else
       // (Announce boosts, Update, Delete, Follow, Like) is out of scope
@@ -173,10 +179,21 @@ export async function fetchOutbox(
 
       const publishedAt = parseDate(note.published) ?? parseDate(activity.published) ?? new Date()
       if (publishedAt.getTime() < opts.cutoffMs) {
-        // Pages are newest-first; once we've crossed the cutoff we're done.
-        reachedCursor = true
-        break
+        // Older than cutoff — count the streak. Only stop once we've seen
+        // several in a row (handles stray out-of-order items gracefully).
+        cutoffStreak++
+        if (cutoffStreak >= CUTOFF_STREAK_THRESHOLD) {
+          reachedCursor = true
+          break
+        }
+        continue
       }
+      cutoffStreak = 0
+
+      // Advance cursor only for activities we actually accept — anchoring to
+      // a skipped Announce or non-public note means a future change to that
+      // activity (which we never ingest) could break dedup.
+      if (newCursor === null && activityId) newCursor = activityId
 
       const normalised = normaliseNote(actor, activity, note, publishedAt)
       if (normalised) items.push(normalised)

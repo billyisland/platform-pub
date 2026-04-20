@@ -42,6 +42,16 @@ const INITIAL_BACKOFF_MS = 1000
 const JETSTREAM_LOCK_KEY = ADVISORY_LOCKS.JETSTREAM
 const LEADER_POLL_MS = 30_000
 
+// Jetstream puts every DID in the upgrade URL as a `wantedDids=` query param.
+// Most reverse proxies and WebSocket servers cap the upgrade URL around
+// 8-16 KB; each DID contributes ~40 bytes (including the param name + `=`
+// + URL encoding), so the server filter tops out around 150-200 DIDs. Above
+// this we subscribe to the wildcard firehose (still scoped to
+// app.bsky.feed.post via wantedCollections) and filter DIDs client-side
+// using sourceByDid. Bandwidth goes up but the platform scales past 200
+// Bluesky subscriptions without sharding.
+const WILDCARD_DID_THRESHOLD = 150
+
 type SourceRow = {
   id: string
   source_uri: string
@@ -192,12 +202,28 @@ export class JetstreamListener {
     }
 
     const changed = !setsEqual(this.currentDids, nextDids)
+    const wasWildcard = this.currentDids.size >= WILDCARD_DID_THRESHOLD
+    const willBeWildcard = nextDids.size >= WILDCARD_DID_THRESHOLD
     this.currentDids = nextDids
     this.sourceByDid = nextMap
 
     if (!changed) return
 
-    logger.info({ didCount: nextDids.size }, 'Jetstream DID set changed — reconnecting')
+    // When we were and still are above the wildcard threshold, the Jetstream
+    // filter didn't change — we aren't sending `wantedDids` at all. The only
+    // thing that matters is `sourceByDid`, which we just swapped in memory.
+    // Avoid the full cursor-rewind reconnect storm for routine subscribe /
+    // unsubscribe churn past the threshold.
+    if (wasWildcard && willBeWildcard && this.ws) {
+      logger.info({ didCount: nextDids.size },
+        'Jetstream DID set changed (wildcard mode) — filter is client-side, no reconnect')
+      return
+    }
+
+    logger.info(
+      { didCount: nextDids.size, mode: willBeWildcard ? 'wildcard' : 'filtered' },
+      'Jetstream DID set changed — reconnecting'
+    )
 
     if (nextDids.size === 0) {
       if (this.ws) this.ws.close()
@@ -247,12 +273,25 @@ export class JetstreamListener {
 
     const params = new URLSearchParams()
     for (const c of WANTED_COLLECTIONS) params.append('wantedCollections', c)
-    for (const did of this.currentDids) params.append('wantedDids', did)
+
+    const wildcard = this.currentDids.size >= WILDCARD_DID_THRESHOLD
+    if (!wildcard) {
+      // Below threshold: let Jetstream do the DID filter server-side so we
+      // only receive events we care about.
+      for (const did of this.currentDids) params.append('wantedDids', did)
+    }
+    // Above threshold: omit `wantedDids` and receive every
+    // app.bsky.feed.post. handleMessage() drops events whose DID isn't in
+    // sourceByDid, so correctness is unaffected — only bandwidth goes up.
+
     const cursor = this.oldestCursor()
     if (cursor) params.set('cursor', cursor)
 
     const fullUrl = `${this.url}?${params.toString()}`
-    logger.debug({ didCount: this.currentDids.size, cursor }, 'Opening Jetstream WebSocket')
+    logger.debug(
+      { didCount: this.currentDids.size, mode: wildcard ? 'wildcard' : 'filtered', cursor },
+      'Opening Jetstream WebSocket'
+    )
 
     // Pin the resolved IP so the WS library can't be tricked by a second
     // DNS lookup into connecting to a different (private) address — same
