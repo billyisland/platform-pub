@@ -235,6 +235,9 @@ export function MessageThread({
         ))
         latestCreatedAt.current = new Date().toISOString()
       }
+      if (result.skippedRecipientIds?.length) {
+        console.warn('DM send partial: recipients without pubkeys were skipped', result.skippedRecipientIds)
+      }
     } catch (err: any) {
       // Remove optimistic message on failure
       setMsgs(prev => prev.filter(m => m.id !== optimisticId))

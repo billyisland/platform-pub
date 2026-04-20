@@ -44,7 +44,7 @@ export const messages = {
     ),
 
   send: (conversationId: string, content: string, replyToId?: string) =>
-    request<{ messageIds: string[] }>(`/messages/${conversationId}`, {
+    request<{ messageIds: string[]; skippedRecipientIds: string[] }>(`/messages/${conversationId}`, {
       method: 'POST',
       body: JSON.stringify({ content, ...(replyToId && { replyToId }) }),
     }),

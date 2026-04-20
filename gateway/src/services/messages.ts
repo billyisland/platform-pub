@@ -280,7 +280,7 @@ export async function loadConversationMessages(
 // -----------------------------------------------------------------------------
 
 type SendMessageResult =
-  | { ok: true; data: { messageIds: string[] } }
+  | { ok: true; data: { messageIds: string[]; skippedRecipientIds: string[] } }
   | { ok: false; status: 403 | 400; error: string }
 
 export async function sendMessage(
@@ -324,14 +324,18 @@ export async function sendMessage(
 
   // Filter out recipients with no pubkey before the encrypt round-trip — they
   // can't receive the message regardless. Preserves the original recipientIds
-  // order so encryption result indices line up with deliverable rows.
+  // order so encryption result indices line up with deliverable rows. Skipped
+  // IDs are returned to the caller so it can distinguish full success from
+  // partial delivery (e.g. surface a warning to the sender).
   const deliverable: { recipientId: string; recipientPubkey: string }[] = []
+  const skippedRecipientIds: string[] = []
   for (const recipientId of recipientIds) {
     const pubkey = pubkeyMap.get(recipientId)
     if (pubkey) {
       deliverable.push({ recipientId, recipientPubkey: pubkey })
     } else {
       logger.error({ recipientId }, 'Recipient has no pubkey — skipping')
+      skippedRecipientIds.push(recipientId)
     }
   }
   if (deliverable.length === 0) {
@@ -386,7 +390,7 @@ export async function sendMessage(
     logger.error({ err, conversationId }, 'Conversation-pulse publish failed (non-fatal)')
   })
 
-  return { ok: true, data: { messageIds } }
+  return { ok: true, data: { messageIds, skippedRecipientIds } }
 }
 
 export async function markMessageRead(

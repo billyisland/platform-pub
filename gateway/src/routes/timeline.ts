@@ -36,6 +36,8 @@ interface CursorParts {
 // (Scores are seconds-based time+engagement signals; 1e18 is ~3×10^10 years.)
 const UNBOUNDED_SCORE = 1e18
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function parseCursor(raw: string | undefined): CursorParts | undefined {
   if (!raw) return undefined
   const parts = raw.split(':')
@@ -44,13 +46,13 @@ function parseCursor(raw: string | undefined): CursorParts | undefined {
     const score = Number(parts[0])
     const ts = parseInt(parts[1], 10)
     const id = parts[2]
-    if (!isNaN(score) && !isNaN(ts) && id.length >= 36) return { score, ts, id }
+    if (!isNaN(score) && !isNaN(ts) && UUID_RE.test(id)) return { score, ts, id }
   }
   // 2-part: "unix_seconds:uuid" — following-feed cursor (legacy for explore too)
   if (parts.length === 2) {
     const ts = parseInt(parts[0], 10)
     const id = parts[1]
-    if (!isNaN(ts) && id.length >= 36) return { ts, id }
+    if (!isNaN(ts) && UUID_RE.test(id)) return { ts, id }
   }
   // Legacy: plain unix seconds (no id component — use max uuid for stable ordering)
   const ts = parseInt(raw, 10)

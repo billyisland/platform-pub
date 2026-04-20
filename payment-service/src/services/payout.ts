@@ -254,7 +254,16 @@ class PayoutService {
 
     // Find writers with enough platform_settled balance and completed KYC.
     // Combines read_events earnings with upvote earnings (vote_charges with recipient_id set).
-    // FIX #4: Compute net amounts (after platform fee) for payout eligibility
+    // FIX #4: Compute net amounts (after platform fee) for payout eligibility.
+    //
+    // Rounding: the platform fee is applied per-row then summed, not applied
+    // once to the grand total. This matches the "platform absorbs rounding
+    // dust" rule the settlement and split paths already follow
+    // (tests/payout-math.test.ts:183, tests/settlement.test.ts:135). A 1p
+    // read at 8% bps floors the fee to 0, so the writer keeps the full
+    // penny; summing-then-flooring would instead collapse N of those pennies
+    // into a single non-zero fee. The per-row form is very slightly
+    // writer-favourable (up to N-1 pence across N rows) and intentional.
     const { rows: eligibleWriters } = await pool.query<{
       writer_id: string
       gross_pence: string

@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — stragglers §21, §36, §57 shipped; §37 deferred.
+  §21 — `sendMessage` now returns `{ messageIds, skippedRecipientIds }`
+  instead of silently dropping recipients whose `nostr_pubkey` is null.
+  `SendMessageResult` type in `gateway/src/services/messages.ts`, web
+  `messages.send()` return type in `web/src/lib/api/messages.ts`, and
+  `MessageThread.tsx` all updated; the web client `console.warn`s on
+  partial delivery so dev signal is there pending a proper UI surface
+  (no UX spec for partial-delivery toast yet, so no visible widget).
+  §36 — verified per-row `SUM(amount - FLOOR(amount * fee / 10000))`
+  matches the existing "platform absorbs rounding dust" rule tested in
+  `payout-math.test.ts:183` and `settlement.test.ts:135`. A 1p read at
+  8% bps correctly floors fee to zero; summing-then-flooring would
+  instead collapse N sub-penny fees into a non-zero aggregate. Comment
+  at `payout.ts` eligibility query now documents intent + points at the
+  existing tests, so the pattern isn't misread as a bug during the next
+  audit pass. §57 — cursor parser UUID validation tightened from
+  `id.length >= 36` to a proper `^[0-9a-f]{8}-…-[0-9a-f]{12}$` regex.
+  Legacy fallback branch (no-id plain-unix-seconds) unchanged — still
+  injects the sentinel max-uuid. §37 (Stripe apiVersion bump) —
+  deferred: installed stripe SDK is v14.25.0, which pins
+  `LatestApiVersion = '2023-10-16'` at the type level, so a bare
+  `apiVersion` string swap won't compile. Requires a coordinated SDK
+  dependency bump (v14 → v17+) + end-to-end Stripe flow testing that
+  needs network + a Stripe test account. Stays as the opportunistic
+  item the original audit framed it as — piggyback next time
+  webhook.ts/payout.ts/settlement.ts are touched with those resources
+  available. Gateway 24/24 tests, payment-service 41/41, web 75/75, all
+  builds clean.
 - **2026-04-20** — §53 mega-route-file split shipped: the three largest
   gateway route modules (`publications.ts` 1,353 lines / 29 routes,
   `articles.ts` 1,153 / 13 routes, `subscriptions.ts` 959 / 13 routes) now
