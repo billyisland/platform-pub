@@ -358,14 +358,14 @@ Monthly subscriptions last exactly 30 days, not one calendar month. This means a
 The repository root contains 9 planning/spec documents totalling ~270KB:
 
 - `DEPLOYMENT.md` (67KB) — deployment guide
-- `PUBLICATIONS-SPEC.md` (46KB) — feature spec
-- `OWNER-DASHBOARD-SPEC.md` (27KB) — feature spec
-- `SUBSCRIPTIONS-GAP-ANALYSIS.md` (18KB) — analysis doc
+- `docs/adr/PUBLICATIONS-SPEC.md` (46KB) — feature spec
+- `docs/adr/OWNER-DASHBOARD-SPEC.md` (27KB) — feature spec
+- `docs/audits/SUBSCRIPTIONS-GAP-ANALYSIS.md` (18KB) — analysis doc
 - `RESILIENCE.md` (21KB) — resilience spec
 - `FEED-ALGORITHM.md` (13KB) — feed design
 - `SETTINGS-RATIONALISATION.md` (11KB) — settings plan
-- `platform-pub-currency-strategy.md` (8KB) — currency strategy
-- `platform-bucket-system-design.md` (8KB) — bucket system design
+- `docs/adr/platform-pub-currency-strategy.md` (8KB) — currency strategy
+- `docs/adr/platform-bucket-system-design.md` (8KB) — bucket system design
 - `feature-debt.md` (15KB) — feature debt tracking
 
 Plus a `planning-archive/` directory. These are valuable as historical context but cluttering the repo root. They should be moved to `docs/planning/` or similar. The specs that are now implemented should be archived — leaving them in the root suggests they're still actionable.

@@ -4,7 +4,7 @@ import { RichText } from '@atproto/api'
 // AT Protocol (Bluesky) normaliser
 //
 // Takes a Jetstream commit event for app.bsky.feed.post and produces the
-// fields needed for external_items + feed_items. See UNIVERSAL-FEED-ADR.md
+// fields needed for external_items + feed_items. See docs/adr/UNIVERSAL-FEED-ADR.md
 // §V.3 and §VI.3.
 //
 // Jetstream commit shape (subset we care about):

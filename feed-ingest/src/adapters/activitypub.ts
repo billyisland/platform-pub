@@ -5,7 +5,7 @@ import { sanitizeContent, stripHtml } from '../lib/sanitize.js'
 // ActivityPub (Mastodon) outbox adapter
 //
 // Fetches an actor's public outbox and normalises each Note object into the
-// shape expected by external_items + feed_items. See UNIVERSAL-FEED-ADR.md
+// shape expected by external_items + feed_items. See docs/adr/UNIVERSAL-FEED-ADR.md
 // §VI.4.
 //
 // This is deliberately a minimal reader: we only ingest public `Create`

@@ -509,7 +509,7 @@ The "reposted by" line is a link to the reposter's profile, `hover:text-black`. 
 
 ### 2.4 Email-on-publish (settings toggle)
 
-Covered in `EMAIL-ON-PUBLISH-SPEC.md`. The UI surface is:
+Covered in `docs/adr/EMAIL-ON-PUBLISH-SPEC.md`. The UI surface is:
 
 **Writer side:** Dashboard > Pricing tab (or a future "Distribution" section). Toggle: "Email subscribers when you publish." Default on for new writers. Uses the same toggle-button pattern as FeedDial (two buttons: On / Off, `bg-black text-white` for active, `bg-grey-100` for inactive).
 

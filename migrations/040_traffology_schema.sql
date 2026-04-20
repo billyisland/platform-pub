@@ -1,5 +1,5 @@
 -- Traffology schema — writer-facing analytics for all.haus
--- Creates all tables from TRAFFOLOGY-MASTER-ADR-2.md Section 4.
+-- Creates all tables from docs/adr/TRAFFOLOGY-MASTER-ADR-2.md Section 4.
 -- Phase 2/3 tables (nostr_events, public_mentions, observations, aggregated
 -- tables) are created empty now so the schema is complete from day one.
 

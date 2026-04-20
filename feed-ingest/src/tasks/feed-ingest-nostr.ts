@@ -17,7 +17,7 @@ const FUTURE_DRIFT_WINDOW_SECONDS = 10 * 60 // 10 minutes
 // REQ for recent events by the source pubkey, normalises into external_items
 // + feed_items, and handles kind 5 deletions.
 //
-// See UNIVERSAL-FEED-ADR.md §VI.2 for full spec.
+// See docs/adr/UNIVERSAL-FEED-ADR.md §VI.2 for full spec.
 // =============================================================================
 
 interface NostrEvent {

@@ -3,7 +3,7 @@
 -- Adds size_tier to articles for the redesign's three-tier card rendering.
 -- Default is derived from word_count via a BEFORE INSERT trigger so that
 -- editorial overrides (future UI) survive re-publishes; app code never sets
--- size_tier explicitly. See ALLHAUS-REDESIGN-SPEC.md §4a.
+-- size_tier explicitly. See docs/adr/ALLHAUS-REDESIGN-SPEC.md §4a.
 
 ALTER TABLE articles
   ADD COLUMN size_tier TEXT

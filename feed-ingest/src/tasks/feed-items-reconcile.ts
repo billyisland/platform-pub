@@ -10,7 +10,7 @@ import logger from '../../shared/src/lib/logger.js'
 //   2. External items with no feed_items row → INSERT
 //   3. feed_items pointing to deleted/missing sources → clean up
 //
-// Runs daily at 05:00 UTC. See UNIVERSAL-FEED-ADR.md §XV.7.
+// Runs daily at 05:00 UTC. See docs/adr/UNIVERSAL-FEED-ADR.md §XV.7.
 //
 // Any non-zero count means a dual-write path leaked — transactional writes
 // should keep feed_items in lockstep with the source tables. We log WARN

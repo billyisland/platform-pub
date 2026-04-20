@@ -2,7 +2,7 @@
 --
 -- Stores per-user Layer 1 signals computed by a daily feed-ingest cron job.
 -- pip_status is the three-state trust pip: 'known', 'partial', 'unknown'.
--- See ALLHAUS-OMNIBUS.md §III.7 for pip thresholds, §IV.3 for schema.
+-- See docs/adr/ALLHAUS-OMNIBUS.md §III.7 for pip thresholds, §IV.3 for schema.
 
 CREATE TABLE trust_layer1 (
     user_id              UUID PRIMARY KEY REFERENCES accounts(id),

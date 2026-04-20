@@ -11,7 +11,7 @@ import { insertAtprotoItem } from '../lib/atproto-ingest.js'
 // Jetstream listener
 //
 // A long-lived WebSocket subscriber to the Bluesky Jetstream firehose. See
-// UNIVERSAL-FEED-ADR.md §V.3 and §VI.3.
+// docs/adr/UNIVERSAL-FEED-ADR.md §V.3 and §VI.3.
 //
 // Responsibilities:
 //   - Maintain a persistent connection filtered to the set of DIDs we have

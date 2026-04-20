@@ -11,7 +11,7 @@ import logger from '../../shared/src/lib/logger.js'
 //   2. External sources → feed_items (display_name, avatar_url)
 //
 // Up to 24 hours of staleness is acceptable per design.
-// Runs daily at 04:00 UTC. See UNIVERSAL-FEED-ADR.md §V.2.
+// Runs daily at 04:00 UTC. See docs/adr/UNIVERSAL-FEED-ADR.md §V.2.
 // =============================================================================
 
 export const feedItemsAuthorRefresh: Task = async (_payload, _helpers) => {

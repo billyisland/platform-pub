@@ -2,7 +2,7 @@
 --
 -- trust_epochs: audit log of aggregation runs (full quarterly + Mon/Thu mop-ups).
 -- vouches columns: track per-vouch freshness for decay computation.
--- See ALLHAUS-OMNIBUS.md §II.8 for decay tables, §IV.7 Build Phase 4.
+-- See docs/adr/ALLHAUS-OMNIBUS.md §II.8 for decay tables, §IV.7 Build Phase 4.
 
 CREATE TABLE trust_epochs (
     epoch_id    TEXT PRIMARY KEY,

@@ -11,7 +11,7 @@ import { requireAuth } from '../middleware/auth.js'
 //   GET /me/reading-preferences           — fetch reading prefs
 //   PUT /me/reading-preferences           — update reading prefs
 //
-// See ALLHAUS-REDESIGN-SPEC.md §4 "Reading history and resumption".
+// See docs/adr/ALLHAUS-REDESIGN-SPEC.md §4 "Reading history and resumption".
 // =============================================================================
 
 const HEX64_RE = /^[0-9a-f]{64}$/

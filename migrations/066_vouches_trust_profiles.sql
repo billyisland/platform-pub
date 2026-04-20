@@ -2,7 +2,7 @@
 --
 -- vouches: per-attestor/subject/dimension endorsements with public/aggregate visibility.
 -- trust_profiles: precomputed dimension scores (populated by Phase 4 epoch aggregation cron).
--- See ALLHAUS-OMNIBUS.md §IV.3 for schema spec.
+-- See docs/adr/ALLHAUS-OMNIBUS.md §IV.3 for schema spec.
 
 CREATE TABLE vouches (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -4,7 +4,7 @@
 -- mounts at the position the reader last left it. Replaces the bookmark
 -- gesture with an ambient "remember my place" mechanism.
 --
--- See ALLHAUS-REDESIGN-SPEC.md §4 "Reading history and resumption".
+-- See docs/adr/ALLHAUS-REDESIGN-SPEC.md §4 "Reading history and resumption".
 
 CREATE TABLE reading_positions (
   user_id       UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

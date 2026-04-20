@@ -20,7 +20,7 @@ import {
 // with >=5 changes since last run (threshold gate).
 //
 // Dry-run: TRUST_DRY_RUN=1 or payload { dryRun: true } — logs diffs, no writes.
-// See ALLHAUS-OMNIBUS.md §II.8 + §IV.7 Build Phase 4.
+// See docs/adr/ALLHAUS-OMNIBUS.md §II.8 + §IV.7 Build Phase 4.
 // =============================================================================
 
 const DIMENSIONS = ['humanity', 'encounter', 'identity', 'integrity'] as const

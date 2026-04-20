@@ -2,7 +2,7 @@
 --
 -- Populates the feed_items table created in migration 053 with all existing content.
 -- Idempotent via ON CONFLICT DO NOTHING on the unique partial indexes.
--- See UNIVERSAL-FEED-ADR.md §VII.2 (backfill migration).
+-- See docs/adr/UNIVERSAL-FEED-ADR.md §VII.2 (backfill migration).
 
 -- 1. Articles (published, not deleted)
 INSERT INTO feed_items (

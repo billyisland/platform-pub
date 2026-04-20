@@ -4,7 +4,7 @@
 -- Replaces the Phase 1 three-stream merge (articles + notes + external_items
 -- queried separately, merged in application code) with a single-table scan.
 --
--- See UNIVERSAL-FEED-ADR.md §IV.5 for full design rationale.
+-- See docs/adr/UNIVERSAL-FEED-ADR.md §IV.5 for full design rationale.
 
 CREATE TABLE feed_items (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),

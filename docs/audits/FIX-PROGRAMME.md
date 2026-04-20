@@ -1,7 +1,7 @@
 # all.haus — consolidated fix programme
 
-Merges `platform-pub-review.md` (DM path, resolver, feed-ingest, Stripe,
-dead-code sweep) and `AUDIT-BACKLOG.md` (scheduler, access, subscriptions,
+Merges `docs/audits/platform-pub-review.md` (DM path, resolver, feed-ingest, Stripe,
+dead-code sweep) and `docs/audits/AUDIT-BACKLOG.md` (scheduler, access, subscriptions,
 service structure, refactor debt) after spot-verification against `master`.
 
 Both audits hold up on the things I re-checked against source. Where they
@@ -23,6 +23,33 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — §55 markdown reorg shipped: cleared 5 stale
+  LibreOffice lock files (none of the documents were open — leftovers
+  from prior crashes dated Apr 12–16), then moved 22 of the 26
+  root-level markdowns into `docs/adr/` (14 forward-looking specs:
+  `ALLHAUS-ADR-UNIFIED`, `ALLHAUS-OMNIBUS`, `ALLHAUS-REDESIGN-SPEC`,
+  `CODE-QUALITY`, `EMAIL-ON-PUBLISH-SPEC`, `GATEWAY-DECOMPOSITION`,
+  `OWNER-DASHBOARD-SPEC`, `PUBLICATIONS-SPEC`, `REDESIGN-SCOPE`,
+  `TRAFFOLOGY-MASTER-ADR-2`, `UI-DESIGN-SPEC`, `UNIVERSAL-FEED-ADR`,
+  `platform-bucket-system-design`, `platform-pub-currency-strategy`)
+  and `docs/audits/` (8 post-hoc reviews: `ADMIN-PAGE-AUDIT`,
+  `AUDIT-BACKLOG`, `AUDIT-REPORT`, `FIX-PROGRAMME`,
+  `SUBSCRIPTIONS-GAP-ANALYSIS`, `all-haus-frontend-audit`,
+  `platform-pub-review`, `universal-feed-audit`). Four files remain
+  at root per the §55 spec: `README.md`, `CLAUDE.md`, `DEPLOYMENT.md`,
+  `feature-debt.md`. `git mv` used for the 17 tracked files so rename
+  history is preserved; plain `mv` for the 5 untracked ones
+  (`ALLHAUS-ADR-UNIFIED`, `ALLHAUS-OMNIBUS`, `AUDIT-BACKLOG`,
+  `REDESIGN-SCOPE`, `platform-pub-review` — no prior commits, so zero
+  history loss). Bulk path-rewrite via `perl -pi -e` with a negative
+  lookbehind `(?<!/)FILENAME\.md` pattern (idempotent — already-prefixed
+  refs skip) rewrote every remaining bare reference across `CLAUDE.md`,
+  `feature-debt.md`, the moved docs (adr↔audits cross-refs), 7
+  feed-ingest task/adapter files, `gateway/src/routes/reading-positions.ts`,
+  and 8 migration SQL files. `planning-archive/` intentionally not
+  touched — that's frozen historical snapshot. Post-rewrite grep across
+  the whole tree (ex. planning-archive, .git, .claude) returns zero
+  bare references, confirming the regex was exhaustive.
 - **2026-04-20** — Day 7 §52 api.ts split shipped: 1,568-line
   `web/src/lib/api.ts` split into 16 modules under `web/src/lib/api/`
   (`client.ts` for the shared `request()` + `ApiError` infra, plus
@@ -334,7 +361,7 @@ config object the function already has. One line + regression test.
 
 ### 11. **Verify first** — group-DM sender-side duplicates
 
-**Flagged by `platform-pub-review.md` §1.** `direct_messages` has one
+**Flagged by `docs/audits/platform-pub-review.md` §1.** `direct_messages` has one
 `recipient_id` per row, so a group send inserts N rows. The
 `loadConversationMessages` WHERE at `messages.ts:182` matches
 `sender_id = $2` OR `recipient_id = $2`, so the sender sees their own
@@ -347,7 +374,7 @@ row + per-recipient-ciphertext row rather than N envelope rows.
 
 ### 12. **Verify first** — is the DM 402 `dm_payment_required` ever consumed?
 
-**Flagged by `platform-pub-review.md` §1.** `sendMessage`
+**Flagged by `docs/audits/platform-pub-review.md` §1.** `sendMessage`
 (`messages.ts:296-308`) returns 402 with a price when any recipient
 charges. Grep shows the string `dm_payment_required` only in the
 definition and the throw — no endpoint takes payment and then unblocks
@@ -695,8 +722,8 @@ Both v1_6 handlers are live — `AccountLedger.tsx:51` consumes
 **55. Move audit/planning markdowns out of root.** 22 `.md` files at
 root (audit claimed 32 — overstated).
 **Fix:** `docs/adr/` for specs (ALLHAUS-REDESIGN-SPEC, UNIVERSAL-FEED-ADR,
-ALLHAUS-OMNIBUS, etc.), `docs/audits/` for `platform-pub-review.md`,
-`AUDIT-BACKLOG.md`, this file. Keep `README.md`, `CLAUDE.md`,
+ALLHAUS-OMNIBUS, etc.), `docs/audits/` for `docs/audits/platform-pub-review.md`,
+`docs/audits/AUDIT-BACKLOG.md`, this file. Keep `README.md`, `CLAUDE.md`,
 `DEPLOYMENT.md`, `feature-debt.md` at root.
 
 **56. Stale docker-compose.yml header.** Comment at :1-17 lists 9

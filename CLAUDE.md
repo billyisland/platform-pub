@@ -103,7 +103,7 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Overlay sits above content with 40% scrim, topbar stays visible and interactive
 - Mobile: full-screen bottom sheet
 - NoteComposer (`web/src/components/feed/NoteComposer.tsx`) is deprecated — kept in codebase but no longer imported anywhere
-- Full spec: `ALLHAUS-REDESIGN-SPEC.md` §3
+- Full spec: `docs/adr/ALLHAUS-REDESIGN-SPEC.md` §3
 
 ### Feed & search
 - Feed ranking spec in `planning-archive/FEED-ALGORITHM.md` (Phase 1 implemented)
@@ -126,7 +126,7 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Mastodon (Phase 4, read-only): `feed-ingest/src/adapters/activitypub.ts` fetches the actor doc to find the outbox URL, then paginates the outbox newest-first. Only public `Create` → `Note` activities are ingested (visibility check via `to`/`cc` containing the AS Public URI); Announces (boosts), non-public posts, and tombstones are ignored — outbox polling has no deletion signal, so delete propagation waits for inbox delivery (future phase). `feed-ingest/src/tasks/feed-ingest-activitypub.ts` is the per-source poll task, cursor = id URI of the previous newest item. `feed-ingest/src/lib/activitypub-ingest.ts` shared dual-write + `activitypub_instance_health` counters (see migration 056). WebFinger + actor lookup: `gateway/src/lib/activitypub-resolve.ts` (`resolveWebFinger`, `fetchActorProfile`, `extractFromMastodonUrl`). The universal resolver's `fediverse_handle` chain is live, and the ambiguous `user@domain` chain runs WebFinger alongside NIP-05. Mastodon sources wear a `BETA` label in `SubscribeInput` and the subscriptions page — per ADR §XIII, outbox polling is best-effort
 - Daily cron jobs: `feed_items_reconcile` (05:00) catches dual-write drift, `feed_items_author_refresh` (04:00) propagates author metadata changes. `feed_scores_refresh` (`*/5 * * * *`) computes HN-style gravity scores into `feed_items.score` from `feed_engagement` (48h window) — lives in feed-ingest (not the gateway) so scoring failures can't affect the public API
 - Outbound (Phase 5A — Mastodon, Phase 5B — Bluesky + external Nostr): migration 057 adds `linked_accounts` (encrypted OAuth credentials via `LINKED_ACCOUNT_KEY_HEX` / `shared/src/lib/crypto.ts`), `outbound_posts` (audit + retry state), and `oauth_app_registrations` (per-instance dynamic client reg). Migration 058 makes `outbound_posts.linked_account_id` nullable and adds `signed_event jsonb` so external-Nostr jobs ride the same queue without an OAuth account. Migration 059 adds `atproto_oauth_sessions` (DB-backed `NodeSavedSessionStore` for `@atproto/oauth-client-node`, AES-256-GCM encrypted). Migration 060 adds `atproto_oauth_pending_states` (DB-backed `NodeSavedStateStore` for the authorize→callback PKCE/DPoP round-trip so the flow survives multi-replica gateway scale-out; pruned every 5m by `atproto_oauth_states_prune`). Gateway `/api/v1/linked-accounts/*` handles Mastodon OAuth + AT Protocol OAuth (`POST /linked-accounts/bluesky` → authorize URL, `GET /linked-accounts/bluesky/callback`); `shared/src/lib/atproto-oauth.ts` is the singleton `NodeOAuthClient` factory (confidential client, `private_key_jwt`, PKCE + DPoP + PAR; loopback `client_id` for local dev, `ATPROTO_CLIENT_BASE_URL` + `ATPROTO_PRIVATE_JWK` in prod). `POST /notes` accepts optional `crossPost: { linkedAccountId, sourceItemId, actionType }` and calls `enqueueCrossPost` (best-effort); quote/reply to external Nostr posts enqueues via `enqueueNostrOutbound` (user-signed event in the job payload). feed-ingest `outbound_cross_post` dispatches by protocol: `activitypub-outbound.ts` (`/api/v1/statuses` + `Idempotency-Key`, federated reply targets via `/api/v2/search?resolve=true`), `atproto-outbound.ts` (`com.atproto.repo.createRecord` via `OAuthSession.fetchHandler`, DPoP-bound, 300-grapheme truncation via `Intl.Segmenter`, reply strong-refs and `app.bsky.embed.record` quotes from `external_items.interaction_data`), `nostr-outbound.ts` (WS publishes to `external_sources.relay_urls`). `outbound_token_refresh` cron (every 30m) proactively touches dormant atproto sessions weekly via `client.restore(did, 'auto')`; Mastodon tokens don't expire so that branch is a no-op. `LinkedAccountsPanel` on `/settings` manages both Mastodon and Bluesky connections. Nginx routes `/.well-known/oauth-client-metadata.json` + `/.well-known/jwks.json` to the gateway for PDS discovery
-- Full spec: `UNIVERSAL-FEED-ADR.md`
+- Full spec: `docs/adr/UNIVERSAL-FEED-ADR.md`
 
 ### Trust graph (Phases 1–2 + 4)
 - `trust_layer1` (migration 065): precomputed per-user signals (account age, paying readers, article count, Stripe KYC, NIP-05). Daily cron in feed-ingest (`trust_layer1_refresh`, 01:00 UTC). Pip status (`known`/`partial`/`unknown`) renders on all feed cards via `TrustPip` component
@@ -137,11 +137,11 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Gateway `trust.ts`: `GET /trust/:userId` (Layer 1 + Layer 2 epoch scores + public endorsements + Layer 4 relational data + viewer's vouches), `POST /vouches` (create/upsert), `DELETE /vouches/:id` (withdraw), `GET /my/vouches` (own vouch list). Prefers epoch scores; live vouch counts as pre-first-epoch fallback
 - Layer 4 relational data: viewer's valued set (follows + active subscriptions) intersected with subject's public endorsements — generates "N writers you follow endorse this person" text
 - Frontend: `TrustProfile` component (dimension bars using epoch scores, endorsements, Layer 4), `VouchModal` (dimension selector, visibility radio, aggregate disclaimer), vouch button on writer profiles, `VouchList` on `/network?tab=vouches` with withdrawal
-- Full spec: `ALLHAUS-OMNIBUS.md`
+- Full spec: `docs/adr/ALLHAUS-OMNIBUS.md`
 
 ## Omnivorous input (identity resolution)
 
-Wherever all.haus asks a user to identify a person, feed, or resource, the receiving field should be omnivorous: accept a URL, a handle, an email, an npub, a DID, a username — whatever the user has — and resolve it. Do not build narrow single-format inputs (email-only, username-only) for identity fields. Use the universal resolver (`POST /api/resolve`, specced in `UNIVERSAL-FEED-ADR.md` §V.5) as the shared resolution backend. The resolver classifies input by pattern matching and dispatches to protocol-specific resolution chains. Context parameter (`subscribe`, `invite`, `dm`, `general`) controls priority and filtering.
+Wherever all.haus asks a user to identify a person, feed, or resource, the receiving field should be omnivorous: accept a URL, a handle, an email, an npub, a DID, a username — whatever the user has — and resolve it. Do not build narrow single-format inputs (email-only, username-only) for identity fields. Use the universal resolver (`POST /api/resolve`, specced in `docs/adr/UNIVERSAL-FEED-ADR.md` §V.5) as the shared resolution backend. The resolver classifies input by pattern matching and dispatches to protocol-specific resolution chains. Context parameter (`subscribe`, `invite`, `dm`, `general`) controls priority and filtering.
 
 ## TypeScript setup
 
@@ -217,9 +217,12 @@ Threads never use nested indentation, left borders between nested replies, quote
 ## Key docs
 
 - `feature-debt.md` — consolidated feature debt, outstanding work, and attack order
-- `ALLHAUS-REDESIGN-SPEC.md` — redesign spec for topbar, feed, compose overlay, card family (Steps 1–4 shipped including article tiers, reading-history resumption, playscript threads; remaining: compose article mode, polish states)
-- `REDESIGN-SCOPE.md` — product scope document arguing what the product is (companion to the redesign spec)
-- `UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)
+- `docs/adr/ALLHAUS-REDESIGN-SPEC.md` — redesign spec for topbar, feed, compose overlay, card family (Steps 1–4 shipped including article tiers, reading-history resumption, playscript threads; remaining: compose article mode, polish states)
+- `docs/adr/REDESIGN-SCOPE.md` — product scope document arguing what the product is (companion to the redesign spec)
+- `docs/adr/UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)
+- `docs/adr/ALLHAUS-OMNIBUS.md` — trust graph spec (Layer 1/2/4, Phase A/B anonymity)
+- `docs/adr/` — active ADRs and specs (publications, email-on-publish, traffology, currency strategy, etc.)
+- `docs/audits/` — code reviews, audits, and fix programmes (`docs/audits/FIX-PROGRAMME.md`, `docs/audits/platform-pub-review.md`, `docs/audits/AUDIT-BACKLOG.md`, etc.)
 - `DEPLOYMENT.md` — full production deployment guide
 - `schema.sql` — full PostgreSQL schema (source of truth for DB structure)
 - `planning-archive/` — completed specs (FEATURES.md, DESIGN-BRIEF.md, FEED-ALGORITHM.md, RESILIENCE.md, etc.)
