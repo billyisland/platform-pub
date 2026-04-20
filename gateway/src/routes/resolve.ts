@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth.js'
-import { resolve, getAsyncResult } from '../lib/resolver.js'
+import { resolve, getAsyncResult, type ResolveContext } from '../lib/resolver.js'
 import logger from '../../shared/src/lib/logger.js'
 
 // =============================================================================
@@ -14,7 +14,7 @@ export async function resolveRoutes(app: FastifyInstance) {
 
   // POST /resolve — resolve an arbitrary input string
   app.post<{
-    Body: { query: string; context?: 'subscribe' | 'invite' | 'dm' | 'general' }
+    Body: { query: string; context?: ResolveContext }
   }>('/resolve', {
     preHandler: requireAuth,
     config: { rateLimit: { max: 30, timeWindow: '1 minute' } },

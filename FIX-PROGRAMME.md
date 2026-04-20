@@ -23,6 +23,44 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — Day 6 P2 deletions + renames shipped: §47
+  (deleted 8 orphan components — `NoteComposer.tsx`,
+  `NotificationBell.tsx`, `ErrorBoundary.tsx`, `UserSearch.tsx`,
+  `DrivesTab.tsx`, `ThereforeMark.tsx`, `OffersTab.tsx`,
+  `FeaturedWriters.tsx`; removed the stale `[class*="NoteComposer"]`
+  print selector in globals.css and updated stale comment references
+  in `format.ts` and `ProposalsTab.tsx`); §48 (web `lib/api.ts`
+  pruned — deleted unused `keys`/`follows`/`search`/`writers`
+  groupings and their types `KeyResponse`, `WriterProfile`,
+  `ProfileFollower`, `ProfileFollowing`, `PublicSubscription`;
+  dropped `export` on `SignupInput`, `SignupResult`,
+  `GatePassResponse`, `ResolvedContent`, `Publication`;
+  `lib/ndk.ts` kind constants trimmed to the three actually
+  used — `KIND_ARTICLE`, `KIND_NOTE`, `KIND_DELETION`; dropped
+  redundant `export default` on the three editor nodes since
+  all consumers use the named export; `decryptVaultContentAesGcm`
+  left as a non-exported internal — the test exercises the
+  XChaCha variant which remains exported); §49 (gateway
+  `lib/errors.ts` deleted as orphan; `routes/resolve.ts` now
+  imports `ResolveContext` type from the resolver lib so the
+  inline string-union doesn't drift from the canonical type;
+  `services/messages.ts` types reached by namespace import
+  `* as messages`, no change needed); §50 (removed unused
+  `date-fns`, `clsx` from web `package.json`; added missing
+  explicit `@tiptap/core` + `prosemirror-state` deps to stop
+  relying on transitive resolution through `@tiptap/react`);
+  §51 (deleted 547-line orphan `provenance-ikb.jsx` at repo
+  root); §54 (gateway routes renamed: `routes/feed.ts` →
+  `routes/timeline.ts` with `feedRoutes` → `timelineRoutes`,
+  `routes/feeds.ts` → `routes/external-feeds.ts` with
+  `feedsRoutes` → `externalFeedsRoutes`, `routes/v1_6.ts` →
+  `routes/my-account.ts` with `v1_6Routes` → `myAccountRoutes`;
+  endpoint paths (`/feed`, `/my/tab`, etc.) unchanged so no
+  client or test changes needed; CLAUDE.md references
+  updated). §52 (api.ts split) and §55 (markdown reorg)
+  deferred — §55 specifically because stale LibreOffice
+  lock files on 5 specs suggest the user may still have
+  them open. All 127 tests still green (52 gateway + 75 web).
 - **2026-04-20** — Day 5 payments cleanup shipped: §32
   (`reservePublicationPayout` no longer duplicates the allocation
   maths — the DB fetches its own rows, maps to camelCase, and the

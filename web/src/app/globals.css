@@ -548,7 +548,6 @@
   .report-button,
   button,
   .sticky,
-  [class*="NoteComposer"],
   [class*="ReplySection"],
   [class*="AllowanceExhausted"] {
     display: none !important;

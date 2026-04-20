@@ -1,7 +1,7 @@
 // =============================================================================
 // Shared formatting utilities
 //
-// Consolidated from ArticleCard, NoteCard, FeaturedWriters, [username]/page.
+// Consolidated from ArticleCard, NoteCard, [username]/page.
 // =============================================================================
 
 /**

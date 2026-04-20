@@ -22,7 +22,7 @@ import { replyRoutes } from './routes/replies.js'
 import { mediaRoutes } from './routes/media.js'
 import { subscriptionRoutes } from './routes/subscriptions.js'
 import { expireAndRenewSubscriptions } from './workers/subscription-expiry.js'
-import { v1_6Routes } from './routes/v1_6.js'
+import { myAccountRoutes } from './routes/my-account.js'
 import { receiptRoutes } from './routes/receipts.js'
 import { exportRoutes } from './routes/export.js'
 import { notificationRoutes } from './routes/notifications.js'
@@ -31,7 +31,7 @@ import { historyRoutes } from './routes/history.js'
 import { giftLinkRoutes } from './routes/gift-links.js'
 import { subscriptionOfferRoutes } from './routes/subscription-offers.js'
 import { messageRoutes } from './routes/messages.js'
-import { feedRoutes } from './routes/feed.js'
+import { timelineRoutes } from './routes/timeline.js'
 import { socialRoutes } from './routes/social.js'
 import { publicationRoutes } from './routes/publications.js'
 import { driveRoutes } from './routes/drives.js'
@@ -41,7 +41,7 @@ import { unsubscribeRoutes } from './routes/unsubscribe.js'
 import { bookmarkRoutes } from './routes/bookmarks.js'
 import { tagRoutes } from './routes/tags.js'
 import { resolveRoutes } from './routes/resolve.js'
-import { feedsRoutes } from './routes/feeds.js'
+import { externalFeedsRoutes } from './routes/external-feeds.js'
 import { linkedAccountsRoutes } from './routes/linked-accounts.js'
 import { trustRoutes } from './routes/trust.js'
 import { readingPositionRoutes } from './routes/reading-positions.js'
@@ -144,7 +144,7 @@ async function start() {
   await app.register(unsubscribeRoutes, { prefix: '/api/v1' })
 
   // v1.6 additional routes (reading tab)
-  await app.register(v1_6Routes, { prefix: '/api/v1' })
+  await app.register(myAccountRoutes, { prefix: '/api/v1' })
 
   // Receipt portability (portable bearer proofs + platform pubkey for federation)
   await app.register(receiptRoutes, { prefix: '/api/v1' })
@@ -171,7 +171,7 @@ async function start() {
   await app.register(messageRoutes, { prefix: '/api/v1' })
 
   // Feed (unified endpoint with reach dial — following, explore)
-  await app.register(feedRoutes, { prefix: '/api/v1' })
+  await app.register(timelineRoutes, { prefix: '/api/v1' })
 
   // Social (blocks, mutes)
   await app.register(socialRoutes, { prefix: '/api/v1' })
@@ -195,7 +195,7 @@ async function start() {
   await app.register(resolveRoutes, { prefix: '/api/v1' })
 
   // External feed subscriptions (RSS, Nostr, Bluesky, Mastodon)
-  await app.register(feedsRoutes, { prefix: '/api/v1' })
+  await app.register(externalFeedsRoutes, { prefix: '/api/v1' })
 
   // Linked accounts for outbound cross-posting (Phase 5)
   await app.register(linkedAccountsRoutes, { prefix: '/api/v1' })

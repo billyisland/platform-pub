@@ -161,5 +161,3 @@ export const PaywallGateNode = Node.create({
     }
   },
 })
-
-export default PaywallGateNode

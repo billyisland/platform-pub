@@ -102,5 +102,3 @@ export const EmbedNode = Node.create<EmbedNodeOptions>({
     ]
   },
 })
-
-export default EmbedNode

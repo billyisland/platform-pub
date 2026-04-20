@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth.js'
 import { pool } from '../../shared/src/db/client.js'
 
-export async function v1_6Routes(app: FastifyInstance) {
+export async function myAccountRoutes(app: FastifyInstance) {
   // GET /my/tab
   app.get('/my/tab', { preHandler: requireAuth }, async (req, reply) => {
     const userId = req.session!.sub!

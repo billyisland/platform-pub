@@ -7,14 +7,9 @@
 // =============================================================================
 
 // Nostr event kind constants
-export const KIND_VAULT = 39701
-export const KIND_RECEIPT = 9901
 export const KIND_ARTICLE = 30023
-export const KIND_DRAFT = 30024
 export const KIND_NOTE = 1
-export const KIND_CONTACTS = 3
 export const KIND_DELETION = 5
-export const KIND_REACTION = 7
 
 // =============================================================================
 // App-level event interfaces

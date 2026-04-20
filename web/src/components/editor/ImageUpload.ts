@@ -101,5 +101,3 @@ async function handleFileUpload(
     options.onUploadEnd?.()
   }
 }
-
-export default ImageUpload

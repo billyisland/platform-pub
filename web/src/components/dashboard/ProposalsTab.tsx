@@ -149,7 +149,7 @@ export function ProposalsTab({ userId }: { userId: string }) {
 }
 
 // =============================================================================
-// Offers Section (table rendering from OffersTab)
+// Offers Section
 // =============================================================================
 
 function OffersSection({ offers, onUpdate }: { offers: SubscriptionOffer[]; onUpdate: () => void }) {
@@ -249,7 +249,7 @@ function OffersSection({ offers, onUpdate }: { offers: SubscriptionOffer[]; onUp
 }
 
 // =============================================================================
-// Offer Create Form (extracted from OffersTab)
+// Offer Create Form
 // =============================================================================
 
 function OfferCreateForm({ mode, onCreated, onCancel }: { mode: 'code' | 'grant'; onCreated: () => void; onCancel: () => void }) {

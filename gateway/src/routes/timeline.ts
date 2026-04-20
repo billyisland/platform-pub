@@ -164,7 +164,7 @@ const FEED_JOINS = `
   LEFT JOIN trust_layer1 tl ON tl.user_id = fi.author_id
 `
 
-export async function feedRoutes(app: FastifyInstance) {
+export async function timelineRoutes(app: FastifyInstance) {
 
   app.get<{ Querystring: { reach?: string; cursor?: string; limit?: string } }>(
     '/feed', { preHandler: requireAuth }, async (req, reply) => {

@@ -40,13 +40,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // Auth
 // =============================================================================
 
-export interface SignupInput {
+interface SignupInput {
   email: string
   displayName: string
   username: string
 }
 
-export interface SignupResult {
+interface SignupResult {
   accountId: string
   pubkey: string
   username: string
@@ -169,7 +169,7 @@ export interface ArticleEarnings {
   paidPence: number
 }
 
-export interface GatePassResponse {
+interface GatePassResponse {
   readEventId: string
   allowanceJustExhausted?: boolean
   readState: string
@@ -256,34 +256,10 @@ export const articles = {
 }
 
 // =============================================================================
-// Key Service (via gateway proxy)
-// =============================================================================
-
-export interface KeyResponse {
-  encryptedKey: string
-  articleNostrEventId: string
-  algorithm: string
-  isReissuance: boolean
-}
-
-export const keys = {
-  requestKey: (nostrEventId: string) =>
-    request<KeyResponse>(`/articles/${nostrEventId}/key`, {
-      method: 'POST',
-    }),
-
-  unwrapKey: (encryptedKey: string) =>
-    request<{ contentKeyBase64: string }>('/unwrap-key', {
-      method: 'POST',
-      body: JSON.stringify({ encryptedKey }),
-    }),
-}
-
-// =============================================================================
 // Content Resolution
 // =============================================================================
 
-export interface ResolvedContent {
+interface ResolvedContent {
   type: 'note' | 'article'
   eventId: string
   content?: string
@@ -314,100 +290,6 @@ export const feed = {
   get: (reach: FeedReach, cursor?: number, limit?: number) =>
     request<{ items: any[]; reach: FeedReach }>(
       `/feed?reach=${reach}${cursor ? `&cursor=${cursor}` : ''}${limit ? `&limit=${limit}` : ''}`
-    ),
-}
-
-// =============================================================================
-// Follows
-// =============================================================================
-
-export const follows = {
-  follow: (writerId: string) =>
-    request<{ ok: boolean }>(`/follows/${writerId}`, { method: 'POST' }),
-
-  pubkeys: () =>
-    request<{ pubkeys: string[] }>('/follows/pubkeys'),
-}
-
-// =============================================================================
-// Search
-// =============================================================================
-
-export const search = {
-  writers: (q: string, limit = 10) =>
-    request<{ writers: any[] }>(`/search?type=writers&q=${encodeURIComponent(q)}&limit=${limit}`),
-}
-
-// =============================================================================
-// Writers (public)
-// =============================================================================
-
-export interface WriterProfile {
-  id: string
-  pubkey: string
-  username: string
-  displayName: string | null
-  bio: string | null
-  avatar: string | null
-  hostingType: string
-  subscriptionPricePence: number
-  annualDiscountPct: number
-  showCommissionButton: boolean
-  articleCount: number
-  hasPaywalledArticle: boolean
-  followerCount: number
-  followingCount: number
-}
-
-export interface ProfileFollower {
-  id: string
-  username: string
-  displayName: string | null
-  avatar: string | null
-  pubkey: string
-  isWriter: boolean
-  followedAt: string
-}
-
-export interface ProfileFollowing {
-  id: string
-  username: string
-  displayName: string | null
-  avatar: string | null
-  pubkey: string
-  followedAt: string
-}
-
-export interface PublicSubscription {
-  writerId: string
-  writerUsername: string
-  writerDisplayName: string | null
-  writerAvatar: string | null
-  startedAt: string
-}
-
-export const writers = {
-  getProfile: (username: string) =>
-    request<WriterProfile>(`/writers/${username}`),
-
-  getArticles: (username: string, limit = 20, offset = 0) =>
-    request<{ articles: any[]; limit: number; offset: number }>(
-      `/writers/${username}/articles?limit=${limit}&offset=${offset}`
-    ),
-
-  getFollowers: (username: string, limit = 20, offset = 0) =>
-    request<{ followers: ProfileFollower[]; total: number; limit: number; offset: number }>(
-      `/writers/${username}/followers?limit=${limit}&offset=${offset}`
-    ),
-
-  getFollowing: (username: string, limit = 20, offset = 0) =>
-    request<{ following: ProfileFollowing[]; total: number; limit: number; offset: number }>(
-      `/writers/${username}/following?limit=${limit}&offset=${offset}`
-    ),
-
-  getSubscriptions: (username: string, limit = 20, offset = 0) =>
-    request<{ subscriptions: PublicSubscription[]; limit: number; offset: number }>(
-      `/writers/${username}/subscriptions?limit=${limit}&offset=${offset}`
     ),
 }
 
@@ -1201,7 +1083,7 @@ export interface Subscriber {
 // Publications
 // =============================================================================
 
-export interface Publication {
+interface Publication {
   id: string
   slug: string
   name: string

@@ -87,7 +87,7 @@ function stripControlChars(s: string | undefined | null): string | null {
 // POST   /feeds/:id/refresh     — Force immediate re-fetch
 // =============================================================================
 
-export async function feedsRoutes(app: FastifyInstance) {
+export async function externalFeedsRoutes(app: FastifyInstance) {
 
   // POST /feeds/subscribe — subscribe to an external source
   app.post<{

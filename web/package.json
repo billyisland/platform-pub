@@ -17,12 +17,14 @@
 
     "@noble/ciphers": "^1.0.0",
 
+    "@tiptap/core": "^2.3.0",
     "@tiptap/react": "^2.3.0",
     "@tiptap/starter-kit": "^2.3.0",
     "@tiptap/extension-image": "^2.3.0",
     "@tiptap/extension-placeholder": "^2.3.0",
     "@tiptap/extension-character-count": "^2.3.0",
     "@tiptap/pm": "^2.3.0",
+    "prosemirror-state": "^1.4.0",
 
     "tiptap-markdown": "^0.8.0",
 
@@ -30,8 +32,6 @@
     "@stripe/react-stripe-js": "^2.6.0",
 
     "zustand": "^4.5.0",
-    "date-fns": "^3.6.0",
-    "clsx": "^2.1.0",
 
     "unified": "^11.0.0",
     "remark-parse": "^11.0.0",
