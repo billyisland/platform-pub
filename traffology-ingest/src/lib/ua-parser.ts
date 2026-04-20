@@ -7,7 +7,7 @@ import UAParser from 'ua-parser-js'
 // Browser family: simplified name (Chrome, Firefox, Safari, etc.).
 // =============================================================================
 
-export interface UAResult {
+interface UAResult {
   deviceType: 'desktop' | 'mobile' | 'tablet'
   browserFamily: string | null
 }

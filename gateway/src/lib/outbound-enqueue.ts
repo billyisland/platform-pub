@@ -12,7 +12,7 @@ import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 // already indexed, cross-posting is best-effort).
 // =============================================================================
 
-export interface EnqueueCrossPostInput {
+interface EnqueueCrossPostInput {
   accountId: string            // all.haus user id
   linkedAccountId: string      // linked_accounts.id
   sourceItemId: string         // external_items.id being replied/quoted
@@ -21,7 +21,7 @@ export interface EnqueueCrossPostInput {
   bodyText: string
 }
 
-export interface SignedNostrEvent {
+interface SignedNostrEvent {
   id: string
   pubkey: string
   created_at: number
@@ -31,7 +31,7 @@ export interface SignedNostrEvent {
   sig: string
 }
 
-export interface EnqueueNostrOutboundInput {
+interface EnqueueNostrOutboundInput {
   accountId: string
   sourceItemId: string         // external_items.id (carries the source's relay_urls)
   nostrEventId: string

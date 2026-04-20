@@ -7,7 +7,7 @@ import type { NormalisedActivityPubItem } from '../adapters/activitypub.js'
 // occasional overlap between backfill and steady-state polling is safe.
 // =============================================================================
 
-export interface ActivityPubIngestSource {
+interface ActivityPubIngestSource {
   id: string
   source_uri: string
   display_name: string | null

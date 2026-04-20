@@ -23,6 +23,30 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — §58/59 follow-up: knip `types` strict-gate cleanup.
+  Dropped `export` on 45 internal-only type/interface declarations across
+  14 files flagged by `knip --include types`: feed-ingest adapters
+  (`MastodonOutbound{Input,Result}`, `ActorMetadata`,
+  `OutboxFetch{Options,Result}`, `AtprotoReplyRef`,
+  `AtprotoPost{Input,Result}`, `RssFetch{Options,Result}`,
+  `NormalisedItem`), feed-ingest libs (`ActivityPubIngestSource`,
+  `AtprotoIngestSource`, `TruncateOptions`), gateway libs
+  (`ActorProfile`, `AtprotoProfile`, `SubscriptionEventParams`,
+  `EnqueueCrossPostInput`, `SignedNostrEvent`, `EnqueueNostrOutboundInput`,
+  `InputType`, `MatchType`, `Confidence`, `ResolverMatch`,
+  `ResolverResult` — `ResolveContext` kept exported since `routes/resolve.ts`
+  still imports it per §49), gateway middleware/services
+  (`PublicationMember`, `AccessCheckResult`, `InboxConversation`,
+  `ConversationMessage`, `SendMessageResult`, `DecryptRequest`,
+  `DecryptResult`, `DmPricingSummary`, `PublishToPublication{Input,Result}`),
+  key-custody (`GeneratedKeypair`), payment-service
+  (`PortableReceiptParams`, `ReadClassification`, `Split`, `SplitResult`,
+  `PayoutStatus`, `WriterPayout`, `HandledStripeEvent`), traffology
+  (`GeoResult`, `UAResult`, `KnownDomain`). CI workflow simplified: the
+  `--include=files,dependencies,exports,unlisted,binaries` gate is now
+  the default `npx knip` run (types is part of the default set now that
+  the baseline is zero). All 8 workspace builds clean, 113 backend tests
+  green, 75 web tests green, knip clean on the full default gate.
 - **2026-04-20** — §58/59 follow-up polish: deleted the dead
   `shared/src/index.ts` barrel (zero consumers — the 202-import rewrite
   standardised exclusively on `@platform-pub/shared/<subpath>.js`),

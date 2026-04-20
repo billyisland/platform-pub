@@ -91,7 +91,7 @@ export async function addConversationMembers(
   return { ok: true, data: { ok: true } }
 }
 
-export interface InboxConversation {
+interface InboxConversation {
   id: string
   lastMessageAt: string | null
   createdAt: string
@@ -159,7 +159,7 @@ export async function listInbox(userId: string): Promise<InboxConversation[]> {
   }))
 }
 
-export interface ConversationMessage {
+interface ConversationMessage {
   id: string
   senderId: string
   senderUsername: string | null
@@ -279,7 +279,7 @@ export async function loadConversationMessages(
 // Send / read / like
 // -----------------------------------------------------------------------------
 
-export type SendMessageResult =
+type SendMessageResult =
   | { ok: true; data: { messageIds: string[] } }
   | { ok: false; status: 403 | 400; error: string }
 
@@ -458,13 +458,13 @@ export async function toggleMessageLike(
 // Decrypt
 // -----------------------------------------------------------------------------
 
-export interface DecryptRequest {
+interface DecryptRequest {
   id: string
   counterpartyPubkey: string
   ciphertext: string
 }
 
-export interface DecryptResult {
+interface DecryptResult {
   id: string
   plaintext: string | null
   error?: string
@@ -491,7 +491,7 @@ export async function decryptBatch(
 // DM pricing
 // -----------------------------------------------------------------------------
 
-export interface DmPricingSummary {
+interface DmPricingSummary {
   defaultPricePence: number
   overrides: {
     userId: string

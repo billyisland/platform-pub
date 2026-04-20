@@ -35,7 +35,7 @@ function getServiceKeypair(): { privkey: Uint8Array; pubkey: string } {
 // extension until the NIP stabilises.
 // =============================================================================
 
-export interface SubscriptionEventParams {
+interface SubscriptionEventParams {
   subscriptionId: string
   readerPubkey: string
   writerPubkey: string

@@ -36,7 +36,7 @@ export interface StandingMember {
   revenueShareBps: number
 }
 
-export interface Split {
+interface Split {
   accountId: string
   amountPence: number
   shareType: string
@@ -44,7 +44,7 @@ export interface Split {
   articleId: string | null
 }
 
-export interface SplitResult {
+interface SplitResult {
   platformFeePence: number
   splits: Split[]
   remainingPool: number

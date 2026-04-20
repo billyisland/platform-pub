@@ -11,7 +11,7 @@ import type { NormalisedAtprotoItem } from '../adapters/atproto.js'
 // hit), so callers can count newly-ingested items.
 // =============================================================================
 
-export interface AtprotoIngestSource {
+interface AtprotoIngestSource {
   id: string
   source_uri: string
   display_name: string | null

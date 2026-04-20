@@ -24,9 +24,8 @@ jobs:
       # Backend ESLint (promise-safety rules)
       - run: npx eslint
 
-      # Knip — strict gate on high-signal categories. Unused types are a
-      # known baseline and are excluded until cleanup lands (see feature-debt).
-      - run: npx knip --include=files,dependencies,exports,unlisted,binaries
+      # Knip — strict gate on all high-signal categories (default set).
+      - run: npx knip
 
   test:
     runs-on: ubuntu-latest

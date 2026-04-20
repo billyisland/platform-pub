@@ -6,7 +6,7 @@
 // independent publishers.
 // =============================================================================
 
-export interface KnownDomain {
+interface KnownDomain {
   displayName: string
   sourceType: 'search' | 'link' | 'mailing-list' | 'nostr' | 'platform-internal'
 }

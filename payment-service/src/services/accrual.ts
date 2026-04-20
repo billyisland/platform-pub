@@ -8,7 +8,7 @@ import logger from '../lib/logger.js'
 // Read classification — extracted as a pure function for testability
 // =============================================================================
 
-export interface ReadClassification {
+interface ReadClassification {
   readState: 'provisional' | 'accrued'
   onFreeAllowance: boolean
   allowanceJustExhausted: boolean

@@ -14,7 +14,7 @@ import logger from '@platform-pub/shared/lib/logger.js'
 
 const AP_ACCEPT = 'application/activity+json, application/ld+json;profile="https://www.w3.org/ns/activitystreams", application/json;q=0.9'
 
-export interface ActorProfile {
+interface ActorProfile {
   actorUri: string
   displayName: string | null
   description: string | null

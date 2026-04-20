@@ -12,7 +12,7 @@ import { pool } from '@platform-pub/shared/db/client.js'
 // Format: base64(iv[12] + authTag[16] + ciphertext[32])
 // =============================================================================
 
-export interface GeneratedKeypair {
+interface GeneratedKeypair {
   pubkeyHex: string
   privkeyEncrypted: string
 }

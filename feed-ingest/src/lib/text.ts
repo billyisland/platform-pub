@@ -29,7 +29,7 @@ function countGraphemes(text: string): string[] | null {
   return parts
 }
 
-export interface TruncateOptions {
+interface TruncateOptions {
   /** Maximum number of graphemes in the output. */
   max: number
   /** Appended verbatim when truncation is needed, e.g. all.haus canonical URL. */

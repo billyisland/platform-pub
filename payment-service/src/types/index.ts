@@ -4,7 +4,7 @@
 // =============================================================================
 
 export type ReadState = 'provisional' | 'accrued' | 'platform_settled' | 'writer_paid'
-export type PayoutStatus = 'pending' | 'initiated' | 'completed' | 'failed'
+type PayoutStatus = 'pending' | 'initiated' | 'completed' | 'failed'
 
 // -----------------------------------------------------------------------------
 // Config — all monetary values in pence (integers, never floats)
@@ -92,7 +92,7 @@ export interface TabSettlement {
 // Writer payout — Stage 3: platform pays writer
 // -----------------------------------------------------------------------------
 
-export interface WriterPayout {
+interface WriterPayout {
   id: string
   writerId: string
   amountPence: number
@@ -145,7 +145,7 @@ export interface ArticleEarnings {
 // confirmed when funds are actually transferred.
 // -----------------------------------------------------------------------------
 
-export type HandledStripeEvent =
+type HandledStripeEvent =
   | 'payment_intent.succeeded'
   | 'payment_intent.payment_failed'
   | 'transfer.paid'

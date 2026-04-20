@@ -17,7 +17,7 @@ export { generateDTag }
 // without any Nostr event being created.
 // =============================================================================
 
-export interface PublishToPublicationInput {
+interface PublishToPublicationInput {
   publicationId: string
   authorId: string
   authorPubkey: string
@@ -33,7 +33,7 @@ export interface PublishToPublicationInput {
   existingDTag?: string
 }
 
-export interface PublishToPublicationResult {
+interface PublishToPublicationResult {
   articleId: string
   status: string
   nostrEventId?: string

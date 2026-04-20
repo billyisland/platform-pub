@@ -9,7 +9,7 @@ import { pool } from '@platform-pub/shared/db/client.js'
 // req.publicationMember for downstream route handlers.
 // =============================================================================
 
-export interface PublicationMember {
+interface PublicationMember {
   id: string
   publication_id: string
   account_id: string

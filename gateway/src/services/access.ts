@@ -14,7 +14,7 @@ import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 // Returns { hasAccess: true, reason: '...' } or { hasAccess: false }
 // =============================================================================
 
-export interface AccessCheckResult {
+interface AccessCheckResult {
   hasAccess: boolean
   reason?: 'own_content' | 'already_unlocked' | 'subscription'
   subscriptionId?: string

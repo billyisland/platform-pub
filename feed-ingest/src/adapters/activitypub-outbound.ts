@@ -22,7 +22,7 @@ export interface MastodonCredentials {
   scope?: string
 }
 
-export interface MastodonOutboundInput {
+interface MastodonOutboundInput {
   instanceUrl: string
   text: string
   maxChars: number
@@ -30,7 +30,7 @@ export interface MastodonOutboundInput {
   replyToStatusUri?: string     // external_items.source_item_uri when action=reply
 }
 
-export interface MastodonOutboundResult {
+interface MastodonOutboundResult {
   externalPostUri: string
 }
 

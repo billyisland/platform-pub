@@ -20,16 +20,16 @@ import { resolveWebFinger, fetchActorProfile, extractFromMastodonUrl } from './a
 // stubs returning "coming soon".
 // =============================================================================
 
-export type InputType =
+type InputType =
   | 'url' | 'npub' | 'nprofile' | 'hex_pubkey' | 'did'
   | 'bluesky_handle' | 'fediverse_handle' | 'ambiguous_at'
   | 'dotted_host' | 'platform_username' | 'free_text'
 
-export type MatchType = 'native_account' | 'external_source' | 'rss_feed'
-export type Confidence = 'exact' | 'probable' | 'speculative'
+type MatchType = 'native_account' | 'external_source' | 'rss_feed'
+type Confidence = 'exact' | 'probable' | 'speculative'
 export type ResolveContext = 'subscribe' | 'invite' | 'dm' | 'general'
 
-export interface ResolverMatch {
+interface ResolverMatch {
   type: MatchType
   confidence: Confidence
   account?: {
@@ -53,7 +53,7 @@ export interface ResolverMatch {
   }
 }
 
-export interface ResolverResult {
+interface ResolverResult {
   inputType: InputType
   matches: ResolverMatch[]
   // Phase A returns 'complete' immediately when there is no async work; otherwise

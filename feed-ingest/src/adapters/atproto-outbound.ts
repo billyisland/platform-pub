@@ -19,12 +19,12 @@ import { truncateWithLink } from '../lib/text.js'
 // Intl.Segmenter so CJK / emoji / combining marks all count as one.
 // =============================================================================
 
-export interface AtprotoReplyRef {
+interface AtprotoReplyRef {
   uri: string
   cid: string
 }
 
-export interface AtprotoPostInput {
+interface AtprotoPostInput {
   did: string
   text: string
   maxGraphemes: number
@@ -37,7 +37,7 @@ export interface AtprotoPostInput {
   quote?: AtprotoReplyRef
 }
 
-export interface AtprotoPostResult {
+interface AtprotoPostResult {
   externalPostUri: string
   cid: string
 }

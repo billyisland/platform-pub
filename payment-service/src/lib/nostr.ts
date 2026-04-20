@@ -13,7 +13,7 @@ import logger from './logger.js'
 // keyed HMAC hash for reader privacy on the public relay.
 // =============================================================================
 
-export interface PortableReceiptParams {
+interface PortableReceiptParams {
   articleNostrEventId: string
   writerPubkey: string
   readerPubkey: string    // actual pubkey — only in the private receipt

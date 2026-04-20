@@ -29,7 +29,7 @@ export interface MediaAttachment {
   description?: string
 }
 
-export interface ActorMetadata {
+interface ActorMetadata {
   id: string
   name: string | null
   preferredUsername: string | null
@@ -117,7 +117,7 @@ function extractImage(obj: any): string | null {
 // cursor (the id of the newest item from the previous poll) or the cutoff.
 // =============================================================================
 
-export interface OutboxFetchOptions {
+interface OutboxFetchOptions {
   outboxUrl: string
   cursor: string | null          // newest seen id URI from previous poll
   cutoffMs: number                // don't page older than this (epoch ms)
@@ -125,7 +125,7 @@ export interface OutboxFetchOptions {
   itemsPerPage: number
 }
 
-export interface OutboxFetchResult {
+interface OutboxFetchResult {
   items: NormalisedActivityPubItem[]
   newCursor: string | null        // id of the newest item we saw this run
 }

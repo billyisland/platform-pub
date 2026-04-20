@@ -7,7 +7,7 @@ import geoip from 'geoip-lite'
 // Returns null fields when lookup fails (private IPs, unknown ranges).
 // =============================================================================
 
-export interface GeoResult {
+interface GeoResult {
   country: string | null
   city: string | null
 }

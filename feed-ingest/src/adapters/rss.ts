@@ -30,13 +30,13 @@ const parser = new Parser<unknown, RssItemExtras>({
   },
 })
 
-export interface RssFetchOptions {
+interface RssFetchOptions {
   feedUrl: string
   etag?: string | null
   lastModified?: string | null
 }
 
-export interface RssFetchResult {
+interface RssFetchResult {
   items: NormalisedItem[]
   etag?: string
   lastModified?: string
@@ -45,7 +45,7 @@ export interface RssFetchResult {
   notModified: boolean
 }
 
-export interface NormalisedItem {
+interface NormalisedItem {
   sourceItemUri: string
   authorName: string | null
   authorHandle: string | null

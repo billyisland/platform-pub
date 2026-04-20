@@ -22,7 +22,7 @@ import logger from '@platform-pub/shared/lib/logger.js'
 
 const APPVIEW = 'https://public.api.bsky.app'
 
-export interface AtprotoProfile {
+interface AtprotoProfile {
   did: string
   handle: string
   displayName?: string
