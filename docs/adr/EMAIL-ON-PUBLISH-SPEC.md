@@ -201,7 +201,7 @@ Parallel query for publication articles joins on `publication_id` instead.
 - **Audience: paid subscribers only** (existing `notify_on_publish` on subscriptions)
 - Broadcast stream warm-up starts here with low volume
 
-**Files:** `shared/src/lib/email.ts`, `shared/src/lib/publish-emails.ts`, new `publish-email-template.ts`, `gateway/src/routes/articles.ts`, new `gateway/src/routes/unsubscribe.ts`, `web/src/components/editor/ArticleEditor.tsx`, `web/src/lib/publish.ts`, migration (just `email_sent_at` on articles)
+**Files:** `shared/src/lib/email.ts`, `shared/src/lib/publish-emails.ts`, new `publish-email-template.ts`, `gateway/src/routes/articles/publish.ts`, new `gateway/src/routes/unsubscribe.ts`, `web/src/components/editor/ArticleEditor.tsx`, `web/src/lib/publish.ts`, migration (just `email_sent_at` on articles)
 
 ### Phase 2: Follower emails + notification preferences
 

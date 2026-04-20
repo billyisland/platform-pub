@@ -420,7 +420,7 @@ export async function checkArticleAccess(
 }
 ```
 
-All callers in `gateway/src/routes/articles.ts` (gate-pass handler) pass through the article's `publication_id`.
+All callers in `gateway/src/routes/articles/gate-pass.ts` pass through the article's `publication_id`.
 
 ### 2.2 Publication permission middleware
 
@@ -668,7 +668,7 @@ Limited to:
 
 ### 6.1 Publication management
 
-All in `gateway/src/routes/publications.ts`.
+All in `gateway/src/routes/publications/` (concern-split directory).
 
 ```
 POST   /api/v1/publications                        — Create (creator becomes Owner + EiC)
@@ -946,8 +946,8 @@ New notification types, using the existing `notifications` table (`type` is TEXT
 | 1.2 | Key-custody signerType | `key-custody/src/lib/crypto.ts`, `key-custody/src/routes/keypairs.ts` |
 | 1.3 | Gateway key-custody client | `gateway/src/lib/key-custody-client.ts` |
 | 1.4 | Publication auth middleware | `gateway/src/middleware/publication-auth.ts` |
-| 1.5 | Publication CRUD routes | `gateway/src/routes/publications.ts`, `gateway/src/index.ts` |
-| 1.6 | Member management routes | `gateway/src/routes/publications.ts` |
+| 1.5 | Publication CRUD routes | `gateway/src/routes/publications/core.ts`, `gateway/src/index.ts` |
+| 1.6 | Member management routes | `gateway/src/routes/publications/members.ts` |
 | 1.7 | `checkArticleAccess` extension | `gateway/src/services/access.ts` |
 | 1.8 | API client publications namespace | `web/src/lib/api.ts` |
 
@@ -955,7 +955,7 @@ New notification types, using the existing `notifications` table (`type` is TEXT
 
 | Step | Description | Files |
 |------|-------------|-------|
-| 2.1 | Publication article gateway routes + server-side publisher | `gateway/src/routes/publications.ts`, `gateway/src/services/publication-publisher.ts` |
+| 2.1 | Publication article gateway routes + server-side publisher | `gateway/src/routes/publications/cms.ts`, `gateway/src/services/publication-publisher.ts` |
 | 2.2 | Signing route publication support | `gateway/src/routes/signing.ts` |
 | 2.3 | Draft publication association | `gateway/src/routes/drafts.ts` |
 | 2.4 | Editor publication selector + cross-post checkbox | `web/src/components/editor/ArticleEditor.tsx`, `web/src/app/write/page.tsx`, `web/src/lib/publish.ts` |
@@ -966,14 +966,14 @@ New notification types, using the existing `notifications` table (`type` is TEXT
 
 | Step | Description | Files |
 |------|-------------|-------|
-| 3.1 | Public publication gateway routes | `gateway/src/routes/publications.ts` |
-| 3.2 | Publication subscription routes | `gateway/src/routes/subscriptions.ts` |
+| 3.1 | Public publication gateway routes | `gateway/src/routes/publications/public.ts` |
+| 3.2 | Publication subscription routes | `gateway/src/routes/subscriptions/publication.ts` |
 | 3.3 | Publication follows routes | `gateway/src/routes/follows.ts` |
 | 3.4 | Publication RSS | `gateway/src/routes/rss.ts` |
 | 3.5 | Search extension | `gateway/src/routes/search.ts` |
 | 3.6 | Feed integration | `gateway/src/routes/feed.ts`, `gateway/src/workers/feed-scorer.ts` |
 | 3.7 | Publication pages (layout, homepage, about, masthead, subscribe, archive, article) | `web/src/app/pub/[slug]/...`, `web/src/components/publication/...` |
-| 3.8 | Article page publication awareness | `web/src/app/article/[dTag]/page.tsx`, `gateway/src/routes/articles.ts` |
+| 3.8 | Article page publication awareness | `web/src/app/article/[dTag]/page.tsx`, `gateway/src/routes/articles/gate-pass.ts` |
 | 3.9 | Writer profile publication filtering | `gateway/src/routes/writers.ts` |
 
 ### Phase 4 — Theming and custom domains (DEFERRED)
@@ -989,10 +989,10 @@ Tracked in `feature-debt.md`. Requires:
 
 | Step | Description | Files |
 |------|-------------|-------|
-| 5.1 | Rate card routes | `gateway/src/routes/publications.ts` |
-| 5.2 | Payroll routes | `gateway/src/routes/publications.ts` |
+| 5.1 | Rate card routes | `gateway/src/routes/publications/revenue.ts` |
+| 5.2 | Payroll routes | `gateway/src/routes/publications/revenue.ts` |
 | 5.3 | Publication payout worker | `payment-service/src/services/payout.ts`, `payment-service/src/workers/payout.ts` |
-| 5.4 | Earnings routes | `gateway/src/routes/publications.ts` |
+| 5.4 | Earnings routes | `gateway/src/routes/publications/revenue.ts` |
 | 5.5 | Revenue UI tabs | `web/src/components/dashboard/RateCardTab.tsx`, `PayrollTab.tsx`, `PublicationEarningsTab.tsx` |
 
 ---
