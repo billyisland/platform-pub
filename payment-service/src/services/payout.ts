@@ -531,15 +531,25 @@ export class PayoutService {
   // ---------------------------------------------------------------------------
 
   async confirmPayout(stripeTransferId: string): Promise<void> {
-    await pool.query(
+    const { rows } = await pool.query<{ id: string }>(
       `UPDATE writer_payouts
        SET status = 'completed', completed_at = now()
        WHERE stripe_transfer_id = $1
-         AND status != 'completed'`,
+         AND status != 'completed'
+       RETURNING id`,
       [stripeTransferId]
     )
 
-    logger.info({ stripeTransferId }, 'Writer payout confirmed')
+    if (rows.length === 0) {
+      // Either the webhook fired for an unknown transfer, or the row was
+      // already 'completed' (duplicate delivery — Stripe retries 3× on 2xx
+      // failures). Both are safe no-ops, but worth logging: an unknown
+      // transfer ID in production may indicate a mis-routed webhook.
+      logger.warn({ stripeTransferId }, 'confirmPayout: no row updated')
+      return
+    }
+
+    logger.info({ stripeTransferId, payoutId: rows[0].id }, 'Writer payout confirmed')
   }
 
   // ---------------------------------------------------------------------------
@@ -549,9 +559,17 @@ export class PayoutService {
 
   async handleFailedPayout(stripeTransferId: string, reason: string): Promise<void> {
     await withTransaction(async (client) => {
+      // A payout that previously reached 'completed' (e.g. a transfer.paid
+      // webhook that later reversed) needs completed_at nulled out alongside
+      // the status flip — otherwise reporting shows the payout as both failed
+      // and completed at some historical timestamp. failed_reason is only
+      // overwritten when empty so a subsequent retry doesn't lose the first
+      // failure's context.
       const payoutRow = await client.query<{ id: string; writer_id: string }>(
         `UPDATE writer_payouts
-         SET status = 'failed', failed_reason = $1
+         SET status = 'failed',
+             failed_reason = COALESCE(failed_reason, $1),
+             completed_at = NULL
          WHERE stripe_transfer_id = $2
          RETURNING id, writer_id`,
         [reason, stripeTransferId]
@@ -720,17 +738,8 @@ export class PayoutService {
         return null
       }
 
-      const platformFeePence = Math.floor(lockedGross * feeBps / 10000)
-      let remainingPool = lockedGross - platformFeePence
-      let flatFeesPaidPence = 0
-      const splits: Array<{
-        accountId: string; amountPence: number; shareType: string;
-        shareBps: number | null; articleId: string | null;
-      }> = []
-      const flatFeeShareIds: string[] = []
-
-      // --- Per-article overrides ---
-      const { rows: articleShares } = await client.query<{
+      // --- Load per-article overrides ---
+      const { rows: articleShareRows } = await client.query<{
         id: string; article_id: string; account_id: string;
         share_type: string; share_value: number; paid_out: boolean;
       }>(
@@ -741,7 +750,7 @@ export class PayoutService {
         [publicationId],
       )
 
-      const articleIds = [...new Set(articleShares.map(s => s.article_id))]
+      const articleIds = [...new Set(articleShareRows.map(s => s.article_id))]
       const articleEarnings = new Map<string, number>()
 
       if (articleIds.length > 0) {
@@ -760,33 +769,8 @@ export class PayoutService {
         }
       }
 
-      for (const share of articleShares) {
-        if (share.share_type === 'flat_fee_pence' && !share.paid_out) {
-          const fee = share.share_value
-          if (fee > remainingPool) continue
-          remainingPool -= fee
-          flatFeesPaidPence += fee
-          flatFeeShareIds.push(share.id)
-          splits.push({
-            accountId: share.account_id, amountPence: fee,
-            shareType: 'flat_fee', shareBps: null,
-            articleId: share.article_id,
-          })
-        } else if (share.share_type === 'revenue_bps') {
-          const articleNet = articleEarnings.get(share.article_id) || 0
-          const payout = Math.floor(articleNet * share.share_value / 10000)
-          if (payout <= 0) continue
-          remainingPool -= payout
-          splits.push({
-            accountId: share.account_id, amountPence: payout,
-            shareType: 'article_revenue', shareBps: share.share_value,
-            articleId: share.article_id,
-          })
-        }
-      }
-
-      // --- Standing shares ---
-      const { rows: standingMembers } = await client.query<{
+      // --- Load standing shares ---
+      const { rows: standingRows } = await client.query<{
         account_id: string; revenue_share_bps: number;
       }>(
         `SELECT account_id, revenue_share_bps
@@ -795,19 +779,23 @@ export class PayoutService {
         [publicationId],
       )
 
-      const totalStandingBps = standingMembers.reduce((sum, m) => sum + m.revenue_share_bps, 0)
+      // Delegate allocation to the pure function so production and unit tests
+      // execute the same code path.
+      const articleShares: ArticleShare[] = articleShareRows.map(r => ({
+        id: r.id,
+        articleId: r.article_id,
+        accountId: r.account_id,
+        shareType: r.share_type as 'flat_fee_pence' | 'revenue_bps',
+        shareValue: r.share_value,
+        paidOut: r.paid_out,
+      }))
+      const standingMembers: StandingMember[] = standingRows.map(r => ({
+        accountId: r.account_id,
+        revenueShareBps: r.revenue_share_bps,
+      }))
 
-      if (totalStandingBps > 0 && remainingPool > 0) {
-        for (const member of standingMembers) {
-          const payout = Math.floor(remainingPool * member.revenue_share_bps / totalStandingBps)
-          if (payout <= 0) continue
-          splits.push({
-            accountId: member.account_id, amountPence: payout,
-            shareType: 'standing', shareBps: member.revenue_share_bps,
-            articleId: null,
-          })
-        }
-      }
+      const { platformFeePence, splits, remainingPool, flatFeesPaidPence, flatFeeShareIds } =
+        computePublicationSplits(lockedGross, feeBps, articleShares, articleEarnings, standingMembers)
 
       // --- Insert publication_payouts as pending ---
       const { rows: [payoutRow] } = await client.query<{ id: string }>(

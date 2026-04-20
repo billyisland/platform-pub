@@ -23,6 +23,22 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — Day 5 payments cleanup shipped: §32
+  (`reservePublicationPayout` no longer duplicates the allocation
+  maths — the DB fetches its own rows, maps to camelCase, and the
+  result is passed through the pure `computePublicationSplits`;
+  splits / platformFee / flatFee / remainingPool / flatFeeShareIds
+  all destructure out of the pure result, so production and the
+  payout-math unit tests now exercise the same code path); §34
+  (`confirmPayout` adds `RETURNING id` and logs a `warn` when
+  zero rows are updated — distinguishes unknown-transfer webhooks
+  from legitimate duplicate deliveries); §35 (`handleFailedPayout`
+  clears `completed_at = NULL` on the failed flip so reporting
+  doesn't show a payout as both failed and completed; wraps
+  `failed_reason` in `COALESCE` so a retry's reason doesn't stomp
+  the first failure's context). §33 is already covered by §4's
+  finalise split and noted in-code. All 15 payout-math tests still
+  green.
 - **2026-04-20** — Day 5 feed-ingest shipped: §22 (kind 30023
   now keyed on `naddr` — pubkey + kind + d-tag — via a new
   `isParameterizedReplaceable` helper; upsert is a ratchet:
