@@ -7,7 +7,7 @@
     },
     "shared": {}
   },
-  "ignoreBinaries": ["tsc", "next", "vitest", "tsx"],
+  "ignoreBinaries": ["next", "vitest", "tsx"],
   "ignoreDependencies": [
     "@atproto/oauth-client-node",
     "pino",

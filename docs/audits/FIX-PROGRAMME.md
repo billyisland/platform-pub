@@ -23,6 +23,20 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — §58/59 follow-up polish: deleted the dead
+  `shared/src/index.ts` barrel (zero consumers — the 202-import rewrite
+  standardised exclusively on `@platform-pub/shared/<subpath>.js`),
+  dropped the now-unreachable `main` field and `"."` / `"./*"` entries
+  from `shared/package.json`'s exports map (keeping only `./*.js`
+  which is the form every consumer uses). Removed `tsc` from
+  `knip.json` `ignoreBinaries` (each workspace declares `typescript`
+  as a devDep, so knip resolves it). All 7 backend Dockerfiles got
+  `RUN npm prune --omit=dev` between build and `NODE_ENV=production`
+  — previously production images shipped the full dev toolchain
+  (tsx/vitest/typescript). `ApiError` now exported from
+  `web/src/lib/api/client.ts` so error handlers can `instanceof`
+  it. All 113 backend tests + 75 web tests green, knip clean, web
+  type-check clean.
 - **2026-04-20** — §58 + §59 shipped together (they were coupled — knip
   can only see the full graph once workspaces eliminate the symlink dance).
   npm workspaces adopted at root with 8 members (`shared`, `gateway`,

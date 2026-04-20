@@ -8,6 +8,7 @@ COPY shared/ shared/
 COPY key-custody/ key-custody/
 RUN npm run build --workspace=@platform-pub/shared
 RUN npm run build --workspace=@platform-pub/key-custody
+RUN npm prune --omit=dev
 ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
 RUN chown -R app:app /app
