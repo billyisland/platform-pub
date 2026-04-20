@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/**/*.ts"],
+      "project": ["scripts/**/*.ts"]
+    },
+    "shared": {}
+  },
+  "ignoreBinaries": ["tsc", "next", "vitest", "tsx"],
+  "ignoreDependencies": [
+    "@atproto/oauth-client-node",
+    "pino",
+    "pino-pretty",
+    "pg",
+    "jose",
+    "nostr-tools",
+    "dotenv",
+    "sharp",
+    "@types/pg"
+  ]
+}

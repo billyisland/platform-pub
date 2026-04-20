@@ -1,4 +1,4 @@
-import { pool, withTransaction } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 
 // =============================================================================
 // Article Access Checker

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { getCount, getCountsByPieceIds } from '../lib/concurrent-tracker.js'
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 
 // =============================================================================
 // Concurrent reader endpoints — internal only (called by gateway)

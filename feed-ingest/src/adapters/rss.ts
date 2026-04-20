@@ -1,7 +1,7 @@
 import Parser from 'rss-parser'
-import { safeFetch } from '../../shared/src/lib/http-client.js'
+import { safeFetch } from '@platform-pub/shared/lib/http-client.js'
 import { sanitizeContent, stripHtml } from '../lib/sanitize.js'
-import logger from '../../shared/src/lib/logger.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // RSS / Atom ingestion adapter
@@ -10,13 +10,22 @@ import logger from '../../shared/src/lib/logger.js'
 // ready for INSERT INTO external_items.
 // =============================================================================
 
-const parser = new Parser({
+type RssItemExtras = {
+  mediaContent: unknown
+  mediaThumbnail: unknown
+  'content:encoded'?: string
+  author?: string
+}
+
+const parser = new Parser<unknown, RssItemExtras>({
   timeout: 10_000,
   maxRedirects: 3,
   customFields: {
     item: [
       ['media:content', 'mediaContent', { keepArray: true }],
       ['media:thumbnail', 'mediaThumbnail'],
+      'content:encoded',
+      'author',
     ],
   },
 })

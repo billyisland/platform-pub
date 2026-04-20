@@ -1,6 +1,6 @@
 import Stripe from 'stripe'
 import type { WriterEarnings, ArticleEarnings } from '../types/index.js'
-import { pool, withTransaction, loadConfig } from '../../shared/src/db/client.js'
+import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -109,7 +109,7 @@ export function computePublicationSplits(
   return { platformFeePence, splits, remainingPool, flatFeesPaidPence, flatFeeShareIds }
 }
 
-export class PayoutService {
+class PayoutService {
   private stripe: Stripe
 
   constructor() {

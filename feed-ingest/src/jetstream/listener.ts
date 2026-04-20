@@ -1,9 +1,9 @@
 import { WebSocket } from 'ws'
 import type { PoolClient } from 'pg'
-import { pool, withTransaction } from '../../shared/src/db/client.js'
-import logger from '../../shared/src/lib/logger.js'
-import { pinnedWebSocketOptions } from '../../shared/src/lib/http-client.js'
-import { ADVISORY_LOCKS } from '../../shared/src/lib/advisory-locks.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
+import { pinnedWebSocketOptions } from '@platform-pub/shared/lib/http-client.js'
+import { ADVISORY_LOCKS } from '@platform-pub/shared/lib/advisory-locks.js'
 import { normaliseAtprotoCommit, buildAtUri, type JetstreamCommit } from '../adapters/atproto.js'
 import { insertAtprotoItem } from '../lib/atproto-ingest.js'
 

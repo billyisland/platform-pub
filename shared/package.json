@@ -4,6 +4,11 @@
   "description": "Shared database client, auth, session, and keypair management for all.haus",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*.js": "./dist/*.js",
+    "./*": "./dist/*.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

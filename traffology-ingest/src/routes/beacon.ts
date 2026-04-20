@@ -5,8 +5,8 @@ import { resolvePieceId } from '../lib/piece-resolver.js'
 import { lookupGeo } from '../lib/geo.js'
 import { parseUA } from '../lib/ua-parser.js'
 import { touch, remove } from '../lib/concurrent-tracker.js'
-import { pool } from '../../shared/src/db/client.js'
-import logger from '../../shared/src/lib/logger.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // POST /beacon — receives session data from the page script

@@ -1,13 +1,15 @@
 FROM node:20-alpine
 WORKDIR /app
-COPY tsconfig.base.json ./
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY shared/package.json shared/
+COPY feed-ingest/package.json feed-ingest/
+RUN npm ci --workspace=@platform-pub/shared --workspace=@platform-pub/feed-ingest --include-workspace-root
 COPY shared/ shared/
 COPY feed-ingest/ feed-ingest/
-RUN cd shared && npm install && cd ../feed-ingest && npm install
-RUN ln -sf /app/shared /app/feed-ingest/shared
-RUN cd feed-ingest && npm run build
+RUN npm run build --workspace=@platform-pub/shared
+RUN npm run build --workspace=@platform-pub/feed-ingest
 ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
 RUN chown -R app:app /app
 USER app
-CMD ["node", "feed-ingest/dist/src/index.js"]
+CMD ["node", "feed-ingest/dist/index.js"]

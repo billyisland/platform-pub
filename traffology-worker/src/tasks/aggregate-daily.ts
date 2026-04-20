@@ -1,6 +1,6 @@
 import { type Task } from 'graphile-worker'
 import { type PoolClient } from 'pg'
-import { pool, withTransaction } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 
 // =============================================================================
 // aggregate_daily

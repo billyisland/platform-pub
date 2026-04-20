@@ -1,10 +1,10 @@
-import { pool, withTransaction } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { publishSubscriptionEvent } from '../lib/nostr-publisher.js'
 import {
   sendSubscriptionRenewedEmail,
   sendSubscriptionExpiryWarningEmail,
-} from '../../shared/src/lib/subscription-emails.js'
-import logger from '../../shared/src/lib/logger.js'
+} from '@platform-pub/shared/lib/subscription-emails.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 import { logSubscriptionCharge } from '../routes/subscriptions.js'
 
 // =============================================================================

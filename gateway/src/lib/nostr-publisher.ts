@@ -1,6 +1,6 @@
 import { finalizeEvent, getPublicKey } from 'nostr-tools'
 import { WebSocket } from 'ws'
-import logger from '../../shared/src/lib/logger.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Gateway Nostr Publisher

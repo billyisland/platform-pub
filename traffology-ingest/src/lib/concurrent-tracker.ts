@@ -47,14 +47,6 @@ export function getCount(pieceId: string): number {
   return count
 }
 
-export function getTotalCount(): number {
-  let total = 0
-  for (const [pieceId] of activeSessions) {
-    total += getCount(pieceId)
-  }
-  return total
-}
-
 export function getCountsByPieceIds(pieceIds: string[]): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const pieceId of pieceIds) {

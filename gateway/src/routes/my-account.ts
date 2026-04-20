@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth.js'
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 
 export async function myAccountRoutes(app: FastifyInstance) {
   // GET /my/tab

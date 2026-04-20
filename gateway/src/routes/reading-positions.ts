@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
 
 // =============================================================================

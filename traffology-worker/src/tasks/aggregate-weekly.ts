@@ -1,5 +1,5 @@
 import { type Task } from 'graphile-worker'
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 
 // =============================================================================
 // aggregate_weekly

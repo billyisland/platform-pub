@@ -1,4 +1,4 @@
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 
 // =============================================================================
 // Piece resolver — lazy-creates traffology.pieces from public.articles

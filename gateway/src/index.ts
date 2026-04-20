@@ -1,6 +1,6 @@
 import 'dotenv/config'
-import { requireEnv, requireEnvMinLength } from '../shared/src/lib/env.js'
-import { ADVISORY_LOCKS } from '../shared/src/lib/advisory-locks.js'
+import { requireEnv, requireEnvMinLength } from '@platform-pub/shared/lib/env.js'
+import { ADVISORY_LOCKS } from '@platform-pub/shared/lib/advisory-locks.js'
 import Fastify from 'fastify'
 import sensible from '@fastify/sensible'
 import cookie from '@fastify/cookie'
@@ -45,10 +45,10 @@ import { externalFeedsRoutes } from './routes/external-feeds.js'
 import { linkedAccountsRoutes } from './routes/linked-accounts.js'
 import { trustRoutes } from './routes/trust.js'
 import { readingPositionRoutes } from './routes/reading-positions.js'
-import { atprotoClientMetadata, atprotoJwks } from '../shared/src/lib/atproto-oauth.js'
+import { atprotoClientMetadata, atprotoJwks } from '@platform-pub/shared/lib/atproto-oauth.js'
 import { publishScheduledDrafts } from './workers/scheduler.js'
-import { pool } from '../shared/src/db/client.js'
-import logger from '../shared/src/lib/logger.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // all.haus — API Gateway

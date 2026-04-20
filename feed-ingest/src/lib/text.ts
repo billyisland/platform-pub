@@ -14,7 +14,7 @@
 // federations still link back to the canonical all.haus post.
 // =============================================================================
 
-export function countGraphemes(text: string): string[] | null {
+function countGraphemes(text: string): string[] | null {
   // Intl.Segmenter is runtime-available on Node 18+ but may be missing from
   // the TS lib target on older setups — cast through any to tolerate both.
   const Segmenter = (typeof Intl !== 'undefined' ? (Intl as any).Segmenter : undefined) as

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth.js'
 import { resolve, getAsyncResult, type ResolveContext } from '../lib/resolver.js'
-import logger from '../../shared/src/lib/logger.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Universal Resolver endpoints

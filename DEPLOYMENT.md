@@ -125,17 +125,11 @@ Key variables:
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/ejklake/platform-pub /root/platform-pub
+git clone https://github.com/billyisland/platform-pub /root/platform-pub
 cd /root/platform-pub
 ```
 
-> **Local dev only:** each service imports `shared/` via a sibling symlink. These are committed to the repo, so `git clone` restores them automatically. If for any reason they are missing:
-> ```bash
-> ln -snf ../shared gateway/shared
-> ln -snf ../shared payment-service/shared
-> ln -snf ../shared key-service/shared
-> ln -snf ../shared key-custody/shared
-> ```
+The backend is an npm workspace (`shared`, `gateway`, `payment-service`, `key-service`, `key-custody`, `feed-ingest`, `traffology-ingest`, `traffology-worker`). One `npm ci` at the root installs every service — `@platform-pub/shared` is linked into each consumer's `node_modules/` automatically. Docker builds use `npm ci --workspace=<name> --include-workspace-root` so each image contains only what that service needs. `web/` stays standalone (Next.js toolchain, its own lockfile).
 
 ### 2. Create environment files
 

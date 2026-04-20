@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the pool before importing the module under test
 const mockQuery = vi.fn()
-vi.mock('../../shared/src/db/client.js', () => ({
+vi.mock('@platform-pub/shared/db/client.js', () => ({
   pool: { query: (...args: any[]) => mockQuery(...args) },
 }))
 

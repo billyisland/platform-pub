@@ -1,11 +1,11 @@
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import { publishToPublication } from '../services/publication-publisher.js'
-import { sendPublishNotifications } from '../../shared/src/lib/publish-emails.js'
+import { sendPublishNotifications } from '@platform-pub/shared/lib/publish-emails.js'
 import { checkAndTriggerDriveFulfilment } from '../routes/drives.js'
-import logger from '../../shared/src/lib/logger.js'
-import { slugify, generateDTag } from '../../shared/src/lib/slug.js'
+import logger from '@platform-pub/shared/lib/logger.js'
+import { slugify, generateDTag } from '@platform-pub/shared/lib/slug.js'
 
 // =============================================================================
 // Scheduled Publishing Worker

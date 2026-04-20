@@ -47,22 +47,6 @@ export function encryptArticleBodyXChaCha(
   return combined.toString('base64')
 }
 
-export function decryptArticleBodyXChaCha(
-  ciphertextBase64: string,
-  contentKeyBytes: Buffer
-): string {
-  const combined = Buffer.from(ciphertextBase64, 'base64')
-  const nonce = combined.subarray(0, 24)
-  const ciphertextWithTag = combined.subarray(24)
-
-  const key = new Uint8Array(contentKeyBytes)
-
-  const plaintext = xchacha20poly1305(key, new Uint8Array(nonce))
-    .decrypt(new Uint8Array(ciphertextWithTag))
-
-  return new TextDecoder().decode(plaintext)
-}
-
 // =============================================================================
 // AES-256-GCM — legacy (kept for backward-compatible decryption only)
 // =============================================================================

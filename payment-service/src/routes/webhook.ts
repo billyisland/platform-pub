@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import Stripe from 'stripe'
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
 import { accrualService } from '../services/accrual.js'

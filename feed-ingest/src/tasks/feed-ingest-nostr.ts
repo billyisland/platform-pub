@@ -2,9 +2,9 @@ import type { Task } from 'graphile-worker'
 import { randomUUID } from 'node:crypto'
 import { WebSocket } from 'ws'
 import { nip19, verifyEvent } from 'nostr-tools'
-import { pool, withTransaction } from '../../shared/src/db/client.js'
-import logger from '../../shared/src/lib/logger.js'
-import { pinnedWebSocketOptions, type PinnedWebSocketOptions } from '../../shared/src/lib/http-client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
+import { pinnedWebSocketOptions, type PinnedWebSocketOptions } from '@platform-pub/shared/lib/http-client.js'
 
 // Reject events claiming timestamps more than this far in the future — prevents
 // a hostile relay from poisoning the cursor into year 2100.

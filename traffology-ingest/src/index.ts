@@ -4,8 +4,8 @@ import sensible from '@fastify/sensible'
 import rateLimit from '@fastify/rate-limit'
 import { beaconRoutes } from './routes/beacon.js'
 import { concurrentRoutes } from './routes/concurrent.js'
-import { pool } from '../shared/src/db/client.js'
-import logger from '../shared/src/lib/logger.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Traffology Ingest Service

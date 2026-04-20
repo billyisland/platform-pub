@@ -5,16 +5,16 @@ const mockVerifySession = vi.fn()
 const mockRefreshIfNeeded = vi.fn()
 const mockQuery = vi.fn()
 
-vi.mock('../../shared/src/auth/session.js', () => ({
+vi.mock('@platform-pub/shared/auth/session.js', () => ({
   verifySession: (...args: any[]) => mockVerifySession(...args),
   refreshIfNeeded: (...args: any[]) => mockRefreshIfNeeded(...args),
 }))
 
-vi.mock('../../shared/src/db/client.js', () => ({
+vi.mock('@platform-pub/shared/db/client.js', () => ({
   pool: { query: (...args: any[]) => mockQuery(...args) },
 }))
 
-vi.mock('../../shared/src/lib/logger.js', () => ({
+vi.mock('@platform-pub/shared/lib/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 

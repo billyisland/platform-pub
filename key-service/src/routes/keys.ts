@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { vaultService, KeyServiceError } from '../services/vault.js'
 import { decryptContentKey } from '../lib/kms.js'
 import { wrapKeyForReader } from '../lib/nip44.js'
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================

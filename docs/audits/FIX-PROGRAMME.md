@@ -23,6 +23,56 @@ starts.
 
 ## Progress
 
+- **2026-04-20** — §58 + §59 shipped together (they were coupled — knip
+  can only see the full graph once workspaces eliminate the symlink dance).
+  npm workspaces adopted at root with 8 members (`shared`, `gateway`,
+  `payment-service`, `key-service`, `key-custody`, `feed-ingest`,
+  `traffology-ingest`, `traffology-worker` — `web/` stays standalone).
+  Each consumer now lists `"@platform-pub/shared": "*"` and imports via
+  `@platform-pub/shared/<subpath>` (202 imports rewritten across services
+  + test mocks). `shared/package.json` exposes an `exports` map so subpath
+  imports work both in dev (npm hoists `@platform-pub/*` into
+  `node_modules/@platform-pub/`) and inside Docker images. All 7 backend
+  Dockerfiles rewritten to `npm ci --workspace=… --include-workspace-root`
+  then per-workspace `npm run build` — no more symlink dance, no more
+  per-service lockfiles (now one `package-lock.json` at root). Per-service
+  tsconfigs set `"rootDir": "src"` (removes the workaround that let tsc
+  silently accept rootDir violations via symlinked source). The conversion
+  revealed latent type errors in `feed-ingest/src/adapters/rss.ts` —
+  custom RSS fields (`'content:encoded'`, `author`) weren't in the default
+  `Parser` generic; fixed by typing `Parser<unknown, RssItemExtras>` with
+  explicit `customFields` item list. `traffology-ingest` + `-worker` got
+  `--passWithNoTests` on their `test` script (no test files yet, but they
+  declared `"test": "vitest run"` which fails CI with exit 1). Knip v6.5.0
+  wired at root with `knip.json`: scripts/ as entry+project pattern for
+  the repo's `.ts` scripts, shared-workspace override (its `exports` map
+  lets knip reach all public surfaces), `ignoreBinaries` for `tsc`/`next`/
+  `vitest`/`tsx`, `ignoreDependencies` list for workspace-transitive deps
+  (`pino`, `pg`, `jose`, `nostr-tools`, etc. — imported transitively via
+  `@platform-pub/shared`, so per-service `package.json` declares them but
+  no direct imports appear). Dead-code sweep from knip's initial report:
+  4 singleton-service classes dropped `export` (`VaultService`,
+  `PayoutService`, `AccrualService`, `SettlementService` — only the
+  `const xService = new XService()` singleton is imported externally), and
+  3 genuinely unused functions deleted outright (`nip44Encrypt` HTTP
+  wrapper in gateway's key-custody-client, `decryptArticleBodyXChaCha` in
+  key-service/src/lib/crypto.ts, `getTotalCount` in traffology-ingest's
+  concurrent-tracker). `countGraphemes` in feed-ingest/src/lib/text.ts
+  unexported (internal-only). CI workflow rewritten: one `npm ci` at root
+  replaces 5 per-prefix installs, build + test run via
+  `npm run X --workspaces --if-present`, knip gates on
+  `files,dependencies,exports,unlisted,binaries`. Types category excluded
+  from the strict gate — a 46-type baseline remains (mostly internal-only
+  input/result interfaces paired with exported functions; cleanup is
+  mechanical but out of scope for this session). `web/` CI path unchanged
+  (still standalone `cd web && npm ci`). Local verification: 7/7
+  workspace builds clean, all tests green (11 key-service + 41
+  payment-service + 19 key-custody + 42 feed-ingest + shared + gateway,
+  traffology-\* pass-with-no-tests), ESLint 0 errors, knip clean on
+  strict categories. Follow-up tracked: drop `export` on the 46 unused
+  types, move web/ into the workspace once Next.js toolchain compat is
+  verified, consider promoting `types` back into the knip strict gate
+  once cleanup lands.
 - **2026-04-20** — §55 markdown reorg shipped: cleared 5 stale
   LibreOffice lock files (none of the documents were open — leftovers
   from prior crashes dated Apr 12–16), then moved 22 of the 26

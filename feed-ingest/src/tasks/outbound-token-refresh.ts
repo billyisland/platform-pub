@@ -1,7 +1,7 @@
 import type { Task } from 'graphile-worker'
-import { pool } from '../../shared/src/db/client.js'
-import { getAtprotoClient } from '../../shared/src/lib/atproto-oauth.js'
-import logger from '../../shared/src/lib/logger.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import { getAtprotoClient } from '@platform-pub/shared/lib/atproto-oauth.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // outbound_token_refresh — daemon-style cron job

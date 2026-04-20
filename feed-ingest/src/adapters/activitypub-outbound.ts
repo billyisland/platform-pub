@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { safeFetch } from '../../shared/src/lib/http-client.js'
+import { safeFetch } from '@platform-pub/shared/lib/http-client.js'
 import { truncateWithLink } from '../lib/text.js'
 
 // =============================================================================

@@ -1,5 +1,5 @@
-import { getAtprotoClient } from '../../shared/src/lib/atproto-oauth.js'
-import logger from '../../shared/src/lib/logger.js'
+import { getAtprotoClient } from '@platform-pub/shared/lib/atproto-oauth.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 import { truncateWithLink } from '../lib/text.js'
 
 // =============================================================================

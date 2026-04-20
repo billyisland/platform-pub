@@ -7,11 +7,12 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/src/index.js",
+    "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@platform-pub/shared": "*",
     "fastify": "^4.26.0",
     "@fastify/sensible": "^5.5.0",
     "nostr-tools": "^2.3.0",

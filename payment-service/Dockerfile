@@ -1,14 +1,16 @@
 FROM node:20-alpine
 WORKDIR /app
-COPY tsconfig.base.json ./
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY shared/package.json shared/
+COPY payment-service/package.json payment-service/
+RUN npm ci --workspace=@platform-pub/shared --workspace=@platform-pub/payment-service --include-workspace-root
 COPY shared/ shared/
 COPY payment-service/ payment-service/
-RUN cd shared && npm install && cd ../payment-service && npm install
-RUN ln -sf /app/shared /app/payment-service/shared
-RUN cd payment-service && npm run build
+RUN npm run build --workspace=@platform-pub/shared
+RUN npm run build --workspace=@platform-pub/payment-service
 ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
 RUN chown -R app:app /app
 USER app
 EXPOSE 3001
-CMD ["node", "payment-service/dist/src/index.js"]
+CMD ["node", "payment-service/dist/index.js"]

@@ -1,9 +1,21 @@
 {
+  "workspaces": [
+    "shared",
+    "gateway",
+    "payment-service",
+    "key-service",
+    "key-custody",
+    "feed-ingest",
+    "traffology-ingest",
+    "traffology-worker"
+  ],
   "scripts": {
     "seed": "npx tsx scripts/seed.ts",
     "seed:clean": "npx tsx scripts/seed.ts --clean",
     "lint": "eslint",
-    "lint:fix": "eslint --fix"
+    "lint:fix": "eslint --fix",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
   },
   "dependencies": {
     "dotenv": "^17.3.1",
@@ -14,6 +26,7 @@
     "@faker-js/faker": "^10.4.0",
     "@types/pg": "^8.20.0",
     "eslint": "^10.2.0",
+    "knip": "6.5.0",
     "typescript-eslint": "^8.58.0"
   }
 }

@@ -4,9 +4,9 @@ import sensible from '@fastify/sensible'
 import { paymentRoutes } from './routes/payment.js'
 import { webhookRoutes } from './routes/webhook.js'
 import { startPayoutWorker } from './workers/payout.js'
-import { pool } from '../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 import logger from './lib/logger.js'
-import { requireEnv } from '../shared/src/lib/env.js'
+import { requireEnv } from '@platform-pub/shared/lib/env.js'
 
 // =============================================================================
 // all.haus — Payment Service

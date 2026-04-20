@@ -1,14 +1,14 @@
 import type { FastifyInstance } from 'fastify'
 import crypto from 'node:crypto'
 import { z } from 'zod'
-import { pool } from '../../shared/src/db/client.js'
-import { safeFetch } from '../../shared/src/lib/http-client.js'
-import { encryptJson, decryptJson } from '../../shared/src/lib/crypto.js'
-import { getAtprotoClient } from '../../shared/src/lib/atproto-oauth.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import { safeFetch } from '@platform-pub/shared/lib/http-client.js'
+import { encryptJson, decryptJson } from '@platform-pub/shared/lib/crypto.js'
+import { getAtprotoClient } from '@platform-pub/shared/lib/atproto-oauth.js'
 import { getProfile, isDid, normaliseHandle } from '../lib/atproto-resolve.js'
 import { requireAuth } from '../middleware/auth.js'
-import { requireEnv } from '../../shared/src/lib/env.js'
-import logger from '../../shared/src/lib/logger.js'
+import { requireEnv } from '@platform-pub/shared/lib/env.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Linked Accounts (Phase 5 — outbound reply router)

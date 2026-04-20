@@ -1,5 +1,5 @@
 import type { EventTemplate } from 'nostr-tools'
-import logger from '../../shared/src/lib/logger.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Key Custody Client
@@ -56,15 +56,6 @@ export async function unwrapKey(
   signerType: 'account' | 'publication' = 'account'
 ): Promise<{ contentKeyBase64: string }> {
   return post('/api/v1/keypairs/unwrap', { signerId, signerType, encryptedKey })
-}
-
-export async function nip44Encrypt(
-  signerId: string,
-  recipientPubkey: string,
-  plaintext: string,
-  signerType: 'account' | 'publication' = 'account'
-): Promise<{ ciphertext: string }> {
-  return post('/api/v1/keypairs/nip44-encrypt', { signerId, signerType, recipientPubkey, plaintext })
 }
 
 // Batch variant — encrypts the same plaintext for N recipients in one HTTP

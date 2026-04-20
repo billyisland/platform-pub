@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify'
-import { pool } from '../../shared/src/db/client.js'
-import { verifyUnsubscribeToken } from '../../shared/src/lib/publish-email-template.js'
-import { requireEnv } from '../../shared/src/lib/env.js'
-import logger from '../../shared/src/lib/logger.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import { verifyUnsubscribeToken } from '@platform-pub/shared/lib/publish-email-template.js'
+import { requireEnv } from '@platform-pub/shared/lib/env.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Email Unsubscribe Route

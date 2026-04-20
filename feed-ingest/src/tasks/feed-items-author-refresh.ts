@@ -1,6 +1,6 @@
 import type { Task } from 'graphile-worker'
-import { pool } from '../../shared/src/db/client.js'
-import logger from '../../shared/src/lib/logger.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // feed_items_author_refresh — daily metadata propagation

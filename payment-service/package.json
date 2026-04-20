@@ -6,12 +6,13 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/src/index.js",
+    "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "migrate": "node -r tsx/esm src/db/migrate.ts"
   },
   "dependencies": {
+    "@platform-pub/shared": "*",
     "stripe": "^14.0.0",
     "pg": "^8.20.0",
     "fastify": "^4.26.0",

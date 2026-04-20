@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify'
-import { pool, withTransaction } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { generateKeypair } from '../lib/key-custody-client.js'
-import { createSession } from '../../shared/src/auth/session.js'
-import { getAccount } from '../../shared/src/auth/accounts.js'
-import logger from '../../shared/src/lib/logger.js'
+import { createSession } from '@platform-pub/shared/auth/session.js'
+import { getAccount } from '@platform-pub/shared/auth/accounts.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 import { randomBytes, createHmac, timingSafeEqual } from 'crypto'
 
 // =============================================================================

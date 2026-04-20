@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import Stripe from 'stripe'
 import type { PoolClient } from 'pg'
 import type { TabSettlement, PlatformConfig } from '../types/index.js'
-import { pool, withTransaction, loadConfig } from '../../shared/src/db/client.js'
+import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -23,7 +23,7 @@ import logger from '../lib/logger.js'
 // Stripe webhook confirms payment — balance is zeroed only on confirmation.
 // =============================================================================
 
-export class SettlementService {
+class SettlementService {
   private stripe: Stripe
 
   constructor() {

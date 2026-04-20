@@ -1,4 +1,4 @@
-import { pool, withTransaction } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { generateContentKey, encryptContentKey, decryptContentKey } from '../lib/kms.js'
 import { encryptArticleBodyXChaCha } from '../lib/crypto.js'
 import { wrapKeyForReader } from '../lib/nip44.js'
@@ -24,7 +24,7 @@ import logger from '../lib/logger.js'
 //      so the lookup is stable across NIP-23 event ID changes on re-publish.
 // =============================================================================
 
-export class VaultService {
+class VaultService {
 
   // ---------------------------------------------------------------------------
   // publishArticle

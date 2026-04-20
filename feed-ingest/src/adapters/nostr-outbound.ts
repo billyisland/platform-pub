@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws'
-import logger from '../../shared/src/lib/logger.js'
-import { pinnedWebSocketOptions } from '../../shared/src/lib/http-client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
+import { pinnedWebSocketOptions } from '@platform-pub/shared/lib/http-client.js'
 
 // =============================================================================
 // External Nostr outbound adapter

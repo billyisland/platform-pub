@@ -1,5 +1,5 @@
-import { safeFetch } from '../../shared/src/lib/http-client.js'
-import logger from '../../shared/src/lib/logger.js'
+import { safeFetch } from '@platform-pub/shared/lib/http-client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // AT Protocol (Bluesky) identity resolution helpers.

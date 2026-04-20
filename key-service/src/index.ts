@@ -3,9 +3,9 @@ import Fastify from 'fastify'
 import sensible from '@fastify/sensible'
 import rateLimit from '@fastify/rate-limit'
 import { keyRoutes } from './routes/keys.js'
-import { pool } from '../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 import logger from './lib/logger.js'
-import { requireEnv, requireEnvMinLength } from '../shared/src/lib/env.js'
+import { requireEnv, requireEnvMinLength } from '@platform-pub/shared/lib/env.js'
 
 // =============================================================================
 // all.haus — Key Service

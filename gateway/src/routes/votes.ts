@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool, withTransaction } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
-import logger from '../../shared/src/lib/logger.js'
-import { voteCostPence } from '../../shared/src/lib/voting.js'
+import logger from '@platform-pub/shared/lib/logger.js'
+import { voteCostPence } from '@platform-pub/shared/lib/voting.js'
 
 // =============================================================================
 // Vote Routes

@@ -1,5 +1,5 @@
-import { pool, withTransaction } from '../../shared/src/db/client.js'
-import logger from '../../shared/src/lib/logger.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Drive expiry worker — runs hourly from gateway/index.ts under an advisory

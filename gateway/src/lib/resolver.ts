@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { nip19 } from 'nostr-tools'
 import { WebSocket } from 'ws'
-import { pool } from '../../shared/src/db/client.js'
-import { pinnedWebSocketOptions, safeFetch } from '../../shared/src/lib/http-client.js'
-import logger from '../../shared/src/lib/logger.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import { pinnedWebSocketOptions, safeFetch } from '@platform-pub/shared/lib/http-client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 import { getProfile as atprotoGetProfile, resolveHandle as atprotoResolveHandle, extractFromBskyUrl, isDid as isAtprotoDid } from './atproto-resolve.js'
 import { resolveWebFinger, fetchActorProfile, extractFromMastodonUrl } from './activitypub-resolve.js'
 

@@ -1,6 +1,6 @@
 import type { Task } from 'graphile-worker'
-import { pool } from '../../shared/src/db/client.js'
-import logger from '../../shared/src/lib/logger.js'
+import { pool } from '@platform-pub/shared/db/client.js'
+import logger from '@platform-pub/shared/lib/logger.js'
 
 // Deletes expired rows from atproto_oauth_pending_states.
 // These are short-lived PKCE/DPoP state records; anything past expires_at

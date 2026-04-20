@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { pool } from '../../shared/src/db/client.js'
+import { pool } from '@platform-pub/shared/db/client.js'
 import { optionalAuth } from '../middleware/auth.js'
 
 // =============================================================================

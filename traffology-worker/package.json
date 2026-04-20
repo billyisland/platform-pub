@@ -7,11 +7,12 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/src/index.js",
-    "test": "vitest run",
+    "start": "node dist/index.js",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@platform-pub/shared": "*",
     "dotenv": "^17.3.1",
     "graphile-worker": "^0.16.0",
     "pg": "^8.20.0",

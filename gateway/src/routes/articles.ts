@@ -1,16 +1,16 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createHmac } from 'crypto'
-import { pool, withTransaction } from '../../shared/src/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { checkArticleAccess, recordSubscriptionRead, recordPurchaseUnlock } from '../services/access.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { publishToRelay } from '../lib/nostr-publisher.js'
 import { checkAndTriggerDriveFulfilment } from './drives.js'
-import { sendPublishNotifications } from '../../shared/src/lib/publish-emails.js'
-import logger from '../../shared/src/lib/logger.js'
-import { requireEnv } from '../../shared/src/lib/env.js'
-import { slugify } from '../../shared/src/lib/slug.js'
+import { sendPublishNotifications } from '@platform-pub/shared/lib/publish-emails.js'
+import logger from '@platform-pub/shared/lib/logger.js'
+import { requireEnv } from '@platform-pub/shared/lib/env.js'
+import { slugify } from '@platform-pub/shared/lib/slug.js'
 
 // =============================================================================
 // Article Routes
