@@ -20,6 +20,9 @@ import { externalSourcesGc } from './tasks/external-sources-gc.js'
 import { feedScoresRefresh } from './tasks/feed-scores-refresh.js'
 import { trustLayer1Refresh } from './tasks/trust-layer1-refresh.js'
 import { trustEpochAggregate } from './tasks/trust-epoch-aggregate.js'
+import { relayPublish } from './tasks/relay-publish.js'
+import { relayOutboxRedrive } from './tasks/relay-outbox-redrive.js'
+import { relayOutboxReconcile } from './tasks/relay-outbox-reconcile.js'
 import { JetstreamListener } from './jetstream/listener.js'
 
 // =============================================================================
@@ -79,6 +82,10 @@ async function start() {
         '0 2 1 1,4,7,10 * trust_epoch_aggregate',
         // Trust mop-up scoring — Mon/Thu at 02:00 UTC
         '0 2 * * 1,4 trust_epoch_aggregate',
+        // Relay outbox second heartbeat — every minute
+        '* * * * * relay_outbox_redrive',
+        // Relay outbox queue metrics — daily at 04:30 UTC
+        '30 4 * * * relay_outbox_reconcile',
       ].join('\n')
     ),
     taskList: {
@@ -100,6 +107,9 @@ async function start() {
       feed_scores_refresh: feedScoresRefresh,
       trust_layer1_refresh: trustLayer1Refresh,
       trust_epoch_aggregate: trustEpochAggregate,
+      relay_publish: relayPublish,
+      relay_outbox_redrive: relayOutboxRedrive,
+      relay_outbox_reconcile: relayOutboxReconcile,
     },
   })
 

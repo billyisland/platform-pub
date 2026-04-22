@@ -78,6 +78,7 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - The platform runs its own strfry relay; events are published via `gateway/src/lib/nostr-publisher.ts`
 - The web client uses NDK (`@nostr-dev-kit/ndk`) for reading events; `web/src/lib/ndk.ts` handles event parsing
 - Soft-delete: articles are marked deleted in the DB and a Nostr kind 5 deletion event is published
+- **Relay outbox (§60, Phase 1 landed)**: signed events destined for the platform relay are enqueued into `relay_outbox` (migration 076) inside the caller's transaction via `shared/src/lib/relay-outbox.ts::enqueueRelayPublish`. The `feed-ingest` worker `relay_publish` publishes via `publishNostrToRelays`, owns retry with `attempts` / `next_attempt_at` / `max_attempts`, and uses a transaction-scoped advisory lock on `(entity_type, entity_id)` for per-entity serialisation. A minute-cadence `relay_outbox_redrive` cron provides a second heartbeat independent of the enqueue path; `relay_outbox_reconcile` emits daily queue metrics. Phase 2–3 call-site migration + Phase 5 `§1` ordering retirement still outstanding — spec in `docs/adr/RELAY-OUTBOX-ADR.md`
 
 ### Payments
 - Readers accumulate a tab (Stripe PaymentIntent) as they read gated articles
