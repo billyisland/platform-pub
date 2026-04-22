@@ -7,7 +7,7 @@ import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { sendMagicLinkEmail, sendEmail } from '@platform-pub/shared/lib/email.js'
 import { requireAuth } from '../middleware/auth.js'
 import { generateKeypair, signEvent } from '../lib/key-custody-client.js'
-import { publishToRelay } from '../lib/nostr-publisher.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import Stripe from 'stripe'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { requireEnv } from '@platform-pub/shared/lib/env.js'
@@ -464,7 +464,9 @@ export async function authRoutes(app: FastifyInstance) {
         [accountId]
       )
 
-      // Publish kind 5 deletion events (non-fatal — DB is source of truth)
+      // Enqueue kind 5 deletion events (non-fatal — DB is source of truth).
+      // relay_outbox owns retry so a relay blip during account deletion no
+      // longer leaves tombstones un-published.
       for (const article of articles) {
         try {
           const deletionEvent = await signEvent(accountId, {
@@ -476,9 +478,13 @@ export async function authRoutes(app: FastifyInstance) {
             ],
             created_at: Math.floor(Date.now() / 1000),
           })
-          await publishToRelay(deletionEvent as any)
+          await enqueueRelayPublish(client, {
+            entityType: 'article_deletion',
+            entityId: article.id,
+            signedEvent: deletionEvent as SignedNostrEvent,
+          })
         } catch (err) {
-          logger.error({ err, articleId: article.id }, 'Failed to publish kind 5 deletion event during account deletion')
+          logger.error({ err, articleId: article.id }, 'Failed to enqueue kind 5 deletion event during account deletion')
         }
       }
 

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
-import { publishToRelay } from '../lib/nostr-publisher.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -836,16 +836,21 @@ async function publishDriveEvent(
       created_at: Math.floor(Date.now() / 1000),
     })
 
-    await publishToRelay(event as any)
+    await withTransaction(async (client) => {
+      await client.query(
+        'UPDATE pledge_drives SET nostr_event_id = $1 WHERE id = $2',
+        [event.id, driveId]
+      )
+      await enqueueRelayPublish(client, {
+        entityType: 'drive',
+        entityId: driveId,
+        signedEvent: event as SignedNostrEvent,
+      })
+    })
 
-    await pool.query(
-      'UPDATE pledge_drives SET nostr_event_id = $1 WHERE id = $2',
-      [event.id, driveId]
-    )
-
-    logger.debug({ driveId, eventId: event.id }, 'Drive Nostr event published')
+    logger.debug({ driveId, eventId: event.id }, 'Drive Nostr event enqueued')
   } catch (err) {
-    logger.error({ err, driveId }, 'Failed to publish drive Nostr event')
+    logger.error({ err, driveId }, 'Failed to enqueue drive Nostr event')
   }
 }
 
@@ -865,9 +870,16 @@ async function publishDriveDeletion(creatorId: string, driveId: string): Promise
       created_at: Math.floor(Date.now() / 1000),
     })
 
-    await publishToRelay(event as any)
-    logger.debug({ driveId, deletionEventId: event.id }, 'Drive deletion event published')
+    await withTransaction(async (client) => {
+      await enqueueRelayPublish(client, {
+        entityType: 'drive_deletion',
+        entityId: driveId,
+        signedEvent: event as SignedNostrEvent,
+      })
+    })
+
+    logger.debug({ driveId, deletionEventId: event.id }, 'Drive deletion event enqueued')
   } catch (err) {
-    logger.error({ err, driveId }, 'Failed to publish drive deletion event')
+    logger.error({ err, driveId }, 'Failed to enqueue drive deletion event')
   }
 }

@@ -1,13 +1,15 @@
 import { finalizeEvent, getPublicKey } from 'nostr-tools'
 import { WebSocket } from 'ws'
-import logger from '@platform-pub/shared/lib/logger.js'
+import type { SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 
 // =============================================================================
 // Gateway Nostr Publisher
 //
-// Signs events with the platform service key and publishes them to the relay.
-// Used for subscription state events (kind 7003) and any other platform-attested
-// Nostr events originating from the gateway.
+// Signs events with the platform service key. Publishing to the relay goes
+// through `relay_outbox` (see shared/src/lib/relay-outbox.ts) — callers sign
+// here and enqueue the result inside their own transaction. `publishToRelay`
+// remains for the legacy awaited call sites that Phase 3 of RELAY-OUTBOX-ADR
+// will migrate.
 //
 // Signing uses PLATFORM_SERVICE_PRIVKEY — the same key used by the payment
 // service for kind 9901 receipt events.
@@ -24,15 +26,13 @@ function getServiceKeypair(): { privkey: Uint8Array; pubkey: string } {
 // =============================================================================
 // Subscription event — kind 7003 (provisional NIP-88)
 //
-// Published on subscription create, reactivate, and cancel. Signed by the
-// platform service key to attest that reader X has (or had) access to writer Y.
-//
-// Federation use: another host can verify this event against GET /platform-pubkey
-// and trust that the subscription was valid during the stated period.
+// Signed on subscription create, reactivate, cancel, and renew. Attests that
+// reader X has (or had) access to writer Y. Federation use: another host can
+// verify this event against GET /platform-pubkey and trust that the
+// subscription was valid during the stated period.
 //
 // NB: This kind number is provisional and will be updated when NIP-88 is
-// finalised. Implementations should treat the kind as an opaque platform
-// extension until the NIP stabilises.
+// finalised.
 // =============================================================================
 
 interface SubscriptionEventParams {
@@ -45,7 +45,7 @@ interface SubscriptionEventParams {
   periodEnd: Date
 }
 
-export async function publishSubscriptionEvent(params: SubscriptionEventParams): Promise<string> {
+export function signSubscriptionEvent(params: SubscriptionEventParams): SignedNostrEvent {
   const { privkey } = getServiceKeypair()
 
   const eventTemplate = {
@@ -63,15 +63,7 @@ export async function publishSubscriptionEvent(params: SubscriptionEventParams):
     content: '',
   }
 
-  const signedEvent = finalizeEvent(eventTemplate, privkey)
-  await publishToRelay(signedEvent)
-
-  logger.debug(
-    { nostrEventId: signedEvent.id, subscriptionId: params.subscriptionId, status: params.status },
-    'Subscription Nostr event published'
-  )
-
-  return signedEvent.id
+  return finalizeEvent(eventTemplate, privkey) as SignedNostrEvent
 }
 
 // ---------------------------------------------------------------------------

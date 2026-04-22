@@ -276,7 +276,29 @@ No intermediate DB state that references an unpublished event. The vault-ownersh
 - `feed-ingest/src/tasks/relay-outbox-redrive.ts` — minute cron, batches 100, distinct `job_key` per tick
 - `feed-ingest/src/tasks/relay-outbox-reconcile.ts` — daily cron at 04:30 UTC, emits `abandoned` / `failed_high_retry` / `sent_last_24h`
 
-Phases 2, 3, 5, 6 (call-site migration, §1 retirement, backfill + tests) still to land.
+## Phase 2 landed (fire-and-forget + swallowed-error call sites)
+
+All five non-awaited call sites now sign + enqueue in a single transaction. `publishSubscriptionEvent` was split into `signSubscriptionEvent` (returns a `SignedNostrEvent`); the publish step is owned by the `relay_publish` worker.
+
+- `gateway/src/lib/nostr-publisher.ts` — `publishSubscriptionEvent` replaced by `signSubscriptionEvent`
+- `gateway/src/routes/subscriptions/writer.ts` — create, reactivate, cancel now sign + `enqueueRelayPublish` inside `withTransaction`; cancel picked up a txn (was bare `pool.query`). `nostr_event_id` now written synchronously from the signed event id inside the same txn
+- `gateway/src/workers/subscription-expiry.ts` — renew branch signs + enqueues inside the existing `withTransaction` block; `nostr_event_id` persists atomically with the period roll
+- `gateway/src/services/messages.ts` — `publishConversationPulse` signs via `signEvent` and enqueues (entity_type = `conversation_pulse`) inside a short `withTransaction`; caller semantics unchanged (fire-and-forget `.catch`)
+
+## Phase 3 landed (remaining awaited call sites)
+
+Eight call sites migrated to enqueue-in-txn. Per risk #3 the payment-service receipt helper was refactored to sign-only; publishing now flows through the shared `relay_publish` worker. All deletion paths fold the sign + DB update + enqueue into a single transaction so a crash can't leave the DB marked deleted while the relay still serves the event.
+
+- `payment-service/src/lib/nostr.ts` — `publishReceiptEvent` replaced by `signReceiptEvent`; `publishToRelay` helper deleted
+- `payment-service/src/services/accrual.ts` — `publishReceiptAsync` signs then `withTransaction(UPDATE read_events + enqueueRelayPublish)`; retry now owned by `relay_outbox`, no bespoke fallback
+- `gateway/src/routes/auth.ts` — account-deletion loop enqueues per-article kind-5 tombstones inside the existing `withTransaction`
+- `gateway/src/routes/articles/manage.ts` — article soft-delete folds the deletion event into the existing `withTransaction` with `articles`/`feed_items` updates
+- `gateway/src/routes/notes.ts` — note deletion now runs DELETE + enqueue in a single txn
+- `gateway/src/routes/publications/cms.ts` — publication article soft-delete wrapped in `withTransaction`; UPDATE + sign + enqueue atomic
+- `gateway/src/routes/drives.ts` — `publishDriveEvent` + `publishDriveDeletion` sign + enqueue in a short txn; caller `.catch` pattern preserved
+- `gateway/src/routes/signing.ts` — `POST /sign-and-publish` now signs + enqueues. **API semantic change**: 200 means "signed and durably queued" rather than "event on relay"
+
+Phases 5, 6 (§1 scheduler retirement, backfill + integration tests) still to land. Phase 4 (publish-path rewrite) remains deferred to its own ADR.
 
 ## Out of scope (deferred)
 

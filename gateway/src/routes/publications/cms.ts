@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool } from '@platform-pub/shared/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../../middleware/auth.js'
 import { requirePublicationPermission } from '../../middleware/publication-auth.js'
 import { signEvent } from '../../lib/key-custody-client.js'
-import { publishToRelay } from '../../lib/nostr-publisher.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import { publishToPublication, approveAndPublishArticle } from '../../services/publication-publisher.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
@@ -186,26 +186,22 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id, articleId } = req.params
 
-      const articleResult = await pool.query<{
-        nostr_event_id: string
-        nostr_d_tag: string
-        nostr_pubkey: string
-      }>(
-        `UPDATE articles SET deleted_at = now(), publication_article_status = 'unpublished'
-         WHERE id = $1 AND publication_id = $2
-         RETURNING nostr_event_id, nostr_d_tag,
-           (SELECT nostr_pubkey FROM publications WHERE id = $2) AS nostr_pubkey`,
-        [articleId, id]
-      )
+      const result = await withTransaction(async (client) => {
+        const articleResult = await client.query<{
+          nostr_event_id: string
+          nostr_d_tag: string
+          nostr_pubkey: string
+        }>(
+          `UPDATE articles SET deleted_at = now(), publication_article_status = 'unpublished'
+           WHERE id = $1 AND publication_id = $2
+           RETURNING nostr_event_id, nostr_d_tag,
+             (SELECT nostr_pubkey FROM publications WHERE id = $2) AS nostr_pubkey`,
+          [articleId, id]
+        )
 
-      if (articleResult.rows.length === 0) {
-        return reply.status(404).send({ error: 'Article not found' })
-      }
+        if (articleResult.rows.length === 0) return null
+        const article = articleResult.rows[0]
 
-      const article = articleResult.rows[0]
-
-      // Publish kind 5 deletion event to the relay
-      try {
         const deletionEvent = await signEvent(id, {
           kind: 5,
           content: '',
@@ -215,12 +211,21 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
           ],
           created_at: Math.floor(Date.now() / 1000),
         }, 'publication')
-        await publishToRelay(deletionEvent as any)
-        logger.info({ articleId, deletionEventId: deletionEvent.id }, 'Kind 5 deletion event published for publication article')
-      } catch (err) {
-        // Non-fatal: DB is source of truth; feed will still exclude via deleted_at
-        logger.error({ err, articleId }, 'Failed to publish kind 5 deletion event for publication article')
+
+        await enqueueRelayPublish(client, {
+          entityType: 'article_deletion',
+          entityId: articleId,
+          signedEvent: deletionEvent as SignedNostrEvent,
+        })
+
+        return { deletionEventId: deletionEvent.id }
+      })
+
+      if (!result) {
+        return reply.status(404).send({ error: 'Article not found' })
       }
+
+      logger.info({ articleId, deletionEventId: result.deletionEventId }, 'Publication article soft-deleted and kind-5 enqueued')
 
       return reply.send({ ok: true })
     }

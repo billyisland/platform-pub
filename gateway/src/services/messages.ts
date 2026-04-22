@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { signEvent, nip44EncryptBatch, nip44Decrypt } from '../lib/key-custody-client.js'
-import { publishToRelay } from '../lib/nostr-publisher.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -593,9 +593,14 @@ async function publishConversationPulse(senderId: string, conversationId: string
       tags: [['conversation', conversationId]],
       created_at: Math.floor(Date.now() / 1000),
     })
-    await publishToRelay(event as any)
-    logger.debug({ conversationId, eventId: event.id }, 'Conversation pulse published')
+    await withTransaction(async (client) => {
+      await enqueueRelayPublish(client, {
+        entityType: 'conversation_pulse',
+        signedEvent: event as SignedNostrEvent,
+      })
+    })
+    logger.debug({ conversationId, eventId: event.id }, 'Conversation pulse enqueued')
   } catch (err) {
-    logger.error({ err, conversationId }, 'Failed to publish conversation pulse')
+    logger.error({ err, conversationId }, 'Failed to enqueue conversation pulse')
   }
 }

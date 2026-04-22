@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../../middleware/auth.js'
 import { signEvent } from '../../lib/key-custody-client.js'
-import { publishToRelay } from '../../lib/nostr-publisher.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { UUID_RE } from './shared.js'
 
@@ -163,9 +163,18 @@ export async function articleManageRoutes(app: FastifyInstance) {
 
       // Soft-delete all live rows for this d-tag (there may be duplicates from
       // previous publishes/edits that pre-date the unique-live-row constraint).
-      // Dual-write to feed_items in the same transaction so a crash between
-      // the two UPDATEs can't leave a live feed_items row pointing at a
-      // deleted article — the daily reconcile cron used to paper over this.
+      // Dual-write to feed_items + enqueue the kind-5 tombstone in the same
+      // transaction so a crash can't leave the DB marked deleted while the
+      // relay still serves the article.
+      const deletionEvent = await signEvent(writerId, {
+        kind: 5,
+        content: '',
+        tags: [
+          ['e', article.nostr_event_id],
+          ['a', `30023:${article.nostr_pubkey}:${article.nostr_d_tag}`],
+        ],
+        created_at: Math.floor(Date.now() / 1000),
+      })
       await withTransaction(async (client) => {
         await client.query(
           'UPDATE articles SET deleted_at = now() WHERE writer_id = $1 AND nostr_d_tag = $2 AND deleted_at IS NULL',
@@ -177,30 +186,17 @@ export async function articleManageRoutes(app: FastifyInstance) {
              AND deleted_at IS NULL`,
           [writerId, article.nostr_d_tag]
         )
+        await enqueueRelayPublish(client, {
+          entityType: 'article_deletion',
+          entityId: article.id,
+          signedEvent: deletionEvent as SignedNostrEvent,
+        })
       })
 
       logger.info(
-        { articleId: article.id, nostrEventId: article.nostr_event_id, writerId },
-        'Article soft-deleted'
+        { articleId: article.id, nostrEventId: article.nostr_event_id, deletionEventId: deletionEvent.id, writerId },
+        'Article soft-deleted and deletion event enqueued'
       )
-
-      // Publish kind 5 deletion event to the relay so the feed filters it out
-      try {
-        const deletionEvent = await signEvent(writerId, {
-          kind: 5,
-          content: '',
-          tags: [
-            ['e', article.nostr_event_id],
-            ['a', `30023:${article.nostr_pubkey}:${article.nostr_d_tag}`],
-          ],
-          created_at: Math.floor(Date.now() / 1000),
-        })
-        await publishToRelay(deletionEvent as any)
-        logger.info({ articleId: article.id, deletionEventId: deletionEvent.id }, 'Kind 5 deletion event published')
-      } catch (err) {
-        // Non-fatal: DB is source of truth; feed will still exclude via deleted_at
-        logger.error({ err, articleId: article.id }, 'Failed to publish kind 5 deletion event')
-      }
 
       return reply.status(200).send({
         ok: true,

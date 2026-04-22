@@ -1,5 +1,6 @@
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { publishSubscriptionEvent } from '../lib/nostr-publisher.js'
+import { signSubscriptionEvent } from '../lib/nostr-publisher.js'
+import { enqueueRelayPublish } from '@platform-pub/shared/lib/relay-outbox.js'
 import {
   sendSubscriptionRenewedEmail,
   sendSubscriptionExpiryWarningEmail,
@@ -97,21 +98,26 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
         }
 
         await logSubscriptionCharge(client, sub.id, sub.reader_id, sub.writer_id, renewalPrice, newPeriodStart, newPeriodEnd)
-      })
 
-      publishSubscriptionEvent({
-        subscriptionId: sub.id,
-        readerPubkey: sub.reader_pubkey,
-        writerPubkey: sub.writer_pubkey,
-        status: 'active',
-        pricePence: renewalPrice,
-        periodStart: sub.current_period_end,
-        periodEnd: new Date(sub.current_period_end.getTime() + (sub.subscription_period === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000),
-      }).then(nostrEventId =>
-        pool.query(`UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`, [nostrEventId, sub.id])
-      ).catch(err =>
-        logger.error({ err, subscriptionId: sub.id }, 'Renewal Nostr event failed')
-      )
+        const renewalEvent = signSubscriptionEvent({
+          subscriptionId: sub.id,
+          readerPubkey: sub.reader_pubkey,
+          writerPubkey: sub.writer_pubkey,
+          status: 'active',
+          pricePence: renewalPrice,
+          periodStart: newPeriodStart,
+          periodEnd: newPeriodEnd,
+        })
+        await client.query(
+          `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
+          [renewalEvent.id, sub.id]
+        )
+        await enqueueRelayPublish(client, {
+          entityType: 'subscription',
+          entityId: sub.id,
+          signedEvent: renewalEvent,
+        })
+      })
 
       sendSubscriptionRenewedEmail(sub.reader_id, sub.writer_id, renewalPrice, newPeriodEnd).catch(err =>
         logger.warn({ err, subscriptionId: sub.id }, 'Renewal email failed')

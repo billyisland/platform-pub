@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
-import { publishToRelay } from '../lib/nostr-publisher.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import { enqueueCrossPost, enqueueNostrOutbound } from '../lib/outbound-enqueue.js'
 import { truncatePreview } from '@platform-pub/shared/lib/text.js'
 import logger from '@platform-pub/shared/lib/logger.js'
@@ -260,34 +260,38 @@ export async function noteRoutes(app: FastifyInstance) {
       const { nostrEventId } = req.params
 
       try {
-        const result = await pool.query(
-          `DELETE FROM notes
-           WHERE nostr_event_id = $1 AND author_id = $2
-           RETURNING id`,
-          [nostrEventId, authorId]
-        )
+        const deletionEvent = await signEvent(authorId, {
+          kind: 5,
+          content: '',
+          tags: [['e', nostrEventId]],
+          created_at: Math.floor(Date.now() / 1000),
+        })
 
-        if (result.rowCount === 0) {
+        const deleted = await withTransaction(async (client) => {
+          const result = await client.query<{ id: string }>(
+            `DELETE FROM notes
+             WHERE nostr_event_id = $1 AND author_id = $2
+             RETURNING id`,
+            [nostrEventId, authorId]
+          )
+          if (result.rowCount === 0) return null
+
+          await enqueueRelayPublish(client, {
+            entityType: 'note_deletion',
+            entityId: result.rows[0].id,
+            signedEvent: deletionEvent as SignedNostrEvent,
+          })
+          return result.rows[0].id
+        })
+
+        if (!deleted) {
           return reply.status(404).send({ error: 'Note not found or not yours' })
         }
 
-        logger.info({ nostrEventId, authorId }, 'Note deleted')
-
-        // Publish kind 5 deletion event so the relay filters the note from feeds
-        try {
-          const deletionEvent = await signEvent(authorId, {
-            kind: 5,
-            content: '',
-            tags: [['e', nostrEventId]],
-            created_at: Math.floor(Date.now() / 1000),
-          })
-          await publishToRelay(deletionEvent as any)
-          logger.info({ nostrEventId, deletionEventId: deletionEvent.id }, 'Kind 5 deletion event published for note')
-        } catch (err) {
-          // Non-fatal: note is removed from DB; feed will stop showing it once
-          // strfry's stored event is evicted or the client refreshes past it.
-          logger.error({ err, nostrEventId }, 'Failed to publish kind 5 deletion event for note')
-        }
+        logger.info(
+          { nostrEventId, noteId: deleted, deletionEventId: deletionEvent.id, authorId },
+          'Note deleted and kind-5 enqueued'
+        )
 
         return reply.status(200).send({ ok: true, deletedNostrEventId: nostrEventId })
       } catch (err) {

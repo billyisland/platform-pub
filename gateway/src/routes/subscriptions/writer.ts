@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../../middleware/auth.js'
-import { publishSubscriptionEvent } from '../../lib/nostr-publisher.js'
+import { signSubscriptionEvent } from '../../lib/nostr-publisher.js'
+import { enqueueRelayPublish } from '@platform-pub/shared/lib/relay-outbox.js'
 import { sendSubscriptionCancelledEmail, sendNewSubscriberEmail } from '@platform-pub/shared/lib/subscription-emails.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { logSubscriptionCharge } from './shared.js'
@@ -162,9 +163,10 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
             [writerId, readerId]
           ).catch((err) => logger.warn({ err }, 'Failed to insert new_subscriber notification'))
 
-          // Publish subscription event asynchronously — non-blocking
+          // Sign the attestation and hand off to relay_outbox for durable
+          // publish. Same transaction → enqueue is rolled back on error.
           const readerPubkey = req.session!.pubkey
-          publishSubscriptionEvent({
+          const reactivateEvent = signSubscriptionEvent({
             subscriptionId: sub.id,
             readerPubkey,
             writerPubkey: writer.nostr_pubkey,
@@ -172,14 +174,16 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
             pricePence,
             periodStart: now,
             periodEnd,
-          }).then(nostrEventId =>
-            pool.query(
-              `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
-              [nostrEventId, sub.id]
-            )
-          ).catch(err =>
-            logger.error({ err, subscriptionId: sub.id }, 'Subscription reactivation Nostr event failed')
+          })
+          await client.query(
+            `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
+            [reactivateEvent.id, sub.id]
           )
+          await enqueueRelayPublish(client, {
+            entityType: 'subscription',
+            entityId: sub.id,
+            signedEvent: reactivateEvent,
+          })
 
           // Notify writer of new subscriber — non-blocking
           sendNewSubscriberEmail(writerId, readerId, pricePence).catch(err =>
@@ -223,9 +227,10 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
           [writerId, readerId]
         ).catch((err) => logger.warn({ err }, 'Failed to insert new_subscriber notification'))
 
-        // Publish subscription event asynchronously — non-blocking
+        // Sign the attestation and hand off to relay_outbox for durable
+        // publish. Same transaction → enqueue is rolled back on error.
         const readerPubkey = req.session!.pubkey
-        publishSubscriptionEvent({
+        const createEvent = signSubscriptionEvent({
           subscriptionId,
           readerPubkey,
           writerPubkey: writer.nostr_pubkey,
@@ -233,14 +238,16 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
           pricePence,
           periodStart: now,
           periodEnd,
-        }).then(nostrEventId =>
-          pool.query(
-            `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
-            [nostrEventId, subscriptionId]
-          )
-        ).catch(err =>
-          logger.error({ err, subscriptionId }, 'Subscription create Nostr event failed')
+        })
+        await client.query(
+          `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
+          [createEvent.id, subscriptionId]
         )
+        await enqueueRelayPublish(client, {
+          entityType: 'subscription',
+          entityId: subscriptionId,
+          signedEvent: createEvent,
+        })
 
         // Notify writer of new subscriber — non-blocking
         sendNewSubscriberEmail(writerId, readerId, pricePence).catch(err =>
@@ -272,56 +279,63 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
       const readerId = req.session!.sub!
       const { writerId } = req.params
 
-      const result = await pool.query<{
-        id: string
-        current_period_end: Date
-        current_period_start: Date
-        price_pence: number
-        writer_pubkey: string
-      }>(
-        `UPDATE subscriptions
-         SET status = 'cancelled', auto_renew = FALSE, cancelled_at = now(), updated_at = now()
-         WHERE reader_id = $1 AND writer_id = $2 AND status = 'active'
-         RETURNING id, current_period_end, current_period_start, price_pence,
-                   (SELECT nostr_pubkey FROM accounts WHERE id = $2) AS writer_pubkey`,
-        [readerId, writerId]
-      )
+      const cancelled = await withTransaction(async (client) => {
+        const result = await client.query<{
+          id: string
+          current_period_end: Date
+          current_period_start: Date
+          price_pence: number
+          writer_pubkey: string
+        }>(
+          `UPDATE subscriptions
+           SET status = 'cancelled', auto_renew = FALSE, cancelled_at = now(), updated_at = now()
+           WHERE reader_id = $1 AND writer_id = $2 AND status = 'active'
+           RETURNING id, current_period_end, current_period_start, price_pence,
+                     (SELECT nostr_pubkey FROM accounts WHERE id = $2) AS writer_pubkey`,
+          [readerId, writerId]
+        )
 
-      if (result.rowCount === 0) {
+        if (result.rowCount === 0) return null
+
+        const sub = result.rows[0]
+
+        const readerPubkey = req.session!.pubkey
+        const cancelEvent = signSubscriptionEvent({
+          subscriptionId: sub.id,
+          readerPubkey,
+          writerPubkey: sub.writer_pubkey,
+          status: 'cancelled',
+          pricePence: sub.price_pence,
+          periodStart: sub.current_period_start,
+          periodEnd: sub.current_period_end,
+        })
+        await client.query(
+          `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
+          [cancelEvent.id, sub.id]
+        )
+        await enqueueRelayPublish(client, {
+          entityType: 'subscription',
+          entityId: sub.id,
+          signedEvent: cancelEvent,
+        })
+
+        return sub
+      })
+
+      if (!cancelled) {
         return reply.status(404).send({ error: 'No active subscription found' })
       }
 
-      const sub = result.rows[0]
-      logger.info({ readerId, writerId, subscriptionId: sub.id }, 'Subscription cancelled')
+      logger.info({ readerId, writerId, subscriptionId: cancelled.id }, 'Subscription cancelled')
 
-      // Publish cancellation event asynchronously — non-blocking
-      const readerPubkey = req.session!.pubkey
-      publishSubscriptionEvent({
-        subscriptionId: sub.id,
-        readerPubkey,
-        writerPubkey: sub.writer_pubkey,
-        status: 'cancelled',
-        pricePence: sub.price_pence,
-        periodStart: sub.current_period_start,
-        periodEnd: sub.current_period_end,
-      }).then(nostrEventId =>
-        pool.query(
-          `UPDATE subscriptions SET nostr_event_id = $1 WHERE id = $2`,
-          [nostrEventId, sub.id]
-        )
-      ).catch(err =>
-        logger.error({ err, subscriptionId: sub.id }, 'Subscription cancel Nostr event failed')
-      )
-
-      // Send cancellation email asynchronously
-      sendSubscriptionCancelledEmail(readerId, writerId, sub.current_period_end).catch(err =>
-        logger.warn({ err, subscriptionId: sub.id }, 'Cancellation email failed')
+      sendSubscriptionCancelledEmail(readerId, writerId, cancelled.current_period_end).catch(err =>
+        logger.warn({ err, subscriptionId: cancelled.id }, 'Cancellation email failed')
       )
 
       return reply.status(200).send({
-        subscriptionId: sub.id,
+        subscriptionId: cancelled.id,
         status: 'cancelled',
-        accessUntil: sub.current_period_end.toISOString(),
+        accessUntil: cancelled.current_period_end.toISOString(),
       })
     }
   )

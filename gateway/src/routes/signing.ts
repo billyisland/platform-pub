@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { signEvent, unwrapKey } from '../lib/key-custody-client.js'
-import { publishToRelay } from '../lib/nostr-publisher.js'
-import { pool } from '@platform-pub/shared/db/client.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -74,10 +74,17 @@ export async function signingRoutes(app: FastifyInstance) {
   })
 
   // ---------------------------------------------------------------------------
-  // POST /sign-and-publish — sign a Nostr event and publish it to the relay
+  // POST /sign-and-publish — sign a Nostr event and enqueue it for publish
   //
-  // Combines signing and relay publishing into a single call so the web client
+  // Combines signing and relay enqueue into a single call so the web client
   // does not need direct relay access. Returns the signed event data.
+  //
+  // Semantic change (§60 Phase 3): this used to await a synchronous relay
+  // publish; it now enqueues into `relay_outbox` and returns once the row is
+  // committed. A 200 means "signed and durably queued for publish"; the
+  // `relay_publish` worker delivers to the relay with retry. Clients that
+  // need delivery confirmation should subscribe to the relay for the
+  // returned event id rather than relying on this response alone.
   // ---------------------------------------------------------------------------
 
   app.post('/sign-and-publish', { preHandler: requireAuth }, async (req, reply) => {
@@ -112,9 +119,14 @@ export async function signingRoutes(app: FastifyInstance) {
         created_at: parsed.data.created_at ?? Math.floor(Date.now() / 1000),
       }, signerType)
 
-      await publishToRelay(signed as any)
+      await withTransaction(async (client) => {
+        await enqueueRelayPublish(client, {
+          entityType: 'signing_passthrough',
+          signedEvent: signed as SignedNostrEvent,
+        })
+      })
 
-      logger.info({ signerId, signerType, eventKind: parsed.data.kind, eventId: signed.id }, 'Event signed and published')
+      logger.info({ signerId, signerType, eventKind: parsed.data.kind, eventId: signed.id }, 'Event signed and enqueued')
       return reply.status(200).send(signed)
     } catch (err) {
       logger.error({ err, signerId, signerType }, 'Sign-and-publish failed')

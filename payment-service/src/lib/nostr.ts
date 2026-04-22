@@ -1,5 +1,5 @@
 import { finalizeEvent, getPublicKey } from 'nostr-tools'
-import logger from './logger.js'
+import type { SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 
 // =============================================================================
 // Portable Receipt Token
@@ -9,7 +9,7 @@ import logger from './logger.js'
 // Verifiable offline with verifyEvent() from nostr-tools against the platform
 // pubkey returned by GET /platform-pubkey.
 //
-// The public kind 9901 relay event (publishReceiptEvent below) still uses the
+// The public kind 9901 relay event (signReceiptEvent below) still uses the
 // keyed HMAC hash for reader privacy on the public relay.
 // =============================================================================
 
@@ -21,20 +21,18 @@ interface PortableReceiptParams {
 }
 
 // =============================================================================
-// Nostr Receipt Publisher
+// Nostr Receipt Signer
 //
-// Publishes kind 9901 consumption receipt events per ADR §II.4b.
-//
-// This is NOT in the critical payment path — DB write always happens first.
-// Receipt publish failures are logged and queued for retry; they never block
-// content delivery or payment recording.
+// Signs kind 9901 consumption receipt events per ADR §II.4b. The caller is
+// expected to hand the returned event to relay_outbox
+// (`enqueueRelayPublish` in shared) inside a transaction — publishing itself
+// lives in the feed-ingest `relay_publish` worker.
 //
 // The receipt is signed by the platform's service keypair, not the reader's.
 // The platform is attesting that the gate was passed and charge recorded.
 // =============================================================================
 
 interface ReceiptParams {
-  readEventId: string
   articleNostrEventId: string
   writerPubkey: string
   readerPubkeyHash: string | null
@@ -74,7 +72,7 @@ export function createPortableReceipt(params: PortableReceiptParams): string {
   return JSON.stringify(signedEvent)
 }
 
-export async function publishReceiptEvent(params: ReceiptParams): Promise<string> {
+export function signReceiptEvent(params: ReceiptParams): SignedNostrEvent {
   const { privkey } = getServiceKeypair()
 
   const eventTemplate = {
@@ -92,51 +90,5 @@ export async function publishReceiptEvent(params: ReceiptParams): Promise<string
     content: '',
   }
 
-  const signedEvent = finalizeEvent(eventTemplate, privkey)
-
-  await publishToRelay(signedEvent)
-
-  logger.debug({ nostrEventId: signedEvent.id, readEventId: params.readEventId }, 'Receipt event published')
-
-  return signedEvent.id
-}
-
-async function publishToRelay(event: ReturnType<typeof finalizeEvent>): Promise<void> {
-  const relayUrl = process.env.PLATFORM_RELAY_WS_URL
-  if (!relayUrl) throw new Error('PLATFORM_RELAY_WS_URL not set')
-
-  // Simple WebSocket publish — production would use a pooled relay connection
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(relayUrl)
-    const timeout = setTimeout(() => {
-      ws.close()
-      reject(new Error('Relay publish timeout'))
-    }, 5_000)
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify(['EVENT', event]))
-    }
-
-    ws.onmessage = (msg) => {
-      try {
-        const [type, eventId, success, message] = JSON.parse(msg.data as string)
-        if (type === 'OK') {
-          clearTimeout(timeout)
-          ws.close()
-          if (success) {
-            resolve()
-          } else {
-            reject(new Error(`Relay rejected event: ${message}`))
-          }
-        }
-      } catch {
-        // Non-OK messages (NOTICE etc) — ignore
-      }
-    }
-
-    ws.onerror = () => {
-      clearTimeout(timeout)
-      reject(new Error('WebSocket connection to relay failed'))
-    }
-  })
+  return finalizeEvent(eventTemplate, privkey) as SignedNostrEvent
 }

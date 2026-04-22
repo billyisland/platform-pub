@@ -1,7 +1,8 @@
 import type { PoolClient } from 'pg'
 import type { GatePassEvent, ReadEvent, ReadingTab, PlatformConfig } from '../types/index.js'
 import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
-import { publishReceiptEvent, createPortableReceipt } from '../lib/nostr.js'
+import { enqueueRelayPublish } from '@platform-pub/shared/lib/relay-outbox.js'
+import { signReceiptEvent, createPortableReceipt } from '../lib/nostr.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -256,9 +257,7 @@ async function publishReceiptAsync(readEvent: ReadEvent, event: GatePassEvent): 
     const articleNostrEventId = await getArticleNostrEventId(event.articleId)
     const writerPubkey = await getWriterPubkey(event.writerId)
 
-    // Publish public kind 9901 to relay (uses keyed HMAC hash, not real pubkey)
-    const nostrEventId = await publishReceiptEvent({
-      readEventId: readEvent.id,
+    const receiptEvent = signReceiptEvent({
       articleNostrEventId,
       writerPubkey,
       readerPubkeyHash: event.readerPubkeyHash,
@@ -266,7 +265,7 @@ async function publishReceiptAsync(readEvent: ReadEvent, event: GatePassEvent): 
       tabId: event.tabId,
     })
 
-    // Create portable receipt (private, not published — stored in DB for export)
+    // Portable receipt stays local — private to the reader, never on the relay.
     const receiptToken = createPortableReceipt({
       articleNostrEventId,
       writerPubkey,
@@ -274,16 +273,23 @@ async function publishReceiptAsync(readEvent: ReadEvent, event: GatePassEvent): 
       amountPence: event.amountPence,
     })
 
-    await pool.query(
-      `UPDATE read_events
-       SET receipt_nostr_event_id = $1,
-           reader_pubkey = $2,
-           receipt_token = $3
-       WHERE id = $4`,
-      [nostrEventId, event.readerPubkey, receiptToken, readEvent.id]
-    )
+    await withTransaction(async (client) => {
+      await client.query(
+        `UPDATE read_events
+         SET receipt_nostr_event_id = $1,
+             reader_pubkey = $2,
+             receipt_token = $3
+         WHERE id = $4`,
+        [receiptEvent.id, event.readerPubkey, receiptToken, readEvent.id]
+      )
+      await enqueueRelayPublish(client, {
+        entityType: 'receipt',
+        entityId: readEvent.id,
+        signedEvent: receiptEvent,
+      })
+    })
   } catch (err) {
-    // Receipt failure never fails the read — it queues for retry
+    // Receipt failure never fails the read — relay_outbox owns retry.
     logger.error({ err, readEventId: readEvent.id }, 'Receipt publish failed — will retry')
   }
 }
