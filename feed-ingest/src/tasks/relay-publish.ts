@@ -173,7 +173,7 @@ function defaultRelayUrls(): string[] {
   return url ? [url] : []
 }
 
-function computeBackoff(attempts: number): Date {
+export function computeBackoff(attempts: number): Date {
   // min(2^attempts minutes, 1 hour) with ±10% jitter.
   const baseMs = Math.min(Math.pow(2, attempts) * 60_000, 3_600_000)
   const jitter = baseMs * (Math.random() * 0.2 - 0.1)

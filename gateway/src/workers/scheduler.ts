@@ -1,6 +1,6 @@
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import { signEvent } from '../lib/key-custody-client.js'
-import { publishToRelay } from '../lib/nostr-publisher.js'
 import { publishToPublication } from '../services/publication-publisher.js'
 import { sendPublishNotifications } from '@platform-pub/shared/lib/publish-emails.js'
 import { checkAndTriggerDriveFulfilment } from '../routes/drives.js'
@@ -149,10 +149,11 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
 
   const eventContent = isPaywalled ? freeContent : fullContent
 
-  // Sign v1. For free articles this is the canonical event. For paywalled
-  // articles v1 is a template used only to mint an event id that the key
-  // service accepts as the ownership-check target — v1 is never published,
-  // because a paywalled event without a payload tag is a broken reader state.
+  // Sign v1. For free articles this is the canonical event that gets
+  // enqueued for relay publish in the same txn as the article row. For
+  // paywalled articles v1 is only the vault-ownership anchor the key
+  // service matches against; the canonical v2 (with payload tag) is
+  // enqueued once the vault is sealed.
   const v1 = await signEvent(draft.writer_id, {
     kind: 30023,
     content: eventContent,
@@ -160,13 +161,11 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
     created_at: Math.floor(Date.now() / 1000),
   }, 'account')
 
-  // Upsert the articles row + dual-write to feed_items so vault creation —
-  // which checks the writer owns a row with this nostr_event_id — has
-  // something to match against, and the feed has a matching row for the
-  // unified timeline. If any subsequent step throws, the outer catch
-  // retains the draft for retry; both upserts are idempotent and retries
-  // converge via the key service's re-publish path (which reuses the
-  // existing content key).
+  // Upsert articles + feed_items keyed on v1.id. For free drafts we enqueue
+  // v1 to the relay outbox inside this same txn — article row and outbox
+  // row commit together, the worker publishes. For paywalled drafts this
+  // txn establishes the vault-ownership anchor; enqueue happens in the
+  // second txn after the vault is sealed and v2 is signed.
   const articleId = await withTransaction(async (client) => {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO articles (
@@ -233,13 +232,25 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
       v1.id,
     ])
 
+    // For free articles v1 is the canonical event — enqueue alongside the
+    // INSERT so the article row and the outbox row commit atomically. For
+    // paywalled articles this is deferred until v2 is signed.
+    if (!isPaywalled) {
+      await enqueueRelayPublish(client, {
+        entityType: 'article',
+        entityId: artId,
+        signedEvent: v1 as SignedNostrEvent,
+      })
+    }
+
     return artId
   })
 
   if (isPaywalled && paywallContent) {
-    // Build the canonical v2 (with payload tag) and publish that. v1 is
-    // discarded — it was only needed to mint an event id the key service
-    // would accept for the ownership check.
+    // Seal the vault (key-service validates ownership against v1.id on the
+    // article row we just committed) then build the canonical v2 with the
+    // payload tag. v1 is discarded — never enqueued, never reaches the
+    // relay.
     const vault = await createVault(v1.id, articleId, dTag, draft, paywallContent)
 
     const v2 = await signEvent(draft.writer_id, {
@@ -249,8 +260,10 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
       created_at: (v1 as any).created_at + 1,
     }, 'account')
 
-    await publishToRelay(v2 as any)
-
+    // Swing articles + feed_items to v2.id and enqueue v2 in a single txn.
+    // If any step throws the whole txn rolls back, the draft is retained
+    // (outer catch), and retry re-converges via the articles ON CONFLICT
+    // upsert + the vault-key reuse path in key-service.
     await withTransaction(async (client) => {
       await client.query(
         'UPDATE articles SET nostr_event_id = $1 WHERE id = $2',
@@ -260,9 +273,12 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
         'UPDATE feed_items SET nostr_event_id = $1 WHERE article_id = $2',
         [v2.id, articleId],
       )
+      await enqueueRelayPublish(client, {
+        entityType: 'article',
+        entityId: articleId,
+        signedEvent: v2 as SignedNostrEvent,
+      })
     })
-  } else {
-    await publishToRelay(v1 as any)
   }
 
   sendPublishNotifications(

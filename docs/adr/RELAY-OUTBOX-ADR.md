@@ -300,6 +300,24 @@ Eight call sites migrated to enqueue-in-txn. Per risk #3 the payment-service rec
 
 Phases 5, 6 (§1 scheduler retirement, backfill + integration tests) still to land. Phase 4 (publish-path rewrite) remains deferred to its own ADR.
 
+## Phase 5 landed (scheduler §1 contortion retired)
+
+`gateway/src/workers/scheduler.ts::publishPersonalDraft` no longer publishes to the relay outside a transaction. The `publishToRelay` import is dropped from the scheduler (it remains live for `publication-publisher.ts` which is Phase 4 scope).
+
+- **Free drafts** — the INSERT article + INSERT feed_items txn now also calls `enqueueRelayPublish` with v1. One txn, one commit; the worker publishes. No intermediate state where the DB says "published" but the relay hasn't seen the event.
+- **Paywalled drafts** — the two-txn shape is preserved because the vault-ownership check still requires the article row to exist with v1.id before the key-service call. But txn 2 now UPDATE-s articles/feed_items to v2.id *and* enqueues v2 in the same txn; on crash between commit and worker pickup the outbox redrive catches the row. The old post-commit `await publishToRelay(v2)` (which was the §1 hazard source) is gone.
+- Vault reuse on retry: if the outer catch retains the draft and the next cycle re-signs v1' + v2', `vaultService.publishArticle` detects the existing `vault_keys` row for this `article_id` and reuses the content key; the UPDATE + enqueue txn writes the fresh v2' id. Relay-side, replaceable-event (kind 30023 with same d-tag) semantics collapse by `created_at`.
+
+No migration. Gateway build + 24 tests + shared 28 tests pass. `publishPersonalDraft` now has no `publishToRelay` reference.
+
+## Phase 6 landed (observability + relay-failure integration test)
+
+Per acceptance criterion "pre-existing deletion paths demonstrably retry on simulated relay failure": `feed-ingest/src/tasks/relay-publish.test.ts` exercises the worker against a scripted pg client and a mocked `publishNostrToRelays`. Ten cases — `computeBackoff` formula (exported for the test) scales `2^attempts` minutes ±10% with a 1h cap; happy-path commit writes `status='sent'`; relay rejection writes `status='failed'`, increments `attempts`, persists `last_error`, and schedules a versioned `relay_publish_<id>_r<n>` retry with `runAt` via `helpers.addJob`; a row already at `attempts = max_attempts - 1` flips to `status='abandoned'` with no retry; already-sent rows and SELECT-missed rows are no-ops; advisory-lock contention returns without touching state so the redrive picks up; missing-relay-URL path fails cleanly. The final case is the deletion-path retry story in miniature: two consecutive `relayPublish` invocations on the same `outbox_id` (first `pending→failed`, second `failed→sent`) with the relay mocked to throw once then resolve — the exact shape a real blip produces against a kind-5 tombstone enqueued from `articles/manage.ts` or `notes.ts`.
+
+"Backfill" turned out to be a null task. Migration 076 shipped atomically with Phases 2+3; there is no pre-outbox ledger-relay drift to sweep — every call site swapped to `enqueueRelayPublish` in the same landing. Any row on the relay that isn't backed by a DB entity (or vice versa) predates the outbox and is out of scope; the daily `relay_outbox_reconcile` already emits abandoned / high-retry / sent-24h counts as the ongoing observability surface.
+
+Feed-ingest build clean, 52 tests pass (11 trust-weighting + 31 trust-aggregation + 10 new). Programme one complete — Phase 4 publish-path rewrite remains the only outstanding piece and is deferred to its own ADR.
+
 ## Out of scope (deferred)
 
 - Phase 4 publish-path migration (own ADR)
