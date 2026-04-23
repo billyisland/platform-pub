@@ -1,15 +1,13 @@
 import { finalizeEvent, getPublicKey } from 'nostr-tools'
-import { WebSocket } from 'ws'
 import type { SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 
 // =============================================================================
 // Gateway Nostr Publisher
 //
-// Signs events with the platform service key. Publishing to the relay goes
-// through `relay_outbox` (see shared/src/lib/relay-outbox.ts) — callers sign
-// here and enqueue the result inside their own transaction. `publishToRelay`
-// remains for the legacy awaited call sites that Phase 3 of RELAY-OUTBOX-ADR
-// will migrate.
+// Signs events with the platform service key. All write paths flow through
+// `relay_outbox` (see shared/src/lib/relay-outbox.ts) — callers sign here and
+// hand the signed event to `enqueueRelayPublish` inside their own transaction;
+// the feed-ingest `relay_publish` worker owns the actual websocket publish.
 //
 // Signing uses PLATFORM_SERVICE_PRIVKEY — the same key used by the payment
 // service for kind 9901 receipt events.
@@ -64,45 +62,4 @@ export function signSubscriptionEvent(params: SubscriptionEventParams): SignedNo
   }
 
   return finalizeEvent(eventTemplate, privkey) as SignedNostrEvent
-}
-
-// ---------------------------------------------------------------------------
-// Internal relay publisher — identical pattern to payment-service/src/lib/nostr.ts
-// ---------------------------------------------------------------------------
-
-export async function publishToRelay(event: ReturnType<typeof finalizeEvent>): Promise<void> {
-  const relayUrl = process.env.PLATFORM_RELAY_WS_URL
-  if (!relayUrl) throw new Error('PLATFORM_RELAY_WS_URL not set')
-
-  return publishToRelayUrl(relayUrl, event)
-}
-
-function publishToRelayUrl(relayUrl: string, event: ReturnType<typeof finalizeEvent>): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(relayUrl)
-    const timeout = setTimeout(() => {
-      ws.close()
-      reject(new Error('Relay publish timeout'))
-    }, 5_000)
-
-    ws.on('open', () => {
-      ws.send(JSON.stringify(['EVENT', event]))
-    })
-
-    ws.on('message', (data) => {
-      try {
-        const [type, , success, message] = JSON.parse(data.toString())
-        if (type === 'OK') {
-          clearTimeout(timeout)
-          ws.close()
-          if (success) { resolve() } else { reject(new Error(`Relay rejected event: ${message}`)) }
-        }
-      } catch { /* ignore NOTICE etc */ }
-    })
-
-    ws.on('error', (err) => {
-      clearTimeout(timeout)
-      reject(err)
-    })
-  })
 }

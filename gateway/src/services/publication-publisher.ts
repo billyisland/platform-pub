@@ -1,6 +1,6 @@
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { signEvent } from '../lib/key-custody-client.js'
-import { publishToRelay } from '../lib/nostr-publisher.js'
+import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { generateDTag } from '@platform-pub/shared/lib/slug.js'
 import { truncatePreview } from '@platform-pub/shared/lib/text.js'
@@ -11,8 +11,9 @@ export { generateDTag }
 //
 // Orchestrates the full flow for publication articles:
 //   1. Sign the NIP-23 event with the publication's custodial key
-//   2. Publish to the relay
-//   3. Index in the database
+//   2. Index the article + feed_items row AND enqueue the signed event into
+//      `relay_outbox` atomically in one transaction; the feed-ingest
+//      `relay_publish` worker owns the relay publish with retry.
 //
 // Contributors without can_publish get their article saved as 'submitted'
 // without any Nostr event being created.
@@ -140,13 +141,10 @@ export async function publishToPublication(
     created_at: Math.floor(Date.now() / 1000),
   }
 
-  // Sign with the publication's key
+  // Sign with the publication's key (IO to key-custody — stays outside the txn)
   const signed = await signEvent(input.publicationId, eventTemplate, 'publication')
 
-  // Publish to relay
-  await publishToRelay(signed as any)
-
-  // Index in DB + dual-write feed_items
+  // Index in DB + dual-write feed_items + enqueue relay publish atomically
   const slug = dTag
 
   const articleId = await withTransaction(async (client) => {
@@ -224,6 +222,12 @@ export async function publishToPublication(
       truncatePreview(input.content),
       signed.id,
     ])
+
+    await enqueueRelayPublish(client, {
+      entityType: 'article',
+      entityId: artId,
+      signedEvent: signed as SignedNostrEvent,
+    })
 
     return artId
   })
@@ -309,9 +313,7 @@ export async function approveAndPublishArticle(
     created_at: Math.floor(Date.now() / 1000),
   }, 'publication')
 
-  await publishToRelay(signed as any)
-
-  // Update DB + dual-write feed_items
+  // Update DB + dual-write feed_items + enqueue relay publish atomically
   await withTransaction(async (client) => {
     await client.query(
       `UPDATE articles
@@ -357,6 +359,12 @@ export async function approveAndPublishArticle(
        ON CONFLICT DO NOTHING`,
       [article.writer_id, editorId, articleId]
     )
+
+    await enqueueRelayPublish(client, {
+      entityType: 'article',
+      entityId: articleId,
+      signedEvent: signed as SignedNostrEvent,
+    })
   })
 
   logger.info({ publicationId, articleId, nostrEventId: signed.id, editor: editorId }, 'Submitted article approved and published')
