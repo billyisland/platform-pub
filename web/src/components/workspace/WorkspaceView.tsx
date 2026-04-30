@@ -6,14 +6,24 @@ import { useAuth } from '../../stores/auth'
 import { feed as feedApi } from '../../lib/api'
 import type { FeedItem, ExternalFeedItem } from '../../lib/ndk'
 import { Vessel } from './Vessel'
-import { VesselCard } from './VesselCard'
+import { VesselCard, NewUserVesselCard } from './VesselCard'
 
 const FLOOR = '#F0EFEB' // grey-100 per Step 1 / Colour tokens committed
 
 // Slice 1: one hardcoded vessel, fetching from /api/v1/timeline.
 // The feeds API arrives in slice 3.
 
-function mapApiItem(item: any): FeedItem | null {
+interface NewUserItem {
+  type: 'new_user'
+  username: string
+  displayName: string | null
+  avatar: string | null
+  joinedAt: number
+}
+
+type WorkspaceItem = FeedItem | NewUserItem
+
+function mapApiItem(item: any): WorkspaceItem | null {
   if (item.type === 'article') {
     return {
       type: 'article',
@@ -69,13 +79,22 @@ function mapApiItem(item: any): FeedItem | null {
       pipStatus: item.pipStatus ?? 'unknown',
     } as ExternalFeedItem
   }
+  if (item.type === 'new_user') {
+    return {
+      type: 'new_user',
+      username: item.username,
+      displayName: item.displayName ?? null,
+      avatar: item.avatar ?? null,
+      joinedAt: item.joinedAt,
+    }
+  }
   return null
 }
 
 export function WorkspaceView() {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const [items, setItems] = useState<FeedItem[]>([])
+  const [items, setItems] = useState<WorkspaceItem[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
 
   useEffect(() => {
@@ -92,7 +111,7 @@ export function WorkspaceView() {
         if (cancelled) return
         const mapped = (data.items ?? [])
           .map(mapApiItem)
-          .filter((x: FeedItem | null): x is FeedItem => x !== null)
+          .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null)
         setItems(mapped)
         setStatus('ready')
       })
@@ -118,7 +137,16 @@ export function WorkspaceView() {
           {status === 'error' && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
           {status === 'ready' && items.length === 0 && <Hint>NO ITEMS</Hint>}
           {status === 'ready' &&
-            items.slice(0, 12).map((item) => <VesselCard key={item.id} item={item} />)}
+            items.slice(0, 12).map((item) =>
+              item.type === 'new_user' ? (
+                <NewUserVesselCard
+                  key={`new-user-${item.username}-${item.joinedAt}`}
+                  item={item}
+                />
+              ) : (
+                <VesselCard key={item.id} item={item} />
+              ),
+            )}
         </Vessel>
       </div>
     </Floor>

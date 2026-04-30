@@ -117,6 +117,40 @@ function NoteVesselCard({ note }: { note: NoteEvent }) {
   )
 }
 
+interface NewUserItem {
+  type: 'new_user'
+  username: string
+  displayName: string | null
+  avatar: string | null
+  joinedAt: number
+}
+
+export function NewUserVesselCard({ item }: { item: NewUserItem }) {
+  const name = item.displayName ?? item.username ?? 'Someone'
+  return (
+    <CardShell>
+      <div
+        className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.06em]"
+        style={{ color: TOKENS.meta }}
+      >
+        <span style={{ color: TOKENS.title }} className="font-medium">
+          {name}
+        </span>
+        <span>·</span>
+        <time dateTime={new Date(item.joinedAt * 1000).toISOString()}>
+          {formatDateRelative(item.joinedAt)}
+        </time>
+      </div>
+      <p
+        className="text-[13px] leading-[1.45] mt-1.5"
+        style={{ color: TOKENS.standfirst }}
+      >
+        joined the platform
+      </p>
+    </CardShell>
+  )
+}
+
 function ExternalVesselCard({ external }: { external: ExternalFeedItem }) {
   const name = external.authorName ?? external.authorHandle ?? external.sourceName ?? 'External'
   const protocol = external.sourceProtocol.toUpperCase()
