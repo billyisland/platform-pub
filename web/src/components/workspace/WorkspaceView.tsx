@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../stores/auth'
+import { useWorkspace } from '../../stores/workspace'
 import { workspaceFeeds as workspaceFeedsApi, type WorkspaceFeed } from '../../lib/api'
 import type { FeedItem, ExternalFeedItem } from '../../lib/ndk'
 import { Vessel } from './Vessel'
@@ -15,8 +16,31 @@ import { FeedComposer } from './FeedComposer'
 const FLOOR = '#F0EFEB' // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed"
 
-// Slice 3: per-feed vessels backed by /api/v1/feeds. Empty source sets fall
-// back to an explore stream until source-set wiring lands.
+// Slice 5a: vessels are absolutely positioned on the floor and drag-to-move.
+// Layout state lives in useWorkspace (localStorage-backed). For any feed
+// without a stored position, we compute a default grid slot and write back.
+
+// Default-grid geometry. Vessels are 300px wide; we leave a 40px gutter on
+// the right so name labels don't crowd. Row height is approximate — vessels
+// vary, but the grid only matters until the user drags. Top padding leaves
+// room for browser UI / future header elements.
+const DEFAULT_GRID = {
+  paddingX: 32,
+  paddingY: 32,
+  colWidth: 340, // 300 vessel + 40 gutter
+  rowHeight: 600,
+}
+
+function defaultGridSlot(index: number, viewportWidth: number) {
+  const usableWidth = Math.max(viewportWidth - DEFAULT_GRID.paddingX * 2, DEFAULT_GRID.colWidth)
+  const cols = Math.max(1, Math.floor(usableWidth / DEFAULT_GRID.colWidth))
+  const col = index % cols
+  const row = Math.floor(index / cols)
+  return {
+    x: DEFAULT_GRID.paddingX + col * DEFAULT_GRID.colWidth,
+    y: DEFAULT_GRID.paddingY + row * DEFAULT_GRID.rowHeight,
+  }
+}
 
 interface NewUserItem {
   type: 'new_user'
@@ -110,6 +134,11 @@ export function WorkspaceView() {
   const [composerOpen, setComposerOpen] = useState(false)
   const [newFeedOpen, setNewFeedOpen] = useState(false)
   const [feedComposerFor, setFeedComposerFor] = useState<WorkspaceFeed | null>(null)
+  const floorRef = useRef<HTMLDivElement>(null)
+  const positions = useWorkspace((s) => s.positions)
+  const hydrated = useWorkspace((s) => s.hydrated)
+  const hydrate = useWorkspace((s) => s.hydrate)
+  const setVesselPosition = useWorkspace((s) => s.setVesselPosition)
 
   const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
     setVessels((prev) =>
@@ -151,7 +180,13 @@ export function WorkspaceView() {
 
   async function handleCreateFeed(name: string) {
     const { feed } = await workspaceFeedsApi.create(name)
-    setVessels((prev) => [...prev, { feed, items: [], status: 'loading' }])
+    setVessels((prev) => {
+      const next = [...prev, { feed, items: [], status: 'loading' as const }]
+      // Default position for the newly-added vessel: next slot in the grid.
+      const slot = defaultGridSlot(next.length - 1, window.innerWidth)
+      setVesselPosition(feed.id, slot)
+      return next
+    })
     setNewFeedOpen(false)
     void loadVesselItems(feed)
   }
@@ -160,10 +195,17 @@ export function WorkspaceView() {
     if (!loading && !user) router.push('/auth?mode=login')
   }, [user, loading, router])
 
+  // Hydrate the workspace store from localStorage as soon as the user is
+  // known. Bootstrap below depends on hydration so default-slot writes don't
+  // overwrite a stored layout.
+  useEffect(() => {
+    if (user) hydrate(user.id)
+  }, [user, hydrate])
+
   // Bootstrap: list feeds, seed the default if none exist, fetch items per
   // vessel. Re-runs only when the authenticated user changes.
   useEffect(() => {
-    if (!user) return
+    if (!user || !hydrated) return
     let cancelled = false
     setBootstrap('loading')
     ;(async () => {
@@ -181,6 +223,17 @@ export function WorkspaceView() {
         }))
         setVessels(initial)
         setBootstrap('ready')
+
+        // Assign default positions for any feed without a stored layout.
+        // Reads the live store inside getState() to avoid stale-closure issues.
+        const stored = useWorkspace.getState().positions
+        const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
+        list.forEach((feed, i) => {
+          if (!stored[feed.id]) {
+            setVesselPosition(feed.id, defaultGridSlot(i, viewportWidth))
+          }
+        })
+
         for (const feed of list) {
           if (cancelled) return
           // Fire-and-forget per vessel — no need to serialise.
@@ -195,23 +248,27 @@ export function WorkspaceView() {
     return () => {
       cancelled = true
     }
-  }, [user, loadVesselItems])
+  }, [user, hydrated, loadVesselItems, setVesselPosition])
 
   if (loading || !user) {
     return <Floor />
   }
 
   return (
-    <Floor>
-      <div className="flex flex-wrap justify-center gap-8 pt-12 px-6">
-        {bootstrap === 'loading' && <Hint>BOOTSTRAPPING WORKSPACE…</Hint>}
-        {bootstrap === 'error' && <Hint>COULDN&rsquo;T LOAD WORKSPACE</Hint>}
-        {bootstrap === 'ready' &&
-          vessels.map((v) => (
+    <Floor floorRef={floorRef}>
+      {bootstrap === 'loading' && <CenteredHint>BOOTSTRAPPING WORKSPACE…</CenteredHint>}
+      {bootstrap === 'error' && <CenteredHint>COULDN&rsquo;T LOAD WORKSPACE</CenteredHint>}
+      {bootstrap === 'ready' &&
+        vessels.map((v) => {
+          const pos = positions[v.feed.id] ?? { x: 0, y: 0 }
+          return (
             <Vessel
               key={v.feed.id}
               name={v.feed.name}
               onNameClick={() => setFeedComposerFor(v.feed)}
+              position={pos}
+              onPositionCommit={(next) => setVesselPosition(v.feed.id, next)}
+              dragConstraints={floorRef}
             >
               {v.status === 'loading' && <Hint>LOADING…</Hint>}
               {v.status === 'error' && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
@@ -228,8 +285,8 @@ export function WorkspaceView() {
                   ),
                 )}
             </Vessel>
-          ))}
-      </div>
+          )
+        })}
       <ForallMenu onAction={handleForallAction} />
       <Composer
         open={composerOpen}
@@ -253,9 +310,41 @@ export function WorkspaceView() {
   )
 }
 
-function Floor({ children }: { children?: React.ReactNode }) {
+function Floor({
+  children,
+  floorRef,
+}: {
+  children?: React.ReactNode
+  floorRef?: React.RefObject<HTMLDivElement>
+}) {
   return (
-    <div style={{ background: FLOOR, minHeight: '100vh' }}>
+    <div
+      ref={floorRef}
+      style={{
+        background: FLOOR,
+        minHeight: '100vh',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function CenteredHint({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="font-mono text-[11px] uppercase tracking-[0.06em] text-center"
+      style={{
+        color: '#9C9A94',
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+      }}
+    >
       {children}
     </div>
   )

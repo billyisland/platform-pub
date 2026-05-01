@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -234,6 +234,26 @@ The `feeds` object becomes load-bearing. A vessel's name label is now a click-to
 **Wiring (`WorkspaceView.tsx`).** New `feedComposerFor: WorkspaceFeed | null` state; vessel name onClick sets it. After source change the affected vessel re-fetches via the existing `loadVesselItems`.
 
 Skipped intentionally: rename / delete UI on vessels (routes already exist; needs its own confirm-flow), per-source weight / sampling-mode authoring (columns reserved, no UX yet), source mute toggle (column reserved, no UI), drag to reorder sources, paste-URL one-shot (the *Fork feed by URL* ∀ item — naturally a *create feed* + *add source* combo, deferred), the `external_subscriptions` cap check on POST `/feeds/:id/sources` (the existing `/feeds/subscribe` route enforces a 200-cap; slice 4 trusts the caller — a real cap on workspace adds is a follow-up that probably belongs in a shared helper), bulk import (selecting current follows en masse to seed a feed), and per-vessel pagination beyond 20 items. The *Reset workspace layout* ∀ item remains a `console.log` stub.
+
+### Slice 5a — vessel drag-to-position + localStorage layout (2026-05-01)
+
+The first vessel gesture. Vessels stop flex-wrapping and become absolutely-positioned objects on the floor, draggable by the name label, with positions persisted to localStorage per user. Framer Motion enters the codebase for the first time.
+
+**New surfaces.**
+- `web/src/stores/workspace.ts` — `useWorkspace` Zustand store. `positions: Record<feedId, {x,y}>`, `hydrate(userId)`, `setVesselPosition(feedId, pos)`, `removeVessel(feedId)`, `reset()`. localStorage key `workspace:layout:<userId>`, debounced 200ms write. Quota-exceeded / private-browsing failures swallowed silently — the in-memory layout is authoritative for the session, the persistence is best-effort. Per ADR §3 there is no server sync this slice.
+- `web/src/lib/workspace/motion.ts` — small Framer Motion config (drag spring, reduced-motion variant, `prefersReducedMotion()` helper). Slice 5a actually uses none of the spring config because `dragMomentum={false}` settles the vessel exactly where the cursor was; the file exists for the resize / rotate / ∀→H→⊔ slices that *do* need it.
+
+**Vessel changes (`Vessel.tsx`).** The chassis is now a `motion.div` with `position: absolute`, `x` / `y` motion values mirrored to `position` props via a `useEffect`. `drag` is enabled but `dragListener` is `false` — drag only initiates when `dragControls.start(event)` fires from the name label's `onPointerDown`. Cards inside the vessel stay clickable. `dragMomentum={false}` + `dragElastic={0}` — no springy slide-back, no overshoot. `dragConstraints` accepts a `RefObject<HTMLElement>` from the parent so vessels can't be dragged off the floor and lost. A `dragMovedRef` flag tracks whether the gesture was a drag or a click; the name-label `onClick` (which opens `FeedComposer`) is suppressed if any movement occurred during the gesture, so dragging the label doesn't accidentally open the composer.
+
+**WorkspaceView changes.** Floor becomes `position: relative`, `height: 100vh`, `overflow: hidden`. A `floorRef` is threaded into each `Vessel` as `dragConstraints`. The bootstrap effect now blocks on `useWorkspace.hydrated` so default-slot writes never overwrite a stored layout. After hydration, for each feed without a stored position, a default grid slot is computed (340px col width = 300px vessel + 40px gutter, 32px outer padding, wraps at viewport width) and written back. `handleCreateFeed` does the same for newly-created vessels: next-slot default at the time of creation. The `flex flex-wrap justify-center` wrapper is gone; vessels live as absolutely-positioned children of the floor. Loading / error hints centre on the floor via `position: absolute; top/left: 50%; translate(-50%, -50%)`.
+
+**Behaviour.** Position is `{x, y}` in floor coordinates (top-left origin). `dragConstraints` clamps to the floor element's box, so a vessel can't be lost off-screen. No no-overlap rule — overlap is allowed in slice 5a; Wireframe §3's no-overlap commitment waits until resize/brightness slices land and the spatial economics matter.
+
+**No new dependencies on Framer Motion ceremonies.** `motion.div` only — no `AnimatePresence`, no path animation, no SVG morphing. The ∀→H→⊔ ceremonial sequence (Slice 9 / Step 9) and the brightness / density gestures will pull in more of the API; this slice deliberately stays minimal.
+
+**Reset workspace layout (∀ menu item) still stubbed.** The store's `reset()` exists and is exported; wiring the ∀ item is a small follow-up that probably wants a confirm modal first.
+
+Skipped intentionally: vessel resize (next slice), brightness / density / rotation (Step 2 wireframe), no-overlap collision detection, scrollable canvas beyond viewport, server-side persistence (still localStorage-only per ADR §3), keyboard equivalents for drag (deferred per ADR §6 a11y floor — vessels remain keyboard-reachable as `role="region"`, just not keyboard-positionable), mobile touch geometry (still desktop-only per ADR §5), default-grid recompute on viewport resize (the slot formula reads `window.innerWidth` once at bootstrap; if the user resizes their browser drastically the existing layout stays put rather than reflowing), garbage-collect orphaned `positions` entries when feeds are deleted on another device (`removeVessel` exists but isn't wired to deletion yet because vessel deletion UI doesn't exist).
 
 ## Deferred (TODO in code, not blocking the experiment)
 
