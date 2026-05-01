@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -254,6 +254,34 @@ The first vessel gesture. Vessels stop flex-wrapping and become absolutely-posit
 **Reset workspace layout (∀ menu item) still stubbed.** The store's `reset()` exists and is exported; wiring the ∀ item is a small follow-up that probably wants a confirm modal first.
 
 Skipped intentionally: vessel resize (next slice), brightness / density / rotation (Step 2 wireframe), no-overlap collision detection, scrollable canvas beyond viewport, server-side persistence (still localStorage-only per ADR §3), keyboard equivalents for drag (deferred per ADR §6 a11y floor — vessels remain keyboard-reachable as `role="region"`, just not keyboard-positionable), mobile touch geometry (still desktop-only per ADR §5), default-grid recompute on viewport resize (the slot formula reads `window.innerWidth` once at bootstrap; if the user resizes their browser drastically the existing layout stays put rather than reflowing), garbage-collect orphaned `positions` entries when feeds are deleted on another device (`removeVessel` exists but isn't wired to deletion yet because vessel deletion UI doesn't exist).
+
+### Slice 5b — vessel resize via bottom-right corner (2026-05-01)
+
+The second vessel gesture. Vessels gain a quiet resize handle at the bottom-right corner of the chassis; drag widens / lengthens the vessel; size persists alongside position in localStorage.
+
+**Store changes (`useWorkspace`).** `VesselLayout` extends from `{x, y}` to `{x, y, w?, h?}`. New `setVesselSize(feedId, {w, h})` merges into the existing record under the same `workspace:layout:<userId>` key, debounced 200ms. Slice-5a values (positions only) read forward without migration — `w` / `h` are optional and undefined means "use the vessel's intrinsic size."
+
+**Vessel changes (`Vessel.tsx`).** New `size?: {w?, h?}` and `onSizeCommit?` props. The chassis becomes `position: relative` so the handle can pin to its bottom-right; a 16×16 hit area at `right: -8, bottom: -8` (offsetting the 8px wall) carries a small ◢ glyph at low opacity. Resize is plain `onPointerDown` + `setPointerCapture` + `onPointerMove` — Framer Motion's `drag` API is for translation, not bounded resize, so the handle owns its own gesture path. `liveSize` state mirrors the in-flight value during the drag and is committed on `onPointerUp`. Min 220×200 per spec ("below which content becomes illegible"); max 2000×2000 defensively (the floor's `overflow: hidden` clips visually so spec's "no maximum" rule is honoured by the floor, not the vessel). When `size.h` is set, the chassis takes a fixed height and the body becomes `overflow-y: auto` so cards scroll inside; without `h`, the vessel grows with content as before.
+
+**Gesture independence.** The resize handle calls `event.stopPropagation()` on pointerdown and the vessel's translation drag is gated by `dragControls.start()` from the name label only — the two gestures don't interfere.
+
+Skipped intentionally: pinch-to-resize (touch — deferred per ADR §5), corner-handle visibility on hover only (the handle stays present and quiet, in keeping with workspace-as-physical-space), per-density default sizes (size is freeform until density gestures arrive), aspect-ratio lock (spec implies free resize), keyboard equivalents for resize (deferred per ADR §6 a11y floor), no-overlap collision detection (still a later slice — vessels can overlap when resized large), default-size recompute on viewport resize, server-side persistence.
+
+### Slice 5c — vessel brightness, density, orientation (2026-05-01)
+
+The three remaining per-feed attentional axes per `WORKSPACE-DESIGN-SPEC.md` §"Feed scope" come online. Brightness changes the resolved colour palette (walls, interior, name label, cards). Density changes the card grammar inside (compact / standard / full). Orientation toggles the chassis between vertical (⊔: left + right + bottom walls) and horizontal (⊏: top + left + bottom walls, opening on the right; cards lay out in a row, horizontal scroll if w/h fixed).
+
+**Tokens consolidated.** New `web/src/components/workspace/tokens.ts` exports `Brightness | Density | Orientation` + a `PALETTES: Record<Brightness, VesselPalette>` lookup keyed on the wireframe's committed primary / medium / dim colour tables (incl. desaturated crimson `#C4545A` and `pipOpacity: 0.7` at dim). Three small `next*` cycle helpers. The chassis resolves a single `palette` and passes `brightness` + `density` down to cards; cards re-render at the right brightness/density without per-card token plumbing beyond the two props.
+
+**Store changes (`useWorkspace`).** `VesselLayout` extends with optional `brightness`, `density`, `orientation`. Three new setters (`setVesselBrightness` / `setVesselDensity` / `setVesselOrientation`) merge into the existing per-feed record under the same `workspace:layout:<userId>` storage key, debounced 200ms. Slice-5a / 5b values read forward unchanged because every new axis is optional with a per-axis default (medium / standard / vertical).
+
+**Vessel changes (`Vessel.tsx`).** Accepts the three new props + commit callbacks. Wall arrangement branches on orientation. Inner flex direction switches between `column` and `row`; height-set vessels now scroll on the active axis (vertical → `overflow-y`, horizontal → `overflow-x`). Three small cycle controls (mono-glyph buttons) appear pinned to the chassis bottom-right just left of the resize handle: `○|◐|●` for brightness, `c|s|f` for density, `||─` for orientation. Each click cycles forward; `title` carries the full label so the abbreviations stay discoverable. Per ADR §5 these are the desktop alternatives to the touch gestures (two-finger vertical drag for brightness, two-finger rotation for orientation, gestural density toggle) — the cycle buttons are honest about discreteness; when continuous brightness lands, the storage shape evolves at that point.
+
+**Card changes (`VesselCard.tsx`).** Now accepts `density` + `brightness` props and resolves a `CardContext` carrying both. Compact density collapses the card to an inline 9px pip + single-line title (with a crimson `£` glyph for paywalled articles, no full price). Standard is the slice-1 layout. Full adds a final source-attribution row (`VIA <PROTOCOL> · <IDENTIFIER>`, mono caps 10px, quietest meta colour). All hardcoded medium-bright tokens are replaced with palette lookups, so a vessel at `dim` recolours its cards including pip opacity (0.7 per spec).
+
+**Wiring (`WorkspaceView.tsx`).** Plumbs the three new props from `useWorkspace` to each `Vessel`, and `density` + `brightness` from the layout to each rendered card.
+
+Skipped intentionally: continuous brightness (touch gesture deferred per ADR §5; storage stays discrete until then), real touch gestures (two-finger vertical drag, two-finger rotation, gestural density), brightness-as-focus coupling (`WORKSPACE-DESIGN-SPEC.md` §"What this spec doesn't yet pin down" — focus mode is its own design pass), name-label repositioning to the opening side in horizontal mode (label stays above the vessel root for now; spec calls for it to follow the opening), per-density default sizes (a horizontal vessel still inherits the user's last w/h — they resize to taste), keyboard equivalents for the three controls (deferred per ADR §6 a11y floor — the cycle buttons are clickable, just not arrow-key-reachable), nine-state matrix QA across density × brightness in the live UI (the wireframe showed the nine frames pass; the runtime renderer is a first cut), no-overlap collision (still later), thumbnails / lead images at full density (the spec calls for them; `feed_items` doesn't carry them in a way the slice can render — TODO).
 
 ## Deferred (TODO in code, not blocking the experiment)
 

@@ -139,6 +139,10 @@ export function WorkspaceView() {
   const hydrated = useWorkspace((s) => s.hydrated)
   const hydrate = useWorkspace((s) => s.hydrate)
   const setVesselPosition = useWorkspace((s) => s.setVesselPosition)
+  const setVesselSize = useWorkspace((s) => s.setVesselSize)
+  const setVesselBrightness = useWorkspace((s) => s.setVesselBrightness)
+  const setVesselDensity = useWorkspace((s) => s.setVesselDensity)
+  const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation)
 
   const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
     setVessels((prev) =>
@@ -260,14 +264,22 @@ export function WorkspaceView() {
       {bootstrap === 'error' && <CenteredHint>COULDN&rsquo;T LOAD WORKSPACE</CenteredHint>}
       {bootstrap === 'ready' &&
         vessels.map((v) => {
-          const pos = positions[v.feed.id] ?? { x: 0, y: 0 }
+          const layout = positions[v.feed.id] ?? { x: 0, y: 0 }
           return (
             <Vessel
               key={v.feed.id}
               name={v.feed.name}
               onNameClick={() => setFeedComposerFor(v.feed)}
-              position={pos}
+              position={{ x: layout.x, y: layout.y }}
+              size={{ w: layout.w, h: layout.h }}
+              brightness={layout.brightness}
+              density={layout.density}
+              orientation={layout.orientation}
               onPositionCommit={(next) => setVesselPosition(v.feed.id, next)}
+              onSizeCommit={(next) => setVesselSize(v.feed.id, next)}
+              onBrightnessCommit={(next) => setVesselBrightness(v.feed.id, next)}
+              onDensityCommit={(next) => setVesselDensity(v.feed.id, next)}
+              onOrientationCommit={(next) => setVesselOrientation(v.feed.id, next)}
               dragConstraints={floorRef}
             >
               {v.status === 'loading' && <Hint>LOADING…</Hint>}
@@ -279,9 +291,16 @@ export function WorkspaceView() {
                     <NewUserVesselCard
                       key={`new-user-${item.username}-${item.joinedAt}`}
                       item={item}
+                      density={layout.density}
+                      brightness={layout.brightness}
                     />
                   ) : (
-                    <VesselCard key={item.id} item={item} />
+                    <VesselCard
+                      key={item.id}
+                      item={item}
+                      density={layout.density}
+                      brightness={layout.brightness}
+                    />
                   ),
                 )}
             </Vessel>

@@ -1,21 +1,32 @@
 import { create } from 'zustand'
+import type { Brightness, Density, Orientation } from '../components/workspace/tokens'
 
 // =============================================================================
 // useWorkspace — vessel layout state for the workspace experiment
 //
-// Slice 5a scope: vessel position only ({x, y} in floor coordinates,
-// top-left origin). Resize, brightness, density, rotation arrive in later
-// slices and extend this store.
+// Slice 5a: position ({x, y} in floor coordinates, top-left origin).
+// Slice 5b: width + height (optional — undefined means "intrinsic size").
+// Slice 5c: brightness, density, orientation (optional — undefined means
+// the per-axis default: medium / standard / vertical).
 //
 // Per WORKSPACE-EXPERIMENT-ADR.md §3, localStorage is the source of truth
 // for workspace layout. The store is hydrated from localStorage on first
 // authenticated load (keyed by user id) and writes back debounced 200ms.
 // No server sync this slice.
+//
+// Storage shape stays Record<feedId, VesselLayout>. Slice-5a values
+// (`{x, y}` only) and slice-5b values (`{x, y, w, h}`) read forward cleanly
+// because every additional axis is optional.
 // =============================================================================
 
 export interface VesselLayout {
   x: number
   y: number
+  w?: number
+  h?: number
+  brightness?: Brightness
+  density?: Density
+  orientation?: Orientation
 }
 
 interface WorkspaceState {
@@ -24,7 +35,11 @@ interface WorkspaceState {
   hydrated: boolean
 
   hydrate: (userId: string) => void
-  setVesselPosition: (feedId: string, pos: VesselLayout) => void
+  setVesselPosition: (feedId: string, pos: { x: number; y: number }) => void
+  setVesselSize: (feedId: string, size: { w: number; h: number }) => void
+  setVesselBrightness: (feedId: string, brightness: Brightness) => void
+  setVesselDensity: (feedId: string, density: Density) => void
+  setVesselOrientation: (feedId: string, orientation: Orientation) => void
   removeVessel: (feedId: string) => void
   reset: () => void
 }
@@ -78,9 +93,62 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   setVesselPosition: (feedId, pos) => {
     const userId = get().userId
+    const existing = get().positions[feedId]
     const next = {
       ...get().positions,
-      [feedId]: { x: Math.round(pos.x), y: Math.round(pos.y) },
+      [feedId]: {
+        ...existing,
+        x: Math.round(pos.x),
+        y: Math.round(pos.y),
+      },
+    }
+    set({ positions: next })
+    if (userId) scheduleWrite(userId, next)
+  },
+
+  setVesselSize: (feedId, size) => {
+    const userId = get().userId
+    const existing = get().positions[feedId] ?? { x: 0, y: 0 }
+    const next = {
+      ...get().positions,
+      [feedId]: {
+        ...existing,
+        w: Math.round(size.w),
+        h: Math.round(size.h),
+      },
+    }
+    set({ positions: next })
+    if (userId) scheduleWrite(userId, next)
+  },
+
+  setVesselBrightness: (feedId, brightness) => {
+    const userId = get().userId
+    const existing = get().positions[feedId] ?? { x: 0, y: 0 }
+    const next = {
+      ...get().positions,
+      [feedId]: { ...existing, brightness },
+    }
+    set({ positions: next })
+    if (userId) scheduleWrite(userId, next)
+  },
+
+  setVesselDensity: (feedId, density) => {
+    const userId = get().userId
+    const existing = get().positions[feedId] ?? { x: 0, y: 0 }
+    const next = {
+      ...get().positions,
+      [feedId]: { ...existing, density },
+    }
+    set({ positions: next })
+    if (userId) scheduleWrite(userId, next)
+  },
+
+  setVesselOrientation: (feedId, orientation) => {
+    const userId = get().userId
+    const existing = get().positions[feedId] ?? { x: 0, y: 0 }
+    const next = {
+      ...get().positions,
+      [feedId]: { ...existing, orientation },
     }
     set({ positions: next })
     if (userId) scheduleWrite(userId, next)
