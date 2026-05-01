@@ -9,7 +9,10 @@ import type { FeedItem, ExternalFeedItem } from '../../lib/ndk'
 import { Vessel } from './Vessel'
 import { VesselCard, NewUserVesselCard } from './VesselCard'
 import { ForallMenu, type ForallAction } from './ForallMenu'
-import { Composer } from './Composer'
+import { Composer, type ReplyTarget } from './Composer'
+import { PipPanel } from './PipPanel'
+import { follows as followsApi } from '../../lib/api'
+import type { PipStatus } from '../../lib/ndk'
 import { NewFeedPrompt } from './NewFeedPrompt'
 import { FeedComposer } from './FeedComposer'
 import { ResetLayoutConfirm } from './ResetLayoutConfirm'
@@ -152,6 +155,13 @@ export function WorkspaceView() {
   const [vessels, setVessels] = useState<VesselState[]>([])
   const [bootstrap, setBootstrap] = useState<'loading' | 'ready' | 'error'>('loading')
   const [composerOpen, setComposerOpen] = useState<false | 'note' | 'article'>(false)
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null)
+  const [pipPanel, setPipPanel] = useState<{
+    pubkey: string
+    status?: PipStatus
+    rect: DOMRect
+  } | null>(null)
+  const [followedPubkeys, setFollowedPubkeys] = useState<Set<string>>(new Set())
   const [newFeedOpen, setNewFeedOpen] = useState(false)
   const [feedComposerFor, setFeedComposerFor] = useState<WorkspaceFeed | null>(null)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
@@ -197,10 +207,12 @@ export function WorkspaceView() {
 
   function handleForallAction(key: ForallAction) {
     if (key === 'new-note') {
+      setReplyTarget(null)
       setComposerOpen('note')
       return
     }
     if (key === 'new-article') {
+      setReplyTarget(null)
       setComposerOpen('article')
       return
     }
@@ -262,6 +274,26 @@ export function WorkspaceView() {
   useEffect(() => {
     if (!loading && !user) router.push('/auth?mode=login')
   }, [user, loading, router])
+
+  // Slice 12: fetch the user's followed pubkeys once on mount so the pip
+  // panel can render its initial follow state without a per-open round-trip.
+  // Failure is non-fatal — panel just defaults to "not following."
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    followsApi
+      .listPubkeys()
+      .then(({ pubkeys }) => {
+        if (cancelled) return
+        setFollowedPubkeys(new Set(pubkeys))
+      })
+      .catch(() => {
+        if (!cancelled) setFollowedPubkeys(new Set())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   // Hydrate the workspace store from localStorage as soon as the user is
   // known. Bootstrap below depends on hydration so default-slot writes don't
@@ -387,6 +419,13 @@ export function WorkspaceView() {
                       item={item}
                       density={layout.density}
                       brightness={layout.brightness}
+                      onReply={(target) => {
+                        setReplyTarget(target)
+                        setComposerOpen('note')
+                      }}
+                      onPipOpen={(pubkey, rect, status) => {
+                        setPipPanel({ pubkey, rect, status })
+                      }}
                     />
                   ),
                 )}
@@ -397,7 +436,11 @@ export function WorkspaceView() {
       <Composer
         open={!!composerOpen}
         initialMode={composerOpen === 'article' ? 'article' : 'note'}
-        onClose={() => setComposerOpen(false)}
+        replyTarget={replyTarget}
+        onClose={() => {
+          setComposerOpen(false)
+          setReplyTarget(null)
+        }}
         onPublished={refreshAll}
       />
       <NewFeedPrompt
@@ -435,6 +478,33 @@ export function WorkspaceView() {
         open={forkOpen}
         onClose={() => setForkOpen(false)}
         onForked={handleForked}
+      />
+      <PipPanel
+        open={!!pipPanel}
+        pubkey={pipPanel?.pubkey ?? ''}
+        pipStatus={pipPanel?.status}
+        anchorRect={
+          pipPanel
+            ? {
+                top: pipPanel.rect.top,
+                left: pipPanel.rect.left,
+                bottom: pipPanel.rect.bottom,
+                right: pipPanel.rect.right,
+              }
+            : null
+        }
+        initialIsFollowing={
+          pipPanel ? followedPubkeys.has(pipPanel.pubkey) : false
+        }
+        onClose={() => setPipPanel(null)}
+        onFollowChanged={(pk, isFollowing) => {
+          setFollowedPubkeys((prev) => {
+            const next = new Set(prev)
+            if (isFollowing) next.add(pk)
+            else next.delete(pk)
+            return next
+          })
+        }}
       />
       {ceremony && (
         <ForallCeremony

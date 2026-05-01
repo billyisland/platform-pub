@@ -9,6 +9,7 @@ import CharacterCount from '@tiptap/extension-character-count'
 import { Markdown } from 'tiptap-markdown'
 import { useAuth } from '../../stores/auth'
 import { publishNote, type CrossPostTarget } from '../../lib/publishNote'
+import { publishReply } from '../../lib/replies'
 import { publishArticle, publishToPublication } from '../../lib/publish'
 import { createAutoSaver, saveDraft } from '../../lib/drafts'
 import { uploadImage } from '../../lib/media'
@@ -103,14 +104,23 @@ interface PublicationOption {
   canPublish: boolean
 }
 
+export interface ReplyTarget {
+  eventId: string
+  eventKind: number
+  authorPubkey: string
+  authorName: string
+  excerpt?: string
+}
+
 interface ComposerProps {
   open: boolean
   initialMode?: ComposerMode
+  replyTarget?: ReplyTarget | null
   onClose: () => void
   onPublished?: () => void
 }
 
-export function Composer({ open, initialMode = 'note', onClose, onPublished }: ComposerProps) {
+export function Composer({ open, initialMode = 'note', replyTarget, onClose, onPublished }: ComposerProps) {
   const { user } = useAuth()
   const [mode, setMode] = useState<ComposerMode>(initialMode)
   const [chips, setChips] = useState<ToChip[]>([])
@@ -204,7 +214,7 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
 
   useEffect(() => {
     if (!open) return
-    setMode(initialMode)
+    setMode(replyTarget ? 'note' : initialMode)
     setChips([])
     setToQuery('')
     setResolverResult(null)
@@ -465,13 +475,14 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
   const selectedPub = publications.find((p) => p.id === selectedPublicationId)
   const isSubmitForReview = !!selectedPub && !selectedPub.canPublish
 
+  const isReply = !!replyTarget && mode === 'note'
+
   const canPublishNote =
     !!user &&
     !!body.trim() &&
     !overLimit &&
     !publishing &&
-    !isMixed &&
-    (isPrivate || broadcastNostrSelected)
+    (isReply || (!isMixed && (isPrivate || broadcastNostrSelected)))
 
   const canPublishArticle =
     !!user && !publishing && !!title.trim() && wordCount >= 10 && !hasPersonChip
@@ -483,6 +494,17 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
     setPublishing(true)
     setError(null)
     try {
+      if (isReply && replyTarget) {
+        await publishReply({
+          content: body,
+          targetEventId: replyTarget.eventId,
+          targetKind: replyTarget.eventKind,
+          targetAuthorPubkey: replyTarget.authorPubkey,
+        })
+        onPublished?.()
+        onClose()
+        return
+      }
       if (isPrivate) {
         const memberIds = chips
           .filter((c) => c.kind === 'person' && c.match?.account?.id)
@@ -587,7 +609,7 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
       onMouseDown={onScrimClick}
       role="dialog"
       aria-modal="true"
-      aria-label={mode === 'article' ? 'Write an article' : 'New note'}
+      aria-label={isReply ? 'Reply' : mode === 'article' ? 'Write an article' : 'New note'}
       style={{
         position: 'fixed',
         inset: 0,
@@ -609,7 +631,32 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
           boxShadow: '0 24px 48px rgba(0, 0, 0, 0.18)',
         }}
       >
-        {!hasPersonChip && (
+        {isReply && replyTarget && (
+          <div
+            style={{
+              background: TOKENS.bannerBg,
+              padding: '10px 12px',
+              marginBottom: 16,
+            }}
+          >
+            <div
+              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              style={{ color: TOKENS.hintFg }}
+            >
+              Replying to {replyTarget.authorName}
+            </div>
+            {replyTarget.excerpt && (
+              <p
+                className="font-serif italic text-[13px] mt-1"
+                style={{ color: TOKENS.bannerFg, lineHeight: 1.45 }}
+              >
+                {replyTarget.excerpt}
+              </p>
+            )}
+          </div>
+        )}
+
+        {!isReply && !hasPersonChip && (
           <div
             className="font-mono text-[11px] uppercase tracking-[0.06em]"
             style={{
@@ -623,6 +670,7 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
           </div>
         )}
 
+        {!isReply && (
         <label
           className="label-ui block"
           htmlFor="composer-to"
@@ -630,7 +678,9 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
         >
           To
         </label>
+        )}
 
+        {!isReply && (
         <div
           style={{
             border: `1px solid ${TOKENS.inputBorder}`,
@@ -789,8 +839,9 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
             </div>
           )}
         </div>
+        )}
 
-        {mode === 'note' && chips.length === 0 && (
+        {!isReply && mode === 'note' && chips.length === 0 && (
           <ProtocolSelector
             enabled={enabledProtocols}
             linked={linkedByProtocol}
@@ -866,22 +917,24 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
                 </span>
               </div>
             )}
-            <div style={{ marginTop: 8, textAlign: 'right' }}>
-              <button
-                type="button"
-                onClick={switchToArticle}
-                className="font-sans text-[13px]"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: TOKENS.hintFg,
-                  cursor: 'pointer',
-                  padding: 0,
-                }}
-              >
-                Write an article →
-              </button>
-            </div>
+            {!isReply && (
+              <div style={{ marginTop: 8, textAlign: 'right' }}>
+                <button
+                  type="button"
+                  onClick={switchToArticle}
+                  className="font-sans text-[13px]"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: TOKENS.hintFg,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                >
+                  Write an article →
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <ArticleModePanel
@@ -915,6 +968,10 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
           <div className="font-mono text-[11px]" style={{ color: TOKENS.hintFg }}>
             {error ? (
               <span style={{ color: TOKENS.errorFg }}>{error}</span>
+            ) : isReply ? (
+              <span style={{ color: overLimit ? TOKENS.errorFg : TOKENS.hintFg }}>
+                {charCount}/{NOTE_CHAR_LIMIT}
+              </span>
             ) : mode === 'article' ? (
               hasPersonChip ? (
                 <span style={{ color: TOKENS.errorFg }}>
@@ -988,10 +1045,14 @@ export function Composer({ open, initialMode = 'note', onClose, onPublished }: C
               }}
             >
               {publishing
-                ? isPrivate
-                  ? 'Sending…'
-                  : 'Publishing…'
-                : mode === 'article'
+                ? isReply
+                  ? 'Replying…'
+                  : isPrivate
+                    ? 'Sending…'
+                    : 'Publishing…'
+                : isReply
+                  ? 'Reply'
+                  : mode === 'article'
                   ? isSubmitForReview
                     ? 'Submit for review'
                     : 'Publish'

@@ -1,9 +1,17 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import type { FeedItem, ArticleEvent, NoteEvent, ExternalFeedItem } from '../../lib/ndk'
+import type { PipStatus } from '../../lib/ndk'
+import { useAuth } from '../../stores/auth'
 import { useWriterName } from '../../hooks/useWriterName'
 import { TrustPip } from '../ui/TrustPip'
+import { VoteControls } from '../ui/VoteControls'
 import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
+import type { ReplyTarget } from './Composer'
+import { PipTrigger } from './PipTrigger'
+
+export type PipOpen = (pubkey: string, rect: DOMRect, status: PipStatus | undefined) => void
 import {
   PALETTES,
   DEFAULT_BRIGHTNESS,
@@ -18,6 +26,8 @@ import {
 // Slice 5c: density variants (compact / standard / full) + brightness-driven
 // palette flowed in from the chassis. Compact = inline 9px pip + title.
 // Standard = current. Full = current + source-attribution line.
+// Slice 11: click-through to reader + action strip (vote / reply / share).
+// Compact density stays action-less; standard + full render the strip.
 
 interface CardContext {
   density: Density
@@ -28,47 +38,145 @@ interface Props {
   item: FeedItem
   density?: Density
   brightness?: Brightness
+  onReply?: (target: ReplyTarget) => void
+  onPipOpen?: PipOpen
 }
 
-export function VesselCard({ item, density, brightness }: Props) {
+// at:// → bsky.app web URL. Mirrors the helper in feed/ExternalCard.tsx —
+// kept local to avoid pulling in the deprecated card module.
+function atprotoWebUri(atUri: string): string | null {
+  const match = atUri.match(/^at:\/\/([^/]+)\/app\.bsky\.feed\.post\/([^/]+)$/)
+  if (!match) return null
+  return `https://bsky.app/profile/${match[1]}/post/${match[2]}`
+}
+
+export function VesselCard({ item, density, brightness, onReply, onPipOpen }: Props) {
   const ctx: CardContext = {
     density: density ?? DEFAULT_DENSITY,
     palette: PALETTES[brightness ?? DEFAULT_BRIGHTNESS],
   }
-  if (item.type === 'article') return <ArticleVesselCard article={item} ctx={ctx} />
-  if (item.type === 'note') return <NoteVesselCard note={item} ctx={ctx} />
+  if (item.type === 'article')
+    return <ArticleVesselCard article={item} ctx={ctx} onReply={onReply} onPipOpen={onPipOpen} />
+  if (item.type === 'note')
+    return <NoteVesselCard note={item} ctx={ctx} onReply={onReply} onPipOpen={onPipOpen} />
   return <ExternalVesselCard external={item} ctx={ctx} />
 }
 
 function CardShell({
   ctx,
+  onClick,
   children,
 }: {
   ctx: CardContext
+  onClick?: () => void
   children: React.ReactNode
 }) {
   // Compact density compresses the surface — single-line cards feel airless
   // with full padding. Standard / full keep the slice-1 padding.
   const padding = ctx.density === 'compact' ? '8px 12px' : '16px'
   return (
-    <div style={{ background: ctx.palette.cardBg, padding }}>{children}</div>
+    <div
+      onClick={onClick}
+      style={{
+        background: ctx.palette.cardBg,
+        padding,
+        cursor: onClick ? 'pointer' : undefined,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+// Action strip under the card body. Quiet by default — mono-caps, hint-coloured —
+// in keeping with the card chassis grammar. Compact density skips this row.
+function CardActions({
+  ctx,
+  voteEventId,
+  voteKind,
+  isOwnContent,
+  replyTarget,
+  shareUrl,
+  onReply,
+}: {
+  ctx: CardContext
+  voteEventId?: string
+  voteKind?: number
+  isOwnContent?: boolean
+  replyTarget?: ReplyTarget
+  shareUrl?: string
+  onReply?: (target: ReplyTarget) => void
+}) {
+  if (ctx.density === 'compact') return null
+
+  function handleShare(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!shareUrl) return
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(shareUrl)
+    }
+  }
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="flex items-center gap-3 mt-3 font-mono text-[11px] uppercase tracking-[0.06em]"
+      style={{ color: ctx.palette.cardMeta }}
+    >
+      {voteEventId && voteKind !== undefined && (
+        <VoteControls
+          targetEventId={voteEventId}
+          targetKind={voteKind}
+          isOwnContent={!!isOwnContent}
+        />
+      )}
+      {replyTarget && onReply && (
+        <button
+          type="button"
+          onClick={() => onReply(replyTarget)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: ctx.palette.cardMeta,
+          }}
+          className="hover:opacity-80"
+        >
+          Reply
+        </button>
+      )}
+      {shareUrl && (
+        <button
+          type="button"
+          onClick={handleShare}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: ctx.palette.cardMeta,
+          }}
+          className="hover:opacity-80"
+        >
+          Share
+        </button>
+      )}
+    </div>
   )
 }
 
 function CompactRow({
-  pipStatus,
+  pipNode,
   title,
   trailing,
   ctx,
 }: {
-  pipStatus?: 'known' | 'partial' | 'unknown'
+  pipNode: React.ReactNode
   title: string
   trailing?: React.ReactNode
   ctx: CardContext
 }) {
-  // 9px inline pip per Step 2 compact-density spec. TrustPip's smallest
-  // canonical size is 11px; we wrap and scale it down with transform so the
-  // pip code stays a single source of truth.
   return (
     <div
       className="flex items-center gap-2 font-sans text-[13px]"
@@ -79,12 +187,9 @@ function CompactRow({
           display: 'inline-flex',
           width: 9,
           height: 9,
-          opacity: ctx.palette.pipOpacity,
         }}
       >
-        <span style={{ transform: 'scale(0.82)', transformOrigin: 'top left' }}>
-          <TrustPip status={pipStatus} />
-        </span>
+        {pipNode}
       </span>
       <span className="truncate flex-1">{title}</span>
       {trailing}
@@ -93,13 +198,13 @@ function CompactRow({
 }
 
 function Byline({
-  pipStatus,
+  pipNode,
   name,
   publishedAt,
   trailing,
   ctx,
 }: {
-  pipStatus?: 'known' | 'partial' | 'unknown'
+  pipNode: React.ReactNode
   name: string
   publishedAt: number
   trailing?: React.ReactNode
@@ -110,9 +215,7 @@ function Byline({
       className="flex items-center gap-2 mb-2 font-mono text-[11px] uppercase tracking-[0.06em]"
       style={{ color: ctx.palette.cardMeta }}
     >
-      <span style={{ display: 'inline-flex', opacity: ctx.palette.pipOpacity }}>
-        <TrustPip status={pipStatus} />
-      </span>
+      {pipNode}
       <span style={{ color: ctx.palette.cardTitle }} className="font-medium">
         {name}
       </span>
@@ -148,13 +251,31 @@ function SourceAttribution({
 function ArticleVesselCard({
   article,
   ctx,
+  onReply,
+  onPipOpen,
 }: {
   article: ArticleEvent
   ctx: CardContext
+  onReply?: (target: ReplyTarget) => void
+  onPipOpen?: PipOpen
 }) {
+  const router = useRouter()
+  const { user } = useAuth()
   const writer = useWriterName(article.pubkey)
   const name = writer?.displayName ?? article.pubkey.slice(0, 12) + '…'
   const standfirst = article.summary || truncateText(stripMarkdown(article.content), 140)
+  const href = `/article/${article.dTag}`
+  const shareUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}${href}` : href
+  const isOwnContent = !!user && user.pubkey === article.pubkey
+  const replyTarget: ReplyTarget = {
+    eventId: article.id,
+    eventKind: 30023,
+    authorPubkey: article.pubkey,
+    authorName: name,
+    excerpt: article.title,
+  }
+  const onCardClick = () => router.push(href)
   const pricePill =
     article.isPaywalled && article.pricePence ? (
       ctx.density === 'compact' ? (
@@ -169,11 +290,37 @@ function ArticleVesselCard({
       )
     ) : null
 
+  const pipNodeCompact = onPipOpen ? (
+    <PipTrigger
+      pubkey={article.pubkey}
+      pipStatus={article.pipStatus}
+      opacity={ctx.palette.pipOpacity}
+      scale={0.82}
+      onOpen={onPipOpen}
+    />
+  ) : (
+    <span style={{ opacity: ctx.palette.pipOpacity, transform: 'scale(0.82)', transformOrigin: 'top left' }}>
+      <TrustPip status={article.pipStatus} />
+    </span>
+  )
+  const pipNodeByline = onPipOpen ? (
+    <PipTrigger
+      pubkey={article.pubkey}
+      pipStatus={article.pipStatus}
+      opacity={ctx.palette.pipOpacity}
+      onOpen={onPipOpen}
+    />
+  ) : (
+    <span style={{ display: 'inline-flex', opacity: ctx.palette.pipOpacity }}>
+      <TrustPip status={article.pipStatus} />
+    </span>
+  )
+
   if (ctx.density === 'compact') {
     return (
-      <CardShell ctx={ctx}>
+      <CardShell ctx={ctx} onClick={onCardClick}>
         <CompactRow
-          pipStatus={article.pipStatus}
+          pipNode={pipNodeCompact}
           title={article.title}
           trailing={pricePill}
           ctx={ctx}
@@ -183,9 +330,9 @@ function ArticleVesselCard({
   }
 
   return (
-    <CardShell ctx={ctx}>
+    <CardShell ctx={ctx} onClick={onCardClick}>
       <Byline
-        pipStatus={article.pipStatus}
+        pipNode={pipNodeByline}
         name={name}
         publishedAt={article.publishedAt}
         trailing={pricePill}
@@ -212,19 +359,73 @@ function ArticleVesselCard({
           ctx={ctx}
         />
       )}
+      <CardActions
+        ctx={ctx}
+        voteEventId={article.id}
+        voteKind={30023}
+        isOwnContent={isOwnContent}
+        replyTarget={replyTarget}
+        shareUrl={shareUrl}
+        onReply={onReply}
+      />
     </CardShell>
   )
 }
 
-function NoteVesselCard({ note, ctx }: { note: NoteEvent; ctx: CardContext }) {
+function NoteVesselCard({
+  note,
+  ctx,
+  onReply,
+  onPipOpen,
+}: {
+  note: NoteEvent
+  ctx: CardContext
+  onReply?: (target: ReplyTarget) => void
+  onPipOpen?: PipOpen
+}) {
+  const { user } = useAuth()
   const writer = useWriterName(note.pubkey)
   const name = writer?.displayName ?? note.pubkey.slice(0, 12) + '…'
+  const isOwnContent = !!user && user.pubkey === note.pubkey
+  const replyTarget: ReplyTarget = {
+    eventId: note.id,
+    eventKind: 1,
+    authorPubkey: note.pubkey,
+    authorName: name,
+    excerpt: truncateText(note.content, 120),
+  }
+
+  const pipNodeCompact = onPipOpen ? (
+    <PipTrigger
+      pubkey={note.pubkey}
+      pipStatus={note.pipStatus}
+      opacity={ctx.palette.pipOpacity}
+      scale={0.82}
+      onOpen={onPipOpen}
+    />
+  ) : (
+    <span style={{ opacity: ctx.palette.pipOpacity, transform: 'scale(0.82)', transformOrigin: 'top left' }}>
+      <TrustPip status={note.pipStatus} />
+    </span>
+  )
+  const pipNodeByline = onPipOpen ? (
+    <PipTrigger
+      pubkey={note.pubkey}
+      pipStatus={note.pipStatus}
+      opacity={ctx.palette.pipOpacity}
+      onOpen={onPipOpen}
+    />
+  ) : (
+    <span style={{ display: 'inline-flex', opacity: ctx.palette.pipOpacity }}>
+      <TrustPip status={note.pipStatus} />
+    </span>
+  )
 
   if (ctx.density === 'compact') {
     return (
       <CardShell ctx={ctx}>
         <CompactRow
-          pipStatus={note.pipStatus}
+          pipNode={pipNodeCompact}
           title={truncateText(note.content, 90)}
           ctx={ctx}
         />
@@ -235,7 +436,7 @@ function NoteVesselCard({ note, ctx }: { note: NoteEvent; ctx: CardContext }) {
   return (
     <CardShell ctx={ctx}>
       <Byline
-        pipStatus={note.pipStatus}
+        pipNode={pipNodeByline}
         name={name}
         publishedAt={note.publishedAt}
         ctx={ctx}
@@ -253,6 +454,14 @@ function NoteVesselCard({ note, ctx }: { note: NoteEvent; ctx: CardContext }) {
           ctx={ctx}
         />
       )}
+      <CardActions
+        ctx={ctx}
+        voteEventId={note.id}
+        voteKind={1}
+        isOwnContent={isOwnContent}
+        replyTarget={replyTarget}
+        onReply={onReply}
+      />
     </CardShell>
   )
 }
@@ -283,7 +492,7 @@ export function NewUserVesselCard({
   if (ctx.density === 'compact') {
     return (
       <CardShell ctx={ctx}>
-        <CompactRow title={`${name} joined`} ctx={ctx} />
+        <CompactRow pipNode={null} title={`${name} joined`} ctx={ctx} />
       </CardShell>
     )
   }
@@ -323,12 +532,34 @@ function ExternalVesselCard({
     external.authorName ?? external.authorHandle ?? external.sourceName ?? 'External'
   const protocol = external.sourceProtocol.toUpperCase()
   const body = external.title ?? external.summary ?? external.contentText ?? ''
+  // External items live at their source — atproto URIs need rewriting to
+  // a browser-followable bsky.app URL; everything else is already a URL.
+  const externalUrl =
+    external.sourceProtocol === 'atproto'
+      ? atprotoWebUri(external.sourceItemUri) ?? external.sourceItemUri
+      : external.sourceItemUri
+  const onCardClick = () => {
+    if (typeof window !== 'undefined') {
+      window.open(externalUrl, '_blank', 'noopener,noreferrer')
+    }
+  }
+
+  const pipNodeCompact = (
+    <span style={{ opacity: ctx.palette.pipOpacity, transform: 'scale(0.82)', transformOrigin: 'top left' }}>
+      <TrustPip status={external.pipStatus} />
+    </span>
+  )
+  const pipNodeByline = (
+    <span style={{ display: 'inline-flex', opacity: ctx.palette.pipOpacity }}>
+      <TrustPip status={external.pipStatus} />
+    </span>
+  )
 
   if (ctx.density === 'compact') {
     return (
-      <CardShell ctx={ctx}>
+      <CardShell ctx={ctx} onClick={onCardClick}>
         <CompactRow
-          pipStatus={external.pipStatus}
+          pipNode={pipNodeCompact}
           title={body || name}
           ctx={ctx}
         />
@@ -337,9 +568,9 @@ function ExternalVesselCard({
   }
 
   return (
-    <CardShell ctx={ctx}>
+    <CardShell ctx={ctx} onClick={onCardClick}>
       <Byline
-        pipStatus={external.pipStatus}
+        pipNode={pipNodeByline}
         name={name}
         publishedAt={external.publishedAt}
         trailing={
@@ -367,6 +598,7 @@ function ExternalVesselCard({
           ctx={ctx}
         />
       )}
+      <CardActions ctx={ctx} shareUrl={externalUrl} />
     </CardShell>
   )
 }
