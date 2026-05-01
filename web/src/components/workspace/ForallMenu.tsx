@@ -14,7 +14,7 @@ const TOKENS = {
   itemMuted: '#8A8880',
 }
 
-export type ForallAction = 'new-feed' | 'new-note' | 'fork' | 'reset'
+export type ForallAction = 'new-feed' | 'new-note' | 'new-article' | 'fork' | 'reset'
 
 interface MenuItem {
   key: ForallAction
@@ -35,6 +35,7 @@ export function ForallMenu({ onAction }: ForallMenuProps) {
   const items: MenuItem[] = [
     { key: 'new-feed', label: 'New feed' },
     { key: 'new-note', label: 'New note' },
+    { key: 'new-article', label: 'Write an article' },
     { key: 'fork', label: 'Fork feed by URL' },
     { key: 'reset', label: 'Reset workspace layout' },
   ]

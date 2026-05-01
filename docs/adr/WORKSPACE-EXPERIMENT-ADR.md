@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -349,6 +349,42 @@ The first-login path is gated in the bootstrap effect: when the feed list is emp
 **Position discontinuity (first-login).** The ceremonial pace plays viewport-centred per spec ("expands from the centre of an empty screen"), but the founder's feed mounts at its grid slot — so when the ceremony completes, the ⊔ "appears" in the corner rather than gliding from centre to slot. The spec describes a continuous resolve into resting position; sliding the SVG across the floor to terminate exactly on the destination chassis is a polish slice, not slice 9. The current jump is brief and the eye reads it as the ceremony giving way to the workspace, not as a glitch.
 
 Skipped intentionally: the slide-from-centre-to-corner choreography for first-login (the ceremonial pace's terminal position currently doesn't match the eventual founder's-feed grid slot — a continuous transit is its own animation slice with `layoutId` plumbing that's not in service yet), card content during the ceremonial cards phase (the placeholders are blank rectangles — title/standfirst lines "resolve in their final third into legible content" per spec, deferred until the cards layer can be re-used between ceremony and live render), morph-not-just-cross-fade between glyphs (true ∀→H path morphing requires either pre-baked path data or a font-as-paths pipeline; the current cross-fade reads convincingly at the durations involved), reduced-motion sliding equivalent (the fade-in is pure opacity — no traversal), per-vessel ∀→H→⊔ on subsequent reloads (intentionally one-shot — the ceremony is a transit, not a category), audio cue / haptic.
+
+### Slice 10 — Composer article mode + 400-word note→article nudge (2026-05-01)
+
+`Composer` becomes the single composing surface for both notes and articles, per `WIREFRAME-DECISIONS-CONSOLIDATED.md` Step 6. Note mode (slices 2.5–2.8) is unchanged; article mode adds a TipTap-backed editing surface, title + dek + publication selector + paywall toolbar, and the 400-word elevation nudge. Two entry points: ∀ → *Write an article* (direct), and the in-composer *Write an article →* link (or 400-word nudge) from note mode (elevation).
+
+**Mode state.** `Composer` gains `mode: 'note' | 'article'` + `initialMode?: ComposerMode` prop. Mode is local to the component and resets on every open. The retired `stores/compose.ts` stays untouched — workspace-scope compose state is still component-local until a second open-as-article entry point exists (e.g. quote-as-article from a card).
+
+**TipTap.** A single `useEditor` instance is mounted up-front while the Composer is open (extensions: `StarterKit` with H2/H3, `Markdown`, `Image`, `ImageUpload`, `EmbedNode`, `PaywallGateNode`, `Placeholder`, `CharacterCount`). It survives a note→article elevation in-place. The textarea-based note mode is preserved as-is — switching to article mode lazy-populates the editor with the textarea content via `editor.commands.setContent(initialBody, false)`. A heading-prefixed first line (`# …`) is promoted to the title field, matching the spec's *"Pre-populated if note content began with a heading"*. The elevation is one-way per slice 10: there's no *back to note* affordance, because the note's plain-text + char-count semantics aren't expressible in TipTap state without lossy round-tripping.
+
+**Article-mode chrome.** New zones top-down per spec:
+1. Title — Literata serif italic 22px on `bg-grey-100` (`#F0EFEB`) field.
+2. Standfirst — Literata serif italic 15px, `Standfirst (optional)` placeholder.
+3. *Publish as* selector — `<select>` defaulting to `PERSONAL`. Populates from `publications.myMemberships()` pre-fetched on open. Memberships without `can_publish` annotate the option label `(review)` and the publish button flips to `Submit for review`.
+4. Toolbar — `B · I · H2 · H3 · " · IMG | PAYWALL`. PAYWALL is the only crimson-accented item; toggling inserts/removes the `paywallGate` node via the existing TipTap commands.
+5. Editor surface — `EditorContent` on `bg-grey-100` with `min-height: 320` and a `max-height: calc(100vh - 480px)` scroll cap so the panel never exceeds viewport.
+6. Price row — appears only when the gate is inserted. £-prefixed numeric input + word count + read-time readout.
+
+**Hint copy + button.** Bottom row in article mode reads `N words · M min read[ · Saved]`. Person chips in the To field disable publish with *Articles can't be sent privately — remove person chips to publish.* The Publish button is crimson `#B5242A` in article mode (matches the wireframe's *publish button turns crimson*); label flips to `Submit for review` for memberships without `can_publish`.
+
+**Publish path.** `handlePublishArticle` builds a `PublishData` from the editor's markdown (split at `PAYWALL_GATE_MARKER` if the gate is inserted, with `gatePositionPct` computed from the free/paywall ratio) and dispatches:
+- `publishToPublication(publicationId, data)` if a publication is selected — server-side pipeline via `gateway/publications/:id/articles`. Same path the legacy `/write?pub=…` form uses.
+- `publishArticle(data, user.pubkey)` for `PERSONAL` — client-side pipeline (sign v1, index, encrypt v2 if paywalled, sign v2, re-index). Same path the legacy `/write` form uses.
+
+The composer doesn't reimplement either pipeline — both helpers in `web/src/lib/publish.ts` are reused. Tags, scheduling, comments toggle, and `showOnWriterProfile` defer to defaults (`tags: []`, no schedule, comments-on, profile-on); per spec these "defer to the full editor" until polished into the panel. The legacy `/write` page survives unchanged as the deep-link form for resume + edit + schedule + tags-rich flows.
+
+**Draft autosave.** The TipTap `onUpdate` hook calls `createAutoSaver(3000)` with the current title/dek/content/price. Autosave is gated on a non-empty title — `saveDraft` requires it server-side. Draft status (`Saved` / `Save failed`) appears inline in the bottom hint row for ~2s.
+
+**Cross-protocol broadcast in article mode.** Hidden — the *Send via* row only renders when `mode === 'note' && chips.length === 0`. The article path always anchors on Nostr (kind 30023) with no atproto/activitypub fan-out. Cross-posting articles to ActivityPub or Bluesky is its own slice (the Bluesky/Mastodon outbound paths key on a Nostr kind-1 source event; articles are kind 30023 and would need their own routing through `outbound_posts.action_type = 'original'` plus a per-protocol body shape decision — defer until users actually ask for it).
+
+**400-word nudge.** New `web/src/components/workspace/Composer.tsx` local state `nudgeDismissed` + `showNudge`. While in note mode, an effect counts whitespace-split words and shows an inline panel reading *This is getting long. Switch to article mode?* with `Switch` (crimson) and `Dismiss` (grey) buttons. Threshold is 400 words per spec. Dismissal is per-Composer-session (resets on close/reopen). The nudge is a one-shot panel rather than a recurring toast — once dismissed, it stays gone for the rest of the open session even as the user keeps typing.
+
+**∀ menu fifth item.** `ForallMenu` adds `'new-article'` after `'new-note'` with label *Write an article*. `WorkspaceView.composerOpen` becomes `false | 'note' | 'article'` so the same Composer instance can open in either mode. Mode resets on open via the `initialMode` prop.
+
+**`/write` page survives.** The route still serves the long-form editor (full toolbar, tags, scheduling, edit-published-article via `?edit=`, draft resumption via `?draft=`). It's no longer the *only* way to write an article — the workspace Composer covers fresh-publish + paywall-gate + publication routing for the common case — but the Migration Map's "undecided" verdict on `/write` resolves provisionally as **survives as deep-link form** (per Open Item §5.6).
+
+Skipped intentionally: schedule button (no draft-then-schedule UI in the panel; falls back to `/write?draft=…` if the user wants to schedule), tag input (Wireframe Step 6 doesn't list it among article-mode zones; tags survive on `/write`), comments toggle, *show on writer profile* toggle for publication articles, edit-published-article from the workspace (the panel only knows fresh-publish; editing routes to `/write?edit=…`), draft resumption (the panel always opens fresh — opening a saved draft routes to `/write?draft=…`), embed toolbar button (simpler IMG-only toolbar this slice), price suggestion based on word count (the legacy `/write` has it; defer until the panel sees real use), publish-confirmation panel with email-subscribers checkbox (slice goes straight from Publish click to publish; the confirm/email flow is per spec but adds a step that didn't fit the workspace's *gesture is the publish* feel — revisit), back-to-note from article mode (one-way elevation), TipTap-as-note-mode (the textarea stays — note→article is a real mode change with content carry-over, not a chrome change over a single editor), 760px article-mode width per the legacy ALLHAUS spec (kept at 640 for both modes; revisit if the article surface feels cramped). Cross-posting articles to ActivityPub / Bluesky and the article→DM "private article" gesture remain explicitly out of scope.
 
 ## Deferred (TODO in code, not blocking the experiment)
 

@@ -151,7 +151,7 @@ export function WorkspaceView() {
   const router = useRouter()
   const [vessels, setVessels] = useState<VesselState[]>([])
   const [bootstrap, setBootstrap] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [composerOpen, setComposerOpen] = useState(false)
+  const [composerOpen, setComposerOpen] = useState<false | 'note' | 'article'>(false)
   const [newFeedOpen, setNewFeedOpen] = useState(false)
   const [feedComposerFor, setFeedComposerFor] = useState<WorkspaceFeed | null>(null)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
@@ -197,7 +197,11 @@ export function WorkspaceView() {
 
   function handleForallAction(key: ForallAction) {
     if (key === 'new-note') {
-      setComposerOpen(true)
+      setComposerOpen('note')
+      return
+    }
+    if (key === 'new-article') {
+      setComposerOpen('article')
       return
     }
     if (key === 'new-feed') {
@@ -391,7 +395,8 @@ export function WorkspaceView() {
         })}
       <ForallMenu onAction={handleForallAction} />
       <Composer
-        open={composerOpen}
+        open={!!composerOpen}
+        initialMode={composerOpen === 'article' ? 'article' : 'note'}
         onClose={() => setComposerOpen(false)}
         onPublished={refreshAll}
       />
