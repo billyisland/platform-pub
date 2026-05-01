@@ -329,4 +329,144 @@ export async function trustRoutes(app: FastifyInstance) {
       return reply.send({ vouches })
     }
   )
+
+  // ---------------------------------------------------------------------------
+  // Slice 15 — three-question polls (humanity / authenticity / good_faith)
+  //
+  // GET    /trust/polls/:userId — aggregate yes/no counts per question + the
+  //                               viewer's own answer (or null)
+  // POST   /trust/polls/:userId — body { question, answer } — upsert
+  // DELETE /trust/polls/:userId — body { question } — withdraw
+  //
+  // Anonymity: the GET response carries only aggregate counts + the viewer's
+  // own row. No other respondent's identity ever ships. The full anonymous
+  // attestation pipeline (per ADR-OMNIBUS §III.7) replaces this surface when
+  // it lands; the route shape is forward-compatible because clients only see
+  // counts.
+  // ---------------------------------------------------------------------------
+  const POLL_QUESTIONS = ['humanity', 'authenticity', 'good_faith'] as const
+  type PollQuestion = typeof POLL_QUESTIONS[number]
+
+  app.get<{ Params: { userId: string } }>(
+    '/trust/polls/:userId',
+    { preHandler: optionalAuth },
+    async (req, reply) => {
+      const { userId } = req.params
+      if (!UUID_RE.test(userId)) {
+        return reply.status(400).send({ error: 'Invalid user id' })
+      }
+      const viewerId = req.session?.sub ?? null
+
+      const { rows: subjectRows } = await pool.query(
+        `SELECT id FROM accounts WHERE id = $1`,
+        [userId]
+      )
+      if (subjectRows.length === 0) {
+        return reply.status(404).send({ error: 'User not found' })
+      }
+
+      const aggResult = await pool.query<{
+        question: PollQuestion
+        answer: 'yes' | 'no'
+        count: string
+      }>(
+        `SELECT question, answer, COUNT(*)::text AS count
+           FROM trust_polls
+           WHERE subject_id = $1
+           GROUP BY question, answer`,
+        [userId]
+      )
+
+      const viewerResult = viewerId
+        ? await pool.query<{ question: PollQuestion; answer: 'yes' | 'no' }>(
+            `SELECT question, answer
+               FROM trust_polls
+               WHERE subject_id = $1 AND respondent_id = $2`,
+            [userId, viewerId]
+          )
+        : { rows: [] as { question: PollQuestion; answer: 'yes' | 'no' }[] }
+
+      const polls: Record<
+        PollQuestion,
+        { yes: number; no: number; viewerAnswer: 'yes' | 'no' | null }
+      > = {
+        humanity: { yes: 0, no: 0, viewerAnswer: null },
+        authenticity: { yes: 0, no: 0, viewerAnswer: null },
+        good_faith: { yes: 0, no: 0, viewerAnswer: null },
+      }
+
+      for (const row of aggResult.rows) {
+        if (!POLL_QUESTIONS.includes(row.question)) continue
+        polls[row.question][row.answer] = parseInt(row.count, 10)
+      }
+      for (const row of viewerResult.rows) {
+        if (!POLL_QUESTIONS.includes(row.question)) continue
+        polls[row.question].viewerAnswer = row.answer
+      }
+
+      return reply.send({ subjectId: userId, polls })
+    }
+  )
+
+  app.post<{ Params: { userId: string }; Body: unknown }>(
+    '/trust/polls/:userId',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const respondentId = req.session!.sub!
+      const { userId } = req.params
+      if (!UUID_RE.test(userId)) {
+        return reply.status(400).send({ error: 'Invalid user id' })
+      }
+      if (userId === respondentId) {
+        return reply.status(400).send({ error: 'Cannot poll yourself' })
+      }
+      const body = (req.body ?? {}) as { question?: string; answer?: string }
+      if (!body.question || !POLL_QUESTIONS.includes(body.question as PollQuestion)) {
+        return reply.status(400).send({ error: 'Invalid question' })
+      }
+      if (!body.answer || (body.answer !== 'yes' && body.answer !== 'no')) {
+        return reply.status(400).send({ error: 'Invalid answer' })
+      }
+
+      const { rows: subjectRows } = await pool.query(
+        `SELECT id FROM accounts WHERE id = $1`,
+        [userId]
+      )
+      if (subjectRows.length === 0) {
+        return reply.status(404).send({ error: 'User not found' })
+      }
+
+      await pool.query(
+        `INSERT INTO trust_polls (respondent_id, subject_id, question, answer)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (respondent_id, subject_id, question)
+         DO UPDATE SET answer = EXCLUDED.answer, updated_at = now()`,
+        [respondentId, userId, body.question, body.answer]
+      )
+      return reply.status(204).send()
+    }
+  )
+
+  app.delete<{ Params: { userId: string }; Body: unknown }>(
+    '/trust/polls/:userId',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const respondentId = req.session!.sub!
+      const { userId } = req.params
+      if (!UUID_RE.test(userId)) {
+        return reply.status(400).send({ error: 'Invalid user id' })
+      }
+      const body = (req.body ?? {}) as { question?: string }
+      if (!body.question || !POLL_QUESTIONS.includes(body.question as PollQuestion)) {
+        return reply.status(400).send({ error: 'Invalid question' })
+      }
+
+      await pool.query(
+        `DELETE FROM trust_polls
+         WHERE respondent_id = $1 AND subject_id = $2 AND question = $3`,
+        [respondentId, userId, body.question]
+      )
+      return reply.status(204).send()
+    }
+  )
 }

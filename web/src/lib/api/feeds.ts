@@ -92,4 +92,33 @@ export const workspaceFeeds = {
 
   removeSource: (id: string, sourceId: string) =>
     request<void>(`/workspace/feeds/${id}/sources/${sourceId}`, { method: 'DELETE' }),
+
+  // Slice 14: per-feed-per-author volume + sampling commitment surfaced from
+  // the pip panel. step=null means "passive" (no row), step=0 mutes, 1..5 are
+  // the committed levels mapped to feed_sources.weight server-side.
+  getAuthorVolume: (feedId: string, pubkey: string) =>
+    request<AuthorVolume>(`/workspace/feeds/${feedId}/author-volume/${pubkey}`),
+
+  setAuthorVolume: (
+    feedId: string,
+    pubkey: string,
+    body: { step: number; sampling: 'random' | 'top' },
+  ) =>
+    request<AuthorVolume>(`/workspace/feeds/${feedId}/author-volume/${pubkey}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  clearAuthorVolume: (feedId: string, pubkey: string) =>
+    request<void>(`/workspace/feeds/${feedId}/author-volume/${pubkey}`, {
+      method: 'DELETE',
+    }),
+}
+
+export interface AuthorVolume {
+  authorPubkey: string
+  accountId: string | null
+  step: number | null
+  sampling: 'random' | 'top'
+  muted: boolean
 }

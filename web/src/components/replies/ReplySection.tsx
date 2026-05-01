@@ -19,6 +19,10 @@ interface ReplySectionProps {
   onComposerClose?: () => void
   onReplyCountLoaded?: (count: number) => void
   isUnlocked?: boolean
+  // Slice 13: when an external publish path inserts a reply (e.g. the
+  // workspace's overlay Composer), bumping this triggers a refetch so the
+  // inline thread stays consistent with the canonical store.
+  refreshKey?: number
 }
 
 export function ReplySection({
@@ -32,6 +36,7 @@ export function ReplySection({
   onComposerClose,
   onReplyCountLoaded,
   isUnlocked,
+  refreshKey,
 }: ReplySectionProps) {
   const { user } = useAuth()
   const [replies, setReplies] = useState<ReplyData[]>([])
@@ -87,7 +92,7 @@ export function ReplySection({
     }
 
     loadReplies()
-  }, [targetEventId, isUnlocked])
+  }, [targetEventId, isUnlocked, refreshKey])
 
   const handleNewReply = useCallback((reply: ReplyData) => {
     setReplies(prev => [...prev, reply])

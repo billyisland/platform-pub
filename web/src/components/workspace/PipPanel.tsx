@@ -4,8 +4,18 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '../../stores/auth'
 import { TrustPip } from '../ui/TrustPip'
-import { trust as trustApi, follows as followsApi } from '../../lib/api'
-import type { TrustProfileResponse } from '../../lib/api/trust'
+import {
+  trust as trustApi,
+  follows as followsApi,
+  workspaceFeeds as workspaceFeedsApi,
+  type AuthorVolume,
+} from '../../lib/api'
+import type {
+  TrustProfileResponse,
+  PollAnswer,
+  PollQuestion,
+  PollsResponse,
+} from '../../lib/api/trust'
 import type { PipStatus } from '../../lib/ndk'
 
 // PipPanel — popover surface opened by tapping a TrustPip on a vessel card.
@@ -43,8 +53,11 @@ interface PipPanelProps {
   // Page coordinates of the tapped pip — used to anchor the popover.
   anchorRect: { top: number; left: number; bottom: number; right: number } | null
   initialIsFollowing: boolean
+  // Slice 14: when set, the volume bar is wired against this feed.
+  feedId?: string
   onClose: () => void
   onFollowChanged?: (pubkey: string, following: boolean) => void
+  onVolumeChanged?: (feedId: string) => void
 }
 
 interface WriterMeta {
@@ -61,8 +74,10 @@ export function PipPanel({
   pipStatus = 'unknown',
   anchorRect,
   initialIsFollowing,
+  feedId,
   onClose,
   onFollowChanged,
+  onVolumeChanged,
 }: PipPanelProps) {
   const { user } = useAuth()
   const [writer, setWriter] = useState<WriterMeta | null>(null)
@@ -297,18 +312,22 @@ export function PipPanel({
                 No trust signals yet.
               </p>
             )}
-            <p
-              className="font-serif italic"
-              style={{
-                fontSize: 13,
-                color: TOKENS.hint,
-                marginTop: 10,
-                lineHeight: 1.45,
-              }}
-            >
-              Polling questions land in a future slice.
-            </p>
+            {/* Slice 15: poll-questions section — separate from layer-1 signals
+                because the question shape and the data shape are different.
+                Rendered only for non-self panels (you don't poll yourself). */}
+            {!isOwn && writer && (
+              <PollQuestions subjectUserId={writer.id} subjectName={writer.displayName || writer.username} />
+            )}
           </div>
+
+          {/* VOLUME section — slice 14 */}
+          {!isOwn && feedId && writer && (
+            <VolumeBar
+              feedId={feedId}
+              pubkey={pubkey}
+              onChanged={() => onVolumeChanged?.(feedId)}
+            />
+          )}
 
           {/* Footer */}
           {offersSubscription && writer.username && (
@@ -336,6 +355,350 @@ export function PipPanel({
           )}
         </>
       ) : null}
+    </div>
+  )
+}
+
+// Slice 14 — VOLUME bar. Five-step horizontal bar + RANDOM/TOP sampling
+// toggle. The bar represents per-feed-per-author commitment; an empty state
+// (no row) reads as "passive" (default ranking, no commit). Steps:
+//   0 = mute (suppress the author from this feed)
+//   1..5 = quieter → louder
+// Step 3 is the default weight (1.0); rates either side bracket it.
+//
+// The items query already honours `muted_at` on the underlying feed_sources
+// row (slice 4); weight ordering is the eventual ranking story and not yet
+// observable. The bar is honest about this in its hint copy.
+function VolumeBar({
+  feedId,
+  pubkey,
+  onChanged,
+}: {
+  feedId: string
+  pubkey: string
+  onChanged?: () => void
+}) {
+  const [state, setState] = useState<AuthorVolume | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    workspaceFeedsApi
+      .getAuthorVolume(feedId, pubkey)
+      .then((res) => {
+        if (cancelled) return
+        setState(res)
+      })
+      .catch(() => {
+        if (cancelled) return
+        // Author isn't a native account, or feed not found — leave the section
+        // hidden. The volume commit only makes sense for tracked native authors.
+        setState(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [feedId, pubkey])
+
+  // The route returns 200 with accountId=null for unknown authors — that's
+  // the cue to hide the bar entirely. Loading state suppresses render to
+  // avoid flicker.
+  if (loading) return null
+  if (!state || !state.accountId) return null
+
+  const currentStep = state.step
+  const sampling: 'random' | 'top' = state.sampling
+
+  async function commit(nextStep: number) {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await workspaceFeedsApi.setAuthorVolume(feedId, pubkey, {
+        step: nextStep,
+        sampling,
+      })
+      setState(res)
+      onChanged?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function commitSampling(next: 'random' | 'top') {
+    if (busy) return
+    if (currentStep === null) return // sampling toggle is moot before commit
+    setBusy(true)
+    try {
+      const res = await workspaceFeedsApi.setAuthorVolume(feedId, pubkey, {
+        step: currentStep,
+        sampling: next,
+      })
+      setState(res)
+      onChanged?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function clear() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await workspaceFeedsApi.clearAuthorVolume(feedId, pubkey)
+      setState({ ...state!, step: null, muted: false, sampling: 'random' })
+      onChanged?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div
+        className="font-mono text-[11px] uppercase tracking-[0.06em]"
+        style={{ color: TOKENS.meta, marginBottom: 8 }}
+      >
+        Volume
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {[0, 1, 2, 3, 4, 5].map((s) => {
+          const active = currentStep !== null && s <= currentStep && currentStep > 0 && s > 0
+          const muteActive = currentStep === 0 && s === 0
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => commit(s)}
+              disabled={busy}
+              aria-label={s === 0 ? 'Mute' : `Volume ${s}`}
+              style={{
+                width: s === 0 ? 24 : 20,
+                height: 20,
+                background: muteActive
+                  ? TOKENS.crimson
+                  : active
+                    ? TOKENS.fg
+                    : '#E6E5E0',
+                border: 'none',
+                cursor: busy ? 'default' : 'pointer',
+                padding: 0,
+                fontSize: 10,
+                color: muteActive ? '#FFFFFF' : TOKENS.meta,
+                fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
+              }}
+            >
+              {s === 0 ? '×' : ''}
+            </button>
+          )
+        })}
+        {currentStep !== null && (
+          <button
+            type="button"
+            onClick={clear}
+            disabled={busy}
+            className="font-mono text-[11px] uppercase tracking-[0.06em]"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: busy ? 'default' : 'pointer',
+              color: TOKENS.hint,
+              padding: 0,
+              marginLeft: 8,
+            }}
+          >
+            CLEAR
+          </button>
+        )}
+      </div>
+
+      {/* RANDOM / TOP toggle — only meaningful once committed */}
+      {currentStep !== null && currentStep > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {(['random', 'top'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => commitSampling(mode)}
+              disabled={busy}
+              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              style={{
+                background: sampling === mode ? TOKENS.fg : 'transparent',
+                color: sampling === mode ? '#FFFFFF' : TOKENS.meta,
+                border: `1px solid ${sampling === mode ? TOKENS.fg : TOKENS.rule}`,
+                cursor: busy ? 'default' : 'pointer',
+                padding: '4px 10px',
+              }}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p
+        className="font-serif italic"
+        style={{
+          fontSize: 12,
+          color: TOKENS.hint,
+          marginTop: 10,
+          lineHeight: 1.45,
+        }}
+      >
+        {currentStep === null
+          ? 'Default — no commitment yet. Pick a step to set how much of this author you want in this feed.'
+          : currentStep === 0
+            ? 'Muted in this feed.'
+            : 'Weight is recorded; ranking by volume lands when the items query honours weight.'}
+      </p>
+    </div>
+  )
+}
+
+// Slice 15 — three-question poll section per CARDS-AND-PIP-PANEL-HANDOFF.md.
+// Each row is question label · YES/NO toggle · aggregate confidence percentage.
+// The viewer's own answer (if any) is highlighted; tapping again withdraws it.
+function PollQuestions({
+  subjectUserId,
+  subjectName,
+}: {
+  subjectUserId: string
+  subjectName: string
+}) {
+  const [polls, setPolls] = useState<PollsResponse['polls'] | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState<PollQuestion | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    trustApi
+      .getPolls(subjectUserId)
+      .then((res) => {
+        if (cancelled) return
+        setPolls(res.polls)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setPolls(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [subjectUserId])
+
+  if (loading) return null
+  if (!polls) return null
+
+  const QUESTIONS: { key: PollQuestion; label: string }[] = [
+    { key: 'humanity', label: 'Are they human?' },
+    { key: 'authenticity', label: 'Are they who they seem to be?' },
+    { key: 'good_faith', label: 'Do they engage in good faith?' },
+  ]
+
+  async function answer(q: PollQuestion, a: PollAnswer) {
+    if (busy || !polls) return
+    const current = polls[q]
+    const isWithdraw = current.viewerAnswer === a
+    setBusy(q)
+    // Optimistic update — adjust aggregate counts so the bar moves immediately.
+    const next: PollsResponse['polls'] = JSON.parse(JSON.stringify(polls))
+    const slot = next[q]
+    if (current.viewerAnswer === 'yes') slot.yes = Math.max(0, slot.yes - 1)
+    if (current.viewerAnswer === 'no') slot.no = Math.max(0, slot.no - 1)
+    if (!isWithdraw) {
+      slot[a] += 1
+      slot.viewerAnswer = a
+    } else {
+      slot.viewerAnswer = null
+    }
+    setPolls(next)
+    try {
+      if (isWithdraw) {
+        await trustApi.withdrawPoll(subjectUserId, q)
+      } else {
+        await trustApi.submitPoll(subjectUserId, q, a)
+      }
+    } catch {
+      // Re-fetch on failure to recover from drift.
+      const recovered = await trustApi.getPolls(subjectUserId).catch(() => null)
+      if (recovered) setPolls(recovered.polls)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {QUESTIONS.map(({ key, label }) => {
+        const slot = polls[key]
+        const total = slot.yes + slot.no
+        const yesPct = total > 0 ? Math.round((slot.yes / total) * 100) : null
+        const isBusy = busy === key
+        return (
+          <div
+            key={key}
+            style={{ display: 'flex', alignItems: 'center', gap: 10 }}
+          >
+            <span
+              className="font-serif"
+              style={{ fontSize: 13, color: TOKENS.fg, flex: 1, lineHeight: 1.4 }}
+            >
+              {label}
+            </span>
+            <button
+              type="button"
+              onClick={() => answer(key, 'yes')}
+              disabled={isBusy}
+              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              style={{
+                background: slot.viewerAnswer === 'yes' ? TOKENS.fg : 'transparent',
+                color: slot.viewerAnswer === 'yes' ? '#FFFFFF' : TOKENS.meta,
+                border: `1px solid ${slot.viewerAnswer === 'yes' ? TOKENS.fg : TOKENS.rule}`,
+                cursor: isBusy ? 'default' : 'pointer',
+                padding: '3px 8px',
+              }}
+            >
+              YES
+            </button>
+            <button
+              type="button"
+              onClick={() => answer(key, 'no')}
+              disabled={isBusy}
+              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              style={{
+                background: slot.viewerAnswer === 'no' ? TOKENS.crimson : 'transparent',
+                color: slot.viewerAnswer === 'no' ? '#FFFFFF' : TOKENS.meta,
+                border: `1px solid ${slot.viewerAnswer === 'no' ? TOKENS.crimson : TOKENS.rule}`,
+                cursor: isBusy ? 'default' : 'pointer',
+                padding: '3px 8px',
+              }}
+            >
+              NO
+            </button>
+            <span
+              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              style={{ color: TOKENS.hint, minWidth: 40, textAlign: 'right' }}
+            >
+              {yesPct === null ? '—' : `${yesPct}%`}
+            </span>
+          </div>
+        )
+      })}
+      <p
+        className="font-serif italic"
+        style={{ fontSize: 12, color: TOKENS.hint, marginTop: 4, lineHeight: 1.45 }}
+      >
+        Polls about {subjectName} are visible only as totals — your own answer is
+        editable.
+      </p>
     </div>
   )
 }

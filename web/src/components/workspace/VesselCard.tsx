@@ -10,6 +10,7 @@ import { VoteControls } from '../ui/VoteControls'
 import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
 import type { ReplyTarget } from './Composer'
 import { PipTrigger } from './PipTrigger'
+import { ReplySection } from '../replies/ReplySection'
 
 export type PipOpen = (pubkey: string, rect: DOMRect, status: PipStatus | undefined) => void
 import {
@@ -40,6 +41,12 @@ interface Props {
   brightness?: Brightness
   onReply?: (target: ReplyTarget) => void
   onPipOpen?: PipOpen
+  // Slice 13: inline thread expansion state. Parent owns the toggle so
+  // refresh ticks (after overlay-Composer replies) can target a specific
+  // card without forcing the whole vessel to remount.
+  threadExpanded?: boolean
+  onToggleThread?: (target: ReplyTarget) => void
+  threadRefreshKey?: number
 }
 
 // at:// → bsky.app web URL. Mirrors the helper in feed/ExternalCard.tsx —
@@ -50,15 +57,44 @@ function atprotoWebUri(atUri: string): string | null {
   return `https://bsky.app/profile/${match[1]}/post/${match[2]}`
 }
 
-export function VesselCard({ item, density, brightness, onReply, onPipOpen }: Props) {
+export function VesselCard({
+  item,
+  density,
+  brightness,
+  onReply,
+  onPipOpen,
+  threadExpanded,
+  onToggleThread,
+  threadRefreshKey,
+}: Props) {
   const ctx: CardContext = {
     density: density ?? DEFAULT_DENSITY,
     palette: PALETTES[brightness ?? DEFAULT_BRIGHTNESS],
   }
   if (item.type === 'article')
-    return <ArticleVesselCard article={item} ctx={ctx} onReply={onReply} onPipOpen={onPipOpen} />
+    return (
+      <ArticleVesselCard
+        article={item}
+        ctx={ctx}
+        onReply={onReply}
+        onPipOpen={onPipOpen}
+        threadExpanded={threadExpanded}
+        onToggleThread={onToggleThread}
+        threadRefreshKey={threadRefreshKey}
+      />
+    )
   if (item.type === 'note')
-    return <NoteVesselCard note={item} ctx={ctx} onReply={onReply} onPipOpen={onPipOpen} />
+    return (
+      <NoteVesselCard
+        note={item}
+        ctx={ctx}
+        onReply={onReply}
+        onPipOpen={onPipOpen}
+        threadExpanded={threadExpanded}
+        onToggleThread={onToggleThread}
+        threadRefreshKey={threadRefreshKey}
+      />
+    )
   return <ExternalVesselCard external={item} ctx={ctx} />
 }
 
@@ -98,6 +134,8 @@ function CardActions({
   replyTarget,
   shareUrl,
   onReply,
+  threadExpanded,
+  onToggleThread,
 }: {
   ctx: CardContext
   voteEventId?: string
@@ -106,6 +144,8 @@ function CardActions({
   replyTarget?: ReplyTarget
   shareUrl?: string
   onReply?: (target: ReplyTarget) => void
+  threadExpanded?: boolean
+  onToggleThread?: (target: ReplyTarget) => void
 }) {
   if (ctx.density === 'compact') return null
 
@@ -146,6 +186,22 @@ function CardActions({
           Reply
         </button>
       )}
+      {replyTarget && onToggleThread && (
+        <button
+          type="button"
+          onClick={() => onToggleThread(replyTarget)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: ctx.palette.cardMeta,
+          }}
+          className="hover:opacity-80"
+        >
+          {threadExpanded ? 'Hide thread' : 'Thread'}
+        </button>
+      )}
       {shareUrl && (
         <button
           type="button"
@@ -162,6 +218,32 @@ function CardActions({
           Share
         </button>
       )}
+    </div>
+  )
+}
+
+// Slice 13: inline playscript thread for vessel cards. Wraps the existing
+// `ReplySection` (the source of truth for the playscript render + reply
+// publish + vote tally pipeline) in a click-isolating shell so taps inside
+// the thread don't bubble up to the card-level navigation. `compact` keeps
+// ReplySection from drawing its own border-top + heading; the visual gap
+// from the card body is provided by the `mt-4` here.
+function CardThread({
+  target,
+  refreshKey,
+}: {
+  target: ReplyTarget
+  refreshKey?: number
+}) {
+  return (
+    <div onClick={(e) => e.stopPropagation()} className="mt-4">
+      <ReplySection
+        targetEventId={target.eventId}
+        targetKind={target.eventKind}
+        targetAuthorPubkey={target.authorPubkey}
+        compact
+        refreshKey={refreshKey}
+      />
     </div>
   )
 }
@@ -253,11 +335,17 @@ function ArticleVesselCard({
   ctx,
   onReply,
   onPipOpen,
+  threadExpanded,
+  onToggleThread,
+  threadRefreshKey,
 }: {
   article: ArticleEvent
   ctx: CardContext
   onReply?: (target: ReplyTarget) => void
   onPipOpen?: PipOpen
+  threadExpanded?: boolean
+  onToggleThread?: (target: ReplyTarget) => void
+  threadRefreshKey?: number
 }) {
   const router = useRouter()
   const { user } = useAuth()
@@ -367,7 +455,12 @@ function ArticleVesselCard({
         replyTarget={replyTarget}
         shareUrl={shareUrl}
         onReply={onReply}
+        threadExpanded={threadExpanded}
+        onToggleThread={onToggleThread}
       />
+      {threadExpanded && (
+        <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
+      )}
     </CardShell>
   )
 }
@@ -377,11 +470,17 @@ function NoteVesselCard({
   ctx,
   onReply,
   onPipOpen,
+  threadExpanded,
+  onToggleThread,
+  threadRefreshKey,
 }: {
   note: NoteEvent
   ctx: CardContext
   onReply?: (target: ReplyTarget) => void
   onPipOpen?: PipOpen
+  threadExpanded?: boolean
+  onToggleThread?: (target: ReplyTarget) => void
+  threadRefreshKey?: number
 }) {
   const { user } = useAuth()
   const writer = useWriterName(note.pubkey)
@@ -461,7 +560,12 @@ function NoteVesselCard({
         isOwnContent={isOwnContent}
         replyTarget={replyTarget}
         onReply={onReply}
+        threadExpanded={threadExpanded}
+        onToggleThread={onToggleThread}
       />
+      {threadExpanded && (
+        <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
+      )}
     </CardShell>
   )
 }

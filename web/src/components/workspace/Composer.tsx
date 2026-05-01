@@ -118,9 +118,12 @@ interface ComposerProps {
   replyTarget?: ReplyTarget | null
   onClose: () => void
   onPublished?: () => void
+  // Slice 13: separate signal for reply publishes so the parent can refetch
+  // the affected card's inline thread without refetching every vessel's items.
+  onReplied?: (targetEventId: string) => void
 }
 
-export function Composer({ open, initialMode = 'note', replyTarget, onClose, onPublished }: ComposerProps) {
+export function Composer({ open, initialMode = 'note', replyTarget, onClose, onPublished, onReplied }: ComposerProps) {
   const { user } = useAuth()
   const [mode, setMode] = useState<ComposerMode>(initialMode)
   const [chips, setChips] = useState<ToChip[]>([])
@@ -501,6 +504,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
           targetKind: replyTarget.eventKind,
           targetAuthorPubkey: replyTarget.authorPubkey,
         })
+        onReplied?.(replyTarget.eventId)
         onPublished?.()
         onClose()
         return

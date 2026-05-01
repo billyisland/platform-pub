@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -440,22 +440,92 @@ The TrustPip stops being inert. Tapping the pip on a native (note / article) car
 
 Skipped intentionally: VOLUME bar (no schema; needs polling-spec-proper-adjacent design pass), the three-poll-question UI (no polling backend), in-person count line (no `encounter` data exposure), subscribed-state detection in the footer (`SUBSCRIBED — MANAGE ›`), pip panel in non-green states (the four-state pip mapping per handoff §"Trust section" needs the polling result composition function — `ALLHAUS-OMNIBUS` §III.7 + open question), pip panel on mobile (sheet-from-bottom; ADR §5 mobile defer), block / mute (block lives elsewhere per handoff §"What the panel does NOT carry"; mute = 0% volume so retires with the volume bar's arrival), `ALL POLLING ›` depth affordance (needs the trust-detail surface), pip panel for external authors (cross-protocol identity resolution), focus management / focus trap inside the panel (the workspace a11y floor per ADR §6 keeps this minimal — Esc + outside-click close suffice), aria-expanded state on the trigger button, animated open/close (the panel snaps; Framer Motion's `AnimatePresence` could tween but the popover's small surface makes it unnecessary for now).
 
+### Slice 13 — inline playscript thread on vessel cards (2026-05-02)
+
+The slice 11 build log flagged `web/src/components/replies/PlayscriptThread.tsx` as surviving Migration Map §2 *replies/* but not yet wired into the vessel surface. Slice 13 wires it. Native cards (article + note) gain a `Thread` toggle in the action strip; tapping it expands an inline playscript directly under the card body.
+
+**No new component.** `ReplySection` (the existing source-of-truth for tree fetch + flatten-to-playscript + reply-publish + vote-tally batching) is reused unchanged in shape. The slice adds a single new prop — `refreshKey?: number` — to its existing useEffect deps so an external publish path (the slice-11 overlay Composer) can nudge a refetch without remounting. `compact` (already supported) suppresses the section's own border-top + heading so the embed reads as part of the card.
+
+**Surface (`VesselCard.tsx`).** `CardActions` gains an optional `Thread` button after `Reply` — text-only mono-caps in the strip's grey, label flips to `Hide thread` when expanded. Compact density still skips the action row entirely; the toggle is suppressed there. A new `CardThread` wrapper renders `ReplySection` inline and click-isolates the subtree (`onClick={(e) => e.stopPropagation()}`) so taps inside the thread don't bubble up to the card-level navigation. External cards don't render the toggle — `/api/v1/replies` keys on a native event id and the cross-protocol reply story is still deferred.
+
+**State (`WorkspaceView.tsx`).** Two new pieces: `expandedThreads: Set<string>` (which event ids are open) and `threadRefreshTicks: Record<string, number>` (per-target counter bumped after an overlay-Composer reply lands). Toggle handler flips membership; the slice-11 overlay Reply path stays as the *fast* compose surface, but its reply-publish now also auto-expands the affected card's thread and bumps the tick so the new reply is immediately visible.
+
+**`Composer.onReplied`.** New optional callback fires only on the reply branch of `handlePublishNote` (the four-line branch added in slice 11). Distinct from `onPublished` because note/article publishes refresh every vessel's items query, while reply publishes only need the affected card's thread to refetch.
+
+**Brightness coverage.** ReplySection's hardcoded greys (text-grey-200, text-grey-300, etc.) don't recolour for dim/bright vessel palettes. Slice 13 accepts the slight palette mismatch — the playscript reads correctly, just isn't fully tokenised. Per-brightness theming for the playscript surface lives with the broader brightness × focus design pass (already deferred).
+
+Skipped intentionally: reply count badge on the action strip (the existing `/api/v1/replies` endpoint exposes `totalCount` — surfacing it inline was deemed visual noise without a stronger reason to draw the eye to thread depth before expansion), in-thread quote-reply (the `Quote` action remains absent), nested-thread parent context beyond what the existing playscript already handles via the `→ PARENT:` line, animated expand/collapse (Framer Motion `AnimatePresence` would tween nicely but the visual snap reads fine and the workspace's animation budget is reserved for the ∀ ceremonies + drag), keyboard shortcut to toggle thread (per ADR §6 a11y floor — the button is Tab-reachable, just not chord-shortcutted), brightness-aware colour overrides for the playscript surface, share-toast affordance from inside the thread (the ReplySection still owns its own delete confirm + report — those routes remain unchanged).
+
+### Slice 14 — pip panel VOLUME bar + per-feed-per-author commitment (2026-05-02)
+
+Slice 12 left the VOLUME section of the pip panel out of the first cut, citing missing schema + design pending. Slice 14 ships it without a new migration — the existing `feed_sources` rows on migration 077 already have `weight`, `sampling_mode`, and `muted_at` columns reserved for exactly this purpose, and slice 4's `sourceFilteredItems` already filters on `muted_at IS NULL`. Volume becomes a thin pip-panel surface over those columns.
+
+**Architectural call.** The handoff doc (`CARDS-AND-PIP-PANEL-HANDOFF.md` §"Open architectural questions") leaves whose-volume-applies-where unanswered: per-vessel? globally? Slice 14 decides per-vessel. The vessel *is* the per-feed surface; if you want a writer at low volume in your tech feed and high volume in your friends feed, that's the right default. Globally would conflict with the vessel-as-attentional-economy ethos.
+
+**Routes (`gateway/src/routes/feeds.ts`).** Three new endpoints alongside the slice 4 source-CRUD surface:
+- `GET /workspace/feeds/:id/author-volume/:pubkey` — read. Looks up `accounts.nostr_pubkey = $pubkey`, finds the matching `feed_sources` account row for that feed, returns `{ accountId, step, sampling, muted }`. `step = null` when there's no row (passive default — no commitment yet).
+- `PUT /workspace/feeds/:id/author-volume/:pubkey { step: 0..5, sampling: 'random' | 'top' }` — upsert via `INSERT … ON CONFLICT (feed_id, account_id) WHERE source_type = 'account' DO UPDATE` against the existing partial unique index. Step 0 sets `muted_at = now()`; steps 1–5 clear `muted_at` and set `weight` per a five-bucket lookup (`[1.0, 0.25, 0.5, 1.0, 2.0, 4.0]` keyed by step). Step 3's weight matches the `feed_sources.weight DEFAULT 1.0` so a passive→committed-at-3 transition doesn't change ranking once weight is wired.
+- `DELETE /workspace/feeds/:id/author-volume/:pubkey` — clears the row (back to passive). Unknown-author DELETE returns 204 rather than 404 because the only client gesture is *clear commitment*, and a missing row already represents the cleared state.
+
+**Sampling mapping.** The route's `'random'` ⇔ `feed_sources.sampling_mode = 'random'`, `'top'` ⇔ `'scored'`. The third existing value `'chronological'` is the hidden default, matching what slice 4's items query actually does today; the bar UI doesn't surface it.
+
+**Surface (`PipPanel.tsx`).** New `feedId?: string` prop. When set on a non-self panel, a `VolumeBar` section renders below the trust signals: a six-button row (× mute, then steps 1..5), a `CLEAR` link to return to passive, and a RANDOM/TOP toggle (visible only at step ≥1, where sampling is meaningful). Active steps fill in solid black; mute is solid crimson; passive (no commitment) renders all empty. Optimistic local state with a refetch-on-failure recovery path. Hint copy below the bar adapts: passive → "Default — no commitment yet"; muted → "Muted in this feed"; committed → "Weight is recorded; ranking by volume lands when the items query honours weight" (honest about the deferred ranking story).
+
+**Wiring (`WorkspaceView.tsx`).** The existing `pipPanel` state gains `feedId: string` (the vessel the click came from); the per-card `onPipOpen` curry now passes `v.feed.id`. New `onVolumeChanged` callback on `PipPanel` triggers `loadVesselItems(target.feed)` so a freshly-muted author drops from the visible card set without a manual reload — the items query already filters muted sources.
+
+**Why no new table.** Reusing `feed_sources` keeps the items query consistent across slices: an author is a tracked source whether the user added them via the source composer (slice 4) or via the volume bar's first-step commitment. The two surfaces author the same row shape. A separate `feed_author_overrides` table would have required a parallel mute filter in the items query and an extra precedence rule between two separate weight columns.
+
+**Web client (`web/src/lib/api/feeds.ts`).** New `workspaceFeedsApi.getAuthorVolume / setAuthorVolume / clearAuthorVolume` plus the `AuthorVolume` type. Standard `client.request` shape; re-exported from the api facade.
+
+Skipped intentionally: ranking-by-weight in the items query (still chronological per slice 4 — wiring weight into the SQL is the larger ranking story), volume bar on external cards (no native account_id; cross-protocol pip panels are deferred), keyboard equivalents for the bar (per ADR §6 a11y floor), continuous (drag-to-set) volume (touch gesture + fine resolution storage; the discrete five-step buckets match the wireframe and the storage shape is forward-compatible), volume bar in the author's own pip panel (you can't set commitment for yourself), per-source-not-just-author volume (a publication source has weight too — the source composer already shows it as a column, but the surface-side dial belongs in the source composer not the pip panel), TOP-mode metric definition (the route accepts the value; the ranking semantics defer with the items-query-honours-weight slice), bulk import / import follows-as-volume-set, undo-clear toast.
+
+### Slice 15 — three-question polls + minimal polling backend (2026-05-02)
+
+The pip panel's TRUST section becomes load-bearing for the spec's three questions per `CARDS-AND-PIP-PANEL-HANDOFF.md` §"Trust section":
+1. *Are they human?*
+2. *Are they who they seem to be?*
+3. *Do they engage in good faith?*
+
+**Honesty about anonymity.** ADR-OMNIBUS §III.7 frames trust polling as anonymous via a separate attestation service that doesn't see session data. Slice 15 *does not* build that pipeline. It ships a non-anonymous `respondent_id` in the row so writes are attributable at the database level. The route shape mitigates: `GET /trust/polls/:userId` only ever surfaces aggregate counts + the viewer's own row — no other respondent's identity is reachable through any panel-side path. The honest framing is *minimal polling backend, not anonymous polling backend*. The attestation-service rewrite replaces the table when it lands; the client UI is already shaped for aggregate-only reads, so no panel work is wasted.
+
+**Schema (migration 078).** `trust_polls(id, respondent_id, subject_id, question, answer, created_at, updated_at)`. `question` is one of `humanity / authenticity / good_faith`; `answer` is `yes / no`. UNIQUE on `(respondent_id, subject_id, question)` so re-answers upsert. `CHECK (respondent_id != subject_id)` — you don't poll yourself. Index on `(subject_id, question)` for the aggregate read. `updated_at` trigger on edit.
+
+**Question naming choice.** The handoff intentionally distinguishes the three poll questions from the four `vouches` dimensions (humanity, encounter, identity, integrity). `humanity` overlaps; `authenticity` ("who they seem to be") is *deliberately weaker* than the formal `identity` vouch dimension; `good_faith` is the behavioural-honesty question the handoff explicitly defends as *not* the abstract `integrity`. New names rather than reusing existing dimension labels keep the two surfaces distinct in the schema, which matters when the anonymous-attestation rewrite arrives — vouches and polls have different anonymity guarantees.
+
+**Routes (`gateway/src/routes/trust.ts`).** Three new endpoints under the existing trust router:
+- `GET /trust/polls/:userId` — `optionalAuth`. Returns `{ subjectId, polls: { humanity: { yes, no, viewerAnswer }, authenticity: …, good_faith: … } }`. `viewerAnswer` is `null` for anonymous viewers or for questions the viewer hasn't answered. Two queries: a `GROUP BY question, answer` aggregate, and (when authenticated) a viewer-scoped row lookup. The shape always includes all three questions, with zero counts for ones never polled, so the client doesn't have to handle missing keys.
+- `POST /trust/polls/:userId { question, answer }` — `requireAuth`. Subject-self block (`userId === respondentId` returns 400). Validates question + answer. Upsert on the unique key.
+- `DELETE /trust/polls/:userId { question }` — `requireAuth`. Withdraws the viewer's row. 204 on success or no-op.
+
+**Surface (`PipPanel.tsx`).** New `PollQuestions` component renders three rows below the Layer 1 trust signals (suppressed for the user's own pip — you don't poll yourself). Each row: Literata 13px question label · YES toggle (solid black when chosen) · NO toggle (solid crimson when chosen) · right-aligned `N%` confidence (yes-share of total, em-dash when no votes). Optimistic update on tap — the bar moves before the round-trip — with a re-fetch on failure to recover from drift. Re-tapping the viewer's current answer withdraws it (so you can change your mind, or unanswer to "don't know"). Italic Literata footnote: *Polls about &lt;name&gt; are visible only as totals — your own answer is editable.* — naming the privacy contract the route enforces. The slice 12 *Polling questions land in a future slice.* placeholder copy is gone.
+
+**Web client (`web/src/lib/api/trust.ts`).** New `trustApi.getPolls / submitPoll / withdrawPoll` plus `PollQuestion`, `PollAnswer`, `PollAggregates`, `PollsResponse` types. Re-exported via the existing api facade.
+
+**Pip-colour composition still deferred.** The handoff §"Trust section" + §"Open architectural questions" notes that the pip's four-state colour (green / amber / grey / crimson) should compose from the three poll results plus in-person (`encounter` vouch) count. Slice 15 ships *the data and the gesture* but doesn't change the pip's colour mapping — `trust_layer1_refresh` still drives `pip_status` purely from Layer 1 signals. Wiring poll aggregates into the pip mapping is a separate slice that owns the threshold function (the handoff calls it out as trust-system-spec-proper territory).
+
+**Single respondent per row.** No multiple identities, no Sybil resistance, no decay. Slice 15 is the smallest possible thing that makes the panel real. The full trust system per ADR-OMNIBUS adds: anonymous attestations (encrypted to a service pubkey), graph-weighted aggregation, decay across epochs, concentration / Sybil discount factors, the humanity ratchet. None of that is in slice 15. The route shape, however, doesn't expose attribution to clients — so swapping the storage backend is a server-side replacement.
+
+Skipped intentionally: anonymous attestation pipeline (the trust-system-proper rewrite), graph-weighted aggregation (every respondent counts equally — the handoff's "anonymous and secure, drawing on the user's trust graph and the wider network" language requires the full system), decay across time, Sybil discount, the in-person count line below the three questions (needs `vouches.dimension = 'encounter'` data piped through — separate slice), pip-colour composition from poll results (the pip still maps from Layer 1 only), `ALL POLLING ›` depth view (the handoff's extended detail surface), confidence intervals on the percentage display (the handoff calls for "high confidence" colour signalling — needs a sample-size threshold function), question-level mute (a viewer who doesn't want to opine on humanity can simply not tap; a separate "skip" affordance is unnecessary friction), poll-question version history (today's three are not necessarily the final phrasing — when they change, existing rows stay valid because the question key is the join target, not the rendered string).
+
 ## Deferred (TODO in code, not blocking the experiment)
 
-- Trust pip colour function (signal composition rule).
+- Trust pip colour function (signal composition rule — slice 15 ships the polling data; slice that maps polls + encounter count into the four-state pip is its own design pass).
 - Save persistence (per-feed Saved state schema and surface).
 - DM/messages model (vessel vs `/messages` route).
 - Notifications anchor (corner pip vs ∀-menu adjunct vs vessel).
 - Search entry point.
 - Publications surface in workspace.
 - Named audiences (FOR field) persistence + consent + management.
-- Volume TOP metric definition.
+- Volume TOP metric definition (slice 14 records the value; ranking semantics defer with the items-query-honours-weight slice).
+- Items query honouring `feed_sources.weight` (slice 14 stores it; ranking still chronological).
+- Anonymous attestation pipeline (slice 15 ships attributable polls; trust-system-proper rewrites the storage backend).
+- In-person count line on the pip panel (`vouches.dimension = 'encounter'` aggregate).
 - Dark mode.
 - "Medium-bright" pixel value.
 - Cards with media (lead images, video embeds).
 - Long-note truncation.
 - Tags in article mode.
-- Pip panel for non-green trust states.
-- Cross-protocol reply semantics.
-- Brightness × focus coupling.
+- Pip panel for non-green trust states (waits on the colour-composition slice).
+- Cross-protocol reply semantics (slice 13 inline thread is native-only; external cards still have no Reply / Thread affordances).
+- Brightness × focus coupling (also blocks per-brightness theming for the slice-13 inline playscript).
 - Nudge dismissal persistence beyond session.

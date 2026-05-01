@@ -61,6 +61,21 @@ export interface MyVouch {
   }
 }
 
+// Slice 15 — three poll questions surfaced on the pip panel.
+export type PollQuestion = 'humanity' | 'authenticity' | 'good_faith'
+export type PollAnswer = 'yes' | 'no'
+
+export interface PollAggregates {
+  yes: number
+  no: number
+  viewerAnswer: PollAnswer | null
+}
+
+export interface PollsResponse {
+  subjectId: string
+  polls: Record<PollQuestion, PollAggregates>
+}
+
 export const trust = {
   getProfile: (userId: string) =>
     request<TrustProfileResponse>(`/trust/${userId}`),
@@ -81,4 +96,19 @@ export const trust = {
 
   myVouches: () =>
     request<{ vouches: MyVouch[] }>('/my/vouches'),
+
+  getPolls: (userId: string) =>
+    request<PollsResponse>(`/trust/polls/${userId}`),
+
+  submitPoll: (userId: string, question: PollQuestion, answer: PollAnswer) =>
+    request<void>(`/trust/polls/${userId}`, {
+      method: 'POST',
+      body: JSON.stringify({ question, answer }),
+    }),
+
+  withdrawPoll: (userId: string, question: PollQuestion) =>
+    request<void>(`/trust/polls/${userId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ question }),
+    }),
 }

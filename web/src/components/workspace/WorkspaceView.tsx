@@ -156,10 +156,19 @@ export function WorkspaceView() {
   const [bootstrap, setBootstrap] = useState<'loading' | 'ready' | 'error'>('loading')
   const [composerOpen, setComposerOpen] = useState<false | 'note' | 'article'>(false)
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null)
+  // Slice 13: which cards have their inline thread expanded, plus a per-target
+  // refresh-tick map so an overlay-Composer reply nudges that card's
+  // ReplySection to refetch (matching the canonical store).
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
+  const [threadRefreshTicks, setThreadRefreshTicks] = useState<Record<string, number>>({})
   const [pipPanel, setPipPanel] = useState<{
     pubkey: string
     status?: PipStatus
     rect: DOMRect
+    // Slice 14: which feed the panel was opened from. The volume bar's commit
+    // surface scopes per-feed-per-author, so the panel needs to know which
+    // ⊔ contributed the click.
+    feedId: string
   } | null>(null)
   const [followedPubkeys, setFollowedPubkeys] = useState<Set<string>>(new Set())
   const [newFeedOpen, setNewFeedOpen] = useState(false)
@@ -424,8 +433,18 @@ export function WorkspaceView() {
                         setComposerOpen('note')
                       }}
                       onPipOpen={(pubkey, rect, status) => {
-                        setPipPanel({ pubkey, rect, status })
+                        setPipPanel({ pubkey, rect, status, feedId: v.feed.id })
                       }}
+                      threadExpanded={expandedThreads.has(item.id)}
+                      onToggleThread={(target) => {
+                        setExpandedThreads((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(target.eventId)) next.delete(target.eventId)
+                          else next.add(target.eventId)
+                          return next
+                        })
+                      }}
+                      threadRefreshKey={threadRefreshTicks[item.id]}
                     />
                   ),
                 )}
@@ -442,6 +461,20 @@ export function WorkspaceView() {
           setReplyTarget(null)
         }}
         onPublished={refreshAll}
+        onReplied={(targetEventId) => {
+          // Bump the per-target tick so any expanded inline thread refetches.
+          // Also auto-expand so a reply published from the overlay is visible
+          // without a second click.
+          setThreadRefreshTicks((prev) => ({
+            ...prev,
+            [targetEventId]: (prev[targetEventId] ?? 0) + 1,
+          }))
+          setExpandedThreads((prev) => {
+            const next = new Set(prev)
+            next.add(targetEventId)
+            return next
+          })
+        }}
       />
       <NewFeedPrompt
         open={newFeedOpen}
@@ -483,6 +516,7 @@ export function WorkspaceView() {
         open={!!pipPanel}
         pubkey={pipPanel?.pubkey ?? ''}
         pipStatus={pipPanel?.status}
+        feedId={pipPanel?.feedId}
         anchorRect={
           pipPanel
             ? {
@@ -504,6 +538,13 @@ export function WorkspaceView() {
             else next.delete(pk)
             return next
           })
+        }}
+        onVolumeChanged={(feedId) => {
+          // Mute state is honoured by the items query (slice 4); refetch the
+          // affected vessel so a freshly-muted author drops from the visible
+          // set without a manual reload.
+          const target = vessels.find((v) => v.feed.id === feedId)
+          if (target) void loadVesselItems(target.feed)
         }}
       />
       {ceremony && (
