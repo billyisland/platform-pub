@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -199,6 +199,22 @@ The protocol toggles and "Everyone on Bluesky / fediverse" broadcast chips light
 **Worker payload shape.** Top-level cross-posts produce one `outbound_posts` row per target with `(linked_account_id = <atproto|activitypub linked>, source_item_id = NULL, action_type = 'original')`. Body text passes through the same grapheme/char budget truncation paths (`truncateWithLink`); on Bluesky truncation appends the all.haus permalink, on Mastodon nothing (no quote URL since there's no source). Idempotency keys (`outbound_posts.id`) are stable across retries.
 
 Skipped intentionally: cross-protocol broadcast that *omits* Nostr (still requires the anchor — sliced separately because the all.haus DB record currently keys on a Nostr event id), per-protocol body customisation (mentions, language tags, sensitive-content flags), per-target preview before send, post-publish toast surfacing the cross-post status, retry/abandon UI on the workspace floor (status lives in `outbound_posts`; surfacing it is its own slice), broadcast-to-self filtering (a user sending "Everyone on Bluesky" doesn't get a status from their own bridge — same as today since the cross-post writes to the linked account, not the source feed).
+
+### Slice 3 — feeds schema + CRUD + multi-vessel workspace (2026-05-01)
+
+The `feeds` object becomes real. A vessel is now a render of a server-backed feed, not a hardcoded explore query, and ∀ → *New feed* spawns a fresh vessel.
+
+**Schema (migration 077).** `feeds(id, owner_id, name, created_at, updated_at)` with an 80-char name guard and an `owner_id, created_at` index. `feed_sources(feed_id, source_type, account_id|publication_id|external_source_id|tag_name, weight, sampling_mode, muted_at)` with a target-matches-type CHECK and per-type partial unique indexes so the same target can't double-up. `weight` and `sampling_mode` are reserved columns for the eventual ranking story (ADR §3) — slice 3's items query ignores both. `feed_sources` mutations bump `feeds.updated_at` via trigger so workspace ordering stays correct without route-side coordination.
+
+**Routes (`gateway/src/routes/feeds.ts`).** `GET /api/v1/feeds` (list mine), `POST /api/v1/feeds {name}`, `PATCH /api/v1/feeds/:id {name}`, `DELETE /api/v1/feeds/:id`, `GET /api/v1/feeds/:id/items`. Owner-private: every read and write asserts `owner_id = session.sub`. Zod-validated bodies, UUID guard on params. Items returns `{feed, items, nextCursor, placeholder}`. When `feed_sources` is empty, `placeholder: true` and items mirror the explore query (cursoring on `(score, published_at, id)`); when sources exist, slice 3 returns an empty array with a TODO until source-set wiring lands. The placeholder query is a deliberate small duplication of `timeline.ts`'s explore branch — `timeline.ts` keeps its helpers module-private and the duplication retires when source semantics arrive.
+
+**Web client (`web/src/lib/api/feeds.ts`).** New `workspaceFeeds` namespace exporting `list / create / rename / remove / items` plus `WorkspaceFeed` and `WorkspaceFeedItemsResponse` types. Renamed away from `feeds` because the existing `external-feeds.ts` already exports a `feeds` namespace for RSS/Mastodon/Bluesky/Nostr subscriptions on `/subscriptions`; collision would have shadowed both.
+
+**Workspace (`WorkspaceView.tsx`).** Bootstraps on first authenticated load: list feeds; if none exist create the default "Founder's feed"; render one `Vessel` per feed with parallel `items()` fetches. Vessels lay out via `flex flex-wrap gap-8` on the floor — multi-vessel arrives with the multi-feed object, not as a separate slice. Composer's `onPublished` now refreshes every vessel.
+
+**∀ menu *New feed* wired.** New `NewFeedPrompt` modal (matches `Composer`'s scrim/panel grammar) takes a name (1–80 chars), POSTs, and appends a vessel that immediately fetches its placeholder items. Body copy is honest about the placeholder: *Sources arrive in a later slice — for now this feed shows the explore stream.* Cancel / Esc / scrim-click closes; Enter submits.
+
+Skipped intentionally: rename UI on existing vessels, delete UI on vessels, source-set authoring (the actual point of having a feed object — wiring `feed_sources` rows from follows / publications / external subscriptions / tags is the next slice's territory), per-vessel pagination beyond the first 20 items, optimistic cross-vessel publish (the user's own publish lands in `feed_items` and only its source feeds should refetch — currently every vessel does), drag-to-reposition (still no `useWorkspace` store), multi-feed empty state UX (each vessel shows its own NO ITEMS independently). The *Fork feed by URL* and *Reset workspace layout* ∀ items remain `console.log` stubs.
 
 ## Deferred (TODO in code, not blocking the experiment)
 

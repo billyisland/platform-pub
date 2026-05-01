@@ -45,6 +45,7 @@ import { externalFeedsRoutes } from './routes/external-feeds.js'
 import { linkedAccountsRoutes } from './routes/linked-accounts.js'
 import { trustRoutes } from './routes/trust.js'
 import { readingPositionRoutes } from './routes/reading-positions.js'
+import { feedsRoutes } from './routes/feeds.js'
 import { getAtprotoClient } from '@platform-pub/shared/lib/atproto-oauth.js'
 import { publishScheduledDrafts } from './workers/scheduler.js'
 import { pool } from '@platform-pub/shared/db/client.js'
@@ -205,6 +206,9 @@ async function start() {
 
   // Reading-position resumption (per-user, per-article scroll snapshot)
   await app.register(readingPositionRoutes, { prefix: '/api/v1' })
+
+  // Workspace feeds (slice 3 — owner-private feed objects rendered by vessels)
+  await app.register(feedsRoutes, { prefix: '/api/v1' })
 
   // AT Protocol OAuth client metadata (discovered by Bluesky PDSes).
   // Mounted at the root so the canonical URL is

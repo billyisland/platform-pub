@@ -1,19 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../stores/auth'
-import { feed as feedApi } from '../../lib/api'
+import { workspaceFeeds as workspaceFeedsApi, type WorkspaceFeed } from '../../lib/api'
 import type { FeedItem, ExternalFeedItem } from '../../lib/ndk'
 import { Vessel } from './Vessel'
 import { VesselCard, NewUserVesselCard } from './VesselCard'
 import { ForallMenu, type ForallAction } from './ForallMenu'
 import { Composer } from './Composer'
+import { NewFeedPrompt } from './NewFeedPrompt'
 
 const FLOOR = '#F0EFEB' // grey-100 per Step 1 / Colour tokens committed
+const DEFAULT_FEED_NAME = "Founder's feed"
 
-// Slice 1: one hardcoded vessel, fetching from /api/v1/timeline.
-// The feeds API arrives in slice 3.
+// Slice 3: per-feed vessels backed by /api/v1/feeds. Empty source sets fall
+// back to an explore stream until source-set wiring lands.
 
 interface NewUserItem {
   type: 'new_user'
@@ -24,6 +26,12 @@ interface NewUserItem {
 }
 
 type WorkspaceItem = FeedItem | NewUserItem
+
+interface VesselState {
+  feed: WorkspaceFeed
+  items: WorkspaceItem[]
+  status: 'loading' | 'ready' | 'error'
+}
 
 function mapApiItem(item: any): WorkspaceItem | null {
   if (item.type === 'article') {
@@ -96,46 +104,96 @@ function mapApiItem(item: any): WorkspaceItem | null {
 export function WorkspaceView() {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const [items, setItems] = useState<WorkspaceItem[]>([])
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [vessels, setVessels] = useState<VesselState[]>([])
+  const [bootstrap, setBootstrap] = useState<'loading' | 'ready' | 'error'>('loading')
   const [composerOpen, setComposerOpen] = useState(false)
-  const [feedRefreshTick, setFeedRefreshTick] = useState(0)
+  const [newFeedOpen, setNewFeedOpen] = useState(false)
+
+  const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
+    setVessels((prev) =>
+      prev.map((v) => (v.feed.id === feed.id ? { ...v, status: 'loading' } : v)),
+    )
+    try {
+      const data = await workspaceFeedsApi.items(feed.id)
+      const mapped = (data.items ?? [])
+        .map(mapApiItem)
+        .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null)
+      setVessels((prev) =>
+        prev.map((v) =>
+          v.feed.id === feed.id ? { feed: data.feed, items: mapped, status: 'ready' } : v,
+        ),
+      )
+    } catch (err) {
+      console.error('Vessel items load error:', err)
+      setVessels((prev) =>
+        prev.map((v) => (v.feed.id === feed.id ? { ...v, status: 'error' } : v)),
+      )
+    }
+  }, [])
+
+  function refreshAll() {
+    vessels.forEach((v) => void loadVesselItems(v.feed))
+  }
 
   function handleForallAction(key: ForallAction) {
     if (key === 'new-note') {
       setComposerOpen(true)
       return
     }
+    if (key === 'new-feed') {
+      setNewFeedOpen(true)
+      return
+    }
     console.log(`[workspace] ${key} — not yet wired`)
+  }
+
+  async function handleCreateFeed(name: string) {
+    const { feed } = await workspaceFeedsApi.create(name)
+    setVessels((prev) => [...prev, { feed, items: [], status: 'loading' }])
+    setNewFeedOpen(false)
+    void loadVesselItems(feed)
   }
 
   useEffect(() => {
     if (!loading && !user) router.push('/auth?mode=login')
   }, [user, loading, router])
 
+  // Bootstrap: list feeds, seed the default if none exist, fetch items per
+  // vessel. Re-runs only when the authenticated user changes.
   useEffect(() => {
     if (!user) return
     let cancelled = false
-    setStatus('loading')
-    feedApi
-      .get('explore')
-      .then((data) => {
+    setBootstrap('loading')
+    ;(async () => {
+      try {
+        let { feeds: list } = await workspaceFeedsApi.list()
+        if (list.length === 0) {
+          const { feed } = await workspaceFeedsApi.create(DEFAULT_FEED_NAME)
+          list = [feed]
+        }
         if (cancelled) return
-        const mapped = (data.items ?? [])
-          .map(mapApiItem)
-          .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null)
-        setItems(mapped)
-        setStatus('ready')
-      })
-      .catch((err) => {
+        const initial: VesselState[] = list.map((feed) => ({
+          feed,
+          items: [],
+          status: 'loading',
+        }))
+        setVessels(initial)
+        setBootstrap('ready')
+        for (const feed of list) {
+          if (cancelled) return
+          // Fire-and-forget per vessel — no need to serialise.
+          void loadVesselItems(feed)
+        }
+      } catch (err) {
         if (cancelled) return
-        console.error('Workspace feed load error:', err)
-        setStatus('error')
-      })
+        console.error('Workspace bootstrap error:', err)
+        setBootstrap('error')
+      }
+    })()
     return () => {
       cancelled = true
     }
-  }, [user, feedRefreshTick])
+  }, [user, loadVesselItems])
 
   if (loading || !user) {
     return <Floor />
@@ -143,29 +201,39 @@ export function WorkspaceView() {
 
   return (
     <Floor>
-      <div className="flex justify-center pt-12">
-        <Vessel name="Founder's feed">
-          {status === 'loading' && <Hint>LOADING…</Hint>}
-          {status === 'error' && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
-          {status === 'ready' && items.length === 0 && <Hint>NO ITEMS</Hint>}
-          {status === 'ready' &&
-            items.slice(0, 12).map((item) =>
-              item.type === 'new_user' ? (
-                <NewUserVesselCard
-                  key={`new-user-${item.username}-${item.joinedAt}`}
-                  item={item}
-                />
-              ) : (
-                <VesselCard key={item.id} item={item} />
-              ),
-            )}
-        </Vessel>
+      <div className="flex flex-wrap justify-center gap-8 pt-12 px-6">
+        {bootstrap === 'loading' && <Hint>BOOTSTRAPPING WORKSPACE…</Hint>}
+        {bootstrap === 'error' && <Hint>COULDN&rsquo;T LOAD WORKSPACE</Hint>}
+        {bootstrap === 'ready' &&
+          vessels.map((v) => (
+            <Vessel key={v.feed.id} name={v.feed.name}>
+              {v.status === 'loading' && <Hint>LOADING…</Hint>}
+              {v.status === 'error' && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
+              {v.status === 'ready' && v.items.length === 0 && <Hint>NO ITEMS</Hint>}
+              {v.status === 'ready' &&
+                v.items.slice(0, 12).map((item) =>
+                  item.type === 'new_user' ? (
+                    <NewUserVesselCard
+                      key={`new-user-${item.username}-${item.joinedAt}`}
+                      item={item}
+                    />
+                  ) : (
+                    <VesselCard key={item.id} item={item} />
+                  ),
+                )}
+            </Vessel>
+          ))}
       </div>
       <ForallMenu onAction={handleForallAction} />
       <Composer
         open={composerOpen}
         onClose={() => setComposerOpen(false)}
-        onPublished={() => setFeedRefreshTick((n) => n + 1)}
+        onPublished={refreshAll}
+      />
+      <NewFeedPrompt
+        open={newFeedOpen}
+        onClose={() => setNewFeedOpen(false)}
+        onCreate={handleCreateFeed}
       />
     </Floor>
   )
