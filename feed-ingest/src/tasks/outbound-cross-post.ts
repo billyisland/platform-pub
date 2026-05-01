@@ -113,7 +113,7 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
     if (row.protocol === 'activitypub') {
       if (!row.la_instance_url) throw new Error('Linked account has no instance_url')
       if (!row.la_credentials_enc) throw new Error('Linked account has no credentials')
-      if (row.action_type !== 'reply' && row.action_type !== 'quote') {
+      if (row.action_type !== 'reply' && row.action_type !== 'quote' && row.action_type !== 'original') {
         throw new Error(`Unsupported activitypub action_type: ${row.action_type}`)
       }
       const creds = decryptJson<MastodonCredentials>(row.la_credentials_enc)
@@ -163,6 +163,8 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
           throw new Error('Source atproto item is missing uri/cid — cannot quote')
         }
         quote = { uri: interaction.uri, cid: interaction.cid }
+      } else if (row.action_type !== 'original') {
+        throw new Error(`Unsupported atproto action_type: ${row.action_type}`)
       }
 
       const appUrl = process.env.APP_URL?.replace(/\/$/, '')

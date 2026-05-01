@@ -23,15 +23,16 @@ export interface QuoteTarget {
 
 export interface CrossPostTarget {
   linkedAccountId: string
-  sourceItemId: string         // external_items.id
-  actionType: 'reply' | 'quote'
+  // Required for reply/quote (external_items.id); omitted for top-level 'original'.
+  sourceItemId?: string
+  actionType: 'reply' | 'quote' | 'original'
 }
 
 export async function publishNote(
   content: string,
   authorPubkey: string,
   quoteTarget?: QuoteTarget,
-  crossPost?: CrossPostTarget
+  crossPosts?: CrossPostTarget[]
 ): Promise<PublishNoteResult> {
   const tags: string[][] = []
 
@@ -61,7 +62,7 @@ export async function publishNote(
         quotedTitle: quoteTarget.previewTitle,
         quotedAuthor: quoteTarget.previewAuthorName,
       }),
-      ...(crossPost && { crossPost }),
+      ...(crossPosts && crossPosts.length > 0 && { crossPosts }),
     }),
   })
 

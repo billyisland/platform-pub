@@ -15,8 +15,10 @@ import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 interface EnqueueCrossPostInput {
   accountId: string            // all.haus user id
   linkedAccountId: string      // linked_accounts.id
-  sourceItemId: string         // external_items.id being replied/quoted
-  actionType: 'reply' | 'quote'
+  // Required for reply/quote (the external_items.id being responded to);
+  // omitted for 'original' (top-level broadcast — no source).
+  sourceItemId?: string
+  actionType: 'reply' | 'quote' | 'original'
   nostrEventId: string
   bodyText: string
 }
@@ -77,7 +79,7 @@ export async function enqueueCrossPost(input: EnqueueCrossPostInput): Promise<vo
       la[0].protocol,
       input.nostrEventId,
       input.actionType,
-      input.sourceItemId,
+      input.sourceItemId ?? null,
       input.bodyText,
     ])
 

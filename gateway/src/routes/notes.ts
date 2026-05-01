@@ -38,12 +38,19 @@ const IndexNoteSchema = z.object({
     content: z.string(),
     sig: z.string(),
   }).optional(),
-  // Optional: cross-post this note to a linked external account (Phase 5)
-  crossPost: z.object({
-    linkedAccountId: z.string().uuid(),
-    sourceItemId: z.string().uuid(),
-    actionType: z.enum(['reply', 'quote']),
-  }).optional(),
+  // Optional: cross-post this note to one or more linked external accounts.
+  // 'reply' / 'quote' must carry sourceItemId; 'original' (top-level broadcast)
+  // omits it. Each entry produces an outbound_posts row + worker job.
+  crossPosts: z.array(
+    z.object({
+      linkedAccountId: z.string().uuid(),
+      sourceItemId: z.string().uuid().optional(),
+      actionType: z.enum(['reply', 'quote', 'original']),
+    }).refine(
+      (v) => v.actionType === 'original' ? v.sourceItemId === undefined : v.sourceItemId !== undefined,
+      { message: "sourceItemId required for reply/quote, forbidden for original" }
+    )
+  ).optional(),
 })
 
 export async function noteRoutes(app: FastifyInstance) {
@@ -221,19 +228,23 @@ export async function noteRoutes(app: FastifyInstance) {
         }
       }
 
-      // Outbound: enqueue cross-post job if requested (Phase 5)
-      if (data.crossPost && noteId) {
-        try {
-          await enqueueCrossPost({
-            accountId: authorId,
-            linkedAccountId: data.crossPost.linkedAccountId,
-            sourceItemId: data.crossPost.sourceItemId,
-            actionType: data.crossPost.actionType,
-            nostrEventId: data.nostrEventId,
-            bodyText: data.content,
-          })
-        } catch (err) {
-          logger.warn({ err, noteId }, 'Failed to enqueue outbound cross-post')
+      // Outbound: enqueue cross-post job(s) if requested (Phase 5).
+      // Each entry is a separate target; failures are isolated and non-fatal —
+      // the native note is already indexed.
+      if (data.crossPosts && data.crossPosts.length > 0 && noteId) {
+        for (const target of data.crossPosts) {
+          try {
+            await enqueueCrossPost({
+              accountId: authorId,
+              linkedAccountId: target.linkedAccountId,
+              sourceItemId: target.sourceItemId,
+              actionType: target.actionType,
+              nostrEventId: data.nostrEventId,
+              bodyText: data.content,
+            })
+          } catch (err) {
+            logger.warn({ err, noteId, target }, 'Failed to enqueue outbound cross-post')
+          }
         }
       }
 

@@ -7,6 +7,8 @@ import { feed as feedApi } from '../../lib/api'
 import type { FeedItem, ExternalFeedItem } from '../../lib/ndk'
 import { Vessel } from './Vessel'
 import { VesselCard, NewUserVesselCard } from './VesselCard'
+import { ForallMenu, type ForallAction } from './ForallMenu'
+import { Composer } from './Composer'
 
 const FLOOR = '#F0EFEB' // grey-100 per Step 1 / Colour tokens committed
 
@@ -96,6 +98,16 @@ export function WorkspaceView() {
   const router = useRouter()
   const [items, setItems] = useState<WorkspaceItem[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [composerOpen, setComposerOpen] = useState(false)
+  const [feedRefreshTick, setFeedRefreshTick] = useState(0)
+
+  function handleForallAction(key: ForallAction) {
+    if (key === 'new-note') {
+      setComposerOpen(true)
+      return
+    }
+    console.log(`[workspace] ${key} — not yet wired`)
+  }
 
   useEffect(() => {
     if (!loading && !user) router.push('/auth?mode=login')
@@ -123,7 +135,7 @@ export function WorkspaceView() {
     return () => {
       cancelled = true
     }
-  }, [user])
+  }, [user, feedRefreshTick])
 
   if (loading || !user) {
     return <Floor />
@@ -149,6 +161,12 @@ export function WorkspaceView() {
             )}
         </Vessel>
       </div>
+      <ForallMenu onAction={handleForallAction} />
+      <Composer
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        onPublished={() => setFeedRefreshTick((n) => n + 1)}
+      />
     </Floor>
   )
 }

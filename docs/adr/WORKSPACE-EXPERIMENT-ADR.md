@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-04-30. Status: Active experiment, slice 1 + 1.5 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -66,9 +66,12 @@ Untouched:
 - Auth, payments, subscriptions, publications routes.
 
 Adapted:
-- `useCompose` store extends per Steps 5/6.
-- `ComposeOverlay` shell becomes the chrome around the new `Composer` component (one component, two modes — note + article).
 - Card data shapes survive; visual rendering reskinned per `CARDS-AND-PIP-PANEL-HANDOFF.md`.
+- The existing publish pipelines (`publishNote` for kind 1, `messages.createConversation` + `messages.send` for encrypted DMs) are reused unchanged — the new composer is a fresh UI on top of the existing rails.
+
+Resolved against pre-experiment forecasts:
+- `useCompose` store does **not** extend — it retires alongside the `ComposeOverlay` shell. Workspace composer state is component-local until a second open-the-composer entry point exists, then a fresh `useWorkspaceCompose` (or similar) replaces it.
+- The new `Composer` is **not** chrome wrapped around `ComposeOverlay`. It is a new component (`web/src/components/workspace/Composer.tsx`) — `ComposeOverlay` continues to render only on platform-mode routes (`/feed`, `/article/...`, etc.) and will be deleted before any merge to `master`.
 
 Retired (on this branch only):
 - Phase A topbar.
@@ -112,6 +115,90 @@ Per ADR §1, the Phase A topbar and `ComposeOverlay` are retired on this branch.
 - `WorkspaceView` floor now fills `100vh` directly.
 
 Other routes (`/feed`, `/write`, `/`, `/:username`, etc.) are untouched and keep platform chrome. Note: with no topbar there is currently no in-app navigation off `/workspace` — the ∀ menu (slice 2) becomes the navigation anchor.
+
+### Slice 2 — ∀ menu (2026-05-01)
+
+Persistent ∀ control fixed bottom-right of the workspace floor. Tap (or Enter when focused) reveals a four-item menu per `WORKSPACE-DESIGN-SPEC.md` §"Workspace scope": *New feed*, *New note*, *Fork feed by URL*, *Reset workspace layout*. Closes on outside click, Escape, or item select; focus returns to the ∀ button. Arrow-up/-down + Home/End cycle items; mouse hover and keyboard navigation share an `activeIndex`. The button is a 56px black disc with the ∀ glyph in Literata; menu is a small white sheet with a hairline black border, no scrim.
+
+- `web/src/components/workspace/ForallMenu.tsx` — new component, fixed position, role=menu/menuitem.
+- `WorkspaceView` mounts `<ForallMenu />` on the floor.
+- All four item handlers are `console.log` stubs for this slice. Wiring lives in later slices: *new note* → `Composer` (per ADR §"Adapted"), *new feed* → `POST /api/v1/feeds` (slice 3), *fork by URL* → universal resolver, *reset layout* → `useWorkspace` (slice 4).
+- No Framer Motion yet; ADR §2 reserves it for the ∀→H→⊔ ceremony and gestures. Menu reveal is a CSS transform/transition.
+
+Skipped intentionally: ∀→H→⊔ animation, mobile placement (∀ position on touch is part of the deferred mobile decision per ADR §5), focus-trap inside the menu (single-level, Escape suffices for the experiment a11y floor).
+
+### Slice 2.5 — minimal Composer wired to *New note* (2026-05-01)
+
+`web/src/components/workspace/Composer.tsx` is the workspace's own composer surface — fresh component, *not* a reuse of the retired `ComposeOverlay`. Slice 2.5 ships note mode only.
+
+- Centred panel over a 40% scrim, opens on ∀ → *New note*. Esc / scrim click / Cancel close it.
+- Surface per `WORKSPACE-DESIGN-SPEC.md` §"The note composer": a To field above a body textarea. Empty To shows the persistent `Publishing publicly` banner; the action button reads `Publish`.
+- To-field resolution and protocol selection are **not** wired this slice. Typing into To disables Publish and surfaces a hint that private addressing arrives in a later slice. This honours the spec's invariant — that the To field is *the* central narrowing gesture — without faking autocomplete.
+- Body publishes via the existing `publishNote(content, user.pubkey)` pipeline (signed and outbox-enqueued through `/api/v1/notes`). Char limit 1000.
+- On success the Composer closes and bumps a `feedRefreshTick` on `WorkspaceView`, which re-fetches the vessel's feed. No optimistic insertion yet — the new note appears via refetch, which is sufficient at slice 2.5 because the founder's-feed vessel is the only one and the user's own publish lands in `feed_items` immediately.
+- State is local to `WorkspaceView`. The migration map flags the retired `stores/compose.ts` for rewrite (three-mode shell coordination retires with the overlay); this slice deliberately does not extend it. A workspace-scoped store arrives when a second open-the-composer entry point exists (e.g. reply from a card).
+
+`ForallMenu` becomes controlled — it now takes `onAction(key)` rather than owning stub handlers. The other three actions (*new feed*, *fork by URL*, *reset layout*) remain stubs in `WorkspaceView.handleForallAction`.
+
+Skipped intentionally: article mode, To-field autocomplete + resolver wiring, protocol selector, draft autosave, media attachments, the 400-word note→article nudge, optimistic feed insertion, mobile sheet geometry.
+
+### Slice 2.6 — To-field resolver + protocol selector (2026-05-01)
+
+The To field's central design role per `WORKSPACE-DESIGN-SPEC.md` §"The note composer" is the cardinality-determines-publication gesture. Slice 2.6 makes it real on the input side; publishing semantics catch up later.
+
+**To field.** Composer-local input now wraps a chip row. Typing 300ms-debounce-resolves through the universal resolver (`POST /api/v1/resolve`, context `dm`) and Phase B polls (up to 3 ticks at 1s) — same shape as `SubscribeInput` but adapted for chip selection. Native account matches surface in a dropdown alongside fuzzy-matched broadcast tokens (*Everyone on all.haus / Nostr / Bluesky / fediverse*). Enter on the input adds the top person match; click adds either kind. Backspace on an empty input pops the last chip; per-chip × button removes any chip. Person chips render black, broadcast chips render light.
+
+**Banner + button label.** Empty-or-broadcast-only To still shows the `Publishing publicly` banner; the button still reads `Publish`. Person chips suppress the banner.
+
+**Protocol selector.** Visible only when the chip row is empty (per spec: "When the To field is empty, a subtle secondary control surfaces"). Four toggle pills — `ALL.HAUS · NOSTR · BLUESKY · ACTIVITYPUB` — all on by default. Stored in component state.
+
+**Publish gating.**
+- Person chips present → publish disabled with hint *Private addressing wires in a later slice — remove person chips to publish*. The DM/private-addressing pipeline is its own slice (the resolved chip carries the protocol, but encrypted DM dispatch + cross-protocol DM is non-trivial).
+- Empty To with Nostr toggled off, or broadcast-only To without Nostr → publish disabled with hint *Cross-protocol broadcast wires later. Include Nostr to publish.* The hint is honest about what the existing `publishNote` pipeline does (it signs and outbox-enqueues a Nostr kind 1; cross-posting to ActivityPub / atproto requires `crossPost` + a `linked_account_id`, deferred).
+- Otherwise (empty To with Nostr on, or broadcast-token-list-including-Nostr) → public publish via existing `publishNote(content, user.pubkey)`. Other-protocol toggles and other-protocol broadcast tokens are accepted by the UI and ignored at publish time; the gating hint and the *Send via* selector make this state visible.
+
+**No store coupling.** All resolver state, chip state, and protocol state is local to `Composer.tsx`. The retired `stores/compose.ts` stays untouched.
+
+Skipped intentionally: encrypted Nostr DM dispatch (person chips), cross-protocol broadcast publishing (lighting up Bluesky/ActivityPub toggles for real — needs `linked_accounts` integration), chip ordering / drag-reorder, "named groups" autocomplete, identity-resolution chains beyond `dm` context (e.g. RSS feeds aren't valid To targets), keyboard navigation inside the dropdown beyond Enter-on-top-match, To-field history / recents.
+
+### Slice 2.7 — person chips dispatch as encrypted DMs (2026-05-01)
+
+The cardinality-determines-publication invariant is now real for native targets. Publishing the composer with one or more person chips routes through the existing DM pipeline rather than the public publish path.
+
+**Pipeline.** `Composer.handlePublish` branches on chip kind:
+- *Person chips only* → `POST /conversations { memberIds }` then `POST /messages/:conversationId { content }`. The existing `gateway/src/services/messages.ts` handles NIP-44 encryption end-to-end via key-custody — the composer doesn't see plaintext leaving the browser any differently than the existing `/messages` page does. Multiple person chips form a group conversation in one call.
+- *Empty / broadcast-only* → unchanged from slice 2.6 (public `publishNote` via Nostr).
+- *Mixed* (person chips + broadcast tokens) → publish disabled with hint *Mixing people with broadcast targets isn't supported in one send*. Two intents in one gesture is genuinely ambiguous; one-or-the-other is the cleanest contract.
+
+**Surface changes.**
+- *Publishing publicly* banner is suppressed when any person chip is present (the publish is no longer public).
+- Action button label flips: `Publish` → `Send` for private. `Publishing…` → `Sending…` while in flight.
+- Hint reads *Sending privately to N recipient(s) — appears in their inbox at all.haus/messages.* — naming the destination so the user understands the gesture's outcome.
+- DM-pricing skip handling: if `messages.send` returns a non-empty `skippedRecipientIds`, surface *Sent, but N recipient(s) were skipped — DM pricing not paid* and leave the composer open. Settling DM pricing happens via the existing `/settings/dm-pricing` flow; not in scope here.
+
+**Conversation deduplication.** Each Send creates a fresh conversation, matching the existing `/messages` page's behaviour. Find-or-create on identical member sets is a separate UX call that depends on whether `/messages` survives as a list surface (migration map §5 #5 still open).
+
+Skipped intentionally: find-or-create dedupe, send to a person chip with no UUID (resolver returned a confidence-`speculative` external account), per-conversation reply context, message threading from a vessel card, mirroring sent DMs into the workspace feed (they're private, they don't belong in `feed_items`).
+
+### Slice 2.8 — cross-protocol broadcast for empty/broadcast-only To (2026-05-01)
+
+The protocol toggles and "Everyone on Bluesky / fediverse" broadcast chips light up. A public publish now anchors on the native Nostr publish *and* fans out to the user's connected Bluesky / Mastodon accounts, on the back of the existing Phase 5 outbound pipeline.
+
+**Wire-up.**
+- The existing `outbound_posts.action_type` CHECK already includes `'original'` (`source_item_id` and `linked_account_id` are both nullable post-058) — no migration. The slot was reserved during Phase 5 and was never wired from the gateway side.
+- `POST /notes` schema swaps the singular `crossPost` (`{linkedAccountId, sourceItemId, actionType: 'reply' | 'quote'}`) for plural `crossPosts: array`. Per-target Zod refinement enforces the invariant `actionType === 'original' ⇔ sourceItemId omitted`. The handler now loops + enqueues each entry; failures are logged and skipped per target so a Bluesky outage can't block a working Mastodon cross-post (or vice versa). The pre-2.8 single-target shape had no production callers — `publishNote` was the only frontend reference and the field was unused — so the rename is straight.
+- `enqueueCrossPost` widens to `actionType: 'reply' | 'quote' | 'original'` and `sourceItemId?: string`. Migration 062's dedup index already keys on `(account_id, nostr_event_id, linked_account_id, action_type)` and tolerates NULL `source_item_id` via `IS NOT DISTINCT FROM`, so re-enqueues are still idempotent.
+- `feed-ingest/src/tasks/outbound-cross-post.ts` accepts `'original'` for both atproto + activitypub. The Mastodon branch simply skips the quote-URL append + `replyToStatusUri`; the Bluesky branch skips the `reply` / `quote` strong-refs. The unsupported-action assertion in the atproto branch is now exhaustive (was implicit no-op fall-through).
+- `web/src/lib/publishNote.ts`: `crossPost?: CrossPostTarget` → `crossPosts?: CrossPostTarget[]`. `CrossPostTarget.sourceItemId` is now optional and `actionType` includes `'original'`.
+
+**Composer surface.**
+- On open, `Composer` calls `linkedAccounts.list()` and bins valid accounts by protocol. The atproto + activitypub toggles in the *Send via* row reflect connection state: connected → toggleable as before; not connected → rendered disabled-grey with a `title` reading *Connect &lt;Bluesky/Activitypub&gt; in Settings → Linked accounts to broadcast there*. Native `ALL.HAUS` and `NOSTR` toggles are unaffected (always-on; `nostr` still gates the publish).
+- Broadcast targets resolve from chips when broadcast chips are present, otherwise from the toggle set. Cross-post targets = `(broadcast_set ∩ {atproto, activitypub}) ∩ {protocols with valid linked account}`.
+- Hint copy: when at least one cross-post target is queued, the char-count line becomes `Publishing to Nostr · BLUESKY · ACTIVITYPUB — N/1000`. The slice 2.6 *Cross-protocol broadcast wires later* hint is gone; the still-present *Include Nostr to publish* gate (Nostr-toggled-off broadcast) reads as *Cross-protocol broadcast needs Nostr as the anchor. Include Nostr to publish.* — matching the new reality that the *other* protocols *are* wired but Nostr remains the anchor.
+
+**Worker payload shape.** Top-level cross-posts produce one `outbound_posts` row per target with `(linked_account_id = <atproto|activitypub linked>, source_item_id = NULL, action_type = 'original')`. Body text passes through the same grapheme/char budget truncation paths (`truncateWithLink`); on Bluesky truncation appends the all.haus permalink, on Mastodon nothing (no quote URL since there's no source). Idempotency keys (`outbound_posts.id`) are stable across retries.
+
+Skipped intentionally: cross-protocol broadcast that *omits* Nostr (still requires the anchor — sliced separately because the all.haus DB record currently keys on a Nostr event id), per-protocol body customisation (mentions, language tags, sensitive-content flags), per-target preview before send, post-publish toast surfacing the cross-post status, retry/abandon UI on the workspace floor (status lives in `outbound_posts`; surfacing it is its own slice), broadcast-to-self filtering (a user sending "Everyone on Bluesky" doesn't get a status from their own bridge — same as today since the cross-post writes to the linked account, not the source feed).
 
 ## Deferred (TODO in code, not blocking the experiment)
 
