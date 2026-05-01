@@ -12,6 +12,8 @@ import { ForallMenu, type ForallAction } from './ForallMenu'
 import { Composer } from './Composer'
 import { NewFeedPrompt } from './NewFeedPrompt'
 import { FeedComposer } from './FeedComposer'
+import { ResetLayoutConfirm } from './ResetLayoutConfirm'
+import { ForkFeedPrompt } from './ForkFeedPrompt'
 
 const FLOOR = '#F0EFEB' // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed"
@@ -134,6 +136,8 @@ export function WorkspaceView() {
   const [composerOpen, setComposerOpen] = useState(false)
   const [newFeedOpen, setNewFeedOpen] = useState(false)
   const [feedComposerFor, setFeedComposerFor] = useState<WorkspaceFeed | null>(null)
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+  const [forkOpen, setForkOpen] = useState(false)
   const floorRef = useRef<HTMLDivElement>(null)
   const positions = useWorkspace((s) => s.positions)
   const hydrated = useWorkspace((s) => s.hydrated)
@@ -143,6 +147,8 @@ export function WorkspaceView() {
   const setVesselBrightness = useWorkspace((s) => s.setVesselBrightness)
   const setVesselDensity = useWorkspace((s) => s.setVesselDensity)
   const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation)
+  const removeVesselLayout = useWorkspace((s) => s.removeVessel)
+  const resetWorkspace = useWorkspace((s) => s.reset)
 
   const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
     setVessels((prev) =>
@@ -179,7 +185,38 @@ export function WorkspaceView() {
       setNewFeedOpen(true)
       return
     }
+    if (key === 'reset') {
+      setResetConfirmOpen(true)
+      return
+    }
+    if (key === 'fork') {
+      setForkOpen(true)
+      return
+    }
     console.log(`[workspace] ${key} — not yet wired`)
+  }
+
+  function handleForked(feed: WorkspaceFeed) {
+    setVessels((prev) => {
+      const next = [...prev, { feed, items: [], status: 'loading' as const }]
+      const slot = defaultGridSlot(next.length - 1, window.innerWidth)
+      setVesselPosition(feed.id, slot)
+      return next
+    })
+    setForkOpen(false)
+    void loadVesselItems(feed)
+  }
+
+  function handleResetLayout() {
+    // Wipe stored layout, then re-seed default grid slots for the current
+    // vessels in their existing order so the floor doesn't briefly collapse
+    // to (0, 0) before the next paint.
+    resetWorkspace()
+    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
+    vessels.forEach((v, i) => {
+      setVesselPosition(v.feed.id, defaultGridSlot(i, viewportWidth))
+    })
+    setResetConfirmOpen(false)
   }
 
   async function handleCreateFeed(name: string) {
@@ -320,10 +357,33 @@ export function WorkspaceView() {
       <FeedComposer
         open={!!feedComposerFor}
         feed={feedComposerFor}
+        deleteBlocked={vessels.length <= 1}
         onClose={() => setFeedComposerFor(null)}
         onSourcesChanged={() => {
           if (feedComposerFor) void loadVesselItems(feedComposerFor)
         }}
+        onRenamed={(updated) => {
+          setVessels((prev) =>
+            prev.map((v) => (v.feed.id === updated.id ? { ...v, feed: updated } : v)),
+          )
+          setFeedComposerFor((curr) => (curr && curr.id === updated.id ? updated : curr))
+        }}
+        onDeleted={(feedId) => {
+          setVessels((prev) => prev.filter((v) => v.feed.id !== feedId))
+          removeVesselLayout(feedId)
+          setFeedComposerFor(null)
+        }}
+      />
+      <ResetLayoutConfirm
+        open={resetConfirmOpen}
+        vesselCount={vessels.length}
+        onClose={() => setResetConfirmOpen(false)}
+        onConfirm={handleResetLayout}
+      />
+      <ForkFeedPrompt
+        open={forkOpen}
+        onClose={() => setForkOpen(false)}
+        onForked={handleForked}
       />
     </Floor>
   )

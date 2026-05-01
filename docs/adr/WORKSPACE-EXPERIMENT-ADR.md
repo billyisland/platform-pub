@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -282,6 +282,48 @@ The three remaining per-feed attentional axes per `WORKSPACE-DESIGN-SPEC.md` §"
 **Wiring (`WorkspaceView.tsx`).** Plumbs the three new props from `useWorkspace` to each `Vessel`, and `density` + `brightness` from the layout to each rendered card.
 
 Skipped intentionally: continuous brightness (touch gesture deferred per ADR §5; storage stays discrete until then), real touch gestures (two-finger vertical drag, two-finger rotation, gestural density), brightness-as-focus coupling (`WORKSPACE-DESIGN-SPEC.md` §"What this spec doesn't yet pin down" — focus mode is its own design pass), name-label repositioning to the opening side in horizontal mode (label stays above the vessel root for now; spec calls for it to follow the opening), per-density default sizes (a horizontal vessel still inherits the user's last w/h — they resize to taste), keyboard equivalents for the three controls (deferred per ADR §6 a11y floor — the cycle buttons are clickable, just not arrow-key-reachable), nine-state matrix QA across density × brightness in the live UI (the wireframe showed the nine frames pass; the runtime renderer is a first cut), no-overlap collision (still later), thumbnails / lead images at full density (the spec calls for them; `feed_items` doesn't carry them in a way the slice can render — TODO).
+
+### Slice 6 — ∀ → *Reset workspace layout* wired (2026-05-01)
+
+The fourth ∀ menu item stops being a `console.log` stub. The reset is layout-only — positions, sizes, brightness, density, orientation — and never touches `feeds` or `feed_sources`. Feeds and their sources survive the reset.
+
+**Surface.** New `web/src/components/workspace/ResetLayoutConfirm.tsx` matches the scrim/panel grammar of `NewFeedPrompt` (40% scrim, 420px panel, hairline black border, 144px top inset). Body copy adapts to vessel count: zero-vessel state describes the wipe abstractly; ≥1 promises *N vessels* will return to the default grid. The confirm button is crimson (`#B5242A`) and auto-focuses on open — destructive-flavoured even though the operation is non-destructive in the data sense, because committed layout is genuinely irrecoverable. Cancel / Esc / scrim-click closes.
+
+**Wiring (`WorkspaceView.tsx`).** New `resetConfirmOpen` flag. `ForallAction === 'reset'` opens the modal; on confirm `handleResetLayout` calls `useWorkspace.reset()` *and immediately re-seeds default grid slots for the current vessels in their existing order* via `defaultGridSlot(i, viewportWidth)`. Without the re-seed the vessels would collapse to `(0, 0)` for one paint while the bootstrap default-slot effect didn't re-run (it's keyed on `user`, not on `positions`). Re-seeding inside the same handler keeps the floor visually continuous through the reset.
+
+**Store (`useWorkspace.reset()`).** Already existed from slice 5a — set `positions: {}`, schedule a localStorage write of the empty object. No changes this slice.
+
+Skipped intentionally: undo (one-shot toast offering *Undo reset* would need a snapshot of the pre-reset map; the modal is the friction layer for now), reset-only-this-vessel (per-vessel context menu, deferred with rename/delete), keyboard shortcut (the ∀ menu's Enter-on-item is the keyboard path), animation on the re-seed (vessels snap to grid; with Framer Motion's `layout` prop this could tween, but the resize/rotate slices haven't pulled in `layoutId` yet).
+
+### Slice 7 — vessel rename + delete UI (2026-05-01)
+
+The two slice-3 routes that had no surface — `PATCH /api/v1/workspace/feeds/:id` and `DELETE /api/v1/workspace/feeds/:id` — light up. Both gestures hang off `FeedComposer`'s header / footer rather than introducing a per-vessel context menu (which would need the long-press / right-click gesture system not yet built).
+
+**Rename (header).** The static name in the composer header swaps to a `Rename` mono-caps button next to the name. Click → inline input pre-filled with the current name (auto-selected for fast retype), `Save` and `Cancel` buttons inline. Enter saves; Esc cancels. Validates 1–80 chars, trim-equal-to-current = no-op close. On success the composer reflects the new name and `onRenamed(feed)` fires up to `WorkspaceView` which patches the matching `vessels[].feed` so the vessel name label updates without a refetch.
+
+**Delete (footer).** A new bottom row separated by hairline, with a single `Delete feed` mono-caps button at right (grey → crimson on hover). Click → swaps in-place to a two-step confirm row: hint *Delete this feed? Sources are removed; subscriptions are kept.* + `Cancel` + crimson `Delete`. The two-step in-panel confirm is lighter than `ResetLayoutConfirm`'s modal because the action is feed-scoped (one row to undo by re-creating) rather than workspace-scoped.
+
+**Last-feed guard.** `WorkspaceView` passes `deleteBlocked={vessels.length <= 1}`; in that case the footer renders a hint reading *Can't delete your only feed — create another first.* in place of the delete button. Without the guard, a sole-feed delete would leave the floor visibly empty until the next bootstrap reseeded a default — an awkward hidden recovery path. The gateway `DELETE /workspace/feeds/:id` would happily delete it; the FE-only guard is the friction layer.
+
+**Subscription preservation.** The composer's hint copy (*subscriptions are kept*) names the deliberate behaviour from slice 4: deleting a feed cascades to its `feed_sources` rows but leaves any underlying `external_subscriptions` rows intact. The user can keep the subscription via `/subscriptions` or reuse the source on another feed.
+
+**Layout cleanup.** On delete, `onDeleted(feedId)` drops the vessel from `vessels` *and* calls `useWorkspace.removeVessel(feedId)` so the localStorage layout entry doesn't accumulate stale records. The store method already existed from slice 5a; this is its first wired caller.
+
+Skipped intentionally: undo-delete toast (would need an in-memory snapshot of the deleted feed + its sources, plus a re-create endpoint that preserves IDs — not worth it for an experiment), per-vessel rename via long-press / context menu (the gesture system is its own slice), confirm-on-rename (rename is reversible — the user can rename back), keyboard shortcut for Rename (the button is reachable via Tab inside the composer; the workspace a11y floor per ADR §6 doesn't require a dedicated shortcut), animated removal of the vessel from the floor (Framer Motion `AnimatePresence` will arrive with the ∀→H→⊔ ceremony slice).
+
+### Slice 8 — ∀ → *Fork feed by URL* wired (2026-05-01)
+
+The third ∀ stub goes live. *Fork feed by URL* is a one-gesture combo of *create feed* + *add first source* + *open vessel*, sharing the universal-resolver input grammar from `FeedComposer`'s "Add a source" but minting a fresh feed each time.
+
+**Surface (`web/src/components/workspace/ForkFeedPrompt.tsx`).** New component. Same scrim/panel grammar as `NewFeedPrompt` (40% scrim, 480px panel, hairline black border, 144px top inset). Single input — *Paste a URL, @username, npub, DID, or #tag* — that resolver-debounces (300ms + Phase B polling, context `subscribe`). Match candidates render below as a list of mono-caps-sublabelled buttons; clicking one performs the fork. Tag fallback for `#name` inputs mirrors `FeedComposer`. Hint copy under the input names the gesture's outcome: *Picks something below to mint a new feed pointed at it. Rename later from the feed composer.*
+
+**Fork mechanics.** `handleFork(opt)` runs `workspaceFeedsApi.create(derivedName)` then `workspaceFeedsApi.addSource(feedId, opt.add)` in sequence. The derived name comes from the resolved match — display name → @username → URI → feed title — clamped to 80 chars. If `create` succeeds but `addSource` fails, the partial feed is *kept* and handed back via `onForked(feed)`; the modal surfaces a hint reading *Feed created but source add failed: …* so the user can finish wiring it via the feed composer rather than losing the new vessel. Roll-forward over rollback because the feed itself is salvageable state.
+
+**Wiring (`WorkspaceView.tsx`).** New `forkOpen` flag. `ForallAction === 'fork'` opens the modal; `handleForked(feed)` mirrors `handleCreateFeed` — appends the vessel, writes a default-grid slot via `setVesselPosition`, fires `loadVesselItems(feed)`. The user lands on a vessel that already shows the source's content on first paint (modulo backfill latency for newly-subscribed external sources).
+
+**Why "fork" not "subscribe".** The menu copy uses *fork* because the verb in this branch's vocabulary is workspace-floor-shaped: *fork* makes a new vessel from an external thing the way a software fork makes a new repo from a remote one. Subscribing to a single source from `/subscriptions` (which still exists as the Phase 1–4 surface) is a different gesture with a different mental model.
+
+Skipped intentionally: multi-source fork (the menu item is "Fork *feed* by URL"; the user mints one source at a time and adds more in `FeedComposer`), fork from clipboard (browser permission costs > value at this fidelity), recently-resolved suggestions (the resolver doesn't expose a history surface yet), import a feed-of-feeds (e.g. an OPML upload — out of scope for the workspace shell), in-place rename of the derived name *before* the fork commits (the modal's hint already promises rename-later via the feed composer; an inline rename would slow the gesture to two steps when one of the resolver matches is good enough).
 
 ## Deferred (TODO in code, not blocking the experiment)
 

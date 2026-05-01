@@ -11,14 +11,14 @@ import {
   type WorkspaceFeedSource,
 } from '../../lib/api'
 
-// FeedComposer — slice 4. Reached from the vessel name label. Lists the
+// FeedComposer — slice 4 + 7. Reached from the vessel name label. Lists the
 // feed's current sources and accepts a free-form input that the universal
 // resolver classifies into a native account / external source / RSS feed
 // candidate. Clicking a candidate POSTs the corresponding feed_sources row.
+// Slice 7 added inline rename + delete-feed at the panel footer.
 //
-// Out of scope for slice 4: per-source weights (column reserved), source
-// reordering, mute toggle (column reserved, no UI), feed rename / delete
-// (routes exist; UI is its own slice), tag autocomplete from a tags index
+// Out of scope: per-source weights (column reserved), source reordering,
+// mute toggle (column reserved, no UI), tag autocomplete from a tags index
 // (free-form `#name` is enough until the index is exposed).
 
 const TOKENS = {
@@ -41,7 +41,15 @@ interface FeedComposerProps {
   open: boolean
   onClose: () => void
   onSourcesChanged?: () => void
+  onRenamed?: (feed: WorkspaceFeed) => void
+  onDeleted?: (feedId: string) => void
+  /** When true, the composer refuses to delete this feed and surfaces a hint
+   *  explaining why. Used to prevent the user from deleting their last feed
+   *  (which would leave the floor empty until next bootstrap reseeds). */
+  deleteBlocked?: boolean
 }
+
+const NAME_LIMIT = 80
 
 interface MatchOption {
   key: string
@@ -98,7 +106,15 @@ function matchToOptions(match: ResolverMatch): MatchOption[] {
   return out
 }
 
-export function FeedComposer({ feed, open, onClose, onSourcesChanged }: FeedComposerProps) {
+export function FeedComposer({
+  feed,
+  open,
+  onClose,
+  onSourcesChanged,
+  onRenamed,
+  onDeleted,
+  deleteBlocked,
+}: FeedComposerProps) {
   const [sources, setSources] = useState<WorkspaceFeedSource[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -107,7 +123,15 @@ export function FeedComposer({ feed, open, onClose, onSourcesChanged }: FeedComp
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Slice 7: rename + delete state.
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
   const inputRef = useRef<HTMLInputElement>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
   const scrimRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollCountRef = useRef(0)
@@ -131,6 +155,11 @@ export function FeedComposer({ feed, open, onClose, onSourcesChanged }: FeedComp
     setResolving(false)
     setBusyKey(null)
     setError(null)
+    setEditingName(false)
+    setNameDraft('')
+    setSavingName(false)
+    setConfirmingDelete(false)
+    setDeleting(false)
     void refreshSources(feed.id)
     const t = setTimeout(() => inputRef.current?.focus(), 0)
     const onKey = (e: KeyboardEvent) => {
@@ -217,6 +246,59 @@ export function FeedComposer({ feed, open, onClose, onSourcesChanged }: FeedComp
     }
   }
 
+  function startRename() {
+    if (!feed) return
+    setNameDraft(feed.name)
+    setEditingName(true)
+    setError(null)
+    // Focus on next tick after the input mounts.
+    setTimeout(() => nameInputRef.current?.select(), 0)
+  }
+
+  function cancelRename() {
+    setEditingName(false)
+    setNameDraft('')
+  }
+
+  async function commitRename() {
+    if (!feed || savingName) return
+    const trimmed = nameDraft.trim()
+    if (!trimmed) return
+    if (trimmed.length > NAME_LIMIT) {
+      setError(`Name must be ${NAME_LIMIT} characters or fewer.`)
+      return
+    }
+    if (trimmed === feed.name) {
+      setEditingName(false)
+      return
+    }
+    setSavingName(true)
+    setError(null)
+    try {
+      const { feed: updated } = await workspaceFeedsApi.rename(feed.id, trimmed)
+      onRenamed?.(updated)
+      setEditingName(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rename feed.')
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!feed || deleting) return
+    setDeleting(true)
+    setError(null)
+    try {
+      await workspaceFeedsApi.remove(feed.id)
+      onDeleted?.(feed.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete feed.')
+      setDeleting(false)
+      setConfirmingDelete(false)
+    }
+  }
+
   async function handleRemove(sourceId: string) {
     if (!feed) return
     setBusyKey(`remove:${sourceId}`)
@@ -274,12 +356,86 @@ export function FeedComposer({ feed, open, onClose, onSourcesChanged }: FeedComp
           flexDirection: 'column',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div className="label-ui" style={{ color: TOKENS.hintFg }}>Feed composer</div>
-            <div className="font-sans text-[18px]" style={{ color: TOKENS.panelBorder, marginTop: 2 }}>
-              {feed.name}
-            </div>
+            {editingName ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void commitRename()
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault()
+                      cancelRename()
+                    }
+                  }}
+                  className="font-sans text-[18px]"
+                  style={{
+                    flex: 1,
+                    border: `1px solid ${TOKENS.inputBorder}`,
+                    padding: '6px 8px',
+                    outline: 'none',
+                    color: TOKENS.panelBorder,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void commitRename()}
+                  disabled={savingName || !nameDraft.trim()}
+                  className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                  style={{
+                    padding: '6px 10px',
+                    background: 'transparent',
+                    color: nameDraft.trim() ? TOKENS.panelBorder : TOKENS.hintFg,
+                    border: 'none',
+                    cursor: savingName || !nameDraft.trim() ? 'default' : 'pointer',
+                  }}
+                >
+                  {savingName ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelRename}
+                  disabled={savingName}
+                  className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                  style={{
+                    padding: '6px 10px',
+                    background: 'transparent',
+                    color: TOKENS.hintFg,
+                    border: 'none',
+                    cursor: savingName ? 'default' : 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                <div className="font-sans text-[18px]" style={{ color: TOKENS.panelBorder, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {feed.name}
+                </div>
+                <button
+                  type="button"
+                  onClick={startRename}
+                  className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                  style={{
+                    padding: '4px 8px',
+                    background: 'transparent',
+                    color: TOKENS.hintFg,
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Rename
+                </button>
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -425,6 +581,78 @@ export function FeedComposer({ feed, open, onClose, onSourcesChanged }: FeedComp
             {error}
           </div>
         )}
+
+        <div
+          style={{
+            marginTop: 20,
+            paddingTop: 16,
+            borderTop: `1px solid ${TOKENS.inputBorder}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 8,
+            minHeight: 32,
+          }}
+        >
+          {deleteBlocked ? (
+            <div className="font-mono text-[11px]" style={{ color: TOKENS.hintFg }}>
+              Can&rsquo;t delete your only feed — create another first.
+            </div>
+          ) : confirmingDelete ? (
+            <>
+              <div className="font-mono text-[11px]" style={{ color: TOKENS.hintFg, marginRight: 'auto' }}>
+                Delete this feed? Sources are removed; subscriptions are kept.
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={deleting}
+                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                style={{
+                  padding: '6px 10px',
+                  background: 'transparent',
+                  color: TOKENS.hintFg,
+                  border: 'none',
+                  cursor: deleting ? 'default' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={deleting}
+                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                style={{
+                  padding: '6px 10px',
+                  background: 'transparent',
+                  color: TOKENS.errorFg,
+                  border: 'none',
+                  cursor: deleting ? 'default' : 'pointer',
+                }}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              style={{
+                padding: '6px 10px',
+                background: 'transparent',
+                color: TOKENS.removeFg,
+                border: 'none',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = TOKENS.errorFg)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.removeFg)}
+            >
+              Delete feed
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
