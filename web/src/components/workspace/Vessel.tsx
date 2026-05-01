@@ -23,18 +23,37 @@ const WIDTH = 300 // px default at standard density
 interface VesselProps {
   name: string
   children: ReactNode
+  onNameClick?: () => void
 }
 
-export function Vessel({ name, children }: VesselProps) {
+export function Vessel({ name, children, onNameClick }: VesselProps) {
   return (
     <div style={{ width: WIDTH }} role="region" aria-label={name}>
-      {/* Name label sits above the opening */}
-      <div
-        className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1"
-        style={{ color: TOKENS.nameLabel }}
-      >
-        {name}
-      </div>
+      {/* Name label sits above the opening. Click opens the feed composer
+          (slice 4); long-press lives in the gesture system not yet built. */}
+      {onNameClick ? (
+        <button
+          type="button"
+          onClick={onNameClick}
+          className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1 text-left"
+          style={{
+            color: TOKENS.nameLabel,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          {name}
+        </button>
+      ) : (
+        <div
+          className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1"
+          style={{ color: TOKENS.nameLabel }}
+        >
+          {name}
+        </div>
+      )}
 
       {/* The ⊔: left wall + right wall + base. Opening = full width at top. */}
       <div

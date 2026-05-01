@@ -10,6 +10,7 @@ import { VesselCard, NewUserVesselCard } from './VesselCard'
 import { ForallMenu, type ForallAction } from './ForallMenu'
 import { Composer } from './Composer'
 import { NewFeedPrompt } from './NewFeedPrompt'
+import { FeedComposer } from './FeedComposer'
 
 const FLOOR = '#F0EFEB' // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed"
@@ -108,6 +109,7 @@ export function WorkspaceView() {
   const [bootstrap, setBootstrap] = useState<'loading' | 'ready' | 'error'>('loading')
   const [composerOpen, setComposerOpen] = useState(false)
   const [newFeedOpen, setNewFeedOpen] = useState(false)
+  const [feedComposerFor, setFeedComposerFor] = useState<WorkspaceFeed | null>(null)
 
   const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
     setVessels((prev) =>
@@ -206,7 +208,11 @@ export function WorkspaceView() {
         {bootstrap === 'error' && <Hint>COULDN&rsquo;T LOAD WORKSPACE</Hint>}
         {bootstrap === 'ready' &&
           vessels.map((v) => (
-            <Vessel key={v.feed.id} name={v.feed.name}>
+            <Vessel
+              key={v.feed.id}
+              name={v.feed.name}
+              onNameClick={() => setFeedComposerFor(v.feed)}
+            >
               {v.status === 'loading' && <Hint>LOADING…</Hint>}
               {v.status === 'error' && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
               {v.status === 'ready' && v.items.length === 0 && <Hint>NO ITEMS</Hint>}
@@ -234,6 +240,14 @@ export function WorkspaceView() {
         open={newFeedOpen}
         onClose={() => setNewFeedOpen(false)}
         onCreate={handleCreateFeed}
+      />
+      <FeedComposer
+        open={!!feedComposerFor}
+        feed={feedComposerFor}
+        onClose={() => setFeedComposerFor(null)}
+        onSourcesChanged={() => {
+          if (feedComposerFor) void loadVesselItems(feedComposerFor)
+        }}
       />
     </Floor>
   )

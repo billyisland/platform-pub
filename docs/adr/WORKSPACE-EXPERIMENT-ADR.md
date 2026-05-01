@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -215,6 +215,25 @@ The `feeds` object becomes real. A vessel is now a render of a server-backed fee
 **∀ menu *New feed* wired.** New `NewFeedPrompt` modal (matches `Composer`'s scrim/panel grammar) takes a name (1–80 chars), POSTs, and appends a vessel that immediately fetches its placeholder items. Body copy is honest about the placeholder: *Sources arrive in a later slice — for now this feed shows the explore stream.* Cancel / Esc / scrim-click closes; Enter submits.
 
 Skipped intentionally: rename UI on existing vessels, delete UI on vessels, source-set authoring (the actual point of having a feed object — wiring `feed_sources` rows from follows / publications / external subscriptions / tags is the next slice's territory), per-vessel pagination beyond the first 20 items, optimistic cross-vessel publish (the user's own publish lands in `feed_items` and only its source feeds should refetch — currently every vessel does), drag-to-reposition (still no `useWorkspace` store), multi-feed empty state UX (each vessel shows its own NO ITEMS independently). The *Fork feed by URL* and *Reset workspace layout* ∀ items remain `console.log` stubs.
+
+### Slice 4 — feed composer: source CRUD + items query honours sources (2026-05-01)
+
+The `feeds` object becomes load-bearing. A vessel's name label is now a click-to-open affordance for the feed composer; the composer authors `feed_sources` rows; the items query fans out across them rather than falling back to explore.
+
+**Routes (`gateway/src/routes/feeds.ts`).** Three new endpoints alongside the slice 3 surface:
+- `GET /api/v1/feeds/:id/sources` — list rows with target display info (account / publication / external_source / tag) via LEFT JOINs against each potential target table. The `display` block is computed server-side so the client doesn't re-derive labels.
+- `POST /api/v1/feeds/:id/sources` — discriminated-union body. Native targets (`account`, `publication`, `tag`) pass an existing UUID or, for tag, a name (auto-inserted into `tags` so `/tag/:name` and global tag listings stay consistent). External takes either an existing `externalSourceId` or a `(protocol, sourceUri[, displayName, …])` pair. The pair shape upserts `external_sources` and ensures an `external_subscriptions` row for the caller (in one txn) so the existing feed-ingest workers pick the source up; an immediate fetch job is enqueued for `rss` / `nostr_external` / `activitypub` (atproto rides Jetstream's 60s DID refresh). The per-type partial unique indexes from migration 077 surface as `409 Source already on feed`.
+- `DELETE /api/v1/feeds/:id/sources/:sourceId` — straight delete. The associated `external_subscriptions` row is deliberately *not* torn down: a user may keep the subscription via `/subscriptions` or use the same external source in another feed. Subscription teardown is its own gesture.
+
+**Items query (`sourceFilteredItems`).** Replaces slice 3's empty-set placeholder for non-empty source sets. Single SELECT against `feed_items`, with the source set expressed as four OR-ed `EXISTS` clauses: account → `fi.author_id = fs.account_id`, publication → `a.publication_id = fs.publication_id`, external_source → `fi.source_id = fs.external_source_id`, tag → `EXISTS` join through `article_tags + tags`. Reused `FEED_SELECT` / `FEED_JOINS` / `rowToItem` from the placeholder branch. `muted_at IS NULL` filters per source. Empty-source feeds still hit the explore placeholder. Cursor narrows from `(score, published_at, id)` to `(published_at, id)` because slice 4 doesn't yet rank across sources — chronological is the honest contract until `weight` + `sampling_mode` wire in.
+
+**Web client (`web/src/lib/api/feeds.ts`).** Three new methods on `workspaceFeeds`: `listSources / addSource / removeSource`. New types `WorkspaceFeedSource`, `WorkspaceFeedSourceKind`, `AddWorkspaceFeedSourceInput` (the discriminated union mirroring the route shape).
+
+**Composer (`web/src/components/workspace/FeedComposer.tsx`).** New component, scrim/panel grammar matching `Composer` and `NewFeedPrompt`. Reached by clicking the vessel name label (`Vessel.tsx` gained an `onNameClick` prop — long-press lives in the gesture system not yet built). Shows the feed name as header, lists current sources with × remove buttons, and offers an "Add a source" input that resolver-debounces (300ms + Phase B polling, context `subscribe`) and renders match candidates (native account / external source / RSS feed). Click a candidate → POST → list refreshes → `onSourcesChanged` triggers `loadVesselItems` on the affected vessel. Tag fallback: input starting with `#` offers a literal `tag` add when the resolver returns nothing useful (the resolver doesn't classify `#tag` natively). Honest empty state: *No sources yet — this feed shows the explore stream until you add one.*
+
+**Wiring (`WorkspaceView.tsx`).** New `feedComposerFor: WorkspaceFeed | null` state; vessel name onClick sets it. After source change the affected vessel re-fetches via the existing `loadVesselItems`.
+
+Skipped intentionally: rename / delete UI on vessels (routes already exist; needs its own confirm-flow), per-source weight / sampling-mode authoring (columns reserved, no UX yet), source mute toggle (column reserved, no UI), drag to reorder sources, paste-URL one-shot (the *Fork feed by URL* ∀ item — naturally a *create feed* + *add source* combo, deferred), the `external_subscriptions` cap check on POST `/feeds/:id/sources` (the existing `/feeds/subscribe` route enforces a 200-cap; slice 4 trusts the caller — a real cap on workspace adds is a follow-up that probably belongs in a shared helper), bulk import (selecting current follows en masse to seed a feed), and per-vessel pagination beyond 20 items. The *Reset workspace layout* ∀ item remains a `console.log` stub.
 
 ## Deferred (TODO in code, not blocking the experiment)
 
