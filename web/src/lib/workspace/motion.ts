@@ -1,7 +1,5 @@
-// Framer Motion config primitives shared by vessel gestures and (eventually)
-// the ∀→H→⊔ ceremonial animations. Slice 5a uses only the drag config; the
-// reduced-motion variant disables the post-drag spring while leaving drag
-// itself functional.
+// Framer Motion config primitives shared by vessel gestures and the
+// ∀→H→⊔ ceremonial animations.
 
 import type { Transition } from 'framer-motion'
 
@@ -20,3 +18,62 @@ export function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined') return false
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
+
+// =============================================================================
+// ∀ → H → ⊔ ceremony — Slice 9
+//
+// Two paces per WORKSPACE-DESIGN-SPEC.md §"The ∀-to-H-to-⊔ transformation"
+// and WIREFRAME-DECISIONS-CONSOLIDATED.md Step 9:
+//
+//   ceremonial — first-login. ~2000ms. Crimson ∀ expands centre-screen,
+//                parts into H, H is held (the slowest moment), crossbar
+//                drops to form ⊔ base, horizontal bars snap into cards,
+//                vessel settles populated.
+//   responsive — feed-creation. ~800ms (under one second per spec). ∀
+//                appears at the destination, briefer H flash, crossbar
+//                resolves to ⊔ base, terminal state is empty.
+//
+// All durations in ms. Phase order: forallIn → forallHold → partToH → hHold
+// → crossbarDrop → (cardsSnap, ceremonial only) → settle. The driver in
+// ForallCeremony advances `phase` on accumulated boundaries.
+// =============================================================================
+
+export interface CeremonyTiming {
+  forallIn: number
+  forallHold: number
+  partToH: number
+  hHold: number
+  crossbarDrop: number
+  cardsSnap: number // 0 for responsive (terminal state is empty)
+  settle: number
+}
+
+export const CEREMONY_TIMINGS: Record<'ceremonial' | 'responsive', CeremonyTiming> = {
+  ceremonial: {
+    forallIn: 150,
+    forallHold: 100,
+    partToH: 150,
+    hHold: 700,
+    crossbarDrop: 350,
+    cardsSnap: 350,
+    settle: 200,
+  },
+  responsive: {
+    forallIn: 80,
+    forallHold: 60,
+    partToH: 120,
+    hHold: 200,
+    crossbarDrop: 200,
+    cardsSnap: 0,
+    settle: 80,
+  },
+}
+
+export function ceremonyTotal(t: CeremonyTiming): number {
+  return t.forallIn + t.forallHold + t.partToH + t.hHold + t.crossbarDrop + t.cardsSnap + t.settle
+}
+
+// Reduced-motion fallback per ADR §2: a brief fade rather than the full
+// transformation. The ceremony component swaps to this when the user has
+// `prefers-reduced-motion: reduce` set.
+export const REDUCED_MOTION_FADE_MS = 200

@@ -55,6 +55,13 @@ interface VesselProps {
   brightness?: Brightness
   density?: Density
   orientation?: Orientation
+  /**
+   * Slice 9: while the ∀→H→⊔ ceremony for this vessel is in flight, the
+   * vessel mounts (items fetch behind the curtain) but is visually
+   * suppressed. The ceremony overlay supplies the visible ⊔ until it
+   * settles and clears the flag.
+   */
+  hidden?: boolean
   onPositionCommit: (pos: { x: number; y: number }) => void
   onSizeCommit?: (size: { w: number; h: number }) => void
   onBrightnessCommit?: (b: Brightness) => void
@@ -72,6 +79,7 @@ export function Vessel({
   brightness,
   density,
   orientation,
+  hidden,
   onPositionCommit,
   onSizeCommit,
   onBrightnessCommit,
@@ -220,6 +228,8 @@ export function Vessel({
         y: my,
         width: effW,
         touchAction: 'none',
+        opacity: hidden ? 0 : 1,
+        pointerEvents: hidden ? 'none' : undefined,
       }}
     >
       {/* Name label sits above the opening, doubles as drag handle. Click

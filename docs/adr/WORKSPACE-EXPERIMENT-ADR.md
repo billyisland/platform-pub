@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -324,6 +324,31 @@ The third ∀ stub goes live. *Fork feed by URL* is a one-gesture combo of *crea
 **Why "fork" not "subscribe".** The menu copy uses *fork* because the verb in this branch's vocabulary is workspace-floor-shaped: *fork* makes a new vessel from an external thing the way a software fork makes a new repo from a remote one. Subscribing to a single source from `/subscriptions` (which still exists as the Phase 1–4 surface) is a different gesture with a different mental model.
 
 Skipped intentionally: multi-source fork (the menu item is "Fork *feed* by URL"; the user mints one source at a time and adds more in `FeedComposer`), fork from clipboard (browser permission costs > value at this fidelity), recently-resolved suggestions (the resolver doesn't expose a history surface yet), import a feed-of-feeds (e.g. an OPML upload — out of scope for the workspace shell), in-place rename of the derived name *before* the fork commits (the modal's hint already promises rename-later via the feed composer; an inline rename would slow the gesture to two steps when one of the resolver matches is good enough).
+
+### Slice 9 — ∀→H→⊔ ceremony animation (2026-05-01)
+
+The signature visual move per `WORKSPACE-DESIGN-SPEC.md` §"The ∀-to-H-to-⊔ transformation" + `WIREFRAME-DECISIONS-CONSOLIDATED.md` Step 9. Two paces: *ceremonial* on first-login (~2000ms, terminal state populated with card placeholders) and *responsive* on each new feed creation (~800ms — under one second per spec, terminal empty ⊔). Framer Motion's `AnimatePresence` + transformable SVG primitives enter the codebase for the first time, on the back of the slice 5a `motion.div` baseline.
+
+**Component (`web/src/components/workspace/ForallCeremony.tsx`).** A floor-relative absolutely-positioned 300×300 SVG overlay. Five phases driven by `setTimeout` boundaries off `CEREMONY_TIMINGS[pace]`: `forall` → `partingToH` → `hHold` → `crossbarDrop` → (`cards`, ceremonial only) → `done`. The ∀ glyph renders as Literata text inside the SVG, crimson `#B5242A`, scales 0.4→1 from box centre, then fades as the H bars resolve. Verticals fade in (matching the ∀'s exit), the crossbar enters at H position (mid-Y, between the verticals), then animates `(x, y, width)` to the ⊔ base position (full-width, bottom). For ceremonial pace, three white card placeholders fade in inside the resolved ⊔. `transition` uses `easeInOut` on the crossbar drop and `easeOut` on entries — snap-not-morph reads via decisive easing rather than literal stepping.
+
+**Reduced-motion variant.** ADR §2 reserved a fade-only fallback. When `prefers-reduced-motion: reduce` is set, the component renders a static ⊔ (verticals + base) that fades in over 200ms then fires `onComplete`. No transformation, no ∀, no card snap.
+
+**Timings (`web/src/lib/workspace/motion.ts`).** New `CeremonyTiming` interface + `CEREMONY_TIMINGS` map. Ceremonial sums to 2000ms (`forallIn 150 + forallHold 100 + partToH 150 + hHold 700 + crossbarDrop 350 + cardsSnap 350 + settle 200`). Responsive sums to 740ms with `cardsSnap = 0`. The `hHold = 700` honours the spec's "the slowest moment — held for ~600ms" framing for the ceremonial pace.
+
+**Wiring (`WorkspaceView.tsx`).** New `ceremony: PendingCeremony | null` state. `handleCreateFeed` and `handleForked` both:
+1. POST → mint feed
+2. Compute destination grid slot via `defaultGridSlot(...)`
+3. Append vessel + write position to the layout store *immediately* — items fetch starts behind the curtain
+4. Set `ceremony = { feedId, pace: 'responsive', target: slot }`
+5. On ceremony `onComplete` → clear `ceremony` (vessel becomes visible)
+
+The first-login path is gated in the bootstrap effect: when the feed list is empty AND a `workspace:ceremony_seen:<userId>` localStorage flag is unset, the ceremony queues at viewport-centred coordinates with `pace: 'ceremonial'`, and the seen flag writes on completion. The flag survives logouts on the same browser; a returning user with zero feeds (e.g. they deleted everything) does not get the ceremonial pace again — it's an onboarding moment, not a fallback.
+
+**Vessel hidden during ceremony (`Vessel.tsx`).** New `hidden?: boolean` prop sets `opacity: 0` + `pointerEvents: 'none'` on the `motion.div`. The vessel still mounts so its items query lands during the ceremony — for an 800ms responsive pace this hides ~500ms of LOADING… that would otherwise follow the ceremony. The visible ⊔ during animation is the ceremony overlay; on `onComplete` the overlay unmounts and the vessel reveals with content already in place (or close to it).
+
+**Position discontinuity (first-login).** The ceremonial pace plays viewport-centred per spec ("expands from the centre of an empty screen"), but the founder's feed mounts at its grid slot — so when the ceremony completes, the ⊔ "appears" in the corner rather than gliding from centre to slot. The spec describes a continuous resolve into resting position; sliding the SVG across the floor to terminate exactly on the destination chassis is a polish slice, not slice 9. The current jump is brief and the eye reads it as the ceremony giving way to the workspace, not as a glitch.
+
+Skipped intentionally: the slide-from-centre-to-corner choreography for first-login (the ceremonial pace's terminal position currently doesn't match the eventual founder's-feed grid slot — a continuous transit is its own animation slice with `layoutId` plumbing that's not in service yet), card content during the ceremonial cards phase (the placeholders are blank rectangles — title/standfirst lines "resolve in their final third into legible content" per spec, deferred until the cards layer can be re-used between ceremony and live render), morph-not-just-cross-fade between glyphs (true ∀→H path morphing requires either pre-baked path data or a font-as-paths pipeline; the current cross-fade reads convincingly at the durations involved), reduced-motion sliding equivalent (the fade-in is pure opacity — no traversal), per-vessel ∀→H→⊔ on subsequent reloads (intentionally one-shot — the ceremony is a transit, not a category), audio cue / haptic.
 
 ## Deferred (TODO in code, not blocking the experiment)
 

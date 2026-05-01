@@ -14,9 +14,27 @@ import { NewFeedPrompt } from './NewFeedPrompt'
 import { FeedComposer } from './FeedComposer'
 import { ResetLayoutConfirm } from './ResetLayoutConfirm'
 import { ForkFeedPrompt } from './ForkFeedPrompt'
+import { ForallCeremony } from './ForallCeremony'
 
 const FLOOR = '#F0EFEB' // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed"
+
+// Slice 9: first-login ceremony plays once per user. Storage flag survives
+// across logouts on the same browser; the responsive (new-feed) ceremony has
+// no equivalent gate since it's a per-action animation, not an onboarding.
+const CEREMONY_SEEN_PREFIX = 'workspace:ceremony_seen:'
+
+// Ceremony box dimensions (mirrors ForallCeremony's BOX_W / BOX_H — kept
+// duplicated locally so positioning math doesn't need to import the
+// component's internals).
+const CEREMONY_BOX_W = 300
+const CEREMONY_BOX_H = 300
+
+interface PendingCeremony {
+  feedId: string
+  pace: 'ceremonial' | 'responsive'
+  target: { x: number; y: number }
+}
 
 // Slice 5a: vessels are absolutely positioned on the floor and drag-to-move.
 // Layout state lives in useWorkspace (localStorage-backed). For any feed
@@ -138,6 +156,7 @@ export function WorkspaceView() {
   const [feedComposerFor, setFeedComposerFor] = useState<WorkspaceFeed | null>(null)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [forkOpen, setForkOpen] = useState(false)
+  const [ceremony, setCeremony] = useState<PendingCeremony | null>(null)
   const floorRef = useRef<HTMLDivElement>(null)
   const positions = useWorkspace((s) => s.positions)
   const hydrated = useWorkspace((s) => s.hydrated)
@@ -197,13 +216,15 @@ export function WorkspaceView() {
   }
 
   function handleForked(feed: WorkspaceFeed) {
+    let slot = { x: 0, y: 0 }
     setVessels((prev) => {
       const next = [...prev, { feed, items: [], status: 'loading' as const }]
-      const slot = defaultGridSlot(next.length - 1, window.innerWidth)
+      slot = defaultGridSlot(next.length - 1, window.innerWidth)
       setVesselPosition(feed.id, slot)
       return next
     })
     setForkOpen(false)
+    setCeremony({ feedId: feed.id, pace: 'responsive', target: slot })
     void loadVesselItems(feed)
   }
 
@@ -221,14 +242,16 @@ export function WorkspaceView() {
 
   async function handleCreateFeed(name: string) {
     const { feed } = await workspaceFeedsApi.create(name)
+    let slot = { x: 0, y: 0 }
     setVessels((prev) => {
       const next = [...prev, { feed, items: [], status: 'loading' as const }]
       // Default position for the newly-added vessel: next slot in the grid.
-      const slot = defaultGridSlot(next.length - 1, window.innerWidth)
+      slot = defaultGridSlot(next.length - 1, window.innerWidth)
       setVesselPosition(feed.id, slot)
       return next
     })
     setNewFeedOpen(false)
+    setCeremony({ feedId: feed.id, pace: 'responsive', target: slot })
     void loadVesselItems(feed)
   }
 
@@ -252,9 +275,11 @@ export function WorkspaceView() {
     ;(async () => {
       try {
         let { feeds: list } = await workspaceFeedsApi.list()
+        let mintedFounderFeed = false
         if (list.length === 0) {
           const { feed } = await workspaceFeedsApi.create(DEFAULT_FEED_NAME)
           list = [feed]
+          mintedFounderFeed = true
         }
         if (cancelled) return
         const initial: VesselState[] = list.map((feed) => ({
@@ -274,6 +299,26 @@ export function WorkspaceView() {
             setVesselPosition(feed.id, defaultGridSlot(i, viewportWidth))
           }
         })
+
+        // First-login ceremony: only if we just minted the default feed AND
+        // this user hasn't seen the ceremony before. Plays viewport-centred
+        // (per spec: "expands from the centre of an empty screen"). The
+        // founder's feed mounts at its grid slot when the ceremony completes;
+        // the position discontinuity from centre to slot is a deferred polish.
+        const ceremonySeenKey = `${CEREMONY_SEEN_PREFIX}${user.id}`
+        const seen =
+          typeof window !== 'undefined'
+            ? window.localStorage.getItem(ceremonySeenKey) === 'true'
+            : true
+        if (mintedFounderFeed && !seen && typeof window !== 'undefined') {
+          const cx = window.innerWidth / 2 - CEREMONY_BOX_W / 2
+          const cy = window.innerHeight / 2 - CEREMONY_BOX_H / 2
+          setCeremony({
+            feedId: list[0].id,
+            pace: 'ceremonial',
+            target: { x: cx, y: cy },
+          })
+        }
 
         for (const feed of list) {
           if (cancelled) return
@@ -317,6 +362,7 @@ export function WorkspaceView() {
               onBrightnessCommit={(next) => setVesselBrightness(v.feed.id, next)}
               onDensityCommit={(next) => setVesselDensity(v.feed.id, next)}
               onOrientationCommit={(next) => setVesselOrientation(v.feed.id, next)}
+              hidden={ceremony?.feedId === v.feed.id}
               dragConstraints={floorRef}
             >
               {v.status === 'loading' && <Hint>LOADING…</Hint>}
@@ -385,6 +431,24 @@ export function WorkspaceView() {
         onClose={() => setForkOpen(false)}
         onForked={handleForked}
       />
+      {ceremony && (
+        <ForallCeremony
+          key={ceremony.feedId}
+          pace={ceremony.pace}
+          target={ceremony.target}
+          onComplete={() => {
+            if (ceremony.pace === 'ceremonial' && user && typeof window !== 'undefined') {
+              try {
+                window.localStorage.setItem(`${CEREMONY_SEEN_PREFIX}${user.id}`, 'true')
+              } catch {
+                // Quota / private browsing — fall through; worst case is the
+                // ceremony plays again on next first-feed mint, which is rare.
+              }
+            }
+            setCeremony(null)
+          }}
+        />
+      )}
     </Floor>
   )
 }
