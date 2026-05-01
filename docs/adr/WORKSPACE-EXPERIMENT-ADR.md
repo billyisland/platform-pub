@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-04-30. Status: Active experiment. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-04-30. Status: Active experiment, slice 1 + 1.5 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -89,6 +89,29 @@ New:
 1. Build workspace at `/workspace` while `/feed` and `/write` still exist. Iterate without disrupting fallback paths.
 2. Wire the authenticated home to `/workspace` when it feels right.
 3. Delete retired code (NoteComposer, ArticleComposePanel, ArticleEditor, old `/feed`, topbar) before any eventual merge to `master`.
+
+## Build log
+
+### Slice 1 — vessel renders real content (2026-04-30, commits `5c76d33`, `9047a87`)
+
+Smallest first slice. New `/workspace` route renders one centred ⊔ on a grey-100 floor, fetching from `/api/v1/feed?reach=explore` (the existing timeline endpoint — feeds API is slice 3) and rendering up to 12 wireframe-grammar cards inside.
+
+- `web/src/app/workspace/page.tsx` — route entry.
+- `web/src/components/workspace/Vessel.tsx` — chassis to Step 1 spec: 8px walls, 16px interior padding, 12px inter-card gap, 300px wide, medium-bright tokens (walls #4A4A47, interior #E6E5E0, cards #F5F4F0). Static — no drag/resize/rotate/brightness/density.
+- `web/src/components/workspace/VesselCard.tsx` — card variants for article, note, external, and `new_user` (join announcement). Pip + author + standfirst, no avatars, no action strip. Tokens local to the file — not added to `tailwind.config.js`.
+- `web/src/components/workspace/WorkspaceView.tsx` — floor + fetch + map.
+
+Skipped intentionally: feeds tables, `useWorkspace` store, ∀ menu, animations, localStorage, drag/resize gestures.
+
+### Slice 1.5 — chrome retired on /workspace (2026-04-30, commit `a67efc9`)
+
+Per ADR §1, the Phase A topbar and `ComposeOverlay` are retired on this branch. Implementation:
+
+- `useLayoutMode` gains a third mode, `workspace`, returned for `/workspace` and any sub-paths.
+- `LayoutShell` now owns Nav / `ComposeOverlay` / `Footer` / main-padding rendering and suppresses all four in workspace mode. `app/layout.tsx` simplifies to `<LayoutShell>{children}</LayoutShell>`.
+- `WorkspaceView` floor now fills `100vh` directly.
+
+Other routes (`/feed`, `/write`, `/`, `/:username`, etc.) are untouched and keep platform chrome. Note: with no topbar there is currently no in-app navigation off `/workspace` — the ∀ menu (slice 2) becomes the navigation anchor.
 
 ## Deferred (TODO in code, not blocking the experiment)
 
