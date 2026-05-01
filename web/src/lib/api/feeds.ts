@@ -55,41 +55,41 @@ export type AddWorkspaceFeedSourceInput =
     }
 
 export const workspaceFeeds = {
-  list: () => request<{ feeds: WorkspaceFeed[] }>('/feeds'),
+  list: () => request<{ feeds: WorkspaceFeed[] }>('/workspace/feeds'),
 
   create: (name: string) =>
-    request<{ feed: WorkspaceFeed }>('/feeds', {
+    request<{ feed: WorkspaceFeed }>('/workspace/feeds', {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
 
   rename: (id: string, name: string) =>
-    request<{ feed: WorkspaceFeed }>(`/feeds/${id}`, {
+    request<{ feed: WorkspaceFeed }>(`/workspace/feeds/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     }),
 
   remove: (id: string) =>
-    request<void>(`/feeds/${id}`, { method: 'DELETE' }),
+    request<void>(`/workspace/feeds/${id}`, { method: 'DELETE' }),
 
   items: (id: string, opts?: { cursor?: string; limit?: number }) => {
     const qs = new URLSearchParams()
     if (opts?.cursor) qs.set('cursor', opts.cursor)
     if (opts?.limit) qs.set('limit', String(opts.limit))
     const suffix = qs.toString() ? `?${qs.toString()}` : ''
-    return request<WorkspaceFeedItemsResponse>(`/feeds/${id}/items${suffix}`)
+    return request<WorkspaceFeedItemsResponse>(`/workspace/feeds/${id}/items${suffix}`)
   },
 
   // Slice 4: source authoring
   listSources: (id: string) =>
-    request<{ sources: WorkspaceFeedSource[] }>(`/feeds/${id}/sources`),
+    request<{ sources: WorkspaceFeedSource[] }>(`/workspace/feeds/${id}/sources`),
 
   addSource: (id: string, input: AddWorkspaceFeedSourceInput) =>
-    request<{ source: WorkspaceFeedSource }>(`/feeds/${id}/sources`, {
+    request<{ source: WorkspaceFeedSource }>(`/workspace/feeds/${id}/sources`, {
       method: 'POST',
       body: JSON.stringify(input),
     }),
 
   removeSource: (id: string, sourceId: string) =>
-    request<void>(`/feeds/${id}/sources/${sourceId}`, { method: 'DELETE' }),
+    request<void>(`/workspace/feeds/${id}/sources/${sourceId}`, { method: 'DELETE' }),
 }

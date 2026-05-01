@@ -7,14 +7,18 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // =============================================================================
 // Workspace feeds (slices 3 + 4)
 //
-// GET    /feeds                       — list feeds owned by the caller
-// POST   /feeds                       — create { name }
-// PATCH  /feeds/:id                   — rename { name }
-// DELETE /feeds/:id                   — delete (cascade removes feed_sources)
-// GET    /feeds/:id/items             — feed contents
-// GET    /feeds/:id/sources           — list source rows (slice 4)
-// POST   /feeds/:id/sources           — add a source (slice 4)
-// DELETE /feeds/:id/sources/:sid      — remove a source (slice 4)
+// Mounted at /api/v1/workspace because /api/v1/feeds is already owned by
+// external-feeds.ts (RSS/Mastodon/Bluesky/Nostr subscriptions on
+// /subscriptions). Effective paths:
+//
+// GET    /workspace/feeds                       — list feeds owned by caller
+// POST   /workspace/feeds                       — create { name }
+// PATCH  /workspace/feeds/:id                   — rename { name }
+// DELETE /workspace/feeds/:id                   — delete (cascade removes feed_sources)
+// GET    /workspace/feeds/:id/items             — feed contents
+// GET    /workspace/feeds/:id/sources           — list source rows (slice 4)
+// POST   /workspace/feeds/:id/sources           — add a source (slice 4)
+// DELETE /workspace/feeds/:id/sources/:sid      — remove a source (slice 4)
 //
 // Slice 3 shipped schema + CRUD + an empty-sources placeholder for /items:
 // when a feed has no feed_sources rows the route falls back to the caller's

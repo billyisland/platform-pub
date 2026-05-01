@@ -207,8 +207,10 @@ async function start() {
   // Reading-position resumption (per-user, per-article scroll snapshot)
   await app.register(readingPositionRoutes, { prefix: '/api/v1' })
 
-  // Workspace feeds (slice 3 — owner-private feed objects rendered by vessels)
-  await app.register(feedsRoutes, { prefix: '/api/v1' })
+  // Workspace feeds (slice 3 — owner-private feed objects rendered by vessels).
+  // Mounted under /api/v1/workspace because external-feeds.ts already owns the
+  // /api/v1/feeds namespace for RSS/Mastodon/Bluesky/Nostr subscriptions.
+  await app.register(feedsRoutes, { prefix: '/api/v1/workspace' })
 
   // AT Protocol OAuth client metadata (discovered by Bluesky PDSes).
   // Mounted at the root so the canonical URL is
