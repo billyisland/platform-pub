@@ -1,10 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { Nav } from '../components/layout/Nav'
-import { Footer } from '../components/layout/Footer'
 import { AuthProvider } from '../components/layout/AuthProvider'
 import { LayoutShell } from '../components/layout/LayoutShell'
-import { ComposeOverlay } from '../components/compose/ComposeOverlay'
 
 export const metadata: Metadata = {
   title: 'all.haus',
@@ -46,14 +43,7 @@ export default function RootLayout({
       </head>
       <body>
         <AuthProvider>
-          <LayoutShell>
-            <Nav />
-            <ComposeOverlay />
-            <main className="min-h-screen pt-[60px]">
-              {children}
-            </main>
-            <Footer />
-          </LayoutShell>
+          <LayoutShell>{children}</LayoutShell>
         </AuthProvider>
       </body>
     </html>

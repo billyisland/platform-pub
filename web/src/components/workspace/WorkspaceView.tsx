@@ -155,10 +155,7 @@ export function WorkspaceView() {
 
 function Floor({ children }: { children?: React.ReactNode }) {
   return (
-    <div
-      style={{ background: FLOOR, minHeight: 'calc(100vh - 60px)' }}
-      className="-mx-4 sm:-mx-6"
-    >
+    <div style={{ background: FLOOR, minHeight: '100vh' }}>
       {children}
     </div>
   )

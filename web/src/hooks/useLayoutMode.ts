@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 
-export type LayoutMode = 'platform' | 'canvas'
+export type LayoutMode = 'platform' | 'canvas' | 'workspace'
 
 /**
  * Known platform-register route prefixes.
@@ -32,6 +32,11 @@ const PLATFORM_PREFIXES = [
 
 export function useLayoutMode(): LayoutMode {
   const pathname = usePathname()
+
+  // Workspace runs without platform chrome (topbar / compose / footer)
+  if (pathname === '/workspace' || pathname.startsWith('/workspace/')) {
+    return 'workspace'
+  }
 
   // Article reader is always canvas
   if (pathname.startsWith('/article/')) return 'canvas'
