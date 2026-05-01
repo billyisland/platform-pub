@@ -36,10 +36,20 @@ const patchFeedSchema = z.object({
   name: z.string().trim().min(1).max(80),
 })
 
-// POST /feeds/:id/sources accepts a discriminated union — native targets pass
-// an existing UUID, external accepts either an existing externalSourceId or a
-// (protocol, sourceUri) pair which is upserted, tag passes a name.
-const addSourceSchema = z.discriminatedUnion('sourceType', [
+// POST /feeds/:id/sources — native targets pass an existing UUID, external
+// accepts either an existing externalSourceId or a (protocol, sourceUri) pair
+// which is upserted, tag passes a name.
+//
+// Originally a z.discriminatedUnion('sourceType', [...]), but Zod 3.25+
+// rejects duplicate discriminator values at schema-construction time and
+// our two external_source variants share that value. Plain z.union tries
+// each variant in order; the two external_source shapes are disjoint by
+// required fields (externalSourceId vs. protocol + sourceUri) so there is
+// no ambiguity, and the route handler branches on `'externalSourceId' in
+// input` rather than a tagged sub-discriminator. Validation messages are
+// slightly less surgical than a discriminated union but the wire shape is
+// unchanged.
+const addSourceSchema = z.union([
   z.object({
     sourceType: z.literal('account'),
     accountId: z.string().uuid(),
