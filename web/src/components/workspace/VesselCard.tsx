@@ -47,6 +47,11 @@ interface Props {
   threadExpanded?: boolean
   onToggleThread?: (target: ReplyTarget) => void
   threadRefreshKey?: number
+  // Slice 20: save state + commit callback. Both come from the parent vessel
+  // so a single savedIds Set drives the Save / Saved label across all cards
+  // in the vessel without per-card state.
+  isSaved?: boolean
+  onToggleSave?: (feedItemId: string, next: boolean) => void
 }
 
 // at:// → bsky.app web URL. Mirrors the helper in feed/ExternalCard.tsx —
@@ -66,6 +71,8 @@ export function VesselCard({
   threadExpanded,
   onToggleThread,
   threadRefreshKey,
+  isSaved,
+  onToggleSave,
 }: Props) {
   const ctx: CardContext = {
     density: density ?? DEFAULT_DENSITY,
@@ -81,6 +88,8 @@ export function VesselCard({
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}
         threadRefreshKey={threadRefreshKey}
+        isSaved={isSaved}
+        onToggleSave={onToggleSave}
       />
     )
   if (item.type === 'note')
@@ -93,9 +102,18 @@ export function VesselCard({
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}
         threadRefreshKey={threadRefreshKey}
+        isSaved={isSaved}
+        onToggleSave={onToggleSave}
       />
     )
-  return <ExternalVesselCard external={item} ctx={ctx} />
+  return (
+    <ExternalVesselCard
+      external={item}
+      ctx={ctx}
+      isSaved={isSaved}
+      onToggleSave={onToggleSave}
+    />
+  )
 }
 
 function CardShell({
@@ -136,6 +154,9 @@ function CardActions({
   onReply,
   threadExpanded,
   onToggleThread,
+  feedItemId,
+  isSaved,
+  onToggleSave,
 }: {
   ctx: CardContext
   voteEventId?: string
@@ -146,6 +167,9 @@ function CardActions({
   onReply?: (target: ReplyTarget) => void
   threadExpanded?: boolean
   onToggleThread?: (target: ReplyTarget) => void
+  feedItemId?: string
+  isSaved?: boolean
+  onToggleSave?: (feedItemId: string, next: boolean) => void
 }) {
   if (ctx.density === 'compact') return null
 
@@ -156,6 +180,11 @@ function CardActions({
       void navigator.clipboard.writeText(shareUrl)
     }
   }
+
+  // Slice 20: Save toggle. Crimson when saved (consistent with the rest of
+  // the workspace's "committed" state colour). Suppressed if the item lacks
+  // a feedItemId (e.g. surfaces that bypass the unified table).
+  const canSave = !!feedItemId && !!onToggleSave
 
   return (
     <div
@@ -216,6 +245,22 @@ function CardActions({
           className="hover:opacity-80"
         >
           Share
+        </button>
+      )}
+      {canSave && (
+        <button
+          type="button"
+          onClick={() => onToggleSave!(feedItemId!, !isSaved)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: isSaved ? ctx.palette.crimson : ctx.palette.cardMeta,
+          }}
+          className="hover:opacity-80"
+        >
+          {isSaved ? 'Saved' : 'Save'}
         </button>
       )}
     </div>
@@ -338,6 +383,8 @@ function ArticleVesselCard({
   threadExpanded,
   onToggleThread,
   threadRefreshKey,
+  isSaved,
+  onToggleSave,
 }: {
   article: ArticleEvent
   ctx: CardContext
@@ -346,6 +393,8 @@ function ArticleVesselCard({
   threadExpanded?: boolean
   onToggleThread?: (target: ReplyTarget) => void
   threadRefreshKey?: number
+  isSaved?: boolean
+  onToggleSave?: (feedItemId: string, next: boolean) => void
 }) {
   const router = useRouter()
   const { user } = useAuth()
@@ -457,6 +506,9 @@ function ArticleVesselCard({
         onReply={onReply}
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}
+        feedItemId={article.feedItemId}
+        isSaved={isSaved}
+        onToggleSave={onToggleSave}
       />
       {threadExpanded && (
         <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
@@ -473,6 +525,8 @@ function NoteVesselCard({
   threadExpanded,
   onToggleThread,
   threadRefreshKey,
+  isSaved,
+  onToggleSave,
 }: {
   note: NoteEvent
   ctx: CardContext
@@ -481,6 +535,8 @@ function NoteVesselCard({
   threadExpanded?: boolean
   onToggleThread?: (target: ReplyTarget) => void
   threadRefreshKey?: number
+  isSaved?: boolean
+  onToggleSave?: (feedItemId: string, next: boolean) => void
 }) {
   const { user } = useAuth()
   const writer = useWriterName(note.pubkey)
@@ -562,6 +618,9 @@ function NoteVesselCard({
         onReply={onReply}
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}
+        feedItemId={note.feedItemId}
+        isSaved={isSaved}
+        onToggleSave={onToggleSave}
       />
       {threadExpanded && (
         <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
@@ -628,9 +687,13 @@ export function NewUserVesselCard({
 function ExternalVesselCard({
   external,
   ctx,
+  isSaved,
+  onToggleSave,
 }: {
   external: ExternalFeedItem
   ctx: CardContext
+  isSaved?: boolean
+  onToggleSave?: (feedItemId: string, next: boolean) => void
 }) {
   const name =
     external.authorName ?? external.authorHandle ?? external.sourceName ?? 'External'
@@ -702,7 +765,13 @@ function ExternalVesselCard({
           ctx={ctx}
         />
       )}
-      <CardActions ctx={ctx} shareUrl={externalUrl} />
+      <CardActions
+        ctx={ctx}
+        shareUrl={externalUrl}
+        feedItemId={external.feedItemId}
+        isSaved={isSaved}
+        onToggleSave={onToggleSave}
+      />
     </CardShell>
   )
 }

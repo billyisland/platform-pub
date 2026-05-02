@@ -22,6 +22,10 @@ export type SizeTier = 'lead' | 'standard' | 'brief'
 export interface ArticleEvent {
   type?: 'article'
   id: string
+  // feedItemId — the feed_items.id key (slice 20). Optional because Article
+  // surfaces outside the workspace feed (reading view, profile pages) build
+  // ArticleEvent objects without going through the unified table.
+  feedItemId?: string
   pubkey: string
   dTag: string
   title: string
@@ -37,11 +41,14 @@ export interface ArticleEvent {
   payloadAlgorithm?: string
   pipStatus?: PipStatus
   sizeTier?: SizeTier
+  // Slice 20: present in the saved-items view, absent in the live view.
+  savedAt?: number
 }
 
 export interface NoteEvent {
   type: 'note'
   id: string
+  feedItemId?: string
   pubkey: string
   content: string
   publishedAt: number
@@ -51,6 +58,7 @@ export interface NoteEvent {
   quotedTitle?: string
   quotedAuthor?: string
   pipStatus?: PipStatus
+  savedAt?: number
 }
 
 export interface VaultEvent {
@@ -64,6 +72,8 @@ export interface VaultEvent {
 export interface ExternalFeedItem {
   type: 'external'
   id: string
+  feedItemId?: string
+  savedAt?: number
   sourceProtocol: string
   sourceItemUri: string
   authorName: string | null

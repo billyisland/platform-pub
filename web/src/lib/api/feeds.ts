@@ -113,6 +113,37 @@ export const workspaceFeeds = {
     request<void>(`/workspace/feeds/${feedId}/author-volume/${pubkey}`, {
       method: 'DELETE',
     }),
+
+  // Slice 20: per-feed saved-items list. Save key is feed_items.id (the
+  // unified identifier); the BookmarkButton retires with the deprecated
+  // chassis on merge, so the workspace's save story is solely this surface.
+  listSaves: (id: string, opts?: { cursor?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (opts?.cursor) qs.set('cursor', opts.cursor)
+    if (opts?.limit) qs.set('limit', String(opts.limit))
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    return request<WorkspaceFeedSavesResponse>(`/workspace/feeds/${id}/saves${suffix}`)
+  },
+
+  listSavedIds: (id: string) =>
+    request<{ feedItemIds: string[] }>(`/workspace/feeds/${id}/saves/ids`),
+
+  saveItem: (id: string, feedItemId: string) =>
+    request<{ ok: true }>(`/workspace/feeds/${id}/saves`, {
+      method: 'POST',
+      body: JSON.stringify({ feedItemId }),
+    }),
+
+  unsaveItem: (id: string, feedItemId: string) =>
+    request<void>(`/workspace/feeds/${id}/saves/${feedItemId}`, {
+      method: 'DELETE',
+    }),
+}
+
+export interface WorkspaceFeedSavesResponse {
+  feed: WorkspaceFeed
+  items: any[]
+  nextCursor?: string
 }
 
 export interface AuthorVolume {

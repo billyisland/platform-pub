@@ -62,6 +62,11 @@ interface VesselProps {
    * settles and clears the flag.
    */
   hidden?: boolean
+  // Slice 20: per-vessel view-mode toggle. When `savedView` is true the
+  // vessel renders the saved-items list rather than the live source query.
+  // The name label appends `· SAVED` so the swap is unmistakable.
+  savedView?: boolean
+  onToggleSavedView?: () => void
   onPositionCommit: (pos: { x: number; y: number }) => void
   onSizeCommit?: (size: { w: number; h: number }) => void
   onBrightnessCommit?: (b: Brightness) => void
@@ -80,6 +85,8 @@ export function Vessel({
   density,
   orientation,
   hidden,
+  savedView,
+  onToggleSavedView,
   onPositionCommit,
   onSizeCommit,
   onBrightnessCommit,
@@ -233,7 +240,9 @@ export function Vessel({
       }}
     >
       {/* Name label sits above the opening, doubles as drag handle. Click
-          opens the feed composer (slice 4); pointerDown initiates drag. */}
+          opens the feed composer (slice 4); pointerDown initiates drag.
+          Slice 20: when in saved view, append " · SAVED" so the mode flip
+          is obvious — the same vessel name otherwise renders identically. */}
       {onNameClick ? (
         <button
           type="button"
@@ -249,6 +258,7 @@ export function Vessel({
           }}
         >
           {name}
+          {savedView ? ' · SAVED' : ''}
         </button>
       ) : (
         <div
@@ -257,6 +267,7 @@ export function Vessel({
           style={{ color: palette.nameLabel, cursor: 'grab' }}
         >
           {name}
+          {savedView ? ' · SAVED' : ''}
         </div>
       )}
 
@@ -287,12 +298,13 @@ export function Vessel({
           {children}
         </div>
 
-        {/* Cycle controls: brightness · density · orientation. Pinned to the
-            chassis bottom-right edge, just left of the resize handle. Each is
-            a small mono-glyph that cycles state on click. Hover tooltip
-            (title=) carries the full label so the abbreviations are
-            discoverable. */}
-        {(onBrightnessCommit || onDensityCommit || onOrientationCommit) && (
+        {/* Cycle controls: brightness · density · orientation · saved-view.
+            Pinned to the chassis bottom-right edge, just left of the resize
+            handle. Each is a small mono-glyph that cycles state on click.
+            Hover tooltip (title=) carries the full label so the
+            abbreviations are discoverable. Slice 20 adds the ★ binary
+            toggle for saved-vs-live view at the rightmost slot. */}
+        {(onBrightnessCommit || onDensityCommit || onOrientationCommit || onToggleSavedView) && (
           <div
             style={{
               position: 'absolute',
@@ -325,6 +337,14 @@ export function Vessel({
                 glyph={orientationGlyph[effOrientation]}
                 color={palette.resizeHandle}
                 onClick={() => onOrientationCommit(nextOrientation(effOrientation))}
+              />
+            )}
+            {onToggleSavedView && (
+              <CycleButton
+                label={savedView ? 'Showing saved items — tap to return' : 'Show saved items'}
+                glyph={savedView ? '★' : '☆'}
+                color={savedView ? palette.crimson : palette.resizeHandle}
+                onClick={onToggleSavedView}
               />
             )}
           </div>
