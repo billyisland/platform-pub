@@ -53,6 +53,7 @@ export default function WritePage() {
     editingEventId?: string
     editingDTag?: string
     publicationId?: string | null
+    coverImageUrl?: string | null
   } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [pubMemberships, setPubMemberships] = useState<PublicationContext[]>([])
@@ -113,6 +114,7 @@ export default function WritePage() {
             tags: existingTags,
             editingEventId: editEventId,
             editingDTag: meta.dTag ?? '',
+            coverImageUrl: meta.coverImageUrl ?? null,
           })
         } catch (err) {
           console.error('Failed to load article for editing:', err)
@@ -133,6 +135,7 @@ export default function WritePage() {
             price: draft.pricePence ?? 0,
             commentsEnabled: true,
             editingDTag: draft.dTag ?? undefined,
+            coverImageUrl: draft.coverImageUrl ?? null,
           })
         } catch {
           setLoadError('Failed to load draft.')
@@ -182,6 +185,7 @@ export default function WritePage() {
       gatePositionPct: data.gatePositionPct,
       pricePence: data.pricePence,
       dTag: initialData?.editingDTag,
+      coverImageUrl: data.coverImageUrl ?? null,
     })
 
     await scheduleDraft(saved.draftId, scheduledAt)
@@ -225,6 +229,7 @@ export default function WritePage() {
       initialPrice={initialData?.price}
       initialCommentsEnabled={initialData?.commentsEnabled}
       initialTags={initialData?.tags}
+      initialCoverImageUrl={initialData?.coverImageUrl ?? null}
       editingEventId={initialData?.editingEventId}
       editingDTag={initialData?.editingDTag}
       publicationMemberships={pubMemberships}

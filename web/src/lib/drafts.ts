@@ -21,6 +21,7 @@ export interface DraftData {
   gatePositionPct: number
   pricePence: number
   dTag?: string             // set when editing an existing article
+  coverImageUrl?: string | null
 }
 
 export interface SavedDraft {

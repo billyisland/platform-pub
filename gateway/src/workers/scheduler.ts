@@ -31,13 +31,14 @@ interface ScheduledDraft {
   gate_position_pct: number | null
   price_pence: number | null
   publication_id: string | null
+  cover_image_url: string | null
 }
 
 export async function publishScheduledDrafts(): Promise<void> {
   // Fetch due drafts with row-level locking to prevent double-publish
   const { rows: drafts } = await pool.query<ScheduledDraft>(
     `SELECT id, writer_id, title, content_raw, nostr_d_tag,
-            gate_position_pct, price_pence, publication_id
+            gate_position_pct, price_pence, publication_id, cover_image_url
      FROM article_drafts
      WHERE scheduled_at IS NOT NULL AND scheduled_at <= now()
      ORDER BY scheduled_at ASC
@@ -107,6 +108,7 @@ async function publishPublicationDraft(draft: ScheduledDraft): Promise<void> {
     showOnWriterProfile: true,
     canPublish,
     existingDTag: draft.nostr_d_tag ?? undefined,
+    coverImageUrl: draft.cover_image_url,
   })
 
   // Send notification emails for new articles
@@ -140,6 +142,10 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
     ['published_at', String(Math.floor(Date.now() / 1000))],
   ]
 
+  if (draft.cover_image_url) {
+    baseTags.push(['image', draft.cover_image_url])
+  }
+
   if (isPaywalled) {
     baseTags.push(
       ['price', String(draft.price_pence), 'GBP'],
@@ -172,8 +178,8 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
          writer_id, nostr_event_id, nostr_d_tag, title, slug,
          content_free, word_count, tier,
          access_mode, price_pence, gate_position_pct,
-         published_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'tier1', $8, $9, $10, now())
+         cover_image_url, published_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'tier1', $8, $9, $10, $11, now())
        ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
          nostr_event_id = EXCLUDED.nostr_event_id,
          title = EXCLUDED.title,
@@ -183,6 +189,7 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
          access_mode = EXCLUDED.access_mode,
          price_pence = EXCLUDED.price_pence,
          gate_position_pct = EXCLUDED.gate_position_pct,
+         cover_image_url = EXCLUDED.cover_image_url,
          published_at = now()
        RETURNING id`,
       [
@@ -196,6 +203,7 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
         isPaywalled ? 'paywalled' : 'public',
         isPaywalled ? draft.price_pence : null,
         isPaywalled ? (draft.gate_position_pct ?? null) : null,
+        draft.cover_image_url,
       ],
     )
     const artId = rows[0].id
@@ -204,24 +212,28 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
       `SELECT display_name, avatar_blossom_url, username FROM accounts WHERE id = $1`,
       [draft.writer_id]
     )
+    const mediaJson = draft.cover_image_url
+      ? JSON.stringify([{ type: 'image', url: draft.cover_image_url }])
+      : null
     await client.query(`
       INSERT INTO feed_items (
         item_type, article_id, author_id,
         author_name, author_avatar, author_username,
         title, content_preview, nostr_event_id,
-        tier, published_at
+        media, tier, published_at
       ) VALUES (
         'article', $1, $2,
         $3, $4, $5,
         $6, $7, $8,
-        'tier1', now()
+        $9, 'tier1', now()
       )
       ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
         title = EXCLUDED.title,
         content_preview = EXCLUDED.content_preview,
         nostr_event_id = EXCLUDED.nostr_event_id,
         author_name = EXCLUDED.author_name,
-        author_avatar = EXCLUDED.author_avatar
+        author_avatar = EXCLUDED.author_avatar,
+        media = EXCLUDED.media
     `, [
       artId, draft.writer_id,
       author?.display_name ?? author?.username ?? 'Unknown',
@@ -230,6 +242,7 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
       draft.title || 'Untitled',
       truncatePreview(eventContent),
       v1.id,
+      mediaJson,
     ])
 
     // For free articles v1 is the canonical event — enqueue alongside the

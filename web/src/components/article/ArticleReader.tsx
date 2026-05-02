@@ -30,6 +30,11 @@ interface ArticleReaderProps {
   preRenderedFreeHtml?: string
   publicationName?: string
   publicationSlug?: string
+  // Slice 23b: explicit cover image (NIP-23 image tag). When set, wins over
+  // the legacy first-inline-image scrape and the body markdown is rendered
+  // unchanged (no stripHeroImage call). Pre-23b articles fall through to
+  // the scrape path below.
+  coverImageUrl?: string | null
 }
 
 // Extract first image from markdown content
@@ -51,7 +56,7 @@ function stripHeroImage(content: string, heroUrl: string): string {
     .trim()
 }
 
-export function ArticleReader({ article, articleDbId, writerName, writerUsername, writerAvatar, writerId, subscriptionPricePence, writerSpendThisMonthPence, nudgeShownThisMonth, preRenderedFreeHtml, publicationName, publicationSlug }: ArticleReaderProps) {
+export function ArticleReader({ article, articleDbId, writerName, writerUsername, writerAvatar, writerId, subscriptionPricePence, writerSpendThisMonthPence, nudgeShownThisMonth, preRenderedFreeHtml, publicationName, publicationSlug, coverImageUrl }: ArticleReaderProps) {
   const { user } = useAuth()
   const [paywallBody, setPaywallBody] = useState<string | null>(null)
   const [unlocking, setUnlocking] = useState(false)
@@ -68,8 +73,16 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
 
   useReadingPosition({ nostrEventId: article.id, enabled: !!user })
 
-  const heroImage = extractHeroImage(article.content)
-  const contentWithoutHero = heroImage ? stripHeroImage(article.content, heroImage) : article.content
+  // Explicit cover wins over the legacy scrape; when one is set the body
+  // markdown is left intact (no stripHeroImage), so the same author can put
+  // an image at the top of their body without it being silently swallowed.
+  const heroImage = coverImageUrl ?? extractHeroImage(article.content)
+  const contentWithoutHero =
+    coverImageUrl
+      ? article.content
+      : heroImage
+        ? stripHeroImage(article.content, heroImage)
+        : article.content
 
   useEffect(() => { if (!preRenderedFreeHtml) renderMarkdown(contentWithoutHero).then(setFreeHtml) }, [contentWithoutHero, preRenderedFreeHtml])
   useEffect(() => { if (paywallBody) renderMarkdown(paywallBody).then(setPaywallHtml) }, [paywallBody])

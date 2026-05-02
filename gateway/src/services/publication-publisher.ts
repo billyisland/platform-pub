@@ -33,6 +33,7 @@ interface PublishToPublicationInput {
   showOnWriterProfile: boolean
   canPublish: boolean
   existingDTag?: string
+  coverImageUrl?: string | null
 }
 
 interface PublishToPublicationResult {
@@ -76,10 +77,10 @@ export async function publishToPublication(
          content_free, word_count, tier,
          access_mode, price_pence, gate_position_pct,
          publication_id, publication_article_status, show_on_writer_profile,
-         published_at
+         cover_image_url, published_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, 'tier1',
-         $9, $10, $11, $12, 'submitted', $13, NULL
+         $9, $10, $11, $12, 'submitted', $13, $14, NULL
        )
        RETURNING id`,
       [
@@ -96,6 +97,7 @@ export async function publishToPublication(
         input.gatePositionPct || null,
         input.publicationId,
         input.showOnWriterProfile,
+        input.coverImageUrl ?? null,
       ]
     )
 
@@ -127,6 +129,10 @@ export async function publishToPublication(
     tags.push(['summary', input.summary])
   }
 
+  if (input.coverImageUrl) {
+    tags.push(['image', input.coverImageUrl])
+  }
+
   if (input.accessMode === 'paywalled' && pricePence) {
     tags.push(
       ['price', String(pricePence), 'GBP'],
@@ -154,10 +160,10 @@ export async function publishToPublication(
          content_free, word_count, tier,
          access_mode, price_pence, gate_position_pct,
          publication_id, publication_article_status, show_on_writer_profile,
-         published_at
+         cover_image_url, published_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, 'tier1',
-         $9, $10, $11, $12, 'published', $13, now()
+         $9, $10, $11, $12, 'published', $13, $14, now()
        )
        ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
          nostr_event_id = EXCLUDED.nostr_event_id,
@@ -168,6 +174,7 @@ export async function publishToPublication(
          access_mode = EXCLUDED.access_mode,
          price_pence = EXCLUDED.price_pence,
          gate_position_pct = EXCLUDED.gate_position_pct,
+         cover_image_url = EXCLUDED.cover_image_url,
          publication_article_status = 'published',
          published_at = now()
        RETURNING id`,
@@ -185,6 +192,7 @@ export async function publishToPublication(
         input.gatePositionPct || null,
         input.publicationId,
         input.showOnWriterProfile,
+        input.coverImageUrl ?? null,
       ]
     )
 
@@ -195,24 +203,28 @@ export async function publishToPublication(
       `SELECT display_name, avatar_blossom_url, username FROM accounts WHERE id = $1`,
       [input.authorId]
     )
+    const mediaJson = input.coverImageUrl
+      ? JSON.stringify([{ type: 'image', url: input.coverImageUrl }])
+      : null
     await client.query(`
       INSERT INTO feed_items (
         item_type, article_id, author_id,
         author_name, author_avatar, author_username,
         title, content_preview, nostr_event_id,
-        tier, published_at
+        media, tier, published_at
       ) VALUES (
         'article', $1, $2,
         $3, $4, $5,
         $6, $7, $8,
-        'tier1', now()
+        $9, 'tier1', now()
       )
       ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
         title = EXCLUDED.title,
         content_preview = EXCLUDED.content_preview,
         nostr_event_id = EXCLUDED.nostr_event_id,
         author_name = EXCLUDED.author_name,
-        author_avatar = EXCLUDED.author_avatar
+        author_avatar = EXCLUDED.author_avatar,
+        media = EXCLUDED.media
     `, [
       artId, input.authorId,
       author?.display_name ?? author?.username ?? 'Unknown',
@@ -221,6 +233,7 @@ export async function publishToPublication(
       input.title,
       truncatePreview(input.content),
       signed.id,
+      mediaJson,
     ])
 
     await enqueueRelayPublish(client, {
@@ -267,9 +280,10 @@ export async function approveAndPublishArticle(
     gate_position_pct: number | null
     nostr_d_tag: string
     show_on_writer_profile: boolean
+    cover_image_url: string | null
   }>(
     `SELECT writer_id, title, summary, content_free, access_mode, price_pence,
-            gate_position_pct, nostr_d_tag, show_on_writer_profile
+            gate_position_pct, nostr_d_tag, show_on_writer_profile, cover_image_url
      FROM articles WHERE id = $1 AND publication_id = $2`,
     [articleId, publicationId]
   )
@@ -299,6 +313,7 @@ export async function approveAndPublishArticle(
   ]
 
   if (article.summary) tags.push(['summary', article.summary])
+  if (article.cover_image_url) tags.push(['image', article.cover_image_url])
   if (article.access_mode === 'paywalled' && article.price_pence) {
     tags.push(
       ['price', String(article.price_pence), 'GBP'],
@@ -323,17 +338,20 @@ export async function approveAndPublishArticle(
     )
 
     // Dual-write: upsert feed_items
+    const mediaJson = article.cover_image_url
+      ? JSON.stringify([{ type: 'image', url: article.cover_image_url }])
+      : null
     await client.query(`
       INSERT INTO feed_items (
         item_type, article_id, author_id,
         author_name, author_avatar, author_username,
         title, content_preview, nostr_event_id,
-        tier, published_at
+        media, tier, published_at
       ) VALUES (
         'article', $1, $2,
         $3, $4, $5,
         $6, $7, $8,
-        'tier1', now()
+        $9, 'tier1', now()
       )
       ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
         title = EXCLUDED.title,
@@ -341,6 +359,7 @@ export async function approveAndPublishArticle(
         nostr_event_id = EXCLUDED.nostr_event_id,
         author_name = EXCLUDED.author_name,
         author_avatar = EXCLUDED.author_avatar,
+        media = EXCLUDED.media,
         published_at = EXCLUDED.published_at
     `, [
       articleId, article.writer_id,
@@ -350,6 +369,7 @@ export async function approveAndPublishArticle(
       article.title,
       truncatePreview(article.content_free),
       signed.id,
+      mediaJson,
     ])
 
     // Notify the author

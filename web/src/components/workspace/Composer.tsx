@@ -143,6 +143,8 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
   const [title, setTitle] = useState('')
   const [dek, setDek] = useState('')
   const [pricePence, setPricePence] = useState(0)
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null)
+  const [coverUploading, setCoverUploading] = useState(false)
   const [publications, setPublications] = useState<PublicationOption[]>([])
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(null)
   const [draftStatus, setDraftStatus] = useState<string | null>(null)
@@ -162,7 +164,22 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
   dekRef.current = dek
   const pricePenceRef = useRef(pricePence)
   pricePenceRef.current = pricePence
+  const coverImageUrlRef = useRef(coverImageUrl)
+  coverImageUrlRef.current = coverImageUrl
   const autoSaver = useMemo(() => createAutoSaver(3000), [])
+
+  const handleCoverUpload = async (file: File) => {
+    setCoverUploading(true)
+    setError(null)
+    try {
+      const result = await uploadImage(file)
+      setCoverImageUrl(result.url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Cover upload failed')
+    } finally {
+      setCoverUploading(false)
+    }
+  }
 
   // TipTap editor for article mode. Always mounted while open so that
   // a mode switch from note→article carries the textarea content forward
@@ -203,6 +220,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
             content: md,
             gatePositionPct: 50,
             pricePence: pricePenceRef.current,
+            coverImageUrl: coverImageUrlRef.current,
           },
           (saved) => {
             setCurrentDraftId(saved.draftId)
@@ -228,6 +246,8 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
     setTitle('')
     setDek('')
     setPricePence(0)
+    setCoverImageUrl(null)
+    setCoverUploading(false)
     setSelectedPublicationId(null)
     setDraftStatus(null)
     setCurrentDraftId(null)
@@ -573,6 +593,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
         showOnWriterProfile: true,
         sendEmail: true,
         tags: [] as string[],
+        coverImageUrl,
       }
       if (selectedPublicationId) {
         await publishToPublication(selectedPublicationId, data)
@@ -952,6 +973,10 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
             setSelectedPublicationId={setSelectedPublicationId}
             pricePence={pricePence}
             setPricePence={setPricePence}
+            coverImageUrl={coverImageUrl}
+            setCoverImageUrl={setCoverImageUrl}
+            coverUploading={coverUploading}
+            onCoverUpload={handleCoverUpload}
             gateInserted={gateInserted}
             uploading={uploading}
             setError={setError}
@@ -1154,6 +1179,10 @@ interface ArticleModePanelProps {
   setSelectedPublicationId: (v: string | null) => void
   pricePence: number
   setPricePence: (v: number) => void
+  coverImageUrl: string | null
+  setCoverImageUrl: (v: string | null) => void
+  coverUploading: boolean
+  onCoverUpload: (file: File) => void
   gateInserted: boolean
   uploading: boolean
   setError: (v: string | null) => void
@@ -1172,12 +1201,26 @@ function ArticleModePanel({
   setSelectedPublicationId,
   pricePence,
   setPricePence,
+  coverImageUrl,
+  setCoverImageUrl,
+  coverUploading,
+  onCoverUpload,
   gateInserted,
   uploading,
   setError,
   wordCount,
   readMinutes,
 }: ArticleModePanelProps) {
+  const pickCover = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/jpeg,image/png,image/gif,image/webp'
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (file) onCoverUpload(file)
+    }
+    input.click()
+  }
   return (
     <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <input
@@ -1212,6 +1255,61 @@ function ArticleModePanel({
           outline: 'none',
         }}
       />
+
+      <div
+        style={{
+          padding: '10px 12px',
+          background: TOKENS.fieldBg,
+        }}
+      >
+        {coverImageUrl ? (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <div
+              style={{
+                width: 120,
+                aspectRatio: '16 / 9',
+                background: '#E6E5E0',
+                flexShrink: 0,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={coverImageUrl}
+                alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                referrerPolicy="no-referrer"
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <button
+                type="button"
+                className="btn-text"
+                disabled={coverUploading}
+                onClick={pickCover}
+              >
+                {coverUploading ? 'Uploading…' : 'Replace'}
+              </button>
+              <button
+                type="button"
+                className="btn-text-danger"
+                disabled={coverUploading}
+                onClick={() => setCoverImageUrl(null)}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn-text"
+            disabled={coverUploading}
+            onClick={pickCover}
+          >
+            {coverUploading ? 'Uploading…' : '+ Add cover image'}
+          </button>
+        )}
+      </div>
 
       {publications.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>

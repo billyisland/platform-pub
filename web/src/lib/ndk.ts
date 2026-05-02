@@ -43,6 +43,18 @@ export interface ArticleEvent {
   sizeTier?: SizeTier
   // Slice 20: present in the saved-items view, absent in the live view.
   savedAt?: number
+  // Slice 23b: cover image, served as feed_items.media shape so the
+  // workspace MediaBlock consumes it without translation.
+  media?: Array<{
+    type: 'image' | 'video' | 'audio' | 'link'
+    url: string
+    thumbnail?: string
+    alt?: string
+    width?: number
+    height?: number
+    title?: string
+    description?: string
+  }>
 }
 
 export interface NoteEvent {

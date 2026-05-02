@@ -37,6 +37,7 @@ interface EditorProps {
   initialPrice?: number
   initialCommentsEnabled?: boolean
   initialTags?: string[]
+  initialCoverImageUrl?: string | null
   editingEventId?: string
   editingDTag?: string
   publicationMemberships?: PublicationContext[]
@@ -67,6 +68,7 @@ export interface PublishData {
   showOnWriterProfile: boolean
   sendEmail?: boolean
   tags: string[]
+  coverImageUrl?: string | null
 }
 
 export function ArticleEditor({
@@ -77,6 +79,7 @@ export function ArticleEditor({
   initialPrice,
   initialCommentsEnabled = true,
   initialTags = [],
+  initialCoverImageUrl = null,
   editingEventId,
   editingDTag,
   publicationMemberships = [],
@@ -99,6 +102,8 @@ export function ArticleEditor({
   const [uploading, setUploading] = useState(false)
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(initialPublicationId)
   const [showOnWriterProfile, setShowOnWriterProfile] = useState(true)
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(initialCoverImageUrl ?? null)
+  const [coverUploading, setCoverUploading] = useState(false)
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
   const [sendEmail, setSendEmail] = useState(true)
   const [showSchedulePicker, setShowSchedulePicker] = useState(false)
@@ -115,8 +120,23 @@ export function ArticleEditor({
   dekRef.current = dek
   const pricePenceRef = useRef(pricePence)
   pricePenceRef.current = pricePence
+  const coverImageUrlRef = useRef(coverImageUrl)
+  coverImageUrlRef.current = coverImageUrl
 
   const autoSaver = useMemo(() => createAutoSaver(3000), [])
+
+  const handleCoverUpload = useCallback(async (file: File) => {
+    setCoverUploading(true)
+    setPublishError(null)
+    try {
+      const result = await uploadImage(file)
+      setCoverImageUrl(result.url)
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : 'Cover upload failed')
+    } finally {
+      setCoverUploading(false)
+    }
+  }, [])
 
   const editor = useEditor({
     extensions: [
@@ -164,7 +184,7 @@ export function ArticleEditor({
       // Auto-save draft
       const content = editor.storage.markdown.getMarkdown()
       autoSaver(
-        { title: titleRef.current, dek: dekRef.current, content, gatePositionPct: 50, pricePence: pricePenceRef.current },
+        { title: titleRef.current, dek: dekRef.current, content, gatePositionPct: 50, pricePence: pricePenceRef.current, coverImageUrl: coverImageUrlRef.current },
         (saved) => {
           setCurrentDraftId(saved.draftId)
           setDraftStatus('Saved')
@@ -226,6 +246,7 @@ export function ArticleEditor({
         showOnWriterProfile,
         sendEmail: isEditing ? false : sendEmail,
         tags: articleTags,
+        coverImageUrl,
       }
 
       if (onPublish) {
@@ -237,7 +258,7 @@ export function ArticleEditor({
     } finally {
       setPublishing(false)
     }
-  }, [editor, title, dek, pricePence, onPublish, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, sendEmail, isEditing, articleTags])
+  }, [editor, title, dek, pricePence, onPublish, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, sendEmail, isEditing, articleTags, coverImageUrl])
 
   // Show the publish confirmation panel for new personal articles;
   // submit-for-review and edits skip confirmation and go straight through.
@@ -287,6 +308,7 @@ export function ArticleEditor({
         showOnWriterProfile,
         sendEmail: false,
         tags: articleTags,
+        coverImageUrl,
       }
 
       await onSchedule(data, new Date(scheduleDateTime).toISOString())
@@ -298,7 +320,7 @@ export function ArticleEditor({
       setShowSchedulePicker(false)
       setScheduleDateTime('')
     }
-  }, [editor, title, dek, pricePence, onSchedule, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, articleTags, scheduleDateTime])
+  }, [editor, title, dek, pricePence, onSchedule, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, articleTags, scheduleDateTime, coverImageUrl])
 
   if (!editor) return null
 
@@ -332,6 +354,71 @@ export function ArticleEditor({
           placeholder="Add a subtitle or standfirst…"
           className="w-full border-none bg-transparent font-serif text-lg text-grey-600 italic placeholder:text-grey-300 focus:outline-none"
         />
+      </div>
+
+      {/* Cover card */}
+      <div className="bg-grey-100 px-5 py-4 mb-2">
+        {coverImageUrl ? (
+          <div className="flex items-start gap-4">
+            <div
+              className="w-32 sm:w-40 bg-grey-200"
+              style={{ aspectRatio: '16 / 9' }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={coverImageUrl}
+                alt=""
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                className="btn-text"
+                disabled={coverUploading}
+                onClick={() => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = 'image/jpeg,image/png,image/gif,image/webp'
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (file) handleCoverUpload(file)
+                  }
+                  input.click()
+                }}
+              >
+                {coverUploading ? 'Uploading…' : 'Replace'}
+              </button>
+              <button
+                type="button"
+                className="btn-text-danger"
+                disabled={coverUploading}
+                onClick={() => setCoverImageUrl(null)}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn-text"
+            disabled={coverUploading}
+            onClick={() => {
+              const input = document.createElement('input')
+              input.type = 'file'
+              input.accept = 'image/jpeg,image/png,image/gif,image/webp'
+              input.onchange = (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0]
+                if (file) handleCoverUpload(file)
+              }
+              input.click()
+            }}
+          >
+            {coverUploading ? 'Uploading…' : '+ Add cover image'}
+          </button>
+        )}
       </div>
 
       {/* Editor toolbar */}

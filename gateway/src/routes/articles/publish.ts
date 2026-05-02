@@ -26,6 +26,7 @@ const IndexArticleSchema = z.object({
   pricePence: z.number().int().min(0).max(999999),
   gatePositionPct: z.number().int().min(0).max(99),
   vaultEventId: z.string().optional(),
+  coverImageUrl: z.string().url().nullable().optional(),
   draftId: z.string().optional(),
   sendEmail: z.boolean().optional(),  // writer opt-in/out for publish notification email
 })
@@ -61,8 +62,8 @@ export async function articlePublishRoutes(app: FastifyInstance) {
              writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
              content_free, word_count, tier,
              access_mode, price_pence, gate_position_pct, vault_event_id,
-             published_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tier1', $9, $10, $11, $12, now())
+             cover_image_url, published_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tier1', $9, $10, $11, $12, $13, now())
            ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
              nostr_event_id = EXCLUDED.nostr_event_id,
              title = EXCLUDED.title,
@@ -74,6 +75,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
              price_pence = EXCLUDED.price_pence,
              gate_position_pct = EXCLUDED.gate_position_pct,
              vault_event_id = EXCLUDED.vault_event_id,
+             cover_image_url = EXCLUDED.cover_image_url,
              updated_at = now()
            RETURNING id, (xmax = 0) AS is_new`,
           [
@@ -89,6 +91,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
             isGated ? data.pricePence : null,
             isGated ? data.gatePositionPct : null,
             data.vaultEventId ?? null,
+            data.coverImageUrl ?? null,
           ]
         )
 
@@ -99,24 +102,28 @@ export async function articlePublishRoutes(app: FastifyInstance) {
           `SELECT display_name, avatar_blossom_url, username FROM accounts WHERE id = $1`,
           [writerId]
         )
+        const mediaJson = data.coverImageUrl
+          ? JSON.stringify([{ type: 'image', url: data.coverImageUrl }])
+          : null
         await client.query(`
           INSERT INTO feed_items (
             item_type, article_id, author_id,
             author_name, author_avatar, author_username,
             title, content_preview, nostr_event_id,
-            tier, published_at
+            media, tier, published_at
           ) VALUES (
             'article', $1, $2,
             $3, $4, $5,
             $6, $7, $8,
-            'tier1', now()
+            $9, 'tier1', now()
           )
           ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
             title = EXCLUDED.title,
             content_preview = EXCLUDED.content_preview,
             nostr_event_id = EXCLUDED.nostr_event_id,
             author_name = EXCLUDED.author_name,
-            author_avatar = EXCLUDED.author_avatar
+            author_avatar = EXCLUDED.author_avatar,
+            media = EXCLUDED.media
         `, [
           artId, writerId,
           author?.display_name ?? author?.username ?? 'Unknown',
@@ -125,6 +132,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
           data.title,
           truncatePreview(data.content),
           data.nostrEventId,
+          mediaJson,
         ])
 
         return { articleId: artId, isNew: result.rows[0].is_new }
@@ -181,6 +189,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         price_pence: number | null
         gate_position_pct: number | null
         vault_event_id: string | null
+        cover_image_url: string | null
         published_at: Date | null
         writer_username: string
         writer_display_name: string | null
@@ -195,7 +204,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         `SELECT a.id, a.writer_id, a.nostr_event_id, a.nostr_d_tag,
                 a.title, a.slug, a.summary, a.content_free, a.word_count,
                 a.access_mode, a.price_pence, a.gate_position_pct,
-                a.vault_event_id, a.published_at,
+                a.vault_event_id, a.cover_image_url, a.published_at,
                 w.username AS writer_username,
                 w.display_name AS writer_display_name,
                 w.avatar_blossom_url AS writer_avatar,
@@ -255,6 +264,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         pricePence: r.price_pence,
         gatePositionPct: r.gate_position_pct,
         vaultEventId: r.vault_event_id,
+        coverImageUrl: r.cover_image_url,
         publishedAt: r.published_at?.toISOString() ?? null,
         writerSpendThisMonthPence,
         nudgeShownThisMonth,
@@ -293,7 +303,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         `SELECT a.id, a.writer_id, a.nostr_event_id, a.nostr_d_tag,
                 a.title, a.slug, a.summary, a.content_free, a.word_count,
                 a.access_mode, a.price_pence, a.gate_position_pct,
-                a.vault_event_id, a.published_at
+                a.vault_event_id, a.cover_image_url, a.published_at
          FROM articles a
          WHERE a.nostr_event_id = $1 AND a.deleted_at IS NULL`,
         [nostrEventId]
@@ -317,6 +327,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         isPaywalled: r.access_mode === 'paywalled',
         pricePence: r.price_pence,
         gatePositionPct: r.gate_position_pct,
+        coverImageUrl: r.cover_image_url,
         publishedAt: r.published_at?.toISOString() ?? null,
       })
     }

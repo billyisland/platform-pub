@@ -110,6 +110,7 @@ function mapApiItem(item: any): WorkspaceItem | null {
       pipStatus: item.pipStatus,
       sizeTier: item.sizeTier,
       savedAt: item.savedAt,
+      media: item.media ?? undefined,
     }
   }
   if (item.type === 'note') {

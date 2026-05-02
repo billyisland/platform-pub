@@ -623,6 +623,7 @@ function ArticleVesselCard({
           {standfirst}
         </p>
       )}
+      <MediaBlock items={article.media ?? []} ctx={ctx} />
       {ctx.density === 'full' && (
         <SourceAttribution
           protocol="ALL.HAUS"

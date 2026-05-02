@@ -41,7 +41,9 @@ export async function generateMetadata({ params }: { params: { dTag: string } })
   const description = article.summary || `By ${article.writer.displayName ?? article.writer.username}`
   const authorName = article.writer.displayName ?? article.writer.username
   const url = `https://all.haus/article/${article.dTag}`
-  const image = extractFirstImage(article.contentFree)
+  // Prefer the explicit cover (slice 23b); fall back to inline-image scrape
+  // for legacy articles that have no cover_image_url set.
+  const image = article.coverImageUrl ?? extractFirstImage(article.contentFree)
 
   return {
     title,
@@ -93,6 +95,7 @@ export default async function ArticlePage({ params }: { params: { dTag: string }
         gatePositionPct: article.gatePositionPct ?? undefined,
         isPaywalled: article.isPaywalled,
       }}
+      coverImageUrl={article.coverImageUrl ?? null}
       articleDbId={article.id}
       writerName={article.writer.displayName ?? article.writer.username}
       writerUsername={article.writer.username}

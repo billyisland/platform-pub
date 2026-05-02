@@ -13,6 +13,7 @@ export interface ArticleMetadata {
   pricePence: number | null
   gatePositionPct: number | null
   vaultEventId: string | null
+  coverImageUrl: string | null
   publishedAt: string | null
   writerSpendThisMonthPence: number | null
   nudgeShownThisMonth: boolean
@@ -62,6 +63,7 @@ export const articles = {
     pricePence: number
     gatePositionPct: number
     vaultEventId?: string
+    coverImageUrl?: string | null
     draftId?: string
     sendEmail?: boolean
   }) =>

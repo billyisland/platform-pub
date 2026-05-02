@@ -29,6 +29,7 @@ const SubmitArticleSchema = z.object({
   gatePositionPct: z.number().int().min(1).max(99).optional(),
   showOnWriterProfile: z.boolean().default(true),
   existingDTag: z.string().optional(),
+  coverImageUrl: z.string().url().nullable().optional(),
 })
 
 const EditArticleSchema = z.object({
@@ -36,6 +37,7 @@ const EditArticleSchema = z.object({
   summary: z.string().max(500).nullable().optional(),
   pricePence: z.number().int().min(0).optional(),
   showOnWriterProfile: z.boolean().optional(),
+  coverImageUrl: z.string().url().nullable().optional(),
 })
 
 export async function publicationCmsRoutes(app: FastifyInstance) {
@@ -140,6 +142,7 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
       const fields: Record<string, string> = {
         title: 'title', summary: 'summary',
         pricePence: 'price_pence', showOnWriterProfile: 'show_on_writer_profile',
+        coverImageUrl: 'cover_image_url',
       }
 
       for (const [jsKey, dbCol] of Object.entries(fields)) {
@@ -169,6 +172,18 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
         await pool.query(
           `UPDATE feed_items SET title = $1 WHERE article_id = $2`,
           [data.title, articleId]
+        )
+      }
+
+      // Dual-write cover into feed_items.media so the workspace MediaBlock
+      // reflects the change without waiting for a re-publish.
+      if (data.coverImageUrl !== undefined) {
+        const mediaJson = data.coverImageUrl
+          ? JSON.stringify([{ type: 'image', url: data.coverImageUrl }])
+          : null
+        await pool.query(
+          `UPDATE feed_items SET media = $1 WHERE article_id = $2`,
+          [mediaJson, articleId]
         )
       }
 

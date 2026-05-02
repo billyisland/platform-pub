@@ -50,6 +50,7 @@ export async function publishArticle(
       accessMode: data.isPaywalled ? 'paywalled' : 'public',
       pricePence: data.pricePence,
       gatePositionPct: data.gatePositionPct,
+      coverImageUrl: data.coverImageUrl ?? null,
       sendEmail: data.sendEmail,
     })
     articleId = result.articleId
@@ -101,6 +102,7 @@ export async function publishArticle(
     accessMode: data.isPaywalled ? 'paywalled' : 'public',
     pricePence: data.pricePence,
     gatePositionPct: data.gatePositionPct,
+    coverImageUrl: data.coverImageUrl ?? null,
   })
 
   return { articleEventId: signedV2.id, dTag, articleId }
@@ -123,6 +125,10 @@ function buildNip23Event(
 
   if (data.dek?.trim()) {
     tags.push(['summary', data.dek.trim()])
+  }
+
+  if (data.coverImageUrl) {
+    tags.push(['image', data.coverImageUrl])
   }
 
   if (data.isPaywalled) {
@@ -189,6 +195,7 @@ export async function publishToPublication(
     pricePence: data.isPaywalled ? data.pricePence : undefined,
     gatePositionPct: data.isPaywalled ? data.gatePositionPct : undefined,
     showOnWriterProfile: data.showOnWriterProfile,
+    coverImageUrl: data.coverImageUrl ?? null,
     existingDTag,
   })
 

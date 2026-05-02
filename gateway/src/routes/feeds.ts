@@ -777,6 +777,7 @@ function rowToItem(row: any) {
       tags: row.tag_names ?? [],
       sizeTier: row.size_tier ?? 'standard',
       pipStatus: row.pip_status ?? 'unknown',
+      media: row.media ?? null,
     }
   }
   if (row.item_type === 'note') {
