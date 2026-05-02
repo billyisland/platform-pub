@@ -7,6 +7,7 @@ const baseL1 = {
   articleCount: 0,
   paymentVerified: false,
   nip05Verified: false,
+  encounterCount: 0,
 }
 
 const noPolls = {
@@ -218,6 +219,78 @@ describe('composePipStatus', () => {
           }),
         ),
       ).toBe('unknown')
+    })
+  })
+
+  // Slice 18 — encounter (in-person met) is the hard upgrade path to green.
+  // ≥1 encounter affirm joins NIP-05 / paying readers as an L1 anchor; ≥2 is
+  // strong enough alone to lift the pip to amber even without other signals.
+  describe('encounter (slice 18)', () => {
+    it('encounter ≥1 anchors green when polls all positive (no other anchor)', () => {
+      // Without nip05 or paying readers — encounter alone unlocks green.
+      expect(
+        composePipStatus(
+          input({
+            polls: {
+              humanity: { yes: 8, no: 1 },
+              authenticity: { yes: 8, no: 1 },
+              good_faith: { yes: 8, no: 1 },
+            },
+            layer1: { encounterCount: 1 },
+          }),
+        ),
+      ).toBe('known')
+    })
+
+    it('encounter = 0 still requires nip05 or paying readers for green', () => {
+      // Regression guard for the pre-slice-18 anchor rule.
+      expect(
+        composePipStatus(
+          input({
+            polls: {
+              humanity: { yes: 8, no: 1 },
+              authenticity: { yes: 8, no: 1 },
+              good_faith: { yes: 8, no: 1 },
+            },
+            layer1: { encounterCount: 0 },
+          }),
+        ),
+      ).toBe('partial')
+    })
+
+    it('encounter ≥2 alone (no polls, no other L1) → partial', () => {
+      // Two independent in-person meetings is enough to lift above grey even
+      // without articles, payment, or polling volume.
+      expect(
+        composePipStatus(
+          input({ layer1: { encounterCount: 2 } }),
+        ),
+      ).toBe('partial')
+    })
+
+    it('encounter = 1 alone → unknown (single claim isn’t enough on its own)', () => {
+      expect(
+        composePipStatus(
+          input({ layer1: { encounterCount: 1 } }),
+        ),
+      ).toBe('unknown')
+    })
+
+    it('encounter does not override humanity-no (still contested)', () => {
+      // The hard upgrade path doesn't bypass crimson — meeting someone in
+      // person doesn't cancel multiple credible accounts of bad faith.
+      expect(
+        composePipStatus(
+          input({
+            polls: {
+              humanity: { yes: 0, no: 8 },
+              authenticity: { yes: 8, no: 1 },
+              good_faith: { yes: 8, no: 1 },
+            },
+            layer1: { encounterCount: 5 },
+          }),
+        ),
+      ).toBe('contested')
     })
   })
 })

@@ -15,6 +15,9 @@ import type {
   PollAnswer,
   PollQuestion,
   PollsResponse,
+  VouchDimension,
+  VouchValue,
+  VouchVisibility,
 } from '../../lib/api/trust'
 import type { PipStatus } from '../../lib/ndk'
 
@@ -44,6 +47,37 @@ const TOKENS = {
   hint: '#8A8880',
   rule: '#E6E5E0',
   crimson: '#B5242A',
+}
+
+// Slice 19 — per-pip-status framing for the panel. Subtitle copy names what
+// the pip means and (where applicable) which gesture would move it; accent
+// is the matching pip colour, applied as a 3px stripe at the panel top so
+// the panel reads visually keyed to the state. Self-pip suppresses both
+// (the framing addresses how *others* read the writer; doesn't apply when
+// looking at your own pip).
+//
+// Colour palette mirrors web/src/components/ui/TrustPip.tsx#PIP_COLORS so
+// the inline glyph and the panel stripe share a single source of truth via
+// duplication. Re-importing the constant would have meant either exporting
+// it from TrustPip.tsx (incidental coupling) or pulling it through a shared
+// tokens module that doesn't exist yet — the four-line dup is honest.
+const STATUS_PRESENTATION: Record<PipStatus, { accent: string; subtitle: string }> = {
+  known: {
+    accent: '#1d9e75',
+    subtitle: 'Established profile — readers confirm the basics.',
+  },
+  partial: {
+    accent: '#ef9f27',
+    subtitle: 'Developing profile — some signal, more would help.',
+  },
+  unknown: {
+    accent: '#b0b0ab',
+    subtitle: 'New here — tap below to share what you know.',
+  },
+  contested: {
+    accent: '#B5242A',
+    subtitle: 'Contested — readers have raised concerns.',
+  },
 }
 
 interface PipPanelProps {
@@ -186,6 +220,8 @@ export function PipPanel({
   const profileHref = writer ? `/${writer.username}` : '#'
   const subscriptionPence = writer?.subscriptionPricePence ?? 0
   const offersSubscription = subscriptionPence > 0
+  const presentation = STATUS_PRESENTATION[pipStatus] ?? STATUS_PRESENTATION.unknown
+  const showFraming = !isOwn && !loading && !error && writer !== null
 
   async function handleFollowToggle() {
     if (!writer || !user || isOwn || followBusy) return
@@ -222,9 +258,23 @@ export function PipPanel({
         border: `1px solid ${TOKENS.panelBorder}`,
         boxShadow: '0 12px 32px rgba(0, 0, 0, 0.18)',
         zIndex: 70,
-        padding: 24,
       }}
     >
+      {/* Slice 19 — accent stripe keyed to pip status. Sits flush at the top,
+          inside the panel border. Suppressed for self-pip and during the
+          load/error states (otherwise it'd flash with whatever the assumed
+          pipStatus default is before the trust profile actually loads). */}
+      {showFraming && (
+        <div
+          style={{
+            height: 3,
+            background: presentation.accent,
+            width: '100%',
+          }}
+          aria-hidden="true"
+        />
+      )}
+      <div style={{ padding: 24 }}>
       {loading ? (
         <div
           className="font-mono text-[11px] uppercase tracking-[0.06em]"
@@ -279,6 +329,23 @@ export function PipPanel({
             )}
           </div>
 
+          {/* Slice 19 — pip-status subtitle. Italic Literata, hint colour;
+              names what the pip means and (for non-green) suggests where the
+              gesture lives. Suppressed for self-pip via showFraming. */}
+          {showFraming && (
+            <p
+              className="font-serif italic"
+              style={{
+                fontSize: 13,
+                color: TOKENS.hint,
+                marginTop: 6,
+                lineHeight: 1.45,
+              }}
+            >
+              {presentation.subtitle}
+            </p>
+          )}
+
           {/* Bio */}
           {writer.bio && (
             <p
@@ -311,6 +378,21 @@ export function PipPanel({
               >
                 No trust signals yet.
               </p>
+            )}
+            {/* Slice 18: encounter (in-person met) line + viewer toggle.
+                Rendered after the L1 signals because it joins them as the
+                hard-upgrade-to-green anchor. Self-pip suppresses (you don't
+                vouch you've met yourself). */}
+            {!isOwn && writer && trustProfile && (
+              <EncounterRow
+                subjectUserId={writer.id}
+                initialAffirmCount={trustProfile.encounter.affirmCount}
+                initialViewerVouch={
+                  trustProfile.viewerVouches.find(
+                    (v) => v.dimension === 'encounter' && v.value === 'affirm',
+                  ) ?? null
+                }
+              />
             )}
             {/* Slice 15: poll-questions section — separate from layer-1 signals
                 because the question shape and the data shape are different.
@@ -355,6 +437,7 @@ export function PipPanel({
           )}
         </>
       ) : null}
+      </div>
     </div>
   )
 }
@@ -699,6 +782,115 @@ function PollQuestions({
         Polls about {subjectName} are visible only as totals — your own answer is
         editable.
       </p>
+    </div>
+  )
+}
+
+// Slice 18 — encounter (in-person met) row + viewer's "I've met them" toggle.
+// The handoff (CARDS-AND-PIP-PANEL-HANDOFF.md §"Trust section") frames
+// in-person meetings as the most expensive signal to fake; slice 17 reserved
+// it as the "hard upgrade path to green" but didn't pipe the data in. Slice
+// 18 closes that loop: the count line lives in TRUST alongside L1 signals,
+// and the toggle posts an `encounter`/`affirm`/`aggregate` vouch via the
+// existing /vouches route.
+//
+// Visibility decision: aggregate (count-only, attestor not surfaced) rather
+// than public. The panel's privacy ethos matches the polling section — your
+// own gesture is editable, totals are what other people see. A reader who
+// wants to publicly endorse "I've met X" can still do so via the full
+// vouch surface at /network. This keeps the panel gesture lightweight and
+// matches the slice-15 polling-as-aggregate-only contract.
+function EncounterRow({
+  subjectUserId,
+  initialAffirmCount,
+  initialViewerVouch,
+}: {
+  subjectUserId: string
+  initialAffirmCount: number
+  initialViewerVouch: { id: string; dimension: VouchDimension; value: VouchValue; visibility: VouchVisibility } | null
+}) {
+  const [count, setCount] = useState(initialAffirmCount)
+  const [viewerVouch, setViewerVouch] = useState(initialViewerVouch)
+  const [busy, setBusy] = useState(false)
+
+  const youMet = viewerVouch !== null
+
+  async function toggle() {
+    if (busy) return
+    setBusy(true)
+    // Optimistic update — the count moves immediately.
+    if (youMet) {
+      setCount((c) => Math.max(0, c - 1))
+      const prev = viewerVouch
+      setViewerVouch(null)
+      try {
+        await trustApi.withdrawVouch(prev!.id)
+      } catch {
+        // Re-affirm on failure to recover.
+        setCount((c) => c + 1)
+        setViewerVouch(prev)
+      } finally {
+        setBusy(false)
+      }
+    } else {
+      setCount((c) => c + 1)
+      try {
+        const created = await trustApi.vouch({
+          subjectId: subjectUserId,
+          dimension: 'encounter',
+          value: 'affirm',
+          visibility: 'aggregate',
+        })
+        setViewerVouch({
+          id: created.id,
+          dimension: 'encounter',
+          value: 'affirm',
+          visibility: 'aggregate',
+        })
+      } catch {
+        setCount((c) => Math.max(0, c - 1))
+      } finally {
+        setBusy(false)
+      }
+    }
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        paddingTop: 12,
+        borderTop: `1px solid ${TOKENS.rule}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      <span
+        className="font-sans text-[13px]"
+        style={{ color: TOKENS.fg, flex: 1 }}
+      >
+        {count === 0
+          ? 'Not yet met by anyone in person.'
+          : count === 1
+            ? 'Met by 1 person in person.'
+            : `Met by ${count} people in person.`}
+      </span>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        className="font-mono text-[11px] uppercase tracking-[0.06em]"
+        style={{
+          background: youMet ? TOKENS.fg : 'transparent',
+          color: youMet ? '#FFFFFF' : TOKENS.fg,
+          border: `1px solid ${youMet ? TOKENS.fg : TOKENS.rule}`,
+          cursor: busy ? 'default' : 'pointer',
+          padding: '4px 10px',
+        }}
+      >
+        {youMet ? 'I’VE MET THEM ✓' : 'I’VE MET THEM'}
+      </button>
     </div>
   )
 }

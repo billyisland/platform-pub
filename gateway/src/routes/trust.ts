@@ -88,6 +88,23 @@ export async function trustRoutes(app: FastifyInstance) {
         }
       }
 
+      // Slice 18: encounter affirm count — separate from the dimension's
+      // mixed affirm+contest `attestationCount`. The pip composer treats
+      // encounter as the "hard upgrade path to green" and the panel surfaces
+      // the count as a distinct line ("Met by N writers in person").
+      // Visibility-agnostic: aggregate-visibility encounters still count toward
+      // the in-person tally, even though their attestor identity is hidden.
+      const { rows: encounterRows } = await pool.query(
+        `SELECT COUNT(*)::int AS affirm_count
+         FROM vouches
+         WHERE subject_id = $1
+           AND dimension = 'encounter'
+           AND value = 'affirm'
+           AND withdrawn_at IS NULL`,
+        [userId]
+      )
+      const encounterAffirmCount = encounterRows[0]?.affirm_count ?? 0
+
       // Public endorsements
       const { rows: endorsements } = await pool.query(
         `SELECT v.id, v.dimension, v.value, v.created_at,
@@ -190,6 +207,7 @@ export async function trustRoutes(app: FastifyInstance) {
           computedAt: l1.computed_at,
         },
         dimensions,
+        encounter: { affirmCount: encounterAffirmCount },
         publicEndorsements,
         layer4,
         viewerVouches,

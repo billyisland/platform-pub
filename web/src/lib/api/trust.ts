@@ -19,6 +19,9 @@ export interface TrustProfileResponse {
     score: number
     attestationCount: number
   }>
+  encounter: {
+    affirmCount: number
+  }
   publicEndorsements: Array<{
     id: string
     dimension: VouchDimension

@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -557,6 +557,58 @@ Sample-size floor of 3 is the honest first cut — keeps a single hostile vote f
 
 Skipped intentionally: encounter count from `vouches.dimension = 'encounter'` (the in-person-met signal — its own slice; the handoff intends it as a hard upgrade path to green), confidence-interval / sample-size scaling beyond the floor of 3 (the current rule is honestly placeholder), real-time pip refresh on poll vote (cron-cadence is intentional), per-viewer pip composition (the eventual "trust as a function of *your* graph" needs the Layer 4 relational layer plus a per-request compute path, deferred), hysteresis to prevent a pip flapping between contested ↔ partial when sample sizes hover at the threshold (revisit if it shows up in real data), pip composition for external authors (still grey because external authors don't have a platform user id, same constraint as slice 12), seeding a refresh on poll-write so freshly-polled subjects update faster than the daily cadence.
 
+### Slice 18 — encounter count + hard upgrade path to green (2026-05-02)
+
+Slice 17 reserved encounter (in-person met) as the hard upgrade path to green but didn't pipe the data in — the pip composer was still keying on `(humanity, authenticity, good_faith, L1)` only. Slice 18 closes that loop. `vouches.dimension = 'encounter'` affirms become a third L1 anchor option, and the pip panel gains an encounter count line plus an "I've met them" toggle for the viewer.
+
+**Compose function (`feed-ingest/src/lib/trust-pip.ts`).** `PipLayer1` extends with `encounterCount: number`. The threshold rules widen:
+- `l1Anchor` — was `nip05Verified || payingReaderCount > 0`. Now also unlocks when `encounterCount ≥ 1`. So a brand-new account with all-three-polls-positive can mint green if even one person has affirmed meeting them in person, without needing NIP-05 or paying readers.
+- `strongL1` — was `articleCount ≥ 3 && paymentVerified`. Now also satisfied when `encounterCount ≥ 2`. Two independent in-person affirms is a real signal even without articles or payment activity, and lifts the pip from grey to amber.
+
+**Threshold call.** Encounter ≥ 1 = anchor, ≥ 2 = strong-alone. Polling has a `SAMPLE_FLOOR = 3` because polls are cheap and Sybil-prone; encounters are deliberate, expensive gestures (you have to know the person *and* explicitly affirm you've met them) so the floor is lower. A single affirm doesn't lift you above grey on its own (still requires polls + anchor for green, or strong L1 for amber), but it does *gate* the green path. Two affirms gates amber. The constants `ENCOUNTER_ANCHOR = 1` / `ENCOUNTER_STRONG = 2` live at the top of the module so a tuning pass touches one place.
+
+**Crimson is uncrossable.** Encounter does not override `humanity-no` or `good_faith-no`. Meeting someone in person doesn't cancel multiple credible accounts of bad faith — the order of evaluation in `composePipStatus` still checks negative polls before any anchor logic. Test `'encounter does not override humanity-no'` is the regression guard.
+
+**Cron query (`feed-ingest/src/tasks/trust-layer1-refresh.ts`).** New `encounter_aggregates` CTE alongside the existing `poll_aggregates`. `COUNT(*) WHERE dimension = 'encounter' AND value = 'affirm' AND withdrawn_at IS NULL`, grouped by `subject_id`. Outer SELECT carries `COALESCE(ea.encounter_count, 0)`, JS passes through to `composePipStatus()`. Bulk upsert shape unchanged — the encounter count is consumed inside the JS composer, not stored on `trust_layer1` (the pip composer reads it; the L1 row only stores the *outcome* `pip_status`). Two-round-trip pattern preserved.
+
+**Visibility-agnostic count.** The pip uses *all* non-withdrawn encounter affirms — both `public` and `aggregate` visibility — because the count matters for trust-system purposes regardless of whether the attestor is publicly named. The /trust/:userId panel surface separately filters `publicEndorsements` on `visibility = 'public'`; that's the right place for visibility filtering, not the pip composer. Contests are excluded (the route already restricts contests to aggregate-only — that's about visibility, not count — but the encounter signal is specifically about affirmative "I've met them" claims, so the SQL filters on `value = 'affirm'`).
+
+**Gateway response (`gateway/src/routes/trust.ts`).** `GET /trust/:userId` adds a top-level `encounter: { affirmCount }` field. Done as a small dedicated COUNT query rather than reusing the existing `dimensions[encounter].attestationCount`, because the latter combines affirm + contest into a single number for the four-dimension trust profile shape. The pip panel needs the affirm count cleanly. Two queries instead of one; the cost is trivial against the existing per-pip-open round trips.
+
+**Panel surface (`web/src/components/workspace/PipPanel.tsx`).** New `EncounterRow` component. Renders below the L1 signals (separated by hairline `borderTop`) with a Literata 13px line — `Met by N people in person.` (or `Not yet met by anyone in person.` for zero, `Met by 1 person in person.` for the singular) — and a right-aligned `I'VE MET THEM` mono-caps toggle. Solid-black filled when active (matches the YES poll button's grammar). Tap-to-affirm posts `vouches { dimension: 'encounter', value: 'affirm', visibility: 'aggregate' }` via the existing `trustApi.vouch`; tap-to-withdraw uses `trustApi.withdrawVouch(id)`. Optimistic count update with revert on failure. Self-pip suppresses (you can't vouch you've met yourself — the existing `attestor_id != subject_id` CHECK enforces this server-side too).
+
+**Visibility = aggregate, not public.** The panel toggle commits an aggregate-visibility vouch — count-only, attestor identity not surfaced on the writer's `publicEndorsements`. This matches the slice-15 polling contract (your gesture is editable, totals are what other people see). A reader who wants to publicly endorse meeting someone can still upgrade via the full vouch surface at `/network`. Keeping the panel gesture lightweight: one tap, no visibility picker. The handoff frames the encounter line as a count display, not an endorsement graph.
+
+**Pip refresh cadence still daily.** Like slice 17's poll votes, an encounter affirm's effect on the inline pip lands at the next `trust_layer1_refresh` (01:00 UTC). The panel itself reflects the count immediately (optimistic update), so the user sees their tap take effect even if the inline pip lags.
+
+Skipped intentionally: encounter-public visibility from the panel (the full-vouch surface at `/network` still owns public-encounter affirms; the panel's gesture is the lightweight aggregate path), confidence-weighted encounter (the handoff alludes to attestor weighting per Layer-2 epoch aggregation — that's the trust-system-proper rewrite, not this slice; here every affirm counts equally), encounter-as-poll-question hybrid (the handoff considers a "did you meet them?" yes/no question alongside the four poll questions — different mental model, separate slice), per-viewer pip composition that *requires* an encounter from someone in your follow graph (Layer 4 in spirit; needs Layer 4 plumbed into the per-request compute path), encounter requiring two-sided confirmation (the spec's eventual "we both met" reciprocal flag — current implementation is one-sided like the rest of `vouches`), encounter on external authors (no platform user id; the `subject_id` foreign key keys on `accounts.id`), seeding a refresh on encounter-write so freshly-vouched subjects update the pip faster than the daily cadence (matches the slice-15 / slice-17 pattern), pip-panel "remove I've met them" confirm step (one-tap toggle is the right friction floor — the user can re-tap to revert).
+
+### Slice 19 — pip panel framing for non-green states (2026-05-02)
+
+Slices 12 → 18 built up the pip panel's data layer (L1 + dimension scores + Layer 4 + polls + encounter + composed pip status) without ever varying the panel's chrome by pip state. The same flat header + same trust section rendered whether the writer's pip was green, amber, grey, or crimson — the only state difference was the inline glyph's colour, inherited via `<TrustPip status={pipStatus} />`. Slice 19 ships the framing layer the panel was always meant to carry: a per-state subtitle that names what the pip means and where the gesture lives, plus a coloured accent stripe at the top of the panel that visually keys it to the pip state.
+
+**`STATUS_PRESENTATION` map.** New module-local constant in `PipPanel.tsx` keyed on `PipStatus`. Each entry carries `accent` (the matching pip colour) + `subtitle` (an italic Literata one-liner). The four lines:
+- `known` → `#1d9e75` · *Established profile — readers confirm the basics.*
+- `partial` → `#ef9f27` · *Developing profile — some signal, more would help.*
+- `unknown` → `#b0b0ab` · *New here — tap below to share what you know.*
+- `contested` → `#B5242A` · *Contested — readers have raised concerns.*
+
+The colours mirror `web/src/components/ui/TrustPip.tsx`'s `PIP_COLORS` lookup. Re-importing would have meant either exporting the constant from `TrustPip.tsx` (incidental coupling — `TrustPip` is a glyph component that doesn't otherwise know about panels) or pulling both consumers through a shared tokens module that doesn't exist yet. The four-line dup is the honest move; both surfaces evolve together because they're tied to a single design call about pip palette.
+
+**Stripe at the top.** A 3px-tall full-width band sits flush above the panel padding, inside the 1px black panel border. Mirrors the workspace's chassis-bar grammar — slice-1 cards use the same left-bar pattern (4px solid bar, varies by card type). The stripe is `aria-hidden` because the inline pip glyph already carries the accessible-label semantics; the stripe is purely visual reinforcement.
+
+**Subtitle under the writer name.** Italic Literata 13px in `TOKENS.hint`, sits between the header row and the bio (or directly above the TRUST section when bio is empty). Names what the pip means in plain language, and for non-green states gestures toward the affordance that exists below — *tap below to share what you know* points at the polls + encounter sections without spelling them out.
+
+**Self-pip suppresses both.** New `showFraming = !isOwn && !loading && !error && writer !== null` gate. The framing is about how *others* read the writer; doesn't apply when looking at your own pip. The load/error gating prevents a flash of "wrong colour" stripe before the trust profile loads — the panel currently assumes a default of `unknown` until trust data lands, which would otherwise render a grey stripe for ~150ms before flipping to the real status.
+
+**No section reordering.** The slice 12 → 18 sections (TRUST L1 signals, encounter row, poll questions, VOLUME bar, SUBSCRIBE footer) stay in the same order regardless of pip state. The data layer is sound; what was missing was *framing*, not architecture. Reordering would over-engineer a slice that's about copy + tone.
+
+**Encounter / poll button palettes unchanged.** YES is solid black, NO is solid crimson. Keying the buttons to the pip palette would muddy the polling signal — the user is registering an opinion *about* the writer, not echoing the existing pip colour. The crimson NO + black YES grammar is one of the panel's load-bearing decisions and stays untouched.
+
+**No tooltip / aria-live announcement on stripe colour change.** The pip glyph itself carries `title` + `aria-label` per `TrustPip.tsx` (e.g. "Contested signal"). Duplicating that on the stripe would be redundant for screen readers and noisy for sighted users; one source is enough.
+
+Skipped intentionally: section reordering by state (e.g. polls foregrounded for grey, contests-list foregrounded for crimson — the current chrome carries the framing without rearranging structure), state-conditional CTAs (e.g. a `REPORT THIS USER ›` link in the contested-state footer — abuse reporting lives at a different surface and isn't part of the pip panel's gesture vocabulary), polling-question reordering when the pip is contested (showing the negative-tally question first — the `humanity / authenticity / good_faith` order is design-canonical and reordering by state would obscure the question you're asking), animated stripe transition between states (slice cadence doesn't justify the Framer Motion plumbing for a colour change that happens once on open and never re-renders without a panel close), per-status pip glyph sizing on the header (today's 1.4× scale is constant), help-text overlay explaining the four states (the legend is implicit in the subtitle copy; an explicit pip-states cheat sheet would belong on a `/about/trust` page that isn't built), the 'unknown' state's invitation copy varying by whether the writer has *any* L1 signal vs literally zero (the "new here" framing reads OK across the gradient — overshooting precision when there's no data to drive a finer copy split), per-locale subtitle copy (i18n is its own infrastructure pass that the workspace experiment hasn't tackled).
+
 ## Deferred (TODO in code, not blocking the experiment)
 
 - Save persistence (per-feed Saved state schema and surface).
@@ -569,13 +621,11 @@ Skipped intentionally: encounter count from `vouches.dimension = 'encounter'` (t
 - Per-source mode mixing inside one feed (slice 16 picks a feed-level dominant mode).
 - Random-mode stable pagination (slice 16 re-rolls per query).
 - Anonymous attestation pipeline (slice 15 ships attributable polls; trust-system-proper rewrites the storage backend).
-- In-person count line on the pip panel (`vouches.dimension = 'encounter'` aggregate).
 - Dark mode.
 - "Medium-bright" pixel value.
 - Cards with media (lead images, video embeds).
 - Long-note truncation.
 - Tags in article mode.
-- Pip panel for non-green trust states (waits on the colour-composition slice).
 - Cross-protocol reply semantics (slice 13 inline thread is native-only; external cards still have no Reply / Thread affordances).
 - Brightness × focus coupling (also blocks per-brightness theming for the slice-13 inline playscript).
 - Nudge dismissal persistence beyond session.

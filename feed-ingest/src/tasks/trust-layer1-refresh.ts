@@ -20,6 +20,12 @@ import { composePipStatus, type PipPolls } from '../lib/trust-pip.js'
 // per user (LEFT JOIN to a grouped view of trust_polls), then JS calls
 // composePipStatus() per row. The second pass is a single multi-row UPDATE
 // via UNNEST so we still write all users in one round-trip.
+//
+// Slice 18 adds the encounter signal — count of non-withdrawn `vouches` rows
+// where `dimension = 'encounter'` and `value = 'affirm'`. Aggregate count
+// only (visibility doesn't matter for the pip composition; the panel's
+// surface decision about whether to show attestor identity belongs to the
+// /trust/:userId route, which already filters on visibility = 'public').
 // =============================================================================
 
 interface RefreshRow {
@@ -29,6 +35,7 @@ interface RefreshRow {
   article_count: number
   payment_verified: boolean
   nip05_verified: boolean
+  encounter_count: number
   poll_humanity_yes: number
   poll_humanity_no: number
   poll_authenticity_yes: number
@@ -66,6 +73,19 @@ export const trustLayer1Refresh: Task = async () => {
         SUM(CASE WHEN question = 'good_faith'   AND answer = 'no'  THEN 1 ELSE 0 END)::int AS poll_good_faith_no
       FROM trust_polls
       GROUP BY subject_id
+    ),
+    encounter_aggregates AS (
+      -- Slice 18: encounter affirms — the "I've met this person" gesture. The
+      -- pip composer treats ≥1 as an L1 anchor and ≥2 as strong-on-its-own.
+      -- Visibility doesn't matter for the count (panel surface filters on
+      -- public separately); contests would be aggregate-only by route rule
+      -- and don't unlock anchor — only affirms.
+      SELECT subject_id AS user_id, COUNT(*)::int AS encounter_count
+      FROM vouches
+      WHERE dimension = 'encounter'
+        AND value = 'affirm'
+        AND withdrawn_at IS NULL
+      GROUP BY subject_id
     )
     SELECT
       a.id AS user_id,
@@ -74,6 +94,7 @@ export const trustLayer1Refresh: Task = async () => {
       COALESCE(ws.article_count, 0)              AS article_count,
       (a.stripe_connect_id IS NOT NULL AND a.stripe_connect_kyc_complete) AS payment_verified,
       FALSE                                       AS nip05_verified,
+      COALESCE(ea.encounter_count, 0)            AS encounter_count,
       COALESCE(pa.poll_humanity_yes, 0)          AS poll_humanity_yes,
       COALESCE(pa.poll_humanity_no, 0)           AS poll_humanity_no,
       COALESCE(pa.poll_authenticity_yes, 0)      AS poll_authenticity_yes,
@@ -81,9 +102,10 @@ export const trustLayer1Refresh: Task = async () => {
       COALESCE(pa.poll_good_faith_yes, 0)        AS poll_good_faith_yes,
       COALESCE(pa.poll_good_faith_no, 0)         AS poll_good_faith_no
     FROM accounts a
-    LEFT JOIN writer_stats ws    ON ws.writer_id = a.id
-    LEFT JOIN paying_readers pr  ON pr.writer_id = a.id
-    LEFT JOIN poll_aggregates pa ON pa.user_id   = a.id
+    LEFT JOIN writer_stats ws         ON ws.writer_id = a.id
+    LEFT JOIN paying_readers pr       ON pr.writer_id = a.id
+    LEFT JOIN poll_aggregates pa      ON pa.user_id   = a.id
+    LEFT JOIN encounter_aggregates ea ON ea.user_id   = a.id
     `,
   )
 
@@ -103,6 +125,7 @@ export const trustLayer1Refresh: Task = async () => {
         articleCount:       r.article_count,
         paymentVerified:    r.payment_verified,
         nip05Verified:      r.nip05_verified,
+        encounterCount:     r.encounter_count,
       },
       polls,
     })
