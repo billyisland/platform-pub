@@ -130,7 +130,7 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Full spec: `docs/adr/UNIVERSAL-FEED-ADR.md`
 
 ### Trust graph (Phases 1–2 + 4)
-- `trust_layer1` (migration 065): precomputed per-user signals (account age, paying readers, article count, Stripe KYC, NIP-05). Daily cron in feed-ingest (`trust_layer1_refresh`, 01:00 UTC). Pip status (`known`/`partial`/`unknown`) renders on all feed cards via `TrustPip` component
+- `trust_layer1` (migration 065 + 079): precomputed per-user signals (account age, paying readers, article count, Stripe KYC, NIP-05). Daily cron in feed-ingest (`trust_layer1_refresh`, 01:00 UTC). Pip status is a four-state glyph (`known`/`partial`/`unknown`/`contested`) composed by `feed-ingest/src/lib/trust-pip.ts` from L1 signals + `trust_polls` aggregates (workspace experiment slice 17); renders on all feed cards via `TrustPip` component
 - `vouches` (migration 066 + 067): per-attestor/subject/dimension endorsements. Dimensions: `humanity`, `encounter`, `identity`, `integrity`. Values: `affirm`/`contest`. Visibility: `public` or `aggregate`. Contests must be aggregate. One vouch per attestor/subject/dimension (upsert). Soft-delete withdrawal via `withdrawn_at`. Decay tracking: `epochs_since_reaffirm` + `last_reaffirmed_at` (reset on reaffirmation)
 - `trust_profiles` (migration 066): precomputed dimension scores populated by epoch aggregation cron
 - `trust_epochs` (migration 067): audit trail of aggregation runs (full quarterly + Mon/Thu mop-ups)

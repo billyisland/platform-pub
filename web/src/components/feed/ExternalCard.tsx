@@ -43,7 +43,7 @@ export interface ExternalFeedItem {
   publishedAt: number
   sourceName: string | null
   sourceAvatar: string | null
-  pipStatus?: 'known' | 'partial' | 'unknown'
+  pipStatus?: 'known' | 'partial' | 'unknown' | 'contested'
 }
 
 interface ExternalCardProps {

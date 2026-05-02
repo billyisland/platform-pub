@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -531,9 +531,34 @@ Outer SELECT cursors on `(effective_score, fi_id)` with row-comparison `< ($4::f
 
 Skipped intentionally: per-source mode mixing inside one feed (one source chronological, another scored — needs row-level mode dispatch), random-mode stable pagination (would need a per-cursor seed; load-more re-rolls is acceptable for the experiment), weight-into-explore (the empty-source placeholder branch keeps its score-DESC explore semantics — placebo-on-a-feed-with-no-sources is the explore stream itself, not the volume bar's territory), cross-vessel ranking interactions (each vessel still scores independently — a writer at weight-4 in feed A and weight-1 in feed B is correctly ranked per-vessel), explicit TOP metric definition (the route accepts `'top'` and maps it to `sampling_mode = 'scored'` which uses `feed_items.score` — refining what TOP "means" beyond reusing the existing score is its own pass), unit/integration tests against a live DB (the gateway's vitest harness mocks `pool.query` so testing this would assert SQL string shape, not behaviour — manual smoke is the verification floor for this slice, matching slices 13–15), volume-bar honest-state when the underlying source row didn't exist before commit (currently the PUT creates it; that's still correct — the bar was always meant to upsert).
 
+### Slice 17 — pip colour composition from polls + Layer 1 (2026-05-02)
+
+The pip stops mapping purely from Layer 1 thresholds. Slices 12 and 15 had built up the data layer (L1 signals + three-question polls) but the pip's colour was still set by the slice-1-shipped SQL CASE on `(account_age_days, paying_reader_count, payment_verified)` only — polls were collected but never observed in the inline glyph. Slice 17 closes the loop with a four-state composition (`known/partial/unknown/contested`) blending both inputs.
+
+**Migration 079.** `trust_layer1.pip_status` CHECK constraint widens from three values to four — adds `'contested'`. No data migration needed; the daily refresh repopulates every row.
+
+**Compose function (`feed-ingest/src/lib/trust-pip.ts`).** Pure module, no DB. `composePipStatus({layer1, polls}) → PipStatus`. Threshold rules:
+- **Crimson (`contested`)** — `humanity` no-share ≥0.7 (with sample ≥3) OR `good_faith` no-share ≥0.7 (with sample ≥3). Authenticity-no alone stays amber, not crimson — the handoff intentionally distinguishes authenticity (a deliberately weaker question than the formal `identity` vouch dimension) from the behavioural-honesty signal `good_faith`.
+- **Green (`known`)** — all three polls positive (yes-share ≥0.7, sample ≥3) AND L1 anchor (NIP-05 verified OR ≥1 paying reader). The L1 anchor stops a flood of poll-positive responses on a brand-new account from minting a green pip without any platform-side commitment from the writer.
+- **Amber (`partial`)** — any single poll positive (with sample), OR strong L1 (≥3 articles + payment_verified) without polls. Lets a writer with low polling volume but real platform commitment surface above grey.
+- **Grey (`unknown`)** — no meaningful signal yet.
+
+Sample-size floor of 3 is the honest first cut — keeps a single hostile vote from flipping the pip but doesn't pretend to confidence-interval rigour. The handoff calls for proper confidence-interval scaling once the system has volume; we'll tune after a week of real polling. Threshold values (0.7 / 0.3 / 3) are chosen by feel and live as constants at the top of the module so a tuning pass touches one place.
+
+**Tests (`feed-ingest/src/lib/trust-pip.test.ts`).** 14 unit tests covering each state + the sample-size floor + edge cases (authenticity-no without humanity-no stays amber; humanity-no overrides any L1 anchor; ambiguous polls without L1 stay grey; below-floor poll volume reads as no-data).
+
+**Cron (`feed-ingest/src/tasks/trust-layer1-refresh.ts`).** Existing daily task no longer composes pip in SQL. Single SELECT now also pivots `trust_polls` into six per-subject counts via `LEFT JOIN poll_aggregates`; JS calls `composePipStatus()` per row; bulk upsert via `UNNEST` keeps it to two round-trips total. Threshold logic is in JS rather than SQL CASE so a tuning change touches one file.
+
+**Frontend (`web/src/components/ui/TrustPip.tsx`).** `PipStatus` type widens; `PIP_COLORS` adds `contested: '#B5242A'` (the crimson the rest of the workspace uses); `PIP_TITLES` adds `'Contested signal'` for the tooltip. `web/src/lib/ndk.ts` widens its exported `PipStatus`. The deprecated `web/src/components/feed/ExternalCard.tsx` (kept until merge per Migration Map §1) widens its inline copy of the union too — small busywork, retires with the file.
+
+**No pip-panel surface change.** `PipPanel.tsx` already shows raw L1 + polling aggregates; the composition lives behind the inline pip glyph. The panel surfaces the *constituent* data so users can see why a pip is the colour it is — no new copy needed.
+
+**Refresh cadence still daily.** A poll vote's effect on the inline pip lands at the next `trust_layer1_refresh` (01:00 UTC). Real-time pip refresh on vote would need either a per-write trigger or a fast-path recomputation in the route handler; the daily cron is the cadence the broader trust system uses, and the panel itself shows live aggregates so the user sees their tap reflected immediately even if the inline pip lags.
+
+Skipped intentionally: encounter count from `vouches.dimension = 'encounter'` (the in-person-met signal — its own slice; the handoff intends it as a hard upgrade path to green), confidence-interval / sample-size scaling beyond the floor of 3 (the current rule is honestly placeholder), real-time pip refresh on poll vote (cron-cadence is intentional), per-viewer pip composition (the eventual "trust as a function of *your* graph" needs the Layer 4 relational layer plus a per-request compute path, deferred), hysteresis to prevent a pip flapping between contested ↔ partial when sample sizes hover at the threshold (revisit if it shows up in real data), pip composition for external authors (still grey because external authors don't have a platform user id, same constraint as slice 12), seeding a refresh on poll-write so freshly-polled subjects update faster than the daily cadence.
+
 ## Deferred (TODO in code, not blocking the experiment)
 
-- Trust pip colour function (signal composition rule — slice 15 ships the polling data; slice that maps polls + encounter count into the four-state pip is its own design pass).
 - Save persistence (per-feed Saved state schema and surface).
 - DM/messages model (vessel vs `/messages` route).
 - Notifications anchor (corner pip vs ∀-menu adjunct vs vessel).

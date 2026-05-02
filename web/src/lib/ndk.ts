@@ -15,7 +15,7 @@ export const KIND_DELETION = 5
 // App-level event interfaces
 // =============================================================================
 
-export type PipStatus = 'known' | 'partial' | 'unknown'
+export type PipStatus = 'known' | 'partial' | 'unknown' | 'contested'
 
 export type SizeTier = 'lead' | 'standard' | 'brief'
 
