@@ -925,11 +925,32 @@ function weightToStep(weight: number): number {
 }
 
 // -----------------------------------------------------------------------------
-// Source-filtered items query — slice 4. Fans out across the four source_type
-// branches via OR-ed EXISTS clauses against feed_sources scoped to the feed.
-// Cursor uses (published_at, id) since slice 4 doesn't yet rank by score
-// across sources — chronological is honest until weight + sampling_mode wire
-// in. Mute is applied per-row via muted_at.
+// Source-filtered items query — slice 16.
+//
+// Slice 4 shipped the source-set fan-out but ranked everything chronologically
+// regardless of feed_sources.weight or sampling_mode. Slice 14 then surfaced a
+// volume bar that wrote real weight rows but had nothing to do at query time.
+// Slice 16 closes the loop:
+//
+//   - Each item that matches at least one (non-muted) source carries
+//     MAX(weight) across its matches — a writer subscribed via two sources
+//     (e.g. account + publication) gets the louder of the two.
+//
+//   - effective_score is computed per item from the feed-level dominant
+//     sampling_mode (most common across non-muted source rows, alphabetical
+//     tiebreak for determinism):
+//       chronological → epoch(published_at) * weight
+//       scored        → feed_items.score * weight
+//       random        → random() * weight  (re-rolls per query)
+//
+//   - Cursor is (effective_score, id). Random mode's cursor is mathematically
+//     valid but the next page reshuffles — true random pagination requires a
+//     stable seed per cursor and is deferred.
+//
+// Per-source mode mixing inside one feed (one source chronological, another
+// scored) is also deferred — it would need a per-row mode column flowing
+// through a more complex score computation. The dominant-mode rule is the
+// honest first cut.
 // -----------------------------------------------------------------------------
 async function sourceFilteredItems(
   readerId: string,
@@ -937,54 +958,68 @@ async function sourceFilteredItems(
   rawCursor: string | undefined,
   limit: number,
 ) {
-  const cursor = parseCursor(rawCursor)
+  const cursor = parseScoredCursor(rawCursor)
   const cursorClause = cursor
-    ? `AND (fi.published_at, fi.id) < (to_timestamp($4), $5::uuid)`
+    ? `AND (effective_score, fi_id) < ($4::float8, $5::uuid)`
     : ''
   const params: any[] = cursor
-    ? [readerId, feedId, limit, cursor.ts, cursor.id]
+    ? [readerId, feedId, limit, cursor.score, cursor.id]
     : [readerId, feedId, limit]
 
   const result = await pool.query<any>(
     `
-    SELECT ${FEED_SELECT}, a.title AS title
-    FROM feed_items fi
-    ${FEED_JOINS}
-    WHERE fi.deleted_at IS NULL
-      AND fi.author_id != $1
-      AND NOT EXISTS (
-        SELECT 1 FROM blocks WHERE blocker_id = $1 AND blocked_id = fi.author_id
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM mutes WHERE muter_id = $1 AND muted_id = fi.author_id
-      )
-      AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
-      AND (
-        EXISTS (
-          SELECT 1 FROM feed_sources fs
-          WHERE fs.feed_id = $2 AND fs.muted_at IS NULL
-            AND fs.source_type = 'account' AND fs.account_id = fi.author_id
+    WITH feed_mode AS (
+      SELECT sampling_mode
+        FROM feed_sources
+        WHERE feed_id = $2 AND muted_at IS NULL
+        GROUP BY sampling_mode
+        ORDER BY COUNT(*) DESC, sampling_mode
+        LIMIT 1
+    ),
+    matched AS (
+      SELECT fi.id AS fi_id, MAX(fs.weight)::float8 AS weight
+        FROM feed_items fi
+        LEFT JOIN articles a ON a.id = fi.article_id
+        JOIN feed_sources fs
+          ON fs.feed_id = $2 AND fs.muted_at IS NULL
+         AND (
+           (fs.source_type = 'account' AND fs.account_id = fi.author_id)
+           OR (fs.source_type = 'publication' AND fs.publication_id = a.publication_id)
+           OR (fs.source_type = 'external_source' AND fs.external_source_id = fi.source_id)
+           OR (fs.source_type = 'tag' AND EXISTS (
+             SELECT 1 FROM article_tags at_join
+             JOIN tags t_join ON t_join.id = at_join.tag_id
+             WHERE at_join.article_id = fi.article_id AND t_join.name = fs.tag_name
+           ))
+         )
+        WHERE fi.deleted_at IS NULL
+        GROUP BY fi.id
+    ),
+    scored AS (
+      SELECT ${FEED_SELECT}, a.title AS title,
+        (CASE
+          WHEN (SELECT sampling_mode FROM feed_mode) = 'scored'
+            THEN COALESCE(fi.score, 0)::float8 * m.weight
+          WHEN (SELECT sampling_mode FROM feed_mode) = 'random'
+            THEN random() * m.weight
+          ELSE EXTRACT(EPOCH FROM fi.published_at)::float8 * m.weight
+        END)::float8 AS effective_score
+      FROM feed_items fi
+      JOIN matched m ON m.fi_id = fi.id
+      ${FEED_JOINS}
+      WHERE fi.deleted_at IS NULL
+        AND fi.author_id != $1
+        AND NOT EXISTS (
+          SELECT 1 FROM blocks WHERE blocker_id = $1 AND blocked_id = fi.author_id
         )
-        OR EXISTS (
-          SELECT 1 FROM feed_sources fs
-          WHERE fs.feed_id = $2 AND fs.muted_at IS NULL
-            AND fs.source_type = 'publication' AND fs.publication_id = a.publication_id
+        AND NOT EXISTS (
+          SELECT 1 FROM mutes WHERE muter_id = $1 AND muted_id = fi.author_id
         )
-        OR EXISTS (
-          SELECT 1 FROM feed_sources fs
-          WHERE fs.feed_id = $2 AND fs.muted_at IS NULL
-            AND fs.source_type = 'external_source' AND fs.external_source_id = fi.source_id
-        )
-        OR EXISTS (
-          SELECT 1 FROM feed_sources fs
-          JOIN article_tags at_join ON at_join.article_id = fi.article_id
-          JOIN tags t_join ON t_join.id = at_join.tag_id
-          WHERE fs.feed_id = $2 AND fs.muted_at IS NULL
-            AND fs.source_type = 'tag' AND fs.tag_name = t_join.name
-        )
-      )
-      ${cursorClause}
-    ORDER BY fi.published_at DESC, fi.id DESC
+        AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
+    )
+    SELECT * FROM scored
+    WHERE TRUE ${cursorClause}
+    ORDER BY effective_score DESC, fi_id DESC
     LIMIT $3
   `,
     params,
@@ -993,10 +1028,24 @@ async function sourceFilteredItems(
   const items = result.rows.map(rowToItem)
   const lastRow = result.rows[result.rows.length - 1]
   const nextCursor = lastRow
-    ? `${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
+    ? `${Number(lastRow.effective_score)}:${lastRow.fi_id}`
     : undefined
 
   return { items, nextCursor }
+}
+
+// Slice 16 cursor: (effective_score:float, id:uuid). Distinct from
+// parseCursor's 2-part shape (which the slice-4 chronological branch used as
+// (ts:int, id)) — the float vs int parse matters because parseInt would
+// truncate fractional weights.
+function parseScoredCursor(raw: string | undefined): { score: number; id: string } | undefined {
+  if (!raw) return undefined
+  const parts = raw.split(':')
+  if (parts.length !== 2) return undefined
+  const score = Number(parts[0])
+  const id = parts[1]
+  if (Number.isNaN(score) || !UUID_RE.test(id)) return undefined
+  return { score, id }
 }
 
 async function placeholderExploreItems(

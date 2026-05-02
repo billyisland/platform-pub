@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -507,6 +507,30 @@ The pip panel's TRUST section becomes load-bearing for the spec's three question
 
 Skipped intentionally: anonymous attestation pipeline (the trust-system-proper rewrite), graph-weighted aggregation (every respondent counts equally — the handoff's "anonymous and secure, drawing on the user's trust graph and the wider network" language requires the full system), decay across time, Sybil discount, the in-person count line below the three questions (needs `vouches.dimension = 'encounter'` data piped through — separate slice), pip-colour composition from poll results (the pip still maps from Layer 1 only), `ALL POLLING ›` depth view (the handoff's extended detail surface), confidence intervals on the percentage display (the handoff calls for "high confidence" colour signalling — needs a sample-size threshold function), question-level mute (a viewer who doesn't want to opine on humanity can simply not tap; a separate "skip" affordance is unnecessary friction), poll-question version history (today's three are not necessarily the final phrasing — when they change, existing rows stay valid because the question key is the join target, not the rendered string).
 
+### Slice 16 — items query honours `feed_sources.weight` + `sampling_mode` (2026-05-02)
+
+The slice 14 volume bar stops being a placebo. `sourceFilteredItems` now ranks rows by an `effective_score = mode_value × weight` blend rather than chronological-ignoring-weight. The volume bar's hint copy in `PipPanel.tsx` drops the *ranking by volume lands when the items query honours weight* admission and reads the terse *Weight applied to this feed's ranking.* — the bar's commitment is now observable in the vessel that triggered it.
+
+**Rewrite (`sourceFilteredItems` in `gateway/src/routes/feeds.ts`).** Three CTEs replace the slice-4 single SELECT:
+1. `feed_mode` — the feed's dominant `sampling_mode` across non-muted source rows. `GROUP BY sampling_mode ORDER BY COUNT(*) DESC, sampling_mode LIMIT 1`. Alphabetical tiebreak makes the choice deterministic when two modes have equal source counts.
+2. `matched` — every `feed_items` row that matches at least one non-muted source, with `weight = MAX(fs.weight)` across matches. The four `source_type` branches collapse into a single `JOIN feed_sources fs ON ... AND (account-match OR pub-match OR external-match OR tag-match)` with `GROUP BY fi.id`. Two sources for the same writer (e.g. account row + publication row) take the louder of the two weights.
+3. `scored` — runs `FEED_JOINS`, applies block / mute / reply-roots gates, computes `effective_score` from the dominant mode:
+   - `chronological` → `EXTRACT(EPOCH FROM published_at) * weight`
+   - `scored` → `COALESCE(fi.score, 0) * weight` (the existing `feed_scores_refresh` value)
+   - `random` → `random() * weight`
+
+Outer SELECT cursors on `(effective_score, fi_id)` with row-comparison `< ($4::float8, $5::uuid)`.
+
+**Cursor format (`parseScoredCursor`).** New 2-part `${effective_score}:${id}`. Distinct parser from `parseCursor` because the float vs `parseInt` matters for fractional weights — the existing `parseCursor` would silently truncate a `19345678.5` epoch-times-half score. Random mode's cursor is mathematically valid (later pages still filter `< previous_score`) but next-page rows reshuffle because `random()` reseeds per query — load-more under random mode is a re-roll, not stable pagination.
+
+**Per-source mode mixing — deferred.** A feed with one `chronological` and one `scored` source picks whichever mode has more source rows. Per-row mode dispatch (chronological's chrono-author beats scored's scored-author when they're in the same vessel) needs the mode column flowing through the per-row score computation; the dominant-mode rule is the honest first cut.
+
+**PipPanel hint update.** `web/src/components/workspace/PipPanel.tsx` `VolumeBar` hint copy drops the deferred-ranking disclaimer; the panel-level docstring updates to acknowledge slices 14–16 as the volume + polling story rather than placeholders.
+
+**No new dependencies.** All data already lives in `feed_sources` (migration 077) and `feed_items.score` (existing `feed_scores_refresh` cron). The only code change is the SQL rewrite + cursor parser + hint copy.
+
+Skipped intentionally: per-source mode mixing inside one feed (one source chronological, another scored — needs row-level mode dispatch), random-mode stable pagination (would need a per-cursor seed; load-more re-rolls is acceptable for the experiment), weight-into-explore (the empty-source placeholder branch keeps its score-DESC explore semantics — placebo-on-a-feed-with-no-sources is the explore stream itself, not the volume bar's territory), cross-vessel ranking interactions (each vessel still scores independently — a writer at weight-4 in feed A and weight-1 in feed B is correctly ranked per-vessel), explicit TOP metric definition (the route accepts `'top'` and maps it to `sampling_mode = 'scored'` which uses `feed_items.score` — refining what TOP "means" beyond reusing the existing score is its own pass), unit/integration tests against a live DB (the gateway's vitest harness mocks `pool.query` so testing this would assert SQL string shape, not behaviour — manual smoke is the verification floor for this slice, matching slices 13–15), volume-bar honest-state when the underlying source row didn't exist before commit (currently the PUT creates it; that's still correct — the bar was always meant to upsert).
+
 ## Deferred (TODO in code, not blocking the experiment)
 
 - Trust pip colour function (signal composition rule — slice 15 ships the polling data; slice that maps polls + encounter count into the four-state pip is its own design pass).
@@ -516,8 +540,9 @@ Skipped intentionally: anonymous attestation pipeline (the trust-system-proper r
 - Search entry point.
 - Publications surface in workspace.
 - Named audiences (FOR field) persistence + consent + management.
-- Volume TOP metric definition (slice 14 records the value; ranking semantics defer with the items-query-honours-weight slice).
-- Items query honouring `feed_sources.weight` (slice 14 stores it; ranking still chronological).
+- Volume TOP metric definition (slice 14 records the value; slice 16 maps it to `feed_items.score × weight`; refining what TOP *means* beyond reusing the existing score remains open).
+- Per-source mode mixing inside one feed (slice 16 picks a feed-level dominant mode).
+- Random-mode stable pagination (slice 16 re-rolls per query).
 - Anonymous attestation pipeline (slice 15 ships attributable polls; trust-system-proper rewrites the storage backend).
 - In-person count line on the pip panel (`vouches.dimension = 'encounter'` aggregate).
 - Dark mode.

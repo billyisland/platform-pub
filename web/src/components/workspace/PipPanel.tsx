@@ -30,10 +30,10 @@ import type { PipStatus } from '../../lib/ndk'
 // This slice ships a first cut: trust section renders the existing Layer 1
 // signals + dimension scores from `trust_profiles` rather than the polling
 // questions described in the handoff (the polling backend is a future system
-// per ADR-OMNIBUS §III.7 and the trust-system spec proper). The VOLUME bar
-// is rendered as a placeholder — interactive, but per-feed volume isn't yet
-// schema-backed (ADR §3 "stub in code, no schema until the surface
-// solidifies"). Both sections are flagged in-panel so users see what's real.
+// per ADR-OMNIBUS §III.7 and the trust-system spec proper). Slice 14 wired
+// the VOLUME bar against feed_sources rows; slice 15 added the polling-
+// questions row; slice 16 made weight/sampling_mode actually load-bearing in
+// the items query.
 
 const TOKENS = {
   scrim: 'rgba(26, 26, 24, 0.18)',
@@ -553,7 +553,7 @@ function VolumeBar({
           ? 'Default — no commitment yet. Pick a step to set how much of this author you want in this feed.'
           : currentStep === 0
             ? 'Muted in this feed.'
-            : 'Weight is recorded; ranking by volume lands when the items query honours weight.'}
+            : 'Weight applied to this feed’s ranking.'}
       </p>
     </div>
   )
