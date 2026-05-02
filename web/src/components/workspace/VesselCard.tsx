@@ -8,6 +8,7 @@ import { useWriterName } from '../../hooks/useWriterName'
 import { TrustPip } from '../ui/TrustPip'
 import { VoteControls } from '../ui/VoteControls'
 import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
+import { extractNoteMedia, stripMediaUrls } from '../../lib/media'
 import type { ReplyTarget } from './Composer'
 import { PipTrigger } from './PipTrigger'
 import { ReplySection } from '../replies/ReplySection'
@@ -375,6 +376,139 @@ function SourceAttribution({
   )
 }
 
+// Slice 23 — hero media for notes + external cards. Articles defer until the
+// editor + publish path carry the NIP-23 image tag.
+//
+// Renders the first image/video item; remaining items collapse into a `+N`
+// corner pill. Image → lazy-loaded <img> in a 16:9 cover container. Video →
+// thumbnail (if present) + play glyph; click opens the source URL. Suppressed
+// in compact density since the action strip is also suppressed there — we
+// don't want a hero image rendering on a row that's intentionally airless.
+interface MediaItemLike {
+  type: 'image' | 'video' | 'audio' | 'link'
+  url: string
+  thumbnail?: string
+  alt?: string
+}
+
+function MediaBlock({
+  items,
+  ctx,
+  externalUrl,
+}: {
+  items: MediaItemLike[]
+  ctx: CardContext
+  externalUrl?: string
+}) {
+  if (ctx.density === 'compact') return null
+  if (!items || items.length === 0) return null
+
+  // Pick the first image; if none, the first video. Audio + link items are
+  // skipped — link cards have a different mental model (the existing external
+  // card link-embed) and audio isn't part of the workspace's render budget.
+  const hero = items.find((m) => m.type === 'image') ?? items.find((m) => m.type === 'video')
+  if (!hero) return null
+
+  const overflowCount = items.length - 1
+  const playable = hero.type === 'video' && externalUrl
+
+  return (
+    <div
+      onClick={(e) => {
+        if (!playable) return
+        e.stopPropagation()
+        window.open(externalUrl, '_blank', 'noopener,noreferrer')
+      }}
+      style={{
+        position: 'relative',
+        marginTop: 10,
+        marginBottom: 6,
+        background: ctx.palette.interior,
+        aspectRatio: '16 / 9',
+        overflow: 'hidden',
+        cursor: playable ? 'pointer' : undefined,
+      }}
+    >
+      {hero.type === 'image' && (
+        <img
+          src={hero.url}
+          alt={hero.alt ?? ''}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      )}
+      {hero.type === 'video' && hero.thumbnail && (
+        <img
+          src={hero.thumbnail}
+          alt={hero.alt ?? ''}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      )}
+      {hero.type === 'video' && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: hero.thumbnail ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.06)',
+          }}
+        >
+          <span
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.92)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M5 3.5v9l7-4.5z" fill="#1A1A18" />
+            </svg>
+          </span>
+        </div>
+      )}
+      {overflowCount > 0 && (
+        <span
+          aria-hidden="true"
+          className="font-mono"
+          style={{
+            position: 'absolute',
+            right: 8,
+            bottom: 8,
+            padding: '2px 8px',
+            background: 'rgba(0,0,0,0.72)',
+            color: '#FFFFFF',
+            fontSize: 11,
+            letterSpacing: '0.04em',
+          }}
+        >
+          +{overflowCount}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function ArticleVesselCard({
   article,
   ctx,
@@ -588,6 +722,10 @@ function NoteVesselCard({
     )
   }
 
+  const noteMedia = extractNoteMedia(note.content)
+  const noteDisplayText =
+    noteMedia.length > 0 ? stripMediaUrls(note.content).displayText : note.content
+
   return (
     <CardShell ctx={ctx}>
       <Byline
@@ -596,12 +734,15 @@ function NoteVesselCard({
         publishedAt={note.publishedAt}
         ctx={ctx}
       />
-      <p
-        className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
-        style={{ color: ctx.palette.cardTitle }}
-      >
-        {truncateText(note.content, 220)}
-      </p>
+      {noteDisplayText && (
+        <p
+          className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
+          style={{ color: ctx.palette.cardTitle }}
+        >
+          {truncateText(noteDisplayText, 220)}
+        </p>
+      )}
+      <MediaBlock items={noteMedia} ctx={ctx} />
       {ctx.density === 'full' && (
         <SourceAttribution
           protocol="NOSTR"
@@ -758,6 +899,7 @@ function ExternalVesselCard({
           {truncateText(body, 200)}
         </p>
       )}
+      <MediaBlock items={external.media ?? []} ctx={ctx} externalUrl={externalUrl} />
       {ctx.density === 'full' && (
         <SourceAttribution
           protocol={protocol}

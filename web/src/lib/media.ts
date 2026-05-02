@@ -120,3 +120,22 @@ export function stripMediaUrls(text: string): {
   }
   return { displayText, imageUrls, embedUrls }
 }
+
+/**
+ * Slice 23 — pull image URLs out of note content, shaped like the
+ * external_items.media JSONB the gateway emits, so a single MediaBlock can
+ * render notes + externals through one path.
+ */
+export interface ExtractedMedia {
+  type: 'image' | 'video' | 'audio' | 'link'
+  url: string
+  thumbnail?: string
+  alt?: string
+}
+
+export function extractNoteMedia(content: string): ExtractedMedia[] {
+  if (!content) return []
+  return extractUrls(content)
+    .filter(isImageUrl)
+    .map((url) => ({ type: 'image' as const, url }))
+}
