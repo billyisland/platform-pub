@@ -19,6 +19,7 @@ import { ResetLayoutConfirm } from './ResetLayoutConfirm'
 import { ForkFeedPrompt } from './ForkFeedPrompt'
 import { ForallCeremony } from './ForallCeremony'
 import { NotificationsAnchor } from './NotificationsAnchor'
+import { SearchAnchor } from './SearchAnchor'
 
 const FLOOR = '#F0EFEB' // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed"
@@ -601,6 +602,7 @@ export function WorkspaceView() {
         })}
       <ForallMenu onAction={handleForallAction} />
       <NotificationsAnchor />
+      <SearchAnchor />
       <Composer
         open={!!composerOpen}
         initialMode={composerOpen === 'article' ? 'article' : 'note'}
