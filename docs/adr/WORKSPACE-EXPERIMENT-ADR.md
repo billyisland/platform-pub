@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
+*Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`).*
 
 ## Context
 
@@ -758,6 +758,20 @@ The slice 23 deferral retires. Articles now carry an explicit cover image (NIP-2
 **Backwards compatibility.** Articles published before slice 23b have NULL `cover_image_url` and NULL `feed_items.media`. The reader page's legacy `extractHeroImage` + `stripHeroImage` pair is the back-compat path that gives those articles a hero from their first inline image. The workspace surface renders them without a hero (which matches their pre-23b appearance — there was no article media at all).
 
 Skipped intentionally: crop / focal-point UI (the picker is upload-or-remove; revisit when cover-as-design-element pressure shows up), alt-text capture in the picker (the `media` JSON shape carries `alt` but the picker UI doesn't ask for one — the `<img>` lands with empty alt), NIP-23 image-tag dimension hints (the spec allows `["image", url, "WxH"]` — emitting plain 2-element keeps the upload pipeline from probing Blossom for dimensions on the client), auto-pick-from-first-inline-image button in the picker (legacy reader does this implicitly; making it explicit means the writer chooses, not the system), cover surfacing on dashboard / `/<username>` profile / publication CMS list (each list view can pull `articles.cover_image_url` in its own slice; the schema is in place), backfill (no retroactive write into `feed_items.media` for pre-23b articles), cross-protocol bridges (Mastodon featured-image, Bluesky embeds — the cross-post pipeline `feed-ingest/src/tasks/outbound-cross-post.ts` skips articles entirely today and stays so; cover translation per protocol is its own slice), per-density variation in hero size (16:9 is constant across standard + full — full could go larger but the rhythm benefit is minor), `image` tag on the v2 (vault re-index) event already inherits from `baseTags` since both v1 and v2 reuse the same tag list, so this is automatic — the only subtlety is that the `image` tag is added to `baseTags` *after* the slice-10 ordering and before the price/gate tags, which keeps tag order stable across covered + uncovered articles.
+
+### Slice 24 — vessel bar: inline source input + controls on bottom edge (2026-05-07)
+
+The thin 8px bottom wall becomes a 32px toolbar bar (`VesselBar`) that is the vessel's bottom edge. The bar carries the cycle controls (brightness, density, orientation, saved-view) on its left side, a gear button that opens the FeedComposer modal (rename/delete/full source list), and a resolver-backed `+ add source` text input on its right side. Adding a source no longer requires opening a modal — type into the bar, pick a result from the dropdown, and the vessel refetches.
+
+**New component (`web/src/components/workspace/VesselBar.tsx`).** Self-contained bar with its own resolver state (300ms debounce, Phase B polling up to 3 ticks, tag fallback for `#name` input). Dropdown renders below the bar, palette-matched per brightness. Cycle buttons use `BarButton` (hover brightens from muted to full). The gear `⚙` button is the surviving path to the `FeedComposer` modal for rename, delete, and viewing the full source list with remove buttons.
+
+**Palette tokens (`web/src/components/workspace/tokens.ts`).** `VesselPalette` gains 8 new fields: `barBg`, `barText`, `barTextMuted`, `barInputBg`, `barInputText`, `barInputPlaceholder`, `barDropdownBg`, `barDropdownHover`. Primary brightness is dark (`#111111` bar, `#2A2A27` input); medium is mid-tone (`#4A4A47`); dim is light (`#8A8880`). The bar always contrasts with the vessel interior above it.
+
+**Vessel chassis (`web/src/components/workspace/Vessel.tsx`).** Bottom border removed from `wallStyle` (the bar replaces it). The old floating `CycleButton` group (positioned at `bottom: -WALL - 18`) and the `CycleButton` helper component are deleted. The chassis div becomes `display: flex; flex-direction: column` so the content area (`flex: 1 1 0; min-height: 0`) and bar stack correctly when the vessel has a fixed height. The name label is simplified to a drag-only handle (no click handler). The resize corner mark now uses `palette.barTextMuted` so it reads against the bar background.
+
+**WorkspaceView wiring (`web/src/components/workspace/WorkspaceView.tsx`).** Each `<Vessel>` receives `feedId={v.feed.id}` and `onSourceAdded={() => void loadVesselItems(v.feed)}` so the bar can add sources and trigger a refetch without the modal.
+
+Skipped intentionally: source removal from the bar (still requires the FeedComposer modal via the gear button), source count badge on the bar (the bar stays minimal — count is visible in the modal), per-source weight/sampling authoring from the bar, keyboard navigation in the dropdown (Tab/arrow — the dropdown uses mouse selection only for now), mobile touch adaptation (bar is desktop-only per ADR §5).
 
 ## Deferred (TODO in code, not blocking the experiment)
 

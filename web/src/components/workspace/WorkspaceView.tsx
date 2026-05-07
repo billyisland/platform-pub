@@ -530,7 +530,9 @@ export function WorkspaceView() {
             <Vessel
               key={v.feed.id}
               name={v.feed.name}
+              feedId={v.feed.id}
               onNameClick={() => setFeedComposerFor(v.feed)}
+              onSourceAdded={() => void loadVesselItems(v.feed)}
               position={{ x: layout.x, y: layout.y }}
               size={{ w: layout.w, h: layout.h }}
               brightness={layout.brightness}

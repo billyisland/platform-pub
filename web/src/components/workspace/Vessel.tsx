@@ -7,13 +7,11 @@ import {
   DEFAULT_BRIGHTNESS,
   DEFAULT_DENSITY,
   DEFAULT_ORIENTATION,
-  nextBrightness,
-  nextDensity,
-  nextOrientation,
   type Brightness,
   type Density,
   type Orientation,
 } from './tokens'
+import { VesselBar } from './VesselBar'
 
 // Vessel — the ⊔ chassis, per WIREFRAME-DECISIONS-CONSOLIDATED.md Step 1.
 //
@@ -49,22 +47,15 @@ const MAX_H = 2000
 interface VesselProps {
   name: string
   children: ReactNode
+  feedId: string
   onNameClick?: () => void
+  onSourceAdded?: () => void
   position: { x: number; y: number }
   size?: { w?: number; h?: number }
   brightness?: Brightness
   density?: Density
   orientation?: Orientation
-  /**
-   * Slice 9: while the ∀→H→⊔ ceremony for this vessel is in flight, the
-   * vessel mounts (items fetch behind the curtain) but is visually
-   * suppressed. The ceremony overlay supplies the visible ⊔ until it
-   * settles and clears the flag.
-   */
   hidden?: boolean
-  // Slice 20: per-vessel view-mode toggle. When `savedView` is true the
-  // vessel renders the saved-items list rather than the live source query.
-  // The name label appends `· SAVED` so the swap is unmistakable.
   savedView?: boolean
   onToggleSavedView?: () => void
   onPositionCommit: (pos: { x: number; y: number }) => void
@@ -78,7 +69,9 @@ interface VesselProps {
 export function Vessel({
   name,
   children,
+  feedId,
   onNameClick,
+  onSourceAdded,
   position,
   size,
   brightness,
@@ -122,13 +115,6 @@ export function Vessel({
   function startDrag(event: React.PointerEvent) {
     dragMovedRef.current = false
     dragControls.start(event)
-  }
-
-  function handleNameClick() {
-    // Suppress the click that fires at the end of a drag — we treat any
-    // pointer movement during the gesture as "this was a drag, not a click."
-    if (dragMovedRef.current) return
-    onNameClick?.()
   }
 
   // Effective dimensions: liveSize during a resize gesture wins; otherwise
@@ -183,35 +169,17 @@ export function Vessel({
     setLiveSize(null)
   }
 
-  // Wall arrangement per orientation:
-  //   vertical   → ⊔ : left + right + bottom (opening on top)
-  //   horizontal → ⊏ : top + left + bottom    (opening on right)
+  // Wall arrangement per orientation. The bottom wall is replaced by VesselBar,
+  // so only left/right (vertical) or top/left (horizontal) get thin borders.
   const wallStyle = isHorizontal
     ? {
         borderTop: `${WALL}px solid ${palette.walls}`,
         borderLeft: `${WALL}px solid ${palette.walls}`,
-        borderBottom: `${WALL}px solid ${palette.walls}`,
       }
     : {
         borderLeft: `${WALL}px solid ${palette.walls}`,
         borderRight: `${WALL}px solid ${palette.walls}`,
-        borderBottom: `${WALL}px solid ${palette.walls}`,
       }
-
-  const brightnessGlyph: Record<Brightness, string> = {
-    primary: '○',
-    medium: '◐',
-    dim: '●',
-  }
-  const densityGlyph: Record<Density, string> = {
-    compact: 'c',
-    standard: 's',
-    full: 'f',
-  }
-  const orientationGlyph: Record<Orientation, string> = {
-    vertical: '|',
-    horizontal: '─',
-  }
 
   return (
     <motion.div
@@ -239,37 +207,15 @@ export function Vessel({
         pointerEvents: hidden ? 'none' : undefined,
       }}
     >
-      {/* Name label sits above the opening, doubles as drag handle. Click
-          opens the feed composer (slice 4); pointerDown initiates drag.
-          Slice 20: when in saved view, append " · SAVED" so the mode flip
-          is obvious — the same vessel name otherwise renders identically. */}
-      {onNameClick ? (
-        <button
-          type="button"
-          onPointerDown={startDrag}
-          onClick={handleNameClick}
-          className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1 text-left select-none"
-          style={{
-            color: palette.nameLabel,
-            background: 'transparent',
-            border: 'none',
-            cursor: 'grab',
-            padding: 0,
-          }}
-        >
-          {name}
-          {savedView ? ' · SAVED' : ''}
-        </button>
-      ) : (
-        <div
-          onPointerDown={startDrag}
-          className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1 select-none"
-          style={{ color: palette.nameLabel, cursor: 'grab' }}
-        >
-          {name}
-          {savedView ? ' · SAVED' : ''}
-        </div>
-      )}
+      {/* Name label sits above the opening, doubles as drag handle. */}
+      <div
+        onPointerDown={startDrag}
+        className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1 select-none"
+        style={{ color: palette.nameLabel, cursor: 'grab' }}
+      >
+        {name}
+        {savedView ? ' · SAVED' : ''}
+      </div>
 
       {/* The vessel chassis. Position relative so chrome controls (resize +
           brightness / density / orientation) can pin to its corners. When the
@@ -282,6 +228,8 @@ export function Vessel({
           ...wallStyle,
           background: palette.interior,
           height: heightSet ? effH : undefined,
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         <div
@@ -290,7 +238,8 @@ export function Vessel({
             display: 'flex',
             flexDirection: isHorizontal ? 'row' : 'column',
             gap: `${GAP}px`,
-            height: heightSet ? '100%' : undefined,
+            flex: heightSet ? '1 1 0' : undefined,
+            minHeight: 0,
             overflowY: heightSet && !isHorizontal ? 'auto' : undefined,
             overflowX: isHorizontal ? 'auto' : undefined,
           }}
@@ -298,57 +247,21 @@ export function Vessel({
           {children}
         </div>
 
-        {/* Cycle controls: brightness · density · orientation · saved-view.
-            Pinned to the chassis bottom-right edge, just left of the resize
-            handle. Each is a small mono-glyph that cycles state on click.
-            Hover tooltip (title=) carries the full label so the
-            abbreviations are discoverable. Slice 20 adds the ★ binary
-            toggle for saved-vs-live view at the rightmost slot. */}
-        {(onBrightnessCommit || onDensityCommit || onOrientationCommit || onToggleSavedView) && (
-          <div
-            style={{
-              position: 'absolute',
-              right: 22,
-              bottom: -WALL - 18,
-              display: 'flex',
-              gap: 4,
-              alignItems: 'center',
-            }}
-          >
-            {onBrightnessCommit && (
-              <CycleButton
-                label={`Brightness: ${effBrightness}`}
-                glyph={brightnessGlyph[effBrightness]}
-                color={palette.resizeHandle}
-                onClick={() => onBrightnessCommit(nextBrightness(effBrightness))}
-              />
-            )}
-            {onDensityCommit && (
-              <CycleButton
-                label={`Density: ${effDensity}`}
-                glyph={densityGlyph[effDensity]}
-                color={palette.resizeHandle}
-                onClick={() => onDensityCommit(nextDensity(effDensity))}
-              />
-            )}
-            {onOrientationCommit && (
-              <CycleButton
-                label={`Orientation: ${effOrientation}`}
-                glyph={orientationGlyph[effOrientation]}
-                color={palette.resizeHandle}
-                onClick={() => onOrientationCommit(nextOrientation(effOrientation))}
-              />
-            )}
-            {onToggleSavedView && (
-              <CycleButton
-                label={savedView ? 'Showing saved items — tap to return' : 'Show saved items'}
-                glyph={savedView ? '★' : '☆'}
-                color={savedView ? palette.crimson : palette.resizeHandle}
-                onClick={onToggleSavedView}
-              />
-            )}
-          </div>
-        )}
+        {/* VesselBar replaces the bottom wall — cycle controls + source input */}
+        <VesselBar
+          feedId={feedId}
+          palette={palette}
+          brightness={effBrightness}
+          density={effDensity}
+          orientation={effOrientation}
+          savedView={savedView}
+          onBrightnessCommit={onBrightnessCommit}
+          onDensityCommit={onDensityCommit}
+          onOrientationCommit={onOrientationCommit}
+          onToggleSavedView={onToggleSavedView}
+          onSourceAdded={onSourceAdded}
+          onNameClick={onNameClick}
+        />
 
         {onSizeCommit && (
           <div
@@ -360,16 +273,14 @@ export function Vessel({
             onPointerCancel={handleResizePointerUp}
             style={{
               position: 'absolute',
-              right: -WALL,
-              bottom: -WALL,
+              right: isHorizontal ? 0 : -WALL,
+              bottom: 0,
               width: 16,
               height: 16,
               cursor: 'nwse-resize',
               touchAction: 'none',
             }}
           >
-            {/* Tiny corner mark — present but quiet, like a piece of furniture
-                with a hint of grain at the corner. */}
             <div
               style={{
                 position: 'absolute',
@@ -377,8 +288,8 @@ export function Vessel({
                 bottom: 3,
                 width: 8,
                 height: 8,
-                borderRight: `2px solid ${palette.resizeHandle}`,
-                borderBottom: `2px solid ${palette.resizeHandle}`,
+                borderRight: `2px solid ${palette.barTextMuted}`,
+                borderBottom: `2px solid ${palette.barTextMuted}`,
                 opacity: 0.7,
               }}
             />
@@ -389,35 +300,3 @@ export function Vessel({
   )
 }
 
-function CycleButton({
-  label,
-  glyph,
-  color,
-  onClick,
-}: {
-  label: string
-  glyph: string
-  color: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className="font-mono uppercase tracking-[0.06em] text-[11px] select-none"
-      style={{
-        color,
-        background: 'transparent',
-        border: 'none',
-        padding: '0 4px',
-        cursor: 'pointer',
-        opacity: 0.75,
-        lineHeight: 1,
-      }}
-    >
-      {glyph}
-    </button>
-  )
-}

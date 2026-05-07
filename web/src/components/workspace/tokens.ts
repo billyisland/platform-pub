@@ -28,6 +28,14 @@ export interface VesselPalette {
   crimson: string
   resizeHandle: string
   pipOpacity: number
+  barBg: string
+  barText: string
+  barTextMuted: string
+  barInputBg: string
+  barInputText: string
+  barInputPlaceholder: string
+  barDropdownBg: string
+  barDropdownHover: string
 }
 
 export const PALETTES: Record<Brightness, VesselPalette> = {
@@ -42,6 +50,14 @@ export const PALETTES: Record<Brightness, VesselPalette> = {
     crimson: '#B5242A',
     resizeHandle: '#5F5E5A',
     pipOpacity: 1,
+    barBg: '#111111',
+    barText: '#E6E5E0',
+    barTextMuted: '#8A8880',
+    barInputBg: '#2A2A27',
+    barInputText: '#E6E5E0',
+    barInputPlaceholder: '#6A6A66',
+    barDropdownBg: '#1A1A18',
+    barDropdownHover: '#2A2A27',
   },
   medium: {
     walls: '#4A4A47',
@@ -54,6 +70,14 @@ export const PALETTES: Record<Brightness, VesselPalette> = {
     crimson: '#B5242A',
     resizeHandle: '#9C9A94',
     pipOpacity: 1,
+    barBg: '#4A4A47',
+    barText: '#D4D3CE',
+    barTextMuted: '#9C9A94',
+    barInputBg: '#5F5E5A',
+    barInputText: '#E6E5E0',
+    barInputPlaceholder: '#8A8880',
+    barDropdownBg: '#4A4A47',
+    barDropdownHover: '#5F5E5A',
   },
   dim: {
     walls: '#8A8880',
@@ -66,6 +90,14 @@ export const PALETTES: Record<Brightness, VesselPalette> = {
     crimson: '#C4545A',
     resizeHandle: '#B4B2A9',
     pipOpacity: 0.7,
+    barBg: '#8A8880',
+    barText: '#D4D3CE',
+    barTextMuted: '#A8A6A0',
+    barInputBg: '#9C9A94',
+    barInputText: '#D4D3CE',
+    barInputPlaceholder: '#B4B2A9',
+    barDropdownBg: '#8A8880',
+    barDropdownHover: '#9C9A94',
   },
 }
 
