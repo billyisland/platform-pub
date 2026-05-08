@@ -176,7 +176,8 @@ export function VesselBar({
   const fallbackTag = tagFallback()
   const showTagFallback = fallbackTag && !matches.some((m) => m.key === fallbackTag.key)
   const dropdownItems = fallbackTag && showTagFallback ? [...matches, fallbackTag] : matches
-  const showDropdown = focused && query.trim().length > 0 && (dropdownItems.length > 0 || resolving)
+  const doneWithNoResults = !resolving && resolverResult !== null && dropdownItems.length === 0
+  const showDropdown = focused && query.trim().length > 0 && (dropdownItems.length > 0 || resolving || doneWithNoResults)
 
   const brightnessGlyph: Record<Brightness, string> = {
     primary: '○',
@@ -307,6 +308,14 @@ export function VesselBar({
               style={{ padding: '8px 10px', color: palette.barTextMuted }}
             >
               Resolving…
+            </div>
+          )}
+          {doneWithNoResults && (
+            <div
+              className="font-mono text-[11px] uppercase tracking-[0.04em]"
+              style={{ padding: '8px 10px', color: palette.barTextMuted }}
+            >
+              No match — try a URL, @user, npub, or #tag
             </div>
           )}
           {dropdownItems.map((opt) => (
