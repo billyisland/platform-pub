@@ -771,6 +771,8 @@ The thin 8px bottom wall becomes a 32px toolbar bar (`VesselBar`) that is the ve
 
 **WorkspaceView wiring (`web/src/components/workspace/WorkspaceView.tsx`).** Each `<Vessel>` receives `feedId={v.feed.id}` and `onSourceAdded={() => void loadVesselItems(v.feed)}` so the bar can add sources and trigger a refetch without the modal.
 
+**Fix (2026-05-08).** The dropdown gate (`showDropdown`) required `dropdownItems.length > 0 || resolving` — when Phase B completed with zero matches the dropdown vanished silently. Added a `doneWithNoResults` state so the dropdown stays open to show "No match — try a URL, @user, npub, or #tag" when resolution finishes empty.
+
 Skipped intentionally: source removal from the bar (still requires the FeedComposer modal via the gear button), source count badge on the bar (the bar stays minimal — count is visible in the modal), per-source weight/sampling authoring from the bar, keyboard navigation in the dropdown (Tab/arrow — the dropdown uses mouse selection only for now), mobile touch adaptation (bar is desktop-only per ADR §5).
 
 ## Deferred (TODO in code, not blocking the experiment)
