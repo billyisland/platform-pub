@@ -66,7 +66,7 @@ export async function resolveHandle(handle: string): Promise<string | null> {
     const data = JSON.parse(res.text) as { did?: unknown }
     return typeof data.did === 'string' && isDid(data.did) ? data.did : null
   } catch (err) {
-    logger.debug({ handle, err }, 'resolveHandle failed')
+    logger.warn({ handle, err }, 'resolveHandle failed')
     return null
   }
 }
@@ -100,7 +100,7 @@ export async function getProfile(actor: string): Promise<AtprotoProfile | null> 
       avatar: typeof data.avatar === 'string' ? data.avatar : undefined,
     }
   } catch (err) {
-    logger.debug({ actor, err }, 'getProfile failed')
+    logger.warn({ actor, err }, 'getProfile failed')
     return null
   }
 }

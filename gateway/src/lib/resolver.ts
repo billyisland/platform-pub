@@ -500,7 +500,7 @@ async function resolveUrl(url: string): Promise<ResolverMatch[]> {
     }
 
   } catch (err) {
-    logger.debug({ url, err }, 'URL resolution failed')
+    logger.warn({ url, err }, 'URL resolution failed')
   }
 
   return matches
@@ -650,7 +650,7 @@ async function resolveNip05(identifier: string): Promise<ResolverMatch[]> {
       })
     }
   } catch (err) {
-    logger.debug({ identifier, err }, 'NIP-05 resolution failed')
+    logger.warn({ identifier, err }, 'NIP-05 resolution failed')
   }
 
   return matches
@@ -725,7 +725,7 @@ function fetchKind0FromRelay(
     try {
       wsOpts = await pinnedWebSocketOptions(relayUrl)
     } catch (err) {
-      logger.debug({ relayUrl, err }, 'Nostr profile relay rejected by SSRF guard')
+      logger.warn({ relayUrl, err }, 'Nostr profile relay rejected by SSRF guard')
       resolve(null)
       return
     }

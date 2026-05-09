@@ -49,7 +49,7 @@ export async function resolveWebFinger(acct: string): Promise<string | null> {
     }
     return null
   } catch (err) {
-    logger.debug({ acct, err }, 'WebFinger resolution failed')
+    logger.warn({ acct, err }, 'WebFinger resolution failed')
     return null
   }
 }
@@ -82,7 +82,7 @@ export async function fetchActorProfile(actorUri: string): Promise<ActorProfile 
       handle,
     }
   } catch (err) {
-    logger.debug({ actorUri, err }, 'Actor fetch failed')
+    logger.warn({ actorUri, err }, 'Actor fetch failed')
     return null
   }
 }
