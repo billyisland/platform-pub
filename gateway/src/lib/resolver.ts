@@ -161,6 +161,9 @@ function classifyInput(query: string): InputType {
   if (BLUESKY_HANDLE.test(trimmed)) return 'bluesky_handle'
   if (DOTTED_HOST.test(trimmed)) return 'dotted_host'
   if (PLATFORM_USERNAME.test(trimmed) && trimmed.length >= 2) return 'platform_username'
+  // @username (single @ prefix, no domain) — strip the @ and treat as platform username
+  const stripped = trimmed.startsWith('@') ? trimmed.slice(1) : ''
+  if (stripped && PLATFORM_USERNAME.test(stripped) && stripped.length >= 2) return 'platform_username'
 
   return 'free_text'
 }
@@ -187,10 +190,18 @@ export async function resolve(
   // Phase A means we don't even open a polling request.
   const skipExternal = context === 'invite' || context === 'dm'
 
+  // Strip leading @ for username lookups so @someuser resolves like someuser
+  const usernameQuery = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed
+
   switch (inputType) {
     case 'platform_username': {
-      const account = await lookupByUsername(trimmed)
-      if (account) matches.push(account)
+      const account = await lookupByUsername(usernameQuery)
+      if (account) {
+        matches.push(account)
+      } else {
+        const fuzzy = await searchPlatform(usernameQuery)
+        matches.push(...fuzzy)
+      }
       break
     }
 
@@ -302,7 +313,7 @@ export async function resolve(
     }
 
     case 'free_text': {
-      const searchResults = await searchPlatform(trimmed)
+      const searchResults = await searchPlatform(usernameQuery)
       matches.push(...searchResults)
       break
     }

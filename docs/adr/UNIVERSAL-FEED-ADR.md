@@ -580,7 +580,8 @@ The resolver classifies input by pattern matching, then dispatches to the approp
 | `@user@instance.tld` | Fediverse handle | WebFinger resolution → ActivityPub actor URI → external activitypub source |
 | `user@domain.tld` (no `@` prefix) | Ambiguous: email, NIP-05, or fediverse | Ambiguous chain (§V.5.3) |
 | `@handle.tld` / `handle.tld` (no `@` prefix) | Dotted host | Try AT Protocol handle resolution (custom-domain handles), then URL discovery |
-| Alphanumeric, no `@`, no `.` | Platform username | Platform account lookup (by `username`) |
+| `@username` (single `@`, no domain) | Platform username | Strip `@`, then exact username lookup → fuzzy ILIKE fallback |
+| Alphanumeric, no `@`, no `.` | Platform username | Exact username lookup → fuzzy ILIKE fallback (writers + publications) |
 | Anything else | Free-text | Platform search (writers + publications) |
 
 The `bluesky_handle` classification is restricted to the official `.bsky.social` / `.bsky.team` suffixes so that `@example.com` (a user-controlled atproto handle) is not misclassified as a Bluesky handle when it might also be an RSS-hosting domain. The new `dotted_host` classification captures this case and tries atproto resolution first (for custom-domain handles like `alice.example.com`) before falling through to URL discovery.
@@ -1217,7 +1218,7 @@ GET    /api/resolve/:requestId      — Poll for async remote resolution results
                                      Short-lived (60s TTL); results cached in-memory, not DB.
 ```
 
-This is the shared endpoint backing all omnivorous input fields across the platform. The frontend calls `POST /api/resolve` on input blur or after a 300ms debounce, receives instant local results, then polls `GET /api/resolve/:requestId` at 1-second intervals (max 3 polls) for remote resolution results (see §V.5.7 for the two-phase UX).
+This is the shared endpoint backing all omnivorous input fields across the platform. The frontend calls `POST /api/resolve` on input blur or after a 300ms debounce, receives instant local results, then polls `GET /api/resolve/:requestId` at 1-second intervals (max 8 polls) for remote resolution results (see §V.5.7 for the two-phase UX).
 
 ### X.2 Feed subscriptions
 

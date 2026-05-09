@@ -64,7 +64,7 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
 
   const pollForResults = useCallback(async (requestId: string) => {
     pollCountRef.current++
-    if (pollCountRef.current > 3) {
+    if (pollCountRef.current > 8) {
       setResolving(false)
       return
     }

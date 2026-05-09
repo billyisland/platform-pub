@@ -98,6 +98,7 @@ export function VesselBar({
   const [query, setQuery] = useState('')
   const [resolverResult, setResolverResult] = useState<ResolverResult | null>(null)
   const [resolving, setResolving] = useState(false)
+  const [resolveError, setResolveError] = useState(false)
   const [adding, setAdding] = useState(false)
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -107,7 +108,7 @@ export function VesselBar({
 
   const pollForResults = useCallback(async (requestId: string) => {
     pollCountRef.current++
-    if (pollCountRef.current > 3) {
+    if (pollCountRef.current > 8) {
       setResolving(false)
       return
     }
@@ -128,10 +129,12 @@ export function VesselBar({
     if (!value.trim()) {
       setResolverResult(null)
       setResolving(false)
+      setResolveError(false)
       return
     }
     debounceRef.current = setTimeout(async () => {
       setResolving(true)
+      setResolveError(false)
       pollCountRef.current = 0
       try {
         const res = await resolver.resolve(value.trim(), 'subscribe')
@@ -139,6 +142,7 @@ export function VesselBar({
         if (res.requestId && res.status === 'pending') void pollForResults(res.requestId)
         else setResolving(false)
       } catch {
+        setResolveError(true)
         setResolving(false)
       }
     }, 300)
@@ -177,7 +181,7 @@ export function VesselBar({
   const showTagFallback = fallbackTag && !matches.some((m) => m.key === fallbackTag.key)
   const dropdownItems = fallbackTag && showTagFallback ? [...matches, fallbackTag] : matches
   const doneWithNoResults = !resolving && resolverResult !== null && dropdownItems.length === 0
-  const showDropdown = focused && query.trim().length > 0 && (dropdownItems.length > 0 || resolving || doneWithNoResults)
+  const showDropdown = focused && query.trim().length > 0 && (dropdownItems.length > 0 || resolving || doneWithNoResults || resolveError)
 
   const brightnessGlyph: Record<Brightness, string> = {
     primary: '○',
@@ -308,6 +312,14 @@ export function VesselBar({
               style={{ padding: '8px 10px', color: palette.barTextMuted }}
             >
               Resolving…
+            </div>
+          )}
+          {resolveError && (
+            <div
+              className="font-mono text-[11px] uppercase tracking-[0.04em]"
+              style={{ padding: '8px 10px', color: palette.crimson }}
+            >
+              Resolution failed
             </div>
           )}
           {doneWithNoResults && (
