@@ -209,16 +209,20 @@ async function resolveAndValidateHost(hostname: string): Promise<ResolvedHost> {
 function buildPinnedAgent(expectedHost: string, resolved: ResolvedHost): Agent {
   return new Agent({
     connect: {
-      lookup(hostname, _opts, cb) {
+      // Node 20+ enables autoSelectFamily by default, which calls lookup
+      // with { all: true } — the callback must return an array of
+      // {address, family} objects in that case, not (address, family) args.
+      lookup: ((hostname: string, opts: any, cb: any) => {
         if (hostname !== expectedHost) {
-          // Should never happen — the agent is built for a specific hostname
-          // and only used for a single request — but guard anyway so we
-          // never resolve an attacker-supplied CNAME.
           cb(new Error(`Unexpected host ${hostname} in pinned agent for ${expectedHost}`), '', 0)
           return
         }
-        cb(null, resolved.address, resolved.family)
-      },
+        if (opts?.all) {
+          cb(null, [{ address: resolved.address, family: resolved.family }])
+        } else {
+          cb(null, resolved.address, resolved.family)
+        }
+      }) as LookupFunction,
     },
   })
 }
@@ -363,17 +367,17 @@ export async function pinnedWebSocketOptions(
   const expectedHost = parsed.hostname
 
   return {
-    lookup: (hostname, _opts, cb) => {
-      // `ws` forwards this to net.connect/tls.connect. Guard against anything
-      // other than the hostname we already cleared — the pinned options
-      // object is built for a single request, so any other hostname means
-      // something is wrong and we should refuse rather than re-resolve.
+    lookup: ((hostname: string, opts: any, cb: any) => {
       if (hostname !== expectedHost) {
-        cb(new Error(`Unexpected host ${hostname} in pinned WS lookup for ${expectedHost}`) as NodeJS.ErrnoException, '', 0)
+        cb(new Error(`Unexpected host ${hostname} in pinned WS lookup for ${expectedHost}`), '', 0)
         return
       }
-      cb(null, resolved.address, resolved.family)
-    },
+      if (opts?.all) {
+        cb(null, [{ address: resolved.address, family: resolved.family }])
+      } else {
+        cb(null, resolved.address, resolved.family)
+      }
+    }) as LookupFunction,
   }
 }
 
