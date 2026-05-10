@@ -733,7 +733,7 @@ function parseSaveCursor(
 const FEED_SELECT = `
   fi.id AS fi_id, fi.item_type, fi.article_id, fi.note_id, fi.external_item_id,
   fi.author_id, fi.nostr_event_id, fi.source_protocol, fi.source_item_uri,
-  fi.source_id, fi.media, fi.score, fi.tier,
+  fi.source_id, COALESCE(ei.media, fi.media) AS media, fi.score, fi.tier,
   EXTRACT(EPOCH FROM fi.published_at)::bigint AS published_at_epoch,
   acc.nostr_pubkey AS nostr_pubkey,
   a.nostr_d_tag, a.access_mode, a.price_pence, a.gate_position_pct,
