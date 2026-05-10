@@ -1,7 +1,19 @@
-'use client'
+"use client";
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { motion, useDragControls, useMotionValue } from 'framer-motion'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import {
+  motion,
+  animate,
+  useDragControls,
+  useMotionValue,
+} from "framer-motion";
+import { prefersReducedMotion } from "../../lib/workspace/motion";
 import {
   PALETTES,
   DEFAULT_BRIGHTNESS,
@@ -10,8 +22,8 @@ import {
   type Brightness,
   type Density,
   type Orientation,
-} from './tokens'
-import { VesselBar } from './VesselBar'
+} from "./tokens";
+import { VesselBar } from "./VesselBar";
 
 // Vessel — the ⊔ chassis, per WIREFRAME-DECISIONS-CONSOLIDATED.md Step 1.
 //
@@ -30,40 +42,42 @@ import { VesselBar } from './VesselBar'
 // orientation, gestural density toggle) are deferred; the cycle buttons are
 // the desktop alternative for now.
 
-const WALL = 8 // px
-const PAD = 16 // px interior padding (top zone left open per Step 1: "Opening: full width of the vessel interior")
-const GAP = 12 // px inter-card gap
-const WIDTH = 300 // px default at standard density
+const WALL = 8; // px
+const PAD = 16; // px interior padding (top zone left open per Step 1: "Opening: full width of the vessel interior")
+const GAP = 12; // px inter-card gap
+const WIDTH = 300; // px default at standard density
 
 // Slice 5b: minimums per spec ("below which content becomes illegible").
 // Spec says no maximum; we clamp at sane upper bounds defensively — the
 // floor's overflow:hidden handles oversize visually, and a workspace-level
 // reset returns truly-lost vessels.
-const MIN_W = 220
-const MIN_H = 200
-const MAX_W = 2000
-const MAX_H = 2000
+const MIN_W = 220;
+const MIN_H = 200;
+const MAX_W = 2000;
+const MAX_H = 2000;
 
 interface VesselProps {
-  name: string
-  children: ReactNode
-  feedId: string
-  onNameClick?: () => void
-  onSourceAdded?: () => void
-  position: { x: number; y: number }
-  size?: { w?: number; h?: number }
-  brightness?: Brightness
-  density?: Density
-  orientation?: Orientation
-  hidden?: boolean
-  savedView?: boolean
-  onToggleSavedView?: () => void
-  onPositionCommit: (pos: { x: number; y: number }) => void
-  onSizeCommit?: (size: { w: number; h: number }) => void
-  onBrightnessCommit?: (b: Brightness) => void
-  onDensityCommit?: (d: Density) => void
-  onOrientationCommit?: (o: Orientation) => void
-  dragConstraints?: RefObject<HTMLElement>
+  name: string;
+  children: ReactNode;
+  feedId: string;
+  onNameClick?: () => void;
+  onSourceAdded?: () => void;
+  position: { x: number; y: number };
+  size?: { w?: number; h?: number };
+  brightness?: Brightness;
+  density?: Density;
+  orientation?: Orientation;
+  hidden?: boolean;
+  savedView?: boolean;
+  onToggleSavedView?: () => void;
+  onPositionCommit: (pos: { x: number; y: number }) => void;
+  onSizeCommit?: (size: { w: number; h: number }) => void;
+  onBrightnessCommit?: (b: Brightness) => void;
+  onDensityCommit?: (d: Density) => void;
+  onOrientationCommit?: (o: Orientation) => void;
+  onDragStart?: () => void;
+  onDragFrame?: (pos: { x: number; y: number }) => void;
+  dragConstraints?: RefObject<HTMLElement>;
 }
 
 export function Vessel({
@@ -85,88 +99,111 @@ export function Vessel({
   onBrightnessCommit,
   onDensityCommit,
   onOrientationCommit,
+  onDragStart: onDragStartProp,
+  onDragFrame,
   dragConstraints,
 }: VesselProps) {
-  const dragControls = useDragControls()
-  const mx = useMotionValue(position.x)
-  const my = useMotionValue(position.y)
-  const dragMovedRef = useRef(false)
-  const [liveSize, setLiveSize] = useState<{ w: number; h: number } | null>(null)
+  const dragControls = useDragControls();
+  const mx = useMotionValue(position.x);
+  const my = useMotionValue(position.y);
+  const dragMovedRef = useRef(false);
+  const [liveSize, setLiveSize] = useState<{ w: number; h: number } | null>(
+    null,
+  );
   const resizeStateRef = useRef<{
-    startX: number
-    startY: number
-    startW: number
-    startH: number
-  } | null>(null)
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
 
-  const effBrightness = brightness ?? DEFAULT_BRIGHTNESS
-  const effDensity = density ?? DEFAULT_DENSITY
-  const effOrientation = orientation ?? DEFAULT_ORIENTATION
-  const palette = PALETTES[effBrightness]
-  const isHorizontal = effOrientation === 'horizontal'
+  const effBrightness = brightness ?? DEFAULT_BRIGHTNESS;
+  const effDensity = density ?? DEFAULT_DENSITY;
+  const effOrientation = orientation ?? DEFAULT_ORIENTATION;
+  const palette = PALETTES[effBrightness];
+  const isHorizontal = effOrientation === "horizontal";
 
-  // Mirror externally-driven position changes (hydrate, programmatic move)
-  // back into the motion values so the next drag starts from the right place.
+  const isDraggingRef = useRef(false);
+
   useEffect(() => {
-    mx.set(position.x)
-    my.set(position.y)
-  }, [position.x, position.y, mx, my])
+    if (isDraggingRef.current) return;
+    const dx = Math.abs(mx.get() - position.x);
+    const dy = Math.abs(my.get() - position.y);
+    if ((dx > 1 || dy > 1) && !prefersReducedMotion()) {
+      animate(mx, position.x, {
+        type: "spring",
+        stiffness: 600,
+        damping: 40,
+        mass: 0.6,
+      });
+      animate(my, position.y, {
+        type: "spring",
+        stiffness: 600,
+        damping: 40,
+        mass: 0.6,
+      });
+    } else {
+      mx.set(position.x);
+      my.set(position.y);
+    }
+  }, [position.x, position.y, mx, my]);
 
   function startDrag(event: React.PointerEvent) {
-    dragMovedRef.current = false
-    dragControls.start(event)
+    dragMovedRef.current = false;
+    dragControls.start(event);
   }
 
   // Effective dimensions: liveSize during a resize gesture wins; otherwise
   // committed size from props; otherwise intrinsic defaults.
-  const effW = liveSize?.w ?? size?.w ?? WIDTH
-  const effH = liveSize?.h ?? size?.h // undefined = intrinsic content height
-  const heightSet = effH !== undefined
+  const effW = liveSize?.w ?? size?.w ?? WIDTH;
+  const effH = liveSize?.h ?? size?.h; // undefined = intrinsic content height
+  const heightSet = effH !== undefined;
 
   function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (!onSizeCommit) return
-    event.preventDefault()
-    event.stopPropagation()
-    const startW = effW
+    if (!onSizeCommit) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startW = effW;
     // Measure current rendered height so the first drag pixel doesn't snap
     // to whatever value the cards happen to compute to.
-    const chassis = (event.currentTarget.parentElement?.querySelector('[data-vessel-chassis]') ??
-      null) as HTMLElement | null
-    const startH = effH ?? chassis?.getBoundingClientRect().height ?? MIN_H
+    const chassis = (event.currentTarget.parentElement?.querySelector(
+      "[data-vessel-chassis]",
+    ) ?? null) as HTMLElement | null;
+    const startH = effH ?? chassis?.getBoundingClientRect().height ?? MIN_H;
     resizeStateRef.current = {
       startX: event.clientX,
       startY: event.clientY,
       startW,
       startH,
-    }
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setLiveSize({ w: startW, h: startH })
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setLiveSize({ w: startW, h: startH });
   }
 
   function handleResizePointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    const state = resizeStateRef.current
-    if (!state) return
-    const dx = event.clientX - state.startX
-    const dy = event.clientY - state.startY
-    const w = Math.max(MIN_W, Math.min(MAX_W, state.startW + dx))
-    const h = Math.max(MIN_H, Math.min(MAX_H, state.startH + dy))
-    setLiveSize({ w, h })
+    const state = resizeStateRef.current;
+    if (!state) return;
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+    const w = Math.max(MIN_W, Math.min(MAX_W, state.startW + dx));
+    const h = Math.max(MIN_H, Math.min(MAX_H, state.startH + dy));
+    setLiveSize({ w, h });
   }
 
   function handleResizePointerUp(event: React.PointerEvent<HTMLDivElement>) {
-    const state = resizeStateRef.current
-    resizeStateRef.current = null
+    const state = resizeStateRef.current;
+    resizeStateRef.current = null;
     try {
-      event.currentTarget.releasePointerCapture(event.pointerId)
+      event.currentTarget.releasePointerCapture(event.pointerId);
     } catch {
       // Pointer capture may already be released if the gesture was cancelled.
     }
     if (!state || !liveSize || !onSizeCommit) {
-      setLiveSize(null)
-      return
+      setLiveSize(null);
+      return;
     }
-    onSizeCommit({ w: liveSize.w, h: liveSize.h })
-    setLiveSize(null)
+    onSizeCommit({ w: liveSize.w, h: liveSize.h });
+    setLiveSize(null);
   }
 
   // Wall arrangement per orientation. The bottom wall is replaced by VesselBar,
@@ -179,10 +216,11 @@ export function Vessel({
     : {
         borderLeft: `${WALL}px solid ${palette.walls}`,
         borderRight: `${WALL}px solid ${palette.walls}`,
-      }
+      };
 
   return (
     <motion.div
+      data-vessel-id={feedId}
       role="region"
       aria-label={name}
       drag
@@ -191,30 +229,37 @@ export function Vessel({
       dragConstraints={dragConstraints}
       dragMomentum={false}
       dragElastic={0}
+      onDragStart={() => {
+        isDraggingRef.current = true;
+        onDragStartProp?.();
+      }}
       onDrag={(_, info) => {
-        if (info.offset.x !== 0 || info.offset.y !== 0) dragMovedRef.current = true
+        if (info.offset.x !== 0 || info.offset.y !== 0)
+          dragMovedRef.current = true;
+        onDragFrame?.({ x: mx.get(), y: my.get() });
       }}
       onDragEnd={() => {
-        onPositionCommit({ x: mx.get(), y: my.get() })
+        isDraggingRef.current = false;
+        onPositionCommit({ x: mx.get(), y: my.get() });
       }}
       style={{
-        position: 'absolute',
+        position: "absolute",
         x: mx,
         y: my,
         width: effW,
-        touchAction: 'none',
+        touchAction: "none",
         opacity: hidden ? 0 : 1,
-        pointerEvents: hidden ? 'none' : undefined,
+        pointerEvents: hidden ? "none" : undefined,
       }}
     >
       {/* Name label sits above the opening, doubles as drag handle. */}
       <div
         onPointerDown={startDrag}
         className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1 select-none"
-        style={{ color: palette.nameLabel, cursor: 'grab' }}
+        style={{ color: palette.nameLabel, cursor: "grab" }}
       >
         {name}
-        {savedView ? ' · SAVED' : ''}
+        {savedView ? " · SAVED" : ""}
       </div>
 
       {/* The vessel chassis. Position relative so chrome controls (resize +
@@ -224,24 +269,24 @@ export function Vessel({
       <div
         data-vessel-chassis
         style={{
-          position: 'relative',
+          position: "relative",
           ...wallStyle,
           background: palette.interior,
           height: heightSet ? effH : undefined,
-          display: 'flex',
-          flexDirection: 'column',
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         <div
           style={{
             padding: `${PAD}px`,
-            display: 'flex',
-            flexDirection: isHorizontal ? 'row' : 'column',
+            display: "flex",
+            flexDirection: isHorizontal ? "row" : "column",
             gap: `${GAP}px`,
-            flex: heightSet ? '1 1 0' : undefined,
+            flex: heightSet ? "1 1 0" : undefined,
             minHeight: 0,
-            overflowY: heightSet && !isHorizontal ? 'auto' : undefined,
-            overflowX: isHorizontal ? 'auto' : undefined,
+            overflowY: heightSet && !isHorizontal ? "auto" : undefined,
+            overflowX: isHorizontal ? "auto" : undefined,
           }}
         >
           {children}
@@ -272,18 +317,18 @@ export function Vessel({
             onPointerUp={handleResizePointerUp}
             onPointerCancel={handleResizePointerUp}
             style={{
-              position: 'absolute',
+              position: "absolute",
               right: isHorizontal ? 0 : -WALL,
               bottom: 0,
               width: 16,
               height: 16,
-              cursor: 'nwse-resize',
-              touchAction: 'none',
+              cursor: "nwse-resize",
+              touchAction: "none",
             }}
           >
             <div
               style={{
-                position: 'absolute',
+                position: "absolute",
                 right: 3,
                 bottom: 3,
                 width: 8,
@@ -297,6 +342,5 @@ export function Vessel({
         )}
       </div>
     </motion.div>
-  )
+  );
 }
-
