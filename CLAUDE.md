@@ -10,17 +10,17 @@ A publishing and social platform for writers and readers, built on the Nostr pro
 
 ## Services & Ports
 
-| Service | Dir | Port | Framework |
-|---|---|---|---|
-| Web frontend | `web/` | 3010 | Next.js 14 / React 18 |
-| API gateway | `gateway/` | 3000 | Fastify 4 |
-| Payment service | `payment-service/` | 3001 | Fastify 4 |
-| Key service | `key-service/` | 3002 | Fastify 4 |
-| Blossom media | external | 3003 | Blossom |
-| Key custody | `key-custody/` | 3004 | Fastify 4 |
-| Feed ingest | `feed-ingest/` | — | Graphile Worker |
-| Nostr relay | `relay/` | 4848 | strfry |
-| PostgreSQL | — | 5432 | Postgres 16 |
+| Service         | Dir                | Port | Framework             |
+| --------------- | ------------------ | ---- | --------------------- |
+| Web frontend    | `web/`             | 3010 | Next.js 14 / React 18 |
+| API gateway     | `gateway/`         | 3000 | Fastify 4             |
+| Payment service | `payment-service/` | 3001 | Fastify 4             |
+| Key service     | `key-service/`     | 3002 | Fastify 4             |
+| Blossom media   | external           | 3003 | Blossom               |
+| Key custody     | `key-custody/`     | 3004 | Fastify 4             |
+| Feed ingest     | `feed-ingest/`     | —    | Graphile Worker       |
+| Nostr relay     | `relay/`           | 4848 | strfry                |
+| PostgreSQL      | —                  | 5432 | Postgres 16           |
 
 All backend services share a single PostgreSQL database. `shared/` contains the DB client, migration runner, auth helpers, and shared types used by all services.
 
@@ -31,6 +31,7 @@ This is a local dev directory on the developer's laptop. Test features at `local
 ## Commands
 
 ### Local dev stack
+
 ```bash
 docker compose up          # Start all services
 docker compose up gateway  # Start a single service
@@ -38,7 +39,9 @@ docker compose build web   # Rebuild one service image
 ```
 
 ### Individual service development
+
 Each backend service (`gateway/`, `payment-service/`, `key-service/`, `key-custody/`):
+
 ```bash
 npm run dev    # tsx watch mode
 npm run build  # tsc → dist/
@@ -47,6 +50,7 @@ npm run test:watch  # Vitest watch
 ```
 
 Web frontend (`web/`):
+
 ```bash
 npm run dev    # Next.js dev server (port 3010)
 npm run build  # Production build
@@ -54,51 +58,60 @@ npm run lint   # ESLint via next lint
 ```
 
 Shared library (`shared/`):
+
 ```bash
 npm run build  # tsc
 npm run test   # Vitest
 ```
 
 ### Database migrations
+
 Migrations are numbered SQL files in `migrations/`. The shared migration runner applies them in order. Each backend service also has its own `db/migrate.ts` (run via `npm run migrate` in `payment-service`).
 
 ## Architecture
 
 ### Request flow
+
 Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.js app rewrites `/api/*` calls to the gateway at `GATEWAY_URL`, so the frontend never calls backend services directly.
 
 ### Auth
+
 - Magic links + Google OAuth (no passwords)
 - Auth cookies are httpOnly JWTs set by the gateway
 - `gateway/src/middleware/auth.ts` exports `requireAuth` and `optionalAuth` Fastify hooks
 - Custodial Nostr keypairs: key-custody holds private keys, key-service wraps/issues NIP-44 encrypted keys to readers for unlocking gated content
 
 ### Nostr integration
+
 - Articles are Nostr kind 30023 (NIP-23) replaceable long-form events, signed via key-custody
 - The platform runs its own strfry relay; events are published via `gateway/src/lib/nostr-publisher.ts`
 - The web client uses NDK (`@nostr-dev-kit/ndk`) for reading events; `web/src/lib/ndk.ts` handles event parsing
 - Soft-delete: articles are marked deleted in the DB and a Nostr kind 5 deletion event is published
-- **Relay outbox (§60, complete)**: every write path that publishes a signed Nostr event to the platform relay enqueues into `relay_outbox` (migration 076) inside the caller's transaction via `shared/src/lib/relay-outbox.ts::enqueueRelayPublish`. The `feed-ingest` worker `relay_publish` publishes via `publishNostrToRelays`, owns retry with `attempts` / `next_attempt_at` / `max_attempts`, and uses a transaction-scoped advisory lock on `(entity_type, entity_id)` for per-entity serialisation. A minute-cadence `relay_outbox_redrive` cron provides a second heartbeat independent of the enqueue path; `relay_outbox_reconcile` emits daily queue metrics. Phases 1–3 + 5 migrated the non-publish-path call sites (subscriptions create/reactivate/cancel/renew, conversation pulse, account/article/note/publication/drive deletions, `POST /sign-and-publish` passthrough, payment-service kind-9901 receipts, and scheduled personal drafts); Phase 4 migrated the two publication publish sites — `publishToPublication` and `approveAndPublishArticle` — under the eager-commit shape (sign → one txn does INSERT/UPDATE article + feed_items + `enqueueRelayPublish` → 201; relay blips become invisible worker retries instead of 5xx). `publishSubscriptionEvent` is now `signSubscriptionEvent`; `publishReceiptEvent` is `signReceiptEvent`; payment-service shares the shared outbox rather than its own ws publisher. `POST /sign-and-publish`, `POST /publications/:id/articles`, and `POST /publications/:id/articles/:articleId/publish` all now mean "signed and durably queued", not "on relay". Phase 5 also closed the scheduler §1 hazard — paywalled drafts keep txn 1 (article row as vault-ownership anchor) but txn 2 UPDATE-s to v2.id *and* enqueues v2 atomically. Phase 6: `feed-ingest/src/tasks/relay-publish.test.ts` covers success / failure-with-retry / abandon-at-max-attempts / advisory-lock contention / already-sent no-op plus a two-step deletion-path retry. `publishToRelay` / `publishToRelayUrl` are deleted from `gateway/src/lib/nostr-publisher.ts`. Specs: `docs/adr/RELAY-OUTBOX-ADR.md` + `docs/adr/RELAY-OUTBOX-PHASE-4-ADR.md`
+- **Relay outbox (§60, complete)**: every write path that publishes a signed Nostr event to the platform relay enqueues into `relay_outbox` (migration 076) inside the caller's transaction via `shared/src/lib/relay-outbox.ts::enqueueRelayPublish`. The `feed-ingest` worker `relay_publish` publishes via `publishNostrToRelays`, owns retry with `attempts` / `next_attempt_at` / `max_attempts`, and uses a transaction-scoped advisory lock on `(entity_type, entity_id)` for per-entity serialisation. A minute-cadence `relay_outbox_redrive` cron provides a second heartbeat independent of the enqueue path; `relay_outbox_reconcile` emits daily queue metrics. Phases 1–3 + 5 migrated the non-publish-path call sites (subscriptions create/reactivate/cancel/renew, conversation pulse, account/article/note/publication/drive deletions, `POST /sign-and-publish` passthrough, payment-service kind-9901 receipts, and scheduled personal drafts); Phase 4 migrated the two publication publish sites — `publishToPublication` and `approveAndPublishArticle` — under the eager-commit shape (sign → one txn does INSERT/UPDATE article + feed_items + `enqueueRelayPublish` → 201; relay blips become invisible worker retries instead of 5xx). `publishSubscriptionEvent` is now `signSubscriptionEvent`; `publishReceiptEvent` is `signReceiptEvent`; payment-service shares the shared outbox rather than its own ws publisher. `POST /sign-and-publish`, `POST /publications/:id/articles`, and `POST /publications/:id/articles/:articleId/publish` all now mean "signed and durably queued", not "on relay". Phase 5 also closed the scheduler §1 hazard — paywalled drafts keep txn 1 (article row as vault-ownership anchor) but txn 2 UPDATE-s to v2.id _and_ enqueues v2 atomically. Phase 6: `feed-ingest/src/tasks/relay-publish.test.ts` covers success / failure-with-retry / abandon-at-max-attempts / advisory-lock contention / already-sent no-op plus a two-step deletion-path retry. `publishToRelay` / `publishToRelayUrl` are deleted from `gateway/src/lib/nostr-publisher.ts`. Specs: `docs/adr/RELAY-OUTBOX-ADR.md` + `docs/adr/RELAY-OUTBOX-PHASE-4-ADR.md`
 
 ### Payments
+
 - Readers accumulate a tab (Stripe PaymentIntent) as they read gated articles
 - `payment-service/src/services/` contains accrual, settlement, and payout logic
 - Payouts go to writers via Stripe Connect
 - Article access logic lives in `gateway/src/services/article-access/` (`access-check.ts`, `unlock-records.ts`, `gate-pass.ts` orchestrator + `index.ts` barrel). The `/articles/:id/gate-pass` route in `gateway/src/routes/articles/gate-pass.ts` is a thin HTTP wrapper that translates `performGatePass()`'s typed result into status codes
 
 ### Media
+
 - Uploaded via gateway (`gateway/src/routes/media.ts`), stored in a Docker volume, served via Nginx at `/media/`
 - Blossom is configured for Nostr-native media federation but primary storage is local
 - oEmbed proxying handled in `gateway/src/routes/media.ts`
 
 ### Editor
+
 - TipTap (ProseMirror-based) in `web/src/components/editor/`
 - Supports a paywall gate node — content below the gate requires payment to unlock
 - Markdown serialization via `tiptap-markdown`
 
 ### Compose overlay
+
 - `ComposeOverlay` (`web/src/components/compose/ComposeOverlay.tsx`) is the single compose surface for all composing, mounted globally in `app/layout.tsx`
-- Three modes: *note* (default, from topbar COMPOSE button or `⌘K`), *reply* (from Reply on any card, or QuoteSelector), and *article* (from the `Write an article →` link in note mode, or `useCompose().openArticle({ draftId?, publicationSlug? })`)
+- Three modes: _note_ (default, from topbar COMPOSE button or `⌘K`), _reply_ (from Reply on any card, or QuoteSelector), and _article_ (from the `Write an article →` link in note mode, or `useCompose().openArticle({ draftId?, publicationSlug? })`)
 - State managed by Zustand store `web/src/stores/compose.ts` — `useCompose().open(mode, replyTarget)` for note/reply, `openArticle(opts)` for article, `setMode(mode)` to escalate mid-compose
 - Article mode is a dedicated panel (`web/src/components/compose/ArticleComposePanel.tsx`) with its own Tiptap instance, title input (Literata 22px italic), `PUBLISH AS: …` selector, paywall gate + price, autosave to the drafts table via the existing `createAutoSaver`, `OPEN IN FULL EDITOR ↗` (flushes draft, navigates to `/write?draft=<id>[&pub=<slug>]`), `SCHEDULE`, and crimson Publish. Desktop overlay widens from 640→760px in article mode. V1 defers dek/tags/email-toggle/comments-toggle/show-on-writer-profile to the full editor
 - Overlay sits above content with 40% scrim, topbar stays visible and interactive
@@ -107,17 +120,19 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Full spec: `docs/adr/ALLHAUS-REDESIGN-SPEC.md` §3
 
 ### Feed & search
+
 - Feed ranking spec in `planning-archive/FEED-ALGORITHM.md` (Phase 1 implemented)
 - Full-text search uses PostgreSQL trigrams (`pg_trgm`), see `gateway/src/routes/search.ts`
 
 ### External feeds (Universal Feed Phases 1–4 + Phase 5A)
+
 - External content (RSS, external Nostr, Bluesky, Mastodon) is ingested by `feed-ingest/` (Graphile Worker service + a long-lived Jetstream WebSocket listener, no HTTP port)
 - `external_sources` (shared canonical feeds), `external_subscriptions` (per-user), `external_items` (normalised content) — see migration 052
 - `feed_items` (migration 053) is the denormalised unified timeline — articles, notes, and external items all land here via transactional dual-write from their source tables
 - Feed query (`gateway/src/routes/timeline.ts`) is a single-table scan on `feed_items` with LEFT JOINs for type-specific fields (article price/gate, note quote tags, external HTML, atproto quote/reply URIs). Compound `(published_at, id)` cursor
 - External items appear in the following feed only (excluded from explore until scoring worker ships for external content)
 - Daily cap per source enforced at query time via windowed `ROW_NUMBER()` over a rolling 24h window
-- Universal resolver (`gateway/src/lib/resolver.ts`) provides identity resolution for subscribe, invite, and other input fields — see `POST /api/v1/resolve`. Async Phase B results persist in `resolver_async_results` (migration 061, initiator-bound, pruned every 5m by `resolver_results_prune`) so poll results survive gateway scale-out. `bluesky_handle` is restricted to the official `.bsky.social` / `.bsky.team` suffixes; generic dotted hosts (`alice.example.com`) get the new `dotted_host` classification which tries atproto resolution first then falls through to URL discovery. The resolver response carries a `status: 'pending' | 'complete'` field — clients drive polling off that (not `pendingResolutions.length`). `invite` and `dm` contexts skip all external Phase B chains since those flows require a native account. Well-known RSS paths are probed in parallel and memoised per-origin (5-min TTL, 1000-entry cap). Nostr pubkey inputs get a Phase B kind-0 profile fetch against a default relay set for display-name/avatar enrichment. AT Protocol identity via `gateway/src/lib/atproto-resolve.ts` (DID docs, handle resolution, profile metadata — all through the public AppView `public.api.bsky.app`)
+- Universal resolver (`gateway/src/lib/resolver.ts`) provides identity resolution for subscribe, invite, and other input fields — see `POST /api/v1/resolve`. Async Phase B results persist in `resolver_async_results` (migration 061, initiator-bound, pruned every 5m by `resolver_results_prune`) so poll results survive gateway scale-out. `bluesky_handle` is restricted to the official `.bsky.social` / `.bsky.team` suffixes; generic dotted hosts (`alice.example.com`) get the `dotted_host` classification which runs atproto and URL/RSS probes concurrently with incremental partial-result storage so a fast atproto hit isn't blocked by a slow URL probe. The resolver response carries a `status: 'pending' | 'complete'` field — clients drive polling off that (not `pendingResolutions.length`). `invite` and `dm` contexts skip all external Phase B chains since those flows require a native account. Well-known RSS paths are probed in parallel and memoised per-origin (5-min TTL, 1000-entry cap). Nostr pubkey inputs get a Phase B kind-0 profile fetch against a default relay set for display-name/avatar enrichment. AT Protocol identity via `gateway/src/lib/atproto-resolve.ts` (DID docs, handle resolution, profile metadata — all through the public AppView `public.api.bsky.app`)
 - Subscription CRUD: `gateway/src/routes/external-feeds.ts` — subscribe, list, remove, mute, refresh. Accepts `rss`, `nostr_external`, `atproto`, `activitypub` protocols; enqueues an immediate fetch job per protocol (RSS poll, Nostr fetch, atproto `getAuthorFeed` backfill, or AP outbox poll). Also exposes `GET /admin/activitypub/instance-health` for per-instance success/failure rates
 - `ExternalCard` component renders external items with provenance badge (`VIA RSS` / `VIA NOSTR` / `VIA BLUESKY` / `VIA MASTODON`), sanitised HTML, images, link embed cards, quote-post links, video links. Atproto `at://` URIs are rewritten to `bsky.app` URLs at render time
 - `/subscriptions` page manages external feed subscriptions
@@ -130,6 +145,7 @@ Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.
 - Full spec: `docs/adr/UNIVERSAL-FEED-ADR.md`
 
 ### Trust graph (Phases 1–2 + 4)
+
 - `trust_layer1` (migration 065 + 079): precomputed per-user signals (account age, paying readers, article count, Stripe KYC, NIP-05). Daily cron in feed-ingest (`trust_layer1_refresh`, 01:00 UTC). Pip status is a four-state glyph (`known`/`partial`/`unknown`/`contested`) composed by `feed-ingest/src/lib/trust-pip.ts` from L1 signals + `trust_polls` aggregates (workspace experiment slice 17); renders on all feed cards via `TrustPip` component
 - `vouches` (migration 066 + 067): per-attestor/subject/dimension endorsements. Dimensions: `humanity`, `encounter`, `identity`, `integrity`. Values: `affirm`/`contest`. Visibility: `public` or `aggregate`. Contests must be aggregate. One vouch per attestor/subject/dimension (upsert). Soft-delete withdrawal via `withdrawn_at`. Decay tracking: `epochs_since_reaffirm` + `last_reaffirmed_at` (reset on reaffirmation)
 - `trust_profiles` (migration 066): precomputed dimension scores populated by epoch aggregation cron
@@ -159,44 +175,54 @@ Custom semantic tokens in `web/tailwind.config.js`. Fonts: Jost (sans), Literata
 These rules apply to all frontend code. Follow them when writing or modifying components.
 
 ### Three-voice typeface system
-| Voice | Typeface | Use for |
-|---|---|---|
-| **Literary** (serif) | Literata | Article prose, publication names, content previews, the reading experience |
-| **Platform** (sans) | Jost | UI copy, page titles, body text, descriptions, buttons, display names |
-| **Infrastructure** (mono) | IBM Plex Mono | Labels, metadata, system status, data values, tab pills |
+
+| Voice                     | Typeface      | Use for                                                                    |
+| ------------------------- | ------------- | -------------------------------------------------------------------------- |
+| **Literary** (serif)      | Literata      | Article prose, publication names, content previews, the reading experience |
+| **Platform** (sans)       | Jost          | UI copy, page titles, body text, descriptions, buttons, display names      |
+| **Infrastructure** (mono) | IBM Plex Mono | Labels, metadata, system status, data values, tab pills                    |
 
 Never use serif for platform UI elements (page titles, settings, admin headings, user display names in lists). Never use sans for infrastructure labels. When in doubt, prefer sans over serif for non-literary content.
 
 ### Use design tokens, not inline sizes
-| Token | Size | Use for |
-|---|---|---|
-| `text-ui-xs` | 13px sans | Small UI text, descriptions, secondary copy |
-| `text-ui-sm` | 14px sans | Standard UI text, form values, list items |
-| `text-mono-xs` | 11px mono | Small mono data (dates, amounts, tabular values) |
-| `.label-ui` | 11px mono, uppercase, 0.06em tracking | All infrastructure labels and metadata tags |
+
+| Token          | Size                                  | Use for                                          |
+| -------------- | ------------------------------------- | ------------------------------------------------ |
+| `text-ui-xs`   | 13px sans                             | Small UI text, descriptions, secondary copy      |
+| `text-ui-sm`   | 14px sans                             | Standard UI text, form values, list items        |
+| `text-mono-xs` | 11px mono                             | Small mono data (dates, amounts, tabular values) |
+| `.label-ui`    | 11px mono, uppercase, 0.06em tracking | All infrastructure labels and metadata tags      |
 
 Never hand-roll `font-mono text-[12px] uppercase tracking-[0.06em]` — that is `.label-ui`. Never use `text-[13px] font-sans` — that is `text-ui-xs`. Never use `text-[14px] font-sans` — that is `text-ui-sm`.
 
 ### Form labels
+
 Always use `.label-ui text-grey-400` for form labels. Do not use `text-ui-xs uppercase tracking-wider` or `text-sm text-grey-600` for labels.
 
 ### Buttons
+
 Use the defined button classes: `.btn` (primary), `.btn-accent` (crimson), `.btn-ghost` (background), `.btn-soft` (secondary/soft action). Do not hand-roll button styles with inline classes.
 
 ### Text-link actions
+
 Use `.btn-text` for inline text-link actions (13px sans, black, medium weight). Use `.btn-text-muted` for secondary actions (grey, hover:black). Use `.btn-text-danger` for destructive actions (crimson). Do not hand-roll text button styles with `text-ui-xs text-black font-medium` or similar.
 
 ### Toggle chips
+
 Use `.toggle-chip` + `.toggle-chip-active` / `.toggle-chip-inactive` (combined with `.label-ui`) for On/Off style selectors. Do not hand-roll toggle styling with inline conditional classes.
 
 ### Page shell
+
 All top-level admin/settings/dashboard pages use `<PageShell>` from `web/src/components/ui/PageShell.tsx`. It fixes outer padding (`py-12`), title styling, and title→content gap (`mb-8`). Choose width by content type: `article` (640px) for single-column forms, `feed` (780px) for lists/cards/reading surfaces, `content` (960px) for tables and data-dense dashboards. Do not hand-roll `mx-auto max-w-* px-4 sm:px-6 py-*` wrappers on new pages. Use `<PageHeader>` standalone for sub-views that need the same title treatment.
 
 ### Dividers
+
 Use `.slab-rule-4` for major section dividers. Do not use `h-[4px] bg-black` inline.
 
 ### Feed card chassis
+
 All three feed card types (`ArticleCard`, `NoteCard`, `ExternalCard`) share a unified visual grammar:
+
 - **Left bar**: 4px solid, full card height. Black (`#111111`) for native, crimson (`#B5242A`) for paid, grey-300 (`#BBBBBB`) for external. Applied via `borderLeft` inline style + `paddingLeft: '24px'`.
 - **Byline row**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600`). Order: TrustPip · Author name · middle-dot · timestamp · (optional price or protocol badge).
 - **Action row**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600`). `Reply` opens the compose overlay; `Quote`, `VoteControls`, `BookmarkButton`, `ShareButton` as appropriate per type.
@@ -204,7 +230,9 @@ All three feed card types (`ArticleCard`, `NoteCard`, `ExternalCard`) share a un
 - **Feed rhythm**: 40px gap between all items (`space-y-[40px]`), no horizontal rules between cards.
 
 ### Reply threads (playscripts)
+
 Threads never use nested indentation, left borders between nested replies, quote-of-parent blockquotes, or avatars. They render flat and chronological as a transcript.
+
 - **Thread step-in**: the thread container is indented 32px once (`ml-8`) from the parent card's content column. This is the only indentation in the thread system.
 - **Inter-entry rhythm**: 32px (`space-y-[32px]`). No hairline rules between entries.
 - **Speaker line**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600`). Structure: `TrustPip` · bold Jost name · colon. Own replies read `YOU:` with no pip (the asymmetric 16px left-jog is deliberate — `YOU:` is the reader, not a named speaker).

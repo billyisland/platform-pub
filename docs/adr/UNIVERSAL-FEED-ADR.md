@@ -43,12 +43,12 @@ The strategic logic is simple: **the platform that owns the reading experience o
 
 The existing `content_tier` enum maps cleanly onto the universal feed:
 
-| Tier | Enum value | Source | Ingestion method | Outbound reply |
-|------|-----------|--------|------------------|----------------|
-| 1 | `tier1` | Native all.haus | Direct write to relay + DB | N/A (already native) |
-| 2 | `tier2` | External Nostr relays | WebSocket subscription via strfry/NDK | Publish to source relay |
-| 3 | `tier3` | Bluesky (AT Protocol) / Mastodon (ActivityPub) | Jetstream / outbox polling | AT Protocol `createRecord` / ActivityPub `POST` |
-| 4 | `tier4` | RSS / Atom feeds | HTTP polling | N/A (RSS is read-only) |
+| Tier | Enum value | Source                                         | Ingestion method                      | Outbound reply                                  |
+| ---- | ---------- | ---------------------------------------------- | ------------------------------------- | ----------------------------------------------- |
+| 1    | `tier1`    | Native all.haus                                | Direct write to relay + DB            | N/A (already native)                            |
+| 2    | `tier2`    | External Nostr relays                          | WebSocket subscription via strfry/NDK | Publish to source relay                         |
+| 3    | `tier3`    | Bluesky (AT Protocol) / Mastodon (ActivityPub) | Jetstream / outbox polling            | AT Protocol `createRecord` / ActivityPub `POST` |
+| 4    | `tier4`    | RSS / Atom feeds                               | HTTP polling                          | N/A (RSS is read-only)                          |
 
 The tier determines both how content enters the system and whether replies can be routed back to the source.
 
@@ -211,15 +211,15 @@ The `media` column on both `external_items` and `feed_items` is a JSONB array. E
 
 ```typescript
 interface MediaAttachment {
-  type: 'image' | 'video' | 'audio' | 'link';
-  url: string;              // source URL
-  thumbnail?: string;       // preview/thumbnail URL (video, link cards)
-  alt?: string;             // alt text (images)
-  width?: number;           // intrinsic width in px
-  height?: number;          // intrinsic height in px
-  mime_type?: string;       // e.g. 'image/jpeg', 'video/mp4'
-  title?: string;           // link card title
-  description?: string;     // link card description
+  type: "image" | "video" | "audio" | "link";
+  url: string; // source URL
+  thumbnail?: string; // preview/thumbnail URL (video, link cards)
+  alt?: string; // alt text (images)
+  width?: number; // intrinsic width in px
+  height?: number; // intrinsic height in px
+  mime_type?: string; // e.g. 'image/jpeg', 'video/mp4'
+  title?: string; // link card title
+  description?: string; // link card description
 }
 ```
 
@@ -304,6 +304,7 @@ CREATE UNIQUE INDEX idx_feed_items_external ON feed_items(external_item_id)
 ```
 
 **Write paths (Phase 2) — all writes are transactional:**
+
 - **Articles:** Gateway inserts into `articles` and the corresponding `feed_items` row in the **same Postgres transaction**. If either INSERT fails, both roll back. An article without a `feed_items` row is invisible in the feed — this is a correctness requirement, not an optimisation.
 - **Notes:** Same pattern — `notes` INSERT + `feed_items` INSERT in a single transaction.
 - **External items:** `feed-ingest` worker inserts into `external_items` and `feed_items` in a single transaction.
@@ -324,21 +325,21 @@ Content edits (article title, preview text) are propagated synchronously in the 
 
 The `feed_items` table is polymorphic — different columns are populated depending on `item_type`. Implementors should not assume all fields are present for all item types.
 
-| Column | `article` | `note` | `external` |
-|--------|-----------|--------|------------|
-| `article_id` | set | NULL | NULL |
-| `note_id` | NULL | set | NULL |
-| `external_item_id` | NULL | NULL | set |
-| `author_id` | set | set | NULL |
-| `author_username` | set | set | NULL |
-| `title` | set (article title) | NULL | set if RSS, NULL otherwise |
-| `content_preview` | set (plain text) | set (plain text) | set (plain text) |
-| `content_html` | NULL | NULL | set for RSS + ActivityPub |
-| `nostr_event_id` | set | set | NULL |
-| `source_protocol` | NULL | NULL | set |
-| `source_item_uri` | NULL | NULL | set |
-| `source_id` | NULL | NULL | set |
-| `media` | NULL | NULL | set (JSONB array) |
+| Column             | `article`           | `note`           | `external`                 |
+| ------------------ | ------------------- | ---------------- | -------------------------- |
+| `article_id`       | set                 | NULL             | NULL                       |
+| `note_id`          | NULL                | set              | NULL                       |
+| `external_item_id` | NULL                | NULL             | set                        |
+| `author_id`        | set                 | set              | NULL                       |
+| `author_username`  | set                 | set              | NULL                       |
+| `title`            | set (article title) | NULL             | set if RSS, NULL otherwise |
+| `content_preview`  | set (plain text)    | set (plain text) | set (plain text)           |
+| `content_html`     | NULL                | NULL             | set for RSS + ActivityPub  |
+| `nostr_event_id`   | set                 | set              | NULL                       |
+| `source_protocol`  | NULL                | NULL             | set                        |
+| `source_item_uri`  | NULL                | NULL             | set                        |
+| `source_id`        | NULL                | NULL             | set                        |
+| `media`            | NULL                | NULL             | set (JSONB array)          |
 
 ### IV.6 `linked_accounts` — user credentials for outbound posting
 
@@ -466,7 +467,7 @@ INSERT INTO platform_config (key, value, description) VALUES
 A new Docker Compose service (`feed-ingest`) containing two processes:
 
 1. **Graphile Worker** — handles scheduled polling jobs (RSS, ActivityPub, external Nostr), outbound cross-posts, token refresh, and pruning. Follows the same pattern as `traffology-worker`.
-2. **Jetstream listener** — a standalone long-lived process maintaining a persistent WebSocket connection to Bluesky's Jetstream. This is *not* a Graphile job; it runs as a separate entrypoint within the same container.
+2. **Jetstream listener** — a standalone long-lived process maintaining a persistent WebSocket connection to Bluesky's Jetstream. This is _not_ a Graphile job; it runs as a separate entrypoint within the same container.
 
 Both share the Postgres database. The Jetstream listener writes directly to `external_items` (and `feed_items` in Phase 2+). Graphile Worker processes its job queue as normal.
 
@@ -483,26 +484,26 @@ feed-ingest:
       condition: service_healthy
   environment:
     DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
-    LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX}   # Phase 5 (outbound); omit in Phases 1–4
-    JETSTREAM_URL: ${JETSTREAM_URL:-wss://jetstream1.us-east.bsky.network/subscribe}  # Phase 3+
+    LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX} # Phase 5 (outbound); omit in Phases 1–4
+    JETSTREAM_URL: ${JETSTREAM_URL:-wss://jetstream1.us-east.bsky.network/subscribe} # Phase 3+
 ```
 
 The service has no HTTP API. Health is inferred from Graphile Worker's heartbeat and a simple liveness file written by the Jetstream process.
 
 ### V.2 Graphile Worker job types
 
-| Job | Schedule | Phase | Description |
-|-----|----------|-------|-------------|
-| `feed_ingest_poll` | Cron: every 60s | 1 | Finds `external_sources` due for polling, enqueues per-source jobs (with per-host concurrency limits — see below) |
-| `feed_ingest_rss` | Per-source | 1 | Fetches an RSS/Atom feed, parses, upserts into `external_items` (Phase 1) or `external_items` + `feed_items` (Phase 2+) |
-| `feed_ingest_activitypub` | Per-source | 4 | Fetches an ActivityPub actor's outbox, upserts items |
-| `feed_ingest_nostr` | Per-source | 2 | Subscribes to external relay for a pubkey, fetches recent events |
-| `outbound_cross_post` | Per-event | 5 | Dispatches a queued outbound post via the appropriate adapter |
-| `outbound_token_refresh` | Cron: every 30min | 5 | Refreshes OAuth tokens nearing expiry in `linked_accounts` |
-| `external_items_prune` | Cron: daily | 1 | Deletes `external_items` older than retention period, excluding items with user interactions (see §XV.3) |
-| `source_metadata_refresh` | Cron: daily | 1 | Refreshes `display_name`, `avatar_url`, `description` on active sources |
-| `feed_items_author_refresh` | Cron: daily | 2 | Propagates changed author metadata (native accounts + external sources) to denormalised `feed_items` rows |
-| `feed_items_reconcile` | Cron: daily | 2 | Checks for orphaned or missing `feed_items` rows and repairs them (see §XV.7) |
+| Job                         | Schedule          | Phase | Description                                                                                                             |
+| --------------------------- | ----------------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
+| `feed_ingest_poll`          | Cron: every 60s   | 1     | Finds `external_sources` due for polling, enqueues per-source jobs (with per-host concurrency limits — see below)       |
+| `feed_ingest_rss`           | Per-source        | 1     | Fetches an RSS/Atom feed, parses, upserts into `external_items` (Phase 1) or `external_items` + `feed_items` (Phase 2+) |
+| `feed_ingest_activitypub`   | Per-source        | 4     | Fetches an ActivityPub actor's outbox, upserts items                                                                    |
+| `feed_ingest_nostr`         | Per-source        | 2     | Subscribes to external relay for a pubkey, fetches recent events                                                        |
+| `outbound_cross_post`       | Per-event         | 5     | Dispatches a queued outbound post via the appropriate adapter                                                           |
+| `outbound_token_refresh`    | Cron: every 30min | 5     | Refreshes OAuth tokens nearing expiry in `linked_accounts`                                                              |
+| `external_items_prune`      | Cron: daily       | 1     | Deletes `external_items` older than retention period, excluding items with user interactions (see §XV.3)                |
+| `source_metadata_refresh`   | Cron: daily       | 1     | Refreshes `display_name`, `avatar_url`, `description` on active sources                                                 |
+| `feed_items_author_refresh` | Cron: daily       | 2     | Propagates changed author metadata (native accounts + external sources) to denormalised `feed_items` rows               |
+| `feed_items_reconcile`      | Cron: daily       | 2     | Checks for orphaned or missing `feed_items` rows and repairs them (see §XV.7)                                           |
 
 **Per-host ingestion rate limiting:**
 
@@ -518,17 +519,20 @@ Implementation: the poll job groups sources by hostname and enqueues at most **2
 The Jetstream connection is architecturally distinct from Graphile jobs because it is a persistent, long-lived WebSocket — not a discrete unit of work.
 
 **Lifecycle:**
+
 - On startup, queries all active `external_sources WHERE protocol = 'atproto'`, collects DIDs.
 - Opens a WebSocket to the configured Jetstream endpoint with `wantedDids` and `wantedCollections=['app.bsky.feed.post']`.
 - Processes incoming events: normalise → upsert `external_items` (Phase 1) or `external_items` + `feed_items` (Phase 2+).
 - Handles deletion events (`app.bsky.feed.post` delete commits) by setting `deleted_at` on the relevant tables.
 
 **DID list management:**
+
 - Polls `external_sources` every 60 seconds for changes to the active atproto DID set.
 - On change, disconnects and reconnects with the updated `wantedDids` list.
 - Jetstream supports up to ~10,000 DIDs per connection. If the platform exceeds this, the listener opens multiple parallel connections with partitioned DID sets. The partition boundary is documented in the Jetstream docs and should be checked at implementation time.
 
 **Cursor management:**
+
 - Jetstream provides a `time_us` (microsecond timestamp) cursor.
 - Stored per-source in `external_sources.cursor`.
 - **New source initialisation:** When a new atproto source is created (user subscribes to a Bluesky account), its cursor is initialised to the current `time_us` (i.e., `now`). The source's recent post history is backfilled separately via a one-time `getAuthorFeed` API call (enqueued as a Graphile Worker job). This prevents new subscriptions from dragging the global Jetstream cursor backward — the listener only sees the new DID on its next 60-second poll and starts receiving events from that point forward.
@@ -536,6 +540,7 @@ The Jetstream connection is architecturally distinct from Graphile jobs because 
 - If the oldest cursor is too old (Jetstream retains ~72h), fall back to fetching recent posts via `getAuthorFeed` for each DID whose cursor exceeds the retention window, then update those cursors to `now` and reconnect.
 
 **Failure modes:**
+
 - WebSocket disconnect: automatic reconnect with exponential backoff (1s → 2s → 4s → ... → 30s max).
 - Jetstream service outage (both endpoints): fall back to polling `getAuthorFeed` via `feed_ingest_poll` for atproto sources until Jetstream recovers. The poll job checks a `jetstream_healthy` flag set by the listener process.
 
@@ -553,9 +558,14 @@ interface IngestAdapter {
 
 interface OutboundAdapter {
   /** Post a reply/quote/repost to the external platform. */
-  send(post: OutboundPost, credentials: DecryptedCredentials): Promise<{ externalUri: string }>;
+  send(
+    post: OutboundPost,
+    credentials: DecryptedCredentials,
+  ): Promise<{ externalUri: string }>;
   /** Refresh OAuth tokens. Returns updated credentials or throws. */
-  refreshTokens?(credentials: DecryptedCredentials): Promise<DecryptedCredentials>;
+  refreshTokens?(
+    credentials: DecryptedCredentials,
+  ): Promise<DecryptedCredentials>;
 }
 ```
 
@@ -569,22 +579,22 @@ This is the implementation of design principle #9 (omnivorous input). The feed s
 
 The resolver classifies input by pattern matching, then dispatches to the appropriate resolution chain. Classification is deterministic, not probabilistic — every input maps to exactly one chain (or the ambiguous-identifier chain, which tries multiple).
 
-| Pattern | Classification | Resolution chain |
-|---------|---------------|------------------|
-| `https://...` or `http://...` | URL | URL resolver (§V.5.2) |
-| `npub1...` | Nostr NIP-19 pubkey | Decode bech32 → hex pubkey → platform account lookup + external Nostr source |
-| `nprofile1...` | Nostr NIP-19 profile | Decode bech32 → hex pubkey + relay hints → same as npub + populate `relay_urls` |
-| 64-char hex string | Nostr hex pubkey | Platform account lookup (by `nostr_pubkey`) + external Nostr source |
-| `did:plc:...` or `did:web:...` | AT Protocol DID | Resolve DID → Bluesky handle → external atproto source |
-| `@handle.bsky.social` / `@handle.bsky.team` | Bluesky handle (official suffix) | AT Protocol handle resolution (`com.atproto.identity.resolveHandle`) |
-| `@user@instance.tld` | Fediverse handle | WebFinger resolution → ActivityPub actor URI → external activitypub source |
-| `user@domain.tld` (no `@` prefix) | Ambiguous: email, NIP-05, or fediverse | Ambiguous chain (§V.5.3) |
-| `@handle.tld` / `handle.tld` (no `@` prefix) | Dotted host | Try AT Protocol handle resolution (custom-domain handles), then URL discovery |
-| `@username` (single `@`, no domain) | Platform username | Strip `@`, then exact username lookup → fuzzy ILIKE fallback |
-| Alphanumeric, no `@`, no `.` | Platform username | Exact username lookup → fuzzy ILIKE fallback (writers + publications) |
-| Anything else | Free-text | Platform search (writers + publications) |
+| Pattern                                      | Classification                         | Resolution chain                                                                |
+| -------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
+| `https://...` or `http://...`                | URL                                    | URL resolver (§V.5.2)                                                           |
+| `npub1...`                                   | Nostr NIP-19 pubkey                    | Decode bech32 → hex pubkey → platform account lookup + external Nostr source    |
+| `nprofile1...`                               | Nostr NIP-19 profile                   | Decode bech32 → hex pubkey + relay hints → same as npub + populate `relay_urls` |
+| 64-char hex string                           | Nostr hex pubkey                       | Platform account lookup (by `nostr_pubkey`) + external Nostr source             |
+| `did:plc:...` or `did:web:...`               | AT Protocol DID                        | Resolve DID → Bluesky handle → external atproto source                          |
+| `@handle.bsky.social` / `@handle.bsky.team`  | Bluesky handle (official suffix)       | AT Protocol handle resolution (`com.atproto.identity.resolveHandle`)            |
+| `@user@instance.tld`                         | Fediverse handle                       | WebFinger resolution → ActivityPub actor URI → external activitypub source      |
+| `user@domain.tld` (no `@` prefix)            | Ambiguous: email, NIP-05, or fediverse | Ambiguous chain (§V.5.3)                                                        |
+| `@handle.tld` / `handle.tld` (no `@` prefix) | Dotted host                            | Try AT Protocol handle resolution (custom-domain handles), then URL discovery   |
+| `@username` (single `@`, no domain)          | Platform username                      | Strip `@`, then exact username lookup → fuzzy ILIKE fallback                    |
+| Alphanumeric, no `@`, no `.`                 | Platform username                      | Exact username lookup → fuzzy ILIKE fallback (writers + publications)           |
+| Anything else                                | Free-text                              | Platform search (writers + publications)                                        |
 
-The `bluesky_handle` classification is restricted to the official `.bsky.social` / `.bsky.team` suffixes so that `@example.com` (a user-controlled atproto handle) is not misclassified as a Bluesky handle when it might also be an RSS-hosting domain. The new `dotted_host` classification captures this case and tries atproto resolution first (for custom-domain handles like `alice.example.com`) before falling through to URL discovery.
+The `bluesky_handle` classification is restricted to the official `.bsky.social` / `.bsky.team` suffixes so that `@example.com` (a user-controlled atproto handle) is not misclassified as a Bluesky handle when it might also be an RSS-hosting domain. The `dotted_host` classification captures this case and runs atproto and URL/RSS probes concurrently with incremental partial-result storage — whichever probe lands first is persisted immediately so a fast atproto hit (e.g. `npr.org` as a custom-domain Bluesky handle) isn't blocked by a slow URL/RSS probe on a complex site.
 
 #### V.5.2 URL resolver
 
@@ -618,6 +628,7 @@ The `user@domain` pattern is genuinely ambiguous — it could be an email (for a
 3. **WebFinger resolution** — fetch `https://domain.tld/.well-known/webfinger?resource=acct:user@domain.tld`. If valid, extract the ActivityPub actor URI. Return as a potential activitypub source.
 
 The calling context determines priority:
+
 - **Feed subscribe flow:** prefer external source results (NIP-05 or WebFinger). If both match, present both as options.
 - **Publication invite flow:** prefer native account (email match). If no email match, fall through to NIP-05/WebFinger and offer to subscribe instead of invite.
 - **DM / mention flow:** prefer native account. External identities can't receive DMs.
@@ -629,15 +640,24 @@ The resolver returns a structured result, not a single answer:
 ```typescript
 interface ResolverResult {
   /** What the resolver understood the input to be */
-  inputType: 'url' | 'npub' | 'nprofile' | 'hex_pubkey' | 'did' |
-             'bluesky_handle' | 'dotted_host' | 'fediverse_handle' | 'ambiguous_at' |
-             'platform_username' | 'free_text';
+  inputType:
+    | "url"
+    | "npub"
+    | "nprofile"
+    | "hex_pubkey"
+    | "did"
+    | "bluesky_handle"
+    | "dotted_host"
+    | "fediverse_handle"
+    | "ambiguous_at"
+    | "platform_username"
+    | "free_text";
 
   /** Matches found, ordered by confidence */
   matches: ResolverMatch[];
 
   /** 'pending' if remote Phase B chains are still running; 'complete' otherwise */
-  status?: 'pending' | 'complete';
+  status?: "pending" | "complete";
 
   /** Remote resolution chains the client should poll for */
   pendingResolutions?: PendingResolution[];
@@ -647,11 +667,16 @@ interface ResolverResult {
 }
 
 interface ResolverMatch {
-  type: 'native_account' | 'external_source' | 'rss_feed';
-  confidence: 'exact' | 'probable' | 'speculative';
+  type: "native_account" | "external_source" | "rss_feed";
+  confidence: "exact" | "probable" | "speculative";
 
   /** Non-null if this is a native all.haus account */
-  account?: { id: string; username: string; displayName: string; avatar?: string };
+  account?: {
+    id: string;
+    username: string;
+    displayName: string;
+    avatar?: string;
+  };
 
   /** Non-null if this is an external source (for subscription) */
   externalSource?: {
@@ -660,7 +685,7 @@ interface ResolverMatch {
     displayName?: string;
     avatar?: string;
     description?: string;
-    relayUrls?: string[];  // nostr_external only
+    relayUrls?: string[]; // nostr_external only
   };
 
   /** Non-null if this is a discovered RSS feed */
@@ -674,14 +699,14 @@ The UI renders this as a dropdown of matches when there's more than one result. 
 
 The universal resolver is the shared primitive. Each existing identity input across the platform should migrate to it over time. Current state and target:
 
-| Feature | Current input | Current location | Target |
-|---------|--------------|------------------|--------|
-| **Publication invite** | Email only | `MembersTab.tsx:199` | Email, username, npub, NIP-05, fediverse handle. Resolve to native account; if external-only, offer "invite by email" fallback. |
-| **DM new conversation** | Username only | `messages/page.tsx:114` | Username, email, npub, NIP-05. Resolve to native account only (DMs require platform membership). |
-| **DM pricing override** | Username only | `DmFeeSettings.tsx:116` | Same as DM — username, email, npub, NIP-05. Native accounts only. |
-| **Feed subscribe** | (New) | `POST /api/feeds/subscribe` | Full resolver: URLs, handles, npubs, DIDs, NIP-05, fediverse handles, RSS URLs. |
-| **Search** | Free-text query | `search/page.tsx:68` | Add resolver as a pre-pass: if the query looks like an identifier (URL, handle, npub), resolve first and show the resolved result above search results. |
-| **Publication ownership transfer** | UUID only | `publications.ts:495` | Username, email, npub. Resolve to native account (must be platform member). |
+| Feature                            | Current input   | Current location            | Target                                                                                                                                                  |
+| ---------------------------------- | --------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Publication invite**             | Email only      | `MembersTab.tsx:199`        | Email, username, npub, NIP-05, fediverse handle. Resolve to native account; if external-only, offer "invite by email" fallback.                         |
+| **DM new conversation**            | Username only   | `messages/page.tsx:114`     | Username, email, npub, NIP-05. Resolve to native account only (DMs require platform membership).                                                        |
+| **DM pricing override**            | Username only   | `DmFeeSettings.tsx:116`     | Same as DM — username, email, npub, NIP-05. Native accounts only.                                                                                       |
+| **Feed subscribe**                 | (New)           | `POST /api/feeds/subscribe` | Full resolver: URLs, handles, npubs, DIDs, NIP-05, fediverse handles, RSS URLs.                                                                         |
+| **Search**                         | Free-text query | `search/page.tsx:68`        | Add resolver as a pre-pass: if the query looks like an identifier (URL, handle, npub), resolve first and show the resolved result above search results. |
+| **Publication ownership transfer** | UUID only       | `publications.ts:495`       | Username, email, npub. Resolve to native account (must be platform member).                                                                             |
 
 Migration priority: feed subscribe (Phase 1), publication invite (Phase 1 — low effort, high visibility), search pre-pass (Phase 2), DM flows (Phase 3). The resolver library ships in Phase 1; downstream adoption is incremental.
 
@@ -720,6 +745,7 @@ This avoids the worst case (user stares at a spinner for 10 seconds) without req
 The simplest channel. Read-only — no outbound adapter.
 
 **Ingestion:**
+
 - Standard HTTP GET with `If-None-Match` (ETag) and `If-Modified-Since` headers.
 - Parse with a robust library (`feedparser-promised` or `rss-parser`). Do not hand-roll XML parsing.
 - Each `<item>` or `<entry>` becomes one `external_items` row (and one `feed_items` row in Phase 2+).
@@ -731,29 +757,35 @@ The simplest channel. Read-only — no outbound adapter.
 - `media` = extracted from `<enclosure>` elements and `<media:content>`.
 
 **Content sanitisation:**
+
 - HTML content is sanitised with a strict allowlist (no `<script>`, `<iframe>`, `<object>`, event handlers) before storage in `content_html`. Use `sanitize-html` or equivalent.
 - Image URLs in media are proxied through the gateway's existing media proxy (or stored as direct URLs with a CSP that permits external images). Decision deferred to implementation.
 
 **Polling interval:**
+
 - Defaults to `feed_ingest_rss_interval_seconds` (5 min).
 - Respects `Cache-Control: max-age` and `Retry-After` headers from the source.
 - Exponential backoff on errors: interval × `feed_ingest_error_backoff_factor` ^ `error_count`.
 - Source deactivated after `feed_ingest_max_error_count` consecutive errors.
 
 **Deduplication:**
+
 - `UNIQUE (protocol, source_item_uri)` constraint on `external_items`. `ON CONFLICT DO NOTHING`.
 
 **Volume control:**
+
 - `feed_ingest_max_items_per_fetch` (default 50) caps items per poll cycle. This is enforced at ingestion time — the adapter stops processing after this many new items per fetch.
 - `feed_ingest_daily_cap_default` (default 100) provides a platform-wide safety valve at the ingestion layer: sources that produce more than this many items per day have excess items dropped (oldest first). This is a source-level cap, not per-subscriber.
 - Per-subscriber `daily_cap` (on `external_subscriptions`) is enforced at **feed query time**, not at ingestion. Because items are shared across subscribers (principle #8), the ingestion layer cannot enforce per-subscriber caps without affecting other subscribers to the same source. The feed query applies a windowed row-number filter per source (see §VII.1).
 
 **Feed discovery:**
+
 - The user enters any identifier into the subscribe input. The universal resolver (§V.5) handles classification and URL-based RSS discovery (§V.5.2, step 3), including `<link rel="alternate">` extraction and well-known path probing.
 - Feed discovery is a real-world rabbit hole (Cloudflare challenges, broken XML, CDATA-wrapped HTML, feeds that serve HTML to non-reader User-Agents). The resolver's URL fetcher uses a User-Agent string that identifies as a feed reader. The SSRF-hardened HTTP client (§XVI.3) enforces 10-second timeouts and 5MB response limits. Accept partial success — if discovery fails, the UI shows a clear error with the option to paste a direct feed URL.
 - On success, creates the `external_sources` row (or finds the existing one), creates the `external_subscriptions` row, and triggers an immediate `feed_ingest_rss` job.
 
 **Deletion:**
+
 - RSS has no deletion signal. Items removed from the feed XML are not deleted from `external_items`; they simply stop appearing in future fetches. They age out via the retention pruning job.
 
 ### VI.2 External Nostr relays (tier 2)
@@ -761,6 +793,7 @@ The simplest channel. Read-only — no outbound adapter.
 **Why this comes before Bluesky/Mastodon:** The platform already understands Nostr events, already has relay infrastructure (strfry), and already renders notes and articles. External Nostr ingestion reuses the existing event parsing logic and rendering components with minimal new code. It validates the multi-source feed assembly pipeline before introducing OAuth, foreign content formats, and protocol-specific rendering.
 
 **Ingestion:**
+
 - For each `external_sources` row with `protocol = 'nostr_external'`, the `feed_ingest_nostr` job opens a temporary WebSocket to each relay in `relay_urls`.
 - Sends a `REQ` filter for `kinds: [1, 30023]` by the specified pubkey, with `since` set to the stored cursor (or 48 hours ago if no cursor).
 - Collects events, closes the connection, normalises into `external_items` (and `feed_items` in Phase 2+).
@@ -772,11 +805,13 @@ The simplest channel. Read-only — no outbound adapter.
 **Cursor:** `created_at` of the newest event processed, stored in `external_sources.cursor`.
 
 **Outbound:**
+
 - Publishes the user's Nostr reply event (already created on the all.haus relay) to the source relays listed in `interaction_data.relays`.
 - Uses the user's custodial keypair via `key-custody` (HTTP call from `feed-ingest` to `key-custody` service).
 - The event is already signed; this is just a relay publish (same fire-and-forget WebSocket pattern as `nostr-publisher.ts` in the gateway).
 
 **Deletion:**
+
 - Kind 5 deletion events from the source relay set `external_items.deleted_at` (and `feed_items.deleted_at` in Phase 2+).
 
 ### VI.3 Bluesky / AT Protocol (tier 3)
@@ -786,6 +821,7 @@ The simplest channel. Read-only — no outbound adapter.
 See §V.3 for Jetstream listener architecture.
 
 **Normalisation:**
+
 - `source_item_uri` = AT URI (`at://did:plc:.../app.bsky.feed.post/rkey`).
 - `content_text` = `record.text`.
 - `content_html` = rendered from facets (mentions → links, URIs → links). Use `@atproto/api`'s `RichText` class for facet rendering rather than hand-rolling.
@@ -796,6 +832,7 @@ See §V.3 for Jetstream listener architecture.
 - For reposts: `is_repost = TRUE`, `original_item_uri` = the reposted post's AT URI.
 
 **Deletion:**
+
 - Jetstream delivers `delete` commits. The listener sets `deleted_at` on `external_items` (and `feed_items` in Phase 2+).
 
 **Outbound — AT Protocol OAuth + `createRecord`:**
@@ -804,7 +841,7 @@ Reply structure (AT Protocol requires both `parent` and `root` strong references
 
 ```typescript
 const record = {
-  $type: 'app.bsky.feed.post',
+  $type: "app.bsky.feed.post",
   text: outboundPost.text,
   createdAt: new Date().toISOString(),
   reply: {
@@ -821,7 +858,7 @@ const record = {
 
 await agent.api.com.atproto.repo.createRecord({
   repo: linkedAccount.externalId,
-  collection: 'app.bsky.feed.post',
+  collection: "app.bsky.feed.post",
   record,
 });
 ```
@@ -830,11 +867,11 @@ Quote-post structure:
 
 ```typescript
 const record = {
-  $type: 'app.bsky.feed.post',
+  $type: "app.bsky.feed.post",
   text: outboundPost.text,
   createdAt: new Date().toISOString(),
   embed: {
-    $type: 'app.bsky.embed.record',
+    $type: "app.bsky.embed.record",
     record: {
       uri: interactionData.uri,
       cid: interactionData.cid,
@@ -871,6 +908,7 @@ Scoped permissions: request `atproto:write` and `atproto:read`. Adopt granular A
 - `source_reply_uri` = `inReplyTo`.
 
 **Known limitations of outbox polling:**
+
 - Many Mastodon instances restrict outbox access to authenticated requests, return inconsistent pagination, or rate-limit aggressively.
 - Some instances return only public posts; followers-only posts are invisible to outbox polling.
 - The adapter must handle: 401/403 responses (mark source with error), missing pagination links (stop at first page), varying `Content-Type` headers, and instances that return HTML instead of JSON-LD to unknown User-Agents.
@@ -879,6 +917,7 @@ Scoped permissions: request `atproto:write` and `atproto:read`. Adopt granular A
 **Cursor:** The `id` of the most recent activity processed, stored in `external_sources.cursor`.
 
 **Deletion:**
+
 - Outbox polling has no reliable deletion signal. Items that disappear from the outbox are not proactively deleted. They age out via retention pruning.
 - Future: inbox delivery (Phase 4) would receive `Delete` activities and could set `deleted_at`.
 
@@ -886,10 +925,10 @@ Scoped permissions: request `atproto:write` and `atproto:read`. Adopt granular A
 
 ```typescript
 const response = await fetch(`${instanceUrl}/api/v1/statuses`, {
-  method: 'POST',
+  method: "POST",
   headers: {
-    'Authorization': `Bearer ${credentials.accessToken}`,
-    'Content-Type': 'application/json',
+    Authorization: `Bearer ${credentials.accessToken}`,
+    "Content-Type": "application/json",
   },
   body: JSON.stringify({
     status: outboundPost.text,
@@ -1078,23 +1117,41 @@ The gateway writes to `articles`/`notes` and the corresponding `feed_items` row 
 // In the article publish handler — MUST be within the same transaction:
 const client = await pool.connect();
 try {
-  await client.query('BEGIN');
+  await client.query("BEGIN");
 
-  const { rows: [article] } = await client.query(`
+  const {
+    rows: [article],
+  } = await client.query(
+    `
     INSERT INTO articles (id, writer_id, title, ..., published_at)
     VALUES ($1, $2, $3, ..., $9) RETURNING id
-  `, [articleId, writerId, title, /* ... */ publishedAt]);
+  `,
+    [articleId, writerId, title, /* ... */ publishedAt],
+  );
 
-  await client.query(`
+  await client.query(
+    `
     INSERT INTO feed_items (item_type, article_id, author_id, author_name,
       author_avatar, author_username, title, content_preview,
       nostr_event_id, tier, published_at)
     VALUES ('article', $1, $2, $3, $4, $5, $6, $7, $8, 'tier1', $9)
-  `, [articleId, writerId, displayName, avatar, username, title, preview, eventId, publishedAt]);
+  `,
+    [
+      articleId,
+      writerId,
+      displayName,
+      avatar,
+      username,
+      title,
+      preview,
+      eventId,
+      publishedAt,
+    ],
+  );
 
-  await client.query('COMMIT');
+  await client.query("COMMIT");
 } catch (err) {
-  await client.query('ROLLBACK');
+  await client.query("ROLLBACK");
   throw err;
 } finally {
   client.release();
@@ -1114,11 +1171,13 @@ Migration `007-backfill-feed-items.sql` populates `feed_items` from existing `ar
 External items render in the same card layout as native notes but with distinct visual treatment:
 
 **Provenance badge:**
+
 - Sits below the author name, uses `.label-ui` class (11px mono, uppercase, 0.06em tracking — per design system).
 - Text: `VIA BLUESKY`, `VIA MASTODON`, `VIA RSS`, `VIA NOSTR`.
 - Colour: `text-crimson` (functional label, not decorative).
 
 **External card differences from NoteCard:**
+
 - Author avatar: loaded from `author_avatar_url` (external URL) instead of the platform's `/media/` path. Falls back to a protocol-specific default icon.
 - Author name: not a link to an all.haus profile (no profile exists). Instead, links to the source platform profile via `author_uri`.
 - Content: renders `content_html` (sanitised) for RSS and ActivityPub items. Renders `content_text` for Bluesky and Nostr items.
@@ -1132,13 +1191,13 @@ External items render in the same card layout as native notes but with distinct 
 
 When a user interacts with an external item in the feed:
 
-| Action | Native behaviour | Outbound behaviour (if linked) |
-|--------|-----------------|-------------------------------|
-| **Reply** | Creates `kind:1` note on all.haus relay. The note's `reply_to_event_id` is NULL (it's a top-level note that references the external item via a new `external_reply_to` field). | Cross-posts reply to source platform via outbound adapter. |
-| **Quote** | Creates `kind:1` note with `q` tag + embedded card showing the external item. | Cross-posts as quote-post (AT Protocol: `embed.record`; ActivityPub: link in body; Nostr: `q` tag). |
-| **Repost** | Creates `kind:6` repost event on all.haus relay. | Cross-posts as repost/boost on source platform. |
-| **Bookmark** | Saves to user's all.haus bookmarks (local only). | No outbound action. |
-| **Vote** | Standard all.haus vote (platform-native, no cross-post). | No outbound action. |
+| Action       | Native behaviour                                                                                                                                                               | Outbound behaviour (if linked)                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| **Reply**    | Creates `kind:1` note on all.haus relay. The note's `reply_to_event_id` is NULL (it's a top-level note that references the external item via a new `external_reply_to` field). | Cross-posts reply to source platform via outbound adapter.                                          |
+| **Quote**    | Creates `kind:1` note with `q` tag + embedded card showing the external item.                                                                                                  | Cross-posts as quote-post (AT Protocol: `embed.record`; ActivityPub: link in body; Nostr: `q` tag). |
+| **Repost**   | Creates `kind:6` repost event on all.haus relay.                                                                                                                               | Cross-posts as repost/boost on source platform.                                                     |
+| **Bookmark** | Saves to user's all.haus bookmarks (local only).                                                                                                                               | No outbound action.                                                                                 |
+| **Vote**     | Standard all.haus vote (platform-native, no cross-post).                                                                                                                       | No outbound action.                                                                                 |
 
 The reply/quote composer shows a toggle: "Also post to [Bluesky/Mastodon]". Default state from `linked_accounts.cross_post_default`. Hidden if no linked account exists for the source protocol. Hidden for RSS items (read-only protocol).
 
@@ -1170,11 +1229,11 @@ User composes reply to external item
 
 Different platforms have different constraints:
 
-| Platform | Max length | Formatting | Link handling |
-|----------|-----------|------------|---------------|
-| Bluesky | 300 graphemes | Facets (mentions, links) | Detect and encode as facets |
-| Mastodon | ~500 chars (instance-dependent) | HTML subset | Plain URLs auto-linked |
-| Nostr | Unlimited | Markdown | Markdown links |
+| Platform | Max length                      | Formatting               | Link handling               |
+| -------- | ------------------------------- | ------------------------ | --------------------------- |
+| Bluesky  | 300 graphemes                   | Facets (mentions, links) | Detect and encode as facets |
+| Mastodon | ~500 chars (instance-dependent) | HTML subset              | Plain URLs auto-linked      |
+| Nostr    | Unlimited                       | Markdown                 | Markdown links              |
 
 If the user's reply exceeds the target platform's limit, the adapter truncates with an ellipsis and appends a link back to the full reply on all.haus. The canonical, full-length version always lives on all.haus.
 
@@ -1190,14 +1249,14 @@ Outbound jobs run in `feed-ingest`, not in the gateway. This keeps credential de
 
 External integrations fail. The design must surface errors clearly rather than silently degrading.
 
-| Error | User sees | System action |
-|-------|-----------|---------------|
-| RSS feed returns 404 for 3+ days | Badge on subscription: "Feed unavailable" | `error_count` increments; deactivated at threshold |
-| RSS feed returns 403 (Cloudflare challenge) | Badge: "Feed blocked by source" | Same backoff; deactivated at threshold |
-| Bluesky OAuth token expires, refresh fails | Banner in settings: "Reconnect your Bluesky account" | `linked_accounts.is_valid = FALSE`; outbound paused |
-| Mastodon instance goes offline | Badge on subscription: "Instance unavailable" | Backoff; items resume when instance recovers |
-| Outbound cross-post fails permanently | Notification: "Your reply couldn't be posted to Bluesky. It's still on all.haus." | `outbound_posts.status = 'failed'` |
-| Source returns content that fails sanitisation | Item silently skipped | Logged; does not increment `error_count` |
+| Error                                          | User sees                                                                         | System action                                       |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| RSS feed returns 404 for 3+ days               | Badge on subscription: "Feed unavailable"                                         | `error_count` increments; deactivated at threshold  |
+| RSS feed returns 403 (Cloudflare challenge)    | Badge: "Feed blocked by source"                                                   | Same backoff; deactivated at threshold              |
+| Bluesky OAuth token expires, refresh fails     | Banner in settings: "Reconnect your Bluesky account"                              | `linked_accounts.is_valid = FALSE`; outbound paused |
+| Mastodon instance goes offline                 | Badge on subscription: "Instance unavailable"                                     | Backoff; items resume when instance recovers        |
+| Outbound cross-post fails permanently          | Notification: "Your reply couldn't be posted to Bluesky. It's still on all.haus." | `outbound_posts.status = 'failed'`                  |
+| Source returns content that fails sanitisation | Item silently skipped                                                             | Logged; does not increment `error_count`            |
 
 Settings page includes a "Connected accounts" section showing linked account status, and a "Subscriptions" section showing per-source health.
 
@@ -1257,11 +1316,11 @@ No separate `include_external` parameter. External items are part of the followi
 
 ## XI. Environment variables
 
-| Variable | Service | Phase | Purpose |
-|----------|---------|-------|---------|
-| `LINKED_ACCOUNT_KEY_HEX` | feed-ingest, gateway | 5 | AES-256 key for encrypting linked account credentials |
-| `JETSTREAM_URL` | feed-ingest | 3 | Bluesky Jetstream WebSocket URL |
-| `OAUTH_CALLBACK_URL` | gateway | 5 | Callback URL for OAuth flows (`https://all.haus/api/linked-accounts/callback`) |
+| Variable                 | Service              | Phase | Purpose                                                                        |
+| ------------------------ | -------------------- | ----- | ------------------------------------------------------------------------------ |
+| `LINKED_ACCOUNT_KEY_HEX` | feed-ingest, gateway | 5     | AES-256 key for encrypting linked account credentials                          |
+| `JETSTREAM_URL`          | feed-ingest          | 3     | Bluesky Jetstream WebSocket URL                                                |
+| `OAUTH_CALLBACK_URL`     | gateway              | 5     | Callback URL for OAuth flows (`https://all.haus/api/linked-accounts/callback`) |
 
 ---
 
@@ -1288,6 +1347,7 @@ The Phase 2 gateway code changes (dual-write paths for articles/notes, edit prop
 ### Phase 1 — RSS reader + three-stream feed (the foundation)
 
 **Scope:**
+
 - `external_sources`, `external_subscriptions`, `external_items` tables (migration `006`)
 - **No `feed_items` table** — Phase 1 uses the three-stream merge (§VII.1): articles + notes + external items, merged in application code
 - Feed route extended to include external items stream alongside existing article/note queries
@@ -1309,6 +1369,7 @@ The Phase 2 gateway code changes (dual-write paths for articles/notes, edit prop
 ### Phase 2 — Unified timeline + external Nostr (tier 2)
 
 **Scope:**
+
 - `feed_items` table, indexes, constraints (migration `007`)
 - Backfill migration `008` (articles + notes + external_items → feed_items)
 - Gateway dual-write paths: article/note creation and edits write `feed_items` rows in the same transaction
@@ -1326,6 +1387,7 @@ The Phase 2 gateway code changes (dual-write paths for articles/notes, edit prop
 ### Phase 3 — Bluesky ingestion (read-only)
 
 **Scope:**
+
 - Jetstream listener (standalone process in feed-ingest)
 - AT Protocol ingestion adapter with facet rendering
 - New source cursor initialisation: cursor set to `now()`, recent history backfilled via one-time `getAuthorFeed` job (see §V.3 cursor management)
@@ -1341,6 +1403,7 @@ The Phase 2 gateway code changes (dual-write paths for articles/notes, edit prop
 ### Phase 4 — Mastodon ingestion (read-only)
 
 **Scope:**
+
 - ActivityPub outbox polling adapter
 - HTML content rendering in `ExternalCard`
 - Per-instance error handling, user-facing health indicators, and per-instance success rate logging
@@ -1358,6 +1421,7 @@ The Phase 2 gateway code changes (dual-write paths for articles/notes, edit prop
 Split into two sessions to match the "one coherent commit per phase" rhythm.
 
 **Session A (shipped):** Mastodon OAuth outbound + foundation.
+
 - Migration 057 — `linked_accounts`, `outbound_posts`, `oauth_app_registrations` tables + `outbound_*` `platform_config` keys
 - `shared/src/lib/crypto.ts` — AES-256-GCM credential encryption via `LINKED_ACCOUNT_KEY_HEX`
 - Gateway `/api/v1/linked-accounts/*` — list/remove/update + Mastodon OAuth start + callback; dynamic client registration cached per instance in `oauth_app_registrations`
@@ -1366,6 +1430,7 @@ Split into two sessions to match the "one coherent commit per phase" rhythm.
 - `LinkedAccountsPanel` on `/settings` — connect/disconnect + per-account `cross_post_default` toggle; `?linked=mastodon|error` callback banner
 
 **Session B (shipped):**
+
 - Migration 058 — `outbound_posts.linked_account_id` nullable + `signed_event jsonb` so external-Nostr outbound rides the unified queue without an OAuth linked account
 - Migration 059 — `atproto_oauth_sessions (did PK, session_data_enc)` as the DB-backed `NodeSavedSessionStore` for `@atproto/oauth-client-node`, AES-256-GCM encrypted under `LINKED_ACCOUNT_KEY_HEX`
 - Cross-post toggle UI in `ExternalCard` reply/quote composer (hidden when no linked account for the item's protocol); `useLinkedAccounts` module-level cache so multiple cards share one fetch
@@ -1386,13 +1451,13 @@ Not phased because it requires implementing the ActivityPub server side (inbox e
 
 ## XIV. Relationship to existing roadmap items
 
-| Roadmap item | Relationship |
-|-------------|-------------|
-| **Feed ranking algorithm** | External items participate in ranking via `feed_items.score`. The scoring worker (specced in FEED-ALGORITHM.md, not yet built) writes scores to `feed_items` instead of `feed_scores`. The `feed_scores` table can be dropped or retained as a staging table. `feed_engagement` gains `'external_click'` and `'external_reply'` engagement types. |
-| **Federation + self-hosted packaging** | External Nostr ingestion (Phase 2) is the application-layer complement to relay-level federation via negentropy sync. |
-| **Mostr bridge** | Mostr bridges at the protocol level (Nostr ↔ ActivityPub). The universal feed bridges at the application layer. Complementary: Mostr handles passive federation; the universal feed handles active, user-controlled cross-posting. |
-| **Traffology** | The Traffology analytics pipeline can ingest `external_items` as a signal: when an external post links to an all.haus article, it registers as a referral source. The `outbound_posts` table feeds the "outbound URL search" channel in Traffology's four-channel model. |
-| **Feed scoring worker** | The unbuilt scoring worker from FEED-ALGORITHM.md should target `feed_items.score` directly rather than the separate `feed_scores` table. This simplifies the explore feed query to a single-table scan with an index on `(score DESC, published_at DESC)`. |
+| Roadmap item                           | Relationship                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Feed ranking algorithm**             | External items participate in ranking via `feed_items.score`. The scoring worker (specced in FEED-ALGORITHM.md, not yet built) writes scores to `feed_items` instead of `feed_scores`. The `feed_scores` table can be dropped or retained as a staging table. `feed_engagement` gains `'external_click'` and `'external_reply'` engagement types. |
+| **Federation + self-hosted packaging** | External Nostr ingestion (Phase 2) is the application-layer complement to relay-level federation via negentropy sync.                                                                                                                                                                                                                             |
+| **Mostr bridge**                       | Mostr bridges at the protocol level (Nostr ↔ ActivityPub). The universal feed bridges at the application layer. Complementary: Mostr handles passive federation; the universal feed handles active, user-controlled cross-posting.                                                                                                                |
+| **Traffology**                         | The Traffology analytics pipeline can ingest `external_items` as a signal: when an external post links to an all.haus article, it registers as a referral source. The `outbound_posts` table feeds the "outbound URL search" channel in Traffology's four-channel model.                                                                          |
+| **Feed scoring worker**                | The unbuilt scoring worker from FEED-ALGORITHM.md should target `feed_items.score` directly rather than the separate `feed_scores` table. This simplifies the explore feed query to a single-table scan with an index on `(score DESC, published_at DESC)`.                                                                                       |
 
 ---
 
