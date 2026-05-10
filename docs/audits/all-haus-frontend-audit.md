@@ -56,11 +56,13 @@ The dashboard has articles, drafts, drives, offers, and pricing tabs but no perf
 
 After signup, no guided setup. No "create your profile, write your first article, set your pricing" sequence. New writers land on the feed with no orientation. The invite system exists (`/invite/[token]`) but there's no post-signup wizard.
 
-### 7. CSP header blocking external images
+### 7. ~~CSP header blocking external images~~ (RESOLVED)
 
 **Impact: medium-high — will cause immediate problems.**
 
-The nginx CSP sets `img-src 'self' data: blob:`, which blocks all external image URLs. Writers pasting images hosted elsewhere, embedding from CDNs, or using external avatars will hit a wall. The Blossom upload path handles platform-hosted images, but the CSP needs to permit at least the Blossom domain and common image CDNs.
+~~The nginx CSP sets `img-src 'self' data: blob:`, which blocks all external image URLs. Writers pasting images hosted elsewhere, embedding from CDNs, or using external avatars will hit a wall. The Blossom upload path handles platform-hosted images, but the CSP needs to permit at least the Blossom domain and common image CDNs.~~
+
+Fixed: `img-src` widened to `'self' data: blob: https:` — permits any HTTPS image origin, which is the minimum for a social reader ingesting content from arbitrary external sources.
 
 ### 8. Import tooling
 
