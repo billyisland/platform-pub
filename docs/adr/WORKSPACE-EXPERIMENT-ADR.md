@@ -816,6 +816,10 @@ Vessels now push each other when dragged — the no-overlap rule from `WORKSPACE
 
 Skipped intentionally: resize collision (vessels can still grow into each other — resize is a less frequent gesture and the drag collision covers the primary furniture-pushing metaphor), snap-to-grid or snap-to-edge affordances, minimum gap between vessels (touching is allowed — the 8px walls provide visual separation), keyboard-driven collision (deferred with keyboard drag per ADR §6), mobile touch (deferred per ADR §5).
 
+### Fix — external items invisible in workspace feeds (2026-05-10)
+
+`sourceFilteredItems` (slice 16) filtered `AND fi.author_id != $1` to exclude the viewer's own content. External items have `author_id = NULL`; in SQL `NULL != $1` evaluates to NULL (falsy), so every external feed item was silently dropped from workspace feed results regardless of source-set configuration. Changed to `AND (fi.author_id IS NULL OR fi.author_id != $1)`. The `followingFeed` query in `timeline.ts` was not affected — it never had a self-exclusion filter; only block/mute `NOT EXISTS` checks, which correctly pass for NULL author_ids.
+
 ## Deferred (TODO in code, not blocking the experiment)
 
 - DM/messages model (vessel vs `/messages` route).
