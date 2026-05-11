@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { snap } from "../lib/workspace/grid";
 import type {
   Brightness,
   Density,
@@ -111,8 +112,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       ...get().positions,
       [feedId]: {
         ...existing,
-        x: Math.round(pos.x),
-        y: Math.round(pos.y),
+        x: snap(pos.x),
+        y: snap(pos.y),
       },
     };
     set({ positions: next });
@@ -126,8 +127,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       ...get().positions,
       [feedId]: {
         ...existing,
-        w: Math.round(size.w),
-        h: Math.round(size.h),
+        w: snap(size.w),
+        h: snap(size.h),
       },
     };
     set({ positions: next });
@@ -176,7 +177,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const existing = next[feedId];
       if (!existing) continue;
       if (existing.x === pos.x && existing.y === pos.y) continue;
-      next[feedId] = { ...existing, x: pos.x, y: pos.y };
+      next[feedId] = { ...existing, x: snap(pos.x), y: snap(pos.y) };
       changed = true;
     }
     if (!changed) return;

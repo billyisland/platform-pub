@@ -57,8 +57,8 @@ interface PendingCeremony {
 // vary, but the grid only matters until the user drags. Top padding leaves
 // room for browser UI / future header elements.
 const DEFAULT_GRID = {
-  paddingX: 32,
-  paddingY: 32,
+  paddingX: 40,
+  paddingY: 40,
   colWidth: 340, // 300 vessel + 40 gutter
   rowHeight: 600,
 };

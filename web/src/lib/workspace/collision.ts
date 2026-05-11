@@ -1,3 +1,5 @@
+import { snap } from "./grid";
+
 export interface VesselRect {
   id: string;
   x: number;
@@ -51,8 +53,8 @@ export function resolveCollisions(
         ny = Math.max(0, Math.min(floorBounds.h - other.h, ny));
       }
 
-      nx = Math.round(nx);
-      ny = Math.round(ny);
+      nx = snap(nx);
+      ny = snap(ny);
 
       if (nx !== other.x || ny !== other.y) {
         const pushed = { ...other, x: nx, y: ny };

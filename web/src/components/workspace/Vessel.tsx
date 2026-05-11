@@ -14,6 +14,7 @@ import {
   useMotionValue,
 } from "framer-motion";
 import { prefersReducedMotion } from "../../lib/workspace/motion";
+import { snap } from "../../lib/workspace/grid";
 import {
   PALETTES,
   DEFAULT_BRIGHTNESS,
@@ -185,8 +186,8 @@ export function Vessel({
     if (!state) return;
     const dx = event.clientX - state.startX;
     const dy = event.clientY - state.startY;
-    const w = Math.max(MIN_W, Math.min(MAX_W, state.startW + dx));
-    const h = Math.max(MIN_H, Math.min(MAX_H, state.startH + dy));
+    const w = snap(Math.max(MIN_W, Math.min(MAX_W, state.startW + dx)));
+    const h = snap(Math.max(MIN_H, Math.min(MAX_H, state.startH + dy)));
     setLiveSize({ w, h });
   }
 
@@ -240,7 +241,7 @@ export function Vessel({
       }}
       onDragEnd={() => {
         isDraggingRef.current = false;
-        onPositionCommit({ x: mx.get(), y: my.get() });
+        onPositionCommit({ x: snap(mx.get()), y: snap(my.get()) });
       }}
       style={{
         position: "absolute",

@@ -814,7 +814,23 @@ Vessels now push each other when dragged — the no-overlap rule from `WORKSPACE
 
 **WorkspaceView changes.** `handleVesselDragFrame(feedId, pos)` runs on every drag frame: reads sibling positions from the Zustand store (always current since `batchUpdatePositions` is synchronous), reads dimensions from the DOM via `offsetWidth` / `offsetHeight`, builds the rect set, and calls `resolveCollisions`. Pushed positions commit instantly to the store, which triggers the spring animation on pushed vessels via the position-sync effect.
 
-Skipped intentionally: resize collision (vessels can still grow into each other — resize is a less frequent gesture and the drag collision covers the primary furniture-pushing metaphor), snap-to-grid or snap-to-edge affordances, minimum gap between vessels (touching is allowed — the 8px walls provide visual separation), keyboard-driven collision (deferred with keyboard drag per ADR §6), mobile touch (deferred per ADR §5).
+Skipped intentionally: resize collision (vessels can still grow into each other — resize is a less frequent gesture and the drag collision covers the primary furniture-pushing metaphor), minimum gap between vessels (touching is allowed — the 8px walls provide visual separation), keyboard-driven collision (deferred with keyboard drag per ADR §6), mobile touch (deferred per ADR §5).
+
+### Snap-to-grid (2026-05-11)
+
+All vessel coordinates (position and size) are quantized to a 20px grid. The grid unit was chosen because it divides evenly into the default vessel width (300px = 15 cells), minimum width (220px = 11 cells), gutter (40px = 2 cells), and row height (600px = 30 cells) — everything aligns without adjusting existing size constants.
+
+**`web/src/lib/workspace/grid.ts`.** Single `GRID = 20` constant and `snap(v)` function (`Math.round(v / GRID) * GRID`). All snapping in the system passes through this one function.
+
+**Drag.** Vessels drag smoothly during the gesture (Framer Motion controls the motion values). On release, `onDragEnd` snaps the committed position; the existing spring animation (`stiffness: 600, damping: 40, mass: 0.6`) carries the vessel the last few pixels to its grid point, so the snap feels physical rather than teleported.
+
+**Resize.** Snapping applies during the gesture (in `handleResizePointerMove`), so width and height step in 20px increments as the user drags the resize handle. This gives immediate visual feedback that the grid is active.
+
+**Collision.** Pushed positions snap via `grid.snap()` instead of `Math.round()`, so collision cascades produce grid-aligned results and pushed vessels spring-animate to grid points.
+
+**Store.** `setVesselPosition`, `setVesselSize`, and `batchUpdatePositions` all snap as a safety net — no unsnapped value can enter localStorage regardless of call site.
+
+**Default grid.** Padding adjusted from 32px to 40px (2 grid cells) so initial layouts are grid-aligned from first load.
 
 ### Fix — external items invisible in workspace feeds (2026-05-10)
 
