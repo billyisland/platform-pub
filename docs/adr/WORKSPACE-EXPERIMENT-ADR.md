@@ -248,18 +248,18 @@ Skipped intentionally: rename / delete UI on vessels (routes already exist; need
 
 ### Slice 5a — vessel drag-to-position + localStorage layout (2026-05-01)
 
-The first vessel gesture. Vessels stop flex-wrapping and become absolutely-positioned objects on the floor, draggable by the name label, with positions persisted to localStorage per user. Framer Motion enters the codebase for the first time.
+The first vessel gesture. Vessels stop flex-wrapping and become absolutely-positioned objects on the floor, draggable by the frame (any non-interactive surface — name label, walls, bar background), with positions persisted to localStorage per user. Framer Motion enters the codebase for the first time.
 
 **New surfaces.**
 
 - `web/src/stores/workspace.ts` — `useWorkspace` Zustand store. `positions: Record<feedId, {x,y}>`, `hydrate(userId)`, `setVesselPosition(feedId, pos)`, `removeVessel(feedId)`, `reset()`. localStorage key `workspace:layout:<userId>`, debounced 200ms write. Quota-exceeded / private-browsing failures swallowed silently — the in-memory layout is authoritative for the session, the persistence is best-effort. Per ADR §3 there is no server sync this slice.
 - `web/src/lib/workspace/motion.ts` — small Framer Motion config (drag spring, reduced-motion variant, `prefersReducedMotion()` helper). Slice 5a actually uses none of the spring config because `dragMomentum={false}` settles the vessel exactly where the cursor was; the file exists for the resize / rotate / ∀→H→⊔ slices that _do_ need it.
 
-**Vessel changes (`Vessel.tsx`).** The chassis is now a `motion.div` with `position: absolute`, `x` / `y` motion values mirrored to `position` props via a `useEffect`. `drag` is enabled but `dragListener` is `false` — drag only initiates when `dragControls.start(event)` fires from the name label's `onPointerDown`. Cards inside the vessel stay clickable. `dragMomentum={false}` + `dragElastic={0}` — no springy slide-back, no overshoot. `dragConstraints` accepts a `RefObject<HTMLElement>` from the parent so vessels can't be dragged off the floor and lost. A `dragMovedRef` flag tracks whether the gesture was a drag or a click; the name-label `onClick` (which opens `FeedComposer`) is suppressed if any movement occurred during the gesture, so dragging the label doesn't accidentally open the composer.
+**Vessel changes (`Vessel.tsx`).** The chassis is now a `motion.div` with `position: absolute`, `x` / `y` motion values mirrored to `position` props via a `useEffect`. `drag` is enabled but `dragListener` is `false` — drag only initiates when `dragControls.start(event)` fires from `onPointerDown` on the outer `motion.div`. The `startDrag` handler checks `target.closest('button, a, input, textarea, select, [role="button"]')` and bails on interactive elements; the content area (cards) calls `e.stopPropagation()` on `onPointerDown` so card interactions don't trigger drag. The result is that the entire frame — name label, chassis walls, VesselBar background — is a drag surface, while buttons, inputs, links, and card content are excluded. `dragMomentum={false}` + `dragElastic={0}` — no springy slide-back, no overshoot. `dragConstraints` accepts a `RefObject<HTMLElement>` from the parent; a `clampPos` helper additionally clamps snapped positions to floor-grid-aligned bounds so the full vessel rectangle stays within the workspace. A `dragMovedRef` flag tracks whether the gesture was a drag or a click; the name-label `onClick` (which opens `FeedComposer`) is suppressed if any movement occurred during the gesture, so dragging the label doesn't accidentally open the composer.
 
 **WorkspaceView changes.** Floor becomes `position: relative`, `height: 100vh`, `overflow: hidden`. A `floorRef` is threaded into each `Vessel` as `dragConstraints`. The bootstrap effect now blocks on `useWorkspace.hydrated` so default-slot writes never overwrite a stored layout. After hydration, for each feed without a stored position, a default grid slot is computed (340px col width = 300px vessel + 40px gutter, 32px outer padding, wraps at viewport width) and written back. `handleCreateFeed` does the same for newly-created vessels: next-slot default at the time of creation. The `flex flex-wrap justify-center` wrapper is gone; vessels live as absolutely-positioned children of the floor. Loading / error hints centre on the floor via `position: absolute; top/left: 50%; translate(-50%, -50%)`.
 
-**Behaviour.** Position is `{x, y}` in floor coordinates (top-left origin). `dragConstraints` clamps to the floor element's box, so a vessel can't be lost off-screen. No no-overlap rule in slice 5a — collision detection ships in slice 25.
+**Behaviour.** Position is `{x, y}` in floor coordinates (top-left origin). `dragConstraints` clamps to the floor element's box as a first pass; `clampPos` additionally grid-floor-snaps the maximum position so the vessel's full rectangle (not just its top-left corner) stays within the workspace, accounting for the vessel's rendered width and height. No no-overlap rule in slice 5a — collision detection ships in slice 25.
 
 **No new dependencies on Framer Motion ceremonies.** `motion.div` only — no `AnimatePresence`, no path animation, no SVG morphing. The ∀→H→⊔ ceremonial sequence (Slice 9 / Step 9) and the brightness / density gestures will pull in more of the API; this slice deliberately stays minimal.
 
@@ -275,7 +275,9 @@ The second vessel gesture. Vessels gain a quiet resize handle at the bottom-righ
 
 **Vessel changes (`Vessel.tsx`).** New `size?: {w?, h?}` and `onSizeCommit?` props. The chassis becomes `position: relative` so the handle can pin to its bottom-right; a 16×16 hit area at `right: -8, bottom: -8` (offsetting the 8px wall) carries a small ◢ glyph at low opacity. Resize is plain `onPointerDown` + `setPointerCapture` + `onPointerMove` — Framer Motion's `drag` API is for translation, not bounded resize, so the handle owns its own gesture path. `liveSize` state mirrors the in-flight value during the drag and is committed on `onPointerUp`. Min 220×200 per spec ("below which content becomes illegible"); max 2000×2000 defensively (the floor's `overflow: hidden` clips visually so spec's "no maximum" rule is honoured by the floor, not the vessel). When `size.h` is set, the chassis takes a fixed height and the body becomes `overflow-y: auto` so cards scroll inside; without `h`, the vessel grows with content as before.
 
-**Gesture independence.** The resize handle calls `event.stopPropagation()` on pointerdown and the vessel's translation drag is gated by `dragControls.start()` from the name label only — the two gestures don't interfere.
+**Gesture independence.** The resize handle calls `event.stopPropagation()` on pointerdown and the vessel's translation drag is gated by `dragControls.start()` with an interactive-element check — the two gestures don't interfere.
+
+**Resize bounds.** `handleResizePointerDown` computes max resize dimensions from the vessel's position relative to the floor, floor-snapped to the grid (`Math.floor(available / GRID) * GRID`), and stores them in `resizeStateRef`. `handleResizePointerMove` clamps to these maxes before snapping, so the vessel can't be resized past the workspace edge.
 
 Skipped intentionally: pinch-to-resize (touch — deferred per ADR §5), corner-handle visibility on hover only (the handle stays present and quiet, in keeping with workspace-as-physical-space), per-density default sizes (size is freeform until density gestures arrive), aspect-ratio lock (spec implies free resize), keyboard equivalents for resize (deferred per ADR §6 a11y floor), default-size recompute on viewport resize, server-side persistence.
 
@@ -415,7 +417,7 @@ Vessels stop being read-only display surfaces. Cards click through to the reader
 
 Click bubbling: `CardActions` calls `e.stopPropagation()` on its container so vote / reply / share clicks don't fall through to the card-level `onClick` and trigger an unwanted navigation.
 
-**Drag vs click.** Vessels initiate drag only from the name label (`dragControls.start(event)` on `onPointerDown` of the `<button>` / `<div>` name label, with `dragListener={false}` on the parent `motion.div`). Cards inside the vessel are not drag handles, so card clicks are safe — no need for a `dragMovedRef`-style suppression on the card layer.
+**Drag vs click.** Vessels initiate drag from any non-interactive surface of the frame (`onPointerDown` on the outer `motion.div` with `dragListener={false}`; `startDrag` checks `target.closest('button, a, input, textarea, select, [role="button"]')` and bails). The content area stops propagation on `onPointerDown` so card interactions are isolated from the drag gesture. Cards inside the vessel are not drag handles, so card clicks are safe — no need for a `dragMovedRef`-style suppression on the card layer.
 
 **`Composer.replyTarget`.** New optional `ReplyTarget` prop (`{ eventId, eventKind, authorPubkey, authorName, excerpt? }`) exported from `Composer.tsx`. When set:
 
@@ -822,9 +824,9 @@ All vessel coordinates (position and size) are quantized to a 20px grid. The gri
 
 **`web/src/lib/workspace/grid.ts`.** Single `GRID = 20` constant and `snap(v)` function (`Math.round(v / GRID) * GRID`). All snapping in the system passes through this one function.
 
-**Drag.** Vessels drag smoothly during the gesture (Framer Motion controls the motion values). On release, `onDragEnd` snaps the committed position; the existing spring animation (`stiffness: 600, damping: 40, mass: 0.6`) carries the vessel the last few pixels to its grid point, so the snap feels physical rather than teleported.
+**Drag.** Vessels snap to the grid on every drag frame — `onDrag` sets `mx`/`my` to `snap(value)` then clamps via `clampPos` so the vessel jumps in discrete 20px steps and never exits the workspace. The per-frame snap makes the grid feel physical during the gesture rather than only on release.
 
-**Resize.** Snapping applies during the gesture (in `handleResizePointerMove`), so width and height step in 20px increments as the user drags the resize handle. This gives immediate visual feedback that the grid is active.
+**Resize.** Snapping applies during the gesture (in `handleResizePointerMove`), so width and height step in 20px increments as the user drags the resize handle. Max resize dimensions are computed at gesture start from the vessel's position relative to the floor and floor-snapped to the grid, so the vessel can't be resized past the workspace edge.
 
 **Collision.** Pushed positions snap via `grid.snap()` instead of `Math.round()`, so collision cascades produce grid-aligned results and pushed vessels spring-animate to grid points.
 

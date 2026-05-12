@@ -14,7 +14,7 @@ import {
   useMotionValue,
 } from "framer-motion";
 import { prefersReducedMotion } from "../../lib/workspace/motion";
-import { snap } from "../../lib/workspace/grid";
+import { snap, GRID } from "../../lib/workspace/grid";
 import {
   PALETTES,
   DEFAULT_BRIGHTNESS,
@@ -105,6 +105,7 @@ export function Vessel({
   dragConstraints,
 }: VesselProps) {
   const dragControls = useDragControls();
+  const vesselRef = useRef<HTMLDivElement>(null);
   const mx = useMotionValue(position.x);
   const my = useMotionValue(position.y);
   const dragMovedRef = useRef(false);
@@ -116,6 +117,8 @@ export function Vessel({
     startY: number;
     startW: number;
     startH: number;
+    maxW: number;
+    maxH: number;
   } | null>(null);
 
   const effBrightness = brightness ?? DEFAULT_BRIGHTNESS;
@@ -150,8 +153,29 @@ export function Vessel({
   }, [position.x, position.y, mx, my]);
 
   function startDrag(event: React.PointerEvent) {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, select, [role='button']"))
+      return;
     dragMovedRef.current = false;
     dragControls.start(event);
+  }
+
+  function clampPos(x: number, y: number) {
+    const floor = dragConstraints?.current;
+    const vessel = vesselRef.current;
+    if (!floor || !vessel) return { x, y };
+    const maxX = Math.max(
+      0,
+      Math.floor((floor.clientWidth - vessel.offsetWidth) / GRID) * GRID,
+    );
+    const maxY = Math.max(
+      0,
+      Math.floor((floor.clientHeight - vessel.offsetHeight) / GRID) * GRID,
+    );
+    return {
+      x: Math.max(0, Math.min(x, maxX)),
+      y: Math.max(0, Math.min(y, maxY)),
+    };
   }
 
   // Effective dimensions: liveSize during a resize gesture wins; otherwise
@@ -165,17 +189,38 @@ export function Vessel({
     event.preventDefault();
     event.stopPropagation();
     const startW = effW;
-    // Measure current rendered height so the first drag pixel doesn't snap
-    // to whatever value the cards happen to compute to.
-    const chassis = (event.currentTarget.parentElement?.querySelector(
+    const chassisEl = vesselRef.current?.querySelector(
       "[data-vessel-chassis]",
-    ) ?? null) as HTMLElement | null;
-    const startH = effH ?? chassis?.getBoundingClientRect().height ?? MIN_H;
+    ) as HTMLElement | null;
+    const startH = effH ?? chassisEl?.getBoundingClientRect().height ?? MIN_H;
+    let maxW = MAX_W;
+    let maxH = MAX_H;
+    const floor = dragConstraints?.current;
+    const vessel = vesselRef.current;
+    if (floor && vessel) {
+      const overhead = vessel.offsetHeight - startH;
+      maxW = Math.max(
+        MIN_W,
+        Math.min(
+          MAX_W,
+          Math.floor((floor.clientWidth - mx.get()) / GRID) * GRID,
+        ),
+      );
+      maxH = Math.max(
+        MIN_H,
+        Math.min(
+          MAX_H,
+          Math.floor((floor.clientHeight - my.get() - overhead) / GRID) * GRID,
+        ),
+      );
+    }
     resizeStateRef.current = {
       startX: event.clientX,
       startY: event.clientY,
       startW,
       startH,
+      maxW,
+      maxH,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     setLiveSize({ w: startW, h: startH });
@@ -186,8 +231,8 @@ export function Vessel({
     if (!state) return;
     const dx = event.clientX - state.startX;
     const dy = event.clientY - state.startY;
-    const w = snap(Math.max(MIN_W, Math.min(MAX_W, state.startW + dx)));
-    const h = snap(Math.max(MIN_H, Math.min(MAX_H, state.startH + dy)));
+    const w = snap(Math.max(MIN_W, Math.min(state.maxW, state.startW + dx)));
+    const h = snap(Math.max(MIN_H, Math.min(state.maxH, state.startH + dy)));
     setLiveSize({ w, h });
   }
 
@@ -221,6 +266,7 @@ export function Vessel({
 
   return (
     <motion.div
+      ref={vesselRef}
       data-vessel-id={feedId}
       role="region"
       aria-label={name}
@@ -230,6 +276,7 @@ export function Vessel({
       dragConstraints={dragConstraints}
       dragMomentum={false}
       dragElastic={0}
+      onPointerDown={startDrag}
       onDragStart={() => {
         isDraggingRef.current = true;
         onDragStartProp?.();
@@ -237,11 +284,14 @@ export function Vessel({
       onDrag={(_, info) => {
         if (info.offset.x !== 0 || info.offset.y !== 0)
           dragMovedRef.current = true;
-        onDragFrame?.({ x: mx.get(), y: my.get() });
+        const clamped = clampPos(snap(mx.get()), snap(my.get()));
+        mx.set(clamped.x);
+        my.set(clamped.y);
+        onDragFrame?.({ x: clamped.x, y: clamped.y });
       }}
       onDragEnd={() => {
         isDraggingRef.current = false;
-        onPositionCommit({ x: snap(mx.get()), y: snap(my.get()) });
+        onPositionCommit(clampPos(snap(mx.get()), snap(my.get())));
       }}
       style={{
         position: "absolute",
@@ -249,15 +299,15 @@ export function Vessel({
         y: my,
         width: effW,
         touchAction: "none",
+        cursor: hidden ? undefined : "grab",
         opacity: hidden ? 0 : 1,
         pointerEvents: hidden ? "none" : undefined,
       }}
     >
-      {/* Name label sits above the opening, doubles as drag handle. */}
+      {/* Name label sits above the opening. */}
       <div
-        onPointerDown={startDrag}
         className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1 select-none"
-        style={{ color: palette.nameLabel, cursor: "grab" }}
+        style={{ color: palette.nameLabel }}
       >
         {name}
         {savedView ? " · SAVED" : ""}
@@ -279,6 +329,7 @@ export function Vessel({
         }}
       >
         <div
+          onPointerDown={(e) => e.stopPropagation()}
           style={{
             padding: `${PAD}px`,
             display: "flex",
@@ -288,6 +339,7 @@ export function Vessel({
             minHeight: 0,
             overflowY: heightSet && !isHorizontal ? "auto" : undefined,
             overflowX: isHorizontal ? "auto" : undefined,
+            cursor: "default",
           }}
         >
           {children}
