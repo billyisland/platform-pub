@@ -8,6 +8,7 @@ import {
   resolveCollisions,
   type VesselRect,
 } from "../../lib/workspace/collision";
+import { snap } from "../../lib/workspace/grid";
 import {
   workspaceFeeds as workspaceFeedsApi,
   type WorkspaceFeed,
@@ -52,10 +53,8 @@ interface PendingCeremony {
 // Layout state lives in useWorkspace (localStorage-backed). For any feed
 // without a stored position, we compute a default grid slot and write back.
 
-// Default-grid geometry. Vessels are 300px wide; we leave a 40px gutter on
-// the right so name labels don't crowd. Row height is approximate — vessels
-// vary, but the grid only matters until the user drags. Top padding leaves
-// room for browser UI / future header elements.
+const MIN_H = 200;
+
 const DEFAULT_GRID = {
   paddingX: 40,
   paddingY: 40,
@@ -63,7 +62,11 @@ const DEFAULT_GRID = {
   rowHeight: 600,
 };
 
-function defaultGridSlot(index: number, viewportWidth: number) {
+function defaultGridSlot(
+  index: number,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
   const usableWidth = Math.max(
     viewportWidth - DEFAULT_GRID.paddingX * 2,
     DEFAULT_GRID.colWidth,
@@ -71,9 +74,14 @@ function defaultGridSlot(index: number, viewportWidth: number) {
   const cols = Math.max(1, Math.floor(usableWidth / DEFAULT_GRID.colWidth));
   const col = index % cols;
   const row = Math.floor(index / cols);
+  const y = DEFAULT_GRID.paddingY + row * DEFAULT_GRID.rowHeight;
+  const maxH = snap(
+    Math.max(MIN_H, viewportHeight - y - DEFAULT_GRID.paddingY),
+  );
   return {
     x: DEFAULT_GRID.paddingX + col * DEFAULT_GRID.colWidth,
-    y: DEFAULT_GRID.paddingY + row * DEFAULT_GRID.rowHeight,
+    y,
+    h: Math.min(DEFAULT_GRID.rowHeight, maxH),
   };
 }
 
@@ -419,7 +427,7 @@ export function WorkspaceView() {
   }
 
   function handleForked(feed: WorkspaceFeed) {
-    let slot = { x: 0, y: 0 };
+    let slot = { x: 0, y: 0, h: DEFAULT_GRID.rowHeight };
     setVessels((prev) => {
       const next = [
         ...prev,
@@ -431,8 +439,13 @@ export function WorkspaceView() {
           savedIds: new Set<string>(),
         },
       ];
-      slot = defaultGridSlot(next.length - 1, window.innerWidth);
+      slot = defaultGridSlot(
+        next.length - 1,
+        window.innerWidth,
+        window.innerHeight,
+      );
       setVesselPosition(feed.id, slot);
+      setVesselSize(feed.id, { w: 300, h: slot.h });
       return next;
     });
     setForkOpen(false);
@@ -441,21 +454,20 @@ export function WorkspaceView() {
   }
 
   function handleResetLayout() {
-    // Wipe stored layout, then re-seed default grid slots for the current
-    // vessels in their existing order so the floor doesn't briefly collapse
-    // to (0, 0) before the next paint.
     resetWorkspace();
-    const viewportWidth =
-      typeof window !== "undefined" ? window.innerWidth : 1280;
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
     vessels.forEach((v, i) => {
-      setVesselPosition(v.feed.id, defaultGridSlot(i, viewportWidth));
+      const slot = defaultGridSlot(i, vw, vh);
+      setVesselPosition(v.feed.id, slot);
+      setVesselSize(v.feed.id, { w: 300, h: slot.h });
     });
     setResetConfirmOpen(false);
   }
 
   async function handleCreateFeed(name: string) {
     const { feed } = await workspaceFeedsApi.create(name);
-    let slot = { x: 0, y: 0 };
+    let slot = { x: 0, y: 0, h: DEFAULT_GRID.rowHeight };
     setVessels((prev) => {
       const next = [
         ...prev,
@@ -467,9 +479,13 @@ export function WorkspaceView() {
           savedIds: new Set<string>(),
         },
       ];
-      // Default position for the newly-added vessel: next slot in the grid.
-      slot = defaultGridSlot(next.length - 1, window.innerWidth);
+      slot = defaultGridSlot(
+        next.length - 1,
+        window.innerWidth,
+        window.innerHeight,
+      );
       setVesselPosition(feed.id, slot);
+      setVesselSize(feed.id, { w: 300, h: slot.h });
       return next;
     });
     setNewFeedOpen(false);
@@ -554,14 +570,16 @@ export function WorkspaceView() {
             .catch(() => {});
         }
 
-        // Assign default positions for any feed without a stored layout.
-        // Reads the live store inside getState() to avoid stale-closure issues.
         const stored = useWorkspace.getState().positions;
         const viewportWidth =
           typeof window !== "undefined" ? window.innerWidth : 1280;
+        const viewportHeight =
+          typeof window !== "undefined" ? window.innerHeight : 800;
         list.forEach((feed, i) => {
           if (!stored[feed.id]) {
-            setVesselPosition(feed.id, defaultGridSlot(i, viewportWidth));
+            const slot = defaultGridSlot(i, viewportWidth, viewportHeight);
+            setVesselPosition(feed.id, slot);
+            setVesselSize(feed.id, { w: 300, h: slot.h });
           }
         });
 
