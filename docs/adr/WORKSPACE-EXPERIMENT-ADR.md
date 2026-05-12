@@ -820,13 +820,13 @@ Skipped intentionally: resize collision (vessels can still grow into each other 
 
 ### Snap-to-grid (2026-05-11)
 
-All vessel coordinates (position and size) are quantized to a 20px grid. The grid unit was chosen because it divides evenly into the default vessel width (300px = 15 cells), minimum width (220px = 11 cells), gutter (40px = 2 cells), and row height (600px = 30 cells) — everything aligns without adjusting existing size constants.
+All vessel coordinates (position and size) are quantized to a 10px grid. The grid unit divides evenly into the default vessel width (300px = 30 cells), minimum width (220px = 22 cells), gutter (40px = 4 cells), and row height (600px = 60 cells).
 
-**`web/src/lib/workspace/grid.ts`.** Single `GRID = 20` constant and `snap(v)` function (`Math.round(v / GRID) * GRID`). All snapping in the system passes through this one function.
+**`web/src/lib/workspace/grid.ts`.** Single `GRID = 10` constant and `snap(v)` function (`Math.round(v / GRID) * GRID`). All snapping in the system passes through this one function.
 
-**Drag.** Vessels snap to the grid on every drag frame — `onDrag` sets `mx`/`my` to `snap(value)` then clamps via `clampPos` so the vessel jumps in discrete 20px steps and never exits the workspace. The per-frame snap makes the grid feel physical during the gesture rather than only on release.
+**Drag.** Vessels snap to the grid on every drag frame — `onDrag` sets `mx`/`my` to `snap(value)` then clamps via `clampPos` so the vessel jumps in discrete 10px steps and never exits the workspace. The per-frame snap makes the grid feel physical during the gesture rather than only on release.
 
-**Resize.** Snapping applies during the gesture (in `handleResizePointerMove`), so width and height step in 20px increments as the user drags the resize handle. Max resize dimensions are computed at gesture start from the vessel's position relative to the floor and floor-snapped to the grid, so the vessel can't be resized past the workspace edge.
+**Resize.** Snapping applies during the gesture (in `handleResizePointerMove`), so width and height step in 10px increments as the user drags the resize handle. Max resize dimensions are computed at gesture start from the vessel's position relative to the floor and floor-snapped to the grid, so the vessel can't be resized past the workspace edge.
 
 **Collision.** Pushed positions snap via `grid.snap()` instead of `Math.round()`, so collision cascades produce grid-aligned results and pushed vessels spring-animate to grid points.
 
