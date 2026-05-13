@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
+_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 + 26 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
 
 ## Context
 
@@ -837,6 +837,18 @@ All vessel coordinates (position and size) are quantized to a 10px grid. The gri
 ### Fix — external items invisible in workspace feeds (2026-05-10)
 
 `sourceFilteredItems` (slice 16) filtered `AND fi.author_id != $1` to exclude the viewer's own content. External items have `author_id = NULL`; in SQL `NULL != $1` evaluates to NULL (falsy), so every external feed item was silently dropped from workspace feed results regardless of source-set configuration. Changed to `AND (fi.author_id IS NULL OR fi.author_id != $1)`. The `followingFeed` query in `timeline.ts` was not affected — it never had a self-exclusion filter; only block/mute `NOT EXISTS` checks, which correctly pass for NULL author_ids.
+
+### Slice 26 — per-source volume controls in FeedComposer (2026-05-13)
+
+The pip panel's volume bar (slice 14) was unreachable for external sources because external cards don't have clickable pips (cross-protocol identity resolution is deferred). Volume controls now live on every source row in the FeedComposer, making weight, sampling mode, and mute accessible for all source types — native accounts, external feeds, tags, and publications alike.
+
+**New route (`PATCH /workspace/feeds/:id/sources/:sourceId`).** Accepts `{ step?: 0..5, sampling?: 'random'|'top', muted?: boolean }`. Step maps to weight via the same `VOLUME_WEIGHTS` scale as the author-volume route (step 3 = 1.0 default, step 0 = mute via `muted_at`). Returns the full hydrated source row. Zod-validated; ownership-asserted.
+
+**API client (`web/src/lib/api/feeds.ts`).** New `patchSource(feedId, sourceId, body)` method.
+
+**FeedComposer (`web/src/components/workspace/FeedComposer.tsx`).** Each source row is now a `SourceRow` component with: (1) the existing label/sublabel/remove button on the first line, (2) a compact inline volume bar on the second line — same 0=mute / 1..5 step model as the pip panel, plus RANDOM/TOP sampling toggle. Muted sources render with strikethrough label text and crimson × in the mute cell. Changes commit immediately via PATCH and update the source list in-place; `onSourcesChanged` triggers a vessel refetch. Client-side `weightToStep` mirrors the backend inverse so bar position reads back correctly from existing weights.
+
+Skipped intentionally: per-source weight visible on vessel cards (the bar is only in the composer — card density doesn't have room), drag-to-reorder sources (position doesn't affect ranking), keyboard navigation in the volume bar (mouse-only per ADR §6 experiment floor).
 
 ## Deferred (TODO in code, not blocking the experiment)
 

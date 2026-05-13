@@ -18,6 +18,7 @@ import logger from "@platform-pub/shared/lib/logger.js";
 // GET    /workspace/feeds/:id/items             — feed contents
 // GET    /workspace/feeds/:id/sources           — list source rows (slice 4)
 // POST   /workspace/feeds/:id/sources           — add a source (slice 4)
+// PATCH  /workspace/feeds/:id/sources/:sid      — update weight/sampling/muted
 // DELETE /workspace/feeds/:id/sources/:sid      — remove a source (slice 4)
 //
 // Slice 3 shipped schema + CRUD + an empty-sources placeholder for /items:
@@ -39,6 +40,12 @@ const createFeedSchema = z.object({
 
 const patchFeedSchema = z.object({
   name: z.string().trim().min(1).max(80),
+});
+
+const patchSourceSchema = z.object({
+  step: z.number().int().min(0).max(5).optional(),
+  sampling: z.enum(["random", "top"]).optional(),
+  muted: z.boolean().optional(),
 });
 
 // POST /feeds/:id/sources — native targets pass an existing UUID, external
@@ -547,6 +554,91 @@ export async function feedsRoutes(app: FastifyInstance) {
       if (rowCount === 0)
         return reply.status(404).send({ error: "Source not found" });
       return reply.status(204).send();
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // PATCH /feeds/:id/sources/:sourceId — update weight/sampling/muted
+  //
+  // Accepts { step?: 0..5, sampling?: 'random'|'top', muted?: boolean }.
+  // Step maps to the same weight scale as the author-volume route so the two
+  // surfaces stay consistent. Returns the updated source row.
+  // ---------------------------------------------------------------------------
+  app.patch<{ Params: { id: string; sourceId: string }; Body: unknown }>(
+    "/feeds/:id/sources/:sourceId",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const ownerId = req.session!.sub!;
+      const { id, sourceId } = req.params;
+      if (!UUID_RE.test(id))
+        return reply.status(400).send({ error: "Invalid feed id" });
+      if (!UUID_RE.test(sourceId))
+        return reply.status(400).send({ error: "Invalid source id" });
+
+      const parsed = patchSourceSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+      const { step, sampling, muted } = parsed.data;
+      if (step === undefined && sampling === undefined && muted === undefined) {
+        return reply.status(400).send({ error: "Nothing to update" });
+      }
+
+      const feed = await loadFeed(id, ownerId);
+      if (!feed) return reply.status(404).send({ error: "Feed not found" });
+
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      let paramIdx = 3; // $1=sourceId, $2=feedId
+
+      if (step !== undefined) {
+        sets.push(`weight = $${paramIdx}`);
+        vals.push(stepToWeight(step));
+        paramIdx++;
+      }
+      if (sampling !== undefined) {
+        sets.push(`sampling_mode = $${paramIdx}`);
+        vals.push(
+          sampling === "top"
+            ? "scored"
+            : sampling === "random"
+              ? "chronological"
+              : sampling,
+        );
+        paramIdx++;
+      }
+      if (muted !== undefined) {
+        sets.push(`muted_at = $${paramIdx}`);
+        vals.push(muted ? new Date() : null);
+        paramIdx++;
+      }
+
+      const { rowCount } = await pool.query(
+        `UPDATE feed_sources SET ${sets.join(", ")}
+         WHERE id = $1 AND feed_id = $2`,
+        [sourceId, id, ...vals],
+      );
+      if (rowCount === 0)
+        return reply.status(404).send({ error: "Source not found" });
+
+      // Re-fetch the full hydrated row for the response.
+      const { rows } = await pool.query<SourceRow>(
+        `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
+           fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
+           acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
+           pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
+           xs.protocol AS external_protocol, xs.source_uri AS external_source_uri,
+           xs.display_name AS external_display_name, xs.avatar_url AS external_avatar
+         FROM feed_sources fs
+         LEFT JOIN accounts acc ON acc.id = fs.account_id
+         LEFT JOIN publications pub ON pub.id = fs.publication_id
+         LEFT JOIN external_sources xs ON xs.id = fs.external_source_id
+         WHERE fs.id = $1`,
+        [sourceId],
+      );
+      return reply.send({ source: sourceRowToResponse(rows[0]) });
     },
   );
 
