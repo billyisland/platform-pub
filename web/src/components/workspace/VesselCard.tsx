@@ -1,19 +1,32 @@
-'use client'
+"use client";
 
-import { useRouter } from 'next/navigation'
-import type { FeedItem, ArticleEvent, NoteEvent, ExternalFeedItem } from '../../lib/ndk'
-import type { PipStatus } from '../../lib/ndk'
-import { useAuth } from '../../stores/auth'
-import { useWriterName } from '../../hooks/useWriterName'
-import { TrustPip } from '../ui/TrustPip'
-import { VoteControls } from '../ui/VoteControls'
-import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
-import { extractNoteMedia, stripMediaUrls } from '../../lib/media'
-import type { ReplyTarget } from './Composer'
-import { PipTrigger } from './PipTrigger'
-import { ReplySection } from '../replies/ReplySection'
+import { useRouter } from "next/navigation";
+import type {
+  FeedItem,
+  ArticleEvent,
+  NoteEvent,
+  ExternalFeedItem,
+} from "../../lib/ndk";
+import type { PipStatus } from "../../lib/ndk";
+import { useAuth } from "../../stores/auth";
+import { useWriterName } from "../../hooks/useWriterName";
+import { TrustPip } from "../ui/TrustPip";
+import { VoteControls } from "../ui/VoteControls";
+import {
+  formatDateRelative,
+  truncateText,
+  stripMarkdown,
+} from "../../lib/format";
+import { extractNoteMedia, stripMediaUrls } from "../../lib/media";
+import type { ReplyTarget } from "./Composer";
+import { PipTrigger } from "./PipTrigger";
+import { ReplySection } from "../replies/ReplySection";
 
-export type PipOpen = (pubkey: string, rect: DOMRect, status: PipStatus | undefined) => void
+export type PipOpen = (
+  pubkey: string,
+  rect: DOMRect,
+  status: PipStatus | undefined,
+) => void;
 import {
   PALETTES,
   DEFAULT_BRIGHTNESS,
@@ -21,7 +34,7 @@ import {
   type Brightness,
   type Density,
   type VesselPalette,
-} from './tokens'
+} from "./tokens";
 
 // VesselCard — card variant for inside a ⊔.
 // Slice 1: medium-bright tokens, standard-density grammar.
@@ -32,35 +45,36 @@ import {
 // Compact density stays action-less; standard + full render the strip.
 
 interface CardContext {
-  density: Density
-  palette: VesselPalette
+  density: Density;
+  palette: VesselPalette;
+  dragData?: string;
 }
 
 interface Props {
-  item: FeedItem
-  density?: Density
-  brightness?: Brightness
-  onReply?: (target: ReplyTarget) => void
-  onPipOpen?: PipOpen
+  item: FeedItem;
+  density?: Density;
+  brightness?: Brightness;
+  onReply?: (target: ReplyTarget) => void;
+  onPipOpen?: PipOpen;
+  dragData?: string;
   // Slice 13: inline thread expansion state. Parent owns the toggle so
   // refresh ticks (after overlay-Composer replies) can target a specific
   // card without forcing the whole vessel to remount.
-  threadExpanded?: boolean
-  onToggleThread?: (target: ReplyTarget) => void
-  threadRefreshKey?: number
-  // Slice 20: save state + commit callback. Both come from the parent vessel
-  // so a single savedIds Set drives the Save / Saved label across all cards
-  // in the vessel without per-card state.
-  isSaved?: boolean
-  onToggleSave?: (feedItemId: string, next: boolean) => void
+  threadExpanded?: boolean;
+  onToggleThread?: (target: ReplyTarget) => void;
+  threadRefreshKey?: number;
+  isSaved?: boolean;
+  onToggleSave?: (feedItemId: string, next: boolean) => void;
+  expanded?: boolean;
+  onToggleExpand?: (itemId: string) => void;
 }
 
 // at:// → bsky.app web URL. Mirrors the helper in feed/ExternalCard.tsx —
 // kept local to avoid pulling in the deprecated card module.
 function atprotoWebUri(atUri: string): string | null {
-  const match = atUri.match(/^at:\/\/([^/]+)\/app\.bsky\.feed\.post\/([^/]+)$/)
-  if (!match) return null
-  return `https://bsky.app/profile/${match[1]}/post/${match[2]}`
+  const match = atUri.match(/^at:\/\/([^/]+)\/app\.bsky\.feed\.post\/([^/]+)$/);
+  if (!match) return null;
+  return `https://bsky.app/profile/${match[1]}/post/${match[2]}`;
 }
 
 export function VesselCard({
@@ -74,12 +88,16 @@ export function VesselCard({
   threadRefreshKey,
   isSaved,
   onToggleSave,
+  expanded,
+  onToggleExpand,
+  dragData,
 }: Props) {
   const ctx: CardContext = {
     density: density ?? DEFAULT_DENSITY,
     palette: PALETTES[brightness ?? DEFAULT_BRIGHTNESS],
-  }
-  if (item.type === 'article')
+    dragData,
+  };
+  if (item.type === "article")
     return (
       <ArticleVesselCard
         article={item}
@@ -91,9 +109,11 @@ export function VesselCard({
         threadRefreshKey={threadRefreshKey}
         isSaved={isSaved}
         onToggleSave={onToggleSave}
+        expanded={expanded}
+        onToggleExpand={onToggleExpand}
       />
-    )
-  if (item.type === 'note')
+    );
+  if (item.type === "note")
     return (
       <NoteVesselCard
         note={item}
@@ -105,16 +125,20 @@ export function VesselCard({
         threadRefreshKey={threadRefreshKey}
         isSaved={isSaved}
         onToggleSave={onToggleSave}
+        expanded={expanded}
+        onToggleExpand={onToggleExpand}
       />
-    )
+    );
   return (
     <ExternalVesselCard
       external={item}
       ctx={ctx}
       isSaved={isSaved}
       onToggleSave={onToggleSave}
+      expanded={expanded}
+      onToggleExpand={onToggleExpand}
     />
-  )
+  );
 }
 
 function CardShell({
@@ -122,25 +146,36 @@ function CardShell({
   onClick,
   children,
 }: {
-  ctx: CardContext
-  onClick?: () => void
-  children: React.ReactNode
+  ctx: CardContext;
+  onClick?: () => void;
+  children: React.ReactNode;
 }) {
-  // Compact density compresses the surface — single-line cards feel airless
-  // with full padding. Standard / full keep the slice-1 padding.
-  const padding = ctx.density === 'compact' ? '8px 12px' : '16px'
+  const padding = ctx.density === "compact" ? "8px 12px" : "16px";
+  const draggable = !!ctx.dragData && ctx.density !== "compact";
   return (
     <div
       onClick={onClick}
+      draggable={draggable || undefined}
+      onDragStart={
+        draggable
+          ? (e) => {
+              e.dataTransfer.setData(
+                "application/x-vessel-card",
+                ctx.dragData!,
+              );
+              e.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
       style={{
         background: ctx.palette.cardBg,
         padding,
-        cursor: onClick ? 'pointer' : undefined,
+        cursor: onClick ? "pointer" : undefined,
       }}
     >
       {children}
     </div>
-  )
+  );
 }
 
 // Action strip under the card body. Quiet by default — mono-caps, hint-coloured —
@@ -159,33 +194,33 @@ function CardActions({
   isSaved,
   onToggleSave,
 }: {
-  ctx: CardContext
-  voteEventId?: string
-  voteKind?: number
-  isOwnContent?: boolean
-  replyTarget?: ReplyTarget
-  shareUrl?: string
-  onReply?: (target: ReplyTarget) => void
-  threadExpanded?: boolean
-  onToggleThread?: (target: ReplyTarget) => void
-  feedItemId?: string
-  isSaved?: boolean
-  onToggleSave?: (feedItemId: string, next: boolean) => void
+  ctx: CardContext;
+  voteEventId?: string;
+  voteKind?: number;
+  isOwnContent?: boolean;
+  replyTarget?: ReplyTarget;
+  shareUrl?: string;
+  onReply?: (target: ReplyTarget) => void;
+  threadExpanded?: boolean;
+  onToggleThread?: (target: ReplyTarget) => void;
+  feedItemId?: string;
+  isSaved?: boolean;
+  onToggleSave?: (feedItemId: string, next: boolean) => void;
 }) {
-  if (ctx.density === 'compact') return null
+  if (ctx.density === "compact") return null;
 
   function handleShare(e: React.MouseEvent) {
-    e.stopPropagation()
-    if (!shareUrl) return
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      void navigator.clipboard.writeText(shareUrl)
+    e.stopPropagation();
+    if (!shareUrl) return;
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(shareUrl);
     }
   }
 
   // Slice 20: Save toggle. Crimson when saved (consistent with the rest of
   // the workspace's "committed" state colour). Suppressed if the item lacks
   // a feedItemId (e.g. surfaces that bypass the unified table).
-  const canSave = !!feedItemId && !!onToggleSave
+  const canSave = !!feedItemId && !!onToggleSave;
 
   return (
     <div
@@ -205,10 +240,10 @@ function CardActions({
           type="button"
           onClick={() => onReply(replyTarget)}
           style={{
-            background: 'transparent',
-            border: 'none',
+            background: "transparent",
+            border: "none",
             padding: 0,
-            cursor: 'pointer',
+            cursor: "pointer",
             color: ctx.palette.cardMeta,
           }}
           className="hover:opacity-80"
@@ -221,15 +256,15 @@ function CardActions({
           type="button"
           onClick={() => onToggleThread(replyTarget)}
           style={{
-            background: 'transparent',
-            border: 'none',
+            background: "transparent",
+            border: "none",
             padding: 0,
-            cursor: 'pointer',
+            cursor: "pointer",
             color: ctx.palette.cardMeta,
           }}
           className="hover:opacity-80"
         >
-          {threadExpanded ? 'Hide thread' : 'Thread'}
+          {threadExpanded ? "Hide thread" : "Thread"}
         </button>
       )}
       {shareUrl && (
@@ -237,10 +272,10 @@ function CardActions({
           type="button"
           onClick={handleShare}
           style={{
-            background: 'transparent',
-            border: 'none',
+            background: "transparent",
+            border: "none",
             padding: 0,
-            cursor: 'pointer',
+            cursor: "pointer",
             color: ctx.palette.cardMeta,
           }}
           className="hover:opacity-80"
@@ -253,19 +288,19 @@ function CardActions({
           type="button"
           onClick={() => onToggleSave!(feedItemId!, !isSaved)}
           style={{
-            background: 'transparent',
-            border: 'none',
+            background: "transparent",
+            border: "none",
             padding: 0,
-            cursor: 'pointer',
+            cursor: "pointer",
             color: isSaved ? ctx.palette.crimson : ctx.palette.cardMeta,
           }}
           className="hover:opacity-80"
         >
-          {isSaved ? 'Saved' : 'Save'}
+          {isSaved ? "Saved" : "Save"}
         </button>
       )}
     </div>
-  )
+  );
 }
 
 // Slice 13: inline playscript thread for vessel cards. Wraps the existing
@@ -278,8 +313,8 @@ function CardThread({
   target,
   refreshKey,
 }: {
-  target: ReplyTarget
-  refreshKey?: number
+  target: ReplyTarget;
+  refreshKey?: number;
 }) {
   return (
     <div onClick={(e) => e.stopPropagation()} className="mt-4">
@@ -291,7 +326,7 @@ function CardThread({
         refreshKey={refreshKey}
       />
     </div>
-  )
+  );
 }
 
 function CompactRow({
@@ -300,10 +335,10 @@ function CompactRow({
   trailing,
   ctx,
 }: {
-  pipNode: React.ReactNode
-  title: string
-  trailing?: React.ReactNode
-  ctx: CardContext
+  pipNode: React.ReactNode;
+  title: string;
+  trailing?: React.ReactNode;
+  ctx: CardContext;
 }) {
   return (
     <div
@@ -312,7 +347,7 @@ function CompactRow({
     >
       <span
         style={{
-          display: 'inline-flex',
+          display: "inline-flex",
           width: 9,
           height: 9,
         }}
@@ -322,7 +357,7 @@ function CompactRow({
       <span className="truncate flex-1">{title}</span>
       {trailing}
     </div>
-  )
+  );
 }
 
 function Byline({
@@ -332,11 +367,11 @@ function Byline({
   trailing,
   ctx,
 }: {
-  pipNode: React.ReactNode
-  name: string
-  publishedAt: number
-  trailing?: React.ReactNode
-  ctx: CardContext
+  pipNode: React.ReactNode;
+  name: string;
+  publishedAt: number;
+  trailing?: React.ReactNode;
+  ctx: CardContext;
 }) {
   return (
     <div
@@ -353,7 +388,7 @@ function Byline({
       </time>
       {trailing}
     </div>
-  )
+  );
 }
 
 function SourceAttribution({
@@ -361,9 +396,9 @@ function SourceAttribution({
   identifier,
   ctx,
 }: {
-  protocol: string
-  identifier?: string
-  ctx: CardContext
+  protocol: string;
+  identifier?: string;
+  ctx: CardContext;
 }) {
   return (
     <div
@@ -371,9 +406,9 @@ function SourceAttribution({
       style={{ color: ctx.palette.cardMeta }}
     >
       VIA {protocol}
-      {identifier ? ` · ${identifier}` : ''}
+      {identifier ? ` · ${identifier}` : ""}
     </div>
-  )
+  );
 }
 
 // Slice 23 — hero media for notes + external cards. Articles defer until the
@@ -385,10 +420,10 @@ function SourceAttribution({
 // in compact density since the action strip is also suppressed there — we
 // don't want a hero image rendering on a row that's intentionally airless.
 interface MediaItemLike {
-  type: 'image' | 'video' | 'audio' | 'link'
-  url: string
-  thumbnail?: string
-  alt?: string
+  type: "image" | "video" | "audio" | "link";
+  url: string;
+  thumbnail?: string;
+  alt?: string;
 }
 
 function MediaBlock({
@@ -396,89 +431,93 @@ function MediaBlock({
   ctx,
   externalUrl,
 }: {
-  items: MediaItemLike[]
-  ctx: CardContext
-  externalUrl?: string
+  items: MediaItemLike[];
+  ctx: CardContext;
+  externalUrl?: string;
 }) {
-  if (ctx.density === 'compact') return null
-  if (!items || items.length === 0) return null
+  if (ctx.density === "compact") return null;
+  if (!items || items.length === 0) return null;
 
   // Pick the first image; if none, the first video. Audio + link items are
   // skipped — link cards have a different mental model (the existing external
   // card link-embed) and audio isn't part of the workspace's render budget.
-  const hero = items.find((m) => m.type === 'image') ?? items.find((m) => m.type === 'video')
-  if (!hero) return null
+  const hero =
+    items.find((m) => m.type === "image") ??
+    items.find((m) => m.type === "video");
+  if (!hero) return null;
 
-  const overflowCount = items.length - 1
-  const playable = hero.type === 'video' && externalUrl
+  const overflowCount = items.length - 1;
+  const playable = hero.type === "video" && externalUrl;
 
   return (
     <div
       onClick={(e) => {
-        if (!playable) return
-        e.stopPropagation()
-        window.open(externalUrl, '_blank', 'noopener,noreferrer')
+        if (!playable) return;
+        e.stopPropagation();
+        window.open(externalUrl, "_blank", "noopener,noreferrer");
       }}
       style={{
-        position: 'relative',
+        position: "relative",
         marginTop: 10,
         marginBottom: 6,
         background: ctx.palette.interior,
-        aspectRatio: '16 / 9',
-        overflow: 'hidden',
-        cursor: playable ? 'pointer' : undefined,
+        aspectRatio: "16 / 9",
+        overflow: "hidden",
+        cursor: playable ? "pointer" : undefined,
       }}
     >
-      {hero.type === 'image' && (
+      {hero.type === "image" && (
         <img
           src={hero.url}
-          alt={hero.alt ?? ''}
+          alt={hero.alt ?? ""}
           loading="lazy"
           referrerPolicy="no-referrer"
           style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
           }}
         />
       )}
-      {hero.type === 'video' && hero.thumbnail && (
+      {hero.type === "video" && hero.thumbnail && (
         <img
           src={hero.thumbnail}
-          alt={hero.alt ?? ''}
+          alt={hero.alt ?? ""}
           loading="lazy"
           referrerPolicy="no-referrer"
           style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
           }}
         />
       )}
-      {hero.type === 'video' && (
+      {hero.type === "video" && (
         <div
           aria-hidden="true"
           style={{
-            position: 'absolute',
+            position: "absolute",
             inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: hero.thumbnail ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.06)',
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: hero.thumbnail
+              ? "rgba(0,0,0,0.18)"
+              : "rgba(0,0,0,0.06)",
           }}
         >
           <span
             style={{
               width: 44,
               height: 44,
-              borderRadius: '50%',
-              background: 'rgba(255,255,255,0.92)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.92)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
             }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
@@ -492,21 +531,21 @@ function MediaBlock({
           aria-hidden="true"
           className="font-mono"
           style={{
-            position: 'absolute',
+            position: "absolute",
             right: 8,
             bottom: 8,
-            padding: '2px 8px',
-            background: 'rgba(0,0,0,0.72)',
-            color: '#FFFFFF',
+            padding: "2px 8px",
+            background: "rgba(0,0,0,0.72)",
+            color: "#FFFFFF",
             fontSize: 11,
-            letterSpacing: '0.04em',
+            letterSpacing: "0.04em",
           }}
         >
           +{overflowCount}
         </span>
       )}
     </div>
-  )
+  );
 }
 
 function ArticleVesselCard({
@@ -519,37 +558,45 @@ function ArticleVesselCard({
   threadRefreshKey,
   isSaved,
   onToggleSave,
+  expanded,
+  onToggleExpand,
 }: {
-  article: ArticleEvent
-  ctx: CardContext
-  onReply?: (target: ReplyTarget) => void
-  onPipOpen?: PipOpen
-  threadExpanded?: boolean
-  onToggleThread?: (target: ReplyTarget) => void
-  threadRefreshKey?: number
-  isSaved?: boolean
-  onToggleSave?: (feedItemId: string, next: boolean) => void
+  article: ArticleEvent;
+  ctx: CardContext;
+  onReply?: (target: ReplyTarget) => void;
+  onPipOpen?: PipOpen;
+  threadExpanded?: boolean;
+  onToggleThread?: (target: ReplyTarget) => void;
+  threadRefreshKey?: number;
+  isSaved?: boolean;
+  onToggleSave?: (feedItemId: string, next: boolean) => void;
+  expanded?: boolean;
+  onToggleExpand?: (itemId: string) => void;
 }) {
-  const router = useRouter()
-  const { user } = useAuth()
-  const writer = useWriterName(article.pubkey)
-  const name = writer?.displayName ?? article.pubkey.slice(0, 12) + '…'
-  const standfirst = article.summary || truncateText(stripMarkdown(article.content), 140)
-  const href = `/article/${article.dTag}`
+  const router = useRouter();
+  const { user } = useAuth();
+  const writer = useWriterName(article.pubkey);
+  const name = writer?.displayName ?? article.pubkey.slice(0, 12) + "…";
+  const standfirst =
+    article.summary || truncateText(stripMarkdown(article.content), 140);
+  const href = `/article/${article.dTag}`;
   const shareUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}${href}` : href
-  const isOwnContent = !!user && user.pubkey === article.pubkey
+    typeof window !== "undefined" ? `${window.location.origin}${href}` : href;
+  const isOwnContent = !!user && user.pubkey === article.pubkey;
   const replyTarget: ReplyTarget = {
     eventId: article.id,
     eventKind: 30023,
     authorPubkey: article.pubkey,
     authorName: name,
     excerpt: article.title,
-  }
-  const onCardClick = () => router.push(href)
+  };
+  const expandKey = article.feedItemId ?? article.id;
+  const onCardClick = onToggleExpand
+    ? () => onToggleExpand(expandKey)
+    : () => router.push(href);
   const pricePill =
     article.isPaywalled && article.pricePence ? (
-      ctx.density === 'compact' ? (
+      ctx.density === "compact" ? (
         <span style={{ color: ctx.palette.crimson, marginLeft: 4 }}>£</span>
       ) : (
         <>
@@ -559,7 +606,7 @@ function ArticleVesselCard({
           </span>
         </>
       )
-    ) : null
+    ) : null;
 
   const pipNodeCompact = onPipOpen ? (
     <PipTrigger
@@ -570,10 +617,16 @@ function ArticleVesselCard({
       onOpen={onPipOpen}
     />
   ) : (
-    <span style={{ opacity: ctx.palette.pipOpacity, transform: 'scale(0.82)', transformOrigin: 'top left' }}>
+    <span
+      style={{
+        opacity: ctx.palette.pipOpacity,
+        transform: "scale(0.82)",
+        transformOrigin: "top left",
+      }}
+    >
       <TrustPip status={article.pipStatus} />
     </span>
-  )
+  );
   const pipNodeByline = onPipOpen ? (
     <PipTrigger
       pubkey={article.pubkey}
@@ -582,12 +635,12 @@ function ArticleVesselCard({
       onOpen={onPipOpen}
     />
   ) : (
-    <span style={{ display: 'inline-flex', opacity: ctx.palette.pipOpacity }}>
+    <span style={{ display: "inline-flex", opacity: ctx.palette.pipOpacity }}>
       <TrustPip status={article.pipStatus} />
     </span>
-  )
+  );
 
-  if (ctx.density === 'compact') {
+  if (ctx.density === "compact") {
     return (
       <CardShell ctx={ctx} onClick={onCardClick}>
         <CompactRow
@@ -597,7 +650,7 @@ function ArticleVesselCard({
           ctx={ctx}
         />
       </CardShell>
-    )
+    );
   }
 
   return (
@@ -615,19 +668,51 @@ function ArticleVesselCard({
       >
         {article.title}
       </h3>
-      {standfirst && (
-        <p
-          className="text-[13px] leading-[1.45]"
-          style={{ color: ctx.palette.cardStandfirst }}
-        >
-          {standfirst}
-        </p>
+      {expanded ? (
+        <>
+          {article.content && (
+            <div
+              className="font-serif text-[14.5px] leading-[1.55] mt-2"
+              style={{ color: ctx.palette.cardTitle, whiteSpace: "pre-wrap" }}
+            >
+              {stripMarkdown(article.content)}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(href);
+            }}
+            className="font-mono text-[11px] uppercase tracking-[0.06em] mt-3"
+            style={{
+              color: ctx.palette.crimson,
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+            }}
+          >
+            Read full article →
+          </button>
+        </>
+      ) : (
+        <>
+          {standfirst && (
+            <p
+              className="text-[13px] leading-[1.45]"
+              style={{ color: ctx.palette.cardStandfirst }}
+            >
+              {standfirst}
+            </p>
+          )}
+          <MediaBlock items={article.media ?? []} ctx={ctx} />
+        </>
       )}
-      <MediaBlock items={article.media ?? []} ctx={ctx} />
-      {ctx.density === 'full' && (
+      {ctx.density === "full" && (
         <SourceAttribution
           protocol="ALL.HAUS"
-          identifier={article.pubkey.slice(0, 12) + '…'}
+          identifier={article.pubkey.slice(0, 12) + "…"}
           ctx={ctx}
         />
       )}
@@ -649,7 +734,7 @@ function ArticleVesselCard({
         <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
       )}
     </CardShell>
-  )
+  );
 }
 
 function NoteVesselCard({
@@ -662,28 +747,32 @@ function NoteVesselCard({
   threadRefreshKey,
   isSaved,
   onToggleSave,
+  expanded,
+  onToggleExpand,
 }: {
-  note: NoteEvent
-  ctx: CardContext
-  onReply?: (target: ReplyTarget) => void
-  onPipOpen?: PipOpen
-  threadExpanded?: boolean
-  onToggleThread?: (target: ReplyTarget) => void
-  threadRefreshKey?: number
-  isSaved?: boolean
-  onToggleSave?: (feedItemId: string, next: boolean) => void
+  note: NoteEvent;
+  ctx: CardContext;
+  onReply?: (target: ReplyTarget) => void;
+  onPipOpen?: PipOpen;
+  threadExpanded?: boolean;
+  onToggleThread?: (target: ReplyTarget) => void;
+  threadRefreshKey?: number;
+  isSaved?: boolean;
+  onToggleSave?: (feedItemId: string, next: boolean) => void;
+  expanded?: boolean;
+  onToggleExpand?: (itemId: string) => void;
 }) {
-  const { user } = useAuth()
-  const writer = useWriterName(note.pubkey)
-  const name = writer?.displayName ?? note.pubkey.slice(0, 12) + '…'
-  const isOwnContent = !!user && user.pubkey === note.pubkey
+  const { user } = useAuth();
+  const writer = useWriterName(note.pubkey);
+  const name = writer?.displayName ?? note.pubkey.slice(0, 12) + "…";
+  const isOwnContent = !!user && user.pubkey === note.pubkey;
   const replyTarget: ReplyTarget = {
     eventId: note.id,
     eventKind: 1,
     authorPubkey: note.pubkey,
     authorName: name,
     excerpt: truncateText(note.content, 120),
-  }
+  };
 
   const pipNodeCompact = onPipOpen ? (
     <PipTrigger
@@ -694,10 +783,16 @@ function NoteVesselCard({
       onOpen={onPipOpen}
     />
   ) : (
-    <span style={{ opacity: ctx.palette.pipOpacity, transform: 'scale(0.82)', transformOrigin: 'top left' }}>
+    <span
+      style={{
+        opacity: ctx.palette.pipOpacity,
+        transform: "scale(0.82)",
+        transformOrigin: "top left",
+      }}
+    >
       <TrustPip status={note.pipStatus} />
     </span>
-  )
+  );
   const pipNodeByline = onPipOpen ? (
     <PipTrigger
       pubkey={note.pubkey}
@@ -706,12 +801,12 @@ function NoteVesselCard({
       onOpen={onPipOpen}
     />
   ) : (
-    <span style={{ display: 'inline-flex', opacity: ctx.palette.pipOpacity }}>
+    <span style={{ display: "inline-flex", opacity: ctx.palette.pipOpacity }}>
       <TrustPip status={note.pipStatus} />
     </span>
-  )
+  );
 
-  if (ctx.density === 'compact') {
+  if (ctx.density === "compact") {
     return (
       <CardShell ctx={ctx}>
         <CompactRow
@@ -720,15 +815,22 @@ function NoteVesselCard({
           ctx={ctx}
         />
       </CardShell>
-    )
+    );
   }
 
-  const noteMedia = extractNoteMedia(note.content)
+  const noteMedia = extractNoteMedia(note.content);
   const noteDisplayText =
-    noteMedia.length > 0 ? stripMediaUrls(note.content).displayText : note.content
+    noteMedia.length > 0
+      ? stripMediaUrls(note.content).displayText
+      : note.content;
+
+  const expandKey = note.feedItemId ?? note.id;
+  const onCardClick = onToggleExpand
+    ? () => onToggleExpand(expandKey)
+    : undefined;
 
   return (
-    <CardShell ctx={ctx}>
+    <CardShell ctx={ctx} onClick={onCardClick}>
       <Byline
         pipNode={pipNodeByline}
         name={name}
@@ -740,14 +842,14 @@ function NoteVesselCard({
           className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
           style={{ color: ctx.palette.cardTitle }}
         >
-          {truncateText(noteDisplayText, 220)}
+          {expanded ? noteDisplayText : truncateText(noteDisplayText, 220)}
         </p>
       )}
       <MediaBlock items={noteMedia} ctx={ctx} />
-      {ctx.density === 'full' && (
+      {ctx.density === "full" && (
         <SourceAttribution
           protocol="NOSTR"
-          identifier={note.pubkey.slice(0, 12) + '…'}
+          identifier={note.pubkey.slice(0, 12) + "…"}
           ctx={ctx}
         />
       )}
@@ -768,15 +870,15 @@ function NoteVesselCard({
         <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
       )}
     </CardShell>
-  )
+  );
 }
 
 interface NewUserItem {
-  type: 'new_user'
-  username: string
-  displayName: string | null
-  avatar: string | null
-  joinedAt: number
+  type: "new_user";
+  username: string;
+  displayName: string | null;
+  avatar: string | null;
+  joinedAt: number;
 }
 
 export function NewUserVesselCard({
@@ -784,22 +886,22 @@ export function NewUserVesselCard({
   density,
   brightness,
 }: {
-  item: NewUserItem
-  density?: Density
-  brightness?: Brightness
+  item: NewUserItem;
+  density?: Density;
+  brightness?: Brightness;
 }) {
   const ctx: CardContext = {
     density: density ?? DEFAULT_DENSITY,
     palette: PALETTES[brightness ?? DEFAULT_BRIGHTNESS],
-  }
-  const name = item.displayName ?? item.username ?? 'Someone'
+  };
+  const name = item.displayName ?? item.username ?? "Someone";
 
-  if (ctx.density === 'compact') {
+  if (ctx.density === "compact") {
     return (
       <CardShell ctx={ctx}>
         <CompactRow pipNode={null} title={`${name} joined`} ctx={ctx} />
       </CardShell>
-    )
+    );
   }
 
   return (
@@ -823,7 +925,7 @@ export function NewUserVesselCard({
         joined the platform
       </p>
     </CardShell>
-  )
+  );
 }
 
 function ExternalVesselCard({
@@ -831,49 +933,60 @@ function ExternalVesselCard({
   ctx,
   isSaved,
   onToggleSave,
+  expanded,
+  onToggleExpand,
 }: {
-  external: ExternalFeedItem
-  ctx: CardContext
-  isSaved?: boolean
-  onToggleSave?: (feedItemId: string, next: boolean) => void
+  external: ExternalFeedItem;
+  ctx: CardContext;
+  isSaved?: boolean;
+  onToggleSave?: (feedItemId: string, next: boolean) => void;
+  expanded?: boolean;
+  onToggleExpand?: (itemId: string) => void;
 }) {
   const name =
-    external.authorName ?? external.authorHandle ?? external.sourceName ?? 'External'
-  const protocol = external.sourceProtocol.toUpperCase()
-  const body = external.title ?? external.summary ?? external.contentText ?? ''
-  // External items live at their source — atproto URIs need rewriting to
-  // a browser-followable bsky.app URL; everything else is already a URL.
+    external.authorName ??
+    external.authorHandle ??
+    external.sourceName ??
+    "External";
+  const protocol = external.sourceProtocol.toUpperCase();
+  const body = external.title ?? external.summary ?? external.contentText ?? "";
+  const fullBody = external.contentText ?? external.contentHtml ?? body;
   const externalUrl =
-    external.sourceProtocol === 'atproto'
-      ? atprotoWebUri(external.sourceItemUri) ?? external.sourceItemUri
-      : external.sourceItemUri
-  const onCardClick = () => {
-    if (typeof window !== 'undefined') {
-      window.open(externalUrl, '_blank', 'noopener,noreferrer')
-    }
-  }
+    external.sourceProtocol === "atproto"
+      ? (atprotoWebUri(external.sourceItemUri) ?? external.sourceItemUri)
+      : external.sourceItemUri;
+  const expandKey = external.feedItemId ?? external.id;
+  const onCardClick = onToggleExpand
+    ? () => onToggleExpand(expandKey)
+    : () => {
+        if (typeof window !== "undefined") {
+          window.open(externalUrl, "_blank", "noopener,noreferrer");
+        }
+      };
 
   const pipNodeCompact = (
-    <span style={{ opacity: ctx.palette.pipOpacity, transform: 'scale(0.82)', transformOrigin: 'top left' }}>
+    <span
+      style={{
+        opacity: ctx.palette.pipOpacity,
+        transform: "scale(0.82)",
+        transformOrigin: "top left",
+      }}
+    >
       <TrustPip status={external.pipStatus} />
     </span>
-  )
+  );
   const pipNodeByline = (
-    <span style={{ display: 'inline-flex', opacity: ctx.palette.pipOpacity }}>
+    <span style={{ display: "inline-flex", opacity: ctx.palette.pipOpacity }}>
       <TrustPip status={external.pipStatus} />
     </span>
-  )
+  );
 
-  if (ctx.density === 'compact') {
+  if (ctx.density === "compact") {
     return (
       <CardShell ctx={ctx} onClick={onCardClick}>
-        <CompactRow
-          pipNode={pipNodeCompact}
-          title={body || name}
-          ctx={ctx}
-        />
+        <CompactRow pipNode={pipNodeCompact} title={body || name} ctx={ctx} />
       </CardShell>
-    )
+    );
   }
 
   return (
@@ -883,7 +996,7 @@ function ExternalVesselCard({
         name={name}
         publishedAt={external.publishedAt}
         trailing={
-          ctx.density === 'standard' ? (
+          ctx.density === "standard" ? (
             <>
               <span>·</span>
               <span>VIA {protocol}</span>
@@ -892,16 +1005,54 @@ function ExternalVesselCard({
         }
         ctx={ctx}
       />
-      {body && (
-        <p
-          className="text-[13.5px] leading-[1.5]"
-          style={{ color: ctx.palette.cardTitle }}
-        >
-          {truncateText(body, 200)}
-        </p>
+      {expanded ? (
+        <>
+          {fullBody && (
+            <p
+              className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
+              style={{ color: ctx.palette.cardTitle }}
+            >
+              {fullBody}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (typeof window !== "undefined") {
+                window.open(externalUrl, "_blank", "noopener,noreferrer");
+              }
+            }}
+            className="font-mono text-[11px] uppercase tracking-[0.06em] mt-3"
+            style={{
+              color: ctx.palette.crimson,
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+            }}
+          >
+            Open original →
+          </button>
+        </>
+      ) : (
+        <>
+          {body && (
+            <p
+              className="text-[13.5px] leading-[1.5]"
+              style={{ color: ctx.palette.cardTitle }}
+            >
+              {truncateText(body, 200)}
+            </p>
+          )}
+          <MediaBlock
+            items={external.media ?? []}
+            ctx={ctx}
+            externalUrl={externalUrl}
+          />
+        </>
       )}
-      <MediaBlock items={external.media ?? []} ctx={ctx} externalUrl={externalUrl} />
-      {ctx.density === 'full' && (
+      {ctx.density === "full" && (
         <SourceAttribution
           protocol={protocol}
           identifier={external.authorHandle ?? external.sourceName ?? undefined}
@@ -916,5 +1067,5 @@ function ExternalVesselCard({
         onToggleSave={onToggleSave}
       />
     </CardShell>
-  )
+  );
 }

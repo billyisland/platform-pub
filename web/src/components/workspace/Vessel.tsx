@@ -69,6 +69,9 @@ interface VesselProps {
   density?: Density;
   orientation?: Orientation;
   hidden?: boolean;
+  minimized?: boolean;
+  onMinimize?: (minimized: boolean) => void;
+  onHide?: () => void;
   savedView?: boolean;
   onToggleSavedView?: () => void;
   onPositionCommit: (pos: { x: number; y: number }) => void;
@@ -79,6 +82,7 @@ interface VesselProps {
   onDragStart?: () => void;
   onDragFrame?: (pos: { x: number; y: number }) => void;
   dragConstraints?: RefObject<HTMLElement>;
+  onCardDrop?: (data: string) => void;
 }
 
 export function Vessel({
@@ -93,6 +97,9 @@ export function Vessel({
   density,
   orientation,
   hidden,
+  minimized,
+  onMinimize,
+  onHide,
   savedView,
   onToggleSavedView,
   onPositionCommit,
@@ -103,8 +110,10 @@ export function Vessel({
   onDragStart: onDragStartProp,
   onDragFrame,
   dragConstraints,
+  onCardDrop,
 }: VesselProps) {
   const dragControls = useDragControls();
+  const [isDragTarget, setIsDragTarget] = useState(false);
   const vesselRef = useRef<HTMLDivElement>(null);
   const mx = useMotionValue(position.x);
   const my = useMotionValue(position.y);
@@ -252,6 +261,28 @@ export function Vessel({
     setLiveSize(null);
   }
 
+  function handleChassisDragOver(e: React.DragEvent) {
+    if (!onCardDrop) return;
+    if (!e.dataTransfer.types.includes("application/x-vessel-card")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!isDragTarget) setIsDragTarget(true);
+  }
+
+  function handleChassisDragLeave(e: React.DragEvent) {
+    const chassis = e.currentTarget as HTMLElement;
+    if (chassis.contains(e.relatedTarget as Node)) return;
+    setIsDragTarget(false);
+  }
+
+  function handleChassisDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragTarget(false);
+    const raw = e.dataTransfer.getData("application/x-vessel-card");
+    if (!raw || !onCardDrop) return;
+    onCardDrop(raw);
+  }
+
   // Wall arrangement per orientation. The bottom wall is replaced by VesselBar,
   // so only left/right (vertical) or top/left (horizontal) get thin borders.
   const wallStyle = isHorizontal
@@ -319,6 +350,9 @@ export function Vessel({
           otherwise it grows with content. */}
       <div
         data-vessel-chassis
+        onDragOver={handleChassisDragOver}
+        onDragLeave={handleChassisDragLeave}
+        onDrop={handleChassisDrop}
         style={{
           position: "relative",
           ...wallStyle,
@@ -326,24 +360,28 @@ export function Vessel({
           height: heightSet ? effH : undefined,
           display: "flex",
           flexDirection: "column",
+          outline: isDragTarget ? `2px solid ${palette.walls}` : undefined,
+          outlineOffset: -2,
         }}
       >
-        <div
-          onPointerDown={(e) => e.stopPropagation()}
-          style={{
-            padding: `${PAD}px`,
-            display: "flex",
-            flexDirection: isHorizontal ? "row" : "column",
-            gap: `${GAP}px`,
-            flex: heightSet ? "1 1 0" : undefined,
-            minHeight: 0,
-            overflowY: heightSet && !isHorizontal ? "auto" : undefined,
-            overflowX: isHorizontal ? "auto" : undefined,
-            cursor: "default",
-          }}
-        >
-          {children}
-        </div>
+        {!minimized && (
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
+              padding: `${PAD}px`,
+              display: "flex",
+              flexDirection: isHorizontal ? "row" : "column",
+              gap: `${GAP}px`,
+              flex: heightSet ? "1 1 0" : undefined,
+              minHeight: 0,
+              overflowY: heightSet && !isHorizontal ? "auto" : undefined,
+              overflowX: isHorizontal ? "auto" : undefined,
+              cursor: "default",
+            }}
+          >
+            {children}
+          </div>
+        )}
 
         {/* VesselBar replaces the bottom wall — cycle controls + source input */}
         <VesselBar
@@ -359,9 +397,12 @@ export function Vessel({
           onToggleSavedView={onToggleSavedView}
           onSourceAdded={onSourceAdded}
           onNameClick={onNameClick}
+          minimized={minimized}
+          onMinimize={onMinimize}
+          onHide={onHide}
         />
 
-        {onSizeCommit && (
+        {onSizeCommit && !minimized && (
           <div
             role="button"
             aria-label="Resize vessel"

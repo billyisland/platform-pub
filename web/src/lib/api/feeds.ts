@@ -27,6 +27,8 @@ export type WorkspaceFeedSourceKind =
 export interface WorkspaceFeedSource {
   id: string;
   sourceType: WorkspaceFeedSourceKind;
+  accountId?: string;
+  externalSourceId?: string;
   weight: number;
   samplingMode: string;
   mutedAt: string | null;
@@ -72,6 +74,12 @@ export const workspaceFeeds = {
   remove: (id: string) =>
     request<void>(`/workspace/feeds/${id}`, { method: "DELETE" }),
 
+  merge: (targetFeedId: string, sourceFeedId: string) =>
+    request<{ feed: WorkspaceFeed }>(`/workspace/feeds/${targetFeedId}/merge`, {
+      method: "POST",
+      body: JSON.stringify({ sourceFeedId }),
+    }),
+
   items: (id: string, opts?: { cursor?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (opts?.cursor) qs.set("cursor", opts.cursor);
@@ -98,6 +106,15 @@ export const workspaceFeeds = {
     request<void>(`/workspace/feeds/${id}/sources/${sourceId}`, {
       method: "DELETE",
     }),
+
+  moveSource: (sourceFeedId: string, sourceId: string, targetFeedId: string) =>
+    request<{ ok: true }>(
+      `/workspace/feeds/${sourceFeedId}/sources/${sourceId}/move`,
+      {
+        method: "POST",
+        body: JSON.stringify({ targetFeedId }),
+      },
+    ),
 
   patchSource: (
     id: string,

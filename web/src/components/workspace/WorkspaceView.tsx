@@ -12,6 +12,7 @@ import { snap } from "../../lib/workspace/grid";
 import {
   workspaceFeeds as workspaceFeedsApi,
   type WorkspaceFeed,
+  type WorkspaceFeedSource,
 } from "../../lib/api";
 import type { FeedItem, ExternalFeedItem } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
@@ -23,9 +24,8 @@ import { follows as followsApi } from "../../lib/api";
 import type { PipStatus } from "../../lib/ndk";
 import { NewFeedPrompt } from "./NewFeedPrompt";
 import { FeedComposer } from "./FeedComposer";
-import { ResetLayoutConfirm } from "./ResetLayoutConfirm";
-import { ForkFeedPrompt } from "./ForkFeedPrompt";
 import { ForallCeremony } from "./ForallCeremony";
+import { MergeFeedConfirm } from "./MergeFeedConfirm";
 import { NotificationsAnchor } from "./NotificationsAnchor";
 import { SearchAnchor } from "./SearchAnchor";
 
@@ -98,12 +98,8 @@ type WorkspaceItem = FeedItem | NewUserItem;
 interface VesselState {
   feed: WorkspaceFeed;
   items: WorkspaceItem[];
+  sources: WorkspaceFeedSource[];
   status: "loading" | "ready" | "error";
-  // Slice 20: per-vessel view-mode + savedIds Set. View defaults to 'live'
-  // on each new vessel; the toggle never persists across reloads (ADR §3
-  // saved-state persistence is server-backed, view-mode-toggle is session
-  // ephemeral so the workspace re-opens "live" — saved view is a brief
-  // detour, not a sticky channel).
   view: "live" | "saved";
   savedIds: Set<string>;
 }
@@ -114,6 +110,7 @@ function mapApiItem(item: any): WorkspaceItem | null {
       type: "article",
       id: item.nostrEventId,
       feedItemId: item.feedItemId,
+      authorId: item.authorId,
       pubkey: item.pubkey,
       dTag: item.dTag,
       title: item.title,
@@ -136,6 +133,7 @@ function mapApiItem(item: any): WorkspaceItem | null {
       type: "note",
       id: item.nostrEventId,
       feedItemId: item.feedItemId,
+      authorId: item.authorId,
       pubkey: item.pubkey,
       content: item.content,
       publishedAt: item.publishedAt,
@@ -153,6 +151,7 @@ function mapApiItem(item: any): WorkspaceItem | null {
       type: "external",
       id: item.id,
       feedItemId: item.feedItemId,
+      externalSourceId: item.externalSourceId,
       sourceProtocol: item.sourceProtocol,
       sourceItemUri: item.sourceItemUri,
       authorName: item.authorName,
@@ -197,6 +196,7 @@ export function WorkspaceView() {
   // Slice 13: which cards have their inline thread expanded, plus a per-target
   // refresh-tick map so an overlay-Composer reply nudges that card's
   // ReplySection to refetch (matching the canonical store).
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(
     new Set(),
   );
@@ -219,9 +219,11 @@ export function WorkspaceView() {
   const [feedComposerFor, setFeedComposerFor] = useState<WorkspaceFeed | null>(
     null,
   );
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  const [forkOpen, setForkOpen] = useState(false);
   const [ceremony, setCeremony] = useState<PendingCeremony | null>(null);
+  const [pendingMerge, setPendingMerge] = useState<{
+    source: WorkspaceFeed;
+    target: WorkspaceFeed;
+  } | null>(null);
   const floorRef = useRef<HTMLDivElement>(null);
   const positions = useWorkspace((s) => s.positions);
   const hydrated = useWorkspace((s) => s.hydrated);
@@ -231,9 +233,10 @@ export function WorkspaceView() {
   const setVesselBrightness = useWorkspace((s) => s.setVesselBrightness);
   const setVesselDensity = useWorkspace((s) => s.setVesselDensity);
   const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation);
+  const setVesselMinimized = useWorkspace((s) => s.setVesselMinimized);
+  const setVesselHidden = useWorkspace((s) => s.setVesselHidden);
   const removeVesselLayout = useWorkspace((s) => s.removeVessel);
   const batchUpdatePositions = useWorkspace((s) => s.batchUpdatePositions);
-  const resetWorkspace = useWorkspace((s) => s.reset);
 
   const dragActiveRef = useRef<string | null>(null);
 
@@ -286,6 +289,51 @@ export function WorkspaceView() {
     if (updates.size > 0) {
       batchUpdatePositions(Object.fromEntries(updates));
     }
+  }
+
+  function handleVesselDragEnd(feedId: string, pos: { x: number; y: number }) {
+    setVesselPosition(feedId, pos);
+    dragActiveRef.current = null;
+
+    const floor = floorRef.current;
+    if (!floor) return;
+    const moverEl = floor.querySelector<HTMLElement>(
+      `[data-vessel-id="${feedId}"]`,
+    );
+    if (!moverEl) return;
+    const cx = pos.x + moverEl.offsetWidth / 2;
+    const cy = pos.y + moverEl.offsetHeight / 2;
+
+    const store = useWorkspace.getState();
+    floor.querySelectorAll<HTMLElement>("[data-vessel-id]").forEach((el) => {
+      const id = el.dataset.vesselId!;
+      if (id === feedId) return;
+      const layout = store.positions[id];
+      if (!layout || layout.hidden) return;
+      if (
+        cx >= layout.x &&
+        cx <= layout.x + el.offsetWidth &&
+        cy >= layout.y &&
+        cy <= layout.y + el.offsetHeight
+      ) {
+        const source = vessels.find((v) => v.feed.id === feedId);
+        const target = vessels.find((v) => v.feed.id === id);
+        if (source && target) {
+          setPendingMerge({ source: source.feed, target: target.feed });
+        }
+      }
+    });
+  }
+
+  async function handleMergeConfirm() {
+    if (!pendingMerge) return;
+    const { source, target } = pendingMerge;
+    await workspaceFeedsApi.merge(target.id, source.id);
+    setVessels((prev) => prev.filter((v) => v.feed.id !== source.id));
+    removeVesselLayout(source.id);
+    setPendingMerge(null);
+    const targetVessel = vessels.find((v) => v.feed.id === target.id);
+    if (targetVessel) void loadVesselItems(targetVessel.feed);
   }
 
   // Slice 20: load function honours the vessel's current view mode. The
@@ -415,54 +463,67 @@ export function WorkspaceView() {
       setNewFeedOpen(true);
       return;
     }
-    if (key === "reset") {
-      setResetConfirmOpen(true);
-      return;
-    }
-    if (key === "fork") {
-      setForkOpen(true);
-      return;
-    }
-    console.log(`[workspace] ${key} — not yet wired`);
   }
 
-  function handleForked(feed: WorkspaceFeed) {
-    let slot = { x: 0, y: 0, h: DEFAULT_GRID.rowHeight };
-    setVessels((prev) => {
-      const next = [
-        ...prev,
-        {
-          feed,
-          items: [],
-          status: "loading" as const,
-          view: "live" as const,
-          savedIds: new Set<string>(),
-        },
-      ];
-      slot = defaultGridSlot(
-        next.length - 1,
-        window.innerWidth,
-        window.innerHeight,
+  function handleRestoreHiddenFeed(feedId: string) {
+    setVesselHidden(feedId, false);
+  }
+
+  const hiddenFeeds = vessels
+    .filter((v) => positions[v.feed.id]?.hidden)
+    .map((v) => ({ id: v.feed.id, name: v.feed.name }));
+
+  function matchItemToSource(
+    item: WorkspaceItem,
+    sources: WorkspaceFeedSource[],
+  ): string | undefined {
+    if (item.type === "new_user") return undefined;
+    if (item.type === "external") {
+      const esId = (item as ExternalFeedItem).externalSourceId;
+      if (!esId) return undefined;
+      return sources.find(
+        (s) =>
+          s.sourceType === "external_source" && s.externalSourceId === esId,
+      )?.id;
+    }
+    const authorId = (item as any).authorId as string | undefined;
+    if (!authorId) return undefined;
+    return sources.find(
+      (s) => s.sourceType === "account" && s.accountId === authorId,
+    )?.id;
+  }
+
+  async function handleCardDrop(targetFeedId: string, raw: string) {
+    let payload: { feedId: string; feedSourceId: string };
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (payload.feedId === targetFeedId) return;
+    try {
+      await workspaceFeedsApi.moveSource(
+        payload.feedId,
+        payload.feedSourceId,
+        targetFeedId,
       );
-      setVesselPosition(feed.id, slot);
-      setVesselSize(feed.id, { w: 300, h: slot.h });
-      return next;
-    });
-    setForkOpen(false);
-    setCeremony({ feedId: feed.id, pace: "responsive", target: slot });
-    void loadVesselItems(feed);
-  }
-
-  function handleResetLayout() {
-    resetWorkspace();
-    const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
-    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-    vessels.forEach((v, i) => {
-      const slot = defaultGridSlot(i, vw, vh);
-      setVesselPosition(v.feed.id, slot);
-      setVesselSize(v.feed.id, { w: 300, h: slot.h });
-    });
-    setResetConfirmOpen(false);
+      const src = vessels.find((v) => v.feed.id === payload.feedId);
+      const tgt = vessels.find((v) => v.feed.id === targetFeedId);
+      if (src) void loadVesselItems(src.feed);
+      if (tgt) void loadVesselItems(tgt.feed);
+      for (const fid of [payload.feedId, targetFeedId]) {
+        workspaceFeedsApi
+          .listSources(fid)
+          .then(({ sources }) => {
+            setVessels((prev) =>
+              prev.map((v) => (v.feed.id === fid ? { ...v, sources } : v)),
+            );
+          })
+          .catch(() => {});
+      }
+    } catch (err) {
+      console.error("Move source failed:", err);
+    }
   }
 
   async function handleCreateFeed(name: string) {
@@ -474,6 +535,7 @@ export function WorkspaceView() {
         {
           feed,
           items: [],
+          sources: [],
           status: "loading" as const,
           view: "live" as const,
           savedIds: new Set<string>(),
@@ -543,6 +605,7 @@ export function WorkspaceView() {
         const initial: VesselState[] = list.map((feed) => ({
           feed,
           items: [],
+          sources: [],
           status: "loading",
           view: "live",
           savedIds: new Set<string>(),
@@ -564,6 +627,18 @@ export function WorkspaceView() {
                   v.feed.id === feed.id
                     ? { ...v, savedIds: new Set(feedItemIds) }
                     : v,
+                ),
+              );
+            })
+            .catch(() => {});
+
+          workspaceFeedsApi
+            .listSources(feed.id)
+            .then(({ sources }) => {
+              if (cancelled) return;
+              setVessels((prev) =>
+                prev.map((v) =>
+                  v.feed.id === feed.id ? { ...v, sources } : v,
                 ),
               );
             })
@@ -632,98 +707,143 @@ export function WorkspaceView() {
         <CenteredHint>COULDN&rsquo;T LOAD WORKSPACE</CenteredHint>
       )}
       {bootstrap === "ready" &&
-        vessels.map((v) => {
-          const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
-          return (
-            <Vessel
-              key={v.feed.id}
-              name={v.feed.name}
-              feedId={v.feed.id}
-              onNameClick={() => setFeedComposerFor(v.feed)}
-              onSourceAdded={() => void loadVesselItems(v.feed)}
-              position={{ x: layout.x, y: layout.y }}
-              size={{ w: layout.w, h: layout.h }}
-              brightness={layout.brightness}
-              density={layout.density}
-              orientation={layout.orientation}
-              savedView={v.view === "saved"}
-              onToggleSavedView={() => handleToggleSavedView(v.feed.id)}
-              onPositionCommit={(next) => setVesselPosition(v.feed.id, next)}
-              onSizeCommit={(next) => setVesselSize(v.feed.id, next)}
-              onBrightnessCommit={(next) =>
-                setVesselBrightness(v.feed.id, next)
-              }
-              onDensityCommit={(next) => setVesselDensity(v.feed.id, next)}
-              onOrientationCommit={(next) =>
-                setVesselOrientation(v.feed.id, next)
-              }
-              onDragStart={() => handleVesselDragStart(v.feed.id)}
-              onDragFrame={(pos) => handleVesselDragFrame(v.feed.id, pos)}
-              hidden={ceremony?.feedId === v.feed.id}
-              dragConstraints={floorRef}
-            >
-              {v.status === "loading" && <Hint>LOADING…</Hint>}
-              {v.status === "error" && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
-              {v.status === "ready" && v.items.length === 0 && (
-                <Hint>
-                  {v.view === "saved"
-                    ? "NO SAVED ITEMS YET — TAP SAVE ON A CARD TO KEEP IT HERE"
-                    : "NO ITEMS"}
-                </Hint>
-              )}
-              {v.status === "ready" &&
-                v.items.slice(0, 12).map((item) =>
-                  item.type === "new_user" ? (
-                    <NewUserVesselCard
-                      key={`new-user-${item.username}-${item.joinedAt}`}
-                      item={item}
-                      density={layout.density}
-                      brightness={layout.brightness}
-                    />
-                  ) : (
-                    <VesselCard
-                      key={item.id}
-                      item={item}
-                      density={layout.density}
-                      brightness={layout.brightness}
-                      onReply={(target) => {
-                        setReplyTarget(target);
-                        setComposerOpen("note");
-                      }}
-                      onPipOpen={(pubkey, rect, status) => {
-                        setPipPanel({
-                          pubkey,
-                          rect,
-                          status,
-                          feedId: v.feed.id,
-                        });
-                      }}
-                      threadExpanded={expandedThreads.has(item.id)}
-                      onToggleThread={(target) => {
-                        setExpandedThreads((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(target.eventId))
-                            next.delete(target.eventId);
-                          else next.add(target.eventId);
-                          return next;
-                        });
-                      }}
-                      threadRefreshKey={threadRefreshTicks[item.id]}
-                      isSaved={
-                        "feedItemId" in item && item.feedItemId
-                          ? v.savedIds.has(item.feedItemId)
-                          : false
-                      }
-                      onToggleSave={(feedItemId, next) =>
-                        void handleToggleSave(v.feed.id, feedItemId, next)
-                      }
-                    />
-                  ),
+        vessels
+          .filter((v) => !positions[v.feed.id]?.hidden)
+          .map((v) => {
+            const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
+            return (
+              <Vessel
+                key={v.feed.id}
+                name={v.feed.name}
+                feedId={v.feed.id}
+                onNameClick={() => setFeedComposerFor(v.feed)}
+                onSourceAdded={() => {
+                  void loadVesselItems(v.feed);
+                  workspaceFeedsApi
+                    .listSources(v.feed.id)
+                    .then(({ sources }) =>
+                      setVessels((prev) =>
+                        prev.map((vs) =>
+                          vs.feed.id === v.feed.id ? { ...vs, sources } : vs,
+                        ),
+                      ),
+                    )
+                    .catch(() => {});
+                }}
+                position={{ x: layout.x, y: layout.y }}
+                size={{ w: layout.w, h: layout.h }}
+                brightness={layout.brightness}
+                density={layout.density}
+                orientation={layout.orientation}
+                minimized={layout.minimized}
+                onMinimize={(m) => setVesselMinimized(v.feed.id, m)}
+                onHide={() => setVesselHidden(v.feed.id, true)}
+                savedView={v.view === "saved"}
+                onToggleSavedView={() => handleToggleSavedView(v.feed.id)}
+                onPositionCommit={(next) =>
+                  handleVesselDragEnd(v.feed.id, next)
+                }
+                onSizeCommit={(next) => setVesselSize(v.feed.id, next)}
+                onBrightnessCommit={(next) =>
+                  setVesselBrightness(v.feed.id, next)
+                }
+                onDensityCommit={(next) => setVesselDensity(v.feed.id, next)}
+                onOrientationCommit={(next) =>
+                  setVesselOrientation(v.feed.id, next)
+                }
+                onDragStart={() => handleVesselDragStart(v.feed.id)}
+                onDragFrame={(pos) => handleVesselDragFrame(v.feed.id, pos)}
+                hidden={ceremony?.feedId === v.feed.id}
+                dragConstraints={floorRef}
+                onCardDrop={(raw) => handleCardDrop(v.feed.id, raw)}
+              >
+                {v.status === "loading" && <Hint>LOADING…</Hint>}
+                {v.status === "error" && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
+                {v.status === "ready" && v.items.length === 0 && (
+                  <Hint>
+                    {v.view === "saved"
+                      ? "NO SAVED ITEMS YET — TAP SAVE ON A CARD TO KEEP IT HERE"
+                      : "NO ITEMS"}
+                  </Hint>
                 )}
-            </Vessel>
-          );
-        })}
-      <ForallMenu onAction={handleForallAction} />
+                {v.status === "ready" &&
+                  v.items.slice(0, 12).map((item) =>
+                    item.type === "new_user" ? (
+                      <NewUserVesselCard
+                        key={`new-user-${item.username}-${item.joinedAt}`}
+                        item={item}
+                        density={layout.density}
+                        brightness={layout.brightness}
+                      />
+                    ) : (
+                      <VesselCard
+                        key={item.id}
+                        item={item}
+                        density={layout.density}
+                        brightness={layout.brightness}
+                        onReply={(target) => {
+                          setReplyTarget(target);
+                          setComposerOpen("note");
+                        }}
+                        onPipOpen={(pubkey, rect, status) => {
+                          setPipPanel({
+                            pubkey,
+                            rect,
+                            status,
+                            feedId: v.feed.id,
+                          });
+                        }}
+                        threadExpanded={expandedThreads.has(item.id)}
+                        onToggleThread={(target) => {
+                          setExpandedThreads((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(target.eventId))
+                              next.delete(target.eventId);
+                            else next.add(target.eventId);
+                            return next;
+                          });
+                        }}
+                        threadRefreshKey={threadRefreshTicks[item.id]}
+                        isSaved={
+                          "feedItemId" in item && item.feedItemId
+                            ? v.savedIds.has(item.feedItemId)
+                            : false
+                        }
+                        onToggleSave={(feedItemId, next) =>
+                          void handleToggleSave(v.feed.id, feedItemId, next)
+                        }
+                        expanded={expandedCards.has(
+                          "feedItemId" in item && item.feedItemId
+                            ? item.feedItemId
+                            : item.id,
+                        )}
+                        onToggleExpand={(itemId) => {
+                          setExpandedCards((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(itemId)) next.delete(itemId);
+                            else next.add(itemId);
+                            return next;
+                          });
+                        }}
+                        dragData={(() => {
+                          const fsId = matchItemToSource(item, v.sources);
+                          if (!fsId) return undefined;
+                          return JSON.stringify({
+                            feedId: v.feed.id,
+                            feedSourceId: fsId,
+                          });
+                        })()}
+                      />
+                    ),
+                  )}
+              </Vessel>
+            );
+          })}
+      <ForallMenu
+        onAction={handleForallAction}
+        hiddenFeeds={hiddenFeeds}
+        onRestore={handleRestoreHiddenFeed}
+      />
       <NotificationsAnchor />
       <SearchAnchor />
       <Composer
@@ -761,7 +881,18 @@ export function WorkspaceView() {
         deleteBlocked={vessels.length <= 1}
         onClose={() => setFeedComposerFor(null)}
         onSourcesChanged={() => {
-          if (feedComposerFor) void loadVesselItems(feedComposerFor);
+          if (!feedComposerFor) return;
+          void loadVesselItems(feedComposerFor);
+          workspaceFeedsApi
+            .listSources(feedComposerFor.id)
+            .then(({ sources }) =>
+              setVessels((prev) =>
+                prev.map((v) =>
+                  v.feed.id === feedComposerFor.id ? { ...v, sources } : v,
+                ),
+              ),
+            )
+            .catch(() => {});
         }}
         onRenamed={(updated) => {
           setVessels((prev) =>
@@ -779,16 +910,12 @@ export function WorkspaceView() {
           setFeedComposerFor(null);
         }}
       />
-      <ResetLayoutConfirm
-        open={resetConfirmOpen}
-        vesselCount={vessels.length}
-        onClose={() => setResetConfirmOpen(false)}
-        onConfirm={handleResetLayout}
-      />
-      <ForkFeedPrompt
-        open={forkOpen}
-        onClose={() => setForkOpen(false)}
-        onForked={handleForked}
+      <MergeFeedConfirm
+        open={!!pendingMerge}
+        sourceName={pendingMerge?.source.name ?? ""}
+        targetName={pendingMerge?.target.name ?? ""}
+        onClose={() => setPendingMerge(null)}
+        onConfirm={handleMergeConfirm}
       />
       <PipPanel
         open={!!pipPanel}

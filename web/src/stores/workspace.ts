@@ -32,6 +32,8 @@ export interface VesselLayout {
   brightness?: Brightness;
   density?: Density;
   orientation?: Orientation;
+  minimized?: boolean;
+  hidden?: boolean;
 }
 
 interface WorkspaceState {
@@ -45,6 +47,8 @@ interface WorkspaceState {
   setVesselBrightness: (feedId: string, brightness: Brightness) => void;
   setVesselDensity: (feedId: string, density: Density) => void;
   setVesselOrientation: (feedId: string, orientation: Orientation) => void;
+  setVesselMinimized: (feedId: string, minimized: boolean) => void;
+  setVesselHidden: (feedId: string, hidden: boolean) => void;
   batchUpdatePositions: (
     updates: Record<string, { x: number; y: number }>,
   ) => void;
@@ -163,6 +167,28 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const next = {
       ...get().positions,
       [feedId]: { ...existing, orientation },
+    };
+    set({ positions: next });
+    if (userId) scheduleWrite(userId, next);
+  },
+
+  setVesselMinimized: (feedId, minimized) => {
+    const userId = get().userId;
+    const existing = get().positions[feedId] ?? { x: 0, y: 0 };
+    const next = {
+      ...get().positions,
+      [feedId]: { ...existing, minimized },
+    };
+    set({ positions: next });
+    if (userId) scheduleWrite(userId, next);
+  },
+
+  setVesselHidden: (feedId, hidden) => {
+    const userId = get().userId;
+    const existing = get().positions[feedId] ?? { x: 0, y: 0 };
+    const next = {
+      ...get().positions,
+      [feedId]: { ...existing, hidden },
     };
     set({ positions: next });
     if (userId) scheduleWrite(userId, next);

@@ -217,6 +217,120 @@ export async function feedsRoutes(app: FastifyInstance) {
   );
 
   // ---------------------------------------------------------------------------
+  // POST /feeds/:id/merge — merge a source feed into this (target) feed
+  //
+  // Moves non-duplicate sources and saves from the source feed into the
+  // target, then deletes the source feed. Both feeds must exist and be
+  // owned by the caller.
+  // ---------------------------------------------------------------------------
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    "/feeds/:id/merge",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const ownerId = req.session!.sub!;
+      const { id: targetId } = req.params;
+      if (!UUID_RE.test(targetId))
+        return reply.status(400).send({ error: "Invalid feed id" });
+
+      const parsed = z
+        .object({ sourceFeedId: z.string().uuid() })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+      const { sourceFeedId } = parsed.data;
+
+      if (sourceFeedId === targetId) {
+        return reply
+          .status(400)
+          .send({ error: "Cannot merge a feed into itself" });
+      }
+
+      try {
+        await withTransaction(async (client) => {
+          // 1. Verify both feeds exist and are owned by the caller.
+          const { rows: feedRows } = await client.query<{
+            id: string;
+            owner_id: string;
+          }>(`SELECT id, owner_id FROM feeds WHERE id = ANY($1::uuid[])`, [
+            [targetId, sourceFeedId],
+          ]);
+          const targetFeed = feedRows.find((r) => r.id === targetId);
+          const sourceFeed = feedRows.find((r) => r.id === sourceFeedId);
+
+          if (!targetFeed) {
+            throw tagged("NOT_FOUND_TARGET");
+          }
+          if (!sourceFeed) {
+            throw tagged("NOT_FOUND_SOURCE");
+          }
+          if (targetFeed.owner_id !== ownerId) {
+            throw tagged("FORBIDDEN_TARGET");
+          }
+          if (sourceFeed.owner_id !== ownerId) {
+            throw tagged("FORBIDDEN_SOURCE");
+          }
+
+          // 2. Move non-duplicate sources from source → target.
+          //    Exclude rows that would conflict with existing target sources
+          //    by matching on type + FK.
+          await client.query(
+            `UPDATE feed_sources SET feed_id = $1
+             WHERE feed_id = $2
+               AND NOT EXISTS (
+                 SELECT 1 FROM feed_sources t
+                 WHERE t.feed_id = $1
+                   AND t.source_type = feed_sources.source_type
+                   AND (
+                     (t.source_type = 'account' AND t.account_id = feed_sources.account_id)
+                     OR (t.source_type = 'publication' AND t.publication_id = feed_sources.publication_id)
+                     OR (t.source_type = 'external_source' AND t.external_source_id = feed_sources.external_source_id)
+                     OR (t.source_type = 'tag' AND t.tag_name = feed_sources.tag_name)
+                   )
+               )`,
+            [targetId, sourceFeedId],
+          );
+
+          // 3. Delete remaining orphaned source rows (duplicates that couldn't move).
+          await client.query(`DELETE FROM feed_sources WHERE feed_id = $1`, [
+            sourceFeedId,
+          ]);
+
+          // 4. Move non-duplicate saves.
+          await client.query(
+            `INSERT INTO feed_saves (id, feed_id, feed_item_id, created_at)
+             SELECT gen_random_uuid(), $1, feed_item_id, created_at
+             FROM feed_saves WHERE feed_id = $2
+             ON CONFLICT (feed_id, feed_item_id) DO NOTHING`,
+            [targetId, sourceFeedId],
+          );
+
+          // 5. Delete the source feed (cascades remaining feed_saves).
+          await client.query(`DELETE FROM feeds WHERE id = $1`, [sourceFeedId]);
+        });
+
+        // 6. Return the updated target feed.
+        const updatedFeed = await loadFeed(targetId, ownerId);
+        if (!updatedFeed)
+          return reply.status(404).send({ error: "Feed not found" });
+        return reply.send({ feed: feedRowToResponse(updatedFeed) });
+      } catch (err) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code === "NOT_FOUND_TARGET" || code === "NOT_FOUND_SOURCE") {
+          return reply.status(404).send({ error: "Feed not found" });
+        }
+        if (code === "FORBIDDEN_TARGET" || code === "FORBIDDEN_SOURCE") {
+          return reply.status(403).send({ error: "Feed not owned by you" });
+        }
+        logger.error({ err, targetId, sourceFeedId }, "Feed merge failed");
+        return reply.status(500).send({ error: "Feed merge failed" });
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // GET /feeds/:id/items — feed contents
   //
   // Empty source set → falls back to the caller's explore feed. This keeps
@@ -558,6 +672,69 @@ export async function feedsRoutes(app: FastifyInstance) {
   );
 
   // ---------------------------------------------------------------------------
+  // POST /feeds/:id/sources/:sourceId/move — move a source to another feed
+  //
+  // Relocates a feed_source row from this feed to a target feed. Returns 409
+  // if the target already has the same source. Both feeds must be owned by
+  // the caller.
+  // ---------------------------------------------------------------------------
+  app.post<{ Params: { id: string; sourceId: string }; Body: unknown }>(
+    "/feeds/:id/sources/:sourceId/move",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const ownerId = req.session!.sub!;
+      const { id, sourceId } = req.params;
+      if (!UUID_RE.test(id))
+        return reply.status(400).send({ error: "Invalid feed id" });
+      if (!UUID_RE.test(sourceId))
+        return reply.status(400).send({ error: "Invalid source id" });
+
+      const parsed = z
+        .object({ targetFeedId: z.string().uuid() })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+      const { targetFeedId } = parsed.data;
+
+      if (targetFeedId === id) {
+        return reply
+          .status(400)
+          .send({ error: "Source and target feed are the same" });
+      }
+
+      try {
+        const sourceFeed = await loadFeed(id, ownerId);
+        if (!sourceFeed)
+          return reply.status(404).send({ error: "Source feed not found" });
+        const targetFeed = await loadFeed(targetFeedId, ownerId);
+        if (!targetFeed)
+          return reply.status(404).send({ error: "Target feed not found" });
+
+        const { rowCount } = await pool.query(
+          `UPDATE feed_sources SET feed_id = $1
+           WHERE id = $2 AND feed_id = $3`,
+          [targetFeedId, sourceId, id],
+        );
+        if (rowCount === 0)
+          return reply.status(404).send({ error: "Source not found" });
+
+        return reply.send({ ok: true });
+      } catch (err) {
+        if ((err as { code?: string } | null)?.code === "23505") {
+          return reply
+            .status(409)
+            .send({ error: "Target feed already has this source" });
+        }
+        logger.error({ err }, "Move source failed");
+        return reply.status(500).send({ error: "Move source failed" });
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // PATCH /feeds/:id/sources/:sourceId — update weight/sampling/muted
   //
   // Accepts { step?: 0..5, sampling?: 'random'|'top', muted?: boolean }.
@@ -892,6 +1069,7 @@ function rowToItem(row: any) {
     return {
       type: "article" as const,
       feedItemId: row.fi_id,
+      authorId: row.author_id ?? undefined,
       nostrEventId: row.nostr_event_id,
       pubkey: row.nostr_pubkey,
       dTag: row.nostr_d_tag,
@@ -914,6 +1092,7 @@ function rowToItem(row: any) {
     return {
       type: "note" as const,
       feedItemId: row.fi_id,
+      authorId: row.author_id ?? undefined,
       nostrEventId: row.nostr_event_id,
       pubkey: row.nostr_pubkey,
       content: row.note_content,
@@ -931,6 +1110,7 @@ function rowToItem(row: any) {
   return {
     type: "external" as const,
     feedItemId: row.fi_id,
+    externalSourceId: row.source_id ?? undefined,
     id: row.external_item_id,
     sourceProtocol: row.source_protocol,
     sourceItemUri: row.source_item_uri,
@@ -1017,6 +1197,8 @@ function sourceRowToResponse(row: SourceRow) {
   return {
     id: row.id,
     sourceType: row.source_type,
+    accountId: row.account_id ?? undefined,
+    externalSourceId: row.external_source_id ?? undefined,
     weight: Number(row.weight),
     samplingMode: row.sampling_mode,
     mutedAt: row.muted_at?.toISOString() ?? null,

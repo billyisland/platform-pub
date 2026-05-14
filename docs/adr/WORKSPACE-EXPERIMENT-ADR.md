@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 + 26 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
+_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 + 26 + 27 + 28 + 29 + 30 + 31 + 32 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
 
 ## Context
 
@@ -849,6 +849,34 @@ The pip panel's volume bar (slice 14) was unreachable for external sources becau
 **FeedComposer (`web/src/components/workspace/FeedComposer.tsx`).** Each source row is now a `SourceRow` component with: (1) the existing label/sublabel/remove button on the first line, (2) a compact inline volume bar on the second line — same 0=mute / 1..5 step model as the pip panel, plus RANDOM/TOP sampling toggle. Muted sources render with strikethrough label text and crimson × in the mute cell. Changes commit immediately via PATCH and update the source list in-place; `onSourcesChanged` triggers a vessel refetch. Client-side `weightToStep` mirrors the backend inverse so bar position reads back correctly from existing weights.
 
 Skipped intentionally: per-source weight visible on vessel cards (the bar is only in the composer — card density doesn't have room), drag-to-reorder sources (position doesn't affect ranking), keyboard navigation in the volume bar (mouse-only per ADR §6 experiment floor).
+
+### Slice 27 — default source volume = 100% (2026-05-14)
+
+New sources default to step 5 (weight 4.0) instead of step 3 (weight 1.0). Migration 082 changes the `feed_sources.weight` column default. The `INSERT INTO feed_sources` in the add-source path relies on the DB column default, so no route changes needed. Existing sources keep their stored weights. Frontend `FeedComposer` SourceRow reads back weight via `weightToStep()` which maps 4.0 → step 5 correctly.
+
+### Slice 28 — minimize / hide vessels (2026-05-14)
+
+Vessels gain minimize (collapse to bar only, no cards) and hide (remove from workspace, restorable via ∀ menu) controls. `VesselLayout` in `stores/workspace.ts` extends with `minimized?: boolean` and `hidden?: boolean`, plus `setVesselMinimized` and `setVesselHidden` actions (same spread + scheduleWrite pattern). `VesselBar` gains two new `BarButton`s: minimize (`▁`/`□` toggle) and hide (`×`), placed after the gear icon. `Vessel.tsx` wraps the content area in `{!minimized && (...)}` and suppresses the resize handle when minimized. Drag still works on minimized vessels. `WorkspaceView` filters hidden vessels from the render loop.
+
+Skipped intentionally: minimize animation (chassis snaps to bar height immediately), auto-minimize on narrow viewports, keyboard shortcut for minimize/hide.
+
+### Slice 29 — forall menu updates (2026-05-14)
+
+`ForallAction` type narrowed from `'new-feed' | 'new-note' | 'fork' | 'reset'` to `'new-feed' | 'new-note' | 'new-article'`. Fork and reset actions removed (fork can return as a FeedComposer feature; reset available via browser devtools / clearing localStorage). Hidden feeds appear below a thin `<hr>` divider, styled with 24px left indent and muted colour — click calls `setVesselHidden(feedId, false)`. Keyboard navigation wraps across all items including hidden feeds.
+
+### Slice 30 — card inline expand (2026-05-14)
+
+Clicking a card expands it inline instead of navigating away. `WorkspaceView` manages `expandedCards: Set<string>` state. `VesselCard` accepts `expanded` and `onToggleExpand` props. `ArticleVesselCard`: expanded shows full `article.content` (the `contentFree` portion) + "Read full article →" link. `NoteVesselCard`: expanded shows full `noteDisplayText` without the 220-char truncation. `ExternalVesselCard`: expanded shows full body + "Open original →" link. Card expansion is independent from thread expansion — expanding a card does not auto-expand its thread. Compact density skips expansion.
+
+### Slice 31 — feed merge via drag (2026-05-14)
+
+Dragging one vessel so its center lands inside another vessel triggers a merge confirmation prompt. Backend: `POST /workspace/feeds/:id/merge` accepts `{ sourceFeedId }`, runs in a transaction — moves non-duplicate sources (aware of partial unique indexes via NOT EXISTS subquery), copies saves via ON CONFLICT DO NOTHING, deletes the source feed. Frontend: `handleVesselDragEnd` computes the dragged vessel's center and checks if it falls within another vessel's bounding rect; if so, opens `MergeFeedConfirm` dialog. On confirm: API call, remove source vessel from state + layout store, reload target vessel. `MergeFeedConfirm.tsx` follows `NewFeedPrompt` dialog pattern.
+
+### Slice 32 — move source via card drag between feeds (2026-05-14)
+
+Dragging a card from one vessel and dropping it on another moves the card's underlying source. Backend: `POST /workspace/feeds/:id/sources/:sourceId/move` accepts `{ targetFeedId }`, checks ownership and duplicate conflicts (23505 → 409), updates `feed_sources.feed_id`. API response adds `authorId` to article/note items and `externalSourceId` to external items for source matching; source list response adds `accountId` and `externalSourceId` FK references. Frontend: `VesselCard` is `draggable` via HTML5 drag API with `application/x-vessel-card` MIME type carrying `{ feedId, feedSourceId }` JSON. `Vessel` chassis registers `onDragOver`/`onDragLeave`/`onDrop` with visual outline highlight. `WorkspaceView` caches source lists per vessel (fetched at bootstrap), computes `dragData` by matching items to sources (external via `externalSourceId`, native via `authorId` → `accountId`). Drop handler calls the move API and reloads both affected vessels.
+
+Skipped intentionally: drag preview (uses browser default ghost), undo on move, publication/tag-sourced item drag (no unique source match — drag silently disabled), cross-vessel multi-select drag.
 
 ## Deferred (TODO in code, not blocking the experiment)
 
