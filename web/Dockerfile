@@ -1,14 +1,22 @@
-FROM node:20-alpine
+FROM node:20-alpine AS build
 WORKDIR /app
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
 COPY web/ .
-RUN npm install
 ARG NEXT_PUBLIC_RELAY_URL
 ARG NEXT_PUBLIC_GATEWAY_URL
 ENV NEXT_PUBLIC_RELAY_URL=$NEXT_PUBLIC_RELAY_URL
 ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL
 RUN npm run build
-ENV NODE_ENV=production
+
+FROM node:20-alpine
 RUN addgroup -S app && adduser -S app -G app
+WORKDIR /app
+COPY --from=build /app/package.json /app/next.config.js ./
+COPY --from=build /app/node_modules node_modules
+COPY --from=build /app/.next .next
+COPY --from=build /app/public public
+ENV NODE_ENV=production
 USER app
 EXPOSE 3000
 CMD ["npm", "start"]
