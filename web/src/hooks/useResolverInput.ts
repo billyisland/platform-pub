@@ -25,21 +25,26 @@ export function useResolverInput(opts?: {
   const [resolveError, setResolveError] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCountRef = useRef(0);
+  const genRef = useRef(0);
 
   const pollForResults = useCallback(
-    async (requestId: string) => {
+    async (requestId: string, gen: number) => {
+      if (gen !== genRef.current) return;
       pollCountRef.current++;
       if (pollCountRef.current > maxPolls) {
         setResolving(false);
         return;
       }
       await new Promise((r) => setTimeout(r, 1000));
+      if (gen !== genRef.current) return;
       try {
         const res = await resolver.poll(requestId);
+        if (gen !== genRef.current) return;
         setResult(res);
-        if (res.status === "pending") void pollForResults(requestId);
+        if (res.status === "pending") void pollForResults(requestId, gen);
         else setResolving(false);
       } catch {
+        if (gen !== genRef.current) return;
         setResolving(false);
       }
     },
@@ -51,22 +56,28 @@ export function useResolverInput(opts?: {
       setQuery(value);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (!value.trim()) {
+        genRef.current++;
         setResult(null);
         setResolving(false);
         setResolveError(false);
         return;
       }
+      genRef.current++;
+      const gen = genRef.current;
       debounceRef.current = setTimeout(async () => {
+        if (gen !== genRef.current) return;
         setResolving(true);
         setResolveError(false);
         pollCountRef.current = 0;
         try {
           const res = await resolver.resolve(value.trim(), "subscribe");
+          if (gen !== genRef.current) return;
           setResult(res);
           if (res.requestId && res.status === "pending")
-            void pollForResults(res.requestId);
+            void pollForResults(res.requestId, gen);
           else setResolving(false);
         } catch {
+          if (gen !== genRef.current) return;
           setResolveError(true);
           setResolving(false);
         }
@@ -76,6 +87,8 @@ export function useResolverInput(opts?: {
   );
 
   const reset = useCallback(() => {
+    genRef.current++;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     setQuery("");
     setResult(null);
     setResolving(false);
