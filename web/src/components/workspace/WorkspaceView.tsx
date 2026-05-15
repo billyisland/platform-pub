@@ -16,7 +16,7 @@ import {
 } from "../../lib/api";
 import type { FeedItem, ExternalFeedItem } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
-import { VesselCard, NewUserVesselCard } from "./VesselCard";
+import { VesselCard, NewUserVesselCard, type NewUserItem } from "./VesselCard";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { Composer, type ReplyTarget } from "./Composer";
 import { PipPanel } from "./PipPanel";
@@ -83,14 +83,6 @@ function defaultGridSlot(
     y,
     h: Math.min(DEFAULT_GRID.rowHeight, maxH),
   };
-}
-
-interface NewUserItem {
-  type: "new_user";
-  username: string;
-  displayName: string | null;
-  avatar: string | null;
-  joinedAt: number;
 }
 
 type WorkspaceItem = FeedItem | NewUserItem;

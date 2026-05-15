@@ -873,7 +873,7 @@ function NoteVesselCard({
   );
 }
 
-interface NewUserItem {
+export interface NewUserItem {
   type: "new_user";
   username: string;
   displayName: string | null;

@@ -2,14 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  resolver,
   workspaceFeeds as workspaceFeedsApi,
-  type AddWorkspaceFeedSourceInput,
-  type ResolverMatch,
-  type ResolverResult,
   type WorkspaceFeed,
   type WorkspaceFeedSource,
 } from "../../lib/api";
+import { useResolverInput } from "../../hooks/useResolverInput";
+import type { MatchOption } from "../../lib/workspace/resolve";
 
 const VOLUME_WEIGHTS = [1.0, 0.25, 0.5, 1.0, 2.0, 4.0];
 function weightToStep(weight: number): number {
@@ -55,65 +53,6 @@ interface FeedComposerProps {
 
 const NAME_LIMIT = 80;
 
-interface MatchOption {
-  key: string;
-  label: string;
-  sublabel: string | null;
-  add: AddWorkspaceFeedSourceInput;
-  confidence: ResolverMatch["confidence"];
-}
-
-function matchToOptions(match: ResolverMatch): MatchOption[] {
-  const out: MatchOption[] = [];
-  if (match.type === "native_account" && match.account) {
-    out.push({
-      key: `acc:${match.account.id}`,
-      label: match.account.displayName || `@${match.account.username}`,
-      sublabel: match.account.username ? `@${match.account.username}` : null,
-      add: { sourceType: "account", accountId: match.account.id },
-      confidence: match.confidence,
-    });
-  }
-  if (match.type === "external_source" && match.externalSource) {
-    const x = match.externalSource;
-    out.push({
-      key: `xs:${x.protocol}:${x.sourceUri}`,
-      label: x.displayName || x.sourceUri,
-      sublabel: x.protocol,
-      add: {
-        sourceType: "external_source",
-        protocol: x.protocol as
-          | "rss"
-          | "atproto"
-          | "activitypub"
-          | "nostr_external",
-        sourceUri: x.sourceUri,
-        displayName: x.displayName,
-        description: x.description,
-        avatarUrl: x.avatar,
-        relayUrls: x.relayUrls,
-      },
-      confidence: match.confidence,
-    });
-  }
-  if (match.type === "rss_feed" && match.rssFeed) {
-    out.push({
-      key: `rss:${match.rssFeed.feedUrl}`,
-      label: match.rssFeed.title || match.rssFeed.feedUrl,
-      sublabel: "rss",
-      add: {
-        sourceType: "external_source",
-        protocol: "rss",
-        sourceUri: match.rssFeed.feedUrl,
-        displayName: match.rssFeed.title,
-        description: match.rssFeed.description,
-      },
-      confidence: match.confidence,
-    });
-  }
-  return out;
-}
-
 export function FeedComposer({
   feed,
   open,
@@ -125,15 +64,10 @@ export function FeedComposer({
 }: FeedComposerProps) {
   const [sources, setSources] = useState<WorkspaceFeedSource[]>([]);
   const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState("");
-  const [resolverResult, setResolverResult] = useState<ResolverResult | null>(
-    null,
-  );
-  const [resolving, setResolving] = useState(false);
+  const ri = useResolverInput({ maxPolls: 3 });
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Slice 7: rename + delete state.
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -143,8 +77,6 @@ export function FeedComposer({
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollCountRef = useRef(0);
 
   const refreshSources = useCallback(async (feedId: string) => {
     setLoading(true);
@@ -160,9 +92,7 @@ export function FeedComposer({
 
   useEffect(() => {
     if (!open || !feed) return;
-    setQuery("");
-    setResolverResult(null);
-    setResolving(false);
+    ri.reset();
     setBusyKey(null);
     setError(null);
     setEditingName(false);
@@ -179,49 +109,8 @@ export function FeedComposer({
     return () => {
       clearTimeout(t);
       document.removeEventListener("keydown", onKey);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [open, feed, onClose, refreshSources]);
-
-  const pollForResults = useCallback(async (requestId: string) => {
-    pollCountRef.current++;
-    if (pollCountRef.current > 3) {
-      setResolving(false);
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const res = await resolver.poll(requestId);
-      setResolverResult(res);
-      if (res.status === "pending") void pollForResults(requestId);
-      else setResolving(false);
-    } catch {
-      setResolving(false);
-    }
-  }, []);
-
-  function onQueryChange(value: string) {
-    setQuery(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!value.trim()) {
-      setResolverResult(null);
-      setResolving(false);
-      return;
-    }
-    debounceRef.current = setTimeout(async () => {
-      setResolving(true);
-      pollCountRef.current = 0;
-      try {
-        const res = await resolver.resolve(value.trim(), "subscribe");
-        setResolverResult(res);
-        if (res.requestId && res.status === "pending")
-          void pollForResults(res.requestId);
-        else setResolving(false);
-      } catch {
-        setResolving(false);
-      }
-    }, 300);
-  }
 
   async function handleAdd(opt: MatchOption) {
     if (!feed || busyKey) return;
@@ -229,8 +118,7 @@ export function FeedComposer({
     setError(null);
     try {
       await workspaceFeedsApi.addSource(feed.id, opt.add);
-      setQuery("");
-      setResolverResult(null);
+      ri.reset();
       await refreshSources(feed.id);
       onSourcesChanged?.();
     } catch (err) {
@@ -238,23 +126,6 @@ export function FeedComposer({
     } finally {
       setBusyKey(null);
     }
-  }
-
-  // Tag fallback — when the input starts with `#` and the resolver returns
-  // nothing useful, offer a literal tag add. Tags don't go through the
-  // resolver at all so this is an out-of-band path.
-  function tagFallback(): MatchOption | null {
-    const trimmed = query.trim();
-    if (!trimmed.startsWith("#") || trimmed.length < 2) return null;
-    const tagName = trimmed.slice(1).trim().replace(/\s+/g, "-").toLowerCase();
-    if (!tagName) return null;
-    return {
-      key: `tag:${tagName}`,
-      label: `#${tagName}`,
-      sublabel: "tag",
-      add: { sourceType: "tag", tagName },
-      confidence: "exact",
-    };
   }
 
   function startRename() {
@@ -333,13 +204,6 @@ export function FeedComposer({
   }
 
   if (!open || !feed) return null;
-
-  const matches = (resolverResult?.matches ?? []).flatMap(matchToOptions);
-  const fallbackTag = tagFallback();
-  const showTagFallback =
-    fallbackTag && !matches.some((m) => m.key === fallbackTag.key);
-  const dropdownItems =
-    fallbackTag && showTagFallback ? [...matches, fallbackTag] : matches;
 
   return (
     <div
@@ -562,8 +426,8 @@ export function FeedComposer({
         <input
           ref={inputRef}
           type="text"
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
+          value={ri.query}
+          onChange={(e) => ri.onQueryChange(e.target.value)}
           placeholder="Username, URL, npub, DID, #tag…"
           className="font-sans text-[14px] w-full"
           style={{
@@ -574,7 +438,7 @@ export function FeedComposer({
           }}
         />
         <div style={{ minHeight: 24 }}>
-          {resolving && (
+          {ri.resolving && (
             <div
               className="font-mono text-[11px]"
               style={{ color: TOKENS.hintFg }}
@@ -582,7 +446,7 @@ export function FeedComposer({
               RESOLVING…
             </div>
           )}
-          {!resolving && query && dropdownItems.length === 0 && (
+          {(ri.doneEmpty || ri.resolveError) && (
             <div
               className="font-mono text-[11px]"
               style={{ color: TOKENS.hintFg }}
@@ -590,9 +454,9 @@ export function FeedComposer({
               No match. Try a full URL, an @username, an npub, or a #tag.
             </div>
           )}
-          {dropdownItems.length > 0 && (
+          {ri.matches.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {dropdownItems.map((opt) => (
+              {ri.matches.map((opt) => (
                 <button
                   key={opt.key}
                   type="button"

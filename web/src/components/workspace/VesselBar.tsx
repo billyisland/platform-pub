@@ -1,13 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import {
-  resolver,
-  workspaceFeeds as workspaceFeedsApi,
-  type AddWorkspaceFeedSourceInput,
-  type ResolverMatch,
-  type ResolverResult,
-} from "../../lib/api";
+import { useRef, useState } from "react";
+import { workspaceFeeds as workspaceFeedsApi } from "../../lib/api";
+import { useResolverInput } from "../../hooks/useResolverInput";
+import type { MatchOption } from "../../lib/workspace/resolve";
 import type { VesselPalette, Brightness, Density, Orientation } from "./tokens";
 import { nextBrightness, nextDensity, nextOrientation } from "./tokens";
 
@@ -31,61 +27,6 @@ interface VesselBarProps {
   onHide?: () => void;
 }
 
-interface MatchOption {
-  key: string;
-  label: string;
-  sublabel: string | null;
-  add: AddWorkspaceFeedSourceInput;
-}
-
-function matchToOptions(match: ResolverMatch): MatchOption[] {
-  const out: MatchOption[] = [];
-  if (match.type === "native_account" && match.account) {
-    out.push({
-      key: `acc:${match.account.id}`,
-      label: match.account.displayName || `@${match.account.username}`,
-      sublabel: match.account.username ? `@${match.account.username}` : null,
-      add: { sourceType: "account", accountId: match.account.id },
-    });
-  }
-  if (match.type === "external_source" && match.externalSource) {
-    const x = match.externalSource;
-    out.push({
-      key: `xs:${x.protocol}:${x.sourceUri}`,
-      label: x.displayName || x.sourceUri,
-      sublabel: x.protocol,
-      add: {
-        sourceType: "external_source",
-        protocol: x.protocol as
-          | "rss"
-          | "atproto"
-          | "activitypub"
-          | "nostr_external",
-        sourceUri: x.sourceUri,
-        displayName: x.displayName,
-        description: x.description,
-        avatarUrl: x.avatar,
-        relayUrls: x.relayUrls,
-      },
-    });
-  }
-  if (match.type === "rss_feed" && match.rssFeed) {
-    out.push({
-      key: `rss:${match.rssFeed.feedUrl}`,
-      label: match.rssFeed.title || match.rssFeed.feedUrl,
-      sublabel: "rss",
-      add: {
-        sourceType: "external_source",
-        protocol: "rss",
-        sourceUri: match.rssFeed.feedUrl,
-        displayName: match.rssFeed.title,
-        description: match.rssFeed.description,
-      },
-    });
-  }
-  return out;
-}
-
 export { BAR_H };
 
 export function VesselBar({
@@ -105,69 +46,18 @@ export function VesselBar({
   onMinimize,
   onHide,
 }: VesselBarProps) {
-  const [query, setQuery] = useState("");
-  const [resolverResult, setResolverResult] = useState<ResolverResult | null>(
-    null,
-  );
-  const [resolving, setResolving] = useState(false);
-  const [resolveError, setResolveError] = useState(false);
+  const ri = useResolverInput();
   const [adding, setAdding] = useState(false);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollCountRef = useRef(0);
   const barRef = useRef<HTMLDivElement>(null);
-
-  const pollForResults = useCallback(async (requestId: string) => {
-    pollCountRef.current++;
-    if (pollCountRef.current > 8) {
-      setResolving(false);
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const res = await resolver.poll(requestId);
-      setResolverResult(res);
-      if (res.status === "pending") void pollForResults(requestId);
-      else setResolving(false);
-    } catch {
-      setResolving(false);
-    }
-  }, []);
-
-  function onQueryChange(value: string) {
-    setQuery(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!value.trim()) {
-      setResolverResult(null);
-      setResolving(false);
-      setResolveError(false);
-      return;
-    }
-    debounceRef.current = setTimeout(async () => {
-      setResolving(true);
-      setResolveError(false);
-      pollCountRef.current = 0;
-      try {
-        const res = await resolver.resolve(value.trim(), "subscribe");
-        setResolverResult(res);
-        if (res.requestId && res.status === "pending")
-          void pollForResults(res.requestId);
-        else setResolving(false);
-      } catch {
-        setResolveError(true);
-        setResolving(false);
-      }
-    }, 300);
-  }
 
   async function handleAdd(opt: MatchOption) {
     if (adding) return;
     setAdding(true);
     try {
       await workspaceFeedsApi.addSource(feedId, opt.add);
-      setQuery("");
-      setResolverResult(null);
+      ri.reset();
       onSourceAdded?.();
     } catch (err) {
       console.error("VesselBar add source error:", err);
@@ -176,34 +66,10 @@ export function VesselBar({
     }
   }
 
-  function tagFallback(): MatchOption | null {
-    const trimmed = query.trim();
-    if (!trimmed.startsWith("#") || trimmed.length < 2) return null;
-    const tagName = trimmed.slice(1).trim().replace(/\s+/g, "-").toLowerCase();
-    if (!tagName) return null;
-    return {
-      key: `tag:${tagName}`,
-      label: `#${tagName}`,
-      sublabel: "tag",
-      add: { sourceType: "tag", tagName },
-    };
-  }
-
-  const matches = (resolverResult?.matches ?? []).flatMap(matchToOptions);
-  const fallbackTag = tagFallback();
-  const showTagFallback =
-    fallbackTag && !matches.some((m) => m.key === fallbackTag.key);
-  const dropdownItems =
-    fallbackTag && showTagFallback ? [...matches, fallbackTag] : matches;
-  const doneWithNoResults =
-    !resolving && resolverResult !== null && dropdownItems.length === 0;
   const showDropdown =
     focused &&
-    query.trim().length > 0 &&
-    (dropdownItems.length > 0 ||
-      resolving ||
-      doneWithNoResults ||
-      resolveError);
+    ri.query.trim().length > 0 &&
+    (ri.matches.length > 0 || ri.resolving || ri.doneEmpty || ri.resolveError);
 
   const brightnessGlyph: Record<Brightness, string> = {
     primary: "○",
@@ -320,8 +186,8 @@ export function VesselBar({
           <input
             ref={inputRef}
             type="text"
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
+            value={ri.query}
+            onChange={(e) => ri.onQueryChange(e.target.value)}
             onFocus={() => setFocused(true)}
             onBlur={() => {
               setTimeout(() => setFocused(false), 150);
@@ -358,7 +224,7 @@ export function VesselBar({
             zIndex: 20,
           }}
         >
-          {resolving && dropdownItems.length === 0 && (
+          {ri.resolving && ri.matches.length === 0 && (
             <div
               className="font-mono text-[11px] uppercase tracking-[0.04em]"
               style={{ padding: "8px 10px", color: palette.barTextMuted }}
@@ -366,7 +232,7 @@ export function VesselBar({
               Resolving…
             </div>
           )}
-          {resolveError && (
+          {ri.resolveError && (
             <div
               className="font-mono text-[11px] uppercase tracking-[0.04em]"
               style={{ padding: "8px 10px", color: palette.crimson }}
@@ -374,7 +240,7 @@ export function VesselBar({
               Resolution failed
             </div>
           )}
-          {doneWithNoResults && (
+          {ri.doneEmpty && (
             <div
               className="font-mono text-[11px] uppercase tracking-[0.04em]"
               style={{ padding: "8px 10px", color: palette.barTextMuted }}
@@ -382,7 +248,7 @@ export function VesselBar({
               No match — try a URL, @user, npub, or #tag
             </div>
           )}
-          {dropdownItems.map((opt) => (
+          {ri.matches.map((opt) => (
             <button
               key={opt.key}
               type="button"

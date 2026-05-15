@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 + 26 + 27 + 28 + 29 + 30 + 31 + 32 shipped on branch. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
+_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 + 26 + 27 + 28 + 29 + 30 + 31 + 32 shipped on branch + refactoring pass. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
 
 ## Context
 
@@ -877,6 +877,18 @@ Dragging one vessel so its center lands inside another vessel triggers a merge c
 Dragging a card from one vessel and dropping it on another moves the card's underlying source. Backend: `POST /workspace/feeds/:id/sources/:sourceId/move` accepts `{ targetFeedId }`, checks ownership and duplicate conflicts (23505 → 409), updates `feed_sources.feed_id`. API response adds `authorId` to article/note items and `externalSourceId` to external items for source matching; source list response adds `accountId` and `externalSourceId` FK references. Frontend: `VesselCard` is `draggable` via HTML5 drag API with `application/x-vessel-card` MIME type carrying `{ feedId, feedSourceId }` JSON. `Vessel` chassis registers `onDragOver`/`onDragLeave`/`onDrop` with visual outline highlight. `WorkspaceView` caches source lists per vessel (fetched at bootstrap), computes `dragData` by matching items to sources (external via `externalSourceId`, native via `authorId` → `accountId`). Drop handler calls the move API and reloads both affected vessels.
 
 Skipped intentionally: drag preview (uses browser default ghost), undo on move, publication/tag-sourced item drag (no unique source match — drag silently disabled), cross-vessel multi-select drag.
+
+### Refactoring pass (2026-05-15)
+
+Not a feature slice — a cleanup pass across the workspace experiment codebase.
+
+**Zustand store (`stores/workspace.ts`).** Extracted a `patchVessel(feedId, patch)` helper inside the store creator. The seven per-axis setters (`setVesselPosition`, `setVesselSize`, `setVesselBrightness`, `setVesselDensity`, `setVesselOrientation`, `setVesselMinimized`, `setVesselHidden`) collapsed from copy-paste bodies to one-line `patchVessel` calls.
+
+**Resolver deduplication.** `VesselBar` and `FeedComposer` each had independent copies of resolver state management (query, debounce, poll loop, tag fallback, match mapping). Extracted shared `web/src/hooks/useResolverInput.ts` (hook) and `web/src/lib/workspace/resolve.ts` (pure utilities: `matchToOptions`, `tagFallback`, `resolveMatches`). Both consumers now call `useResolverInput()` and reference `ri.query`, `ri.matches`, `ri.resolving`, `ri.doneEmpty`, `ri.resolveError`, `ri.reset()`.
+
+**Dead code deleted.** `ResetLayoutConfirm.tsx` and `ForkFeedPrompt.tsx` — neither was imported anywhere (their functionality was absorbed into `WorkspaceView` in later slices). Removed from the migration map component list.
+
+**Type cleanup.** Duplicate `NewUserItem` interface (defined identically in both `WorkspaceView.tsx` and `VesselCard.tsx`) consolidated — exported from `VesselCard`, imported in `WorkspaceView`. `catch (err: any)` in `SearchAnchor.tsx` replaced with proper `DOMException` type guard.
 
 ## Deferred (TODO in code, not blocking the experiment)
 

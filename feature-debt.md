@@ -8,7 +8,7 @@ Last audited: 2026-05-10. Items marked DONE were verified against the codebase a
 
 **Posture:** Strong shipped state (~v5.36.0 baseline). All critical/security bugs resolved across three audit passes (100+ items in FIX-PROGRAMME). Design system fully standardised. Core product loop (write → publish → pay → read) functional end-to-end. Universal feed (RSS, Nostr, Bluesky, Mastodon ingest + outbound cross-posting) operational. Trust graph Phases 1–2 + 4 live. Relay outbox programme complete (all 6 phases shipped, §60 closed 2026-04-23).
 
-**Active branch:** `workspace-experiment` (slices 1–32 complete, not merged to master, not browser-tested — Postgres down on dev machine at time of last work). Decision pending: merge or retire.
+**Active branch:** `workspace-experiment` (slices 1–32 complete + refactoring pass, not merged to master, not browser-tested — Postgres down on dev machine at time of last work). Refactoring pass (2026-05-15): extracted shared `useResolverInput` hook + `resolve.ts` utilities from duplicated VesselBar/FeedComposer resolver logic; consolidated Zustand store setters via `patchVessel` helper; deleted dead `ForkFeedPrompt.tsx` + `ResetLayoutConfirm.tsx`; fixed duplicate `NewUserItem` type + `catch (err: any)`. Decision pending: merge or retire.
 
 **Biggest product gaps (launch-blocking or near):**
 

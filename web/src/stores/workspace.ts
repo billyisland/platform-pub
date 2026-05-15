@@ -98,131 +98,78 @@ function scheduleWrite(
   }, WRITE_DEBOUNCE_MS);
 }
 
-export const useWorkspace = create<WorkspaceState>((set, get) => ({
-  userId: null,
-  positions: {},
-  hydrated: false,
-
-  hydrate: (userId) => {
-    if (get().userId === userId && get().hydrated) return;
-    const positions = readFromStorage(userId);
-    set({ userId, positions, hydrated: true });
-  },
-
-  setVesselPosition: (feedId, pos) => {
-    const userId = get().userId;
-    const existing = get().positions[feedId];
-    const next = {
-      ...get().positions,
-      [feedId]: {
-        ...existing,
-        x: snap(pos.x),
-        y: snap(pos.y),
-      },
-    };
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
-  },
-
-  setVesselSize: (feedId, size) => {
+export const useWorkspace = create<WorkspaceState>((set, get) => {
+  function patchVessel(feedId: string, patch: Partial<VesselLayout>) {
     const userId = get().userId;
     const existing = get().positions[feedId] ?? { x: 0, y: 0 };
     const next = {
       ...get().positions,
-      [feedId]: {
-        ...existing,
-        w: snap(size.w),
-        h: snap(size.h),
-      },
+      [feedId]: { ...existing, ...patch },
     };
     set({ positions: next });
     if (userId) scheduleWrite(userId, next);
-  },
+  }
 
-  setVesselBrightness: (feedId, brightness) => {
-    const userId = get().userId;
-    const existing = get().positions[feedId] ?? { x: 0, y: 0 };
-    const next = {
-      ...get().positions,
-      [feedId]: { ...existing, brightness },
-    };
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
-  },
+  return {
+    userId: null,
+    positions: {},
+    hydrated: false,
 
-  setVesselDensity: (feedId, density) => {
-    const userId = get().userId;
-    const existing = get().positions[feedId] ?? { x: 0, y: 0 };
-    const next = {
-      ...get().positions,
-      [feedId]: { ...existing, density },
-    };
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
-  },
+    hydrate: (userId) => {
+      if (get().userId === userId && get().hydrated) return;
+      const positions = readFromStorage(userId);
+      set({ userId, positions, hydrated: true });
+    },
 
-  setVesselOrientation: (feedId, orientation) => {
-    const userId = get().userId;
-    const existing = get().positions[feedId] ?? { x: 0, y: 0 };
-    const next = {
-      ...get().positions,
-      [feedId]: { ...existing, orientation },
-    };
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
-  },
+    setVesselPosition: (feedId, pos) =>
+      patchVessel(feedId, { x: snap(pos.x), y: snap(pos.y) }),
 
-  setVesselMinimized: (feedId, minimized) => {
-    const userId = get().userId;
-    const existing = get().positions[feedId] ?? { x: 0, y: 0 };
-    const next = {
-      ...get().positions,
-      [feedId]: { ...existing, minimized },
-    };
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
-  },
+    setVesselSize: (feedId, size) =>
+      patchVessel(feedId, { w: snap(size.w), h: snap(size.h) }),
 
-  setVesselHidden: (feedId, hidden) => {
-    const userId = get().userId;
-    const existing = get().positions[feedId] ?? { x: 0, y: 0 };
-    const next = {
-      ...get().positions,
-      [feedId]: { ...existing, hidden },
-    };
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
-  },
+    setVesselBrightness: (feedId, brightness) =>
+      patchVessel(feedId, { brightness }),
 
-  batchUpdatePositions: (updates) => {
-    const userId = get().userId;
-    const current = get().positions;
-    const next = { ...current };
-    let changed = false;
-    for (const [feedId, pos] of Object.entries(updates)) {
-      const existing = next[feedId];
-      if (!existing) continue;
-      if (existing.x === pos.x && existing.y === pos.y) continue;
-      next[feedId] = { ...existing, x: snap(pos.x), y: snap(pos.y) };
-      changed = true;
-    }
-    if (!changed) return;
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
-  },
+    setVesselDensity: (feedId, density) => patchVessel(feedId, { density }),
 
-  removeVessel: (feedId) => {
-    const userId = get().userId;
-    if (!(feedId in get().positions)) return;
-    const next = { ...get().positions };
-    delete next[feedId];
-    set({ positions: next });
-    if (userId) scheduleWrite(userId, next);
-  },
+    setVesselOrientation: (feedId, orientation) =>
+      patchVessel(feedId, { orientation }),
 
-  reset: () => {
-    const userId = get().userId;
-    set({ positions: {} });
-    if (userId) scheduleWrite(userId, {});
-  },
-}));
+    setVesselMinimized: (feedId, minimized) =>
+      patchVessel(feedId, { minimized }),
+
+    setVesselHidden: (feedId, hidden) => patchVessel(feedId, { hidden }),
+
+    batchUpdatePositions: (updates) => {
+      const userId = get().userId;
+      const current = get().positions;
+      const next = { ...current };
+      let changed = false;
+      for (const [feedId, pos] of Object.entries(updates)) {
+        const existing = next[feedId];
+        if (!existing) continue;
+        if (existing.x === pos.x && existing.y === pos.y) continue;
+        next[feedId] = { ...existing, x: snap(pos.x), y: snap(pos.y) };
+        changed = true;
+      }
+      if (!changed) return;
+      set({ positions: next });
+      if (userId) scheduleWrite(userId, next);
+    },
+
+    removeVessel: (feedId) => {
+      const userId = get().userId;
+      if (!(feedId in get().positions)) return;
+      const next = { ...get().positions };
+      delete next[feedId];
+      set({ positions: next });
+      if (userId) scheduleWrite(userId, next);
+    },
+
+    reset: () => {
+      const userId = get().userId;
+      set({ positions: {} });
+      if (userId) scheduleWrite(userId, {});
+    },
+  };
+});
