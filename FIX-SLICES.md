@@ -178,7 +178,7 @@ These bugs interact — the paywall content lifecycle is: compose → save draft
 
 ---
 
-## Slice 6: Database schema migration
+## Slice 6: Database schema migration ✓ DONE (2026-05-16)
 
 **Priority: MEDIUM. Estimated effort: 1–2 hours.**
 **Service:** migrations/

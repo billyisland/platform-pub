@@ -1,11 +1,11 @@
 -- =============================================================================
 -- all.haus — PostgreSQL Schema
--- Generated from migrations 001–084 (2026-05-15).
+-- Generated from migrations 001–087 (2026-05-16).
 -- Loaded by Docker initdb.d on first boot; migration runner applies incremental
 -- changes after.
 --
 -- 83 tables (66 public + 17 traffology)
--- 151 indexes | 157 foreign keys | 50 CHECK constraints | 8 triggers
+-- 155 indexes | 157 foreign keys | 51 CHECK constraints | 16 triggers
 -- =============================================================================
 
 
@@ -1069,7 +1069,8 @@ CREATE TABLE public.reading_tabs (
     last_read_at timestamp with time zone,
     last_settled_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT reading_tabs_balance_non_negative CHECK (balance_pence >= 0)
 );
 
 
@@ -2277,7 +2278,7 @@ CREATE UNIQUE INDEX idx_feed_items_external ON public.feed_items USING btree (ex
 CREATE UNIQUE INDEX idx_feed_items_note ON public.feed_items USING btree (note_id) WHERE (note_id IS NOT NULL);
 
 
-CREATE INDEX idx_feed_items_score ON public.feed_items USING btree (score DESC, published_at DESC) WHERE (deleted_at IS NULL);
+CREATE INDEX idx_feed_items_score ON public.feed_items USING btree (score DESC, published_at DESC, id DESC) WHERE (deleted_at IS NULL);
 
 
 CREATE INDEX idx_feed_items_source ON public.feed_items USING btree (source_id, published_at DESC) WHERE ((source_id IS NOT NULL) AND (deleted_at IS NULL));
@@ -2388,6 +2389,9 @@ CREATE INDEX idx_pub_members_publication ON public.publication_members USING btr
 CREATE INDEX idx_pub_payout_splits_account ON public.publication_payout_splits USING btree (account_id);
 
 
+CREATE INDEX idx_pub_article_shares_pub ON public.publication_article_shares USING btree (publication_id);
+CREATE INDEX idx_pub_article_shares_article ON public.publication_article_shares USING btree (article_id);
+CREATE INDEX idx_pub_payout_splits_article ON public.publication_payout_splits USING btree (article_id) WHERE (article_id IS NOT NULL);
 CREATE INDEX idx_pub_payout_splits_payout ON public.publication_payout_splits USING btree (publication_payout_id);
 
 
@@ -2460,6 +2464,7 @@ CREATE INDEX idx_sub_offers_recipient ON public.subscription_offers USING btree 
 CREATE INDEX idx_sub_offers_writer ON public.subscription_offers USING btree (writer_id);
 
 
+CREATE INDEX idx_subscriptions_publication ON public.subscriptions USING btree (publication_id) WHERE (publication_id IS NOT NULL);
 CREATE INDEX idx_subscriptions_period_end ON public.subscriptions USING btree (current_period_end) WHERE (status = ANY (ARRAY['active'::text, 'cancelled'::text]));
 
 
@@ -2616,13 +2621,21 @@ CREATE TRIGGER trg_pledge_drives_updated_at BEFORE UPDATE ON public.pledge_drive
 
 
 CREATE TRIGGER trg_reading_tabs_updated_at BEFORE UPDATE ON public.reading_tabs FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_subscriptions_updated_at BEFORE UPDATE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_linked_accounts_updated_at BEFORE UPDATE ON public.linked_accounts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_external_sources_updated_at BEFORE UPDATE ON public.external_sources FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_activitypub_instance_health_updated_at BEFORE UPDATE ON public.activitypub_instance_health FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_notification_preferences_updated_at BEFORE UPDATE ON public.notification_preferences FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_vote_tallies_updated_at BEFORE UPDATE ON public.vote_tallies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_platform_config_updated_at BEFORE UPDATE ON public.platform_config FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_atproto_oauth_sessions_updated_at BEFORE UPDATE ON public.atproto_oauth_sessions FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 CREATE TRIGGER trust_polls_touch_updated_at BEFORE UPDATE ON public.trust_polls FOR EACH ROW EXECUTE FUNCTION public.trust_polls_touch_updated_at();
 
 
 ALTER TABLE ONLY public.article_drafts
-    ADD CONSTRAINT article_drafts_publication_id_fkey FOREIGN KEY (publication_id) REFERENCES public.publications(id);
+    ADD CONSTRAINT article_drafts_publication_id_fkey FOREIGN KEY (publication_id) REFERENCES public.publications(id) ON DELETE SET NULL;
 
 
 ALTER TABLE ONLY public.article_drafts
@@ -2650,7 +2663,7 @@ ALTER TABLE ONLY public.article_unlocks
 
 
 ALTER TABLE ONLY public.articles
-    ADD CONSTRAINT articles_publication_id_fkey FOREIGN KEY (publication_id) REFERENCES public.publications(id);
+    ADD CONSTRAINT articles_publication_id_fkey FOREIGN KEY (publication_id) REFERENCES public.publications(id) ON DELETE SET NULL;
 
 
 ALTER TABLE ONLY public.articles
@@ -3090,7 +3103,7 @@ ALTER TABLE ONLY public.subscriptions
 
 
 ALTER TABLE ONLY public.subscriptions
-    ADD CONSTRAINT subscriptions_publication_id_fkey FOREIGN KEY (publication_id) REFERENCES public.publications(id);
+    ADD CONSTRAINT subscriptions_publication_id_fkey FOREIGN KEY (publication_id) REFERENCES public.publications(id) ON DELETE CASCADE;
 
 
 ALTER TABLE ONLY public.subscriptions
@@ -3110,7 +3123,7 @@ ALTER TABLE ONLY public.tab_settlements
 
 
 ALTER TABLE ONLY public.trust_layer1
-    ADD CONSTRAINT trust_layer1_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.accounts(id);
+    ADD CONSTRAINT trust_layer1_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 ALTER TABLE ONLY public.trust_polls
@@ -3122,7 +3135,7 @@ ALTER TABLE ONLY public.trust_polls
 
 
 ALTER TABLE ONLY public.trust_profiles
-    ADD CONSTRAINT trust_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.accounts(id);
+    ADD CONSTRAINT trust_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 ALTER TABLE ONLY public.vault_keys
@@ -3158,11 +3171,11 @@ ALTER TABLE ONLY public.votes
 
 
 ALTER TABLE ONLY public.vouches
-    ADD CONSTRAINT vouches_attestor_id_fkey FOREIGN KEY (attestor_id) REFERENCES public.accounts(id);
+    ADD CONSTRAINT vouches_attestor_id_fkey FOREIGN KEY (attestor_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 ALTER TABLE ONLY public.vouches
-    ADD CONSTRAINT vouches_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.accounts(id);
+    ADD CONSTRAINT vouches_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 ALTER TABLE ONLY public.writer_payouts
@@ -3455,5 +3468,8 @@ INSERT INTO _migrations (filename) VALUES
   ('081_article_cover_image.sql'),
   ('082_feed_sources_default_volume.sql'),
   ('083_search_content_trgm_index.sql'),
-  ('084_email_verification_requested_at.sql')
+  ('084_email_verification_requested_at.sql'),
+  ('085_settlement_status.sql'),
+  ('086_reading_tabs_balance_check.sql'),
+  ('087_schema_hardening.sql')
 ON CONFLICT (filename) DO NOTHING;

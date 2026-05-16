@@ -23,6 +23,7 @@ import { trustEpochAggregate } from "./tasks/trust-epoch-aggregate.js";
 import { relayPublish } from "./tasks/relay-publish.js";
 import { relayOutboxRedrive } from "./tasks/relay-outbox-redrive.js";
 import { relayOutboxReconcile } from "./tasks/relay-outbox-reconcile.js";
+import { relayOutboxPrune } from "./tasks/relay-outbox-prune.js";
 import { JetstreamListener } from "./jetstream/listener.js";
 
 // =============================================================================
@@ -86,6 +87,8 @@ async function start() {
         "* * * * * relay_outbox_redrive",
         // Relay outbox queue metrics — daily at 04:30 UTC
         "30 4 * * * relay_outbox_reconcile",
+        // Prune sent relay_outbox entries older than 30 days — daily at 03:30 UTC
+        "30 3 * * * relay_outbox_prune",
       ].join("\n"),
     ),
     taskList: {
@@ -110,6 +113,7 @@ async function start() {
       relay_publish: relayPublish,
       relay_outbox_redrive: relayOutboxRedrive,
       relay_outbox_reconcile: relayOutboxReconcile,
+      relay_outbox_prune: relayOutboxPrune,
     },
   });
 
