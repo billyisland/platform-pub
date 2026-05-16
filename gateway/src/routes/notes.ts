@@ -1,12 +1,18 @@
-import type { FastifyInstance } from 'fastify'
-import { z } from 'zod'
-import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { requireAuth } from '../middleware/auth.js'
-import { signEvent } from '../lib/key-custody-client.js'
-import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
-import { enqueueCrossPost, enqueueNostrOutbound } from '../lib/outbound-enqueue.js'
-import { truncatePreview } from '@platform-pub/shared/lib/text.js'
-import logger from '@platform-pub/shared/lib/logger.js'
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
+import { requireAuth } from "../middleware/auth.js";
+import { signEvent } from "../lib/key-custody-client.js";
+import {
+  enqueueRelayPublish,
+  type SignedNostrEvent,
+} from "@platform-pub/shared/lib/relay-outbox.js";
+import {
+  enqueueCrossPost,
+  enqueueNostrOutbound,
+} from "../lib/outbound-enqueue.js";
+import { truncatePreview } from "@platform-pub/shared/lib/text.js";
+import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
 // Note Routes
@@ -17,7 +23,7 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // GET    /feed/global              — Global "For you" feed (all articles + notes + new users)
 // =============================================================================
 
-const NOTE_CHAR_LIMIT = 1000
+const NOTE_CHAR_LIMIT = 1000;
 
 const IndexNoteSchema = z.object({
   nostrEventId: z.string().min(1),
@@ -29,44 +35,55 @@ const IndexNoteSchema = z.object({
   quotedTitle: z.string().optional(),
   quotedAuthor: z.string().optional(),
   // Optional: full signed Nostr event for outbound relay publishing (Phase 2)
-  signedEvent: z.object({
-    id: z.string(),
-    pubkey: z.string(),
-    created_at: z.number(),
-    kind: z.number(),
-    tags: z.array(z.array(z.string())),
-    content: z.string(),
-    sig: z.string(),
-  }).optional(),
+  signedEvent: z
+    .object({
+      id: z.string(),
+      pubkey: z.string(),
+      created_at: z.number(),
+      kind: z.number(),
+      tags: z.array(z.array(z.string())),
+      content: z.string(),
+      sig: z.string(),
+    })
+    .optional(),
   // Optional: cross-post this note to one or more linked external accounts.
   // 'reply' / 'quote' must carry sourceItemId; 'original' (top-level broadcast)
   // omits it. Each entry produces an outbound_posts row + worker job.
-  crossPosts: z.array(
-    z.object({
-      linkedAccountId: z.string().uuid(),
-      sourceItemId: z.string().uuid().optional(),
-      actionType: z.enum(['reply', 'quote', 'original']),
-    }).refine(
-      (v) => v.actionType === 'original' ? v.sourceItemId === undefined : v.sourceItemId !== undefined,
-      { message: "sourceItemId required for reply/quote, forbidden for original" }
+  crossPosts: z
+    .array(
+      z
+        .object({
+          linkedAccountId: z.string().uuid(),
+          sourceItemId: z.string().uuid().optional(),
+          actionType: z.enum(["reply", "quote", "original"]),
+        })
+        .refine(
+          (v) =>
+            v.actionType === "original"
+              ? v.sourceItemId === undefined
+              : v.sourceItemId !== undefined,
+          {
+            message:
+              "sourceItemId required for reply/quote, forbidden for original",
+          },
+        ),
     )
-  ).optional(),
-})
+    .optional(),
+});
 
 export async function noteRoutes(app: FastifyInstance) {
-
   // ---------------------------------------------------------------------------
   // POST /notes — index a published note
   // ---------------------------------------------------------------------------
 
-  app.post('/notes', { preHandler: requireAuth }, async (req, reply) => {
-    const parsed = IndexNoteSchema.safeParse(req.body)
+  app.post("/notes", { preHandler: requireAuth }, async (req, reply) => {
+    const parsed = IndexNoteSchema.safeParse(req.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
+      return reply.status(400).send({ error: parsed.error.flatten() });
     }
 
-    const authorId = req.session!.sub!
-    const data = parsed.data
+    const authorId = req.session!.sub!;
+    const data = parsed.data;
 
     try {
       const { noteId, duplicate } = await withTransaction(async (client) => {
@@ -89,21 +106,28 @@ export async function noteRoutes(app: FastifyInstance) {
             data.quotedExcerpt ?? null,
             data.quotedTitle ?? null,
             data.quotedAuthor ?? null,
-          ]
-        )
+          ],
+        );
 
         if (result.rows.length === 0) {
-          return { noteId: null, duplicate: true }
+          return { noteId: null, duplicate: true };
         }
 
-        const nId = result.rows[0].id
+        const nId = result.rows[0].id;
 
         // Dual-write: insert feed_items row in same transaction
-        const { rows: [author] } = await client.query<{ display_name: string | null; avatar_blossom_url: string | null; username: string | null }>(
+        const {
+          rows: [author],
+        } = await client.query<{
+          display_name: string | null;
+          avatar_blossom_url: string | null;
+          username: string | null;
+        }>(
           `SELECT display_name, avatar_blossom_url, username FROM accounts WHERE id = $1`,
-          [authorId]
-        )
-        await client.query(`
+          [authorId],
+        );
+        await client.query(
+          `
           INSERT INTO feed_items (
             item_type, note_id, author_id,
             author_name, author_avatar, author_username,
@@ -120,78 +144,86 @@ export async function noteRoutes(app: FastifyInstance) {
             author_name = EXCLUDED.author_name,
             author_avatar = EXCLUDED.author_avatar,
             author_username = EXCLUDED.author_username
-        `, [
-          nId, authorId,
-          author?.display_name ?? author?.username ?? 'Unknown',
-          author?.avatar_blossom_url ?? null,
-          author?.username ?? null,
-          truncatePreview(data.content),
-          data.nostrEventId,
-        ])
+        `,
+          [
+            nId,
+            authorId,
+            author?.display_name ?? author?.username ?? "Unknown",
+            author?.avatar_blossom_url ?? null,
+            author?.username ?? null,
+            truncatePreview(data.content),
+            data.nostrEventId,
+          ],
+        );
 
-        return { noteId: nId, duplicate: false }
-      })
+        return { noteId: nId, duplicate: false };
+      });
 
       if (duplicate) {
-        return reply.status(200).send({ ok: true, duplicate: true })
+        return reply.status(200).send({ ok: true, duplicate: true });
       }
 
       logger.info(
         { noteId, authorId, nostrEventId: data.nostrEventId },
-        'Note indexed'
-      )
+        "Note indexed",
+      );
 
       // Notify quoted content author (fire-and-forget)
       if (data.isQuoteComment && data.quotedEventId) {
         const quotedNote = await pool.query<{ author_id: string }>(
           `SELECT author_id FROM notes WHERE nostr_event_id = $1`,
-          [data.quotedEventId]
-        )
-        const quotedArticle = quotedNote.rows.length === 0
-          ? await pool.query<{ author_id: string }>(
-              `SELECT writer_id AS author_id FROM articles WHERE nostr_event_id = $1 AND deleted_at IS NULL`,
-              [data.quotedEventId]
-            )
-          : quotedNote
-        const quotedAuthorId = quotedArticle.rows[0]?.author_id
+          [data.quotedEventId],
+        );
+        const quotedArticle =
+          quotedNote.rows.length === 0
+            ? await pool.query<{ author_id: string }>(
+                `SELECT writer_id AS author_id FROM articles WHERE nostr_event_id = $1 AND deleted_at IS NULL`,
+                [data.quotedEventId],
+              )
+            : quotedNote;
+        const quotedAuthorId = quotedArticle.rows[0]?.author_id;
         if (quotedAuthorId && quotedAuthorId !== authorId) {
           try {
             await pool.query(
               `INSERT INTO notifications (recipient_id, actor_id, type, note_id)
                VALUES ($1, $2, 'new_quote', $3)
                ON CONFLICT DO NOTHING`,
-              [quotedAuthorId, authorId, noteId]
-            )
+              [quotedAuthorId, authorId, noteId],
+            );
           } catch (err) {
-            logger.warn({ err }, 'Failed to insert new_quote notification')
+            logger.warn({ err }, "Failed to insert new_quote notification");
           }
         }
       }
 
       // Notify @mentioned users (fire-and-forget, batched)
-      const mentionMatches = data.content.matchAll(/(?<![a-zA-Z0-9.])@([a-zA-Z0-9_]+)/g)
-      const mentionedUsernames = [...new Set([...mentionMatches].map(m => m[1]))]
+      const mentionMatches = data.content.matchAll(
+        /(?<![a-zA-Z0-9.])@([a-zA-Z0-9_]+)/g,
+      );
+      const mentionedUsernames = [
+        ...new Set([...mentionMatches].map((m) => m[1])),
+      ];
       if (mentionedUsernames.length > 0) {
         const { rows: mentionedUsers } = await pool.query<{ id: string }>(
           `SELECT id FROM accounts WHERE username = ANY($1) AND status = 'active' AND id != $2`,
-          [mentionedUsernames, authorId]
-        )
+          [mentionedUsernames, authorId],
+        );
         if (mentionedUsers.length > 0) {
-          const values: string[] = []
-          const params: string[] = [noteId!]
+          const values: string[] = [];
+          const params: string[] = [noteId!];
           mentionedUsers.forEach((mentioned, i) => {
-            values.push(`($${i * 2 + 2}, $${i * 2 + 3}, 'new_mention', $1)`)
-            params.push(mentioned.id, authorId)
-          })
+            values.push(`($${i * 2 + 2}, $${i * 2 + 3}, 'new_mention', $1)`);
+            params.push(mentioned.id, authorId);
+          });
           try {
             await pool.query(
               `INSERT INTO notifications (recipient_id, actor_id, type, note_id)
-               VALUES ${values.join(', ')}
+               VALUES ${values.join(", ")}
                ON CONFLICT DO NOTHING`,
-              params
-            )
+              params,
+            );
           } catch (err) {
-            logger.warn({ err }, 'Failed to insert mention notifications')
+            logger.warn({ err }, "Failed to insert mention notifications");
           }
         }
       }
@@ -211,8 +243,8 @@ export async function noteRoutes(app: FastifyInstance) {
                AND xs.relay_urls IS NOT NULL
                AND array_length(xs.relay_urls, 1) > 0
              LIMIT 1`,
-            [data.quotedEventId]
-          )
+            [data.quotedEventId],
+          );
           if (rows.length > 0) {
             await enqueueNostrOutbound({
               accountId: authorId,
@@ -220,11 +252,14 @@ export async function noteRoutes(app: FastifyInstance) {
               nostrEventId: data.nostrEventId,
               bodyText: data.content,
               signedEvent: data.signedEvent,
-              actionType: 'quote',
-            })
+              actionType: "quote",
+            });
           }
         } catch (err) {
-          logger.warn({ err, noteId }, 'Failed to enqueue outbound Nostr publish')
+          logger.warn(
+            { err, noteId },
+            "Failed to enqueue outbound Nostr publish",
+          );
         }
       }
 
@@ -241,19 +276,22 @@ export async function noteRoutes(app: FastifyInstance) {
               actionType: target.actionType,
               nostrEventId: data.nostrEventId,
               bodyText: data.content,
-            })
+            });
           } catch (err) {
-            logger.warn({ err, noteId, target }, 'Failed to enqueue outbound cross-post')
+            logger.warn(
+              { err, noteId, target },
+              "Failed to enqueue outbound cross-post",
+            );
           }
         }
       }
 
-      return reply.status(201).send({ noteId })
+      return reply.status(201).send({ noteId });
     } catch (err) {
-      logger.error({ err, authorId }, 'Note indexing failed')
-      return reply.status(500).send({ error: 'Indexing failed' })
+      logger.error({ err, authorId }, "Note indexing failed");
+      return reply.status(500).send({ error: "Indexing failed" });
     }
-  })
+  });
 
   // ---------------------------------------------------------------------------
   // DELETE /notes/:nostrEventId — delete a note
@@ -264,53 +302,62 @@ export async function noteRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.delete<{ Params: { nostrEventId: string } }>(
-    '/notes/:nostrEventId',
+    "/notes/:nostrEventId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const authorId = req.session!.sub!
-      const { nostrEventId } = req.params
+      const authorId = req.session!.sub!;
+      const { nostrEventId } = req.params;
 
       try {
         const deletionEvent = await signEvent(authorId, {
           kind: 5,
-          content: '',
-          tags: [['e', nostrEventId]],
+          content: "",
+          tags: [["e", nostrEventId]],
           created_at: Math.floor(Date.now() / 1000),
-        })
+        });
 
         const deleted = await withTransaction(async (client) => {
           const result = await client.query<{ id: string }>(
             `DELETE FROM notes
              WHERE nostr_event_id = $1 AND author_id = $2
              RETURNING id`,
-            [nostrEventId, authorId]
-          )
-          if (result.rowCount === 0) return null
+            [nostrEventId, authorId],
+          );
+          if (result.rowCount === 0) return null;
 
           await enqueueRelayPublish(client, {
-            entityType: 'note_deletion',
+            entityType: "note_deletion",
             entityId: result.rows[0].id,
             signedEvent: deletionEvent as SignedNostrEvent,
-          })
-          return result.rows[0].id
-        })
+          });
+          return result.rows[0].id;
+        });
 
         if (!deleted) {
-          return reply.status(404).send({ error: 'Note not found or not yours' })
+          return reply
+            .status(404)
+            .send({ error: "Note not found or not yours" });
         }
 
         logger.info(
-          { nostrEventId, noteId: deleted, deletionEventId: deletionEvent.id, authorId },
-          'Note deleted and kind-5 enqueued'
-        )
+          {
+            nostrEventId,
+            noteId: deleted,
+            deletionEventId: deletionEvent.id,
+            authorId,
+          },
+          "Note deleted and kind-5 enqueued",
+        );
 
-        return reply.status(200).send({ ok: true, deletedNostrEventId: nostrEventId })
+        return reply
+          .status(200)
+          .send({ ok: true, deletedNostrEventId: nostrEventId });
       } catch (err) {
-        logger.error({ err, nostrEventId, authorId }, 'Note deletion failed')
-        return reply.status(500).send({ error: 'Deletion failed' })
+        logger.error({ err, nostrEventId, authorId }, "Note deletion failed");
+        return reply.status(500).send({ error: "Deletion failed" });
       }
-    }
-  )
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // GET /content/resolve?eventId=xxx
@@ -320,10 +367,11 @@ export async function noteRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get<{ Querystring: { eventId?: string } }>(
-    '/content/resolve',
+    "/content/resolve",
     async (req, reply) => {
-      const { eventId } = req.query
-      if (!eventId) return reply.status(400).send({ error: 'eventId required' })
+      const { eventId } = req.query;
+      if (!eventId)
+        return reply.status(400).send({ error: "eventId required" });
 
       try {
         // Check notes table first
@@ -333,22 +381,24 @@ export async function noteRoutes(app: FastifyInstance) {
            FROM notes n
            JOIN accounts a ON a.id = n.author_id
            WHERE n.nostr_event_id = $1`,
-          [eventId]
-        )
+          [eventId],
+        );
 
         if (noteResult.rows.length > 0) {
-          const row = noteResult.rows[0]
+          const row = noteResult.rows[0];
           return reply.send({
-            type: 'note',
+            type: "note",
             eventId: row.nostr_event_id,
             content: row.content,
-            publishedAt: Math.floor(new Date(row.published_at).getTime() / 1000),
+            publishedAt: Math.floor(
+              new Date(row.published_at).getTime() / 1000,
+            ),
             author: {
               username: row.username,
               displayName: row.display_name,
               avatar: row.avatar,
             },
-          })
+          });
         }
 
         // Check articles table
@@ -358,37 +408,45 @@ export async function noteRoutes(app: FastifyInstance) {
                   a.username, a.display_name, a.avatar_blossom_url AS avatar
            FROM articles ar
            JOIN accounts a ON a.id = ar.writer_id
-           WHERE ar.nostr_event_id = $1`,
-          [eventId]
-        )
+           WHERE ar.nostr_event_id = $1 AND ar.deleted_at IS NULL AND ar.published_at IS NOT NULL`,
+          [eventId],
+        );
 
         if (articleResult.rows.length > 0) {
-          const row = articleResult.rows[0]
+          const row = articleResult.rows[0];
           const contentSnippet = row.summary
             ? row.summary.slice(0, 200)
-            : (row.content_free ?? '').replace(/^#{1,6}\s+.*/gm, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/\*\*?(.+?)\*\*?/g, '$1').replace(/\n+/g, ' ').trim().slice(0, 200)
+            : (row.content_free ?? "")
+                .replace(/^#{1,6}\s+.*/gm, "")
+                .replace(/!\[.*?\]\(.*?\)/g, "")
+                .replace(/\*\*?(.+?)\*\*?/g, "$1")
+                .replace(/\n+/g, " ")
+                .trim()
+                .slice(0, 200);
           return reply.send({
-            type: 'article',
+            type: "article",
             eventId: row.nostr_event_id,
             title: row.title,
             dTag: row.nostr_d_tag,
             accessMode: row.access_mode,
-            isPaywalled: row.access_mode === 'paywalled',
+            isPaywalled: row.access_mode === "paywalled",
             content: contentSnippet,
-            publishedAt: Math.floor(new Date(row.published_at).getTime() / 1000),
+            publishedAt: Math.floor(
+              new Date(row.published_at).getTime() / 1000,
+            ),
             author: {
               username: row.username,
               displayName: row.display_name,
               avatar: row.avatar,
             },
-          })
+          });
         }
 
-        return reply.status(404).send({ error: 'Event not found' })
+        return reply.status(404).send({ error: "Event not found" });
       } catch (err) {
-        logger.error({ err, eventId }, 'Content resolve failed')
-        return reply.status(500).send({ error: 'Resolve failed' })
+        logger.error({ err, eventId }, "Content resolve failed");
+        return reply.status(500).send({ error: "Resolve failed" });
       }
-    }
-  )
+    },
+  );
 }

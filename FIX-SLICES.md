@@ -122,7 +122,7 @@ D76 and D77 are the most dangerous confirmed bugs — a Stripe charge can succee
 
 ---
 
-## Slice 3: Article access + gate-pass fixes
+## Slice 3: Article access + gate-pass fixes ✓ DONE (2026-05-16)
 
 **Priority: HIGH. Estimated effort: 1 hour.**
 **Service:** gateway

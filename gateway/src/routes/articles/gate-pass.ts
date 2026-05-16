@@ -1,11 +1,8 @@
-import type { FastifyInstance } from 'fastify'
-import { requireAuth } from '../../middleware/auth.js'
-import { performGatePass } from '../../services/article-access/index.js'
-import logger from '@platform-pub/shared/lib/logger.js'
-import {
-  KEY_SERVICE_URL,
-  proxyToService,
-} from './shared.js'
+import type { FastifyInstance } from "fastify";
+import { requireAuth } from "../../middleware/auth.js";
+import { performGatePass } from "../../services/article-access/index.js";
+import logger from "@platform-pub/shared/lib/logger.js";
+import { KEY_SERVICE_URL, proxyToService } from "./shared.js";
 
 // =============================================================================
 // Vault/key proxies + gate-pass route
@@ -18,47 +15,48 @@ import {
 
 export async function articleGatePassRoutes(app: FastifyInstance) {
   app.post<{ Params: { nostrEventId: string } }>(
-    '/articles/:nostrEventId/vault',
+    "/articles/:nostrEventId/vault",
     { preHandler: requireAuth },
     async (req, reply) => {
       // Inject writer identity so the key service can verify ownership
-      req.headers['x-writer-id'] = req.session!.sub!
+      req.headers["x-writer-id"] = req.session!.sub!;
       return proxyToService(
         `${KEY_SERVICE_URL}/api/v1/articles/${req.params.nostrEventId}/vault`,
-        'POST',
+        "POST",
         req,
-        reply
-      )
-    }
-  )
+        reply,
+      );
+    },
+  );
 
   app.patch<{ Params: { nostrEventId: string } }>(
-    '/articles/:nostrEventId/vault',
+    "/articles/:nostrEventId/vault",
     { preHandler: requireAuth },
     async (req, reply) => {
       // Inject writer identity so the key service can verify ownership
-      req.headers['x-writer-id'] = req.session!.sub!
+      req.headers["x-writer-id"] = req.session!.sub!;
       return proxyToService(
         `${KEY_SERVICE_URL}/api/v1/articles/${req.params.nostrEventId}/vault`,
-        'PATCH',
+        "PATCH",
         req,
-        reply
-      )
-    }
-  )
+        reply,
+      );
+    },
+  );
 
   app.post<{ Params: { nostrEventId: string } }>(
-    '/articles/:nostrEventId/key',
+    "/articles/:nostrEventId/key",
     { preHandler: requireAuth },
     async (req, reply) => {
+      req.headers["x-reader-id"] = req.session!.sub!;
       return proxyToService(
         `${KEY_SERVICE_URL}/api/v1/articles/${req.params.nostrEventId}/key`,
-        'POST',
+        "POST",
         req,
-        reply
-      )
-    }
-  )
+        reply,
+      );
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /articles/:nostrEventId/gate-pass — thin HTTP wrapper over the
@@ -68,47 +66,63 @@ export async function articleGatePassRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.post<{ Params: { nostrEventId: string } }>(
-    '/articles/:nostrEventId/gate-pass',
-    { preHandler: requireAuth, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    "/articles/:nostrEventId/gate-pass",
+    {
+      preHandler: requireAuth,
+      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+    },
     async (req, reply) => {
-      const readerId = req.session!.sub!
-      const readerPubkey = req.session!.pubkey
-      const { nostrEventId } = req.params
+      const readerId = req.session!.sub!;
+      const readerPubkey = req.session!.pubkey;
+      const { nostrEventId } = req.params;
 
       try {
-        const result = await performGatePass({ readerId, readerPubkey, nostrEventId })
+        const result = await performGatePass({
+          readerId,
+          readerPubkey,
+          nostrEventId,
+        });
 
         switch (result.kind) {
-          case 'success':
-            return reply.status(200).send(result.body)
-          case 'not_found':
-            return reply.status(404).send({ error: 'Article not found' })
-          case 'not_gated':
-            return reply.status(400).send({ error: 'Article is not gated' })
-          case 'invitation_required':
+          case "success":
+            return reply.status(200).send(result.body);
+          case "not_found":
+            return reply.status(404).send({ error: "Article not found" });
+          case "not_gated":
+            return reply.status(400).send({ error: "Article is not gated" });
+          case "invitation_required":
             return reply.status(403).send({
-              error: 'invitation_required',
-              message: 'This is a private article. Contact the author to request access.',
-            })
-          case 'payment_required':
+              error: "invitation_required",
+              message:
+                "This is a private article. Contact the author to request access.",
+            });
+          case "payment_required":
             return reply.status(402).send({
               error: result.error,
-              message: 'Payment required.',
-            })
-          case 'key_issuance_failed_after_payment':
+              message: "Payment required.",
+            });
+          case "key_issuance_failed_after_payment":
             return reply.status(502).send({
-              error: 'Key issuance failed — the read has been recorded. Retry to get the content key.',
+              error:
+                "Key issuance failed — the read has been recorded. Retry to get the content key.",
               readEventId: result.readEventId,
-            })
-          case 'service_unreachable':
-            return reply.status(502).send({ error: 'Payment or key service unreachable' })
-          case 'service_error':
-            return reply.status(500).send({ error: 'Gate pass recording failed' })
+            });
+          case "service_unreachable":
+            return reply
+              .status(502)
+              .send({ error: "Payment or key service unreachable" });
+          case "service_error":
+            return reply
+              .status(500)
+              .send({ error: "Gate pass recording failed" });
         }
       } catch (err) {
-        logger.error({ err, readerId, nostrEventId }, 'Gate pass orchestration failed')
-        return reply.status(500).send({ error: 'Internal error' })
+        logger.error(
+          { err, readerId, nostrEventId },
+          "Gate pass orchestration failed",
+        );
+        return reply.status(500).send({ error: "Internal error" });
       }
-    }
-  )
+    },
+  );
 }
