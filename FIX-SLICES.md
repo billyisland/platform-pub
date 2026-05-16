@@ -225,7 +225,7 @@ Also add a cron task for D67 (relay_outbox cleanup):
 
 ---
 
-## Slice 8: Traffology critical fix + misc gateway fixes
+## Slice 8: Traffology critical fix + misc gateway fixes ✓ DONE (2026-05-16)
 
 **Priority: MEDIUM. Estimated effort: 2 hours.**
 **Services:** traffology-worker, gateway
