@@ -1,247 +1,274 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { Avatar } from '../ui/Avatar'
-import { formatDateFromISO } from '../../lib/format'
-import { account, subscribe as apiSubscribe } from '../../lib/api'
-import type { MySubscription } from '../../lib/api'
+import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
+import { Avatar } from "../ui/Avatar";
+import { formatDateFromISO } from "../../lib/format";
+import { account, subscribe as apiSubscribe } from "../../lib/api";
+import type { MySubscription } from "../../lib/api";
 
 interface Following {
-  id: string
-  username: string
-  displayName: string | null
-  avatar: string | null
-  followedAt: string
-  subscriptionPricePence: number
-  hasPaywalledArticle: boolean
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatar: string | null;
+  followedAt: string;
+  subscriptionPricePence: number;
+  hasPaywalledArticle: boolean;
 }
 
 interface PublicSubscription {
-  writerId: string
-  writerUsername: string
-  writerDisplayName: string | null
-  writerAvatar: string | null
-  startedAt: string
+  writerId: string;
+  writerUsername: string;
+  writerDisplayName: string | null;
+  writerAvatar: string | null;
+  startedAt: string;
 }
 
-export function FollowingTab({ username, isOwnProfile }: { username: string; isOwnProfile: boolean }) {
-  const [following, setFollowing] = useState<Following[]>([])
-  const [total, setTotal] = useState(0)
-  const [subscriptions, setSubscriptions] = useState<PublicSubscription[]>([])
-  const [mySubs, setMySubs] = useState<Map<string, MySubscription>>(new Map())
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [unfollowingId, setUnfollowingId] = useState<string | null>(null)
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
-  const [confirmUnsubId, setConfirmUnsubId] = useState<string | null>(null)
+export function FollowingTab({
+  username,
+  isOwnProfile,
+}: {
+  username: string;
+  isOwnProfile: boolean;
+}) {
+  const [following, setFollowing] = useState<Following[]>([]);
+  const [total, setTotal] = useState(0);
+  const [subscriptions, setSubscriptions] = useState<PublicSubscription[]>([]);
+  const [mySubs, setMySubs] = useState<Map<string, MySubscription>>(new Map());
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [unfollowingId, setUnfollowingId] = useState<string | null>(null);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [confirmUnsubId, setConfirmUnsubId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      setLoading(true)
+      setLoading(true);
       try {
         const fetches: Promise<any>[] = [
-          fetch(`/api/v1/writers/${username}/following?limit=30`, { credentials: 'include' }),
-          fetch(`/api/v1/writers/${username}/subscriptions?limit=50`, { credentials: 'include' }),
-        ]
+          fetch(`/api/v1/writers/${username}/following?limit=30`, {
+            credentials: "include",
+          }),
+          fetch(`/api/v1/writers/${username}/subscriptions?limit=50`, {
+            credentials: "include",
+          }),
+        ];
         if (isOwnProfile) {
-          fetches.push(account.getMySubscriptions())
+          fetches.push(account.getMySubscriptions());
         }
 
-        const results = await Promise.all(fetches)
-        const followRes = results[0] as Response
-        const subRes = results[1] as Response
+        const results = await Promise.all(fetches);
+        const followRes = results[0] as Response;
+        const subRes = results[1] as Response;
 
         if (followRes.ok) {
-          const data = await followRes.json()
-          setFollowing(data.following ?? [])
-          setTotal(data.total ?? 0)
+          const data = await followRes.json();
+          setFollowing(data.following ?? []);
+          setTotal(data.total ?? 0);
         }
         if (subRes.ok) {
-          const data = await subRes.json()
-          setSubscriptions(data.subscriptions ?? [])
+          const data = await subRes.json();
+          setSubscriptions(data.subscriptions ?? []);
         }
         if (isOwnProfile && results[2]) {
-          const mySubData = results[2] as { subscriptions: MySubscription[] }
-          const map = new Map<string, MySubscription>()
+          const mySubData = results[2] as { subscriptions: MySubscription[] };
+          const map = new Map<string, MySubscription>();
           for (const s of mySubData.subscriptions) {
-            map.set(s.writerId, s)
+            map.set(s.writerId, s);
           }
-          setMySubs(map)
+          setMySubs(map);
         }
-      } catch { /* silently fail */ }
-      finally { setLoading(false) }
+      } catch {
+        /* silently fail */
+      } finally {
+        setLoading(false);
+      }
     }
-    load()
-  }, [username, isOwnProfile])
+    load();
+  }, [username, isOwnProfile]);
 
   async function loadMore() {
-    setLoadingMore(true)
+    setLoadingMore(true);
     try {
-      const res = await fetch(`/api/v1/writers/${username}/following?limit=30&offset=${following.length}`, { credentials: 'include' })
+      const res = await fetch(
+        `/api/v1/writers/${username}/following?limit=30&offset=${following.length}`,
+        { credentials: "include" },
+      );
       if (res.ok) {
-        const data = await res.json()
-        setFollowing(prev => [...prev, ...(data.following ?? [])])
+        const data = await res.json();
+        setFollowing((prev) => [...prev, ...(data.following ?? [])]);
       }
-    } catch { /* silently fail */ }
-    finally { setLoadingMore(false) }
+    } catch {
+      /* silently fail */
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   async function handleUnfollow(writerId: string) {
-    setUnfollowingId(writerId)
+    setUnfollowingId(writerId);
     try {
-      const res = await fetch(`/api/v1/follows/${writerId}`, { method: 'DELETE', credentials: 'include' })
+      const res = await fetch(`/api/v1/follows/${writerId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
       if (res.ok) {
-        setFollowing(prev => prev.filter(f => f.id !== writerId))
-        setTotal(prev => prev - 1)
+        setFollowing((prev) => prev.filter((f) => f.id !== writerId));
+        setTotal((prev) => prev - 1);
       }
-    } catch { /* silently fail */ }
-    finally { setUnfollowingId(null) }
+    } catch {
+      /* silently fail */
+    } finally {
+      setUnfollowingId(null);
+    }
   }
 
   async function handleSubscribe(writerId: string) {
-    setActionLoadingId(writerId)
+    setActionLoadingId(writerId);
     try {
-      const result = await apiSubscribe(writerId, { period: 'monthly' })
-      setMySubs(prev => {
-        const next = new Map(prev)
+      const result = await apiSubscribe(writerId, { period: "monthly" });
+      setMySubs((prev) => {
+        const next = new Map(prev);
         next.set(writerId, {
           id: result.subscriptionId,
           writerId,
-          writerUsername: '',
+          writerUsername: "",
           writerDisplayName: null,
           writerAvatar: null,
           pricePence: result.pricePence,
-          status: 'active',
+          status: "active",
           autoRenew: true,
-          currentPeriodEnd: result.currentPeriodEnd ?? '',
+          currentPeriodEnd: result.currentPeriodEnd ?? "",
           startedAt: new Date().toISOString(),
           cancelledAt: null,
           hidden: false,
           notifyOnPublish: true,
-        })
-        return next
-      })
-    } catch { /* silently fail */ }
-    finally { setActionLoadingId(null) }
+        });
+        return next;
+      });
+    } catch {
+      /* silently fail */
+    } finally {
+      setActionLoadingId(null);
+    }
   }
 
   async function handleUnsubscribe(writerId: string) {
-    setConfirmUnsubId(null)
-    setActionLoadingId(writerId)
+    setConfirmUnsubId(null);
+    setActionLoadingId(writerId);
     try {
-      const res = await fetch(`/api/v1/subscriptions/${writerId}`, { method: 'DELETE', credentials: 'include' })
+      const res = await fetch(`/api/v1/subscriptions/${writerId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
       if (res.ok) {
-        const data = await res.json()
-        setMySubs(prev => {
-          const next = new Map(prev)
-          const existing = next.get(writerId)
+        const data = await res.json();
+        setMySubs((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(writerId);
           if (existing) {
-            next.set(writerId, { ...existing, status: 'cancelled', autoRenew: false, cancelledAt: new Date().toISOString(), currentPeriodEnd: data.accessUntil })
+            next.set(writerId, {
+              ...existing,
+              status: "cancelled",
+              autoRenew: false,
+              cancelledAt: new Date().toISOString(),
+              currentPeriodEnd: data.accessUntil,
+            });
           }
-          return next
-        })
+          return next;
+        });
       }
-    } catch { /* silently fail */ }
-    finally { setActionLoadingId(null) }
+    } catch {
+      /* silently fail */
+    } finally {
+      setActionLoadingId(null);
+    }
   }
 
   async function handleResubscribe(writerId: string) {
-    setActionLoadingId(writerId)
+    setActionLoadingId(writerId);
     try {
-      const result = await apiSubscribe(writerId, { period: 'monthly' })
-      setMySubs(prev => {
-        const next = new Map(prev)
+      const result = await apiSubscribe(writerId, { period: "monthly" });
+      setMySubs((prev) => {
+        const next = new Map(prev);
         next.set(writerId, {
           id: result.subscriptionId,
           writerId,
-          writerUsername: '',
+          writerUsername: "",
           writerDisplayName: null,
           writerAvatar: null,
           pricePence: result.pricePence,
-          status: 'active',
+          status: "active",
           autoRenew: true,
-          currentPeriodEnd: result.currentPeriodEnd ?? '',
+          currentPeriodEnd: result.currentPeriodEnd ?? "",
           startedAt: new Date().toISOString(),
           cancelledAt: null,
           hidden: false,
           notifyOnPublish: true,
-        })
-        return next
-      })
-    } catch { /* silently fail */ }
-    finally { setActionLoadingId(null) }
+        });
+        return next;
+      });
+    } catch {
+      /* silently fail */
+    } finally {
+      setActionLoadingId(null);
+    }
   }
 
   if (loading) {
-    return <div className="py-10 text-center text-ui-sm text-grey-300">Loading...</div>
+    return (
+      <div className="py-10 text-center text-ui-sm text-grey-300">
+        Loading...
+      </div>
+    );
   }
 
-  const confirmWriter = confirmUnsubId ? following.find(f => f.id === confirmUnsubId) : null
-  const confirmSub = confirmUnsubId ? mySubs.get(confirmUnsubId) : null
+  const confirmWriter = confirmUnsubId
+    ? following.find((f) => f.id === confirmUnsubId)
+    : null;
+  const confirmSub = confirmUnsubId ? mySubs.get(confirmUnsubId) : null;
 
   return (
     <div>
       {/* Unsubscribe confirmation modal */}
       {confirmUnsubId && confirmWriter && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => setConfirmUnsubId(null)}
-        >
-          <div
-            className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="text-[16px] font-sans font-semibold text-black mb-2">
-              Cancel subscription?
-            </h3>
-            <p className="text-ui-sm text-grey-400 mb-1">
-              Are you sure you want to cancel your subscription to{' '}
-              <strong className="text-black">{confirmWriter.displayName ?? confirmWriter.username}</strong>?
-            </p>
-            <p className="text-ui-sm text-grey-400 mb-6">
-              Your subscription will remain active until the end of your current billing period
-              {confirmSub?.currentPeriodEnd && (
-                <> ({new Date(confirmSub.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })})</>
-              )}.
-              You won't be charged again.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setConfirmUnsubId(null)}
-                className="btn-soft py-1.5 px-4 text-ui-xs"
-              >
-                Keep subscription
-              </button>
-              <button
-                onClick={() => handleUnsubscribe(confirmUnsubId)}
-                className="btn py-1.5 px-4 text-ui-xs bg-red-600 hover:bg-red-700 text-white"
-              >
-                Cancel subscription
-              </button>
-            </div>
-          </div>
-        </div>
+        <UnsubscribeModal
+          confirmWriter={confirmWriter}
+          confirmSub={confirmSub ?? undefined}
+          onClose={() => setConfirmUnsubId(null)}
+          onConfirm={() => handleUnsubscribe(confirmUnsubId)}
+        />
       )}
 
       {/* Following list */}
       {following.length === 0 ? (
-        <p className="text-ui-sm text-grey-400 py-10">Not following anyone yet.</p>
+        <p className="text-ui-sm text-grey-400 py-10">
+          Not following anyone yet.
+        </p>
       ) : (
         <div className="space-y-1">
-          {following.map(f => {
-            const sub = mySubs.get(f.id)
-            const sellsSubscriptions = f.hasPaywalledArticle && f.subscriptionPricePence > 0
-            const isActive = sub?.status === 'active'
-            const isCancelled = sub?.status === 'cancelled'
+          {following.map((f) => {
+            const sub = mySubs.get(f.id);
+            const sellsSubscriptions =
+              f.hasPaywalledArticle && f.subscriptionPricePence > 0;
+            const isActive = sub?.status === "active";
+            const isCancelled = sub?.status === "cancelled";
 
             return (
               <div
                 key={f.id}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-grey-100 transition-colors"
               >
-                <Link href={`/${f.username}`} className="flex items-center gap-3 min-w-0 flex-1">
-                  <Avatar src={f.avatar} name={f.displayName ?? f.username} size={36} />
+                <Link
+                  href={`/${f.username}`}
+                  className="flex items-center gap-3 min-w-0 flex-1"
+                >
+                  <Avatar
+                    src={f.avatar}
+                    name={f.displayName ?? f.username}
+                    size={36}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-ui-sm font-sans text-black truncate">
                       {f.displayName ?? f.username}
@@ -259,7 +286,9 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
                         disabled={actionLoadingId === f.id}
                         className="btn-accent py-1 px-3 text-[11px] disabled:opacity-50 transition-colors"
                       >
-                        {actionLoadingId === f.id ? '...' : `Subscribe £${(f.subscriptionPricePence / 100).toFixed(2)}/mo`}
+                        {actionLoadingId === f.id
+                          ? "..."
+                          : `Subscribe £${(f.subscriptionPricePence / 100).toFixed(2)}/mo`}
                       </button>
                     )}
                     {isActive && (
@@ -268,7 +297,7 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
                         disabled={actionLoadingId === f.id}
                         className="btn-soft py-1 px-3 text-[11px] disabled:opacity-50 transition-colors"
                       >
-                        {actionLoadingId === f.id ? '...' : 'Subscribed'}
+                        {actionLoadingId === f.id ? "..." : "Subscribed"}
                       </button>
                     )}
                     {isCancelled && (
@@ -276,11 +305,15 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
                         onClick={() => handleResubscribe(f.id)}
                         disabled={actionLoadingId === f.id}
                         className="btn-soft py-1 px-3 text-[11px] text-red-600 disabled:opacity-50 transition-colors"
-                        title={sub?.currentPeriodEnd
-                          ? `Access until ${new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-                          : undefined}
+                        title={
+                          sub?.currentPeriodEnd
+                            ? `Access until ${new Date(sub.currentPeriodEnd).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
+                            : undefined
+                        }
                       >
-                        {actionLoadingId === f.id ? '...' : 'Cancelled — resubscribe'}
+                        {actionLoadingId === f.id
+                          ? "..."
+                          : "Cancelled — resubscribe"}
                       </button>
                     )}
 
@@ -290,7 +323,7 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
                       disabled={unfollowingId === f.id}
                       className="btn-ghost py-1 px-3 text-[11px] text-grey-300 hover:text-red-600 disabled:opacity-50 transition-colors"
                     >
-                      {unfollowingId === f.id ? '...' : 'Unfollow'}
+                      {unfollowingId === f.id ? "..." : "Unfollow"}
                     </button>
                   </div>
                 ) : (
@@ -299,7 +332,7 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
                   </time>
                 )}
               </div>
-            )
+            );
           })}
         </div>
       )}
@@ -311,7 +344,9 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
             disabled={loadingMore}
             className="btn-soft py-1.5 px-4 text-ui-xs disabled:opacity-50"
           >
-            {loadingMore ? 'Loading...' : `Load more (${total - following.length} remaining)`}
+            {loadingMore
+              ? "Loading..."
+              : `Load more (${total - following.length} remaining)`}
           </button>
         </div>
       )}
@@ -320,22 +355,26 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
       {!isOwnProfile && subscriptions.length > 0 && (
         <>
           <div className="rule-inset my-8" />
-          <h3 className="label-ui text-grey-300 mb-4">
-            Subscribes to
-          </h3>
+          <h3 className="label-ui text-grey-300 mb-4">Subscribes to</h3>
           <div className="space-y-1">
-            {subscriptions.map(s => (
+            {subscriptions.map((s) => (
               <Link
                 key={s.writerId}
                 href={`/${s.writerUsername}`}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-grey-100 transition-colors"
               >
-                <Avatar src={s.writerAvatar} name={s.writerDisplayName ?? s.writerUsername} size={36} />
+                <Avatar
+                  src={s.writerAvatar}
+                  name={s.writerDisplayName ?? s.writerUsername}
+                  size={36}
+                />
                 <div className="min-w-0 flex-1">
                   <p className="text-ui-sm font-sans text-black truncate">
                     {s.writerDisplayName ?? s.writerUsername}
                   </p>
-                  <p className="text-ui-xs text-grey-300">@{s.writerUsername}</p>
+                  <p className="text-ui-xs text-grey-300">
+                    @{s.writerUsername}
+                  </p>
                 </div>
               </Link>
             ))}
@@ -343,5 +382,105 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
         </>
       )}
     </div>
-  )
+  );
+}
+
+function UnsubscribeModal({
+  confirmWriter,
+  confirmSub,
+  onClose,
+  onConfirm,
+}: {
+  confirmWriter: Following;
+  confirmSub?: MySubscription;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    },
+    [onClose],
+  );
+
+  useEffect(() => {
+    document.addEventListener("keydown", handleKeyDown);
+    dialogRef.current?.focus();
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unsub-modal-title"
+        tabIndex={-1}
+        className="bg-white max-w-sm w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3
+          id="unsub-modal-title"
+          className="text-[16px] font-sans font-semibold text-black mb-2"
+        >
+          Cancel subscription?
+        </h3>
+        <p className="text-ui-sm text-grey-400 mb-1">
+          Are you sure you want to cancel your subscription to{" "}
+          <strong className="text-black">
+            {confirmWriter.displayName ?? confirmWriter.username}
+          </strong>
+          ?
+        </p>
+        <p className="text-ui-sm text-grey-400 mb-6">
+          Your subscription will remain active until the end of your current
+          billing period
+          {confirmSub?.currentPeriodEnd && (
+            <>
+              {" "}
+              (
+              {new Date(confirmSub.currentPeriodEnd).toLocaleDateString(
+                "en-GB",
+                { day: "numeric", month: "long", year: "numeric" },
+              )}
+              )
+            </>
+          )}
+          . You won't be charged again.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="btn-soft py-1.5 px-4 text-ui-xs">
+            Keep subscription
+          </button>
+          <button
+            onClick={onConfirm}
+            className="btn py-1.5 px-4 text-ui-xs bg-red-600 hover:bg-red-700 text-white"
+          >
+            Cancel subscription
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

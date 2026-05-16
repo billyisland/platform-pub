@@ -154,7 +154,19 @@ function CardShell({
   const draggable = !!ctx.dragData && ctx.density !== "compact";
   return (
     <div
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
       draggable={draggable || undefined}
       onDragStart={
         draggable
@@ -496,7 +508,8 @@ function MediaBlock({
       )}
       {hero.type === "video" && (
         <div
-          aria-hidden="true"
+          role="img"
+          aria-label="Play video"
           style={{
             position: "absolute",
             inset: 0,
@@ -509,6 +522,7 @@ function MediaBlock({
           }}
         >
           <span
+            aria-hidden="true"
             style={{
               width: 44,
               height: 44,

@@ -1,4 +1,4 @@
-import type { PipStatus } from '../../lib/ndk'
+import type { PipStatus } from "../../lib/ndk";
 
 // =============================================================================
 // TrustPip — 5px circle indicating author legibility level
@@ -14,30 +14,31 @@ import type { PipStatus } from '../../lib/ndk'
 // =============================================================================
 
 const PIP_COLORS: Record<PipStatus, string> = {
-  known: '#1d9e75',
-  partial: '#ef9f27',
-  unknown: '#b0b0ab',
-  contested: '#B5242A',
-}
+  known: "#1d9e75",
+  partial: "#ef9f27",
+  unknown: "#b0b0ab",
+  contested: "#B5242A",
+};
 
 const PIP_TITLES: Record<PipStatus, string> = {
-  known: 'Established author',
-  partial: 'Developing profile',
-  unknown: 'No trust data',
-  contested: 'Contested signal',
-}
+  known: "Established author",
+  partial: "Developing profile",
+  unknown: "No trust data",
+  contested: "Contested signal",
+};
 
 interface TrustPipProps {
-  status?: PipStatus
+  status?: PipStatus;
 }
 
-export function TrustPip({ status = 'unknown' }: TrustPipProps) {
+export function TrustPip({ status = "unknown" }: TrustPipProps) {
   return (
     <span
+      role="img"
       className="trust-pip"
       style={{ backgroundColor: PIP_COLORS[status] }}
       title={PIP_TITLES[status]}
       aria-label={PIP_TITLES[status]}
     />
-  )
+  );
 }

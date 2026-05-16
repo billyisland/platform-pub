@@ -1,7 +1,11 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { trust, type VouchDimension, type VouchVisibility } from '../../lib/api'
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  trust,
+  type VouchDimension,
+  type VouchVisibility,
+} from "../../lib/api";
 
 // =============================================================================
 // VouchModal — dimension selector + visibility + submit
@@ -11,81 +15,154 @@ import { trust, type VouchDimension, type VouchVisibility } from '../../lib/api'
 // a disclaimer before proceeding.
 // =============================================================================
 
-const DIMENSIONS: { key: VouchDimension; label: string; description: string }[] = [
-  { key: 'humanity',  label: 'Humanity',  description: 'Are they a real human being?' },
-  { key: 'encounter', label: 'Encounter', description: 'Have you met or meaningfully interacted?' },
-  { key: 'identity',  label: 'Identity',  description: 'Is their presented identity consistent?' },
-  { key: 'integrity', label: 'Integrity', description: 'Do they act honestly and in good faith?' },
-]
+const DIMENSIONS: {
+  key: VouchDimension;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "humanity",
+    label: "Humanity",
+    description: "Are they a real human being?",
+  },
+  {
+    key: "encounter",
+    label: "Encounter",
+    description: "Have you met or meaningfully interacted?",
+  },
+  {
+    key: "identity",
+    label: "Identity",
+    description: "Is their presented identity consistent?",
+  },
+  {
+    key: "integrity",
+    label: "Integrity",
+    description: "Do they act honestly and in good faith?",
+  },
+];
 
 interface VouchModalProps {
-  subjectId: string
-  subjectName: string
-  existingVouches: Array<{ id: string; dimension: VouchDimension; value: string; visibility: string }>
-  onClose: () => void
-  onVouched: () => void
+  subjectId: string;
+  subjectName: string;
+  existingVouches: Array<{
+    id: string;
+    dimension: VouchDimension;
+    value: string;
+    visibility: string;
+  }>;
+  onClose: () => void;
+  onVouched: () => void;
 }
 
-export function VouchModal({ subjectId, subjectName, existingVouches, onClose, onVouched }: VouchModalProps) {
-  const existingDims = new Set(existingVouches.map(v => v.dimension))
+export function VouchModal({
+  subjectId,
+  subjectName,
+  existingVouches,
+  onClose,
+  onVouched,
+}: VouchModalProps) {
+  const existingDims = new Set(existingVouches.map((v) => v.dimension));
 
-  const [selected, setSelected] = useState<Set<VouchDimension>>(new Set())
-  const [visibility, setVisibility] = useState<VouchVisibility>('public')
-  const [showDisclaimer, setShowDisclaimer] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<VouchDimension>>(new Set());
+  const [visibility, setVisibility] = useState<VouchVisibility>("public");
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    },
+    [onClose],
+  );
+
+  useEffect(() => {
+    document.addEventListener("keydown", handleKeyDown);
+    dialogRef.current?.focus();
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
 
   function toggleDimension(dim: VouchDimension) {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(dim)) next.delete(dim)
-      else next.add(dim)
-      return next
-    })
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(dim)) next.delete(dim);
+      else next.add(dim);
+      return next;
+    });
   }
 
   async function handleSubmit() {
-    if (selected.size === 0) return
+    if (selected.size === 0) return;
 
     // Show disclaimer for aggregate-only
-    if (visibility === 'aggregate' && !showDisclaimer) {
-      setShowDisclaimer(true)
-      return
+    if (visibility === "aggregate" && !showDisclaimer) {
+      setShowDisclaimer(true);
+      return;
     }
 
-    setSubmitting(true)
-    setError(null)
+    setSubmitting(true);
+    setError(null);
 
     try {
       for (const dim of selected) {
         await trust.vouch({
           subjectId,
           dimension: dim,
-          value: 'affirm',
+          value: "affirm",
           visibility,
-        })
+        });
       }
-      onVouched()
+      onVouched();
     } catch (err: any) {
-      setError(err?.body?.error ?? 'Failed to submit vouch')
+      setError(err?.body?.error ?? "Failed to submit vouch");
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
   // Disclaimer step for aggregate-only
   if (showDisclaimer) {
     return (
-      <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+        onClick={onClose}
+      >
         <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="vouch-disclaimer-title"
+          tabIndex={-1}
           className="bg-white w-full max-w-sm p-6 space-y-4"
-          onClick={e => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
-          <h3 className="font-sans text-base font-medium text-black">Aggregate-only vouch</h3>
+          <h3
+            id="vouch-disclaimer-title"
+            className="font-sans text-base font-medium text-black"
+          >
+            Aggregate-only vouch
+          </h3>
           <p className="text-ui-xs text-grey-500 leading-relaxed">
-            This vouch will be added to the person's aggregate score. Other readers
-            won't see that it came from you. The platform can see it. We're building
-            a stronger-privacy channel — it's not yet available.
+            This vouch will be added to the person's aggregate score. Other
+            readers won't see that it came from you. The platform can see it.
+            We're building a stronger-privacy channel — it's not yet available.
           </p>
           <div className="flex items-center gap-2 pt-2">
             <button
@@ -99,10 +176,13 @@ export function VouchModal({ subjectId, subjectName, existingVouches, onClose, o
               disabled={submitting}
               className="btn py-1.5 px-4 text-ui-xs disabled:opacity-50"
             >
-              {submitting ? '...' : 'Vouch anyway'}
+              {submitting ? "..." : "Vouch anyway"}
             </button>
             <button
-              onClick={() => { setVisibility('public'); setShowDisclaimer(false) }}
+              onClick={() => {
+                setVisibility("public");
+                setShowDisclaimer(false);
+              }}
               className="btn-text-muted text-ui-xs"
             >
               Make public instead
@@ -110,27 +190,38 @@ export function VouchModal({ subjectId, subjectName, existingVouches, onClose, o
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="vouch-modal-title"
+        tabIndex={-1}
         className="bg-white w-full max-w-sm p-6 space-y-4"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-sans text-base font-medium text-black">
+        <h3
+          id="vouch-modal-title"
+          className="font-sans text-base font-medium text-black"
+        >
           Vouch for {subjectName}
         </h3>
 
         {/* Dimension checkboxes */}
         <div className="space-y-3">
           {DIMENSIONS.map(({ key, label, description }) => {
-            const alreadyVouched = existingDims.has(key)
+            const alreadyVouched = existingDims.has(key);
             return (
               <label
                 key={key}
-                className={`flex items-start gap-3 cursor-pointer ${alreadyVouched ? 'opacity-50' : ''}`}
+                className={`flex items-start gap-3 cursor-pointer ${alreadyVouched ? "opacity-50" : ""}`}
               >
                 <input
                   type="checkbox"
@@ -140,14 +231,20 @@ export function VouchModal({ subjectId, subjectName, existingVouches, onClose, o
                   className="mt-0.5 accent-black"
                 />
                 <div>
-                  <div className="text-ui-sm text-black font-medium">{label}</div>
-                  <div className="text-[11px] font-sans text-grey-400">{description}</div>
+                  <div className="text-ui-sm text-black font-medium">
+                    {label}
+                  </div>
+                  <div className="text-[11px] font-sans text-grey-400">
+                    {description}
+                  </div>
                   {alreadyVouched && (
-                    <div className="text-[11px] font-sans text-grey-300 italic">Already vouched</div>
+                    <div className="text-[11px] font-sans text-grey-300 italic">
+                      Already vouched
+                    </div>
                   )}
                 </div>
               </label>
-            )
+            );
           })}
         </div>
 
@@ -157,26 +254,30 @@ export function VouchModal({ subjectId, subjectName, existingVouches, onClose, o
             <input
               type="radio"
               name="visibility"
-              checked={visibility === 'public'}
-              onChange={() => setVisibility('public')}
+              checked={visibility === "public"}
+              onChange={() => setVisibility("public")}
               className="accent-black"
             />
             <div>
               <span className="text-ui-sm text-black">Public endorsement</span>
-              <span className="text-[11px] font-sans text-grey-400 ml-2">Visible on profiles</span>
+              <span className="text-[11px] font-sans text-grey-400 ml-2">
+                Visible on profiles
+              </span>
             </div>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="radio"
               name="visibility"
-              checked={visibility === 'aggregate'}
-              onChange={() => setVisibility('aggregate')}
+              checked={visibility === "aggregate"}
+              onChange={() => setVisibility("aggregate")}
               className="accent-black"
             />
             <div>
               <span className="text-ui-sm text-black">Aggregate only</span>
-              <span className="text-[11px] font-sans text-grey-400 ml-2">Anonymous to other readers</span>
+              <span className="text-[11px] font-sans text-grey-400 ml-2">
+                Anonymous to other readers
+              </span>
             </div>
           </label>
         </div>
@@ -187,7 +288,10 @@ export function VouchModal({ subjectId, subjectName, existingVouches, onClose, o
 
         {/* Actions */}
         <div className="flex items-center gap-2 pt-2">
-          <button onClick={onClose} className="btn-ghost py-1.5 px-4 text-ui-xs">
+          <button
+            onClick={onClose}
+            className="btn-ghost py-1.5 px-4 text-ui-xs"
+          >
             Cancel
           </button>
           <button
@@ -195,10 +299,10 @@ export function VouchModal({ subjectId, subjectName, existingVouches, onClose, o
             disabled={submitting || selected.size === 0}
             className="btn py-1.5 px-4 text-ui-xs disabled:opacity-50"
           >
-            {submitting ? '...' : `Vouch (${selected.size})`}
+            {submitting ? "..." : `Vouch (${selected.size})`}
           </button>
         </div>
       </div>
     </div>
-  )
+  );
 }

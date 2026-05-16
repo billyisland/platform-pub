@@ -306,7 +306,7 @@ Mechanical find-and-replace across ~40 files. No logic changes. Reference CLAUDE
 
 ---
 
-## Slice 12: Frontend accessibility
+## Slice 12: Frontend accessibility ✓ DONE (2026-05-16)
 
 **Priority: LOW. Estimated effort: 2 hours.**
 **Service:** web
