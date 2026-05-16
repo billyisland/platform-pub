@@ -54,7 +54,7 @@ Actionable fix plan derived from the codebase review in `REVIEW-PLAN.md` (2026-0
 
 ---
 
-## Slice 0: Commit the working-tree fixes
+## Slice 0: Commit the working-tree fixes ✓ DONE (2026-05-16)
 
 **DO THIS FIRST. Estimated effort: 30 minutes.**
 
@@ -81,7 +81,7 @@ The working tree contains valuable security and correctness fixes that are stuck
 
 ---
 
-## Slice 1: Security — SSRF, XSS, injection
+## Slice 1: Security — SSRF, XSS, injection ✓ DONE (2026-05-16)
 
 **Priority: URGENT. Estimated effort: 1 hour.**
 **Services:** gateway, shared, feed-ingest, traffology-worker
