@@ -102,7 +102,7 @@ All items are one-line or few-line fixes with a clear pattern.
 
 ---
 
-## Slice 2: Payment settlement three-phase refactor
+## Slice 2: Payment settlement three-phase refactor ✓ DONE (2026-05-16)
 
 **Priority: HIGH. Estimated effort: 2–3 hours.**
 **Service:** payment-service

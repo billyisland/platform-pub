@@ -1,9 +1,11 @@
-import { randomUUID } from 'node:crypto'
-import Stripe from 'stripe'
-import type { PoolClient } from 'pg'
-import type { TabSettlement, PlatformConfig } from '../types/index.js'
-import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
-import logger from '../lib/logger.js'
+import Stripe from "stripe";
+import type { PlatformConfig } from "../types/index.js";
+import {
+  pool,
+  withTransaction,
+  loadConfig,
+} from "@platform-pub/shared/db/client.js";
+import logger from "../lib/logger.js";
 
 // =============================================================================
 // SettlementService — Stage 2 of the three-stage money flow
@@ -13,23 +15,23 @@ import logger from '../lib/logger.js'
 //   • Monthly fallback: tab balance >= £2.00 AND >= 30 days since last read
 //     (ADR: "one month after the last payment")
 //
-// On settlement:
-//   1. Lock the reader's tab row
-//   2. Snapshot the current tab balance for settlement
-//   3. Create a Stripe PaymentIntent for that amount
-//   4. Write tab_settlement record (pending confirmation)
-//   5. Mark tab as settling (balance frozen, not zeroed — see FIX #13)
+// Three-phase pattern (mirrors payout.ts):
+//   1. Txn 1: Lock tab, INSERT tab_settlements as 'pending', COMMIT
+//   2. Stripe paymentIntents.create OUTSIDE any transaction (stable idempotency key)
+//   3. Txn 2: UPDATE tab_settlements with stripe_payment_intent_id, status='completed'
 //
-// Stripe webhook confirms payment — balance is zeroed only on confirmation.
+// Crash recovery: resumePendingSettlements() retries pending rows on startup.
 // =============================================================================
 
+const STRIPE_MIN_CHARGE_PENCE = 30;
+
 class SettlementService {
-  private stripe: Stripe
+  private stripe: Stripe;
 
   constructor() {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-      apiVersion: '2023-10-16',
-    })
+      apiVersion: "2023-10-16",
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -39,82 +41,71 @@ class SettlementService {
 
   async checkAndSettle(
     readerId: string,
-    triggerType: 'threshold' | 'monthly_fallback' = 'threshold'
+    triggerType: "threshold" | "monthly_fallback" = "threshold",
   ): Promise<string | null> {
-    const config = await loadConfig()
+    const config = await loadConfig();
 
     const tabRow = await pool.query<{
-      id: string
-      balance_pence: number
-      last_read_at: Date | null
-      last_settled_at: Date | null
-      stripe_customer_id: string | null
+      id: string;
+      balance_pence: number;
+      last_read_at: Date | null;
+      last_settled_at: Date | null;
+      stripe_customer_id: string | null;
     }>(
       `SELECT t.id, t.balance_pence, t.last_read_at, t.last_settled_at, a.stripe_customer_id
        FROM reading_tabs t
        JOIN accounts a ON a.id = t.reader_id
        WHERE t.reader_id = $1`,
-      [readerId]
-    )
+      [readerId],
+    );
 
-    if (tabRow.rowCount === 0) return null
+    if (tabRow.rowCount === 0) return null;
 
-    const tab = tabRow.rows[0]
+    const tab = tabRow.rows[0];
 
     if (!tab.stripe_customer_id) {
-      // Reader has no card — cannot settle
-      return null
+      return null;
     }
 
-    const shouldSettle = this.shouldTriggerSettlement(tab, config, triggerType)
-    if (!shouldSettle) return null
+    const shouldSettle = this.shouldTriggerSettlement(tab, config, triggerType);
+    if (!shouldSettle) return null;
 
-    return this.initiateSettlement(readerId, tab.id, tab.balance_pence, tab.stripe_customer_id, triggerType)
+    return this.initiateSettlement(
+      readerId,
+      tab.id,
+      tab.balance_pence,
+      tab.stripe_customer_id,
+      triggerType,
+    );
   }
 
   // ---------------------------------------------------------------------------
   // shouldTriggerSettlement — pure logic, no DB
-  //
-  // FIX #3: The monthly fallback now checks last_read_at (the reader's last
-  // reading activity), not last_settled_at. The ADR says the tab settles
-  // "one month after the last payment" — meaning a month after the reader
-  // last read something, not a month after the last settlement.
   // ---------------------------------------------------------------------------
 
   private shouldTriggerSettlement(
-    tab: { balance_pence: number; last_read_at: Date | null; last_settled_at: Date | null },
+    tab: {
+      balance_pence: number;
+      last_read_at: Date | null;
+      last_settled_at: Date | null;
+    },
     config: PlatformConfig,
-    triggerType: 'threshold' | 'monthly_fallback'
+    triggerType: "threshold" | "monthly_fallback",
   ): boolean {
-    if (triggerType === 'threshold') {
-      return tab.balance_pence >= config.tabSettlementThresholdPence
+    if (triggerType === "threshold") {
+      return tab.balance_pence >= config.tabSettlementThresholdPence;
     }
 
-    // Monthly fallback: at least £2 AND 30+ days since last read activity
-    if (tab.balance_pence < config.monthlyFallbackMinimumPence) return false
+    if (tab.balance_pence < config.monthlyFallbackMinimumPence) return false;
 
-    const now = Date.now()
-    const fallbackMs = config.monthlyFallbackDays * 24 * 60 * 60 * 1000
-    // FIX #3: Use last_read_at, falling back to tab creation (epoch 0 if null)
-    const lastActivity = tab.last_read_at?.getTime() ?? 0
-    return now - lastActivity >= fallbackMs
+    const now = Date.now();
+    const fallbackMs = config.monthlyFallbackDays * 24 * 60 * 60 * 1000;
+    const lastActivity = tab.last_read_at?.getTime() ?? 0;
+    return now - lastActivity >= fallbackMs;
   }
 
   // ---------------------------------------------------------------------------
-  // initiateSettlement — writes DB record, creates Stripe PaymentIntent
-  //
-  // FIX #13: Tab balance is NO LONGER zeroed at initiation. Instead, we
-  // record the settlement amount and leave the tab balance intact. The
-  // confirmSettlement webhook handler zeroes the settled portion. This
-  // prevents the race condition where:
-  //   1. Tab zeroed at initiation
-  //   2. New read arrives, adds to tab (now at new_read_amount)
-  //   3. Stripe fails, handleFailedPayment restores old balance
-  //   4. New read's amount is lost (overwritten by restoration)
-  //
-  // The settlement record tracks the amount being settled. New reads that
-  // arrive during the settlement window are added to the tab normally and
-  // are not part of this settlement.
+  // initiateSettlement — three-phase: reserve → Stripe → complete
   // ---------------------------------------------------------------------------
 
   private async initiateSettlement(
@@ -122,176 +113,315 @@ class SettlementService {
     tabId: string,
     amountPence: number,
     stripeCustomerId: string,
-    triggerType: 'threshold' | 'monthly_fallback'
-  ): Promise<string> {
-    const config = await loadConfig()
+    triggerType: "threshold" | "monthly_fallback",
+  ): Promise<string | null> {
+    const reserved = await this.reserveSettlement(
+      readerId,
+      tabId,
+      amountPence,
+      stripeCustomerId,
+      triggerType,
+    );
+    if (!reserved) return null;
 
-    // Calculate fee split — integer arithmetic throughout
-    const platformFeePence = Math.floor((amountPence * config.platformFeeBps) / 10_000)
-    const netToWritersPence = amountPence - platformFeePence
-
-    return withTransaction(async (client) => {
-      // Lock the tab to prevent double-settlement
-      const lockedTab = await client.query<{ balance_pence: number }>(
-        'SELECT balance_pence FROM reading_tabs WHERE id = $1 FOR UPDATE',
-        [tabId]
-      )
-
-      // Re-check balance inside the lock (may have changed)
-      const lockedBalance = lockedTab.rows[0].balance_pence
-      if (lockedBalance < amountPence) {
-        // Balance dropped — use the locked balance instead
-        logger.warn(
-          { tabId, expected: amountPence, actual: lockedBalance },
-          'Tab balance changed between check and lock — using locked amount'
-        )
-        // Recalculate with actual balance
-        const actualAmount = lockedBalance
-        const actualFee = Math.floor((actualAmount * config.platformFeeBps) / 10_000)
-        const actualNet = actualAmount - actualFee
-
-        return this.executeSettlement(
-          client, readerId, tabId, actualAmount, actualFee, actualNet,
-          stripeCustomerId, triggerType
-        )
-      }
-
-      return this.executeSettlement(
-        client, readerId, tabId, amountPence, platformFeePence, netToWritersPence,
-        stripeCustomerId, triggerType
-      )
-    })
+    await this.completeSettlement(
+      reserved.settlementId,
+      reserved.amountPence,
+      stripeCustomerId,
+      readerId,
+      tabId,
+      triggerType,
+    );
+    return reserved.settlementId;
   }
 
-  private async executeSettlement(
-    client: PoolClient,
+  // ---------------------------------------------------------------------------
+  // Phase 1: reserveSettlement (Txn 1)
+  // Lock the tab, check for existing pending settlement, validate amount,
+  // INSERT tab_settlements as 'pending'. Commits before any Stripe call.
+  // ---------------------------------------------------------------------------
+
+  private async reserveSettlement(
     readerId: string,
     tabId: string,
-    amountPence: number,
-    platformFeePence: number,
-    netToWritersPence: number,
+    expectedAmountPence: number,
     stripeCustomerId: string,
-    triggerType: 'threshold' | 'monthly_fallback'
-  ): Promise<string> {
-    // Create Stripe PaymentIntent — off-session (card already on file)
-    // Idempotency key protects against duplicate charges on network retries
-    const settlementIdempotencyKey = randomUUID()
-    const paymentIntent = await this.stripe.paymentIntents.create({
-      amount: amountPence,
-      currency: 'gbp',
-      customer: stripeCustomerId,
-      payment_method_types: ['card'],
-      confirm: true,
-      off_session: true,
-      metadata: {
-        platform: 'all.haus',
-        reader_id: readerId,
-        tab_id: tabId,
-        trigger_type: triggerType,
+    triggerType: "threshold" | "monthly_fallback",
+  ): Promise<{ settlementId: string; amountPence: number } | null> {
+    const config = await loadConfig();
+
+    return withTransaction(async (client) => {
+      const lockedTab = await client.query<{ balance_pence: number }>(
+        "SELECT balance_pence FROM reading_tabs WHERE id = $1 FOR UPDATE",
+        [tabId],
+      );
+
+      const lockedBalance = lockedTab.rows[0].balance_pence;
+
+      // Use the locked balance (may have changed since the initial check)
+      const amountPence =
+        Math.min(lockedBalance, expectedAmountPence) > 0
+          ? Math.min(lockedBalance, expectedAmountPence) === expectedAmountPence
+            ? expectedAmountPence
+            : lockedBalance
+          : lockedBalance;
+
+      const actualAmount =
+        lockedBalance < expectedAmountPence
+          ? lockedBalance
+          : expectedAmountPence;
+
+      if (actualAmount < STRIPE_MIN_CHARGE_PENCE) {
+        logger.info(
+          {
+            tabId,
+            amountPence: actualAmount,
+            minimum: STRIPE_MIN_CHARGE_PENCE,
+          },
+          "Amount below Stripe minimum — skipping settlement",
+        );
+        return null;
+      }
+
+      if (lockedBalance < expectedAmountPence) {
+        logger.warn(
+          { tabId, expected: expectedAmountPence, actual: lockedBalance },
+          "Tab balance changed between check and lock — using locked amount",
+        );
+      }
+
+      // Check for existing pending settlement on this tab
+      const existingPending = await client.query<{ id: string }>(
+        `SELECT id FROM tab_settlements WHERE tab_id = $1 AND status = 'pending'`,
+        [tabId],
+      );
+      if (existingPending.rowCount! > 0) {
+        logger.info(
+          { tabId, existingSettlementId: existingPending.rows[0].id },
+          "Pending settlement already exists — skipping",
+        );
+        return null;
+      }
+
+      const platformFeePence = Math.floor(
+        (actualAmount * config.platformFeeBps) / 10_000,
+      );
+      const netToWritersPence = actualAmount - platformFeePence;
+
+      const settlementRow = await client.query<{ id: string }>(
+        `INSERT INTO tab_settlements (
+           reader_id, tab_id, amount_pence, platform_fee_pence,
+           net_to_writers_pence, trigger_type, status
+         ) VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+         RETURNING id`,
+        [
+          readerId,
+          tabId,
+          actualAmount,
+          platformFeePence,
+          netToWritersPence,
+          triggerType,
+        ],
+      );
+
+      const settlementId = settlementRow.rows[0].id;
+
+      logger.info(
+        { settlementId, readerId, amountPence: actualAmount, triggerType },
+        "Settlement reserved (pending Stripe charge)",
+      );
+
+      return { settlementId, amountPence: actualAmount };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 2+3: completeSettlement
+  // Stripe call with stable idempotency key, then Txn 2 to record PI ID and
+  // flip status to 'completed'. Safe to retry — same key deduplicates on Stripe.
+  // ---------------------------------------------------------------------------
+
+  private async completeSettlement(
+    settlementId: string,
+    amountPence: number,
+    stripeCustomerId: string,
+    readerId: string,
+    tabId: string,
+    triggerType: "threshold" | "monthly_fallback",
+  ): Promise<void> {
+    const paymentIntent = await this.stripe.paymentIntents.create(
+      {
+        amount: amountPence,
+        currency: "gbp",
+        customer: stripeCustomerId,
+        payment_method_types: ["card"],
+        confirm: true,
+        off_session: true,
+        metadata: {
+          platform: "all.haus",
+          reader_id: readerId,
+          tab_id: tabId,
+          settlement_id: settlementId,
+          trigger_type: triggerType,
+        },
       },
-    }, {
-      idempotencyKey: settlementIdempotencyKey,
-    })
+      {
+        idempotencyKey: `settlement-${settlementId}`,
+      },
+    );
 
-    // Write settlement record (pending Stripe confirmation)
-    const settlementRow = await client.query<{ id: string }>(
-      `INSERT INTO tab_settlements (
-         reader_id, tab_id, amount_pence, platform_fee_pence,
-         net_to_writers_pence, stripe_payment_intent_id, trigger_type
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id`,
-      [
-        readerId,
-        tabId,
-        amountPence,
-        platformFeePence,
-        netToWritersPence,
-        paymentIntent.id,
-        triggerType,
-      ]
-    )
-
-    const settlementId = settlementRow.rows[0].id
-
-    // FIX #13: Do NOT zero the tab here. The tab balance stays as-is.
-    // New reads can still accrue. The confirmSettlement webhook handler
-    // subtracts the settled amount when Stripe confirms.
+    await pool.query(
+      `UPDATE tab_settlements
+       SET stripe_payment_intent_id = $1, status = 'completed'
+       WHERE id = $2 AND status = 'pending'`,
+      [paymentIntent.id, settlementId],
+    );
 
     logger.info(
-      { settlementId, readerId, amountPence, triggerType, paymentIntentId: paymentIntent.id },
-      'Settlement initiated — awaiting Stripe confirmation'
-    )
+      {
+        settlementId,
+        readerId,
+        amountPence,
+        triggerType,
+        paymentIntentId: paymentIntent.id,
+      },
+      "Settlement completed — awaiting Stripe confirmation",
+    );
+  }
 
-    return settlementId
+  // ---------------------------------------------------------------------------
+  // resumePendingSettlements — called at startup to retry any settlements that
+  // were reserved but crashed before the Stripe call completed. Stable
+  // idempotency keys make this safe to call repeatedly.
+  // ---------------------------------------------------------------------------
+
+  async resumePendingSettlements(): Promise<void> {
+    const { rows } = await pool.query<{
+      id: string;
+      reader_id: string;
+      tab_id: string;
+      amount_pence: number;
+      trigger_type: "threshold" | "monthly_fallback";
+    }>(
+      `SELECT id, reader_id, tab_id, amount_pence, trigger_type
+       FROM tab_settlements
+       WHERE status = 'pending'
+       ORDER BY created_at ASC`,
+    );
+
+    if (rows.length === 0) return;
+
+    logger.info({ count: rows.length }, "Resuming pending settlements");
+
+    for (const row of rows) {
+      try {
+        // Look up the customer's stripe_customer_id
+        const { rows: accRows } = await pool.query<{
+          stripe_customer_id: string | null;
+        }>(
+          `SELECT a.stripe_customer_id
+           FROM reading_tabs t
+           JOIN accounts a ON a.id = t.reader_id
+           WHERE t.id = $1`,
+          [row.tab_id],
+        );
+
+        const stripeCustomerId = accRows[0]?.stripe_customer_id;
+        if (!stripeCustomerId) {
+          logger.warn(
+            { settlementId: row.id, tabId: row.tab_id },
+            "Cannot resume settlement — no stripe_customer_id found, marking failed",
+          );
+          await pool.query(
+            `UPDATE tab_settlements SET status = 'failed' WHERE id = $1`,
+            [row.id],
+          );
+          continue;
+        }
+
+        await this.completeSettlement(
+          row.id,
+          row.amount_pence,
+          stripeCustomerId,
+          row.reader_id,
+          row.tab_id,
+          row.trigger_type,
+        );
+      } catch (err) {
+        logger.error(
+          { err, settlementId: row.id, readerId: row.reader_id },
+          "Failed to resume pending settlement — will retry next startup",
+        );
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
   // confirmSettlement — called from Stripe webhook on payment_intent.succeeded
   //
-  // FIX #13: Now subtracts the settled amount from the tab balance (instead
-  // of assuming it was already zeroed). This is safe even if new reads arrived
-  // between initiation and confirmation.
+  // Subtracts the settled amount from the tab balance. Safe even if new reads
+  // arrived between initiation and confirmation.
   // ---------------------------------------------------------------------------
 
-  async confirmSettlement(paymentIntentId: string, stripeChargeId: string): Promise<void> {
+  async confirmSettlement(
+    paymentIntentId: string,
+    stripeChargeId: string,
+  ): Promise<void> {
     await withTransaction(async (client) => {
-      // Find the settlement record
       const settlementRow = await client.query<{
-        id: string
-        reader_id: string
-        tab_id: string
-        amount_pence: number
-        stripe_charge_id: string | null
+        id: string;
+        reader_id: string;
+        tab_id: string;
+        amount_pence: number;
+        stripe_charge_id: string | null;
       }>(
         `SELECT id, reader_id, tab_id, amount_pence, stripe_charge_id
          FROM tab_settlements
          WHERE stripe_payment_intent_id = $1`,
-        [paymentIntentId]
-      )
+        [paymentIntentId],
+      );
 
       if (settlementRow.rowCount === 0) {
-        throw new Error(`No settlement found for PaymentIntent: ${paymentIntentId}`)
+        throw new Error(
+          `No settlement found for PaymentIntent: ${paymentIntentId}`,
+        );
       }
 
-      const settlement = settlementRow.rows[0]
+      const settlement = settlementRow.rows[0];
 
-      // Idempotency guard: if already confirmed, skip to prevent double-debit
       if (settlement.stripe_charge_id !== null) {
         logger.warn(
-          { settlementId: settlement.id, existingChargeId: settlement.stripe_charge_id, newChargeId: stripeChargeId },
-          'Settlement already confirmed — skipping duplicate webhook'
-        )
-        return
+          {
+            settlementId: settlement.id,
+            existingChargeId: settlement.stripe_charge_id,
+            newChargeId: stripeChargeId,
+          },
+          "Settlement already confirmed — skipping duplicate webhook",
+        );
+        return;
       }
 
-      // Atomic claim: only proceed if we successfully set the charge ID.
-      // Prevents TOCTOU race between the SELECT above and concurrent webhooks.
       const claimed = await client.query(
         `UPDATE tab_settlements SET stripe_charge_id = $1 WHERE id = $2 AND stripe_charge_id IS NULL`,
-        [stripeChargeId, settlement.id]
-      )
+        [stripeChargeId, settlement.id],
+      );
       if (claimed.rowCount === 0) {
         logger.warn(
           { settlementId: settlement.id, stripeChargeId },
-          'Settlement claimed by concurrent webhook — skipping'
-        )
-        return
+          "Settlement claimed by concurrent webhook — skipping",
+        );
+        return;
       }
 
-      // FIX #13: Subtract the settled amount from the tab (not zero it).
-      // New reads may have accrued since settlement was initiated.
       await client.query(
         `UPDATE reading_tabs
          SET balance_pence = GREATEST(0, balance_pence - $1),
              last_settled_at = now(),
              updated_at = now()
          WHERE id = $2`,
-        [settlement.amount_pence, settlement.tab_id]
-      )
+        [settlement.amount_pence, settlement.tab_id],
+      );
 
-      // Advance accrued read_events to platform_settled
-      // Only transition reads that were accrued at the time of settlement
-      // (reads with read_at <= settlement creation time)
       const { rowCount } = await client.query(
         `UPDATE read_events
          SET state = 'platform_settled',
@@ -300,61 +430,68 @@ class SettlementService {
          WHERE tab_id = $2
            AND state = 'accrued'
            AND read_at <= (SELECT settled_at FROM tab_settlements WHERE id = $1)`,
-        [settlement.id, settlement.tab_id]
-      )
+        [settlement.id, settlement.tab_id],
+      );
 
-      // Advance accrued vote_charges to platform_settled
       await client.query(
         `UPDATE vote_charges
          SET state = 'platform_settled'
          WHERE tab_id = $1
            AND state = 'accrued'
            AND created_at <= (SELECT settled_at FROM tab_settlements WHERE id = $2)`,
-        [settlement.tab_id, settlement.id]
-      )
+        [settlement.tab_id, settlement.id],
+      );
 
       logger.info(
-        { settlementId: settlement.id, readEventsUpdated: rowCount, stripeChargeId },
-        'Settlement confirmed — reads advanced to platform_settled'
-      )
-    })
+        {
+          settlementId: settlement.id,
+          readEventsUpdated: rowCount,
+          stripeChargeId,
+        },
+        "Settlement confirmed — reads advanced to platform_settled",
+      );
+    });
   }
 
   // ---------------------------------------------------------------------------
   // handleFailedPayment — called from Stripe webhook on payment_intent.payment_failed
   //
-  // FIX #13: Since we no longer zero the tab at initiation, failure handling
-  // is simpler: just delete the settlement record. The tab balance was never
-  // modified, so no restoration is needed. Reads remain accrued.
+  // Since tab balance is never modified at initiation, failure handling is
+  // simple: mark the settlement as failed. Reads remain accrued.
   // ---------------------------------------------------------------------------
 
-  async handleFailedPayment(paymentIntentId: string, failureMessage: string): Promise<void> {
+  async handleFailedPayment(
+    paymentIntentId: string,
+    failureMessage: string,
+  ): Promise<void> {
     await withTransaction(async (client) => {
       const settlementRow = await client.query<{
-        id: string
-        reader_id: string
-        tab_id: string
-        amount_pence: number
+        id: string;
+        reader_id: string;
+        tab_id: string;
+        amount_pence: number;
       }>(
         `SELECT id, reader_id, tab_id, amount_pence
          FROM tab_settlements
          WHERE stripe_payment_intent_id = $1`,
-        [paymentIntentId]
-      )
+        [paymentIntentId],
+      );
 
-      if (settlementRow.rowCount === 0) return
+      if (settlementRow.rowCount === 0) return;
 
-      const settlement = settlementRow.rows[0]
+      const settlement = settlementRow.rows[0];
 
-      // Remove the settlement record — reads stay accrued, tab is untouched
-      await client.query('DELETE FROM tab_settlements WHERE id = $1', [settlement.id])
+      await client.query(
+        `UPDATE tab_settlements SET status = 'failed' WHERE id = $1`,
+        [settlement.id],
+      );
 
       logger.warn(
         { settlementId: settlement.id, paymentIntentId, failureMessage },
-        'Payment failed — settlement record removed, tab balance unchanged'
-      )
-    })
+        "Payment failed — settlement marked failed, tab balance unchanged",
+      );
+    });
   }
 }
 
-export const settlementService = new SettlementService()
+export const settlementService = new SettlementService();

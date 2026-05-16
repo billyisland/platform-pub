@@ -1,18 +1,27 @@
-import type { PoolClient } from 'pg'
-import type { GatePassEvent, ReadEvent, ReadingTab, PlatformConfig } from '../types/index.js'
-import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
-import { enqueueRelayPublish } from '@platform-pub/shared/lib/relay-outbox.js'
-import { signReceiptEvent, createPortableReceipt } from '../lib/nostr.js'
-import logger from '../lib/logger.js'
+import type { PoolClient } from "pg";
+import type {
+  GatePassEvent,
+  ReadEvent,
+  ReadingTab,
+  PlatformConfig,
+} from "../types/index.js";
+import {
+  pool,
+  withTransaction,
+  loadConfig,
+} from "@platform-pub/shared/db/client.js";
+import { enqueueRelayPublish } from "@platform-pub/shared/lib/relay-outbox.js";
+import { signReceiptEvent, createPortableReceipt } from "../lib/nostr.js";
+import logger from "../lib/logger.js";
 
 // =============================================================================
 // Read classification — extracted as a pure function for testability
 // =============================================================================
 
 interface ReadClassification {
-  readState: 'provisional' | 'accrued'
-  onFreeAllowance: boolean
-  allowanceJustExhausted: boolean
+  readState: "provisional" | "accrued";
+  onFreeAllowance: boolean;
+  allowanceJustExhausted: boolean;
 }
 
 export function classifyRead(
@@ -20,15 +29,16 @@ export function classifyRead(
   freeAllowanceRemainingPence: number,
   amountPence: number,
 ): ReadClassification {
-  const allowanceJustExhausted = !hasCard &&
+  const allowanceJustExhausted =
+    !hasCard &&
     freeAllowanceRemainingPence > 0 &&
-    freeAllowanceRemainingPence - amountPence <= 0
+    freeAllowanceRemainingPence - amountPence <= 0;
 
   return {
-    readState: hasCard ? 'accrued' : 'provisional',
+    readState: hasCard ? "accrued" : "provisional",
     onFreeAllowance: !hasCard && freeAllowanceRemainingPence > 0,
     allowanceJustExhausted,
-  }
+  };
 }
 
 // =============================================================================
@@ -42,24 +52,24 @@ export function classifyRead(
 //   5. Return the read event — caller (gate route) uses this to issue content key
 // =============================================================================
 
-const CONFIG_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const CONFIG_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 class AccrualService {
-  private config: PlatformConfig | null = null
-  private configLoadedAt = 0
+  private config: PlatformConfig | null = null;
+  private configLoadedAt = 0;
 
   async getConfig(): Promise<PlatformConfig> {
     if (!this.config || Date.now() - this.configLoadedAt > CONFIG_TTL_MS) {
-      this.config = await loadConfig()
-      this.configLoadedAt = Date.now()
+      this.config = await loadConfig();
+      this.configLoadedAt = Date.now();
     }
-    return this.config
+    return this.config;
   }
 
   // Call this on config changes rather than restarting the service
   invalidateConfig() {
-    this.config = null
-    this.configLoadedAt = 0
+    this.config = null;
+    this.configLoadedAt = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -67,47 +77,46 @@ class AccrualService {
   // Called synchronously in the gate-pass request path; must be fast.
   // ---------------------------------------------------------------------------
 
-  async recordGatePass(event: GatePassEvent): Promise<{ readEvent: ReadEvent; allowanceJustExhausted: boolean }> {
-    const config = await this.getConfig()
+  async recordGatePass(
+    event: GatePassEvent,
+  ): Promise<{ readEvent: ReadEvent; allowanceJustExhausted: boolean }> {
+    const config = await this.getConfig();
 
-    return withTransaction(async (client) => {
-      // Determine read state based on whether the reader has a card connected
+    const result = await withTransaction(async (client) => {
       const readerRow = await client.query<{
-        stripe_customer_id: string | null
-        free_allowance_remaining_pence: number
+        stripe_customer_id: string | null;
+        free_allowance_remaining_pence: number;
       }>(
         `SELECT stripe_customer_id, free_allowance_remaining_pence
          FROM accounts WHERE id = $1 FOR UPDATE`,
-        [event.readerId]
-      )
+        [event.readerId],
+      );
 
       if (readerRow.rowCount === 0) {
-        throw new Error(`Reader not found: ${event.readerId}`)
+        throw new Error(`Reader not found: ${event.readerId}`);
       }
 
-      const reader = readerRow.rows[0]
-      const hasCard = reader.stripe_customer_id !== null
+      const reader = readerRow.rows[0];
+      const hasCard = reader.stripe_customer_id !== null;
 
       const classification = classifyRead(
         hasCard,
         reader.free_allowance_remaining_pence,
         event.amountPence,
-      )
-      const { readState, onFreeAllowance, allowanceJustExhausted } = classification
+      );
+      const { readState, onFreeAllowance, allowanceJustExhausted } =
+        classification;
 
       if (!hasCard) {
-        // Provisional: reader has no card — debit against free allowance (can go negative)
-
         await client.query(
           `UPDATE accounts
            SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1,
                updated_at = now()
            WHERE id = $2`,
-          [event.amountPence, event.readerId]
-        )
+          [event.amountPence, event.readerId],
+        );
       }
 
-      // Write the read_event record — DB-first per dual-write architecture (§II.4b)
       const readEventRow = await client.query<ReadEvent>(
         `INSERT INTO read_events (
            reader_id, article_id, writer_id, tab_id,
@@ -123,42 +132,43 @@ class AccrualService {
           readState,
           event.readerPubkeyHash,
           onFreeAllowance,
-        ]
-      )
+        ],
+      );
 
-      const readEvent = readEventRow.rows[0]
+      const readEvent = readEventRow.rows[0];
 
-      // Update reading tab balance (only for accrued reads — tab is real money owed)
-      // Lock the tab row first to prevent lost updates from concurrent gate passes
-      if (readState === 'accrued') {
+      if (readState === "accrued") {
         await client.query(
           `SELECT id FROM reading_tabs WHERE id = $1 FOR UPDATE`,
-          [event.tabId]
-        )
+          [event.tabId],
+        );
         await client.query(
           `UPDATE reading_tabs
            SET balance_pence = balance_pence + $1,
                last_read_at  = now(),
                updated_at    = now()
            WHERE id = $2`,
-          [event.amountPence, event.tabId]
-        )
+          [event.amountPence, event.tabId],
+        );
       }
 
-      // FIX #10: Use a proper async helper that catches errors reliably,
-      // instead of setImmediate with an async callback (which can silently
-      // swallow rejections if the promise rejects outside the try/catch).
-      publishReceiptAsync(readEvent, event).catch(() => {
-        // Already logged inside publishReceiptAsync — no-op here
-      })
-
       logger.info(
-        { readEventId: readEvent.id, state: readState, amountPence: event.amountPence },
-        'Gate pass recorded'
-      )
+        {
+          readEventId: readEvent.id,
+          state: readState,
+          amountPence: event.amountPence,
+        },
+        "Gate pass recorded",
+      );
 
-      return { readEvent, allowanceJustExhausted }
-    })
+      return { readEvent, allowanceJustExhausted };
+    });
+
+    // Fire receipt publish AFTER the transaction commits so the read_event row
+    // is visible to the receipt's own transaction.
+    publishReceiptAsync(result.readEvent, event).catch(() => {});
+
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -179,17 +189,17 @@ class AccrualService {
     return withTransaction(async (client) => {
       // Get all provisional reads for this reader
       const { rows: provisionalReads } = await client.query<{
-        id: string
-        amount_pence: number
+        id: string;
+        amount_pence: number;
       }>(
         `SELECT id, amount_pence
          FROM read_events
          WHERE reader_id = $1 AND state = 'provisional'
          FOR UPDATE`,
-        [readerId]
-      )
+        [readerId],
+      );
 
-      if (provisionalReads.length === 0) return 0
+      if (provisionalReads.length === 0) return 0;
 
       // FIX #12: Ensure the reader has a tab — they may not have had one
       // during the provisional period. Upsert to handle the race safely.
@@ -199,11 +209,14 @@ class AccrualService {
          ON CONFLICT ON CONSTRAINT one_tab_per_reader
          DO UPDATE SET updated_at = now()
          RETURNING id`,
-        [readerId]
-      )
-      const tabId = tabRow.rows[0].id
+        [readerId],
+      );
+      const tabId = tabRow.rows[0].id;
 
-      const totalPence = provisionalReads.reduce((sum, r) => sum + r.amount_pence, 0)
+      const totalPence = provisionalReads.reduce(
+        (sum, r) => sum + r.amount_pence,
+        0,
+      );
 
       // Update all provisional reads to accrued, assigning the tab
       await client.query(
@@ -212,18 +225,23 @@ class AccrualService {
              tab_id = $1,
              state_updated_at = now()
          WHERE reader_id = $2 AND state = 'provisional'`,
-        [tabId, readerId]
-      )
+        [tabId, readerId],
+      );
 
       // Also convert provisional vote_charges to accrued
-      const { rows: provisionalVoteCharges } = await client.query<{ amount_pence: number }>(
+      const { rows: provisionalVoteCharges } = await client.query<{
+        amount_pence: number;
+      }>(
         `UPDATE vote_charges
          SET state = 'accrued', tab_id = $1
          WHERE voter_id = $2 AND state = 'provisional'
          RETURNING amount_pence`,
-        [tabId, readerId]
-      )
-      const voteChargeTotal = provisionalVoteCharges.reduce((sum, r) => sum + r.amount_pence, 0)
+        [tabId, readerId],
+      );
+      const voteChargeTotal = provisionalVoteCharges.reduce(
+        (sum, r) => sum + r.amount_pence,
+        0,
+      );
 
       // Add total to tab balance (reads + vote charges)
       await client.query(
@@ -232,16 +250,16 @@ class AccrualService {
              last_read_at  = now(),
              updated_at    = now()
          WHERE id = $2`,
-        [totalPence + voteChargeTotal, tabId]
-      )
+        [totalPence + voteChargeTotal, tabId],
+      );
 
       logger.info(
         { readerId, convertedCount: provisionalReads.length, totalPence },
-        'Provisional reads converted to accrued'
-      )
+        "Provisional reads converted to accrued",
+      );
 
-      return provisionalReads.length
-    })
+      return provisionalReads.length;
+    });
   }
 }
 
@@ -252,10 +270,13 @@ class AccrualService {
 // FIX #10: Extracted async receipt publishing into a standalone async function
 // so errors are reliably caught and logged. This replaces the setImmediate
 // pattern which could silently swallow rejections.
-async function publishReceiptAsync(readEvent: ReadEvent, event: GatePassEvent): Promise<void> {
+async function publishReceiptAsync(
+  readEvent: ReadEvent,
+  event: GatePassEvent,
+): Promise<void> {
   try {
-    const articleNostrEventId = await getArticleNostrEventId(event.articleId)
-    const writerPubkey = await getWriterPubkey(event.writerId)
+    const articleNostrEventId = await getArticleNostrEventId(event.articleId);
+    const writerPubkey = await getWriterPubkey(event.writerId);
 
     const receiptEvent = signReceiptEvent({
       articleNostrEventId,
@@ -263,7 +284,7 @@ async function publishReceiptAsync(readEvent: ReadEvent, event: GatePassEvent): 
       readerPubkeyHash: event.readerPubkeyHash,
       amountPence: event.amountPence,
       tabId: event.tabId,
-    })
+    });
 
     // Portable receipt stays local — private to the reader, never on the relay.
     const receiptToken = createPortableReceipt({
@@ -271,7 +292,7 @@ async function publishReceiptAsync(readEvent: ReadEvent, event: GatePassEvent): 
       writerPubkey,
       readerPubkey: event.readerPubkey,
       amountPence: event.amountPence,
-    })
+    });
 
     await withTransaction(async (client) => {
       await client.query(
@@ -280,40 +301,45 @@ async function publishReceiptAsync(readEvent: ReadEvent, event: GatePassEvent): 
              reader_pubkey = $2,
              receipt_token = $3
          WHERE id = $4`,
-        [receiptEvent.id, event.readerPubkey, receiptToken, readEvent.id]
-      )
+        [receiptEvent.id, event.readerPubkey, receiptToken, readEvent.id],
+      );
       await enqueueRelayPublish(client, {
-        entityType: 'receipt',
+        entityType: "receipt",
         entityId: readEvent.id,
         signedEvent: receiptEvent,
-      })
-    })
+      });
+    });
   } catch (err) {
     // Receipt failure never fails the read — relay_outbox owns retry.
-    logger.error({ err, readEventId: readEvent.id }, 'Receipt publish failed — will retry')
+    logger.error(
+      { err, readEventId: readEvent.id },
+      "Receipt publish failed — will retry",
+    );
   }
 }
 
 async function getArticleNostrEventId(articleId: string): Promise<string> {
   const { rows } = await pool.query<{ nostr_event_id: string }>(
-    'SELECT nostr_event_id FROM articles WHERE id = $1',
-    [articleId]
-  )
+    "SELECT nostr_event_id FROM articles WHERE id = $1",
+    [articleId],
+  );
   if (!rows[0]?.nostr_event_id) {
-    throw new Error(`Article not found or missing nostr_event_id: ${articleId}`)
+    throw new Error(
+      `Article not found or missing nostr_event_id: ${articleId}`,
+    );
   }
-  return rows[0].nostr_event_id
+  return rows[0].nostr_event_id;
 }
 
 async function getWriterPubkey(writerId: string): Promise<string> {
   const { rows } = await pool.query<{ nostr_pubkey: string }>(
-    'SELECT nostr_pubkey FROM accounts WHERE id = $1',
-    [writerId]
-  )
+    "SELECT nostr_pubkey FROM accounts WHERE id = $1",
+    [writerId],
+  );
   if (!rows[0]?.nostr_pubkey) {
-    throw new Error(`Writer not found or missing nostr_pubkey: ${writerId}`)
+    throw new Error(`Writer not found or missing nostr_pubkey: ${writerId}`);
   }
-  return rows[0].nostr_pubkey
+  return rows[0].nostr_pubkey;
 }
 
-export const accrualService = new AccrualService()
+export const accrualService = new AccrualService();

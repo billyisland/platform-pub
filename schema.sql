@@ -1206,8 +1206,10 @@ CREATE TABLE public.tab_settlements (
     stripe_payment_intent_id text,
     stripe_charge_id text,
     trigger_type text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
     settled_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tab_settlements_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text]))),
     CONSTRAINT tab_settlements_trigger_type_check CHECK ((trigger_type = ANY (ARRAY['threshold'::text, 'monthly_fallback'::text])))
 );
 
@@ -2480,6 +2482,8 @@ CREATE INDEX idx_tab_settlements_reader_id ON public.tab_settlements USING btree
 
 
 CREATE INDEX idx_tab_settlements_settled_at ON public.tab_settlements USING btree (settled_at DESC);
+
+CREATE INDEX idx_tab_settlements_pending ON public.tab_settlements USING btree (status) WHERE (status = 'pending'::text);
 
 
 CREATE INDEX idx_tags_name ON public.tags USING btree (name);
