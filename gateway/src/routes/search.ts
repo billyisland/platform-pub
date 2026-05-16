@@ -1,6 +1,6 @@
-import type { FastifyInstance } from 'fastify'
-import { pool } from '@platform-pub/shared/db/client.js'
-import { optionalAuth } from '../middleware/auth.js'
+import type { FastifyInstance } from "fastify";
+import { pool } from "@platform-pub/shared/db/client.js";
+import { optionalAuth } from "../middleware/auth.js";
 
 // =============================================================================
 // Search Routes
@@ -23,35 +23,39 @@ import { optionalAuth } from '../middleware/auth.js'
 // GET /search?q=<query>&type=articles|writers&limit=20
 // =============================================================================
 
-const escapeLike = (s: string) => s.replace(/[%_\\]/g, '\\$&')
+const escapeLike = (s: string) => s.replace(/[%_\\]/g, "\\$&");
 
 export async function searchRoutes(app: FastifyInstance) {
-
   app.get<{
-    Querystring: { q: string; type?: string; limit?: string; offset?: string }
+    Querystring: { q: string; type?: string; limit?: string; offset?: string };
   }>(
-    '/search',
-    { preHandler: optionalAuth, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    "/search",
+    {
+      preHandler: optionalAuth,
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+    },
     async (req, reply) => {
-      const query = (req.query.q ?? '').trim()
+      const query = (req.query.q ?? "").trim();
       if (query.length < 2) {
-        return reply.status(400).send({ error: 'Search query must be at least 2 characters' })
+        return reply
+          .status(400)
+          .send({ error: "Search query must be at least 2 characters" });
       }
 
-      const type = req.query.type ?? 'articles'
-      const limit = Math.min(parseInt(req.query.limit ?? '20', 10), 50)
-      const offset = parseInt(req.query.offset ?? '0', 10)
+      const type = req.query.type ?? "articles";
+      const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 50);
+      const offset = Math.min(parseInt(req.query.offset ?? "0", 10) || 0, 1000);
 
-      if (type === 'writers') {
-        return searchWriters(query, limit, offset, reply)
+      if (type === "writers") {
+        return searchWriters(query, limit, offset, reply);
       }
-      if (type === 'publications') {
-        return searchPublications(query, limit, offset, reply)
+      if (type === "publications") {
+        return searchPublications(query, limit, offset, reply);
       }
 
-      return searchArticles(query, limit, offset, reply)
-    }
-  )
+      return searchArticles(query, limit, offset, reply);
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -66,20 +70,20 @@ async function searchArticles(
   query: string,
   limit: number,
   offset: number,
-  reply: any
+  reply: any,
 ) {
   const { rows } = await pool.query<{
-    id: string
-    nostr_event_id: string
-    nostr_d_tag: string
-    title: string
-    summary: string | null
-    word_count: number | null
-    access_mode: string
-    published_at: Date
-    writer_username: string
-    writer_display_name: string | null
-    similarity: number
+    id: string;
+    nostr_event_id: string;
+    nostr_d_tag: string;
+    title: string;
+    summary: string | null;
+    word_count: number | null;
+    access_mode: string;
+    published_at: Date;
+    writer_username: string;
+    writer_display_name: string | null;
+    similarity: number;
   }>(
     `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, a.title, a.summary,
             a.word_count, a.access_mode, a.published_at,
@@ -98,8 +102,8 @@ async function searchArticles(
        )
      ORDER BY similarity DESC, a.published_at DESC
      LIMIT $3 OFFSET $4`,
-    [query, `%${escapeLike(query)}%`, limit, offset]
-  )
+    [query, `%${escapeLike(query)}%`, limit, offset],
+  );
 
   const results = rows.map((r) => ({
     id: r.id,
@@ -109,16 +113,18 @@ async function searchArticles(
     summary: r.summary,
     wordCount: r.word_count,
     accessMode: r.access_mode,
-    isPaywalled: r.access_mode === 'paywalled',
+    isPaywalled: r.access_mode === "paywalled",
     publishedAt: r.published_at.toISOString(),
     writer: {
       username: r.writer_username,
       displayName: r.writer_display_name,
     },
     relevance: r.similarity,
-  }))
+  }));
 
-  return reply.status(200).send({ query, type: 'articles', results, limit, offset })
+  return reply
+    .status(200)
+    .send({ query, type: "articles", results, limit, offset });
 }
 
 // ---------------------------------------------------------------------------
@@ -129,16 +135,16 @@ async function searchWriters(
   query: string,
   limit: number,
   offset: number,
-  reply: any
+  reply: any,
 ) {
   const { rows } = await pool.query<{
-    id: string
-    username: string
-    display_name: string | null
-    bio: string | null
-    avatar_blossom_url: string | null
-    nostr_pubkey: string
-    article_count: string
+    id: string;
+    username: string;
+    display_name: string | null;
+    bio: string | null;
+    avatar_blossom_url: string | null;
+    nostr_pubkey: string;
+    article_count: string;
   }>(
     `SELECT a.id, a.username, a.display_name, a.bio,
             a.avatar_blossom_url, a.nostr_pubkey,
@@ -153,8 +159,8 @@ async function searchWriters(
        CASE WHEN a.username ILIKE $2 THEN 0 ELSE 1 END,
        a.display_name
      LIMIT $3 OFFSET $4`,
-    [`%${escapeLike(query)}%`, `${escapeLike(query)}%`, limit, offset]
-  )
+    [`%${escapeLike(query)}%`, `${escapeLike(query)}%`, limit, offset],
+  );
 
   const results = rows.map((r) => ({
     id: r.id,
@@ -164,9 +170,11 @@ async function searchWriters(
     avatar: r.avatar_blossom_url,
     pubkey: r.nostr_pubkey,
     articleCount: parseInt(r.article_count, 10),
-  }))
+  }));
 
-  return reply.status(200).send({ query, type: 'writers', results, limit, offset })
+  return reply
+    .status(200)
+    .send({ query, type: "writers", results, limit, offset });
 }
 
 // ---------------------------------------------------------------------------
@@ -177,17 +185,17 @@ async function searchPublications(
   query: string,
   limit: number,
   offset: number,
-  reply: any
+  reply: any,
 ) {
   const { rows } = await pool.query<{
-    id: string
-    slug: string
-    name: string
-    tagline: string | null
-    logo_blossom_url: string | null
-    article_count: string
-    member_count: string
-    similarity: number
+    id: string;
+    slug: string;
+    name: string;
+    tagline: string | null;
+    logo_blossom_url: string | null;
+    article_count: string;
+    member_count: string;
+    similarity: number;
   }>(
     `SELECT p.id, p.slug, p.name, p.tagline, p.logo_blossom_url,
             (SELECT COUNT(*) FROM articles WHERE publication_id = p.id AND published_at IS NOT NULL AND deleted_at IS NULL) AS article_count,
@@ -202,11 +210,11 @@ async function searchPublications(
        )
      ORDER BY similarity DESC, p.name
      LIMIT $3 OFFSET $4`,
-    [query, `%${escapeLike(query)}%`, limit, offset]
-  )
+    [query, `%${escapeLike(query)}%`, limit, offset],
+  );
 
-  const results = rows.map(r => ({
-    type: 'publication' as const,
+  const results = rows.map((r) => ({
+    type: "publication" as const,
     id: r.id,
     slug: r.slug,
     name: r.name,
@@ -215,7 +223,9 @@ async function searchPublications(
     articleCount: parseInt(r.article_count, 10),
     memberCount: parseInt(r.member_count, 10),
     relevance: r.similarity,
-  }))
+  }));
 
-  return reply.status(200).send({ query, type: 'publications', results, limit, offset })
+  return reply
+    .status(200)
+    .send({ query, type: "publications", results, limit, offset });
 }
