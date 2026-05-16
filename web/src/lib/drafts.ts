@@ -1,4 +1,4 @@
-import type { PublishData } from '../components/editor/ArticleEditor'
+import type { PublishData } from "../components/editor/ArticleEditor";
 
 // =============================================================================
 // Draft Saving
@@ -12,91 +12,101 @@ import type { PublishData } from '../components/editor/ArticleEditor'
 // Relay-side draft events (kind 30024) are a post-launch addition.
 // =============================================================================
 
-const API_BASE = '/api/v1'
+const API_BASE = "/api/v1";
 
 export interface DraftData {
-  title: string
-  dek?: string              // optional standfirst/subtitle
-  content: string           // full raw editor content
-  gatePositionPct: number
-  pricePence: number
-  dTag?: string             // set when editing an existing article
-  coverImageUrl?: string | null
+  title: string;
+  dek?: string; // optional standfirst/subtitle
+  content: string; // full raw editor content
+  gatePositionPct: number;
+  pricePence: number;
+  dTag?: string; // set when editing an existing article
+  coverImageUrl?: string | null;
+  publicationId?: string | null;
 }
 
 export interface SavedDraft {
-  draftId: string
-  autoSavedAt: string
-  scheduledAt: string | null
+  draftId: string;
+  autoSavedAt: string;
+  scheduledAt: string | null;
 }
 
 export async function saveDraft(data: DraftData): Promise<SavedDraft> {
   const res = await fetch(`${API_BASE}/drafts`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
-  })
+  });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new Error(`Draft save failed: ${res.status} — ${body?.error ?? 'unknown'}`)
+    const body = await res.json().catch(() => null);
+    throw new Error(
+      `Draft save failed: ${res.status} — ${body?.error ?? "unknown"}`,
+    );
   }
 
-  return res.json()
+  return res.json();
 }
 
 export async function loadDrafts(): Promise<SavedDraft[]> {
   const res = await fetch(`${API_BASE}/drafts`, {
-    credentials: 'include',
-  })
+    credentials: "include",
+  });
 
-  if (!res.ok) return []
-  const data = await res.json()
-  return data.drafts ?? []
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.drafts ?? [];
 }
 
 export async function loadDraft(draftId: string): Promise<DraftData | null> {
   const res = await fetch(`${API_BASE}/drafts/${draftId}`, {
-    credentials: 'include',
-  })
+    credentials: "include",
+  });
 
-  if (!res.ok) return null
-  return res.json()
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export async function deleteDraft(draftId: string): Promise<void> {
   await fetch(`${API_BASE}/drafts/${draftId}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  })
+    method: "DELETE",
+    credentials: "include",
+  });
 }
 
-export async function scheduleDraft(draftId: string, scheduledAt: string): Promise<{ ok: boolean; scheduledAt: string }> {
+export async function scheduleDraft(
+  draftId: string,
+  scheduledAt: string,
+): Promise<{ ok: boolean; scheduledAt: string }> {
   const res = await fetch(`${API_BASE}/drafts/${draftId}/schedule`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scheduledAt }),
-  })
+  });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new Error(`Schedule failed: ${res.status} — ${body?.error ?? 'unknown'}`)
+    const body = await res.json().catch(() => null);
+    throw new Error(
+      `Schedule failed: ${res.status} — ${body?.error ?? "unknown"}`,
+    );
   }
 
-  return res.json()
+  return res.json();
 }
 
 export async function unscheduleDraft(draftId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/drafts/${draftId}/schedule`, {
-    method: 'DELETE',
-    credentials: 'include',
-  })
+    method: "DELETE",
+    credentials: "include",
+  });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new Error(`Unschedule failed: ${res.status} — ${body?.error ?? 'unknown'}`)
+    const body = await res.json().catch(() => null);
+    throw new Error(
+      `Unschedule failed: ${res.status} — ${body?.error ?? "unknown"}`,
+    );
   }
 }
 
@@ -110,28 +120,36 @@ export async function unscheduleDraft(draftId: string): Promise<void> {
 // =============================================================================
 
 export function createAutoSaver(delayMs = 3000) {
-  let timer: ReturnType<typeof setTimeout> | null = null
-  let lastSavedContent = ''
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let lastSavedContent = "";
 
-  return function debouncedSave(
+  function debouncedSave(
     data: DraftData,
     onSaved?: (draft: SavedDraft) => void,
-    onError?: (err: Error) => void
+    onError?: (err: Error) => void,
   ) {
-    if (timer) clearTimeout(timer)
+    if (timer) clearTimeout(timer);
 
     timer = setTimeout(async () => {
-      // Skip if content hasn't changed
-      const fingerprint = `${data.title}|${data.content}`
-      if (fingerprint === lastSavedContent) return
+      const fingerprint = `${data.title}|${data.content}`;
+      if (fingerprint === lastSavedContent) return;
 
       try {
-        const result = await saveDraft(data)
-        lastSavedContent = fingerprint
-        onSaved?.(result)
+        const result = await saveDraft(data);
+        lastSavedContent = fingerprint;
+        onSaved?.(result);
       } catch (err) {
-        onError?.(err as Error)
+        onError?.(err as Error);
       }
-    }, delayMs)
+    }, delayMs);
   }
+
+  debouncedSave.cancel = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  return debouncedSave;
 }

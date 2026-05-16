@@ -159,7 +159,7 @@ These bugs interact — the paywall content lifecycle is: compose → save draft
 
 ---
 
-## Slice 5: Compose overlay + cross-posting
+## Slice 5: Compose overlay + cross-posting ✓ DONE (2026-05-16)
 
 **Priority: MEDIUM. Estimated effort: 2 hours.**
 **Service:** web
