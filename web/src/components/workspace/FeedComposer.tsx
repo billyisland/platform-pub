@@ -285,7 +285,7 @@ export function FeedComposer({
                   type="button"
                   onClick={() => void commitRename()}
                   disabled={savingName || !nameDraft.trim()}
-                  className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                  className="label-ui"
                   style={{
                     padding: "6px 10px",
                     background: "transparent",
@@ -303,7 +303,7 @@ export function FeedComposer({
                   type="button"
                   onClick={cancelRename}
                   disabled={savingName}
-                  className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                  className="label-ui"
                   style={{
                     padding: "6px 10px",
                     background: "transparent",
@@ -338,7 +338,7 @@ export function FeedComposer({
                 <button
                   type="button"
                   onClick={startRename}
-                  className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                  className="label-ui"
                   style={{
                     padding: "4px 8px",
                     background: "transparent",
@@ -355,7 +355,7 @@ export function FeedComposer({
           <button
             type="button"
             onClick={onClose}
-            className="font-mono text-[11px] uppercase tracking-[0.06em]"
+            className="label-ui"
             style={{
               padding: "6px 10px",
               background: "transparent",
@@ -385,7 +385,7 @@ export function FeedComposer({
         >
           {loading && (
             <div
-              className="font-mono text-[11px]"
+              className="font-mono text-mono-xs"
               style={{ color: TOKENS.hintFg }}
             >
               LOADING…
@@ -393,7 +393,7 @@ export function FeedComposer({
           )}
           {!loading && sources.length === 0 && (
             <div
-              className="font-mono text-[11px]"
+              className="font-mono text-mono-xs"
               style={{ color: TOKENS.hintFg }}
             >
               No sources yet — this feed shows the explore stream until you add
@@ -429,7 +429,7 @@ export function FeedComposer({
           value={ri.query}
           onChange={(e) => ri.onQueryChange(e.target.value)}
           placeholder="Username, URL, npub, DID, #tag…"
-          className="font-sans text-[14px] w-full"
+          className="font-sans text-ui-sm w-full"
           style={{
             border: `1px solid ${TOKENS.inputBorder}`,
             padding: "10px 12px",
@@ -440,7 +440,7 @@ export function FeedComposer({
         <div style={{ minHeight: 24 }}>
           {ri.resolving && (
             <div
-              className="font-mono text-[11px]"
+              className="font-mono text-mono-xs"
               style={{ color: TOKENS.hintFg }}
             >
               RESOLVING…
@@ -448,7 +448,7 @@ export function FeedComposer({
           )}
           {(ri.doneEmpty || ri.resolveError) && (
             <div
-              className="font-mono text-[11px]"
+              className="font-mono text-mono-xs"
               style={{ color: TOKENS.hintFg }}
             >
               No match. Try a full URL, an @username, an npub, or a #tag.
@@ -462,7 +462,7 @@ export function FeedComposer({
                   type="button"
                   onClick={() => void handleAdd(opt)}
                   disabled={busyKey === opt.key}
-                  className="font-sans text-[13px]"
+                  className="font-sans text-ui-xs"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -493,7 +493,7 @@ export function FeedComposer({
                   </span>
                   {opt.sublabel && (
                     <span
-                      className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                      className="label-ui"
                       style={{ color: TOKENS.hintFg, marginLeft: 12 }}
                     >
                       {opt.sublabel}
@@ -507,7 +507,7 @@ export function FeedComposer({
 
         {error && (
           <div
-            className="font-mono text-[11px]"
+            className="font-mono text-mono-xs"
             style={{ color: TOKENS.errorFg, marginTop: 12 }}
           >
             {error}
@@ -528,7 +528,7 @@ export function FeedComposer({
         >
           {deleteBlocked ? (
             <div
-              className="font-mono text-[11px]"
+              className="font-mono text-mono-xs"
               style={{ color: TOKENS.hintFg }}
             >
               Can&rsquo;t delete your only feed — create another first.
@@ -536,7 +536,7 @@ export function FeedComposer({
           ) : confirmingDelete ? (
             <>
               <div
-                className="font-mono text-[11px]"
+                className="font-mono text-mono-xs"
                 style={{ color: TOKENS.hintFg, marginRight: "auto" }}
               >
                 Delete this feed? Sources are removed; subscriptions are kept.
@@ -545,7 +545,7 @@ export function FeedComposer({
                 type="button"
                 onClick={() => setConfirmingDelete(false)}
                 disabled={deleting}
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{
                   padding: "6px 10px",
                   background: "transparent",
@@ -560,7 +560,7 @@ export function FeedComposer({
                 type="button"
                 onClick={() => void handleDelete()}
                 disabled={deleting}
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{
                   padding: "6px 10px",
                   background: "transparent",
@@ -576,7 +576,7 @@ export function FeedComposer({
             <button
               type="button"
               onClick={() => setConfirmingDelete(true)}
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{
                 padding: "6px 10px",
                 background: "transparent",
@@ -660,7 +660,7 @@ function SourceRow({
       >
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
           <div
-            className="font-sans text-[13px]"
+            className="font-sans text-ui-xs"
             style={{
               color: isMuted ? TOKENS.hintFg : TOKENS.panelBorder,
               overflow: "hidden",
@@ -672,7 +672,7 @@ function SourceRow({
           </div>
           {source.display.sublabel && (
             <div
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{ color: TOKENS.hintFg }}
             >
               {source.display.sublabel}

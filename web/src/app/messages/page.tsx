@@ -106,17 +106,17 @@ export default function MessagesPage() {
                 >
                   &#8592;
                 </button>
-                <p className="text-[14px] font-sans font-semibold text-black">New message</p>
+                <p className="text-ui-sm font-sans font-semibold text-black">New message</p>
               </div>
               <form onSubmit={handleNewConversation} className="p-4">
-                <label className="block text-[13px] font-sans font-medium text-grey-600 mb-1">To</label>
+                <label className="block text-ui-xs font-sans font-medium text-grey-600 mb-1">To</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={newRecipient}
                     onChange={(e) => setNewRecipient(e.target.value)}
                     placeholder="Username"
-                    className="flex-1 bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300"
+                    className="flex-1 bg-grey-100 px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300"
                     autoFocus
                   />
                   <button type="submit" disabled={creating} className="btn text-sm disabled:opacity-50">
@@ -135,7 +135,7 @@ export default function MessagesPage() {
             />
           ) : (
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-[14px] font-sans text-grey-300">Select a conversation or start a new one.</p>
+              <p className="text-ui-sm font-sans text-grey-300">Select a conversation or start a new one.</p>
             </div>
           )}
         </div>

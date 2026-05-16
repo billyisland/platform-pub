@@ -1007,7 +1007,7 @@ function Floor({
 function CenteredHint({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="font-mono text-[11px] uppercase tracking-[0.06em] text-center"
+      className="label-ui text-center"
       style={{
         color: "#9C9A94",
         position: "absolute",
@@ -1024,7 +1024,7 @@ function CenteredHint({ children }: { children: React.ReactNode }) {
 function Hint({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="font-mono text-[11px] uppercase tracking-[0.06em] py-6 text-center"
+      className="label-ui py-6 text-center"
       style={{ color: "#9C9A94" }}
     >
       {children}

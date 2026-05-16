@@ -187,13 +187,13 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
                             <button
                               onClick={() => handleSaveRole(m.id)}
                               disabled={savingRole}
-                              className="text-[13px] text-black font-medium disabled:opacity-50"
+                              className="text-ui-xs text-black font-medium disabled:opacity-50"
                             >
                               {savingRole ? '...' : 'Save'}
                             </button>
                             <button
                               onClick={cancelEditRole}
-                              className="text-[13px] text-grey-300 hover:text-black"
+                              className="text-ui-xs text-grey-300 hover:text-black"
                             >
                               &times;
                             </button>
@@ -226,7 +226,7 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
         <button
           onClick={handleLeave}
           disabled={leaving}
-          className="text-[13px] text-grey-300 hover:text-black transition-colors disabled:opacity-50"
+          className="text-ui-xs text-grey-300 hover:text-black transition-colors disabled:opacity-50"
         >
           {leaving ? 'Leaving...' : 'Leave this publication'}
         </button>

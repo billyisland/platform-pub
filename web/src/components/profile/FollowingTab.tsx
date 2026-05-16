@@ -243,7 +243,7 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
                 <Link href={`/${f.username}`} className="flex items-center gap-3 min-w-0 flex-1">
                   <Avatar src={f.avatar} name={f.displayName ?? f.username} size={36} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[14px] font-sans text-black truncate">
+                    <p className="text-ui-sm font-sans text-black truncate">
                       {f.displayName ?? f.username}
                     </p>
                     <p className="text-ui-xs text-grey-300">@{f.username}</p>
@@ -332,7 +332,7 @@ export function FollowingTab({ username, isOwnProfile }: { username: string; isO
               >
                 <Avatar src={s.writerAvatar} name={s.writerDisplayName ?? s.writerUsername} size={36} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-sans text-black truncate">
+                  <p className="text-ui-sm font-sans text-black truncate">
                     {s.writerDisplayName ?? s.writerUsername}
                   </p>
                   <p className="text-ui-xs text-grey-300">@{s.writerUsername}</p>

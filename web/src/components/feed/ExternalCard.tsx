@@ -119,21 +119,21 @@ export function ExternalCard({ item }: ExternalCardProps) {
             href={authorWebUri}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-black transition-colors truncate"
+            className="label-ui text-grey-600 hover:text-black transition-colors truncate"
           >
             {authorDisplay}
           </a>
         ) : (
-          <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 truncate">
+          <span className="label-ui text-grey-600 truncate">
             {authorDisplay}
           </span>
         )}
-        <span className="font-mono text-[11px] text-grey-600">&middot;</span>
-        <span className="font-mono text-[11px] tracking-[0.02em] text-grey-600 flex-shrink-0">
+        <span className="font-mono text-mono-xs text-grey-600">&middot;</span>
+        <span className="font-mono text-mono-xs tracking-[0.02em] text-grey-600 flex-shrink-0">
           {formatDateRelative(item.publishedAt)}
         </span>
-        <span className="font-mono text-[11px] text-grey-600">&middot;</span>
-        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 flex-shrink-0">
+        <span className="font-mono text-mono-xs text-grey-600">&middot;</span>
+        <span className="label-ui text-grey-400 flex-shrink-0">
           {badge}
         </span>
         {item.sourceProtocol === 'activitypub' && (

@@ -57,7 +57,7 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
           </div>
           <p className="font-serif text-lg font-medium text-black">{drive.title}</p>
           {drive.description && (
-            <p className="text-[14px] text-grey-600 font-sans mt-1 line-clamp-2">{drive.description}</p>
+            <p className="text-ui-sm text-grey-600 font-sans mt-1 line-clamp-2">{drive.description}</p>
           )}
         </div>
 
@@ -103,7 +103,7 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
             </button>
           ) : (
             <form onSubmit={handlePledge} className="flex items-center gap-2">
-              <span className="text-[13px] font-sans text-grey-400">£</span>
+              <span className="text-ui-xs font-sans text-grey-400">£</span>
               <input
                 type="number"
                 step="0.01"
@@ -111,7 +111,7 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
                 value={pledgeAmount}
                 onChange={(e) => setPledgeAmount(e.target.value)}
                 placeholder="0.00"
-                className="w-24 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black"
+                className="w-24 bg-grey-100 px-2 py-1 text-ui-xs font-sans text-black"
                 autoFocus
               />
               <button type="submit" disabled={pledging} className="btn text-sm disabled:opacity-50">

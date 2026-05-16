@@ -133,7 +133,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
 
       {/* Tags — omitted for briefs */}
       {!isBrief && article.topicTags && article.topicTags.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-3 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300">
+        <div className="flex items-center gap-1.5 mb-3 label-ui text-grey-300">
           {article.topicTags.map((tag, i) => (
             <span key={tag} className="flex items-center gap-1.5">
               {i > 0 && <span>&middot;</span>}

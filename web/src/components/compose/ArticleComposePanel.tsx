@@ -362,7 +362,7 @@ export function ArticleComposePanel() {
               <select
                 value={selectedPubId ?? ""}
                 onChange={(e) => setSelectedPubId(e.target.value || null)}
-                className="font-mono text-[11px] uppercase tracking-[0.06em] text-black bg-transparent border-none focus:outline-none cursor-pointer"
+                className="label-ui text-black bg-transparent border-none focus:outline-none cursor-pointer"
               >
                 <option value="">PERSONAL</option>
                 {memberships.map((m) => (
@@ -372,13 +372,13 @@ export function ArticleComposePanel() {
                 ))}
               </select>
             ) : (
-              <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-black">
+              <span className="label-ui text-black">
                 PERSONAL
               </span>
             )}
           </div>
           {wordCount > 0 && (
-            <span className="font-mono text-[11px] text-grey-400">
+            <span className="font-mono text-mono-xs text-grey-400">
               {wordCount} WORDS · {readMinutes} MIN
             </span>
           )}
@@ -471,7 +471,7 @@ export function ArticleComposePanel() {
             style={{ borderTop: "1px solid #F0F0F0" }}
           >
             <span className="label-ui text-grey-400">PRICE</span>
-            <span className="font-mono text-[11px] text-grey-600">£</span>
+            <span className="font-mono text-mono-xs text-grey-600">£</span>
             <input
               type="number"
               min={0.01}
@@ -482,7 +482,7 @@ export function ArticleComposePanel() {
                 const n = parseFloat(e.target.value);
                 setPricePence(isNaN(n) ? 0 : Math.round(n * 100));
               }}
-              className="w-20 bg-transparent border-none font-mono text-[11px] text-black focus:outline-none"
+              className="w-20 bg-transparent border-none font-mono text-mono-xs text-black focus:outline-none"
             />
           </div>
         )}
@@ -493,20 +493,20 @@ export function ArticleComposePanel() {
         className="px-6 py-3 flex items-center gap-4"
         style={{ borderTop: "4px solid #E5E5E5" }}
       >
-        <span className="font-mono text-[11px] text-grey-400 min-w-[80px]">
+        <span className="font-mono text-mono-xs text-grey-400 min-w-[80px]">
           {saveStatus ?? (loadingDraft ? "LOADING…" : draftId ? "DRAFT" : "")}
         </span>
         <span className="flex-1" />
         <button
           onClick={handleOpenInFull}
-          className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-black transition-colors"
+          className="label-ui text-grey-600 hover:text-black transition-colors"
         >
           OPEN IN FULL EDITOR ↗
         </button>
         <button
           onClick={() => setShowSchedule((v) => !v)}
           disabled={!canPublish}
-          className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-black transition-colors disabled:opacity-40"
+          className="label-ui text-grey-600 hover:text-black transition-colors disabled:opacity-40"
         >
           SCHEDULE
         </button>
@@ -548,7 +548,7 @@ export function ArticleComposePanel() {
               setShowSchedule(false);
               setScheduleDateTime("");
             }}
-            className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-black"
+            className="label-ui text-grey-400 hover:text-black"
           >
             CANCEL
           </button>
@@ -586,7 +586,7 @@ function TB({
   children: React.ReactNode;
 }) {
   const base =
-    "px-2 py-1 text-[11px] font-mono uppercase tracking-[0.06em] rounded transition-colors";
+    "px-2 py-1 label-ui rounded transition-colors";
   const tone = accent
     ? active
       ? "text-crimson border border-crimson"

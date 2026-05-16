@@ -60,13 +60,13 @@ export function TagBrowser({ tagName }: { tagName: string }) {
                 style={{ borderLeft: `6px solid ${barColor}`, paddingLeft: '28px' }}
               >
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600">
+                  <span className="label-ui text-grey-600">
                     {a.author_display_name ?? a.author_username}
                   </span>
                   {publishedAt > 0 && (
                     <>
-                      <span className="font-mono text-[11px] text-grey-600">&middot;</span>
-                      <span className="font-mono text-[11px] tracking-[0.02em] text-grey-600">
+                      <span className="font-mono text-mono-xs text-grey-600">&middot;</span>
+                      <span className="font-mono text-mono-xs tracking-[0.02em] text-grey-600">
                         {formatDateRelative(publishedAt)}
                       </span>
                     </>

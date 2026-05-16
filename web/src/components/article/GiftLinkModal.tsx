@@ -26,7 +26,7 @@ export function GiftLinkModal({ articleDbId, onClose }: GiftLinkModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
       <div className="bg-white border border-grey-200 shadow-lg w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
         <h3 className="font-serif text-[20px] font-medium text-black mb-1">Create gift link</h3>
-        <p className="text-[13px] font-sans text-grey-400 mb-4">Generate a shareable link that grants free access.</p>
+        <p className="text-ui-xs font-sans text-grey-400 mb-4">Generate a shareable link that grants free access.</p>
         {!url ? (
           <>
             <label className="block text-[12px] font-mono text-grey-400 mb-1">Redemption limit</label>
@@ -36,7 +36,7 @@ export function GiftLinkModal({ articleDbId, onClose }: GiftLinkModalProps) {
               max={1000}
               value={limit}
               onChange={(e) => setLimit(parseInt(e.target.value, 10) || 5)}
-              className="w-20 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black mb-4"
+              className="w-20 bg-grey-100 px-2 py-1 text-ui-xs font-sans text-black mb-4"
             />
             <div>
               <button onClick={handleCreate} disabled={creating} className="btn text-sm disabled:opacity-50">
@@ -50,7 +50,7 @@ export function GiftLinkModal({ articleDbId, onClose }: GiftLinkModalProps) {
               type="text"
               readOnly
               value={url}
-              className="w-full bg-grey-100 px-3 py-1.5 text-[13px] font-mono text-black mb-3"
+              className="w-full bg-grey-100 px-3 py-1.5 text-ui-xs font-mono text-black mb-3"
               onClick={(e) => (e.target as HTMLInputElement).select()}
             />
             <button

@@ -67,7 +67,7 @@ export function PlayscriptThread({
       {hiddenCount > 0 && (
         <button
           onClick={() => setShowAll(true)}
-          className="mt-[32px] font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-black hover:underline transition-colors"
+          className="mt-[32px] label-ui text-grey-400 hover:text-black hover:underline transition-colors"
         >
           Show {hiddenCount} more {hiddenCount === 1 ? 'reply' : 'replies'}
         </button>

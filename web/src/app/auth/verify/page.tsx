@@ -58,7 +58,7 @@ export default function VerifyPage() {
       {status === 'verifying' && (
         <>
           <div className="mx-auto mb-4 h-8 w-8 animate-spin  border-2 border-grey-200 border-t-grey-600" />
-          <h1 className="font-serif text-xl font-bold text-black mb-2">
+          <h1 className="font-sans text-xl font-bold text-black mb-2">
             Logging you in...
           </h1>
           <p className="text-sm text-grey-400">Verifying your login link.</p>
@@ -72,7 +72,7 @@ export default function VerifyPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="font-serif text-xl font-bold text-black mb-2">
+          <h1 className="font-sans text-xl font-bold text-black mb-2">
             You're in
           </h1>
           <p className="text-sm text-grey-400">Redirecting to your feed...</p>
@@ -81,7 +81,7 @@ export default function VerifyPage() {
 
       {status === 'error' && (
         <>
-          <h1 className="font-serif text-xl font-bold text-black mb-2">
+          <h1 className="font-sans text-xl font-bold text-black mb-2">
             Login link didn't work
           </h1>
           <p className="text-sm text-grey-400 mb-6 leading-relaxed">

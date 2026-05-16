@@ -141,18 +141,18 @@ export default function AuthPage() {
 
       <form onSubmit={mode === 'signup' ? handleSignup : handleLogin} className="space-y-5">
         <div>
-          <label htmlFor="email" className="label-muted block mb-2" style={{ fontSize: '13px' }}>Email</label>
+          <label htmlFor="email" className="label-ui text-grey-400 block mb-2">Email</label>
           <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white px-4 py-[14px] text-black focus:outline-none" style={{ fontSize: '16px', border: '1.5px solid #E5E5E5' }} placeholder="you@example.com" />
         </div>
 
         {mode === 'signup' && (
           <>
             <div>
-              <label htmlFor="displayName" className="label-muted block mb-2" style={{ fontSize: '13px' }}>Display name</label>
+              <label htmlFor="displayName" className="label-ui text-grey-400 block mb-2">Display name</label>
               <input id="displayName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full bg-white px-4 py-[14px] text-black focus:outline-none" style={{ fontSize: '16px', border: '1.5px solid #E5E5E5' }} placeholder="Your Name" />
             </div>
             <div>
-              <label htmlFor="username" className="label-muted block mb-2" style={{ fontSize: '13px' }}>Username</label>
+              <label htmlFor="username" className="label-ui text-grey-400 block mb-2">Username</label>
               <input id="username" type="text" required pattern="^[a-z0-9_-]+$" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} className="w-full bg-white px-4 py-[14px] text-black focus:outline-none" style={{ fontSize: '16px', border: '1.5px solid #E5E5E5' }} placeholder="yourname" />
               <p className="mt-2 text-mono-xs text-grey-400">yourname.all.haus</p>
             </div>

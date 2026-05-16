@@ -94,7 +94,7 @@ export default async function WriterProfilePage({ params }: { params: { username
           {' · '}
           <a
             href={`/rss/${params.username}`}
-            className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 hover:text-black"
+            className="label-ui text-grey-300 hover:text-black"
           >
             RSS
           </a>

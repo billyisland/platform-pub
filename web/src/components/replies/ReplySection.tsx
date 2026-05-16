@@ -155,7 +155,7 @@ export function ReplySection({
   return (
     <div className={compact ? '' : 'mt-8 pt-6 border-t border-grey-200'}>
       {!compact && (
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 mb-6">
+        <h3 className="label-ui text-grey-600 mb-6">
           {totalCount > 0
             ? `${totalCount} ${totalCount !== 1 ? 'replies' : 'reply'}`
             : 'Replies'}

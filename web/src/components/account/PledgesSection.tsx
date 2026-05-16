@@ -27,7 +27,7 @@ export function PledgesSection() {
         {pledges.map(p => (
           <div key={p.id} className="flex items-center justify-between px-6 py-4">
             <div className="min-w-0">
-              <p className="text-[14px] font-sans text-black">{p.driveTitle}</p>
+              <p className="text-ui-sm font-sans text-black">{p.driveTitle}</p>
               <p className="label-ui text-grey-300">by @{p.writer.username}</p>
             </div>
             <div className="flex items-center gap-4 flex-shrink-0">

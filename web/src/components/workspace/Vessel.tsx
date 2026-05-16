@@ -337,7 +337,7 @@ export function Vessel({
     >
       {/* Name label sits above the opening. */}
       <div
-        className="font-mono uppercase tracking-[0.06em] text-[11px] mb-2 px-1 select-none"
+        className="label-ui mb-2 px-1 select-none"
         style={{ color: palette.nameLabel }}
       >
         {name}

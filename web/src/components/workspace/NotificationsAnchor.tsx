@@ -220,7 +220,7 @@ export function NotificationsAnchor() {
             }}
           >
             <span
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{ color: TOKENS.text }}
             >
               Notifications
@@ -229,7 +229,7 @@ export function NotificationsAnchor() {
               type="button"
               onClick={handleReadAll}
               disabled={unreadCount === 0}
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -245,7 +245,7 @@ export function NotificationsAnchor() {
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {status === 'loading' && (
               <div
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{ color: TOKENS.hint, padding: '24px 16px', textAlign: 'center' }}
               >
                 Loading…
@@ -253,7 +253,7 @@ export function NotificationsAnchor() {
             )}
             {status === 'error' && (
               <div
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{ color: TOKENS.hint, padding: '24px 16px', textAlign: 'center' }}
               >
                 Couldn’t load notifications
@@ -316,7 +316,7 @@ export function NotificationsAnchor() {
                   />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div
-                      className="font-sans text-[13px]"
+                      className="font-sans text-ui-xs"
                       style={{
                         color: TOKENS.text,
                         fontWeight: isUnread ? 600 : 400,
@@ -372,7 +372,7 @@ export function NotificationsAnchor() {
                   setOpen(false)
                   router.push('/notifications')
                 }}
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{
                   background: 'transparent',
                   border: 'none',

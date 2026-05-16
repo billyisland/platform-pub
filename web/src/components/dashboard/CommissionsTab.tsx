@@ -124,7 +124,7 @@ export function CommissionCard({ commission: c, onUpdate }: { commission: Commis
           </div>
           <p className="font-serif text-lg font-medium text-black">{c.title}</p>
           {c.description && (
-            <p className="text-[14px] text-grey-600 font-sans mt-1 line-clamp-2">{c.description}</p>
+            <p className="text-ui-sm text-grey-600 font-sans mt-1 line-clamp-2">{c.description}</p>
           )}
         </div>
 
@@ -163,7 +163,7 @@ export function CommissionCard({ commission: c, onUpdate }: { commission: Commis
           <button
             onClick={handleDecline}
             disabled={acting}
-            className={`text-[13px] font-sans transition-colors disabled:opacity-50 ${confirmDecline ? 'text-crimson font-medium' : 'text-grey-300 hover:text-black'}`}
+            className={`text-ui-xs font-sans transition-colors disabled:opacity-50 ${confirmDecline ? 'text-crimson font-medium' : 'text-grey-300 hover:text-black'}`}
           >
             {acting ? '...' : confirmDecline ? 'Confirm decline?' : 'Decline'}
           </button>

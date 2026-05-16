@@ -80,7 +80,7 @@ export default async function PublicationHomepage({ params }: { params: { slug: 
           <PubFollowButton publicationId={pub.id} initialFollowing={pub.isFollowing ?? false} />
           <a
             href={`/api/v1/pub/${pub.slug}/rss`}
-            className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-300 hover:text-black"
+            className="label-ui text-grey-300 hover:text-black"
           >
             RSS
           </a>

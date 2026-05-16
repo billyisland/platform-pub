@@ -97,7 +97,7 @@ export function DangerZone() {
               Any outstanding earnings will be paid out to your connected Stripe account.
             </p>
 
-            <label className="block text-sm text-black mb-2">
+            <label className="label-ui text-grey-400 block mb-2">
               Enter your email to confirm:
             </label>
             <input

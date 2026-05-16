@@ -191,7 +191,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="mx-auto max-w-article pt-16 lg:pt-0 px-4 sm:px-6 py-8">
-      <h1 className="font-serif text-3xl sm:text-4xl font-light text-black mb-1">Notifications</h1>
+      <h1 className="font-sans text-3xl sm:text-4xl font-light text-black mb-1">Notifications</h1>
       <p className="text-ui-sm text-grey-400 mb-8">Your activity log</p>
 
       {dataLoading ? (

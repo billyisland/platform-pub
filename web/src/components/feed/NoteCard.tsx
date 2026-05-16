@@ -133,16 +133,16 @@ export function NoteCard({ note, onDeleted, onQuote, voteTally, myVoteCounts }: 
         {authorHref ? (
           <Link
             href={authorHref}
-            className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-black transition-colors"
+            className="label-ui text-grey-600 hover:text-black transition-colors"
           >
             {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
           </Link>
         ) : (
-          <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600">
+          <span className="label-ui text-grey-600">
             {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + '...'}
           </span>
         )}
-        <span className="font-mono text-[11px] text-grey-600">&middot;</span>
+        <span className="font-mono text-mono-xs text-grey-600">&middot;</span>
         <span className="font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600">
           {formatDateRelative(note.publishedAt)}
         </span>

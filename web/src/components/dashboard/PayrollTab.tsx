@@ -92,7 +92,7 @@ export function PayrollTab({ publicationId }: Props) {
       <div className="bg-white px-6 py-5">
         <div className="flex items-center justify-between mb-4">
           <p className="label-ui text-grey-400">Standing revenue shares</p>
-          <p className={`text-[13px] font-sans tabular-nums ${overBudget ? 'text-crimson' : 'text-grey-400'}`}>
+          <p className={`text-ui-xs font-sans tabular-nums ${overBudget ? 'text-crimson' : 'text-grey-400'}`}>
             {(currentTotal / 100).toFixed(1)}% of 100%
           </p>
         </div>
@@ -127,7 +127,7 @@ export function PayrollTab({ publicationId }: Props) {
                   type="number" min="0" max="10000" step="100"
                   value={editShares[m.memberId] ?? '0'}
                   onChange={e => setEditShares(prev => ({ ...prev, [m.memberId]: e.target.value }))}
-                  className="w-20 bg-grey-100 px-2 py-1 text-[13px] font-sans text-black text-right tabular-nums"
+                  className="w-20 bg-grey-100 px-2 py-1 text-ui-xs font-sans text-black text-right tabular-nums"
                 />
                 <span className="text-[12px] font-sans text-grey-300 w-12">
                   {((parseInt(editShares[m.memberId] || '0', 10)) / 100).toFixed(1)}%
@@ -141,7 +141,7 @@ export function PayrollTab({ publicationId }: Props) {
           <button onClick={handleSave} disabled={saving || overBudget} className="btn text-sm disabled:opacity-50">
             {saving ? 'Saving\u2026' : 'Save'}
           </button>
-          {overBudget && <p className="text-[13px] font-sans text-crimson">Total exceeds 100%</p>}
+          {overBudget && <p className="text-ui-xs font-sans text-crimson">Total exceeds 100%</p>}
         </div>
         {msg && <p className="text-ui-xs text-grey-600 mt-2">{msg}</p>}
       </div>

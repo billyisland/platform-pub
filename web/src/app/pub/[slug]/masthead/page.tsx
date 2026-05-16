@@ -50,7 +50,7 @@ export default async function MastheadPage({ params }: { params: { slug: string 
 
   return (
     <div className="max-w-article mx-auto">
-      <h1 className="font-serif text-3xl mb-8">Masthead</h1>
+      <h1 className="font-sans text-3xl mb-8">Masthead</h1>
       <div className="space-y-6">
         {data.members.map((m: any) => (
           <div key={m.account_id} className="flex items-start gap-4">

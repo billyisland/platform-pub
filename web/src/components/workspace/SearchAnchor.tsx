@@ -200,7 +200,7 @@ export function SearchAnchor() {
               value={query}
               onChange={(e) => handleQueryChange(e.target.value)}
               placeholder="Search writers, articles, publications…"
-              className="font-sans text-[14px]"
+              className="font-sans text-ui-sm"
               style={{
                 width: "100%",
                 padding: "8px 10px",
@@ -215,7 +215,7 @@ export function SearchAnchor() {
           <div style={{ overflowY: "auto", flex: 1 }}>
             {status === "idle" && (
               <div
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{
                   color: TOKENS.hint,
                   padding: "24px 16px",
@@ -227,7 +227,7 @@ export function SearchAnchor() {
             )}
             {status === "loading" && (
               <div
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{
                   color: TOKENS.hint,
                   padding: "24px 16px",
@@ -239,7 +239,7 @@ export function SearchAnchor() {
             )}
             {status === "error" && (
               <div
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{
                   color: TOKENS.hint,
                   padding: "24px 16px",
@@ -279,7 +279,7 @@ export function SearchAnchor() {
                     }}
                   >
                     <div
-                      className="font-sans text-[13px]"
+                      className="font-sans text-ui-xs"
                       style={{ color: TOKENS.text, fontWeight: 500 }}
                     >
                       {w.displayName ?? w.username}
@@ -352,7 +352,7 @@ export function SearchAnchor() {
                     }}
                   >
                     <div
-                      className="font-sans text-[13px]"
+                      className="font-sans text-ui-xs"
                       style={{ color: TOKENS.text, fontWeight: 500 }}
                     >
                       {p.name}
@@ -443,7 +443,7 @@ function Section({
   return (
     <div>
       <div
-        className="font-mono text-[11px] uppercase tracking-[0.06em]"
+        className="label-ui"
         style={{
           color: TOKENS.meta,
           padding: "10px 16px 6px 16px",

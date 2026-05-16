@@ -10,21 +10,21 @@ export function Footer() {
         {/* Left: mark + wordmark */}
         <div className="flex items-center gap-2">
           <ForAllMark size={14} className="text-grey-600" />
-          <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600">all.haus</span>
+          <span className="label-ui text-grey-600">all.haus</span>
         </div>
 
         {/* Right: links */}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <Link href="/about" className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-grey-400 transition-colors">
+          <Link href="/about" className="label-ui text-grey-600 hover:text-grey-400 transition-colors">
             About
           </Link>
-          <Link href="/community-guidelines" className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-grey-400 transition-colors">
+          <Link href="/community-guidelines" className="label-ui text-grey-600 hover:text-grey-400 transition-colors">
             Guidelines
           </Link>
-          <Link href="/privacy" className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-grey-400 transition-colors">
+          <Link href="/privacy" className="label-ui text-grey-600 hover:text-grey-400 transition-colors">
             Privacy
           </Link>
-          <Link href="/terms" className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-grey-400 transition-colors">
+          <Link href="/terms" className="label-ui text-grey-600 hover:text-grey-400 transition-colors">
             Terms
           </Link>
         </div>

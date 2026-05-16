@@ -126,7 +126,7 @@ export function PaywallGate({
         {/* Subscribe option */}
         {showSubscribeOption && (
           <div className="mt-6 pt-6 max-w-sm mx-auto" style={{ borderTop: '4px solid #F0F0F0' }}>
-            <p className="font-sans text-[14px] text-grey-600 mb-4">
+            <p className="font-sans text-ui-sm text-grey-600 mb-4">
               Or subscribe to {writerName ?? writerUsername} for <strong>£{subPricePounds}/mo</strong> to read everything
             </p>
             {onSubscribe ? (

@@ -21,7 +21,7 @@ export default function ConversationPage() {
   return (
     <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
       <div className="h-[600px] flex items-center justify-center">
-        <p className="text-[14px] font-sans text-grey-300">Loading conversation…</p>
+        <p className="text-ui-sm font-sans text-grey-300">Loading conversation…</p>
       </div>
     </div>
   )

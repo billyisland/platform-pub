@@ -23,7 +23,7 @@ function Badge({ count, className = '' }: { count: number; className?: string })
 
 function navLinkClass(active: boolean) {
   return [
-    'font-mono text-[11px] uppercase tracking-[0.06em] transition-colors px-3 py-1',
+    'label-ui transition-colors px-3 py-1',
     active
       ? 'text-white border-b-4 border-crimson'
       : 'text-grey-400 hover:text-white',
@@ -73,7 +73,7 @@ function AvatarDropdown({ user, onLogout, onClose }: {
     }
   }, [onClose])
 
-  const linkClass = 'block px-4 py-2 text-[14px] text-black hover:bg-grey-100 transition-colors font-sans'
+  const linkClass = 'block px-4 py-2 text-ui-sm text-black hover:bg-grey-100 transition-colors font-sans'
 
   return (
     <>
@@ -83,7 +83,7 @@ function AvatarDropdown({ user, onLogout, onClose }: {
           <div className="flex items-center gap-2">
             <NavAvatar user={user} size={32} />
             <div>
-              <p className="text-[14px] font-semibold text-black font-sans">{user.displayName ?? user.username}</p>
+              <p className="text-ui-sm font-semibold text-black font-sans">{user.displayName ?? user.username}</p>
               {user.username && (
                 <p className="text-[11px] text-grey-600 font-mono uppercase tracking-[0.02em]">@{user.username}</p>
               )}
@@ -131,7 +131,7 @@ function AvatarDropdown({ user, onLogout, onClose }: {
           {user.isAdmin && (
             <Link href="/admin" onClick={onClose} className={linkClass}>Admin</Link>
           )}
-          <button onClick={onLogout} className="block w-full text-left px-4 py-2 text-[14px] text-grey-600 hover:bg-grey-100 transition-colors font-sans">
+          <button onClick={onLogout} className="block w-full text-left px-4 py-2 text-ui-sm text-grey-600 hover:bg-grey-100 transition-colors font-sans">
             Log out
           </button>
         </div>
@@ -160,7 +160,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
   }
 
   const linkClass = (path: string) => [
-    'block py-3 font-mono text-[11px] uppercase tracking-[0.06em] transition-colors',
+    'block py-3 label-ui transition-colors',
     isActive(path) ? 'text-white font-medium' : 'text-grey-400 hover:text-white',
   ].join(' ')
 
@@ -189,7 +189,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="SEARCH…"
-              className="w-full bg-grey-600/20 px-3 py-2 text-[11px] text-white placeholder-grey-400 font-mono uppercase tracking-[0.06em] border-none"
+              className="w-full bg-grey-600/20 px-3 py-2 label-ui text-white placeholder-grey-400 border-none"
             />
           </form>
 
@@ -213,7 +213,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
 
           <button
             onClick={() => { onLogout(); onClose() }}
-            className="block py-3 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-white transition-colors"
+            className="block py-3 label-ui text-grey-400 hover:text-white transition-colors"
           >
             Log out
           </button>
@@ -225,7 +225,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
-          <Link href="/auth?mode=login" onClick={onClose} className="block py-3 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-white transition-colors">Log in</Link>
+          <Link href="/auth?mode=login" onClick={onClose} className="block py-3 label-ui text-grey-400 hover:text-white transition-colors">Log in</Link>
           <Link href="/auth?mode=signup" onClick={onClose} className="inline-block mt-1 btn-accent text-center text-sm py-2 px-6">Sign up</Link>
         </>
       )}
@@ -378,7 +378,7 @@ export function Nav() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="SEARCH…"
-                className="w-36 bg-white/10 px-3 py-1.5 text-[11px] text-white placeholder-grey-400 font-mono uppercase tracking-[0.06em] focus:w-52 transition-all border-none"
+                className="w-36 bg-white/10 px-3 py-1.5 label-ui text-white placeholder-grey-400 focus:w-52 transition-all border-none"
               />
             </form>
 
@@ -387,7 +387,7 @@ export function Nav() {
               <>
                 <button
                   onClick={() => openCompose()}
-                  className="hidden md:flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-white transition-colors group"
+                  className="hidden md:flex items-center gap-1 label-ui text-grey-400 hover:text-white transition-colors group"
                 >
                   <span className="group-hover:border-b group-hover:border-crimson pb-px">Compose</span>
                   <span className="text-grey-600">&nbsp;&#8984;K</span>
@@ -426,7 +426,7 @@ export function Nav() {
               <div className="hidden md:flex items-center gap-3">
                 <Link
                   href="/auth?mode=login"
-                  className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-400 hover:text-white transition-colors"
+                  className="label-ui text-grey-400 hover:text-white transition-colors"
                 >
                   Log in
                 </Link>

@@ -9,7 +9,7 @@ export default function FeedError({
 }) {
   return (
     <div className="mx-auto max-w-feed px-4 sm:px-6 py-20 text-center">
-      <h1 className="font-serif text-2xl font-medium text-black mb-4">Feed unavailable</h1>
+      <h1 className="font-sans text-2xl font-medium text-black mb-4">Feed unavailable</h1>
       <p className="text-sm text-grey-400 mb-6">
         Could not load the feed. Please try again.
       </p>

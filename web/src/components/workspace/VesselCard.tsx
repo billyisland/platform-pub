@@ -225,7 +225,7 @@ function CardActions({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="flex items-center gap-3 mt-3 font-mono text-[11px] uppercase tracking-[0.06em]"
+      className="flex items-center gap-3 mt-3 label-ui"
       style={{ color: ctx.palette.cardMeta }}
     >
       {voteEventId && voteKind !== undefined && (
@@ -342,7 +342,7 @@ function CompactRow({
 }) {
   return (
     <div
-      className="flex items-center gap-2 font-sans text-[13px]"
+      className="flex items-center gap-2 font-sans text-ui-xs"
       style={{ color: ctx.palette.cardTitle }}
     >
       <span
@@ -375,7 +375,7 @@ function Byline({
 }) {
   return (
     <div
-      className="flex items-center gap-2 mb-2 font-mono text-[11px] uppercase tracking-[0.06em]"
+      className="flex items-center gap-2 mb-2 label-ui"
       style={{ color: ctx.palette.cardMeta }}
     >
       {pipNode}
@@ -684,7 +684,7 @@ function ArticleVesselCard({
               e.stopPropagation();
               router.push(href);
             }}
-            className="font-mono text-[11px] uppercase tracking-[0.06em] mt-3"
+            className="label-ui mt-3"
             style={{
               color: ctx.palette.crimson,
               background: "none",
@@ -700,7 +700,7 @@ function ArticleVesselCard({
         <>
           {standfirst && (
             <p
-              className="text-[13px] leading-[1.45]"
+              className="text-ui-xs leading-[1.45]"
               style={{ color: ctx.palette.cardStandfirst }}
             >
               {standfirst}
@@ -907,7 +907,7 @@ export function NewUserVesselCard({
   return (
     <CardShell ctx={ctx}>
       <div
-        className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.06em]"
+        className="flex items-center gap-2 label-ui"
         style={{ color: ctx.palette.cardMeta }}
       >
         <span style={{ color: ctx.palette.cardTitle }} className="font-medium">
@@ -919,7 +919,7 @@ export function NewUserVesselCard({
         </time>
       </div>
       <p
-        className="text-[13px] leading-[1.45] mt-1.5"
+        className="text-ui-xs leading-[1.45] mt-1.5"
         style={{ color: ctx.palette.cardStandfirst }}
       >
         joined the platform
@@ -1023,7 +1023,7 @@ function ExternalVesselCard({
                 window.open(externalUrl, "_blank", "noopener,noreferrer");
               }
             }}
-            className="font-mono text-[11px] uppercase tracking-[0.06em] mt-3"
+            className="label-ui mt-3"
             style={{
               color: ctx.palette.crimson,
               background: "none",

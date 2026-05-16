@@ -283,7 +283,7 @@ New test files for untested pure functions. May require exporting currently modu
 
 ---
 
-## Slice 11: Design system token sweep
+## Slice 11: Design system token sweep ✓ DONE (2026-05-16)
 
 **Priority: LOW. Estimated effort: 3–4 hours.**
 **Service:** web

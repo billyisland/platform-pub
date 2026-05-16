@@ -281,7 +281,7 @@ export function ComposeOverlay() {
                 {/* Character counter */}
                 {charCount > 0 && (
                   <span
-                    className={`font-mono text-[11px] transition-colors ${isOver ? "text-crimson font-medium" : charCount > NOTE_CHAR_LIMIT - 50 ? "text-crimson" : "text-grey-600"}`}
+                    className={`font-mono text-mono-xs transition-colors ${isOver ? "text-crimson font-medium" : charCount > NOTE_CHAR_LIMIT - 50 ? "text-crimson" : "text-grey-600"}`}
                   >
                     {charCount}/{NOTE_CHAR_LIMIT}
                   </span>
@@ -292,7 +292,7 @@ export function ComposeOverlay() {
                   <button
                     type="button"
                     onClick={() => setMode("article", content)}
-                    className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 hover:text-black transition-colors"
+                    className="label-ui text-grey-600 hover:text-black transition-colors"
                   >
                     Write an article &rarr;
                   </button>
@@ -468,7 +468,7 @@ export function ComposeOverlay() {
                 <span className="flex-1" />
                 {charCount > 0 && (
                   <span
-                    className={`font-mono text-[11px] ${isOver ? "text-crimson font-medium" : "text-grey-600"}`}
+                    className={`font-mono text-mono-xs ${isOver ? "text-crimson font-medium" : "text-grey-600"}`}
                   >
                     {charCount}/{NOTE_CHAR_LIMIT}
                   </span>
@@ -536,7 +536,7 @@ function ReplyPreview({
                 target.authorPubkey.slice(0, 10) + "\u2026"}
             </p>
             {target.previewTitle && (
-              <p className="text-[13px] font-sans font-medium text-black leading-snug mt-0.5 line-clamp-1">
+              <p className="text-ui-xs font-sans font-medium text-black leading-snug mt-0.5 line-clamp-1">
                 {target.previewTitle}
               </p>
             )}

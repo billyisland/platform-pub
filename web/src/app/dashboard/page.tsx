@@ -562,33 +562,33 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
           </p>
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <span className="text-[14px] font-sans text-grey-400">£</span>
+              <span className="text-ui-sm font-sans text-grey-400">£</span>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={subPrice}
                 onChange={(e) => setSubPrice(e.target.value)}
-                className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                className="w-28 bg-grey-100 px-3 py-1.5 text-ui-sm font-sans text-black placeholder-grey-300"
                 placeholder="3.00"
               />
-              <span className="text-[13px] font-sans text-grey-300">/month</span>
+              <span className="text-ui-xs font-sans text-grey-300">/month</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-[14px] font-sans text-grey-400 w-[13px]">%</span>
+              <span className="text-ui-sm font-sans text-grey-400 w-[13px]">%</span>
               <input
                 type="number"
                 min="0"
                 max="30"
                 value={annualDiscount}
                 onChange={(e) => setAnnualDiscount(e.target.value)}
-                className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                className="w-28 bg-grey-100 px-3 py-1.5 text-ui-sm font-sans text-black placeholder-grey-300"
                 placeholder="15"
               />
-              <span className="text-[13px] font-sans text-grey-300">annual discount</span>
+              <span className="text-ui-xs font-sans text-grey-300">annual discount</span>
             </div>
             {monthlyPence > 0 && (
-              <p className="text-[13px] font-sans text-grey-400">
+              <p className="text-ui-xs font-sans text-grey-400">
                 Readers pay £{subPrice}/mo or £{annualPounds}/year{discountPct > 0 ? ` (save ${discountPct}%)` : ''}
               </p>
             )}
@@ -632,17 +632,17 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
             </button>
             {articlePriceMode === 'fixed' && (
               <div className="flex items-center gap-3 pt-1">
-                <span className="text-[14px] font-sans text-grey-400">£</span>
+                <span className="text-ui-sm font-sans text-grey-400">£</span>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
                   value={fixedArticlePrice}
                   onChange={(e) => setFixedArticlePrice(e.target.value)}
-                  className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                  className="w-28 bg-grey-100 px-3 py-1.5 text-ui-sm font-sans text-black placeholder-grey-300"
                   placeholder="0.20"
                 />
-                <span className="text-[13px] font-sans text-grey-300">per read</span>
+                <span className="text-ui-xs font-sans text-grey-300">per read</span>
               </div>
             )}
           </div>
@@ -652,7 +652,7 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
           <button type="submit" disabled={savingPrice} className="btn text-sm disabled:opacity-50">
             {savingPrice ? 'Saving…' : 'Save pricing'}
           </button>
-          {priceMsg && <p className="text-[13px] font-sans text-grey-600 mt-2">{priceMsg}</p>}
+          {priceMsg && <p className="text-ui-xs font-sans text-grey-600 mt-2">{priceMsg}</p>}
         </div>
       </form>
 

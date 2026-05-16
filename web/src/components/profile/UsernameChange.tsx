@@ -120,11 +120,11 @@ export function UsernameChange() {
             <button
               onClick={handleSave}
               disabled={saving || availability !== 'available'}
-              className="text-[13px] text-black font-medium disabled:opacity-50"
+              className="text-ui-xs text-black font-medium disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
-            <button onClick={handleCancel} className="text-[13px] text-grey-300 hover:text-black">
+            <button onClick={handleCancel} className="text-ui-xs text-grey-300 hover:text-black">
               Cancel
             </button>
           </div>
@@ -140,7 +140,7 @@ export function UsernameChange() {
             {!onCooldown && (
               <button
                 onClick={() => setEditing(true)}
-                className="text-[13px] text-grey-300 hover:text-black"
+                className="text-ui-xs text-grey-300 hover:text-black"
               >
                 Change
               </button>

@@ -236,7 +236,7 @@ function OffersSection({ offers, onUpdate }: { offers: SubscriptionOffer[]; onUp
             {revoked.map(offer => (
               <div key={offer.id} className="flex items-center gap-3 text-grey-300 py-1">
                 <span className="line-through">{offer.label}</span>
-                <span className="font-mono text-[11px]">{offer.mode}</span>
+                <span className="font-mono text-mono-xs">{offer.mode}</span>
                 <span>{offer.discountPct}%</span>
                 <span className="tabular-nums">{offer.redemptionCount} redeemed</span>
               </div>

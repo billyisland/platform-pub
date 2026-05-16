@@ -129,7 +129,7 @@ export function ForallMenu({
               type="button"
               onClick={() => selectItem(item.key)}
               onMouseEnter={() => setActiveIndex(i)}
-              className="font-sans text-[14px] block w-full text-left"
+              className="font-sans text-ui-sm block w-full text-left"
               style={{
                 color: TOKENS.itemFg,
                 padding: "10px 14px",
@@ -170,7 +170,7 @@ export function ForallMenu({
                       onRestore?.(hf.id);
                     }}
                     onMouseEnter={() => setActiveIndex(idx)}
-                    className="font-mono text-[11px] uppercase tracking-[0.06em] block w-full text-left"
+                    className="label-ui block w-full text-left"
                     style={{
                       color: TOKENS.itemMuted,
                       padding: "8px 14px 8px 24px",

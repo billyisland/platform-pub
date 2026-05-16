@@ -250,7 +250,7 @@ function MatchRow({
         <button
           onClick={() => onSubscribe(match)}
           disabled={isLoading}
-          className="btn text-[13px] py-1 px-3 ml-3 flex-shrink-0 disabled:opacity-50"
+          className="btn text-ui-xs py-1 px-3 ml-3 flex-shrink-0 disabled:opacity-50"
         >
           {isLoading ? 'Adding...' : 'Subscribe'}
         </button>

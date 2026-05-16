@@ -126,7 +126,7 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
         </span>
       </div>
       {displayContent && (
-        <p className="line-clamp-3 font-sans text-[14px] text-grey-600 leading-[1.55]">
+        <p className="line-clamp-3 font-sans text-ui-sm text-grey-600 leading-[1.55]">
           {displayContent}
         </p>
       )}

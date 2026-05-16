@@ -90,7 +90,7 @@ export function MergeFeedConfirm({
         }}
       >
         <p
-          className="font-sans text-[14px] leading-[1.5]"
+          className="font-sans text-ui-sm leading-[1.5]"
           style={{ color: TOKENS.panelBorder, marginBottom: 16 }}
         >
           Merge <strong>{sourceName}</strong> into <strong>{targetName}</strong>
@@ -107,7 +107,7 @@ export function MergeFeedConfirm({
           }}
         >
           <div
-            className="font-mono text-[11px]"
+            className="font-mono text-mono-xs"
             style={{ color: TOKENS.hintFg }}
           >
             {error && <span style={{ color: TOKENS.errorFg }}>{error}</span>}
@@ -117,7 +117,7 @@ export function MergeFeedConfirm({
               type="button"
               onClick={onClose}
               disabled={merging}
-              className="font-sans text-[13px]"
+              className="font-sans text-ui-xs"
               style={{
                 padding: "8px 14px",
                 background: "transparent",
@@ -132,7 +132,7 @@ export function MergeFeedConfirm({
               type="button"
               onClick={handleConfirm}
               disabled={merging}
-              className="font-sans text-[13px]"
+              className="font-sans text-ui-xs"
               style={{
                 padding: "8px 16px",
                 background: merging ? TOKENS.primaryDisabled : TOKENS.primaryBg,

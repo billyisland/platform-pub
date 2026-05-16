@@ -59,22 +59,22 @@ export function CommissionForm({
         Commission {targetWriterName}
       </p>
 
-      <label className="block text-[13px] font-sans text-grey-600 mb-1">
+      <label className="block text-ui-xs font-sans text-grey-600 mb-1">
         What do you want them to write about?
       </label>
       <textarea
         value={pitch}
         onChange={(e) => setPitch(e.target.value)}
         placeholder="Describe the piece you'd like to see…"
-        className="w-full bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 mb-4 resize-none"
+        className="w-full bg-grey-100 px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300 mb-4 resize-none"
         rows={3}
       />
 
-      <label className="block text-[13px] font-sans text-grey-600 mb-1">
+      <label className="block text-ui-xs font-sans text-grey-600 mb-1">
         How much are you offering?
       </label>
       <div className="flex items-center gap-1 mb-4">
-        <span className="text-[14px] font-sans text-grey-400">£</span>
+        <span className="text-ui-sm font-sans text-grey-400">£</span>
         <input
           type="number"
           step="0.01"
@@ -82,18 +82,18 @@ export function CommissionForm({
           value={amountPounds}
           onChange={(e) => setAmountPounds(e.target.value)}
           placeholder="0.00"
-          className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+          className="w-28 bg-grey-100 px-3 py-1.5 text-ui-sm font-sans text-black placeholder-grey-300"
         />
       </div>
 
-      {error && <p className="text-[13px] font-sans text-crimson mb-3">{error}</p>}
+      {error && <p className="text-ui-xs font-sans text-crimson mb-3">{error}</p>}
 
       <div className="flex items-center gap-3">
         <button type="submit" disabled={submitting} className="btn text-sm disabled:opacity-50">
           {submitting ? 'Sending…' : 'Send commission'}
         </button>
         {onClose && (
-          <button type="button" onClick={onClose} className="text-[13px] font-sans text-grey-400 hover:text-black transition-colors">
+          <button type="button" onClick={onClose} className="text-ui-xs font-sans text-grey-400 hover:text-black transition-colors">
             Cancel
           </button>
         )}

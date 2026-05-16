@@ -69,7 +69,7 @@ export function FollowersTab({ username, isOwnProfile }: { username: string; isO
             <Avatar src={f.avatar} name={f.displayName ?? f.username} size={36} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <p className="text-[14px] font-sans text-black truncate">
+                <p className="text-ui-sm font-sans text-black truncate">
                   {f.displayName ?? f.username}
                 </p>
                 {isOwnProfile && f.subscriptionStatus === 'active' && (

@@ -419,7 +419,7 @@ function FeedErrorState({ onRetry, showGatewayHint }: { onRetry: () => void; sho
           RETRY
         </button>
         {showGatewayHint && (
-          <p className="mt-6 text-[14px] text-grey-600 leading-[1.55] max-w-[360px] mx-auto">
+          <p className="mt-6 text-ui-sm text-grey-600 leading-[1.55] max-w-[360px] mx-auto">
             The gateway may be down. This isn&rsquo;t a sync issue on your end.
           </p>
         )}

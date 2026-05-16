@@ -665,7 +665,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
             }}
           >
             <div
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{ color: TOKENS.hintFg }}
             >
               Replying to {replyTarget.authorName}
@@ -683,7 +683,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
 
         {!isReply && !hasPersonChip && (
           <div
-            className="font-mono text-[11px] uppercase tracking-[0.06em]"
+            className="label-ui"
             style={{
               background: TOKENS.bannerBg,
               color: TOKENS.bannerFg,
@@ -722,7 +722,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
           {chips.map((chip) => (
             <span
               key={chip.id}
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -762,7 +762,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
             onChange={(e) => onToQueryChange(e.target.value)}
             onKeyDown={onToKey}
             placeholder={chips.length === 0 ? '∀  (everyone, everywhere)' : ''}
-            className="font-sans text-[14px]"
+            className="font-sans text-ui-sm"
             style={{
               flex: 1,
               minWidth: 160,
@@ -808,7 +808,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
                   key={`person-${i}`}
                   type="button"
                   onClick={() => addPersonChip(m)}
-                  className="font-sans text-[14px] block w-full text-left"
+                  className="font-sans text-ui-sm block w-full text-left"
                   style={{
                     padding: '8px 12px',
                     background: 'transparent',
@@ -824,7 +824,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
                 >
                   <span style={{ fontWeight: 500 }}>{m.account?.displayName}</span>
                   <span
-                    className="font-mono text-[11px]"
+                    className="font-mono text-mono-xs"
                     style={{ color: TOKENS.hintFg, marginLeft: 8 }}
                   >
                     @{m.account?.username}
@@ -836,7 +836,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
                   key={t.id}
                   type="button"
                   onClick={() => addBroadcastChip(t)}
-                  className="font-sans text-[14px] block w-full text-left"
+                  className="font-sans text-ui-sm block w-full text-left"
                   style={{
                     padding: '8px 12px',
                     background: 'transparent',
@@ -855,7 +855,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
               ))}
               {!resolving && personMatches.length === 0 && filteredBroadcasts.length === 0 && (
                 <div
-                  className="font-mono text-[11px]"
+                  className="font-mono text-mono-xs"
                   style={{ color: TOKENS.hintFg, padding: '8px 12px' }}
                 >
                   No matches.
@@ -904,14 +904,14 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
                   gap: 12,
                 }}
               >
-                <span className="font-sans text-[13px]" style={{ color: TOKENS.bannerFg }}>
+                <span className="font-sans text-ui-xs" style={{ color: TOKENS.bannerFg }}>
                   This is getting long. Switch to article mode?
                 </span>
                 <span style={{ display: 'flex', gap: 8 }}>
                   <button
                     type="button"
                     onClick={switchToArticle}
-                    className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                    className="label-ui"
                     style={{
                       padding: '6px 10px',
                       background: TOKENS.publishBg,
@@ -928,7 +928,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
                       setShowNudge(false)
                       setNudgeDismissed(true)
                     }}
-                    className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                    className="label-ui"
                     style={{
                       padding: '6px 10px',
                       background: 'transparent',
@@ -947,7 +947,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
                 <button
                   type="button"
                   onClick={switchToArticle}
-                  className="font-sans text-[13px]"
+                  className="font-sans text-ui-xs"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -994,7 +994,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
             gap: 16,
           }}
         >
-          <div className="font-mono text-[11px]" style={{ color: TOKENS.hintFg }}>
+          <div className="font-mono text-mono-xs" style={{ color: TOKENS.hintFg }}>
             {error ? (
               <span style={{ color: TOKENS.errorFg }}>{error}</span>
             ) : isReply ? (
@@ -1045,7 +1045,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
               type="button"
               onClick={onClose}
               disabled={publishing}
-              className="font-sans text-[13px]"
+              className="font-sans text-ui-xs"
               style={{
                 padding: '8px 14px',
                 background: 'transparent',
@@ -1060,7 +1060,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
               type="button"
               onClick={handlePublish}
               disabled={!canPublish}
-              className="font-sans text-[13px]"
+              className="font-sans text-ui-xs"
               style={{
                 padding: '8px 16px',
                 background: canPublish
@@ -1142,7 +1142,7 @@ function ProtocolSelector({
             type="button"
             onClick={handleClick}
             disabled={!isConnected}
-            className="font-mono text-[11px] uppercase tracking-[0.06em]"
+            className="label-ui"
             title={
               isConnected
                 ? undefined
@@ -1319,7 +1319,7 @@ function ArticleModePanel({
           <select
             value={selectedPublicationId ?? ''}
             onChange={(e) => setSelectedPublicationId(e.target.value || null)}
-            className="font-sans text-[13px]"
+            className="font-sans text-ui-xs"
             style={{
               background: TOKENS.fieldBg,
               border: 'none',
@@ -1362,7 +1362,7 @@ function ArticleModePanel({
           <span className="label-ui" style={{ color: TOKENS.paywallFg }}>
             Price
           </span>
-          <span className="font-sans text-[13px]" style={{ color: TOKENS.hintFg }}>
+          <span className="font-sans text-ui-xs" style={{ color: TOKENS.hintFg }}>
             £
           </span>
           <input
@@ -1374,7 +1374,7 @@ function ArticleModePanel({
               const n = parseFloat(e.target.value)
               setPricePence(Number.isFinite(n) ? Math.round(n * 100) : 0)
             }}
-            className="font-sans text-[13px]"
+            className="font-sans text-ui-xs"
             style={{
               width: 80,
               padding: '4px 8px',
@@ -1383,7 +1383,7 @@ function ArticleModePanel({
               outline: 'none',
             }}
           />
-          <span className="font-mono text-[11px]" style={{ color: TOKENS.hintFg }}>
+          <span className="font-mono text-mono-xs" style={{ color: TOKENS.hintFg }}>
             {wordCount} {wordCount === 1 ? 'word' : 'words'} · {readMinutes} min read
           </span>
         </div>
@@ -1409,7 +1409,7 @@ function ArticleToolbar({
     <button
       type="button"
       onClick={onClick}
-      className="font-sans text-[13px]"
+      className="font-sans text-ui-xs"
       style={{
         padding: '4px 8px',
         background: active ? TOKENS.bannerBg : 'transparent',

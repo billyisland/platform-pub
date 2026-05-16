@@ -119,7 +119,7 @@ export function NewFeedPrompt({ open, onClose, onCreate }: NewFeedPromptProps) {
             }
           }}
           placeholder="e.g. Politics, Friends, Reading list"
-          className="font-sans text-[14px] w-full"
+          className="font-sans text-ui-sm w-full"
           style={{
             border: `1px solid ${TOKENS.inputBorder}`,
             padding: '10px 12px',
@@ -128,7 +128,7 @@ export function NewFeedPrompt({ open, onClose, onCreate }: NewFeedPromptProps) {
           }}
         />
         <div
-          className="font-mono text-[11px]"
+          className="font-mono text-mono-xs"
           style={{ color: TOKENS.hintFg, marginBottom: 16 }}
         >
           Sources arrive in a later slice — for now this feed shows the explore stream.
@@ -142,7 +142,7 @@ export function NewFeedPrompt({ open, onClose, onCreate }: NewFeedPromptProps) {
             gap: 16,
           }}
         >
-          <div className="font-mono text-[11px]" style={{ color: TOKENS.hintFg }}>
+          <div className="font-mono text-mono-xs" style={{ color: TOKENS.hintFg }}>
             {error ? (
               <span style={{ color: TOKENS.errorFg }}>{error}</span>
             ) : overLimit ? (
@@ -156,7 +156,7 @@ export function NewFeedPrompt({ open, onClose, onCreate }: NewFeedPromptProps) {
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="font-sans text-[13px]"
+              className="font-sans text-ui-xs"
               style={{
                 padding: '8px 14px',
                 background: 'transparent',
@@ -171,7 +171,7 @@ export function NewFeedPrompt({ open, onClose, onCreate }: NewFeedPromptProps) {
               type="button"
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className="font-sans text-[13px]"
+              className="font-sans text-ui-xs"
               style={{
                 padding: '8px 16px',
                 background: canSubmit ? TOKENS.primaryBg : TOKENS.primaryDisabled,

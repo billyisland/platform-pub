@@ -49,7 +49,7 @@ export function SubscriptionsSection() {
                 </span>
               )}
               <div className="min-w-0">
-                <Link href={`/${s.writerUsername}`} className="text-[14px] font-sans font-medium text-black hover:opacity-70 truncate block">
+                <Link href={`/${s.writerUsername}`} className="text-ui-sm font-sans font-medium text-black hover:opacity-70 truncate block">
                   {s.writerDisplayName ?? s.writerUsername}
                 </Link>
                 <p className="label-ui text-grey-300">
@@ -74,7 +74,7 @@ export function SubscriptionsSection() {
                   finally { setTogglingNotify(null) }
                 }}
                 disabled={togglingNotify === s.id || s.status !== 'active'}
-                className="text-[13px] font-sans text-grey-300 hover:text-black disabled:opacity-50"
+                className="text-ui-xs font-sans text-grey-300 hover:text-black disabled:opacity-50"
                 title={s.notifyOnPublish ? 'Email me when they publish' : 'Email notifications muted'}
               >
                 {togglingNotify === s.id ? '...' : s.notifyOnPublish ? 'Notify' : 'Muted'}
@@ -89,7 +89,7 @@ export function SubscriptionsSection() {
                   finally { setTogglingVisibility(null) }
                 }}
                 disabled={togglingVisibility === s.writerId}
-                className="text-[13px] font-sans text-grey-300 hover:text-black disabled:opacity-50"
+                className="text-ui-xs font-sans text-grey-300 hover:text-black disabled:opacity-50"
                 title={s.hidden ? 'Hidden from your public profile' : 'Visible on your public profile'}
               >
                 {togglingVisibility === s.writerId ? '...' : s.hidden ? 'Hidden' : 'Public'}
@@ -98,12 +98,12 @@ export function SubscriptionsSection() {
                 <button
                   onClick={() => handleCancel(s.writerId)}
                   disabled={cancellingId === s.writerId}
-                  className="text-[13px] font-sans text-grey-300 hover:text-black disabled:opacity-50"
+                  className="text-ui-xs font-sans text-grey-300 hover:text-black disabled:opacity-50"
                 >
                   {cancellingId === s.writerId ? '...' : 'Cancel'}
                 </button>
               ) : (
-                <span className="text-[13px] font-sans text-grey-300">Cancelled</span>
+                <span className="text-ui-xs font-sans text-grey-300">Cancelled</span>
               )}
             </div>
           </div>

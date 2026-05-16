@@ -30,7 +30,7 @@ export function ConversationList({
         <p className="font-mono text-[12px] uppercase tracking-[0.04em] text-black">Messages</p>
         <button
           onClick={onNewMessage}
-          className="text-[13px] font-sans text-crimson hover:text-crimson-dark"
+          className="text-ui-xs font-sans text-crimson hover:text-crimson-dark"
         >
           New
         </button>
@@ -39,7 +39,7 @@ export function ConversationList({
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
           <div className="px-4 py-8 text-center">
-            <p className="text-[13px] font-sans text-grey-300">No conversations yet.</p>
+            <p className="text-ui-xs font-sans text-grey-300">No conversations yet.</p>
           </div>
         ) : (
           conversations.map(conv => {
@@ -61,12 +61,12 @@ export function ConversationList({
                       {conv.unreadCount > 0 && (
                         <span className="w-2 h-2  bg-crimson flex-shrink-0" />
                       )}
-                      <p className={`text-[14px] font-sans truncate ${conv.unreadCount > 0 ? 'font-semibold text-black' : 'text-black'}`}>
+                      <p className={`text-ui-sm font-sans truncate ${conv.unreadCount > 0 ? 'font-semibold text-black' : 'text-black'}`}>
                         {displayName}
                       </p>
                     </div>
                     {conv.lastMessage && (
-                      <p className="text-[13px] font-sans text-grey-400 truncate mt-0.5">
+                      <p className="text-ui-xs font-sans text-grey-400 truncate mt-0.5">
                         {conv.lastMessage.content}
                       </p>
                     )}

@@ -84,7 +84,7 @@ export function PlayscriptReply({
 
       {/* Speaker line */}
       <div
-        className="font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600 flex items-center gap-[6px] pr-20"
+        className="label-ui text-grey-600 flex items-center gap-[6px] pr-20"
       >
         {replyingTo && (
           <>

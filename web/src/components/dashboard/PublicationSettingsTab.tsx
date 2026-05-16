@@ -418,7 +418,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
                   <li>Remove the publication permanently</li>
                 </ul>
 
-                <label className="block text-sm text-black mb-2">
+                <label className="label-ui text-grey-400 block mb-2">
                   Type the publication name to confirm:
                 </label>
                 <input

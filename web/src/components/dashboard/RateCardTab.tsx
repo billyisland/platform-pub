@@ -62,27 +62,27 @@ export function RateCardTab({ publicationId }: Props) {
         <p className="label-ui text-grey-400 mb-4">Subscription pricing</p>
         <form onSubmit={handleSave} className="space-y-4">
           <div className="flex items-center gap-3">
-            <span className="text-[14px] font-sans text-grey-400">£</span>
+            <span className="text-ui-sm font-sans text-grey-400">£</span>
             <input
               type="number" step="0.01" min="0" value={subPrice}
               onChange={e => setSubPrice(e.target.value)}
-              className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+              className="w-28 bg-grey-100 px-3 py-1.5 text-ui-sm font-sans text-black placeholder-grey-300"
               placeholder="8.00"
             />
-            <span className="text-[13px] font-sans text-grey-300">/month</span>
+            <span className="text-ui-xs font-sans text-grey-300">/month</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[14px] font-sans text-grey-400 w-[13px]">%</span>
+            <span className="text-ui-sm font-sans text-grey-400 w-[13px]">%</span>
             <input
               type="number" min="0" max="100" value={annualDiscount}
               onChange={e => setAnnualDiscount(e.target.value)}
-              className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+              className="w-28 bg-grey-100 px-3 py-1.5 text-ui-sm font-sans text-black placeholder-grey-300"
               placeholder="15"
             />
-            <span className="text-[13px] font-sans text-grey-300">annual discount</span>
+            <span className="text-ui-xs font-sans text-grey-300">annual discount</span>
           </div>
           {monthlyPence > 0 && (
-            <p className="text-[13px] font-sans text-grey-400">
+            <p className="text-ui-xs font-sans text-grey-400">
               Readers pay £{subPrice}/mo or £{(annualPence / 100).toFixed(2)}/year{discountPct > 0 ? ` (save ${discountPct}%)` : ''}
             </p>
           )}
@@ -93,7 +93,7 @@ export function RateCardTab({ publicationId }: Props) {
               <button
                 type="button"
                 onClick={() => setArticlePriceMode('per_article')}
-                className={`px-3 py-1.5 text-[13px] font-sans transition-colors ${
+                className={`px-3 py-1.5 text-ui-xs font-sans transition-colors ${
                   articlePriceMode === 'per_article' ? 'bg-black text-white' : 'bg-grey-100 text-black hover:bg-grey-200/60'
                 }`}
               >
@@ -102,7 +102,7 @@ export function RateCardTab({ publicationId }: Props) {
               <button
                 type="button"
                 onClick={() => setArticlePriceMode('per_1000_words')}
-                className={`px-3 py-1.5 text-[13px] font-sans transition-colors ${
+                className={`px-3 py-1.5 text-ui-xs font-sans transition-colors ${
                   articlePriceMode === 'per_1000_words' ? 'bg-black text-white' : 'bg-grey-100 text-black hover:bg-grey-200/60'
                 }`}
               >
@@ -110,23 +110,23 @@ export function RateCardTab({ publicationId }: Props) {
               </button>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-[14px] font-sans text-grey-400">£</span>
+              <span className="text-ui-sm font-sans text-grey-400">£</span>
               <input
                 type="number" step="0.01" min="0" value={defaultArticlePrice}
                 onChange={e => setDefaultArticlePrice(e.target.value)}
-                className="w-28 bg-grey-100 px-3 py-1.5 text-[14px] font-sans text-black placeholder-grey-300"
+                className="w-28 bg-grey-100 px-3 py-1.5 text-ui-sm font-sans text-black placeholder-grey-300"
                 placeholder={articlePriceMode === 'per_1000_words' ? '0.10' : '0.20'}
               />
-              <span className="text-[13px] font-sans text-grey-300">
+              <span className="text-ui-xs font-sans text-grey-300">
                 {articlePriceMode === 'per_1000_words' ? 'per 1,000 words' : 'per read'}
               </span>
             </div>
             {articlePriceMode === 'per_1000_words' && (
-              <p className="text-[13px] font-sans text-grey-400 mt-2">
+              <p className="text-ui-xs font-sans text-grey-400 mt-2">
                 e.g. a 3,800-word article would cost £{(parseFloat(defaultArticlePrice || '0') * 3).toFixed(2)}
               </p>
             )}
-            <p className="text-[13px] font-sans text-grey-300 mt-2">
+            <p className="text-ui-xs font-sans text-grey-300 mt-2">
               Individual articles can override this in the editor.
             </p>
           </div>

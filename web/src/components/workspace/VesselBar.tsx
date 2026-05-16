@@ -255,7 +255,7 @@ export function VesselBar({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => void handleAdd(opt)}
               disabled={adding}
-              className="font-mono text-[11px] tracking-[0.02em]"
+              className="font-mono text-mono-xs tracking-[0.02em]"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -324,7 +324,7 @@ function BarButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="font-mono text-[11px] uppercase tracking-[0.06em] select-none"
+      className="label-ui select-none"
       style={{
         color: mutedColor,
         background: "transparent",

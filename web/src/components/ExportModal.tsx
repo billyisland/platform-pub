@@ -44,7 +44,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
       <div className="bg-white w-full max-w-md mx-4 px-6 py-6 shadow-xl">
         <p className="font-serif text-lg font-medium text-black mb-4">Export your data</p>
 
-        <p className="text-[14px] font-sans text-grey-600 mb-6">
+        <p className="text-ui-sm font-sans text-grey-600 mb-6">
           Download your data from all.haus. Receipt tokens are portable across Nostr.
         </p>
 
@@ -55,14 +55,14 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
               disabled={exporting !== null}
               className="w-full text-left px-4 py-3 border border-grey-200 hover:bg-grey-100 transition-colors disabled:opacity-50"
             >
-              <p className="text-[14px] font-sans font-medium text-black">Portable receipts</p>
-              <p className="text-[13px] font-sans text-grey-400 mt-0.5">Cryptographic proof of your paid reads.</p>
+              <p className="text-ui-sm font-sans font-medium text-black">Portable receipts</p>
+              <p className="text-ui-xs font-sans text-grey-400 mt-0.5">Cryptographic proof of your paid reads.</p>
             </button>
             {downloaded.has('receipts') && (
-              <p className="text-[13px] font-sans text-green-600 mt-1 px-4">&#10003; Downloaded</p>
+              <p className="text-ui-xs font-sans text-green-600 mt-1 px-4">&#10003; Downloaded</p>
             )}
             {errors.has('receipts') && (
-              <p className="text-[13px] font-sans text-red-600 mt-1 px-4">{errors.get('receipts')}</p>
+              <p className="text-ui-xs font-sans text-red-600 mt-1 px-4">{errors.get('receipts')}</p>
             )}
           </div>
 
@@ -73,24 +73,24 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
                 disabled={exporting !== null}
                 className="w-full text-left px-4 py-3 border border-grey-200 hover:bg-grey-100 transition-colors disabled:opacity-50"
               >
-                <p className="text-[14px] font-sans font-medium text-black">Full account export</p>
-                <p className="text-[13px] font-sans text-grey-400 mt-0.5">Keys, receipts, articles — everything you need to migrate.</p>
+                <p className="text-ui-sm font-sans font-medium text-black">Full account export</p>
+                <p className="text-ui-xs font-sans text-grey-400 mt-0.5">Keys, receipts, articles — everything you need to migrate.</p>
               </button>
               {downloaded.has('account') && (
-                <p className="text-[13px] font-sans text-green-600 mt-1 px-4">&#10003; Downloaded</p>
+                <p className="text-ui-xs font-sans text-green-600 mt-1 px-4">&#10003; Downloaded</p>
               )}
               {errors.has('account') && (
-                <p className="text-[13px] font-sans text-red-600 mt-1 px-4">{errors.get('account')}</p>
+                <p className="text-ui-xs font-sans text-red-600 mt-1 px-4">{errors.get('account')}</p>
               )}
             </div>
           )}
         </div>
 
         <div className="flex gap-3">
-          <button onClick={onClose} className="text-[13px] font-sans text-grey-400 hover:text-black">
+          <button onClick={onClose} className="text-ui-xs font-sans text-grey-400 hover:text-black">
             {downloaded.size > 0 ? 'Done' : 'Cancel'}
           </button>
-          {exporting && <span className="text-[13px] font-sans text-grey-300">Exporting…</span>}
+          {exporting && <span className="text-ui-xs font-sans text-grey-300">Exporting…</span>}
         </div>
       </div>
     </div>

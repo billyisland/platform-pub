@@ -311,7 +311,7 @@ export function MessageThread({
               &#8592;
             </button>
           )}
-          <p className="text-[14px] font-sans font-semibold text-black">{memberName}</p>
+          <p className="text-ui-sm font-sans font-semibold text-black">{memberName}</p>
         </div>
         {memberId && (
           <button
@@ -340,7 +340,7 @@ export function MessageThread({
         {loading || decrypting ? (
           <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-8 animate-pulse bg-grey-100 rounded" />)}</div>
         ) : msgs.length === 0 ? (
-          <p className="text-center text-[13px] font-sans text-grey-300 py-8">No messages yet. Start the conversation.</p>
+          <p className="text-center text-ui-xs font-sans text-grey-300 py-8">No messages yet. Start the conversation.</p>
         ) : (
           msgs.map(msg => {
             const isMine = msg.senderId === user?.id
@@ -371,10 +371,10 @@ export function MessageThread({
                       <MediaContent
                         content={msg.content}
                         variant="message"
-                        textClassName={`text-[14px] font-sans leading-relaxed whitespace-pre-wrap ${isMine ? 'text-white' : 'text-black'}`}
+                        textClassName={`text-ui-sm font-sans leading-relaxed whitespace-pre-wrap ${isMine ? 'text-white' : 'text-black'}`}
                       />
                     ) : (
-                      <p className="text-[14px] font-sans leading-relaxed whitespace-pre-wrap italic text-grey-300">
+                      <p className="text-ui-sm font-sans leading-relaxed whitespace-pre-wrap italic text-grey-300">
                         Could not decrypt
                       </p>
                     )}
@@ -475,7 +475,7 @@ export function MessageThread({
           }}
           placeholder={replyTo ? 'Write a reply\u2026' : 'Write a message\u2026'}
           rows={1}
-          className="flex-1 bg-grey-100 px-3 py-2 text-[14px] font-sans text-black placeholder-grey-300 resize-none overflow-y-auto"
+          className="flex-1 bg-grey-100 px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300 resize-none overflow-y-auto"
           style={{ maxHeight: '160px' }}
         />
         <button

@@ -277,13 +277,13 @@ export function PipPanel({
       <div style={{ padding: 24 }}>
       {loading ? (
         <div
-          className="font-mono text-[11px] uppercase tracking-[0.06em]"
+          className="label-ui"
           style={{ color: TOKENS.hint }}
         >
           LOADING…
         </div>
       ) : error ? (
-        <div className="font-sans text-[13px]" style={{ color: TOKENS.meta }}>
+        <div className="font-sans text-ui-xs" style={{ color: TOKENS.meta }}>
           {error}
         </div>
       ) : writer ? (
@@ -315,7 +315,7 @@ export function PipPanel({
                 type="button"
                 onClick={handleFollowToggle}
                 disabled={followBusy}
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -364,7 +364,7 @@ export function PipPanel({
           {/* TRUST section — first cut */}
           <div style={{ marginTop: 20 }}>
             <div
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{ color: TOKENS.meta, marginBottom: 8 }}
             >
               Trust
@@ -373,7 +373,7 @@ export function PipPanel({
               <TrustSignals profile={trustProfile} />
             ) : (
               <p
-                className="font-sans text-[13px]"
+                className="font-sans text-ui-xs"
                 style={{ color: TOKENS.hint }}
               >
                 No trust signals yet.
@@ -424,7 +424,7 @@ export function PipPanel({
               <Link
                 href={`/${writer.username}`}
                 onClick={onClose}
-                className="font-mono text-[11px] uppercase tracking-[0.06em]"
+                className="label-ui"
                 style={{
                   color: TOKENS.crimson,
                   textDecoration: 'none',
@@ -543,7 +543,7 @@ function VolumeBar({
   return (
     <div style={{ marginTop: 20 }}>
       <div
-        className="font-mono text-[11px] uppercase tracking-[0.06em]"
+        className="label-ui"
         style={{ color: TOKENS.meta, marginBottom: 8 }}
       >
         Volume
@@ -584,7 +584,7 @@ function VolumeBar({
             type="button"
             onClick={clear}
             disabled={busy}
-            className="font-mono text-[11px] uppercase tracking-[0.06em]"
+            className="label-ui"
             style={{
               background: 'transparent',
               border: 'none',
@@ -608,7 +608,7 @@ function VolumeBar({
               type="button"
               onClick={() => commitSampling(mode)}
               disabled={busy}
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{
                 background: sampling === mode ? TOKENS.fg : 'transparent',
                 color: sampling === mode ? '#FFFFFF' : TOKENS.meta,
@@ -740,7 +740,7 @@ function PollQuestions({
               type="button"
               onClick={() => answer(key, 'yes')}
               disabled={isBusy}
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{
                 background: slot.viewerAnswer === 'yes' ? TOKENS.fg : 'transparent',
                 color: slot.viewerAnswer === 'yes' ? '#FFFFFF' : TOKENS.meta,
@@ -755,7 +755,7 @@ function PollQuestions({
               type="button"
               onClick={() => answer(key, 'no')}
               disabled={isBusy}
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{
                 background: slot.viewerAnswer === 'no' ? TOKENS.crimson : 'transparent',
                 color: slot.viewerAnswer === 'no' ? '#FFFFFF' : TOKENS.meta,
@@ -767,7 +767,7 @@ function PollQuestions({
               NO
             </button>
             <span
-              className="font-mono text-[11px] uppercase tracking-[0.06em]"
+              className="label-ui"
               style={{ color: TOKENS.hint, minWidth: 40, textAlign: 'right' }}
             >
               {yesPct === null ? '—' : `${yesPct}%`}
@@ -867,7 +867,7 @@ function EncounterRow({
       }}
     >
       <span
-        className="font-sans text-[13px]"
+        className="font-sans text-ui-xs"
         style={{ color: TOKENS.fg, flex: 1 }}
       >
         {count === 0
@@ -880,7 +880,7 @@ function EncounterRow({
         type="button"
         onClick={toggle}
         disabled={busy}
-        className="font-mono text-[11px] uppercase tracking-[0.06em]"
+        className="label-ui"
         style={{
           background: youMet ? TOKENS.fg : 'transparent',
           color: youMet ? '#FFFFFF' : TOKENS.fg,
@@ -922,13 +922,13 @@ function TrustSignals({ profile }: { profile: TrustProfileResponse }) {
           style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}
         >
           <span
-            className="font-sans text-[13px]"
+            className="font-sans text-ui-xs"
             style={{ color: '#1A1A18', flex: 1 }}
           >
             {r.label}
           </span>
           <span
-            className="font-mono text-[11px] uppercase tracking-[0.06em]"
+            className="label-ui"
             style={{ color: '#5F5E5A' }}
           >
             {r.value}
