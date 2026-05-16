@@ -1,5 +1,5 @@
-import type { FastifyInstance } from 'fastify'
-import { pool } from '@platform-pub/shared/db/client.js'
+import type { FastifyInstance } from "fastify";
+import { pool } from "@platform-pub/shared/db/client.js";
 
 // =============================================================================
 // RSS Feed Routes
@@ -18,53 +18,52 @@ import { pool } from '@platform-pub/shared/db/client.js'
 // Feed format: RSS 2.0 (broader client support than Atom)
 // =============================================================================
 
-const SITE_URL = process.env.APP_URL ?? 'https://all.haus'
+const SITE_URL = process.env.APP_URL ?? "https://all.haus";
 
 export async function rssRoutes(app: FastifyInstance) {
-
   // ---------------------------------------------------------------------------
   // GET /rss/:username — writer-specific RSS feed
   // ---------------------------------------------------------------------------
 
   app.get<{ Params: { username: string } }>(
-    '/rss/:username',
+    "/rss/:username",
     async (req, reply) => {
-      const { username } = req.params
+      const { username } = req.params;
 
       const writerResult = await pool.query<{
-        id: string
-        display_name: string | null
-        bio: string | null
+        id: string;
+        display_name: string | null;
+        bio: string | null;
       }>(
         `SELECT id, display_name, bio FROM accounts
          WHERE username = $1 AND status = 'active'`,
-        [username]
-      )
+        [username],
+      );
 
       if (writerResult.rows.length === 0) {
-        return reply.status(404).send('Writer not found')
+        return reply.status(404).send("Writer not found");
       }
 
-      const writer = writerResult.rows[0]
+      const writer = writerResult.rows[0];
 
       const { rows: articles } = await pool.query<{
-        nostr_d_tag: string
-        title: string
-        summary: string | null
-        content_free: string | null
-        published_at: Date
+        nostr_d_tag: string;
+        title: string;
+        summary: string | null;
+        content_free: string | null;
+        published_at: Date;
       }>(
         `SELECT nostr_d_tag, title, summary, content_free, published_at
          FROM articles
          WHERE writer_id = $1 AND published_at IS NOT NULL AND deleted_at IS NULL
          ORDER BY published_at DESC
          LIMIT 20`,
-        [writer.id]
-      )
+        [writer.id],
+      );
 
-      const displayName = writer.display_name ?? username
-      const feedUrl = `${SITE_URL}/rss/${username}`
-      const writerUrl = `${SITE_URL}/${username}`
+      const displayName = writer.display_name ?? username;
+      const feedUrl = `${SITE_URL}/rss/${username}`;
+      const writerUrl = `${SITE_URL}/${username}`;
 
       const xml = buildRssFeed({
         title: `${displayName} — all.haus`,
@@ -74,45 +73,52 @@ export async function rssRoutes(app: FastifyInstance) {
         items: articles.map((a) => ({
           title: a.title,
           link: `${SITE_URL}/article/${a.nostr_d_tag}`,
-          description: a.summary ?? truncate(stripHtml(a.content_free ?? ''), 300),
-          content: a.content_free ?? '',
+          description:
+            a.summary ?? truncate(stripHtml(a.content_free ?? ""), 300),
+          content: a.content_free ?? "",
           pubDate: a.published_at,
         })),
-      })
+      });
 
-      reply.header('Content-Type', 'application/rss+xml; charset=utf-8')
-      reply.header('Cache-Control', 'public, max-age=600') // 10 min cache
-      return reply.send(xml)
-    }
-  )
+      reply.header("Content-Type", "application/rss+xml; charset=utf-8");
+      reply.header("Cache-Control", "public, max-age=600"); // 10 min cache
+      return reply.send(xml);
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // GET /api/v1/pub/:slug/rss — publication RSS feed
   // ---------------------------------------------------------------------------
 
   app.get<{ Params: { slug: string } }>(
-    '/api/v1/pub/:slug/rss',
+    "/api/v1/pub/:slug/rss",
     async (req, reply) => {
-      const { slug } = req.params
+      const { slug } = req.params;
 
       const pubResult = await pool.query<{
-        id: string; name: string; tagline: string | null
+        id: string;
+        name: string;
+        tagline: string | null;
       }>(
         `SELECT id, name, tagline FROM publications
          WHERE slug = $1 AND status = 'active'`,
-        [slug]
-      )
+        [slug],
+      );
 
       if (pubResult.rows.length === 0) {
-        return reply.status(404).send('Publication not found')
+        return reply.status(404).send("Publication not found");
       }
 
-      const pub = pubResult.rows[0]
+      const pub = pubResult.rows[0];
 
       const { rows: articles } = await pool.query<{
-        nostr_d_tag: string; title: string; summary: string | null
-        content_free: string | null; published_at: Date
-        writer_username: string; writer_display_name: string | null
+        nostr_d_tag: string;
+        title: string;
+        summary: string | null;
+        content_free: string | null;
+        published_at: Date;
+        writer_username: string;
+        writer_display_name: string | null;
       }>(
         `SELECT a.nostr_d_tag, a.title, a.summary, a.content_free, a.published_at,
                 w.username AS writer_username, w.display_name AS writer_display_name
@@ -122,44 +128,45 @@ export async function rssRoutes(app: FastifyInstance) {
            AND a.publication_article_status = 'published'
          ORDER BY a.published_at DESC
          LIMIT 20`,
-        [pub.id]
-      )
+        [pub.id],
+      );
 
-      const pubUrl = `${SITE_URL}/pub/${slug}`
+      const pubUrl = `${SITE_URL}/pub/${slug}`;
       const xml = buildRssFeed({
         title: `${pub.name}`,
         description: pub.tagline ?? `Articles from ${pub.name}`,
         link: pubUrl,
         feedUrl: `${SITE_URL}/api/v1/pub/${slug}/rss`,
-        items: articles.map(a => ({
+        items: articles.map((a) => ({
           title: a.title,
           link: `${SITE_URL}/pub/${slug}/${a.nostr_d_tag}`,
-          description: a.summary ?? truncate(stripHtml(a.content_free ?? ''), 300),
-          content: a.content_free ?? '',
+          description:
+            a.summary ?? truncate(stripHtml(a.content_free ?? ""), 300),
+          content: a.content_free ?? "",
           pubDate: a.published_at,
           author: a.writer_display_name ?? a.writer_username,
         })),
-      })
+      });
 
-      reply.header('Content-Type', 'application/rss+xml; charset=utf-8')
-      reply.header('Cache-Control', 'public, max-age=600')
-      return reply.send(xml)
-    }
-  )
+      reply.header("Content-Type", "application/rss+xml; charset=utf-8");
+      reply.header("Cache-Control", "public, max-age=600");
+      return reply.send(xml);
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // GET /rss — platform-wide recent articles feed
   // ---------------------------------------------------------------------------
 
-  app.get('/rss', async (req, reply) => {
+  app.get("/rss", async (req, reply) => {
     const { rows: articles } = await pool.query<{
-      nostr_d_tag: string
-      title: string
-      summary: string | null
-      content_free: string | null
-      published_at: Date
-      writer_username: string
-      writer_display_name: string | null
+      nostr_d_tag: string;
+      title: string;
+      summary: string | null;
+      content_free: string | null;
+      published_at: Date;
+      writer_username: string;
+      writer_display_name: string | null;
     }>(
       `SELECT a.nostr_d_tag, a.title, a.summary, a.content_free, a.published_at,
               w.username AS writer_username,
@@ -168,28 +175,29 @@ export async function rssRoutes(app: FastifyInstance) {
        JOIN accounts w ON w.id = a.writer_id
        WHERE a.published_at IS NOT NULL AND a.deleted_at IS NULL AND w.status = 'active'
        ORDER BY a.published_at DESC
-       LIMIT 30`
-    )
+       LIMIT 30`,
+    );
 
     const xml = buildRssFeed({
-      title: 'all.haus — recent articles',
-      description: 'Recent articles from writers on all.haus',
+      title: "all.haus — recent articles",
+      description: "Recent articles from writers on all.haus",
       link: SITE_URL,
       feedUrl: `${SITE_URL}/rss`,
       items: articles.map((a) => ({
         title: a.title,
         link: `${SITE_URL}/article/${a.nostr_d_tag}`,
-        description: a.summary ?? truncate(stripHtml(a.content_free ?? ''), 300),
-        content: a.content_free ?? '',
+        description:
+          a.summary ?? truncate(stripHtml(a.content_free ?? ""), 300),
+        content: a.content_free ?? "",
         pubDate: a.published_at,
         author: a.writer_display_name ?? a.writer_username,
       })),
-    })
+    });
 
-    reply.header('Content-Type', 'application/rss+xml; charset=utf-8')
-    reply.header('Cache-Control', 'public, max-age=300') // 5 min cache
-    return reply.send(xml)
-  })
+    reply.header("Content-Type", "application/rss+xml; charset=utf-8");
+    reply.header("Cache-Control", "public, max-age=300"); // 5 min cache
+    return reply.send(xml);
+  });
 }
 
 // =============================================================================
@@ -197,34 +205,37 @@ export async function rssRoutes(app: FastifyInstance) {
 // =============================================================================
 
 interface RssFeedParams {
-  title: string
-  description: string
-  link: string
-  feedUrl: string
-  items: RssItem[]
+  title: string;
+  description: string;
+  link: string;
+  feedUrl: string;
+  items: RssItem[];
 }
 
 interface RssItem {
-  title: string
-  link: string
-  description: string
-  content: string
-  pubDate: Date
-  author?: string
+  title: string;
+  link: string;
+  description: string;
+  content: string;
+  pubDate: Date;
+  author?: string;
 }
 
 function buildRssFeed(params: RssFeedParams): string {
-  const items = params.items.map((item) => `
+  const items = params.items
+    .map(
+      (item) => `
     <item>
       <title>${escapeXml(item.title)}</title>
       <link>${escapeXml(item.link)}</link>
       <description>${escapeXml(item.description)}</description>
-      <content:encoded><![CDATA[${item.content}]]></content:encoded>
+      <content:encoded><![CDATA[${item.content.replace(/\]\]>/g, "]]]]><![CDATA[>")}]]></content:encoded>
       <pubDate>${item.pubDate.toUTCString()}</pubDate>
       <guid isPermaLink="true">${escapeXml(item.link)}</guid>
-      ${item.author ? `<dc:creator>${escapeXml(item.author)}</dc:creator>` : ''}
-    </item>`
-  ).join('\n')
+      ${item.author ? `<dc:creator>${escapeXml(item.author)}</dc:creator>` : ""}
+    </item>`,
+    )
+    .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
@@ -241,23 +252,23 @@ function buildRssFeed(params: RssFeedParams): string {
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
     ${items}
   </channel>
-</rss>`
+</rss>`;
 }
 
 function escapeXml(str: string): string {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, '').trim()
+  return html.replace(/<[^>]*>/g, "").trim();
 }
 
 function truncate(text: string, max: number): string {
-  if (text.length <= max) return text
-  return text.slice(0, max).replace(/\s+\S*$/, '') + '...'
+  if (text.length <= max) return text;
+  return text.slice(0, max).replace(/\s+\S*$/, "") + "...";
 }

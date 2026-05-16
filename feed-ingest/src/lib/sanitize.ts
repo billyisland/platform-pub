@@ -1,4 +1,4 @@
-import sanitizeHtml from 'sanitize-html'
+import sanitizeHtml from "sanitize-html";
 
 // =============================================================================
 // HTML sanitisation for external content
@@ -9,23 +9,34 @@ import sanitizeHtml from 'sanitize-html'
 
 const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
-    'p', 'br', 'a', 'em', 'strong', 'code', 'pre',
-    'blockquote', 'ul', 'ol', 'li', 'img',
+    "p",
+    "br",
+    "a",
+    "em",
+    "strong",
+    "code",
+    "pre",
+    "blockquote",
+    "ul",
+    "ol",
+    "li",
+    "img",
   ],
   allowedAttributes: {
-    a: ['href', 'rel'],
-    img: ['src', 'alt'],
+    a: ["href", "rel"],
+    img: ["src", "alt"],
   },
   transformTags: {
-    a: sanitizeHtml.simpleTransform('a', { rel: 'nofollow' }),
+    a: sanitizeHtml.simpleTransform("a", { rel: "nofollow" }),
   },
-  allowedSchemes: ['http', 'https'],
-}
+  allowedSchemes: ["http", "https"],
+  allowProtocolRelative: false,
+};
 
 export function sanitizeContent(html: string): string {
-  return sanitizeHtml(html, SANITIZE_OPTIONS)
+  return sanitizeHtml(html, SANITIZE_OPTIONS);
 }
 
 export function stripHtml(html: string): string {
-  return sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} }).trim()
+  return sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} }).trim();
 }

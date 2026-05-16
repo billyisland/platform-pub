@@ -1,6 +1,6 @@
-import { sendEmail } from './email.js'
-import { pool } from '../db/client.js'
-import logger from './logger.js'
+import { sendEmail } from "./email.js";
+import { pool } from "../db/client.js";
+import logger from "./logger.js";
 
 // =============================================================================
 // Subscription Email Templates
@@ -9,7 +9,15 @@ import logger from './logger.js'
 // and new subscriber notification to writer.
 // =============================================================================
 
-const APP_URL = process.env.APP_URL ?? 'http://localhost:3010'
+const APP_URL = process.env.APP_URL ?? "http://localhost:3010";
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 // Shared email wrapper — exported for unit testing
 export function emailHtml(heading: string, body: string): string {
@@ -23,40 +31,49 @@ export function emailHtml(heading: string, body: string): string {
         all.haus — writing worth reading
       </p>
     </div>
-  `.trim()
+  `.trim();
 }
 
 export function paragraph(text: string): string {
-  return `<p style="font-size: 15px; color: #57534e; line-height: 1.6; margin-bottom: 16px;">${text}</p>`
+  return `<p style="font-size: 15px; color: #57534e; line-height: 1.6; margin-bottom: 16px;">${text}</p>`;
 }
 
 export function button(href: string, label: string): string {
-  return `<a href="${href}" style="display: inline-block; background: #1c1917; color: #ffffff; font-size: 14px; font-weight: 500; padding: 12px 28px; border-radius: 6px; text-decoration: none; margin-bottom: 16px;">${label}</a>`
+  return `<a href="${href}" style="display: inline-block; background: #1c1917; color: #ffffff; font-size: 14px; font-weight: 500; padding: 12px 28px; border-radius: 6px; text-decoration: none; margin-bottom: 16px;">${label}</a>`;
 }
 
 export function formatPounds(pence: number): string {
-  return `£${(pence / 100).toFixed(2)}`
+  return `£${(pence / 100).toFixed(2)}`;
 }
 
 export function formatDate(date: Date): string {
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Helper: look up email + display name for an account
 // ---------------------------------------------------------------------------
 
-async function getAccountInfo(accountId: string): Promise<{ email: string; displayName: string; username: string } | null> {
-  const { rows } = await pool.query<{ email: string | null; display_name: string | null; username: string }>(
-    `SELECT email, display_name, username FROM accounts WHERE id = $1`,
-    [accountId]
-  )
-  if (rows.length === 0 || !rows[0].email) return null
+async function getAccountInfo(
+  accountId: string,
+): Promise<{ email: string; displayName: string; username: string } | null> {
+  const { rows } = await pool.query<{
+    email: string | null;
+    display_name: string | null;
+    username: string;
+  }>(`SELECT email, display_name, username FROM accounts WHERE id = $1`, [
+    accountId,
+  ]);
+  if (rows.length === 0 || !rows[0].email) return null;
   return {
     email: rows[0].email,
     displayName: rows[0].display_name ?? rows[0].username,
     username: rows[0].username,
-  }
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -69,11 +86,11 @@ export async function sendSubscriptionRenewedEmail(
   pricePence: number,
   nextPeriodEnd: Date,
 ): Promise<void> {
-  const reader = await getAccountInfo(readerId)
-  const writer = await getAccountInfo(writerId)
-  if (!reader || !writer) return
+  const reader = await getAccountInfo(readerId);
+  const writer = await getAccountInfo(writerId);
+  if (!reader || !writer) return;
 
-  const writerName = writer.displayName
+  const writerName = writer.displayName;
 
   await sendEmail({
     to: reader.email,
@@ -82,16 +99,18 @@ export async function sendSubscriptionRenewedEmail(
       `Your subscription to ${writerName} has renewed.`,
       `${formatPounds(pricePence)} has been added to your reading tab.`,
       `Next renewal: ${formatDate(nextPeriodEnd)}.`,
-      '',
+      "",
       `Manage your subscriptions: ${APP_URL}/account`,
-    ].join('\n'),
+    ].join("\n"),
     htmlBody: emailHtml(
-      'Subscription renewed',
-      paragraph(`Your subscription to <strong>${writerName}</strong> has renewed. ${formatPounds(pricePence)} has been added to your reading tab.`) +
-      paragraph(`Next renewal: ${formatDate(nextPeriodEnd)}.`) +
-      button(`${APP_URL}/account`, 'Manage subscriptions')
+      "Subscription renewed",
+      paragraph(
+        `Your subscription to <strong>${escapeHtml(writerName)}</strong> has renewed. ${formatPounds(pricePence)} has been added to your reading tab.`,
+      ) +
+        paragraph(`Next renewal: ${formatDate(nextPeriodEnd)}.`) +
+        button(`${APP_URL}/account`, "Manage subscriptions"),
     ),
-  })
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -103,11 +122,11 @@ export async function sendSubscriptionCancelledEmail(
   writerId: string,
   accessUntil: Date,
 ): Promise<void> {
-  const reader = await getAccountInfo(readerId)
-  const writer = await getAccountInfo(writerId)
-  if (!reader || !writer) return
+  const reader = await getAccountInfo(readerId);
+  const writer = await getAccountInfo(writerId);
+  if (!reader || !writer) return;
 
-  const writerName = writer.displayName
+  const writerName = writer.displayName;
 
   await sendEmail({
     to: reader.email,
@@ -115,16 +134,20 @@ export async function sendSubscriptionCancelledEmail(
     textBody: [
       `You've cancelled your subscription to ${writerName}.`,
       `You'll have access until ${formatDate(accessUntil)}.`,
-      '',
+      "",
       `You can resubscribe anytime from their profile: ${APP_URL}/${writer.username}`,
-    ].join('\n'),
+    ].join("\n"),
     htmlBody: emailHtml(
-      'Subscription cancelled',
-      paragraph(`You've cancelled your subscription to <strong>${writerName}</strong>.`) +
-      paragraph(`You'll still have access until <strong>${formatDate(accessUntil)}</strong>. Articles you've already read remain permanently unlocked.`) +
-      button(`${APP_URL}/${writer.username}`, 'Resubscribe')
+      "Subscription cancelled",
+      paragraph(
+        `You've cancelled your subscription to <strong>${escapeHtml(writerName)}</strong>.`,
+      ) +
+        paragraph(
+          `You'll still have access until <strong>${formatDate(accessUntil)}</strong>. Articles you've already read remain permanently unlocked.`,
+        ) +
+        button(`${APP_URL}/${writer.username}`, "Resubscribe"),
     ),
-  })
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -136,11 +159,11 @@ export async function sendSubscriptionExpiryWarningEmail(
   writerId: string,
   expiresAt: Date,
 ): Promise<void> {
-  const reader = await getAccountInfo(readerId)
-  const writer = await getAccountInfo(writerId)
-  if (!reader || !writer) return
+  const reader = await getAccountInfo(readerId);
+  const writer = await getAccountInfo(writerId);
+  if (!reader || !writer) return;
 
-  const writerName = writer.displayName
+  const writerName = writer.displayName;
 
   await sendEmail({
     to: reader.email,
@@ -148,14 +171,18 @@ export async function sendSubscriptionExpiryWarningEmail(
     textBody: [
       `Your subscription to ${writerName} expires on ${formatDate(expiresAt)}.`,
       `Resubscribe to keep reading: ${APP_URL}/${writer.username}`,
-    ].join('\n'),
+    ].join("\n"),
     htmlBody: emailHtml(
-      'Subscription expiring soon',
-      paragraph(`Your subscription to <strong>${writerName}</strong> expires on <strong>${formatDate(expiresAt)}</strong>.`) +
-      paragraph('Articles you\'ve already read remain permanently unlocked, but you won\'t be able to read new paywalled content.') +
-      button(`${APP_URL}/${writer.username}`, 'Resubscribe')
+      "Subscription expiring soon",
+      paragraph(
+        `Your subscription to <strong>${escapeHtml(writerName)}</strong> expires on <strong>${formatDate(expiresAt)}</strong>.`,
+      ) +
+        paragraph(
+          "Articles you've already read remain permanently unlocked, but you won't be able to read new paywalled content.",
+        ) +
+        button(`${APP_URL}/${writer.username}`, "Resubscribe"),
     ),
-  })
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -167,24 +194,25 @@ export async function sendNewSubscriberEmail(
   readerId: string,
   pricePence: number,
 ): Promise<void> {
-  const writer = await getAccountInfo(writerId)
-  const reader = await getAccountInfo(readerId)
-  if (!writer || !reader) return
+  const writer = await getAccountInfo(writerId);
+  const reader = await getAccountInfo(readerId);
+  if (!writer || !reader) return;
 
-  const readerName = reader.displayName
+  const readerName = reader.displayName;
 
   await sendEmail({
     to: writer.email,
     subject: `New subscriber: ${readerName}`,
     textBody: [
       `${readerName} just subscribed to your writing for ${formatPounds(pricePence)}/mo.`,
-      '',
+      "",
       `View your subscribers: ${APP_URL}/dashboard?tab=subscribers`,
-    ].join('\n'),
+    ].join("\n"),
     htmlBody: emailHtml(
-      'New subscriber',
-      paragraph(`<strong>${readerName}</strong> just subscribed to your writing for ${formatPounds(pricePence)}/mo.`) +
-      button(`${APP_URL}/dashboard?tab=subscribers`, 'View subscribers')
+      "New subscriber",
+      paragraph(
+        `<strong>${escapeHtml(readerName)}</strong> just subscribed to your writing for ${formatPounds(pricePence)}/mo.`,
+      ) + button(`${APP_URL}/dashboard?tab=subscribers`, "View subscribers"),
     ),
-  })
+  });
 }

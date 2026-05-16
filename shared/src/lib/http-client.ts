@@ -263,6 +263,7 @@ export interface SafeFetchOptions {
   maxBytes?: number;
   method?: string;
   body?: string | Uint8Array;
+  redirect?: "follow" | "manual";
 }
 
 export interface SafeFetchResult {
@@ -314,6 +315,16 @@ export async function safeFetch(
 
       // Handle redirects manually so we can re-validate each hop
       if (response.status >= 300 && response.status < 400) {
+        // If caller requested manual redirect handling, return as-is
+        if (options.redirect === "manual") {
+          return {
+            ok: false,
+            status: response.status,
+            headers: response.headers,
+            text: "",
+            url: currentUrl,
+          };
+        }
         const location = response.headers.get("location");
         if (!location) {
           throw new Error(
