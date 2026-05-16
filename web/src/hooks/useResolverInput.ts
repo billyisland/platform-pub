@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { resolver, type ResolverResult } from "../lib/api";
 import { resolveMatches, type MatchOption } from "../lib/workspace/resolve";
 
@@ -17,8 +17,10 @@ export interface UseResolverInput {
 
 export function useResolverInput(opts?: {
   maxPolls?: number;
+  context?: "subscribe" | "invite" | "dm" | "general";
 }): UseResolverInput {
   const maxPolls = opts?.maxPolls ?? MAX_POLLS;
+  const context = opts?.context ?? "subscribe";
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<ResolverResult | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -26,6 +28,16 @@ export function useResolverInput(opts?: {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCountRef = useRef(0);
   const genRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      genRef.current++;
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+  }, []);
 
   const pollForResults = useCallback(
     async (requestId: string, gen: number) => {
@@ -70,7 +82,7 @@ export function useResolverInput(opts?: {
         setResolveError(false);
         pollCountRef.current = 0;
         try {
-          const res = await resolver.resolve(value.trim(), "subscribe");
+          const res = await resolver.resolve(value.trim(), context);
           if (gen !== genRef.current) return;
           setResult(res);
           if (res.requestId && res.status === "pending")

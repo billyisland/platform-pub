@@ -244,7 +244,7 @@ Also add a cron task for D67 (relay_outbox cleanup):
 
 ---
 
-## Slice 9: Workspace data layer + UI fixes
+## Slice 9: Workspace data layer + UI fixes ✓ DONE (2026-05-16)
 
 **Priority: MEDIUM. Estimated effort: 2 hours.**
 **Services:** gateway, web

@@ -321,11 +321,14 @@ export function WorkspaceView() {
     if (!pendingMerge) return;
     const { source, target } = pendingMerge;
     await workspaceFeedsApi.merge(target.id, source.id);
-    setVessels((prev) => prev.filter((v) => v.feed.id !== source.id));
+    setVessels((prev) => {
+      const next = prev.filter((v) => v.feed.id !== source.id);
+      const targetVessel = next.find((v) => v.feed.id === target.id);
+      if (targetVessel) void loadVesselItems(targetVessel.feed);
+      return next;
+    });
     removeVesselLayout(source.id);
     setPendingMerge(null);
-    const targetVessel = vessels.find((v) => v.feed.id === target.id);
-    if (targetVessel) void loadVesselItems(targetVessel.feed);
   }
 
   // Slice 20: load function honours the vessel's current view mode. The
@@ -375,8 +378,11 @@ export function WorkspaceView() {
     vesselViewRef.current = next;
   }, [vessels]);
 
+  const vesselsRef = useRef(vessels);
+  vesselsRef.current = vessels;
+
   function refreshAll() {
-    vessels.forEach((v) => void loadVesselItems(v.feed));
+    vesselsRef.current.forEach((v) => void loadVesselItems(v.feed));
   }
 
   // Slice 20: optimistic save toggle. The savedIds Set on each vessel drives
@@ -870,7 +876,9 @@ export function WorkspaceView() {
       <FeedComposer
         open={!!feedComposerFor}
         feed={feedComposerFor}
-        deleteBlocked={vessels.length <= 1}
+        deleteBlocked={
+          vessels.filter((v) => !positions[v.feed.id]?.hidden).length <= 1
+        }
         onClose={() => setFeedComposerFor(null)}
         onSourcesChanged={() => {
           if (!feedComposerFor) return;

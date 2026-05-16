@@ -71,8 +71,21 @@ function readFromStorage(userId: string): Record<string, VesselLayout> {
     const raw = window.localStorage.getItem(storageKey(userId));
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") return parsed;
-    return {};
+    if (!parsed || typeof parsed !== "object") return {};
+    const clean: Record<string, VesselLayout> = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      const v = val as Record<string, unknown>;
+      if (
+        v &&
+        typeof v === "object" &&
+        typeof v.x === "number" &&
+        typeof v.y === "number" &&
+        Number.isFinite(v.x) &&
+        Number.isFinite(v.y)
+      )
+        clean[key] = v as unknown as VesselLayout;
+    }
+    return clean;
   } catch {
     return {};
   }
@@ -117,6 +130,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     hydrate: (userId) => {
       if (get().userId === userId && get().hydrated) return;
+      if (writeTimer) {
+        clearTimeout(writeTimer);
+        writeTimer = null;
+      }
       const positions = readFromStorage(userId);
       set({ userId, positions, hydrated: true });
     },

@@ -206,6 +206,17 @@ export async function feedsRoutes(app: FastifyInstance) {
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
 
+      const {
+        rows: [{ count }],
+      } = await pool.query<{ count: string }>(
+        `SELECT COUNT(*) AS count FROM feeds WHERE owner_id = $1`,
+        [ownerId],
+      );
+      if (parseInt(count, 10) <= 1)
+        return reply
+          .status(409)
+          .send({ error: "Cannot delete your only feed" });
+
       const { rowCount } = await pool.query(
         `DELETE FROM feeds WHERE id = $1 AND owner_id = $2`,
         [id, ownerId],
@@ -1299,12 +1310,11 @@ async function addSource(
     if (!/^[0-9a-f]{64}$/i.test(sourceUri)) throw tagged("TARGET_NOT_FOUND");
   }
 
-  const { externalSourceId, subscriptionId } = await withTransaction(
-    async (client) => {
-      const {
-        rows: [src],
-      } = await client.query<{ id: string }>(
-        `INSERT INTO external_sources (protocol, source_uri, display_name, description, avatar_url, relay_urls)
+  const { inserted, ensured } = await withTransaction(async (client) => {
+    const {
+      rows: [src],
+    } = await client.query<{ id: string }>(
+      `INSERT INTO external_sources (protocol, source_uri, display_name, description, avatar_url, relay_urls)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (protocol, source_uri) DO UPDATE SET
          display_name = COALESCE(NULLIF($3, ''), external_sources.display_name),
@@ -1315,57 +1325,59 @@ async function addSource(
          orphaned_at = NULL,
          updated_at = now()
        RETURNING id`,
-        [
-          protocol,
-          sourceUri,
-          displayName ?? null,
-          description ?? null,
-          avatarUrl ?? null,
-          protocol === "nostr_external" && relayUrls && relayUrls.length > 0
-            ? relayUrls
-            : null,
-        ],
-      );
-      const {
-        rows: [sub],
-      } = await client.query<{ id: string }>(
-        `INSERT INTO external_subscriptions (subscriber_id, source_id)
+      [
+        protocol,
+        sourceUri,
+        displayName ?? null,
+        description ?? null,
+        avatarUrl ?? null,
+        protocol === "nostr_external" && relayUrls && relayUrls.length > 0
+          ? relayUrls
+          : null,
+      ],
+    );
+    const {
+      rows: [sub],
+    } = await client.query<{ id: string }>(
+      `INSERT INTO external_subscriptions (subscriber_id, source_id)
        VALUES ($1, $2)
        ON CONFLICT (subscriber_id, source_id) DO UPDATE SET is_muted = FALSE
        RETURNING id`,
-        [ownerId, src.id],
-      );
-      return { externalSourceId: src.id, subscriptionId: sub.id };
-    },
-  );
-
-  // Kick off an immediate fetch so the new source has content to show
-  // shortly after the user adds it (atproto goes via Jetstream's 60s DID
-  // refresh — no per-add job).
-  const fetchTask =
-    protocol === "rss"
-      ? "feed_ingest_rss"
-      : protocol === "nostr_external"
-        ? "feed_ingest_nostr"
-        : protocol === "activitypub"
-          ? "feed_ingest_activitypub"
-          : null;
-  if (fetchTask) {
-    await pool.query(
-      `SELECT graphile_worker.add_job(
-         $2,
-         json_build_object('sourceId', $1::text),
-         job_key := 'feed_ingest_' || $1::text,
-         max_attempts := 1
-       )`,
-      [externalSourceId, fetchTask],
+      [ownerId, src.id],
     );
-  }
 
-  const inserted = await insertSource(feedId, "external_source", {
-    external_source_id: externalSourceId,
+    const fetchTask =
+      protocol === "rss"
+        ? "feed_ingest_rss"
+        : protocol === "nostr_external"
+          ? "feed_ingest_nostr"
+          : protocol === "activitypub"
+            ? "feed_ingest_activitypub"
+            : null;
+    if (fetchTask) {
+      await client.query(
+        `SELECT graphile_worker.add_job(
+           $2,
+           json_build_object('sourceId', $1::text),
+           job_key := 'feed_ingest_' || $1::text,
+           max_attempts := 1
+         )`,
+        [src.id, fetchTask],
+      );
+    }
+
+    const ins = await insertSource(
+      feedId,
+      "external_source",
+      { external_source_id: src.id },
+      client,
+    );
+    return {
+      inserted: ins,
+      ensured: { externalSourceId: src.id, subscriptionId: sub.id },
+    };
   });
-  return { source: inserted, ensured: { externalSourceId, subscriptionId } };
+  return { source: inserted, ensured };
 }
 
 async function insertSource(
@@ -1377,9 +1389,10 @@ async function insertSource(
     external_source_id?: string;
     tag_name?: string;
   },
+  db: { query: typeof pool.query } = pool,
 ) {
   try {
-    const { rows } = await pool.query<SourceRow>(
+    const { rows } = await db.query<SourceRow>(
       `INSERT INTO feed_sources (feed_id, source_type, account_id, publication_id, external_source_id, tag_name)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, source_type, weight, sampling_mode, muted_at, created_at,
@@ -1400,7 +1413,7 @@ async function insertSource(
     // The display fields above are NULLs from the bare INSERT — re-hydrate
     // by fetching the row through the same join the GET endpoint uses, so
     // the client sees the same shape on create as on list.
-    const { rows: hydrated } = await pool.query<SourceRow>(
+    const { rows: hydrated } = await db.query<SourceRow>(
       `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
          fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
          acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
