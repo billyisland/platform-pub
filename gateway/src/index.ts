@@ -1,55 +1,58 @@
-import 'dotenv/config'
-import { requireEnv, requireEnvMinLength } from '@platform-pub/shared/lib/env.js'
-import { ADVISORY_LOCKS } from '@platform-pub/shared/lib/advisory-locks.js'
-import Fastify from 'fastify'
-import sensible from '@fastify/sensible'
-import cookie from '@fastify/cookie'
-import cors from '@fastify/cors'
-import multipart from '@fastify/multipart'
-import rateLimit from '@fastify/rate-limit'
-import { authRoutes } from './routes/auth.js'
-import { signingRoutes } from './routes/signing.js'
-import { writerRoutes } from './routes/writers.js'
-import { articleRoutes } from './routes/articles/index.js'
-import { noteRoutes } from './routes/notes.js'
-import { followRoutes } from './routes/follows.js'
-import { moderationRoutes } from './routes/moderation.js'
-import { rssRoutes } from './routes/rss.js'
-import { searchRoutes } from './routes/search.js'
-import { googleAuthRoutes } from './routes/google-auth.js'
-import { draftRoutes } from './routes/drafts.js'
-import { replyRoutes } from './routes/replies.js'
-import { mediaRoutes } from './routes/media.js'
-import { subscriptionRoutes } from './routes/subscriptions/index.js'
-import { expireAndRenewSubscriptions } from './workers/subscription-expiry.js'
-import { myAccountRoutes } from './routes/my-account.js'
-import { receiptRoutes } from './routes/receipts.js'
-import { exportRoutes } from './routes/export.js'
-import { notificationRoutes } from './routes/notifications.js'
-import { voteRoutes } from './routes/votes.js'
-import { historyRoutes } from './routes/history.js'
-import { giftLinkRoutes } from './routes/gift-links.js'
-import { subscriptionOfferRoutes } from './routes/subscription-offers.js'
-import { messageRoutes } from './routes/messages.js'
-import { timelineRoutes } from './routes/timeline.js'
-import { socialRoutes } from './routes/social.js'
-import { publicationRoutes } from './routes/publications/index.js'
-import { driveRoutes } from './routes/drives.js'
-import { expireOverdueDrives } from './workers/drive-expiry.js'
-import { traffologyRoutes } from './routes/traffology.js'
-import { unsubscribeRoutes } from './routes/unsubscribe.js'
-import { bookmarkRoutes } from './routes/bookmarks.js'
-import { tagRoutes } from './routes/tags.js'
-import { resolveRoutes } from './routes/resolve.js'
-import { externalFeedsRoutes } from './routes/external-feeds.js'
-import { linkedAccountsRoutes } from './routes/linked-accounts.js'
-import { trustRoutes } from './routes/trust.js'
-import { readingPositionRoutes } from './routes/reading-positions.js'
-import { feedsRoutes } from './routes/feeds.js'
-import { getAtprotoClient } from '@platform-pub/shared/lib/atproto-oauth.js'
-import { publishScheduledDrafts } from './workers/scheduler.js'
-import { pool } from '@platform-pub/shared/db/client.js'
-import logger from '@platform-pub/shared/lib/logger.js'
+import "dotenv/config";
+import {
+  requireEnv,
+  requireEnvMinLength,
+} from "@platform-pub/shared/lib/env.js";
+import { ADVISORY_LOCKS } from "@platform-pub/shared/lib/advisory-locks.js";
+import Fastify from "fastify";
+import sensible from "@fastify/sensible";
+import cookie from "@fastify/cookie";
+import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
+import { authRoutes } from "./routes/auth.js";
+import { signingRoutes } from "./routes/signing.js";
+import { writerRoutes } from "./routes/writers.js";
+import { articleRoutes } from "./routes/articles/index.js";
+import { noteRoutes } from "./routes/notes.js";
+import { followRoutes } from "./routes/follows.js";
+import { moderationRoutes } from "./routes/moderation.js";
+import { rssRoutes } from "./routes/rss.js";
+import { searchRoutes } from "./routes/search.js";
+import { googleAuthRoutes } from "./routes/google-auth.js";
+import { draftRoutes } from "./routes/drafts.js";
+import { replyRoutes } from "./routes/replies.js";
+import { mediaRoutes } from "./routes/media.js";
+import { subscriptionRoutes } from "./routes/subscriptions/index.js";
+import { expireAndRenewSubscriptions } from "./workers/subscription-expiry.js";
+import { myAccountRoutes } from "./routes/my-account.js";
+import { receiptRoutes } from "./routes/receipts.js";
+import { exportRoutes } from "./routes/export.js";
+import { notificationRoutes } from "./routes/notifications.js";
+import { voteRoutes } from "./routes/votes.js";
+import { historyRoutes } from "./routes/history.js";
+import { giftLinkRoutes } from "./routes/gift-links.js";
+import { subscriptionOfferRoutes } from "./routes/subscription-offers.js";
+import { messageRoutes } from "./routes/messages.js";
+import { timelineRoutes } from "./routes/timeline.js";
+import { socialRoutes } from "./routes/social.js";
+import { publicationRoutes } from "./routes/publications/index.js";
+import { driveRoutes } from "./routes/drives.js";
+import { expireOverdueDrives } from "./workers/drive-expiry.js";
+import { traffologyRoutes } from "./routes/traffology.js";
+import { unsubscribeRoutes } from "./routes/unsubscribe.js";
+import { bookmarkRoutes } from "./routes/bookmarks.js";
+import { tagRoutes } from "./routes/tags.js";
+import { resolveRoutes } from "./routes/resolve.js";
+import { externalFeedsRoutes } from "./routes/external-feeds.js";
+import { linkedAccountsRoutes } from "./routes/linked-accounts.js";
+import { trustRoutes } from "./routes/trust.js";
+import { readingPositionRoutes } from "./routes/reading-positions.js";
+import { feedsRoutes } from "./routes/feeds.js";
+import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
+import { publishScheduledDrafts } from "./workers/scheduler.js";
+import { pool } from "@platform-pub/shared/db/client.js";
+import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
 // all.haus — API Gateway
@@ -70,27 +73,33 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // =============================================================================
 
 // Validate required env vars at startup — fail fast
-const SESSION_SECRET = requireEnvMinLength('SESSION_SECRET', 32)
-const APP_URL = requireEnv('APP_URL')
+const SESSION_SECRET = requireEnvMinLength("SESSION_SECRET", 32);
+const APP_URL = requireEnv("APP_URL");
 
-const app = Fastify({ logger })
+const app = Fastify({ logger });
 
 async function start() {
   // Plugins
-  await app.register(sensible)
+  await app.register(sensible);
   await app.register(cookie, {
     secret: SESSION_SECRET,
-  })
+  });
   await app.register(cors, {
     origin: APP_URL,
-    credentials: true,       // allow cookies
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  })
+    credentials: true, // allow cookies
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  });
   await app.register(multipart, {
     limits: {
       fileSize: 12 * 1024 * 1024, // 12 MB (slightly above 10 MB limit to allow overhead)
     },
-  })
+  });
+
+  // Strip client-supplied identity headers before any route handler runs.
+  // These headers are set by auth middleware for downstream services —
+  // they must never come from the client.
+  const { stripIdentityHeaders } = await import("./middleware/auth.js");
+  app.addHook("onRequest", stripIdentityHeaders);
 
   // Rate limiting — per-route limits on sensitive endpoints only.
   // The global blanket limit caused cascading auth failures in dev (Docker
@@ -99,132 +108,136 @@ async function start() {
   // own per-route limits registered inline.
   await app.register(rateLimit, {
     global: false,
-  })
+  });
 
   // Auth routes
-  await app.register(authRoutes, { prefix: '/api/v1' })
-  await app.register(googleAuthRoutes, { prefix: '/api/v1' })
+  await app.register(authRoutes, { prefix: "/api/v1" });
+  await app.register(googleAuthRoutes, { prefix: "/api/v1" });
 
   // Signing service (event signing + NIP-44 key unwrapping)
-  await app.register(signingRoutes, { prefix: '/api/v1' })
+  await app.register(signingRoutes, { prefix: "/api/v1" });
 
   // Writer profiles (public)
-  await app.register(writerRoutes, { prefix: '/api/v1' })
+  await app.register(writerRoutes, { prefix: "/api/v1" });
 
   // Articles (indexing, metadata, vault/key proxies, gate pass orchestration)
-  await app.register(articleRoutes, { prefix: '/api/v1' })
+  await app.register(articleRoutes, { prefix: "/api/v1" });
 
   // Notes (short-form content indexing)
-  await app.register(noteRoutes, { prefix: '/api/v1' })
+  await app.register(noteRoutes, { prefix: "/api/v1" });
 
   // Drafts (auto-save, load, delete — per ADR §III.3 open question #15)
-  await app.register(draftRoutes, { prefix: '/api/v1' })
+  await app.register(draftRoutes, { prefix: "/api/v1" });
 
   // Replies (index, threaded fetch, soft-delete, toggle)
-  await app.register(replyRoutes, { prefix: '/api/v1' })
+  await app.register(replyRoutes, { prefix: "/api/v1" });
 
   // Media (Blossom upload proxy, oEmbed proxy)
-  await app.register(mediaRoutes, { prefix: '/api/v1' })
+  await app.register(mediaRoutes, { prefix: "/api/v1" });
 
   // Follows (follow/unfollow writers, feed filtering)
-  await app.register(followRoutes, { prefix: '/api/v1' })
+  await app.register(followRoutes, { prefix: "/api/v1" });
 
   // Moderation (reports, content removal, account suspension)
-  await app.register(moderationRoutes, { prefix: '/api/v1' })
+  await app.register(moderationRoutes, { prefix: "/api/v1" });
 
   // Search (articles + writers, trigram-powered)
-  await app.register(searchRoutes, { prefix: '/api/v1' })
+  await app.register(searchRoutes, { prefix: "/api/v1" });
 
   // RSS feeds (public, no auth — per ADR §II.6)
-  await app.register(rssRoutes)
+  await app.register(rssRoutes);
 
   // Subscriptions (subscribe, unsubscribe, check, list, pricing)
-  await app.register(subscriptionRoutes, { prefix: '/api/v1' })
+  await app.register(subscriptionRoutes, { prefix: "/api/v1" });
 
   // Email unsubscribe (signed token — no auth required)
-  await app.register(unsubscribeRoutes, { prefix: '/api/v1' })
+  await app.register(unsubscribeRoutes, { prefix: "/api/v1" });
 
   // v1.6 additional routes (reading tab)
-  await app.register(myAccountRoutes, { prefix: '/api/v1' })
+  await app.register(myAccountRoutes, { prefix: "/api/v1" });
 
   // Receipt portability (portable bearer proofs + platform pubkey for federation)
-  await app.register(receiptRoutes, { prefix: '/api/v1' })
+  await app.register(receiptRoutes, { prefix: "/api/v1" });
 
   // Author migration export (content keys + receipt whitelist for portability)
-  await app.register(exportRoutes, { prefix: '/api/v1' })
+  await app.register(exportRoutes, { prefix: "/api/v1" });
 
   // Notifications (new followers, new replies)
-  await app.register(notificationRoutes, { prefix: '/api/v1' })
+  await app.register(notificationRoutes, { prefix: "/api/v1" });
 
   // Votes (upvote/downvote articles, notes, replies)
-  await app.register(voteRoutes, { prefix: '/api/v1' })
+  await app.register(voteRoutes, { prefix: "/api/v1" });
 
   // Reading history (list previously-read articles for the current reader)
-  await app.register(historyRoutes, { prefix: '/api/v1' })
+  await app.register(historyRoutes, { prefix: "/api/v1" });
 
   // Gift links (capped shareable access tokens for paywalled articles)
-  await app.register(giftLinkRoutes, { prefix: '/api/v1' })
+  await app.register(giftLinkRoutes, { prefix: "/api/v1" });
 
   // Subscription offers (discount codes and gifted subscriptions)
-  await app.register(subscriptionOfferRoutes, { prefix: '/api/v1' })
+  await app.register(subscriptionOfferRoutes, { prefix: "/api/v1" });
 
   // Direct messages (NIP-17 E2E encrypted conversations)
-  await app.register(messageRoutes, { prefix: '/api/v1' })
+  await app.register(messageRoutes, { prefix: "/api/v1" });
 
   // Feed (unified endpoint with reach dial — following, explore)
-  await app.register(timelineRoutes, { prefix: '/api/v1' })
+  await app.register(timelineRoutes, { prefix: "/api/v1" });
 
   // Social (blocks, mutes)
-  await app.register(socialRoutes, { prefix: '/api/v1' })
+  await app.register(socialRoutes, { prefix: "/api/v1" });
 
   // Publications (multi-writer publishing groups)
-  await app.register(publicationRoutes, { prefix: '/api/v1' })
+  await app.register(publicationRoutes, { prefix: "/api/v1" });
 
   // Pledge drives (crowdfunding, commissions)
-  await app.register(driveRoutes, { prefix: '/api/v1' })
+  await app.register(driveRoutes, { prefix: "/api/v1" });
 
   // Traffology (writer analytics — concurrent reader counts)
-  await app.register(traffologyRoutes, { prefix: '/api/v1' })
+  await app.register(traffologyRoutes, { prefix: "/api/v1" });
 
   // Bookmarks
-  await app.register(bookmarkRoutes, { prefix: '/api/v1' })
+  await app.register(bookmarkRoutes, { prefix: "/api/v1" });
 
   // Tags
-  await app.register(tagRoutes, { prefix: '/api/v1' })
+  await app.register(tagRoutes, { prefix: "/api/v1" });
 
   // Universal resolver (omnivorous identity input)
-  await app.register(resolveRoutes, { prefix: '/api/v1' })
+  await app.register(resolveRoutes, { prefix: "/api/v1" });
 
   // External feed subscriptions (RSS, Nostr, Bluesky, Mastodon)
-  await app.register(externalFeedsRoutes, { prefix: '/api/v1' })
+  await app.register(externalFeedsRoutes, { prefix: "/api/v1" });
 
   // Linked accounts for outbound cross-posting (Phase 5)
-  await app.register(linkedAccountsRoutes, { prefix: '/api/v1' })
+  await app.register(linkedAccountsRoutes, { prefix: "/api/v1" });
 
   // Trust Layer 1 signals (Phase 1)
-  await app.register(trustRoutes, { prefix: '/api/v1' })
+  await app.register(trustRoutes, { prefix: "/api/v1" });
 
   // Reading-position resumption (per-user, per-article scroll snapshot)
-  await app.register(readingPositionRoutes, { prefix: '/api/v1' })
+  await app.register(readingPositionRoutes, { prefix: "/api/v1" });
 
   // Workspace feeds (slice 3 — owner-private feed objects rendered by vessels).
   // Mounted under /api/v1/workspace because external-feeds.ts already owns the
   // /api/v1/feeds namespace for RSS/Mastodon/Bluesky/Nostr subscriptions.
-  await app.register(feedsRoutes, { prefix: '/api/v1/workspace' })
+  await app.register(feedsRoutes, { prefix: "/api/v1/workspace" });
 
   // AT Protocol OAuth client metadata (discovered by Bluesky PDSes).
   // Mounted at the root so the canonical URL is
   //   https://${APP_URL}/.well-known/oauth-client-metadata.json
-  app.get('/.well-known/oauth-client-metadata.json', async (_req, reply) => {
-    reply.type('application/json').header('Cache-Control', 'public, max-age=3600')
-    const client = await getAtprotoClient()
-    return client.clientMetadata
-  })
-  app.get('/.well-known/jwks.json', async (_req, reply) => {
-    reply.type('application/json').header('Cache-Control', 'public, max-age=3600')
-    const client = await getAtprotoClient()
-    return client.jwks
-  })
+  app.get("/.well-known/oauth-client-metadata.json", async (_req, reply) => {
+    reply
+      .type("application/json")
+      .header("Cache-Control", "public, max-age=3600");
+    const client = await getAtprotoClient();
+    return client.clientMetadata;
+  });
+  app.get("/.well-known/jwks.json", async (_req, reply) => {
+    reply
+      .type("application/json")
+      .header("Cache-Control", "public, max-age=3600");
+    const client = await getAtprotoClient();
+    return client.jwks;
+  });
 
   // ---------------------------------------------------------------------------
   // Service proxies
@@ -237,92 +250,112 @@ async function start() {
   // ---------------------------------------------------------------------------
 
   // Health check
-  app.get('/health', async () => {
-    await pool.query('SELECT 1')
-    return { status: 'ok', service: 'gateway' }
-  })
+  app.get("/health", async () => {
+    await pool.query("SELECT 1");
+    return { status: "ok", service: "gateway" };
+  });
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
-    logger.info({ signal }, 'Shutting down gateway')
-    await app.close()
-    await pool.end()
-    process.exit(0)
-  }
-  process.on('SIGTERM', () => shutdown('SIGTERM'))
-  process.on('SIGINT', () => shutdown('SIGINT'))
+    logger.info({ signal }, "Shutting down gateway");
+    await app.close();
+    await pool.end();
+    process.exit(0);
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 
   // Eagerly construct the AT Protocol OAuth client so a malformed
   // ATPROTO_PRIVATE_JWK fails the boot instead of the first OAuth-dependent
   // request. Loopback dev mode doesn't need a JWK, so this is effectively a
   // no-op there.
   try {
-    await getAtprotoClient()
+    await getAtprotoClient();
   } catch (err) {
-    logger.error({ err }, 'AT Protocol OAuth client failed to initialise — aborting boot')
-    throw err
+    logger.error(
+      { err },
+      "AT Protocol OAuth client failed to initialise — aborting boot",
+    );
+    throw err;
   }
 
-  const port = parseInt(process.env.PORT ?? '3000', 10)
-  await app.listen({ port, host: '0.0.0.0' })
-  logger.info({ port }, 'Gateway started')
+  const port = parseInt(process.env.PORT ?? "3000", 10);
+  await app.listen({ port, host: "0.0.0.0" });
+  logger.info({ port }, "Gateway started");
 
   // Background workers — run periodically after startup
   // Advisory locks prevent duplicate execution when horizontally scaled
-  const WORKER_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
-  const LOCK_SUBSCRIPTIONS = ADVISORY_LOCKS.SUBSCRIPTIONS
-  const LOCK_DRIVES = ADVISORY_LOCKS.DRIVES
-  const LOCK_SCHEDULER = ADVISORY_LOCKS.SCHEDULER
-  const SCHEDULER_INTERVAL_MS = 60 * 1000 // 1 minute
+  const WORKER_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+  const LOCK_SUBSCRIPTIONS = ADVISORY_LOCKS.SUBSCRIPTIONS;
+  const LOCK_DRIVES = ADVISORY_LOCKS.DRIVES;
+  const LOCK_SCHEDULER = ADVISORY_LOCKS.SCHEDULER;
+  const SCHEDULER_INTERVAL_MS = 60 * 1000; // 1 minute
 
-  async function withAdvisoryLock(lockId: number, name: string, fn: () => Promise<unknown>) {
-    const client = await pool.connect()
+  async function withAdvisoryLock(
+    lockId: number,
+    name: string,
+    fn: () => Promise<unknown>,
+  ) {
+    const client = await pool.connect();
     try {
       const { rows } = await client.query<{ locked: boolean }>(
-        'SELECT pg_try_advisory_lock($1) AS locked', [lockId]
-      )
+        "SELECT pg_try_advisory_lock($1) AS locked",
+        [lockId],
+      );
       if (!rows[0].locked) {
-        logger.info(`${name}: skipped — another instance holds the lock`)
-        return
+        logger.info(`${name}: skipped — another instance holds the lock`);
+        return;
       }
       try {
-        await fn()
+        await fn();
       } finally {
-        await client.query('SELECT pg_advisory_unlock($1)', [lockId])
+        await client.query("SELECT pg_advisory_unlock($1)", [lockId]);
       }
     } finally {
-      client.release()
+      client.release();
     }
   }
 
   setInterval(() => {
-    withAdvisoryLock(LOCK_SUBSCRIPTIONS, 'Subscription expiry', expireAndRenewSubscriptions).catch(err =>
-      logger.error({ err }, 'Subscription expiry worker failed')
-    )
-    withAdvisoryLock(LOCK_DRIVES, 'Drive expiry', expireOverdueDrives).catch(err =>
-      logger.error({ err }, 'Drive expiry worker failed')
-    )
-  }, WORKER_INTERVAL_MS)
+    withAdvisoryLock(
+      LOCK_SUBSCRIPTIONS,
+      "Subscription expiry",
+      expireAndRenewSubscriptions,
+    ).catch((err) =>
+      logger.error({ err }, "Subscription expiry worker failed"),
+    );
+    withAdvisoryLock(LOCK_DRIVES, "Drive expiry", expireOverdueDrives).catch(
+      (err) => logger.error({ err }, "Drive expiry worker failed"),
+    );
+  }, WORKER_INTERVAL_MS);
 
   setInterval(() => {
-    withAdvisoryLock(LOCK_SCHEDULER, 'Scheduled publishing', publishScheduledDrafts).catch(err =>
-      logger.error({ err }, 'Scheduler worker failed')
-    )
-  }, SCHEDULER_INTERVAL_MS)
+    withAdvisoryLock(
+      LOCK_SCHEDULER,
+      "Scheduled publishing",
+      publishScheduledDrafts,
+    ).catch((err) => logger.error({ err }, "Scheduler worker failed"));
+  }, SCHEDULER_INTERVAL_MS);
 
   // Run once on startup
-  withAdvisoryLock(LOCK_SUBSCRIPTIONS, 'Subscription expiry', expireAndRenewSubscriptions).catch(err =>
-    logger.error({ err }, 'Subscription expiry worker failed (startup)')
-  )
-  withAdvisoryLock(LOCK_DRIVES, 'Drive expiry', expireOverdueDrives).catch(err =>
-    logger.error({ err }, 'Drive expiry worker failed (startup)')
-  )
-  withAdvisoryLock(LOCK_SCHEDULER, 'Scheduled publishing', publishScheduledDrafts).catch(err =>
-    logger.error({ err }, 'Scheduler worker failed (startup)')
-  )
+  withAdvisoryLock(
+    LOCK_SUBSCRIPTIONS,
+    "Subscription expiry",
+    expireAndRenewSubscriptions,
+  ).catch((err) =>
+    logger.error({ err }, "Subscription expiry worker failed (startup)"),
+  );
+  withAdvisoryLock(LOCK_DRIVES, "Drive expiry", expireOverdueDrives).catch(
+    (err) => logger.error({ err }, "Drive expiry worker failed (startup)"),
+  );
+  withAdvisoryLock(
+    LOCK_SCHEDULER,
+    "Scheduled publishing",
+    publishScheduledDrafts,
+  ).catch((err) => logger.error({ err }, "Scheduler worker failed (startup)"));
 }
 
 start().catch((err) => {
-  logger.error({ err }, 'Failed to start gateway')
-  process.exit(1)
-})
+  logger.error({ err }, "Failed to start gateway");
+  process.exit(1);
+});

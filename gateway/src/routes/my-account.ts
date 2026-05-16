@@ -1,11 +1,11 @@
-import type { FastifyInstance } from 'fastify'
-import { requireAuth } from '../middleware/auth.js'
-import { pool } from '@platform-pub/shared/db/client.js'
+import type { FastifyInstance } from "fastify";
+import { requireAuth } from "../middleware/auth.js";
+import { pool } from "@platform-pub/shared/db/client.js";
 
 export async function myAccountRoutes(app: FastifyInstance) {
   // GET /my/tab
-  app.get('/my/tab', { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!
+  app.get("/my/tab", { preHandler: requireAuth }, async (req, reply) => {
+    const userId = req.session!.sub!;
     try {
       const account = await pool.query(
         `SELECT a.free_allowance_remaining_pence,
@@ -13,9 +13,10 @@ export async function myAccountRoutes(app: FastifyInstance) {
          FROM accounts a
          LEFT JOIN reading_tabs rt ON rt.reader_id = a.id
          WHERE a.id = $1`,
-        [userId]
-      )
-      const reads = await pool.query(`
+        [userId],
+      );
+      const reads = await pool.query(
+        `
         SELECT r.id as "readId", a.title as "articleTitle", a.nostr_d_tag as "articleDTag",
                w.display_name as "writerDisplayName", w.username as "writerUsername",
                r.amount_pence as "chargePence", r.read_at as "readAt",
@@ -28,63 +29,71 @@ export async function myAccountRoutes(app: FastifyInstance) {
         WHERE r.reader_id = $1
         ORDER BY r.read_at DESC
         LIMIT 100
-      `, [userId])
-      const settled = reads.rows.find((r: any) => r.settledAt)
+      `,
+        [userId],
+      );
+      const settled = reads.rows.find((r: any) => r.settledAt);
       return reply.send({
         tabBalancePence: account.rows[0]?.balance_pence ?? 0,
-        freeAllowanceRemainingPence: account.rows[0]?.free_allowance_remaining_pence ?? 0,
+        freeAllowanceRemainingPence:
+          account.rows[0]?.free_allowance_remaining_pence ?? 0,
         lastSettledAt: settled?.settledAt || null,
-        reads: reads.rows
-      })
+        reads: reads.rows,
+      });
     } catch (err) {
-      req.log.error({ err }, 'Failed to fetch tab')
-      return reply.status(500).send({ error: 'Failed to fetch tab data' })
+      req.log.error({ err }, "Failed to fetch tab");
+      return reply.status(500).send({ error: "Failed to fetch tab data" });
     }
-  })
+  });
 
   // =========================================================================
   // GET /my/account-statement — unified credits, debits & paginated statement
   // =========================================================================
-  app.get<{ Querystring: { filter?: string; limit?: string; offset?: string; include_free_reads?: string } }>(
-    '/my/account-statement',
+  app.get<{
+    Querystring: {
+      filter?: string;
+      limit?: string;
+      offset?: string;
+      include_free_reads?: string;
+    };
+  }>(
+    "/my/account-statement",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
-      const filter = req.query.filter ?? 'all' // 'all' | 'credits' | 'debits'
-      const limit = Math.min(parseInt(req.query.limit ?? '30', 10) || 30, 200)
-      const offset = parseInt(req.query.offset ?? '0', 10) || 0
-      const includeFreeReads = req.query.include_free_reads === 'true'
+      const userId = req.session!.sub!;
+      const filter = req.query.filter ?? "all"; // 'all' | 'credits' | 'debits'
+      const limit = Math.min(parseInt(req.query.limit ?? "30", 10) || 30, 200);
+      const offset = parseInt(req.query.offset ?? "0", 10) || 0;
+      const includeFreeReads = req.query.include_free_reads === "true";
 
       try {
         // 1. Account info + last settlement date
         const accountRow = await pool.query<{
-          created_at: string
-          free_allowance_remaining_pence: number
+          created_at: string;
+          free_allowance_remaining_pence: number;
         }>(
           `SELECT created_at, free_allowance_remaining_pence FROM accounts WHERE id = $1`,
-          [userId]
-        )
+          [userId],
+        );
         if (accountRow.rowCount === 0) {
-          return reply.status(404).send({ error: 'Account not found' })
+          return reply.status(404).send({ error: "Account not found" });
         }
-        const account = accountRow.rows[0]
+        const account = accountRow.rows[0];
 
         const settlementRow = await pool.query<{ settled_at: string }>(
           `SELECT settled_at FROM tab_settlements WHERE reader_id = $1 ORDER BY settled_at DESC LIMIT 1`,
-          [userId]
-        )
-        const lastSettledAt = settlementRow.rows[0]?.settled_at ?? null
+          [userId],
+        );
+        const lastSettledAt = settlementRow.rows[0]?.settled_at ?? null;
 
         // Platform fee rate
         const configRow = await pool.query<{ value: string }>(
-          `SELECT value FROM platform_config WHERE key = 'platform_fee_bps'`
-        )
-        const feeBps = parseInt(configRow.rows[0]?.value ?? '800', 10)
+          `SELECT value FROM platform_config WHERE key = 'platform_fee_bps'`,
+        );
+        const feeBps = parseInt(configRow.rows[0]?.value ?? "800", 10);
 
         // 2. Build the unified statement via UNION ALL
         //    Each sub-query produces: id, date, type, category, description, amount_pence, link
-        const sinceClause = lastSettledAt ? `AND $3::timestamptz IS NOT NULL` : `AND ($3::timestamptz IS NULL OR TRUE)`
-        // We pass lastSettledAt as $3 but use it conditionally in the summary query
 
         const statementSQL = `
           WITH statement AS (
@@ -117,7 +126,9 @@ export async function myAccountRoutes(app: FastifyInstance) {
               AND re.amount_pence > 0
               AND re.is_subscription_read = FALSE
 
-            ${includeFreeReads ? `
+            ${
+              includeFreeReads
+                ? `
             UNION ALL
 
             -- Free reads (no charge)
@@ -133,7 +144,9 @@ export async function myAccountRoutes(app: FastifyInstance) {
             JOIN articles art ON art.id = re.article_id
             WHERE re.reader_id = $1
               AND (re.amount_pence = 0 OR re.is_subscription_read = TRUE)
-            ` : ''}
+            `
+                : ""
+            }
 
             UNION ALL
 
@@ -144,7 +157,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
               'credit' AS type,
               'article_earning' AS category,
               COALESCE(reader.display_name, reader.username, 'Reader') || ' read ' || art.title AS description,
-              (re.amount_pence - FLOOR(re.amount_pence * ${feeBps} / 10000))::int AS amount_pence,
+              (re.amount_pence - FLOOR(re.amount_pence * $2 / 10000))::int AS amount_pence,
               '/article/' || art.nostr_d_tag AS link
             FROM read_events re
             JOIN articles art ON art.id = re.article_id
@@ -236,20 +249,23 @@ export async function myAccountRoutes(app: FastifyInstance) {
             WHERE ts.reader_id = $1
           )
           SELECT * FROM statement
-          ${filter === 'credits' ? "WHERE type = 'credit'" : filter === 'debits' ? "WHERE type = 'debit'" : ''}
+          ${filter === "credits" ? "WHERE type = 'credit'" : filter === "debits" ? "WHERE type = 'debit'" : ""}
           ORDER BY date DESC
-        `
+        `;
 
         // Get total count for pagination
-        const countSQL = `SELECT COUNT(*) AS total FROM (${statementSQL}) AS counted`
-        const countResult = await pool.query<{ total: string }>(countSQL, [userId])
-        const totalEntries = parseInt(countResult.rows[0].total, 10)
+        const countSQL = `SELECT COUNT(*) AS total FROM (${statementSQL}) AS counted`;
+        const countResult = await pool.query<{ total: string }>(countSQL, [
+          userId,
+          feeBps,
+        ]);
+        const totalEntries = parseInt(countResult.rows[0].total, 10);
 
         // Get paginated entries
         const entriesResult = await pool.query(
-          `${statementSQL} LIMIT $2 OFFSET $3`,
-          [userId, limit, offset]
-        )
+          `${statementSQL} LIMIT $3 OFFSET $4`,
+          [userId, feeBps, limit, offset],
+        );
 
         // 3. Compute summary totals (since last settlement, unfiltered)
         const summarySQL = `
@@ -265,7 +281,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
 
             UNION ALL
 
-            SELECT 'credit', (re.amount_pence - FLOOR(re.amount_pence * ${feeBps} / 10000))::int, re.read_at
+            SELECT 'credit', (re.amount_pence - FLOOR(re.amount_pence * $3 / 10000))::int, re.read_at
             FROM read_events re
             WHERE re.writer_id = $1 AND re.reader_id != $1 AND re.amount_pence > 0
               AND re.state IN ('platform_settled', 'writer_paid')
@@ -297,13 +313,19 @@ export async function myAccountRoutes(app: FastifyInstance) {
             COALESCE(SUM(CASE WHEN type = 'debit' THEN amount_pence ELSE 0 END), 0) AS debits_total
           FROM statement
           WHERE date > COALESCE($2::timestamptz, '1970-01-01'::timestamptz)
-        `
-        const summaryResult = await pool.query<{ credits_total: string; debits_total: string }>(
-          summarySQL,
-          [userId, lastSettledAt]
-        )
-        const creditsTotalPence = parseInt(summaryResult.rows[0].credits_total, 10)
-        const debitsTotalPence = parseInt(summaryResult.rows[0].debits_total, 10)
+        `;
+        const summaryResult = await pool.query<{
+          credits_total: string;
+          debits_total: string;
+        }>(summarySQL, [userId, lastSettledAt, feeBps]);
+        const creditsTotalPence = parseInt(
+          summaryResult.rows[0].credits_total,
+          10,
+        );
+        const debitsTotalPence = parseInt(
+          summaryResult.rows[0].debits_total,
+          10,
+        );
 
         return reply.send({
           summary: {
@@ -315,11 +337,13 @@ export async function myAccountRoutes(app: FastifyInstance) {
           entries: entriesResult.rows,
           totalEntries,
           hasMore: offset + limit < totalEntries,
-        })
+        });
       } catch (err) {
-        req.log.error({ err }, 'Failed to fetch account statement')
-        return reply.status(500).send({ error: 'Failed to fetch account statement' })
+        req.log.error({ err }, "Failed to fetch account statement");
+        return reply
+          .status(500)
+          .send({ error: "Failed to fetch account statement" });
       }
-    }
-  )
+    },
+  );
 }

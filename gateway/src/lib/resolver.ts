@@ -171,7 +171,7 @@ const FEDIVERSE_HANDLE = /^@[\w.+-]+@[\w.-]+\.[\w.]+$/; // @user@instance.tld
 const AMBIGUOUS_AT = /^[\w.+-]+@[\w.-]+\.[\w.]+$/; // user@domain.tld (no @ prefix)
 const PLATFORM_USERNAME = /^[\w]+$/; // alphanumeric, no @, no .
 
-function classifyInput(query: string): InputType {
+export function classifyInput(query: string): InputType {
   const trimmed = query.trim();
 
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://"))
@@ -261,6 +261,7 @@ export async function resolve(
         const decoded = nip19.decode(trimmed);
         if (decoded.type === "nprofile") {
           const data = decoded.data as { pubkey: string; relays?: string[] };
+          const relayUrls = data.relays?.slice(0, 5);
           const account = await lookupByPubkey(data.pubkey);
           if (account) matches.push(account);
           matches.push({
@@ -269,7 +270,7 @@ export async function resolve(
             externalSource: {
               protocol: "nostr_external",
               sourceUri: data.pubkey,
-              relayUrls: data.relays,
+              relayUrls,
             },
           });
           if (!skipExternal) pendingResolutions.push("nostr_profile");
@@ -685,7 +686,11 @@ async function tryWellKnownPaths(
   origin: string,
 ): Promise<ResolverMatch | null> {
   const cached = wellKnownCache.get(origin);
-  if (cached && cached.expires > Date.now()) return cached.result;
+  if (cached && cached.expires > Date.now()) {
+    wellKnownCache.delete(origin);
+    wellKnownCache.set(origin, cached);
+    return cached.result;
+  }
 
   // Probe all paths in parallel and pick the first hit by WELL_KNOWN_PATHS
   // order (so /feed wins over /rss when both exist). One concurrent burst

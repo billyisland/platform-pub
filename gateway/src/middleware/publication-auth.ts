@@ -1,5 +1,5 @@
-import type { FastifyRequest, FastifyReply } from 'fastify'
-import { pool } from '@platform-pub/shared/db/client.js'
+import type { FastifyRequest, FastifyReply } from "fastify";
+import { pool } from "@platform-pub/shared/db/client.js";
 
 // =============================================================================
 // Publication Auth Middleware
@@ -10,80 +10,95 @@ import { pool } from '@platform-pub/shared/db/client.js'
 // =============================================================================
 
 interface PublicationMember {
-  id: string
-  publication_id: string
-  account_id: string
-  role: string
-  contributor_type: string
-  title: string | null
-  is_owner: boolean
-  revenue_share_bps: number | null
-  can_publish: boolean
-  can_edit_others: boolean
-  can_manage_members: boolean
-  can_manage_finances: boolean
-  can_manage_settings: boolean
+  id: string;
+  publication_id: string;
+  account_id: string;
+  role: string;
+  contributor_type: string;
+  title: string | null;
+  is_owner: boolean;
+  revenue_share_bps: number | null;
+  can_publish: boolean;
+  can_edit_others: boolean;
+  can_manage_members: boolean;
+  can_manage_finances: boolean;
+  can_manage_settings: boolean;
 }
 
-declare module 'fastify' {
+declare module "fastify" {
   interface FastifyRequest {
-    publicationMember?: PublicationMember
+    publicationMember?: PublicationMember;
   }
 }
 
-export function requirePublicationPermission(...requiredPermissions: string[]) {
+type PermissionKey = keyof Pick<
+  PublicationMember,
+  | "can_publish"
+  | "can_edit_others"
+  | "can_manage_members"
+  | "can_manage_finances"
+  | "can_manage_settings"
+>;
+
+export function requirePublicationPermission(
+  ...requiredPermissions: PermissionKey[]
+) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
-    const userId = req.session?.sub
-    const publicationId = (req.params as any).publicationId || (req.params as any).id
+    const userId = req.session?.sub;
+    const params = req.params as { publicationId?: string; id?: string };
+    const publicationId = params.publicationId || params.id;
 
     if (!userId || !publicationId) {
-      return reply.status(401).send({ error: 'Unauthorized' })
+      return reply.status(401).send({ error: "Unauthorized" });
     }
 
     const { rows } = await pool.query<PublicationMember>(
       `SELECT * FROM publication_members
        WHERE publication_id = $1 AND account_id = $2 AND removed_at IS NULL`,
-      [publicationId, userId]
-    )
+      [publicationId, userId],
+    );
 
     if (rows.length === 0) {
-      return reply.status(403).send({ error: 'Not a member of this publication' })
+      return reply
+        .status(403)
+        .send({ error: "Not a member of this publication" });
     }
 
-    const member = rows[0]
+    const member = rows[0];
 
     for (const perm of requiredPermissions) {
-      if (!(member as any)[perm]) {
+      if (!member[perm]) {
         return reply.status(403).send({
-          error: `Missing permission: ${perm}`
-        })
+          error: `Missing permission: ${perm}`,
+        });
       }
     }
 
-    req.publicationMember = member
-  }
+    req.publicationMember = member;
+  };
 }
 
 export function requirePublicationOwner() {
   return async (req: FastifyRequest, reply: FastifyReply) => {
-    const userId = req.session?.sub
-    const publicationId = (req.params as any).publicationId || (req.params as any).id
+    const userId = req.session?.sub;
+    const params = req.params as { publicationId?: string; id?: string };
+    const publicationId = params.publicationId || params.id;
 
     if (!userId || !publicationId) {
-      return reply.status(401).send({ error: 'Unauthorized' })
+      return reply.status(401).send({ error: "Unauthorized" });
     }
 
     const { rows } = await pool.query<PublicationMember>(
       `SELECT * FROM publication_members
        WHERE publication_id = $1 AND account_id = $2
          AND is_owner = TRUE AND removed_at IS NULL`,
-      [publicationId, userId]
-    )
+      [publicationId, userId],
+    );
 
     if (rows.length === 0) {
-      return reply.status(403).send({ error: 'Owner access required' })
+      return reply.status(403).send({ error: "Owner access required" });
     }
 
-    req.publicationMember = rows[0]
-  }
+    req.publicationMember = rows[0];
+  };
 }
