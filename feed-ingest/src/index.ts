@@ -57,8 +57,8 @@ async function start() {
       [
         // Poll for sources due for fetching — every 60 seconds
         "* * * * * feed_ingest_poll",
-        // Prune old external items — daily at 02:00 UTC
-        "0 2 * * * external_items_prune",
+        // Prune old external items — daily at 02:15 UTC
+        "15 2 * * * external_items_prune",
         // Refresh source metadata — daily at 03:00 UTC
         "0 3 * * * source_metadata_refresh",
         // Refresh denormalised author metadata in feed_items — daily at 04:00 UTC

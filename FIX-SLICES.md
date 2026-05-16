@@ -207,7 +207,7 @@ Also add a cron task for D67 (relay_outbox cleanup):
 
 ---
 
-## Slice 7: Infrastructure fixes
+## Slice 7: Infrastructure fixes ✓ DONE (2026-05-16)
 
 **Priority: MEDIUM. Estimated effort: 30 minutes.**
 **Files:** nginx.conf, docker-compose.yml

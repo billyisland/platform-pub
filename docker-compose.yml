@@ -89,6 +89,8 @@ services:
       MEDIA_DIR: /app/media
       PUBLIC_MEDIA_URL: https://all.haus/media
       LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX}
+      ATPROTO_CLIENT_BASE_URL: ${ATPROTO_CLIENT_BASE_URL:-https://all.haus}
+      ATPROTO_PRIVATE_JWK: ${ATPROTO_PRIVATE_JWK}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 10s
@@ -112,6 +114,7 @@ services:
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
+      DB_POOL_MAX: 10
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
       interval: 10s
@@ -133,6 +136,7 @@ services:
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
+      DB_POOL_MAX: 10
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
       interval: 10s
@@ -153,6 +157,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+      DB_POOL_MAX: 10
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3004/health || exit 1"]
       interval: 10s
@@ -173,6 +178,7 @@ services:
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
       IP_HASH_SALT: ${TRAFFOLOGY_IP_HASH_SALT:-traffology-dev-salt}
+      DB_POOL_MAX: 10
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health || exit 1"]
       interval: 10s
@@ -192,6 +198,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+      DB_POOL_MAX: 10
 
   # ---------------------------------------------------------------------------
   # Feed Ingest — external content ingestion (RSS, Nostr, AT Protocol, ActivityPub)
@@ -208,6 +215,10 @@ services:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
       LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX}
       APP_URL: https://all.haus
+      PLATFORM_RELAY_WS_URL: ws://strfry:7777
+      DB_POOL_MAX: 10
+      ATPROTO_CLIENT_BASE_URL: ${ATPROTO_CLIENT_BASE_URL:-https://all.haus}
+      ATPROTO_PRIVATE_JWK: ${ATPROTO_PRIVATE_JWK}
 
   # ---------------------------------------------------------------------------
   # Web client (Next.js)

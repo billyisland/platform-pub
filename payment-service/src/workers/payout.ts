@@ -1,5 +1,5 @@
-import { payoutService } from '../services/payout.js'
-import logger from '../lib/logger.js'
+import { payoutService } from "../services/payout.js";
+import logger from "../lib/logger.js";
 
 // =============================================================================
 // Daily Payout Worker
@@ -10,43 +10,46 @@ import logger from '../lib/logger.js'
 // Can also be triggered via the internal /payout-cycle HTTP route (e.g. for
 // manual runs or integration tests).
 //
-// Schedule: runs at 02:00 UTC daily — well outside peak traffic.
+// Schedule: runs at 02:30 UTC daily — staggered from trust epoch (02:00).
 // =============================================================================
 
-const PAYOUT_HOUR_UTC = 2
-const PAYOUT_MINUTE_UTC = 0
+const PAYOUT_HOUR_UTC = 2;
+const PAYOUT_MINUTE_UTC = 30;
 
 function msUntilNextRun(): number {
-  const now = new Date()
-  const next = new Date()
-  next.setUTCHours(PAYOUT_HOUR_UTC, PAYOUT_MINUTE_UTC, 0, 0)
-  if (next <= now) next.setUTCDate(next.getUTCDate() + 1)
-  return next.getTime() - now.getTime()
+  const now = new Date();
+  const next = new Date();
+  next.setUTCHours(PAYOUT_HOUR_UTC, PAYOUT_MINUTE_UTC, 0, 0);
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  return next.getTime() - now.getTime();
 }
 
 export function startPayoutWorker(): void {
   const scheduleNext = () => {
-    const delay = msUntilNextRun()
+    const delay = msUntilNextRun();
     logger.info(
-      { nextRunInMs: delay, nextRunAt: new Date(Date.now() + delay).toISOString() },
-      'Payout worker scheduled'
-    )
+      {
+        nextRunInMs: delay,
+        nextRunAt: new Date(Date.now() + delay).toISOString(),
+      },
+      "Payout worker scheduled",
+    );
 
     setTimeout(async () => {
       try {
-        logger.info('Payout cycle starting')
-        const writerResult = await payoutService.runPayoutCycle()
-        logger.info(writerResult, 'Writer payout cycle complete')
+        logger.info("Payout cycle starting");
+        const writerResult = await payoutService.runPayoutCycle();
+        logger.info(writerResult, "Writer payout cycle complete");
 
-        const pubResult = await payoutService.runPublicationPayoutCycle()
-        logger.info(pubResult, 'Publication payout cycle complete')
+        const pubResult = await payoutService.runPublicationPayoutCycle();
+        logger.info(pubResult, "Publication payout cycle complete");
       } catch (err) {
-        logger.error({ err }, 'Payout cycle failed')
+        logger.error({ err }, "Payout cycle failed");
       } finally {
-        scheduleNext()
+        scheduleNext();
       }
-    }, delay)
-  }
+    }, delay);
+  };
 
-  scheduleNext()
+  scheduleNext();
 }
