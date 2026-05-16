@@ -4,7 +4,7 @@
 
 **Status:** Active
 **Date:** April 2026
-**Supersedes:** docs/adr/ALLHAUS-ADR-UNIFIED.md (April 2026)
+**Supersedes:** planning-archive/ALLHAUS-ADR-UNIFIED.md (April 2026)
 
 ---
 
@@ -12,11 +12,11 @@
 
 This is an omnibus. It contains four documents that were previously fused into a single "unified ADR" and have now been separated into their proper shapes while remaining bound together for ease of reference. Each book has a distinct audience, a distinct purpose, and can be read on its own.
 
-| Book | Title | Audience | What it is |
-|---|---|---|---|
-| **I** | **Vision** | Everyone | Why all.haus exists, what it is, what it is not. The political and product framing. Short. |
+| Book   | Title                         | Audience                            | What it is                                                                                                                      |
+| ------ | ----------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **I**  | **Vision**                    | Everyone                            | Why all.haus exists, what it is, what it is not. The political and product framing. Short.                                      |
 | **II** | **Trust graph specification** | Architects, cryptographers, critics | How legibility-without-identification is built. The four layers, the dual-graph mechanism, the threat model, the scale caveats. |
-| **IV** | **Implementation plan** | Backend engineers, the author | Services, schemas, endpoints, phasing. The build order and what ships when. |
+| **IV** | **Implementation plan**       | Backend engineers, the author       | Services, schemas, endpoints, phasing. The build order and what ships when.                                                     |
 
 **Book III (Workspace specification) was removed in April 2026.** The four-panel workspace it specified was retired in favour of the single-surface product model described in `docs/adr/REDESIGN-SCOPE.md`. The trust pip spec, visual separation model, and feed item structure from Book III survive as design language in the existing codebase; the workspace shell, panel system, mode tabs, and responsive panel behaviour do not. Build Phases 3 and 7 in Book IV have been updated accordingly.
 
@@ -67,6 +67,7 @@ A note on register. Book I argues. Book II specifies. Book IV instructs. Each ha
 - §IV.10 What a real ADR looks like (and when to write one)
 
 ---
+
 ---
 
 # Book I — Vision
@@ -85,7 +86,7 @@ Together they create a flywheel: writers publish through the WRITER; the reading
 
 ## §I.2 The problem it addresses
 
-The missing layer of the internet is *legibility without identification*. The current web forces a bad trade: operate under your real name and accept surveillance, targeting, and the collapse of context; or operate anonymously and accept that nobody has any reason to trust you. The missing middle is the ability to know things about a person or a piece of content that matter — are they human, are they consistent, are their incentives transparent, do they have a track record — without knowing things that don't matter, or are dangerous to reveal.
+The missing layer of the internet is _legibility without identification_. The current web forces a bad trade: operate under your real name and accept surveillance, targeting, and the collapse of context; or operate anonymously and accept that nobody has any reason to trust you. The missing middle is the ability to know things about a person or a piece of content that matter — are they human, are they consistent, are their incentives transparent, do they have a track record — without knowing things that don't matter, or are dangerous to reveal.
 
 In an increasingly authoritarian world of arbitrary powers, a system that requires real-name identification to function is not neutral infrastructure — it is a tool of control. It should be possible to lead a full life and a successful career on all.haus via a high-quality pseudonym: one that can be guaranteed in various ways but cannot be trivially traced to a real-world government identity. This is a political commitment, not just a privacy feature.
 
@@ -103,7 +104,7 @@ The deliberate separation of READER and WRITER is a structural commitment with p
 
 **It makes day-one utility real.** A writer who wants portable identity, a paywall, and transparent payment gets a working product on day one, with no trust graph, no readership, and no network effects. A reader who wants a better feed reader with trust annotations gets a working product on day one, with no writing, no account beyond the minimum, and no obligation to pay for anything.
 
-**It makes the phasing plan honest.** The WRITER and the READER can ship the first useful version of themselves without the trust graph being dense. The trust graph *enriches* both tools as it fills in — it does not gate either of them. This is the correct dependency structure. A product that requires dense trust-graph participation on day one would be dead on arrival.
+**It makes the phasing plan honest.** The WRITER and the READER can ship the first useful version of themselves without the trust graph being dense. The trust graph _enriches_ both tools as it fills in — it does not gate either of them. This is the correct dependency structure. A product that requires dense trust-graph participation on day one would be dead on arrival.
 
 **It reframes the competitive landscape.** The READER does not compete on aggregation alone — it competes on trust annotation. The WRITER does not compete on publishing alone — it competes on the writer-interest protection stack (portable identity, pseudonymity, transparent payment, protocol ownership). Each tool is a distinctive proposition that does not depend on the other being fully built out.
 
@@ -111,7 +112,7 @@ The deliberate separation of READER and WRITER is a structural commitment with p
 
 The READER's closest comparator is Flipboard's Surf (launched April 2026), which combines Bluesky, Mastodon, RSS, podcasts, and YouTube into a single browsing experience. The RSS reader incumbents — Feedly, Inoreader, NewsBlur — are mature and well-established.
 
-All of these solve the *aggregation* problem: getting everything into one place. None of them touch the *trust* problem. You can curate your sources perfectly and still not know whether the person behind a pseudonym is acting in good faith, whether an article was funded by an undisclosed interest, whether a seemingly independent voice is part of a coordinated network. Source selection does not solve the legibility problem. The trust layer does.
+All of these solve the _aggregation_ problem: getting everything into one place. None of them touch the _trust_ problem. You can curate your sources perfectly and still not know whether the person behind a pseudonym is acting in good faith, whether an article was funded by an undisclosed interest, whether a seemingly independent voice is part of a coordinated network. Source selection does not solve the legibility problem. The trust layer does.
 
 The WRITER's comparators are Substack, Ghost, Beehiiv, and Mirror — plus the native-Nostr writing clients (Habla, Yakihonne, Highlighter). The differentiation is the stack: portable identity via Nostr, transparent payment, no platform lock-in on the reader relationship, no demand for government identity, and editorial structures (Publications) that give writers the benefits of publisher infrastructure without ceding ownership of their audience.
 
@@ -119,7 +120,7 @@ The WRITER's comparators are Substack, Ghost, Beehiiv, and Mirror — plus the n
 
 This is the single most important strategic clarification. The trust graph's attestation layer (Layer 2) will be built and shipped in two phases: **weakly anonymous first, strongly anonymous later.** The target architecture is the dual-graph system (Book II §II.6); the launch reality is something simpler that gets the product to readers faster.
 
-**Why the two-phase approach.** The target architecture — where the platform cannot determine who attested to whom even under compulsion — is the right long-term design. But at launch, the kompromat value of "X endorsed Y's integrity" data is low. Attestation records are not medical records, not sexual content, not financial fraud, not plans to overthrow a government. They are roughly on the order of "Alice left Bob a positive review on Goodreads." A subpoena for attestation data is not the defining threat to the early-stage project. The defining threat is *shipping something people use.*
+**Why the two-phase approach.** The target architecture — where the platform cannot determine who attested to whom even under compulsion — is the right long-term design. But at launch, the kompromat value of "X endorsed Y's integrity" data is low. Attestation records are not medical records, not sexual content, not financial fraud, not plans to overthrow a government. They are roughly on the order of "Alice left Bob a positive review on Goodreads." A subpoena for attestation data is not the defining threat to the early-stage project. The defining threat is _shipping something people use._
 
 Building a trustable public web is the priority. Building unanswerable-to-subpoenas infrastructure is a second-order commitment that the project is serious about but that does not need to gate launch.
 
@@ -127,27 +128,28 @@ Building a trustable public web is the priority. Building unanswerable-to-subpoe
 
 Attestations in Phase A are submitted under the user's public identity and are **not displayed** attached to that identity. The platform knows who attested to whom. Readers see only aggregate scores ("14 attestors vouch for this person's integrity") and, in the Trust panel's relational layer, statements about the viewer's network ("3 writers you follow have publicly endorsed this person").
 
-In Phase A, attestations and public endorsements converge into a single primitive: a user vouches for another user on a dimension, and chooses whether the vouch is *public* (attributable, visible on profiles) or *anonymous-to-readers* (feeds aggregate scores only, attributable in the platform's database). Both types feed Layer 4. The anonymous-to-readers variant is "anonymous" in the weak sense: anonymous from the reader's point of view, not anonymous from the platform's point of view.
+In Phase A, attestations and public endorsements converge into a single primitive: a user vouches for another user on a dimension, and chooses whether the vouch is _public_ (attributable, visible on profiles) or _anonymous-to-readers_ (feeds aggregate scores only, attributable in the platform's database). Both types feed Layer 4. The anonymous-to-readers variant is "anonymous" in the weak sense: anonymous from the reader's point of view, not anonymous from the platform's point of view.
 
 This gets us a trust product with real relational signal, with no cryptography, no blind signatures, no separate keys, and no user friction beyond a single "Vouch for integrity?" button.
 
 **Phase B — Strong anonymity (when warranted by scale and threat environment).**
 
-Phase B introduces the dual-graph architecture as originally specified in Book II §II.6: a separate anonymous Nostr keypair, blind-signature registration so the platform cannot link voucher requests to anonymous-node registrations, NIP-44-encrypted submissions, batched publication. In Phase B, "anonymous-to-readers" attestations from Phase A are *not* migrated — Phase A data remains Phase A data (the platform already knows it). Phase B is a separate, opt-in channel for users who want the strong guarantee.
+Phase B introduces the dual-graph architecture as originally specified in Book II §II.6: a separate anonymous Nostr keypair, blind-signature registration so the platform cannot link voucher requests to anonymous-node registrations, NIP-44-encrypted submissions, batched publication. In Phase B, "anonymous-to-readers" attestations from Phase A are _not_ migrated — Phase A data remains Phase A data (the platform already knows it). Phase B is a separate, opt-in channel for users who want the strong guarantee.
 
 Phase B will ship when:
 
-- There are enough active attestors (~several thousand) that the anonymity set is meaningful, *and*
-- There is visible demand from users who need the stronger guarantee (journalists in adversarial contexts, users in jurisdictions with hostile subpoena regimes, users making negative attestations), *and*
+- There are enough active attestors (~several thousand) that the anonymity set is meaningful, _and_
+- There is visible demand from users who need the stronger guarantee (journalists in adversarial contexts, users in jurisdictions with hostile subpoena regimes, users making negative attestations), _and_
 - The engineering cost of the dual-graph infrastructure is no longer displacing more urgent work.
 
 The expected timeline is not "year one." It is "once the product is loved and the trust graph is producing real signal." Committing to Phase B in the spec now ensures the architecture is designed with the transition in mind; it does not require the transition to happen on a fixed schedule.
 
 **What this means for users.** At launch, users are asked to vouch for each other under their public identities, with the choice of whether the vouch is visible to other readers or aggregated silently. They are told, plainly, that the platform holds this data — and that the platform will, at a later date, offer a separate channel with stronger guarantees. This is more honest than shipping a weak version of the dual-graph system and calling it strong, and it is less friction-heavy than shipping the dual-graph system on day one to a user base that won't use it.
 
-**What this means for the threat model.** Book II §II.10 describes the full threat model — subpoenas, seizure, coercion, traffic analysis. That threat model is the *target* threat model. At Phase A, the honest position is: the platform holds attestation data under normal operational security; it will resist improper requests; it will not build the infrastructure that a hostile operator could use to weaponise that data; and it will migrate to the stronger architecture on a stated schedule. Users in high-threat contexts should not rely on Phase A for adversarial resistance — and should be told so in the UI.
+**What this means for the threat model.** Book II §II.10 describes the full threat model — subpoenas, seizure, coercion, traffic analysis. That threat model is the _target_ threat model. At Phase A, the honest position is: the platform holds attestation data under normal operational security; it will resist improper requests; it will not build the infrastructure that a hostile operator could use to weaponise that data; and it will migrate to the stronger architecture on a stated schedule. Users in high-threat contexts should not rely on Phase A for adversarial resistance — and should be told so in the UI.
 
 ---
+
 ---
 
 # Book II — Trust graph specification
@@ -156,14 +158,14 @@ The expected timeline is not "year one." It is "once the product is loved and th
 
 The trust graph is built from four progressively richer layers. The design intent is that Layer 1 works for every user from day one, Layers 2 and 4 become populated as users vouch for each other, and Layer 3 produces meaningful output once the graph is dense enough to analyse.
 
-| Layer | What it is | Active from |
-|---|---|---|
-| 1 | Automatic signals (account age, paying readers, publishing frequency, payment verification, NIP-05) | Day one, every account |
-| 2 | Attestations — dimensional vouches from one user about another (humanity, encounter, identity, integrity) | Phase A launch |
-| 3 | Graph analysis — weighting, diversity, Sybil detection | Activates as graph densifies (~1k+ attestors) |
-| 4 | Relational presentation — "what your network says" | Phase A launch, improves with Layer 2 density |
+| Layer | What it is                                                                                                | Active from                                   |
+| ----- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| 1     | Automatic signals (account age, paying readers, publishing frequency, payment verification, NIP-05)       | Day one, every account                        |
+| 2     | Attestations — dimensional vouches from one user about another (humanity, encounter, identity, integrity) | Phase A launch                                |
+| 3     | Graph analysis — weighting, diversity, Sybil detection                                                    | Activates as graph densifies (~1k+ attestors) |
+| 4     | Relational presentation — "what your network says"                                                        | Phase A launch, improves with Layer 2 density |
 
-The key property of this stack is **graceful degradation**. A reader looking at a feed item with a thin Layer 1 profile, no Layer 2 attestations, no Layer 3 signal, and no Layer 4 relational data still sees *something* informative: "this is an RSS item with no identity metadata" is itself a useful datum. The READER is honest about what it can and cannot say.
+The key property of this stack is **graceful degradation**. A reader looking at a feed item with a thin Layer 1 profile, no Layer 2 attestations, no Layer 3 signal, and no Layer 4 relational data still sees _something_ informative: "this is an RSS item with no identity metadata" is itself a useful datum. The READER is honest about what it can and cannot say.
 
 ## §II.2 Layer 1: automatic signals
 
@@ -200,7 +202,7 @@ The attestation primitive is the same in both phases of the anonymity strategy (
 A user selects another user's profile and clicks "Vouch" on one or more dimensions. They are presented with two choices:
 
 1. **Public endorsement** — visible on both parties' profiles, attributable, feeds Layer 4 directly.
-2. **Aggregate-only vouch** — not visible on either profile, contributes to the subject's aggregate score only. Anonymous *from other readers' point of view.* The platform knows the identity of the attestor.
+2. **Aggregate-only vouch** — not visible on either profile, contributes to the subject's aggregate score only. Anonymous _from other readers' point of view._ The platform knows the identity of the attestor.
 
 Both types contribute to the subject's Layer 2 dimension scores. Both are withdrawable at any time by the attestor. Public endorsements additionally feed Layer 4.
 
@@ -233,7 +235,7 @@ Layer 4 intersects the viewer's **valued set** (people they follow, pay through 
 - "5 writers you also follow also follow this author."
 - "No one in your network has publicly endorsed this person."
 
-Layer 4 draws only on *public endorsements* and *public-graph proximity*, never on aggregate-only or anonymous attestations. Using anonymous attestation data in Layer 4 would require the platform to correlate public and anonymous identities, which would collapse the firewall in Phase B — and is unnecessary, because public endorsements are the simpler, lower-friction mechanism for the relational layer.
+Layer 4 draws only on _public endorsements_ and _public-graph proximity_, never on aggregate-only or anonymous attestations. Using anonymous attestation data in Layer 4 would require the platform to correlate public and anonymous identities, which would collapse the firewall in Phase B — and is unnecessary, because public endorsements are the simpler, lower-friction mechanism for the relational layer.
 
 This is why the attestation primitive splits into two forms. Public endorsements produce relational data (Layer 4); aggregate-only / anonymous attestations produce global signal (Layers 2–3). Most users will only make public endorsements; a committed minority will also or exclusively use the aggregate-only channel (in Phase A) or the anonymous channel (in Phase B).
 
@@ -258,9 +260,9 @@ This section describes the Phase B target architecture. It is not what ships at 
 
 The two graphs are connected only by encrypted inbound channels (anonymous nodes submit attestations about named public nodes), batched outbound updates (the platform publishes revised reputation scores on the public graph at fixed intervals), and credibility feedback (the platform sends credibility adjustments back to anonymous nodes via their encrypted channels). No other communication crosses the boundary.
 
-**Why structural separation rather than cryptographic approaches.** Three genres of solution were considered. Trusted execution enclaves offer strong guarantees but introduce hardware-vendor dependencies. Cryptographic approaches (homomorphic encryption, secure multi-party computation) offer the theoretically strongest position but push against the limits of what these techniques can do efficiently for the required graph analysis, making them a research problem rather than an engineering task. Structural separation — two graphs that never cross-reference at the individual level — is the most *comprehensible* of the three, which matters for a system whose trustworthiness depends on users understanding why it works.
+**Why structural separation rather than cryptographic approaches.** Three genres of solution were considered. Trusted execution enclaves offer strong guarantees but introduce hardware-vendor dependencies. Cryptographic approaches (homomorphic encryption, secure multi-party computation) offer the theoretically strongest position but push against the limits of what these techniques can do efficiently for the required graph analysis, making them a research problem rather than an engineering task. Structural separation — two graphs that never cross-reference at the individual level — is the most _comprehensible_ of the three, which matters for a system whose trustworthiness depends on users understanding why it works.
 
-**Anonymous node key management (Phase B).** The anonymous attestation key must not be custodial. The existing Nostr setup is custodial — key-custody holds the private key, indexed by `user_id` — and that works because the platform is *supposed* to know which user owns which Nostr key. The anonymous attestation key has the opposite requirement: the platform must *not* know. The anonymous key lives on the user's device:
+**Anonymous node key management (Phase B).** The anonymous attestation key must not be custodial. The existing Nostr setup is custodial — key-custody holds the private key, indexed by `user_id` — and that works because the platform is _supposed_ to know which user owns which Nostr key. The anonymous attestation key has the opposite requirement: the platform must _not_ know. The anonymous key lives on the user's device:
 
 - **Generation is automatic.** When the user opts into Phase B attestation, the client generates the keypair silently. One button: "Enable private attestation."
 - **Storage is local.** IndexedDB, encrypted at rest with a key derived from WebAuthn (if the device supports it) or a user-chosen passphrase.
@@ -306,26 +308,26 @@ Attestations decay; attestors are weighted; scores are published on an epoch cad
 
 **Decay and reaffirmation.** Attestations decay on a per-epoch basis:
 
-| Epochs since last reaffirmation | Freshness |
-|---|---|
-| 0 (current epoch) | 1.0 |
-| 1 | 0.85 |
-| 2 | 0.70 |
-| 3 | 0.50 |
-| 4 | 0.30 |
-| 5 | 0.15 |
-| 6+ | 0.0 (expired) |
+| Epochs since last reaffirmation | Freshness     |
+| ------------------------------- | ------------- |
+| 0 (current epoch)               | 1.0           |
+| 1                               | 0.85          |
+| 2                               | 0.70          |
+| 3                               | 0.50          |
+| 4                               | 0.30          |
+| 5                               | 0.15          |
+| 6+                              | 0.0 (expired) |
 
 With quarterly epochs, an attestation that has not been reaffirmed for roughly eighteen months effectively vanishes. The trust graph is a living picture of current opinion, not an archaeological record.
 
 **Small-scale decay protection.** For subjects with fewer than 10 attestations, freshness decay is slowed rather than paused outright, using a graduated ramp that avoids a cliff when the threshold is crossed.
 
 | Active attestation count | Decay rate multiplier |
-|---|---|
-| 1–3 | 0.0 (fully paused) |
-| 4–6 | 0.25 (quarter speed) |
-| 7–9 | 0.5 (half speed) |
-| 10+ | 1.0 (full decay) |
+| ------------------------ | --------------------- |
+| 1–3                      | 0.0 (fully paused)    |
+| 4–6                      | 0.25 (quarter speed)  |
+| 7–9                      | 0.5 (half speed)      |
+| 10+                      | 1.0 (full decay)      |
 
 The multiplier scales the per-epoch freshness drop. At 5 attestations, an attestation that would normally drop from 1.0 to 0.85 after one epoch instead drops to `1.0 - (0.15 × 0.25) = 0.9625`. This prevents the degenerate case where a small writer's score decays faster than it accumulates, while avoiding the cliff where attestation #10 suddenly starts the full decay clock for all prior attestations simultaneously. A writer who slowly accumulates vouches sees decay phase in gradually rather than switch on at a threshold.
 
@@ -346,12 +348,12 @@ Bracket advancement is not purely performance-based: a newly registered anonymou
 
 **Phase A weighting formula.** Each attestor's weight is a product of four normalised sub-scores, each in `[0, 1]`:
 
-| Sub-score | Computation | Rationale |
-|---|---|---|
-| **Age** | `min(account_age_days / 365, 1.0)` | Caps at 1 year. A week-old account gets 0.02; a six-month account gets 0.5. |
-| **Payment** | `1.0` if Stripe account connected and verified; `0.3` otherwise | Binary, heavily gated. The strongest single Sybil signal. |
-| **Readership** | `min(paying_reader_count / 50, 1.0)` | Caps at 50 paying readers. Scales linearly below that. |
-| **Activity** | `min(article_count / 10, 1.0)` | Caps at 10 published articles. |
+| Sub-score      | Computation                                                     | Rationale                                                                   |
+| -------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Age**        | `min(account_age_days / 365, 1.0)`                              | Caps at 1 year. A week-old account gets 0.02; a six-month account gets 0.5. |
+| **Payment**    | `1.0` if Stripe account connected and verified; `0.3` otherwise | Binary, heavily gated. The strongest single Sybil signal.                   |
+| **Readership** | `min(paying_reader_count / 50, 1.0)`                            | Caps at 50 paying readers. Scales linearly below that.                      |
+| **Activity**   | `min(article_count / 10, 1.0)`                                  | Caps at 10 published articles.                                              |
 
 `attestor_weight = age × payment × readership × activity`
 
@@ -396,7 +398,7 @@ What a seizure yields: the public graph (already public); public endorsements (a
 
 **Phase A launch threat model.**
 
-What the platform holds: all of Phase B, plus — crucially — the mapping between attestations and the user who made them. An aggregate-only vouch in Phase A is anonymous from other readers; it is not anonymous from the platform. A subpoena served on all.haus in Phase A *can* be answered with "user X vouched for user Y on dimension Z on date D."
+What the platform holds: all of Phase B, plus — crucially — the mapping between attestations and the user who made them. An aggregate-only vouch in Phase A is anonymous from other readers; it is not anonymous from the platform. A subpoena served on all.haus in Phase A _can_ be answered with "user X vouched for user Y on dimension Z on date D."
 
 Users who need stronger guarantees in Phase A should:
 
@@ -414,12 +416,12 @@ Users who need stronger guarantees in Phase A should:
 
 ## §II.11 Scale honesty: what each layer produces at each size
 
-| Scale (active attestors) | Layer 1 | Layer 2 | Layer 3 | Layer 4 |
-|---|---|---|---|---|
-| 0–50 | Works | Very thin, most profiles have zero attestations | Produces no meaningful signal | "No one in your network has endorsed this person" on most profiles |
-| 50–500 | Works | Produces per-subject aggregates; individual dimension scores are noisy | Weak; Sybil detection is guessing | Relational signal starts appearing for well-connected subjects |
-| 500–5000 | Works | Per-subject aggregates are stable; dimensional differentiation meaningful | Diversity weighting starts working; Sybil detection weakly discriminates | Relational signal populated for most viewer/subject pairs |
-| 5000+ | Works | Rich per-subject aggregates | Full graph analysis meaningful; Phase B dual-graph protections become materially valuable | Rich, differentiated relational signal |
+| Scale (active attestors) | Layer 1 | Layer 2                                                                   | Layer 3                                                                                   | Layer 4                                                            |
+| ------------------------ | ------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 0–50                     | Works   | Very thin, most profiles have zero attestations                           | Produces no meaningful signal                                                             | "No one in your network has endorsed this person" on most profiles |
+| 50–500                   | Works   | Produces per-subject aggregates; individual dimension scores are noisy    | Weak; Sybil detection is guessing                                                         | Relational signal starts appearing for well-connected subjects     |
+| 500–5000                 | Works   | Per-subject aggregates are stable; dimensional differentiation meaningful | Diversity weighting starts working; Sybil detection weakly discriminates                  | Relational signal populated for most viewer/subject pairs          |
+| 5000+                    | Works   | Rich per-subject aggregates                                               | Full graph analysis meaningful; Phase B dual-graph protections become materially valuable | Rich, differentiated relational signal                             |
 
 The product should be honest about this in the UI. At small scale, the Trust panel says "3 early users have endorsed this person's humanity" — a thin but accurate statement — rather than generating the appearance of richer signal than exists.
 
@@ -435,7 +437,7 @@ This solves three problems at once:
 
 1. The Trust panel is populated with real signal on day one for the writers most likely to be read.
 2. Layer 4 relational data has something to intersect with. A new reader following one seed writer immediately sees "3 people you follow have endorsed this person" for other seed writers.
-3. The product demonstrates what the trust graph is *for*. A user encountering a populated Trust panel understands the feature in seconds; a user encountering an empty Trust panel needs it explained.
+3. The product demonstrates what the trust graph is _for_. A user encountering a populated Trust panel understands the feature in seconds; a user encountering an empty Trust panel needs it explained.
 
 The seed cohort is the answer to the attestation cold-start problem that every similar product either ignores or pretends to solve with algorithms. Letterboxd, Are.na, Substack Notes — every curated network of any quality was bootstrapped this way, by a founding cohort that knew each other.
 
@@ -472,23 +474,23 @@ The seed cohort is the answer to the attestation cold-start problem that every s
 - **Bootstrap cohort:** 20–50 known writers and editors seed the public endorsement graph at launch. Explicit and acknowledged in launch messaging.
 
 ---
----
 
+---
 
 # Book IV — Implementation plan
 
 ## §IV.1 What exists already
 
-| Component | Status | Role |
-|---|---|---|
-| Nostr keypair infrastructure | Built | Public identities |
-| NIP-44 encrypted DMs | Built | Phase B encrypted channel (not yet used) |
-| Nostr relay infrastructure | Built | Transport |
-| Reading-tab payment system | Built | Layer 1 signal; Sybil resistance for registration |
-| User identity and profile system | Built | Public graph node identity |
-| Feed-ingest service (Graphile Worker) | Built | Aggregation; cron infrastructure |
-| Content-tier system | Built | Distinguishes native, federated, bridged content |
-| Key-custody service | Built | Custodial Nostr keys (public only — NOT for anonymous keys in Phase B) |
+| Component                             | Status | Role                                                                   |
+| ------------------------------------- | ------ | ---------------------------------------------------------------------- |
+| Nostr keypair infrastructure          | Built  | Public identities                                                      |
+| NIP-44 encrypted DMs                  | Built  | Phase B encrypted channel (not yet used)                               |
+| Nostr relay infrastructure            | Built  | Transport                                                              |
+| Reading-tab payment system            | Built  | Layer 1 signal; Sybil resistance for registration                      |
+| User identity and profile system      | Built  | Public graph node identity                                             |
+| Feed-ingest service (Graphile Worker) | Built  | Aggregation; cron infrastructure                                       |
+| Content-tier system                   | Built  | Distinguishes native, federated, bridged content                       |
+| Key-custody service                   | Built  | Custodial Nostr keys (public only — NOT for anonymous keys in Phase B) |
 
 ## §IV.2 Services: what's new, what changes
 
@@ -679,6 +681,7 @@ The aggregation seam in Phase B: the epoch aggregation job reads the private gra
 ### Phase A
 
 **Vouching UI** (integrated into writer profiles and trust drill-down):
+
 - "Vouch" button on writer profiles and trust profile drill-down.
 - Dimension selector (humanity, encounter, identity, integrity).
 - Visibility selector: "Public endorsement" (default) or "Aggregate only" (with plain-text disclaimer about platform visibility).
@@ -688,6 +691,7 @@ The aggregation seam in Phase B: the epoch aggregation job reads the private gra
 ### Phase B additions
 
 **Anonymous key management module** (`web/src/lib/attestation-keys.ts`):
+
 - Generate keypair (secp256k1, Nostr-compatible)
 - Store in IndexedDB, encrypted at rest
 - BIP-39 mnemonic generation and display
@@ -695,6 +699,7 @@ The aggregation seam in Phase B: the epoch aggregation job reads the private gra
 - Blind signature request flow (authenticate → get blinded sig → unblind → register anonymously)
 
 **Anonymous attestation UI** (new section, accessible from settings or trust profile drill-down, only renders if anonymous key is present):
+
 - Enable private attestation onboarding (seed phrase flow)
 - Prompt display: list of people the user has previously attested to, with affirm/contest/revoke/silent per dimension
 - New attestation: select a user, choose dimensions
@@ -703,21 +708,25 @@ The aggregation seam in Phase B: the epoch aggregation job reads the private gra
 ## §IV.6 Standards and prior art being adopted
 
 **Nostr-native:**
+
 - **NIP-58 Badges.** On-protocol format for attestations. All.haus can act as a badge issuer for each dimension and for Layer 1 automatic signals. Badges are Nostr events, portable, verifiable.
 - **Nostr Web of Trust.** The follow graph as rudimentary trust layer.
 - **NIP-44 encryption** (Phase B transport).
 
 **W3C standards:**
+
 - **Verifiable Credentials v2.0** (W3C Recommendation, May 2025). Standard format for privacy-respecting, machine-verifiable claims.
 - **Decentralised Identifiers (DIDs) v1.1** (Candidate Recommendation, March 2026). A `did:nostr` method mapping Nostr pubkeys to DIDs.
 - **eIDAS 2.0.** EU digital identity wallets required by end of 2026. VC interoperability.
 
 **Proof of personhood:**
+
 - **Gitcoin Passport / Human Passport.** Credential aggregation from multiple weak signals.
 - **BrightID.** Social-graph Sybil detection.
 - **Keyoxide / Ariadne Spec.** Decentralised identity proofs.
 
 **From outside the identity space:**
+
 - **Elo / PageRank.** Attestation value depends on attestor standing. Approximated by Layer 1 weighting in Phase A and credibility brackets in Phase B.
 - **Collaborative filtering.** Trust is relational.
 - **Score opacity.** The trust calculus is opaque in mechanics but transparent in inputs.
@@ -783,7 +792,6 @@ Attestation scoring directly affects user-visible reputation. Incorrect aggregat
 
 **Rich Layer 3 signal at small scale.** Sybil detection, diversity weighting, and credibility brackets need a dense graph. The system is built for the architecture; the signal gets richer as the user base grows. Public endorsements carry the relational product in the meantime.
 
-
 **Full recursive trust weighting.** In a single-graph system with attributable attestations, full PageRank-style recursive weighting is possible. In Phase B's dual-graph system, this is approximated by credibility brackets, which capture track-record quality but not social standing. A highly respected public figure and an unknown newcomer who both happen to be accurate attestors end up in the same bracket. This is a real loss of information and the cost of not bridging the two graphs.
 
 **Relational data from anonymous attestations.** Layer 4 draws on public endorsements only. It cannot say "3 people you trust have anonymously attested to this person's integrity" without breaking the Phase B firewall. Public endorsements are the pragmatic bridge.
@@ -823,11 +831,11 @@ Examples of the kind of decision that warrants its own ADR:
 - Choosing between two candidate Sybil-detection algorithms.
 - Adding a content-warning dimension to attestations.
 
-Examples of things that do *not* warrant an ADR — they are amendments to this document, made by editing the relevant book directly:
+Examples of things that do _not_ warrant an ADR — they are amendments to this document, made by editing the relevant book directly:
 
 - Adjusting Tailwind class values in the design spec.
 - Changing the exact wording of the disclaimer modal.
 - Renaming a database column before it ships.
 - Reordering the build phases (as long as the logic is unchanged).
 
-The test: if a future engineer would want to know *why* a decision was made (not just what the decision was), write an ADR. The omnibus answers "what." ADRs answer "why that and not the alternative."
+The test: if a future engineer would want to know _why_ a decision was made (not just what the decision was), write an ADR. The omnibus answers "what." ADRs answer "why that and not the alternative."

@@ -2,6 +2,8 @@
 
 _Reconciliation between the April 2026 design corpus and the live codebase. April 2026._
 
+> **Note (2026-05-15):** The companion design-corpus documents referenced below (`ALLHAUS-UI-SURFACE.md`, `PRINCIPLES.md`, `WORKSPACE-DESIGN-SPEC.md`, `WIREFRAME-PLAN.md`, `CARDS-AND-PIP-PANEL-HANDOFF.md`) were working documents that were not committed to the repository. This map and `WORKSPACE-EXPERIMENT-ADR.md` are self-contained — the section references (e.g. §1, §5.3) cite the un-committed corpus by section number for audit trail purposes. Verdicts were last verified against the codebase on 2026-05-15; see task #6 of REVIEW-PLAN.md Session 9.1.
+
 Companion to `ALLHAUS-UI-SURFACE.md`. That document is descriptive — what the UI is, abstracted from the code. This document is operational — for every shipped surface, a verdict on what the workspace reframe means for it, and for every backend hook a verdict on whether it survives the UI's reframe. Read alongside `PRINCIPLES.md`, `WORKSPACE-DESIGN-SPEC.md`, `WIREFRAME-PLAN.md`, and `CARDS-AND-PIP-PANEL-HANDOFF.md` (collectively, "the new corpus").
 
 Verdict vocabulary:

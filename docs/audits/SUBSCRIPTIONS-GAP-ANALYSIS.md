@@ -2,6 +2,8 @@
 
 Where the platform stands against the state of the art (Substack), what separates us from bare adequacy, and how to close those gaps.
 
+> **Reconciliation status (2026-05-15):** Phase 1 is complete — all 5 MVP items and both "should include" items are resolved. Auto-renewal (Step 1) ships in `gateway/src/workers/subscription-expiry.ts` with offer-period handling, Nostr kind 7003 attestation via relay outbox, and expiry-warning emails. UI gaps (Step 2) resolved across `/ledger` (reader management), dashboard Pricing tab (writer price setting), PaywallGate (subscribe prompt + spend-threshold nudge), and subscription-events endpoint. Subscription emails (Step 3) ship four templates in `shared/src/lib/subscription-emails.ts`. Annual pricing (Step 4) and comp subscriptions (Step 5) both live. Phase 2 is not started — free trials, gift subscriptions (purchaser→recipient flow), welcome email on subscribe, subscriber import/export, growth analytics, and custom subscribe landing page (`/[username]/subscribe`) remain outstanding.
+
 ---
 
 ## The landscape
@@ -42,46 +44,46 @@ These are capabilities Substack has that we entirely lack, grouped by how much t
 
 ### Critical (writers will reject the platform without these)
 
-| Gap | Why it matters |
-|---|---|
-| **Auto-renewal** | Without it, subscriptions are one-month trials that silently expire. Writers can't build recurring revenue. This is the single most damaging gap. |
-| **Email delivery of posts** | Substack's core insight: the inbox is the feed. Writers expect new posts to reach subscribers' email. Without this, subscribers must remember to visit the site. |
-| **Annual pricing** | Monthly-only pricing costs writers ~20–30% of potential revenue. Annual plans reduce churn and increase LTV. Substack offers monthly and annual with a configurable discount. |
-| **Subscribe prompt at the paywall** | Our paywall gate actively discourages subscriptions. When a reader hits a paywall, they should see "subscribe for £X/mo to read everything" alongside the per-read option. |
-| **Subscription price in writer settings** | Writers need a UI to set and change their subscription price. Currently impossible without API calls. |
+| Gap                                       | Why it matters                                                                                                                                                                |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Auto-renewal**                          | Without it, subscriptions are one-month trials that silently expire. Writers can't build recurring revenue. This is the single most damaging gap.                             |
+| **Email delivery of posts**               | Substack's core insight: the inbox is the feed. Writers expect new posts to reach subscribers' email. Without this, subscribers must remember to visit the site.              |
+| **Annual pricing**                        | Monthly-only pricing costs writers ~20–30% of potential revenue. Annual plans reduce churn and increase LTV. Substack offers monthly and annual with a configurable discount. |
+| **Subscribe prompt at the paywall**       | Our paywall gate actively discourages subscriptions. When a reader hits a paywall, they should see "subscribe for £X/mo to read everything" alongside the per-read option.    |
+| **Subscription price in writer settings** | Writers need a UI to set and change their subscription price. Currently impossible without API calls.                                                                         |
 
 ### Important (noticeably absent, compensatable short-term)
 
-| Gap | Why it matters |
-|---|---|
-| **Free trials** | 7-day or 30-day trials let writers convert hesitant readers. Substack makes this a toggle. |
-| **Gift subscriptions** | "Buy a subscription for someone" is a significant revenue channel, especially around holidays and for institutional gifting. |
-| **Comp subscriptions** | Writers need to grant free subscriptions to collaborators, friends, press — without it showing up as a financial transaction. The free pass system exists but isn't wired to subscriptions. |
-| **Welcome email** | Substack sends a configurable welcome email on subscribe. It's the writer's first direct contact with a paying reader and sets expectations. |
-| **Subscriber import/export** | Writers switching from Substack need to bring their list. Writers leaving need to take it. Without import, onboarding is manual. Without export, we're doing the lock-in we claim to oppose. |
-| **Reader subscription management** | Readers need a page listing all their active subscriptions in one place, with cancel/resubscribe controls. |
-| **Subscriber growth analytics** | New subscribers, cancellations, net growth, churn rate over time. Writers run their publication like a business — they need these numbers. |
-| **Custom subscribe landing page** | A dedicated, shareable URL (`/username/subscribe`) with the writer's pitch, pricing, and a prominent subscribe button. Currently, subscription is a small button on the profile page among other content. |
+| Gap                                | Why it matters                                                                                                                                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Free trials**                    | 7-day or 30-day trials let writers convert hesitant readers. Substack makes this a toggle.                                                                                                                |
+| **Gift subscriptions**             | "Buy a subscription for someone" is a significant revenue channel, especially around holidays and for institutional gifting.                                                                              |
+| **Comp subscriptions**             | Writers need to grant free subscriptions to collaborators, friends, press — without it showing up as a financial transaction. The free pass system exists but isn't wired to subscriptions.               |
+| **Welcome email**                  | Substack sends a configurable welcome email on subscribe. It's the writer's first direct contact with a paying reader and sets expectations.                                                              |
+| **Subscriber import/export**       | Writers switching from Substack need to bring their list. Writers leaving need to take it. Without import, onboarding is manual. Without export, we're doing the lock-in we claim to oppose.              |
+| **Reader subscription management** | Readers need a page listing all their active subscriptions in one place, with cancel/resubscribe controls.                                                                                                |
+| **Subscriber growth analytics**    | New subscribers, cancellations, net growth, churn rate over time. Writers run their publication like a business — they need these numbers.                                                                |
+| **Custom subscribe landing page**  | A dedicated, shareable URL (`/username/subscribe`) with the writer's pitch, pricing, and a prominent subscribe button. Currently, subscription is a small button on the profile page among other content. |
 
 ### Nice-to-have (competitive polish, not dealbreakers)
 
-| Gap | Why it matters |
-|---|---|
-| **Founding member tier** | A higher optional price for readers who want to pay more. Substack's founding members pay 2–5x the base price. Simple to implement (just a second price point). |
-| **Referral programme** | Subscribers earn free months by referring others. Growth loop. |
-| **Discovery network** | Substack's recommendation engine surfaces writers to new readers. Hard to replicate at small scale but important at scale. |
-| **Mobile app** | Substack's reader app drives engagement. Expensive to build but significant for retention. |
-| **Podcast/audio RSS** | Subscriber-only podcast feeds. Growing segment of Substack usage. |
-| **Group/team subscriptions** | Institutional pricing for companies buying seats. |
-| **Multiple tiers** | More than one subscription tier per writer (e.g. "supporter" and "patron"). Substack supports this. |
-| **Subscriber-only community** | Chat or discussion space exclusive to paying subscribers. |
-| **Custom domains** | `writer.com` instead of `all.haus/writer`. |
+| Gap                           | Why it matters                                                                                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Founding member tier**      | A higher optional price for readers who want to pay more. Substack's founding members pay 2–5x the base price. Simple to implement (just a second price point). |
+| **Referral programme**        | Subscribers earn free months by referring others. Growth loop.                                                                                                  |
+| **Discovery network**         | Substack's recommendation engine surfaces writers to new readers. Hard to replicate at small scale but important at scale.                                      |
+| **Mobile app**                | Substack's reader app drives engagement. Expensive to build but significant for retention.                                                                      |
+| **Podcast/audio RSS**         | Subscriber-only podcast feeds. Growing segment of Substack usage.                                                                                               |
+| **Group/team subscriptions**  | Institutional pricing for companies buying seats.                                                                                                               |
+| **Multiple tiers**            | More than one subscription tier per writer (e.g. "supporter" and "patron"). Substack supports this.                                                             |
+| **Subscriber-only community** | Chat or discussion space exclusive to paying subscribers.                                                                                                       |
+| **Custom domains**            | `writer.com` instead of `all.haus/writer`.                                                                                                                      |
 
 ---
 
 ## What separates us from bare adequacy (the MVP)
 
-Bare adequacy means: a writer could plausibly choose this platform over Substack because our other features (Nostr ownership, pay-per-read, data portability, permanent unlocks, lower fees) compensate for subscription gaps — but the subscription system itself must not be *broken*. It must work reliably even if it's not feature-rich.
+Bare adequacy means: a writer could plausibly choose this platform over Substack because our other features (Nostr ownership, pay-per-read, data portability, permanent unlocks, lower fees) compensate for subscription gaps — but the subscription system itself must not be _broken_. It must work reliably even if it's not feature-rich.
 
 ### The MVP must fix these
 

@@ -109,10 +109,19 @@ Key variables:
 | `EMAIL_FROM_BROADCAST`                      | gateway                           | From address for publish notification emails (default: `posts@all.haus`)                                                                                                                    |
 | `BROADCAST_DAILY_SEND_LIMIT`                | gateway                           | Daily send cap for broadcast warm-up; `0` = unlimited (default: `50`)                                                                                                                       |
 | `TRAFFOLOGY_INGEST_URL`                     | gateway                           | Internal URL for traffology-ingest (default: http://localhost:3005)                                                                                                                         |
-| `TRAFFOLOGY_IP_HASH_SALT`                   | traffology-ingest                 | Salt for SHA-256 IP hashing (must override default in production)                                                                                                                           |
+| `IP_HASH_SALT`                              | traffology-ingest                 | Salt for SHA-256 IP hashing (must override default in production)                                                                                                                           |
 | `LINKED_ACCOUNT_KEY_HEX`                    | gateway, feed-ingest              | AES-256 key (64 hex chars) for encrypting linked-account OAuth credentials and `atproto_oauth_sessions.session_data_enc`. Must be identical across gateway and feed-ingest                  |
 | `ATPROTO_CLIENT_BASE_URL`                   | gateway, feed-ingest              | Public origin for the AT Protocol OAuth client metadata (e.g. `https://all.haus`). When unset or pointing at localhost, the code falls back to the loopback `client_id` (dev only)          |
 | `ATPROTO_PRIVATE_JWK`                       | gateway, feed-ingest              | ES256 signing JWK (JSON string) used for `private_key_jwt` confidential-client auth. **Required in prod** whenever `ATPROTO_CLIENT_BASE_URL` is a public origin                             |
+| `GATEWAY_URL`                               | web                               | Server-side SSR fetch URL for the gateway (e.g. `http://gateway:3000`). Used by all server-component pages that fetch from the API                                                          |
+| `GATEWAY_INTERNAL_URL`                      | web                               | Optional override for SSR fetches when Docker network name differs from public gateway URL. Takes precedence over `GATEWAY_URL`                                                             |
+| `POSTMARK_API_KEY`                          | gateway (shared)                  | Required when `EMAIL_PROVIDER=postmark`. Transactional + broadcast API key                                                                                                                  |
+| `RESEND_API_KEY`                            | gateway (shared)                  | Required when `EMAIL_PROVIDER=resend`. Alternative to Postmark                                                                                                                              |
+| `EMAIL_FROM`                                | gateway (shared)                  | From address for transactional emails — magic links, DM notifications (default: `login@all.haus`)                                                                                           |
+| `STRIPE_WEBHOOK_SECRET`                     | payment-service                   | Stripe webhook signing secret for signature verification                                                                                                                                    |
+| `MEDIA_DIR`                                 | gateway                           | Path to media storage volume (default: `/app/media`). Relevant for non-Docker deployments                                                                                                   |
+| `PUBLIC_MEDIA_URL`                          | gateway                           | Public URL prefix for served media (default: `https://all.haus/media`)                                                                                                                      |
+| `LINKED_ACCOUNT_KEY_VERSION`                | gateway, feed-ingest              | Integer controlling write-side key version for `LINKED_ACCOUNT_KEY_HEX` rotation (default: `1`)                                                                                             |
 
 > **Security:** `ACCOUNT_KEY_HEX` must never be set on the gateway — the key-custody service is the sole holder of this key by design. The gateway cannot decrypt user private keys.
 
@@ -166,9 +175,9 @@ docker compose ps   # wait for postgres to be healthy
 
 ### 4. Apply schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. As of v5.13.0, `schema.sql` includes all structural changes through migration 038; the `_migrations` table is pre-seeded accordingly.
+The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. `schema.sql` is generated from `pg_dump` of a fully-migrated database and the `_migrations` table is pre-seeded accordingly.
 
-For **fresh** databases: no action needed — the schema and `_migrations` seed handle everything. As of v5.30.0, `schema.sql` includes all structural changes through migration 045.
+For **fresh** databases: no action needed — `schema.sql` includes all structural changes through migration 084 (as of 2026-05-15).
 
 For **existing** databases that were initialised with an earlier `schema.sql`, use the migration runner:
 
@@ -376,10 +385,10 @@ This release adds the Traffology analytics system (writer-facing traffic insight
 
 **New env vars:**
 
-| Variable                  | Service           | Purpose                                                             |
-| ------------------------- | ----------------- | ------------------------------------------------------------------- |
-| `TRAFFOLOGY_INGEST_URL`   | gateway           | Internal URL for traffology-ingest (default: http://localhost:3005) |
-| `TRAFFOLOGY_IP_HASH_SALT` | traffology-ingest | Salt for IP hashing (**must override in production**)               |
+| Variable                | Service           | Purpose                                                             |
+| ----------------------- | ----------------- | ------------------------------------------------------------------- |
+| `TRAFFOLOGY_INGEST_URL` | gateway           | Internal URL for traffology-ingest (default: http://localhost:3005) |
+| `IP_HASH_SALT`          | traffology-ingest | Salt for IP hashing (**must override in production**)               |
 
 **Upgrade steps:**
 
@@ -392,7 +401,7 @@ DATABASE_URL=postgresql://platformpub:$POSTGRES_PASSWORD@127.0.0.1:5432/platform
   npx tsx shared/src/db/migrate.ts
 
 # Add Traffology env vars
-echo 'TRAFFOLOGY_IP_HASH_SALT=<generate with: openssl rand -hex 32>' >> traffology-ingest/.env
+echo 'IP_HASH_SALT=<generate with: openssl rand -hex 32>' >> traffology-ingest/.env
 # gateway/.env already has TRAFFOLOGY_INGEST_URL defaulting to http://localhost:3005
 # (use http://traffology-ingest:3005 in Docker)
 

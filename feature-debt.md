@@ -2,13 +2,13 @@
 
 Consolidated from planning documents, verified against the codebase as of 2026-05-10. Completed specs live in `planning-archive/`. Documents left in the project root describe work that is still outstanding — each is referenced in the relevant section below.
 
-Last audited: 2026-05-10. Items marked DONE were verified against the codebase and docs in that audit.
+Last audited: 2026-05-15. Items marked DONE were verified against the codebase and docs in that audit.
 
 ## Situation report (2026-05-10)
 
 **Posture:** Strong shipped state (~v5.36.0 baseline). All critical/security bugs resolved across three audit passes (100+ items in FIX-PROGRAMME). Design system fully standardised. Core product loop (write → publish → pay → read) functional end-to-end. Universal feed (RSS, Nostr, Bluesky, Mastodon ingest + outbound cross-posting) operational. Trust graph Phases 1–2 + 4 live. Relay outbox programme complete (all 6 phases shipped, §60 closed 2026-04-23).
 
-**Active branch:** `workspace-experiment` (slices 1–32 complete + refactoring pass, not merged to master, not browser-tested — Postgres down on dev machine at time of last work). Refactoring pass (2026-05-15): extracted shared `useResolverInput` hook + `resolve.ts` utilities from duplicated VesselBar/FeedComposer resolver logic; consolidated Zustand store setters via `patchVessel` helper; deleted dead `ForkFeedPrompt.tsx` + `ResetLayoutConfirm.tsx`; fixed duplicate `NewUserItem` type + `catch (err: any)`. Decision pending: merge or retire.
+**Active branch:** `workspace-experiment` (slices 1–32 complete + refactoring pass, not merged to master, not browser-tested — Postgres down on dev machine at time of last work). Refactoring pass (2026-05-15): extracted shared `useResolverInput` hook + `resolve.ts` utilities from duplicated VesselBar/FeedComposer resolver logic; consolidated Zustand store setters via `patchVessel` helper; deleted dead `ForkFeedPrompt.tsx` + `ResetLayoutConfirm.tsx`; fixed duplicate `NewUserItem` type + `catch (err: any)`. Full codebase review completed (REVIEW-PLAN.md, 24 sessions, 300+ diagnoses). Decision pending: merge or retire.
 
 **Biggest product gaps (launch-blocking or near):**
 
@@ -24,7 +24,7 @@ Last audited: 2026-05-10. Items marked DONE were verified against the codebase a
 | Admin/design system (13 items) | All resolved |
 | Universal feed (34+ items, 3 passes) | All resolved |
 | Consolidated fix programme (100+ items) | All P0/P1/P2 resolved |
-| Frontend audit (12 items) | 4/12 resolved |
+| Frontend audit (12 items) | 6/12 resolved |
 | Subscriptions gap analysis | Phase 1 complete, Phase 2 not started |
 
 **Pending architectural decisions:**
@@ -122,7 +122,7 @@ _(None — remaining items moved to Infrastructure backlog below.)_
 - ~~No CI/CD~~ — moved to infrastructure backlog
 - ~~TypeScript target mismatch~~ — moved to infrastructure backlog (cosmetic, no runtime impact)
 - ~~Accessibility gaps~~ — **resolved:** vote buttons already had aria-labels; paywall indicator uses price text (not colour-only); dropdown keyboard nav (Escape-to-close, aria-expanded, role="menu") added to AvatarDropdown and NotificationBell.
-- ~~Reduce JWT session lifetime~~ — **fixed:** reduced from 7 days to 2 hours with 1-hour refresh-on-use half-life. Active users stay logged in; idle sessions expire in 2 hours.
+- ~~Reduce JWT session lifetime~~ — **fixed:** 30-day JWT with 7-day refresh half-life (implementation). Active users stay logged in; `sessions_invalidated_at` provides server-side revocation.
 
 ---
 
@@ -258,19 +258,20 @@ Phase 1 complete (build status archived: `planning-archive/TRAFFOLOGY-BUILD-STAT
 
 **Frontend audit — `docs/audits/all-haus-frontend-audit.md`**
 
-12-item ranked audit. Outstanding items:
+12-item ranked audit. 6/12 resolved. Outstanding items:
 
 - ~~#1: Open Graph / social sharing metadata~~ — **done (v5.32.0):** OG + Twitter Card tags on all public pages
-- #2: Email / newsletter delivery (no email-on-publish — critical for writer retention)
+- ~~#2: Email / newsletter delivery~~ — **done:** `sendPublishNotifications()` wired to publish route + "Email subscribers" checkbox in editor
 - #3: Landing page (minimal — no social proof, no screenshots, no tab model explanation)
+- ~~#4: Writer analytics~~ — **done:** Traffology Phase 1 (feed UI, piece detail, overview, dashboard Analytics tab)
 - #5: Publication homepage templates (wireframe-quality, no visual customisation)
 - #6: Writer onboarding flow (no post-signup wizard)
 - ~~#7: CSP header blocking external images~~ — **done:** `img-src` widened to include `https:` for external feed media
 - #8: Import tooling (no Substack/Ghost/WordPress import)
-- #9: Frontend test coverage (zero tests in web/)
-- ~~#10: Dashboard architecture (single ~530-line component)~~ — **done (v5.34.0):** reduced from 7 to 4 tabs, ProposalsTab extracted to own component, drafts merged into ArticlesTab
+- #9: Frontend test coverage (6 test files now exist — vault, publish, voting, format, markdown, media — was zero)
+- ~~#10: Dashboard architecture~~ — **done (v5.34.0):** tab contents extracted into 10+ separate components
 - #11: Dark mode
-- Item #4 (writer analytics) resolved by Traffology Phase 1
+- #12: Design system housekeeping (CSS aliases cleaned; `platform-pub` naming persists in docker-compose/package.json)
 
 **Owner dashboard — `docs/adr/OWNER-DASHBOARD-SPEC.md`**
 
@@ -553,7 +554,7 @@ Features any user would reasonably expect given the platform's existing capabili
 2. **Email-on-publish** — trivial build, high writer-retention value. See `docs/adr/EMAIL-ON-PUBLISH-SPEC.md`
 3. **Owner dashboard** — entirely unbuilt, need operator visibility before real money. See `docs/adr/OWNER-DASHBOARD-SPEC.md`
 4. **Subscription Phase 2** — free trials, gift subs, welcome email, import/export, analytics, custom landing page. See `docs/audits/SUBSCRIPTIONS-GAP-ANALYSIS.md`
-5. **Workspace experiment decision** — merge to master or retire? 23 slices on branch, never browser-tested
+5. **Workspace experiment decision** — merge to master or retire? 32 slices on branch, never browser-tested
 6. **Reposts** — needs feed algorithm to be meaningful
 7. **Currency strategy** — see `docs/adr/platform-pub-currency-strategy.md`
 8. **Publications Phase 4** (theming/custom domains) — see `docs/adr/PUBLICATIONS-SPEC.md` §10 Phase 4
@@ -579,5 +580,5 @@ Features any user would reasonably expect given the platform's existing capabili
 - TypeScript strictness (eliminate remaining ~23 `any` instances)
 - Accessibility pass
 - TypeScript target alignment
-- **Session invalidation on logout** — JWTs remain valid for up to 2 hours after logout (cookie is cleared client-side, but the token itself works until natural expiry). Window reduced from 7 days to 2 hours (v5.12.0), but a server-side token blacklist or refresh-token revocation pattern would close it fully. Lower priority now that the window is short.
+- **Session invalidation on logout** — `sessions_invalidated_at` provides server-side revocation (all-devices logout), but there's no per-session revocation (e.g. "log out of that device"). The `requireAuth` hook enforces `sessions_invalidated_at` on every request.
 - **CSP nonce middleware** — `nginx.conf` CSP uses `'unsafe-inline'` for `script-src`, which undermines XSS protection. Removing it requires Next.js middleware to generate per-request nonces and inject them into both the CSP header and inline `<script>` tags. Needs careful testing to avoid breaking hydration. Flagged in v5.28.0 audit.

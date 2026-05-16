@@ -26,11 +26,11 @@ Ranked by priority: what matters most to converting writers and readers at launc
 
 ~~The root layout metadata is `title: 'all.haus'` and `description: 'A publishing platform for writers and readers'`. No Open Graph tags, no Twitter cards, no per-article dynamic metadata.~~ **Fixed:** OG + Twitter Card metadata on all public pages — root layout (fallback defaults + `metadataBase`), homepage, about, writer profiles (with avatar + bio), publication homepage/about/masthead (with logo image), tag browse pages. Article pages already had dynamic OG tags with image extraction.
 
-### 2. Email / newsletter delivery
+### ~~2. Email / newsletter delivery~~ — RESOLVED
 
 **Impact: critical — the feature Substack writers consider non-negotiable.**
 
-There is no "send this to my subscribers" button, no mailing list management, no email delivery of articles. The email service exists for auth magic links only. Writers evaluating all.haus against Substack will ask "but how do I email my list?" within the first minute. Without an answer, they won't switch.
+~~There is no "send this to my subscribers" button, no mailing list management, no email delivery of articles. The email service exists for auth magic links only. Writers evaluating all.haus against Substack will ask "but how do I email my list?" within the first minute. Without an answer, they won't switch.~~ **Fixed:** `shared/src/lib/publish-emails.ts` implements `sendPublishNotifications()` with Postmark broadcast stream, daily send-cap, and per-subscriber `notify_on_publish` opt-in. The publish route calls it on every article publish. The editor and compose overlay expose an "Email subscribers" checkbox.
 
 ### 3. Landing page
 
@@ -38,11 +38,11 @@ There is no "send this to my subscribers" button, no mailing list management, no
 
 Two headline lines, a slab rule, one paragraph, two buttons. No social proof, no screenshots, no example articles, no visual demonstration of the reading or writing experience. No explanation of the tab model, which is the platform's most distinctive feature. Someone evaluating all.haus has no way to judge the product without signing up. The about page copy is good but it's behind a click.
 
-### 4. Writer analytics
+### ~~4. Writer analytics~~ — RESOLVED (Traffology Phase 1)
 
 **Impact: high — the thing that keeps writers engaged day-to-day.**
 
-The dashboard has articles, drafts, drives, offers, and pricing tabs but no performance view. No read counts, no unique readers, no referral sources, no earnings charts, no trend lines. Ghost and Substack both surface this prominently. Writers are obsessed with their numbers; without them, the dashboard feels hollow.
+~~The dashboard has articles, drafts, drives, offers, and pricing tabs but no performance view. No read counts, no unique readers, no referral sources, no earnings charts, no trend lines. Ghost and Substack both surface this prominently. Writers are obsessed with their numbers; without them, the dashboard feels hollow.~~ **Fixed:** Traffology Phase 1 ships a complete analytics system: page tracking script, ingest service, hourly/daily/weekly aggregation, source resolution, observation engine, feed UI at `/traffology`, piece-level detail with provenance bars, overview with baseline stats, and an Analytics tab in the dashboard.
 
 ### 5. Publication homepage templates
 
@@ -76,11 +76,11 @@ No way to import a Substack archive, Ghost export, or WordPress dump. The launch
 
 No tests in `web/`. The vault decryption pipeline, the paywall gate state machine, the TipTap editor with draggable gate — these are complex interactive flows being tested manually. A handful of integration tests on the critical paths (unlock flow, gate state transitions, publish flow) would catch regressions before users do.
 
-### 10. Dashboard architecture
+### ~~10. Dashboard architecture~~ — RESOLVED (v5.34.0)
 
 **Impact: medium — maintainability.**
 
-The dashboard is a single ~530-line page component with pricing, articles, drafts, publication context switching, and publication creation all inlined. As the publication features grow, this will become unmanageable. Extract tab contents into proper route segments or at minimum separate files.
+~~The dashboard is a single ~530-line page component with pricing, articles, drafts, publication context switching, and publication creation all inlined. As the publication features grow, this will become unmanageable. Extract tab contents into proper route segments or at minimum separate files.~~ **Fixed:** Tab contents extracted into 10+ separate components (AnalyticsTab, SubscribersTab, ProposalsTab, PublicationArticlesTab, MembersTab, PublicationSettingsTab, RateCardTab, PayrollTab, PublicationEarningsTab, GiftLinksPanel). The page component is now an orchestrator/router. Tabs consolidated from 7 to 4 (Articles, Subscribers, Proposals, Pricing).
 
 ### 11. Dark mode
 
