@@ -129,7 +129,7 @@ function feedItemToResponse(row: any) {
 
 // Shared SELECT columns — feed_items + LEFT JOINs for type-specific fields
 const FEED_SELECT = `
-  fi.id AS fi_id, fi.item_type, fi.article_id, fi.note_id, fi.external_item_id,
+  fi.id AS fi_id, fi.item_type, fi.title, fi.article_id, fi.note_id, fi.external_item_id,
   fi.author_id, fi.nostr_event_id, fi.source_protocol, fi.source_item_uri,
   fi.source_id, COALESCE(ei.media, fi.media) AS media, fi.score, fi.tier,
   EXTRACT(EPOCH FROM fi.published_at)::bigint AS published_at_epoch,
@@ -235,6 +235,7 @@ async function followingFeed(
        AND es.is_muted = FALSE
       WHERE fi_inner.item_type = 'external'
         AND fi_inner.deleted_at IS NULL
+        AND fi_inner.published_at > now() - INTERVAL '30 days'
     )
     SELECT ${FEED_SELECT}
     FROM feed_items fi
