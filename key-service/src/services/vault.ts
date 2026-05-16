@@ -1,10 +1,18 @@
-import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { generateContentKey, encryptContentKey, decryptContentKey } from '../lib/kms.js'
-import { encryptArticleBodyXChaCha } from '../lib/crypto.js'
-import { wrapKeyForReader } from '../lib/nip44.js'
-import { verifyPayment, resolveArticleId } from './verification.js'
-import type { VaultEncryptResult, KeyResponse } from '../types/index.js'
-import logger from '../lib/logger.js'
+import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
+import {
+  generateContentKey,
+  encryptContentKey,
+  decryptContentKey,
+} from "../lib/kms.js";
+import {
+  encryptArticleBodyXChaCha,
+  decryptArticleBodyXChaCha,
+  decryptArticleBody,
+} from "../lib/crypto.js";
+import { wrapKeyForReader } from "../lib/nip44.js";
+import { verifyPayment, resolveArticleId } from "./verification.js";
+import type { VaultEncryptResult, KeyResponse } from "../types/index.js";
+import logger from "../lib/logger.js";
 
 // =============================================================================
 // VaultService
@@ -25,7 +33,6 @@ import logger from '../lib/logger.js'
 // =============================================================================
 
 class VaultService {
-
   // ---------------------------------------------------------------------------
   // publishArticle
   //
@@ -38,86 +45,103 @@ class VaultService {
   // ---------------------------------------------------------------------------
 
   async publishArticle(params: {
-    articleId: string
-    nostrArticleEventId: string
-    paywallBody: string
-    pricePence: number
-    gatePositionPct: number
-    nostrDTag: string
+    articleId: string;
+    nostrArticleEventId: string;
+    paywallBody: string;
+    pricePence: number;
+    gatePositionPct: number;
+    nostrDTag: string;
   }): Promise<VaultEncryptResult> {
-
     return withTransaction(async (client) => {
       // Check if a key already exists (edit / re-publish)
-      const existingKey = await client.query<{ id: string; content_key_enc: string }>(
-        `SELECT id, content_key_enc FROM vault_keys WHERE article_id = $1`,
-        [params.articleId]
-      )
+      const existingKey = await client.query<{
+        id: string;
+        content_key_enc: string;
+      }>(`SELECT id, content_key_enc FROM vault_keys WHERE article_id = $1`, [
+        params.articleId,
+      ]);
 
-      let contentKeyBytes: Buffer
-      let vaultKeyId: string
+      let contentKeyBytes: Buffer;
+      let vaultKeyId: string;
 
       if (existingKey.rowCount && existingKey.rowCount > 0) {
         // Reuse existing key — re-encrypt body with same key
         try {
-          contentKeyBytes = decryptContentKey(existingKey.rows[0].content_key_enc)
+          contentKeyBytes = decryptContentKey(
+            existingKey.rows[0].content_key_enc,
+          );
         } catch (err) {
-          logger.error({ err, articleId: params.articleId }, 'Failed to decrypt existing vault key — possible KMS key rotation')
-          throw Object.assign(new Error('VAULT_KEY_DECRYPT_FAILED'), { statusCode: 500 })
+          logger.error(
+            { err, articleId: params.articleId },
+            "Failed to decrypt existing vault key — possible KMS key rotation",
+          );
+          throw Object.assign(new Error("VAULT_KEY_DECRYPT_FAILED"), {
+            statusCode: 500,
+          });
         }
-        vaultKeyId = existingKey.rows[0].id
+        vaultKeyId = existingKey.rows[0].id;
 
         // Keep nostr_article_event_id current for audit purposes;
         // ciphertext is updated below after re-encryption.
         await client.query(
           `UPDATE vault_keys SET nostr_article_event_id = $1 WHERE id = $2`,
-          [params.nostrArticleEventId, vaultKeyId]
-        )
+          [params.nostrArticleEventId, vaultKeyId],
+        );
 
-        logger.info({ articleId: params.articleId, vaultKeyId }, 'Reusing existing vault key for article edit')
+        logger.info(
+          { articleId: params.articleId, vaultKeyId },
+          "Reusing existing vault key for article edit",
+        );
       } else {
         // New article — generate fresh key
-        contentKeyBytes = generateContentKey()
-        const contentKeyEnc = encryptContentKey(contentKeyBytes)
+        contentKeyBytes = generateContentKey();
+        const contentKeyEnc = encryptContentKey(contentKeyBytes);
 
         const keyRow = await client.query<{ id: string }>(
           `INSERT INTO vault_keys (article_id, nostr_article_event_id, content_key_enc, algorithm)
            VALUES ($1, $2, $3, 'xchacha20poly1305')
            RETURNING id`,
-          [params.articleId, params.nostrArticleEventId, contentKeyEnc]
-        )
-        vaultKeyId = keyRow.rows[0].id
-        logger.info({ articleId: params.articleId, vaultKeyId }, 'Generated new vault key (xchacha20poly1305)')
+          [params.articleId, params.nostrArticleEventId, contentKeyEnc],
+        );
+        vaultKeyId = keyRow.rows[0].id;
+        logger.info(
+          { articleId: params.articleId, vaultKeyId },
+          "Generated new vault key (xchacha20poly1305)",
+        );
       }
 
-      const algorithm = 'xchacha20poly1305' as const
+      const algorithm = "xchacha20poly1305" as const;
 
       // Encrypt the paywalled body
-      const ciphertext = encryptArticleBodyXChaCha(params.paywallBody, contentKeyBytes)
+      const ciphertext = encryptArticleBodyXChaCha(
+        params.paywallBody,
+        contentKeyBytes,
+      );
 
       // Persist ciphertext in vault_keys so the gate-pass can serve it directly.
       // This decouples decryption from relay availability — readers no longer need
       // to find the ['payload', ...] tag on the NIP-23 event.
       await client.query(
         `UPDATE vault_keys SET ciphertext = $1 WHERE id = $2`,
-        [ciphertext, vaultKeyId]
-      )
+        [ciphertext, vaultKeyId],
+      );
 
       // Build a legacy vault event template for any callers that still expect it.
       // New callers should use ciphertext + algorithm directly and embed in NIP-23.
       const nostrVaultEvent = {
         kind: 39701 as const,
         tags: [
-          ['d', params.nostrDTag],
-          ['e', params.nostrArticleEventId],
-          ['encrypted', algorithm],
-          ['price', String(params.pricePence), 'GBP'],
-          ['gate', String(params.gatePositionPct)],
+          ["d", params.nostrDTag],
+          ["e", params.nostrArticleEventId],
+          ["encrypted", algorithm],
+          ["price", String(params.pricePence), "GBP"],
+          ["gate", String(params.gatePositionPct)],
         ],
         content: ciphertext,
-      }
+      };
 
-      return { ciphertext, algorithm, vaultKeyId, nostrVaultEvent }
-    })
+      return { ciphertext, algorithm, vaultKeyId, nostrVaultEvent };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -125,11 +149,14 @@ class VaultService {
   // (new articles don't have a separate vault event to track)
   // ---------------------------------------------------------------------------
 
-  async updateVaultEventId(articleId: string, vaultNostrEventId: string): Promise<void> {
+  async updateVaultEventId(
+    articleId: string,
+    vaultNostrEventId: string,
+  ): Promise<void> {
     await pool.query(
       `UPDATE articles SET vault_event_id = $1, updated_at = now() WHERE id = $2`,
-      [vaultNostrEventId, articleId]
-    )
+      [vaultNostrEventId, articleId],
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -148,14 +175,17 @@ class VaultService {
   // ---------------------------------------------------------------------------
 
   async issueKey(params: {
-    readerId: string
-    readerPubkey: string
-    articleNostrEventId: string
+    readerId: string;
+    readerPubkey: string;
+    articleNostrEventId: string;
   }): Promise<KeyResponse> {
     // Step 1: resolve Nostr event ID → internal article UUID
-    const resolved = await resolveArticleId(params.articleNostrEventId)
+    const resolved = await resolveArticleId(params.articleNostrEventId);
     if (!resolved) {
-      throw new KeyServiceError('ARTICLE_NOT_FOUND', `No article found for event ID: ${params.articleNostrEventId}`)
+      throw new KeyServiceError(
+        "ARTICLE_NOT_FOUND",
+        `No article found for event ID: ${params.articleNostrEventId}`,
+      );
     }
 
     // Step 2: verify access — own content, permanent unlock, or paid read
@@ -171,42 +201,55 @@ class VaultService {
     // Paid read: first-time purchasers — the gateway records a read_event via
     // the payment service before calling this endpoint, so verifyPayment finds
     // it and returns isVerified: true.
-    const isOwnContent = params.readerId === resolved.writerId
-    let verificationReadEventId: string | null = null
+    const isOwnContent = params.readerId === resolved.writerId;
+    let verificationReadEventId: string | null = null;
 
     if (!isOwnContent) {
       const { rows: unlockRows } = await pool.query<{ id: string }>(
         `SELECT id FROM article_unlocks WHERE reader_id = $1 AND article_id = $2 LIMIT 1`,
-        [params.readerId, resolved.articleId]
-      )
+        [params.readerId, resolved.articleId],
+      );
 
       if (unlockRows.length === 0) {
         // No permanent unlock — must have a valid payment record
-        const verification = await verifyPayment(params.readerId, resolved.articleId)
+        const verification = await verifyPayment(
+          params.readerId,
+          resolved.articleId,
+        );
         if (!verification.isVerified) {
-          const reason = verification.readEventExists ? 'PROVISIONAL_ONLY' : 'NO_PAYMENT_RECORD'
-          throw new KeyServiceError('PAYMENT_NOT_VERIFIED', reason)
+          const reason = verification.readEventExists
+            ? "PROVISIONAL_ONLY"
+            : "NO_PAYMENT_RECORD";
+          throw new KeyServiceError("PAYMENT_NOT_VERIFIED", reason);
         }
-        verificationReadEventId = verification.readEventId
+        verificationReadEventId = verification.readEventId;
       }
     }
 
     // Step 3: retrieve vault key by article_id (stable across event ID changes)
-    const keyRow = await pool.query<{ id: string; content_key_enc: string; algorithm: string; ciphertext: string | null }>(
+    const keyRow = await pool.query<{
+      id: string;
+      content_key_enc: string;
+      algorithm: string;
+      ciphertext: string | null;
+    }>(
       `SELECT id, content_key_enc, algorithm, ciphertext FROM vault_keys WHERE article_id = $1`,
-      [resolved.articleId]
-    )
+      [resolved.articleId],
+    );
 
     if (keyRow.rowCount === 0) {
-      throw new KeyServiceError('VAULT_KEY_NOT_FOUND', `No vault key for article: ${params.articleNostrEventId}`)
+      throw new KeyServiceError(
+        "VAULT_KEY_NOT_FOUND",
+        `No vault key for article: ${params.articleNostrEventId}`,
+      );
     }
 
-    const vaultKey = keyRow.rows[0]
-    const algorithm = vaultKey.algorithm as 'xchacha20poly1305' | 'aes-256-gcm'
+    const vaultKey = keyRow.rows[0];
+    const algorithm = vaultKey.algorithm as "xchacha20poly1305" | "aes-256-gcm";
 
     // Step 4: decrypt content key from KMS envelope, re-wrap with NIP-44
-    const contentKeyBytes = decryptContentKey(vaultKey.content_key_enc)
-    const encryptedKey = wrapKeyForReader(contentKeyBytes, params.readerPubkey)
+    const contentKeyBytes = decryptContentKey(vaultKey.content_key_enc);
+    const encryptedKey = wrapKeyForReader(contentKeyBytes, params.readerPubkey);
 
     // Step 5: log issuance
     const isReissuance = await this.logIssuance({
@@ -214,12 +257,17 @@ class VaultService {
       readerId: params.readerId,
       articleId: resolved.articleId,
       readEventId: verificationReadEventId,
-    })
+    });
 
     logger.info(
-      { readerId: params.readerId, articleId: resolved.articleId, algorithm, isReissuance },
-      'Content key issued'
-    )
+      {
+        readerId: params.readerId,
+        articleId: resolved.articleId,
+        algorithm,
+        isReissuance,
+      },
+      "Content key issued",
+    );
 
     return {
       encryptedKey,
@@ -227,7 +275,55 @@ class VaultService {
       algorithm,
       isReissuance,
       ciphertext: vaultKey.ciphertext ?? undefined,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // decryptForAuthor
+  //
+  // Returns the plaintext paywall content for the article's own author.
+  // Used by the gateway's edit route so the author can reload their full article.
+  // ---------------------------------------------------------------------------
+
+  async decryptForAuthor(params: {
+    writerId: string;
+    articleId: string;
+  }): Promise<string> {
+    const { rows } = await pool.query<{ writer_id: string }>(
+      `SELECT writer_id FROM articles WHERE id = $1 AND deleted_at IS NULL`,
+      [params.articleId],
+    );
+
+    if (rows.length === 0) {
+      throw new KeyServiceError("ARTICLE_NOT_FOUND", "Article not found");
     }
+    if (rows[0].writer_id !== params.writerId) {
+      throw new KeyServiceError("FORBIDDEN", "Not the article author");
+    }
+
+    const keyRow = await pool.query<{
+      content_key_enc: string;
+      algorithm: string;
+      ciphertext: string | null;
+    }>(
+      `SELECT content_key_enc, algorithm, ciphertext FROM vault_keys WHERE article_id = $1`,
+      [params.articleId],
+    );
+
+    if (keyRow.rowCount === 0 || !keyRow.rows[0].ciphertext) {
+      throw new KeyServiceError(
+        "VAULT_KEY_NOT_FOUND",
+        "No vault content for this article",
+      );
+    }
+
+    const { content_key_enc, algorithm, ciphertext } = keyRow.rows[0];
+    const contentKeyBytes = decryptContentKey(content_key_enc);
+
+    if (algorithm === "xchacha20poly1305") {
+      return decryptArticleBodyXChaCha(ciphertext, contentKeyBytes);
+    }
+    return decryptArticleBody(ciphertext, contentKeyBytes);
   }
 
   // ---------------------------------------------------------------------------
@@ -235,28 +331,34 @@ class VaultService {
   // ---------------------------------------------------------------------------
 
   private async logIssuance(params: {
-    vaultKeyId: string
-    readerId: string
-    articleId: string
-    readEventId: string | null
+    vaultKeyId: string;
+    readerId: string;
+    articleId: string;
+    readEventId: string | null;
   }): Promise<boolean> {
     const { rows: prior } = await pool.query<{ id: string }>(
       `SELECT id FROM content_key_issuances
        WHERE reader_id = $1 AND article_id = $2
        LIMIT 1`,
-      [params.readerId, params.articleId]
-    )
+      [params.readerId, params.articleId],
+    );
 
-    const isReissuance = prior.length > 0
+    const isReissuance = prior.length > 0;
 
     await pool.query(
       `INSERT INTO content_key_issuances
          (vault_key_id, reader_id, article_id, read_event_id, is_reissuance)
        VALUES ($1, $2, $3, $4, $5)`,
-      [params.vaultKeyId, params.readerId, params.articleId, params.readEventId, isReissuance]
-    )
+      [
+        params.vaultKeyId,
+        params.readerId,
+        params.articleId,
+        params.readEventId,
+        isReissuance,
+      ],
+    );
 
-    return isReissuance
+    return isReissuance;
   }
 }
 
@@ -267,11 +369,11 @@ class VaultService {
 export class KeyServiceError extends Error {
   constructor(
     public readonly code: string,
-    message: string
+    message: string,
   ) {
-    super(message)
-    this.name = 'KeyServiceError'
+    super(message);
+    this.name = "KeyServiceError";
   }
 }
 
-export const vaultService = new VaultService()
+export const vaultService = new VaultService();

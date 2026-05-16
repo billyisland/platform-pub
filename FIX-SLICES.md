@@ -139,7 +139,7 @@ D76 and D77 are the most dangerous confirmed bugs — a Stripe charge can succee
 
 ---
 
-## Slice 4: Editor paywall round-trip
+## Slice 4: Editor paywall round-trip ✓ DONE (2026-05-16)
 
 **Priority: HIGH. Estimated effort: 3–4 hours.**
 **Service:** web

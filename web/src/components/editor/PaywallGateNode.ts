@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from '@tiptap/core'
+import { Node, mergeAttributes } from "@tiptap/core";
 
 // =============================================================================
 // PaywallGateNode — TipTap Extension
@@ -21,21 +21,21 @@ import { Node, mergeAttributes } from '@tiptap/core'
 // which the publish pipeline detects to split the content.
 // =============================================================================
 
-declare module '@tiptap/core' {
+declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     paywallGate: {
-      insertPaywallGate: () => ReturnType
-      removePaywallGate: () => ReturnType
-    }
+      insertPaywallGate: () => ReturnType;
+      removePaywallGate: () => ReturnType;
+    };
   }
 }
 
-export const PAYWALL_GATE_MARKER = '<!-- paywall-gate -->'
+export const PAYWALL_GATE_MARKER = "<!-- paywall-gate -->";
 
 export const PaywallGateNode = Node.create({
-  name: 'paywallGate',
+  name: "paywallGate",
 
-  group: 'block',
+  group: "block",
 
   atom: true, // non-editable, non-splittable
 
@@ -44,120 +44,129 @@ export const PaywallGateNode = Node.create({
   parseHTML() {
     return [
       {
-        tag: 'div[data-paywall-gate]',
+        tag: "div[data-paywall-gate]",
       },
-    ]
+    ];
   },
 
   renderHTML({ HTMLAttributes }) {
     return [
-      'div',
+      "div",
       mergeAttributes(HTMLAttributes, {
-        'data-paywall-gate': '',
-        class: 'paywall-gate-marker',
-        contenteditable: 'false',
+        "data-paywall-gate": "",
+        class: "paywall-gate-marker",
+        contenteditable: "false",
       }),
-      [
-        'span',
-        { class: 'gate-label' },
-        'Paywall — content below is paid',
-      ],
-      [
-        'span',
-        { class: 'gate-remove', 'data-gate-remove': '' },
-        '✕ remove',
-      ],
-    ]
+      ["span", { class: "gate-label" }, "Paywall — content below is paid"],
+      ["span", { class: "gate-remove", "data-gate-remove": "" }, "✕ remove"],
+    ];
   },
 
   addStorage() {
     return {
       markdown: {
         serialize(state: any) {
-          state.write('<!-- paywall-gate -->\n\n')
+          state.write("<!-- paywall-gate -->\n\n");
         },
-        parse: {},
+        parse: {
+          setup(markdownit: any) {
+            markdownit.core.ruler.after(
+              "block",
+              "paywall_gate",
+              (state: any) => {
+                const tokens = state.tokens;
+                for (let i = 0; i < tokens.length; i++) {
+                  const token = tokens[i];
+                  if (
+                    token.type === "html_block" &&
+                    token.content.trim() === "<!-- paywall-gate -->"
+                  ) {
+                    token.type = "paywallGate";
+                    token.content = "";
+                  }
+                }
+              },
+            );
+          },
+        },
       },
-    }
+    };
   },
 
   addCommands() {
     return {
       insertPaywallGate:
         () =>
-        ({ commands, state }) => {
+        ({ chain, state }) => {
           // Remove any existing gate first (only one allowed)
-          const { doc } = state
-          let existingPos: number | null = null
+          const { doc } = state;
+          let existingPos: number | null = null;
           doc.descendants((node, pos) => {
-            if (node.type.name === 'paywallGate') {
-              existingPos = pos
-              return false
+            if (node.type.name === "paywallGate") {
+              existingPos = pos;
+              return false;
             }
-          })
+          });
 
           if (existingPos !== null) {
-            // Delete existing gate before inserting new one
-            commands.deleteRange({
-              from: existingPos,
-              to: existingPos + 1,
-            })
+            return chain()
+              .deleteRange({ from: existingPos, to: existingPos + 1 })
+              .insertContent({ type: this.name })
+              .run();
           }
 
-          return commands.insertContent({
-            type: this.name,
-          })
+          return chain().insertContent({ type: this.name }).run();
         },
 
       removePaywallGate:
         () =>
         ({ commands, state }) => {
-          const { doc } = state
-          let gatePos: number | null = null
+          const { doc } = state;
+          let gatePos: number | null = null;
           doc.descendants((node, pos) => {
-            if (node.type.name === 'paywallGate') {
-              gatePos = pos
-              return false
+            if (node.type.name === "paywallGate") {
+              gatePos = pos;
+              return false;
             }
-          })
+          });
 
           if (gatePos !== null) {
             return commands.deleteRange({
               from: gatePos,
               to: gatePos + 1,
-            })
+            });
           }
 
-          return false
+          return false;
         },
-    }
+    };
   },
 
   // Handle click on the remove button
   addNodeView() {
     return ({ node, getPos, editor }) => {
-      const dom = document.createElement('div')
-      dom.classList.add('paywall-gate-marker')
-      dom.contentEditable = 'false'
-      dom.setAttribute('data-paywall-gate', '')
+      const dom = document.createElement("div");
+      dom.classList.add("paywall-gate-marker");
+      dom.contentEditable = "false";
+      dom.setAttribute("data-paywall-gate", "");
 
-      const label = document.createElement('span')
-      label.classList.add('gate-label')
-      label.textContent = 'Paywall — content below is paid'
+      const label = document.createElement("span");
+      label.classList.add("gate-label");
+      label.textContent = "Paywall — content below is paid";
 
-      const remove = document.createElement('span')
-      remove.classList.add('gate-remove')
-      remove.textContent = '✕ remove'
-      remove.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        editor.commands.removePaywallGate()
-      })
+      const remove = document.createElement("span");
+      remove.classList.add("gate-remove");
+      remove.textContent = "✕ remove";
+      remove.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        editor.commands.removePaywallGate();
+      });
 
-      dom.appendChild(label)
-      dom.appendChild(remove)
+      dom.appendChild(label);
+      dom.appendChild(remove);
 
-      return { dom }
-    }
+      return { dom };
+    };
   },
-})
+});

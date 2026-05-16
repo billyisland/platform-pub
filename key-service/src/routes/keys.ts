@@ -1,10 +1,10 @@
-import type { FastifyInstance } from 'fastify'
-import { z } from 'zod'
-import { vaultService, KeyServiceError } from '../services/vault.js'
-import { decryptContentKey } from '../lib/kms.js'
-import { wrapKeyForReader } from '../lib/nip44.js'
-import { pool } from '@platform-pub/shared/db/client.js'
-import logger from '../lib/logger.js'
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { vaultService, KeyServiceError } from "../services/vault.js";
+import { decryptContentKey } from "../lib/kms.js";
+import { wrapKeyForReader } from "../lib/nip44.js";
+import { pool } from "@platform-pub/shared/db/client.js";
+import logger from "../lib/logger.js";
 
 // =============================================================================
 // Key Service Routes
@@ -25,14 +25,13 @@ const PublishVaultSchema = z.object({
   pricePence: z.number().int().positive(),
   gatePositionPct: z.number().int().min(1).max(99),
   nostrDTag: z.string().min(1),
-})
+});
 
 const UpdateVaultEventIdSchema = z.object({
-  vaultNostrEventId: z.string().length(64),   // hex Nostr event ID
-})
+  vaultNostrEventId: z.string().length(64), // hex Nostr event ID
+});
 
 export async function keyRoutes(app: FastifyInstance) {
-
   // ---------------------------------------------------------------------------
   // POST /articles/:nostrEventId/vault
   // Called by the publishing pipeline after the writer hits publish.
@@ -41,27 +40,29 @@ export async function keyRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.post<{ Params: { nostrEventId: string } }>(
-    '/articles/:nostrEventId/vault',
+    "/articles/:nostrEventId/vault",
     async (req, reply) => {
-      const writerId = req.headers['x-writer-id']
-      if (!writerId || typeof writerId !== 'string') {
-        return reply.status(401).send({ error: 'Missing x-writer-id' })
+      const writerId = req.headers["x-writer-id"];
+      if (!writerId || typeof writerId !== "string") {
+        return reply.status(401).send({ error: "Missing x-writer-id" });
       }
 
-      const parsed = PublishVaultSchema.safeParse(req.body)
+      const parsed = PublishVaultSchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() })
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
       // Verify the writer owns this article
       const { rows } = await pool.query<{ id: string }>(
         `SELECT id FROM articles
          WHERE id = $1 AND writer_id = $2 AND nostr_event_id = $3`,
-        [parsed.data.articleId, writerId, req.params.nostrEventId]
-      )
+        [parsed.data.articleId, writerId, req.params.nostrEventId],
+      );
 
       if (rows.length === 0) {
-        return reply.status(403).send({ error: 'Article not found or not owned by writer' })
+        return reply
+          .status(403)
+          .send({ error: "Article not found or not owned by writer" });
       }
 
       try {
@@ -72,20 +73,23 @@ export async function keyRoutes(app: FastifyInstance) {
           pricePence: parsed.data.pricePence,
           gatePositionPct: parsed.data.gatePositionPct,
           nostrDTag: parsed.data.nostrDTag,
-        })
+        });
 
         return reply.status(201).send({
           vaultKeyId: result.vaultKeyId,
           ciphertext: result.ciphertext,
           algorithm: result.algorithm,
           nostrVaultEvent: result.nostrVaultEvent,
-        })
+        });
       } catch (err) {
-        logger.error({ err, writerId, nostrEventId: req.params.nostrEventId }, 'Vault publish failed')
-        return reply.status(500).send({ error: 'Vault publish failed' })
+        logger.error(
+          { err, writerId, nostrEventId: req.params.nostrEventId },
+          "Vault publish failed",
+        );
+        return reply.status(500).send({ error: "Vault publish failed" });
       }
-    }
-  )
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // PATCH /articles/:nostrEventId/vault
@@ -94,31 +98,36 @@ export async function keyRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.patch<{ Params: { nostrEventId: string } }>(
-    '/articles/:nostrEventId/vault',
+    "/articles/:nostrEventId/vault",
     async (req, reply) => {
-      const writerId = req.headers['x-writer-id']
-      if (!writerId || typeof writerId !== 'string') {
-        return reply.status(401).send({ error: 'Missing x-writer-id' })
+      const writerId = req.headers["x-writer-id"];
+      if (!writerId || typeof writerId !== "string") {
+        return reply.status(401).send({ error: "Missing x-writer-id" });
       }
 
-      const parsed = UpdateVaultEventIdSchema.safeParse(req.body)
+      const parsed = UpdateVaultEventIdSchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() })
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
       const { rows } = await pool.query<{ id: string }>(
         `SELECT id FROM articles WHERE nostr_event_id = $1 AND writer_id = $2`,
-        [req.params.nostrEventId, writerId]
-      )
+        [req.params.nostrEventId, writerId],
+      );
 
       if (rows.length === 0) {
-        return reply.status(403).send({ error: 'Article not found or not owned by writer' })
+        return reply
+          .status(403)
+          .send({ error: "Article not found or not owned by writer" });
       }
 
-      await vaultService.updateVaultEventId(rows[0].id, parsed.data.vaultNostrEventId)
-      return reply.status(200).send({ ok: true })
-    }
-  )
+      await vaultService.updateVaultEventId(
+        rows[0].id,
+        parsed.data.vaultNostrEventId,
+      );
+      return reply.status(200).send({ ok: true });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /articles/:nostrEventId/key
@@ -130,19 +139,21 @@ export async function keyRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.post<{ Params: { nostrEventId: string } }>(
-    '/articles/:nostrEventId/key',
+    "/articles/:nostrEventId/key",
     async (req, reply) => {
-      const readerId = req.headers['x-reader-id']
-      const readerPubkey = req.headers['x-reader-pubkey']
+      const readerId = req.headers["x-reader-id"];
+      const readerPubkey = req.headers["x-reader-pubkey"];
 
-      if (!readerId || typeof readerId !== 'string') {
-        return reply.status(401).send({ error: 'Missing x-reader-id' })
+      if (!readerId || typeof readerId !== "string") {
+        return reply.status(401).send({ error: "Missing x-reader-id" });
       }
-      if (!readerPubkey || typeof readerPubkey !== 'string') {
-        return reply.status(401).send({ error: 'Missing x-reader-pubkey' })
+      if (!readerPubkey || typeof readerPubkey !== "string") {
+        return reply.status(401).send({ error: "Missing x-reader-pubkey" });
       }
       if (!/^[0-9a-f]{64}$/.test(readerPubkey)) {
-        return reply.status(400).send({ error: 'Invalid x-reader-pubkey format' })
+        return reply
+          .status(400)
+          .send({ error: "Invalid x-reader-pubkey format" });
       }
 
       try {
@@ -150,9 +161,9 @@ export async function keyRoutes(app: FastifyInstance) {
           readerId,
           readerPubkey,
           articleNostrEventId: req.params.nostrEventId,
-        })
+        });
 
-        return reply.status(200).send(keyResponse)
+        return reply.status(200).send(keyResponse);
       } catch (err) {
         if (err instanceof KeyServiceError) {
           const statusMap: Record<string, number> = {
@@ -161,16 +172,21 @@ export async function keyRoutes(app: FastifyInstance) {
             PROVISIONAL_ONLY: 402,
             NO_PAYMENT_RECORD: 402,
             VAULT_KEY_NOT_FOUND: 404,
-          }
-          const status = statusMap[err.code] ?? 500
-          return reply.status(status).send({ error: err.code, message: err.message })
+          };
+          const status = statusMap[err.code] ?? 500;
+          return reply
+            .status(status)
+            .send({ error: err.code, message: err.message });
         }
 
-        logger.error({ err, readerId, nostrEventId: req.params.nostrEventId }, 'Key issuance failed')
-        return reply.status(500).send({ error: 'Key issuance failed' })
+        logger.error(
+          { err, readerId, nostrEventId: req.params.nostrEventId },
+          "Key issuance failed",
+        );
+        return reply.status(500).send({ error: "Key issuance failed" });
       }
-    }
-  )
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // GET /writers/export-keys
@@ -183,33 +199,33 @@ export async function keyRoutes(app: FastifyInstance) {
   // Requires x-writer-id and x-writer-pubkey headers (injected by gateway).
   // ---------------------------------------------------------------------------
 
-  app.get('/writers/export-keys', async (req, reply) => {
+  app.get("/writers/export-keys", async (req, reply) => {
     // Validate internal service secret — only the gateway should call this endpoint
-    const rawSecret = req.headers['x-internal-secret']
-    const secret = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret
-    if (typeof secret !== 'string' || secret !== process.env.INTERNAL_SECRET) {
-      return reply.status(401).send({ error: 'Unauthorized' })
+    const rawSecret = req.headers["x-internal-secret"];
+    const secret = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret;
+    if (typeof secret !== "string" || secret !== process.env.INTERNAL_SECRET) {
+      return reply.status(401).send({ error: "Unauthorized" });
     }
 
-    const writerId = req.headers['x-writer-id']
-    const writerPubkey = req.headers['x-writer-pubkey']
+    const writerId = req.headers["x-writer-id"];
+    const writerPubkey = req.headers["x-writer-pubkey"];
 
-    if (!writerId || typeof writerId !== 'string') {
-      return reply.status(401).send({ error: 'Missing x-writer-id' })
+    if (!writerId || typeof writerId !== "string") {
+      return reply.status(401).send({ error: "Missing x-writer-id" });
     }
-    if (!writerPubkey || typeof writerPubkey !== 'string') {
-      return reply.status(401).send({ error: 'Missing x-writer-pubkey' })
+    if (!writerPubkey || typeof writerPubkey !== "string") {
+      return reply.status(401).send({ error: "Missing x-writer-pubkey" });
     }
 
     try {
       // Fetch all vault keys for the writer's paywalled articles
       const { rows } = await pool.query<{
-        article_id: string
-        nostr_event_id: string
-        nostr_d_tag: string
-        title: string
-        content_key_enc: string
-        algorithm: string
+        article_id: string;
+        nostr_event_id: string;
+        nostr_d_tag: string;
+        title: string;
+        content_key_enc: string;
+        algorithm: string;
       }>(
         `SELECT vk.article_id, a.nostr_event_id, a.nostr_d_tag, a.title,
                 vk.content_key_enc, vk.algorithm
@@ -218,27 +234,76 @@ export async function keyRoutes(app: FastifyInstance) {
          WHERE a.writer_id = $1
            AND a.deleted_at IS NULL
          ORDER BY a.published_at DESC`,
-        [writerId]
-      )
+        [writerId],
+      );
 
-      const keys = rows.map(row => {
-        const contentKeyBytes = decryptContentKey(row.content_key_enc)
-        const encryptedKey = wrapKeyForReader(contentKeyBytes, writerPubkey)
+      const keys = rows.map((row) => {
+        const contentKeyBytes = decryptContentKey(row.content_key_enc);
+        const encryptedKey = wrapKeyForReader(contentKeyBytes, writerPubkey);
         return {
           articleId: row.article_id,
           nostrEventId: row.nostr_event_id,
           dTag: row.nostr_d_tag,
           title: row.title,
           algorithm: row.algorithm,
-          encryptedKey,  // NIP-44 wrapped to writer's own pubkey
-        }
-      })
+          encryptedKey, // NIP-44 wrapped to writer's own pubkey
+        };
+      });
 
-      logger.info({ writerId, count: keys.length }, 'Writer key export')
-      return reply.status(200).send({ keys })
+      logger.info({ writerId, count: keys.length }, "Writer key export");
+      return reply.status(200).send({ keys });
     } catch (err) {
-      logger.error({ err, writerId }, 'Writer key export failed')
-      return reply.status(500).send({ error: 'Key export failed' })
+      logger.error({ err, writerId }, "Writer key export failed");
+      return reply.status(500).send({ error: "Key export failed" });
     }
-  })
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /articles/:articleId/paywall-content
+  //
+  // Returns the decrypted paywall content to the article's own author for editing.
+  // Requires x-writer-id header (injected by gateway from session).
+  // ---------------------------------------------------------------------------
+
+  app.get<{ Params: { articleId: string } }>(
+    "/articles/:articleId/paywall-content",
+    async (req, reply) => {
+      const rawSecret = req.headers["x-internal-secret"];
+      const secret = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret;
+      if (
+        typeof secret !== "string" ||
+        secret !== process.env.INTERNAL_SECRET
+      ) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
+      const writerId = req.headers["x-writer-id"];
+      if (!writerId || typeof writerId !== "string") {
+        return reply.status(401).send({ error: "Missing x-writer-id" });
+      }
+
+      try {
+        const content = await vaultService.decryptForAuthor({
+          writerId,
+          articleId: req.params.articleId,
+        });
+        return reply.status(200).send({ content });
+      } catch (err) {
+        if (err instanceof KeyServiceError) {
+          const statusMap: Record<string, number> = {
+            ARTICLE_NOT_FOUND: 404,
+            FORBIDDEN: 403,
+            VAULT_KEY_NOT_FOUND: 404,
+          };
+          const status = statusMap[err.code] ?? 500;
+          return reply.status(status).send({ error: err.code });
+        }
+        logger.error(
+          { err, articleId: req.params.articleId },
+          "Paywall content decrypt failed",
+        );
+        return reply.status(500).send({ error: "Decryption failed" });
+      }
+    },
+  );
 }

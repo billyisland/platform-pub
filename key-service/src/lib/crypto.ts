@@ -1,5 +1,5 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
-import { xchacha20poly1305 } from '@noble/ciphers/chacha'
+import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 
 // =============================================================================
 // Article Encryption
@@ -31,20 +31,20 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha'
 
 export function encryptArticleBodyXChaCha(
   plaintextBody: string,
-  contentKeyBytes: Buffer
+  contentKeyBytes: Buffer,
 ): string {
   if (contentKeyBytes.length !== 32) {
-    throw new Error('Content key must be 32 bytes')
+    throw new Error("Content key must be 32 bytes");
   }
 
-  const nonce = randomBytes(24)
-  const key = new Uint8Array(contentKeyBytes)
-  const plaintext = new TextEncoder().encode(plaintextBody)
+  const nonce = randomBytes(24);
+  const key = new Uint8Array(contentKeyBytes);
+  const plaintext = new TextEncoder().encode(plaintextBody);
 
-  const ciphertextWithTag = xchacha20poly1305(key, nonce).encrypt(plaintext)
+  const ciphertextWithTag = xchacha20poly1305(key, nonce).encrypt(plaintext);
 
-  const combined = Buffer.concat([nonce, Buffer.from(ciphertextWithTag)])
-  return combined.toString('base64')
+  const combined = Buffer.concat([nonce, Buffer.from(ciphertextWithTag)]);
+  return combined.toString("base64");
 }
 
 // =============================================================================
@@ -53,36 +53,56 @@ export function encryptArticleBodyXChaCha(
 
 export function encryptArticleBody(
   plaintextBody: string,
-  contentKeyBytes: Buffer
+  contentKeyBytes: Buffer,
 ): string {
   if (contentKeyBytes.length !== 32) {
-    throw new Error('Content key must be 32 bytes')
+    throw new Error("Content key must be 32 bytes");
   }
 
-  const iv = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', contentKeyBytes, iv)
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", contentKeyBytes, iv);
 
-  const bodyBuffer = Buffer.from(plaintextBody, 'utf8')
-  const encrypted = Buffer.concat([cipher.update(bodyBuffer), cipher.final()])
-  const authTag = cipher.getAuthTag()
+  const bodyBuffer = Buffer.from(plaintextBody, "utf8");
+  const encrypted = Buffer.concat([cipher.update(bodyBuffer), cipher.final()]);
+  const authTag = cipher.getAuthTag();
 
-  const combined = Buffer.concat([iv, authTag, encrypted])
-  return combined.toString('base64')
+  const combined = Buffer.concat([iv, authTag, encrypted]);
+  return combined.toString("base64");
 }
 
 export function decryptArticleBody(
   ciphertextBase64: string,
-  contentKeyBytes: Buffer
+  contentKeyBytes: Buffer,
 ): string {
-  const combined = Buffer.from(ciphertextBase64, 'base64')
+  const combined = Buffer.from(ciphertextBase64, "base64");
 
-  const iv = combined.subarray(0, 12)
-  const authTag = combined.subarray(12, 28)
-  const ciphertext = combined.subarray(28)
+  const iv = combined.subarray(0, 12);
+  const authTag = combined.subarray(12, 28);
+  const ciphertext = combined.subarray(28);
 
-  const decipher = createDecipheriv('aes-256-gcm', contentKeyBytes, iv)
-  decipher.setAuthTag(authTag)
+  const decipher = createDecipheriv("aes-256-gcm", contentKeyBytes, iv);
+  decipher.setAuthTag(authTag);
 
-  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()])
-  return decrypted.toString('utf8')
+  const decrypted = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]);
+  return decrypted.toString("utf8");
+}
+
+export function decryptArticleBodyXChaCha(
+  ciphertextBase64: string,
+  contentKeyBytes: Buffer,
+): string {
+  if (contentKeyBytes.length !== 32) {
+    throw new Error("Content key must be 32 bytes");
+  }
+
+  const combined = Buffer.from(ciphertextBase64, "base64");
+  const nonce = new Uint8Array(combined.subarray(0, 24));
+  const ciphertextWithTag = new Uint8Array(combined.subarray(24));
+  const key = new Uint8Array(contentKeyBytes);
+
+  const plaintext = xchacha20poly1305(key, nonce).decrypt(ciphertextWithTag);
+  return new TextDecoder().decode(plaintext);
 }
