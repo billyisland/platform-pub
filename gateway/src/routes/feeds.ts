@@ -580,7 +580,7 @@ export async function feedsRoutes(app: FastifyInstance) {
       const accountId = accRows[0].id;
 
       const weight = stepToWeight(step);
-      const samplingMode = sampling === "top" ? "scored" : "random";
+      const samplingMode = sampling === "top" ? "scored" : "chronological";
 
       // Upsert a feed_sources account row scoped to (feed, author). Setting
       // step=0 keeps the row but records muted_at; the items query already

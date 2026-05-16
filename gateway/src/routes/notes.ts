@@ -309,6 +309,16 @@ export async function noteRoutes(app: FastifyInstance) {
       const { nostrEventId } = req.params;
 
       try {
+        const { rowCount } = await pool.query(
+          `SELECT 1 FROM notes WHERE nostr_event_id = $1 AND author_id = $2`,
+          [nostrEventId, authorId],
+        );
+        if (rowCount === 0) {
+          return reply
+            .status(404)
+            .send({ error: "Note not found or not yours" });
+        }
+
         const deletionEvent = await signEvent(authorId, {
           kind: 5,
           content: "",

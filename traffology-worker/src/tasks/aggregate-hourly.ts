@@ -1,6 +1,6 @@
-import { type Task } from 'graphile-worker'
-import { type PoolClient } from 'pg'
-import { withTransaction } from '@platform-pub/shared/db/client.js'
+import { type Task } from "graphile-worker";
+import { type PoolClient } from "pg";
+import { withTransaction } from "@platform-pub/shared/db/client.js";
 
 // =============================================================================
 // aggregate_hourly
@@ -14,10 +14,14 @@ import { withTransaction } from '@platform-pub/shared/db/client.js'
 // =============================================================================
 
 export const aggregateHourly: Task = async (_payload, helpers) => {
-  const start = Date.now()
+  const start = Date.now();
 
   // First, resolve any unresolved sources
-  await helpers.addJob('resolve_source', {}, { jobKey: 'resolve_source_batch' })
+  await helpers.addJob(
+    "resolve_source",
+    {},
+    { jobKey: "resolve_source_batch" },
+  );
 
   await withTransaction(async (client: PoolClient) => {
     // =========================================================================
@@ -87,7 +91,7 @@ export const aggregateHourly: Task = async (_payload, helpers) => {
         paid_conversions = EXCLUDED.paid_conversions,
         last_reader_at = EXCLUDED.last_reader_at,
         updated_at = EXCLUDED.updated_at
-    `)
+    `);
 
     // =========================================================================
     // source_stats — per source per piece
@@ -128,7 +132,7 @@ export const aggregateHourly: Task = async (_payload, helpers) => {
         avg_scroll_depth = EXCLUDED.avg_scroll_depth,
         bounce_rate = EXCLUDED.bounce_rate,
         updated_at = EXCLUDED.updated_at
-    `)
+    `);
 
     // =========================================================================
     // half_day_buckets — 12-hour buckets per source per piece
@@ -172,7 +176,7 @@ export const aggregateHourly: Task = async (_payload, helpers) => {
           AND EXTRACT(HOUR FROM s.started_at) < 18
       ON CONFLICT (piece_id, source_id, bucket_start) DO UPDATE SET
         reader_count = EXCLUDED.reader_count
-    `)
+    `);
 
     // =========================================================================
     // Ranking pass — compute rank_this_year and rank_all_time
@@ -190,12 +194,13 @@ export const aggregateHourly: Task = async (_payload, helpers) => {
             PARTITION BY p.writer_id
             ORDER BY ps.total_readers DESC
           )::int AS rank_all_time,
-          ROW_NUMBER() OVER (
-            PARTITION BY p.writer_id
-            ORDER BY ps.total_readers DESC
-          ) FILTER (
-            WHERE p.published_at >= date_trunc('year', CURRENT_DATE)
-          ) AS rank_this_year_raw
+          CASE WHEN p.published_at >= date_trunc('year', CURRENT_DATE)
+            THEN ROW_NUMBER() OVER (
+              PARTITION BY p.writer_id
+              ORDER BY CASE WHEN p.published_at >= date_trunc('year', CURRENT_DATE)
+                THEN ps.total_readers ELSE -1 END DESC
+            )
+          END AS rank_this_year_raw
         FROM traffology.piece_stats ps
         JOIN traffology.pieces p ON p.id = ps.piece_id
       )
@@ -204,8 +209,8 @@ export const aggregateHourly: Task = async (_payload, helpers) => {
         rank_this_year = r.rank_this_year_raw::int
       FROM ranked r
       WHERE ps.piece_id = r.piece_id
-    `)
-  })
+    `);
+  });
 
-  helpers.logger.info(`aggregate_hourly completed in ${Date.now() - start}ms`)
-}
+  helpers.logger.info(`aggregate_hourly completed in ${Date.now() - start}ms`);
+};

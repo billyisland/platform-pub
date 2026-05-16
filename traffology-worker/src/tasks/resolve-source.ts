@@ -269,7 +269,23 @@ async function findOrCreateSource(
 ): Promise<string> {
   const { sourceType, domain, displayName, allhausWriterId } = params;
 
-  // Try to find existing source for this writer with matching type + domain
+  const { rows } = await pool.query<{ id: string; created: boolean }>(
+    `INSERT INTO traffology.sources
+       (writer_id, source_type, domain, display_name, allhaus_writer_id, is_new_for_writer)
+     VALUES ($1, $2, $3, $4, $5, TRUE)
+     ON CONFLICT DO NOTHING
+     RETURNING id, TRUE AS created`,
+    [writerId, sourceType, domain, displayName, allhausWriterId ?? null],
+  );
+
+  if (rows.length > 0) {
+    logger.info(
+      { writerId, sourceType, domain, displayName },
+      "New source created",
+    );
+    return rows[0].id;
+  }
+
   const { rows: existing } = await pool.query<{ id: string }>(
     `SELECT id FROM traffology.sources
      WHERE writer_id = $1 AND source_type = $2
@@ -279,25 +295,7 @@ async function findOrCreateSource(
     [writerId, sourceType, domain, displayName],
   );
 
-  if (existing.length > 0) {
-    return existing[0].id;
-  }
-
-  // Create new source
-  const { rows: created } = await pool.query<{ id: string }>(
-    `INSERT INTO traffology.sources
-       (writer_id, source_type, domain, display_name, allhaus_writer_id, is_new_for_writer)
-     VALUES ($1, $2, $3, $4, $5, TRUE)
-     RETURNING id`,
-    [writerId, sourceType, domain, displayName, allhausWriterId ?? null],
-  );
-
-  logger.info(
-    { writerId, sourceType, domain, displayName },
-    "New source created",
-  );
-
-  return created[0].id;
+  return existing[0].id;
 }
 
 function extractDomain(url: string): string | null {
