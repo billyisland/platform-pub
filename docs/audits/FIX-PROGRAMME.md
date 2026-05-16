@@ -41,72 +41,72 @@ starts.
   Graphile Worker's dedup can't collapse the retry into the in-flight
   job and lose the backoff delay. §78 — `/.well-known/oauth-client-metadata.json`
   and `/.well-known/jwks.json` now set `Content-Type: application/json`
-  + `Cache-Control: public, max-age=3600` so PDSes polling for JWKS
-  rotation don't hammer origin. §79 — `outbound-token-refresh.ts` logs
-  sanitised `{ errName, errMessage: str.slice(0, 200) }` instead of the
-  raw error object, removing the DPoP/token-leak-through-logs surface.
-  §80 — `atproto_oauth_pending_states` TTL bumped 10min → 15min so a
-  callback arriving at `expires_at` can't race the 5min prune cron.
-  §81 — loopback `redirect_uri` now reads `process.env.PORT ?? '3000'`
-  instead of hardcoding `:3000`, so dev gateways on alternate ports
-  don't silently fail with redirect mismatch. §82 — `atproto-oauth.ts`
-  asserts `baseUrl.startsWith('https://')` before casting in the prod
-  branch; typo'd `ATPROTO_CLIENT_BASE_URL=http://...` fails fast
-  instead of producing malformed client metadata. §83 —
-  `atprotoClientMetadata()` + `atprotoJwks()` single-call helpers
-  deleted; the two well-known route handlers now call `getAtprotoClient()`
-  directly. §84 — publication CMS title edit now dual-writes to
-  `feed_items.title` in the same handler, closing the drift window
-  that relied on the 05:00 reconcile cron. §87 — personal-draft
-  scheduler now dual-writes the `feed_items` row inside a transaction
-  (mirroring `routes/articles/publish.ts`), so scheduled personal
-  articles appear in the unified timeline immediately instead of
-  waiting up to 24h for reconcile. Paywalled branch's v2 event-id
-  rewrite also wrapped in a transaction so articles + feed_items can't
-  end up pointing at different events. §73 — dropped the stray
-  `?? item.summary` fallback on RSS `content_preview` (was always
-  redundant: the RSS adapter's own `rawHtml` fallback already derives
-  `contentText` from `summary` when `contentText` would otherwise be
-  null, so the second fallback in the ingest path just masked what
-  was already happening). §74 — new `activitypub_instance_health_prune`
-  task drops rows whose last_success_at AND last_failure_at are both
-  &gt; 90 days old; weekly Sunday 07:00 UTC cron. §75 — Bluesky adapter's
-  `renderHtml` now runs its output through `sanitizeContent` like RSS
-  and ActivityPub, so if we ever broaden the RichText walk the
-  sanitiser is already in the path. §76 — gateway boot now eagerly
-  calls `getAtprotoClient()` before `app.listen`; a malformed
-  `ATPROTO_PRIVATE_JWK` fails the boot instead of the first
-  OAuth-dependent request. Loopback dev is a no-op there since no
-  JWK is required. §77 — `outbound_token_refresh` now distinguishes
-  transient atproto errors (PDS 5xx, `ECONNRESET`/`ETIMEDOUT` + the
-  rest of the undici transport set, walked through `cause` up to 4
-  levels) from terminal ones; transient errors leave `is_valid=TRUE`
-  and retry next cron tick instead of hassling the user with a
-  reconnect prompt over a 30-second PDS blip. §85 — added three
-  drift-repair UPDATEs to `feed_items_reconcile` (articles: title +
-  content_preview; notes: content_preview; external: title +
-  content_preview + author_name + author_avatar) so the reconcile
-  safety net closes drift as well as missing rows. Per-case counts
-  mirrored in the WARN log. §86 — new
-  `shared/src/lib/text.ts::truncatePreview` that uses
-  `Array.from(text).slice(0, 200).join('')` (code-point-aware) so JS
-  content_preview writes agree with Postgres `LEFT(..., 200)` for
-  emoji/astral-plane content. Swapped in across nine feed_items write
-  paths (gateway publish.ts, notes.ts, publication-publisher.ts ×2,
-  scheduler.ts; feed-ingest feed-ingest-rss.ts, feed-ingest-nostr.ts,
-  atproto-ingest.ts, activitypub-ingest.ts). Error-truncation
-  `.slice(0, 200)` call sites (log messages, HTTP error bodies) kept
-  as-is — not content_preview-producing. Deferred from this round:
-  §65 (observation dedup — needs semantic decision on temporal
-  bucketing), §66 (cron `jobKey` — graphile-worker's `known_crontabs`
-  slot-dedup already blocks duplicate fires for a given minute, so
-  the claimed bug reproduces only on clock skew > 60s; leaving for
-  when that surfaces), §68 (concurrent-reader endpoint auth —
-  docker-internal network mostly contains it; revisit when/if those
-  endpoints get exposed), §69 (JSONB zod validation on
-  observation.values — not load-bearing until a third observation
-  type ships). All 8 workspace builds clean; gateway 24/24 tests +
-  shared 28/28 + feed-ingest 42/42 tests green; knip clean.
+  - `Cache-Control: public, max-age=3600` so PDSes polling for JWKS
+    rotation don't hammer origin. §79 — `outbound-token-refresh.ts` logs
+    sanitised `{ errName, errMessage: str.slice(0, 200) }` instead of the
+    raw error object, removing the DPoP/token-leak-through-logs surface.
+    §80 — `atproto_oauth_pending_states` TTL bumped 10min → 15min so a
+    callback arriving at `expires_at` can't race the 5min prune cron.
+    §81 — loopback `redirect_uri` now reads `process.env.PORT ?? '3000'`
+    instead of hardcoding `:3000`, so dev gateways on alternate ports
+    don't silently fail with redirect mismatch. §82 — `atproto-oauth.ts`
+    asserts `baseUrl.startsWith('https://')` before casting in the prod
+    branch; typo'd `ATPROTO_CLIENT_BASE_URL=http://...` fails fast
+    instead of producing malformed client metadata. §83 —
+    `atprotoClientMetadata()` + `atprotoJwks()` single-call helpers
+    deleted; the two well-known route handlers now call `getAtprotoClient()`
+    directly. §84 — publication CMS title edit now dual-writes to
+    `feed_items.title` in the same handler, closing the drift window
+    that relied on the 05:00 reconcile cron. §87 — personal-draft
+    scheduler now dual-writes the `feed_items` row inside a transaction
+    (mirroring `routes/articles/publish.ts`), so scheduled personal
+    articles appear in the unified timeline immediately instead of
+    waiting up to 24h for reconcile. Paywalled branch's v2 event-id
+    rewrite also wrapped in a transaction so articles + feed_items can't
+    end up pointing at different events. §73 — dropped the stray
+    `?? item.summary` fallback on RSS `content_preview` (was always
+    redundant: the RSS adapter's own `rawHtml` fallback already derives
+    `contentText` from `summary` when `contentText` would otherwise be
+    null, so the second fallback in the ingest path just masked what
+    was already happening). §74 — new `activitypub_instance_health_prune`
+    task drops rows whose last_success_at AND last_failure_at are both
+    &gt; 90 days old; weekly Sunday 07:00 UTC cron. §75 — Bluesky adapter's
+    `renderHtml` now runs its output through `sanitizeContent` like RSS
+    and ActivityPub, so if we ever broaden the RichText walk the
+    sanitiser is already in the path. §76 — gateway boot now eagerly
+    calls `getAtprotoClient()` before `app.listen`; a malformed
+    `ATPROTO_PRIVATE_JWK` logs a warning and disables Bluesky OAuth
+    instead of aborting boot. Loopback dev is a no-op there since no
+    JWK is required. §77 — `outbound_token_refresh` now distinguishes
+    transient atproto errors (PDS 5xx, `ECONNRESET`/`ETIMEDOUT` + the
+    rest of the undici transport set, walked through `cause` up to 4
+    levels) from terminal ones; transient errors leave `is_valid=TRUE`
+    and retry next cron tick instead of hassling the user with a
+    reconnect prompt over a 30-second PDS blip. §85 — added three
+    drift-repair UPDATEs to `feed_items_reconcile` (articles: title +
+    content_preview; notes: content_preview; external: title +
+    content_preview + author_name + author_avatar) so the reconcile
+    safety net closes drift as well as missing rows. Per-case counts
+    mirrored in the WARN log. §86 — new
+    `shared/src/lib/text.ts::truncatePreview` that uses
+    `Array.from(text).slice(0, 200).join('')` (code-point-aware) so JS
+    content_preview writes agree with Postgres `LEFT(..., 200)` for
+    emoji/astral-plane content. Swapped in across nine feed_items write
+    paths (gateway publish.ts, notes.ts, publication-publisher.ts ×2,
+    scheduler.ts; feed-ingest feed-ingest-rss.ts, feed-ingest-nostr.ts,
+    atproto-ingest.ts, activitypub-ingest.ts). Error-truncation
+    `.slice(0, 200)` call sites (log messages, HTTP error bodies) kept
+    as-is — not content_preview-producing. Deferred from this round:
+    §65 (observation dedup — needs semantic decision on temporal
+    bucketing), §66 (cron `jobKey` — graphile-worker's `known_crontabs`
+    slot-dedup already blocks duplicate fires for a given minute, so
+    the claimed bug reproduces only on clock skew > 60s; leaving for
+    when that surfaces), §68 (concurrent-reader endpoint auth —
+    docker-internal network mostly contains it; revisit when/if those
+    endpoints get exposed), §69 (JSONB zod validation on
+    observation.values — not load-bearing until a third observation
+    type ships). All 8 workspace builds clean; gateway 24/24 tests +
+    shared 28/28 + feed-ingest 42/42 tests green; knip clean.
 - **2026-04-20** — §61 gate-pass orchestration shipped. New
   `gateway/src/services/article-access/` directory with three modules:
   `access-check.ts` (the `checkArticleAccess` function + `AccessCheckResult`
@@ -227,49 +227,49 @@ starts.
   `traffology-ingest`, `traffology-worker` — `web/` stays standalone).
   Each consumer now lists `"@platform-pub/shared": "*"` and imports via
   `@platform-pub/shared/<subpath>` (202 imports rewritten across services
-  + test mocks). `shared/package.json` exposes an `exports` map so subpath
-  imports work both in dev (npm hoists `@platform-pub/*` into
-  `node_modules/@platform-pub/`) and inside Docker images. All 7 backend
-  Dockerfiles rewritten to `npm ci --workspace=… --include-workspace-root`
-  then per-workspace `npm run build` — no more symlink dance, no more
-  per-service lockfiles (now one `package-lock.json` at root). Per-service
-  tsconfigs set `"rootDir": "src"` (removes the workaround that let tsc
-  silently accept rootDir violations via symlinked source). The conversion
-  revealed latent type errors in `feed-ingest/src/adapters/rss.ts` —
-  custom RSS fields (`'content:encoded'`, `author`) weren't in the default
-  `Parser` generic; fixed by typing `Parser<unknown, RssItemExtras>` with
-  explicit `customFields` item list. `traffology-ingest` + `-worker` got
-  `--passWithNoTests` on their `test` script (no test files yet, but they
-  declared `"test": "vitest run"` which fails CI with exit 1). Knip v6.5.0
-  wired at root with `knip.json`: scripts/ as entry+project pattern for
-  the repo's `.ts` scripts, shared-workspace override (its `exports` map
-  lets knip reach all public surfaces), `ignoreBinaries` for `tsc`/`next`/
-  `vitest`/`tsx`, `ignoreDependencies` list for workspace-transitive deps
-  (`pino`, `pg`, `jose`, `nostr-tools`, etc. — imported transitively via
-  `@platform-pub/shared`, so per-service `package.json` declares them but
-  no direct imports appear). Dead-code sweep from knip's initial report:
-  4 singleton-service classes dropped `export` (`VaultService`,
-  `PayoutService`, `AccrualService`, `SettlementService` — only the
-  `const xService = new XService()` singleton is imported externally), and
-  3 genuinely unused functions deleted outright (`nip44Encrypt` HTTP
-  wrapper in gateway's key-custody-client, `decryptArticleBodyXChaCha` in
-  key-service/src/lib/crypto.ts, `getTotalCount` in traffology-ingest's
-  concurrent-tracker). `countGraphemes` in feed-ingest/src/lib/text.ts
-  unexported (internal-only). CI workflow rewritten: one `npm ci` at root
-  replaces 5 per-prefix installs, build + test run via
-  `npm run X --workspaces --if-present`, knip gates on
-  `files,dependencies,exports,unlisted,binaries`. Types category excluded
-  from the strict gate — a 46-type baseline remains (mostly internal-only
-  input/result interfaces paired with exported functions; cleanup is
-  mechanical but out of scope for this session). `web/` CI path unchanged
-  (still standalone `cd web && npm ci`). Local verification: 7/7
-  workspace builds clean, all tests green (11 key-service + 41
-  payment-service + 19 key-custody + 42 feed-ingest + shared + gateway,
-  traffology-\* pass-with-no-tests), ESLint 0 errors, knip clean on
-  strict categories. Follow-up tracked: drop `export` on the 46 unused
-  types, move web/ into the workspace once Next.js toolchain compat is
-  verified, consider promoting `types` back into the knip strict gate
-  once cleanup lands.
+  - test mocks). `shared/package.json` exposes an `exports` map so subpath
+    imports work both in dev (npm hoists `@platform-pub/*` into
+    `node_modules/@platform-pub/`) and inside Docker images. All 7 backend
+    Dockerfiles rewritten to `npm ci --workspace=… --include-workspace-root`
+    then per-workspace `npm run build` — no more symlink dance, no more
+    per-service lockfiles (now one `package-lock.json` at root). Per-service
+    tsconfigs set `"rootDir": "src"` (removes the workaround that let tsc
+    silently accept rootDir violations via symlinked source). The conversion
+    revealed latent type errors in `feed-ingest/src/adapters/rss.ts` —
+    custom RSS fields (`'content:encoded'`, `author`) weren't in the default
+    `Parser` generic; fixed by typing `Parser<unknown, RssItemExtras>` with
+    explicit `customFields` item list. `traffology-ingest` + `-worker` got
+    `--passWithNoTests` on their `test` script (no test files yet, but they
+    declared `"test": "vitest run"` which fails CI with exit 1). Knip v6.5.0
+    wired at root with `knip.json`: scripts/ as entry+project pattern for
+    the repo's `.ts` scripts, shared-workspace override (its `exports` map
+    lets knip reach all public surfaces), `ignoreBinaries` for `tsc`/`next`/
+    `vitest`/`tsx`, `ignoreDependencies` list for workspace-transitive deps
+    (`pino`, `pg`, `jose`, `nostr-tools`, etc. — imported transitively via
+    `@platform-pub/shared`, so per-service `package.json` declares them but
+    no direct imports appear). Dead-code sweep from knip's initial report:
+    4 singleton-service classes dropped `export` (`VaultService`,
+    `PayoutService`, `AccrualService`, `SettlementService` — only the
+    `const xService = new XService()` singleton is imported externally), and
+    3 genuinely unused functions deleted outright (`nip44Encrypt` HTTP
+    wrapper in gateway's key-custody-client, `decryptArticleBodyXChaCha` in
+    key-service/src/lib/crypto.ts, `getTotalCount` in traffology-ingest's
+    concurrent-tracker). `countGraphemes` in feed-ingest/src/lib/text.ts
+    unexported (internal-only). CI workflow rewritten: one `npm ci` at root
+    replaces 5 per-prefix installs, build + test run via
+    `npm run X --workspaces --if-present`, knip gates on
+    `files,dependencies,exports,unlisted,binaries`. Types category excluded
+    from the strict gate — a 46-type baseline remains (mostly internal-only
+    input/result interfaces paired with exported functions; cleanup is
+    mechanical but out of scope for this session). `web/` CI path unchanged
+    (still standalone `cd web && npm ci`). Local verification: 7/7
+    workspace builds clean, all tests green (11 key-service + 41
+    payment-service + 19 key-custody + 42 feed-ingest + shared + gateway,
+    traffology-\* pass-with-no-tests), ESLint 0 errors, knip clean on
+    strict categories. Follow-up tracked: drop `export` on the 46 unused
+    types, move web/ into the workspace once Next.js toolchain compat is
+    verified, consider promoting `types` back into the knip strict gate
+    once cleanup lands.
 - **2026-04-20** — §55 markdown reorg shipped: cleared 5 stale
   LibreOffice lock files (none of the documents were open — leftovers
   from prior crashes dated Apr 12–16), then moved 22 of the 26
@@ -370,7 +370,7 @@ starts.
   now keyed on `naddr` — pubkey + kind + d-tag — via a new
   `isParameterizedReplaceable` helper; upsert is a ratchet:
   `ON CONFLICT (protocol, source_item_uri) DO UPDATE … WHERE
-  external_items.published_at < EXCLUDED.published_at`, returning
+external_items.published_at < EXCLUDED.published_at`, returning
   `(xmax = 0) AS was_insert` so feed_items dual-writes distinguish
   insert-vs-revision-update; kind-5 deletion now also handles NIP-09
   `a`-tag addresses, reconstructing the naddr from
@@ -378,7 +378,7 @@ starts.
   075 adds `external_sources.metadata_updated_at`, kind-0 profile
   writes gated on strictly-newer `created_at`, ratchet persists via
   `metadata_updated_at = CASE WHEN $5 IS NOT NULL THEN
-  to_timestamp(…) ELSE metadata_updated_at END`); §24
+to_timestamp(…) ELSE metadata_updated_at END`); §24
   (`fetchFromRelay` sends `['CLOSE', subId]` before socket close on
   timeout, guarded by `readyState === OPEN`); §25 (sub IDs
   `fi-${randomUUID()}`); §26 (per-relay validation runs through
@@ -498,7 +498,7 @@ commit can anchor the "done" state.
 ### 2. Stripe webhook dedup race (event loss on crash)
 
 **Verified:** `payment-service/src/routes/webhook.ts:56-78`. INSERT marks
-event-seen *before* handler runs. If the process dies between INSERT and
+event-seen _before_ handler runs. If the process dies between INSERT and
 `handleStripeEvent` return, the dedup row survives, Stripe retry hits the
 duplicate branch and acks, event is lost. The `DELETE on catch` at :71 helps
 only when the handler returns an error — a crash bypasses it.
@@ -510,20 +510,20 @@ Gives you a reconciliation log of attempted-but-failed events as a bonus.
 ### 3. Stripe transfer orphan — writer payouts
 
 **Verified:** `payment-service/src/services/payout.ts:342-361`. Inside
-`withTransaction`, `stripe.transfers.create` runs at :342 *before* the
+`withTransaction`, `stripe.transfers.create` runs at :342 _before_ the
 `writer_payouts` INSERT at :355. If the INSERT (or either subsequent UPDATE)
 throws, the transaction rolls back — but the Stripe transfer already
 happened. Idempotency key is `payout-${writerId}-${randomUUID()}` per call
 (:351), so retries don't dedupe against the orphan.
 
-**Fix:** write payout row as `status='pending'` *before* calling Stripe, then
+**Fix:** write payout row as `status='pending'` _before_ calling Stripe, then
 update to `'initiated'` after. Use a stable idempotency key
 `payout-${payoutId}` so retries land on the same transfer.
 
 ### 4. Stripe transfer orphan — publication payouts (same shape, N-multiplied)
 
 **Verified:** `payment-service/src/services/payout.ts:641-690`. Transfers
-created in the loop at :661 *before* `publication_payout_splits` rows INSERT
+created in the loop at :661 _before_ `publication_payout_splits` rows INSERT
 at :683. Any later throw rolls the transaction back with real transfers
 pending. Idempotency key includes `randomUUID()` (:671) so retries don't
 dedupe.
@@ -550,17 +550,19 @@ this as "NIP-17" is actively misleading.
 ### 6. `listInbox` mute filter drops whole conversations
 
 **Verified:** `gateway/src/services/messages.ts:126-127`.
+
 ```sql
 LEFT JOIN mutes m ON m.muter_id = $1 AND m.muted_id = cm.user_id
 WHERE m.muter_id IS NULL
 ```
+
 `cm` is pre-aggregation, so in a 3-person group where you've muted one
 person, the entire conversation vanishes from your inbox — not just the
 muted speaker. Also no block filter even though send/create both enforce it,
 so a convo with someone who later blocked you stays in your inbox and 403s
 on send.
 
-**Fix:** move the mute check to filter members *inside* `array_agg` (or
+**Fix:** move the mute check to filter members _inside_ `array_agg` (or
 aggregate into `member_ids` then filter down), and mirror the `blocks`
 check the send path uses.
 
@@ -773,7 +775,7 @@ cross-post.ts:125` appends source URL to `text`, then
 `truncateWithLink(combined, { max })` truncates the end. Long quotes →
 URL (the part that makes it a quote) is what gets cut.
 **Fix:** budget is `maxChars − URL length − separator`, applied to
-`text` *before* append.
+`text` _before_ append.
 
 ### Payments (other)
 
@@ -808,7 +810,7 @@ rowcount is 0.
 **35. `handleFailedPayout` status machine under-specified.** `failed_reason`
 overwritten each call (no history). `completed_at` never cleared — a
 completed payout that later receives `transfer.failed` (reversals can
-cause this) ends up `status='failed'` *and* `completed_at != NULL`.
+cause this) ends up `status='failed'` _and_ `completed_at != NULL`.
 **Fix:** null `completed_at` when transitioning to failed; append to a
 `failure_history jsonb` or log table rather than overwriting.
 
@@ -830,7 +832,7 @@ touching these files anyway.
 `publication-publisher.ts:363-372`, `web/src/lib/publish.ts:202`. The
 web test at `publish.test.ts:45` asserts identical output to gateway —
 duplication is known. `scheduler.ts:131` uses the local copy while the
-file *also* imports from `publication-publisher.js` (via
+file _also_ imports from `publication-publisher.js` (via
 `publishToPublication`). Same file, two implementations.
 **Fix:** move to `shared/src/lib/nostr.ts`, import from all three.
 
@@ -900,6 +902,7 @@ concern (no type check in prod build).
 ### Dead code (delete now)
 
 **47. Unused components.** Six confirmed orphans with zero imports:
+
 - `web/src/components/feed/NoteComposer.tsx` (188 lines, replaced by
   `ComposeOverlay`)
 - `web/src/components/ui/NotificationBell.tsx` (274)
@@ -1270,7 +1273,7 @@ don't drift again.
 
 - **feed-ingest `a`-tag split out-of-bounds on kind-5 deletion.**
   `feed-ingest-nostr.ts:290-298` — `const [kindStr, aPubkey, dTag] =
-  aAddr.split(':')` followed by `kindStr ?? ''`, `!aPubkey`,
+aAddr.split(':')` followed by `kindStr ?? ''`, `!aPubkey`,
   `Number.isFinite(kind)`, and `dTag ?? ''` — all three destructured
   values are defensively handled. Not a bug.
 - **RSS dual-write fails silently on feed_items error.** Both
@@ -1296,7 +1299,7 @@ don't drift again.
 
 ## Rejected / overstated claims (held over from both audits)
 
-- **`/my/account-statement` has no web consumer** — *wrong*. Consumed by
+- **`/my/account-statement` has no web consumer** — _wrong_. Consumed by
   `web/src/components/account/AccountLedger.tsx:51`. The rename (§54) is
   still worth doing; the endpoint is live.
 - **32 markdown files in repo root** — actual is 22. Still cluttered

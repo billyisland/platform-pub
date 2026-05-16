@@ -266,17 +266,16 @@ async function start() {
   process.on("SIGINT", () => shutdown("SIGINT"));
 
   // Eagerly construct the AT Protocol OAuth client so a malformed
-  // ATPROTO_PRIVATE_JWK fails the boot instead of the first OAuth-dependent
-  // request. Loopback dev mode doesn't need a JWK, so this is effectively a
-  // no-op there.
+  // ATPROTO_PRIVATE_JWK surfaces at boot instead of the first OAuth-dependent
+  // request. Non-fatal: Bluesky OAuth features are disabled until the JWK is
+  // configured, but the rest of the gateway serves normally.
   try {
     await getAtprotoClient();
   } catch (err) {
-    logger.error(
+    logger.warn(
       { err },
-      "AT Protocol OAuth client failed to initialise — aborting boot",
+      "AT Protocol OAuth client failed to initialise — Bluesky OAuth disabled",
     );
-    throw err;
   }
 
   const port = parseInt(process.env.PORT ?? "3000", 10);
