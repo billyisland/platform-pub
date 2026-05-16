@@ -13,7 +13,7 @@ import { requireAuth } from '../middleware/auth.js'
 export async function historyRoutes(app: FastifyInstance) {
 
   app.get('/my/reading-history', { preHandler: requireAuth }, async (req, reply) => {
-    const readerId = req.session!.sub!
+    const readerId = req.session!.sub
     const query = req.query as { limit?: string; offset?: string }
     const limit = Math.min(100, Math.max(1, parseInt(query.limit ?? '50', 10) || 50))
     const offset = Math.max(0, parseInt(query.offset ?? '0', 10) || 0)

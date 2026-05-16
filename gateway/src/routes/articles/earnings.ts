@@ -15,7 +15,7 @@ export async function articleEarningsRoutes(app: FastifyInstance) {
     { preHandler: requireAuth },
     async (req, reply) => {
       // Ensure writers can only see their own earnings
-      if (req.params.writerId !== req.session!.sub!) {
+      if (req.params.writerId !== req.session!.sub) {
         return reply.status(403).send({ error: 'Forbidden' })
       }
 
@@ -32,7 +32,7 @@ export async function articleEarningsRoutes(app: FastifyInstance) {
     '/earnings/:writerId/articles',
     { preHandler: requireAuth },
     async (req, reply) => {
-      if (req.params.writerId !== req.session!.sub!) {
+      if (req.params.writerId !== req.session!.sub) {
         return reply.status(403).send({ error: 'Forbidden' })
       }
 

@@ -206,7 +206,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
 
     let updated = 0;
     for (const event of events) {
-      const normalised = normaliseNostrEvent(event, source.relay_urls!);
+      const normalised = normaliseNostrEvent(event, source.relay_urls);
       const outcome = await withTransaction(async (client) => {
         // Ratchet upsert: keyed on (protocol, source_item_uri). For regular
         // kinds the URI is an nevent so a re-fetch of the same event has
@@ -362,7 +362,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
           identifier: dTag ?? "",
           pubkey: aPubkey,
           kind,
-          relays: source.relay_urls!,
+          relays: source.relay_urls,
         });
 
         await pool.query(

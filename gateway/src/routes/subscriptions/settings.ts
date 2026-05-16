@@ -24,7 +24,7 @@ export async function subscriptionSettingsRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() })
       }
 
-      const accountId = req.session!.sub!
+      const accountId = req.session!.sub
       const { pricePence, annualDiscountPct, defaultArticlePricePence } = parsed.data
 
       const sets = ['subscription_price_pence = $1', 'updated_at = now()']

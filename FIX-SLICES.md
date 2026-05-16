@@ -326,7 +326,7 @@ Mechanical find-and-replace across ~40 files. No logic changes. Reference CLAUDE
 
 ---
 
-## Slice 13: Cleanup, dead code, docs
+## Slice 13: Cleanup, dead code, docs ✓ DONE (2026-05-16)
 
 **Priority: LOW. Estimated effort: 1 hour.**
 

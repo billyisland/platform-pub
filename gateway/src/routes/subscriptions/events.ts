@@ -14,7 +14,7 @@ export async function subscriptionEventsRoutes(app: FastifyInstance) {
     '/subscription-events',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const limit = Math.min(parseInt(req.query.limit ?? '50', 10) || 50, 100)
       const offset = parseInt(req.query.offset ?? '0', 10) || 0
 

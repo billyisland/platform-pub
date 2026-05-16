@@ -30,62 +30,65 @@
 // week of real data.
 // =============================================================================
 
-export type PipStatus = 'known' | 'partial' | 'unknown' | 'contested'
+type PipStatus = "known" | "partial" | "unknown" | "contested";
 
 export interface PipLayer1 {
-  accountAgeDays: number
-  payingReaderCount: number
-  articleCount: number
-  paymentVerified: boolean
-  nip05Verified: boolean
-  encounterCount: number
+  accountAgeDays: number;
+  payingReaderCount: number;
+  articleCount: number;
+  paymentVerified: boolean;
+  nip05Verified: boolean;
+  encounterCount: number;
 }
 
 export interface PipPollAggregate {
-  yes: number
-  no: number
+  yes: number;
+  no: number;
 }
 
 export interface PipPolls {
-  humanity: PipPollAggregate
-  authenticity: PipPollAggregate
-  good_faith: PipPollAggregate
+  humanity: PipPollAggregate;
+  authenticity: PipPollAggregate;
+  good_faith: PipPollAggregate;
 }
 
 export interface PipComposeInput {
-  layer1: PipLayer1
-  polls: PipPolls
+  layer1: PipLayer1;
+  polls: PipPolls;
 }
 
-const SAMPLE_FLOOR = 3
-const POSITIVE_SHARE = 0.7
-const NEGATIVE_SHARE = 0.3
-const ENCOUNTER_ANCHOR = 1
-const ENCOUNTER_STRONG = 2
+const SAMPLE_FLOOR = 3;
+const POSITIVE_SHARE = 0.7;
+const NEGATIVE_SHARE = 0.3;
+const ENCOUNTER_ANCHOR = 1;
+const ENCOUNTER_STRONG = 2;
 
-type PollSignal = 'positive' | 'negative' | 'ambiguous' | 'no-data'
+type PollSignal = "positive" | "negative" | "ambiguous" | "no-data";
 
 function classifyPoll(poll: PipPollAggregate): PollSignal {
-  const total = poll.yes + poll.no
-  if (total < SAMPLE_FLOOR) return 'no-data'
-  const yesShare = poll.yes / total
-  if (yesShare >= POSITIVE_SHARE) return 'positive'
-  if (yesShare <= NEGATIVE_SHARE) return 'negative'
-  return 'ambiguous'
+  const total = poll.yes + poll.no;
+  if (total < SAMPLE_FLOOR) return "no-data";
+  const yesShare = poll.yes / total;
+  if (yesShare >= POSITIVE_SHARE) return "positive";
+  if (yesShare <= NEGATIVE_SHARE) return "negative";
+  return "ambiguous";
 }
 
-export function composePipStatus({ layer1, polls }: PipComposeInput): PipStatus {
-  const humanity = classifyPoll(polls.humanity)
-  const authenticity = classifyPoll(polls.authenticity)
-  const goodFaith = classifyPoll(polls.good_faith)
+export function composePipStatus({
+  layer1,
+  polls,
+}: PipComposeInput): PipStatus {
+  const humanity = classifyPoll(polls.humanity);
+  const authenticity = classifyPoll(polls.authenticity);
+  const goodFaith = classifyPoll(polls.good_faith);
 
   // Crimson — humanity-no or good_faith-no, both with sample. authenticity-no
   // alone is amber, not crimson: "they're not who they seem" without "they
   // engage in bad faith" is yellow-flag, not red. The handoff explicitly
   // distinguishes authenticity (deliberately weaker than the formal `identity`
   // vouch dimension) from the behavioural-honesty question good_faith.
-  if (humanity === 'negative' || goodFaith === 'negative') {
-    return 'contested'
+  if (humanity === "negative" || goodFaith === "negative") {
+    return "contested";
   }
 
   // Green — all three polls positive AND a real L1 anchor. The L1 anchor stops
@@ -96,14 +99,14 @@ export function composePipStatus({ layer1, polls }: PipComposeInput): PipStatus 
   const l1Anchor =
     layer1.nip05Verified ||
     layer1.payingReaderCount > 0 ||
-    layer1.encounterCount >= ENCOUNTER_ANCHOR
+    layer1.encounterCount >= ENCOUNTER_ANCHOR;
   if (
-    humanity === 'positive' &&
-    authenticity === 'positive' &&
-    goodFaith === 'positive' &&
+    humanity === "positive" &&
+    authenticity === "positive" &&
+    goodFaith === "positive" &&
     l1Anchor
   ) {
-    return 'known'
+    return "known";
   }
 
   // Amber — any positive poll with sample, OR strong L1 commitment. The L1
@@ -112,16 +115,16 @@ export function composePipStatus({ layer1, polls }: PipComposeInput): PipStatus 
   // alone (multiple independent in-person meetings is meaningful even without
   // articles or payment).
   const anyPollPositive =
-    humanity === 'positive' ||
-    authenticity === 'positive' ||
-    goodFaith === 'positive'
+    humanity === "positive" ||
+    authenticity === "positive" ||
+    goodFaith === "positive";
   const strongL1 =
     (layer1.articleCount >= 3 && layer1.paymentVerified) ||
-    layer1.encounterCount >= ENCOUNTER_STRONG
+    layer1.encounterCount >= ENCOUNTER_STRONG;
   if (anyPollPositive || strongL1) {
-    return 'partial'
+    return "partial";
   }
 
   // Grey — no meaningful signal yet.
-  return 'unknown'
+  return "unknown";
 }

@@ -72,7 +72,7 @@ export async function articleGatePassRoutes(app: FastifyInstance) {
       config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
     },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const readerPubkey = req.session!.pubkey;
       const { nostrEventId } = req.params;
 

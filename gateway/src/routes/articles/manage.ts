@@ -32,7 +32,7 @@ export async function articleManageRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get('/my/articles', { preHandler: requireAuth }, async (req, reply) => {
-    const writerId = req.session!.sub!
+    const writerId = req.session!.sub
 
     try {
       const { rows } = await pool.query(
@@ -101,7 +101,7 @@ export async function articleManageRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() })
       }
 
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
       const body = parsed.data
 
       const updates: string[] = []
@@ -145,7 +145,7 @@ export async function articleManageRoutes(app: FastifyInstance) {
     '/articles/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       const { rows } = await pool.query<{ id: string; nostr_event_id: string; nostr_d_tag: string; nostr_pubkey: string }>(
         `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, acc.nostr_pubkey
@@ -222,7 +222,7 @@ export async function articleManageRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Invalid article ID' })
       }
 
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       const result = await pool.query<{ id: string; pinned_on_profile: boolean }>(
         `UPDATE articles SET pinned_on_profile = NOT pinned_on_profile, updated_at = now()
@@ -254,7 +254,7 @@ export async function articleManageRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Invalid article ID' })
       }
 
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       const result = await pool.query<{ id: string }>(
         `UPDATE articles SET published_at = NULL, updated_at = now()

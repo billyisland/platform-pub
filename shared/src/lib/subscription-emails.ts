@@ -1,6 +1,7 @@
 import { sendEmail } from "./email.js";
 import { pool } from "../db/client.js";
 import logger from "./logger.js";
+import { escapeHtml } from "./text.js";
 
 // =============================================================================
 // Subscription Email Templates
@@ -10,14 +11,6 @@ import logger from "./logger.js";
 // =============================================================================
 
 const APP_URL = process.env.APP_URL ?? "http://localhost:3010";
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 // Shared email wrapper — exported for unit testing
 export function emailHtml(heading: string, body: string): string {

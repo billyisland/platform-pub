@@ -39,7 +39,7 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
     '/subscriptions/:writerId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!
+      const readerId = req.session!.sub
       const { writerId } = req.params
       const body = req.body as { period?: string; offerCode?: string }
       const period = body?.period === 'annual' ? 'annual' : 'monthly'
@@ -276,7 +276,7 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
     '/subscriptions/:writerId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!
+      const readerId = req.session!.sub
       const { writerId } = req.params
 
       const cancelled = await withTransaction(async (client) => {
@@ -348,7 +348,7 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
     '/subscriptions/mine',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!
+      const readerId = req.session!.sub
 
       const { rows } = await pool.query<{
         id: string
@@ -408,7 +408,7 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
     '/subscriptions/check/:writerId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!
+      const readerId = req.session!.sub
       const { writerId } = req.params
 
       // Own content is always free
@@ -455,7 +455,7 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
     '/subscriptions/:writerId/visibility',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!
+      const readerId = req.session!.sub
       const { writerId } = req.params
 
       const parsed = VisibilitySchema.safeParse(req.body)
@@ -486,7 +486,7 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
     '/subscriptions/:id/notifications',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!
+      const readerId = req.session!.sub
       const { id: subscriptionId } = req.params
       const parsed = NotifySchema.safeParse(req.body)
       if (!parsed.success) {

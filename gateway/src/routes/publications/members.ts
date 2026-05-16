@@ -83,7 +83,7 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
       }
 
       const { id } = req.params
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const { email, accountId, role, contributorType, message } = parsed.data
 
       const { rows } = await pool.query<{ id: string; token: string }>(
@@ -122,7 +122,7 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Token required' })
       }
 
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
 
       const { rows: invites } = await pool.query(
         `SELECT * FROM publication_invites
@@ -301,7 +301,7 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
       }
 
       const { id } = req.params
-      const currentOwnerId = req.session!.sub!
+      const currentOwnerId = req.session!.sub
       const { newOwnerId } = parsed.data
 
       // Verify new owner is an active EiC
@@ -345,7 +345,7 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
     { preHandler: [requireAuth] },
     async (req, reply) => {
       const { id } = req.params
-      const accountId = req.session!.sub!
+      const accountId = req.session!.sub
 
       const { rows } = await pool.query(
         `SELECT id, is_owner FROM publication_members

@@ -18,7 +18,7 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
     "/subscriptions/publication/:id",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const { id: publicationId } = req.params;
       const body = req.body as { period?: string };
       const period = body?.period === "annual" ? "annual" : "monthly";
@@ -203,7 +203,7 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
     "/subscriptions/publication/:id",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const { id: publicationId } = req.params;
 
       const result = await pool.query(

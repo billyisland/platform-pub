@@ -5,14 +5,16 @@ Task document for Claude Code. This is a reference catalogue — it documents ev
 ## Current state
 
 **What exists:**
+
 - TypeScript `strict: true` via `tsconfig.base.json` (all backend services inherit it)
 - `next lint` in `web/` (Next.js default ESLint — no custom `.eslintrc`)
 - Vitest in all backend services + shared (4 test files, ~478 lines total)
 - Zod for runtime validation on API inputs
 
 **What does not exist:**
-- No CI pipeline (no `.github/workflows/`)
-- No ESLint on backend services (gateway, payment-service, key-service, key-custody, shared)
+
+- CI pipeline: `.github/workflows/ci.yml` (build, ESLint, Knip, Vitest, `next lint`, `npm audit`)
+- ESLint: root `eslint.config.mjs` covers all `*/src/**/*.ts` via `tseslint.configs.recommendedTypeChecked`
 - No Prettier or formatting enforcement anywhere
 - No test coverage reporting
 - No dependency auditing
@@ -24,16 +26,16 @@ Task document for Claude Code. This is a reference catalogue — it documents ev
 
 ## Codebase shape
 
-| Service | Dir | Files | Lines | Tests |
-|---|---|---|---|---|
-| Web frontend | `web/src/` | 126 | 15,582 | 0 |
-| API gateway | `gateway/src/` | 36 | 11,757 | 0 |
-| Payment service | `payment-service/src/` | 11 | 2,030 | 1 (settlement) |
-| Key service | `key-service/src/` | 10 | 915 | 1 (crypto) |
-| Key custody | `key-custody/src/` | 5 | 448 | 1 (crypto) |
-| Shared library | `shared/src/` | 13 | 1,221 | 1 (session) |
-| SQL schema | `schema.sql` | 1 | ~800 | — |
-| Migrations | `migrations/` | 38 | ~1,200 | — |
+| Service         | Dir                    | Files | Lines  | Tests          |
+| --------------- | ---------------------- | ----- | ------ | -------------- |
+| Web frontend    | `web/src/`             | 126   | 15,582 | 0              |
+| API gateway     | `gateway/src/`         | 36    | 11,757 | 0              |
+| Payment service | `payment-service/src/` | 11    | 2,030  | 1 (settlement) |
+| Key service     | `key-service/src/`     | 10    | 915    | 1 (crypto)     |
+| Key custody     | `key-custody/src/`     | 5     | 448    | 1 (crypto)     |
+| Shared library  | `shared/src/`          | 13    | 1,221  | 1 (session)    |
+| SQL schema      | `schema.sql`           | 1     | ~800   | —              |
+| Migrations      | `migrations/`          | 38    | ~1,200 | —              |
 
 45 tables, 96 indexes, 102 foreign keys.
 
@@ -58,6 +60,7 @@ This document catalogues every non-LLM tool worth considering. That does not mea
 **Do this week:** Tier 1b (ESLint on backend services), but only the promise-safety rules: `no-floating-promises` and `no-misused-promises`. These two rules alone justify the entire ESLint setup. An unhandled promise rejection in a Fastify route handler crashes the process in production; this catches them at lint time. Everything else in the ESLint config is nice-to-have by comparison.
 
 **Skip or defer everything else** until one of these conditions is met:
+
 - A second regular contributor joins (import boundaries, Prettier, and architectural enforcement start earning their keep when you're no longer the only person who knows the architecture)
 - The codebase is post-launch and in maintenance mode (dead code detection, complexity dashboards, and coverage thresholds become useful when the rate of change slows and stability matters more than velocity)
 - A specific problem emerges that a specific tool solves (formatting inconsistency actually causing merge pain → adopt Prettier; circular dependency found in production → add madge to CI)
@@ -160,13 +163,13 @@ npm install -D eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser
 Create `eslint.config.mjs` at the repo root using flat config:
 
 ```js
-import tseslint from '@typescript-eslint/eslint-plugin';
-import tsparser from '@typescript-eslint/parser';
+import tseslint from "@typescript-eslint/eslint-plugin";
+import tsparser from "@typescript-eslint/parser";
 
 export default [
   {
-    files: ['*/src/**/*.ts'],
-    ignores: ['web/**', '**/dist/**', '**/node_modules/**'],
+    files: ["*/src/**/*.ts"],
+    ignores: ["web/**", "**/dist/**", "**/node_modules/**"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
@@ -174,25 +177,28 @@ export default [
       },
     },
     plugins: {
-      '@typescript-eslint': tseslint,
+      "@typescript-eslint": tseslint,
     },
     rules: {
       // Catch actual bugs
-      '@typescript-eslint/no-floating-promises': 'error',   // Critical for Fastify
-      '@typescript-eslint/no-misused-promises': 'error',
-      '@typescript-eslint/await-thenable': 'error',
-      '@typescript-eslint/no-unnecessary-type-assertion': 'warn',
+      "@typescript-eslint/no-floating-promises": "error", // Critical for Fastify
+      "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/await-thenable": "error",
+      "@typescript-eslint/no-unnecessary-type-assertion": "warn",
 
       // Code hygiene
-      '@typescript-eslint/no-unused-vars': ['warn', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-      }],
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/consistent-type-imports': 'warn',
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+        },
+      ],
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/consistent-type-imports": "warn",
 
       // Import discipline
-      'no-duplicate-imports': 'error',
+      "no-duplicate-imports": "error",
     },
   },
 ];
@@ -290,15 +296,15 @@ cd ../key-custody && npm install -D @vitest/coverage-v8
 In each service, if there's no `vitest.config.ts`, create one (or add to existing):
 
 ```ts
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json-summary'],
-      include: ['src/**/*.ts'],
-      exclude: ['src/**/*.d.ts', 'src/**/index.ts'],
+      provider: "v8",
+      reporter: ["text", "json-summary"],
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.d.ts", "src/**/index.ts"],
     },
   },
 });
@@ -327,49 +333,49 @@ Create `.dependency-cruiser.cjs` at repo root:
 module.exports = {
   forbidden: [
     {
-      name: 'no-web-to-backend',
-      comment: 'Web client must not import backend code directly',
-      severity: 'error',
-      from: { path: '^web/src' },
-      to: { path: '^(gateway|payment-service|key-service|key-custody)/src' },
+      name: "no-web-to-backend",
+      comment: "Web client must not import backend code directly",
+      severity: "error",
+      from: { path: "^web/src" },
+      to: { path: "^(gateway|payment-service|key-service|key-custody)/src" },
     },
     {
-      name: 'no-cross-service-imports',
-      comment: 'Services must not import from each other (use HTTP/events)',
-      severity: 'error',
-      from: { path: '^gateway/src' },
-      to: { path: '^(payment-service|key-service|key-custody)/src' },
+      name: "no-cross-service-imports",
+      comment: "Services must not import from each other (use HTTP/events)",
+      severity: "error",
+      from: { path: "^gateway/src" },
+      to: { path: "^(payment-service|key-service|key-custody)/src" },
     },
     {
-      name: 'no-cross-service-imports-payment',
-      severity: 'error',
-      from: { path: '^payment-service/src' },
-      to: { path: '^(gateway|key-service|key-custody)/src' },
+      name: "no-cross-service-imports-payment",
+      severity: "error",
+      from: { path: "^payment-service/src" },
+      to: { path: "^(gateway|key-service|key-custody)/src" },
     },
     {
-      name: 'no-cross-service-imports-key',
-      severity: 'error',
-      from: { path: '^key-service/src' },
-      to: { path: '^(gateway|payment-service|key-custody)/src' },
+      name: "no-cross-service-imports-key",
+      severity: "error",
+      from: { path: "^key-service/src" },
+      to: { path: "^(gateway|payment-service|key-custody)/src" },
     },
     {
-      name: 'no-cross-service-imports-custody',
-      severity: 'error',
-      from: { path: '^key-custody/src' },
-      to: { path: '^(gateway|payment-service|key-service)/src' },
+      name: "no-cross-service-imports-custody",
+      severity: "error",
+      from: { path: "^key-custody/src" },
+      to: { path: "^(gateway|payment-service|key-service)/src" },
     },
     {
-      name: 'no-circular',
-      comment: 'No circular dependencies',
-      severity: 'error',
+      name: "no-circular",
+      comment: "No circular dependencies",
+      severity: "error",
       from: {},
       to: { circular: true },
     },
   ],
   options: {
-    doNotFollow: { path: 'node_modules' },
+    doNotFollow: { path: "node_modules" },
     tsPreCompilationDeps: true,
-    tsConfig: { fileName: 'tsconfig.base.json' },
+    tsConfig: { fileName: "tsconfig.base.json" },
   },
 };
 ```
@@ -494,6 +500,7 @@ squawk migrations/*.sql
 ```
 
 Squawk checks for PostgreSQL-specific antipatterns:
+
 - Adding a column with a volatile default (full table rewrite + lock)
 - Creating an index without `CONCURRENTLY`
 - `NOT NULL` constraint additions without a default
@@ -553,6 +560,7 @@ These are manual / periodic checks, not CI.
 ### 5a. SonarCloud
 
 Free for public repos. Connect at sonarcloud.io, link the GitHub repo. It provides:
+
 - Cognitive complexity per function (better than cyclomatic for readability assessment)
 - Duplicated code blocks across the entire codebase
 - Technical debt estimate (time-to-fix aggregate)
@@ -579,19 +587,10 @@ High-churn files that also have high complexity scores are the most valuable tar
 ## Implementation order
 
 **Now:**
+
 1. **CI pipeline** (1a) — immediate, everything else depends on this
 2. **Backend ESLint** (1b, promise-safety rules only) — same PR as CI
 
-**When a second contributor joins or post-launch:**
-3. **Prettier** (2a) — one formatting commit, then enforce in CI
-4. **Import boundaries** (2c) — catches architectural drift across multiple authors
-5. **Coverage reporting** (2b) — add to CI, no threshold until tests are written
-6. **Security lint rules** (1c) — extend the existing ESLint config
+**When a second contributor joins or post-launch:** 3. **Prettier** (2a) — one formatting commit, then enforce in CI 4. **Import boundaries** (2c) — catches architectural drift across multiple authors 5. **Coverage reporting** (2b) — add to CI, no threshold until tests are written 6. **Security lint rules** (1c) — extend the existing ESLint config
 
-**When a specific need arises:**
-7. **knip** (3a) — run once to clean up dead code, add to CI if accumulation is a problem
-8. **Complexity rules** (3c) — add to ESLint as warnings if large functions are causing bugs
-9. **squawk** (4a) — run before each new migration
-10. **Schema checks** (4b) — run once against local DB, fix any missing FK indexes
-11. **SonarCloud** (5a) — connect when a team dashboard would be useful
-12. **Hotspot analysis** (5b) — run once to identify refactoring targets
+**When a specific need arises:** 7. **knip** (3a) — run once to clean up dead code, add to CI if accumulation is a problem 8. **Complexity rules** (3c) — add to ESLint as warnings if large functions are causing bugs 9. **squawk** (4a) — run before each new migration 10. **Schema checks** (4b) — run once against local DB, fix any missing FK indexes 11. **SonarCloud** (5a) — connect when a team dashboard would be useful 12. **Hotspot analysis** (5b) — run once to identify refactoring targets

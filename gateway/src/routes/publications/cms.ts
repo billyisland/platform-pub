@@ -117,8 +117,8 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
 
       const { id } = req.params;
       const member = req.publicationMember!;
-      const userId = req.session!.sub!;
-      const userPubkey = req.session!.pubkey!;
+      const userId = req.session!.sub;
+      const userPubkey = req.session!.pubkey;
 
       const result = await publishToPublication({
         publicationId: id,
@@ -305,7 +305,7 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
     { preHandler: [requireAuth, requirePublicationPermission("can_publish")] },
     async (req, reply) => {
       const { id, articleId } = req.params;
-      const editorId = req.session!.sub!;
+      const editorId = req.session!.sub;
 
       const result = await approveAndPublishArticle(id, articleId, editorId);
       return reply.send(result);

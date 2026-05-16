@@ -65,7 +65,7 @@ export async function exportRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get('/account/export', { preHandler: requireAuth }, async (req, reply) => {
-    const writerId = req.session!.sub!
+    const writerId = req.session!.sub
 
     // Fetch writer's account
     const accountRow = await pool.query<{

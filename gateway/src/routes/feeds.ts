@@ -127,7 +127,7 @@ export async function feedsRoutes(app: FastifyInstance) {
   // GET /feeds — list mine, newest first
   // ---------------------------------------------------------------------------
   app.get("/feeds", { preHandler: requireAuth }, async (req, reply) => {
-    const ownerId = req.session!.sub!;
+    const ownerId = req.session!.sub;
     const { rows } = await pool.query<FeedRow>(
       `SELECT f.id, f.name, f.created_at, f.updated_at,
          (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
@@ -146,7 +146,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const parsed = createFeedSchema.safeParse(req.body);
       if (!parsed.success) {
         return reply
@@ -169,7 +169,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -201,7 +201,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -238,7 +238,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/merge",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id: targetId } = req.params;
       if (!UUID_RE.test(targetId))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -352,7 +352,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     Params: { id: string };
     Querystring: { cursor?: string; limit?: string };
   }>("/feeds/:id/items", { preHandler: requireAuth }, async (req, reply) => {
-    const ownerId = req.session!.sub!;
+    const ownerId = req.session!.sub;
     const { id } = req.params;
     if (!UUID_RE.test(id))
       return reply.status(400).send({ error: "Invalid feed id" });
@@ -406,7 +406,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/sources",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -449,7 +449,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/sources",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -498,7 +498,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/author-volume/:pubkey",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id, pubkey } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -558,7 +558,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/author-volume/:pubkey",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id, pubkey } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -621,7 +621,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/author-volume/:pubkey",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id, pubkey } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -662,7 +662,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/sources/:sourceId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id, sourceId } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -693,7 +693,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/sources/:sourceId/move",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id, sourceId } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -756,7 +756,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/sources/:sourceId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id, sourceId } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -847,7 +847,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     Params: { id: string };
     Querystring: { cursor?: string; limit?: string };
   }>("/feeds/:id/saves", { preHandler: requireAuth }, async (req, reply) => {
-    const ownerId = req.session!.sub!;
+    const ownerId = req.session!.sub;
     const { id } = req.params;
     if (!UUID_RE.test(id))
       return reply.status(400).send({ error: "Invalid feed id" });
@@ -904,7 +904,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/saves/ids",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -925,7 +925,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/saves",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
@@ -967,7 +967,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     "/feeds/:id/saves/:feedItemId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const ownerId = req.session!.sub!;
+      const ownerId = req.session!.sub;
       const { id, feedItemId } = req.params;
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });

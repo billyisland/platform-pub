@@ -48,7 +48,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() });
     }
 
-    const writerId = req.session!.sub!;
+    const writerId = req.session!.sub;
     const data = parsed.data;
 
     const slug = slugify(data.title, 120);
@@ -336,7 +336,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
     { preHandler: requireAuth },
     async (req, reply) => {
       const { nostrEventId } = req.params;
-      const userId = req.session!.sub!;
+      const userId = req.session!.sub;
 
       const { rows } = await pool.query(
         `SELECT a.id, a.writer_id, a.nostr_event_id, a.nostr_d_tag,

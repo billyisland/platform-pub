@@ -53,7 +53,7 @@ export async function requireAdmin(req: any, reply: any): Promise<void> {
   await requireAuth(req, reply)
   if (reply.sent) return
 
-  if (!(await isAdmin(req.session!.sub!))) {
+  if (!(await isAdmin(req.session!.sub))) {
     return reply.status(403).send({ error: 'Admin access required' })
   }
 }
@@ -91,7 +91,7 @@ export async function moderationRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const reporterId = req.session!.sub!
+    const reporterId = req.session!.sub
     const data = parsed.data
 
     if (!data.targetNostrEventId && !data.targetAccountId) {
@@ -219,7 +219,7 @@ export async function moderationRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() })
       }
 
-      const adminId = req.session!.sub!
+      const adminId = req.session!.sub
       const { reportId } = req.params
       const { action, reason } = parsed.data
 
@@ -350,7 +350,7 @@ export async function moderationRoutes(app: FastifyInstance) {
           [accountId]
         )
 
-        logger.info({ accountId, adminId: req.session!.sub! }, 'Account suspended directly')
+        logger.info({ accountId, adminId: req.session!.sub }, 'Account suspended directly')
 
         return reply.status(200).send({ ok: true, accountId, status: 'suspended' })
       })

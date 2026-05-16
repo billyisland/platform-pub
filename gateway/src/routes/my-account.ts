@@ -5,7 +5,7 @@ import { pool } from "@platform-pub/shared/db/client.js";
 export async function myAccountRoutes(app: FastifyInstance) {
   // GET /my/tab
   app.get("/my/tab", { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!;
+    const userId = req.session!.sub;
     try {
       const account = await pool.query(
         `SELECT a.free_allowance_remaining_pence,
@@ -60,7 +60,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
     "/my/account-statement",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!;
+      const userId = req.session!.sub;
       const filter = req.query.filter ?? "all"; // 'all' | 'credits' | 'debits'
       const limit = Math.min(parseInt(req.query.limit ?? "30", 10) || 30, 200);
       const offset = parseInt(req.query.offset ?? "0", 10) || 0;

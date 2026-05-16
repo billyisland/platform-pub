@@ -255,7 +255,7 @@ export async function authRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get("/auth/me", { preHandler: requireAuth }, async (req, reply) => {
-    const account = await getAccount(req.session!.sub!);
+    const account = await getAccount(req.session!.sub);
     if (!account) {
       return reply.status(404).send({ error: "Account not found" });
     }
@@ -302,7 +302,7 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      const accountId = req.session!.sub!;
+      const accountId = req.session!.sub;
 
       await updateProfile(accountId, {
         displayName: parsed.data.displayName,
@@ -328,7 +328,7 @@ export async function authRoutes(app: FastifyInstance) {
     "/auth/upgrade-writer",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const accountId = req.session!.sub!;
+      const accountId = req.session!.sub;
       const account = await getAccount(accountId);
 
       if (!account) {
@@ -402,7 +402,7 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      const accountId = req.session!.sub!;
+      const accountId = req.session!.sub;
       const account = await getAccount(accountId);
 
       if (!account) {
@@ -482,7 +482,7 @@ export async function authRoutes(app: FastifyInstance) {
     "/auth/deactivate",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const accountId = req.session!.sub!;
+      const accountId = req.session!.sub;
 
       await pool.query(
         `UPDATE accounts SET status = 'deactivated', updated_at = now() WHERE id = $1`,
@@ -516,7 +516,7 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      const accountId = req.session!.sub!;
+      const accountId = req.session!.sub;
 
       // Verify the email matches
       const { rows: accountRows } = await pool.query<{ email: string }>(
@@ -677,7 +677,7 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      const accountId = req.session!.sub!;
+      const accountId = req.session!.sub;
       const newEmail = parsed.data.newEmail.toLowerCase().trim();
 
       // Check if email is already in use — return success either way to
@@ -858,7 +858,7 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      const accountId = req.session!.sub!;
+      const accountId = req.session!.sub;
       const newUsername = parsed.data.newUsername.toLowerCase();
 
       if (!USERNAME_RE.test(newUsername)) {
@@ -938,7 +938,7 @@ export async function authRoutes(app: FastifyInstance) {
           .send({ available: false, reason: "Invalid format" });
       }
 
-      const accountId = req.session!.sub!;
+      const accountId = req.session!.sub;
       const { rows } = await pool.query(
         "SELECT id FROM accounts WHERE username = $1 AND id != $2",
         [username, accountId],

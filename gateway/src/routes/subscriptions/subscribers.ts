@@ -19,7 +19,7 @@ export async function subscriptionSubscribersRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get("/subscribers", { preHandler: requireAuth }, async (req, reply) => {
-    const writerId = req.session!.sub!;
+    const writerId = req.session!.sub;
 
     const { rows } = await pool.query<{
       subscription_id: string;
@@ -101,7 +101,7 @@ export async function subscriptionSubscribersRoutes(app: FastifyInstance) {
     "/subscriptions/:readerId/comp",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!;
+      const writerId = req.session!.sub;
       const { readerId } = req.params;
 
       if (readerId === writerId) {
@@ -207,7 +207,7 @@ export async function subscriptionSubscribersRoutes(app: FastifyInstance) {
     "/subscriptions/:readerId/comp",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!;
+      const writerId = req.session!.sub;
       const { readerId } = req.params;
 
       const result = await pool.query(

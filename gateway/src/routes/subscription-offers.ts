@@ -34,7 +34,7 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
     '/subscription-offers',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       const parsed = CreateOfferSchema.safeParse(req.body)
       if (!parsed.success) {
@@ -101,7 +101,7 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
     '/subscription-offers',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       const { rows } = await pool.query<{
         id: string
@@ -155,7 +155,7 @@ export async function subscriptionOfferRoutes(app: FastifyInstance) {
     '/subscription-offers/:offerId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
       const { offerId } = req.params
 
       const result = await pool.query(

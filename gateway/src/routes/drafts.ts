@@ -37,7 +37,7 @@ export async function draftRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const writerId = req.session!.sub!
+    const writerId = req.session!.sub
     const data = parsed.data
 
     try {
@@ -113,7 +113,7 @@ export async function draftRoutes(app: FastifyInstance) {
 
   // GET /drafts — list writer's drafts
   app.get('/drafts', { preHandler: requireAuth }, async (req, reply) => {
-    const writerId = req.session!.sub!
+    const writerId = req.session!.sub
 
     const { rows } = await pool.query<{
       id: string
@@ -148,7 +148,7 @@ export async function draftRoutes(app: FastifyInstance) {
     '/drafts/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       const { rows } = await pool.query<{
         id: string
@@ -193,7 +193,7 @@ export async function draftRoutes(app: FastifyInstance) {
     '/drafts/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       await pool.query(
         'DELETE FROM article_drafts WHERE id = $1 AND writer_id = $2',
@@ -209,7 +209,7 @@ export async function draftRoutes(app: FastifyInstance) {
     '/drafts/:id/schedule',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
       const body = z.object({
         scheduledAt: z.string().refine(s => !isNaN(Date.parse(s)), 'Invalid date'),
       }).safeParse(req.body)
@@ -247,7 +247,7 @@ export async function draftRoutes(app: FastifyInstance) {
     '/drafts/:id/schedule',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       const result = await pool.query(
         `UPDATE article_drafts

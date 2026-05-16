@@ -40,7 +40,7 @@ export async function signingRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const accountId = req.session!.sub!
+    const accountId = req.session!.sub
     const { publicationId } = parsed.data
 
     // If signing as a publication, verify caller has can_publish
@@ -93,7 +93,7 @@ export async function signingRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const accountId = req.session!.sub!
+    const accountId = req.session!.sub
     const { publicationId } = parsed.data
 
     // If signing as a publication, verify caller has can_publish
@@ -144,7 +144,7 @@ export async function signingRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const accountId = req.session!.sub!
+    const accountId = req.session!.sub
 
     try {
       const result = await unwrapKey(accountId, parsed.data.encryptedKey)

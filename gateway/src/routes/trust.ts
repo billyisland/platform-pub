@@ -241,7 +241,7 @@ export async function trustRoutes(app: FastifyInstance) {
       visibility: Visibility;
     };
   }>("/vouches", { preHandler: requireAuth }, async (req, reply) => {
-    const attestorId = req.session!.sub!;
+    const attestorId = req.session!.sub;
     const { subjectId, dimension, value, visibility } = req.body ?? ({} as any);
 
     // Validate inputs
@@ -309,7 +309,7 @@ export async function trustRoutes(app: FastifyInstance) {
     "/vouches/:id",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const attestorId = req.session!.sub!;
+      const attestorId = req.session!.sub;
       const { id } = req.params;
 
       if (!UUID_RE.test(id)) {
@@ -337,7 +337,7 @@ export async function trustRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get("/my/vouches", { preHandler: requireAuth }, async (req, reply) => {
-    const attestorId = req.session!.sub!;
+    const attestorId = req.session!.sub;
 
     const { rows } = await pool.query(
       `SELECT v.id, v.dimension, v.value, v.visibility, v.created_at,
@@ -450,7 +450,7 @@ export async function trustRoutes(app: FastifyInstance) {
     "/trust/polls/:userId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const respondentId = req.session!.sub!;
+      const respondentId = req.session!.sub;
       const { userId } = req.params;
       if (!UUID_RE.test(userId)) {
         return reply.status(400).send({ error: "Invalid user id" });
@@ -492,7 +492,7 @@ export async function trustRoutes(app: FastifyInstance) {
     "/trust/polls/:userId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const respondentId = req.session!.sub!;
+      const respondentId = req.session!.sub;
       const { userId } = req.params;
       if (!UUID_RE.test(userId)) {
         return reply.status(400).send({ error: "Invalid user id" });

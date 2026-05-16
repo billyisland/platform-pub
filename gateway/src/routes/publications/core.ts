@@ -49,7 +49,7 @@ export async function publicationCoreRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
 
-    const userId = req.session!.sub!
+    const userId = req.session!.sub
     const { slug, name, tagline, about } = parsed.data
 
     // Check slug uniqueness
@@ -179,7 +179,7 @@ export async function publicationCoreRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get('/my/publications', { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!
+    const userId = req.session!.sub
 
     const { rows } = await pool.query(
       `SELECT p.id, p.slug, p.name, p.logo_blossom_url,

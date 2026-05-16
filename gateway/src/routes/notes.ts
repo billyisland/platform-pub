@@ -82,7 +82,7 @@ export async function noteRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() });
     }
 
-    const authorId = req.session!.sub!;
+    const authorId = req.session!.sub;
     const data = parsed.data;
 
     try {
@@ -305,7 +305,7 @@ export async function noteRoutes(app: FastifyInstance) {
     "/notes/:nostrEventId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const authorId = req.session!.sub!;
+      const authorId = req.session!.sub;
       const { nostrEventId } = req.params;
 
       try {

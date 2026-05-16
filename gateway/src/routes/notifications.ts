@@ -20,7 +20,7 @@ export async function notificationRoutes(app: FastifyInstance) {
 
   app.get<{ Querystring: { cursor?: string; limit?: string } }>(
     '/notifications', { preHandler: requireAuth }, async (req, reply) => {
-    const recipientId = req.session!.sub!
+    const recipientId = req.session!.sub
     const limit = Math.min(parseInt(req.query.limit ?? '30', 10) || 30, 50)
     const cursor = req.query.cursor ?? null
 
@@ -122,7 +122,7 @@ export async function notificationRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get('/unread-counts', { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!
+    const userId = req.session!.sub
 
     const { rows } = await pool.query<{ notification_count: string; dm_count: string }>(
       `SELECT
@@ -145,7 +145,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     '/notifications/:id/read',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const recipientId = req.session!.sub!
+      const recipientId = req.session!.sub
       const { id } = req.params
 
       await pool.query(
@@ -162,7 +162,7 @@ export async function notificationRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.post('/notifications/read-all', { preHandler: requireAuth }, async (req, reply) => {
-    const recipientId = req.session!.sub!
+    const recipientId = req.session!.sub
 
     await pool.query(
       `UPDATE notifications SET read = true WHERE recipient_id = $1 AND read = false`,
@@ -188,7 +188,7 @@ export async function notificationRoutes(app: FastifyInstance) {
   ] as const
 
   app.get('/notifications/preferences', { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!
+    const userId = req.session!.sub
 
     const { rows } = await pool.query<{ category: string; enabled: boolean }>(
       'SELECT category, enabled FROM notification_preferences WHERE user_id = $1',
@@ -210,7 +210,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     '/notifications/preferences/:category',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const { category } = req.params
       const { enabled } = req.body as { enabled: boolean }
 

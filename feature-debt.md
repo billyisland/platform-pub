@@ -13,7 +13,7 @@ Last audited: 2026-05-15. Items marked DONE were verified against the codebase a
 **Biggest product gaps (launch-blocking or near):**
 
 1. Subscription auto-renewal — the single most critical missing feature per gap analysis
-2. CI pipeline — zero infrastructure despite being Tier 1a priority
+2. ~~CI pipeline~~ — DONE (`.github/workflows/ci.yml`: build, ESLint, Knip, Vitest, `next lint`, `npm audit`)
 3. Email-on-publish — trivial implementation, high writer-facing value
 4. Owner dashboard — operator visibility before taking real money
 5. Landing page — no social proof, no screenshots, no feature explanation

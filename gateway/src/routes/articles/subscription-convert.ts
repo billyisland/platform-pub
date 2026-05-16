@@ -19,7 +19,7 @@ export async function articleSubscriptionConvertRoutes(app: FastifyInstance) {
     "/nudge/shown",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const { writerId } = req.body as { writerId: string };
 
       if (!writerId) {
@@ -50,7 +50,7 @@ export async function articleSubscriptionConvertRoutes(app: FastifyInstance) {
     "/subscriptions/:writerId/convert",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const { writerId } = req.params;
 
       if (readerId === writerId) {

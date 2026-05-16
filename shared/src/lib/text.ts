@@ -11,15 +11,26 @@
 // reconcile drift pass doesn't bounce the same rows back and forth.
 // =============================================================================
 
-export const PREVIEW_LIMIT = 200
+export const PREVIEW_LIMIT = 200;
 
-export function truncatePreview(text: string | null | undefined, max = PREVIEW_LIMIT): string {
-  if (!text) return ''
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function truncatePreview(
+  text: string | null | undefined,
+  max = PREVIEW_LIMIT,
+): string {
+  if (!text) return "";
   // Array.from splits surrogate pairs into code points, so `.length` here
   // matches pg's LEFT(..., max) on UTF-8 columns for the characters we
   // actually get in user content (pg `LEFT` returns the first `max`
   // characters, and for UTF-8 one character is one code point).
-  const points = Array.from(text)
-  if (points.length <= max) return text
-  return points.slice(0, max).join('')
+  const points = Array.from(text);
+  if (points.length <= max) return text;
+  return points.slice(0, max).join("");
 }

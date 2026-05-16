@@ -128,7 +128,7 @@ export async function tagRoutes(app: FastifyInstance) {
     '/articles/:articleId/tags',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
       const { articleId } = req.params
       const { tags } = req.body as { tags: string[] }
 

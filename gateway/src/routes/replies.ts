@@ -40,7 +40,7 @@ export async function replyRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.flatten() });
     }
 
-    const authorId = req.session!.sub!;
+    const authorId = req.session!.sub;
     const data = parsed.data;
 
     try {
@@ -400,7 +400,7 @@ export async function replyRoutes(app: FastifyInstance) {
     "/replies/:replyId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!;
+      const userId = req.session!.sub;
       const { replyId } = req.params;
 
       const { rows } = await pool.query<{
@@ -462,7 +462,7 @@ export async function replyRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      const writerId = req.session!.sub!;
+      const writerId = req.session!.sub;
       const result = await pool.query(
         `UPDATE articles SET comments_enabled = $1
          WHERE id = $2 AND writer_id = $3 AND deleted_at IS NULL
@@ -495,7 +495,7 @@ export async function replyRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      const authorId = req.session!.sub!;
+      const authorId = req.session!.sub;
       const result = await pool.query(
         `UPDATE notes SET comments_enabled = $1
          WHERE id = $2 AND author_id = $3

@@ -29,7 +29,7 @@ export async function readingPositionRoutes(app: FastifyInstance) {
     '/reading-positions/:nostrEventId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const { nostrEventId } = req.params
 
       if (!HEX64_RE.test(nostrEventId)) {
@@ -65,7 +65,7 @@ export async function readingPositionRoutes(app: FastifyInstance) {
     '/reading-positions/:nostrEventId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const { nostrEventId } = req.params
 
       if (!HEX64_RE.test(nostrEventId)) {
@@ -94,7 +94,7 @@ export async function readingPositionRoutes(app: FastifyInstance) {
   )
 
   app.get('/me/reading-preferences', { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!
+    const userId = req.session!.sub
     const { rows } = await pool.query<{ always_open_articles_at_top: boolean }>(
       'SELECT always_open_articles_at_top FROM accounts WHERE id = $1',
       [userId]
@@ -110,7 +110,7 @@ export async function readingPositionRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
-    const userId = req.session!.sub!
+    const userId = req.session!.sub
     await pool.query(
       'UPDATE accounts SET always_open_articles_at_top = $1, updated_at = now() WHERE id = $2',
       [parsed.data.alwaysOpenAtTop, userId]

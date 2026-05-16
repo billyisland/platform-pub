@@ -27,7 +27,7 @@ export async function followRoutes(app: FastifyInstance) {
     '/follows/:writerId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const followerId = req.session!.sub!
+      const followerId = req.session!.sub
       const { writerId } = req.params
 
       if (followerId === writerId) {
@@ -74,7 +74,7 @@ export async function followRoutes(app: FastifyInstance) {
     '/follows/:writerId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const followerId = req.session!.sub!
+      const followerId = req.session!.sub
       const { writerId } = req.params
 
       await pool.query(
@@ -99,7 +99,7 @@ export async function followRoutes(app: FastifyInstance) {
     '/follows/pubkeys',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const followerId = req.session!.sub!
+      const followerId = req.session!.sub
 
       const [writerRes, pubRes] = await Promise.all([
         pool.query<{ nostr_pubkey: string }>(
@@ -141,7 +141,7 @@ export async function followRoutes(app: FastifyInstance) {
     '/follows/followers',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const followeeId = req.session!.sub!
+      const followeeId = req.session!.sub
 
       const { rows } = await pool.query<{
         id: string
@@ -185,7 +185,7 @@ export async function followRoutes(app: FastifyInstance) {
     '/follows',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const followerId = req.session!.sub!
+      const followerId = req.session!.sub
 
       const { rows } = await pool.query<{
         id: string
@@ -226,7 +226,7 @@ export async function followRoutes(app: FastifyInstance) {
     '/follows/publication/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const followerId = req.session!.sub!
+      const followerId = req.session!.sub
       const { id: publicationId } = req.params
 
       const pubCheck = await pool.query(
@@ -253,7 +253,7 @@ export async function followRoutes(app: FastifyInstance) {
     '/follows/publication/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const followerId = req.session!.sub!
+      const followerId = req.session!.sub
       const { id: publicationId } = req.params
 
       await pool.query(

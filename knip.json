@@ -7,14 +7,12 @@
     },
     "shared": {}
   },
-  "ignoreBinaries": ["next", "vitest", "tsx"],
   "ignoreDependencies": [
     "@atproto/oauth-client-node",
     "pino",
     "pino-pretty",
     "pg",
     "jose",
-    "nostr-tools",
     "dotenv",
     "sharp",
     "@types/pg"

@@ -19,7 +19,7 @@ export async function socialRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get("/my/blocks", { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!;
+    const userId = req.session!.sub;
     const result = await pool.query<{
       id: string;
       username: string;
@@ -53,7 +53,7 @@ export async function socialRoutes(app: FastifyInstance) {
     "/my/blocks/:userId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const blockerId = req.session!.sub!;
+      const blockerId = req.session!.sub;
       const { userId } = req.params;
 
       if (blockerId === userId) {
@@ -78,7 +78,7 @@ export async function socialRoutes(app: FastifyInstance) {
     "/my/blocks/:userId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const blockerId = req.session!.sub!;
+      const blockerId = req.session!.sub;
       const { userId } = req.params;
       await pool.query(
         `DELETE FROM blocks WHERE blocker_id = $1 AND blocked_id = $2`,
@@ -93,7 +93,7 @@ export async function socialRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get("/my/mutes", { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!;
+    const userId = req.session!.sub;
     const result = await pool.query<{
       id: string;
       username: string;
@@ -127,7 +127,7 @@ export async function socialRoutes(app: FastifyInstance) {
     "/my/mutes/:userId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const muterId = req.session!.sub!;
+      const muterId = req.session!.sub;
       const { userId } = req.params;
 
       if (muterId === userId) {
@@ -152,7 +152,7 @@ export async function socialRoutes(app: FastifyInstance) {
     "/my/mutes/:userId",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const muterId = req.session!.sub!;
+      const muterId = req.session!.sub;
       const { userId } = req.params;
       await pool.query(
         `DELETE FROM mutes WHERE muter_id = $1 AND muted_id = $2`,

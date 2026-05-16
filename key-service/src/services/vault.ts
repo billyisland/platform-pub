@@ -126,21 +126,7 @@ class VaultService {
         [ciphertext, vaultKeyId],
       );
 
-      // Build a legacy vault event template for any callers that still expect it.
-      // New callers should use ciphertext + algorithm directly and embed in NIP-23.
-      const nostrVaultEvent = {
-        kind: 39701 as const,
-        tags: [
-          ["d", params.nostrDTag],
-          ["e", params.nostrArticleEventId],
-          ["encrypted", algorithm],
-          ["price", String(params.pricePence), "GBP"],
-          ["gate", String(params.gatePositionPct)],
-        ],
-        content: ciphertext,
-      };
-
-      return { ciphertext, algorithm, vaultKeyId, nostrVaultEvent };
+      return { ciphertext, algorithm, vaultKeyId };
     });
   }
 

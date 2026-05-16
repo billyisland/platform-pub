@@ -79,7 +79,6 @@ export async function keyRoutes(app: FastifyInstance) {
           vaultKeyId: result.vaultKeyId,
           ciphertext: result.ciphertext,
           algorithm: result.algorithm,
-          nostrVaultEvent: result.nostrVaultEvent,
         });
       } catch (err) {
         logger.error(

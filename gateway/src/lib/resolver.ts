@@ -236,7 +236,7 @@ export async function resolve(
       try {
         const decoded = nip19.decode(trimmed);
         if (decoded.type === "npub") {
-          const hexPubkey = decoded.data as string;
+          const hexPubkey = decoded.data;
           const account = await lookupByPubkey(hexPubkey);
           if (account) matches.push(account);
           // Also offer as external Nostr source

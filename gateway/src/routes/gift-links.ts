@@ -28,7 +28,7 @@ export async function giftLinkRoutes(app: FastifyInstance) {
     '/articles/:articleId/gift-link',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const creatorId = req.session!.sub!
+      const creatorId = req.session!.sub
       const { articleId } = req.params
 
       const parsed = CreateGiftLinkSchema.safeParse(req.body)
@@ -76,7 +76,7 @@ export async function giftLinkRoutes(app: FastifyInstance) {
     '/articles/:articleId/gift-links',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const creatorId = req.session!.sub!
+      const creatorId = req.session!.sub
       const { articleId } = req.params
 
       // Verify author owns the article
@@ -124,7 +124,7 @@ export async function giftLinkRoutes(app: FastifyInstance) {
     '/articles/:articleId/gift-link/:linkId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const creatorId = req.session!.sub!
+      const creatorId = req.session!.sub
       const { articleId, linkId } = req.params
 
       const result = await pool.query(
@@ -150,7 +150,7 @@ export async function giftLinkRoutes(app: FastifyInstance) {
     '/articles/:articleId/redeem-gift',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!
+      const readerId = req.session!.sub
       const { articleId } = req.params
       const { token } = req.body as { token: string }
 

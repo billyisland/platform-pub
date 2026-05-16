@@ -174,7 +174,7 @@ export async function timelineRoutes(app: FastifyInstance) {
     "/feed",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const reach = (req.query.reach ?? "following") as Reach;
       const cursor = parseCursor(req.query.cursor);
       const limit = Math.min(

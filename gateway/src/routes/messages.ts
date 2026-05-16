@@ -64,7 +64,7 @@ export async function messageRoutes(app: FastifyInstance) {
     const parsed = CreateConversationSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
 
-    const result = await messages.createConversation(req.session!.sub!, parsed.data.memberIds)
+    const result = await messages.createConversation(req.session!.sub, parsed.data.memberIds)
     if (!result.ok) return sendServiceError(reply, result)
     return reply.status(201).send(result.data)
   })
@@ -76,14 +76,14 @@ export async function messageRoutes(app: FastifyInstance) {
       const parsed = AddMembersSchema.safeParse(req.body)
       if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
 
-      const result = await messages.addConversationMembers(req.params.id, req.session!.sub!, parsed.data.memberIds)
+      const result = await messages.addConversationMembers(req.params.id, req.session!.sub, parsed.data.memberIds)
       if (!result.ok) return sendServiceError(reply, result)
       return reply.status(200).send({ ok: true })
     }
   )
 
   app.get('/messages', { preHandler: requireAuth }, async (req, reply) => {
-    const conversations = await messages.listInbox(req.session!.sub!)
+    const conversations = await messages.listInbox(req.session!.sub)
     return reply.status(200).send({ conversations })
   })
 
@@ -94,7 +94,7 @@ export async function messageRoutes(app: FastifyInstance) {
       const limit = Math.min(parseInt(req.query.limit ?? '50', 10), 100)
       const result = await messages.loadConversationMessages(
         req.params.conversationId,
-        req.session!.sub!,
+        req.session!.sub,
         limit,
         req.query.before
       )
@@ -112,7 +112,7 @@ export async function messageRoutes(app: FastifyInstance) {
 
       const result = await messages.sendMessage(
         req.params.conversationId,
-        req.session!.sub!,
+        req.session!.sub,
         parsed.data.content,
         parsed.data.replyToId ?? null
       )
@@ -125,7 +125,7 @@ export async function messageRoutes(app: FastifyInstance) {
     '/messages/:messageId/read',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const result = await messages.markMessageRead(req.params.messageId, req.session!.sub!)
+      const result = await messages.markMessageRead(req.params.messageId, req.session!.sub)
       if (!result.ok) return sendServiceError(reply, result)
       return reply.status(200).send({ ok: true })
     }
@@ -135,7 +135,7 @@ export async function messageRoutes(app: FastifyInstance) {
     '/messages/:conversationId/read-all',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const result = await messages.markConversationReadAll(req.params.conversationId, req.session!.sub!)
+      const result = await messages.markConversationReadAll(req.params.conversationId, req.session!.sub)
       if (!result.ok) return sendServiceError(reply, result)
       return reply.status(200).send({ ok: true, markedRead: result.data.markedRead })
     }
@@ -145,7 +145,7 @@ export async function messageRoutes(app: FastifyInstance) {
     '/messages/:messageId/like',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const result = await messages.toggleMessageLike(req.params.messageId, req.session!.sub!)
+      const result = await messages.toggleMessageLike(req.params.messageId, req.session!.sub)
       if (!result.ok) return sendServiceError(reply, result)
       return reply.status(200).send(result.data)
     }
@@ -155,12 +155,12 @@ export async function messageRoutes(app: FastifyInstance) {
     const parsed = DecryptBatchSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
 
-    const results = await messages.decryptBatch(req.session!.sub!, parsed.data.messages)
+    const results = await messages.decryptBatch(req.session!.sub, parsed.data.messages)
     return reply.status(200).send({ results })
   })
 
   app.get('/settings/dm-pricing', { preHandler: requireAuth }, async (req, reply) => {
-    const pricing = await messages.getDmPricing(req.session!.sub!)
+    const pricing = await messages.getDmPricing(req.session!.sub)
     return reply.send(pricing)
   })
 
@@ -168,7 +168,7 @@ export async function messageRoutes(app: FastifyInstance) {
     const parsed = DmPricingSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
 
-    await messages.setDefaultDmPrice(req.session!.sub!, parsed.data.defaultPricePence)
+    await messages.setDefaultDmPrice(req.session!.sub, parsed.data.defaultPricePence)
     return reply.send({ ok: true })
   })
 
@@ -179,7 +179,7 @@ export async function messageRoutes(app: FastifyInstance) {
     const parsed = DmOverrideSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
 
-    await messages.setDmPriceOverride(req.session!.sub!, userId, parsed.data.pricePence)
+    await messages.setDmPriceOverride(req.session!.sub, userId, parsed.data.pricePence)
     return reply.send({ ok: true })
   })
 
@@ -187,7 +187,7 @@ export async function messageRoutes(app: FastifyInstance) {
     const userId = (req.params as { userId: string }).userId
     if (!UUID_RE.test(userId)) return reply.status(400).send({ error: 'Invalid user ID' })
 
-    await messages.removeDmPriceOverride(req.session!.sub!, userId)
+    await messages.removeDmPriceOverride(req.session!.sub, userId)
     return reply.send({ ok: true })
   })
 }

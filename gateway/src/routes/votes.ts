@@ -36,7 +36,7 @@ export async function voteRoutes(app: FastifyInstance) {
       }
 
       const { targetEventId, targetKind, direction } = parsed.data
-      const voterId = req.session!.sub!
+      const voterId = req.session!.sub
 
       return withTransaction(async (client) => {
         // ------------------------------------------------------------------
@@ -301,7 +301,7 @@ export async function voteRoutes(app: FastifyInstance) {
     '/votes/mine',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const voterId = req.session!.sub!
+      const voterId = req.session!.sub
       const raw = req.query.eventIds ?? ''
       const eventIds = raw.split(',').map(s => s.trim()).filter(Boolean)
 
@@ -361,7 +361,7 @@ export async function voteRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'direction must be "up" or "down"' })
       }
 
-      const voterId = req.session!.sub!
+      const voterId = req.session!.sub
 
       const { rows } = await pool.query<{ count: string }>(
         `SELECT COUNT(*) AS count FROM votes
@@ -371,7 +371,7 @@ export async function voteRoutes(app: FastifyInstance) {
 
       const existingCount = parseInt(rows[0].count, 10)
       const sequenceNumber = existingCount + 1
-      const costPence = voteCostPence(direction as 'up' | 'down', sequenceNumber)
+      const costPence = voteCostPence(direction, sequenceNumber)
 
       return reply.status(200).send({ sequenceNumber, costPence, direction })
     }

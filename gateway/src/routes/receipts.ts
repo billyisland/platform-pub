@@ -64,7 +64,7 @@ export async function receiptRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get('/receipts/export', { preHandler: requireAuth }, async (req, reply) => {
-    const readerId = req.session!.sub!
+    const readerId = req.session!.sub
 
     try {
       const { rows } = await pool.query<{ receipt_token: string; read_at: Date }>(

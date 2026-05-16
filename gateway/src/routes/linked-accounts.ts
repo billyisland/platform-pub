@@ -70,7 +70,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get("/linked-accounts", { preHandler: requireAuth }, async (req) => {
-    const userId = req.session!.sub!;
+    const userId = req.session!.sub;
     const { rows } = await pool.query<{
       id: string;
       protocol: string;
@@ -115,7 +115,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
     "/linked-accounts/:id",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!;
+      const userId = req.session!.sub;
       const { rowCount } = await pool.query(
         `DELETE FROM linked_accounts WHERE id = $1 AND account_id = $2`,
         [req.params.id, userId],
@@ -133,7 +133,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
     "/linked-accounts/:id",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!;
+      const userId = req.session!.sub;
       const body = z
         .object({ crossPostDefault: z.boolean() })
         .safeParse(req.body);
@@ -246,7 +246,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
     "/linked-accounts/callback",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!;
+      const userId = req.session!.sub;
       const { code, state, error } = req.query;
 
       const redirectOk = (flag: string) =>
@@ -354,7 +354,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
     "/linked-accounts/bluesky",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!;
+      const userId = req.session!.sub;
       const parsed = z
         .object({ handle: z.string().min(1).max(256) })
         .safeParse(req.body);
@@ -450,12 +450,12 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       if (statePayload.protocol !== "atproto") return redirectOk("error");
       if (req.query.state !== statePayload.nonce) return redirectOk("error");
 
-      const userId = req.session!.sub!;
+      const userId = req.session!.sub;
       if (statePayload.userId !== userId) return redirectOk("error");
 
       try {
         const client = await getAtprotoClient();
-        const params = new URLSearchParams(req.query as Record<string, string>);
+        const params = new URLSearchParams(req.query);
         const { session } = await client.callback(params);
         const did = session.did;
 

@@ -23,7 +23,7 @@ export async function bookmarkRoutes(app: FastifyInstance) {
     '/bookmarks/:nostrEventId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const { nostrEventId } = req.params
 
       if (!nostrEventId.match(HEX64_RE)) {
@@ -57,7 +57,7 @@ export async function bookmarkRoutes(app: FastifyInstance) {
     '/bookmarks/:nostrEventId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const { nostrEventId } = req.params
 
       if (!nostrEventId.match(HEX64_RE)) {
@@ -84,7 +84,7 @@ export async function bookmarkRoutes(app: FastifyInstance) {
     '/bookmarks',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const limit = Math.min(parseInt(req.query.limit ?? '20', 10) || 20, 50)
       const offset = parseInt(req.query.offset ?? '0', 10) || 0
 
@@ -116,7 +116,7 @@ export async function bookmarkRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get('/bookmarks/ids', { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!
+    const userId = req.session!.sub
 
     const { rows } = await pool.query<{ nostr_event_id: string }>(
       `SELECT a.nostr_event_id FROM bookmarks b

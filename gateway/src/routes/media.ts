@@ -71,7 +71,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     "/media/upload",
     { preHandler: requireAuth, bodyLimit: 12 * 1024 * 1024 },
     async (req, reply) => {
-      const uploaderId = req.session!.sub!;
+      const uploaderId = req.session!.sub;
 
       try {
         // Parse multipart body
@@ -179,7 +179,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         return reply.status(res.status).send({ error: "oEmbed lookup failed" });
       }
 
-      const oembedData = JSON.parse(res.text) as any;
+      const oembedData = JSON.parse(res.text);
 
       return reply.status(200).send({
         type: oembedData.type,

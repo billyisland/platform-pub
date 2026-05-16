@@ -133,7 +133,7 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
     },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const {
         protocol,
         sourceUri,
@@ -299,7 +299,7 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
       preHandler: requireAuth,
     },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
 
       const { rows } = await pool.query(
         `
@@ -358,7 +358,7 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
       preHandler: requireAuth,
     },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const { id } = req.params;
 
       // Capture source_id so we can opportunistically mark the source as
@@ -401,7 +401,7 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
       preHandler: requireAuth,
     },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const { id } = req.params;
       const { isMuted, dailyCap } = req.body ?? {};
 
@@ -520,7 +520,7 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
       config: { rateLimit: { max: 6, timeWindow: "1 minute" } },
     },
     async (req, reply) => {
-      const readerId = req.session!.sub!;
+      const readerId = req.session!.sub;
       const { id } = req.params;
 
       const { rows } = await pool.query<{

@@ -114,7 +114,7 @@ export async function refreshIfNeeded(
 
   // Past half-life — issue a fresh token
   await createSession(reply, {
-    id: session.sub!,
+    id: session.sub,
     nostrPubkey: session.pubkey,
     isWriter: session.isWriter,
   })

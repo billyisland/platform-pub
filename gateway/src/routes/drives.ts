@@ -58,7 +58,7 @@ export async function driveRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.post('/drives', { preHandler: requireAuth }, async (req, reply) => {
-    const creatorId = req.session!.sub!
+    const creatorId = req.session!.sub
     const parsed = CreateDriveSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() })
@@ -214,7 +214,7 @@ export async function driveRoutes(app: FastifyInstance) {
     '/drives/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
       const parsed = UpdateDriveSchema.safeParse(req.body)
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.flatten() })
@@ -259,7 +259,7 @@ export async function driveRoutes(app: FastifyInstance) {
     '/drives/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
 
       await withTransaction(async (client) => {
         const result = await client.query<{ id: string; nostr_event_id: string | null }>(
@@ -300,7 +300,7 @@ export async function driveRoutes(app: FastifyInstance) {
     '/drives/:id/pledge',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const pledgerId = req.session!.sub!
+      const pledgerId = req.session!.sub
       const parsed = PledgeSchema.safeParse(req.body)
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.flatten() })
@@ -383,7 +383,7 @@ export async function driveRoutes(app: FastifyInstance) {
     '/drives/:id/pledge',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const pledgerId = req.session!.sub!
+      const pledgerId = req.session!.sub
 
       await withTransaction(async (client) => {
         const pledge = await client.query<{ amount_pence: number }>(
@@ -434,7 +434,7 @@ export async function driveRoutes(app: FastifyInstance) {
     '/drives/:id/accept',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
       const parsed = AcceptCommissionSchema.safeParse(req.body ?? {})
       const terms = parsed.success ? parsed.data : {}
 
@@ -473,7 +473,7 @@ export async function driveRoutes(app: FastifyInstance) {
     '/drives/:id/decline',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const writerId = req.session!.sub!
+      const writerId = req.session!.sub
 
       await withTransaction(async (client) => {
         const result = await client.query(
@@ -509,7 +509,7 @@ export async function driveRoutes(app: FastifyInstance) {
     '/drives/:id/pin',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const userId = req.session!.sub!
+      const userId = req.session!.sub
 
       const result = await pool.query(
         `UPDATE pledge_drives SET pinned = NOT pinned
@@ -584,7 +584,7 @@ export async function driveRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get('/my/commissions', { preHandler: requireAuth }, async (req, reply) => {
-    const writerId = req.session!.sub!
+    const writerId = req.session!.sub
 
     const { rows } = await pool.query<{
       id: string
@@ -639,7 +639,7 @@ export async function driveRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get('/my/pledges', { preHandler: requireAuth }, async (req, reply) => {
-    const userId = req.session!.sub!
+    const userId = req.session!.sub
 
     const { rows } = await pool.query<{
       id: string
