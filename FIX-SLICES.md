@@ -264,7 +264,7 @@ Also add a cron task for D67 (relay_outbox cleanup):
 
 ---
 
-## Slice 10: Test coverage — critical pure functions
+## Slice 10: Test coverage — critical pure functions ✓ DONE (2026-05-16)
 
 **Priority: MEDIUM. Estimated effort: 3–4 hours.**
 **Services:** gateway, shared, feed-ingest, web
