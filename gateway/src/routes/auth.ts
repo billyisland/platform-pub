@@ -1,17 +1,37 @@
-import type { FastifyInstance } from 'fastify'
-import { z } from 'zod'
-import { signup, SignupSchema, getAccount, updateProfile, connectStripeAccount, connectPaymentMethod } from '@platform-pub/shared/auth/accounts.js'
-import { createSession, destroySession, verifySession } from '@platform-pub/shared/auth/session.js'
-import { requestMagicLink, verifyMagicLink } from '@platform-pub/shared/auth/magic-links.js'
-import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { sendMagicLinkEmail, sendEmail } from '@platform-pub/shared/lib/email.js'
-import { requireAuth } from '../middleware/auth.js'
-import { generateKeypair, signEvent } from '../lib/key-custody-client.js'
-import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
-import Stripe from 'stripe'
-import logger from '@platform-pub/shared/lib/logger.js'
-import { requireEnv } from '@platform-pub/shared/lib/env.js'
-import crypto from 'crypto'
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import {
+  signup,
+  SignupSchema,
+  getAccount,
+  updateProfile,
+  connectStripeAccount,
+  connectPaymentMethod,
+} from "@platform-pub/shared/auth/accounts.js";
+import {
+  createSession,
+  destroySession,
+  verifySession,
+} from "@platform-pub/shared/auth/session.js";
+import {
+  requestMagicLink,
+  verifyMagicLink,
+} from "@platform-pub/shared/auth/magic-links.js";
+import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
+import {
+  sendMagicLinkEmail,
+  sendEmail,
+} from "@platform-pub/shared/lib/email.js";
+import { requireAuth } from "../middleware/auth.js";
+import { generateKeypair, signEvent } from "../lib/key-custody-client.js";
+import {
+  enqueueRelayPublish,
+  type SignedNostrEvent,
+} from "@platform-pub/shared/lib/relay-outbox.js";
+import Stripe from "stripe";
+import logger from "@platform-pub/shared/lib/logger.js";
+import { requireEnv } from "@platform-pub/shared/lib/env.js";
+import crypto from "crypto";
 
 // =============================================================================
 // Auth Routes — mounted on the gateway
@@ -31,39 +51,44 @@ import crypto from 'crypto'
 // GET  /auth/check-username/:u   — check username availability
 // =============================================================================
 
-const stripe = new Stripe(requireEnv('STRIPE_SECRET_KEY'), {
-  apiVersion: '2023-10-16',
-})
+const stripe = new Stripe(requireEnv("STRIPE_SECRET_KEY"), {
+  apiVersion: "2023-10-16",
+});
 
 export async function authRoutes(app: FastifyInstance) {
-
   // ---------------------------------------------------------------------------
   // POST /auth/signup
   // ---------------------------------------------------------------------------
 
-  app.post('/auth/signup', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const parsed = SignupSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
-
-    try {
-      // Generate keypair via key-custody service — gateway never sees ACCOUNT_KEY_HEX
-      const keypair = await generateKeypair()
-      const result = await signup(parsed.data, reply, keypair)
-      return reply.status(201).send(result)
-    } catch (err: any) {
-      // Unique constraint violations (duplicate username, email, or pubkey)
-      if (err.code === '23505') {
-        const field = err.constraint?.includes('username') ? 'username'
-                    : err.constraint?.includes('email') ? 'email'
-                    : 'account'
-        return reply.status(409).send({ error: `${field}_taken` })
+  app.post(
+    "/auth/signup",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const parsed = SignupSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
-      logger.error({ err }, 'Signup failed')
-      return reply.status(500).send({ error: 'Signup failed' })
-    }
-  })
+
+      try {
+        // Generate keypair via key-custody service — gateway never sees ACCOUNT_KEY_HEX
+        const keypair = await generateKeypair();
+        const result = await signup(parsed.data, reply, keypair);
+        return reply.status(201).send(result);
+      } catch (err: any) {
+        // Unique constraint violations (duplicate username, email, or pubkey)
+        if (err.code === "23505") {
+          const field = err.constraint?.includes("username")
+            ? "username"
+            : err.constraint?.includes("email")
+              ? "email"
+              : "account";
+          return reply.status(409).send({ error: `${field}_taken` });
+        }
+        logger.error({ err }, "Signup failed");
+        return reply.status(500).send({ error: "Signup failed" });
+      }
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/login — magic link
@@ -74,34 +99,46 @@ export async function authRoutes(app: FastifyInstance) {
 
   const LoginSchema = z.object({
     email: z.string().email(),
-  })
+  });
 
-  app.post('/auth/login', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const parsed = LoginSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
-
-    const result = await requestMagicLink(parsed.data.email)
-
-    if (result) {
-      // Send the magic link email
-      // In dev (EMAIL_PROVIDER=console), this logs to stdout
-      // In production, set EMAIL_PROVIDER=postmark or resend
-      try {
-        await sendMagicLinkEmail(parsed.data.email, result.token, result.expiresAt)
-      } catch (err) {
-        logger.error({ err, email: parsed.data.email.slice(0, 3) + '***' }, 'Magic link email failed')
-        // Don't fail the request — the token is still valid, and we don't
-        // want to reveal whether an account exists via email delivery errors
+  app.post(
+    "/auth/login",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const parsed = LoginSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
-    }
 
-    // Always return the same response — don't reveal whether the account exists
-    return reply.status(200).send({
-      message: 'If an account exists with that email, a login link has been sent.',
-    })
-  })
+      const result = await requestMagicLink(parsed.data.email);
+
+      if (result) {
+        // Send the magic link email
+        // In dev (EMAIL_PROVIDER=console), this logs to stdout
+        // In production, set EMAIL_PROVIDER=postmark or resend
+        try {
+          await sendMagicLinkEmail(
+            parsed.data.email,
+            result.token,
+            result.expiresAt,
+          );
+        } catch (err) {
+          logger.error(
+            { err, email: parsed.data.email.slice(0, 3) + "***" },
+            "Magic link email failed",
+          );
+          // Don't fail the request — the token is still valid, and we don't
+          // want to reveal whether an account exists via email delivery errors
+        }
+      }
+
+      // Always return the same response — don't reveal whether the account exists
+      return reply.status(200).send({
+        message:
+          "If an account exists with that email, a login link has been sent.",
+      });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/verify — verify magic link token → create session
@@ -109,96 +146,107 @@ export async function authRoutes(app: FastifyInstance) {
 
   const VerifySchema = z.object({
     token: z.string().min(1),
-  })
+  });
 
-  app.post('/auth/verify', async (req, reply) => {
-    const parsed = VerifySchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
+  app.post(
+    "/auth/verify",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const parsed = VerifySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
+      }
 
-    const accountId = await verifyMagicLink(parsed.data.token)
-    if (!accountId) {
-      return reply.status(401).send({ error: 'Invalid or expired login link' })
-    }
+      const accountId = await verifyMagicLink(parsed.data.token);
+      if (!accountId) {
+        return reply
+          .status(401)
+          .send({ error: "Invalid or expired login link" });
+      }
 
-    const account = await getAccount(accountId)
-    if (!account) {
-      return reply.status(404).send({ error: 'Account not found' })
-    }
+      const account = await getAccount(accountId);
+      if (!account) {
+        return reply.status(404).send({ error: "Account not found" });
+      }
 
-    // Create session
-    await createSession(reply, {
-      id: account.id,
-      nostrPubkey: account.nostrPubkey,
-      isWriter: account.isWriter,
-    })
+      // Create session
+      await createSession(reply, {
+        id: account.id,
+        nostrPubkey: account.nostrPubkey,
+        isWriter: account.isWriter,
+      });
 
-    return reply.status(200).send({
-      id: account.id,
-      username: account.username,
-      displayName: account.displayName,
-    })
-  })
+      return reply.status(200).send({
+        id: account.id,
+        username: account.username,
+        displayName: account.displayName,
+      });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/dev-login — instant login for local development (no magic link)
   // Only available when NODE_ENV=development
   // ---------------------------------------------------------------------------
 
-  if (process.env.NODE_ENV === 'development') {
-    app.post('/auth/dev-login', async (req, reply) => {
-      const parsed = LoginSchema.safeParse(req.body)
+  if (process.env.NODE_ENV === "development") {
+    app.post("/auth/dev-login", async (req, reply) => {
+      const parsed = LoginSchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() })
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
       const { rows } = await pool.query<{ id: string }>(
-        'SELECT id FROM accounts WHERE email = $1 AND status = $2',
-        [parsed.data.email.toLowerCase().trim(), 'active']
-      )
+        "SELECT id FROM accounts WHERE email = $1 AND status = $2",
+        [parsed.data.email.toLowerCase().trim(), "active"],
+      );
 
       if (rows.length === 0) {
-        return reply.status(404).send({ error: 'No account found with that email' })
+        return reply
+          .status(404)
+          .send({ error: "No account found with that email" });
       }
 
-      const account = await getAccount(rows[0].id)
+      const account = await getAccount(rows[0].id);
       if (!account) {
-        return reply.status(404).send({ error: 'Account not found' })
+        return reply.status(404).send({ error: "Account not found" });
       }
 
       await createSession(reply, {
         id: account.id,
         nostrPubkey: account.nostrPubkey,
         isWriter: account.isWriter,
-      })
+      });
 
-      logger.info({ email: parsed.data.email, accountId: account.id }, 'Dev login — session created')
+      logger.info(
+        { email: parsed.data.email, accountId: account.id },
+        "Dev login — session created",
+      );
 
       return reply.status(200).send({
         id: account.id,
         username: account.username,
         displayName: account.displayName,
-      })
-    })
+      });
+    });
   }
 
   // ---------------------------------------------------------------------------
   // POST /auth/logout
   // ---------------------------------------------------------------------------
 
-  app.post('/auth/logout', async (req, reply) => {
+  app.post("/auth/logout", async (req, reply) => {
     // If we have a valid session, invalidate all sessions for this account
-    const session = await verifySession(req)
+    const session = await verifySession(req);
     if (session?.sub) {
       await pool.query(
-        'UPDATE accounts SET sessions_invalidated_at = now() WHERE id = $1',
-        [session.sub]
-      )
+        "UPDATE accounts SET sessions_invalidated_at = now() WHERE id = $1",
+        [session.sub],
+      );
     }
-    destroySession(reply)
-    return reply.status(200).send({ ok: true })
-  })
+    destroySession(reply);
+    return reply.status(200).send({ ok: true });
+  });
 
   // ---------------------------------------------------------------------------
   // GET /auth/me — session hydration
@@ -206,13 +254,16 @@ export async function authRoutes(app: FastifyInstance) {
   // The web client calls this on page load to hydrate auth state.
   // ---------------------------------------------------------------------------
 
-  app.get('/auth/me', { preHandler: requireAuth }, async (req, reply) => {
-    const account = await getAccount(req.session!.sub!)
+  app.get("/auth/me", { preHandler: requireAuth }, async (req, reply) => {
+    const account = await getAccount(req.session!.sub!);
     if (!account) {
-      return reply.status(404).send({ error: 'Account not found' })
+      return reply.status(404).send({ error: "Account not found" });
     }
 
-    const adminIds = (process.env.ADMIN_ACCOUNT_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    const adminIds = (process.env.ADMIN_ACCOUNT_IDS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     return reply.status(200).send({
       id: account.id,
@@ -229,8 +280,8 @@ export async function authRoutes(app: FastifyInstance) {
       defaultArticlePricePence: account.defaultArticlePricePence,
       isAdmin: adminIds.includes(account.id),
       usernameChangedAt: account.usernameChangedAt,
-    })
-  })
+    });
+  });
 
   // ---------------------------------------------------------------------------
   // PATCH /auth/profile — update display name, bio, avatar
@@ -240,24 +291,29 @@ export async function authRoutes(app: FastifyInstance) {
     displayName: z.string().min(1).max(100).optional(),
     bio: z.string().max(500).optional(),
     avatar: z.string().url().max(500).nullable().optional(),
-  })
+  });
 
-  app.patch('/auth/profile', { preHandler: requireAuth }, async (req, reply) => {
-    const parsed = UpdateProfileSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
+  app.patch(
+    "/auth/profile",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const parsed = UpdateProfileSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
+      }
 
-    const accountId = req.session!.sub!
+      const accountId = req.session!.sub!;
 
-    await updateProfile(accountId, {
-      displayName: parsed.data.displayName,
-      bio: parsed.data.bio,
-      avatarBlossomUrl: parsed.data.avatar === null ? null : parsed.data.avatar,
-    })
+      await updateProfile(accountId, {
+        displayName: parsed.data.displayName,
+        bio: parsed.data.bio,
+        avatarBlossomUrl:
+          parsed.data.avatar === null ? null : parsed.data.avatar,
+      });
 
-    return reply.status(200).send({ ok: true })
-  })
+      return reply.status(200).send({ ok: true });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/upgrade-writer — start Stripe Connect onboarding
@@ -268,49 +324,59 @@ export async function authRoutes(app: FastifyInstance) {
   // marks stripe_connect_kyc_complete = true.
   // ---------------------------------------------------------------------------
 
-  app.post('/auth/upgrade-writer', { preHandler: requireAuth }, async (req, reply) => {
-    const accountId = req.session!.sub!
-    const account = await getAccount(accountId)
+  app.post(
+    "/auth/upgrade-writer",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const accountId = req.session!.sub!;
+      const account = await getAccount(accountId);
 
-    if (!account) {
-      return reply.status(404).send({ error: 'Account not found' })
-    }
+      if (!account) {
+        return reply.status(404).send({ error: "Account not found" });
+      }
 
-    if (account.stripeConnectId) {
-      return reply.status(409).send({ error: 'Stripe already connected' })
-    }
+      if (account.stripeConnectId) {
+        return reply.status(409).send({ error: "Stripe already connected" });
+      }
 
-    try {
-      // Create Stripe Connect Express account
-      const connectAccount = await stripe.accounts.create({
-        type: 'express',
-        country: 'GB',
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-        metadata: {
-          platform: 'all.haus',
-          account_id: accountId,
-        },
-      })
+      try {
+        // Create Stripe Connect Express account
+        const connectAccount = await stripe.accounts.create({
+          type: "express",
+          country: "GB",
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+          metadata: {
+            platform: "all.haus",
+            account_id: accountId,
+          },
+        });
 
-      // Generate onboarding link
-      const accountLink = await stripe.accountLinks.create({
-        account: connectAccount.id,
-        refresh_url: `${process.env.APP_URL}/settings/payments?refresh=true`,
-        return_url: `${process.env.APP_URL}/settings/payments?onboarding=complete`,
-        type: 'account_onboarding',
-      })
+        // Generate onboarding link
+        const accountLink = await stripe.accountLinks.create({
+          account: connectAccount.id,
+          refresh_url: `${process.env.APP_URL}/settings/payments?refresh=true`,
+          return_url: `${process.env.APP_URL}/settings/payments?onboarding=complete`,
+          type: "account_onboarding",
+        });
 
-      const result = await connectStripeAccount(accountId, connectAccount.id, accountLink.url)
+        const result = await connectStripeAccount(
+          accountId,
+          connectAccount.id,
+          accountLink.url,
+        );
 
-      return reply.status(200).send(result)
-    } catch (err) {
-      logger.error({ err, accountId }, 'Writer upgrade failed')
-      return reply.status(500).send({ error: 'Failed to start Stripe onboarding' })
-    }
-  })
+        return reply.status(200).send(result);
+      } catch (err) {
+        logger.error({ err, accountId }, "Writer upgrade failed");
+        return reply
+          .status(500)
+          .send({ error: "Failed to start Stripe onboarding" });
+      }
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/connect-card — set up reader payment method
@@ -325,68 +391,84 @@ export async function authRoutes(app: FastifyInstance) {
 
   const ConnectCardSchema = z.object({
     paymentMethodId: z.string().min(1),
-  })
+  });
 
-  app.post('/auth/connect-card', { preHandler: requireAuth }, async (req, reply) => {
-    const parsed = ConnectCardSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
-
-    const accountId = req.session!.sub!
-    const account = await getAccount(accountId)
-
-    if (!account) {
-      return reply.status(404).send({ error: 'Account not found' })
-    }
-
-    try {
-      let customerId = account.stripeCustomerId
-
-      if (!customerId) {
-        // Create Stripe Customer
-        const customer = await stripe.customers.create({
-          metadata: {
-            platform: 'all.haus',
-            account_id: accountId,
-          },
-        })
-        customerId = customer.id
+  app.post(
+    "/auth/connect-card",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const parsed = ConnectCardSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      // Attach payment method and set as default
-      await stripe.paymentMethods.attach(parsed.data.paymentMethodId, {
-        customer: customerId,
-      })
+      const accountId = req.session!.sub!;
+      const account = await getAccount(accountId);
 
-      await stripe.customers.update(customerId, {
-        invoice_settings: {
-          default_payment_method: parsed.data.paymentMethodId,
-        },
-      })
+      if (!account) {
+        return reply.status(404).send({ error: "Account not found" });
+      }
 
-      // Record on account
-      await connectPaymentMethod(accountId, customerId)
-
-      // Notify payment service to convert provisional reads
-      // This is a fire-and-forget internal call — failure is logged, not fatal
       try {
-        const paymentServiceUrl = process.env.PAYMENT_SERVICE_URL ?? 'http://localhost:3001'
-        await fetch(`${paymentServiceUrl}/api/v1/card-connected`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ readerId: accountId, stripeCustomerId: customerId }),
-        })
-      } catch (err) {
-        logger.error({ err, accountId }, 'Failed to notify payment service of card connection')
-      }
+        let customerId = account.stripeCustomerId;
 
-      return reply.status(200).send({ ok: true, hasPaymentMethod: true })
-    } catch (err) {
-      logger.error({ err, accountId }, 'Card connection failed')
-      return reply.status(500).send({ error: 'Failed to connect payment method' })
-    }
-  })
+        if (!customerId) {
+          // Create Stripe Customer
+          const customer = await stripe.customers.create({
+            metadata: {
+              platform: "all.haus",
+              account_id: accountId,
+            },
+          });
+          customerId = customer.id;
+        }
+
+        // Attach payment method and set as default
+        await stripe.paymentMethods.attach(parsed.data.paymentMethodId, {
+          customer: customerId,
+        });
+
+        await stripe.customers.update(customerId, {
+          invoice_settings: {
+            default_payment_method: parsed.data.paymentMethodId,
+          },
+        });
+
+        // Record on account
+        await connectPaymentMethod(accountId, customerId);
+
+        // Notify payment service to convert provisional reads
+        // This is a fire-and-forget internal call — failure is logged, not fatal
+        try {
+          const paymentServiceUrl =
+            process.env.PAYMENT_SERVICE_URL ?? "http://localhost:3001";
+          await fetch(`${paymentServiceUrl}/api/v1/card-connected`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Internal-Token": process.env.INTERNAL_SERVICE_TOKEN ?? "",
+            },
+            body: JSON.stringify({
+              readerId: accountId,
+              stripeCustomerId: customerId,
+            }),
+          });
+        } catch (err) {
+          logger.error(
+            { err, accountId },
+            "Failed to notify payment service of card connection",
+          );
+        }
+
+        return reply.status(200).send({ ok: true, hasPaymentMethod: true });
+      } catch (err) {
+        logger.error({ err, accountId }, "Card connection failed");
+        return reply
+          .status(500)
+          .send({ error: "Failed to connect payment method" });
+      }
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/deactivate — deactivate account (reversible)
@@ -396,18 +478,22 @@ export async function authRoutes(app: FastifyInstance) {
   // for deactivated accounts — the verify route should handle reactivation).
   // ---------------------------------------------------------------------------
 
-  app.post('/auth/deactivate', { preHandler: requireAuth }, async (req, reply) => {
-    const accountId = req.session!.sub!
+  app.post(
+    "/auth/deactivate",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const accountId = req.session!.sub!;
 
-    await pool.query(
-      `UPDATE accounts SET status = 'deactivated', updated_at = now() WHERE id = $1`,
-      [accountId]
-    )
+      await pool.query(
+        `UPDATE accounts SET status = 'deactivated', updated_at = now() WHERE id = $1`,
+        [accountId],
+      );
 
-    logger.info({ accountId }, 'Account deactivated')
-    destroySession(reply)
-    return reply.status(200).send({ ok: true })
-  })
+      logger.info({ accountId }, "Account deactivated");
+      destroySession(reply);
+      return reply.status(200).send({ ok: true });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/delete-account — permanently delete account
@@ -419,84 +505,156 @@ export async function authRoutes(app: FastifyInstance) {
 
   const DeleteAccountSchema = z.object({
     emailConfirmation: z.string().email(),
-  })
+  });
 
-  app.post('/auth/delete-account', { preHandler: requireAuth }, async (req, reply) => {
-    const parsed = DeleteAccountSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
-
-    const accountId = req.session!.sub!
-
-    // Verify the email matches
-    const { rows: accountRows } = await pool.query<{ email: string }>(
-      'SELECT email FROM accounts WHERE id = $1',
-      [accountId]
-    )
-    if (accountRows.length === 0) {
-      return reply.status(404).send({ error: 'Account not found' })
-    }
-    if (accountRows[0].email.toLowerCase() !== parsed.data.emailConfirmation.toLowerCase()) {
-      return reply.status(400).send({ error: 'Email does not match' })
-    }
-
-    await withTransaction(async (client) => {
-      // Cancel all active subscriptions (as reader)
-      await client.query(
-        `UPDATE subscriptions SET status = 'cancelled', cancelled_at = now()
-         WHERE reader_id = $1 AND status = 'active'`,
-        [accountId]
-      )
-
-      // Cancel all active subscriptions (as writer — subscribers lose access)
-      await client.query(
-        `UPDATE subscriptions SET status = 'cancelled', cancelled_at = now()
-         WHERE writer_id = $1 AND status = 'active'`,
-        [accountId]
-      )
-
-      // Soft-delete all articles and collect event IDs for kind-5 deletion
-      const { rows: articles } = await client.query<{ id: string; nostr_event_id: string; nostr_d_tag: string }>(
-        `UPDATE articles SET deleted_at = now()
-         WHERE writer_id = $1 AND deleted_at IS NULL
-         RETURNING id, nostr_event_id, nostr_d_tag`,
-        [accountId]
-      )
-
-      // Enqueue kind 5 deletion events (non-fatal — DB is source of truth).
-      // relay_outbox owns retry so a relay blip during account deletion no
-      // longer leaves tombstones un-published.
-      for (const article of articles) {
-        try {
-          const deletionEvent = await signEvent(accountId, {
-            kind: 5,
-            content: '',
-            tags: [
-              ['e', article.nostr_event_id],
-              ['a', `30023:${accountRows[0].email}:${article.nostr_d_tag}`],
-            ],
-            created_at: Math.floor(Date.now() / 1000),
-          })
-          await enqueueRelayPublish(client, {
-            entityType: 'article_deletion',
-            entityId: article.id,
-            signedEvent: deletionEvent as SignedNostrEvent,
-          })
-        } catch (err) {
-          logger.error({ err, articleId: article.id }, 'Failed to enqueue kind 5 deletion event during account deletion')
-        }
+  app.post(
+    "/auth/delete-account",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const parsed = DeleteAccountSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      // Hard-delete the account (CASCADE handles bookmarks, follows, etc.)
-      await client.query('DELETE FROM accounts WHERE id = $1', [accountId])
+      const accountId = req.session!.sub!;
 
-      logger.info({ accountId, articlesDeleted: articles.length }, 'Account permanently deleted')
-    })
+      // Verify the email matches
+      const { rows: accountRows } = await pool.query<{ email: string }>(
+        "SELECT email FROM accounts WHERE id = $1",
+        [accountId],
+      );
+      if (accountRows.length === 0) {
+        return reply.status(404).send({ error: "Account not found" });
+      }
+      if (
+        accountRows[0].email.toLowerCase() !==
+        parsed.data.emailConfirmation.toLowerCase()
+      ) {
+        return reply.status(400).send({ error: "Email does not match" });
+      }
 
-    destroySession(reply)
-    return reply.status(200).send({ ok: true })
-  })
+      await withTransaction(async (client) => {
+        // Cancel all active subscriptions (as reader)
+        await client.query(
+          `UPDATE subscriptions SET status = 'cancelled', cancelled_at = now()
+         WHERE reader_id = $1 AND status = 'active'`,
+          [accountId],
+        );
+
+        // Cancel all active subscriptions (as writer — subscribers lose access)
+        await client.query(
+          `UPDATE subscriptions SET status = 'cancelled', cancelled_at = now()
+         WHERE writer_id = $1 AND status = 'active'`,
+          [accountId],
+        );
+
+        // Soft-delete all articles and collect event IDs for kind-5 deletion
+        const { rows: articles } = await client.query<{
+          id: string;
+          nostr_event_id: string;
+          nostr_d_tag: string;
+        }>(
+          `UPDATE articles SET deleted_at = now()
+         WHERE writer_id = $1 AND deleted_at IS NULL
+         RETURNING id, nostr_event_id, nostr_d_tag`,
+          [accountId],
+        );
+
+        // Enqueue kind 5 deletion events (non-fatal — DB is source of truth).
+        // relay_outbox owns retry so a relay blip during account deletion no
+        // longer leaves tombstones un-published.
+        for (const article of articles) {
+          try {
+            const deletionEvent = await signEvent(accountId, {
+              kind: 5,
+              content: "",
+              tags: [
+                ["e", article.nostr_event_id],
+                ["a", `30023:${accountRows[0].email}:${article.nostr_d_tag}`],
+              ],
+              created_at: Math.floor(Date.now() / 1000),
+            });
+            await enqueueRelayPublish(client, {
+              entityType: "article_deletion",
+              entityId: article.id,
+              signedEvent: deletionEvent as SignedNostrEvent,
+            });
+          } catch (err) {
+            logger.error(
+              { err, articleId: article.id },
+              "Failed to enqueue kind 5 deletion event during account deletion",
+            );
+          }
+        }
+
+        // Soft-delete all notes and enqueue kind-5 tombstones
+        const { rows: notes } = await client.query<{
+          id: string;
+          nostr_event_id: string;
+        }>(
+          `UPDATE notes SET deleted_at = now()
+           WHERE author_id = $1 AND deleted_at IS NULL
+           RETURNING id, nostr_event_id`,
+          [accountId],
+        );
+
+        for (const note of notes) {
+          try {
+            const deletionEvent = await signEvent(accountId, {
+              kind: 5,
+              content: "",
+              tags: [["e", note.nostr_event_id]],
+              created_at: Math.floor(Date.now() / 1000),
+            });
+            await enqueueRelayPublish(client, {
+              entityType: "note_deletion",
+              entityId: note.id,
+              signedEvent: deletionEvent as SignedNostrEvent,
+            });
+          } catch (err) {
+            logger.error(
+              { err, noteId: note.id },
+              "Failed to enqueue kind 5 deletion event for note during account deletion",
+            );
+          }
+        }
+
+        // Soft-delete the account — hard-delete would violate ON DELETE RESTRICT
+        // FKs on articles, notes, read_events, vote_charges, unlock_records, etc.
+        // Clean up relations that won't be useful post-deletion.
+        await client.query(
+          "DELETE FROM follows WHERE follower_id = $1 OR followee_id = $1",
+          [accountId],
+        );
+        await client.query("DELETE FROM bookmarks WHERE user_id = $1", [
+          accountId,
+        ]);
+        await client.query("DELETE FROM feed_saves WHERE user_id = $1", [
+          accountId,
+        ]);
+        await client.query(
+          `UPDATE accounts
+           SET status = 'deleted', email = 'deleted-' || id || '@deleted',
+               display_name = NULL, bio = NULL, avatar_blossom_url = NULL,
+               sessions_invalidated_at = now(), updated_at = now()
+           WHERE id = $1`,
+          [accountId],
+        );
+
+        logger.info(
+          {
+            accountId,
+            articlesDeleted: articles.length,
+            notesDeleted: notes.length,
+          },
+          "Account soft-deleted",
+        );
+      });
+
+      destroySession(reply);
+      return reply.status(200).send({ ok: true });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/change-email — request email change
@@ -508,51 +666,59 @@ export async function authRoutes(app: FastifyInstance) {
 
   const ChangeEmailSchema = z.object({
     newEmail: z.string().email(),
-  })
+  });
 
-  app.post('/auth/change-email', { preHandler: requireAuth }, async (req, reply) => {
-    const parsed = ChangeEmailSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
+  app.post(
+    "/auth/change-email",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const parsed = ChangeEmailSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
+      }
 
-    const accountId = req.session!.sub!
-    const newEmail = parsed.data.newEmail.toLowerCase().trim()
+      const accountId = req.session!.sub!;
+      const newEmail = parsed.data.newEmail.toLowerCase().trim();
 
-    // Check if email is already in use
-    const { rows: existing } = await pool.query(
-      'SELECT id FROM accounts WHERE email = $1 AND id != $2',
-      [newEmail, accountId]
-    )
-    if (existing.length > 0) {
-      return reply.status(409).send({ error: 'Email already in use' })
-    }
+      // Check if email is already in use — return success either way to
+      // prevent email enumeration. If taken, skip the DB write + email.
+      const { rows: existing } = await pool.query(
+        "SELECT id FROM accounts WHERE email = $1 AND id != $2",
+        [newEmail, accountId],
+      );
+      if (existing.length > 0) {
+        return reply
+          .status(200)
+          .send({ ok: true, message: "Verification email sent" });
+      }
 
-    // Generate verification token
-    const token = crypto.randomBytes(32).toString('base64url')
+      // Generate verification token
+      const token = crypto.randomBytes(32).toString("base64url");
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
-    await pool.query(
-      `UPDATE accounts SET pending_email = $1, email_verification_token = $2, updated_at = now()
+      await pool.query(
+        `UPDATE accounts SET pending_email = $1, email_verification_token = $2,
+         email_verification_requested_at = now(), updated_at = now()
        WHERE id = $3`,
-      [newEmail, token, accountId]
-    )
+        [newEmail, tokenHash, accountId],
+      );
 
-    // Send verification email to the new address
-    const appUrl = process.env.APP_URL ?? 'http://localhost:3010'
-    const verifyUrl = `${appUrl}/auth/verify?emailChange=${encodeURIComponent(token)}`
+      // Send verification email to the new address
+      const appUrl = process.env.APP_URL ?? "http://localhost:3010";
+      const verifyUrl = `${appUrl}/auth/verify?emailChange=${encodeURIComponent(token)}`;
 
-    try {
-      await sendEmail({
-        to: newEmail,
-        subject: 'Verify your new email — all.haus',
-        textBody: [
-          'Click this link to verify your new email address on all.haus:',
-          '',
-          verifyUrl,
-          '',
-          'If you didn\'t request this change, you can ignore this email.',
-        ].join('\n'),
-        htmlBody: `
+      try {
+        await sendEmail({
+          to: newEmail,
+          subject: "Verify your new email — all.haus",
+          textBody: [
+            "Click this link to verify your new email address on all.haus:",
+            "",
+            verifyUrl,
+            "",
+            "If you didn't request this change, you can ignore this email.",
+          ].join("\n"),
+          htmlBody: `
           <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 0;">
             <h2 style="font-size: 20px; font-weight: 600; color: #1c1917; margin-bottom: 16px;">
               Verify your new email
@@ -568,15 +734,24 @@ export async function authRoutes(app: FastifyInstance) {
               If you didn't request this change, you can safely ignore this email.
             </p>
           </div>`,
-      })
-    } catch (err) {
-      logger.error({ err, accountId }, 'Failed to send email change verification')
-      return reply.status(500).send({ error: 'Failed to send verification email' })
-    }
+        });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "Failed to send email change verification",
+        );
+        return reply
+          .status(500)
+          .send({ error: "Failed to send verification email" });
+      }
 
-    logger.info({ accountId, newEmail: newEmail.slice(0, 3) + '***' }, 'Email change requested')
-    return reply.status(200).send({ ok: true })
-  })
+      logger.info(
+        { accountId, newEmail: newEmail.slice(0, 3) + "***" },
+        "Email change requested",
+      );
+      return reply.status(200).send({ ok: true });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/verify-email-change — verify email change token
@@ -586,48 +761,80 @@ export async function authRoutes(app: FastifyInstance) {
 
   const VerifyEmailChangeSchema = z.object({
     token: z.string().min(1),
-  })
+  });
 
-  app.post('/auth/verify-email-change', async (req, reply) => {
-    const parsed = VerifyEmailChangeSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
+  app.post(
+    "/auth/verify-email-change",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const parsed = VerifyEmailChangeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
+      }
 
-    const { rows } = await pool.query<{ id: string; pending_email: string }>(
-      `SELECT id, pending_email FROM accounts
+      const tokenHash = crypto
+        .createHash("sha256")
+        .update(parsed.data.token)
+        .digest("hex");
+
+      const { rows } = await pool.query<{
+        id: string;
+        pending_email: string;
+        email_verification_requested_at: Date | null;
+      }>(
+        `SELECT id, pending_email, email_verification_requested_at FROM accounts
        WHERE email_verification_token = $1 AND pending_email IS NOT NULL`,
-      [parsed.data.token]
-    )
+        [tokenHash],
+      );
 
-    if (rows.length === 0) {
-      return reply.status(400).send({ error: 'Invalid or expired verification token' })
-    }
+      if (rows.length === 0) {
+        return reply
+          .status(400)
+          .send({ error: "Invalid or expired verification token" });
+      }
 
-    const { id: accountId, pending_email: newEmail } = rows[0]
+      const { id: accountId, pending_email: newEmail } = rows[0];
 
-    // Check the new email hasn't been taken since the request was made
-    const { rows: conflict } = await pool.query(
-      'SELECT id FROM accounts WHERE email = $1 AND id != $2',
-      [newEmail, accountId]
-    )
-    if (conflict.length > 0) {
+      // 24-hour TTL
+      const requestedAt = rows[0].email_verification_requested_at;
+      if (
+        requestedAt &&
+        Date.now() - requestedAt.getTime() > 24 * 60 * 60 * 1000
+      ) {
+        await pool.query(
+          `UPDATE accounts SET pending_email = NULL, email_verification_token = NULL WHERE id = $1`,
+          [accountId],
+        );
+        return reply
+          .status(400)
+          .send({ error: "Invalid or expired verification token" });
+      }
+
+      // Check the new email hasn't been taken since the request was made
+      const { rows: conflict } = await pool.query(
+        "SELECT id FROM accounts WHERE email = $1 AND id != $2",
+        [newEmail, accountId],
+      );
+      if (conflict.length > 0) {
+        await pool.query(
+          `UPDATE accounts SET pending_email = NULL, email_verification_token = NULL WHERE id = $1`,
+          [accountId],
+        );
+        return reply
+          .status(409)
+          .send({ error: "Email change could not be completed" });
+      }
+
       await pool.query(
-        `UPDATE accounts SET pending_email = NULL, email_verification_token = NULL WHERE id = $1`,
-        [accountId]
-      )
-      return reply.status(409).send({ error: 'Email already in use' })
-    }
-
-    await pool.query(
-      `UPDATE accounts SET email = $1, pending_email = NULL, email_verification_token = NULL, updated_at = now()
+        `UPDATE accounts SET email = $1, pending_email = NULL, email_verification_token = NULL, updated_at = now()
        WHERE id = $2`,
-      [newEmail, accountId]
-    )
+        [newEmail, accountId],
+      );
 
-    logger.info({ accountId }, 'Email changed successfully')
-    return reply.status(200).send({ ok: true })
-  })
+      logger.info({ accountId }, "Email changed successfully");
+      return reply.status(200).send({ ok: true });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // POST /auth/change-username — change username (30-day cooldown)
@@ -636,96 +843,108 @@ export async function authRoutes(app: FastifyInstance) {
   // and sets up a 90-day redirect from the old username.
   // ---------------------------------------------------------------------------
 
-  const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/
+  const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
   const ChangeUsernameSchema = z.object({
     newUsername: z.string().min(3).max(30),
-  })
+  });
 
-  app.post('/auth/change-username', { preHandler: requireAuth }, async (req, reply) => {
-    const parsed = ChangeUsernameSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
-    }
-
-    const accountId = req.session!.sub!
-    const newUsername = parsed.data.newUsername.toLowerCase()
-
-    if (!USERNAME_RE.test(newUsername)) {
-      return reply.status(400).send({ error: 'Username must be 3-30 characters, lowercase alphanumeric and hyphens only' })
-    }
-
-    const { rows: account } = await pool.query<{
-      username: string | null
-      username_changed_at: Date | null
-    }>(
-      'SELECT username, username_changed_at FROM accounts WHERE id = $1',
-      [accountId]
-    )
-
-    if (account.length === 0) {
-      return reply.status(404).send({ error: 'Account not found' })
-    }
-
-    // 30-day cooldown
-    if (account[0].username_changed_at) {
-      const daysSince = (Date.now() - account[0].username_changed_at.getTime()) / (1000 * 60 * 60 * 24)
-      if (daysSince < 30) {
-        const nextChangeDate = new Date(account[0].username_changed_at.getTime() + 30 * 24 * 60 * 60 * 1000)
-        return reply.status(429).send({
-          error: 'Username change cooldown active',
-          nextChangeDate: nextChangeDate.toISOString(),
-        })
+  app.post(
+    "/auth/change-username",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const parsed = ChangeUsernameSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
       }
-    }
 
-    // Check availability
-    const { rows: existing } = await pool.query(
-      'SELECT id FROM accounts WHERE username = $1 AND id != $2',
-      [newUsername, accountId]
-    )
-    if (existing.length > 0) {
-      return reply.status(409).send({ error: 'Username already taken' })
-    }
+      const accountId = req.session!.sub!;
+      const newUsername = parsed.data.newUsername.toLowerCase();
 
-    const oldUsername = account[0].username
+      if (!USERNAME_RE.test(newUsername)) {
+        return reply.status(400).send({
+          error:
+            "Username must be 3-30 characters, lowercase alphanumeric and hyphens only",
+        });
+      }
 
-    await pool.query(
-      `UPDATE accounts
+      const { rows: account } = await pool.query<{
+        username: string | null;
+        username_changed_at: Date | null;
+      }>("SELECT username, username_changed_at FROM accounts WHERE id = $1", [
+        accountId,
+      ]);
+
+      if (account.length === 0) {
+        return reply.status(404).send({ error: "Account not found" });
+      }
+
+      // 30-day cooldown
+      if (account[0].username_changed_at) {
+        const daysSince =
+          (Date.now() - account[0].username_changed_at.getTime()) /
+          (1000 * 60 * 60 * 24);
+        if (daysSince < 30) {
+          const nextChangeDate = new Date(
+            account[0].username_changed_at.getTime() + 30 * 24 * 60 * 60 * 1000,
+          );
+          return reply.status(429).send({
+            error: "Username change cooldown active",
+            nextChangeDate: nextChangeDate.toISOString(),
+          });
+        }
+      }
+
+      // Check availability
+      const { rows: existing } = await pool.query(
+        "SELECT id FROM accounts WHERE username = $1 AND id != $2",
+        [newUsername, accountId],
+      );
+      if (existing.length > 0) {
+        return reply.status(409).send({ error: "Username already taken" });
+      }
+
+      const oldUsername = account[0].username;
+
+      await pool.query(
+        `UPDATE accounts
        SET username = $1,
            previous_username = $2,
            username_redirect_until = now() + INTERVAL '90 days',
            username_changed_at = now(),
            updated_at = now()
        WHERE id = $3`,
-      [newUsername, oldUsername, accountId]
-    )
+        [newUsername, oldUsername, accountId],
+      );
 
-    logger.info({ accountId, oldUsername, newUsername }, 'Username changed')
-    return reply.status(200).send({ ok: true, username: newUsername })
-  })
+      logger.info({ accountId, oldUsername, newUsername }, "Username changed");
+      return reply.status(200).send({ ok: true, username: newUsername });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // GET /auth/check-username/:username — check username availability
   // ---------------------------------------------------------------------------
 
   app.get<{ Params: { username: string } }>(
-    '/auth/check-username/:username',
+    "/auth/check-username/:username",
     { preHandler: requireAuth },
     async (req, reply) => {
-      const username = req.params.username.toLowerCase()
+      const username = req.params.username.toLowerCase();
 
       if (!USERNAME_RE.test(username)) {
-        return reply.status(200).send({ available: false, reason: 'Invalid format' })
+        return reply
+          .status(200)
+          .send({ available: false, reason: "Invalid format" });
       }
 
-      const accountId = req.session!.sub!
+      const accountId = req.session!.sub!;
       const { rows } = await pool.query(
-        'SELECT id FROM accounts WHERE username = $1 AND id != $2',
-        [username, accountId]
-      )
+        "SELECT id FROM accounts WHERE username = $1 AND id != $2",
+        [username, accountId],
+      );
 
-      return reply.status(200).send({ available: rows.length === 0 })
-    }
-  )
+      return reply.status(200).send({ available: rows.length === 0 });
+    },
+  );
 }
