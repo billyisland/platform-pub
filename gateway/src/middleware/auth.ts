@@ -1,7 +1,16 @@
-import type { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from 'fastify'
-import { verifySession, refreshIfNeeded, destroySession, type SessionPayload } from '@platform-pub/shared/auth/session.js'
-import { pool } from '@platform-pub/shared/db/client.js'
-import logger from '@platform-pub/shared/lib/logger.js'
+import type {
+  FastifyRequest,
+  FastifyReply,
+  HookHandlerDoneFunction,
+} from "fastify";
+import {
+  verifySession,
+  refreshIfNeeded,
+  destroySession,
+  type SessionPayload,
+} from "@platform-pub/shared/auth/session.js";
+import { pool } from "@platform-pub/shared/db/client.js";
+import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
 // Auth Middleware
@@ -21,10 +30,18 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // =============================================================================
 
 // Extend FastifyRequest with session data
-declare module 'fastify' {
+declare module "fastify" {
   interface FastifyRequest {
-    session?: SessionPayload | null
+    session?: SessionPayload | null;
   }
+}
+
+// Strip identity headers from incoming requests so unauthenticated callers
+// cannot impersonate users on downstream services.
+export async function stripIdentityHeaders(req: FastifyRequest): Promise<void> {
+  delete req.headers["x-reader-id"];
+  delete req.headers["x-reader-pubkey"];
+  delete req.headers["x-writer-id"];
 }
 
 // ---------------------------------------------------------------------------
@@ -33,44 +50,50 @@ declare module 'fastify' {
 
 export async function requireAuth(
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ): Promise<void> {
-  const session = await verifySession(req)
+  const session = await verifySession(req);
 
   if (!session || !session.sub) {
-    reply.status(401).send({ error: 'Authentication required' })
-    return
+    reply.status(401).send({ error: "Authentication required" });
+    return;
   }
 
   // Check account status — suspended users must not retain API access
-  const accountRow = await pool.query<{ status: string; sessions_invalidated_at: Date | null }>(
-    'SELECT status, sessions_invalidated_at FROM accounts WHERE id = $1',
-    [session.sub]
-  )
-  if (accountRow.rowCount === 0 || accountRow.rows[0].status !== 'active') {
-    reply.status(403).send({ error: 'Account suspended or not found' })
-    return
+  const accountRow = await pool.query<{
+    status: string;
+    sessions_invalidated_at: Date | null;
+  }>("SELECT status, sessions_invalidated_at FROM accounts WHERE id = $1", [
+    session.sub,
+  ]);
+  if (accountRow.rowCount === 0 || accountRow.rows[0].status !== "active") {
+    reply.status(403).send({ error: "Account suspended or not found" });
+    return;
   }
 
   // Reject tokens issued before the last session invalidation (logout-all-devices)
-  const invalidatedAt = accountRow.rows[0].sessions_invalidated_at
-  if (invalidatedAt && session.iat && session.iat < Math.floor(invalidatedAt.getTime() / 1000)) {
-    destroySession(reply)
-    reply.status(401).send({ error: 'Session expired' })
-    return
+  const invalidatedAt = accountRow.rows[0].sessions_invalidated_at;
+  if (
+    invalidatedAt &&
+    session.iat &&
+    session.iat < Math.floor(invalidatedAt.getTime() / 1000)
+  ) {
+    destroySession(reply);
+    reply.status(401).send({ error: "Session expired" });
+    return;
   }
 
   // Inject headers for downstream services
-  req.headers['x-reader-id'] = session.sub
-  req.headers['x-reader-pubkey'] = session.pubkey
+  req.headers["x-reader-id"] = session.sub;
+  req.headers["x-reader-pubkey"] = session.pubkey;
 
-  req.headers['x-writer-id'] = session.sub
+  req.headers["x-writer-id"] = session.sub;
 
   // Attach to request for route handlers
-  req.session = session
+  req.session = session;
 
   // Silently refresh session if past half-life
-  await refreshIfNeeded(req, reply, session)
+  await refreshIfNeeded(req, reply, session);
 }
 
 // ---------------------------------------------------------------------------
@@ -79,19 +102,41 @@ export async function requireAuth(
 
 export async function optionalAuth(
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ): Promise<void> {
-  const session = await verifySession(req)
+  const session = await verifySession(req);
 
   if (session?.sub) {
-    req.headers['x-reader-id'] = session.sub
-    req.headers['x-reader-pubkey'] = session.pubkey
+    const accountRow = await pool.query<{
+      status: string;
+      sessions_invalidated_at: Date | null;
+    }>("SELECT status, sessions_invalidated_at FROM accounts WHERE id = $1", [
+      session.sub,
+    ]);
 
-    req.headers['x-writer-id'] = session.sub
+    const invalid =
+      accountRow.rowCount === 0 ||
+      accountRow.rows[0].status !== "active" ||
+      (accountRow.rows[0].sessions_invalidated_at &&
+        session.iat &&
+        session.iat <
+          Math.floor(
+            accountRow.rows[0].sessions_invalidated_at.getTime() / 1000,
+          ));
 
-    req.session = session
-    await refreshIfNeeded(req, reply, session)
+    if (invalid) {
+      destroySession(reply);
+      req.session = null;
+      return;
+    }
+
+    req.headers["x-reader-id"] = session.sub;
+    req.headers["x-reader-pubkey"] = session.pubkey;
+    req.headers["x-writer-id"] = session.sub;
+
+    req.session = session;
+    await refreshIfNeeded(req, reply, session);
   } else {
-    req.session = null
+    req.session = null;
   }
 }
