@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useRouter } from "next/navigation";
 import type {
   FeedItem,
@@ -25,6 +26,8 @@ import { ReplySection } from "../replies/ReplySection";
 import { useLiveEngagement } from "../../hooks/useLiveEngagement";
 import { useExternalThread } from "../../hooks/useExternalThread";
 import { ExternalPlayscriptThread } from "./ExternalPlayscriptThread";
+import { useLinkedAccounts } from "../../hooks/useLinkedAccounts";
+import { externalItems } from "../../lib/api/external-items";
 
 export type PipOpen = (
   pubkey: string,
@@ -574,27 +577,59 @@ function EngagementRow({
   repostCount,
   protocol,
   ctx,
+  liked,
+  onLike,
+  likeDisabled,
 }: {
   likeCount: number;
   replyCount: number;
   repostCount: number;
   protocol: string;
   ctx: CardContext;
+  liked?: boolean;
+  onLike?: () => void;
+  likeDisabled?: boolean;
 }) {
-  if (likeCount === 0 && replyCount === 0 && repostCount === 0) return null;
   const hideRepost = protocol === "nostr_external" || protocol === "rss";
+  const hideLike = protocol === "rss";
+  const showLike = !hideLike && (likeCount > 0 || onLike);
+  if (!showLike && replyCount === 0 && repostCount === 0) return null;
   return (
     <div
+      onClick={(e) => e.stopPropagation()}
       className="flex items-center gap-3 mt-2 font-mono text-[11px] uppercase tracking-[0.02em]"
       style={{ color: ctx.palette.cardMeta }}
     >
-      {likeCount > 0 && (
-        <span className="flex items-center gap-1">
+      {showLike && (
+        <button
+          type="button"
+          onClick={onLike}
+          disabled={!onLike || liked}
+          className="flex items-center gap-1 hover:opacity-80 disabled:opacity-50"
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: onLike && !liked ? "pointer" : "default",
+            color: liked
+              ? ctx.palette.crimson
+              : likeDisabled
+                ? ctx.palette.cardMeta
+                : ctx.palette.cardMeta,
+          }}
+          title={
+            likeDisabled
+              ? "Connect account to interact"
+              : liked
+                ? "Liked"
+                : "Like"
+          }
+        >
           <svg
             width="12"
             height="12"
             viewBox="0 0 24 24"
-            fill="none"
+            fill={liked ? "currentColor" : "none"}
             stroke="currentColor"
             strokeWidth="2"
             strokeLinecap="round"
@@ -602,8 +637,8 @@ function EngagementRow({
           >
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
-          {likeCount}
-        </span>
+          {likeCount > 0 && likeCount}
+        </button>
       )}
       {replyCount > 0 && (
         <span className="flex items-center gap-1">
@@ -1063,6 +1098,25 @@ function ExternalVesselCard({
     replyCount: external.replyCount ?? 0,
     repostCount: external.repostCount ?? 0,
   });
+
+  // Like interaction state
+  const linkedAccounts = useLinkedAccounts();
+  const matchingAccount = linkedAccounts?.find(
+    (a) => a.protocol === external.sourceProtocol && a.isValid,
+  );
+  const [liked, setLiked] = React.useState(false);
+  const [likeCountDelta, setLikeCountDelta] = React.useState(0);
+
+  const handleLike = React.useCallback(() => {
+    if (!matchingAccount || liked) return;
+    setLiked(true);
+    setLikeCountDelta(1);
+    externalItems.like(external.id, matchingAccount.id).catch(() => {
+      setLiked(false);
+      setLikeCountDelta(0);
+    });
+  }, [matchingAccount, liked, external.id]);
+
   const onCardClick = onToggleExpand
     ? () => onToggleExpand(expandKey)
     : () => {
@@ -1186,11 +1240,20 @@ function ExternalVesselCard({
         </>
       )}
       <EngagementRow
-        likeCount={engagement.likeCount}
+        likeCount={engagement.likeCount + likeCountDelta}
         replyCount={engagement.replyCount}
         repostCount={engagement.repostCount}
         protocol={external.sourceProtocol}
         ctx={ctx}
+        liked={liked}
+        onLike={
+          external.sourceProtocol !== "rss"
+            ? matchingAccount
+              ? handleLike
+              : undefined
+            : undefined
+        }
+        likeDisabled={external.sourceProtocol !== "rss" && !matchingAccount}
       />
       {ctx.density === "full" && (
         <SourceAttribution

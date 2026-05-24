@@ -1,6 +1,6 @@
 # Workspace Full View — Build Spec
 
-**Status:** Phase 3 shipped (2026-05-24, branch `workspace-experiment`). Thread endpoint (`GET /external-items/:id/thread`), Bluesky (`getPostThread`) + Mastodon (`/context`) fetchers, `useExternalThread` hook, `ExternalPlayscriptThread` + `ExternalPlayscriptEntry` components, thread toggle wired into `ExternalVesselCard`. Nostr thread expansion deferred (returns empty). Reply grouping (§3.3) deferred. Phases 4–5 pending.
+**Status:** Phase 4A shipped (2026-05-24, branch `workspace-experiment`). Migration 092 (action_type constraint + notes.external_parent_id). `POST /external-items/:id/like` endpoint with linked-account validation. `enqueueLike` helper (synthetic dedup key). Feed-ingest dispatcher extended: `likeBlueskyRecord` (atproto `app.bsky.feed.like`), `favouriteMastodonStatus` (Mastodon `/favourite`), Nostr kind 7 via existing signed-event path. Interactive heart button on `ExternalVesselCard` with linked-account gating (greyed/disabled when no account, optimistic increment, filled on like). Phase 4B–4C + Phase 5 pending.
 
 ## Overview
 
@@ -527,12 +527,65 @@ Suggested phasing (each phase is independently shippable):
 - Playscript rendering for external threads
 - Inline reply tags on thread entries
 
-**Phase 4 — Cross-platform interactions**
+**Phase 4A — Interaction foundation + like/favourite**
 
-- Inline reply box + dual-write (reply to source + all.haus note)
-- Like/favourite outbound action
-- Repost/boost outbound action
-- Linked account gating (greyed actions + connect prompt)
+_One context-window unit._
+
+Schema:
+
+- Migration: add `like` and `poll_vote` to `outbound_posts.action_type` constraint
+- Migration: add `external_parent_id UUID REFERENCES external_items(id) ON DELETE SET NULL` to `notes`
+
+Linked account gating (frontend):
+
+- Workspace cards fetch user's linked accounts on mount (reuse existing `linkedAccountsApi.list()`)
+- Determine per-item action availability by matching item's `sourceProtocol` against linked accounts
+- Actions available for the protocol but missing a linked account render **greyed out**
+- Clicking a greyed action shows a prompt: "Connect your [Platform] account to interact" with link to `/settings`
+- Actions not available for the protocol are **hidden** (not greyed)
+
+Like/favourite (full pipeline):
+
+- Gateway: `POST /api/v1/external-items/:id/like` — requires auth, validates linked account for item's protocol, enqueues via `enqueueCrossPost` with `actionType: 'like'`
+- Feed-ingest dispatcher: new `like` handler in `outbound-cross-post.ts`:
+  - atproto: `com.atproto.repo.createRecord` with collection `app.bsky.feed.like`, record `{ subject: { uri, cid }, createdAt }`
+  - activitypub: `POST /api/v1/statuses/:id/favourite` (source item's `source_id` is the status ID)
+  - nostr_external: kind 7 reaction event (`+` content), `e` tag referencing source event, published to source relays
+- Frontend: interactive heart button on `ExternalVesselCard` action row, optimistic count increment, error rollback
+
+**Phase 4B — Repost/boost**
+
+_One context-window unit._
+
+- Gateway: `POST /api/v1/external-items/:id/repost` — same auth + linked account validation pattern
+- Feed-ingest dispatcher: new `repost` handler:
+  - atproto: `com.atproto.repo.createRecord` with collection `app.bsky.feed.repost`, record `{ subject: { uri, cid }, createdAt }`
+  - activitypub: `POST /api/v1/statuses/:id/reblog`
+  - nostr_external: hidden (no standard repost mechanism for external relays)
+  - rss: hidden
+- Frontend: repost-arrows button on action row (hidden for nostr_external and rss per §5.5 matrix), optimistic count increment
+- Action availability follows the §5.5 matrix; button hidden vs greyed logic from 4A applies
+
+**Phase 4C — Inline reply + dual-write**
+
+_One context-window unit._
+
+Inline reply box:
+
+- New `InlineReplyBox` component (`web/src/components/workspace/InlineReplyBox.tsx`)
+- Triggered by `REPLY` action on feed tiles and `REPLY` tag on playscript thread entries
+- Shows target platform badge, text field, submit button
+- Requires linked account for source protocol (greyed/prompt if missing)
+
+Dual-write flow:
+
+- On submit: gateway `POST /api/v1/external-items/:id/reply` creates an all.haus note (Nostr kind 1, signed via key-custody) with `external_parent_id` set to the target item, AND enqueues outbound cross-post with `actionType: 'reply'`
+- The all.haus note appears in the user's note history and carries parent context wherever displayed
+- Feed-ingest dispatcher `reply` handler already exists for all three protocols — no new dispatcher work needed, just the gateway endpoint + frontend
+
+Parent context on native notes:
+
+- When rendering an all.haus note that has `external_parent_id`, fetch and display the external parent tile above it (reuses `ParentContextTile` from Phase 2)
 
 **Phase 5 — Reader pane + polish**
 

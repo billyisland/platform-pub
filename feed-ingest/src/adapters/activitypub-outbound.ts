@@ -1,5 +1,5 @@
-import { safeFetch } from '@platform-pub/shared/lib/http-client.js'
-import { truncateWithLink } from '../lib/text.js'
+import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
+import { truncateWithLink } from "../lib/text.js";
 
 // =============================================================================
 // ActivityPub (Mastodon) outbound adapter
@@ -16,54 +16,118 @@ import { truncateWithLink } from '../lib/text.js'
 // =============================================================================
 
 export interface MastodonCredentials {
-  accessToken: string
-  tokenType?: string
-  scope?: string
+  accessToken: string;
+  tokenType?: string;
+  scope?: string;
 }
 
 interface MastodonOutboundInput {
-  instanceUrl: string
-  text: string
-  maxChars: number
-  sourceHomeUrl?: string        // canonical all.haus URL for truncation fallback
-  replyToStatusUri?: string     // external_items.source_item_uri when action=reply
-  idempotencyKey: string        // stable across retries — typically outbound_posts.id
+  instanceUrl: string;
+  text: string;
+  maxChars: number;
+  sourceHomeUrl?: string; // canonical all.haus URL for truncation fallback
+  replyToStatusUri?: string; // external_items.source_item_uri when action=reply
+  idempotencyKey: string; // stable across retries — typically outbound_posts.id
 }
 
 interface MastodonOutboundResult {
-  externalPostUri: string
+  externalPostUri: string;
 }
 
 export async function postMastodonStatus(
   input: MastodonOutboundInput,
-  credentials: MastodonCredentials
+  credentials: MastodonCredentials,
 ): Promise<MastodonOutboundResult> {
-  let inReplyToId: string | undefined
+  let inReplyToId: string | undefined;
   if (input.replyToStatusUri) {
-    inReplyToId = await resolveRemoteStatus(input.instanceUrl, input.replyToStatusUri, credentials)
+    inReplyToId = await resolveRemoteStatus(
+      input.instanceUrl,
+      input.replyToStatusUri,
+      credentials,
+    );
   }
 
-  const status = truncateWithLink(input.text, { max: input.maxChars, linkSuffix: input.sourceHomeUrl, separator: ' ' })
+  const status = truncateWithLink(input.text, {
+    max: input.maxChars,
+    linkSuffix: input.sourceHomeUrl,
+    separator: " ",
+  });
   const body: Record<string, unknown> = {
     status,
-    visibility: 'public',
-  }
-  if (inReplyToId) body.in_reply_to_id = inReplyToId
+    visibility: "public",
+  };
+  if (inReplyToId) body.in_reply_to_id = inReplyToId;
 
   const res = await safeFetch(`${input.instanceUrl}/api/v1/statuses`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${credentials.accessToken}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Idempotency-Key': input.idempotencyKey,
+      Authorization: `Bearer ${credentials.accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "Idempotency-Key": input.idempotencyKey,
     },
     body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(`Mastodon statuses HTTP ${res.status}: ${res.text.slice(0, 200)}`)
+  });
+  if (!res.ok)
+    throw new Error(
+      `Mastodon statuses HTTP ${res.status}: ${res.text.slice(0, 200)}`,
+    );
 
-  const parsed = JSON.parse(res.text) as { id: string; uri: string; url?: string }
-  return { externalPostUri: parsed.uri ?? parsed.url ?? `${input.instanceUrl}/statuses/${parsed.id}` }
+  const parsed = JSON.parse(res.text) as {
+    id: string;
+    uri: string;
+    url?: string;
+  };
+  return {
+    externalPostUri:
+      parsed.uri ?? parsed.url ?? `${input.instanceUrl}/statuses/${parsed.id}`,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Favourite a status on the user's home instance.
+// Resolves the remote status first (triggers federation if needed), then hits
+// POST /api/v1/statuses/:id/favourite.
+// -----------------------------------------------------------------------------
+
+export async function favouriteMastodonStatus(
+  instanceUrl: string,
+  statusUri: string,
+  credentials: MastodonCredentials,
+): Promise<{ externalPostUri: string }> {
+  const localId = await resolveRemoteStatus(
+    instanceUrl,
+    statusUri,
+    credentials,
+  );
+  if (!localId)
+    throw new Error(`Could not resolve status ${statusUri} on ${instanceUrl}`);
+
+  const res = await safeFetch(
+    `${instanceUrl}/api/v1/statuses/${localId}/favourite`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${credentials.accessToken}`,
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (!res.ok)
+    throw new Error(
+      `Mastodon favourite HTTP ${res.status}: ${res.text.slice(0, 200)}`,
+    );
+
+  const parsed = JSON.parse(res.text) as {
+    id: string;
+    uri: string;
+    url?: string;
+  };
+  return {
+    externalPostUri:
+      parsed.uri ?? parsed.url ?? `${instanceUrl}/statuses/${parsed.id}`,
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -74,33 +138,34 @@ export async function postMastodonStatus(
 async function resolveRemoteStatus(
   instance: string,
   uri: string,
-  credentials: MastodonCredentials
+  credentials: MastodonCredentials,
 ): Promise<string | undefined> {
   // If the URI is already on the same instance, extract the trailing id.
   try {
-    const u = new URL(uri)
-    const home = new URL(instance)
+    const u = new URL(uri);
+    const home = new URL(instance);
     if (u.hostname === home.hostname) {
-      const m = u.pathname.match(/(?:statuses|notes)\/([a-zA-Z0-9]+)\/?$/)
-      if (m) return m[1]
+      const m = u.pathname.match(/(?:statuses|notes)\/([a-zA-Z0-9]+)\/?$/);
+      if (m) return m[1];
     }
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
 
-  const search = new URL(`${instance}/api/v2/search`)
-  search.searchParams.set('q', uri)
-  search.searchParams.set('resolve', 'true')
-  search.searchParams.set('limit', '1')
-  search.searchParams.set('type', 'statuses')
+  const search = new URL(`${instance}/api/v2/search`);
+  search.searchParams.set("q", uri);
+  search.searchParams.set("resolve", "true");
+  search.searchParams.set("limit", "1");
+  search.searchParams.set("type", "statuses");
 
   const res = await safeFetch(search.toString(), {
     headers: {
-      'Authorization': `Bearer ${credentials.accessToken}`,
-      'Accept': 'application/json',
+      Authorization: `Bearer ${credentials.accessToken}`,
+      Accept: "application/json",
     },
-  })
-  if (!res.ok) return undefined
+  });
+  if (!res.ok) return undefined;
 
-  const parsed = JSON.parse(res.text) as { statuses?: { id: string }[] }
-  return parsed.statuses?.[0]?.id
+  const parsed = JSON.parse(res.text) as { statuses?: { id: string }[] };
+  return parsed.statuses?.[0]?.id;
 }
-
