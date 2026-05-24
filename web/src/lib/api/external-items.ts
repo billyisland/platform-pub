@@ -11,4 +11,12 @@ export const externalItems = {
       method: "POST",
       body: JSON.stringify({ linkedAccountId }),
     }),
+  reply: (itemId: string, linkedAccountId: string, content: string) =>
+    request<{ noteId: string; nostrEventId: string }>(
+      `/external-items/${itemId}/reply`,
+      {
+        method: "POST",
+        body: JSON.stringify({ linkedAccountId, content }),
+      },
+    ),
 };

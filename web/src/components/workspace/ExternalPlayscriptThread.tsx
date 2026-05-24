@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import type { ExternalThreadEntry } from "../../lib/api/feeds";
+import type { LinkedAccount } from "../../lib/api/linked-accounts";
 import type { VesselPalette } from "./tokens";
 import { ExternalPlayscriptEntry } from "./ExternalPlayscriptEntry";
+import { InlineReplyBox } from "./InlineReplyBox";
 
 const INITIAL_VISIBLE = 10;
 
@@ -11,14 +13,21 @@ interface Props {
   ancestors: ExternalThreadEntry[];
   descendants: ExternalThreadEntry[];
   palette: VesselPalette;
+  itemId: string;
+  protocol: string;
+  linkedAccount: LinkedAccount | null;
 }
 
 export function ExternalPlayscriptThread({
   ancestors,
   descendants,
   palette,
+  itemId,
+  protocol,
+  linkedAccount,
 }: Props) {
   const [showAll, setShowAll] = useState(false);
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
 
   const allEntries = [...ancestors, ...descendants];
   if (allEntries.length === 0) return null;
@@ -58,7 +67,20 @@ export function ExternalPlayscriptThread({
               entry={entry}
               replyingTo={replyingTo}
               palette={palette}
+              onReply={() =>
+                setReplyingToId(replyingToId === entry.id ? null : entry.id)
+              }
+              replyActive={replyingToId === entry.id}
             />
+            {replyingToId === entry.id && (
+              <InlineReplyBox
+                itemId={itemId}
+                protocol={protocol}
+                linkedAccount={linkedAccount}
+                onClose={() => setReplyingToId(null)}
+                onReplied={() => setReplyingToId(null)}
+              />
+            )}
           </li>
         ))}
       </ol>

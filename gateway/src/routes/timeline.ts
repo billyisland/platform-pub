@@ -100,6 +100,7 @@ function feedItemToResponse(row: any) {
       publishedAt: Number(row.published_at_epoch),
       score: row.score != null ? Number(row.score) : undefined,
       pipStatus: row.pip_status ?? "unknown",
+      externalParentId: row.external_parent_id ?? undefined,
     };
   }
 
@@ -148,6 +149,7 @@ const FEED_SELECT = `
   n.content AS note_content, n.is_quote_comment,
   n.quoted_event_id, n.quoted_event_kind,
   n.quoted_excerpt, n.quoted_title, n.quoted_author,
+  n.external_parent_id,
   -- External-specific (NULL for non-external)
   ei.author_name AS ei_author_name, ei.author_handle AS ei_author_handle,
   ei.author_avatar_url AS ei_author_avatar_url, ei.author_uri AS ei_author_uri,

@@ -70,6 +70,7 @@ export interface NoteEvent {
   quotedAuthor?: string;
   pipStatus?: PipStatus;
   savedAt?: number;
+  externalParentId?: string;
 }
 
 export interface VaultEvent {

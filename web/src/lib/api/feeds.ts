@@ -65,6 +65,7 @@ export interface WorkspaceFeedApiNote {
   score?: number;
   pipStatus: PipStatus;
   savedAt?: number;
+  externalParentId?: string;
 }
 
 export interface WorkspaceFeedApiExternal {

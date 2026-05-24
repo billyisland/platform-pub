@@ -142,6 +142,7 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
       quotedAuthor: item.quotedAuthor,
       pipStatus: item.pipStatus,
       savedAt: item.savedAt,
+      externalParentId: item.externalParentId,
     };
   }
   if (item.type === "external") {

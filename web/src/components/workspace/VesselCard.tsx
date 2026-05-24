@@ -28,6 +28,7 @@ import { useExternalThread } from "../../hooks/useExternalThread";
 import { ExternalPlayscriptThread } from "./ExternalPlayscriptThread";
 import { useLinkedAccounts } from "../../hooks/useLinkedAccounts";
 import { externalItems } from "../../lib/api/external-items";
+import { InlineReplyBox } from "./InlineReplyBox";
 
 export type PipOpen = (
   pubkey: string,
@@ -583,6 +584,8 @@ function EngagementRow({
   reposted,
   onRepost,
   repostDisabled,
+  onReply,
+  replyDisabled,
 }: {
   likeCount: number;
   replyCount: number;
@@ -595,12 +598,16 @@ function EngagementRow({
   reposted?: boolean;
   onRepost?: () => void;
   repostDisabled?: boolean;
+  onReply?: () => void;
+  replyDisabled?: boolean;
 }) {
   const hideRepost = protocol === "nostr_external" || protocol === "rss";
   const hideLike = protocol === "rss";
+  const hideReply = protocol === "rss";
   const showLike = !hideLike && (likeCount > 0 || onLike);
+  const showReply = !hideReply && (replyCount > 0 || onReply);
   const showRepost = !hideRepost && (repostCount > 0 || onRepost);
-  if (!showLike && replyCount === 0 && !showRepost) return null;
+  if (!showLike && !showReply && !showRepost) return null;
   return (
     <div
       onClick={(e) => e.stopPropagation()}
@@ -647,8 +654,21 @@ function EngagementRow({
           {likeCount > 0 && likeCount}
         </button>
       )}
-      {replyCount > 0 && (
-        <span className="flex items-center gap-1">
+      {showReply && (
+        <button
+          type="button"
+          onClick={onReply}
+          disabled={!onReply}
+          className="flex items-center gap-1 hover:opacity-80 disabled:opacity-50"
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: onReply ? "pointer" : "default",
+            color: replyDisabled ? ctx.palette.cardMeta : ctx.palette.cardMeta,
+          }}
+          title={replyDisabled ? "Connect account to interact" : "Reply"}
+        >
           <svg
             width="12"
             height="12"
@@ -661,8 +681,8 @@ function EngagementRow({
           >
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
-          {replyCount}
-        </span>
+          {replyCount > 0 && replyCount}
+        </button>
       )}
       {showRepost && (
         <button
@@ -1000,6 +1020,12 @@ function NoteVesselCard({
         publishedAt={note.publishedAt}
         ctx={ctx}
       />
+      {note.externalParentId && (
+        <ParentContextTile
+          itemId={note.externalParentId}
+          palette={ctx.palette}
+        />
+      )}
       {noteDisplayText && (
         <p
           className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
@@ -1161,6 +1187,14 @@ function ExternalVesselCard({
     });
   }, [matchingAccount, reposted, external.id]);
 
+  // Reply interaction state
+  const [replyOpen, setReplyOpen] = React.useState(false);
+  const [replyCountDelta, setReplyCountDelta] = React.useState(0);
+
+  const handleReply = React.useCallback(() => {
+    setReplyOpen((prev) => !prev);
+  }, []);
+
   const onCardClick = onToggleExpand
     ? () => onToggleExpand(expandKey)
     : () => {
@@ -1285,7 +1319,7 @@ function ExternalVesselCard({
       )}
       <EngagementRow
         likeCount={engagement.likeCount + likeCountDelta}
-        replyCount={engagement.replyCount}
+        replyCount={engagement.replyCount + replyCountDelta}
         repostCount={engagement.repostCount + repostCountDelta}
         protocol={external.sourceProtocol}
         ctx={ctx}
@@ -1312,7 +1346,18 @@ function ExternalVesselCard({
           external.sourceProtocol !== "nostr_external" &&
           !matchingAccount
         }
+        onReply={external.sourceProtocol !== "rss" ? handleReply : undefined}
+        replyDisabled={external.sourceProtocol !== "rss" && !matchingAccount}
       />
+      {replyOpen && (
+        <InlineReplyBox
+          itemId={external.id}
+          protocol={external.sourceProtocol}
+          linkedAccount={matchingAccount ?? null}
+          onClose={() => setReplyOpen(false)}
+          onReplied={() => setReplyCountDelta((d) => d + 1)}
+        />
+      )}
       {ctx.density === "full" && (
         <SourceAttribution
           protocol={protocol}
@@ -1331,7 +1376,12 @@ function ExternalVesselCard({
         onToggleThread={onToggleThread}
       />
       {threadExpanded && threadTarget && (
-        <ExternalCardThread itemId={external.id} palette={ctx.palette} />
+        <ExternalCardThread
+          itemId={external.id}
+          palette={ctx.palette}
+          protocol={external.sourceProtocol}
+          linkedAccount={matchingAccount ?? null}
+        />
       )}
     </CardShell>
   );
@@ -1340,9 +1390,13 @@ function ExternalVesselCard({
 function ExternalCardThread({
   itemId,
   palette,
+  protocol,
+  linkedAccount,
 }: {
   itemId: string;
   palette: VesselPalette;
+  protocol: string;
+  linkedAccount: import("../../lib/api/linked-accounts").LinkedAccount | null;
 }) {
   const { ancestors, descendants, loading, error } = useExternalThread(
     itemId,
@@ -1387,6 +1441,9 @@ function ExternalCardThread({
         ancestors={ancestors}
         descendants={descendants}
         palette={palette}
+        itemId={itemId}
+        protocol={protocol}
+        linkedAccount={linkedAccount}
       />
     </div>
   );

@@ -7,9 +7,17 @@ interface Props {
   entry: ExternalThreadEntry;
   replyingTo: { name: string } | null;
   palette: VesselPalette;
+  onReply?: () => void;
+  replyActive?: boolean;
 }
 
-export function ExternalPlayscriptEntry({ entry, replyingTo, palette }: Props) {
+export function ExternalPlayscriptEntry({
+  entry,
+  replyingTo,
+  palette,
+  onReply,
+  replyActive,
+}: Props) {
   return (
     <div className="group relative">
       {/* Speaker line */}
@@ -65,12 +73,31 @@ export function ExternalPlayscriptEntry({ entry, replyingTo, palette }: Props) {
         )}
       </div>
 
-      {/* Action row: timestamp + inert Reply tag (Phase 4 makes it interactive) */}
+      {/* Action row: timestamp + Reply */}
       <div className="mt-2 flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-400">
         <time dateTime={entry.publishedAt}>
           {formatRelativeTime(entry.publishedAt)}
         </time>
-        <span>Reply</span>
+        {onReply ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReply();
+            }}
+            className={`hover:text-black transition-colors ${replyActive ? "text-black" : ""}`}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+            }}
+          >
+            Reply
+          </button>
+        ) : (
+          <span>Reply</span>
+        )}
       </div>
     </div>
   );
