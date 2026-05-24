@@ -148,7 +148,7 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
           if (didInsert) {
             inserted++;
             if (item.sourceReplyUri) {
-              helpers.addJob("external_parent_prefetch", {
+              void helpers.addJob("external_parent_prefetch", {
                 sourceReplyUri: item.sourceReplyUri,
                 protocol: "atproto",
                 sourceId: source.id,
