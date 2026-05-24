@@ -1,6 +1,6 @@
 # Workspace Full View — Build Spec
 
-**Status:** Phase 4A shipped (2026-05-24, branch `workspace-experiment`). Migration 092 (action_type constraint + notes.external_parent_id). `POST /external-items/:id/like` endpoint with linked-account validation. `enqueueLike` helper (synthetic dedup key). Feed-ingest dispatcher extended: `likeBlueskyRecord` (atproto `app.bsky.feed.like`), `favouriteMastodonStatus` (Mastodon `/favourite`), Nostr kind 7 via existing signed-event path. Interactive heart button on `ExternalVesselCard` with linked-account gating (greyed/disabled when no account, optimistic increment, filled on like). Phase 4B–4C + Phase 5 pending.
+**Status:** Phase 4B shipped (2026-05-24, branch `workspace-experiment`). `POST /external-items/:id/repost` endpoint with linked-account validation + protocol guard (rejects nostr_external + rss per §5.5 matrix). `enqueueRepost` helper (synthetic dedup key `repost:{itemId}`). Feed-ingest dispatcher extended: `repostBlueskyRecord` (atproto `app.bsky.feed.repost`), `reblogMastodonStatus` (Mastodon `/reblog`). Interactive repost-arrows button on `ExternalVesselCard` with linked-account gating (hidden for nostr_external/rss, greyed/disabled when no matching account, optimistic increment, crimson on repost). Phase 4C + Phase 5 pending.
 
 ## Overview
 

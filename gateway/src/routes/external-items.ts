@@ -2,7 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "@platform-pub/shared/db/client.js";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import { requireAuth } from "../middleware/auth.js";
-import { enqueueLike, enqueueNostrOutbound } from "../lib/outbound-enqueue.js";
+import {
+  enqueueLike,
+  enqueueRepost,
+  enqueueNostrOutbound,
+} from "../lib/outbound-enqueue.js";
 import { signEvent } from "../lib/key-custody-client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
@@ -374,6 +378,81 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.warn({ err: msg, itemId: id, accountId }, "Like enqueue failed");
         return reply.status(500).send({ error: "Failed to enqueue like" });
+      }
+
+      return reply.status(202).send({ status: "accepted" });
+    },
+  );
+
+  // =========================================================================
+  // POST /external-items/:id/repost — repost/boost on source platform
+  // =========================================================================
+  app.post<{ Params: { id: string }; Body: { linkedAccountId: string } }>(
+    "/external-items/:id/repost",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const { id } = req.params;
+      const { linkedAccountId } = req.body ?? {};
+      const accountId = (req as any).userId as string;
+
+      if (!linkedAccountId) {
+        return reply.status(400).send({ error: "linkedAccountId is required" });
+      }
+
+      // Load item
+      const { rows: items } = await pool.query<ExternalItemRow>(
+        `SELECT id, source_id, protocol, source_item_uri, source_reply_uri,
+                like_count, reply_count, repost_count, interaction_data
+         FROM external_items WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      );
+      if (items.length === 0) {
+        return reply.status(404).send({ error: "Item not found" });
+      }
+      const item = items[0];
+
+      if (item.protocol === "rss" || item.protocol === "nostr_external") {
+        return reply
+          .status(422)
+          .send({ error: "Reposts are not supported for this protocol" });
+      }
+
+      // Validate linked account ownership + protocol match
+      const { rows: la } = await pool.query<{
+        protocol: string;
+        is_valid: boolean;
+      }>(
+        `SELECT protocol, is_valid FROM linked_accounts
+         WHERE id = $1 AND account_id = $2`,
+        [linkedAccountId, accountId],
+      );
+      if (la.length === 0) {
+        return reply.status(403).send({ error: "Linked account not found" });
+      }
+      if (!la[0].is_valid) {
+        return reply
+          .status(422)
+          .send({ error: "Linked account is invalid — reconnect in settings" });
+      }
+      if (la[0].protocol !== item.protocol) {
+        return reply.status(422).send({
+          error: `Linked account protocol (${la[0].protocol}) does not match item protocol (${item.protocol})`,
+        });
+      }
+
+      try {
+        await enqueueRepost({
+          accountId,
+          linkedAccountId,
+          sourceItemId: id,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(
+          { err: msg, itemId: id, accountId },
+          "Repost enqueue failed",
+        );
+        return reply.status(500).send({ error: "Failed to enqueue repost" });
       }
 
       return reply.status(202).send({ status: "accepted" });

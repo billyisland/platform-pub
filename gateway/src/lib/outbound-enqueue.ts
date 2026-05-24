@@ -29,6 +29,12 @@ interface EnqueueLikeInput {
   sourceItemId: string; // external_items.id being liked
 }
 
+interface EnqueueRepostInput {
+  accountId: string;
+  linkedAccountId: string;
+  sourceItemId: string; // external_items.id being reposted
+}
+
 interface SignedNostrEvent {
   id: string;
   pubkey: string;
@@ -202,6 +208,69 @@ export async function enqueueLike(input: EnqueueLikeInput): Promise<void> {
       SELECT id, TRUE FROM outbound_posts
        WHERE account_id = $1 AND linked_account_id IS NOT DISTINCT FROM $2
          AND nostr_event_id = $4 AND action_type = 'like'
+      LIMIT 1
+    `,
+      [
+        input.accountId,
+        input.linkedAccountId,
+        la[0].protocol,
+        syntheticEventId,
+        input.sourceItemId,
+      ],
+    );
+
+    const op = rows[0];
+    if (!op || op.existed) return;
+    await client.query(
+      `
+      SELECT graphile_worker.add_job(
+        'outbound_cross_post',
+        json_build_object('outboundPostId', $1::text),
+        job_key := 'outbound_cross_post_' || $1::text,
+        max_attempts := 1
+      )
+    `,
+      [op.id],
+    );
+  });
+}
+
+// =============================================================================
+// Repost/boost enqueue — uses a synthetic nostr_event_id for dedup since
+// reposts have no associated all.haus Nostr event.
+// =============================================================================
+
+export async function enqueueRepost(input: EnqueueRepostInput): Promise<void> {
+  const { rows: la } = await pool.query<{
+    protocol: string;
+    is_valid: boolean;
+  }>(
+    `SELECT protocol, is_valid FROM linked_accounts
+     WHERE id = $1 AND account_id = $2`,
+    [input.linkedAccountId, input.accountId],
+  );
+  if (la.length === 0) throw new Error("Linked account not found");
+  if (!la[0].is_valid) throw new Error("Linked account is marked invalid");
+
+  const syntheticEventId = `repost:${input.sourceItemId}`;
+
+  await withTransaction(async (client) => {
+    const { rows } = await client.query<{ id: string; existed: boolean }>(
+      `
+      WITH ins AS (
+        INSERT INTO outbound_posts (
+          account_id, linked_account_id, protocol,
+          nostr_event_id, action_type, source_item_id, body_text,
+          status
+        ) VALUES ($1, $2, $3, $4, 'repost', $5, '', 'pending')
+        ON CONFLICT DO NOTHING
+        RETURNING id
+      )
+      SELECT id, FALSE AS existed FROM ins
+      UNION ALL
+      SELECT id, TRUE FROM outbound_posts
+       WHERE account_id = $1 AND linked_account_id IS NOT DISTINCT FROM $2
+         AND nostr_event_id = $4 AND action_type = 'repost'
       LIMIT 1
     `,
       [

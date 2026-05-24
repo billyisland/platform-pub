@@ -90,6 +90,50 @@ export async function likeBlueskyRecord(
   return { externalPostUri: json.uri };
 }
 
+export async function repostBlueskyRecord(
+  did: string,
+  subject: { uri: string; cid: string },
+): Promise<AtprotoLikeResult> {
+  const client = await getAtprotoClient();
+  const session = await client.restore(did);
+
+  const record = {
+    $type: "app.bsky.feed.repost",
+    subject: { uri: subject.uri, cid: subject.cid },
+    createdAt: new Date().toISOString(),
+  };
+
+  const body = {
+    repo: did,
+    collection: "app.bsky.feed.repost",
+    record,
+  };
+
+  const res = await session.fetchHandler(
+    "/xrpc/com.atproto.repo.createRecord",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    logger.warn(
+      { status: res.status, errText, did },
+      "Bluesky repost createRecord failed",
+    );
+    throw new Error(
+      `Bluesky repost HTTP ${res.status}: ${errText.slice(0, 200)}`,
+    );
+  }
+
+  const json = (await res.json()) as { uri: string; cid: string };
+  if (!json.uri) throw new Error("Bluesky repost response missing uri");
+  return { externalPostUri: json.uri };
+}
+
 export async function postBlueskyRecord(
   input: AtprotoPostInput,
 ): Promise<AtprotoPostResult> {

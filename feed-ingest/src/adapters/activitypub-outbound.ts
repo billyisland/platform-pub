@@ -131,6 +131,52 @@ export async function favouriteMastodonStatus(
 }
 
 // -----------------------------------------------------------------------------
+// Reblog/boost a status on the user's home instance.
+// Resolves the remote status first (triggers federation if needed), then hits
+// POST /api/v1/statuses/:id/reblog.
+// -----------------------------------------------------------------------------
+
+export async function reblogMastodonStatus(
+  instanceUrl: string,
+  statusUri: string,
+  credentials: MastodonCredentials,
+): Promise<{ externalPostUri: string }> {
+  const localId = await resolveRemoteStatus(
+    instanceUrl,
+    statusUri,
+    credentials,
+  );
+  if (!localId)
+    throw new Error(`Could not resolve status ${statusUri} on ${instanceUrl}`);
+
+  const res = await safeFetch(
+    `${instanceUrl}/api/v1/statuses/${localId}/reblog`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${credentials.accessToken}`,
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (!res.ok)
+    throw new Error(
+      `Mastodon reblog HTTP ${res.status}: ${res.text.slice(0, 200)}`,
+    );
+
+  const parsed = JSON.parse(res.text) as {
+    id: string;
+    uri: string;
+    url?: string;
+  };
+  return {
+    externalPostUri:
+      parsed.uri ?? parsed.url ?? `${instanceUrl}/statuses/${parsed.id}`,
+  };
+}
+
+// -----------------------------------------------------------------------------
 // Resolve an external status URI to a status id local to the user's instance.
 // Mastodon's /api/v2/search with `resolve=true` triggers federation-fetch.
 // -----------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import {
   postMastodonStatus,
   favouriteMastodonStatus,
+  reblogMastodonStatus,
   type MastodonCredentials,
 } from "../adapters/activitypub-outbound.js";
 import {
@@ -14,6 +15,7 @@ import {
 import {
   postBlueskyRecord,
   likeBlueskyRecord,
+  repostBlueskyRecord,
 } from "../adapters/atproto-outbound.js";
 import { appendWithinBudget } from "../lib/text.js";
 
@@ -139,6 +141,15 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
           creds,
         );
         externalPostUri = result.externalPostUri;
+      } else if (row.action_type === "repost") {
+        if (!row.ei_source_item_uri)
+          throw new Error("Repost target missing source URI");
+        const result = await reblogMastodonStatus(
+          row.la_instance_url,
+          row.ei_source_item_uri,
+          creds,
+        );
+        externalPostUri = result.externalPostUri;
       } else if (
         row.action_type !== "reply" &&
         row.action_type !== "quote" &&
@@ -192,6 +203,17 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
           );
         }
         const result = await likeBlueskyRecord(did, {
+          uri: interaction.uri,
+          cid: interaction.cid,
+        });
+        externalPostUri = result.externalPostUri;
+      } else if (row.action_type === "repost") {
+        if (!interaction?.uri || !interaction.cid) {
+          throw new Error(
+            "Source atproto item is missing uri/cid — cannot repost",
+          );
+        }
+        const result = await repostBlueskyRecord(did, {
           uri: interaction.uri,
           cid: interaction.cid,
         });

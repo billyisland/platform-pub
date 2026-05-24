@@ -6,4 +6,9 @@ export const externalItems = {
       method: "POST",
       body: JSON.stringify({ linkedAccountId }),
     }),
+  repost: (itemId: string, linkedAccountId: string) =>
+    request<{ status: string }>(`/external-items/${itemId}/repost`, {
+      method: "POST",
+      body: JSON.stringify({ linkedAccountId }),
+    }),
 };

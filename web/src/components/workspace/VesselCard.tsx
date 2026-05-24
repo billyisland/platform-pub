@@ -580,6 +580,9 @@ function EngagementRow({
   liked,
   onLike,
   likeDisabled,
+  reposted,
+  onRepost,
+  repostDisabled,
 }: {
   likeCount: number;
   replyCount: number;
@@ -589,11 +592,15 @@ function EngagementRow({
   liked?: boolean;
   onLike?: () => void;
   likeDisabled?: boolean;
+  reposted?: boolean;
+  onRepost?: () => void;
+  repostDisabled?: boolean;
 }) {
   const hideRepost = protocol === "nostr_external" || protocol === "rss";
   const hideLike = protocol === "rss";
   const showLike = !hideLike && (likeCount > 0 || onLike);
-  if (!showLike && replyCount === 0 && repostCount === 0) return null;
+  const showRepost = !hideRepost && (repostCount > 0 || onRepost);
+  if (!showLike && replyCount === 0 && !showRepost) return null;
   return (
     <div
       onClick={(e) => e.stopPropagation()}
@@ -657,8 +664,31 @@ function EngagementRow({
           {replyCount}
         </span>
       )}
-      {!hideRepost && repostCount > 0 && (
-        <span className="flex items-center gap-1">
+      {showRepost && (
+        <button
+          type="button"
+          onClick={onRepost}
+          disabled={!onRepost || reposted}
+          className="flex items-center gap-1 hover:opacity-80 disabled:opacity-50"
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: onRepost && !reposted ? "pointer" : "default",
+            color: reposted
+              ? ctx.palette.crimson
+              : repostDisabled
+                ? ctx.palette.cardMeta
+                : ctx.palette.cardMeta,
+          }}
+          title={
+            repostDisabled
+              ? "Connect account to interact"
+              : reposted
+                ? "Reposted"
+                : "Repost"
+          }
+        >
           <svg
             width="12"
             height="12"
@@ -674,8 +704,8 @@ function EngagementRow({
             <polyline points="7 23 3 19 7 15" />
             <path d="M21 13v2a4 4 0 0 1-4 4H3" />
           </svg>
-          {repostCount}
-        </span>
+          {repostCount > 0 && repostCount}
+        </button>
       )}
     </div>
   );
@@ -1117,6 +1147,20 @@ function ExternalVesselCard({
     });
   }, [matchingAccount, liked, external.id]);
 
+  // Repost interaction state
+  const [reposted, setReposted] = React.useState(false);
+  const [repostCountDelta, setRepostCountDelta] = React.useState(0);
+
+  const handleRepost = React.useCallback(() => {
+    if (!matchingAccount || reposted) return;
+    setReposted(true);
+    setRepostCountDelta(1);
+    externalItems.repost(external.id, matchingAccount.id).catch(() => {
+      setReposted(false);
+      setRepostCountDelta(0);
+    });
+  }, [matchingAccount, reposted, external.id]);
+
   const onCardClick = onToggleExpand
     ? () => onToggleExpand(expandKey)
     : () => {
@@ -1242,7 +1286,7 @@ function ExternalVesselCard({
       <EngagementRow
         likeCount={engagement.likeCount + likeCountDelta}
         replyCount={engagement.replyCount}
-        repostCount={engagement.repostCount}
+        repostCount={engagement.repostCount + repostCountDelta}
         protocol={external.sourceProtocol}
         ctx={ctx}
         liked={liked}
@@ -1254,6 +1298,20 @@ function ExternalVesselCard({
             : undefined
         }
         likeDisabled={external.sourceProtocol !== "rss" && !matchingAccount}
+        reposted={reposted}
+        onRepost={
+          external.sourceProtocol !== "rss" &&
+          external.sourceProtocol !== "nostr_external"
+            ? matchingAccount
+              ? handleRepost
+              : undefined
+            : undefined
+        }
+        repostDisabled={
+          external.sourceProtocol !== "rss" &&
+          external.sourceProtocol !== "nostr_external" &&
+          !matchingAccount
+        }
       />
       {ctx.density === "full" && (
         <SourceAttribution
