@@ -1,0 +1,682 @@
+import type { FastifyInstance } from "fastify";
+import { pool } from "@platform-pub/shared/db/client.js";
+import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
+import { requireAuth } from "../middleware/auth.js";
+import logger from "@platform-pub/shared/lib/logger.js";
+
+const APPVIEW = "https://public.api.bsky.app";
+
+// In-memory TTL cache to prevent rapid re-fetches (30s per item)
+const engagementCache = new Map<
+  string,
+  { data: EngagementResponse; expiresAt: number }
+>();
+const CACHE_TTL_MS = 30_000;
+
+const parentCache = new Map<
+  string,
+  { data: ParentContextResponse; expiresAt: number }
+>();
+const PARENT_CACHE_TTL_MS = 120_000;
+
+interface EngagementResponse {
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+  protocol: string;
+  fetchedAt: string;
+}
+
+interface ParentContextResponse {
+  parent: ParentItem | null;
+  grandparentTag: { authorName: string; authorHandle: string } | null;
+}
+
+interface ParentItem {
+  id: string;
+  sourceProtocol: string;
+  sourceItemUri: string;
+  authorName: string | null;
+  authorHandle: string | null;
+  authorAvatarUrl: string | null;
+  authorUri: string | null;
+  contentText: string | null;
+  contentHtml: string | null;
+  title: string | null;
+  summary: string | null;
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+  media: unknown[];
+  publishedAt: number;
+  sourceReplyUri: string | null;
+}
+
+interface ExternalItemRow {
+  id: string;
+  source_id: string;
+  protocol: string;
+  source_item_uri: string;
+  source_reply_uri: string | null;
+  like_count: number;
+  reply_count: number;
+  repost_count: number;
+  interaction_data: Record<string, unknown>;
+}
+
+export async function externalItemsRoutes(app: FastifyInstance) {
+  // =========================================================================
+  // GET /external-items/:id/engagement — live engagement counts from source
+  // =========================================================================
+  app.get<{ Params: { id: string } }>(
+    "/external-items/:id/engagement",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const { id } = req.params;
+
+      const cached = engagementCache.get(id);
+      if (cached && cached.expiresAt > Date.now()) {
+        return reply.send(cached.data);
+      }
+
+      const { rows } = await pool.query<ExternalItemRow>(
+        `SELECT id, protocol, source_item_uri, like_count, reply_count, repost_count
+         FROM external_items WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      );
+
+      if (rows.length === 0) {
+        return reply.status(404).send({ error: "Item not found" });
+      }
+
+      const item = rows[0];
+      let likeCount = item.like_count;
+      let replyCount = item.reply_count;
+      let repostCount = item.repost_count;
+
+      if (item.protocol === "atproto") {
+        const live = await fetchBlueskyEngagement(item.source_item_uri);
+        if (live) {
+          likeCount = live.likeCount;
+          replyCount = live.replyCount;
+          repostCount = live.repostCount;
+        }
+      } else if (item.protocol === "activitypub") {
+        const live = await fetchMastodonEngagement(item.source_item_uri);
+        if (live) {
+          likeCount = live.likeCount;
+          replyCount = live.replyCount;
+          repostCount = live.repostCount;
+        }
+      }
+      // nostr_external + rss: return stored snapshot
+
+      // Side-effect: update snapshot columns
+      if (
+        likeCount !== item.like_count ||
+        replyCount !== item.reply_count ||
+        repostCount !== item.repost_count
+      ) {
+        pool
+          .query(
+            `UPDATE external_items SET like_count = $1, reply_count = $2, repost_count = $3 WHERE id = $4`,
+            [likeCount, replyCount, repostCount, id],
+          )
+          .catch((err) =>
+            logger.warn({ err, id }, "Failed to update engagement snapshot"),
+          );
+      }
+
+      const data: EngagementResponse = {
+        likeCount,
+        replyCount,
+        repostCount,
+        protocol: item.protocol,
+        fetchedAt: new Date().toISOString(),
+      };
+
+      engagementCache.set(id, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+
+      return reply.send(data);
+    },
+  );
+
+  // =========================================================================
+  // GET /external-items/:id/parent — parent context tile for reply items
+  // =========================================================================
+  app.get<{ Params: { id: string } }>(
+    "/external-items/:id/parent",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const { id } = req.params;
+
+      const cached = parentCache.get(id);
+      if (cached && cached.expiresAt > Date.now()) {
+        return reply.send(cached.data);
+      }
+
+      const { rows } = await pool.query<ExternalItemRow>(
+        `SELECT id, source_id, protocol, source_item_uri, source_reply_uri,
+                like_count, reply_count, repost_count, interaction_data
+         FROM external_items WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      );
+
+      if (rows.length === 0) {
+        return reply.status(404).send({ error: "Item not found" });
+      }
+
+      const item = rows[0];
+
+      if (!item.source_reply_uri) {
+        const data: ParentContextResponse = {
+          parent: null,
+          grandparentTag: null,
+        };
+        return reply.send(data);
+      }
+
+      // Check if parent already exists in external_items
+      const { rows: parentRows } = await pool.query(
+        `SELECT id, protocol, source_item_uri, source_reply_uri,
+                author_name, author_handle, author_avatar_url, author_uri,
+                content_text, content_html, title, summary, media,
+                like_count, reply_count, repost_count, interaction_data,
+                EXTRACT(EPOCH FROM published_at)::bigint AS published_at_epoch
+         FROM external_items
+         WHERE source_item_uri = $1 AND protocol = $2 AND deleted_at IS NULL
+         LIMIT 1`,
+        [item.source_reply_uri, item.protocol],
+      );
+
+      let parent: ParentItem | null = null;
+      let grandparentTag: { authorName: string; authorHandle: string } | null =
+        null;
+
+      if (parentRows.length > 0) {
+        const row = parentRows[0];
+        parent = rowToParentItem(row);
+        grandparentTag = extractGrandparentTag(row);
+      } else {
+        // Fetch from source platform
+        const fetched = await fetchParentFromSource(item);
+        if (fetched) {
+          parent = fetched.parent;
+          grandparentTag = fetched.grandparentTag;
+        }
+      }
+
+      const data: ParentContextResponse = { parent, grandparentTag };
+      parentCache.set(id, {
+        data,
+        expiresAt: Date.now() + PARENT_CACHE_TTL_MS,
+      });
+
+      return reply.send(data);
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bluesky engagement fetch
+// ---------------------------------------------------------------------------
+
+async function fetchBlueskyEngagement(
+  uri: string,
+): Promise<{
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+} | null> {
+  try {
+    const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getPosts`);
+    url.searchParams.append("uris", uri);
+
+    const res = await safeFetch(url.toString(), {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const data = JSON.parse(res.text) as {
+      posts: Array<{
+        uri: string;
+        likeCount?: number;
+        replyCount?: number;
+        repostCount?: number;
+      }>;
+    };
+
+    const post = data.posts?.[0];
+    if (!post) return null;
+
+    return {
+      likeCount: post.likeCount ?? 0,
+      replyCount: post.replyCount ?? 0,
+      repostCount: post.repostCount ?? 0,
+    };
+  } catch (err) {
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err), uri },
+      "Bluesky engagement fetch failed",
+    );
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mastodon engagement fetch
+// ---------------------------------------------------------------------------
+
+async function fetchMastodonEngagement(
+  uri: string,
+): Promise<{
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+} | null> {
+  const statusId = extractMastodonStatusId(uri);
+  if (!statusId) return null;
+
+  try {
+    const host = new URL(uri).hostname;
+    const res = await safeFetch(`https://${host}/api/v1/statuses/${statusId}`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const status = JSON.parse(res.text) as {
+      favourites_count?: number;
+      replies_count?: number;
+      reblogs_count?: number;
+    };
+
+    return {
+      likeCount: status.favourites_count ?? 0,
+      replyCount: status.replies_count ?? 0,
+      repostCount: status.reblogs_count ?? 0,
+    };
+  } catch (err) {
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err), uri },
+      "Mastodon engagement fetch failed",
+    );
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Parent context fetch from source platform
+// ---------------------------------------------------------------------------
+
+async function fetchParentFromSource(childItem: ExternalItemRow): Promise<{
+  parent: ParentItem;
+  grandparentTag: { authorName: string; authorHandle: string } | null;
+} | null> {
+  const parentUri = childItem.source_reply_uri!;
+
+  if (childItem.protocol === "atproto") {
+    return fetchBlueskyParent(parentUri, childItem.source_id);
+  }
+
+  if (childItem.protocol === "activitypub") {
+    return fetchMastodonParent(parentUri, childItem.source_id);
+  }
+
+  return null;
+}
+
+async function fetchBlueskyParent(
+  parentUri: string,
+  sourceId: string,
+): Promise<{
+  parent: ParentItem;
+  grandparentTag: { authorName: string; authorHandle: string } | null;
+} | null> {
+  try {
+    const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getPosts`);
+    url.searchParams.append("uris", parentUri);
+
+    const res = await safeFetch(url.toString(), {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const data = JSON.parse(res.text) as {
+      posts: Array<{
+        uri: string;
+        cid: string;
+        author: {
+          did: string;
+          handle: string;
+          displayName?: string;
+          avatar?: string;
+        };
+        record: {
+          text?: string;
+          createdAt?: string;
+          reply?: { parent: { uri: string }; root: { uri: string } };
+        };
+        likeCount?: number;
+        replyCount?: number;
+        repostCount?: number;
+        embed?: unknown;
+      }>;
+    };
+
+    const post = data.posts?.[0];
+    if (!post) return null;
+
+    const publishedAt = post.record.createdAt
+      ? Math.floor(new Date(post.record.createdAt).getTime() / 1000)
+      : Math.floor(Date.now() / 1000);
+
+    const parentReplyUri = post.record.reply?.parent.uri ?? null;
+
+    // Store in DB as context-only
+    const insertResult = await pool.query(
+      `INSERT INTO external_items (
+        source_id, protocol, tier, source_item_uri,
+        author_name, author_handle, author_avatar_url, author_uri,
+        content_text, media, source_reply_uri, interaction_data,
+        like_count, reply_count, repost_count,
+        published_at, is_context_only
+      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
+      ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+        like_count = EXCLUDED.like_count,
+        reply_count = EXCLUDED.reply_count,
+        repost_count = EXCLUDED.repost_count
+      RETURNING id`,
+      [
+        sourceId,
+        "atproto",
+        parentUri,
+        post.author.displayName || post.author.handle,
+        post.author.handle,
+        post.author.avatar ?? null,
+        `https://bsky.app/profile/${post.author.did}`,
+        post.record.text ?? null,
+        JSON.stringify([]),
+        parentReplyUri,
+        JSON.stringify({ uri: post.uri, cid: post.cid }),
+        post.likeCount ?? 0,
+        post.replyCount ?? 0,
+        post.repostCount ?? 0,
+        new Date(post.record.createdAt ?? Date.now()),
+      ],
+    );
+
+    const parent: ParentItem = {
+      id: insertResult.rows[0].id,
+      sourceProtocol: "atproto",
+      sourceItemUri: parentUri,
+      authorName: post.author.displayName || post.author.handle,
+      authorHandle: post.author.handle,
+      authorAvatarUrl: post.author.avatar ?? null,
+      authorUri: `https://bsky.app/profile/${post.author.did}`,
+      contentText: post.record.text ?? null,
+      contentHtml: null,
+      title: null,
+      summary: null,
+      likeCount: post.likeCount ?? 0,
+      replyCount: post.replyCount ?? 0,
+      repostCount: post.repostCount ?? 0,
+      media: [],
+      publishedAt: publishedAt,
+      sourceReplyUri: parentReplyUri,
+    };
+
+    // Grandparent: if the parent is itself a reply, we got basic info already
+    let grandparentTag: {
+      authorName: string;
+      authorHandle: string;
+    } | null = null;
+    if (parentReplyUri) {
+      // Try to get grandparent author — fetch is best-effort
+      const gpTag = await fetchBlueskyGrandparentTag(parentReplyUri);
+      if (gpTag) grandparentTag = gpTag;
+    }
+
+    return { parent, grandparentTag };
+  } catch (err) {
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err), parentUri },
+      "Bluesky parent fetch failed",
+    );
+    return null;
+  }
+}
+
+async function fetchBlueskyGrandparentTag(
+  uri: string,
+): Promise<{ authorName: string; authorHandle: string } | null> {
+  try {
+    const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getPosts`);
+    url.searchParams.append("uris", uri);
+
+    const res = await safeFetch(url.toString(), {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const data = JSON.parse(res.text) as {
+      posts: Array<{
+        author: { handle: string; displayName?: string };
+      }>;
+    };
+
+    const post = data.posts?.[0];
+    if (!post) return null;
+
+    return {
+      authorName: post.author.displayName || post.author.handle,
+      authorHandle: post.author.handle,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMastodonParent(
+  parentUri: string,
+  sourceId: string,
+): Promise<{
+  parent: ParentItem;
+  grandparentTag: { authorName: string; authorHandle: string } | null;
+} | null> {
+  const statusId = extractMastodonStatusId(parentUri);
+  if (!statusId) return null;
+
+  try {
+    const host = new URL(parentUri).hostname;
+    const res = await safeFetch(`https://${host}/api/v1/statuses/${statusId}`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const status = JSON.parse(res.text) as {
+      id: string;
+      url: string;
+      uri: string;
+      content: string;
+      created_at: string;
+      account: {
+        acct: string;
+        display_name: string;
+        avatar: string;
+        url: string;
+      };
+      favourites_count?: number;
+      replies_count?: number;
+      reblogs_count?: number;
+      in_reply_to_id: string | null;
+      in_reply_to_account_id: string | null;
+      media_attachments?: Array<{
+        type: string;
+        url: string;
+        preview_url?: string;
+        description?: string;
+      }>;
+    };
+
+    const publishedAt = Math.floor(
+      new Date(status.created_at).getTime() / 1000,
+    );
+
+    const media = (status.media_attachments ?? []).map((m) => ({
+      type:
+        m.type === "image" ? "image" : m.type === "video" ? "video" : "link",
+      url: m.url,
+      thumbnail: m.preview_url,
+      alt: m.description,
+    }));
+
+    // Store in DB as context-only
+    const insertResult = await pool.query(
+      `INSERT INTO external_items (
+        source_id, protocol, tier, source_item_uri,
+        author_name, author_handle, author_avatar_url, author_uri,
+        content_html, media, source_reply_uri, interaction_data,
+        like_count, reply_count, repost_count,
+        published_at, is_context_only
+      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
+      ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+        like_count = EXCLUDED.like_count,
+        reply_count = EXCLUDED.reply_count,
+        repost_count = EXCLUDED.repost_count
+      RETURNING id`,
+      [
+        sourceId,
+        "activitypub",
+        status.url || parentUri,
+        status.account.display_name || status.account.acct,
+        status.account.acct,
+        status.account.avatar ?? null,
+        status.account.url,
+        status.content,
+        JSON.stringify(media),
+        null, // source_reply_uri for the parent (we know it has one if in_reply_to_id exists but we don't have the URI)
+        JSON.stringify({ id: status.uri, webUrl: status.url }),
+        status.favourites_count ?? 0,
+        status.replies_count ?? 0,
+        status.reblogs_count ?? 0,
+        new Date(status.created_at),
+      ],
+    );
+
+    const parent: ParentItem = {
+      id: insertResult.rows[0].id,
+      sourceProtocol: "activitypub",
+      sourceItemUri: status.url || parentUri,
+      authorName: status.account.display_name || status.account.acct,
+      authorHandle: status.account.acct,
+      authorAvatarUrl: status.account.avatar ?? null,
+      authorUri: status.account.url,
+      contentText: null,
+      contentHtml: status.content,
+      title: null,
+      summary: null,
+      likeCount: status.favourites_count ?? 0,
+      replyCount: status.replies_count ?? 0,
+      repostCount: status.reblogs_count ?? 0,
+      media,
+      publishedAt: publishedAt,
+      sourceReplyUri: null,
+    };
+
+    // Grandparent tag — if in_reply_to_account_id exists, fetch account name
+    let grandparentTag: {
+      authorName: string;
+      authorHandle: string;
+    } | null = null;
+    if (status.in_reply_to_id) {
+      const gpTag = await fetchMastodonGrandparentTag(
+        host,
+        status.in_reply_to_id,
+      );
+      if (gpTag) grandparentTag = gpTag;
+    }
+
+    return { parent, grandparentTag };
+  } catch (err) {
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err), parentUri },
+      "Mastodon parent fetch failed",
+    );
+    return null;
+  }
+}
+
+async function fetchMastodonGrandparentTag(
+  host: string,
+  statusId: string,
+): Promise<{ authorName: string; authorHandle: string } | null> {
+  try {
+    const res = await safeFetch(`https://${host}/api/v1/statuses/${statusId}`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const status = JSON.parse(res.text) as {
+      account: { acct: string; display_name: string };
+    };
+
+    return {
+      authorName: status.account.display_name || status.account.acct,
+      authorHandle: status.account.acct,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function rowToParentItem(row: any): ParentItem {
+  return {
+    id: row.id,
+    sourceProtocol: row.protocol,
+    sourceItemUri: row.source_item_uri,
+    authorName: row.author_name,
+    authorHandle: row.author_handle,
+    authorAvatarUrl: row.author_avatar_url,
+    authorUri: row.author_uri,
+    contentText: row.content_text,
+    contentHtml: row.content_html,
+    title: row.title,
+    summary: row.summary,
+    likeCount: row.like_count ?? 0,
+    replyCount: row.reply_count ?? 0,
+    repostCount: row.repost_count ?? 0,
+    media: row.media ?? [],
+    publishedAt: Number(row.published_at_epoch),
+    sourceReplyUri: row.source_reply_uri,
+  };
+}
+
+function extractGrandparentTag(
+  row: any,
+): { authorName: string; authorHandle: string } | null {
+  if (!row.source_reply_uri) return null;
+  // If we have the parent's interaction_data with grandparent info, use it
+  // Otherwise, return null — grandparent tag is best-effort
+  return null;
+}
+
+function extractMastodonStatusId(uri: string): string | null {
+  try {
+    const parts = new URL(uri).pathname.split("/").filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last && /^\d+$/.test(last)) return last;
+    return null;
+  } catch {
+    return null;
+  }
+}

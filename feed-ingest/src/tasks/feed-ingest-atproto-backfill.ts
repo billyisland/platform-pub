@@ -49,7 +49,7 @@ interface AuthorFeedResponse {
   feed: FeedViewPost[];
 }
 
-export const feedIngestAtprotoBackfill: Task = async (payload, _helpers) => {
+export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
   const { sourceId } = payload as { sourceId: string };
 
   const {
@@ -145,7 +145,16 @@ export const feedIngestAtprotoBackfill: Task = async (payload, _helpers) => {
               repostCount: post.repostCount,
             });
           });
-          if (didInsert) inserted++;
+          if (didInsert) {
+            inserted++;
+            if (item.sourceReplyUri) {
+              helpers.addJob("external_parent_prefetch", {
+                sourceReplyUri: item.sourceReplyUri,
+                protocol: "atproto",
+                sourceId: source.id,
+              });
+            }
+          }
         } catch (err) {
           logger.warn(
             {

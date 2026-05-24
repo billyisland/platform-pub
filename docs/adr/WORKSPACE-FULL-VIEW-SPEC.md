@@ -1,6 +1,6 @@
 # Workspace Full View — Build Spec
 
-**Status:** Phase 1 shipped (2026-05-24, branch `workspace-experiment`). Migration 090, engagement counts, `EngagementRow` component, RSS paragraph break fix, `external_engagement_refresh` cron. Phases 2–5 pending.
+**Status:** Phase 2 shipped (2026-05-24, branch `workspace-experiment`). Migration 091 (`is_context_only`), live engagement endpoint, parent context endpoint + eager prefetch task, `useLiveEngagement` hook, `ParentContextTile` component. Reply grouping (§3.3) deferred. Phases 3–5 pending.
 
 ## Overview
 

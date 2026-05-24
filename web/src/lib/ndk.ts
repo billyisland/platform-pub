@@ -96,6 +96,8 @@ export interface ExternalFeedItem {
   contentHtml: string | null;
   title: string | null;
   summary: string | null;
+  sourceReplyUri?: string | null;
+  sourceQuoteUri?: string | null;
   likeCount?: number;
   replyCount?: number;
   repostCount?: number;

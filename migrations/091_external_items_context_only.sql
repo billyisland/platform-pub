@@ -1,0 +1,1 @@
+ALTER TABLE external_items ADD COLUMN is_context_only BOOLEAN NOT NULL DEFAULT FALSE;

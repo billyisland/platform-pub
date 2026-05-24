@@ -20,7 +20,9 @@ import {
 import { extractNoteMedia, stripMediaUrls } from "../../lib/media";
 import type { ReplyTarget } from "./Composer";
 import { PipTrigger } from "./PipTrigger";
+import { ParentContextTile } from "./ParentContextTile";
 import { ReplySection } from "../replies/ReplySection";
+import { useLiveEngagement } from "../../hooks/useLiveEngagement";
 
 export type PipOpen = (
   pubkey: string,
@@ -1048,6 +1050,11 @@ function ExternalVesselCard({
       ? (atprotoWebUri(external.sourceItemUri) ?? external.sourceItemUri)
       : external.sourceItemUri;
   const expandKey = external.feedItemId ?? external.id;
+  const engagement = useLiveEngagement(external.id, !!expanded, {
+    likeCount: external.likeCount ?? 0,
+    replyCount: external.replyCount ?? 0,
+    repostCount: external.repostCount ?? 0,
+  });
   const onCardClick = onToggleExpand
     ? () => onToggleExpand(expandKey)
     : () => {
@@ -1099,6 +1106,9 @@ function ExternalVesselCard({
       />
       {expanded ? (
         <>
+          {external.sourceReplyUri && (
+            <ParentContextTile itemId={external.id} palette={ctx.palette} />
+          )}
           {external.contentHtml ? (
             <div
               className="text-[13.5px] leading-[1.5] [&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:text-black [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-grey-300 [&_blockquote]:pl-3 [&_blockquote]:text-grey-600"
@@ -1156,9 +1166,9 @@ function ExternalVesselCard({
         </>
       )}
       <EngagementRow
-        likeCount={external.likeCount ?? 0}
-        replyCount={external.replyCount ?? 0}
-        repostCount={external.repostCount ?? 0}
+        likeCount={engagement.likeCount}
+        replyCount={engagement.replyCount}
+        repostCount={engagement.repostCount}
         protocol={external.sourceProtocol}
         ctx={ctx}
       />

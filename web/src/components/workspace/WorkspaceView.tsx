@@ -160,6 +160,8 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
       contentHtml: item.contentHtml,
       title: item.title,
       summary: item.summary,
+      sourceReplyUri: item.sourceReplyUri ?? null,
+      sourceQuoteUri: item.sourceQuoteUri ?? null,
       likeCount: item.likeCount ?? 0,
       replyCount: item.replyCount ?? 0,
       repostCount: item.repostCount ?? 0,

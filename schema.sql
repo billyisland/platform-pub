@@ -516,6 +516,7 @@ CREATE TABLE public.external_items (
     like_count integer DEFAULT 0 NOT NULL,
     reply_count integer DEFAULT 0 NOT NULL,
     repost_count integer DEFAULT 0 NOT NULL,
+    is_context_only boolean DEFAULT false NOT NULL,
     published_at timestamp with time zone NOT NULL,
     fetched_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,

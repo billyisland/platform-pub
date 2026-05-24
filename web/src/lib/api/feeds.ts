@@ -82,6 +82,8 @@ export interface WorkspaceFeedApiExternal {
   contentHtml: string | null;
   title: string | null;
   summary: string | null;
+  sourceReplyUri?: string | null;
+  sourceQuoteUri?: string | null;
   likeCount: number;
   replyCount: number;
   repostCount: number;
@@ -290,3 +292,48 @@ export interface AuthorVolume {
   sampling: "random" | "top";
   muted: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// External item interactions (Phase 2 — live engagement + parent context)
+// ---------------------------------------------------------------------------
+
+export interface EngagementResponse {
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+  protocol: string;
+  fetchedAt: string;
+}
+
+export interface ParentContextResponse {
+  parent: ParentItem | null;
+  grandparentTag: { authorName: string; authorHandle: string } | null;
+}
+
+export interface ParentItem {
+  id: string;
+  sourceProtocol: string;
+  sourceItemUri: string;
+  authorName: string | null;
+  authorHandle: string | null;
+  authorAvatarUrl: string | null;
+  authorUri: string | null;
+  contentText: string | null;
+  contentHtml: string | null;
+  title: string | null;
+  summary: string | null;
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+  media: unknown[];
+  publishedAt: number;
+  sourceReplyUri: string | null;
+}
+
+export const externalItems = {
+  engagement: (id: string) =>
+    request<EngagementResponse>(`/external-items/${id}/engagement`),
+
+  parent: (id: string) =>
+    request<ParentContextResponse>(`/external-items/${id}/parent`),
+};
