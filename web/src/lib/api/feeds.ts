@@ -330,10 +330,33 @@ export interface ParentItem {
   sourceReplyUri: string | null;
 }
 
+export interface ExternalThreadEntry {
+  id: string;
+  authorName: string;
+  authorHandle: string;
+  authorUri: string;
+  contentHtml: string;
+  contentText: string;
+  publishedAt: string;
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+  parentId: string | null;
+  protocol: string;
+}
+
+export interface ThreadResponse {
+  ancestors: ExternalThreadEntry[];
+  descendants: ExternalThreadEntry[];
+}
+
 export const externalItems = {
   engagement: (id: string) =>
     request<EngagementResponse>(`/external-items/${id}/engagement`),
 
   parent: (id: string) =>
     request<ParentContextResponse>(`/external-items/${id}/parent`),
+
+  thread: (id: string) =>
+    request<ThreadResponse>(`/external-items/${id}/thread`),
 };

@@ -23,6 +23,8 @@ import { PipTrigger } from "./PipTrigger";
 import { ParentContextTile } from "./ParentContextTile";
 import { ReplySection } from "../replies/ReplySection";
 import { useLiveEngagement } from "../../hooks/useLiveEngagement";
+import { useExternalThread } from "../../hooks/useExternalThread";
+import { ExternalPlayscriptThread } from "./ExternalPlayscriptThread";
 
 export type PipOpen = (
   pubkey: string,
@@ -139,6 +141,8 @@ export function VesselCard({
       onToggleSave={onToggleSave}
       expanded={expanded}
       onToggleExpand={onToggleExpand}
+      threadExpanded={threadExpanded}
+      onToggleThread={onToggleThread}
     />
   );
 }
@@ -1029,6 +1033,8 @@ function ExternalVesselCard({
   onToggleSave,
   expanded,
   onToggleExpand,
+  threadExpanded,
+  onToggleThread,
 }: {
   external: ExternalFeedItem;
   ctx: CardContext;
@@ -1036,6 +1042,8 @@ function ExternalVesselCard({
   onToggleSave?: (feedItemId: string, next: boolean) => void;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
+  threadExpanded?: boolean;
+  onToggleThread?: (target: ReplyTarget) => void;
 }) {
   const name =
     external.authorName ??
@@ -1062,6 +1070,18 @@ function ExternalVesselCard({
           window.open(externalUrl, "_blank", "noopener,noreferrer");
         }
       };
+
+  const threadTarget: ReplyTarget | undefined =
+    external.sourceProtocol !== "rss" &&
+    external.sourceProtocol !== "nostr_external"
+      ? {
+          eventId: external.id,
+          eventKind: 0,
+          authorPubkey: "",
+          authorName: name,
+          excerpt: truncateText(body, 120),
+        }
+      : undefined;
 
   const pipNodeCompact = (
     <span
@@ -1185,7 +1205,68 @@ function ExternalVesselCard({
         feedItemId={external.feedItemId}
         isSaved={isSaved}
         onToggleSave={onToggleSave}
+        replyTarget={threadTarget}
+        threadExpanded={threadExpanded}
+        onToggleThread={onToggleThread}
       />
+      {threadExpanded && threadTarget && (
+        <ExternalCardThread itemId={external.id} palette={ctx.palette} />
+      )}
     </CardShell>
+  );
+}
+
+function ExternalCardThread({
+  itemId,
+  palette,
+}: {
+  itemId: string;
+  palette: VesselPalette;
+}) {
+  const { ancestors, descendants, loading, error } = useExternalThread(
+    itemId,
+    true,
+  );
+
+  if (loading) {
+    return (
+      <div onClick={(e) => e.stopPropagation()} className="mt-4 ml-8">
+        <div className="space-y-[32px] py-2">
+          {[1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-10 animate-pulse rounded"
+              style={{ background: palette.interior }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div onClick={(e) => e.stopPropagation()} className="mt-4 ml-8">
+        <p className="label-ui text-grey-400">Couldn&apos;t load thread</p>
+      </div>
+    );
+  }
+
+  if (ancestors.length === 0 && descendants.length === 0) {
+    return (
+      <div onClick={(e) => e.stopPropagation()} className="mt-4 ml-8">
+        <p className="label-ui text-grey-400">No thread available</p>
+      </div>
+    );
+  }
+
+  return (
+    <div onClick={(e) => e.stopPropagation()} className="mt-4">
+      <ExternalPlayscriptThread
+        ancestors={ancestors}
+        descendants={descendants}
+        palette={palette}
+      />
+    </div>
   );
 }

@@ -19,6 +19,32 @@ const parentCache = new Map<
 >();
 const PARENT_CACHE_TTL_MS = 120_000;
 
+const threadCache = new Map<
+  string,
+  { data: ThreadResponse; expiresAt: number }
+>();
+const THREAD_CACHE_TTL_MS = 60_000;
+
+interface ExternalThreadEntry {
+  id: string;
+  authorName: string;
+  authorHandle: string;
+  authorUri: string;
+  contentHtml: string;
+  contentText: string;
+  publishedAt: string;
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+  parentId: string | null;
+  protocol: string;
+}
+
+interface ThreadResponse {
+  ancestors: ExternalThreadEntry[];
+  descendants: ExternalThreadEntry[];
+}
+
 interface EngagementResponse {
   likeCount: number;
   replyCount: number;
@@ -215,15 +241,59 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       return reply.send(data);
     },
   );
+
+  // =========================================================================
+  // GET /external-items/:id/thread — full reply thread from source platform
+  // =========================================================================
+  app.get<{ Params: { id: string } }>(
+    "/external-items/:id/thread",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const { id } = req.params;
+
+      const cached = threadCache.get(id);
+      if (cached && cached.expiresAt > Date.now()) {
+        return reply.send(cached.data);
+      }
+
+      const { rows } = await pool.query<ExternalItemRow>(
+        `SELECT id, source_id, protocol, source_item_uri, source_reply_uri,
+                like_count, reply_count, repost_count, interaction_data
+         FROM external_items WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      );
+
+      if (rows.length === 0) {
+        return reply.status(404).send({ error: "Item not found" });
+      }
+
+      const item = rows[0];
+      let data: ThreadResponse = { ancestors: [], descendants: [] };
+
+      if (item.protocol === "atproto") {
+        const thread = await fetchBlueskyThread(item);
+        if (thread) data = thread;
+      } else if (item.protocol === "activitypub") {
+        const thread = await fetchMastodonThread(item);
+        if (thread) data = thread;
+      }
+      // nostr_external + rss: return empty thread
+
+      threadCache.set(id, {
+        data,
+        expiresAt: Date.now() + THREAD_CACHE_TTL_MS,
+      });
+
+      return reply.send(data);
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Bluesky engagement fetch
 // ---------------------------------------------------------------------------
 
-async function fetchBlueskyEngagement(
-  uri: string,
-): Promise<{
+async function fetchBlueskyEngagement(uri: string): Promise<{
   likeCount: number;
   replyCount: number;
   repostCount: number;
@@ -268,9 +338,7 @@ async function fetchBlueskyEngagement(
 // Mastodon engagement fetch
 // ---------------------------------------------------------------------------
 
-async function fetchMastodonEngagement(
-  uri: string,
-): Promise<{
+async function fetchMastodonEngagement(uri: string): Promise<{
   likeCount: number;
   replyCount: number;
   repostCount: number;
@@ -633,6 +701,195 @@ async function fetchMastodonGrandparentTag(
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bluesky thread fetch
+// ---------------------------------------------------------------------------
+
+interface BlueskyThreadViewPost {
+  $type?: string;
+  post: {
+    uri: string;
+    cid: string;
+    author: { did: string; handle: string; displayName?: string };
+    record: {
+      text?: string;
+      createdAt?: string;
+      reply?: { parent: { uri: string }; root: { uri: string } };
+    };
+    likeCount?: number;
+    replyCount?: number;
+    repostCount?: number;
+  };
+  parent?: BlueskyThreadViewPost | { $type: string };
+  replies?: Array<BlueskyThreadViewPost | { $type: string }>;
+}
+
+function isThreadViewPost(
+  node: BlueskyThreadViewPost | { $type: string },
+): node is BlueskyThreadViewPost {
+  return (
+    !("$type" in node) || node.$type === "app.bsky.feed.defs#threadViewPost"
+  );
+}
+
+function blueskyPostToEntry(tvp: BlueskyThreadViewPost): ExternalThreadEntry {
+  const post = tvp.post;
+  return {
+    id: post.uri,
+    authorName: post.author.displayName || post.author.handle,
+    authorHandle: post.author.handle,
+    authorUri: `https://bsky.app/profile/${post.author.did}`,
+    contentHtml: "",
+    contentText: post.record.text ?? "",
+    publishedAt: post.record.createdAt ?? new Date().toISOString(),
+    likeCount: post.likeCount ?? 0,
+    replyCount: post.replyCount ?? 0,
+    repostCount: post.repostCount ?? 0,
+    parentId: post.record.reply?.parent.uri ?? null,
+    protocol: "atproto",
+  };
+}
+
+async function fetchBlueskyThread(
+  item: ExternalItemRow,
+): Promise<ThreadResponse | null> {
+  try {
+    const atUri =
+      (item.interaction_data as { uri?: string }).uri ?? item.source_item_uri;
+
+    const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getPostThread`);
+    url.searchParams.append("uri", atUri);
+    url.searchParams.append("depth", "50");
+    url.searchParams.append("parentHeight", "100");
+
+    const res = await safeFetch(url.toString(), {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const data = JSON.parse(res.text) as { thread: BlueskyThreadViewPost };
+    if (!isThreadViewPost(data.thread)) return null;
+
+    const focusUri = data.thread.post.uri;
+
+    // Walk ancestors
+    const ancestors: ExternalThreadEntry[] = [];
+    let current = data.thread.parent;
+    while (current && isThreadViewPost(current)) {
+      ancestors.unshift(blueskyPostToEntry(current));
+      current = current.parent;
+    }
+
+    // Flatten descendants (BFS)
+    const descendants: ExternalThreadEntry[] = [];
+    const queue: BlueskyThreadViewPost[] = [];
+    for (const r of data.thread.replies ?? []) {
+      if (isThreadViewPost(r)) queue.push(r);
+    }
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      descendants.push(blueskyPostToEntry(node));
+      for (const r of node.replies ?? []) {
+        if (isThreadViewPost(r)) queue.push(r);
+      }
+    }
+
+    // Sort descendants chronologically
+    descendants.sort(
+      (a, b) =>
+        new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime(),
+    );
+
+    return { ancestors, descendants };
+  } catch (err) {
+    logger.debug(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        uri: item.source_item_uri,
+      },
+      "Bluesky thread fetch failed",
+    );
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mastodon thread fetch
+// ---------------------------------------------------------------------------
+
+async function fetchMastodonThread(
+  item: ExternalItemRow,
+): Promise<ThreadResponse | null> {
+  const statusId = extractMastodonStatusId(item.source_item_uri);
+  if (!statusId) return null;
+
+  try {
+    const host = new URL(item.source_item_uri).hostname;
+    const res = await safeFetch(
+      `https://${host}/api/v1/statuses/${statusId}/context`,
+      { headers: { Accept: "application/json" } },
+    );
+
+    if (!res.ok) return null;
+
+    const data = JSON.parse(res.text) as {
+      ancestors: MastodonStatus[];
+      descendants: MastodonStatus[];
+    };
+
+    const mapStatus = (s: MastodonStatus): ExternalThreadEntry => ({
+      id: s.id,
+      authorName: s.account.display_name || s.account.acct,
+      authorHandle: s.account.acct,
+      authorUri: s.account.url,
+      contentHtml: s.content ?? "",
+      contentText: stripHtmlTags(s.content ?? ""),
+      publishedAt: s.created_at,
+      likeCount: s.favourites_count ?? 0,
+      replyCount: s.replies_count ?? 0,
+      repostCount: s.reblogs_count ?? 0,
+      parentId: s.in_reply_to_id,
+      protocol: "activitypub",
+    });
+
+    return {
+      ancestors: data.ancestors.map(mapStatus),
+      descendants: data.descendants.map(mapStatus),
+    };
+  } catch (err) {
+    logger.debug(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        uri: item.source_item_uri,
+      },
+      "Mastodon thread fetch failed",
+    );
+    return null;
+  }
+}
+
+interface MastodonStatus {
+  id: string;
+  url: string;
+  uri: string;
+  content: string;
+  created_at: string;
+  account: {
+    acct: string;
+    display_name: string;
+    url: string;
+  };
+  favourites_count?: number;
+  replies_count?: number;
+  reblogs_count?: number;
+  in_reply_to_id: string | null;
+}
+
+function stripHtmlTags(html: string): string {
+  return html.replace(/<[^>]*>/g, "").trim();
 }
 
 // ---------------------------------------------------------------------------
