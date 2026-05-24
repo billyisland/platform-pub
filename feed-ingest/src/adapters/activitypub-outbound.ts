@@ -177,6 +177,64 @@ export async function reblogMastodonStatus(
 }
 
 // -----------------------------------------------------------------------------
+// Vote on a Mastodon poll.
+// Resolves the remote status to get the local poll ID, then POSTs the vote.
+// -----------------------------------------------------------------------------
+
+export async function voteMastodonPoll(
+  instanceUrl: string,
+  statusUri: string,
+  choices: number[],
+  credentials: MastodonCredentials,
+): Promise<{ externalPostUri: string }> {
+  const localId = await resolveRemoteStatus(
+    instanceUrl,
+    statusUri,
+    credentials,
+  );
+  if (!localId)
+    throw new Error(`Could not resolve status ${statusUri} on ${instanceUrl}`);
+
+  const statusRes = await safeFetch(
+    `${instanceUrl}/api/v1/statuses/${localId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${credentials.accessToken}`,
+        Accept: "application/json",
+      },
+    },
+  );
+  if (!statusRes.ok)
+    throw new Error(
+      `Mastodon status fetch HTTP ${statusRes.status}: ${statusRes.text.slice(0, 200)}`,
+    );
+
+  const status = JSON.parse(statusRes.text) as { poll?: { id: string } };
+  if (!status.poll?.id)
+    throw new Error(`Status ${localId} has no poll on ${instanceUrl}`);
+
+  const res = await safeFetch(
+    `${instanceUrl}/api/v1/polls/${status.poll.id}/votes`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${credentials.accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ choices }),
+    },
+  );
+
+  if (!res.ok)
+    throw new Error(
+      `Mastodon poll vote HTTP ${res.status}: ${res.text.slice(0, 200)}`,
+    );
+
+  return { externalPostUri: `${instanceUrl}/statuses/${localId}` };
+}
+
+// -----------------------------------------------------------------------------
 // Resolve an external status URI to a status id local to the user's instance.
 // Mastodon's /api/v2/search with `resolve=true` triggers federation-fetch.
 // -----------------------------------------------------------------------------

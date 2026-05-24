@@ -26,6 +26,7 @@ import { relayOutboxReconcile } from "./tasks/relay-outbox-reconcile.js";
 import { relayOutboxPrune } from "./tasks/relay-outbox-prune.js";
 import { externalEngagementRefresh } from "./tasks/external-engagement-refresh.js";
 import { externalParentPrefetch } from "./tasks/external-parent-prefetch.js";
+import { externalContextGc } from "./tasks/external-context-gc.js";
 import { JetstreamListener } from "./jetstream/listener.js";
 
 // =============================================================================
@@ -93,6 +94,8 @@ async function start() {
         "30 3 * * * relay_outbox_prune",
         // Refresh engagement counts on recent external items — every 30 min
         "*/30 * * * * external_engagement_refresh",
+        // Garbage-collect unreferenced context-only external items — daily at 02:30 UTC
+        "30 2 * * * external_context_gc",
       ].join("\n"),
     ),
     taskList: {
@@ -120,6 +123,7 @@ async function start() {
       relay_outbox_prune: relayOutboxPrune,
       external_engagement_refresh: externalEngagementRefresh,
       external_parent_prefetch: externalParentPrefetch,
+      external_context_gc: externalContextGc,
     },
   });
 

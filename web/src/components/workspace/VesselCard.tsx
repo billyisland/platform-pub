@@ -29,6 +29,9 @@ import { ExternalPlayscriptThread } from "./ExternalPlayscriptThread";
 import { useLinkedAccounts } from "../../hooks/useLinkedAccounts";
 import { externalItems } from "../../lib/api/external-items";
 import { InlineReplyBox } from "./InlineReplyBox";
+import { ContentWarning } from "./ContentWarning";
+import { PollDisplay } from "./PollDisplay";
+import { useReader } from "../../stores/reader";
 
 export type PipOpen = (
   pubkey: string,
@@ -448,17 +451,83 @@ interface MediaItemLike {
   alt?: string;
 }
 
+const YOUTUBE_RE =
+  /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/;
+const VIMEO_RE = /vimeo\.com\/(\d+)/;
+
+function detectEmbedUrl(
+  items: MediaItemLike[],
+  externalUrl?: string,
+): string | null {
+  const urls = [
+    externalUrl,
+    ...items.filter((m) => m.type === "video").map((m) => m.url),
+  ];
+  for (const u of urls) {
+    if (!u) continue;
+    if (YOUTUBE_RE.test(u) || VIMEO_RE.test(u)) return u;
+  }
+  return null;
+}
+
 function MediaBlock({
   items,
   ctx,
   externalUrl,
+  expanded,
 }: {
   items: MediaItemLike[];
   ctx: CardContext;
   externalUrl?: string;
+  expanded?: boolean;
 }) {
+  const [embedHtml, setEmbedHtml] = React.useState<string | null>(null);
+  const [embedLoading, setEmbedLoading] = React.useState(false);
+
+  const embedUrl = detectEmbedUrl(items, externalUrl);
+  const prefersReducedMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  React.useEffect(() => {
+    if (!expanded || !embedUrl || prefersReducedMotion) {
+      setEmbedHtml(null);
+      return;
+    }
+    let cancelled = false;
+    setEmbedLoading(true);
+    fetch(`/api/v1/media/oembed?url=${encodeURIComponent(embedUrl)}`)
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (!cancelled && data?.html) setEmbedHtml(data.html);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setEmbedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, embedUrl, prefersReducedMotion]);
+
   if (ctx.density === "compact") return null;
   if (!items || items.length === 0) return null;
+
+  // If we have an active embed, render the iframe
+  if (embedHtml && expanded) {
+    return (
+      <div
+        style={{
+          position: "relative",
+          marginTop: 10,
+          marginBottom: 6,
+          aspectRatio: "16 / 9",
+          overflow: "hidden",
+        }}
+        dangerouslySetInnerHTML={{ __html: embedHtml }}
+      />
+    );
+  }
 
   // Pick the first image; if none, the first video. Audio + link items are
   // skipped — link cards have a different mental model (the existing external
@@ -516,7 +585,7 @@ function MediaBlock({
           }}
         />
       )}
-      {hero.type === "video" && (
+      {hero.type === "video" && !embedLoading && (
         <div
           role="img"
           aria-label="Play video"
@@ -1195,6 +1264,27 @@ function ExternalVesselCard({
     setReplyOpen((prev) => !prev);
   }, []);
 
+  // Reader pane (RSS articles)
+  const openReader = useReader((s) => s.open);
+  const isRssArticle = external.sourceProtocol === "rss" && !!external.title;
+
+  // Poll vote state
+  const [pollVoting, setPollVoting] = React.useState(false);
+  const [pollVoted, setPollVoted] = React.useState(false);
+
+  const handlePollVote = React.useCallback(
+    (choices: number[]) => {
+      if (!matchingAccount || pollVoting || pollVoted) return;
+      setPollVoting(true);
+      externalItems
+        .pollVote(external.id, matchingAccount.id, choices)
+        .then(() => setPollVoted(true))
+        .catch(() => {})
+        .finally(() => setPollVoting(false));
+    },
+    [matchingAccount, pollVoting, pollVoted, external.id],
+  );
+
   const onCardClick = onToggleExpand
     ? () => onToggleExpand(expandKey)
     : () => {
@@ -1261,30 +1351,50 @@ function ExternalVesselCard({
           {external.sourceReplyUri && (
             <ParentContextTile itemId={external.id} palette={ctx.palette} />
           )}
-          {external.contentHtml ? (
-            <div
-              className="text-[13.5px] leading-[1.5] [&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:text-black [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-grey-300 [&_blockquote]:pl-3 [&_blockquote]:text-grey-600"
-              style={{ color: ctx.palette.cardTitle }}
-              dangerouslySetInnerHTML={{ __html: external.contentHtml }}
-            />
-          ) : fullBody ? (
-            <p
-              className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
-              style={{ color: ctx.palette.cardTitle }}
-            >
-              {fullBody}
-            </p>
-          ) : null}
-          <MediaBlock
-            items={external.media ?? []}
-            ctx={ctx}
-            externalUrl={externalUrl}
-          />
+          {(() => {
+            const contentBlock = (
+              <>
+                {external.contentHtml ? (
+                  <div
+                    className="text-[13.5px] leading-[1.5] [&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:text-black [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-grey-300 [&_blockquote]:pl-3 [&_blockquote]:text-grey-600"
+                    style={{ color: ctx.palette.cardTitle }}
+                    dangerouslySetInnerHTML={{ __html: external.contentHtml }}
+                  />
+                ) : fullBody ? (
+                  <p
+                    className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
+                    style={{ color: ctx.palette.cardTitle }}
+                  >
+                    {fullBody}
+                  </p>
+                ) : null}
+                <MediaBlock
+                  items={external.media ?? []}
+                  ctx={ctx}
+                  externalUrl={externalUrl}
+                  expanded
+                />
+              </>
+            );
+            return external.contentWarning ? (
+              <ContentWarning warningText={external.contentWarning}>
+                {contentBlock}
+              </ContentWarning>
+            ) : (
+              contentBlock
+            );
+          })()}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              if (typeof window !== "undefined") {
+              if (isRssArticle) {
+                openReader(
+                  externalUrl,
+                  external.title ?? undefined,
+                  external.sourceName ?? undefined,
+                );
+              } else if (typeof window !== "undefined") {
                 window.open(externalUrl, "_blank", "noopener,noreferrer");
               }
             }}
@@ -1299,22 +1409,50 @@ function ExternalVesselCard({
           >
             Open original →
           </button>
+          {external.poll && (
+            <PollDisplay
+              poll={external.poll}
+              canVote={!!matchingAccount && !external.poll.closed && !pollVoted}
+              onVote={handlePollVote}
+              voting={pollVoting}
+            />
+          )}
         </>
       ) : (
         <>
-          {body && (
-            <p
-              className="text-[13.5px] leading-[1.5]"
-              style={{ color: ctx.palette.cardTitle }}
-            >
-              {truncateText(body, 200)}
-            </p>
+          {external.contentWarning ? (
+            <ContentWarning warningText={external.contentWarning}>
+              {body && (
+                <p
+                  className="text-[13.5px] leading-[1.5]"
+                  style={{ color: ctx.palette.cardTitle }}
+                >
+                  {truncateText(body, 200)}
+                </p>
+              )}
+              <MediaBlock
+                items={external.media ?? []}
+                ctx={ctx}
+                externalUrl={externalUrl}
+              />
+            </ContentWarning>
+          ) : (
+            <>
+              {body && (
+                <p
+                  className="text-[13.5px] leading-[1.5]"
+                  style={{ color: ctx.palette.cardTitle }}
+                >
+                  {truncateText(body, 200)}
+                </p>
+              )}
+              <MediaBlock
+                items={external.media ?? []}
+                ctx={ctx}
+                externalUrl={externalUrl}
+              />
+            </>
           )}
-          <MediaBlock
-            items={external.media ?? []}
-            ctx={ctx}
-            externalUrl={externalUrl}
-          />
         </>
       )}
       <EngagementRow

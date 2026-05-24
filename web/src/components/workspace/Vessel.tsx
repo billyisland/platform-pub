@@ -25,6 +25,7 @@ import {
   type Orientation,
 } from "./tokens";
 import { VesselBar } from "./VesselBar";
+import { PullToRefresh } from "./PullToRefresh";
 
 // Vessel — the ⊔ chassis, per WIREFRAME-DECISIONS-CONSOLIDATED.md Step 1.
 //
@@ -83,6 +84,7 @@ interface VesselProps {
   onDragFrame?: (pos: { x: number; y: number }) => void;
   dragConstraints?: RefObject<HTMLElement>;
   onCardDrop?: (data: string) => void;
+  onRefresh?: () => Promise<void>;
 }
 
 export function Vessel({
@@ -111,6 +113,7 @@ export function Vessel({
   onDragFrame,
   dragConstraints,
   onCardDrop,
+  onRefresh,
 }: VesselProps) {
   const dragControls = useDragControls();
   const [isDragTarget, setIsDragTarget] = useState(false);
@@ -379,7 +382,11 @@ export function Vessel({
               cursor: "default",
             }}
           >
-            {children}
+            {onRefresh ? (
+              <PullToRefresh onRefresh={onRefresh}>{children}</PullToRefresh>
+            ) : (
+              children
+            )}
           </div>
         )}
 

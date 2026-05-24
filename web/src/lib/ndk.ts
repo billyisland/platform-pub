@@ -99,6 +99,13 @@ export interface ExternalFeedItem {
   summary: string | null;
   sourceReplyUri?: string | null;
   sourceQuoteUri?: string | null;
+  contentWarning?: string | null;
+  poll?: {
+    options: Array<{ title: string; votesCount: number }>;
+    multiple: boolean;
+    expiresAt: string | null;
+    closed: boolean;
+  } | null;
   likeCount?: number;
   replyCount?: number;
   repostCount?: number;

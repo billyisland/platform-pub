@@ -6,6 +6,7 @@ import {
   postMastodonStatus,
   favouriteMastodonStatus,
   reblogMastodonStatus,
+  voteMastodonPoll,
   type MastodonCredentials,
 } from "../adapters/activitypub-outbound.js";
 import {
@@ -147,6 +148,17 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
         const result = await reblogMastodonStatus(
           row.la_instance_url,
           row.ei_source_item_uri,
+          creds,
+        );
+        externalPostUri = result.externalPostUri;
+      } else if (row.action_type === "poll_vote") {
+        if (!row.ei_source_item_uri)
+          throw new Error("Poll vote target missing source URI");
+        const choices: number[] = JSON.parse(row.body_text || "[]");
+        const result = await voteMastodonPoll(
+          row.la_instance_url,
+          row.ei_source_item_uri,
+          choices,
           creds,
         );
         externalPostUri = result.externalPostUri;

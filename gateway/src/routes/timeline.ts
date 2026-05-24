@@ -120,6 +120,8 @@ function feedItemToResponse(row: any) {
     summary: row.ei_summary,
     sourceReplyUri: row.ei_source_reply_uri,
     sourceQuoteUri: row.ei_source_quote_uri,
+    contentWarning: row.ei_content_warning ?? null,
+    poll: row.ei_interaction_data?.poll ?? null,
     media: row.media,
     publishedAt: Number(row.published_at_epoch),
     sourceName: row.source_display_name,
@@ -157,6 +159,8 @@ const FEED_SELECT = `
   ei.title AS ei_title, ei.summary AS ei_summary,
   ei.source_reply_uri AS ei_source_reply_uri,
   ei.source_quote_uri AS ei_source_quote_uri,
+  ei.content_warning AS ei_content_warning,
+  ei.interaction_data AS ei_interaction_data,
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
   -- Trust Layer 1 pip (NULL for external items — they default to 'unknown')
   tl.pip_status

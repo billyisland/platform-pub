@@ -54,6 +54,7 @@ export interface NormalisedActivityPubItem {
   media: MediaAttachment[];
   sourceReplyUri: string | null;
   sourceQuoteUri: string | null; // ActivityPub has no quote primitive; always null
+  contentWarning: string | null;
   publishedAt: Date;
   webUrl: string | null;
   interactionData: {
@@ -61,6 +62,12 @@ export interface NormalisedActivityPubItem {
     activityId?: string;
     replyTo?: string;
     webUrl?: string;
+    poll?: {
+      options: Array<{ title: string; votesCount: number }>;
+      multiple: boolean;
+      expiresAt: string | null;
+      closed: boolean;
+    };
   };
 }
 
@@ -312,6 +319,14 @@ function normaliseNote(
 
   const webUrl = typeof note.url === "string" ? note.url : null;
   const language = extractLanguage(note);
+  const contentWarning =
+    note.sensitive === true &&
+    typeof note.summary === "string" &&
+    note.summary.trim().length > 0
+      ? note.summary
+      : null;
+
+  const poll = extractPoll(note);
 
   return {
     sourceItemUri: id,
@@ -327,6 +342,7 @@ function normaliseNote(
     media,
     sourceReplyUri,
     sourceQuoteUri: null,
+    contentWarning,
     publishedAt,
     webUrl,
     interactionData: {
@@ -334,8 +350,41 @@ function normaliseNote(
       activityId: typeof activity?.id === "string" ? activity.id : undefined,
       replyTo: sourceReplyUri ?? undefined,
       webUrl: webUrl ?? undefined,
+      ...(poll ? { poll } : {}),
     },
   };
+}
+
+function extractPoll(note: any): {
+  options: Array<{ title: string; votesCount: number }>;
+  multiple: boolean;
+  expiresAt: string | null;
+  closed: boolean;
+} | null {
+  const choices = Array.isArray(note.oneOf)
+    ? note.oneOf
+    : Array.isArray(note.anyOf)
+      ? note.anyOf
+      : null;
+  if (!choices || choices.length === 0) return null;
+
+  const multiple = Array.isArray(note.anyOf) && note.anyOf.length > 0;
+  const options = choices
+    .filter((c: any) => c && typeof c.name === "string")
+    .map((c: any) => ({
+      title: c.name as string,
+      votesCount:
+        typeof c.replies?.totalItems === "number" ? c.replies.totalItems : 0,
+    }));
+
+  if (options.length === 0) return null;
+
+  const expiresAt = typeof note.endTime === "string" ? note.endTime : null;
+  const closed =
+    typeof note.closed === "string" ||
+    (expiresAt !== null && new Date(expiresAt).getTime() < Date.now());
+
+  return { options, multiple, expiresAt, closed };
 }
 
 function extractAttachments(raw: unknown): MediaAttachment[] {

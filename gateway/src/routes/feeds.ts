@@ -1060,6 +1060,8 @@ const FEED_SELECT = `
   ei.source_quote_uri AS ei_source_quote_uri,
   ei.like_count AS ei_like_count, ei.reply_count AS ei_reply_count,
   ei.repost_count AS ei_repost_count,
+  ei.content_warning AS ei_content_warning,
+  ei.interaction_data AS ei_interaction_data,
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
   tl.pip_status
 `;
@@ -1166,6 +1168,8 @@ function rowToItem(row: any) {
     likeCount: row.ei_like_count ?? 0,
     replyCount: row.ei_reply_count ?? 0,
     repostCount: row.ei_repost_count ?? 0,
+    contentWarning: row.ei_content_warning ?? null,
+    poll: row.ei_interaction_data?.poll ?? null,
     media: row.media,
     publishedAt: Number(row.published_at_epoch),
     sourceName: row.source_display_name,

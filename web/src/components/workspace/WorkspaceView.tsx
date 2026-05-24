@@ -31,6 +31,8 @@ import type { PipStatus } from "../../lib/ndk";
 import { NewFeedPrompt } from "./NewFeedPrompt";
 import { FeedComposer } from "./FeedComposer";
 import { ForallCeremony } from "./ForallCeremony";
+import { ReaderPane } from "./ReaderPane";
+import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
 import { NotificationsAnchor } from "./NotificationsAnchor";
 import { SearchAnchor } from "./SearchAnchor";
@@ -766,16 +768,27 @@ export function WorkspaceView() {
                 hidden={ceremony?.feedId === v.feed.id}
                 dragConstraints={floorRef}
                 onCardDrop={(raw) => handleCardDrop(v.feed.id, raw)}
+                onRefresh={() => loadVesselItems(v.feed)}
               >
                 {v.status === "loading" && <Hint>LOADING…</Hint>}
                 {v.status === "error" && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
-                {v.status === "ready" && v.items.length === 0 && (
-                  <Hint>
-                    {v.view === "saved"
-                      ? "NO SAVED ITEMS YET — TAP SAVE ON A CARD TO KEEP IT HERE"
-                      : "NO ITEMS"}
-                  </Hint>
-                )}
+                {v.status === "ready" &&
+                  v.items.length === 0 &&
+                  (v.view === "saved" ? (
+                    <Hint>
+                      NO SAVED ITEMS YET — TAP SAVE ON A CARD TO KEEP IT HERE
+                    </Hint>
+                  ) : v.sources.length === 0 ? (
+                    <EmptyFeedTile
+                      variant="no-sources"
+                      onAddSources={() => setFeedComposerFor(v.feed)}
+                    />
+                  ) : (
+                    <EmptyFeedTile
+                      variant="no-items"
+                      onAddSources={() => setFeedComposerFor(v.feed)}
+                    />
+                  ))}
                 {v.status === "ready" &&
                   v.items.slice(0, 12).map((item) =>
                     item.type === "new_user" ? (
@@ -989,6 +1002,7 @@ export function WorkspaceView() {
           }}
         />
       )}
+      <ReaderPane />
     </Floor>
   );
 }
