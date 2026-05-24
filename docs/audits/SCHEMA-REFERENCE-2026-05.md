@@ -52,6 +52,7 @@ Companion to `schema.sql` (83 tables, 151 indexes, 157 FKs, 50 CHECK constraints
 | `feed_sources`     | `feed_sources_source_type_check`   | Enum: `account`, `publication`, `external_source`, `tag`                                                            |
 | `feed_sources`     | `feed_sources_sampling_mode_check` | Enum: `chronological`, `scored`, `random`                                                                           |
 | `feed_sources`     | `feed_sources_target_matches_type` | Discriminated union: each `source_type` must have exactly its corresponding FK set, all others null                 |
+| `feed_sources`     | `feed_sources_tag_name_length`     | `tag_name` 1-64 characters when non-null (migration 089)                                                            |
 | `feeds`            | `feeds_name_length`                | 1-80 characters                                                                                                     |
 | `outbound_posts`   | `outbound_posts_action_type_check` | Enum: `reply`, `quote`, `repost`, `original`                                                                        |
 | `outbound_posts`   | `outbound_posts_status_check`      | Enum: `pending`, `sent`, `failed`, `retrying`                                                                       |
@@ -115,20 +116,21 @@ Partial indexes (with WHERE clauses) encode the query patterns the application a
 
 ### Active-record filters
 
-| Index                          | Table                 | Columns                   | WHERE                                            | Purpose                                        |
-| ------------------------------ | --------------------- | ------------------------- | ------------------------------------------------ | ---------------------------------------------- |
-| `idx_subscriptions_status`     | `subscriptions`       | `(status)`                | `status IN ('active','cancelled')`               | Active subscription lookups (excludes expired) |
-| `idx_subscriptions_period_end` | `subscriptions`       | `(current_period_end)`    | `status IN ('active','cancelled')`               | Expiry worker scans                            |
-| `idx_pub_members_account`      | `publication_members` | `(account_id)`            | `removed_at IS NULL`                             | "My publications" query                        |
-| `idx_pub_members_publication`  | `publication_members` | `(publication_id)`        | `removed_at IS NULL`                             | Publication roster                             |
-| `idx_pub_invites_email`        | `publication_invites` | `(invited_email)`         | `accepted_at IS NULL AND declined_at IS NULL`    | Pending invite lookup                          |
-| `idx_pub_invites_token`        | `publication_invites` | `(token)`                 | `accepted_at IS NULL AND declined_at IS NULL`    | Token redemption                               |
-| `idx_vouches_attestor`         | `vouches`             | `(attestor_id)`           | `withdrawn_at IS NULL`                           | "My active vouches"                            |
-| `idx_vouches_subject`          | `vouches`             | `(subject_id)`            | `withdrawn_at IS NULL`                           | Trust profile aggregation                      |
-| `idx_vouches_public`           | `vouches`             | `(subject_id, dimension)` | `visibility = 'public' AND withdrawn_at IS NULL` | Public endorsement display                     |
-| `idx_ext_sources_next_fetch`   | `external_sources`    | `(last_fetched_at)`       | `is_active = true`                               | Poll scheduler picks next source to fetch      |
-| `idx_ext_sources_protocol`     | `external_sources`    | `(protocol)`              | `is_active = true`                               | Protocol-filtered source listing               |
-| `idx_ext_sources_orphaned`     | `external_sources`    | `(orphaned_at)`           | `orphaned_at IS NOT NULL`                        | Orphan cleanup cron                            |
+| Index                          | Table                 | Columns                    | WHERE                                            | Purpose                                             |
+| ------------------------------ | --------------------- | -------------------------- | ------------------------------------------------ | --------------------------------------------------- |
+| `idx_subscriptions_status`     | `subscriptions`       | `(status)`                 | `status IN ('active','cancelled')`               | Active subscription lookups (excludes expired)      |
+| `idx_subscriptions_period_end` | `subscriptions`       | `(current_period_end)`     | `status IN ('active','cancelled')`               | Expiry worker scans                                 |
+| `idx_pub_members_account`      | `publication_members` | `(account_id)`             | `removed_at IS NULL`                             | "My publications" query                             |
+| `idx_pub_members_publication`  | `publication_members` | `(publication_id)`         | `removed_at IS NULL`                             | Publication roster                                  |
+| `idx_pub_invites_email`        | `publication_invites` | `(invited_email)`          | `accepted_at IS NULL AND declined_at IS NULL`    | Pending invite lookup                               |
+| `idx_pub_invites_token`        | `publication_invites` | `(token)`                  | `accepted_at IS NULL AND declined_at IS NULL`    | Token redemption                                    |
+| `idx_vouches_attestor`         | `vouches`             | `(attestor_id)`            | `withdrawn_at IS NULL`                           | "My active vouches"                                 |
+| `idx_vouches_subject`          | `vouches`             | `(subject_id)`             | `withdrawn_at IS NULL`                           | Trust profile aggregation                           |
+| `idx_vouches_public`           | `vouches`             | `(subject_id, dimension)`  | `visibility = 'public' AND withdrawn_at IS NULL` | Public endorsement display                          |
+| `feed_sources_feed_active_idx` | `feed_sources`        | `(feed_id, sampling_mode)` | `muted_at IS NULL`                               | `sourceFilteredItems` feed_mode CTE (migration 089) |
+| `idx_ext_sources_next_fetch`   | `external_sources`    | `(last_fetched_at)`        | `is_active = true`                               | Poll scheduler picks next source to fetch           |
+| `idx_ext_sources_protocol`     | `external_sources`    | `(protocol)`               | `is_active = true`                               | Protocol-filtered source listing                    |
+| `idx_ext_sources_orphaned`     | `external_sources`    | `(orphaned_at)`            | `orphaned_at IS NOT NULL`                        | Orphan cleanup cron                                 |
 
 ### Sparse/nullable column indexes
 

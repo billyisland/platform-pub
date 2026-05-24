@@ -11,9 +11,102 @@ export interface WorkspaceFeed {
   sourceCount: number;
 }
 
+type MediaItem = {
+  type: "image" | "video" | "audio" | "link";
+  url: string;
+  thumbnail?: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  title?: string;
+  description?: string;
+};
+
+type PipStatus = "known" | "partial" | "unknown" | "contested";
+type SizeTier = "lead" | "standard" | "brief";
+
+export interface WorkspaceFeedApiArticle {
+  type: "article";
+  feedItemId: string;
+  authorId?: string;
+  nostrEventId: string;
+  pubkey: string;
+  dTag: string;
+  title: string;
+  summary: string;
+  contentFree: string;
+  accessMode: string;
+  isPaywalled: boolean;
+  pricePence?: number;
+  gatePositionPct?: number;
+  publishedAt: number;
+  score?: number;
+  tags: string[];
+  sizeTier: SizeTier;
+  pipStatus: PipStatus;
+  media?: MediaItem[];
+  savedAt?: number;
+}
+
+export interface WorkspaceFeedApiNote {
+  type: "note";
+  feedItemId: string;
+  authorId?: string;
+  nostrEventId: string;
+  pubkey: string;
+  content: string;
+  isQuoteComment?: boolean;
+  quotedEventId?: string;
+  quotedEventKind?: number;
+  quotedExcerpt?: string;
+  quotedTitle?: string;
+  quotedAuthor?: string;
+  publishedAt: number;
+  score?: number;
+  pipStatus: PipStatus;
+  savedAt?: number;
+}
+
+export interface WorkspaceFeedApiExternal {
+  type: "external";
+  feedItemId: string;
+  externalSourceId?: string;
+  id: string;
+  sourceProtocol: string;
+  sourceItemUri: string;
+  authorName: string | null;
+  authorHandle: string | null;
+  authorAvatarUrl: string | null;
+  authorUri: string | null;
+  contentText: string | null;
+  contentHtml: string | null;
+  title: string | null;
+  summary: string | null;
+  media: MediaItem[];
+  publishedAt: number;
+  sourceName: string | null;
+  sourceAvatar: string | null;
+  pipStatus: PipStatus;
+  savedAt?: number;
+}
+
+export interface WorkspaceFeedApiNewUser {
+  type: "new_user";
+  username: string;
+  displayName: string | null;
+  avatar: string | null;
+  joinedAt: number;
+}
+
+export type WorkspaceFeedApiItem =
+  | WorkspaceFeedApiArticle
+  | WorkspaceFeedApiNote
+  | WorkspaceFeedApiExternal
+  | WorkspaceFeedApiNewUser;
+
 export interface WorkspaceFeedItemsResponse {
   feed: WorkspaceFeed;
-  items: any[];
+  items: WorkspaceFeedApiItem[];
   nextCursor?: string;
   placeholder: boolean;
 }
@@ -30,7 +123,7 @@ export interface WorkspaceFeedSource {
   accountId?: string;
   externalSourceId?: string;
   weight: number;
-  samplingMode: string;
+  samplingMode: "random" | "top";
   mutedAt: string | null;
   createdAt: string;
   display: {
@@ -183,7 +276,7 @@ export const workspaceFeeds = {
 
 export interface WorkspaceFeedSavesResponse {
   feed: WorkspaceFeed;
-  items: any[];
+  items: WorkspaceFeedApiItem[];
   nextCursor?: string;
 }
 

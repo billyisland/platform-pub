@@ -84,8 +84,27 @@ const addSourceSchema = z.union([
     sourceUri: z.string().min(1).max(2048),
     displayName: z.string().max(200).optional(),
     description: z.string().max(1000).optional(),
-    avatarUrl: z.string().max(2048).optional(),
-    relayUrls: z.array(z.string().min(1).max(2048)).max(10).optional(),
+    avatarUrl: z
+      .string()
+      .max(2048)
+      .url()
+      .refine((u) => u.startsWith("http://") || u.startsWith("https://"), {
+        message: "Avatar URL must use http:// or https://",
+      })
+      .optional(),
+    relayUrls: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(2048)
+          .url()
+          .refine((u) => u.startsWith("ws://") || u.startsWith("wss://"), {
+            message: "Relay URL must use ws:// or wss:// protocol",
+          }),
+      )
+      .max(10)
+      .optional(),
   }),
 ]);
 type AddSourceInput = z.infer<typeof addSourceSchema>;
@@ -347,6 +366,11 @@ export async function feedsRoutes(app: FastifyInstance) {
   // Empty source set → falls back to the caller's explore feed. This keeps
   // the vessel meaningful while source-set wiring is still pending; once
   // sources arrive the SELECT branches on feed_sources rows.
+  //
+  // Cursor formats differ between the two paths (placeholder uses 3-part
+  // score:ts:id, source-filtered uses 2-part score:id). If a feed transitions
+  // mid-session (first source added while client holds a stale cursor), the
+  // new path's parser returns undefined and the client restarts from page 1.
   // ---------------------------------------------------------------------------
   app.get<{
     Params: { id: string };
@@ -1211,7 +1235,7 @@ function sourceRowToResponse(row: SourceRow) {
     accountId: row.account_id ?? undefined,
     externalSourceId: row.external_source_id ?? undefined,
     weight: Number(row.weight),
-    samplingMode: row.sampling_mode,
+    samplingMode: row.sampling_mode === "scored" ? "top" : "random",
     mutedAt: row.muted_at?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
     display,

@@ -616,8 +616,7 @@ function SourceRow({
   const [committing, setCommitting] = useState(false);
   const isMuted = source.mutedAt !== null;
   const currentStep = isMuted ? 0 : weightToStep(source.weight);
-  const sampling: "random" | "top" =
-    source.samplingMode === "scored" ? "top" : "random";
+  const sampling = source.samplingMode as "random" | "top";
 
   async function commitStep(nextStep: number) {
     if (committing) return;
@@ -671,10 +670,7 @@ function SourceRow({
             {source.display.label}
           </div>
           {source.display.sublabel && (
-            <div
-              className="label-ui"
-              style={{ color: TOKENS.hintFg }}
-            >
+            <div className="label-ui" style={{ color: TOKENS.hintFg }}>
               {source.display.sublabel}
             </div>
           )}

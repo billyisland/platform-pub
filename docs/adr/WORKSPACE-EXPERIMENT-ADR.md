@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 + 26 + 27 + 28 + 29 + 30 + 31 + 32 shipped on branch + refactoring pass. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
+_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 + 26 + 27 + 28 + 29 + 30 + 31 + 32 shipped on branch + refactoring pass + hardening pass. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
 
 ## Context
 
@@ -906,3 +906,17 @@ Not a feature slice — a cleanup pass across the workspace experiment codebase.
 - Cross-protocol reply semantics (slice 13 inline thread is native-only; external cards still have no Reply / Thread affordances).
 - Brightness × focus coupling (also blocks per-brightness theming for the slice-13 inline playscript).
 - Nudge dismissal persistence beyond session.
+
+### Hardening pass (2026-05-24)
+
+Migration 089 (`workspace_hardening`). Nine issues identified during codebase review, fixes 1–9:
+
+1. **Sampling mode consistency** — `sourceRowToResponse` now maps DB `sampling_mode` (`chronological`/`scored`) to API vocabulary (`random`/`top`), matching the author-volume endpoint. FeedComposer no longer re-maps client-side. `WorkspaceFeedSource.samplingMode` typed as `"random" | "top"`.
+2. **Cursor format consistency** — documented graceful degradation: placeholder (3-part `score:ts:id`) and source-filtered (2-part `score:id`) cursors use different parsers; a stale cursor from a mode transition returns `undefined` and the client restarts from page 1.
+3. **`any` types removed from API layer** — defined `WorkspaceFeedApiItem` discriminated union (`WorkspaceFeedApiArticle | WorkspaceFeedApiNote | WorkspaceFeedApiExternal | WorkspaceFeedApiNewUser`) with proper literal types for `pipStatus`, `sizeTier`, and `media[].type`. `mapApiItem` and response interfaces use the union instead of `any[]`. `matchItemToSource` casts to `ArticleEvent | NoteEvent` instead of `any`.
+4. **Relay URL validation** — `relayUrls` entries now require `.url()` format and `ws://` or `wss://` protocol.
+5. **Tag name DB constraint** — migration 089 adds `CHECK (tag_name IS NULL OR char_length(tag_name) BETWEEN 1 AND 64)` on `feed_sources`.
+6. **Avatar URL validation** — `avatarUrl` in external source creation now requires `.url()` format and `http://` or `https://` protocol.
+7. **Feed sources query index** — migration 089 adds partial index `feed_sources_feed_active_idx ON feed_sources (feed_id, sampling_mode) WHERE muted_at IS NULL` for the `feed_mode` CTE in `sourceFilteredItems`.
+8. **Feed items score index** — already existed (migration 087: `idx_feed_items_score ON feed_items(score DESC, published_at DESC, id DESC) WHERE deleted_at IS NULL`).
+9. **Float cursor precision** — non-issue in practice (scores ≪ 2^53); no change.

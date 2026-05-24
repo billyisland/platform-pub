@@ -13,8 +13,14 @@ import {
   workspaceFeeds as workspaceFeedsApi,
   type WorkspaceFeed,
   type WorkspaceFeedSource,
+  type WorkspaceFeedApiItem,
 } from "../../lib/api";
-import type { FeedItem, ExternalFeedItem } from "../../lib/ndk";
+import type {
+  FeedItem,
+  ExternalFeedItem,
+  ArticleEvent,
+  NoteEvent,
+} from "../../lib/ndk";
 import { Vessel } from "./Vessel";
 import { VesselCard, NewUserVesselCard, type NewUserItem } from "./VesselCard";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
@@ -96,7 +102,7 @@ interface VesselState {
   savedIds: Set<string>;
 }
 
-function mapApiItem(item: any): WorkspaceItem | null {
+function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
   if (item.type === "article") {
     return {
       type: "article",
@@ -477,14 +483,14 @@ export function WorkspaceView() {
   ): string | undefined {
     if (item.type === "new_user") return undefined;
     if (item.type === "external") {
-      const esId = (item as ExternalFeedItem).externalSourceId;
+      const esId = item.externalSourceId;
       if (!esId) return undefined;
       return sources.find(
         (s) =>
           s.sourceType === "external_source" && s.externalSourceId === esId,
       )?.id;
     }
-    const authorId = (item as any).authorId as string | undefined;
+    const authorId = (item as ArticleEvent | NoteEvent).authorId;
     if (!authorId) return undefined;
     return sources.find(
       (s) => s.sourceType === "account" && s.accountId === authorId,
@@ -1023,10 +1029,7 @@ function CenteredHint({ children }: { children: React.ReactNode }) {
 
 function Hint({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className="label-ui py-6 text-center"
-      style={{ color: "#9C9A94" }}
-    >
+    <div className="label-ui py-6 text-center" style={{ color: "#9C9A94" }}>
       {children}
     </div>
   );
