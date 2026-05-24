@@ -1,9 +1,12 @@
-import type { Task } from 'graphile-worker'
-import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { safeFetch } from '@platform-pub/shared/lib/http-client.js'
-import logger from '@platform-pub/shared/lib/logger.js'
-import { normaliseAtprotoPost, type BskyPostRecord } from '../adapters/atproto.js'
-import { insertAtprotoItem } from '../lib/atproto-ingest.js'
+import type { Task } from "graphile-worker";
+import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
+import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
+import logger from "@platform-pub/shared/lib/logger.js";
+import {
+  normaliseAtprotoPost,
+  type BskyPostRecord,
+} from "../adapters/atproto.js";
+import { insertAtprotoItem } from "../lib/atproto-ingest.js";
 
 // =============================================================================
 // feed_ingest_atproto_backfill — one-time backfill for a new Bluesky source.
@@ -19,86 +22,111 @@ import { insertAtprotoItem } from '../lib/atproto-ingest.js'
 // writer dedupes against anything the listener has already captured.
 // =============================================================================
 
-const APPVIEW = 'https://public.api.bsky.app'
-const PAGE_LIMIT = 100
+const APPVIEW = "https://public.api.bsky.app";
+const PAGE_LIMIT = 100;
 
 interface FeedViewPost {
   post: {
-    uri: string
-    cid: string
-    author: { did: string; handle: string; displayName?: string; avatar?: string }
-    record: BskyPostRecord
-    indexedAt: string
-  }
-  reason?: { $type: string } // e.g. reasonRepost — skip these
+    uri: string;
+    cid: string;
+    author: {
+      did: string;
+      handle: string;
+      displayName?: string;
+      avatar?: string;
+    };
+    record: BskyPostRecord;
+    indexedAt: string;
+    likeCount?: number;
+    replyCount?: number;
+    repostCount?: number;
+  };
+  reason?: { $type: string }; // e.g. reasonRepost — skip these
 }
 
 interface AuthorFeedResponse {
-  cursor?: string
-  feed: FeedViewPost[]
+  cursor?: string;
+  feed: FeedViewPost[];
 }
 
 export const feedIngestAtprotoBackfill: Task = async (payload, _helpers) => {
-  const { sourceId } = payload as { sourceId: string }
+  const { sourceId } = payload as { sourceId: string };
 
-  const { rows: [source] } = await pool.query<{
-    id: string
-    source_uri: string
-    display_name: string | null
-    avatar_url: string | null
-  }>(`SELECT id, source_uri, display_name, avatar_url
+  const {
+    rows: [source],
+  } = await pool.query<{
+    id: string;
+    source_uri: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  }>(
+    `SELECT id, source_uri, display_name, avatar_url
       FROM external_sources
-      WHERE id = $1 AND protocol = 'atproto' AND is_active = TRUE`, [sourceId])
+      WHERE id = $1 AND protocol = 'atproto' AND is_active = TRUE`,
+    [sourceId],
+  );
 
   if (!source) {
-    logger.warn({ sourceId }, 'atproto source not found for backfill — skipping')
-    return
+    logger.warn(
+      { sourceId },
+      "atproto source not found for backfill — skipping",
+    );
+    return;
   }
 
-  const { rows: [cfgRow] } = await pool.query<{ value: string }>(
-    `SELECT value FROM platform_config WHERE key = 'feed_ingest_atproto_backfill_hours'`
-  )
-  const lookbackHours = parseInt(cfgRow?.value ?? '24', 10)
-  const cutoff = Date.now() - lookbackHours * 60 * 60 * 1000
+  const {
+    rows: [cfgRow],
+  } = await pool.query<{ value: string }>(
+    `SELECT value FROM platform_config WHERE key = 'feed_ingest_atproto_backfill_hours'`,
+  );
+  const lookbackHours = parseInt(cfgRow?.value ?? "24", 10);
+  const cutoff = Date.now() - lookbackHours * 60 * 60 * 1000;
 
-  let cursor: string | undefined
-  let inserted = 0
-  let seen = 0
+  let cursor: string | undefined;
+  let inserted = 0;
+  let seen = 0;
   // Hard cap on pages so a pathological actor can't trap the worker.
-  const MAX_PAGES = 5
+  const MAX_PAGES = 5;
 
   try {
     for (let page = 0; page < MAX_PAGES; page++) {
-      const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getAuthorFeed`)
-      url.searchParams.set('actor', source.source_uri)
-      url.searchParams.set('limit', String(PAGE_LIMIT))
-      url.searchParams.set('filter', 'posts_no_replies')
-      if (cursor) url.searchParams.set('cursor', cursor)
+      const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getAuthorFeed`);
+      url.searchParams.set("actor", source.source_uri);
+      url.searchParams.set("limit", String(PAGE_LIMIT));
+      url.searchParams.set("filter", "posts_no_replies");
+      if (cursor) url.searchParams.set("cursor", cursor);
 
       const res = await safeFetch(url.toString(), {
-        headers: { 'Accept': 'application/json' },
-      })
+        headers: { Accept: "application/json" },
+      });
       if (!res.ok) {
-        logger.warn({ sourceId, status: res.status }, 'getAuthorFeed failed — ending backfill')
-        break
+        logger.warn(
+          { sourceId, status: res.status },
+          "getAuthorFeed failed — ending backfill",
+        );
+        break;
       }
 
-      const data = JSON.parse(res.text) as AuthorFeedResponse
-      if (!data.feed || data.feed.length === 0) break
+      const data = JSON.parse(res.text) as AuthorFeedResponse;
+      if (!data.feed || data.feed.length === 0) break;
 
-      let reachedCutoff = false
+      let reachedCutoff = false;
       for (const entry of data.feed) {
-        seen++
+        seen++;
         // Skip reposts in backfill — they're handled via the listener's
         // real-time feed once we ingest repost records (future work).
-        if (entry.reason) continue
-        const post = entry.post
-        if (!post?.record || post.record.$type !== 'app.bsky.feed.post') continue
+        if (entry.reason) continue;
+        const post = entry.post;
+        if (!post?.record || post.record.$type !== "app.bsky.feed.post")
+          continue;
 
-        const publishedAt = Date.parse(post.record.createdAt) || Date.parse(post.indexedAt) || Date.now()
+        const publishedAt =
+          Date.parse(post.record.createdAt) ||
+          Date.parse(post.indexedAt) ||
+          Date.now();
         if (publishedAt < cutoff) {
-          reachedCutoff = true
-          continue
+          reachedCutoff = true;
+          continue;
         }
 
         const item = normaliseAtprotoPost({
@@ -107,46 +135,60 @@ export const feedIngestAtprotoBackfill: Task = async (payload, _helpers) => {
           cid: post.cid,
           record: post.record,
           fallbackDate: new Date(publishedAt),
-        })
+        });
 
         try {
           const didInsert = await withTransaction(async (client) => {
-            return insertAtprotoItem(client, source, item)
-          })
-          if (didInsert) inserted++
+            return insertAtprotoItem(client, source, item, {
+              likeCount: post.likeCount,
+              replyCount: post.replyCount,
+              repostCount: post.repostCount,
+            });
+          });
+          if (didInsert) inserted++;
         } catch (err) {
           logger.warn(
-            { sourceId, uri: post.uri, err: err instanceof Error ? err.message : String(err) },
-            'atproto backfill insert failed'
-          )
+            {
+              sourceId,
+              uri: post.uri,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            "atproto backfill insert failed",
+          );
         }
       }
 
-      if (reachedCutoff) break
-      if (!data.cursor) break
-      cursor = data.cursor
+      if (reachedCutoff) break;
+      if (!data.cursor) break;
+      cursor = data.cursor;
     }
 
     // Bump last_fetched_at so the poll-fallback scheduler respects the
     // fetch_interval_seconds cadence when Jetstream is unhealthy. The
     // listener also updates this column on every real-time event, so a
     // healthy source stays "recent" without hitting this path.
-    await pool.query(`
+    await pool.query(
+      `
       UPDATE external_sources
       SET last_fetched_at = now(),
           error_count = 0,
           last_error = NULL,
           updated_at = now()
       WHERE id = $1
-    `, [sourceId])
+    `,
+      [sourceId],
+    );
 
     if (inserted > 0 || seen > 0) {
-      logger.info({ sourceId, inserted, seen, lookbackHours }, 'atproto backfill complete')
+      logger.info(
+        { sourceId, inserted, seen, lookbackHours },
+        "atproto backfill complete",
+      );
     }
   } catch (err) {
     logger.warn(
       { sourceId, err: err instanceof Error ? err.message : String(err) },
-      'atproto backfill failed'
-    )
+      "atproto backfill failed",
+    );
   }
-}
+};

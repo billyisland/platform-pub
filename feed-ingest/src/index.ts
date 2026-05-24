@@ -24,6 +24,7 @@ import { relayPublish } from "./tasks/relay-publish.js";
 import { relayOutboxRedrive } from "./tasks/relay-outbox-redrive.js";
 import { relayOutboxReconcile } from "./tasks/relay-outbox-reconcile.js";
 import { relayOutboxPrune } from "./tasks/relay-outbox-prune.js";
+import { externalEngagementRefresh } from "./tasks/external-engagement-refresh.js";
 import { JetstreamListener } from "./jetstream/listener.js";
 
 // =============================================================================
@@ -89,6 +90,8 @@ async function start() {
         "30 4 * * * relay_outbox_reconcile",
         // Prune sent relay_outbox entries older than 30 days — daily at 03:30 UTC
         "30 3 * * * relay_outbox_prune",
+        // Refresh engagement counts on recent external items — every 30 min
+        "*/30 * * * * external_engagement_refresh",
       ].join("\n"),
     ),
     taskList: {
@@ -114,6 +117,7 @@ async function start() {
       relay_outbox_redrive: relayOutboxRedrive,
       relay_outbox_reconcile: relayOutboxReconcile,
       relay_outbox_prune: relayOutboxPrune,
+      external_engagement_refresh: externalEngagementRefresh,
     },
   });
 

@@ -562,6 +562,84 @@ function MediaBlock({
   );
 }
 
+function EngagementRow({
+  likeCount,
+  replyCount,
+  repostCount,
+  protocol,
+  ctx,
+}: {
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+  protocol: string;
+  ctx: CardContext;
+}) {
+  if (likeCount === 0 && replyCount === 0 && repostCount === 0) return null;
+  const hideRepost = protocol === "nostr_external" || protocol === "rss";
+  return (
+    <div
+      className="flex items-center gap-3 mt-2 font-mono text-[11px] uppercase tracking-[0.02em]"
+      style={{ color: ctx.palette.cardMeta }}
+    >
+      {likeCount > 0 && (
+        <span className="flex items-center gap-1">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+          {likeCount}
+        </span>
+      )}
+      {replyCount > 0 && (
+        <span className="flex items-center gap-1">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          {replyCount}
+        </span>
+      )}
+      {!hideRepost && repostCount > 0 && (
+        <span className="flex items-center gap-1">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="17 1 21 5 17 9" />
+            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+            <polyline points="7 23 3 19 7 15" />
+            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+          </svg>
+          {repostCount}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ArticleVesselCard({
   article,
   ctx,
@@ -1021,14 +1099,25 @@ function ExternalVesselCard({
       />
       {expanded ? (
         <>
-          {fullBody && (
+          {external.contentHtml ? (
+            <div
+              className="text-[13.5px] leading-[1.5] [&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:text-black [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-grey-300 [&_blockquote]:pl-3 [&_blockquote]:text-grey-600"
+              style={{ color: ctx.palette.cardTitle }}
+              dangerouslySetInnerHTML={{ __html: external.contentHtml }}
+            />
+          ) : fullBody ? (
             <p
               className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
               style={{ color: ctx.palette.cardTitle }}
             >
               {fullBody}
             </p>
-          )}
+          ) : null}
+          <MediaBlock
+            items={external.media ?? []}
+            ctx={ctx}
+            externalUrl={externalUrl}
+          />
           <button
             type="button"
             onClick={(e) => {
@@ -1066,6 +1155,13 @@ function ExternalVesselCard({
           />
         </>
       )}
+      <EngagementRow
+        likeCount={external.likeCount ?? 0}
+        replyCount={external.replyCount ?? 0}
+        repostCount={external.repostCount ?? 0}
+        protocol={external.sourceProtocol}
+        ctx={ctx}
+      />
       {ctx.density === "full" && (
         <SourceAttribution
           protocol={protocol}

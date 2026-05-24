@@ -19,10 +19,17 @@ interface AtprotoIngestSource {
   avatar_url: string | null;
 }
 
+export interface EngagementCounts {
+  likeCount?: number;
+  replyCount?: number;
+  repostCount?: number;
+}
+
 export async function insertAtprotoItem(
   client: PoolClient,
   source: AtprotoIngestSource,
   item: NormalisedAtprotoItem,
+  counts?: EngagementCounts,
 ): Promise<boolean> {
   const { rows, rowCount } = await client.query<{ id: string }>(
     `
@@ -34,6 +41,7 @@ export async function insertAtprotoItem(
       media,
       source_reply_uri, source_quote_uri, is_repost,
       interaction_data,
+      like_count, reply_count, repost_count,
       published_at
     ) VALUES (
       $1, 'atproto', 'tier3',
@@ -43,7 +51,8 @@ export async function insertAtprotoItem(
       $10,
       $11, $12, FALSE,
       $13,
-      $14
+      $14, $15, $16,
+      $17
     )
     ON CONFLICT (protocol, source_item_uri) DO NOTHING
     RETURNING id
@@ -62,6 +71,9 @@ export async function insertAtprotoItem(
       item.sourceReplyUri,
       item.sourceQuoteUri,
       JSON.stringify(item.interactionData),
+      counts?.likeCount ?? 0,
+      counts?.replyCount ?? 0,
+      counts?.repostCount ?? 0,
       item.publishedAt,
     ],
   );

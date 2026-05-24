@@ -82,6 +82,9 @@ export interface WorkspaceFeedApiExternal {
   contentHtml: string | null;
   title: string | null;
   summary: string | null;
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
   media: MediaItem[];
   publishedAt: number;
   sourceName: string | null;
