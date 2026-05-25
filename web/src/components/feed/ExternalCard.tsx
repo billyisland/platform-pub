@@ -60,6 +60,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   atproto: "VIA BLUESKY",
   activitypub: "VIA MASTODON",
   nostr_external: "VIA NOSTR",
+  email: "VIA EMAIL",
 };
 
 // Turn an at:// URI into the Bluesky web URL so "View original" actually

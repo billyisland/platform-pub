@@ -1,7 +1,12 @@
-'use client'
+"use client";
 
-import { useState, useRef, useCallback } from 'react'
-import { resolver, feeds, type ResolverResult, type ResolverMatch } from '../../lib/api'
+import { useState, useRef, useCallback } from "react";
+import {
+  resolver,
+  feeds,
+  type ResolverResult,
+  type ResolverMatch,
+} from "../../lib/api";
 
 // =============================================================================
 // SubscribeInput — omnivorous input for subscribing to external feeds
@@ -12,134 +17,156 @@ import { resolver, feeds, type ResolverResult, type ResolverMatch } from '../../
 // =============================================================================
 
 interface SubscribeInputProps {
-  onSubscribed?: () => void
+  onSubscribed?: () => void;
 }
 
 export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
-  const [query, setQuery] = useState('')
-  const [result, setResult] = useState<ResolverResult | null>(null)
-  const [resolving, setResolving] = useState(false)
-  const [subscribing, setSubscribing] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pollCountRef = useRef(0)
+  const [query, setQuery] = useState("");
+  const [result, setResult] = useState<ResolverResult | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [subscribing, setSubscribing] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [emailIngestAddress, setEmailIngestAddress] = useState<string | null>(
+    null,
+  );
+  const [emailSourceName, setEmailSourceName] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollCountRef = useRef(0);
 
   const handleChange = useCallback((value: string) => {
-    setQuery(value)
-    setError(null)
-    setSuccess(null)
-    setResult(null)
+    setQuery(value);
+    setError(null);
+    setSuccess(null);
+    setResult(null);
+    setEmailIngestAddress(null);
+    setEmailSourceName(null);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!value.trim()) return
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!value.trim()) return;
 
     debounceRef.current = setTimeout(async () => {
-      setResolving(true)
+      setResolving(true);
       try {
-        const res = await resolver.resolve(value.trim(), 'subscribe')
+        const res = await resolver.resolve(value.trim(), "subscribe");
 
         if (res.error && res.matches.length === 0) {
-          setError(res.error)
-          setResult(null)
-          setResolving(false)
-          return
+          setError(res.error);
+          setResult(null);
+          setResolving(false);
+          return;
         }
 
-        setResult(res)
+        setResult(res);
 
         // Poll while the server reports pending Phase B work.
-        if (res.requestId && res.status === 'pending') {
-          pollCountRef.current = 0
-          pollForResults(res.requestId)
+        if (res.requestId && res.status === "pending") {
+          pollCountRef.current = 0;
+          pollForResults(res.requestId);
         } else {
-          setResolving(false)
+          setResolving(false);
         }
       } catch {
-        setError('Resolution failed')
-        setResolving(false)
+        setError("Resolution failed");
+        setResolving(false);
       }
-    }, 300)
-  }, [])
+    }, 300);
+  }, []);
 
   const pollForResults = useCallback(async (requestId: string) => {
-    pollCountRef.current++
+    pollCountRef.current++;
     if (pollCountRef.current > 8) {
-      setResolving(false)
-      return
+      setResolving(false);
+      return;
     }
 
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     try {
-      const res = await resolver.poll(requestId)
-      setResult(res)
+      const res = await resolver.poll(requestId);
+      setResult(res);
 
-      if (res.status === 'pending') {
-        pollForResults(requestId)
+      if (res.status === "pending") {
+        pollForResults(requestId);
       } else {
-        setResolving(false)
+        setResolving(false);
       }
     } catch {
-      setResolving(false)
+      setResolving(false);
     }
-  }, [])
+  }, []);
 
-  const handleSubscribe = useCallback(async (match: ResolverMatch) => {
-    const key = match.externalSource?.sourceUri ?? match.rssFeed?.feedUrl ?? ''
-    setSubscribing(key)
-    setError(null)
+  const handleSubscribe = useCallback(
+    async (match: ResolverMatch) => {
+      const key =
+        match.externalSource?.sourceUri ?? match.rssFeed?.feedUrl ?? "";
+      setSubscribing(key);
+      setError(null);
 
-    try {
-      let protocol: string
-      let sourceUri: string
-      let displayName: string | undefined
-      let description: string | undefined
-      let avatarUrl: string | undefined
-      let relayUrls: string[] | undefined
+      try {
+        let protocol: string;
+        let sourceUri: string;
+        let displayName: string | undefined;
+        let description: string | undefined;
+        let avatarUrl: string | undefined;
+        let relayUrls: string[] | undefined;
 
-      if (match.rssFeed) {
-        protocol = 'rss'
-        sourceUri = match.rssFeed.feedUrl
-        displayName = match.rssFeed.title
-        description = match.rssFeed.description
-      } else if (match.externalSource) {
-        protocol = match.externalSource.protocol
-        sourceUri = match.externalSource.sourceUri
-        displayName = match.externalSource.displayName
-        description = match.externalSource.description
-        avatarUrl = match.externalSource.avatar
-        relayUrls = match.externalSource.relayUrls
-      } else {
-        setError('Cannot subscribe to this type of result')
-        setSubscribing(null)
-        return
+        if (match.rssFeed) {
+          protocol = "rss";
+          sourceUri = match.rssFeed.feedUrl;
+          displayName = match.rssFeed.title;
+          description = match.rssFeed.description;
+        } else if (match.externalSource) {
+          protocol = match.externalSource.protocol;
+          sourceUri = match.externalSource.sourceUri;
+          displayName = match.externalSource.displayName;
+          description = match.externalSource.description;
+          avatarUrl = match.externalSource.avatar;
+          relayUrls = match.externalSource.relayUrls;
+        } else {
+          setError("Cannot subscribe to this type of result");
+          setSubscribing(null);
+          return;
+        }
+
+        const res = await feeds.subscribe({
+          protocol,
+          sourceUri,
+          displayName,
+          description,
+          avatarUrl,
+          relayUrls,
+        });
+        if (res.ingestAddress) {
+          setEmailIngestAddress(res.ingestAddress);
+          setEmailSourceName(displayName ?? sourceUri);
+        } else {
+          setSuccess(`Subscribed to ${displayName ?? sourceUri}`);
+        }
+        setQuery("");
+        setResult(null);
+        onSubscribed?.();
+      } catch (err: any) {
+        setError(err?.message ?? "Subscription failed");
+      } finally {
+        setSubscribing(null);
       }
-
-      await feeds.subscribe({ protocol, sourceUri, displayName, description, avatarUrl, relayUrls })
-      setSuccess(`Subscribed to ${displayName ?? sourceUri}`)
-      setQuery('')
-      setResult(null)
-      onSubscribed?.()
-    } catch (err: any) {
-      setError(err?.message ?? 'Subscription failed')
-    } finally {
-      setSubscribing(null)
-    }
-  }, [onSubscribed])
+    },
+    [onSubscribed],
+  );
 
   const INPUT_TYPE_LABELS: Record<string, string> = {
-    url: 'Resolving URL...',
-    npub: 'Nostr public key',
-    nprofile: 'Nostr profile',
-    hex_pubkey: 'Nostr public key',
-    did: 'AT Protocol DID',
-    bluesky_handle: 'Bluesky handle',
-    fediverse_handle: 'Fediverse handle',
-    ambiguous_at: 'Resolving identity...',
-    platform_username: 'Platform user',
-    free_text: 'Searching...',
-  }
+    url: "Resolving URL...",
+    npub: "Nostr public key",
+    nprofile: "Nostr profile",
+    hex_pubkey: "Nostr public key",
+    did: "AT Protocol DID",
+    bluesky_handle: "Bluesky handle",
+    fediverse_handle: "Fediverse handle",
+    ambiguous_at: "Resolving identity...",
+    platform_username: "Platform user",
+    free_text: "Searching...",
+  };
 
   return (
     <div>
@@ -162,18 +189,39 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
       {/* Classification hint */}
       {resolving && result?.inputType && (
         <p className="text-mono-xs text-grey-400 mt-1.5">
-          {INPUT_TYPE_LABELS[result.inputType] ?? 'Resolving...'}
+          {INPUT_TYPE_LABELS[result.inputType] ?? "Resolving..."}
         </p>
       )}
 
       {/* Error */}
-      {error && (
-        <p className="text-mono-xs text-crimson mt-1.5">{error}</p>
-      )}
+      {error && <p className="text-mono-xs text-crimson mt-1.5">{error}</p>}
 
       {/* Success */}
-      {success && (
-        <p className="text-mono-xs text-black mt-1.5">{success}</p>
+      {success && <p className="text-mono-xs text-black mt-1.5">{success}</p>}
+
+      {/* Email ingest address */}
+      {emailIngestAddress && (
+        <div className="mt-2 border border-grey-200 p-4">
+          <p className="text-ui-sm font-semibold text-black mb-2">
+            Subscribe to {emailSourceName} using this address:
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="text-mono-xs bg-grey-100 px-2 py-1.5 flex-1 truncate">
+              {emailIngestAddress}
+            </code>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(emailIngestAddress)}
+              className="btn text-ui-xs py-1 px-3 flex-shrink-0"
+            >
+              Copy
+            </button>
+          </div>
+          <p className="text-mono-xs text-grey-400 mt-2">
+            Use this address when subscribing to the newsletter. Emails sent
+            here will appear in your feed.
+          </p>
+        </div>
       )}
 
       {/* Match results */}
@@ -191,11 +239,16 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
       )}
 
       {/* No matches after resolution complete */}
-      {result && result.matches.length === 0 && !resolving && !error && !success && query.trim() && (
-        <p className="text-mono-xs text-grey-400 mt-1.5">No matches found</p>
-      )}
+      {result &&
+        result.matches.length === 0 &&
+        !resolving &&
+        !error &&
+        !success &&
+        query.trim() && (
+          <p className="text-mono-xs text-grey-400 mt-1.5">No matches found</p>
+        )}
     </div>
-  )
+  );
 }
 
 function MatchRow({
@@ -203,45 +256,57 @@ function MatchRow({
   subscribing,
   onSubscribe,
 }: {
-  match: ResolverMatch
-  subscribing: string | null
-  onSubscribe: (match: ResolverMatch) => void
+  match: ResolverMatch;
+  subscribing: string | null;
+  onSubscribe: (match: ResolverMatch) => void;
 }) {
-  const isSubscribable = match.type === 'rss_feed' || match.type === 'external_source'
-  const key = match.externalSource?.sourceUri ?? match.rssFeed?.feedUrl ?? ''
-  const isLoading = subscribing === key
+  const isSubscribable =
+    match.type === "rss_feed" || match.type === "external_source";
+  const key = match.externalSource?.sourceUri ?? match.rssFeed?.feedUrl ?? "";
+  const isLoading = subscribing === key;
 
-  let name: string
-  let detail: string
-  let badge: string
+  let name: string;
+  let detail: string;
+  let badge: string;
 
   if (match.rssFeed) {
-    name = match.rssFeed.title ?? 'RSS Feed'
-    detail = match.rssFeed.feedUrl
-    badge = 'RSS'
+    name = match.rssFeed.title ?? "RSS Feed";
+    detail = match.rssFeed.feedUrl;
+    badge = "RSS";
   } else if (match.externalSource) {
-    name = match.externalSource.displayName ?? match.externalSource.sourceUri
-    detail = match.externalSource.sourceUri
-    badge = match.externalSource.protocol === 'atproto' ? 'BLUESKY'
-          : match.externalSource.protocol === 'activitypub' ? 'MASTODON'
-          : match.externalSource.protocol === 'nostr_external' ? 'NOSTR'
-          : match.externalSource.protocol.toUpperCase()
+    name = match.externalSource.displayName ?? match.externalSource.sourceUri;
+    detail = match.externalSource.sourceUri;
+    badge =
+      match.externalSource.protocol === "atproto"
+        ? "BLUESKY"
+        : match.externalSource.protocol === "activitypub"
+          ? "MASTODON"
+          : match.externalSource.protocol === "nostr_external"
+            ? "NOSTR"
+            : match.externalSource.protocol.toUpperCase();
   } else if (match.account) {
-    name = match.account.displayName
-    detail = `@${match.account.username}`
-    badge = 'ALL.HAUS'
+    name = match.account.displayName;
+    detail = `@${match.account.username}`;
+    badge = "ALL.HAUS";
   } else {
-    return null
+    return null;
   }
 
   return (
     <div className="flex items-center justify-between px-4 py-2.5 border-b border-grey-200 last:border-b-0">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-ui-sm font-semibold text-black truncate">{name}</span>
+          <span className="text-ui-sm font-semibold text-black truncate">
+            {name}
+          </span>
           <span className="label-ui text-grey-400 flex-shrink-0">{badge}</span>
-          {match.externalSource?.protocol === 'activitypub' && (
-            <span className="label-ui text-amber-600 flex-shrink-0" title="Mastodon outbox polling is best-effort — some posts may be missing depending on the instance">BETA</span>
+          {match.externalSource?.protocol === "activitypub" && (
+            <span
+              className="label-ui text-amber-600 flex-shrink-0"
+              title="Mastodon outbox polling is best-effort — some posts may be missing depending on the instance"
+            >
+              BETA
+            </span>
           )}
         </div>
         <p className="text-mono-xs text-grey-400 truncate">{detail}</p>
@@ -252,9 +317,9 @@ function MatchRow({
           disabled={isLoading}
           className="btn text-ui-xs py-1 px-3 ml-3 flex-shrink-0 disabled:opacity-50"
         >
-          {isLoading ? 'Adding...' : 'Subscribe'}
+          {isLoading ? "Adding..." : "Subscribe"}
         </button>
       )}
     </div>
-  )
+  );
 }

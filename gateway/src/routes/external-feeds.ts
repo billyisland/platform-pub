@@ -54,6 +54,10 @@ function validateSubscribeInput(input: {
     if (!/^[0-9a-f]{64}$/i.test(sourceUri)) {
       return "nostr_external sourceUri must be a 64-char hex pubkey";
     }
+  } else if (protocol === "email") {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sourceUri)) {
+      return "email sourceUri must be a valid email address (e.g. newsletter@example.com)";
+    }
   }
 
   // Strip control chars and cap free-text fields
@@ -162,13 +166,9 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
         "atproto",
         "nostr_external",
         "activitypub",
-      ] as const;
-      const plannedProtocols = [
-        "farcaster",
-        "matrix",
-        "telegram",
         "email",
       ] as const;
+      const plannedProtocols = ["farcaster", "matrix", "telegram"] as const;
 
       if ((plannedProtocols as readonly string[]).includes(protocol)) {
         return reply.status(400).send({
@@ -266,7 +266,30 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
             [readerId, source.id],
           );
 
-          return { sourceId: source.id, subscriptionId: sub.id };
+          // For email sources, generate a unique ingest address
+          let ingestAddress: string | null = null;
+          if (protocol === "email") {
+            ingestAddress = `${source.id}@ingest.all.haus`;
+            await client.query(
+              `UPDATE external_sources SET ingest_address = $2, updated_at = now()
+               WHERE id = $1 AND ingest_address IS NULL`,
+              [source.id, ingestAddress],
+            );
+            // Re-read in case another subscriber already created it
+            const {
+              rows: [addrRow],
+            } = await client.query<{ ingest_address: string }>(
+              `SELECT ingest_address FROM external_sources WHERE id = $1`,
+              [source.id],
+            );
+            ingestAddress = addrRow?.ingest_address ?? ingestAddress;
+          }
+
+          return {
+            sourceId: source.id,
+            subscriptionId: sub.id,
+            ingestAddress,
+          };
         });
 
         // Enqueue an immediate fetch job for protocols that poll. atproto
@@ -300,6 +323,9 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
         return reply.status(201).send({
           subscriptionId: result.subscriptionId,
           sourceId: result.sourceId,
+          ...(result.ingestAddress
+            ? { ingestAddress: result.ingestAddress }
+            : {}),
         });
       } catch (err) {
         if ((err as { code?: string } | null)?.code === "SUB_LIMIT_EXCEEDED") {
@@ -339,6 +365,7 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
         src.error_count,
         src.last_error,
         src.last_fetched_at,
+        src.ingest_address,
         (SELECT COUNT(*) FROM external_items ei WHERE ei.source_id = src.id AND ei.deleted_at IS NULL) AS item_count
       FROM external_subscriptions es
       JOIN external_sources src ON src.id = es.source_id
@@ -365,6 +392,7 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
             errorCount: row.error_count,
             lastError: row.last_error,
             lastFetchedAt: row.last_fetched_at,
+            ingestAddress: row.ingest_address ?? null,
             itemCount: parseInt(row.item_count, 10),
           },
         })),

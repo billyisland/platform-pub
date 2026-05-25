@@ -18,6 +18,7 @@ import { noteRoutes } from "./routes/notes.js";
 import { followRoutes } from "./routes/follows.js";
 import { moderationRoutes } from "./routes/moderation.js";
 import { rssRoutes } from "./routes/rss.js";
+import { inboundMailRoutes } from "./routes/inbound-mail.js";
 import { searchRoutes } from "./routes/search.js";
 import { googleAuthRoutes } from "./routes/google-auth.js";
 import { draftRoutes } from "./routes/drafts.js";
@@ -148,6 +149,9 @@ async function start() {
 
   // RSS feeds (public, no auth — per ADR §II.6)
   await app.register(rssRoutes);
+
+  // Inbound email webhook (Postmark → email newsletter ingestion)
+  await app.register(inboundMailRoutes);
 
   // Subscriptions (subscribe, unsubscribe, check, list, pricing)
   await app.register(subscriptionRoutes, { prefix: "/api/v1" });

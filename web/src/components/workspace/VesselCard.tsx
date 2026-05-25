@@ -386,6 +386,7 @@ const PROTOCOL_DISPLAY: Record<string, string> = {
   ATPROTO: "BLUESKY",
   ACTIVITYPUB: "FEDIVERSE",
   NOSTR_EXTERNAL: "NOSTR",
+  EMAIL: "EMAIL",
 };
 
 function SourceAttribution({
@@ -659,9 +660,10 @@ function EngagementRow({
   onReply?: () => void;
   replyDisabled?: boolean;
 }) {
-  const hideRepost = protocol === "nostr_external" || protocol === "rss";
-  const hideLike = protocol === "rss";
-  const hideReply = protocol === "rss";
+  const hideRepost =
+    protocol === "nostr_external" || protocol === "rss" || protocol === "email";
+  const hideLike = protocol === "rss" || protocol === "email";
+  const hideReply = protocol === "rss" || protocol === "email";
   const showLike = !hideLike && (likeCount > 0 || onLike);
   const showReply = !hideReply && (replyCount > 0 || onReply);
   const showRepost = !hideRepost && (repostCount > 0 || onRepost);
@@ -1235,9 +1237,12 @@ function ExternalVesselCard({
     setReplyOpen((prev) => !prev);
   }, []);
 
-  // Reader pane (RSS articles)
+  // Reader pane (RSS articles + email newsletters)
   const openReader = useReader((s) => s.open);
-  const isRssArticle = external.sourceProtocol === "rss" && !!external.title;
+  const isRssArticle =
+    (external.sourceProtocol === "rss" ||
+      external.sourceProtocol === "email") &&
+    !!external.title;
 
   // Poll vote state
   const [pollVoting, setPollVoting] = React.useState(false);
@@ -1266,7 +1271,8 @@ function ExternalVesselCard({
 
   const threadTarget: ReplyTarget | undefined =
     external.sourceProtocol !== "rss" &&
-    external.sourceProtocol !== "nostr_external"
+    external.sourceProtocol !== "nostr_external" &&
+    external.sourceProtocol !== "email"
       ? {
           eventId: external.id,
           eventKind: 0,
@@ -1434,16 +1440,22 @@ function ExternalVesselCard({
         ctx={ctx}
         liked={liked}
         onLike={
-          external.sourceProtocol !== "rss"
+          external.sourceProtocol !== "rss" &&
+          external.sourceProtocol !== "email"
             ? matchingAccount
               ? handleLike
               : undefined
             : undefined
         }
-        likeDisabled={external.sourceProtocol !== "rss" && !matchingAccount}
+        likeDisabled={
+          external.sourceProtocol !== "rss" &&
+          external.sourceProtocol !== "email" &&
+          !matchingAccount
+        }
         reposted={reposted}
         onRepost={
           external.sourceProtocol !== "rss" &&
+          external.sourceProtocol !== "email" &&
           external.sourceProtocol !== "nostr_external"
             ? matchingAccount
               ? handleRepost
@@ -1452,11 +1464,21 @@ function ExternalVesselCard({
         }
         repostDisabled={
           external.sourceProtocol !== "rss" &&
+          external.sourceProtocol !== "email" &&
           external.sourceProtocol !== "nostr_external" &&
           !matchingAccount
         }
-        onReply={external.sourceProtocol !== "rss" ? handleReply : undefined}
-        replyDisabled={external.sourceProtocol !== "rss" && !matchingAccount}
+        onReply={
+          external.sourceProtocol !== "rss" &&
+          external.sourceProtocol !== "email"
+            ? handleReply
+            : undefined
+        }
+        replyDisabled={
+          external.sourceProtocol !== "rss" &&
+          external.sourceProtocol !== "email" &&
+          !matchingAccount
+        }
       />
       {replyOpen && (
         <InlineReplyBox

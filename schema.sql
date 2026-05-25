@@ -1233,6 +1233,7 @@ CREATE TABLE public.external_items (
     repost_count integer DEFAULT 0 NOT NULL,
     is_context_only boolean DEFAULT false NOT NULL,
     content_warning text,
+    canonical_url text,
     CONSTRAINT protocol_tier_consistency CHECK ((((protocol = 'nostr_external'::public.external_protocol) AND (tier = 'tier2'::public.content_tier)) OR ((protocol = ANY (ARRAY['atproto'::public.external_protocol, 'activitypub'::public.external_protocol, 'farcaster'::public.external_protocol])) AND (tier = 'tier3'::public.content_tier)) OR ((protocol = ANY (ARRAY['rss'::public.external_protocol, 'telegram'::public.external_protocol, 'matrix'::public.external_protocol, 'email'::public.external_protocol])) AND (tier = 'tier4'::public.content_tier))))
 );
 
@@ -1265,7 +1266,8 @@ CREATE TABLE public.external_sources (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     orphaned_at timestamp with time zone,
-    metadata_updated_at timestamp with time zone
+    metadata_updated_at timestamp with time zone,
+    ingest_address text
 );
 
 
@@ -4341,6 +4343,20 @@ CREATE INDEX idx_ext_items_source_reply ON public.external_items USING btree (so
 
 
 --
+-- Name: idx_ext_items_canonical; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ext_items_canonical ON public.external_items USING btree (canonical_url) WHERE (canonical_url IS NOT NULL);
+
+
+--
+-- Name: idx_ext_sources_ingest_addr; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_ext_sources_ingest_addr ON public.external_sources USING btree (ingest_address) WHERE (ingest_address IS NOT NULL);
+
+
+--
 -- Name: idx_ext_sources_next_fetch; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6719,6 +6735,9 @@ INSERT INTO public._migrations VALUES (90, '090_external_engagement_counts.sql',
 INSERT INTO public._migrations VALUES (91, '091_external_items_context_only.sql', '2026-05-25 10:48:13.961761+00');
 INSERT INTO public._migrations VALUES (92, '092_interaction_foundation.sql', '2026-05-25 10:48:13.967455+00');
 INSERT INTO public._migrations VALUES (93, '093_content_warning.sql', '2026-05-25 10:48:13.973958+00');
+INSERT INTO public._migrations VALUES (94, '094_external_protocol_expansion.sql', '2026-05-25 10:48:13.979000+00');
+INSERT INTO public._migrations VALUES (95, '095_external_protocol_check_constraint.sql', '2026-05-25 10:48:13.984000+00');
+INSERT INTO public._migrations VALUES (96, '096_email_ingest.sql', '2026-05-25 10:48:13.990000+00');
 
 
 SELECT pg_catalog.setval('public._migrations_id_seq', 93, true);

@@ -27,6 +27,7 @@ import { relayOutboxPrune } from "./tasks/relay-outbox-prune.js";
 import { externalEngagementRefresh } from "./tasks/external-engagement-refresh.js";
 import { externalParentPrefetch } from "./tasks/external-parent-prefetch.js";
 import { externalContextGc } from "./tasks/external-context-gc.js";
+import { feedIngestEmail } from "./tasks/feed-ingest-email.js";
 import { JetstreamListener } from "./jetstream/listener.js";
 
 // =============================================================================
@@ -124,6 +125,7 @@ async function start() {
       external_engagement_refresh: externalEngagementRefresh,
       external_parent_prefetch: externalParentPrefetch,
       external_context_gc: externalContextGc,
+      feed_ingest_email: feedIngestEmail,
     },
   });
 

@@ -301,12 +301,12 @@ instance to confirm.
 
 ---
 
-## Slice 3 — Email newsletter ingestion
+## Slice 3 — Email newsletter ingestion ✅ DONE
 
 Strategically the highest-value non-protocol source. Entirely in-stack —
 the platform already runs Postmark/Resend.
 
-### 3A: Inbound mail infrastructure
+### 3A: Inbound mail infrastructure ✅ DONE
 
 **Migration `096_email_ingest.sql`:**
 
@@ -346,7 +346,7 @@ CREATE INDEX idx_ext_items_canonical
 - `feed-ingest/src/tasks/feed-ingest-email.ts` — task that receives
   `{ sourceId, emailPayload }` and calls the adapter + ingest helper.
 
-### 3B: Subscription flow
+### 3B: Subscription flow ✅ DONE
 
 - `gateway/src/routes/external-feeds.ts` — when `protocol = 'email'`,
   generate a unique ingest address (`<uuid>@ingest.all.haus` or similar),
@@ -356,7 +356,7 @@ CREATE INDEX idx_ext_items_canonical
   protocol is selected, display the generated ingest address with a copy
   button and instructions.
 
-### 3C: Dedup strategy
+### 3C: Dedup strategy ✅ DONE
 
 Newsletter-to-RSS overlap is common. Two dedup layers:
 
@@ -368,7 +368,7 @@ Newsletter-to-RSS overlap is common. Two dedup layers:
    existing item from the same author with the same title published
    within ±1 hour. This catches newsletters without a "view online" link.
 
-### 3D: Card rendering
+### 3D: Card rendering ✅ DONE
 
 - `web/src/components/cards/ExternalVesselCard.tsx` — `VIA EMAIL` badge.
   Email items get the reader pane treatment on click (reuse the existing
@@ -378,7 +378,25 @@ Newsletter-to-RSS overlap is common. Two dedup layers:
 **Effort:** ~1 week. The HTML sanitisation is the bulk of the work — newsletter
 HTML is the worst HTML on the internet. Budget 2–3 days for the sanitiser alone.
 
-**Slice 3 total: ~1 week.**
+**Status:** Shipped. Migration 096 adds `ingest_address` on
+`external_sources` and `canonical_url` on `external_items`. Postmark
+inbound webhook at `POST /inbound-mail/:secret` receives newsletter
+emails, enqueues `feed_ingest_email` tasks. Email adapter
+(`feed-ingest/src/adapters/email.ts`) handles newsletter-specific HTML
+sanitisation: strips tracking pixels (1×1 images, known tracker
+domains), collapses table-based layouts, strips MSO conditional
+comments, then runs through the standard `sanitizeContent()` allowlist.
+Canonical URL extraction from "view in browser" links enables
+cross-source dedup against RSS. Dual-write helper
+(`feed-ingest/src/lib/email-ingest.ts`) checks canonical URL and
+title+date fuzzy match before inserting. Subscribe flow generates a
+unique `<sourceId>@ingest.all.haus` address returned to the user with
+copy-to-clipboard UI. Email sources excluded from poll dispatch (push
+only). VesselCard renders `VIA EMAIL` badge and opens ReaderPane on
+click (same as RSS articles). Engagement actions (like, repost, reply,
+thread) suppressed for email items (tier4, no engagement API).
+
+**Slice 3 total: ~1 week. All four sub-slices shipped.**
 
 ---
 
@@ -548,7 +566,7 @@ ops task.
 | 1     | **Slice 0** — schema migration ✅                                             | 1 hour    | —                        |
 | 2     | **Slice 1** — RSS family (JSON Feed ✅, podcasts ✅, YouTube ✅, Substack ✅) | 2 days    | —                        |
 | 3     | **Slice 2** — Lemmy AP compatibility check + wiring ✅                        | 1–3 days  | —                        |
-| 4     | **Slice 3** — Email newsletters                                               | 1 week    | Slice 0                  |
+| 4     | **Slice 3** — Email newsletters ✅                                            | 1 week    | Slice 0                  |
 | 5     | **Slice 4** — Telegram channels                                               | 4 days    | Slice 0                  |
 | 6     | **Slice 5** — Farcaster                                                       | 2–3 weeks | Slice 0 + ops commitment |
 | 7     | **Slice 6** — Matrix                                                          | 2–4 weeks | Slice 0 + ops commitment |
