@@ -259,7 +259,8 @@ Threads never use nested indentation, left borders between nested replies, quote
 ## Key docs
 
 - `feature-debt.md` — consolidated feature debt, outstanding work, and attack order
-- `FEED-INGEST-ATTACK-PLAN.md` — build plan for omnivorous stream ingestion (per-adapter contract, slices 0–6)
+- `FEED-INGEST-ATTACK-PLAN.md` — build plan for omnivorous stream ingestion (per-adapter contract, slices 0–9; 0–3 shipped, 4–9 planned)
+- `docs/adr/CARD-BEHAVIOUR-ADR.md` — unified card interaction model (click regions, conversational neighbourhood expansion, biddability tiers, author affordances)
 - `docs/adr/ALLHAUS-REDESIGN-SPEC.md` — redesign spec for topbar, feed, compose overlay, card family (Steps 1–4 shipped including article tiers, reading-history resumption, playscript threads; remaining: compose article mode, polish states)
 - `docs/adr/REDESIGN-SCOPE.md` — product scope document arguing what the product is (companion to the redesign spec)
 - `docs/adr/UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)

@@ -15,16 +15,37 @@ building.
 
 ## What exists today
 
-| Protocol                    | Read | Write | Mechanism                                            |
-| --------------------------- | ---- | ----- | ---------------------------------------------------- |
-| Nostr (`nostr_external`)    | ✓    | ✓     | Relay subscriptions; outbound signed events          |
-| ActivityPub (`activitypub`) | ✓    | ✓     | Outbox poll; outbound `POST /api/v1/statuses`        |
-| AT Protocol (`atproto`)     | ✓    | ✓     | Jetstream firehose + backfill; outbound via user PDS |
-| RSS/Atom (`rss`)            | ✓    | —     | `rss-parser` poll, ETag/Last-Modified conditional    |
+| Protocol                    | Read | Write | Mechanism                                                        |
+| --------------------------- | ---- | ----- | ---------------------------------------------------------------- |
+| Nostr (`nostr_external`)    | ✓    | ✓     | Relay subs; outbound kind 1 + kind 7 signed events               |
+| ActivityPub (`activitypub`) | ✓    | ✓     | Outbox poll; outbound status + like + repost + reply + poll vote |
+| AT Protocol (`atproto`)     | ✓    | ✓     | Jetstream firehose + backfill; outbound via OAuth DPoP           |
+| RSS/Atom/JSON Feed (`rss`)  | ✓    | —     | `rss-parser` + JSON Feed native parse, ETag/Last-Modified        |
+| Email (`email`)             | ✓    | —     | Postmark inbound webhook, push-only                              |
 
 Every new read adapter normalises into `external_items` + dual-writes
 `feed_items`. Every write adapter consumes `outbound_posts`. No parallel
 pipelines.
+
+### Cross-cutting capabilities (shipped alongside protocol slices)
+
+These capabilities cross-cut all adapters. New adapters inherit the
+framework — they just need protocol-branch implementations.
+
+| Capability              | Mechanism                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| Engagement refresh      | 30-min cron; Bluesky batch `getPosts`, Mastodon per-instance `GET /statuses/:id`      |
+| Parent context prefetch | Enqueued at ingest time when `source_reply_uri` is non-null; stores `is_context_only` |
+| Thread expansion        | Bluesky `getPostThread`, Mastodon `GET /context`; Nostr/RSS empty (deferred)          |
+| Cross-platform like     | Nostr kind 7, Bluesky `createRecord`, Mastodon `POST /favourite`                      |
+| Cross-platform repost   | Bluesky `createRecord`, Mastodon `POST /reblog`; Nostr/RSS rejected                   |
+| Cross-platform reply    | Nostr kind 1, Bluesky `createRecord`, Mastodon `POST /statuses`; RSS rejected         |
+| Poll voting             | Mastodon `POST /polls/:id/votes`                                                      |
+| Content warnings        | AP `sensitive` + `summary` extracted at ingest                                        |
+| Context-only GC         | Daily 02:30 UTC cron; 30-day TTL on unreferenced context items                        |
+| Outbound token refresh  | 30-min cron; proactive atproto session touch                                          |
+| Relay outbox            | All Nostr publishing via durable queue + worker retry (6-phase programme)             |
+| Newsletter sanitisation | Tracking pixel strip, table collapse, MSO comments, canonical URL extraction          |
 
 ---
 
@@ -559,6 +580,338 @@ ops task.
 
 ---
 
+## Slice 7 — ActivityPub inbox (push delivery, real-time AP)
+
+The existing AP adapter polls outboxes — it visits each followed actor's
+outbox on a schedule and pages backward looking for new items. This works
+but carries inherent limitations:
+
+- **Polling lag.** A 30-minute poll interval means items can be up to 30
+  minutes stale. Shortening the interval hits instance rate limits.
+- **No deletion signal.** Outboxes list what the actor published; they
+  have no record of what the actor deleted. The current `CLAUDE.md` notes
+  this explicitly: "delete propagation waits for inbox delivery."
+- **No edit signal.** Mastodon edits (`Update` activities) are pushed to
+  followers, not appended to outboxes. The platform cannot see edits at
+  all under outbox polling.
+- **Proportional cost.** Polling N sources costs N outbound requests per
+  cycle regardless of whether anything changed. An inbox receives only
+  actual activity.
+
+The fix is operating an ActivityPub inbox — a publicly-reachable endpoint
+that receives pushed activities from remote instances. This is how
+ActivityPub was designed to work; outbox polling is the read-only fallback
+for observers who are not participants.
+
+### 7A: Infrastructure — all.haus as an AP actor
+
+all.haus must become a recognisable ActivityPub actor:
+
+- A public-facing actor document (e.g. `GET /ap/actor`) returning the
+  right JSON-LD (`type: Application`, `inbox`, `outbox`, `publicKey`).
+- A WebFinger response at `/.well-known/webfinger` for the actor
+  (e.g. `acct:relay@all.haus`).
+- An inbox endpoint at the actor's `inbox` URL accepting signed `POST`s.
+- HTTP Signature verification on every incoming activity.
+
+The actor is the _platform_, not individual users. all.haus operates one
+application-level actor that follows sources on behalf of its users. When
+a user subscribes to a Mastodon account, the platform actor sends a
+`Follow` to that instance; the instance then delivers `Create`, `Update`,
+`Delete`, `Announce` activities to the inbox.
+
+This is the same pattern as Lemmy, PeerTube, and other platform-level
+AP actors. It is well-understood and does not require per-user identity
+on the fediverse.
+
+**Decision gate:** This is a posture commitment. The platform becomes a
+participant in the fediverse, not just an observer. The operational
+surface grows: incoming HTTP traffic from any instance, signature
+verification, Follow lifecycle management. Decide whether this is
+acceptable before writing code.
+
+### 7B: Read path (inbox receiver)
+
+**Files:**
+
+- `gateway/src/routes/activitypub-inbox.ts` — `POST /ap/inbox`. Verify
+  HTTP Signatures against the sender's public key (fetch + cache the
+  actor document). Validate the activity shape. Dispatch by type:
+  - `Create` → enqueue `feed_ingest_activitypub_inbox` task.
+  - `Update` → same task with an `isEdit: true` flag.
+  - `Delete` → soft-delete the `external_items` row, remove from
+    `feed_items`.
+  - `Announce` (boost) → currently ignored by the outbox adapter;
+    same treatment here unless boost-forwarding is later desired.
+  - `Undo` → handle `Undo Follow` (cleanup if the remote instance
+    unfollows us) and `Undo Like/Announce` (ignore — we don't track
+    reverse engagement).
+  - Everything else → 202 (accepted, not processed).
+- `feed-ingest/src/tasks/feed-ingest-activitypub-inbox.ts` — the task.
+  Reuses `normaliseActivityPubItem()` from the existing adapter and
+  `insertActivityPubItem()` from the dual-write helper. For edits:
+  `UPDATE external_items SET content_text = ..., content_html = ...
+WHERE protocol = 'activitypub' AND source_item_uri = ...`. This is
+  the first adapter with edit support — the upsert shape serves as
+  precedent for Matrix (Slice 6).
+- `gateway/src/routes/activitypub-actor.ts` — `GET /ap/actor` returns
+  the actor document. Nginx routes `/.well-known/webfinger` queries for
+  the actor to the gateway (alongside the existing OAuth client metadata
+  route).
+- `shared/src/lib/http-signatures.ts` — HTTP Signature verification.
+  Verify `(request-target)`, `host`, `date`, `digest` headers against
+  the sender actor's `publicKey`. Actor documents cached (5-min TTL,
+  LRU). Reject signatures older than 5 minutes. This is the
+  fediverse-standard verification — libraries exist but the core is
+  small enough to own.
+
+### 7C: Follow lifecycle
+
+When a user subscribes to an AP source, the platform must send a `Follow`
+activity. When they unsubscribe, send `Undo Follow`.
+
+**Files:**
+
+- `gateway/src/routes/external-feeds.ts` — on AP subscribe, after
+  creating the `external_subscriptions` row, enqueue a
+  `send_activitypub_follow` task. On unsubscribe, enqueue
+  `send_activitypub_undo_follow`.
+- `feed-ingest/src/tasks/send-activitypub-follow.ts` — signs and POSTs
+  the `Follow` activity to the remote actor's inbox using the platform
+  actor's private key. Records the Follow state on `external_sources`
+  (`follow_state: 'pending' | 'accepted' | 'rejected'`).
+- `feed-ingest/src/tasks/feed-ingest-activitypub-inbox.ts` — also
+  handles incoming `Accept Follow` and `Reject Follow`: updates
+  `follow_state` on the source row.
+- `migrations/0XX_ap_inbox.sql` — `follow_state` and
+  `last_inbox_delivery_at` on `external_sources`. Platform actor
+  keypair in `platform_config` (or env vars — implementer's call).
+
+### 7D: Coexistence with outbox polling
+
+Inbox delivery and outbox polling must coexist:
+
+- Not all instances accept Follows from unknown actors (allowlist-only
+  instances, instances that block the platform's domain).
+- The Follow→Accept round-trip is asynchronous and may never complete.
+- Polling is the universal fallback; inbox delivery is the optimisation.
+
+The poll task checks `last_inbox_delivery_at` per source. If delivery
+arrived within 2× the poll interval, skip the outbox poll for that
+source. If delivery goes stale, resume polling. This is conservative —
+polling only stops when inbox delivery is proven active.
+
+**Effort:** 2–3 weeks. HTTP Signature verification and Follow lifecycle
+are the bulk. Normalisation reuses existing adapter code.
+
+**Slice 7 total: 2–3 weeks. The risk is policy (fediverse participation
+posture), not code.**
+
+---
+
+## Slice 8 — Cross-source identity linking
+
+As the platform accumulates external sources across protocols, a pattern
+emerges: the same human posts on Mastodon _and_ Bluesky _and_ publishes
+an RSS newsletter. A reader who follows all three sees the same content
+three times.
+
+### 8A: The problem
+
+Identity fragmentation across protocols:
+
+- A Mastodon profile and a Bluesky profile belong to the same person but
+  share no identifier (different handle systems, different key systems,
+  different instance domains).
+- Cross-posted content (the same text on both platforms, via Bridgy Fed,
+  IFTTT, or manual copy-paste) creates duplicate feed items with no link
+  between them.
+- The reader's feed becomes noisier with each surface they follow for the
+  same person.
+
+This is a _platform_ problem, not a per-protocol problem. No single
+adapter can solve it. The fix lives in the shared layer above adapters.
+
+### 8B: Identity signals
+
+Several signals can link identities across platforms, ordered by strength:
+
+1. **User assertion.** The reader tells the platform "these sources are
+   the same person." Strongest signal — override everything. Stored as
+   an explicit link. Surfaced in the subscription management UI: a
+   "Link to…" action on any source, backed by the resolver so the user
+   can paste a URL/handle from another platform.
+2. **Bridge markers.** Items arriving via protocol bridges carry metadata
+   linking the original and bridged identities.
+   `bridgy-fed.superfeedr.com` accounts are Bluesky mirrors;
+   `mostr.pub` accounts are Nostr mirrors. The bridge domain is a
+   reliable signal that two sources share an author.
+3. **Explicit cross-links.** Many profiles include links to their other
+   accounts: a Mastodon bio contains a Bluesky handle, a Bluesky
+   profile links to a personal site with an RSS feed. These are strong
+   signals but require fetching and parsing profile metadata.
+4. **Shared verified domain.** An RSS feed at `alice.example.com/feed`
+   and a Mastodon profile that verifies `alice.example.com` likely
+   belong to the same person. Medium-confidence — domain verification
+   is meaningful but not infallible.
+
+### 8C: Schema
+
+**Migration:**
+
+```sql
+CREATE TABLE external_identity_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_a_id UUID NOT NULL REFERENCES external_sources(id) ON DELETE CASCADE,
+  source_b_id UUID NOT NULL REFERENCES external_sources(id) ON DELETE CASCADE,
+  link_type TEXT NOT NULL CHECK (link_type IN (
+    'user_asserted', 'bridge', 'cross_link', 'domain_match'
+  )),
+  confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence BETWEEN 0 AND 1),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (source_a_id, source_b_id)
+);
+CREATE INDEX idx_identity_links_source_a ON external_identity_links(source_a_id);
+CREATE INDEX idx_identity_links_source_b ON external_identity_links(source_b_id);
+```
+
+Symmetric link between two `external_sources`. Normalise order
+(`source_a_id < source_b_id`) to avoid duplicates.
+
+No `external_authors` table yet. Identity linking works at the source
+level. A constructed `external_authors` entity is the
+CARD-BEHAVIOUR-ADR §VI.3 concern and is deferred alongside it — the
+linking infrastructure here is a prerequisite for it.
+
+### 8D: Content dedup at query time
+
+When sources are linked, the feed query deduplicates items that share the
+same content fingerprint:
+
+- **Same canonical URL** (for items that carry one — email canonical URLs,
+  RSS GUIDs that are URLs, Bluesky/Mastodon post URLs embedded in
+  cross-posts).
+- **Title + timestamp match** (same title, published within ±5 minutes)
+  for items without canonical URLs.
+- **Text-content hash match** as a fallback — first 200 chars normalised
+  (lowercased, whitespace-collapsed, stripped of URLs) hashed. Catches
+  manual copy-paste cross-posts that share no structural metadata.
+
+The highest-biddability-tier version wins; losers are suppressed. The
+winning card renders a quiet provenance note: `ALSO ON BLUESKY ·
+MASTODON`.
+
+Dedup is a **query-time filter**, not an ingest-time merge. Both items
+exist in `external_items`. This preserves the ability to unlink sources
+without data loss, and means the dedup logic can be tuned without
+reingesting anything.
+
+Implementation: a CTE or subquery in the feed query that groups linked
+items by content fingerprint, ranks by biddability tier, and filters to
+the winner. The cost is a join through `external_identity_links` —
+bounded by the number of linked sources per user (small).
+
+### 8E: Detection (automated)
+
+A periodic task (`identity_link_detect`, daily) scans `external_sources`
+for cross-reference signals:
+
+- **Bridge domains:** match `bridgy-fed.superfeedr.com` and `mostr.pub`
+  source URIs to their mirrored counterparts. `link_type = 'bridge'`,
+  `confidence = 0.95`.
+- **Profile URL cross-links:** for Bluesky and Mastodon sources, fetch
+  the profile (already cached by `source-metadata-refresh`) and parse
+  links in the bio against known source URIs. `link_type = 'cross_link'`,
+  `confidence = 0.8`.
+- **Domain verification:** match RSS source domains against Mastodon
+  verified links. `link_type = 'domain_match'`, `confidence = 0.7`.
+
+User-asserted links override automated ones (`confidence = 1.0`) and are
+never revisited by the detection task.
+
+### 8F: Subscription management UI
+
+- `web/src/pages/subscriptions.tsx` — sources that are linked display
+  as a group with a link icon. Clicking the group expands to show
+  individual sources with protocol badges.
+- "Link to…" action on each source opens a resolver-backed input where
+  the user can paste a URL/handle from another platform. Creates a
+  `user_asserted` link.
+- "Unlink" action breaks a link. Dedup immediately stops for that pair.
+
+**Effort:** 1–2 weeks for the linking schema + query-time dedup +
+subscription UI. Automated detection adds ~3 days.
+
+**Slice 8 total: 2–3 weeks. No infrastructure gate — pure application
+logic.**
+
+---
+
+## Slice 9 — Feed-side support for CARD-BEHAVIOUR-ADR
+
+`docs/adr/CARD-BEHAVIOUR-ADR.md` introduces a unified card interaction
+model that requires two ingest-path changes. These are small and additive
+but must ship before the card-behaviour frontend work can land.
+
+### 9A: `is_reply` on `feed_items`
+
+The card-behaviour spec renders a `↳ REPLYING TO @handle` provenance line
+on reply items. The feed list query must know "is this card a reply"
+**without joining `external_items`**.
+
+**Migration:**
+
+```sql
+ALTER TABLE feed_items ADD COLUMN is_reply BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Backfill: external items
+UPDATE feed_items fi SET is_reply = TRUE
+FROM external_items ei
+WHERE fi.source_id = ei.id
+  AND fi.item_type = 'external'
+  AND ei.source_reply_uri IS NOT NULL;
+
+-- Backfill: native notes (kind 1 with e-tag = reply)
+UPDATE feed_items fi SET is_reply = TRUE
+FROM notes n
+WHERE fi.item_type = 'note'
+  AND fi.source_id = n.id
+  AND n.reply_to_event_id IS NOT NULL;
+```
+
+Populate on write in all dual-write paths:
+
+- External ingest helpers: `is_reply = (source_reply_uri IS NOT NULL)`.
+- Note creation in `gateway/src/routes/notes.ts`: `is_reply = TRUE`
+  when the note carries an `e`-tag reply target.
+- Articles: always `FALSE`.
+
+Add to `feed_items_reconcile` drift-check query.
+
+### 9B: Biddability tier on the feed API
+
+The card-behaviour spec defines four biddability tiers (A/B/C/D) — a
+UI-capability classification computed from protocol + metadata. This is a
+**derived value**, not a stored column. Compute it in the feed response
+projection:
+
+- Native or external-Nostr or Bluesky → `A` (threaded & resolvable)
+- ActivityPub → `B` (threaded, best-effort)
+- RSS with `author_uri` → `C` (standalone, attributed)
+- RSS without `author_uri`, or any item with missing metadata → `D`
+  (standalone, sparse)
+
+Expose as `biddabilityTier: 'A' | 'B' | 'C' | 'D'` on the feed API
+item shape so the client receives it without duplicating the logic.
+
+**Effort:** 1–2 days. Both changes are small. The migration is the only
+risk (dual-write column on `feed_items` — same discipline as every
+prior column addition).
+
+**Slice 9 total: 1–2 days.**
+
+---
+
 ## Recommended sequence
 
 | Order | Slice                                                                         | Effort    | Depends on               |
@@ -567,21 +920,33 @@ ops task.
 | 2     | **Slice 1** — RSS family (JSON Feed ✅, podcasts ✅, YouTube ✅, Substack ✅) | 2 days    | —                        |
 | 3     | **Slice 2** — Lemmy AP compatibility check + wiring ✅                        | 1–3 days  | —                        |
 | 4     | **Slice 3** — Email newsletters ✅                                            | 1 week    | Slice 0                  |
-| 5     | **Slice 4** — Telegram channels                                               | 4 days    | Slice 0                  |
-| 6     | **Slice 5** — Farcaster                                                       | 2–3 weeks | Slice 0 + ops commitment |
-| 7     | **Slice 6** — Matrix                                                          | 2–4 weeks | Slice 0 + ops commitment |
+| 5     | **Slice 9** — CARD-BEHAVIOUR-ADR feed support (`is_reply`, biddability)       | 1–2 days  | —                        |
+| 6     | **Slice 8** — Cross-source identity linking                                   | 2–3 weeks | —                        |
+| 7     | **Slice 7** — ActivityPub inbox (push delivery)                               | 2–3 weeks | Posture commitment       |
+| 8     | **Slice 4** — Telegram channels                                               | 4 days    | Slice 0 + user demand    |
+| 9     | **Slice 5** — Farcaster                                                       | 2–3 weeks | Slice 0 + ops commitment |
+| 10    | **Slice 6** — Matrix                                                          | 2–4 weeks | Slice 0 + ops commitment |
 
-Slices 1 and 2 are independent of Slice 0 (they don't add new enum
-values). Start them in parallel with or before the migration.
+**Next up:** Slice 9 is the smallest unit of work and unblocks the
+CARD-BEHAVIOUR-ADR frontend. Slice 8 (identity linking) is the
+highest-value remaining application-logic slice — no infrastructure gate,
+pure product improvement that gets more valuable as the source count
+grows.
+
+Slice 7 (AP inbox) requires a posture decision: is all.haus a fediverse
+_participant_ or just an _observer_? If participant, Slice 7 unlocks
+real-time AP delivery, edit propagation, and delete propagation — the
+three things outbox polling cannot do. Schedule it when the decision is
+made.
 
 Slices 5 and 6 each require an infrastructure commitment (hub /
 homeserver) that should be made deliberately, not as a side effect of
 adapter development. Schedule them when there is appetite to operate
 another server.
 
-Slice 4 (Telegram) is last among the non-infrastructure slices because
-it is the one source guaranteed to break without warning. Only build it
-if users are asking for it.
+Slice 4 (Telegram) remains last among the non-infrastructure slices.
+The scraping approach is guaranteed to break without warning. Only build
+it if users are asking for it.
 
 ---
 

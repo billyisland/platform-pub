@@ -34,7 +34,8 @@ Last audited: 2026-05-15. Items marked DONE were verified against the codebase a
 
 ---
 
-Last worked: 2026-05-25. Branch `workspace-experiment`. Feed ingest Slice 3 — email newsletter ingestion. Push-based ingest via Postmark inbound webhook (`POST /inbound-mail/:secret`). Migration 096 adds `ingest_address` on `external_sources` and `canonical_url` on `external_items`. Email adapter (`feed-ingest/src/adapters/email.ts`) handles newsletter-specific HTML sanitisation: strips tracking pixels (1×1 images, known tracker domains), collapses table-based layouts, strips MSO conditional comments, extracts canonical URL from "view in browser" links, then runs through `sanitizeContent()`. Dual-write helper (`feed-ingest/src/lib/email-ingest.ts`) with two-layer dedup: canonical URL cross-source match (catches newsletter-to-RSS overlap) + title+date fuzzy match (±1 hour). Subscribe flow generates `<sourceId>@ingest.all.haus` address with copy-to-clipboard UI. Email sources excluded from poll dispatch (push-only). `VIA EMAIL` badge on cards, reader pane on click. Engagement actions suppressed (tier4). `tsc --noEmit` clean for `gateway`, `feed-ingest`, and `web`.
+Last worked: 2026-05-25. Branch `workspace-experiment`. Feed-ingest attack plan extended with slices 7–9. Updated "What exists today" with email protocol + cross-cutting capabilities table. Slice 7: AP inbox (push delivery — real-time AP with edit/delete propagation, Follow lifecycle, coexistence with outbox polling; posture-gated). Slice 8: cross-source identity linking (dedup via `external_identity_links` table, query-time content fingerprint matching, automated bridge/cross-link/domain detection, subscription UI). Slice 9: CARD-BEHAVIOUR-ADR feed support (`is_reply` boolean on `feed_items` + biddability tier on API). Recommended sequence updated. CARD-BEHAVIOUR-ADR added to CLAUDE.md key docs + feature-debt.md strategic initiatives. Constructed external author profiles tracked (deferred from CARD-BEHAVIOUR-ADR §VI.3).
+Previously: 2026-05-25. Branch `workspace-experiment`. Feed ingest Slice 3 — email newsletter ingestion. Push-based ingest via Postmark inbound webhook (`POST /inbound-mail/:secret`). Migration 096 adds `ingest_address` on `external_sources` and `canonical_url` on `external_items`. Email adapter (`feed-ingest/src/adapters/email.ts`) handles newsletter-specific HTML sanitisation: strips tracking pixels (1×1 images, known tracker domains), collapses table-based layouts, strips MSO conditional comments, extracts canonical URL from "view in browser" links, then runs through `sanitizeContent()`. Dual-write helper (`feed-ingest/src/lib/email-ingest.ts`) with two-layer dedup: canonical URL cross-source match (catches newsletter-to-RSS overlap) + title+date fuzzy match (±1 hour). Subscribe flow generates `<sourceId>@ingest.all.haus` address with copy-to-clipboard UI. Email sources excluded from poll dispatch (push-only). `VIA EMAIL` badge on cards, reader pane on click. Engagement actions suppressed (tier4). `tsc --noEmit` clean for `gateway`, `feed-ingest`, and `web`.
 Previously: 2026-05-25. Branch `workspace-experiment`. Workspace slice 34 — numeral roundel. Feed numeral moves from italic serif badge at VesselBar right end to a 26px black roundel mounted on the top-left corner of each vessel chassis (matches ∀ button styling). Hover reveals descriptive name as a label-ui chip; click-drag moves the vessel; double-click opens FeedComposer. `numeral`/`descriptiveName` props removed from VesselBar. `tsc --noEmit` clean.
 Previously: 2026-05-25. Branch `workspace-experiment`. Workspace slice 33 — feed numeral system + cleanup. Feeds now use a numeral system (next vacant positive integer by `createdAt` order) instead of the name-label nameplate; italic serif numeral at the right end of VesselBar, optional descriptive name on hover / in ForallMenu when hidden. Feed creation no longer requires a name (gateway schema defaults to empty string). Minimize removed (overlapped with hide, wasn't working properly) — `minimized` field, `setVesselMinimized`, `▁`/`□` button, content guard all deleted. Save system removed entirely (slice 20 retired) — `feed_saves` routes, `savedIds` tracking, `savedView` toggle, Save/Saved button on card strip all deleted. Caught-up tile refined: new copy, both buttons + scroll-up dismiss (scroll + wheel listeners), reappears only on next no-new-content pull-to-refresh. `tsc --noEmit` clean for `gateway` and `web`.
 Previously: 2026-05-25. Branch `workspace-experiment`. Workspace Full View post-ship fixes: (1) `PullToRefresh` now accepts explicit `scrollRef` prop — `Vessel` passes its content-div ref directly, fixing pull-to-refresh on default-height vessels where `findScrollParent` fell through to the wrong element (Bug 1 in `WORKSPACE-FULL-VIEW-DIAGNOSIS.md`); (2) `ParentContextTile` lifted out of the `expanded` ternary in `ExternalVesselCard` so reply items show parent context without click-to-expand (Bug 3). Bug 2 (missing engagement counts) is operational — no code typo exists; the `onLike`/`onReply` confusion reported in the diagnosis was incorrect (line 677 already reads `onReply`). Remaining: confirm `feed-ingest` worker running for engagement count population; decide on always-visible engagement row (design call); consider `source_reply_uri` backfill for pre-`4a8baac` items.
@@ -244,6 +245,16 @@ Phase 1 is done (auto-renewal, annual pricing, subscribe at paywall, spend-thres
 **Redesign Steps 1–6** — done (2026-04-17 to 2026-04-18). The swap (nav reduction, compose button, subscribe input), compose overlay (note/reply/article modes), card chassis (unified left-bar + byline + action row), article tiers (lead/standard/brief + two-up), reading-history resumption, playscript threads, end-of-feed/zero/error states. See `docs/adr/ALLHAUS-REDESIGN-SPEC.md`.
 
 ### Still outstanding
+
+**Card behaviour unification — `docs/adr/CARD-BEHAVIOUR-ADR.md`**
+
+Unified card interaction model across all four card types (ArticleCard, NoteCard, ExternalCard, QuoteCard). Three phases: Phase 1 — region map + `is_reply` migration + biddability tier on API (§IV, §VII.1–2); Phase 2 — conversational neighbourhood expansion with gateway thread proxy (§V, §VII.3); Phase 3 — author modal + metadata endpoint + touch action sheet (§VI, §VII.4, §VIII). Feed-side changes specced as feed-ingest Slice 9 in `FEED-INGEST-ATTACK-PLAN.md`. **Note:** constructed external author profile pages (§VI.3) deferred to their own ADR — tracked below.
+
+**Constructed external author profile pages** — unified cross-platform post history for external authors. Deferred from CARD-BEHAVIOUR-ADR §VI.3. Needs its own ADR. Prerequisite: cross-source identity linking (feed-ingest Slice 8).
+
+**Feed-ingest slices 7–9 — `FEED-INGEST-ATTACK-PLAN.md`**
+
+Three new slices added to the feed-ingest build plan. Slice 7: ActivityPub inbox (push delivery — real-time AP, edit/delete propagation; posture-gated). Slice 8: cross-source identity linking (dedup when following same person on multiple protocols; no infrastructure gate). Slice 9: CARD-BEHAVIOUR-ADR feed support (`is_reply` column + biddability tier on API; 1–2 days, smallest slice, unblocks card behaviour frontend).
 
 **Codebase audit — `docs/audits/AUDIT-REPORT.md`**
 
@@ -562,19 +573,22 @@ Features any user would reasonably expect given the platform's existing capabili
 - **Redesign Step 2 (compose overlay, note mode)** — New `ComposeOverlay` component mounted globally in layout. Three-zone slab: top zone (mode label or reply preview), editing zone (auto-grow textarea, Jost 16px), controls zone (image upload, cross-post pills per linked account, character counter, Post button). Reply mode with pinned quote preview. Double-escape dismiss with confirmation. Mobile full-screen sheet variant. Zustand store (`stores/compose.ts`) coordinates overlay state. QuoteSelector and WriterActivity updated to use overlay instead of inline NoteComposer modals. See `docs/adr/ALLHAUS-REDESIGN-SPEC.md` §3.
 - **Redesign Step 3 (card chassis refactor)** — All three feed card types unified around shared visual grammar: 4px left bar (black for native, crimson for paid, grey-300 for external), mono-caps 11px byline row (TrustPip · Author · Timestamp), mono-caps action row. NoteCard: avatar removed, byline changed from sans 14px to mono-caps 11px, left bar added, Reply routes through overlay. ExternalCard: avatar removed, byline unified, provenance badge moved into byline row (grey-400, was crimson), inline ExternalReplyComposer removed, Reply routes through overlay. ArticleCard: bar narrowed 6px→4px, padding 28px→24px, Reply button added. Feed vertical rhythm unified to 40px gap via `space-y-[40px]`. See `docs/adr/ALLHAUS-REDESIGN-SPEC.md` §4.
 
-### Later: strategic work (priority order, updated 2026-05-10)
+### Later: strategic work (priority order, updated 2026-05-25)
 
 1. **CI/CD + backend linting** — zero infrastructure, Tier 1a priority. See `docs/adr/CODE-QUALITY.md`
 2. **Email-on-publish** — trivial build, high writer-retention value. See `docs/adr/EMAIL-ON-PUBLISH-SPEC.md`
 3. **Owner dashboard** — entirely unbuilt, need operator visibility before real money. See `docs/adr/OWNER-DASHBOARD-SPEC.md`
-4. **Subscription Phase 2** — free trials, gift subs, welcome email, import/export, analytics, custom landing page. See `docs/audits/SUBSCRIPTIONS-GAP-ANALYSIS.md`
-5. **Workspace experiment decision** — merge to master or retire? 32 slices on branch, never browser-tested
-6. **Reposts** — needs feed algorithm to be meaningful
-7. **Currency strategy** — see `docs/adr/platform-pub-currency-strategy.md`
-8. **Publications Phase 4** (theming/custom domains) — see `docs/adr/PUBLICATIONS-SPEC.md` §10 Phase 4
-9. **Bucket system** — see `docs/adr/platform-bucket-system-design.md`
-10. **Audit report remaining items** — see `docs/audits/AUDIT-REPORT.md`
-11. ~~OG metadata~~ — **done (v5.32.0)**
+4. **Card behaviour unification** — unified click semantics, neighbourhood expansion, biddability tiers. See `docs/adr/CARD-BEHAVIOUR-ADR.md` + feed-ingest Slice 9
+5. **Cross-source identity linking** — dedup multi-protocol follows. See `FEED-INGEST-ATTACK-PLAN.md` Slice 8
+6. **Subscription Phase 2** — free trials, gift subs, welcome email, import/export, analytics, custom landing page. See `docs/audits/SUBSCRIPTIONS-GAP-ANALYSIS.md`
+7. **Workspace experiment decision** — merge to master or retire? 34 slices on branch, never browser-tested
+8. **ActivityPub inbox** — real-time AP, edit/delete propagation. See `FEED-INGEST-ATTACK-PLAN.md` Slice 7. Posture-gated
+9. **Reposts** — needs feed algorithm to be meaningful
+10. **Currency strategy** — see `docs/adr/platform-pub-currency-strategy.md`
+11. **Publications Phase 4** (theming/custom domains) — see `docs/adr/PUBLICATIONS-SPEC.md` §10 Phase 4
+12. **Bucket system** — see `docs/adr/platform-bucket-system-design.md`
+13. **Audit report remaining items** — see `docs/audits/AUDIT-REPORT.md`
+14. ~~OG metadata~~ — **done (v5.32.0)**
 
 ### Completed (v5.28.0 session, 2026-04-12)
 
