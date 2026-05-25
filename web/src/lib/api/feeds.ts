@@ -85,6 +85,15 @@ export interface WorkspaceFeedApiExternal {
   summary: string | null;
   sourceReplyUri?: string | null;
   sourceQuoteUri?: string | null;
+  contentWarning?: string | null;
+  poll?: {
+    options: Array<{ title: string; votesCount: number }>;
+    multiple: boolean;
+    expiresAt: string | null;
+    expired: boolean;
+    votesCount: number;
+    votersCount: number;
+  } | null;
   likeCount: number;
   replyCount: number;
   repostCount: number;

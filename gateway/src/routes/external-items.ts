@@ -922,6 +922,21 @@ async function fetchBlueskyParent(
 
     const parentReplyUri = post.record.reply?.parent.uri ?? null;
 
+    let grandparentTag: {
+      authorName: string;
+      authorHandle: string;
+    } | null = null;
+    if (parentReplyUri) {
+      const gpTag = await fetchBlueskyGrandparentTag(parentReplyUri);
+      if (gpTag) grandparentTag = gpTag;
+    }
+
+    const interactionData: Record<string, unknown> = {
+      uri: post.uri,
+      cid: post.cid,
+    };
+    if (grandparentTag) interactionData.grandparent = grandparentTag;
+
     // Store in DB as context-only
     const insertResult = await pool.query(
       `INSERT INTO external_items (
@@ -934,7 +949,8 @@ async function fetchBlueskyParent(
       ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
         like_count = EXCLUDED.like_count,
         reply_count = EXCLUDED.reply_count,
-        repost_count = EXCLUDED.repost_count
+        repost_count = EXCLUDED.repost_count,
+        interaction_data = EXCLUDED.interaction_data
       RETURNING id`,
       [
         sourceId,
@@ -947,7 +963,7 @@ async function fetchBlueskyParent(
         post.record.text ?? null,
         JSON.stringify([]),
         parentReplyUri,
-        JSON.stringify({ uri: post.uri, cid: post.cid }),
+        JSON.stringify(interactionData),
         post.likeCount ?? 0,
         post.replyCount ?? 0,
         post.repostCount ?? 0,
@@ -974,17 +990,6 @@ async function fetchBlueskyParent(
       publishedAt: publishedAt,
       sourceReplyUri: parentReplyUri,
     };
-
-    // Grandparent: if the parent is itself a reply, we got basic info already
-    let grandparentTag: {
-      authorName: string;
-      authorHandle: string;
-    } | null = null;
-    if (parentReplyUri) {
-      // Try to get grandparent author — fetch is best-effort
-      const gpTag = await fetchBlueskyGrandparentTag(parentReplyUri);
-      if (gpTag) grandparentTag = gpTag;
-    }
 
     return { parent, grandparentTag };
   } catch (err) {
@@ -1082,6 +1087,24 @@ async function fetchMastodonParent(
       alt: m.description,
     }));
 
+    let grandparentTag: {
+      authorName: string;
+      authorHandle: string;
+    } | null = null;
+    if (status.in_reply_to_id) {
+      const gpTag = await fetchMastodonGrandparentTag(
+        host,
+        status.in_reply_to_id,
+      );
+      if (gpTag) grandparentTag = gpTag;
+    }
+
+    const interactionData: Record<string, unknown> = {
+      id: status.uri,
+      webUrl: status.url,
+    };
+    if (grandparentTag) interactionData.grandparent = grandparentTag;
+
     // Store in DB as context-only
     const insertResult = await pool.query(
       `INSERT INTO external_items (
@@ -1094,7 +1117,8 @@ async function fetchMastodonParent(
       ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
         like_count = EXCLUDED.like_count,
         reply_count = EXCLUDED.reply_count,
-        repost_count = EXCLUDED.repost_count
+        repost_count = EXCLUDED.repost_count,
+        interaction_data = EXCLUDED.interaction_data
       RETURNING id`,
       [
         sourceId,
@@ -1106,8 +1130,8 @@ async function fetchMastodonParent(
         status.account.url,
         status.content,
         JSON.stringify(media),
-        null, // source_reply_uri for the parent (we know it has one if in_reply_to_id exists but we don't have the URI)
-        JSON.stringify({ id: status.uri, webUrl: status.url }),
+        null,
+        JSON.stringify(interactionData),
         status.favourites_count ?? 0,
         status.replies_count ?? 0,
         status.reblogs_count ?? 0,
@@ -1134,19 +1158,6 @@ async function fetchMastodonParent(
       publishedAt: publishedAt,
       sourceReplyUri: null,
     };
-
-    // Grandparent tag — if in_reply_to_account_id exists, fetch account name
-    let grandparentTag: {
-      authorName: string;
-      authorHandle: string;
-    } | null = null;
-    if (status.in_reply_to_id) {
-      const gpTag = await fetchMastodonGrandparentTag(
-        host,
-        status.in_reply_to_id,
-      );
-      if (gpTag) grandparentTag = gpTag;
-    }
 
     return { parent, grandparentTag };
   } catch (err) {
@@ -1401,8 +1412,8 @@ function extractGrandparentTag(
   row: any,
 ): { authorName: string; authorHandle: string } | null {
   if (!row.source_reply_uri) return null;
-  // If we have the parent's interaction_data with grandparent info, use it
-  // Otherwise, return null — grandparent tag is best-effort
+  const gp = row.interaction_data?.grandparent;
+  if (gp?.authorName && gp?.authorHandle) return gp;
   return null;
 }
 

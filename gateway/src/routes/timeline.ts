@@ -122,6 +122,9 @@ function feedItemToResponse(row: any) {
     sourceQuoteUri: row.ei_source_quote_uri,
     contentWarning: row.ei_content_warning ?? null,
     poll: row.ei_interaction_data?.poll ?? null,
+    likeCount: row.ei_like_count ?? 0,
+    replyCount: row.ei_reply_count ?? 0,
+    repostCount: row.ei_repost_count ?? 0,
     media: row.media,
     publishedAt: Number(row.published_at_epoch),
     sourceName: row.source_display_name,
@@ -161,6 +164,8 @@ const FEED_SELECT = `
   ei.source_quote_uri AS ei_source_quote_uri,
   ei.content_warning AS ei_content_warning,
   ei.interaction_data AS ei_interaction_data,
+  ei.like_count AS ei_like_count, ei.reply_count AS ei_reply_count,
+  ei.repost_count AS ei_repost_count,
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
   -- Trust Layer 1 pip (NULL for external items — they default to 'unknown')
   tl.pip_status
@@ -275,6 +280,7 @@ async function followingFeed(
       )
       -- Exclude reply notes (top-level only)
       AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
+      AND (fi.item_type != 'external' OR ei.is_context_only IS NOT TRUE)
     ORDER BY fi.published_at DESC, fi.id DESC
     LIMIT $2
   `,

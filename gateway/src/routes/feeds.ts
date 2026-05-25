@@ -1593,6 +1593,7 @@ async function sourceFilteredItems(
           SELECT 1 FROM mutes WHERE muter_id = $1 AND muted_id = fi.author_id
         )
         AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
+        AND (fi.item_type != 'external' OR ei.is_context_only IS NOT TRUE)
     )
     SELECT * FROM scored
     WHERE TRUE ${cursorClause}

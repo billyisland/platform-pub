@@ -15,7 +15,7 @@ interface LiveEngagement extends Snapshot {
 
 // Module-level cache: itemId → { counts, expiresAt }
 const cache = new Map<string, { counts: Snapshot; expiresAt: number }>();
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 30_000;
 
 export function useLiveEngagement(
   itemId: string,
@@ -53,7 +53,8 @@ export function useLiveEngagement(
         setCounts(live);
       })
       .catch(() => {
-        // Fall back to snapshot on failure
+        setCounts(snapshot);
+        fetched.current = false;
       })
       .finally(() => setLoading(false));
   }, [expanded, itemId]);

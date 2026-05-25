@@ -1,6 +1,6 @@
 # Workspace Full View — Build Spec
 
-**Status:** Phase 5 shipped (2026-05-24, branch `workspace-experiment`). All phases complete. Phase 5 adds: (5A) Mastodon content warnings — migration 093 adds `content_warning` column to `external_items`, AP adapter captures `spoiler_text` from sensitive notes, `ContentWarning` component wraps content with reveal toggle. (5B) Poll display + voting — AP adapter extracts `oneOf`/`anyOf` poll data into `interaction_data.poll`, `PollDisplay` component renders option bars with interactive voting, `POST /external-items/:id/poll-vote` endpoint enqueues via `enqueuePollVote`, feed-ingest `voteMastodonPoll` resolves remote status and POSTs to `/api/v1/polls/:id/votes`. (5C) Reader pane — `GET /api/v1/extract?url=` endpoint using `@mozilla/readability` + `jsdom` with SSRF-hardened fetch and 1h cache, `useReader` Zustand store, `ReaderPane` overlay component (scrim + 640px serif panel), RSS article clicks open reader pane. (5D) Inline video embeds — `MediaBlock` detects YouTube/Vimeo URLs, fetches oEmbed HTML from existing proxy on expand, renders iframe inline with `prefers-reduced-motion` respect. (5E) Pull-to-refresh + empty states — `PullToRefresh` component (touch overscroll, 60px threshold), `EmptyFeedTile` with no-sources/no-items variants, wired into Vessel and WorkspaceView. (5F) Context-only GC cron — `external_context_gc` task (daily 02:30 UTC) deletes unreferenced `is_context_only` items older than 30 days.
+**Status:** Phase 6A shipped (2026-05-25, branch `workspace-experiment`). Phase 6B (reply grouping) remains — see §15. Phase 6A fixes: context-only items filtered from feeds, engagement counts added to platform timeline, grandparent tag persisted in `interaction_data` JSONB (both gateway parent-fetch and feed-ingest prefetch), missing `source_reply_uri`/`content_text` columns added to Mastodon prefetch INSERT, `WorkspaceFeedApiExternal` type completed (`contentWarning`, `poll`), `useLiveEngagement` cache aligned to 30s with error-recovery reset. Phase 5 adds: (5A) Mastodon content warnings — migration 093 adds `content_warning` column to `external_items`, AP adapter captures `spoiler_text` from sensitive notes, `ContentWarning` component wraps content with reveal toggle. (5B) Poll display + voting — AP adapter extracts `oneOf`/`anyOf` poll data into `interaction_data.poll`, `PollDisplay` component renders option bars with interactive voting, `POST /external-items/:id/poll-vote` endpoint enqueues via `enqueuePollVote`, feed-ingest `voteMastodonPoll` resolves remote status and POSTs to `/api/v1/polls/:id/votes`. (5C) Reader pane — `GET /api/v1/extract?url=` endpoint using `@mozilla/readability` + `jsdom` with SSRF-hardened fetch and 1h cache, `useReader` Zustand store, `ReaderPane` overlay component (scrim + 640px serif panel), RSS article clicks open reader pane. (5D) Inline video embeds — `MediaBlock` detects YouTube/Vimeo URLs, fetches oEmbed HTML from existing proxy on expand, renders iframe inline with `prefers-reduced-motion` respect. (5E) Pull-to-refresh + empty states — `PullToRefresh` component (touch overscroll, 60px threshold), `EmptyFeedTile` with no-sources/no-items variants, wired into Vessel and WorkspaceView. (5F) Context-only GC cron — `external_context_gc` task (daily 02:30 UTC) deletes unreferenced `is_context_only` items older than 30 days.
 
 ## Overview
 
@@ -596,3 +596,86 @@ Parent context on native notes:
 - Interactive polls (Mastodon)
 - Pull-to-refresh + empty state tiles
 - Context-only item GC cron
+
+---
+
+## 15. Post-Ship Fixes (Phases 6A + 6B)
+
+Post-ship audit (2026-05-25) identified bugs, data gaps, and one unimplemented spec feature. Organised into two slices — 6A is a single session of small targeted fixes; 6B is the larger reply-grouping feature.
+
+### Phase 6A — Bug fixes + data gaps
+
+_One context-window unit. All items are independent and can land in any order._
+
+**6A-1. Context-only items leak into feeds (bug)**
+
+Neither `timeline.ts` nor `feeds.ts` filters `is_context_only = TRUE` external items. Parent posts prefetched as reply context appear as standalone feed cards.
+
+Fix: add `AND (fi.item_type != 'external' OR ei.is_context_only IS NOT TRUE)` to:
+
+- `timeline.ts` `followingFeed` WHERE clause (~line 277)
+- `feeds.ts` `sourceFilteredItems` WHERE clause (~line 1595)
+
+Explore feed already excludes external items entirely, so no change needed there.
+
+**6A-2. Platform timeline missing engagement counts (bug)**
+
+`timeline.ts` `FEED_SELECT` omits `ei.like_count`, `ei.reply_count`, `ei.repost_count`. External items on the platform `/feed` endpoint have undefined engagement counts — compact mode always shows zero. Workspace feeds (`feeds.ts`) are unaffected (they already select these columns).
+
+Fix: add `ei.like_count AS ei_like_count, ei.reply_count AS ei_reply_count, ei.repost_count AS ei_repost_count` to `timeline.ts` `FEED_SELECT`, and include `likeCount`, `replyCount`, `repostCount` in `feedItemToResponse`.
+
+**6A-3. `extractGrandparentTag` stub (dead feature)**
+
+`extractGrandparentTag()` in `external-items.ts:1400-1407` always returns `null`. The "→ REPLYING TO @username" tag works on first fetch (Bluesky/Mastodon helpers construct it inline) but never renders from the DB cache on subsequent requests.
+
+Decision: persist grandparent metadata in the parent's `interaction_data` JSONB as `{ grandparent: { authorName, authorHandle } }`. No migration needed — `interaction_data` is an existing JSONB column already used for polls, embed refs, etc. This data is purely for display (the tag line on the parent card); it has no bearing on entity relationships, feed membership, or follow behaviour.
+
+Fix:
+
+- `fetchBlueskyParent` and `fetchMastodonParent` in `external-items.ts`: write `grandparent` into `interaction_data` on INSERT/upsert
+- `external-parent-prefetch.ts` Bluesky and Mastodon branches: same
+- `extractGrandparentTag`: read from `row.interaction_data?.grandparent`
+
+**6A-4. Parent prefetch missing `source_reply_uri` (data gap)**
+
+`external-parent-prefetch.ts` Mastodon branch (~line 166) omits `source_reply_uri` and `content_text` from the INSERT. Prefetched parents can't show their own reply relationship, and grandparent derivation from the DB row fails.
+
+Fix: add `source_reply_uri` and `content_text` to the INSERT column list in both the Mastodon and Bluesky branches of the prefetch task.
+
+**6A-5. `WorkspaceFeedApiExternal` TypeScript type incomplete (type gap)**
+
+`web/src/lib/api/feeds.ts` `WorkspaceFeedApiExternal` interface is missing `contentWarning`, `poll`, and `interactionData` fields that the backend returns. Works at runtime but defeats type-checking.
+
+Fix: add `contentWarning?: string | null`, `poll?: PollData | null` to the interface.
+
+**6A-6. Minor: cache TTL alignment + error handling**
+
+- `useLiveEngagement.ts` caches for 60s, backend caches for 30s — align both to 30s
+- `useLiveEngagement.ts:55-57` catch block silently swallows errors — reset to snapshot counts on failure so the UI doesn't freeze on stale values
+
+### Phase 6B — Reply grouping
+
+_Separate session. This is the largest remaining spec gap (§3.3)._
+
+When multiple subscribed users reply to the same external post, the feed should show the parent once with replies grouped beneath it, positioned at the most recent reply's timestamp. Currently external replies appear as standalone orphaned cards.
+
+Scope:
+
+**Backend** (`feeds.ts` + `timeline.ts`):
+
+- Detect external items sharing the same `source_reply_uri`
+- Deduplicate the parent: emit one parent row, attach child reply rows
+- Position the group at `MAX(published_at)` of the replies
+- Handle pagination boundaries gracefully (spec allows rendering the parent twice if grouping is missed at a boundary)
+
+**Frontend** (`VesselCard.tsx` / `WorkspaceView.tsx`):
+
+- Render grouped replies beneath their parent card in the feed
+- Reuse `ParentContextTile` for the parent rendering
+- Replies render in chronological order beneath the parent, using the existing playscript entry pattern or a lightweight variant
+
+**Edge cases**:
+
+- Single reply to an external post (no grouping needed — just show parent context tile as today)
+- Parent is from an unsubscribed author (parent is context-only, fetched on demand)
+- Pagination: group straddles a page boundary — acceptable to show parent on both pages

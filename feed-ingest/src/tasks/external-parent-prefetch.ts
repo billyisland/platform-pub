@@ -80,6 +80,17 @@ async function prefetchBlueskyParent(
 
     const parentReplyUri = post.record.reply?.parent.uri ?? null;
 
+    let grandparent: { authorName: string; authorHandle: string } | null = null;
+    if (parentReplyUri) {
+      grandparent = await fetchBlueskyGrandparentTag(parentReplyUri);
+    }
+
+    const interactionData: Record<string, unknown> = {
+      uri: post.uri,
+      cid: post.cid,
+    };
+    if (grandparent) interactionData.grandparent = grandparent;
+
     await pool.query(
       `INSERT INTO external_items (
         source_id, protocol, tier, source_item_uri,
@@ -100,7 +111,7 @@ async function prefetchBlueskyParent(
         post.record.text ?? null,
         JSON.stringify([]),
         parentReplyUri,
-        JSON.stringify({ uri: post.uri, cid: post.cid }),
+        JSON.stringify(interactionData),
         post.likeCount ?? 0,
         post.replyCount ?? 0,
         post.repostCount ?? 0,
@@ -147,6 +158,7 @@ async function prefetchMastodonParent(
       favourites_count?: number;
       replies_count?: number;
       reblogs_count?: number;
+      in_reply_to_id: string | null;
       media_attachments?: Array<{
         type: string;
         url: string;
@@ -163,14 +175,28 @@ async function prefetchMastodonParent(
       alt: m.description,
     }));
 
+    let grandparent: { authorName: string; authorHandle: string } | null = null;
+    if (status.in_reply_to_id) {
+      grandparent = await fetchMastodonGrandparentTag(
+        host,
+        status.in_reply_to_id,
+      );
+    }
+
+    const interactionData: Record<string, unknown> = {
+      id: status.uri,
+      webUrl: status.url,
+    };
+    if (grandparent) interactionData.grandparent = grandparent;
+
     await pool.query(
       `INSERT INTO external_items (
         source_id, protocol, tier, source_item_uri,
         author_name, author_handle, author_avatar_url, author_uri,
-        content_html, media, interaction_data,
+        content_html, content_text, media, source_reply_uri, interaction_data,
         like_count, reply_count, repost_count,
         published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
+      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, TRUE)
       ON CONFLICT (protocol, source_item_uri) DO NOTHING`,
       [
         sourceId,
@@ -181,8 +207,10 @@ async function prefetchMastodonParent(
         status.account.avatar ?? null,
         status.account.url,
         status.content,
+        null,
         JSON.stringify(media),
-        JSON.stringify({ id: status.uri, webUrl: status.url }),
+        null,
+        JSON.stringify(interactionData),
         status.favourites_count ?? 0,
         status.replies_count ?? 0,
         status.reblogs_count ?? 0,
@@ -196,6 +224,61 @@ async function prefetchMastodonParent(
       { err: err instanceof Error ? err.message : String(err), parentUri },
       "Mastodon parent prefetch failed",
     );
+  }
+}
+
+async function fetchBlueskyGrandparentTag(
+  uri: string,
+): Promise<{ authorName: string; authorHandle: string } | null> {
+  try {
+    const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getPosts`);
+    url.searchParams.append("uris", uri);
+
+    const res = await safeFetch(url.toString(), {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const data = JSON.parse(res.text) as {
+      posts: Array<{
+        author: { handle: string; displayName?: string };
+      }>;
+    };
+
+    const post = data.posts?.[0];
+    if (!post) return null;
+
+    return {
+      authorName: post.author.displayName || post.author.handle,
+      authorHandle: post.author.handle,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMastodonGrandparentTag(
+  host: string,
+  statusId: string,
+): Promise<{ authorName: string; authorHandle: string } | null> {
+  try {
+    const res = await safeFetch(`https://${host}/api/v1/statuses/${statusId}`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) return null;
+
+    const status = JSON.parse(res.text) as {
+      account: { acct: string; display_name: string };
+    };
+
+    return {
+      authorName: status.account.display_name || status.account.acct,
+      authorHandle: status.account.acct,
+    };
+  } catch {
+    return null;
   }
 }
 
