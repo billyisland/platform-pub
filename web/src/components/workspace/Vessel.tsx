@@ -118,6 +118,7 @@ export function Vessel({
   const dragControls = useDragControls();
   const [isDragTarget, setIsDragTarget] = useState(false);
   const vesselRef = useRef<HTMLDivElement>(null);
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
   const mx = useMotionValue(position.x);
   const my = useMotionValue(position.y);
   const dragMovedRef = useRef(false);
@@ -369,6 +370,7 @@ export function Vessel({
       >
         {!minimized && (
           <div
+            ref={scrollBodyRef}
             onPointerDown={(e) => e.stopPropagation()}
             style={{
               padding: `${PAD}px`,
@@ -383,7 +385,9 @@ export function Vessel({
             }}
           >
             {onRefresh ? (
-              <PullToRefresh onRefresh={onRefresh}>{children}</PullToRefresh>
+              <PullToRefresh onRefresh={onRefresh} scrollRef={scrollBodyRef}>
+                {children}
+              </PullToRefresh>
             ) : (
               children
             )}

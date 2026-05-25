@@ -6,11 +6,13 @@ import React, {
   useCallback,
   useEffect,
   type ReactNode,
+  type RefObject,
 } from "react";
 
 interface PullToRefreshProps {
   onRefresh: () => Promise<void>;
   children: ReactNode;
+  scrollRef?: RefObject<HTMLElement | null>;
 }
 
 const THRESHOLD = 60;
@@ -26,7 +28,11 @@ function findScrollParent(el: HTMLElement): HTMLElement {
   return el;
 }
 
-export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
+export function PullToRefresh({
+  onRefresh,
+  children,
+  scrollRef,
+}: PullToRefreshProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pulling, setPulling] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
@@ -52,12 +58,12 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
       if (refreshing) return;
       const el = containerRef.current;
       if (!el) return;
-      const scroller = findScrollParent(el);
+      const scroller = scrollRef?.current ?? findScrollParent(el);
       if (scroller.scrollTop > 0) return;
       startY.current = e.touches[0].clientY;
       active.current = true;
     },
-    [refreshing],
+    [refreshing, scrollRef],
   );
 
   const onTouchMove = useCallback(
@@ -94,7 +100,7 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
       if (refreshing) return;
       const el = containerRef.current;
       if (!el) return;
-      const scroller = findScrollParent(el);
+      const scroller = scrollRef?.current ?? findScrollParent(el);
       if (scroller.scrollTop > 0 || e.deltaY >= 0) {
         wheelAccum.current = 0;
         if (pullDistance > 0 && !refreshing) {
@@ -124,7 +130,7 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
         setPulling(dampened >= THRESHOLD * 0.8);
       }
     },
-    [refreshing, pullDistance, doRefresh],
+    [refreshing, pullDistance, doRefresh, scrollRef],
   );
 
   useEffect(() => {

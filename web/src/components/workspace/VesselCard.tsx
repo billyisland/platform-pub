@@ -1346,11 +1346,11 @@ function ExternalVesselCard({
         }
         ctx={ctx}
       />
+      {external.sourceReplyUri && (
+        <ParentContextTile itemId={external.id} palette={ctx.palette} />
+      )}
       {expanded ? (
         <>
-          {external.sourceReplyUri && (
-            <ParentContextTile itemId={external.id} palette={ctx.palette} />
-          )}
           {(() => {
             const contentBlock = (
               <>
