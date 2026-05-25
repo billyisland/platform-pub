@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 23b + 24 + 25 + 26 + 27 + 28 + 29 + 30 + 31 + 32 shipped on branch + refactoring pass + hardening pass. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
+_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 (retired) + 21 + 22 + 23 + 23b + 24 + 25 + 26 + 27 + 28 + 29 + 30 + 31 + 32 + 33 shipped on branch + refactoring pass + hardening pass. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
 
 ## Context
 
@@ -24,7 +24,7 @@ Provide a `prefers-reduced-motion` variant for the ∀→H→⊔ sequences — f
 
 - **Workspace layout** (vessel position, size, brightness, density, orientation) → `localStorage` is the source of truth, keyed by user id. Background sync to a server table is deferred until the shape settles. A future server hydrate doesn't need shape changes if the localStorage shape is treated as canonical.
 - **Feed definitions** (sources + weights + sampling mode) → server-backed from day one. New tables `feeds(id, owner_id, name, created_at, updated_at)` and `feed_sources(feed_id, source_id, weight, sampling_mode, muted_at)`. These describe what _content_ a vessel pulls; the workspace layout merely positions vessels.
-- **Saved items** → defer. Stub in code, no schema until the surface design solidifies.
+- **Saved items** → retired. The per-feed save system (slice 20) was built and later removed — see slice 20 notes.
 
 ### 4. State: Zustand, optimistic
 
@@ -46,7 +46,7 @@ The experiment is desktop-first. Pinch-to-resize, two-finger rotation, two-finge
 Not full WCAG AA. The floor for the experiment:
 
 - All critical paths (compose, open article, vote, reply, subscribe, navigate between vessels) reachable by keyboard.
-- Vessels render as `role="region"` with the feed name as `aria-label`.
+- Vessels render as `role="region"` with the feed numeral (and optional descriptive name) as `aria-label`.
 - ∀ menu opens on Enter as well as click; arrow-key navigation through the four items.
 - Long-press surface has a keyboard equivalent (e.g. `Shift+Enter` on a focused card).
 - Screen-reader labels for all icon-only controls.
@@ -635,40 +635,9 @@ The colours mirror `web/src/components/ui/TrustPip.tsx`'s `PIP_COLORS` lookup. R
 
 Skipped intentionally: section reordering by state (e.g. polls foregrounded for grey, contests-list foregrounded for crimson — the current chrome carries the framing without rearranging structure), state-conditional CTAs (e.g. a `REPORT THIS USER ›` link in the contested-state footer — abuse reporting lives at a different surface and isn't part of the pip panel's gesture vocabulary), polling-question reordering when the pip is contested (showing the negative-tally question first — the `humanity / authenticity / good_faith` order is design-canonical and reordering by state would obscure the question you're asking), animated stripe transition between states (slice cadence doesn't justify the Framer Motion plumbing for a colour change that happens once on open and never re-renders without a panel close), per-status pip glyph sizing on the header (today's 1.4× scale is constant), help-text overlay explaining the four states (the legend is implicit in the subtitle copy; an explicit pip-states cheat sheet would belong on a `/about/trust` page that isn't built), the 'unknown' state's invitation copy varying by whether the writer has _any_ L1 signal vs literally zero (the "new here" framing reads OK across the gradient — overshooting precision when there's no data to drive a finer copy split), per-locale subtitle copy (i18n is its own infrastructure pass that the workspace experiment hasn't tackled).
 
-### Slice 20 — per-feed save persistence + Save action + saved view (2026-05-02)
+### Slice 20 — per-feed save persistence (RETIRED 2026-05-25)
 
-The Deferred list's leading item retires. Slice 11's card action strip reserved a Save slot but the spec was vague on cross-feed vs per-feed semantics; ADR §3 left save persistence open _until the surface design solidifies_. Slice 20 commits per-feed: saves belong to the vessel that minted them. The same article saved in two vessels lives as two `feed_saves` rows. The legacy `bookmarks` table (articles only, per-user, global, used by the deprecated reading-mode chassis' `BookmarkButton`) survives until merge — slice 20 doesn't touch it; the workspace and the reading-mode chassis are deliberately separate save surfaces.
-
-**Architectural call: per-feed.** The vessel _is_ the per-feed surface; saves are an attentional stash, and stashing in a vessel means _for use in this vessel_. Cross-feed unified save would conflict with the vessel-as-attentional-economy ethos and would force a "save to which feed?" picker on the gesture. Per-feed keeps Save a one-tap commit. Cross-vessel "move to" is a future gesture that needs its own design pass; slice 20 doesn't ship it.
-
-**Schema (migration 080).** `feed_saves(id, feed_id, feed_item_id, created_at)`. Cascade on both FKs (feed deletion + item soft-deletion are both load-bearing — deleted items get filtered server-side, deleted feeds wipe their saved set with the rest of the feed). UNIQUE on `(feed_id, feed_item_id)` makes re-save idempotent. Compound index `(feed_id, created_at DESC, id DESC)` supports the listing cursor + the `ids` lookup. No `saved_by` column — feeds are owner-private and the route checks ownership before any read or write; if shared/group feeds ever land, the column adds straight.
-
-**Routes (`gateway/src/routes/feeds.ts`).** Four new endpoints:
-
-- `GET /workspace/feeds/:id/saves?cursor=…&limit=…` — listing in save-time DESC. Reuses `FEED_SELECT` + `FEED_JOINS` so the response items are byte-identical to `/items` plus a `savedAt` epoch. Cursor parses `${epoch_ms}:${feed_save_id}`; ms (vs seconds) preserves intra-second ordering without a tiebreaker beyond the row id we already emit. Soft-deleted `feed_items` are filtered so a save outliving its target cleans visually without a separate sweep.
-- `GET /workspace/feeds/:id/saves/ids` — light-weight `Set<feedItemId>` for the strip to render Save vs Saved labels without per-card round trips.
-- `POST /workspace/feeds/:id/saves { feedItemId }` — idempotent save. Pre-checks `feed_items.id IS NOT NULL AND deleted_at IS NULL` so a deleted target returns 404 rather than silently succeeding via `ON CONFLICT DO NOTHING` (which would surface a ghost row in the saved view).
-- `DELETE /workspace/feeds/:id/saves/:feedItemId` — unsave. 204 on success, no 404 on missing — the gesture is "make this not saved" and a missing row already represents that state.
-
-**Plumbing `feed_items.id` to the client.** `rowToItem` now exposes `feedItemId: row.fi_id` on all three item shapes (article/note/external). The save target is the unified id, not per-type Nostr/external IDs. `web/src/lib/ndk.ts` extends `ArticleEvent`, `NoteEvent`, `ExternalFeedItem` with optional `feedItemId?` (optional because reading-mode + profile pages build these objects without going through the unified table) and an optional `savedAt?` field that's present only in the saved view's response.
-
-**Web client (`web/src/lib/api/feeds.ts`).** `workspaceFeedsApi` gains `listSaves / listSavedIds / saveItem / unsaveItem`. Same `request` shape as the rest of the namespace.
-
-**Save button on the strip (`VesselCard.tsx`).** `CardActions` accepts `feedItemId / isSaved / onToggleSave` and renders a `Save` / `Saved` button after `Share`. Saved is crimson (the workspace's "committed" colour, matching crimson Send / SUBSCRIBE / contested pip). Suppressed in compact density (the strip is suppressed there entirely). Suppressed if the item lacks a `feedItemId` so non-workspace mounts don't render an action they can't fulfil. External cards include the button — saves key on `feed_items.id` not Nostr event id, so externals are first-class save targets unlike vote/reply.
-
-**Vessel SAVED view toggle.** `Vessel.tsx` accepts `savedView?: boolean` + `onToggleSavedView?` and renders a fourth chassis control alongside `brightness · density · orientation`: `★` (filled crimson) when in saved view, `☆` (resize-handle grey) when in live view. Tap flips the binary. The name label appends ` · SAVED` when the toggle is active so the mode flip is unmistakable from the floor — the vessel rendering is otherwise identical between views.
-
-**WorkspaceView state.** `VesselState` extends with `view: 'live' | 'saved'` + `savedIds: Set<string>`. Bootstrap seeds `view: 'live'` and `savedIds: new Set()` per vessel, then fires a `listSavedIds` per feed in the background to populate the Set so the strip's Save / Saved labels render correctly from first paint. `loadVesselItems(feed, view?)` branches on view and hits either `items` or `listSaves`. A `vesselViewRef: Map<string, view>` mirrors the latest view per vessel so `loadVesselItems` (which is `useCallback`-stable) reads the right view without taking a fresh closure on every state change. Toggle handler: flips `v.view`, sets `items: []` + `status: 'loading'`, fires `loadVesselItems` with the new view.
-
-**Optimistic save toggle.** `handleToggleSave(feedId, feedItemId, next)` mutates the affected vessel's `savedIds` Set immediately (add or delete), and — if currently in saved view + this is an unsave — drops the item from the visible list so the gesture's outcome is observable without a refetch. On request failure, the Set is reverted; a dropped item isn't restored to the saved view because the filter discards its data. The user can flip back to live and retry.
-
-**Empty saved state.** Saved view with no items renders _NO SAVED ITEMS YET — TAP SAVE ON A CARD TO KEEP IT HERE_; live view keeps the existing _NO ITEMS_. The hint reads as guidance, not error.
-
-**No store extraction.** `WorkspaceView`-local state is enough; the per-vessel save Set + view-mode aren't shared with any other surface. A `useWorkspaceSaves` extraction can wait until a second consumer arrives (e.g. a saved-items badge in the topbar adjacent or a cross-feed roll-up). Slice 5a's drag store, slice 14's `feed_sources` reuse, and slice 15's polling state all followed the same "extract on second consumer" rule.
-
-**View-mode is session-ephemeral.** Reloading the workspace returns each vessel to the live view. Persisting view-mode in localStorage would be possible (`useWorkspace` already keys on `feedId`) but the saved view is genuinely a brief detour, not a sticky channel — coming back to a workspace that auto-flips to SAVED on any vessel would feel surprising. The Save persistence (the `feed_saves` rows) is server-backed; the view _toggle_ is intentionally ephemeral.
-
-Skipped intentionally: cross-feed save view ("all my saves" — slice 20 is per-feed by design; if a cross-feed gesture lands later it's a `/saved` route or a special vessel, not a flag on the existing list), save-into-a-different-feed picker (the Save button always saves to the active vessel; cross-feed move is its own gesture), pagination in the saved view (returns the first 50; cursor exists in the route + the API client but the client renders a single page and load-more is its own slice), save count badge on the chassis (a `★ N` indicator next to the toggle when saves exist), share-toast affordance on save commit (the strip flips Save→Saved which is visible enough), keyboard equivalent for the SAVED toggle (per ADR §6 a11y floor — the button is Tab-reachable, just not chord-shortcutted), drag-to-reorder saved items (the order is save-time DESC; user-driven reorder is a deeper persistence story), saving from compact density (compact suppresses the action strip entirely; slice 20 doesn't break that rule), legacy `bookmarks` cross-pollination (saving an article on the workspace doesn't backfill the legacy table; the two surfaces are deliberately separate and the legacy table retires on merge), volume×save interplay (a muted author's previously-saved item still appears in the saved view — saved is intentional retention, mute is "less of this in my live feed", and the two commitments don't override each other), per-feed-item annotation / note (a "why I saved this" textarea per save — needs schema changes the slice doesn't ship).
+**Retired.** The entire save system (migration 080 `feed_saves` table, four gateway endpoints, `savedIds` tracking, saved-view toggle on the vessel chassis, Save/Saved button on the card action strip) was removed. The gesture proved redundant alongside the vessel-as-attentional-economy model — if the vessel _is_ the curated surface, bookmarking items within it is a second layer of curation that adds friction without adding signal. The `feed_saves` table, routes, and client code are deleted; the legacy global `bookmarks` table is untouched.
 
 ### Slice 21 — notifications anchor (2026-05-02)
 
@@ -854,11 +823,13 @@ Skipped intentionally: per-source weight visible on vessel cards (the bar is onl
 
 New sources default to step 5 (weight 4.0) instead of step 3 (weight 1.0). Migration 082 changes the `feed_sources.weight` column default. The `INSERT INTO feed_sources` in the add-source path relies on the DB column default, so no route changes needed. Existing sources keep their stored weights. Frontend `FeedComposer` SourceRow reads back weight via `weightToStep()` which maps 4.0 → step 5 correctly.
 
-### Slice 28 — minimize / hide vessels (2026-05-14)
+### Slice 28 — hide vessels (2026-05-14, updated 2026-05-25)
 
-Vessels gain minimize (collapse to bar only, no cards) and hide (remove from workspace, restorable via ∀ menu) controls. `VesselLayout` in `stores/workspace.ts` extends with `minimized?: boolean` and `hidden?: boolean`, plus `setVesselMinimized` and `setVesselHidden` actions (same spread + scheduleWrite pattern). `VesselBar` gains two new `BarButton`s: minimize (`▁`/`□` toggle) and hide (`×`), placed after the gear icon. `Vessel.tsx` wraps the content area in `{!minimized && (...)}` and suppresses the resize handle when minimized. Drag still works on minimized vessels. `WorkspaceView` filters hidden vessels from the render loop.
+Vessels gain a hide control (remove from workspace, restorable via ∀ menu). `VesselLayout` in `stores/workspace.ts` extends with `hidden?: boolean` and a `setVesselHidden` action (same spread + scheduleWrite pattern). `VesselBar` gains a hide (`×`) `BarButton` placed after the gear icon. `WorkspaceView` filters hidden vessels from the render loop.
 
-Skipped intentionally: minimize animation (chassis snaps to bar height immediately), auto-minimize on narrow viewports, keyboard shortcut for minimize/hide.
+**Minimize removed (2026-05-25).** The minimize gesture (collapse to bar only) was removed — it overlapped with hide and wasn't working properly. `minimized` field, `setVesselMinimized` action, minimize `BarButton` (`▁`/`□` toggle), and the `{!minimized && (...)}` content guard in `Vessel.tsx` are all deleted. Content and resize handle always render.
+
+Skipped intentionally: auto-hide on narrow viewports, keyboard shortcut for hide.
 
 ### Slice 29 — forall menu updates (2026-05-14)
 
@@ -882,13 +853,23 @@ Skipped intentionally: drag preview (uses browser default ghost), undo on move, 
 
 Not a feature slice — a cleanup pass across the workspace experiment codebase.
 
-**Zustand store (`stores/workspace.ts`).** Extracted a `patchVessel(feedId, patch)` helper inside the store creator. The seven per-axis setters (`setVesselPosition`, `setVesselSize`, `setVesselBrightness`, `setVesselDensity`, `setVesselOrientation`, `setVesselMinimized`, `setVesselHidden`) collapsed from copy-paste bodies to one-line `patchVessel` calls.
+**Zustand store (`stores/workspace.ts`).** Extracted a `patchVessel(feedId, patch)` helper inside the store creator. The per-axis setters (`setVesselPosition`, `setVesselSize`, `setVesselBrightness`, `setVesselDensity`, `setVesselOrientation`, `setVesselHidden`) collapsed from copy-paste bodies to one-line `patchVessel` calls.
 
 **Resolver deduplication.** `VesselBar` and `FeedComposer` each had independent copies of resolver state management (query, debounce, poll loop, tag fallback, match mapping). Extracted shared `web/src/hooks/useResolverInput.ts` (hook) and `web/src/lib/workspace/resolve.ts` (pure utilities: `matchToOptions`, `tagFallback`, `resolveMatches`). Both consumers now call `useResolverInput()` and reference `ri.query`, `ri.matches`, `ri.resolving`, `ri.doneEmpty`, `ri.resolveError`, `ri.reset()`. The hook uses a generation counter (`genRef`) so that `reset()` and new queries cancel stale debounce timers and in-flight poll chains — the original per-component code had debounce cleanup in effect teardowns that would have been lost in the extraction.
 
 **Dead code deleted.** `ResetLayoutConfirm.tsx` and `ForkFeedPrompt.tsx` — neither was imported anywhere (their functionality was absorbed into `WorkspaceView` in later slices). Removed from the migration map component list.
 
 **Type cleanup.** Duplicate `NewUserItem` interface (defined identically in both `WorkspaceView.tsx` and `VesselCard.tsx`) consolidated — exported from `VesselCard`, imported in `WorkspaceView`. `catch (err: any)` in `SearchAnchor.tsx` replaced with proper `DOMException` type guard.
+
+### Slice 33 — feed numeral system + cleanup (2026-05-25)
+
+Feeds retire the clunky name-label nameplate in favour of a numeral system. Each feed is assigned the next vacant positive integer (sorted by `createdAt`), displayed as an italic serif numeral at the right end of the VesselBar tool panel. Descriptive names are optional — they show on hover over the numeral, and in the ForallMenu when the feed is hidden (e.g. "Feed 4: French news sources"). Feed creation no longer requires a name; `NewFeedPrompt` label reads "Name (optional)" and the gateway schema defaults to empty string. `FeedComposer` rename allows empty names with "No name" placeholder.
+
+**Minimize removed.** The minimize gesture overlapped with hide and wasn't working properly. All minimize infrastructure deleted: `minimized` field on `VesselLayout`, `setVesselMinimized` store action, `▁`/`□` `BarButton` on `VesselBar`, `{!minimized && (...)}` content guard on `Vessel.tsx`. Content and resize handle always render. See updated slice 28.
+
+**Save system removed.** The entire save system (slice 20) retired — migration 080 `feed_saves` table, four gateway endpoints, `savedIds` tracking in `WorkspaceView`, `savedView` toggle on `Vessel`, Save/Saved button on `CardActions`. See updated slice 20.
+
+**Caught-up tile refined.** `EmptyFeedTile` `caught-up` variant updated: copy reads "You're caught up. Add new sources or strengthen current ones to see more." Both ADD SOURCES and DISMISS buttons dismiss the tile (parent-owned state). Scrolling up after the tile appears also dismisses it (scroll event listener in `Vessel.tsx` detects decreasing `scrollTop`). Tile only reappears after the next pull-to-refresh that finds no new content.
 
 ## Deferred (TODO in code, not blocking the experiment)
 

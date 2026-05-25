@@ -109,8 +109,6 @@ interface VesselState {
   items: WorkspaceItem[];
   sources: WorkspaceFeedSource[];
   status: "loading" | "ready" | "error";
-  view: "live" | "saved";
-  savedIds: Set<string>;
   caughtUp?: boolean;
 }
 
@@ -263,7 +261,6 @@ export function WorkspaceView() {
   const setVesselBrightness = useWorkspace((s) => s.setVesselBrightness);
   const setVesselDensity = useWorkspace((s) => s.setVesselDensity);
   const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation);
-  const setVesselMinimized = useWorkspace((s) => s.setVesselMinimized);
   const setVesselHidden = useWorkspace((s) => s.setVesselHidden);
   const removeVesselLayout = useWorkspace((s) => s.removeVessel);
   const batchUpdatePositions = useWorkspace((s) => s.batchUpdatePositions);
@@ -369,134 +366,54 @@ export function WorkspaceView() {
     setPendingMerge(null);
   }
 
-  // Slice 20: load function honours the vessel's current view mode. The
-  // saved view returns the same item shapes from a different endpoint, so
-  // the rest of the rendering pipeline doesn't branch.
-  const loadVesselItems = useCallback(
-    async (feed: WorkspaceFeed, view?: "live" | "saved") => {
-      let prevIds: Set<string> | null = null;
+  const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
+    let prevIds: Set<string> | null = null;
+    setVessels((prev) =>
+      prev.map((v) => {
+        if (v.feed.id !== feed.id) return v;
+        if (v.status === "ready" && v.items.length > 0) {
+          prevIds = new Set(v.items.map(itemKey));
+        }
+        return { ...v, status: "loading", caughtUp: false };
+      }),
+    );
+    try {
+      const data = await workspaceFeedsApi.items(feed.id);
+      const mapped = (data.items ?? [])
+        .map(mapApiItem)
+        .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null);
+      const caughtUp =
+        prevIds !== null &&
+        mapped.length > 0 &&
+        mapped.every((i) => (prevIds as Set<string>).has(itemKey(i)));
       setVessels((prev) =>
-        prev.map((v) => {
-          if (v.feed.id !== feed.id) return v;
-          if (v.status === "ready" && v.items.length > 0) {
-            prevIds = new Set(v.items.map(itemKey));
-          }
-          return { ...v, status: "loading", caughtUp: false };
-        }),
+        prev.map((v) =>
+          v.feed.id === feed.id
+            ? {
+                ...v,
+                feed: data.feed,
+                items: mapped,
+                status: "ready",
+                caughtUp,
+              }
+            : v,
+        ),
       );
-      try {
-        const effView = view ?? vesselViewRef.current.get(feed.id) ?? "live";
-        const data =
-          effView === "saved"
-            ? await workspaceFeedsApi.listSaves(feed.id)
-            : await workspaceFeedsApi.items(feed.id);
-        const mapped = (data.items ?? [])
-          .map(mapApiItem)
-          .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null);
-        const caughtUp =
-          prevIds !== null &&
-          mapped.length > 0 &&
-          mapped.every((i) => (prevIds as Set<string>).has(itemKey(i)));
-        setVessels((prev) =>
-          prev.map((v) =>
-            v.feed.id === feed.id
-              ? {
-                  ...v,
-                  feed: data.feed,
-                  items: mapped,
-                  status: "ready",
-                  caughtUp,
-                }
-              : v,
-          ),
-        );
-      } catch (err) {
-        console.error("Vessel items load error:", err);
-        setVessels((prev) =>
-          prev.map((v) =>
-            v.feed.id === feed.id ? { ...v, status: "error" } : v,
-          ),
-        );
-      }
-    },
-    [],
-  );
-
-  // Mirror the vessels' current view modes into a ref so loadVesselItems can
-  // read the right view without taking a fresh closure on every state change.
-  const vesselViewRef = useRef<Map<string, "live" | "saved">>(new Map());
-  useEffect(() => {
-    const next = new Map<string, "live" | "saved">();
-    vessels.forEach((v) => next.set(v.feed.id, v.view));
-    vesselViewRef.current = next;
-  }, [vessels]);
+    } catch (err) {
+      console.error("Vessel items load error:", err);
+      setVessels((prev) =>
+        prev.map((v) =>
+          v.feed.id === feed.id ? { ...v, status: "error" } : v,
+        ),
+      );
+    }
+  }, []);
 
   const vesselsRef = useRef(vessels);
   vesselsRef.current = vessels;
 
   function refreshAll() {
     vesselsRef.current.forEach((v) => void loadVesselItems(v.feed));
-  }
-
-  // Slice 20: optimistic save toggle. The savedIds Set on each vessel drives
-  // the strip's Save / Saved label; we mutate it before the request and
-  // revert on failure. While in saved view, an unsave additionally drops the
-  // item from the visible list so the gesture's outcome is observable
-  // without a refetch.
-  const handleToggleSave = useCallback(
-    async (feedId: string, feedItemId: string, next: boolean) => {
-      setVessels((prev) =>
-        prev.map((v) => {
-          if (v.feed.id !== feedId) return v;
-          const ids = new Set(v.savedIds);
-          if (next) ids.add(feedItemId);
-          else ids.delete(feedItemId);
-          const items =
-            v.view === "saved" && !next
-              ? v.items.filter((it) =>
-                  "feedItemId" in it ? it.feedItemId !== feedItemId : true,
-                )
-              : v.items;
-          return { ...v, savedIds: ids, items };
-        }),
-      );
-      try {
-        if (next) {
-          await workspaceFeedsApi.saveItem(feedId, feedItemId);
-        } else {
-          await workspaceFeedsApi.unsaveItem(feedId, feedItemId);
-        }
-      } catch (err) {
-        console.error("Save toggle failed:", err);
-        // Roll back the optimistic flip on failure. We don't restore a
-        // dropped item to the saved view since we don't keep its data after
-        // the filter above; the user can flip back to live and retry.
-        setVessels((prev) =>
-          prev.map((v) => {
-            if (v.feed.id !== feedId) return v;
-            const ids = new Set(v.savedIds);
-            if (next) ids.delete(feedItemId);
-            else ids.add(feedItemId);
-            return { ...v, savedIds: ids };
-          }),
-        );
-      }
-    },
-    [],
-  );
-
-  function handleToggleSavedView(feedId: string) {
-    let nextView: "live" | "saved" = "live";
-    let target: WorkspaceFeed | null = null;
-    setVessels((prev) =>
-      prev.map((v) => {
-        if (v.feed.id !== feedId) return v;
-        nextView = v.view === "live" ? "saved" : "live";
-        target = v.feed;
-        return { ...v, view: nextView, items: [], status: "loading" };
-      }),
-    );
-    if (target) void loadVesselItems(target, nextView);
   }
 
   function handleForallAction(key: ForallAction) {
@@ -520,9 +437,26 @@ export function WorkspaceView() {
     setVesselHidden(feedId, false);
   }
 
+  const feedNumerals = new Map<string, number>();
+  const sorted = [...vessels].sort(
+    (a, b) =>
+      new Date(a.feed.createdAt).getTime() -
+      new Date(b.feed.createdAt).getTime(),
+  );
+  sorted.forEach((v, i) => feedNumerals.set(v.feed.id, i + 1));
+
+  function feedDisplayName(feedId: string, feedName: string): string {
+    const num = feedNumerals.get(feedId) ?? 1;
+    const descriptive = feedName.trim();
+    return descriptive ? `Feed ${num}: ${descriptive}` : `Feed ${num}`;
+  }
+
   const hiddenFeeds = vessels
     .filter((v) => positions[v.feed.id]?.hidden)
-    .map((v) => ({ id: v.feed.id, name: v.feed.name }));
+    .map((v) => ({
+      id: v.feed.id,
+      name: feedDisplayName(v.feed.id, v.feed.name),
+    }));
 
   function matchItemToSource(
     item: WorkspaceItem,
@@ -597,8 +531,6 @@ export function WorkspaceView() {
           items: [],
           sources: [],
           status: "loading" as const,
-          view: "live" as const,
-          savedIds: new Set<string>(),
         },
       ];
       slot = defaultGridSlot(
@@ -667,31 +599,11 @@ export function WorkspaceView() {
           items: [],
           sources: [],
           status: "loading",
-          view: "live",
-          savedIds: new Set<string>(),
         }));
         setVessels(initial);
         setBootstrap("ready");
 
-        // Slice 20: prefetch saved-id sets per feed so the Save / Saved
-        // labels on the strip render correctly from first paint. Failures
-        // are non-fatal — the strip just defaults to "Save" until the user
-        // commits a change.
         for (const feed of list) {
-          workspaceFeedsApi
-            .listSavedIds(feed.id)
-            .then(({ feedItemIds }) => {
-              if (cancelled) return;
-              setVessels((prev) =>
-                prev.map((v) =>
-                  v.feed.id === feed.id
-                    ? { ...v, savedIds: new Set(feedItemIds) }
-                    : v,
-                ),
-              );
-            })
-            .catch(() => {});
-
           workspaceFeedsApi
             .listSources(feed.id)
             .then(({ sources }) => {
@@ -774,8 +686,9 @@ export function WorkspaceView() {
             return (
               <Vessel
                 key={v.feed.id}
-                name={v.feed.name}
                 feedId={v.feed.id}
+                numeral={feedNumerals.get(v.feed.id) ?? 1}
+                descriptiveName={v.feed.name || undefined}
                 onNameClick={() => setFeedComposerFor(v.feed)}
                 onSourceAdded={() => {
                   void loadVesselItems(v.feed);
@@ -795,11 +708,7 @@ export function WorkspaceView() {
                 brightness={layout.brightness}
                 density={layout.density}
                 orientation={layout.orientation}
-                minimized={layout.minimized}
-                onMinimize={(m) => setVesselMinimized(v.feed.id, m)}
                 onHide={() => setVesselHidden(v.feed.id, true)}
-                savedView={v.view === "saved"}
-                onToggleSavedView={() => handleToggleSavedView(v.feed.id)}
                 onPositionCommit={(next) =>
                   handleVesselDragEnd(v.feed.id, next)
                 }
@@ -817,16 +726,22 @@ export function WorkspaceView() {
                 dragConstraints={floorRef}
                 onCardDrop={(raw) => handleCardDrop(v.feed.id, raw)}
                 onRefresh={() => loadVesselItems(v.feed)}
+                caughtUp={v.caughtUp}
+                onCaughtUpDismiss={() =>
+                  setVessels((prev) =>
+                    prev.map((vs) =>
+                      vs.feed.id === v.feed.id
+                        ? { ...vs, caughtUp: false }
+                        : vs,
+                    ),
+                  )
+                }
               >
                 {v.status === "loading" && <Hint>LOADING…</Hint>}
                 {v.status === "error" && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
                 {v.status === "ready" &&
                   v.items.length === 0 &&
-                  (v.view === "saved" ? (
-                    <Hint>
-                      NO SAVED ITEMS YET — TAP SAVE ON A CARD TO KEEP IT HERE
-                    </Hint>
-                  ) : v.sources.length === 0 ? (
+                  (v.sources.length === 0 ? (
                     <EmptyFeedTile
                       variant="no-sources"
                       onAddSources={() => setFeedComposerFor(v.feed)}
@@ -841,6 +756,15 @@ export function WorkspaceView() {
                   <EmptyFeedTile
                     variant="caught-up"
                     onAddSources={() => setFeedComposerFor(v.feed)}
+                    onDismiss={() =>
+                      setVessels((prev) =>
+                        prev.map((vs) =>
+                          vs.feed.id === v.feed.id
+                            ? { ...vs, caughtUp: false }
+                            : vs,
+                        ),
+                      )
+                    }
                   />
                 )}
                 {v.status === "ready" &&
@@ -888,14 +812,6 @@ export function WorkspaceView() {
                           });
                         }}
                         threadRefreshKey={threadRefreshTicks[item.id]}
-                        isSaved={
-                          "feedItemId" in item && item.feedItemId
-                            ? v.savedIds.has(item.feedItemId)
-                            : false
-                        }
-                        onToggleSave={(feedItemId, next) =>
-                          void handleToggleSave(v.feed.id, feedItemId, next)
-                        }
                         expanded={expandedCards.has(
                           "feedItemId" in item && item.feedItemId
                             ? item.feedItemId
@@ -998,8 +914,16 @@ export function WorkspaceView() {
       />
       <MergeFeedConfirm
         open={!!pendingMerge}
-        sourceName={pendingMerge?.source.name ?? ""}
-        targetName={pendingMerge?.target.name ?? ""}
+        sourceName={
+          pendingMerge
+            ? feedDisplayName(pendingMerge.source.id, pendingMerge.source.name)
+            : ""
+        }
+        targetName={
+          pendingMerge
+            ? feedDisplayName(pendingMerge.target.id, pendingMerge.target.name)
+            : ""
+        }
         onClose={() => setPendingMerge(null)}
         onConfirm={handleMergeConfirm}
       />

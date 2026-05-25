@@ -35,11 +35,11 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const createFeedSchema = z.object({
-  name: z.string().trim().min(1).max(80),
+  name: z.string().trim().max(80).default(""),
 });
 
 const patchFeedSchema = z.object({
-  name: z.string().trim().min(1).max(80),
+  name: z.string().trim().max(80),
 });
 
 const patchSourceSchema = z.object({

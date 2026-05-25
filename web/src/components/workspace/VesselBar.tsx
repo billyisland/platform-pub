@@ -15,15 +15,13 @@ interface VesselBarProps {
   brightness: Brightness;
   density: Density;
   orientation: Orientation;
-  savedView?: boolean;
+  numeral: number;
+  descriptiveName?: string;
   onBrightnessCommit?: (b: Brightness) => void;
   onDensityCommit?: (d: Density) => void;
   onOrientationCommit?: (o: Orientation) => void;
-  onToggleSavedView?: () => void;
   onSourceAdded?: () => void;
   onNameClick?: () => void;
-  minimized?: boolean;
-  onMinimize?: (minimized: boolean) => void;
   onHide?: () => void;
 }
 
@@ -35,15 +33,13 @@ export function VesselBar({
   brightness,
   density,
   orientation,
-  savedView,
+  numeral,
+  descriptiveName,
   onBrightnessCommit,
   onDensityCommit,
   onOrientationCommit,
-  onToggleSavedView,
   onSourceAdded,
   onNameClick,
-  minimized,
-  onMinimize,
   onHide,
 }: VesselBarProps) {
   const ri = useResolverInput();
@@ -127,20 +123,6 @@ export function VesselBar({
             onClick={() => onOrientationCommit(nextOrientation(orientation))}
           />
         )}
-        {onToggleSavedView && (
-          <BarButton
-            label={
-              savedView
-                ? "Showing saved items — tap to return"
-                : "Show saved items"
-            }
-            glyph={savedView ? "★" : "☆"}
-            color={savedView ? palette.crimson : palette.barText}
-            mutedColor={savedView ? palette.crimson : palette.barTextMuted}
-            onClick={onToggleSavedView}
-          />
-        )}
-
         {/* Gear button — opens the FeedComposer modal for rename/delete/full source list */}
         {onNameClick && (
           <BarButton
@@ -152,15 +134,6 @@ export function VesselBar({
           />
         )}
 
-        {onMinimize && (
-          <BarButton
-            label={minimized ? "Restore" : "Minimize"}
-            glyph={minimized ? "□" : "▁"}
-            color={palette.barText}
-            mutedColor={palette.barTextMuted}
-            onClick={() => onMinimize(!minimized)}
-          />
-        )}
         {onHide && (
           <BarButton
             label="Hide feed"
@@ -174,7 +147,7 @@ export function VesselBar({
         {/* Spacer */}
         <div style={{ flex: 1, minWidth: 8 }} />
 
-        {/* Source search input — right side */}
+        {/* Source search input */}
         <div
           style={{
             position: "relative",
@@ -206,6 +179,28 @@ export function VesselBar({
               lineHeight: "22px",
             }}
           />
+        </div>
+
+        {/* Feed numeral badge — right end */}
+        <div
+          title={
+            descriptiveName
+              ? `Feed ${numeral}: ${descriptiveName}`
+              : `Feed ${numeral}`
+          }
+          className="font-serif select-none"
+          style={{
+            color: palette.barTextMuted,
+            fontSize: 15,
+            lineHeight: `${BAR_H}px`,
+            paddingLeft: 6,
+            paddingRight: 2,
+            cursor: "default",
+            fontStyle: "italic",
+            flexShrink: 0,
+          }}
+        >
+          {numeral}
         </div>
       </div>
 

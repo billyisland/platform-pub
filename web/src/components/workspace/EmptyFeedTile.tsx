@@ -1,16 +1,16 @@
 "use client";
 
-import { useState } from "react";
-
 interface EmptyFeedTileProps {
   variant: "no-sources" | "no-items" | "caught-up";
   onAddSources?: () => void;
+  onDismiss?: () => void;
 }
 
-export function EmptyFeedTile({ variant, onAddSources }: EmptyFeedTileProps) {
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
-
+export function EmptyFeedTile({
+  variant,
+  onAddSources,
+  onDismiss,
+}: EmptyFeedTileProps) {
   if (variant === "no-sources") {
     return (
       <div className="px-6 py-8 text-center">
@@ -30,16 +30,19 @@ export function EmptyFeedTile({ variant, onAddSources }: EmptyFeedTileProps) {
   if (variant === "caught-up") {
     return (
       <div className="px-4 py-4 text-center">
-        <p className="label-ui text-grey-400 mb-1">ALL CAUGHT UP</p>
         <p className="text-ui-xs text-grey-500 mb-3">
-          Nothing new. Follow more accounts or add sources to see more here.
+          You&rsquo;re caught up. Add new sources or strengthen current ones to
+          see more.
         </p>
         <div className="flex items-center justify-center gap-4">
           {onAddSources && (
             <button
               type="button"
               className="btn-text-muted"
-              onClick={onAddSources}
+              onClick={() => {
+                onDismiss?.();
+                onAddSources();
+              }}
             >
               ADD SOURCES
             </button>
@@ -47,7 +50,7 @@ export function EmptyFeedTile({ variant, onAddSources }: EmptyFeedTileProps) {
           <button
             type="button"
             className="btn-text-muted"
-            onClick={() => setDismissed(true)}
+            onClick={() => onDismiss?.()}
           >
             DISMISS
           </button>
@@ -58,28 +61,15 @@ export function EmptyFeedTile({ variant, onAddSources }: EmptyFeedTileProps) {
 
   return (
     <div className="px-6 py-8 text-center">
-      <p className="label-ui text-grey-400 mb-2">ALL CAUGHT UP</p>
+      <p className="label-ui text-grey-400 mb-2">NO ITEMS YET</p>
       <p className="text-ui-xs text-grey-500 mb-4">
         No new items. Add more sources or check back later.
       </p>
-      <div className="flex items-center justify-center gap-4">
-        {onAddSources && (
-          <button
-            type="button"
-            className="btn-text-muted"
-            onClick={onAddSources}
-          >
-            ADD MORE
-          </button>
-        )}
-        <button
-          type="button"
-          className="btn-text-muted"
-          onClick={() => setDismissed(true)}
-        >
-          DISMISS
+      {onAddSources && (
+        <button type="button" className="btn-text-muted" onClick={onAddSources}>
+          ADD MORE
         </button>
-      </div>
+      )}
     </div>
   );
 }

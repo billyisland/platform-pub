@@ -59,9 +59,10 @@ const MAX_W = 2000;
 const MAX_H = 2000;
 
 interface VesselProps {
-  name: string;
   children: ReactNode;
   feedId: string;
+  numeral: number;
+  descriptiveName?: string;
   onNameClick?: () => void;
   onSourceAdded?: () => void;
   position: { x: number; y: number };
@@ -70,11 +71,7 @@ interface VesselProps {
   density?: Density;
   orientation?: Orientation;
   hidden?: boolean;
-  minimized?: boolean;
-  onMinimize?: (minimized: boolean) => void;
   onHide?: () => void;
-  savedView?: boolean;
-  onToggleSavedView?: () => void;
   onPositionCommit: (pos: { x: number; y: number }) => void;
   onSizeCommit?: (size: { w: number; h: number }) => void;
   onBrightnessCommit?: (b: Brightness) => void;
@@ -85,12 +82,15 @@ interface VesselProps {
   dragConstraints?: RefObject<HTMLElement>;
   onCardDrop?: (data: string) => void;
   onRefresh?: () => Promise<void>;
+  caughtUp?: boolean;
+  onCaughtUpDismiss?: () => void;
 }
 
 export function Vessel({
-  name,
   children,
   feedId,
+  numeral,
+  descriptiveName,
   onNameClick,
   onSourceAdded,
   position,
@@ -99,11 +99,7 @@ export function Vessel({
   density,
   orientation,
   hidden,
-  minimized,
-  onMinimize,
   onHide,
-  savedView,
-  onToggleSavedView,
   onPositionCommit,
   onSizeCommit,
   onBrightnessCommit,
@@ -114,6 +110,8 @@ export function Vessel({
   dragConstraints,
   onCardDrop,
   onRefresh,
+  caughtUp,
+  onCaughtUpDismiss,
 }: VesselProps) {
   const dragControls = useDragControls();
   const [isDragTarget, setIsDragTarget] = useState(false);
@@ -141,6 +139,23 @@ export function Vessel({
   const isHorizontal = effOrientation === "horizontal";
 
   const isDraggingRef = useRef(false);
+  const prevScrollTopRef = useRef(0);
+
+  useEffect(() => {
+    if (!caughtUp || !onCaughtUpDismiss) return;
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    prevScrollTopRef.current = el.scrollTop;
+    function onScroll() {
+      if (!el) return;
+      if (el.scrollTop < prevScrollTopRef.current) {
+        onCaughtUpDismiss!();
+      }
+      prevScrollTopRef.current = el.scrollTop;
+    }
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [caughtUp, onCaughtUpDismiss]);
 
   useEffect(() => {
     if (isDraggingRef.current) return;
@@ -304,7 +319,11 @@ export function Vessel({
       ref={vesselRef}
       data-vessel-id={feedId}
       role="region"
-      aria-label={name}
+      aria-label={
+        descriptiveName
+          ? `Feed ${numeral}: ${descriptiveName}`
+          : `Feed ${numeral}`
+      }
       drag
       dragListener={false}
       dragControls={dragControls}
@@ -339,15 +358,6 @@ export function Vessel({
         pointerEvents: hidden ? "none" : undefined,
       }}
     >
-      {/* Name label sits above the opening. */}
-      <div
-        className="label-ui mb-2 px-1 select-none"
-        style={{ color: palette.nameLabel }}
-      >
-        {name}
-        {savedView ? " · SAVED" : ""}
-      </div>
-
       {/* The vessel chassis. Position relative so chrome controls (resize +
           brightness / density / orientation) can pin to its corners. When the
           user has fixed a height, the body becomes a scroll container;
@@ -368,31 +378,29 @@ export function Vessel({
           outlineOffset: -2,
         }}
       >
-        {!minimized && (
-          <div
-            ref={scrollBodyRef}
-            onPointerDown={(e) => e.stopPropagation()}
-            style={{
-              padding: `${PAD}px`,
-              display: "flex",
-              flexDirection: isHorizontal ? "row" : "column",
-              gap: `${GAP}px`,
-              flex: heightSet ? "1 1 0" : undefined,
-              minHeight: 0,
-              overflowY: heightSet && !isHorizontal ? "auto" : undefined,
-              overflowX: isHorizontal ? "auto" : undefined,
-              cursor: "default",
-            }}
-          >
-            {onRefresh ? (
-              <PullToRefresh onRefresh={onRefresh} scrollRef={scrollBodyRef}>
-                {children}
-              </PullToRefresh>
-            ) : (
-              children
-            )}
-          </div>
-        )}
+        <div
+          ref={scrollBodyRef}
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            padding: `${PAD}px`,
+            display: "flex",
+            flexDirection: isHorizontal ? "row" : "column",
+            gap: `${GAP}px`,
+            flex: heightSet ? "1 1 0" : undefined,
+            minHeight: 0,
+            overflowY: heightSet && !isHorizontal ? "auto" : undefined,
+            overflowX: isHorizontal ? "auto" : undefined,
+            cursor: "default",
+          }}
+        >
+          {onRefresh ? (
+            <PullToRefresh onRefresh={onRefresh} scrollRef={scrollBodyRef}>
+              {children}
+            </PullToRefresh>
+          ) : (
+            children
+          )}
+        </div>
 
         {/* VesselBar replaces the bottom wall — cycle controls + source input */}
         <VesselBar
@@ -401,19 +409,17 @@ export function Vessel({
           brightness={effBrightness}
           density={effDensity}
           orientation={effOrientation}
-          savedView={savedView}
+          numeral={numeral}
+          descriptiveName={descriptiveName}
           onBrightnessCommit={onBrightnessCommit}
           onDensityCommit={onDensityCommit}
           onOrientationCommit={onOrientationCommit}
-          onToggleSavedView={onToggleSavedView}
           onSourceAdded={onSourceAdded}
           onNameClick={onNameClick}
-          minimized={minimized}
-          onMinimize={onMinimize}
           onHide={onHide}
         />
 
-        {onSizeCommit && !minimized && (
+        {onSizeCommit && (
           <div
             role="button"
             aria-label="Resize vessel"

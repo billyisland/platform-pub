@@ -68,14 +68,9 @@ interface Props {
   onReply?: (target: ReplyTarget) => void;
   onPipOpen?: PipOpen;
   dragData?: string;
-  // Slice 13: inline thread expansion state. Parent owns the toggle so
-  // refresh ticks (after overlay-Composer replies) can target a specific
-  // card without forcing the whole vessel to remount.
   threadExpanded?: boolean;
   onToggleThread?: (target: ReplyTarget) => void;
   threadRefreshKey?: number;
-  isSaved?: boolean;
-  onToggleSave?: (feedItemId: string, next: boolean) => void;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
 }
@@ -97,8 +92,6 @@ export function VesselCard({
   threadExpanded,
   onToggleThread,
   threadRefreshKey,
-  isSaved,
-  onToggleSave,
   expanded,
   onToggleExpand,
   dragData,
@@ -118,8 +111,6 @@ export function VesselCard({
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}
         threadRefreshKey={threadRefreshKey}
-        isSaved={isSaved}
-        onToggleSave={onToggleSave}
         expanded={expanded}
         onToggleExpand={onToggleExpand}
       />
@@ -134,8 +125,6 @@ export function VesselCard({
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}
         threadRefreshKey={threadRefreshKey}
-        isSaved={isSaved}
-        onToggleSave={onToggleSave}
         expanded={expanded}
         onToggleExpand={onToggleExpand}
       />
@@ -144,8 +133,6 @@ export function VesselCard({
     <ExternalVesselCard
       external={item}
       ctx={ctx}
-      isSaved={isSaved}
-      onToggleSave={onToggleSave}
       expanded={expanded}
       onToggleExpand={onToggleExpand}
       threadExpanded={threadExpanded}
@@ -215,9 +202,6 @@ function CardActions({
   onReply,
   threadExpanded,
   onToggleThread,
-  feedItemId,
-  isSaved,
-  onToggleSave,
 }: {
   ctx: CardContext;
   voteEventId?: string;
@@ -228,9 +212,6 @@ function CardActions({
   onReply?: (target: ReplyTarget) => void;
   threadExpanded?: boolean;
   onToggleThread?: (target: ReplyTarget) => void;
-  feedItemId?: string;
-  isSaved?: boolean;
-  onToggleSave?: (feedItemId: string, next: boolean) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -246,11 +227,6 @@ function CardActions({
       });
     }
   }
-
-  // Slice 20: Save toggle. Crimson when saved (consistent with the rest of
-  // the workspace's "committed" state colour). Suppressed if the item lacks
-  // a feedItemId (e.g. surfaces that bypass the unified table).
-  const canSave = !!feedItemId && !!onToggleSave;
 
   return (
     <div
@@ -311,22 +287,6 @@ function CardActions({
           className="hover:opacity-80"
         >
           {copied ? "Copied!" : "Share"}
-        </button>
-      )}
-      {canSave && (
-        <button
-          type="button"
-          onClick={() => onToggleSave!(feedItemId!, !isSaved)}
-          style={{
-            background: "transparent",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-            color: isSaved ? ctx.palette.crimson : ctx.palette.cardMeta,
-          }}
-          className="hover:opacity-80"
-        >
-          {isSaved ? "Saved" : "Save"}
         </button>
       )}
     </div>
@@ -813,8 +773,6 @@ function ArticleVesselCard({
   threadExpanded,
   onToggleThread,
   threadRefreshKey,
-  isSaved,
-  onToggleSave,
   expanded,
   onToggleExpand,
 }: {
@@ -825,8 +783,6 @@ function ArticleVesselCard({
   threadExpanded?: boolean;
   onToggleThread?: (target: ReplyTarget) => void;
   threadRefreshKey?: number;
-  isSaved?: boolean;
-  onToggleSave?: (feedItemId: string, next: boolean) => void;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
 }) {
@@ -983,9 +939,6 @@ function ArticleVesselCard({
         onReply={onReply}
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}
-        feedItemId={article.feedItemId}
-        isSaved={isSaved}
-        onToggleSave={onToggleSave}
       />
       {threadExpanded && (
         <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
@@ -1002,8 +955,6 @@ function NoteVesselCard({
   threadExpanded,
   onToggleThread,
   threadRefreshKey,
-  isSaved,
-  onToggleSave,
   expanded,
   onToggleExpand,
 }: {
@@ -1014,8 +965,6 @@ function NoteVesselCard({
   threadExpanded?: boolean;
   onToggleThread?: (target: ReplyTarget) => void;
   threadRefreshKey?: number;
-  isSaved?: boolean;
-  onToggleSave?: (feedItemId: string, next: boolean) => void;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
 }) {
@@ -1125,9 +1074,6 @@ function NoteVesselCard({
         onReply={onReply}
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}
-        feedItemId={note.feedItemId}
-        isSaved={isSaved}
-        onToggleSave={onToggleSave}
       />
       {threadExpanded && (
         <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
@@ -1194,8 +1140,6 @@ export function NewUserVesselCard({
 function ExternalVesselCard({
   external,
   ctx,
-  isSaved,
-  onToggleSave,
   expanded,
   onToggleExpand,
   threadExpanded,
@@ -1203,8 +1147,6 @@ function ExternalVesselCard({
 }: {
   external: ExternalFeedItem;
   ctx: CardContext;
-  isSaved?: boolean;
-  onToggleSave?: (feedItemId: string, next: boolean) => void;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
   threadExpanded?: boolean;
@@ -1511,9 +1453,6 @@ function ExternalVesselCard({
       <CardActions
         ctx={ctx}
         shareUrl={externalUrl}
-        feedItemId={external.feedItemId}
-        isSaved={isSaved}
-        onToggleSave={onToggleSave}
         replyTarget={threadTarget}
         threadExpanded={threadExpanded}
         onToggleThread={onToggleThread}

@@ -145,7 +145,6 @@ export function FeedComposer({
   async function commitRename() {
     if (!feed || savingName) return;
     const trimmed = nameDraft.trim();
-    if (!trimmed) return;
     if (trimmed.length > NAME_LIMIT) {
       setError(`Name must be ${NAME_LIMIT} characters or fewer.`);
       return;
@@ -272,6 +271,7 @@ export function FeedComposer({
                       cancelRename();
                     }
                   }}
+                  placeholder="Optional descriptive name"
                   className="font-sans text-[18px]"
                   style={{
                     flex: 1,
@@ -284,17 +284,14 @@ export function FeedComposer({
                 <button
                   type="button"
                   onClick={() => void commitRename()}
-                  disabled={savingName || !nameDraft.trim()}
+                  disabled={savingName}
                   className="label-ui"
                   style={{
                     padding: "6px 10px",
                     background: "transparent",
-                    color: nameDraft.trim()
-                      ? TOKENS.panelBorder
-                      : TOKENS.hintFg,
+                    color: TOKENS.panelBorder,
                     border: "none",
-                    cursor:
-                      savingName || !nameDraft.trim() ? "default" : "pointer",
+                    cursor: savingName ? "default" : "pointer",
                   }}
                 >
                   {savingName ? "Saving…" : "Save"}
@@ -324,17 +321,29 @@ export function FeedComposer({
                   marginTop: 2,
                 }}
               >
-                <div
-                  className="font-sans text-[18px]"
-                  style={{
-                    color: TOKENS.panelBorder,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {feed.name}
-                </div>
+                {feed.name ? (
+                  <div
+                    className="font-sans text-[18px]"
+                    style={{
+                      color: TOKENS.panelBorder,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {feed.name}
+                  </div>
+                ) : (
+                  <div
+                    className="font-sans text-[18px]"
+                    style={{
+                      color: TOKENS.hintFg,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    No name
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={startRename}
@@ -347,7 +356,7 @@ export function FeedComposer({
                     cursor: "pointer",
                   }}
                 >
-                  Rename
+                  {feed.name ? "Rename" : "Add name"}
                 </button>
               </div>
             )}
