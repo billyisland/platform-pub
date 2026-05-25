@@ -92,6 +92,13 @@ function hostOf(url: string): string {
   }
 }
 
+const YT_VIDEO_RE =
+  /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/;
+
+function extractYouTubeVideoId(url: string): string | null {
+  return url.match(YT_VIDEO_RE)?.[1] ?? null;
+}
+
 export function ExternalCard({ item }: ExternalCardProps) {
   const { user } = useAuth();
   const openCompose = useCompose((s) => s.open);
@@ -211,20 +218,43 @@ export function ExternalCard({ item }: ExternalCardProps) {
         </div>
       )}
 
-      {/* Video */}
-      {videoMedia && (
-        <a
-          href={viewOriginalUri}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2.5 flex items-center gap-2 border border-grey-200 hover:border-grey-300 transition-colors px-3 py-2 no-underline"
-        >
-          <span className="label-ui text-grey-400">VIDEO</span>
-          <span className="text-ui-xs text-grey-600">
-            Watch on {isAtproto ? "Bluesky" : "source"}
-          </span>
-        </a>
-      )}
+      {/* Video — inline embed for YouTube, link for others */}
+      {videoMedia &&
+        (() => {
+          const ytId =
+            extractYouTubeVideoId(videoMedia.url) ??
+            extractYouTubeVideoId(viewOriginalUri);
+          if (ytId) {
+            return (
+              <div
+                className="mt-2.5 relative overflow-hidden"
+                style={{ paddingBottom: "56.25%" }}
+              >
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${ytId}`}
+                  className="absolute inset-0 w-full h-full"
+                  frameBorder="0"
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            );
+          }
+          return (
+            <a
+              href={viewOriginalUri}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2.5 flex items-center gap-2 border border-grey-200 hover:border-grey-300 transition-colors px-3 py-2 no-underline"
+            >
+              <span className="label-ui text-grey-400">VIDEO</span>
+              <span className="text-ui-xs text-grey-600">
+                Watch on {isAtproto ? "Bluesky" : "source"}
+              </span>
+            </a>
+          );
+        })()}
 
       {/* Audio (podcast episodes) */}
       {audioMedia && (

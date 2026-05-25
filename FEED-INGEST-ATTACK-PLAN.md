@@ -111,7 +111,7 @@ confirm whether the existing adapter covers it; if so, Lemmy sources just use
 
 ---
 
-## Slice 1 — RSS-family enrichment (no schema changes)
+## Slice 1 — RSS-family enrichment (no schema changes) ✅ DONE
 
 These need no new protocol, no new enum value, no new outbound path. They are
 RSS by another name. Each stores as `protocol = 'rss'`, `tier = 'tier4'`.
@@ -174,7 +174,7 @@ dual-writes `interaction_data`. `ExternalCard` renders audio items with
 native `<audio controls preload="none">` player and mono-caps duration
 label.
 
-### 1C: YouTube channel RSS
+### 1C: YouTube channel RSS ✅ DONE
 
 Every channel exposes
 `https://www.youtube.com/feeds/videos.xml?channel_id=…`.
@@ -182,15 +182,16 @@ Free, unlimited, no API key.
 
 **Files:**
 
-- `gateway/src/lib/resolver.ts` — add a `youtube` classification chain
-  in the universal resolver. Detect `youtube.com/channel/`, `/@handle`,
-  `/c/` URLs. For handle/custom URLs, fetch the channel page and extract
-  `channel_id` from the `<link rel="canonical">` or `externalId` in the
-  page source. Return the RSS feed URL as the resolved `sourceUri` with
-  `protocol: 'rss'`.
-- `web/src/components/cards/ExternalVesselCard.tsx` — detect YouTube
-  video URLs in RSS items and render inline video embed via the existing
-  `MediaBlock` YouTube iframe path.
+- `gateway/src/lib/resolver.ts` — `resolveYouTubeChannel()` detects
+  `youtube.com/channel/UC...` (direct ID extraction), `/@handle`, `/c/`,
+  and `/user/` paths (page fetch → channel_id from canonical link,
+  itemprop meta, or embedded JSON). Returns the Atom feed URL as an
+  `rss_feed` match.
+- `web/src/components/feed/ExternalCard.tsx` — `extractYouTubeVideoId()`
+  detects YouTube video URLs in video media attachments or source URIs.
+  YouTube videos render as inline privacy-enhanced iframes
+  (`youtube-nocookie.com/embed/`); non-YouTube videos keep the existing
+  "Watch on source" link.
 
 **Acceptance:** User pastes a YouTube channel URL or `@handle` in the
 subscribe input. Resolver resolves it to the RSS feed URL. Videos appear
@@ -199,24 +200,33 @@ expand.
 
 **Effort:** Half a day (mostly the handle→channel_id resolution).
 
-### 1D: Substack publication RSS
+**Status:** Shipped. Resolver `resolveYouTubeChannel()` handles
+`/channel/`, `/@handle`, `/c/`, `/user/` URL patterns. `ExternalCard`
+renders YouTube videos as inline iframes.
+
+### 1D: Substack publication RSS ✅ DONE
 
 Every Substack publication exposes `/feed`. Plain RSS.
 
 **Files:**
 
-- `gateway/src/lib/resolver.ts` — add a `substack` classification in
-  the resolver. Detect `*.substack.com` URLs and bare `<name>.substack.com`
-  inputs. Append `/feed` to produce the RSS source URI. Also probe
-  custom-domain Substacks by checking for `<link type="application/rss+xml">`
-  in the page head.
+- `gateway/src/lib/resolver.ts` — `resolveSubstackFeed()` detects
+  `*.substack.com` URLs (excluding bare `substack.com`) and constructs
+  the `/feed` URL. Custom-domain Substacks fall through to the generic
+  HTML link discovery path which finds the `<link rel="alternate">`
+  tag.
 
 **Acceptance:** User pastes a Substack URL or `name.substack.com` handle.
 Resolver returns the RSS feed. Posts appear in the following feed.
 
 **Effort:** 2–3 hours.
 
-**Slice 1 total: ~2 days. Large surface-area gain, zero risk.**
+**Status:** Shipped. Resolver `resolveSubstackFeed()` handles
+`*.substack.com` → `/feed` construction. Custom-domain Substacks covered
+by existing HTML link discovery.
+
+**Slice 1 total: ~2 days. Large surface-area gain, zero risk. All four
+sub-slices shipped.**
 
 ---
 
@@ -281,7 +291,7 @@ the platform already runs Postmark/Resend.
 
 ### 3A: Inbound mail infrastructure
 
-**Migration `095_email_ingest.sql`:**
+**Migration `096_email_ingest.sql`:**
 
 ```sql
 -- Per-source ingest mailbox
@@ -516,15 +526,15 @@ ops task.
 
 ## Recommended sequence
 
-| Order | Slice                                                                   | Effort    | Depends on               |
-| ----- | ----------------------------------------------------------------------- | --------- | ------------------------ |
-| 1     | **Slice 0** — schema migration ✅                                       | 1 hour    | —                        |
-| 2     | **Slice 1** — RSS family (JSON Feed ✅, podcasts ✅, YouTube, Substack) | 2 days    | —                        |
-| 3     | **Slice 2** — Lemmy AP compatibility check + wiring                     | 1–3 days  | —                        |
-| 4     | **Slice 3** — Email newsletters                                         | 1 week    | Slice 0                  |
-| 5     | **Slice 4** — Telegram channels                                         | 4 days    | Slice 0                  |
-| 6     | **Slice 5** — Farcaster                                                 | 2–3 weeks | Slice 0 + ops commitment |
-| 7     | **Slice 6** — Matrix                                                    | 2–4 weeks | Slice 0 + ops commitment |
+| Order | Slice                                                                         | Effort    | Depends on               |
+| ----- | ----------------------------------------------------------------------------- | --------- | ------------------------ |
+| 1     | **Slice 0** — schema migration ✅                                             | 1 hour    | —                        |
+| 2     | **Slice 1** — RSS family (JSON Feed ✅, podcasts ✅, YouTube ✅, Substack ✅) | 2 days    | —                        |
+| 3     | **Slice 2** — Lemmy AP compatibility check + wiring                           | 1–3 days  | —                        |
+| 4     | **Slice 3** — Email newsletters                                               | 1 week    | Slice 0                  |
+| 5     | **Slice 4** — Telegram channels                                               | 4 days    | Slice 0                  |
+| 6     | **Slice 5** — Farcaster                                                       | 2–3 weeks | Slice 0 + ops commitment |
+| 7     | **Slice 6** — Matrix                                                          | 2–4 weeks | Slice 0 + ops commitment |
 
 Slices 1 and 2 are independent of Slice 0 (they don't add new enum
 values). Start them in parallel with or before the migration.

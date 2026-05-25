@@ -547,21 +547,28 @@ async function resolveUrl(url: string): Promise<ResolverMatch[]> {
       return []; // Not supported; frontend can show a message
     }
 
-    // 2. Try fetching as RSS/Atom directly
+    // 2. Known content platforms with discoverable RSS
+    const ytFeed = await resolveYouTubeChannel(parsed);
+    if (ytFeed) return [ytFeed];
+
+    const substackFeed = await resolveSubstackFeed(parsed);
+    if (substackFeed) return [substackFeed];
+
+    // 3. Try fetching as RSS/Atom directly
     const rssFeed = await tryRssFetch(url);
     if (rssFeed) {
       matches.push(rssFeed);
       return matches;
     }
 
-    // 3. Try HTML link discovery
+    // 4. Try HTML link discovery
     const discovered = await discoverRssFromHtml(url);
     if (discovered) {
       matches.push(discovered);
       return matches;
     }
 
-    // 4. Try well-known paths
+    // 5. Try well-known paths
     const wellKnown = await tryWellKnownPaths(parsed.origin);
     if (wellKnown) {
       matches.push(wellKnown);
@@ -712,6 +719,78 @@ async function tryWellKnownPaths(
     if (firstKey) wellKnownCache.delete(firstKey);
   }
   return hit;
+}
+
+// =============================================================================
+// YouTube channel → RSS feed
+//
+// YouTube exposes a stable Atom feed per channel at
+// /feeds/videos.xml?channel_id=UC... The channel ID is directly available in
+// /channel/ URLs; for /@handle, /c/, and /user/ paths we fetch the page and
+// extract it from the canonical link or embedded JSON.
+// =============================================================================
+
+const YOUTUBE_HOSTS = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+]);
+
+async function resolveYouTubeChannel(
+  parsed: URL,
+): Promise<ResolverMatch | null> {
+  if (!YOUTUBE_HOSTS.has(parsed.hostname)) return null;
+
+  const channelIdMatch = parsed.pathname.match(/^\/channel\/(UC[\w-]+)/);
+  if (channelIdMatch) {
+    return tryRssFetch(
+      `https://www.youtube.com/feeds/videos.xml?channel_id=${channelIdMatch[1]}`,
+    );
+  }
+
+  const needsPageFetch =
+    /^\/@[\w.-]+\/?$|^\/c\/[\w.-]+\/?$|^\/user\/[\w.-]+\/?$/.test(
+      parsed.pathname,
+    );
+  if (!needsPageFetch) return null;
+
+  try {
+    const response = await safeFetch(parsed.toString(), {
+      headers: { Accept: "text/html" },
+    });
+    if (!response.ok) return null;
+
+    const channelId =
+      response.text.match(/youtube\.com\/channel\/(UC[\w-]+)/)?.[1] ??
+      response.text.match(/itemprop="channelId"\s+content="(UC[\w-]+)"/)?.[1] ??
+      response.text.match(/"channelId"\s*:\s*"(UC[\w-]+)"/)?.[1];
+    if (!channelId) return null;
+
+    return tryRssFetch(
+      `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+// =============================================================================
+// Substack → RSS feed
+//
+// Every Substack publication exposes /feed at its subdomain. Custom-domain
+// Substacks are handled by the generic HTML link discovery path (they carry
+// <link rel="alternate" type="application/rss+xml">).
+// =============================================================================
+
+async function resolveSubstackFeed(parsed: URL): Promise<ResolverMatch | null> {
+  if (
+    !parsed.hostname.endsWith(".substack.com") ||
+    parsed.hostname === "substack.com"
+  ) {
+    return null;
+  }
+
+  return tryRssFetch(`${parsed.origin}/feed`);
 }
 
 // =============================================================================
