@@ -153,8 +153,18 @@ export function Vessel({
       }
       prevScrollTopRef.current = el.scrollTop;
     }
+    function onWheel(e: WheelEvent) {
+      if (!el) return;
+      if (el.scrollTop === 0 && e.deltaY < 0) {
+        onCaughtUpDismiss!();
+      }
+    }
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
+    };
   }, [caughtUp, onCaughtUpDismiss]);
 
   useEffect(() => {

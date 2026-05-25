@@ -869,7 +869,7 @@ Feeds retire the clunky name-label nameplate in favour of a numeral system. Each
 
 **Save system removed.** The entire save system (slice 20) retired — migration 080 `feed_saves` table, four gateway endpoints, `savedIds` tracking in `WorkspaceView`, `savedView` toggle on `Vessel`, Save/Saved button on `CardActions`. See updated slice 20.
 
-**Caught-up tile refined.** `EmptyFeedTile` `caught-up` variant updated: copy reads "You're caught up. Add new sources or strengthen current ones to see more." Both ADD SOURCES and DISMISS buttons dismiss the tile (parent-owned state). Scrolling up after the tile appears also dismisses it (scroll event listener in `Vessel.tsx` detects decreasing `scrollTop`). Tile only reappears after the next pull-to-refresh that finds no new content.
+**Caught-up tile refined.** `EmptyFeedTile` `caught-up` variant updated: copy reads "You're caught up. Add new sources or strengthen current ones to see more." Both ADD SOURCES and DISMISS buttons dismiss the tile (parent-owned state). Scrolling up after the tile appears also dismisses it (`Vessel.tsx` uses a scroll listener for sized vessels + a wheel listener for default-height vessels where `scrollBodyRef` has no overflow scrolling). Tile only reappears after the next pull-to-refresh that finds no new content.
 
 ## Deferred (TODO in code, not blocking the experiment)
 
