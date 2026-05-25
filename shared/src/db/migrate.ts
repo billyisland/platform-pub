@@ -1,7 +1,7 @@
-import 'dotenv/config'
-import fs from 'fs'
-import path from 'path'
-import pg from 'pg'
+import "dotenv/config";
+import fs from "fs";
+import path from "path";
+import pg from "pg";
 
 // =============================================================================
 // Migration Runner
@@ -23,14 +23,14 @@ import pg from 'pg'
 // migrations after that.
 // =============================================================================
 
-const { Pool } = pg
+const { Pool } = pg;
 
 async function migrate() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-  })
+  });
 
-  const client = await pool.connect()
+  const client = await pool.connect();
 
   try {
     // Ensure migrations tracking table exists
@@ -40,65 +40,82 @@ async function migrate() {
         filename TEXT NOT NULL UNIQUE,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
-    `)
+    `);
 
     // Get already-applied migrations
     const { rows: applied } = await client.query<{ filename: string }>(
-      'SELECT filename FROM _migrations ORDER BY filename'
-    )
-    const appliedSet = new Set(applied.map((r) => r.filename))
+      "SELECT filename FROM _migrations ORDER BY filename",
+    );
+    const appliedSet = new Set(applied.map((r) => r.filename));
 
     // Find migration files
-    const migrationsDir = path.resolve(process.cwd(), 'migrations')
+    const migrationsDir = path.resolve(process.cwd(), "migrations");
 
     if (!fs.existsSync(migrationsDir)) {
-      console.log('No migrations/ directory found — nothing to run.')
-      return
+      console.log("No migrations/ directory found — nothing to run.");
+      return;
     }
 
-    const files = fs.readdirSync(migrationsDir)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
+    const files = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
 
-    const pending = files.filter((f) => !appliedSet.has(f))
+    const pending = files.filter((f) => !appliedSet.has(f));
 
     if (pending.length === 0) {
-      console.log('All migrations already applied.')
-      return
+      console.log("All migrations already applied.");
+      return;
     }
 
-    console.log(`Found ${pending.length} pending migration(s):`)
+    console.log(`Found ${pending.length} pending migration(s):`);
 
     for (const filename of pending) {
-      const filepath = path.join(migrationsDir, filename)
-      const sql = fs.readFileSync(filepath, 'utf8')
+      const filepath = path.join(migrationsDir, filename);
+      const sql = fs.readFileSync(filepath, "utf8");
 
-      console.log(`  Applying: ${filename}`)
+      console.log(`  Applying: ${filename}`);
 
-      await client.query('BEGIN')
-      try {
-        await client.query(sql)
-        await client.query(
-          'INSERT INTO _migrations (filename) VALUES ($1)',
-          [filename]
-        )
-        await client.query('COMMIT')
-        console.log(`  ✓ ${filename}`)
-      } catch (err) {
-        await client.query('ROLLBACK')
-        console.error(`  ✗ ${filename} — rolled back`)
-        throw err
+      const needsNoTxn = /ALTER\s+TYPE\s+\S+\s+ADD\s+VALUE/i.test(sql);
+
+      if (needsNoTxn) {
+        try {
+          await client.query(sql);
+          await client.query("INSERT INTO _migrations (filename) VALUES ($1)", [
+            filename,
+          ]);
+          console.log(`  ✓ ${filename} (no-transaction: ALTER TYPE ADD VALUE)`);
+        } catch (err) {
+          console.error(
+            `  ✗ ${filename} — failed (no-transaction, cannot rollback)`,
+          );
+          throw err;
+        }
+      } else {
+        await client.query("BEGIN");
+        try {
+          await client.query(sql);
+          await client.query("INSERT INTO _migrations (filename) VALUES ($1)", [
+            filename,
+          ]);
+          await client.query("COMMIT");
+          console.log(`  ✓ ${filename}`);
+        } catch (err) {
+          await client.query("ROLLBACK");
+          console.error(`  ✗ ${filename} — rolled back`);
+          throw err;
+        }
       }
     }
 
-    console.log(`\nDone. ${pending.length} migration(s) applied.`)
+    console.log(`\nDone. ${pending.length} migration(s) applied.`);
   } finally {
-    client.release()
-    await pool.end()
+    client.release();
+    await pool.end();
   }
 }
 
 migrate().catch((err) => {
-  console.error('Migration failed:', err)
-  process.exit(1)
-})
+  console.error("Migration failed:", err);
+  process.exit(1);
+});

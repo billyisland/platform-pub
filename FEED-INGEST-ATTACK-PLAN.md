@@ -67,21 +67,22 @@ Every adapter touches the same set of files. This is the definitive list:
 
 ## Slice 0 — Schema migration (prerequisite, blocks everything) ✅ DONE
 
-One migration that extends the enum and CHECK for every protocol this plan
-will add. Do it once so adapter work is never blocked on a migration.
+Two migrations: enum values first (must commit before they can be referenced),
+then the CHECK constraint update. The migration runner auto-detects
+`ALTER TYPE ... ADD VALUE` and runs those migrations outside a transaction.
 
-**Migration `094_external_protocol_expansion.sql`:**
+**Migration `094_external_protocol_expansion.sql`** (no-transaction):
 
 ```sql
--- New protocol values
 ALTER TYPE external_protocol ADD VALUE IF NOT EXISTS 'farcaster';
 ALTER TYPE external_protocol ADD VALUE IF NOT EXISTS 'matrix';
 ALTER TYPE external_protocol ADD VALUE IF NOT EXISTS 'telegram';
 ALTER TYPE external_protocol ADD VALUE IF NOT EXISTS 'email';
+```
 
--- Replace the CHECK with one that covers all protocols.
--- (rss stays tier4; telegram and email are unverified → tier4;
---  farcaster has crypto authorship → tier3; matrix → tier4)
+**Migration `095_external_protocol_check_constraint.sql`:**
+
+```sql
 ALTER TABLE external_items DROP CONSTRAINT protocol_tier_consistency;
 ALTER TABLE external_items ADD CONSTRAINT protocol_tier_consistency CHECK (
   (protocol = 'nostr_external' AND tier = 'tier2')
@@ -100,8 +101,9 @@ enum extension automatically covers outbound. No separate migration needed.
 
 **Effort:** 1 hour. **Risk:** None — additive enum values, no data change.
 
-**Status:** Shipped. Migration `094_external_protocol_expansion.sql` + gateway
-stub rejection + `schema.sql` sync.
+**Status:** Shipped. Migrations 094 + 095 + gateway stub rejection +
+`schema.sql` sync. Split into two migrations because PostgreSQL requires
+`ALTER TYPE ADD VALUE` to commit before new values can be used in constraints.
 
 **Do not add a `lemmy` enum value.** Lemmy speaks ActivityPub. Slice 2 will
 confirm whether the existing adapter covers it; if so, Lemmy sources just use
