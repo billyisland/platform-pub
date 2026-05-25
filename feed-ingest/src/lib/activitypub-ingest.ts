@@ -74,13 +74,15 @@ export async function insertActivityPubItem(
       author_name, author_avatar,
       title, content_preview,
       tier, published_at,
-      source_protocol, source_item_uri, source_id, media
+      source_protocol, source_item_uri, source_id, media,
+      is_reply
     ) VALUES (
       'external', $1,
       $2, $3,
       $4, $5,
       'tier3', $6,
-      'activitypub', $7, $8, $9
+      'activitypub', $7, $8, $9,
+      $10
     )
     ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING
   `,
@@ -94,6 +96,7 @@ export async function insertActivityPubItem(
       item.sourceItemUri,
       source.id,
       JSON.stringify(item.media),
+      item.sourceReplyUri != null,
     ],
   );
 

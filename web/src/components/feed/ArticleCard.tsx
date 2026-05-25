@@ -1,108 +1,133 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import type { ArticleEvent } from '../../lib/ndk'
-import { useWriterName } from '../../hooks/useWriterName'
-import { useAuth } from '../../stores/auth'
-import { replies as repliesApi } from '../../lib/api'
-import { VoteControls } from '../ui/VoteControls'
-import { BookmarkButton } from '../ui/BookmarkButton'
-import { ShareButton } from '../ui/ShareButton'
-import type { VoteTally, MyVoteCount } from '../../lib/api'
-import type { QuoteTarget } from '../../lib/publishNote'
-import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
-import { TrustPip } from '../ui/TrustPip'
-import { useCompose } from '../../stores/compose'
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { ArticleEvent } from "../../lib/ndk";
+import { useWriterName } from "../../hooks/useWriterName";
+import { useAuth } from "../../stores/auth";
+import { replies as repliesApi } from "../../lib/api";
+import { VoteControls } from "../ui/VoteControls";
+import { BookmarkButton } from "../ui/BookmarkButton";
+import { ShareButton } from "../ui/ShareButton";
+import type { VoteTally, MyVoteCount } from "../../lib/api";
+import type { QuoteTarget } from "../../lib/publishNote";
+import {
+  formatDateRelative,
+  truncateText,
+  stripMarkdown,
+} from "../../lib/format";
+import { TrustPip } from "../ui/TrustPip";
+import { useCompose } from "../../stores/compose";
 
 interface ArticleCardProps {
-  article: ArticleEvent
-  onQuote?: (target: QuoteTarget) => void
-  voteTally?: VoteTally
-  myVoteCounts?: MyVoteCount
-  isBookmarked?: boolean
-  twoUp?: boolean
+  article: ArticleEvent;
+  onQuote?: (target: QuoteTarget) => void;
+  voteTally?: VoteTally;
+  myVoteCounts?: MyVoteCount;
+  isBookmarked?: boolean;
+  twoUp?: boolean;
 }
 
-export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookmarked, twoUp = false }: ArticleCardProps) {
-  const { user } = useAuth()
-  const router = useRouter()
-  const writerInfo = useWriterName(article.pubkey)
-  const openCompose = useCompose((s) => s.open)
-  const [replyCount, setReplyCount] = useState<number | null>(null)
-  const wordCount = article.content.split(/\s+/).length
-  const readMinutes = Math.max(1, Math.round(wordCount / 200))
-  const sizeTier = article.sizeTier ?? 'standard'
-  const isBrief = sizeTier === 'brief'
-  const excerpt = isBrief ? '' : (article.summary || truncateText(stripMarkdown(article.content), 200))
+export function ArticleCard({
+  article,
+  onQuote,
+  voteTally,
+  myVoteCounts,
+  isBookmarked,
+  twoUp = false,
+}: ArticleCardProps) {
+  const { user } = useAuth();
+  const router = useRouter();
+  const writerInfo = useWriterName(article.pubkey);
+  const openCompose = useCompose((s) => s.open);
+  const [replyCount, setReplyCount] = useState<number | null>(null);
+  const wordCount = article.content.split(/\s+/).length;
+  const readMinutes = Math.max(1, Math.round(wordCount / 200));
+  const sizeTier = article.sizeTier ?? "standard";
+  const isBrief = sizeTier === "brief";
+  const excerpt = isBrief
+    ? ""
+    : article.summary || truncateText(stripMarkdown(article.content), 200);
 
   useEffect(() => {
-    repliesApi.getForTarget(article.id).then(d => setReplyCount(d.totalCount)).catch(err => console.error('Failed to load reply count', err))
-  }, [article.id])
+    repliesApi
+      .getForTarget(article.id)
+      .then((d) => setReplyCount(d.totalCount))
+      .catch((err) => console.error("Failed to load reply count", err));
+  }, [article.id]);
 
-  function handleCardClick() {
-    router.push(`/article/${article.dTag}`)
-  }
+  const [expanded, setExpanded] = useState(false);
+
+  const handleBodyExpand = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpanded((prev) => !prev);
+  }, []);
 
   function handleQuote(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault();
+    e.stopPropagation();
     onQuote?.({
       eventId: article.id,
       eventKind: 30023,
       authorPubkey: article.pubkey,
       previewTitle: article.title,
       previewContent: article.summary,
-      previewAuthorName: writerInfo?.displayName ?? article.pubkey.slice(0, 8) + '\u2026',
-    })
+      previewAuthorName:
+        writerInfo?.displayName ?? article.pubkey.slice(0, 8) + "\u2026",
+    });
   }
 
   function handleReply(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    openCompose('reply', {
+    e.preventDefault();
+    e.stopPropagation();
+    openCompose("reply", {
       eventId: article.id,
       eventKind: 30023,
       authorPubkey: article.pubkey,
       previewTitle: article.title,
       previewContent: article.summary,
-      previewAuthorName: writerInfo?.displayName ?? article.pubkey.slice(0, 8) + '\u2026',
-    })
+      previewAuthorName:
+        writerInfo?.displayName ?? article.pubkey.slice(0, 8) + "\u2026",
+    });
   }
 
-  const authorHref = writerInfo?.username ? `/${writerInfo.username}` : null
-  const isPaid = article.isPaywalled
-  const barColor = isPaid ? '#B5242A' : '#111111'
+  const authorHref = writerInfo?.username ? `/${writerInfo.username}` : null;
+  const isPaid = article.isPaywalled;
+  const barColor = isPaid ? "#B5242A" : "#111111";
 
   // Per-tier typography. Two-up briefs shrink byline/action to 10.5px per spec §4a.
   const headlineClass =
-    sizeTier === 'lead'     ? 'text-[30px]' :
-    sizeTier === 'brief'    ? 'text-[20px]' :
-                              'text-[22px]'
-  const excerptSize = sizeTier === 'lead' ? 'text-[16px]' : 'text-[15.5px]'
-  const metaSize = twoUp ? 'text-[10.5px]' : 'text-[11px]'
-  const showExtendedActions = !twoUp // share, bookmark, quote only on full-width cards
+    sizeTier === "lead"
+      ? "text-[30px]"
+      : sizeTier === "brief"
+        ? "text-[20px]"
+        : "text-[22px]";
+  const excerptSize = sizeTier === "lead" ? "text-[16px]" : "text-[15.5px]";
+  const metaSize = twoUp ? "text-[10.5px]" : "text-[11px]";
+  const showExtendedActions = !twoUp; // share, bookmark, quote only on full-width cards
 
   return (
     <div
-      onClick={handleCardClick}
-      className="group cursor-pointer"
-      style={{ borderLeft: `4px solid ${barColor}`, paddingLeft: '24px' }}
+      className="group"
+      style={{ borderLeft: `4px solid ${barColor}`, paddingLeft: "24px" }}
     >
       {/* Byline — mono-caps, grey-600 */}
-      <div className={`flex items-center gap-2 mb-3 font-mono ${metaSize} uppercase tracking-[0.06em] text-grey-600`}>
+      <div
+        className={`flex items-center gap-2 mb-3 font-mono ${metaSize} uppercase tracking-[0.06em] text-grey-600`}
+      >
         <TrustPip status={article.pipStatus} />
         {authorHref ? (
           <Link
             href={authorHref}
-            onClick={(e) => e.stopPropagation()}
             className="hover:text-black transition-colors"
           >
-            {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}
+            {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + "..."}
           </Link>
         ) : (
-          <span>{writerInfo?.displayName ?? article.pubkey.slice(0, 12) + '...'}</span>
+          <span>
+            {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + "..."}
+          </span>
         )}
         <span>·</span>
         <time
@@ -114,46 +139,66 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
         {isPaid && article.pricePence && (
           <>
             <span>·</span>
-            <span className="tracking-[0.02em] text-crimson">£{(article.pricePence / 100).toFixed(2)}</span>
+            <span className="tracking-[0.02em] text-crimson">
+              £{(article.pricePence / 100).toFixed(2)}
+            </span>
           </>
         )}
       </div>
 
-      {/* Headline — Literata italic */}
-      <h2 className={`font-serif ${headlineClass} font-medium italic text-black leading-[1.18] tracking-[-0.02em] ${isBrief ? 'mb-3' : 'mb-2'} group-hover:text-crimson-dark transition-colors`}>
+      {/* Headline — Literata italic, navigates to article */}
+      <Link
+        href={`/article/${article.dTag}`}
+        className={`block font-serif ${headlineClass} font-medium italic text-black leading-[1.18] tracking-[-0.02em] ${isBrief ? "mb-3" : "mb-2"} hover:text-crimson-dark transition-colors cursor-pointer`}
+      >
         {article.title}
-      </h2>
+      </Link>
 
-      {/* Excerpt — Literata roman (omitted for briefs) */}
-      {!isBrief && (
-        <p className={`font-serif ${excerptSize} text-grey-600 leading-[1.65] mb-4`} style={{ maxWidth: '540px' }}>
-          {excerpt}
-        </p>
-      )}
+      {/* Body — click to expand neighbourhood (Phase 2) */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+      <div onClick={handleBodyExpand} className="cursor-pointer">
+        {/* Excerpt — Literata roman (omitted for briefs) */}
+        {!isBrief && (
+          <p
+            className={`font-serif ${excerptSize} text-grey-600 leading-[1.65] mb-4`}
+            style={{ maxWidth: "540px" }}
+          >
+            {excerpt}
+          </p>
+        )}
 
-      {/* Tags — omitted for briefs */}
-      {!isBrief && article.topicTags && article.topicTags.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-3 label-ui text-grey-300">
-          {article.topicTags.map((tag, i) => (
-            <span key={tag} className="flex items-center gap-1.5">
-              {i > 0 && <span>&middot;</span>}
-              <Link
-                href={`/tag/${tag}`}
-                onClick={e => e.stopPropagation()}
-                className="hover:text-black transition-colors"
-              >
-                {tag}
-              </Link>
-            </span>
-          ))}
-        </div>
-      )}
+        {/* Tags — omitted for briefs */}
+        {!isBrief && article.topicTags && article.topicTags.length > 0 && (
+          <div className="flex items-center gap-1.5 mb-3 label-ui text-grey-300">
+            {article.topicTags.map((tag, i) => (
+              <span key={tag} className="flex items-center gap-1.5">
+                {i > 0 && <span>&middot;</span>}
+                <Link
+                  href={`/tag/${tag}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="hover:text-black transition-colors"
+                >
+                  {tag}
+                </Link>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* End body expand region */}
 
       {/* Action row — mono-caps, grey-600 */}
-      <div className={`flex items-center gap-3 font-mono ${metaSize} uppercase tracking-[0.02em] text-grey-600`}>
+      <div
+        className={`flex items-center gap-3 font-mono ${metaSize} uppercase tracking-[0.02em] text-grey-600`}
+      >
         <span>{readMinutes} min read</span>
         {replyCount !== null && replyCount > 0 && (
-          <><span className="opacity-50">·</span><span>{replyCount} {replyCount !== 1 ? 'replies' : 'reply'}</span></>
+          <>
+            <span className="opacity-50">·</span>
+            <span>
+              {replyCount} {replyCount !== 1 ? "replies" : "reply"}
+            </span>
+          </>
         )}
         <span className="flex-1" />
         {user && (
@@ -172,7 +217,7 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
             Quote
           </button>
         )}
-        <span onClick={e => e.stopPropagation()}>
+        <span onClick={(e) => e.stopPropagation()}>
           <VoteControls
             targetEventId={article.id}
             targetKind={30023}
@@ -183,15 +228,21 @@ export function ArticleCard({ article, onQuote, voteTally, myVoteCounts, isBookm
         </span>
         {showExtendedActions && (
           <>
-            <span onClick={e => e.stopPropagation()}>
-              <BookmarkButton articleId={article.id} initialBookmarked={isBookmarked} />
+            <span onClick={(e) => e.stopPropagation()}>
+              <BookmarkButton
+                articleId={article.id}
+                initialBookmarked={isBookmarked}
+              />
             </span>
-            <span onClick={e => e.stopPropagation()}>
-              <ShareButton url={`/article/${article.dTag}`} title={article.title} />
+            <span onClick={(e) => e.stopPropagation()}>
+              <ShareButton
+                url={`/article/${article.dTag}`}
+                title={article.title}
+              />
             </span>
           </>
         )}
       </div>
     </div>
-  )
+  );
 }

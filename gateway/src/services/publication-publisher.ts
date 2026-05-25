@@ -1,10 +1,13 @@
-import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { signEvent } from '../lib/key-custody-client.js'
-import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
-import logger from '@platform-pub/shared/lib/logger.js'
-import { generateDTag } from '@platform-pub/shared/lib/slug.js'
-import { truncatePreview } from '@platform-pub/shared/lib/text.js'
-export { generateDTag }
+import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
+import { signEvent } from "../lib/key-custody-client.js";
+import {
+  enqueueRelayPublish,
+  type SignedNostrEvent,
+} from "@platform-pub/shared/lib/relay-outbox.js";
+import logger from "@platform-pub/shared/lib/logger.js";
+import { generateDTag } from "@platform-pub/shared/lib/slug.js";
+import { truncatePreview } from "@platform-pub/shared/lib/text.js";
+export { generateDTag };
 
 // =============================================================================
 // Publication Publisher — server-side article publishing pipeline
@@ -20,56 +23,62 @@ export { generateDTag }
 // =============================================================================
 
 interface PublishToPublicationInput {
-  publicationId: string
-  authorId: string
-  authorPubkey: string
-  title: string
-  summary?: string
-  content: string          // full markdown (free content for paywalled, all content for free)
-  fullContent: string      // complete content including paywall body
-  accessMode: 'public' | 'paywalled'
-  pricePence?: number
-  gatePositionPct?: number
-  showOnWriterProfile: boolean
-  canPublish: boolean
-  existingDTag?: string
-  coverImageUrl?: string | null
+  publicationId: string;
+  authorId: string;
+  authorPubkey: string;
+  title: string;
+  summary?: string;
+  content: string; // full markdown (free content for paywalled, all content for free)
+  fullContent: string; // complete content including paywall body
+  accessMode: "public" | "paywalled";
+  pricePence?: number;
+  gatePositionPct?: number;
+  showOnWriterProfile: boolean;
+  canPublish: boolean;
+  existingDTag?: string;
+  coverImageUrl?: string | null;
 }
 
 interface PublishToPublicationResult {
-  articleId: string
-  status: string
-  nostrEventId?: string
-  dTag: string
+  articleId: string;
+  status: string;
+  nostrEventId?: string;
+  dTag: string;
 }
 
 export async function publishToPublication(
-  input: PublishToPublicationInput
+  input: PublishToPublicationInput,
 ): Promise<PublishToPublicationResult> {
-  const dTag = input.existingDTag ?? generateDTag(input.title)
+  const dTag = input.existingDTag ?? generateDTag(input.title);
 
   // Fetch publication for its nostr pubkey and pricing config
-  const { rows: pubs } = await pool.query<{ nostr_pubkey: string; default_article_price_pence: number; article_price_mode: string }>(
-    'SELECT nostr_pubkey, default_article_price_pence, article_price_mode FROM publications WHERE id = $1',
-    [input.publicationId]
-  )
-  if (pubs.length === 0) throw new Error('Publication not found')
-  const pub = pubs[0]
+  const { rows: pubs } = await pool.query<{
+    nostr_pubkey: string;
+    default_article_price_pence: number;
+    article_price_mode: string;
+  }>(
+    "SELECT nostr_pubkey, default_article_price_pence, article_price_mode FROM publications WHERE id = $1",
+    [input.publicationId],
+  );
+  if (pubs.length === 0) throw new Error("Publication not found");
+  const pub = pubs[0];
 
-  const wordCount = input.fullContent.split(/\s+/).length
+  const wordCount = input.fullContent.split(/\s+/).length;
 
   function resolveDefaultPrice(): number {
-    if (pub.article_price_mode === 'per_1000_words') {
-      return Math.floor(wordCount / 1000) * pub.default_article_price_pence
+    if (pub.article_price_mode === "per_1000_words") {
+      return Math.floor(wordCount / 1000) * pub.default_article_price_pence;
     }
-    return pub.default_article_price_pence
+    return pub.default_article_price_pence;
   }
 
-  const pricePence = input.pricePence ?? (input.accessMode === 'paywalled' ? resolveDefaultPrice() : null)
+  const pricePence =
+    input.pricePence ??
+    (input.accessMode === "paywalled" ? resolveDefaultPrice() : null);
 
   // If the author can't publish, save as submitted (no Nostr event)
   if (!input.canPublish) {
-    const slug = dTag
+    const slug = dTag;
 
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO articles (
@@ -85,7 +94,7 @@ export async function publishToPublication(
        RETURNING id`,
       [
         input.authorId,
-        `pending-${dTag}`,  // placeholder event ID — replaced on publish
+        `pending-${dTag}`, // placeholder event ID — replaced on publish
         dTag,
         input.title,
         slug,
@@ -98,8 +107,8 @@ export async function publishToPublication(
         input.publicationId,
         input.showOnWriterProfile,
         input.coverImageUrl ?? null,
-      ]
-    )
+      ],
+    );
 
     // Notify members with can_publish
     await pool.query(
@@ -109,35 +118,42 @@ export async function publishToPublication(
        WHERE pm.publication_id = $3 AND pm.can_publish = TRUE
          AND pm.removed_at IS NULL AND pm.account_id != $1
        ON CONFLICT DO NOTHING`,
-      [input.authorId, rows[0].id, input.publicationId]
-    )
+      [input.authorId, rows[0].id, input.publicationId],
+    );
 
-    logger.info({ publicationId: input.publicationId, articleId: rows[0].id, author: input.authorId }, 'Article submitted for review')
-    return { articleId: rows[0].id, status: 'submitted', dTag }
+    logger.info(
+      {
+        publicationId: input.publicationId,
+        articleId: rows[0].id,
+        author: input.authorId,
+      },
+      "Article submitted for review",
+    );
+    return { articleId: rows[0].id, status: "submitted", dTag };
   }
 
   // Author can publish — full pipeline
   const tags: string[][] = [
-    ['d', dTag],
-    ['title', input.title],
-    ['published_at', String(Math.floor(Date.now() / 1000))],
-    ['p', input.authorPubkey, '', 'author'],
-    ['p', pub.nostr_pubkey, '', 'publisher'],
-  ]
+    ["d", dTag],
+    ["title", input.title],
+    ["published_at", String(Math.floor(Date.now() / 1000))],
+    ["p", input.authorPubkey, "", "author"],
+    ["p", pub.nostr_pubkey, "", "publisher"],
+  ];
 
   if (input.summary) {
-    tags.push(['summary', input.summary])
+    tags.push(["summary", input.summary]);
   }
 
   if (input.coverImageUrl) {
-    tags.push(['image', input.coverImageUrl])
+    tags.push(["image", input.coverImageUrl]);
   }
 
-  if (input.accessMode === 'paywalled' && pricePence) {
+  if (input.accessMode === "paywalled" && pricePence) {
     tags.push(
-      ['price', String(pricePence), 'GBP'],
-      ['gate', String(input.gatePositionPct ?? 50)]
-    )
+      ["price", String(pricePence), "GBP"],
+      ["gate", String(input.gatePositionPct ?? 50)],
+    );
   }
 
   const eventTemplate = {
@@ -145,13 +161,17 @@ export async function publishToPublication(
     content: input.content,
     tags,
     created_at: Math.floor(Date.now() / 1000),
-  }
+  };
 
   // Sign with the publication's key (IO to key-custody — stays outside the txn)
-  const signed = await signEvent(input.publicationId, eventTemplate, 'publication')
+  const signed = await signEvent(
+    input.publicationId,
+    eventTemplate,
+    "publication",
+  );
 
   // Index in DB + dual-write feed_items + enqueue relay publish atomically
-  const slug = dTag
+  const slug = dTag;
 
   const articleId = await withTransaction(async (client) => {
     const { rows } = await client.query<{ id: string }>(
@@ -193,30 +213,37 @@ export async function publishToPublication(
         input.publicationId,
         input.showOnWriterProfile,
         input.coverImageUrl ?? null,
-      ]
-    )
+      ],
+    );
 
-    const artId = rows[0].id
+    const artId = rows[0].id;
 
     // Dual-write: upsert feed_items
-    const { rows: [author] } = await client.query<{ display_name: string | null; avatar_blossom_url: string | null; username: string | null }>(
+    const {
+      rows: [author],
+    } = await client.query<{
+      display_name: string | null;
+      avatar_blossom_url: string | null;
+      username: string | null;
+    }>(
       `SELECT display_name, avatar_blossom_url, username FROM accounts WHERE id = $1`,
-      [input.authorId]
-    )
+      [input.authorId],
+    );
     const mediaJson = input.coverImageUrl
-      ? JSON.stringify([{ type: 'image', url: input.coverImageUrl }])
-      : null
-    await client.query(`
+      ? JSON.stringify([{ type: "image", url: input.coverImageUrl }])
+      : null;
+    await client.query(
+      `
       INSERT INTO feed_items (
         item_type, article_id, author_id,
         author_name, author_avatar, author_username,
         title, content_preview, nostr_event_id,
-        media, tier, published_at
+        media, tier, published_at, is_reply
       ) VALUES (
         'article', $1, $2,
         $3, $4, $5,
         $6, $7, $8,
-        $9, 'tier1', now()
+        $9, 'tier1', now(), FALSE
       )
       ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
         title = EXCLUDED.title,
@@ -225,39 +252,45 @@ export async function publishToPublication(
         author_name = EXCLUDED.author_name,
         author_avatar = EXCLUDED.author_avatar,
         media = EXCLUDED.media
-    `, [
-      artId, input.authorId,
-      author?.display_name ?? author?.username ?? 'Unknown',
-      author?.avatar_blossom_url ?? null,
-      author?.username ?? null,
-      input.title,
-      truncatePreview(input.content),
-      signed.id,
-      mediaJson,
-    ])
+    `,
+      [
+        artId,
+        input.authorId,
+        author?.display_name ?? author?.username ?? "Unknown",
+        author?.avatar_blossom_url ?? null,
+        author?.username ?? null,
+        input.title,
+        truncatePreview(input.content),
+        signed.id,
+        mediaJson,
+      ],
+    );
 
     await enqueueRelayPublish(client, {
-      entityType: 'article',
+      entityType: "article",
       entityId: artId,
       signedEvent: signed as SignedNostrEvent,
-    })
+    });
 
-    return artId
-  })
+    return artId;
+  });
 
-  logger.info({
-    publicationId: input.publicationId,
-    articleId,
-    nostrEventId: signed.id,
-    author: input.authorId,
-  }, 'Publication article published')
+  logger.info(
+    {
+      publicationId: input.publicationId,
+      articleId,
+      nostrEventId: signed.id,
+      author: input.authorId,
+    },
+    "Publication article published",
+  );
 
   return {
     articleId,
-    status: 'published',
+    status: "published",
     nostrEventId: signed.id,
     dTag,
-  }
+  };
 }
 
 // =============================================================================
@@ -267,66 +300,75 @@ export async function publishToPublication(
 export async function approveAndPublishArticle(
   publicationId: string,
   articleId: string,
-  editorId: string
+  editorId: string,
 ): Promise<{ nostrEventId: string }> {
   // Fetch the article and publication
   const { rows: articles } = await pool.query<{
-    writer_id: string
-    title: string
-    summary: string | null
-    content_free: string
-    access_mode: string
-    price_pence: number | null
-    gate_position_pct: number | null
-    nostr_d_tag: string
-    show_on_writer_profile: boolean
-    cover_image_url: string | null
+    writer_id: string;
+    title: string;
+    summary: string | null;
+    content_free: string;
+    access_mode: string;
+    price_pence: number | null;
+    gate_position_pct: number | null;
+    nostr_d_tag: string;
+    show_on_writer_profile: boolean;
+    cover_image_url: string | null;
   }>(
     `SELECT writer_id, title, summary, content_free, access_mode, price_pence,
             gate_position_pct, nostr_d_tag, show_on_writer_profile, cover_image_url
      FROM articles WHERE id = $1 AND publication_id = $2`,
-    [articleId, publicationId]
-  )
-  if (articles.length === 0) throw new Error('Article not found')
-  const article = articles[0]
+    [articleId, publicationId],
+  );
+  if (articles.length === 0) throw new Error("Article not found");
+  const article = articles[0];
 
   const { rows: pubs } = await pool.query<{ nostr_pubkey: string }>(
-    'SELECT nostr_pubkey FROM publications WHERE id = $1',
-    [publicationId]
-  )
-  const pub = pubs[0]
+    "SELECT nostr_pubkey FROM publications WHERE id = $1",
+    [publicationId],
+  );
+  const pub = pubs[0];
 
-  const { rows: authors } = await pool.query<{ nostr_pubkey: string; display_name: string | null; avatar_blossom_url: string | null; username: string | null }>(
-    'SELECT nostr_pubkey, display_name, avatar_blossom_url, username FROM accounts WHERE id = $1',
-    [article.writer_id]
-  )
-  const authorAccount = authors[0]
-  const authorPubkey = authorAccount.nostr_pubkey
+  const { rows: authors } = await pool.query<{
+    nostr_pubkey: string;
+    display_name: string | null;
+    avatar_blossom_url: string | null;
+    username: string | null;
+  }>(
+    "SELECT nostr_pubkey, display_name, avatar_blossom_url, username FROM accounts WHERE id = $1",
+    [article.writer_id],
+  );
+  const authorAccount = authors[0];
+  const authorPubkey = authorAccount.nostr_pubkey;
 
   // Build and sign event
   const tags: string[][] = [
-    ['d', article.nostr_d_tag],
-    ['title', article.title],
-    ['published_at', String(Math.floor(Date.now() / 1000))],
-    ['p', authorPubkey, '', 'author'],
-    ['p', pub.nostr_pubkey, '', 'publisher'],
-  ]
+    ["d", article.nostr_d_tag],
+    ["title", article.title],
+    ["published_at", String(Math.floor(Date.now() / 1000))],
+    ["p", authorPubkey, "", "author"],
+    ["p", pub.nostr_pubkey, "", "publisher"],
+  ];
 
-  if (article.summary) tags.push(['summary', article.summary])
-  if (article.cover_image_url) tags.push(['image', article.cover_image_url])
-  if (article.access_mode === 'paywalled' && article.price_pence) {
+  if (article.summary) tags.push(["summary", article.summary]);
+  if (article.cover_image_url) tags.push(["image", article.cover_image_url]);
+  if (article.access_mode === "paywalled" && article.price_pence) {
     tags.push(
-      ['price', String(article.price_pence), 'GBP'],
-      ['gate', String(article.gate_position_pct ?? 50)]
-    )
+      ["price", String(article.price_pence), "GBP"],
+      ["gate", String(article.gate_position_pct ?? 50)],
+    );
   }
 
-  const signed = await signEvent(publicationId, {
-    kind: 30023,
-    content: article.content_free ?? '',
-    tags,
-    created_at: Math.floor(Date.now() / 1000),
-  }, 'publication')
+  const signed = await signEvent(
+    publicationId,
+    {
+      kind: 30023,
+      content: article.content_free ?? "",
+      tags,
+      created_at: Math.floor(Date.now() / 1000),
+    },
+    "publication",
+  );
 
   // Update DB + dual-write feed_items + enqueue relay publish atomically
   await withTransaction(async (client) => {
@@ -334,24 +376,25 @@ export async function approveAndPublishArticle(
       `UPDATE articles
        SET nostr_event_id = $1, publication_article_status = 'published', published_at = now()
        WHERE id = $2`,
-      [signed.id, articleId]
-    )
+      [signed.id, articleId],
+    );
 
     // Dual-write: upsert feed_items
     const mediaJson = article.cover_image_url
-      ? JSON.stringify([{ type: 'image', url: article.cover_image_url }])
-      : null
-    await client.query(`
+      ? JSON.stringify([{ type: "image", url: article.cover_image_url }])
+      : null;
+    await client.query(
+      `
       INSERT INTO feed_items (
         item_type, article_id, author_id,
         author_name, author_avatar, author_username,
         title, content_preview, nostr_event_id,
-        media, tier, published_at
+        media, tier, published_at, is_reply
       ) VALUES (
         'article', $1, $2,
         $3, $4, $5,
         $6, $7, $8,
-        $9, 'tier1', now()
+        $9, 'tier1', now(), FALSE
       )
       ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
         title = EXCLUDED.title,
@@ -361,33 +404,38 @@ export async function approveAndPublishArticle(
         author_avatar = EXCLUDED.author_avatar,
         media = EXCLUDED.media,
         published_at = EXCLUDED.published_at
-    `, [
-      articleId, article.writer_id,
-      authorAccount.display_name ?? authorAccount.username ?? 'Unknown',
-      authorAccount.avatar_blossom_url ?? null,
-      authorAccount.username ?? null,
-      article.title,
-      truncatePreview(article.content_free),
-      signed.id,
-      mediaJson,
-    ])
+    `,
+      [
+        articleId,
+        article.writer_id,
+        authorAccount.display_name ?? authorAccount.username ?? "Unknown",
+        authorAccount.avatar_blossom_url ?? null,
+        authorAccount.username ?? null,
+        article.title,
+        truncatePreview(article.content_free),
+        signed.id,
+        mediaJson,
+      ],
+    );
 
     // Notify the author
     await client.query(
       `INSERT INTO notifications (recipient_id, actor_id, type, article_id)
        VALUES ($1, $2, 'pub_article_published', $3)
        ON CONFLICT DO NOTHING`,
-      [article.writer_id, editorId, articleId]
-    )
+      [article.writer_id, editorId, articleId],
+    );
 
     await enqueueRelayPublish(client, {
-      entityType: 'article',
+      entityType: "article",
       entityId: articleId,
       signedEvent: signed as SignedNostrEvent,
-    })
-  })
+    });
+  });
 
-  logger.info({ publicationId, articleId, nostrEventId: signed.id, editor: editorId }, 'Submitted article approved and published')
-  return { nostrEventId: signed.id }
+  logger.info(
+    { publicationId, articleId, nostrEventId: signed.id, editor: editorId },
+    "Submitted article approved and published",
+  );
+  return { nostrEventId: signed.id };
 }
-

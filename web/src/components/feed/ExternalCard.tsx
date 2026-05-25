@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { formatDateRelative } from "../../lib/format";
 import { TrustPip } from "../ui/TrustPip";
 import { useAuth } from "../../stores/auth";
@@ -49,6 +50,8 @@ export interface ExternalFeedItem {
   sourceName: string | null;
   sourceAvatar: string | null;
   pipStatus?: "known" | "partial" | "unknown" | "contested";
+  isReply?: boolean;
+  biddabilityTier?: "A" | "B" | "C" | "D";
 }
 
 interface ExternalCardProps {
@@ -137,8 +140,24 @@ export function ExternalCard({ item }: ExternalCardProps) {
     });
   }
 
+  const [expanded, setExpanded] = useState(false);
+
+  function handleBodyExpand(e: React.MouseEvent) {
+    e.stopPropagation();
+    setExpanded((prev) => !prev);
+  }
+
+  const showProvenance =
+    item.isReply &&
+    (item.biddabilityTier === "A" || item.biddabilityTier === "B");
+
   return (
     <div style={{ borderLeft: "4px solid #BBBBBB", paddingLeft: "24px" }}>
+      {/* Provenance — reply signalling (Slice 1D) */}
+      {showProvenance && (
+        <div className="label-ui text-grey-400 mb-1">↳ REPLYING TO A POST</div>
+      )}
+
       {/* Byline — mono-caps, unified with ArticleCard/NoteCard */}
       <div className="flex items-center gap-2 mb-2">
         <TrustPip status={item.pipStatus} />
@@ -148,6 +167,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
             target="_blank"
             rel="noopener noreferrer"
             className="label-ui text-grey-600 hover:text-black transition-colors truncate"
+            onClick={(e) => e.stopPropagation()}
           >
             {authorDisplay}
           </a>
@@ -161,7 +181,22 @@ export function ExternalCard({ item }: ExternalCardProps) {
           {formatDateRelative(item.publishedAt)}
         </span>
         <span className="font-mono text-mono-xs text-grey-600">&middot;</span>
-        <span className="label-ui text-grey-400 flex-shrink-0">{badge}</span>
+        {/* Source attribution as route out (Slice 1E) */}
+        {viewOriginalUri ? (
+          <a
+            href={viewOriginalUri}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="label-ui text-grey-400 hover:text-grey-600 transition-colors flex-shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {badge} · {item.authorHandle ?? item.sourceName ?? "source"}
+          </a>
+        ) : (
+          <span className="label-ui text-grey-400 flex-shrink-0">
+            {badge} · {item.authorHandle ?? item.sourceName ?? "source"}
+          </span>
+        )}
         {item.sourceProtocol === "activitypub" && (
           <span
             className="label-ui text-amber-600 flex-shrink-0"
@@ -172,160 +207,174 @@ export function ExternalCard({ item }: ExternalCardProps) {
         )}
       </div>
 
-      {/* Title — Literata roman (italic is reserved for native articles) */}
-      {item.title && (
-        <h3 className="font-serif text-[20px] leading-[1.4] mt-1 text-black">
-          {item.title}
-        </h3>
-      )}
+      {/* Title — clickable, opens source URL (Slice 1C) */}
+      {item.title &&
+        (viewOriginalUri ? (
+          <a
+            href={viewOriginalUri}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block font-serif text-[20px] leading-[1.4] mt-1 text-black hover:text-crimson-dark transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {item.title}
+          </a>
+        ) : (
+          <h3 className="font-serif text-[20px] leading-[1.4] mt-1 text-black">
+            {item.title}
+          </h3>
+        ))}
 
-      {/* Content — Literata summary when paired with a title (RSS-like),
-          else Jost body matching NoteCard (Bluesky / Mastodon-like) */}
-      {item.title ? (
-        item.contentHtml ? (
+      {/* Body — click to expand neighbourhood (Phase 2); cursor signals interactivity */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+      <div onClick={handleBodyExpand} className="cursor-pointer">
+        {item.title ? (
+          item.contentHtml ? (
+            <div
+              className="font-serif text-[14.5px] text-grey-600 leading-[1.5] mt-1.5 line-clamp-4 [&_a]:text-black [&_a]:underline [&_img]:hidden"
+              dangerouslySetInnerHTML={{ __html: item.contentHtml }}
+            />
+          ) : item.contentText ? (
+            <p className="font-serif text-[14.5px] text-grey-600 leading-[1.5] mt-1.5 line-clamp-4">
+              {item.contentText}
+            </p>
+          ) : null
+        ) : item.contentHtml ? (
           <div
-            className="font-serif text-[14.5px] text-grey-600 leading-[1.5] mt-1.5 line-clamp-4 [&_a]:text-black [&_a]:underline [&_img]:hidden"
+            className="font-sans text-[15px] text-black leading-[1.55] mt-1.5 [&_a]:text-black [&_a]:underline [&_img]:hidden"
             dangerouslySetInnerHTML={{ __html: item.contentHtml }}
           />
         ) : item.contentText ? (
-          <p className="font-serif text-[14.5px] text-grey-600 leading-[1.5] mt-1.5 line-clamp-4">
+          <p className="font-sans text-[15px] text-black leading-[1.55] mt-1.5 whitespace-pre-wrap">
             {item.contentText}
           </p>
-        ) : null
-      ) : item.contentHtml ? (
-        <div
-          className="font-sans text-[15px] text-black leading-[1.55] mt-1.5 [&_a]:text-black [&_a]:underline [&_img]:hidden"
-          dangerouslySetInnerHTML={{ __html: item.contentHtml }}
-        />
-      ) : item.contentText ? (
-        <p className="font-sans text-[15px] text-black leading-[1.55] mt-1.5 whitespace-pre-wrap">
-          {item.contentText}
-        </p>
-      ) : null}
+        ) : null}
 
-      {/* Images */}
-      {imageMedia.length > 0 && (
-        <div className="mt-2.5 flex gap-2 overflow-x-auto">
-          {imageMedia.slice(0, 4).map((m, i) => (
-            <img
-              key={i}
-              src={m.url}
-              alt={m.alt ?? ""}
-              className="max-h-48 object-cover bg-grey-100"
-              loading="lazy"
-              referrerPolicy="no-referrer"
-            />
-          ))}
-        </div>
-      )}
+        {/* Images */}
+        {imageMedia.length > 0 && (
+          <div className="mt-2.5 flex gap-2 overflow-x-auto">
+            {imageMedia.slice(0, 4).map((m, i) => (
+              <img
+                key={i}
+                src={m.url}
+                alt={m.alt ?? ""}
+                className="max-h-48 object-cover bg-grey-100"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+            ))}
+          </div>
+        )}
 
-      {/* Video — inline embed for YouTube, link for others */}
-      {videoMedia &&
-        (() => {
-          const ytId =
-            extractYouTubeVideoId(videoMedia.url) ??
-            extractYouTubeVideoId(viewOriginalUri);
-          if (ytId) {
+        {/* Video — inline embed for YouTube, link for others */}
+        {videoMedia &&
+          (() => {
+            const ytId =
+              extractYouTubeVideoId(videoMedia.url) ??
+              extractYouTubeVideoId(viewOriginalUri);
+            if (ytId) {
+              return (
+                <div
+                  className="mt-2.5 relative overflow-hidden"
+                  style={{ paddingBottom: "56.25%" }}
+                >
+                  <iframe
+                    src={`https://www.youtube-nocookie.com/embed/${ytId}`}
+                    className="absolute inset-0 w-full h-full"
+                    frameBorder="0"
+                    allowFullScreen
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              );
+            }
             return (
-              <div
-                className="mt-2.5 relative overflow-hidden"
-                style={{ paddingBottom: "56.25%" }}
+              <a
+                href={viewOriginalUri}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2.5 flex items-center gap-2 border border-grey-200 hover:border-grey-300 transition-colors px-3 py-2 no-underline"
               >
-                <iframe
-                  src={`https://www.youtube-nocookie.com/embed/${ytId}`}
-                  className="absolute inset-0 w-full h-full"
-                  frameBorder="0"
-                  allowFullScreen
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
+                <span className="label-ui text-grey-400">VIDEO</span>
+                <span className="text-ui-xs text-grey-600">
+                  Watch on {isAtproto ? "Bluesky" : "source"}
+                </span>
+              </a>
             );
-          }
-          return (
-            <a
-              href={viewOriginalUri}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2.5 flex items-center gap-2 border border-grey-200 hover:border-grey-300 transition-colors px-3 py-2 no-underline"
-            >
-              <span className="label-ui text-grey-400">VIDEO</span>
-              <span className="text-ui-xs text-grey-600">
-                Watch on {isAtproto ? "Bluesky" : "source"}
-              </span>
-            </a>
-          );
-        })()}
+          })()}
 
-      {/* Audio (podcast episodes) */}
-      {audioMedia && (
-        <div className="mt-2.5 border border-grey-200 px-3 py-2">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="label-ui text-grey-400">AUDIO</span>
-            {audioMedia.duration_in_seconds != null && (
-              <span className="text-mono-xs text-grey-600">
-                {formatDuration(audioMedia.duration_in_seconds)}
-              </span>
-            )}
-          </div>
-          <audio
-            src={audioMedia.url}
-            controls
-            preload="none"
-            className="w-full h-8"
-          />
-        </div>
-      )}
-
-      {/* Quoted post (Bluesky only for now) */}
-      {quoteWebUri && (
-        <a
-          href={quoteWebUri}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2.5 block border-l-2 border-grey-300 pl-3 py-1 hover:border-black transition-colors no-underline"
-        >
-          <span className="label-ui text-grey-400">QUOTING</span>
-          <span className="text-ui-xs text-grey-600 ml-2">
-            View quoted post &rarr;
-          </span>
-        </a>
-      )}
-
-      {/* Link embed */}
-      {linkEmbed && (
-        <a
-          href={linkEmbed.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2.5 flex gap-3 border border-grey-200 hover:border-grey-300 transition-colors p-2.5 no-underline"
-        >
-          {linkEmbed.thumbnail && (
-            <img
-              src={linkEmbed.thumbnail}
-              alt=""
-              className="w-16 h-16 object-cover bg-grey-100 flex-shrink-0"
-              loading="lazy"
-              referrerPolicy="no-referrer"
+        {/* Audio (podcast episodes) */}
+        {audioMedia && (
+          <div className="mt-2.5 border border-grey-200 px-3 py-2">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="label-ui text-grey-400">AUDIO</span>
+              {audioMedia.duration_in_seconds != null && (
+                <span className="text-mono-xs text-grey-600">
+                  {formatDuration(audioMedia.duration_in_seconds)}
+                </span>
+              )}
+            </div>
+            <audio
+              src={audioMedia.url}
+              controls
+              preload="none"
+              className="w-full h-8"
             />
-          )}
-          <div className="min-w-0 flex-1">
-            {linkEmbed.title && (
-              <p className="text-ui-sm font-semibold text-black truncate">
-                {linkEmbed.title}
-              </p>
-            )}
-            {linkEmbed.description && (
-              <p className="text-ui-xs text-grey-600 line-clamp-2 mt-0.5">
-                {linkEmbed.description}
-              </p>
-            )}
-            <p className="text-mono-xs text-grey-400 truncate mt-0.5">
-              {hostOf(linkEmbed.url)}
-            </p>
           </div>
-        </a>
-      )}
+        )}
+
+        {/* Quoted post (Bluesky only for now) */}
+        {quoteWebUri && (
+          <a
+            href={quoteWebUri}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2.5 block border-l-2 border-grey-300 pl-3 py-1 hover:border-black transition-colors no-underline"
+          >
+            <span className="label-ui text-grey-400">QUOTING</span>
+            <span className="text-ui-xs text-grey-600 ml-2">
+              View quoted post &rarr;
+            </span>
+          </a>
+        )}
+
+        {/* Link embed */}
+        {linkEmbed && (
+          <a
+            href={linkEmbed.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2.5 flex gap-3 border border-grey-200 hover:border-grey-300 transition-colors p-2.5 no-underline"
+          >
+            {linkEmbed.thumbnail && (
+              <img
+                src={linkEmbed.thumbnail}
+                alt=""
+                className="w-16 h-16 object-cover bg-grey-100 flex-shrink-0"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              {linkEmbed.title && (
+                <p className="text-ui-sm font-semibold text-black truncate">
+                  {linkEmbed.title}
+                </p>
+              )}
+              {linkEmbed.description && (
+                <p className="text-ui-xs text-grey-600 line-clamp-2 mt-0.5">
+                  {linkEmbed.description}
+                </p>
+              )}
+              <p className="text-mono-xs text-grey-400 truncate mt-0.5">
+                {hostOf(linkEmbed.url)}
+              </p>
+            </div>
+          </a>
+        )}
+      </div>
+      {/* End body expand region */}
 
       {/* Footer — actions */}
       <div className="mt-3 flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600">
@@ -337,15 +386,6 @@ export function ExternalCard({ item }: ExternalCardProps) {
             Reply
           </button>
         )}
-        <span className="flex-1" />
-        <a
-          href={viewOriginalUri}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-black transition-colors"
-        >
-          View original &nearr;
-        </a>
       </div>
     </div>
   );

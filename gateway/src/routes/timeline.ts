@@ -62,6 +62,22 @@ function parseCursor(raw: string | undefined): CursorParts | undefined {
   return undefined;
 }
 
+function computeBiddabilityTier(row: any): "A" | "B" | "C" | "D" {
+  if (row.item_type === "article" || row.item_type === "note") return "A";
+  switch (row.source_protocol) {
+    case "nostr_external":
+    case "atproto":
+      return "A";
+    case "activitypub":
+      return "B";
+    case "rss":
+    case "email":
+      return row.ei_author_uri ? "C" : "D";
+    default:
+      return "D";
+  }
+}
+
 function feedItemToResponse(row: any) {
   if (row.item_type === "article") {
     return {
@@ -82,6 +98,8 @@ function feedItemToResponse(row: any) {
       sizeTier: row.size_tier ?? "standard",
       pipStatus: row.pip_status ?? "unknown",
       media: row.media ?? null,
+      isReply: row.is_reply ?? false,
+      biddabilityTier: "A" as const,
     };
   }
 
@@ -101,6 +119,8 @@ function feedItemToResponse(row: any) {
       score: row.score != null ? Number(row.score) : undefined,
       pipStatus: row.pip_status ?? "unknown",
       externalParentId: row.external_parent_id ?? undefined,
+      isReply: row.is_reply ?? false,
+      biddabilityTier: "A" as const,
     };
   }
 
@@ -131,6 +151,8 @@ function feedItemToResponse(row: any) {
     sourceName: row.source_display_name,
     sourceAvatar: row.source_avatar_url,
     pipStatus: "unknown" as const,
+    isReply: row.is_reply ?? false,
+    biddabilityTier: computeBiddabilityTier(row),
   };
 }
 
@@ -169,7 +191,8 @@ const FEED_SELECT = `
   ei.repost_count AS ei_repost_count,
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
   -- Trust Layer 1 pip (NULL for external items — they default to 'unknown')
-  tl.pip_status
+  tl.pip_status,
+  fi.is_reply
 `;
 
 const FEED_JOINS = `

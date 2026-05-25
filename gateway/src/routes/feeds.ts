@@ -1063,7 +1063,8 @@ const FEED_SELECT = `
   ei.content_warning AS ei_content_warning,
   ei.interaction_data AS ei_interaction_data,
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
-  tl.pip_status
+  tl.pip_status,
+  fi.is_reply
 `;
 
 const FEED_JOINS = `
@@ -1101,6 +1102,22 @@ function parseCursor(raw: string | undefined): CursorParts | undefined {
   return undefined;
 }
 
+function computeBiddabilityTier(row: any): "A" | "B" | "C" | "D" {
+  if (row.item_type === "article" || row.item_type === "note") return "A";
+  switch (row.source_protocol) {
+    case "nostr_external":
+    case "atproto":
+      return "A";
+    case "activitypub":
+      return "B";
+    case "rss":
+    case "email":
+      return row.ei_author_uri ? "C" : "D";
+    default:
+      return "D";
+  }
+}
+
 function rowToItem(row: any) {
   // feedItemId is the unified `feed_items.id` — the save key in slice 20.
   // All three item types carry it so the client can address a save target
@@ -1126,6 +1143,8 @@ function rowToItem(row: any) {
       sizeTier: row.size_tier ?? "standard",
       pipStatus: row.pip_status ?? "unknown",
       media: row.media ?? null,
+      isReply: row.is_reply ?? false,
+      biddabilityTier: "A" as const,
     };
   }
   if (row.item_type === "note") {
@@ -1146,6 +1165,8 @@ function rowToItem(row: any) {
       score: row.score != null ? Number(row.score) : undefined,
       pipStatus: row.pip_status ?? "unknown",
       externalParentId: row.external_parent_id ?? undefined,
+      isReply: row.is_reply ?? false,
+      biddabilityTier: "A" as const,
     };
   }
   return {
@@ -1175,6 +1196,8 @@ function rowToItem(row: any) {
     sourceName: row.source_display_name,
     sourceAvatar: row.source_avatar_url,
     pipStatus: "unknown" as const,
+    isReply: row.is_reply ?? false,
+    biddabilityTier: computeBiddabilityTier(row),
   };
 }
 

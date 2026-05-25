@@ -920,7 +920,7 @@ prior column addition).
 | 2     | **Slice 1** — RSS family (JSON Feed ✅, podcasts ✅, YouTube ✅, Substack ✅) | 2 days    | —                        |
 | 3     | **Slice 2** — Lemmy AP compatibility check + wiring ✅                        | 1–3 days  | —                        |
 | 4     | **Slice 3** — Email newsletters ✅                                            | 1 week    | Slice 0                  |
-| 5     | **Slice 9** — CARD-BEHAVIOUR-ADR feed support (`is_reply`, biddability)       | 1–2 days  | —                        |
+| 5     | **Slice 9** — CARD-BEHAVIOUR-ADR feed support (`is_reply`, biddability) ✅    | 1–2 days  | —                        |
 | 6     | **Slice 8** — Cross-source identity linking                                   | 2–3 weeks | —                        |
 | 7     | **Slice 7** — ActivityPub inbox (push delivery)                               | 2–3 weeks | Posture commitment       |
 | 8     | **Slice 4** — Telegram channels                                               | 4 days    | Slice 0 + user demand    |

@@ -268,13 +268,15 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
             author_name, author_avatar,
             title, content_preview,
             tier, published_at,
-            source_protocol, source_item_uri, source_id, media
+            source_protocol, source_item_uri, source_id, media,
+            is_reply
           ) VALUES (
             'external', $1,
             $2, $3,
             $4, $5,
             'tier2', to_timestamp($6),
-            'nostr_external', $7, $8, '[]'::jsonb
+            'nostr_external', $7, $8, '[]'::jsonb,
+            $9
           )
           ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO UPDATE SET
             title = EXCLUDED.title,
@@ -282,6 +284,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
             published_at = EXCLUDED.published_at,
             source_item_uri = EXCLUDED.source_item_uri,
             author_name = EXCLUDED.author_name,
+            is_reply = EXCLUDED.is_reply,
             deleted_at = NULL
         `,
           [
@@ -293,6 +296,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
             event.created_at,
             normalised.sourceItemUri,
             sourceId,
+            normalised.sourceReplyUri != null,
           ],
         );
 

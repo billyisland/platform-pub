@@ -132,12 +132,12 @@ export async function noteRoutes(app: FastifyInstance) {
             item_type, note_id, author_id,
             author_name, author_avatar, author_username,
             content_preview, nostr_event_id,
-            tier, published_at
+            tier, published_at, is_reply
           ) VALUES (
             'note', $1, $2,
             $3, $4, $5,
             $6, $7,
-            'tier1', now()
+            'tier1', now(), $8
           )
           ON CONFLICT (note_id) WHERE note_id IS NOT NULL DO UPDATE SET
             content_preview = EXCLUDED.content_preview,
@@ -153,6 +153,8 @@ export async function noteRoutes(app: FastifyInstance) {
             author?.username ?? null,
             truncatePreview(data.content),
             data.nostrEventId,
+            data.signedEvent?.tags?.some((t: string[]) => t[0] === "e") ??
+              false,
           ],
         );
 

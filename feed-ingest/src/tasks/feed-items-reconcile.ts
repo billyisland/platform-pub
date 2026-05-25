@@ -1,6 +1,6 @@
-import type { Task } from 'graphile-worker'
-import { pool } from '@platform-pub/shared/db/client.js'
-import logger from '@platform-pub/shared/lib/logger.js'
+import type { Task } from "graphile-worker";
+import { pool } from "@platform-pub/shared/db/client.js";
+import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
 // feed_items_reconcile — daily integrity check
@@ -25,7 +25,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       item_type, article_id, author_id,
       author_name, author_avatar, author_username,
       title, content_preview, nostr_event_id,
-      tier, published_at
+      tier, published_at, is_reply
     )
     SELECT
       'article', a.id, a.writer_id,
@@ -36,15 +36,16 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       LEFT(a.content_free, 200),
       a.nostr_event_id,
       'tier1',
-      a.published_at
+      a.published_at,
+      FALSE
     FROM articles a
     JOIN accounts acc ON acc.id = a.writer_id
     WHERE a.published_at IS NOT NULL
       AND a.deleted_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.article_id = a.id)
     ON CONFLICT DO NOTHING
-  `)
-  const articlesInserted = articlesResult.rowCount ?? 0
+  `);
+  const articlesInserted = articlesResult.rowCount ?? 0;
 
   // 2. Notes missing from feed_items
   const notesResult = await pool.query(`
@@ -52,7 +53,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       item_type, note_id, author_id,
       author_name, author_avatar, author_username,
       content_preview, nostr_event_id,
-      tier, published_at
+      tier, published_at, is_reply
     )
     SELECT
       'note', n.id, n.author_id,
@@ -62,13 +63,14 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       LEFT(n.content, 200),
       n.nostr_event_id,
       'tier1',
-      n.published_at
+      n.published_at,
+      n.reply_to_event_id IS NOT NULL
     FROM notes n
     JOIN accounts acc ON acc.id = n.author_id
     WHERE NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.note_id = n.id)
     ON CONFLICT DO NOTHING
-  `)
-  const notesInserted = notesResult.rowCount ?? 0
+  `);
+  const notesInserted = notesResult.rowCount ?? 0;
 
   // 3. External items missing from feed_items
   const externalResult = await pool.query(`
@@ -77,7 +79,8 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       author_name, author_avatar,
       title, content_preview,
       tier, published_at,
-      source_protocol, source_item_uri, source_id, media
+      source_protocol, source_item_uri, source_id, media,
+      is_reply
     )
     SELECT
       'external', ei.id,
@@ -90,14 +93,15 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       ei.protocol::text,
       ei.source_item_uri,
       ei.source_id,
-      ei.media
+      ei.media,
+      ei.source_reply_uri IS NOT NULL
     FROM external_items ei
     JOIN external_sources xs ON xs.id = ei.source_id
     WHERE ei.deleted_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.external_item_id = ei.id)
     ON CONFLICT DO NOTHING
-  `)
-  const externalsInserted = externalResult.rowCount ?? 0
+  `);
+  const externalsInserted = externalResult.rowCount ?? 0;
 
   // 4. feed_items with soft-deleted articles that weren't caught
   const staleArticlesResult = await pool.query(`
@@ -106,8 +110,8 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
     WHERE fi.article_id = a.id
       AND a.deleted_at IS NOT NULL
       AND fi.deleted_at IS NULL
-  `)
-  const staleArticlesFixed = staleArticlesResult.rowCount ?? 0
+  `);
+  const staleArticlesFixed = staleArticlesResult.rowCount ?? 0;
 
   // 5. feed_items for external items that were soft-deleted
   const staleExternalResult = await pool.query(`
@@ -116,8 +120,8 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
     WHERE fi.external_item_id = ei.id
       AND ei.deleted_at IS NOT NULL
       AND fi.deleted_at IS NULL
-  `)
-  const staleExternalsFixed = staleExternalResult.rowCount ?? 0
+  `);
+  const staleExternalsFixed = staleExternalResult.rowCount ?? 0;
 
   // 6–8. Repair denormalised field drift on rows that already exist. The
   // ON CONFLICT DO NOTHING inserts above close the "missing row" gap, but
@@ -137,8 +141,8 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
         fi.title IS DISTINCT FROM a.title
         OR fi.content_preview IS DISTINCT FROM LEFT(a.content_free, 200)
       )
-  `)
-  const articleDriftFixed = articleDriftResult.rowCount ?? 0
+  `);
+  const articleDriftFixed = articleDriftResult.rowCount ?? 0;
 
   const noteDriftResult = await pool.query(`
     UPDATE feed_items fi SET
@@ -147,8 +151,8 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
     WHERE fi.note_id = n.id
       AND fi.deleted_at IS NULL
       AND fi.content_preview IS DISTINCT FROM LEFT(n.content, 200)
-  `)
-  const noteDriftFixed = noteDriftResult.rowCount ?? 0
+  `);
+  const noteDriftFixed = noteDriftResult.rowCount ?? 0;
 
   const externalDriftResult = await pool.query(`
     UPDATE feed_items fi SET
@@ -167,13 +171,18 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
         OR fi.author_name IS DISTINCT FROM COALESCE(ei.author_name, xs.display_name, 'Unknown')
         OR fi.author_avatar IS DISTINCT FROM COALESCE(ei.author_avatar_url, xs.avatar_url)
       )
-  `)
-  const externalDriftFixed = externalDriftResult.rowCount ?? 0
+  `);
+  const externalDriftFixed = externalDriftResult.rowCount ?? 0;
 
   const anyDrift =
-    articlesInserted + notesInserted + externalsInserted +
-    staleArticlesFixed + staleExternalsFixed +
-    articleDriftFixed + noteDriftFixed + externalDriftFixed
+    articlesInserted +
+    notesInserted +
+    externalsInserted +
+    staleArticlesFixed +
+    staleExternalsFixed +
+    articleDriftFixed +
+    noteDriftFixed +
+    externalDriftFixed;
 
   // Any non-zero case means a dual-write path leaked. Log at WARN so the
   // on-call dashboard surfaces it — reconcile existing at all is a safety
@@ -191,7 +200,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
         externalDriftFixed,
         totalDrift: anyDrift,
       },
-      'feed_items reconcile repaired dual-write drift'
-    )
+      "feed_items reconcile repaired dual-write drift",
+    );
   }
-}
+};

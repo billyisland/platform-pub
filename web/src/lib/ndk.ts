@@ -39,6 +39,8 @@ export interface ArticleEvent {
   payloadAlgorithm?: string;
   pipStatus?: PipStatus;
   sizeTier?: SizeTier;
+  isReply?: boolean;
+  biddabilityTier?: "A" | "B" | "C" | "D";
   // Slice 20: present in the saved-items view, absent in the live view.
   savedAt?: number;
   // Slice 23b: cover image, served as feed_items.media shape so the
@@ -69,6 +71,8 @@ export interface NoteEvent {
   quotedTitle?: string;
   quotedAuthor?: string;
   pipStatus?: PipStatus;
+  isReply?: boolean;
+  biddabilityTier?: "A" | "B" | "C" | "D";
   savedAt?: number;
   externalParentId?: string;
 }
@@ -124,6 +128,8 @@ export interface ExternalFeedItem {
   sourceName: string | null;
   sourceAvatar: string | null;
   pipStatus?: PipStatus;
+  isReply?: boolean;
+  biddabilityTier?: "A" | "B" | "C" | "D";
 }
 
 export interface ReplyGroupItem {
