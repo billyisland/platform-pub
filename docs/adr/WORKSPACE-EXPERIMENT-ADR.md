@@ -873,7 +873,7 @@ Feeds retire the clunky name-label nameplate in favour of a numeral system. Each
 
 ### Slice 34 — numeral roundel (2026-05-25)
 
-The feed numeral moves from an italic serif badge at the right end of VesselBar to a small black roundel mounted on the top-left corner of each vessel chassis. The roundel's styling matches the ∀ global-controls button: `#1A1A18` background, `#F0EFEB` serif numeral, `1px #4A4A47` ring, subtle shadow — scaled down to 26×26px (vs ∀'s 56×56). Position is absolute on the chassis, centered on the left wall's midpoint at the vessel opening (vertical) or at the wall intersection (horizontal).
+The feed numeral moves from an italic serif badge at the right end of VesselBar to a small black roundel mounted on the top-left corner of each vessel chassis. `#1A1A18` background, `#F0EFEB` bold italic sans (Jost 700i) numeral, no border or shadow — scaled to 26×26px. Position is absolute on the chassis, centered on the left wall's midpoint at the vessel opening (vertical) or at the wall intersection (horizontal).
 
 **Interactions.** Hover fades in a `label-ui` chip to the right of the roundel showing the feed's descriptive name (120ms ease-out opacity transition; hidden when no name exists). Click-and-drag moves the vessel — the roundel is a plain `<div>` (not a `<button>`) so `startDrag` on the outer `motion.div` picks it up naturally, same as dragging any empty wall region. Double-click opens the `FeedComposer` modal via `onNameClick`. A `title` attribute provides the accessible fallback (`Feed N` or `Feed N: Name`).
 

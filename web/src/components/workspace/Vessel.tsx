@@ -53,7 +53,6 @@ const ROUNDEL = 26;
 const ROUNDEL_TOKENS = {
   bg: "#1A1A18",
   fg: "#F0EFEB",
-  ring: "#4A4A47",
 };
 
 // Slice 5b: minimums per spec ("below which content becomes illegible").
@@ -406,7 +405,7 @@ export function Vessel({
               ? `Feed ${numeral}: ${descriptiveName}`
               : `Feed ${numeral}`
           }
-          className="font-serif select-none"
+          className="font-sans select-none"
           style={{
             position: "absolute",
             top: isHorizontal ? -(WALL / 2 + ROUNDEL / 2) : -(ROUNDEL / 2),
@@ -416,9 +415,9 @@ export function Vessel({
             borderRadius: "50%",
             background: ROUNDEL_TOKENS.bg,
             color: ROUNDEL_TOKENS.fg,
-            border: `1px solid ${ROUNDEL_TOKENS.ring}`,
-            boxShadow: "0 2px 6px rgba(0, 0, 0, 0.15)",
             fontSize: 12,
+            fontWeight: 700,
+            fontStyle: "italic",
             lineHeight: 1,
             display: "flex",
             alignItems: "center",
