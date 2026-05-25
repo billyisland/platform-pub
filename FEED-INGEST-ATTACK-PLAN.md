@@ -65,7 +65,7 @@ Every adapter touches the same set of files. This is the definitive list:
 
 ---
 
-## Slice 0 — Schema migration (prerequisite, blocks everything)
+## Slice 0 — Schema migration (prerequisite, blocks everything) ✅ DONE
 
 One migration that extends the enum and CHECK for every protocol this plan
 will add. Do it once so adapter work is never blocked on a migration.
@@ -100,6 +100,9 @@ enum extension automatically covers outbound. No separate migration needed.
 
 **Effort:** 1 hour. **Risk:** None — additive enum values, no data change.
 
+**Status:** Shipped. Migration `094_external_protocol_expansion.sql` + gateway
+stub rejection + `schema.sql` sync.
+
 **Do not add a `lemmy` enum value.** Lemmy speaks ActivityPub. Slice 2 will
 confirm whether the existing adapter covers it; if so, Lemmy sources just use
 `protocol = 'activitypub'` and the only work is UI labelling.
@@ -111,7 +114,7 @@ confirm whether the existing adapter covers it; if so, Lemmy sources just use
 These need no new protocol, no new enum value, no new outbound path. They are
 RSS by another name. Each stores as `protocol = 'rss'`, `tier = 'tier4'`.
 
-### 1A: JSON Feed
+### 1A: JSON Feed ✅ DONE
 
 A content-type/shape sniff in `adapters/rss.ts`. If the response is
 `application/feed+json` or `application/json` and parses as a JSON Feed
@@ -131,6 +134,11 @@ ingests correctly, items appear in the user's following feed with title,
 content, and media.
 
 **Effort:** 2–3 hours.
+
+**Status:** Shipped. `fetchRssFeed()` auto-detects JSON Feed via content-type
+header or shape-sniff, parses natively with `parseJsonFeed()`, falls through
+to `rss-parser` for RSS/Atom. Handles both JSON Feed 1.0 (`author`) and
+1.1 (`authors[]`), maps attachments and images into existing `NormalisedItem`.
 
 ### 1B: Podcast enrichment
 
@@ -493,15 +501,15 @@ ops task.
 
 ## Recommended sequence
 
-| Order | Slice                                                             | Effort    | Depends on               |
-| ----- | ----------------------------------------------------------------- | --------- | ------------------------ |
-| 1     | **Slice 0** — schema migration                                    | 1 hour    | —                        |
-| 2     | **Slice 1** — RSS family (JSON Feed, podcasts, YouTube, Substack) | 2 days    | —                        |
-| 3     | **Slice 2** — Lemmy AP compatibility check + wiring               | 1–3 days  | —                        |
-| 4     | **Slice 3** — Email newsletters                                   | 1 week    | Slice 0                  |
-| 5     | **Slice 4** — Telegram channels                                   | 4 days    | Slice 0                  |
-| 6     | **Slice 5** — Farcaster                                           | 2–3 weeks | Slice 0 + ops commitment |
-| 7     | **Slice 6** — Matrix                                              | 2–4 weeks | Slice 0 + ops commitment |
+| Order | Slice                                                                | Effort    | Depends on               |
+| ----- | -------------------------------------------------------------------- | --------- | ------------------------ |
+| 1     | **Slice 0** — schema migration ✅                                    | 1 hour    | —                        |
+| 2     | **Slice 1** — RSS family (JSON Feed ✅, podcasts, YouTube, Substack) | 2 days    | —                        |
+| 3     | **Slice 2** — Lemmy AP compatibility check + wiring                  | 1–3 days  | —                        |
+| 4     | **Slice 3** — Email newsletters                                      | 1 week    | Slice 0                  |
+| 5     | **Slice 4** — Telegram channels                                      | 4 days    | Slice 0                  |
+| 6     | **Slice 5** — Farcaster                                              | 2–3 weeks | Slice 0 + ops commitment |
+| 7     | **Slice 6** — Matrix                                                 | 2–4 weeks | Slice 0 + ops commitment |
 
 Slices 1 and 2 are independent of Slice 0 (they don't add new enum
 values). Start them in parallel with or before the migration.

@@ -119,7 +119,15 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
   // POST /feeds/subscribe — subscribe to an external source
   app.post<{
     Body: {
-      protocol: "rss" | "atproto" | "activitypub" | "nostr_external";
+      protocol:
+        | "rss"
+        | "atproto"
+        | "activitypub"
+        | "nostr_external"
+        | "farcaster"
+        | "matrix"
+        | "telegram"
+        | "email";
       sourceUri: string;
       displayName?: string;
       description?: string;
@@ -149,15 +157,28 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
           .send({ error: "protocol and sourceUri are required" });
       }
 
-      if (
-        protocol !== "rss" &&
-        protocol !== "atproto" &&
-        protocol !== "nostr_external" &&
-        protocol !== "activitypub"
-      ) {
+      const supportedProtocols = [
+        "rss",
+        "atproto",
+        "nostr_external",
+        "activitypub",
+      ] as const;
+      const plannedProtocols = [
+        "farcaster",
+        "matrix",
+        "telegram",
+        "email",
+      ] as const;
+
+      if ((plannedProtocols as readonly string[]).includes(protocol)) {
+        return reply.status(400).send({
+          error: `Protocol "${protocol}" is not yet supported. Stay tuned.`,
+        });
+      }
+      if (!(supportedProtocols as readonly string[]).includes(protocol)) {
         return reply
           .status(400)
-          .send({ error: `Protocol "${protocol}" is not yet supported.` });
+          .send({ error: `Unknown protocol "${protocol}".` });
       }
 
       const validationError = validateSubscribeInput({
@@ -419,11 +440,9 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
           dailyCap !== null &&
           (!Number.isInteger(dailyCap) || dailyCap < 1 || dailyCap > 1000)
         ) {
-          return reply
-            .status(400)
-            .send({
-              error: "dailyCap must be an integer between 1 and 1000, or null",
-            });
+          return reply.status(400).send({
+            error: "dailyCap must be an integer between 1 and 1000, or null",
+          });
         }
         updates.push(`daily_cap = $${idx}`);
         params.push(dailyCap);

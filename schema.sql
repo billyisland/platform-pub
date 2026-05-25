@@ -163,7 +163,11 @@ CREATE TYPE public.external_protocol AS ENUM (
     'atproto',
     'activitypub',
     'rss',
-    'nostr_external'
+    'nostr_external',
+    'farcaster',
+    'matrix',
+    'telegram',
+    'email'
 );
 
 
@@ -1229,7 +1233,7 @@ CREATE TABLE public.external_items (
     repost_count integer DEFAULT 0 NOT NULL,
     is_context_only boolean DEFAULT false NOT NULL,
     content_warning text,
-    CONSTRAINT protocol_tier_consistency CHECK ((((protocol = 'nostr_external'::public.external_protocol) AND (tier = 'tier2'::public.content_tier)) OR ((protocol = ANY (ARRAY['atproto'::public.external_protocol, 'activitypub'::public.external_protocol])) AND (tier = 'tier3'::public.content_tier)) OR ((protocol = 'rss'::public.external_protocol) AND (tier = 'tier4'::public.content_tier))))
+    CONSTRAINT protocol_tier_consistency CHECK ((((protocol = 'nostr_external'::public.external_protocol) AND (tier = 'tier2'::public.content_tier)) OR ((protocol = ANY (ARRAY['atproto'::public.external_protocol, 'activitypub'::public.external_protocol, 'farcaster'::public.external_protocol])) AND (tier = 'tier3'::public.content_tier)) OR ((protocol = ANY (ARRAY['rss'::public.external_protocol, 'telegram'::public.external_protocol, 'matrix'::public.external_protocol, 'email'::public.external_protocol])) AND (tier = 'tier4'::public.content_tier))))
 );
 
 
