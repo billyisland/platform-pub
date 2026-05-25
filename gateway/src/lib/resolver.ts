@@ -17,6 +17,7 @@ import {
   resolveWebFinger,
   fetchActorProfile,
   extractFromMastodonUrl,
+  extractFromThreadiverseUrl,
 } from "./activitypub-resolve.js";
 
 // =============================================================================
@@ -541,6 +542,12 @@ async function resolveUrl(url: string): Promise<ResolverMatch[]> {
       if (match) return [match];
       // Fall through to RSS discovery if AP resolution fails — the URL may
       // still be something we can subscribe to.
+    }
+
+    const threadiverseHint = extractFromThreadiverseUrl(parsed);
+    if (threadiverseHint) {
+      const match = await resolveActivityPubHandle(threadiverseHint.acct);
+      if (match) return [match];
     }
 
     if (parsed.hostname === "twitter.com" || parsed.hostname === "x.com") {

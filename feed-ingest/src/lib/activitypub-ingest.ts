@@ -24,7 +24,7 @@ export async function insertActivityPubItem(
     `
     INSERT INTO external_items (
       source_id, protocol, tier,
-      source_item_uri,
+      source_item_uri, title,
       author_name, author_handle, author_avatar_url, author_uri,
       content_text, content_html, language,
       media,
@@ -34,14 +34,14 @@ export async function insertActivityPubItem(
       published_at
     ) VALUES (
       $1, 'activitypub', 'tier3',
-      $2,
-      $3, $4, $5, $6,
-      $7, $8, $9,
-      $10,
-      $11, NULL, FALSE,
-      $12,
+      $2, $3,
+      $4, $5, $6, $7,
+      $8, $9, $10,
+      $11,
+      $12, NULL, FALSE,
       $13,
-      $14
+      $14,
+      $15
     )
     ON CONFLICT (protocol, source_item_uri) DO NOTHING
     RETURNING id
@@ -49,6 +49,7 @@ export async function insertActivityPubItem(
     [
       source.id,
       item.sourceItemUri,
+      item.title,
       item.authorName ?? source.display_name ?? null,
       item.authorHandle,
       item.authorAvatarUrl ?? source.avatar_url ?? null,
@@ -77,16 +78,17 @@ export async function insertActivityPubItem(
     ) VALUES (
       'external', $1,
       $2, $3,
-      NULL, $4,
-      'tier3', $5,
-      'activitypub', $6, $7, $8
+      $4, $5,
+      'tier3', $6,
+      'activitypub', $7, $8, $9
     )
     ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING
   `,
     [
       rows[0].id,
-      item.authorName ?? source.display_name ?? "Mastodon user",
+      item.authorName ?? source.display_name ?? "Unknown",
       item.authorAvatarUrl ?? source.avatar_url,
+      item.title,
       truncatePreview(item.contentText),
       item.publishedAt,
       item.sourceItemUri,

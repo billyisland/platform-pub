@@ -44,6 +44,7 @@ interface ActorMetadata {
 
 export interface NormalisedActivityPubItem {
   sourceItemUri: string;
+  title: string | null;
   authorName: string | null;
   authorHandle: string | null;
   authorAvatarUrl: string | null;
@@ -62,6 +63,7 @@ export interface NormalisedActivityPubItem {
     activityId?: string;
     replyTo?: string;
     webUrl?: string;
+    audience?: string;
     poll?: {
       options: Array<{ title: string; votesCount: number }>;
       multiple: boolean;
@@ -205,7 +207,12 @@ export async function fetchOutbox(
       if (!isPublic(activity)) continue;
       const note = activity.object;
       if (!note || typeof note !== "object") continue;
-      if (note.type !== "Note" && note.type !== "Article") continue;
+      if (
+        note.type !== "Note" &&
+        note.type !== "Article" &&
+        note.type !== "Page"
+      )
+        continue;
       if (!isPublic(note)) continue;
 
       const publishedAt =
@@ -309,6 +316,8 @@ function normaliseNote(
   const id = typeof note.id === "string" ? note.id : null;
   if (!id) return null;
 
+  const title =
+    typeof note.name === "string" && note.name.trim() ? note.name.trim() : null;
   const rawHtml = typeof note.content === "string" ? note.content : "";
   const contentHtml = sanitizeContent(rawHtml);
   const contentText = stripHtml(rawHtml);
@@ -326,10 +335,13 @@ function normaliseNote(
       ? note.summary
       : null;
 
+  const audience =
+    typeof note.audience === "string" ? note.audience : undefined;
   const poll = extractPoll(note);
 
   return {
     sourceItemUri: id,
+    title,
     authorName: actor.name,
     authorHandle: actor.preferredUsername
       ? `${actor.preferredUsername}@${actor.host}`
@@ -350,6 +362,7 @@ function normaliseNote(
       activityId: typeof activity?.id === "string" ? activity.id : undefined,
       replyTo: sourceReplyUri ?? undefined,
       webUrl: webUrl ?? undefined,
+      ...(audience ? { audience } : {}),
       ...(poll ? { poll } : {}),
     },
   };

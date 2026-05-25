@@ -381,24 +381,48 @@ function Byline({
   );
 }
 
+const PROTOCOL_DISPLAY: Record<string, string> = {
+  RSS: "RSS",
+  ATPROTO: "BLUESKY",
+  ACTIVITYPUB: "FEDIVERSE",
+  NOSTR_EXTERNAL: "NOSTR",
+};
+
 function SourceAttribution({
   protocol,
   identifier,
+  community,
   ctx,
 }: {
   protocol: string;
   identifier?: string;
+  community?: string;
   ctx: CardContext;
 }) {
+  const label = PROTOCOL_DISPLAY[protocol] ?? protocol;
   return (
     <div
       className="font-mono text-[10px] uppercase tracking-[0.06em] mt-2"
       style={{ color: ctx.palette.cardMeta }}
     >
-      VIA {protocol}
+      VIA {label}
+      {community ? ` · ${community}` : ""}
       {identifier ? ` · ${identifier}` : ""}
     </div>
   );
+}
+
+function extractCommunityName(
+  audience: string | null | undefined,
+): string | undefined {
+  if (!audience) return undefined;
+  try {
+    const path = new URL(audience).pathname;
+    const match = path.match(/^\/[cm]\/([A-Za-z0-9_]+)\/?$/);
+    return match ? match[1] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // Slice 23 — hero media for notes + external cards. Articles defer until the
@@ -1447,6 +1471,7 @@ function ExternalVesselCard({
         <SourceAttribution
           protocol={protocol}
           identifier={external.authorHandle ?? external.sourceName ?? undefined}
+          community={extractCommunityName(external.audience)}
           ctx={ctx}
         />
       )}

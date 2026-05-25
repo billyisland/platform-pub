@@ -122,6 +122,7 @@ function feedItemToResponse(row: any) {
     sourceQuoteUri: row.ei_source_quote_uri,
     contentWarning: row.ei_content_warning ?? null,
     poll: row.ei_interaction_data?.poll ?? null,
+    audience: row.ei_interaction_data?.audience ?? null,
     likeCount: row.ei_like_count ?? 0,
     replyCount: row.ei_reply_count ?? 0,
     repostCount: row.ei_repost_count ?? 0,

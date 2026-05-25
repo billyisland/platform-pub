@@ -100,6 +100,7 @@ export interface ExternalFeedItem {
   sourceReplyUri?: string | null;
   sourceQuoteUri?: string | null;
   contentWarning?: string | null;
+  audience?: string | null;
   poll?: {
     options: Array<{ title: string; votesCount: number }>;
     multiple: boolean;
