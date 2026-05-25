@@ -15,8 +15,6 @@ interface VesselBarProps {
   brightness: Brightness;
   density: Density;
   orientation: Orientation;
-  numeral: number;
-  descriptiveName?: string;
   onBrightnessCommit?: (b: Brightness) => void;
   onDensityCommit?: (d: Density) => void;
   onOrientationCommit?: (o: Orientation) => void;
@@ -33,8 +31,6 @@ export function VesselBar({
   brightness,
   density,
   orientation,
-  numeral,
-  descriptiveName,
   onBrightnessCommit,
   onDensityCommit,
   onOrientationCommit,
@@ -179,28 +175,6 @@ export function VesselBar({
               lineHeight: "22px",
             }}
           />
-        </div>
-
-        {/* Feed numeral badge — right end */}
-        <div
-          title={
-            descriptiveName
-              ? `Feed ${numeral}: ${descriptiveName}`
-              : `Feed ${numeral}`
-          }
-          className="font-serif select-none"
-          style={{
-            color: palette.barTextMuted,
-            fontSize: 15,
-            lineHeight: `${BAR_H}px`,
-            paddingLeft: 6,
-            paddingRight: 2,
-            cursor: "default",
-            fontStyle: "italic",
-            flexShrink: 0,
-          }}
-        >
-          {numeral}
         </div>
       </div>
 

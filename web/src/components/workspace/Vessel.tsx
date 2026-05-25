@@ -49,6 +49,13 @@ const PAD = 16; // px interior padding (top zone left open per Step 1: "Opening:
 const GAP = 12; // px inter-card gap
 const WIDTH = 300; // px default at standard density
 
+const ROUNDEL = 26;
+const ROUNDEL_TOKENS = {
+  bg: "#1A1A18",
+  fg: "#F0EFEB",
+  ring: "#4A4A47",
+};
+
 // Slice 5b: minimums per spec ("below which content becomes illegible").
 // Spec says no maximum; we clamp at sane upper bounds defensively — the
 // floor's overflow:hidden handles oversize visually, and a workspace-level
@@ -120,6 +127,7 @@ export function Vessel({
   const mx = useMotionValue(position.x);
   const my = useMotionValue(position.y);
   const dragMovedRef = useRef(false);
+  const [roundelHovered, setRoundelHovered] = useState(false);
   const [liveSize, setLiveSize] = useState<{ w: number; h: number } | null>(
     null,
   );
@@ -388,6 +396,62 @@ export function Vessel({
           outlineOffset: -2,
         }}
       >
+        {/* Numeral roundel — top-left corner, matches ForallMenu styling */}
+        <div
+          onMouseEnter={() => setRoundelHovered(true)}
+          onMouseLeave={() => setRoundelHovered(false)}
+          onDoubleClick={() => onNameClick?.()}
+          title={
+            descriptiveName
+              ? `Feed ${numeral}: ${descriptiveName}`
+              : `Feed ${numeral}`
+          }
+          className="font-serif select-none"
+          style={{
+            position: "absolute",
+            top: isHorizontal ? -(WALL / 2 + ROUNDEL / 2) : -(ROUNDEL / 2),
+            left: -(WALL / 2 + ROUNDEL / 2),
+            width: ROUNDEL,
+            height: ROUNDEL,
+            borderRadius: "50%",
+            background: ROUNDEL_TOKENS.bg,
+            color: ROUNDEL_TOKENS.fg,
+            border: `1px solid ${ROUNDEL_TOKENS.ring}`,
+            boxShadow: "0 2px 6px rgba(0, 0, 0, 0.15)",
+            fontSize: 12,
+            lineHeight: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "grab",
+            zIndex: 5,
+          }}
+        >
+          {numeral}
+          {descriptiveName && (
+            <div
+              className="label-ui"
+              style={{
+                position: "absolute",
+                left: ROUNDEL + 6,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: ROUNDEL_TOKENS.bg,
+                color: ROUNDEL_TOKENS.fg,
+                padding: "3px 8px",
+                borderRadius: 3,
+                whiteSpace: "nowrap",
+                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.15)",
+                opacity: roundelHovered ? 1 : 0,
+                pointerEvents: "none",
+                transition: "opacity 120ms ease-out",
+              }}
+            >
+              {descriptiveName}
+            </div>
+          )}
+        </div>
+
         <div
           ref={scrollBodyRef}
           onPointerDown={(e) => e.stopPropagation()}
@@ -419,8 +483,6 @@ export function Vessel({
           brightness={effBrightness}
           density={effDensity}
           orientation={effOrientation}
-          numeral={numeral}
-          descriptiveName={descriptiveName}
           onBrightnessCommit={onBrightnessCommit}
           onDensityCommit={onDensityCommit}
           onOrientationCommit={onOrientationCommit}
