@@ -1,6 +1,6 @@
 # Workspace Full View — Build Spec
 
-**Status:** Phase 6B shipped (2026-05-25, branch `workspace-experiment`). All phases complete. Phase 6B: reply grouping — pure `groupReplies()` post-processing in `sourceFilteredItems()` groups external items sharing the same `source_reply_uri` (2+ siblings) into `reply_group` envelopes; new `ReplyGroupCard` component renders `ParentContextTile` once + chronological `ExternalPlayscriptEntry` list. Phase 6A fixes: context-only items filtered from feeds, engagement counts added to platform timeline, grandparent tag persisted in `interaction_data` JSONB (both gateway parent-fetch and feed-ingest prefetch), missing `source_reply_uri`/`content_text` columns added to Mastodon prefetch INSERT, `WorkspaceFeedApiExternal` type completed (`contentWarning`, `poll`), `useLiveEngagement` cache aligned to 30s with error-recovery reset. Phase 5 adds: (5A) Mastodon content warnings — migration 093 adds `content_warning` column to `external_items`, AP adapter captures `spoiler_text` from sensitive notes, `ContentWarning` component wraps content with reveal toggle. (5B) Poll display + voting — AP adapter extracts `oneOf`/`anyOf` poll data into `interaction_data.poll`, `PollDisplay` component renders option bars with interactive voting, `POST /external-items/:id/poll-vote` endpoint enqueues via `enqueuePollVote`, feed-ingest `voteMastodonPoll` resolves remote status and POSTs to `/api/v1/polls/:id/votes`. (5C) Reader pane — `GET /api/v1/extract?url=` endpoint using `@mozilla/readability` + `jsdom` with SSRF-hardened fetch and 1h cache, `useReader` Zustand store, `ReaderPane` overlay component (scrim + 640px serif panel), RSS article clicks open reader pane. (5D) Inline video embeds — `MediaBlock` detects YouTube/Vimeo URLs, fetches oEmbed HTML from existing proxy on expand, renders iframe inline with `prefers-reduced-motion` respect. (5E) Pull-to-refresh + empty states — `PullToRefresh` component (touch overscroll, 60px threshold), `EmptyFeedTile` with no-sources/no-items variants, wired into Vessel and WorkspaceView. (5F) Context-only GC cron — `external_context_gc` task (daily 02:30 UTC) deletes unreferenced `is_context_only` items older than 30 days.
+**Status:** Phase 6B shipped (2026-05-25, branch `workspace-experiment`). All phases complete. Phase 6B: reply grouping — pure `groupReplies()` post-processing in `sourceFilteredItems()` groups external items sharing the same `source_reply_uri` (2+ siblings) into `reply_group` envelopes; new `ReplyGroupCard` component renders `ParentContextTile` once + chronological `ExternalPlayscriptEntry` list. Phase 6A fixes: context-only items filtered from feeds, engagement counts added to platform timeline, grandparent tag persisted in `interaction_data` JSONB (both gateway parent-fetch and feed-ingest prefetch), missing `source_reply_uri`/`content_text` columns added to Mastodon prefetch INSERT, `WorkspaceFeedApiExternal` type completed (`contentWarning`, `poll`), `useLiveEngagement` cache aligned to 30s with error-recovery reset. Phase 5 adds: (5A) Mastodon content warnings — migration 093 adds `content_warning` column to `external_items`, AP adapter captures `spoiler_text` from sensitive notes, `ContentWarning` component wraps content with reveal toggle. (5B) Poll display + voting — AP adapter extracts `oneOf`/`anyOf` poll data into `interaction_data.poll`, `PollDisplay` component renders option bars with interactive voting, `POST /external-items/:id/poll-vote` endpoint enqueues via `enqueuePollVote`, feed-ingest `voteMastodonPoll` resolves remote status and POSTs to `/api/v1/polls/:id/votes`. (5C) Reader pane — `GET /api/v1/extract?url=` endpoint using `@mozilla/readability` + `jsdom` with SSRF-hardened fetch and 1h cache, `useReader` Zustand store, `ReaderPane` overlay component (scrim + 640px serif panel), RSS article clicks open reader pane. (5D) Inline video embeds — `MediaBlock` detects YouTube/Vimeo URLs, fetches oEmbed HTML from existing proxy on expand, renders iframe inline with `prefers-reduced-motion` respect. (5E) Pull-to-refresh + empty states — `PullToRefresh` component (touch + wheel overscroll, 60px threshold; desktop wheel accumulates upward delta at scrollTop 0 with 400ms decay), `EmptyFeedTile` with no-sources/no-items/caught-up variants, wired into Vessel and WorkspaceView; caught-up tile renders above existing items when refresh yields no new content. (5F) Context-only GC cron — `external_context_gc` task (daily 02:30 UTC) deletes unreferenced `is_context_only` items older than 30 days.
 
 ## Overview
 
@@ -376,7 +376,7 @@ Full mode renders all media at full fidelity:
 
 ### 8.1 Trigger
 
-Overscroll gesture: when the user is at the top of the feed and scrolls up, a refresh indicator appears. Releasing triggers a feed refresh. Works on both desktop (custom overscroll handler via wheel/touch events) and mobile (native overscroll).
+Overscroll gesture: when the user is at the top of the feed and scrolls up, a refresh indicator appears. Releasing triggers a feed refresh. Works on both desktop (wheel event accumulation while scrollTop is 0, 400ms decay timer resets between scroll bursts) and mobile (touch overscroll via `findScrollParent` DOM traversal). `PullToRefresh` does not create its own scroll container — it delegates to the Vessel's content div.
 
 ### 8.2 Refresh behaviour
 
@@ -384,7 +384,7 @@ Re-fetches the feed from the gateway with no cursor (latest items). New items pr
 
 ### 8.3 Empty states
 
-Two distinct states, each rendered as a temporary tile at the top of the feed:
+Three distinct states, each rendered as a temporary tile:
 
 **No sources** (feed has zero `feed_sources`):
 
@@ -392,13 +392,19 @@ Two distinct states, each rendered as a temporary tile at the top of the feed:
 
 Clicking opens the subscription management UI (existing SubscribeInput / subscriptions flow).
 
-**No new items** (feed has sources but no items newer than cursor):
+**No items** (feed has sources but zero items):
 
-> "No new items since your last visit. Add more sources or adjust your feed settings."
+> "No new items. Add more sources or check back later."
 
 Clicking also opens subscription management.
 
-Both tiles are dismissible and do not persist across sessions.
+**Caught up** (refresh returned no new content — all item keys match the pre-refresh set):
+
+> "Nothing new. Follow more accounts or add sources to see more here."
+
+Rendered _above_ existing items (not replacing them). `loadVesselItems` snapshots item keys before the fetch; if every returned item was already present, it sets `caughtUp: true` on the vessel state. Cleared on the next load.
+
+All tiles are dismissible and do not persist across sessions.
 
 ---
 
@@ -457,8 +463,8 @@ All interaction endpoints (`like`, `repost`, `reply`, `poll-vote`) require auth 
 | `EngagementCounts` | `web/src/components/workspace/EngagementCounts.tsx` | Normalised heart/speech-bubble/repost display with live-fetch hook |
 | `ContentWarning`   | `web/src/components/workspace/ContentWarning.tsx`   | Collapsible CW wrapper for Mastodon spoiler text                   |
 | `PollDisplay`      | `web/src/components/workspace/PollDisplay.tsx`      | Poll rendering with optional interactive voting                    |
-| `PullToRefresh`    | `web/src/components/workspace/PullToRefresh.tsx`    | Overscroll refresh handler                                         |
-| `EmptyFeedTile`    | `web/src/components/workspace/EmptyFeedTile.tsx`    | "No sources" / "No new items" temporary tiles                      |
+| `PullToRefresh`    | `web/src/components/workspace/PullToRefresh.tsx`    | Touch + wheel overscroll refresh handler                           |
+| `EmptyFeedTile`    | `web/src/components/workspace/EmptyFeedTile.tsx`    | "No sources" / "No items" / "Caught up" temporary tiles            |
 
 ---
 
@@ -594,7 +600,7 @@ Parent context on native notes:
 - Inline video players for video-type items
 - Content warnings (Mastodon)
 - Interactive polls (Mastodon)
-- Pull-to-refresh + empty state tiles
+- Pull-to-refresh (touch + wheel) + empty state tiles (no-sources / no-items / caught-up)
 - Context-only item GC cron
 
 ---

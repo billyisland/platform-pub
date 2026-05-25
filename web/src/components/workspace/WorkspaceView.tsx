@@ -97,6 +97,13 @@ function defaultGridSlot(
 
 type WorkspaceItem = FeedItem | NewUserItem | ReplyGroupItem;
 
+function itemKey(item: WorkspaceItem): string {
+  if (item.type === "new_user")
+    return `new-user:${item.username}:${item.joinedAt}`;
+  if (item.type === "reply_group") return `rg:${item.sourceReplyUri}`;
+  return item.id;
+}
+
 interface VesselState {
   feed: WorkspaceFeed;
   items: WorkspaceItem[];
@@ -104,6 +111,7 @@ interface VesselState {
   status: "loading" | "ready" | "error";
   view: "live" | "saved";
   savedIds: Set<string>;
+  caughtUp?: boolean;
 }
 
 function mapExternalApiItem(
@@ -366,10 +374,15 @@ export function WorkspaceView() {
   // the rest of the rendering pipeline doesn't branch.
   const loadVesselItems = useCallback(
     async (feed: WorkspaceFeed, view?: "live" | "saved") => {
+      let prevIds: Set<string> | null = null;
       setVessels((prev) =>
-        prev.map((v) =>
-          v.feed.id === feed.id ? { ...v, status: "loading" } : v,
-        ),
+        prev.map((v) => {
+          if (v.feed.id !== feed.id) return v;
+          if (v.status === "ready" && v.items.length > 0) {
+            prevIds = new Set(v.items.map(itemKey));
+          }
+          return { ...v, status: "loading", caughtUp: false };
+        }),
       );
       try {
         const effView = view ?? vesselViewRef.current.get(feed.id) ?? "live";
@@ -380,10 +393,20 @@ export function WorkspaceView() {
         const mapped = (data.items ?? [])
           .map(mapApiItem)
           .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null);
+        const caughtUp =
+          prevIds !== null &&
+          mapped.length > 0 &&
+          mapped.every((i) => (prevIds as Set<string>).has(itemKey(i)));
         setVessels((prev) =>
           prev.map((v) =>
             v.feed.id === feed.id
-              ? { ...v, feed: data.feed, items: mapped, status: "ready" }
+              ? {
+                  ...v,
+                  feed: data.feed,
+                  items: mapped,
+                  status: "ready",
+                  caughtUp,
+                }
               : v,
           ),
         );
@@ -814,6 +837,12 @@ export function WorkspaceView() {
                       onAddSources={() => setFeedComposerFor(v.feed)}
                     />
                   ))}
+                {v.status === "ready" && v.caughtUp && v.items.length > 0 && (
+                  <EmptyFeedTile
+                    variant="caught-up"
+                    onAddSources={() => setFeedComposerFor(v.feed)}
+                  />
+                )}
                 {v.status === "ready" &&
                   v.items.slice(0, 12).map((item) =>
                     item.type === "new_user" ? (

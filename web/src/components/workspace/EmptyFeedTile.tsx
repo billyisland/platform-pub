@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 interface EmptyFeedTileProps {
-  variant: "no-sources" | "no-items";
+  variant: "no-sources" | "no-items" | "caught-up";
   onAddSources?: () => void;
 }
 
@@ -23,6 +23,35 @@ export function EmptyFeedTile({ variant, onAddSources }: EmptyFeedTileProps) {
             ADD SOURCES
           </button>
         )}
+      </div>
+    );
+  }
+
+  if (variant === "caught-up") {
+    return (
+      <div className="px-4 py-4 text-center">
+        <p className="label-ui text-grey-400 mb-1">ALL CAUGHT UP</p>
+        <p className="text-ui-xs text-grey-500 mb-3">
+          Nothing new. Follow more accounts or add sources to see more here.
+        </p>
+        <div className="flex items-center justify-center gap-4">
+          {onAddSources && (
+            <button
+              type="button"
+              className="btn-text-muted"
+              onClick={onAddSources}
+            >
+              ADD SOURCES
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn-text-muted"
+            onClick={() => setDismissed(true)}
+          >
+            DISMISS
+          </button>
+        </div>
       </div>
     );
   }

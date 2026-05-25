@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useRef, useState, useCallback, type ReactNode } from "react";
+import React, {
+  useRef,
+  useState,
+  useCallback,
+  useEffect,
+  type ReactNode,
+} from "react";
 
 interface PullToRefreshProps {
   onRefresh: () => Promise<void>;
@@ -8,6 +14,17 @@ interface PullToRefreshProps {
 }
 
 const THRESHOLD = 60;
+const WHEEL_DECAY_MS = 400;
+
+function findScrollParent(el: HTMLElement): HTMLElement {
+  let cur = el.parentElement;
+  while (cur) {
+    const { overflowY } = getComputedStyle(cur);
+    if (overflowY === "auto" || overflowY === "scroll") return cur;
+    cur = cur.parentElement;
+  }
+  return el;
+}
 
 export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -16,12 +33,27 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
   const [refreshing, setRefreshing] = useState(false);
   const startY = useRef(0);
   const active = useRef(false);
+  const wheelAccum = useRef(0);
+  const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const doRefresh = useCallback(() => {
+    setRefreshing(true);
+    setPullDistance(THRESHOLD * 0.6);
+    onRefresh().finally(() => {
+      setRefreshing(false);
+      setPullDistance(0);
+      setPulling(false);
+    });
+  }, [onRefresh]);
+
+  // Touch handlers (mobile)
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (refreshing) return;
       const el = containerRef.current;
-      if (!el || el.scrollTop > 0) return;
+      if (!el) return;
+      const scroller = findScrollParent(el);
+      if (scroller.scrollTop > 0) return;
       startY.current = e.touches[0].clientY;
       active.current = true;
     },
@@ -49,18 +81,57 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
     active.current = false;
 
     if (pulling && !refreshing) {
-      setRefreshing(true);
-      setPullDistance(THRESHOLD * 0.6);
-      onRefresh().finally(() => {
-        setRefreshing(false);
-        setPullDistance(0);
-        setPulling(false);
-      });
+      doRefresh();
     } else {
       setPullDistance(0);
       setPulling(false);
     }
-  }, [pulling, refreshing, onRefresh]);
+  }, [pulling, refreshing, doRefresh]);
+
+  // Wheel handler (desktop): accumulate upward scroll while at top
+  const onWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (refreshing) return;
+      const el = containerRef.current;
+      if (!el) return;
+      const scroller = findScrollParent(el);
+      if (scroller.scrollTop > 0 || e.deltaY >= 0) {
+        wheelAccum.current = 0;
+        if (pullDistance > 0 && !refreshing) {
+          setPullDistance(0);
+          setPulling(false);
+        }
+        return;
+      }
+      wheelAccum.current += Math.abs(e.deltaY);
+      if (wheelTimer.current) clearTimeout(wheelTimer.current);
+      wheelTimer.current = setTimeout(() => {
+        wheelAccum.current = 0;
+        if (!refreshing) {
+          setPullDistance(0);
+          setPulling(false);
+        }
+      }, WHEEL_DECAY_MS);
+
+      const dampened = Math.min(wheelAccum.current * 0.4, THRESHOLD * 1.5);
+      setPullDistance(dampened);
+      if (dampened >= THRESHOLD) {
+        wheelAccum.current = 0;
+        if (wheelTimer.current) clearTimeout(wheelTimer.current);
+        setPulling(false);
+        doRefresh();
+      } else {
+        setPulling(dampened >= THRESHOLD * 0.8);
+      }
+    },
+    [refreshing, pullDistance, doRefresh],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (wheelTimer.current) clearTimeout(wheelTimer.current);
+    };
+  }, []);
 
   return (
     <div
@@ -68,7 +139,8 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
-      style={{ position: "relative", height: "100%", overflowY: "auto" }}
+      onWheel={onWheel}
+      style={{ position: "relative" }}
     >
       {(pullDistance > 0 || refreshing) && (
         <div
@@ -84,7 +156,7 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
               ? "REFRESHING..."
               : pulling
                 ? "RELEASE TO REFRESH"
-                : "PULL TO REFRESH"}
+                : "↑ PULL TO REFRESH"}
           </span>
         </div>
       )}
