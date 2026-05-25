@@ -608,6 +608,11 @@ URLs are the richest input type — a single URL can resolve to an RSS feed, a s
    - `twitter.com/:user`, `x.com/:user` → not supported; return a clear message ("Twitter/X feeds are not available — try following this person on Bluesky or Nostr instead").
    - `njump.me/:identifier`, `nostr.com/:identifier` → extract Nostr identifier, re-enter resolver.
 
+2b. **Known content platform shortcuts:**
+
+- `youtube.com/channel/:id`, `youtube.com/@:handle`, `youtube.com/c/:name`, `youtube.com/user/:name` → extract channel ID (direct from path or via page fetch), construct `youtube.com/feeds/videos.xml?channel_id=` Atom feed URL, validate via RSS fetch. Ingests as `protocol: 'rss'`.
+- `*.substack.com` (any subdomain except bare `substack.com`) → construct `/feed` URL, validate via RSS fetch. Custom-domain Substacks without a `.substack.com` hostname fall through to step 3's HTML link discovery.
+
 3. **RSS/Atom discovery.** Fetch the URL (respecting the SSRF rules from §XVI.3). Try in order:
    - Parse directly as RSS/Atom XML.
    - Parse as HTML, extract `<link rel="alternate" type="application/rss+xml">` or `type="application/atom+xml"`.
