@@ -1,4 +1,4 @@
-import pino from 'pino'
+import pino from "pino";
 
 // =============================================================================
 // Shared Logger
@@ -11,17 +11,19 @@ import pino from 'pino'
 //   logger.info({ readerId, amountPence }, 'Gate pass recorded')
 // =============================================================================
 
-// pino v8 types use `export =` (CJS); TypeScript NodeNext ESM treats the default
-// import as a namespace rather than a callable — cast via any to call the factory.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const logger = (pino as any)({
-  level: process.env.LOG_LEVEL ?? 'info',
-  ...(process.env.NODE_ENV !== 'production' && {
+export const pinoConfig: Record<string, unknown> = {
+  level: process.env.LOG_LEVEL ?? "info",
+  ...(process.env.NODE_ENV !== "production" && {
     transport: {
-      target: 'pino-pretty',
+      target: "pino-pretty",
       options: { colorize: true },
     },
   }),
-})
+};
 
-export default logger
+// pino v8 types use `export =` (CJS); TypeScript NodeNext ESM treats the default
+// import as a namespace rather than a callable — cast via any to call the factory.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const logger = (pino as any)(pinoConfig);
+
+export default logger;

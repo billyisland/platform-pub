@@ -177,7 +177,7 @@ docker compose ps   # wait for postgres to be healthy
 
 The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. `schema.sql` is generated from `pg_dump` of a fully-migrated database and the `_migrations` table is pre-seeded accordingly.
 
-For **fresh** databases: no action needed — `schema.sql` includes all structural changes through migration 084 (as of 2026-05-15).
+For **fresh** databases: no action needed — `schema.sql` includes all structural changes through migration 093 (as of 2026-05-25).
 
 For **existing** databases that were initialised with an earlier `schema.sql`, use the migration runner:
 

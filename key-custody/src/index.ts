@@ -1,10 +1,13 @@
-import 'dotenv/config'
-import Fastify from 'fastify'
-import sensible from '@fastify/sensible'
-import { keypairRoutes } from './routes/keypairs.js'
-import { pool } from '@platform-pub/shared/db/client.js'
-import logger from './lib/logger.js'
-import { requireEnv, requireEnvMinLength } from '@platform-pub/shared/lib/env.js'
+import "dotenv/config";
+import Fastify from "fastify";
+import sensible from "@fastify/sensible";
+import { keypairRoutes } from "./routes/keypairs.js";
+import { pool } from "@platform-pub/shared/db/client.js";
+import logger, { pinoConfig } from "./lib/logger.js";
+import {
+  requireEnv,
+  requireEnvMinLength,
+} from "@platform-pub/shared/lib/env.js";
 
 // =============================================================================
 // all.haus — Key Custody Service
@@ -26,36 +29,36 @@ import { requireEnv, requireEnvMinLength } from '@platform-pub/shared/lib/env.js
 // =============================================================================
 
 // Validate required env vars at startup — fail fast
-requireEnv('INTERNAL_SECRET')
-requireEnv('DATABASE_URL')
-requireEnvMinLength('ACCOUNT_KEY_HEX', 32)
+requireEnv("INTERNAL_SECRET");
+requireEnv("DATABASE_URL");
+requireEnvMinLength("ACCOUNT_KEY_HEX", 32);
 
-const app = Fastify({ logger })
+const app = Fastify({ logger: pinoConfig });
 
 async function start() {
-  await app.register(sensible)
-  await app.register(keypairRoutes, { prefix: '/api/v1' })
+  await app.register(sensible);
+  await app.register(keypairRoutes, { prefix: "/api/v1" });
 
-  app.get('/health', async () => {
-    await pool.query('SELECT 1')
-    return { status: 'ok', service: 'key-custody' }
-  })
+  app.get("/health", async () => {
+    await pool.query("SELECT 1");
+    return { status: "ok", service: "key-custody" };
+  });
 
   const shutdown = async (signal: string) => {
-    logger.info({ signal }, 'Shutting down')
-    await app.close()
-    await pool.end()
-    process.exit(0)
-  }
-  process.on('SIGTERM', () => shutdown('SIGTERM'))
-  process.on('SIGINT', () => shutdown('SIGINT'))
+    logger.info({ signal }, "Shutting down");
+    await app.close();
+    await pool.end();
+    process.exit(0);
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 
-  const port = parseInt(process.env.PORT ?? '3004', 10)
-  await app.listen({ port, host: '0.0.0.0' })
-  logger.info({ port }, 'Key custody service started')
+  const port = parseInt(process.env.PORT ?? "3004", 10);
+  await app.listen({ port, host: "0.0.0.0" });
+  logger.info({ port }, "Key custody service started");
 }
 
 start().catch((err) => {
-  logger.error({ err }, 'Failed to start key custody service')
-  process.exit(1)
-})
+  logger.error({ err }, "Failed to start key custody service");
+  process.exit(1);
+});

@@ -54,7 +54,7 @@ import { extractRoutes } from "./routes/extract.js";
 import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
 import { publishScheduledDrafts } from "./workers/scheduler.js";
 import { pool } from "@platform-pub/shared/db/client.js";
-import logger from "@platform-pub/shared/lib/logger.js";
+import logger, { pinoConfig } from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
 // all.haus — API Gateway
@@ -78,7 +78,7 @@ import logger from "@platform-pub/shared/lib/logger.js";
 const SESSION_SECRET = requireEnvMinLength("SESSION_SECRET", 32);
 const APP_URL = requireEnv("APP_URL");
 
-const app = Fastify({ logger });
+const app = Fastify({ logger: pinoConfig });
 
 async function start() {
   // Plugins

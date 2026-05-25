@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   FeedItem,
@@ -232,13 +232,18 @@ function CardActions({
   isSaved?: boolean;
   onToggleSave?: (feedItemId: string, next: boolean) => void;
 }) {
+  const [copied, setCopied] = useState(false);
+
   if (ctx.density === "compact") return null;
 
   function handleShare(e: React.MouseEvent) {
     e.stopPropagation();
     if (!shareUrl) return;
     if (typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(shareUrl);
+      void navigator.clipboard.writeText(shareUrl).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
     }
   }
 
@@ -305,7 +310,7 @@ function CardActions({
           }}
           className="hover:opacity-80"
         >
-          Share
+          {copied ? "Copied!" : "Share"}
         </button>
       )}
       {canSave && (

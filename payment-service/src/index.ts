@@ -5,7 +5,7 @@ import { paymentRoutes } from "./routes/payment.js";
 import { webhookRoutes } from "./routes/webhook.js";
 import { startPayoutWorker } from "./workers/payout.js";
 import { pool } from "@platform-pub/shared/db/client.js";
-import logger from "./lib/logger.js";
+import logger, { pinoConfig } from "./lib/logger.js";
 import { requireEnv } from "@platform-pub/shared/lib/env.js";
 import { settlementService } from "./services/settlement.js";
 
@@ -20,7 +20,7 @@ requireEnv("INTERNAL_SERVICE_TOKEN");
 requireEnv("PLATFORM_SERVICE_PRIVKEY");
 requireEnv("DATABASE_URL");
 
-const app = Fastify({ logger });
+const app = Fastify({ logger: pinoConfig });
 
 async function start() {
   // Plugins
