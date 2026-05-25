@@ -22,6 +22,8 @@ interface MediaAttachment {
   height?: number;
   title?: string;
   description?: string;
+  duration_in_seconds?: number;
+  size_in_bytes?: number;
 }
 
 export interface ExternalFeedItem {
@@ -73,6 +75,15 @@ function atprotoProfileUri(authorUri: string): string {
   return `https://bsky.app/profile/${authorUri}`;
 }
 
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function hostOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -100,6 +111,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
   const imageMedia = item.media.filter((m) => m.type === "image");
   const linkEmbed = item.media.find((m) => m.type === "link");
   const videoMedia = item.media.find((m) => m.type === "video");
+  const audioMedia = item.media.find((m) => m.type === "audio");
   const quoteWebUri =
     isAtproto && item.sourceQuoteUri
       ? atprotoWebUri(item.sourceQuoteUri)
@@ -212,6 +224,26 @@ export function ExternalCard({ item }: ExternalCardProps) {
             Watch on {isAtproto ? "Bluesky" : "source"}
           </span>
         </a>
+      )}
+
+      {/* Audio (podcast episodes) */}
+      {audioMedia && (
+        <div className="mt-2.5 border border-grey-200 px-3 py-2">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="label-ui text-grey-400">AUDIO</span>
+            {audioMedia.duration_in_seconds != null && (
+              <span className="text-mono-xs text-grey-600">
+                {formatDuration(audioMedia.duration_in_seconds)}
+              </span>
+            )}
+          </div>
+          <audio
+            src={audioMedia.url}
+            controls
+            preload="none"
+            className="w-full h-8"
+          />
+        </div>
       )}
 
       {/* Quoted post (Bluesky only for now) */}

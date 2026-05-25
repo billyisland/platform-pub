@@ -15,9 +15,17 @@ type RssItemExtras = {
   mediaThumbnail: unknown;
   "content:encoded"?: string;
   author?: string;
+  "itunes:duration"?: string;
+  "itunes:image"?: unknown;
+  "itunes:author"?: string;
+  "itunes:summary"?: string;
+  "itunes:episode"?: string;
+  "itunes:season"?: string;
+  "podcast:transcript"?: unknown;
+  "podcast:chapters"?: unknown;
 };
 
-const parser = new Parser<unknown, RssItemExtras>({
+const parser = new Parser<Record<string, never>, RssItemExtras>({
   timeout: 10_000,
   maxRedirects: 3,
   customFields: {
@@ -26,6 +34,14 @@ const parser = new Parser<unknown, RssItemExtras>({
       ["media:thumbnail", "mediaThumbnail"],
       "content:encoded",
       "author",
+      "itunes:duration",
+      "itunes:image",
+      "itunes:author",
+      "itunes:summary",
+      "itunes:episode",
+      "itunes:season",
+      "podcast:transcript",
+      "podcast:chapters",
     ],
   },
 });
@@ -56,6 +72,7 @@ interface NormalisedItem {
   title: string | null;
   language: string | null;
   media: MediaAttachment[];
+  interactionData?: Record<string, unknown>;
   publishedAt: Date;
 }
 
@@ -69,6 +86,8 @@ interface MediaAttachment {
   mime_type?: string;
   title?: string;
   description?: string;
+  duration_in_seconds?: number;
+  size_in_bytes?: number;
 }
 
 export async function fetchRssFeed(
@@ -118,6 +137,8 @@ export async function fetchRssFeed(
 
   const feed = await parser.parseString(response.text);
 
+  const feedImageUrl = feed.itunes?.image ?? undefined;
+
   const items: NormalisedItem[] = [];
   for (const entry of feed.items ?? []) {
     const guid = entry.guid ?? entry.link;
@@ -127,9 +148,15 @@ export async function fetchRssFeed(
       entry["content:encoded"] ?? entry.content ?? entry.summary ?? "";
     const contentHtml = rawHtml ? sanitizeContent(rawHtml) : null;
     const contentText = rawHtml ? stripHtml(rawHtml) : null;
-    const summaryText = entry.summary ? stripHtml(entry.summary) : null;
+    const summaryText = entry.summary
+      ? stripHtml(entry.summary)
+      : entry["itunes:summary"]
+        ? stripHtml(entry["itunes:summary"])
+        : null;
 
-    const media = extractMedia(entry);
+    const media = extractMedia(entry, feedImageUrl);
+
+    const interactionData = buildPodcastInteractionData(entry);
 
     let publishedAt: Date;
     try {
@@ -148,7 +175,12 @@ export async function fetchRssFeed(
 
     items.push({
       sourceItemUri: guid,
-      authorName: entry.creator ?? entry.author ?? null,
+      authorName:
+        entry.creator ??
+        entry.author ??
+        entry["itunes:author"] ??
+        feed.itunes?.author ??
+        null,
       authorHandle: null,
       authorUri: null,
       contentText,
@@ -157,6 +189,7 @@ export async function fetchRssFeed(
       title: entry.title ?? null,
       language: null,
       media,
+      ...(interactionData && { interactionData }),
       publishedAt,
     });
   }
@@ -171,17 +204,76 @@ export async function fetchRssFeed(
   };
 }
 
-function extractMedia(entry: any): MediaAttachment[] {
+function buildPodcastInteractionData(
+  entry: any,
+): Record<string, unknown> | undefined {
+  const chaptersRaw = entry["podcast:chapters"];
+  const transcriptRaw = entry["podcast:transcript"];
+  const episode = entry["itunes:episode"];
+  const season = entry["itunes:season"];
+
+  const chaptersUrl =
+    typeof chaptersRaw === "object" && chaptersRaw !== null
+      ? (chaptersRaw.$ ?? chaptersRaw).url
+      : undefined;
+  const transcriptUrl =
+    typeof transcriptRaw === "object" && transcriptRaw !== null
+      ? (transcriptRaw.$ ?? transcriptRaw).url
+      : undefined;
+
+  const data: Record<string, unknown> = {};
+  if (chaptersUrl) data.chaptersUrl = chaptersUrl;
+  if (transcriptUrl) data.transcriptUrl = transcriptUrl;
+  if (episode) data.episode = parseInt(episode, 10) || undefined;
+  if (season) data.season = parseInt(season, 10) || undefined;
+
+  return Object.keys(data).length > 0 ? data : undefined;
+}
+
+function extractItunesImageUrl(raw: unknown): string | undefined {
+  if (!raw) return undefined;
+  if (typeof raw === "string" && /^https?:\/\//i.test(raw)) return raw;
+  if (typeof raw === "object" && raw !== null) {
+    const href = (raw as any).$ ? (raw as any).$.href : (raw as any).href;
+    if (typeof href === "string" && /^https?:\/\//i.test(href)) return href;
+  }
+  return undefined;
+}
+
+function parseDuration(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  const asNum = Number(trimmed);
+  if (!isNaN(asNum) && asNum >= 0) return Math.round(asNum);
+  const parts = trimmed.split(":").map(Number);
+  if (parts.some(isNaN)) return undefined;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return undefined;
+}
+
+function extractMedia(entry: any, feedImageUrl?: string): MediaAttachment[] {
   const media: MediaAttachment[] = [];
+
+  const duration = parseDuration(entry["itunes:duration"]);
+  const episodeImage = extractItunesImageUrl(entry["itunes:image"]);
 
   // <enclosure> elements
   if (entry.enclosure) {
     const enc = entry.enclosure;
     if (enc.url && /^https?:\/\//i.test(enc.url)) {
+      const type = inferMediaType(enc.type ?? "");
       media.push({
-        type: inferMediaType(enc.type ?? ""),
+        type,
         url: enc.url,
         mime_type: enc.type ?? undefined,
+        ...(type === "audio" && {
+          duration_in_seconds: duration,
+          size_in_bytes: enc.length
+            ? parseInt(enc.length, 10) || undefined
+            : undefined,
+          thumbnail: episodeImage ?? feedImageUrl,
+        }),
       });
     }
   }
@@ -301,6 +393,8 @@ function parseJsonFeed(
         url: att.url,
         mime_type: att.mime_type ?? undefined,
         title: att.title ?? undefined,
+        duration_in_seconds: att.duration_in_seconds ?? undefined,
+        size_in_bytes: att.size_in_bytes ?? undefined,
       });
     }
 

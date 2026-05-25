@@ -140,7 +140,7 @@ header or shape-sniff, parses natively with `parseJsonFeed()`, falls through
 to `rss-parser` for RSS/Atom. Handles both JSON Feed 1.0 (`author`) and
 1.1 (`authors[]`), maps attachments and images into existing `NormalisedItem`.
 
-### 1B: Podcast enrichment
+### 1B: Podcast enrichment ✅ DONE
 
 Already ingestible as plain RSS. The work is parsing the `podcast:`
 namespace into richer `media` JSONB.
@@ -158,6 +158,19 @@ that carry duration and chapter links. `ExternalVesselCard` renders audio
 items with a play indicator.
 
 **Effort:** Half a day.
+
+**Status:** Shipped. `rss-parser` item custom fields extended with
+`itunes:duration`, `itunes:image`, `itunes:author`, `itunes:summary`,
+`itunes:episode`, `itunes:season`, `podcast:transcript`,
+`podcast:chapters`. Audio enclosures now carry `duration_in_seconds`,
+`size_in_bytes`, and `thumbnail` (episode artwork falling back to
+feed-level `itunes:image`). `itunes:author` falls back as author name.
+`interaction_data` populated with `chaptersUrl`, `transcriptUrl`,
+`episode`, `season` from Podcasting 2.0 namespace. JSON Feed attachments
+also carry `duration_in_seconds` and `size_in_bytes`. RSS ingest task
+dual-writes `interaction_data`. `ExternalCard` renders audio items with
+native `<audio controls preload="none">` player and mono-caps duration
+label.
 
 ### 1C: YouTube channel RSS
 
@@ -501,15 +514,15 @@ ops task.
 
 ## Recommended sequence
 
-| Order | Slice                                                                | Effort    | Depends on               |
-| ----- | -------------------------------------------------------------------- | --------- | ------------------------ |
-| 1     | **Slice 0** — schema migration ✅                                    | 1 hour    | —                        |
-| 2     | **Slice 1** — RSS family (JSON Feed ✅, podcasts, YouTube, Substack) | 2 days    | —                        |
-| 3     | **Slice 2** — Lemmy AP compatibility check + wiring                  | 1–3 days  | —                        |
-| 4     | **Slice 3** — Email newsletters                                      | 1 week    | Slice 0                  |
-| 5     | **Slice 4** — Telegram channels                                      | 4 days    | Slice 0                  |
-| 6     | **Slice 5** — Farcaster                                              | 2–3 weeks | Slice 0 + ops commitment |
-| 7     | **Slice 6** — Matrix                                                 | 2–4 weeks | Slice 0 + ops commitment |
+| Order | Slice                                                                   | Effort    | Depends on               |
+| ----- | ----------------------------------------------------------------------- | --------- | ------------------------ |
+| 1     | **Slice 0** — schema migration ✅                                       | 1 hour    | —                        |
+| 2     | **Slice 1** — RSS family (JSON Feed ✅, podcasts ✅, YouTube, Substack) | 2 days    | —                        |
+| 3     | **Slice 2** — Lemmy AP compatibility check + wiring                     | 1–3 days  | —                        |
+| 4     | **Slice 3** — Email newsletters                                         | 1 week    | Slice 0                  |
+| 5     | **Slice 4** — Telegram channels                                         | 4 days    | Slice 0                  |
+| 6     | **Slice 5** — Farcaster                                                 | 2–3 weeks | Slice 0 + ops commitment |
+| 7     | **Slice 6** — Matrix                                                    | 2–4 weeks | Slice 0 + ops commitment |
 
 Slices 1 and 2 are independent of Slice 0 (they don't add new enum
 values). Start them in parallel with or before the migration.
