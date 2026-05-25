@@ -1529,6 +1529,49 @@ function weightToStep(weight: number): number {
 // through a more complex score computation. The dominant-mode rule is the
 // honest first cut.
 // -----------------------------------------------------------------------------
+
+function groupReplies(items: ReturnType<typeof rowToItem>[]) {
+  const groups = new Map<string, { index: number; item: any }[]>();
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.type !== "external" || !it.sourceReplyUri) continue;
+    let arr = groups.get(it.sourceReplyUri);
+    if (!arr) {
+      arr = [];
+      groups.set(it.sourceReplyUri, arr);
+    }
+    arr.push({ index: i, item: it });
+  }
+
+  const remove = new Set<number>();
+  const replace = new Map<number, any>();
+
+  for (const [uri, members] of groups) {
+    if (members.length < 2) continue;
+    const sorted = [...members].sort(
+      (a, b) => a.item.publishedAt - b.item.publishedAt,
+    );
+    const maxPublishedAt = sorted[sorted.length - 1].item.publishedAt;
+    const firstIndex = Math.min(...members.map((m) => m.index));
+    for (const m of members) {
+      if (m.index !== firstIndex) remove.add(m.index);
+    }
+    replace.set(firstIndex, {
+      type: "reply_group" as const,
+      sourceReplyUri: uri,
+      publishedAt: maxPublishedAt,
+      replies: sorted.map((m) => m.item),
+    });
+  }
+
+  const out: any[] = [];
+  for (let i = 0; i < items.length; i++) {
+    if (remove.has(i)) continue;
+    out.push(replace.get(i) ?? items[i]);
+  }
+  return out;
+}
+
 async function sourceFilteredItems(
   readerId: string,
   feedId: string,
@@ -1604,12 +1647,13 @@ async function sourceFilteredItems(
   );
 
   const items = result.rows.map(rowToItem);
+  const grouped = groupReplies(items);
   const lastRow = result.rows[result.rows.length - 1];
   const nextCursor = lastRow
     ? `${Number(lastRow.effective_score)}:${lastRow.fi_id}`
     : undefined;
 
-  return { items, nextCursor };
+  return { items: grouped, nextCursor };
 }
 
 // Slice 16 cursor: (effective_score:float, id:uuid). Distinct from

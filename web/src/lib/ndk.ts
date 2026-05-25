@@ -125,6 +125,13 @@ export interface ExternalFeedItem {
   pipStatus?: PipStatus;
 }
 
+export interface ReplyGroupItem {
+  type: "reply_group";
+  sourceReplyUri: string;
+  publishedAt: number;
+  replies: ExternalFeedItem[];
+}
+
 export type FeedItem =
   | (ArticleEvent & { type: "article" })
   | NoteEvent

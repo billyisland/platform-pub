@@ -1,6 +1,6 @@
 # Workspace Full View — Build Spec
 
-**Status:** Phase 6A shipped (2026-05-25, branch `workspace-experiment`). Phase 6B (reply grouping) remains — see §15. Phase 6A fixes: context-only items filtered from feeds, engagement counts added to platform timeline, grandparent tag persisted in `interaction_data` JSONB (both gateway parent-fetch and feed-ingest prefetch), missing `source_reply_uri`/`content_text` columns added to Mastodon prefetch INSERT, `WorkspaceFeedApiExternal` type completed (`contentWarning`, `poll`), `useLiveEngagement` cache aligned to 30s with error-recovery reset. Phase 5 adds: (5A) Mastodon content warnings — migration 093 adds `content_warning` column to `external_items`, AP adapter captures `spoiler_text` from sensitive notes, `ContentWarning` component wraps content with reveal toggle. (5B) Poll display + voting — AP adapter extracts `oneOf`/`anyOf` poll data into `interaction_data.poll`, `PollDisplay` component renders option bars with interactive voting, `POST /external-items/:id/poll-vote` endpoint enqueues via `enqueuePollVote`, feed-ingest `voteMastodonPoll` resolves remote status and POSTs to `/api/v1/polls/:id/votes`. (5C) Reader pane — `GET /api/v1/extract?url=` endpoint using `@mozilla/readability` + `jsdom` with SSRF-hardened fetch and 1h cache, `useReader` Zustand store, `ReaderPane` overlay component (scrim + 640px serif panel), RSS article clicks open reader pane. (5D) Inline video embeds — `MediaBlock` detects YouTube/Vimeo URLs, fetches oEmbed HTML from existing proxy on expand, renders iframe inline with `prefers-reduced-motion` respect. (5E) Pull-to-refresh + empty states — `PullToRefresh` component (touch overscroll, 60px threshold), `EmptyFeedTile` with no-sources/no-items variants, wired into Vessel and WorkspaceView. (5F) Context-only GC cron — `external_context_gc` task (daily 02:30 UTC) deletes unreferenced `is_context_only` items older than 30 days.
+**Status:** Phase 6B shipped (2026-05-25, branch `workspace-experiment`). All phases complete. Phase 6B: reply grouping — pure `groupReplies()` post-processing in `sourceFilteredItems()` groups external items sharing the same `source_reply_uri` (2+ siblings) into `reply_group` envelopes; new `ReplyGroupCard` component renders `ParentContextTile` once + chronological `ExternalPlayscriptEntry` list. Phase 6A fixes: context-only items filtered from feeds, engagement counts added to platform timeline, grandparent tag persisted in `interaction_data` JSONB (both gateway parent-fetch and feed-ingest prefetch), missing `source_reply_uri`/`content_text` columns added to Mastodon prefetch INSERT, `WorkspaceFeedApiExternal` type completed (`contentWarning`, `poll`), `useLiveEngagement` cache aligned to 30s with error-recovery reset. Phase 5 adds: (5A) Mastodon content warnings — migration 093 adds `content_warning` column to `external_items`, AP adapter captures `spoiler_text` from sensitive notes, `ContentWarning` component wraps content with reveal toggle. (5B) Poll display + voting — AP adapter extracts `oneOf`/`anyOf` poll data into `interaction_data.poll`, `PollDisplay` component renders option bars with interactive voting, `POST /external-items/:id/poll-vote` endpoint enqueues via `enqueuePollVote`, feed-ingest `voteMastodonPoll` resolves remote status and POSTs to `/api/v1/polls/:id/votes`. (5C) Reader pane — `GET /api/v1/extract?url=` endpoint using `@mozilla/readability` + `jsdom` with SSRF-hardened fetch and 1h cache, `useReader` Zustand store, `ReaderPane` overlay component (scrim + 640px serif panel), RSS article clicks open reader pane. (5D) Inline video embeds — `MediaBlock` detects YouTube/Vimeo URLs, fetches oEmbed HTML from existing proxy on expand, renders iframe inline with `prefers-reduced-motion` respect. (5E) Pull-to-refresh + empty states — `PullToRefresh` component (touch overscroll, 60px threshold), `EmptyFeedTile` with no-sources/no-items variants, wired into Vessel and WorkspaceView. (5F) Context-only GC cron — `external_context_gc` task (daily 02:30 UTC) deletes unreferenced `is_context_only` items older than 30 days.
 
 ## Overview
 
@@ -653,29 +653,10 @@ Fix: add `contentWarning?: string | null`, `poll?: PollData | null` to the inter
 - `useLiveEngagement.ts` caches for 60s, backend caches for 30s — align both to 30s
 - `useLiveEngagement.ts:55-57` catch block silently swallows errors — reset to snapshot counts on failure so the UI doesn't freeze on stale values
 
-### Phase 6B — Reply grouping
+### Phase 6B — Reply grouping (shipped 2026-05-25)
 
-_Separate session. This is the largest remaining spec gap (§3.3)._
+Pure `groupReplies()` post-processing function in `gateway/src/routes/feeds.ts`, wired into `sourceFilteredItems()` after `rowToItem()` mapping. No SQL or cursor changes.
 
-When multiple subscribed users reply to the same external post, the feed should show the parent once with replies grouped beneath it, positioned at the most recent reply's timestamp. Currently external replies appear as standalone orphaned cards.
+**Backend**: Groups external items sharing the same `source_reply_uri` (2+ siblings) into `reply_group` envelopes. Group positioned at the first occurrence (highest effective_score). Children sorted by `publishedAt ASC`. Singletons and non-reply items pass through unchanged. Cursor unaffected — derived from raw DB rows before grouping.
 
-Scope:
-
-**Backend** (`feeds.ts` + `timeline.ts`):
-
-- Detect external items sharing the same `source_reply_uri`
-- Deduplicate the parent: emit one parent row, attach child reply rows
-- Position the group at `MAX(published_at)` of the replies
-- Handle pagination boundaries gracefully (spec allows rendering the parent twice if grouping is missed at a boundary)
-
-**Frontend** (`VesselCard.tsx` / `WorkspaceView.tsx`):
-
-- Render grouped replies beneath their parent card in the feed
-- Reuse `ParentContextTile` for the parent rendering
-- Replies render in chronological order beneath the parent, using the existing playscript entry pattern or a lightweight variant
-
-**Edge cases**:
-
-- Single reply to an external post (no grouping needed — just show parent context tile as today)
-- Parent is from an unsubscribed author (parent is context-only, fetched on demand)
-- Pagination: group straddles a page boundary — acceptable to show parent on both pages
+**Frontend**: New `WorkspaceFeedApiReplyGroup` type (`web/src/lib/api/feeds.ts`), `ReplyGroupItem` type (`web/src/lib/ndk.ts`, kept out of base `FeedItem` union — workspace-only via `WorkspaceItem`). `mapApiItem()` in `WorkspaceView.tsx` handles `reply_group` via extracted `mapExternalApiItem()` helper. New `ReplyGroupCard` component (`web/src/components/workspace/ReplyGroupCard.tsx`): renders `ParentContextTile` once (using first reply's ID, module cache deduplicates), then chronological `ExternalPlayscriptEntry` list (5 initial, "Show N more" pagination). Grey-300 left bar. Compact density shows summary line.

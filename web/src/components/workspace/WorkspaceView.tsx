@@ -18,11 +18,13 @@ import {
 import type {
   FeedItem,
   ExternalFeedItem,
+  ReplyGroupItem,
   ArticleEvent,
   NoteEvent,
 } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
 import { VesselCard, NewUserVesselCard, type NewUserItem } from "./VesselCard";
+import { ReplyGroupCard } from "./ReplyGroupCard";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { Composer, type ReplyTarget } from "./Composer";
 import { PipPanel } from "./PipPanel";
@@ -93,7 +95,7 @@ function defaultGridSlot(
   };
 }
 
-type WorkspaceItem = FeedItem | NewUserItem;
+type WorkspaceItem = FeedItem | NewUserItem | ReplyGroupItem;
 
 interface VesselState {
   feed: WorkspaceFeed;
@@ -102,6 +104,38 @@ interface VesselState {
   status: "loading" | "ready" | "error";
   view: "live" | "saved";
   savedIds: Set<string>;
+}
+
+function mapExternalApiItem(
+  item: WorkspaceFeedApiItem & { type: "external" },
+): ExternalFeedItem {
+  return {
+    type: "external",
+    id: item.id,
+    feedItemId: item.feedItemId,
+    externalSourceId: item.externalSourceId,
+    sourceProtocol: item.sourceProtocol,
+    sourceItemUri: item.sourceItemUri,
+    authorName: item.authorName,
+    authorHandle: item.authorHandle,
+    authorAvatarUrl: item.authorAvatarUrl,
+    authorUri: item.authorUri,
+    contentText: item.contentText,
+    contentHtml: item.contentHtml,
+    title: item.title,
+    summary: item.summary,
+    sourceReplyUri: item.sourceReplyUri ?? null,
+    sourceQuoteUri: item.sourceQuoteUri ?? null,
+    likeCount: item.likeCount ?? 0,
+    replyCount: item.replyCount ?? 0,
+    repostCount: item.repostCount ?? 0,
+    media: item.media ?? [],
+    publishedAt: item.publishedAt,
+    sourceName: item.sourceName,
+    sourceAvatar: item.sourceAvatar,
+    pipStatus: item.pipStatus ?? "unknown",
+    savedAt: item.savedAt,
+  };
 }
 
 function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
@@ -148,33 +182,15 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
     };
   }
   if (item.type === "external") {
+    return mapExternalApiItem(item);
+  }
+  if (item.type === "reply_group") {
     return {
-      type: "external",
-      id: item.id,
-      feedItemId: item.feedItemId,
-      externalSourceId: item.externalSourceId,
-      sourceProtocol: item.sourceProtocol,
-      sourceItemUri: item.sourceItemUri,
-      authorName: item.authorName,
-      authorHandle: item.authorHandle,
-      authorAvatarUrl: item.authorAvatarUrl,
-      authorUri: item.authorUri,
-      contentText: item.contentText,
-      contentHtml: item.contentHtml,
-      title: item.title,
-      summary: item.summary,
-      sourceReplyUri: item.sourceReplyUri ?? null,
-      sourceQuoteUri: item.sourceQuoteUri ?? null,
-      likeCount: item.likeCount ?? 0,
-      replyCount: item.replyCount ?? 0,
-      repostCount: item.repostCount ?? 0,
-      media: item.media ?? [],
+      type: "reply_group",
+      sourceReplyUri: item.sourceReplyUri,
       publishedAt: item.publishedAt,
-      sourceName: item.sourceName,
-      sourceAvatar: item.sourceAvatar,
-      pipStatus: item.pipStatus ?? "unknown",
-      savedAt: item.savedAt,
-    } as ExternalFeedItem;
+      replies: item.replies.map(mapExternalApiItem),
+    } as ReplyGroupItem;
   }
   if (item.type === "new_user") {
     return {
@@ -490,6 +506,15 @@ export function WorkspaceView() {
     sources: WorkspaceFeedSource[],
   ): string | undefined {
     if (item.type === "new_user") return undefined;
+    if (item.type === "reply_group") {
+      const first = item.replies[0];
+      if (!first?.externalSourceId) return undefined;
+      return sources.find(
+        (s) =>
+          s.sourceType === "external_source" &&
+          s.externalSourceId === first.externalSourceId,
+      )?.id;
+    }
     if (item.type === "external") {
       const esId = item.externalSourceId;
       if (!esId) return undefined;
@@ -795,6 +820,13 @@ export function WorkspaceView() {
                       <NewUserVesselCard
                         key={`new-user-${item.username}-${item.joinedAt}`}
                         item={item}
+                        density={layout.density}
+                        brightness={layout.brightness}
+                      />
+                    ) : item.type === "reply_group" ? (
+                      <ReplyGroupCard
+                        key={`rg-${item.sourceReplyUri}`}
+                        group={item}
                         density={layout.density}
                         brightness={layout.brightness}
                       />

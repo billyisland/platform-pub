@@ -262,7 +262,7 @@ Threads never use nested indentation, left borders between nested replies, quote
 - `docs/adr/REDESIGN-SCOPE.md` — product scope document arguing what the product is (companion to the redesign spec)
 - `docs/adr/UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)
 - `docs/adr/ALLHAUS-OMNIBUS.md` — trust graph spec (Layer 1/2/4, Phase A/B anonymity)
-- `docs/adr/WORKSPACE-FULL-VIEW-SPEC.md` — workspace full view spec (Compact/Full fidelity modes, engagement counts, parent context, threads, cross-platform interactions, reader pane, content warnings, polls, inline video, pull-to-refresh; Phases 1–6A shipped, 6B reply grouping remains — see §15)
+- `docs/adr/WORKSPACE-FULL-VIEW-SPEC.md` — workspace full view spec (Compact/Full fidelity modes, engagement counts, parent context, threads, cross-platform interactions, reader pane, content warnings, polls, inline video, pull-to-refresh, reply grouping; all phases shipped)
 - `docs/adr/` — active ADRs and specs (publications, email-on-publish, traffology, currency strategy, etc.)
 - `docs/audits/` — code reviews, audits, and fix programmes (`docs/audits/FIX-PROGRAMME.md`, `docs/audits/platform-pub-review.md`, `docs/audits/AUDIT-BACKLOG.md`, etc.)
 - `DEPLOYMENT.md` — full production deployment guide

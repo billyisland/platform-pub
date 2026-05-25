@@ -113,11 +113,19 @@ export interface WorkspaceFeedApiNewUser {
   joinedAt: number;
 }
 
+export interface WorkspaceFeedApiReplyGroup {
+  type: "reply_group";
+  sourceReplyUri: string;
+  publishedAt: number;
+  replies: WorkspaceFeedApiExternal[];
+}
+
 export type WorkspaceFeedApiItem =
   | WorkspaceFeedApiArticle
   | WorkspaceFeedApiNote
   | WorkspaceFeedApiExternal
-  | WorkspaceFeedApiNewUser;
+  | WorkspaceFeedApiNewUser
+  | WorkspaceFeedApiReplyGroup;
 
 export interface WorkspaceFeedItemsResponse {
   feed: WorkspaceFeed;
