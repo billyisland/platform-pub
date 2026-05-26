@@ -254,14 +254,14 @@ export function NoteCard({
         />
       </div>
 
-      {/* Reply thread (display only, no inline composer) */}
+      {/* Reply thread — expanded shows full thread, collapsed shows preview */}
       <div className="mt-2">
         <ReplySection
           targetEventId={note.id}
           targetKind={1}
           targetAuthorPubkey={note.pubkey}
           compact
-          previewLimit={3}
+          previewLimit={expanded ? undefined : 3}
           composerOpen={false}
           onReplyCountLoaded={setReplyCount}
         />

@@ -7,6 +7,7 @@ import type { ArticleEvent } from "../../lib/ndk";
 import { useWriterName } from "../../hooks/useWriterName";
 import { useAuth } from "../../stores/auth";
 import { replies as repliesApi } from "../../lib/api";
+import { ReplySection } from "../replies/ReplySection";
 import { VoteControls } from "../ui/VoteControls";
 import { BookmarkButton } from "../ui/BookmarkButton";
 import { ShareButton } from "../ui/ShareButton";
@@ -243,6 +244,20 @@ export function ArticleCard({
           </>
         )}
       </div>
+
+      {/* Neighbourhood — reply thread on expansion */}
+      {expanded && (
+        <div className="mt-2">
+          <ReplySection
+            targetEventId={article.id}
+            targetKind={30023}
+            targetAuthorPubkey={article.pubkey}
+            compact
+            previewLimit={5}
+            composerOpen={false}
+          />
+        </div>
+      )}
     </div>
   );
 }
