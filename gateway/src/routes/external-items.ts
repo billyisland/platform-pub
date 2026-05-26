@@ -310,7 +310,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params;
       const { linkedAccountId } = req.body ?? {};
-      const accountId = (req as any).userId as string;
+      const accountId = req.session!.sub;
 
       if (!linkedAccountId) {
         return reply.status(400).send({ error: "linkedAccountId is required" });
@@ -400,7 +400,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params;
       const { linkedAccountId } = req.body ?? {};
-      const accountId = (req as any).userId as string;
+      const accountId = req.session!.sub;
 
       if (!linkedAccountId) {
         return reply.status(400).send({ error: "linkedAccountId is required" });
@@ -478,7 +478,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params;
       const { linkedAccountId, choices } = req.body ?? {};
-      const accountId = (req as any).userId as string;
+      const accountId = req.session!.sub;
 
       if (!linkedAccountId) {
         return reply.status(400).send({ error: "linkedAccountId is required" });
@@ -560,7 +560,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params;
       const { linkedAccountId, content } = req.body ?? {};
-      const accountId = (req as any).userId as string;
+      const accountId = req.session!.sub;
 
       if (!linkedAccountId) {
         return reply.status(400).send({ error: "linkedAccountId is required" });

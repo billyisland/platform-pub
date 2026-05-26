@@ -10,6 +10,8 @@ Issues are grouped by severity. Each entry has a problem description, file/line 
 
 **Status (2026-04-15, pass 3 triage complete):** All 21 pass-3 items resolved across migrations 062–064 and code changes in feed-ingest, gateway, shared, and web. Notable: undici Agent-pinned IPv6 + WebSocket DNS pinning (S7/S11), env-controlled crypto key rotation (S8), `NULLS NOT DISTINCT` unique constraint on `outbound_posts` for idempotent cross-posts (K7), grapheme-aware truncation via `Intl.Segmenter` shared across Bluesky and Mastodon adapters (K15), daily `external_sources_gc` task with `orphaned_at` grace/cull windows (K11), and per-initiator row cap on `resolver_async_results` (D8). `feed_items_reconcile` now logs drift at WARN with per-case counts so dual-write regressions surface on-call (D7).
 
+**Status (2026-05-26, pass 4):** C9 found and fixed — four cross-platform interaction routes reading a non-existent `req.userId` property instead of `req.session.sub`.
+
 ---
 
 ## Critical
@@ -28,6 +30,7 @@ items.sort((a, b) => (b.publishedAt ?? b.joinedAt) - (a.publishedAt ?? a.joinedA
 ```
 
 **Fix:**
+
 - Either interleave content + new-user items without resorting (preserve SQL ordering for content, insert new-user rows at fixed positions), or
 - Drive everything through a single query with `UNION ALL` and `ORDER BY score DESC, published_at DESC`.
 
@@ -42,6 +45,7 @@ items.sort((a, b) => (b.publishedAt ?? b.joinedAt) - (a.publishedAt ?? a.joinedA
 **Related issue (same file):** `refreshDids()` uses `setInterval(…, 60_000)` that fires regardless of whether the previous refresh is still in flight — on a slow DB this produces overlapping reconnect storms.
 
 **Fix:**
+
 - Wrap listener startup in `pg_try_advisory_lock(<const>)`; only the holder runs the WS. Release on shutdown; other replicas poll for the lock periodically.
 - For `refreshDids`: replace `setInterval` with a self-scheduling `setTimeout` that only re-arms after the previous run completes.
 
@@ -77,16 +81,18 @@ WHERE id = $1
 **Location:** `feed-ingest/src/tasks/outbound-cross-post.ts:108-118`
 
 **Fix:** Either:
+
 - Reject `actionType='quote'` at enqueue time for activitypub accounts in `gateway/src/lib/outbound-enqueue.ts`, returning a clear error to the UI; or
 - In the adapter, append the source URL to the body when `actionType='quote'` (Mastodon has no native quote-post semantics; link-appending is the conventional workaround).
 
-Recommended: do both — reject at enqueue *and* have the adapter treat unknown actionType as a bug not silent success.
+Recommended: do both — reject at enqueue _and_ have the adapter treat unknown actionType as a bug not silent success.
 
 ---
 
 ### C5. Explore feed pagination is broken at cursor boundaries — ✅ FIXED
 
 **Problem:** `exploreFeed` orders by `fi.score DESC, fi.published_at DESC` but its cursor filter is only `AND EXTRACT(EPOCH FROM fi.published_at)::bigint < $3`. The cursor carries `ts` (published_at of the last row on page N), not score. Because page N was sorted by `score DESC` first, its last row can have an arbitrary score and a high published_at. Page N+1 then:
+
 - returns items with higher scores than some items on page N (duplicates across pages), and
 - silently drops items whose `published_at > cursor.ts` that weren't in page N's top-N by score (items lost forever).
 
@@ -126,11 +132,27 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 
 ---
 
+### C9. Cross-platform interaction routes read non-existent `req.userId` — ✅ FIXED
+
+**Problem:** Four POST handlers in `gateway/src/routes/external-items.ts` read `(req as any).userId` to get the authenticated user's account ID. The auth middleware (`requireAuth`) sets `req.session` (with user ID at `req.session.sub`); `userId` is never set on the request object. Every other route in the gateway uses `req.session!.sub`. The result: `accountId` is always `undefined`, so linked-account ownership checks fail and cross-platform interactions silently break.
+
+**Locations:**
+
+- `gateway/src/routes/external-items.ts:313` (POST /external-items/:id/like)
+- `gateway/src/routes/external-items.ts:403` (POST /external-items/:id/repost)
+- `gateway/src/routes/external-items.ts:481` (POST /external-items/:id/poll-vote)
+- `gateway/src/routes/external-items.ts:563` (POST /external-items/:id/reply)
+
+**Fix:** Replace `(req as any).userId as string` with `req.session!.sub` at all four sites. The `!` assertion is safe because all four routes declare `preHandler: requireAuth`.
+
+---
+
 ## Security
 
 ### S1. DNS-rebinding TOCTOU in `safeFetch` — ✅ FIXED (IP ranges extended + DNS pinned)
 
 **Problem:** `validateHost()` resolves a hostname to IPs and checks against private ranges, then `fetch()` performs its own independent DNS lookup. A hostile DNS server can return a public IP during validation and a private IP for the actual request. The IP-range check doesn't cover:
+
 - IPv4-mapped IPv6 (`::ffff:127.0.0.1`)
 - Multicast (224.0.0.0/4)
 - IPv6 unique-local (fc00::/7)
@@ -138,6 +160,7 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 **Location:** `shared/src/lib/http-client.ts:45-102`
 
 **Fix:**
+
 - Pin the resolved IP: build a custom `undici` Dispatcher with a `connect` hook that uses the already-validated address.
 - Extend IP range checks to cover IPv4-mapped IPv6, multicast, and ULA.
 - Defence in depth: run feed-ingest and gateway in a network namespace that blocks RFC1918 egress.
@@ -149,10 +172,12 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 **Problem:** Both Nostr ingestion and Nostr outbound feed `relay_urls` (user-provided via `POST /feeds/subscribe`) directly into `new WebSocket(url)` with no validation. A user can subscribe with `relay_urls: ["ws://169.254.169.254/..."]` and cause the service to probe cloud-metadata or internal endpoints. `safeFetch` exists for HTTP but was never extended to WS.
 
 **Locations:**
+
 - `feed-ingest/src/tasks/feed-ingest-nostr.ts:243`
 - `feed-ingest/src/adapters/nostr-outbound.ts`
 
 **Fix:**
+
 - Add a `validateWebSocket(url)` helper in `shared/src/lib/http-client.ts` that parses the URL, checks scheme is `wss:`/`ws:`, runs `validateHost()` on the hostname, then returns the resolved address.
 - Call it before every `new WebSocket()`. Use the pinned address when constructing the socket, the same way the TOCTOU fix for S1 works.
 
@@ -185,6 +210,7 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 **Location:** `gateway/src/routes/feeds.ts` (the subscribe handler)
 
 **Fix:** Per-protocol validation in the Zod schema or a refine step:
+
 - `rss`: `sourceUri` is a valid http(s) URL, length ≤ 2048
 - `atproto`: `sourceUri` matches `^did:(plc|web):[a-zA-Z0-9.:_-]+$`
 - `activitypub`: `sourceUri` is a valid https URL
@@ -201,6 +227,7 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 **Location:** `gateway/src/routes/feeds.ts`
 
 **Fix:**
+
 - Cap array length at 10.
 - Validate each URL: parse, require scheme `ws:` or `wss:`, length ≤ 2048.
 - In prod, consider rejecting `ws:` entirely (insecure transport).
@@ -220,6 +247,7 @@ Recommended: do both — reject at enqueue *and* have the adapter treat unknown 
 ### S8. Crypto key rotation is unreachable without a code deploy — ✅ FIXED
 
 **Problem:** `CURRENT_KEY_VERSION = 1` is a compile-time constant. `getKeyForVersion(1)` delegates to `getCurrentKey()` which reads `LINKED_ACCOUNT_KEY_HEX`. To rotate keys, the operator must:
+
 1. Deploy new code with `CURRENT_KEY_VERSION = 2`,
 2. Move old key to `LINKED_ACCOUNT_KEY_HEX_V1`,
 3. Set new key as `LINKED_ACCOUNT_KEY_HEX`.
@@ -245,7 +273,8 @@ If the operator follows the obvious path (swap `LINKED_ACCOUNT_KEY_HEX` in place
 ### S10. Mastodon `Idempotency-Key` uses a weak 32-bit hash — ✅ FIXED
 
 **Problem:** `hashIdempotency` is a 32-bit FNV-1a variant. Space is 2^32; birthday collision at ~65K distinct posts inside Mastodon's 24h dedup window. Per-account scoping limits the real-world blast radius, but:
-- retries that *should* dedup can miss if Mastodon's internal scoping is broader than per-token,
+
+- retries that _should_ dedup can miss if Mastodon's internal scoping is broader than per-token,
 - two different replies from the same user that happen to hash-collide → second is silently treated as a duplicate (user sees "sent" but remote has only the first).
 
 **Location:** `feed-ingest/src/adapters/activitypub-outbound.ts:117-126`
@@ -290,7 +319,8 @@ WHERE source_id = $1 AND protocol = 'nostr_external'
 **Location:** `feed-ingest/src/tasks/feed-ingest-rss.ts:72`
 
 **Fix:** Either:
-- Process the *newest* `maxItems` (sort by `publishedAt` DESC first, then slice), so at worst the oldest history is the casualty — not the most recent content; or
+
+- Process the _newest_ `maxItems` (sort by `publishedAt` DESC first, then slice), so at worst the oldest history is the casualty — not the most recent content; or
 - Schedule a follow-up job to process the remainder, only saving etag once the full set is consumed.
 
 ---
@@ -304,9 +334,9 @@ WHERE source_id = $1 AND protocol = 'nostr_external'
 **Fix:** Build the all.haus canonical URL from the outbound row's `nostr_event_id`, compute its grapheme cost, and truncate the body to `max - linkLen - 2` (space + ellipsis) graphemes:
 
 ```ts
-const link = `${ALL_HAUS_BASE}/n/${nostrEventId}`
-const linkCost = graphemeCount(`\n\n${link}`)
-const budget = max - linkCost
+const link = `${ALL_HAUS_BASE}/n/${nostrEventId}`;
+const linkCost = graphemeCount(`\n\n${link}`);
+const budget = max - linkCost;
 // truncate body to budget, append ellipsis, append link
 ```
 
@@ -339,7 +369,7 @@ Read `jetstream_healthy` from `platform_config` once per poll tick and pass it a
 **Fix:** Add `+` to the local-part character class:
 
 ```js
-const AMBIGUOUS_AT = /^[\w.+-]+@[\w.-]+\.[\w]+$/
+const AMBIGUOUS_AT = /^[\w.+-]+@[\w.-]+\.[\w]+$/;
 ```
 
 While you're there, consider extending the TLD match beyond `[\w]+` to handle multi-label TLDs (`.co.uk` etc.) — `[\w.]+` is enough.
@@ -414,6 +444,7 @@ Handle the no-session-found case separately — log it once at `info`, mark `is_
 **Location:** `gateway/src/routes/feeds.ts:261-270`
 
 **Fix:** After DELETE, check remaining subscribers for the source. If zero, either:
+
 - flip `external_sources.is_active = FALSE` (poll skips inactive rows), or
 - add a daily `external_sources_gc` task that deactivates sources with zero subscribers for >7 days and optionally deletes very old inactive rows.
 
@@ -448,6 +479,7 @@ Recommend the cron approach — lets a re-subscribe within a few days resurrect 
 **Location:** `gateway/src/routes/feeds.ts:122-132`
 
 **Fix:** Either:
+
 - wrap check+insert in an advisory lock keyed by `subscriber_id`, or
 - drop the pre-check and rely on a `CHECK` via a trigger on `external_subscriptions` that counts and rejects at insert time (atomic against concurrent inserts).
 
@@ -495,15 +527,15 @@ Implement `DbStateStore` the same way `DbSessionStore` is implemented in the sam
 **Fix:** Null the cache on rejection:
 
 ```ts
-let clientPromise: Promise<NodeOAuthClient> | null = null
+let clientPromise: Promise<NodeOAuthClient> | null = null;
 export function getAtprotoClient(): Promise<NodeOAuthClient> {
   if (!clientPromise) {
     clientPromise = buildClient().catch((err) => {
-      clientPromise = null  // retry on next call
-      throw err
-    })
+      clientPromise = null; // retry on next call
+      throw err;
+    });
   }
-  return clientPromise
+  return clientPromise;
 }
 ```
 
@@ -516,6 +548,7 @@ export function getAtprotoClient(): Promise<NodeOAuthClient> {
 **Location:** `gateway/src/lib/resolver.ts:64`
 
 **Fix:** Two options:
+
 - **DB-backed table** (consistent with D1 approach): `resolver_async_results(request_id uuid pk, initiator_id uuid, result jsonb, expires_at timestamptz)`.
 - **Accept cache-miss by re-running resolve** on Phase B polls. The resolve is idempotent — duplicating it is cheaper than adding a new persistent cache, and fails gracefully.
 
@@ -528,6 +561,7 @@ Recommend the DB-backed option if D1 lands, because the plumbing becomes trivial
 **Problem:** Both flows write a cookie called `oauth_state`. If a user starts the Mastodon flow, leaves the tab, starts a Bluesky flow in another tab, then returns to the Mastodon tab and completes it, the Mastodon callback sees the Bluesky state and rejects.
 
 **Locations:**
+
 - `gateway/src/routes/linked-accounts.ts:196` (Mastodon)
 - `gateway/src/routes/linked-accounts.ts:345` (Bluesky)
 
@@ -547,6 +581,7 @@ Update both callback handlers to read the matching cookie.
 **Problem:** Mastodon callback has `{ preHandler: requireAuth }`, Bluesky callback doesn't. Bluesky derives userId from the signed cookie, so it works — but a logged-out user with a still-valid signed cookie could complete the link, and the inconsistency makes auth audits harder.
 
 **Locations:**
+
 - Mastodon: `gateway/src/routes/linked-accounts.ts:229-230`
 - Bluesky: `gateway/src/routes/linked-accounts.ts:380-386`
 
@@ -564,7 +599,7 @@ Update both callback handlers to read the matching cookie.
 
 ```ts
 // New format: base64url(version_byte || iv || tag || ct)
-const CURRENT_KEY_VERSION = 1
+const CURRENT_KEY_VERSION = 1;
 ```
 
 Support decryption with multiple keys keyed by version byte. Env becomes `LINKED_ACCOUNT_KEY_HEX_V1`, `LINKED_ACCOUNT_KEY_HEX_V2`, etc.; writes always use the latest. Existing rows without a version byte can be detected by length and assumed to be v0.
@@ -629,7 +664,7 @@ Not urgent, but worth scheduling before the first real rotation event.
 6. **C2** (Jetstream leader election) — same: not breaking now, blocks feed-ingest scale-out.
 7. Everything else as time allows.
 
-### Pass 3 (open)
+### Pass 3 (closed)
 
 1. **C6 + C7** (Nostr forgery + arbitrary deletion) — one-file fix, closes two criticals together. Any external Nostr source is currently an untrusted input channel capable of impersonating its own author and deleting any content we've ingested from them.
 2. **C5** (explore pagination at cursor boundaries) — user-visible feed breakage; compound-cursor pattern already exists in `followingFeed` to copy.
@@ -638,12 +673,16 @@ Not urgent, but worth scheduling before the first real rotation event.
 5. **K7** (outbound UNIQUE), **K13** (refresh rate limit), **K15** (grapheme truncation) — small, high-leverage correctness fixes.
 6. **S8** (crypto rotation workflow) — operational trap; fix before first real rotation.
 7. **S9** (media hotlink privacy) — product/privacy call as much as engineering.
-8. **S10** (weak idempotency hash), **K8–K14**, **D7–D9** — as capacity allows.
+
+### Pass 4 (closed)
+
+1. **C9** (cross-platform interaction routes read non-existent `req.userId`) — all four Phase 4 interaction endpoints broken; one-line fix per site.
+2. **S10** (weak idempotency hash), **K8–K14**, **D7–D9** — as capacity allows.
 
 ---
 
 ## Out of scope but worth noting
 
 - No automated test coverage was audited — this report is static analysis only. If the test suite covers any of the above, note it and close as "already caught".
-- The native content paths (articles, notes, feed-items dual-write from native tables) were *not* audited in depth — focus was on the universal-feed additions. Worth a separate pass on `articles → feed_items` and `notes → feed_items` dual-writes, since those drive the unified timeline.
+- The native content paths (articles, notes, feed-items dual-write from native tables) were _not_ audited in depth — focus was on the universal-feed additions. Worth a separate pass on `articles → feed_items` and `notes → feed_items` dual-writes, since those drive the unified timeline.
 - Performance/indexes on `feed_items` were not profiled against realistic row counts. The compound cursor `(published_at, id)` pattern is sound, but verify the supporting index exists.
