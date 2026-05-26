@@ -52,6 +52,7 @@ import { trustRoutes } from "./routes/trust.js";
 import { readingPositionRoutes } from "./routes/reading-positions.js";
 import { feedsRoutes } from "./routes/feeds.js";
 import { extractRoutes } from "./routes/extract.js";
+import { authorCardRoutes } from "./routes/author-card.js";
 import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
 import { publishScheduledDrafts } from "./workers/scheduler.js";
 import { pool } from "@platform-pub/shared/db/client.js";
@@ -227,6 +228,9 @@ async function start() {
 
   // Readability article extraction for reader pane.
   await app.register(extractRoutes, { prefix: "/api/v1" });
+
+  // Author card (tier-aware profile resolution for hover modals)
+  await app.register(authorCardRoutes, { prefix: "/api/v1" });
 
   // Workspace feeds (slice 3 — owner-private feed objects rendered by vessels).
   // Mounted under /api/v1/workspace because external-feeds.ts already owns the

@@ -20,6 +20,8 @@ import {
 } from "../../lib/format";
 import { TrustPip } from "../ui/TrustPip";
 import { useCompose } from "../../stores/compose";
+import { AuthorModal, useAuthorHover } from "./AuthorModal";
+import { ActionSheet } from "./ActionSheet";
 
 interface ArticleCardProps {
   article: ArticleEvent;
@@ -42,6 +44,7 @@ export function ArticleCard({
   const router = useRouter();
   const writerInfo = useWriterName(article.pubkey);
   const openCompose = useCompose((s) => s.open);
+  const hover = useAuthorHover("native", article.authorId ?? null);
   const [replyCount, setReplyCount] = useState<number | null>(null);
   const wordCount = article.content.split(/\s+/).length;
   const readMinutes = Math.max(1, Math.round(wordCount / 200));
@@ -118,17 +121,31 @@ export function ArticleCard({
         className={`flex items-center gap-2 mb-3 font-mono ${metaSize} uppercase tracking-[0.06em] text-grey-600`}
       >
         <TrustPip status={article.pipStatus} />
-        {authorHref ? (
-          <Link
-            href={authorHref}
-            className="hover:text-black transition-colors"
-          >
-            {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + "..."}
-          </Link>
-        ) : (
-          <span>
-            {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + "..."}
-          </span>
+        <span
+          ref={hover.bylineRef as React.RefObject<HTMLSpanElement>}
+          onMouseEnter={hover.onMouseEnter}
+          onMouseLeave={hover.onMouseLeave}
+        >
+          {authorHref ? (
+            <Link
+              href={authorHref}
+              className="hover:text-black transition-colors"
+            >
+              {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + "..."}
+            </Link>
+          ) : (
+            <span>
+              {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + "..."}
+            </span>
+          )}
+        </span>
+        {hover.open && hover.id && (
+          <AuthorModal
+            type="native"
+            id={hover.id}
+            anchorRef={hover.bylineRef}
+            onClose={hover.onModalClose}
+          />
         )}
         <span>·</span>
         <time
@@ -210,14 +227,17 @@ export function ArticleCard({
             Reply
           </button>
         )}
-        {showExtendedActions && user && onQuote && (
-          <button
-            onClick={handleQuote}
-            className="text-grey-600 hover:text-black transition-colors"
-          >
-            Quote
-          </button>
-        )}
+        {/* Desktop: inline secondary actions; Touch: behind ⋯ */}
+        <span className="hidden [@media(hover:hover)]:contents">
+          {showExtendedActions && user && onQuote && (
+            <button
+              onClick={handleQuote}
+              className="text-grey-600 hover:text-black transition-colors"
+            >
+              Quote
+            </button>
+          )}
+        </span>
         <span onClick={(e) => e.stopPropagation()}>
           <VoteControls
             targetEventId={article.id}
@@ -227,22 +247,51 @@ export function ArticleCard({
             initialMyVotes={myVoteCounts}
           />
         </span>
-        {showExtendedActions && (
-          <>
-            <span onClick={(e) => e.stopPropagation()}>
-              <BookmarkButton
-                articleId={article.id}
-                initialBookmarked={isBookmarked}
-              />
-            </span>
-            <span onClick={(e) => e.stopPropagation()}>
-              <ShareButton
-                url={`/article/${article.dTag}`}
-                title={article.title}
-              />
-            </span>
-          </>
-        )}
+        <span className="hidden [@media(hover:hover)]:contents">
+          {showExtendedActions && (
+            <>
+              <span onClick={(e) => e.stopPropagation()}>
+                <BookmarkButton
+                  articleId={article.id}
+                  initialBookmarked={isBookmarked}
+                />
+              </span>
+              <span onClick={(e) => e.stopPropagation()}>
+                <ShareButton
+                  url={`/article/${article.dTag}`}
+                  title={article.title}
+                />
+              </span>
+            </>
+          )}
+        </span>
+        <span
+          className="[@media(hover:hover)]:hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {showExtendedActions && (
+            <ActionSheet
+              actions={[
+                ...(user && onQuote
+                  ? [{ label: "QUOTE", onClick: handleQuote }]
+                  : []),
+                {
+                  label: "BOOKMARK",
+                  onClick: () => {},
+                  hidden: !user,
+                },
+                {
+                  label: "SHARE",
+                  onClick: () => {
+                    navigator.clipboard?.writeText(
+                      `${window.location.origin}/article/${article.dTag}`,
+                    );
+                  },
+                },
+              ]}
+            />
+          )}
+        </span>
       </div>
 
       {/* Neighbourhood — reply thread on expansion */}

@@ -12,6 +12,8 @@ import {
   NeighbourhoodFailureStub,
   NeighbourhoodEmptyState,
 } from "./NeighbourhoodCard";
+import { AuthorModal, useAuthorHover } from "./AuthorModal";
+import { ActionSheet } from "./ActionSheet";
 
 // =============================================================================
 // ExternalCard — renders external feed items (RSS, Nostr, Bluesky, Mastodon)
@@ -113,6 +115,7 @@ function extractYouTubeVideoId(url: string): string | null {
 export function ExternalCard({ item }: ExternalCardProps) {
   const { user } = useAuth();
   const openCompose = useCompose((s) => s.open);
+  const hover = useAuthorHover("external", item.id);
 
   const authorDisplay = item.authorName ?? item.sourceName ?? "Unknown source";
   const badge = PROTOCOL_LABELS[item.sourceProtocol] ?? "EXTERNAL";
@@ -232,20 +235,33 @@ export function ExternalCard({ item }: ExternalCardProps) {
         {/* Byline — mono-caps, unified with ArticleCard/NoteCard */}
         <div className="flex items-center gap-2 mb-2">
           <TrustPip status={item.pipStatus} />
-          {authorWebUri ? (
-            <a
-              href={authorWebUri}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="label-ui text-grey-600 hover:text-black transition-colors truncate"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {authorDisplay}
-            </a>
-          ) : (
-            <span className="label-ui text-grey-600 truncate">
-              {authorDisplay}
-            </span>
+          <span
+            ref={hover.bylineRef as React.RefObject<HTMLSpanElement>}
+            onMouseEnter={hover.onMouseEnter}
+            onMouseLeave={hover.onMouseLeave}
+            className="truncate"
+          >
+            {authorWebUri ? (
+              <a
+                href={authorWebUri}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="label-ui text-grey-600 hover:text-black transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {authorDisplay}
+              </a>
+            ) : (
+              <span className="label-ui text-grey-600">{authorDisplay}</span>
+            )}
+          </span>
+          {hover.open && hover.id && (
+            <AuthorModal
+              type="external"
+              id={hover.id}
+              anchorRef={hover.bylineRef}
+              onClose={hover.onModalClose}
+            />
           )}
           <span className="font-mono text-mono-xs text-grey-600">&middot;</span>
           <span className="font-mono text-mono-xs tracking-[0.02em] text-grey-600 flex-shrink-0">

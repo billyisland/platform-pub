@@ -82,6 +82,7 @@ function feedItemToResponse(row: any) {
   if (row.item_type === "article") {
     return {
       type: "article" as const,
+      authorId: row.author_id ?? undefined,
       nostrEventId: row.nostr_event_id,
       pubkey: row.nostr_pubkey,
       dTag: row.nostr_d_tag,
@@ -106,6 +107,7 @@ function feedItemToResponse(row: any) {
   if (row.item_type === "note") {
     return {
       type: "note" as const,
+      authorId: row.author_id ?? undefined,
       nostrEventId: row.nostr_event_id,
       pubkey: row.nostr_pubkey,
       content: row.note_content,

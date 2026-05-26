@@ -1,13 +1,13 @@
 # CARD-BEHAVIOUR-ADR: Feed Card Interaction & Conversational Expansion
 
 **all.haus Architectural Decision Record**
-**Status:** Draft — May 2026
+**Status:** Phases 1–3 shipped (May 2026) — Phase 4 remaining
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** UNIVERSAL-FEED-ADR, UI-DESIGN-SPEC
 **Affects:** `web/src/components/feed/*`, `gateway/src/routes/`, `feed-ingest/src/lib/*`, `schema.sql`, `migrations/`
 
 > **Note to Claude Code.** This is a design-decisions document, not a line-level
-> implementation spec. It fixes the *what* and the *why*; you own the *how*.
+> implementation spec. It fixes the _what_ and the _why_; you own the _how_.
 > Where it names a file, endpoint, column, or constant, treat that as the
 > intended shape unless you find a concrete reason it cannot work — in which
 > case stop and flag it rather than improvising a divergent design. Phasing is
@@ -43,7 +43,7 @@ The feed renders four card types — `ArticleCard`, `NoteCard`, `ExternalCard`,
    feed.
 
 The ambition: **one interaction language for all four card types**, in which
-every affordance is present on every card and *degrades predictably* when the
+every affordance is present on every card and _degrades predictably_ when the
 source platform cannot supply the data behind it. The reader should never meet
 four broken UIs wearing a trench coat; they should meet one UI that is
 sometimes quieter than other times.
@@ -57,11 +57,11 @@ sometimes quieter than other times.
 
 2. **Graceful degradation, never disappearance.** An affordance does not vanish
    because the source is sparse. It downgrades to its best available form and
-   says so. Absence of a feature reads as a property of the *source*, not a bug
+   says so. Absence of a feature reads as a property of the _source_, not a bug
    in all.haus.
 
 3. **The conversation is one object.** A reader interested in a post wants the
-   *whole* conversational neighbourhood — what it replies to, and what replies
+   _whole_ conversational neighbourhood — what it replies to, and what replies
    to it — in a single move, not two separate expansions.
 
 4. **Provenance is sacred, and singular.** Every card shows where it came from
@@ -82,25 +82,25 @@ sometimes quieter than other times.
 
 The single most important concept in this ADR. Every card declares a
 **biddability tier** — how much the originating platform lets us do with it.
-The UI is written once against these tiers; it is *not* written four times
+The UI is written once against these tiers; it is _not_ written four times
 against four protocols.
 
-| Tier | Sources | Parent resolvable? | Author profilable? | Interaction counts |
-|------|---------|--------------------|--------------------|--------------------|
-| **A — Threaded & resolvable** | Native (tier 1), external Nostr (tier 2), Bluesky (tier 3) | Yes — parent fetchable on demand | Yes — real profile + post history | Real |
-| **B — Threaded, best-effort** | Mastodon / ActivityPub (tier 3) | Maybe — instance may or may not serve the parent object | Partial — webfinger + actor, may fail | Partial |
-| **C — Standalone, attributed** | RSS/Atom (tier 4) *with* an author URI | No — RSS has no reply concept | Source-level only (the feed, not a person) | None |
-| **D — Standalone, sparse** | RSS (tier 4) without author URI; any item missing author/origin metadata | No | No — author is a bare string | None |
+| Tier                           | Sources                                                                  | Parent resolvable?                                      | Author profilable?                         | Interaction counts |
+| ------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------ | ------------------ |
+| **A — Threaded & resolvable**  | Native (tier 1), external Nostr (tier 2), Bluesky (tier 3)               | Yes — parent fetchable on demand                        | Yes — real profile + post history          | Real               |
+| **B — Threaded, best-effort**  | Mastodon / ActivityPub (tier 3)                                          | Maybe — instance may or may not serve the parent object | Partial — webfinger + actor, may fail      | Partial            |
+| **C — Standalone, attributed** | RSS/Atom (tier 4) _with_ an author URI                                   | No — RSS has no reply concept                           | Source-level only (the feed, not a person) | None               |
+| **D — Standalone, sparse**     | RSS (tier 4) without author URI; any item missing author/origin metadata | No                                                      | No — author is a bare string               | None               |
 
 Mapping rules (deterministic, computed at ingest — see §VII):
 
 - Tier is **not** the same as `content_tier`. `content_tier` is a provenance
   enum; biddability tier is a UI-capability classification. A tier-3 Mastodon
-  item and a tier-3 Bluesky item have the *same* `content_tier` but **different**
+  item and a tier-3 Bluesky item have the _same_ `content_tier` but **different**
   biddability tiers (B vs A). Keep the two concepts separate in code and naming.
 - An item is **A** if it is native, external-Nostr, or Bluesky.
 - An item is **B** if it is ActivityPub.
-- An item is **C** if it is RSS *and* `external_items.author_uri IS NOT NULL`.
+- An item is **C** if it is RSS _and_ `external_items.author_uri IS NOT NULL`.
 - An item is **D** if it is RSS with no `author_uri`, **or** any item of any
   protocol whose required metadata failed to capture (defensive catch-all).
 
@@ -113,15 +113,15 @@ behaviour. Everything in §IV–§VI is written in terms of it.
 
 One map. All four card types. Every region does the same thing on every card.
 
-| Region | Action | Notes |
-|--------|--------|-------|
-| **Headline / first line of content** | Navigate to the item's all.haus view | Native article → `/article/{dTag}`. Note → its permalink. External → the constructed external-item permalink (out of scope detail; for now, route is reserved — see §IX). |
-| **Card body** (the inert space between byline and action row) | **Expand the conversational neighbourhood** — see §V | This is the headline behaviour of this ADR. Toggles. |
-| **Byline name** | Navigate to the author surface | See §VI. Hover → author modal. |
-| **Byline avatar / TrustPip** | Same as byline name | Whole byline cluster is one navigation target. |
-| **Reply provenance line** (`↳ REPLYING TO …`) | None — pure signalling | Tells the reader a parent exists; the parent appears when the body is expanded. Not itself a trigger. See §V.2. |
-| **Source attribution** (`VIA BLUESKY · handle`) | The single route to the original, opens in new tab | Both the protocol word and the handle are one clickable target. See §VI.4. |
-| **Action controls** (vote, reply, quote, bookmark, share) | Their own action | `stopPropagation` so they never trigger body-expand. As today. |
+| Region                                                        | Action                                               | Notes                                                                                                                                                                     |
+| ------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Headline / first line of content**                          | Navigate to the item's all.haus view                 | Native article → `/article/{dTag}`. Note → its permalink. External → the constructed external-item permalink (out of scope detail; for now, route is reserved — see §IX). |
+| **Card body** (the inert space between byline and action row) | **Expand the conversational neighbourhood** — see §V | This is the headline behaviour of this ADR. Toggles.                                                                                                                      |
+| **Byline name**                                               | Navigate to the author surface                       | See §VI. Hover → author modal.                                                                                                                                            |
+| **Byline avatar / TrustPip**                                  | Same as byline name                                  | Whole byline cluster is one navigation target.                                                                                                                            |
+| **Reply provenance line** (`↳ REPLYING TO …`)                 | None — pure signalling                               | Tells the reader a parent exists; the parent appears when the body is expanded. Not itself a trigger. See §V.2.                                                           |
+| **Source attribution** (`VIA BLUESKY · handle`)               | The single route to the original, opens in new tab   | Both the protocol word and the handle are one clickable target. See §VI.4.                                                                                                |
+| **Action controls** (vote, reply, quote, bookmark, share)     | Their own action                                     | `stopPropagation` so they never trigger body-expand. As today.                                                                                                            |
 
 **What changes from current code:**
 
@@ -170,7 +170,7 @@ When a reader clicks the body of a card ("the anchor card"):
 
 ### V.2 The provenance line
 
-When a card *is* a reply, render a thin mono-caps line **above the byline**:
+When a card _is_ a reply, render a thin mono-caps line **above the byline**:
 
 ```
 ↳ REPLYING TO @jaredwhite
@@ -183,7 +183,7 @@ When a card *is* a reply, render a thin mono-caps line **above the byline**:
   - **A / B** with resolvable parent author: `↳ REPLYING TO @handle`
   - **B** where the parent author is not yet known: `↳ REPLYING TO A POST`
   - **C / D**: the line is never rendered (these tiers have no parent concept).
-- Rendering the line requires the feed list to know "is this a reply" *without*
+- Rendering the line requires the feed list to know "is this a reply" _without_
   a join — see §VII.1.
 
 ### V.3 Walking the thread
@@ -196,7 +196,7 @@ ancestry** — that is N uncontrolled outbound requests per expansion. Instead:
 - If the parent is itself a reply, the expanded parent card carries its own
   `↳ SHOW PARENT` control. Clicking it hydrates one further hop.
 - Same downward: replies are fetched one page at a time with a `SHOW MORE
-  REPLIES` control if the count exceeds the first page.
+REPLIES` control if the count exceeds the first page.
 - This keeps every fetch reader-initiated and bounded.
 
 ### V.4 Hydration — the gateway proxy
@@ -248,11 +248,11 @@ banner.
   live. The reader is informed, not blocked, and the failure is correctly
   attributed to the instance, not to all.haus.
 - **Tier C/D:** the body is still clickable and still expands — but only the
-  *replies* side, and only for native all.haus replies to the item (an all.haus
+  _replies_ side, and only for native all.haus replies to the item (an all.haus
   user may have replied to an RSS item; that reply is a native Nostr event we
   own). There is no parent and no `↳` line. If there are also no replies, the
   body click expands to a single quiet line: `NO CONVERSATION YET — BE THE
-  FIRST TO REPLY`, which doubles as a reply affordance.
+FIRST TO REPLY`, which doubles as a reply affordance.
 
 The principle: **body click always does something coherent on every tier.** It
 is never dead (the current `ExternalCard` failing) and never misleading.
@@ -273,7 +273,7 @@ the modal surface itself (no navigation required).
     equivalent counts, Follow button.
   - **B:** whatever webfinger + actor returned; missing fields are simply
     omitted (no empty rows). Follow button present.
-  - **C:** there is no person — the modal describes the *source* (the feed):
+  - **C:** there is no person — the modal describes the _source_ (the feed):
     feed name, feed description if the channel provided one, a Follow control
     that follows the feed. Framed as a source, not a face.
   - **D:** the modal shows the bare author string and a single line —
@@ -298,7 +298,7 @@ Clicking the byline navigates to the **author surface**.
 ### VI.3 ⚠️ DEFERRED — the constructed external author profile
 
 > **Claude Code: action required.** A full all.haus-constructed author profile
-> page for *external* authors — assembled from API-available personal info at
+> page for _external_ authors — assembled from API-available personal info at
 > the originating platform, showing a unified chronological feed of that
 > author's posts across all linked platforms — **is explicitly desired and
 > explicitly out of scope for this ADR.** It is deferred to its own ADR.
@@ -306,12 +306,12 @@ Clicking the byline navigates to the **author surface**.
 > **Before you implement anything in this document, add a tracked item to
 > whichever progress-tracking / backlog markdown the project is currently using
 > (e.g. `AUDIT-BACKLOG.md`, `feature-debt.md`, or the active programme doc).**
-> The item: *"Constructed external author profile pages — unified
+> The item: _"Constructed external author profile pages — unified
 > cross-platform post history. Deferred from CARD-BEHAVIOUR-ADR §VI.3. Needs its
-> own ADR."* Do not let this fall on the floor.
+> own ADR."_ Do not let this fall on the floor.
 
 Because the constructed profile is deferred, byline click for external authors
-degrades to the source surface (§VI.2). The byline-click *contract* — "clicking
+degrades to the source surface (§VI.2). The byline-click _contract_ — "clicking
 a byline takes you to that author's home on all.haus" — is fixed now; the richer
 destination lands later without changing the contract.
 
@@ -327,7 +327,7 @@ The block-caps source line is the **single, canonical route to the original**.
   line — correct and expected.
 - Tier D where even the origin URL is missing: the line renders un-clickable as
   plain provenance text (`VIA RSS · {feed name}`). This is the one acceptable
-  non-interactive instance, and it is still *informative*.
+  non-interactive instance, and it is still _informative_.
 
 ---
 
@@ -342,7 +342,7 @@ The feed list query must know "is this card a reply" to render the `↳` line,
 **without joining `external_items`**.
 
 - Add `is_reply BOOLEAN NOT NULL DEFAULT FALSE` to `feed_items`.
-- **Do not** put the reply *URI* on `feed_items`. `feed_items` is the
+- **Do not** put the reply _URI_ on `feed_items`. `feed_items` is the
   denormalised read-model; it should carry the minimum the list render needs,
   which is the boolean. The canonical `source_reply_uri` stays on
   `external_items` and is read only at hydration time (§V.4). Duplicating the
@@ -392,16 +392,16 @@ parallel path.
   author profile (§VI.3) cannot apply to RSS at all. Not a bug to fix; a
   property to design around.
 - **Mastodon outbox polling is best-effort** — already flagged BETA in
-  `ExternalCard`. Parent hydration for tier B *will* sometimes fail. §V.5
+  `ExternalCard`. Parent hydration for tier B _will_ sometimes fail. §V.5
   designs for this as a normal state.
 - **A reply's parent is usually not in our DB** — ingest only stores posts
-  authored by *followed* sources; a parent by a non-followed account is absent.
-  This is *why* hydration is an on-demand outbound fetch and not a local join.
+  authored by _followed_ sources; a parent by a non-followed account is absent.
+  This is _why_ hydration is an on-demand outbound fetch and not a local join.
 - **Bluesky AppView is rate-limited and unauthenticated** — fine for
   server-side proxied, cached fetches; would be fragile browser-side. Confirms
   the §V.4 gateway-proxy decision.
 - **`feed_items` is a denormalised dual-write table** — any new column (VII.1)
-  must be written in *both* the external ingest path and the native
+  must be written in _both_ the external ingest path and the native
   projection, and backfilled. Consistent with the dual-write discipline already
   in `UNIVERSAL-FEED-ADR` and the reconciliation job in
   `feed-items-reconcile.ts`.
@@ -412,16 +412,16 @@ parallel path.
 
 The desktop hover/click split maps cleanly; it is not "desktop minus hover."
 
-| Desktop | Touch |
-|---------|-------|
-| Body click → expand neighbourhood | Body tap → expand neighbourhood (identical) |
-| Primary actions always visible | Primary actions always visible (identical) |
-| Secondary actions (quote, bookmark, share) revealed on hover | Secondary actions behind one explicit `⋯` control → small action sheet |
-| Byline hover → author modal | **No modal.** Byline tap → straight through to author surface (§VI.2). The modal is a hover artefact; it has no touch meaning. |
-| `↳` provenance line: signalling only | Identical |
-| Source attribution: click → original | Tap → original (identical) |
+| Desktop                                                      | Touch                                                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Body click → expand neighbourhood                            | Body tap → expand neighbourhood (identical)                                                                                    |
+| Primary actions always visible                               | Primary actions always visible (identical)                                                                                     |
+| Secondary actions (quote, bookmark, share) revealed on hover | Secondary actions behind one explicit `⋯` control → small action sheet                                                         |
+| Byline hover → author modal                                  | **No modal.** Byline tap → straight through to author surface (§VI.2). The modal is a hover artefact; it has no touch meaning. |
+| `↳` provenance line: signalling only                         | Identical                                                                                                                      |
+| Source attribution: click → original                         | Tap → original (identical)                                                                                                     |
 
-The `⋯` action sheet is the *correct* touch idiom on a narrow viewport, and it
+The `⋯` action sheet is the _correct_ touch idiom on a narrow viewport, and it
 serves the density axis better than cramming five controls inline — it is not a
 compromise. Keyboard parity: secondary actions are also revealed on card
 keyboard-focus, so the hover-gated cluster is reachable without a pointer.
@@ -433,7 +433,7 @@ keyboard-focus, so the hover-gated cluster is reachable without a pointer.
 - **Constructed external author profile pages** (§VI.3) — deferred to its own
   ADR; tracked-item instruction is in §VI.3, do not skip it.
 - **The external-item permalink page** — §IV reserves the headline → external
-  item route, but the constructed external-item *view* is not specified here.
+  item route, but the constructed external-item _view_ is not specified here.
   Until it exists, headline click on an external card may route to the source
   attribution target (same as §VI.4) as an interim; flag this as interim in the
   code so it is not mistaken for the final design.
@@ -442,7 +442,7 @@ keyboard-focus, so the hover-gated cluster is reachable without a pointer.
   annoying in real use.
 - **Cross-posting / outbound reply routing** — already covered by
   UNIVERSAL-FEED-ADR; unchanged by this ADR.
-- **Vote/bookmark/quote mechanics** — unchanged; this ADR only relocates *when*
+- **Vote/bookmark/quote mechanics** — unchanged; this ADR only relocates _when_
   the controls appear (hover/`⋯`), not what they do.
 
 ---

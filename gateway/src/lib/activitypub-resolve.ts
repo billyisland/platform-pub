@@ -21,6 +21,9 @@ interface ActorProfile {
   description: string | null;
   avatar: string | null;
   handle: string | null; // e.g. alice@mastodon.social
+  followersCount?: number;
+  followingCount?: number;
+  postsCount?: number;
 }
 
 // -----------------------------------------------------------------------------
@@ -95,6 +98,18 @@ export async function fetchActorProfile(
       description,
       avatar,
       handle,
+      followersCount:
+        typeof actor.followers_count === "number"
+          ? actor.followers_count
+          : undefined,
+      followingCount:
+        typeof actor.following_count === "number"
+          ? actor.following_count
+          : undefined,
+      postsCount:
+        typeof actor.statuses_count === "number"
+          ? actor.statuses_count
+          : undefined,
     };
   } catch (err) {
     logger.warn({ actorUri, err }, "Actor fetch failed");

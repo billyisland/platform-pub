@@ -4,7 +4,7 @@ Implementation plan for `docs/adr/CARD-BEHAVIOUR-ADR.md`. Unifies click
 semantics, conversational neighbourhood expansion, and author affordances
 across all feed card types.
 
-**Status:** Phase 1 shipped (2026-05-25). Phase 2 shipped (2026-05-26). Phase 3 next.
+**Status:** Phase 1 shipped (2026-05-25). Phase 2 shipped (2026-05-26). Phase 3 shipped (2026-05-26).
 
 ## Scope
 
@@ -985,7 +985,7 @@ without a pointer.
 
 ---
 
-### Phase 3 total
+### Phase 3 total — SHIPPED 2026-05-26
 
 ~4 days. Ships the author identity layer and completes the touch adaptation.
 

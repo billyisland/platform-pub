@@ -17,6 +17,8 @@ import { formatDateRelative } from "../../lib/format";
 import { content as contentApi } from "../../lib/api";
 import { TrustPip } from "../ui/TrustPip";
 import { useEffect } from "react";
+import { AuthorModal, useAuthorHover } from "./AuthorModal";
+import { ActionSheet } from "./ActionSheet";
 
 interface NoteCardProps {
   note: NoteEvent;
@@ -105,6 +107,7 @@ export function NoteCard({
   const { user } = useAuth();
   const writerInfo = useWriterName(note.pubkey);
   const openCompose = useCompose((s) => s.open);
+  const hover = useAuthorHover("native", note.authorId ?? null);
   const [replyCount, setReplyCount] = useState(0);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -177,17 +180,31 @@ export function NoteCard({
       {/* Byline — mono-caps, grey-600, matching ArticleCard */}
       <div className="flex items-center gap-2 mb-2">
         <TrustPip status={note.pipStatus} />
-        {authorHref ? (
-          <Link
-            href={authorHref}
-            className="label-ui text-grey-600 hover:text-black transition-colors"
-          >
-            {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + "..."}
-          </Link>
-        ) : (
-          <span className="label-ui text-grey-600">
-            {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + "..."}
-          </span>
+        <span
+          ref={hover.bylineRef as React.RefObject<HTMLSpanElement>}
+          onMouseEnter={hover.onMouseEnter}
+          onMouseLeave={hover.onMouseLeave}
+        >
+          {authorHref ? (
+            <Link
+              href={authorHref}
+              className="label-ui text-grey-600 hover:text-black transition-colors"
+            >
+              {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + "..."}
+            </Link>
+          ) : (
+            <span className="label-ui text-grey-600">
+              {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + "..."}
+            </span>
+          )}
+        </span>
+        {hover.open && hover.id && (
+          <AuthorModal
+            type="native"
+            id={hover.id}
+            anchorRef={hover.bylineRef}
+            onClose={hover.onModalClose}
+          />
         )}
         <span className="font-mono text-mono-xs text-grey-600">&middot;</span>
         <span className="font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600">
@@ -237,14 +254,16 @@ export function NoteCard({
         >
           {replyCount > 0 ? `Reply (${replyCount})` : "Reply"}
         </button>
-        {user && onQuote && (
-          <button
-            onClick={handleQuote}
-            className="hover:text-black transition-colors"
-          >
-            Quote
-          </button>
-        )}
+        <span className="hidden [@media(hover:hover)]:contents">
+          {user && onQuote && (
+            <button
+              onClick={handleQuote}
+              className="hover:text-black transition-colors"
+            >
+              Quote
+            </button>
+          )}
+        </span>
         <VoteControls
           targetEventId={note.id}
           targetKind={1}
@@ -252,6 +271,14 @@ export function NoteCard({
           initialTally={voteTally}
           initialMyVotes={myVoteCounts}
         />
+        <span
+          className="[@media(hover:hover)]:hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {user && onQuote && (
+            <ActionSheet actions={[{ label: "QUOTE", onClick: handleQuote }]} />
+          )}
+        </span>
       </div>
 
       {/* Reply thread — expanded shows full thread, collapsed shows preview */}
