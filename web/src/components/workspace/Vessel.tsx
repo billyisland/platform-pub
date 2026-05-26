@@ -49,7 +49,6 @@ const PAD = 16; // px interior padding (top zone left open per Step 1: "Opening:
 const GAP = 12; // px inter-card gap
 const WIDTH = 300; // px default at standard density
 
-const ROUNDEL = 26;
 const ROUNDEL_TOKENS = {
   bg: "#1A1A18",
   fg: "#F0EFEB",
@@ -395,35 +394,22 @@ export function Vessel({
           outlineOffset: -2,
         }}
       >
-        {/* Numeral roundel — top-left corner, matches ForallMenu styling */}
+        {/* Feed numeral — bottom-left corner */}
         <div
           onMouseEnter={() => setRoundelHovered(true)}
           onMouseLeave={() => setRoundelHovered(false)}
           onDoubleClick={() => onNameClick?.()}
-          title={
-            descriptiveName
-              ? `Feed ${numeral}: ${descriptiveName}`
-              : `Feed ${numeral}`
-          }
-          className="font-sans select-none"
+          className="label-ui select-none"
           style={{
             position: "absolute",
-            top: isHorizontal ? -(WALL / 2 + ROUNDEL / 2) : -(ROUNDEL / 2),
-            left: -(WALL / 2 + ROUNDEL / 2),
-            width: ROUNDEL,
-            height: ROUNDEL,
-            borderRadius: "50%",
-            background: ROUNDEL_TOKENS.bg,
-            color: ROUNDEL_TOKENS.fg,
-            fontSize: 12,
-            fontWeight: 700,
-            fontStyle: "italic",
-            lineHeight: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            bottom: 0,
+            left: 0,
+            padding: "4px 6px",
+            color: ROUNDEL_TOKENS.bg,
+            fontSize: 11,
             cursor: "grab",
             zIndex: 5,
+            opacity: 0.5,
           }}
         >
           {numeral}
@@ -432,13 +418,12 @@ export function Vessel({
               className="label-ui"
               style={{
                 position: "absolute",
-                left: ROUNDEL + 6,
-                top: "50%",
-                transform: "translateY(-50%)",
+                left: 0,
+                bottom: "100%",
+                marginBottom: 4,
                 background: ROUNDEL_TOKENS.bg,
                 color: ROUNDEL_TOKENS.fg,
                 padding: "3px 8px",
-                borderRadius: 3,
                 whiteSpace: "nowrap",
                 boxShadow: "0 2px 6px rgba(0, 0, 0, 0.15)",
                 opacity: roundelHovered ? 1 : 0,

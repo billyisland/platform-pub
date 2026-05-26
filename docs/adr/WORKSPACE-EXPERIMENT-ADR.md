@@ -757,7 +757,7 @@ Skipped intentionally: crop / focal-point UI (the picker is upload-or-remove; re
 
 ### Slice 24 — vessel bar: inline source input + controls on bottom edge (2026-05-07)
 
-The thin 8px bottom wall becomes a 32px toolbar bar (`VesselBar`) that is the vessel's bottom edge. The bar carries the cycle controls (brightness, density, orientation) on its left side, a gear button that opens the FeedComposer modal (rename/delete/full source list), and a resolver-backed `+ add source` text input on its right side. Adding a source no longer requires opening a modal — type into the bar, pick a result from the dropdown, and the vessel refetches. (The feed numeral badge was later moved from VesselBar to a top-left roundel — see slice 34.)
+The thin 8px bottom wall becomes a 32px toolbar bar (`VesselBar`) that is the vessel's bottom edge. The bar carries the cycle controls (brightness, density, orientation) on its left side, a gear button that opens the FeedComposer modal (rename/delete/full source list), and a resolver-backed `+ add source` text input on its right side. Adding a source no longer requires opening a modal — type into the bar, pick a result from the dropdown, and the vessel refetches. (The feed numeral badge was later moved from VesselBar to a bottom-left corner label — see slice 34.)
 
 **New component (`web/src/components/workspace/VesselBar.tsx`).** Self-contained bar with its own resolver state (300ms debounce, Phase B polling up to 3 ticks, tag fallback for `#name` input). Dropdown renders below the bar, palette-matched per brightness. Cycle buttons use `BarButton` (hover brightens from muted to full). The gear `⚙` button is the surviving path to the `FeedComposer` modal for rename, delete, and viewing the full source list with remove buttons.
 
@@ -863,7 +863,7 @@ Not a feature slice — a cleanup pass across the workspace experiment codebase.
 
 ### Slice 33 — feed numeral system + cleanup (2026-05-25)
 
-Feeds retire the clunky name-label nameplate in favour of a numeral system. Each feed is assigned the next vacant positive integer (sorted by `createdAt`). Descriptive names are optional — they show in the ForallMenu when the feed is hidden (e.g. "Feed 4: French news sources"). Feed creation no longer requires a name; `NewFeedPrompt` label reads "Name (optional)" and the gateway schema defaults to empty string. `FeedComposer` rename allows empty names with "No name" placeholder. (The numeral was initially displayed as an italic serif badge at the right end of VesselBar; see slice 34 for the roundel treatment.)
+Feeds retire the clunky name-label nameplate in favour of a numeral system. Each feed is assigned the next vacant positive integer (sorted by `createdAt`). Descriptive names are optional — they show in the ForallMenu when the feed is hidden (e.g. "Feed 4: French news sources"). Feed creation no longer requires a name; `NewFeedPrompt` label reads "Name (optional)" and the gateway schema defaults to empty string. `FeedComposer` rename allows empty names with "No name" placeholder. (The numeral was initially displayed as an italic serif badge at the right end of VesselBar; see slice 34 for the bottom-left label treatment.)
 
 **Minimize removed.** The minimize gesture overlapped with hide and wasn't working properly. All minimize infrastructure deleted: `minimized` field on `VesselLayout`, `setVesselMinimized` store action, `▁`/`□` `BarButton` on `VesselBar`, `{!minimized && (...)}` content guard on `Vessel.tsx`. Content and resize handle always render. See updated slice 28.
 
@@ -871,11 +871,11 @@ Feeds retire the clunky name-label nameplate in favour of a numeral system. Each
 
 **Caught-up tile refined.** `EmptyFeedTile` `caught-up` variant updated: copy reads "You're caught up. Add new sources or strengthen current ones to see more." Both ADD SOURCES and DISMISS buttons dismiss the tile (parent-owned state). Scrolling up after the tile appears also dismisses it (`Vessel.tsx` uses a scroll listener for sized vessels + a wheel listener for default-height vessels where `scrollBodyRef` has no overflow scrolling). Tile only reappears after the next pull-to-refresh that finds no new content.
 
-### Slice 34 — numeral roundel (2026-05-25)
+### Slice 34 — feed numeral label (2026-05-25, updated 2026-05-26)
 
-The feed numeral moves from an italic serif badge at the right end of VesselBar to a small black roundel mounted on the top-left corner of each vessel chassis. `#1A1A18` background, `#F0EFEB` bold italic sans (Jost 700i) numeral, no border or shadow — scaled to 26×26px. Position is absolute on the chassis, centered on the left wall's midpoint at the vessel opening (vertical) or at the wall intersection (horizontal).
+The feed numeral moves from an italic serif badge at the right end of VesselBar to the bottom-left corner of the vessel chassis. Rendered as plain `label-ui` text in `#1A1A18` at 50% opacity — no background shape, no circle, no border. The roundel treatment (26×26px black circle at the top-left corner) was an intermediate step that was replaced with this quieter bottom-corner placement.
 
-**Interactions.** Hover fades in a `label-ui` chip to the right of the roundel showing the feed's descriptive name (120ms ease-out opacity transition; hidden when no name exists). Click-and-drag moves the vessel — the roundel is a plain `<div>` (not a `<button>`) so `startDrag` on the outer `motion.div` picks it up naturally, same as dragging any empty wall region. Double-click opens the `FeedComposer` modal via `onNameClick`. A `title` attribute provides the accessible fallback (`Feed N` or `Feed N: Name`).
+**Interactions.** Hover fades in a sharp-cornered `label-ui` chip above the numeral showing the feed's descriptive name (120ms ease-out opacity transition; hidden when no name exists; no `borderRadius` — rounded corners are not part of the design language). The native `title` tooltip was removed to avoid a duplicate hover state. Click-and-drag moves the vessel — the numeral is a plain `<div>` (not a `<button>`) so `startDrag` on the outer `motion.div` picks it up naturally, same as dragging any empty wall region. Double-click opens the `FeedComposer` modal via `onNameClick`.
 
 **VesselBar simplification.** The `numeral` and `descriptiveName` props removed from `VesselBar`; the italic serif badge deleted. The gear `⚙` button remains as a secondary path to the feed composer (discoverable without knowing the double-click gesture).
 
