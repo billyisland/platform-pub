@@ -174,7 +174,10 @@ export function NoteCard({
     <div style={{ borderLeft: "4px solid #111111", paddingLeft: "24px" }}>
       {/* Provenance — reply signalling */}
       {note.isReply && (
-        <div className="label-ui text-grey-400 mb-1">↳ REPLYING TO A POST</div>
+        <div className="label-ui text-grey-400 mb-1">
+          ↳ REPLYING TO{" "}
+          {note.replyToAuthor ? `@${note.replyToAuthor}` : "A POST"}
+        </div>
       )}
 
       {/* Byline — mono-caps, grey-600, matching ArticleCard */}

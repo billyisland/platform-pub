@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { ArticleEvent } from "../../lib/ndk";
 import { useWriterName } from "../../hooks/useWriterName";
 import { useAuth } from "../../stores/auth";
-import { replies as repliesApi } from "../../lib/api";
+import { replies as repliesApi, bookmarks } from "../../lib/api";
 import { ReplySection } from "../replies/ReplySection";
 import { VoteControls } from "../ui/VoteControls";
 import { BookmarkButton } from "../ui/BookmarkButton";
@@ -62,6 +62,7 @@ export function ArticleCard({
   }, [article.id]);
 
   const [expanded, setExpanded] = useState(false);
+  const [bookmarked, setBookmarked] = useState(isBookmarked ?? false);
 
   const handleBodyExpand = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -276,8 +277,15 @@ export function ArticleCard({
                   ? [{ label: "QUOTE", onClick: handleQuote }]
                   : []),
                 {
-                  label: "BOOKMARK",
-                  onClick: () => {},
+                  label: bookmarked ? "UNBOOKMARK" : "BOOKMARK",
+                  onClick: () => {
+                    const prev = bookmarked;
+                    setBookmarked(!prev);
+                    (prev
+                      ? bookmarks.remove(article.id)
+                      : bookmarks.add(article.id)
+                    ).catch(() => setBookmarked(prev));
+                  },
                   hidden: !user,
                 },
                 {

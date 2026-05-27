@@ -29,6 +29,8 @@ interface AuthorCardResponse {
     type: "user" | "source";
     id: string;
     isFollowing: boolean;
+    protocol?: string;
+    sourceUri?: string;
   };
 }
 
@@ -175,9 +177,12 @@ async function resolveExternalAuthor(
     name: string | null;
     description: string | null;
     url: string | null;
-  }>(`SELECT id, name, description, url FROM external_sources WHERE id = $1`, [
-    item.source_id,
-  ]);
+    protocol: string;
+    source_uri: string;
+  }>(
+    `SELECT id, name, description, url, protocol, source_uri FROM external_sources WHERE id = $1`,
+    [item.source_id],
+  );
   const source = sourceRows[0] ?? null;
 
   const { rows: subRows } = await pool.query<{ exists: boolean }>(
@@ -190,7 +195,13 @@ async function resolveExternalAuthor(
   const isFollowing = subRows[0]?.exists ?? false;
 
   const followTarget = source
-    ? { type: "source" as const, id: item.source_id, isFollowing }
+    ? {
+        type: "source" as const,
+        id: item.source_id,
+        isFollowing,
+        protocol: source.protocol,
+        sourceUri: source.source_uri,
+      }
     : undefined;
 
   if (tier === "A" && item.protocol === "atproto" && item.author_uri) {

@@ -1,12 +1,8 @@
-time="2026-05-25T12:02:31+01:00" level=warning msg="The \"ATPROTO_PRIVATE_JWK\" variable is not set. Defaulting to a blank string."
-time="2026-05-25T12:02:31+01:00" level=warning msg="The \"LINKED_ACCOUNT_KEY_HEX\" variable is not set. Defaulting to a blank string."
-time="2026-05-25T12:02:31+01:00" level=warning msg="The \"LINKED_ACCOUNT_KEY_HEX\" variable is not set. Defaulting to a blank string."
-time="2026-05-25T12:02:31+01:00" level=warning msg="The \"ATPROTO_PRIVATE_JWK\" variable is not set. Defaulting to a blank string."
 --
 -- PostgreSQL database dump
 --
 
-\restrict poVcjSxjpCtbVUnohbJg5gJTXHM8pge5HhhT0kqaknaZ9guABrkHmuG3nmdhGmi
+\restrict OdQJLwI4NGvEsV2kGZDvcoeOSDc4viyeqjnuEaW7k0R0xaavzrVebGf15bdgXDZ
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -37,13 +33,6 @@ CREATE SCHEMA traffology;
 
 
 --
--- Name: SCHEMA traffology; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON SCHEMA traffology IS 'Writer analytics pipeline. Separate schema for isolation. Ingests page-view beacons, aggregates hourly/daily/weekly, generates observations.';
-
-
---
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -51,24 +40,10 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
-
-
---
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
 --
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-
-
---
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
 
 
 --
@@ -835,13 +810,6 @@ CREATE TABLE public.accounts (
 
 
 --
--- Name: TABLE accounts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.accounts IS 'User accounts — writers and readers. Custodial Nostr keypair per account (privkey in key-custody).';
-
-
---
 -- Name: activitypub_instance_health; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -855,13 +823,6 @@ CREATE TABLE public.activitypub_instance_health (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE activitypub_instance_health; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.activitypub_instance_health IS 'Per-Mastodon-instance success/failure counters for operational monitoring.';
 
 
 --
@@ -886,13 +847,6 @@ CREATE TABLE public.article_drafts (
 
 
 --
--- Name: TABLE article_drafts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.article_drafts IS 'Autosaved article drafts. One active draft per (writer_id, d_tag) pair.';
-
-
---
 -- Name: article_tags; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -900,13 +854,6 @@ CREATE TABLE public.article_tags (
     article_id uuid NOT NULL,
     tag_id uuid NOT NULL
 );
-
-
---
--- Name: TABLE article_tags; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.article_tags IS 'Many-to-many article↔tag join table.';
 
 
 --
@@ -922,13 +869,6 @@ CREATE TABLE public.article_unlocks (
     unlocked_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT article_unlocks_unlocked_via_check CHECK ((unlocked_via = ANY (ARRAY['purchase'::text, 'subscription'::text, 'own_content'::text, 'free_allowance'::text, 'author_grant'::text, 'pledge'::text, 'invitation'::text])))
 );
-
-
---
--- Name: TABLE article_unlocks; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.article_unlocks IS 'Permanent unlock records — reader has lifetime access after payment.';
 
 
 --
@@ -972,13 +912,6 @@ CREATE TABLE public.articles (
 
 
 --
--- Name: TABLE articles; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.articles IS 'Published articles (Nostr kind 30023). Dual-written to feed_items on publish.';
-
-
---
 -- Name: atproto_oauth_pending_states; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -988,13 +921,6 @@ CREATE TABLE public.atproto_oauth_pending_states (
     expires_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE atproto_oauth_pending_states; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.atproto_oauth_pending_states IS 'PKCE/DPoP state for in-flight AT Protocol OAuth authorize→callback flow.';
 
 
 --
@@ -1010,13 +936,6 @@ CREATE TABLE public.atproto_oauth_sessions (
 
 
 --
--- Name: TABLE atproto_oauth_sessions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.atproto_oauth_sessions IS 'AT Protocol OAuth session store (DPoP-bound, AES-256-GCM encrypted).';
-
-
---
 -- Name: blocks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1028,13 +947,6 @@ CREATE TABLE public.blocks (
 
 
 --
--- Name: TABLE blocks; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.blocks IS 'User block list. Excluded from feeds, replies, DMs.';
-
-
---
 -- Name: bookmarks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1043,13 +955,6 @@ CREATE TABLE public.bookmarks (
     article_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE bookmarks; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.bookmarks IS 'User article bookmarks.';
 
 
 --
@@ -1071,13 +976,6 @@ CREATE TABLE public.comments (
 
 
 --
--- Name: TABLE comments; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.comments IS 'Threaded replies on articles and notes. parentCommentId for tree structure.';
-
-
---
 -- Name: content_key_issuances; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1093,13 +991,6 @@ CREATE TABLE public.content_key_issuances (
 
 
 --
--- Name: TABLE content_key_issuances; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.content_key_issuances IS 'Audit log of NIP-44 key issuances to readers for paywall unlock.';
-
-
---
 -- Name: conversation_members; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1108,13 +999,6 @@ CREATE TABLE public.conversation_members (
     user_id uuid NOT NULL,
     joined_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE conversation_members; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.conversation_members IS 'Conversation membership with per-member read cursor.';
 
 
 --
@@ -1127,13 +1011,6 @@ CREATE TABLE public.conversations (
     last_message_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE conversations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.conversations IS 'DM conversations. Members joined via conversation_members.';
 
 
 --
@@ -1155,13 +1032,6 @@ CREATE TABLE public.direct_messages (
 
 
 --
--- Name: TABLE direct_messages; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.direct_messages IS 'NIP-44 encrypted DM content per recipient. One row per (message, recipient).';
-
-
---
 -- Name: dm_likes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1174,13 +1044,6 @@ CREATE TABLE public.dm_likes (
 
 
 --
--- Name: TABLE dm_likes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.dm_likes IS 'Message reactions within DM conversations.';
-
-
---
 -- Name: dm_pricing; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1190,13 +1053,6 @@ CREATE TABLE public.dm_pricing (
     target_id uuid,
     price_pence integer NOT NULL
 );
-
-
---
--- Name: TABLE dm_pricing; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.dm_pricing IS 'Per-user DM access pricing (pay-to-message). Per-user overrides.';
 
 
 --
@@ -1239,13 +1095,6 @@ CREATE TABLE public.external_items (
 
 
 --
--- Name: TABLE external_items; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.external_items IS 'Normalised content from external protocols. Source of truth for external content; feed_items references these via source_item_uri.';
-
-
---
 -- Name: external_sources; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1272,13 +1121,6 @@ CREATE TABLE public.external_sources (
 
 
 --
--- Name: TABLE external_sources; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.external_sources IS 'Canonical external feed sources (RSS URLs, Nostr pubkeys, atproto DIDs, AP actor URIs). Shared across users.';
-
-
---
 -- Name: external_subscriptions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1293,13 +1135,6 @@ CREATE TABLE public.external_subscriptions (
 
 
 --
--- Name: TABLE external_subscriptions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.external_subscriptions IS 'Per-user subscription to an external_source. Controls what appears in their following feed.';
-
-
---
 -- Name: feed_engagement; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1311,13 +1146,6 @@ CREATE TABLE public.feed_engagement (
     engagement_type text NOT NULL,
     engaged_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE feed_engagement; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.feed_engagement IS 'Vote/reply counts driving HN-style gravity scoring. Refreshed every 5 min.';
 
 
 --
@@ -1346,17 +1174,11 @@ CREATE TABLE public.feed_items (
     score double precision DEFAULT 0 NOT NULL,
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_reply boolean DEFAULT false NOT NULL,
     CONSTRAINT exactly_one_source CHECK ((((((article_id IS NOT NULL))::integer + ((note_id IS NOT NULL))::integer) + ((external_item_id IS NOT NULL))::integer) = 1)),
     CONSTRAINT feed_items_item_type_check CHECK ((item_type = ANY (ARRAY['article'::text, 'note'::text, 'external'::text]))),
     CONSTRAINT tier_consistency CHECK ((((item_type = ANY (ARRAY['article'::text, 'note'::text])) AND (tier = 'tier1'::public.content_tier)) OR (item_type = 'external'::text)))
 );
-
-
---
--- Name: TABLE feed_items; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.feed_items IS 'Denormalised unified timeline. Articles, notes, and external items dual-written here. Single-table scan for all feed queries.';
 
 
 --
@@ -1369,13 +1191,6 @@ CREATE TABLE public.feed_saves (
     feed_item_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE feed_saves; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.feed_saves IS 'User-saved feed items within a workspace feed. Equivalent of bookmarks scoped to a feed.';
 
 
 --
@@ -1393,13 +1208,6 @@ CREATE TABLE public.feed_scores (
     scored_at timestamp with time zone DEFAULT now() NOT NULL,
     publication_id uuid
 );
-
-
---
--- Name: TABLE feed_scores; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.feed_scores IS 'Publication-scoped content scoring for explore feed.';
 
 
 --
@@ -1426,13 +1234,6 @@ CREATE TABLE public.feed_sources (
 
 
 --
--- Name: TABLE feed_sources; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.feed_sources IS 'Discriminated union: what populates a workspace feed. Types: native_account, native_publication, external_source, tag.';
-
-
---
 -- Name: feeds; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1447,13 +1248,6 @@ CREATE TABLE public.feeds (
 
 
 --
--- Name: TABLE feeds; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.feeds IS 'User-created feed containers for the workspace experiment. Each feed has sources and a sampling/ordering strategy.';
-
-
---
 -- Name: follows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1462,13 +1256,6 @@ CREATE TABLE public.follows (
     followee_id uuid NOT NULL,
     followed_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE follows; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.follows IS 'Writer-to-writer follow graph.';
 
 
 --
@@ -1486,13 +1273,6 @@ CREATE TABLE public.gift_links (
     expires_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE gift_links; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.gift_links IS 'Shareable article access links with redemption limits and tracking.';
 
 
 --
@@ -1517,13 +1297,6 @@ CREATE TABLE public.linked_accounts (
 
 
 --
--- Name: TABLE linked_accounts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.linked_accounts IS 'OAuth credentials for cross-posting (Mastodon, Bluesky). AES-256-GCM encrypted.';
-
-
---
 -- Name: magic_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1535,13 +1308,6 @@ CREATE TABLE public.magic_links (
     used_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE magic_links; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.magic_links IS 'Passwordless login tokens — 32-byte random, SHA-256 hashed, 15-min TTL, single-use.';
 
 
 --
@@ -1557,13 +1323,6 @@ CREATE TABLE public.media_uploads (
     size_bytes integer NOT NULL,
     uploaded_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE media_uploads; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.media_uploads IS 'Content-addressed media uploads. SHA-256 dedup, Sharp-processed.';
 
 
 --
@@ -1585,13 +1344,6 @@ CREATE TABLE public.moderation_reports (
 
 
 --
--- Name: TABLE moderation_reports; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.moderation_reports IS 'User-submitted content/account reports for admin review.';
-
-
---
 -- Name: mutes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1600,13 +1352,6 @@ CREATE TABLE public.mutes (
     muted_id uuid NOT NULL,
     muted_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE mutes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.mutes IS 'User mute list. Hidden from feeds without blocking interaction.';
 
 
 --
@@ -1635,13 +1380,6 @@ CREATE TABLE public.notes (
 
 
 --
--- Name: TABLE notes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.notes IS 'Short-form posts (Nostr kind 1). Dual-written to feed_items on create.';
-
-
---
 -- Name: notification_preferences; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1651,13 +1389,6 @@ CREATE TABLE public.notification_preferences (
     enabled boolean DEFAULT true NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE notification_preferences; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.notification_preferences IS 'Per-user notification type opt-out preferences.';
 
 
 --
@@ -1680,13 +1411,6 @@ CREATE TABLE public.notifications (
 
 
 --
--- Name: TABLE notifications; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.notifications IS 'In-app notification queue with type routing and actor/target references.';
-
-
---
 -- Name: oauth_app_registrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1701,13 +1425,6 @@ CREATE TABLE public.oauth_app_registrations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE oauth_app_registrations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.oauth_app_registrations IS 'Per-Mastodon-instance dynamic OAuth client registrations.';
 
 
 --
@@ -1737,13 +1454,6 @@ CREATE TABLE public.outbound_posts (
 
 
 --
--- Name: TABLE outbound_posts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.outbound_posts IS 'Cross-post queue with retry state. Protocol dispatch by linked account type.';
-
-
---
 -- Name: platform_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1753,13 +1463,6 @@ CREATE TABLE public.platform_config (
     description text,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE platform_config; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.platform_config IS 'Singleton platform configuration (fee BPS, admin account IDs, feature flags).';
 
 
 --
@@ -1797,13 +1500,6 @@ CREATE TABLE public.pledge_drives (
 
 
 --
--- Name: TABLE pledge_drives; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.pledge_drives IS 'Crowdfunding drives where readers pledge toward article unlock goals.';
-
-
---
 -- Name: pledges; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1817,13 +1513,6 @@ CREATE TABLE public.pledges (
     fulfilled_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE pledges; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.pledges IS 'Individual pledges toward a drive. Converted to read_events when drive succeeds.';
 
 
 --
@@ -1844,13 +1533,6 @@ CREATE TABLE public.publication_article_shares (
 
 
 --
--- Name: TABLE publication_article_shares; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.publication_article_shares IS 'Cross-publication article syndication records.';
-
-
---
 -- Name: publication_follows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1859,13 +1541,6 @@ CREATE TABLE public.publication_follows (
     publication_id uuid NOT NULL,
     followed_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE publication_follows; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.publication_follows IS 'Reader follows on publications (distinct from writer follows).';
 
 
 --
@@ -1887,13 +1562,6 @@ CREATE TABLE public.publication_invites (
     declined_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE publication_invites; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.publication_invites IS 'Pending membership invitations with role and revenue share.';
 
 
 --
@@ -1923,13 +1591,6 @@ CREATE TABLE public.publication_members (
 
 
 --
--- Name: TABLE publication_members; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.publication_members IS 'Role-based membership (editor_in_chief, editor, contributor).';
-
-
---
 -- Name: publication_payout_splits; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1949,13 +1610,6 @@ CREATE TABLE public.publication_payout_splits (
 
 
 --
--- Name: TABLE publication_payout_splits; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.publication_payout_splits IS 'Per-article revenue share overrides for publication contributors.';
-
-
---
 -- Name: publication_payouts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1971,13 +1625,6 @@ CREATE TABLE public.publication_payouts (
     completed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE publication_payouts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.publication_payouts IS 'Publication-level payout aggregation and Stripe transfer records.';
 
 
 --
@@ -2016,13 +1663,6 @@ CREATE TABLE public.publications (
 
 
 --
--- Name: TABLE publications; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.publications IS 'Multi-author publications. Ownership, branding, payout config.';
-
-
---
 -- Name: read_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2049,13 +1689,6 @@ CREATE TABLE public.read_events (
 
 
 --
--- Name: TABLE read_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.read_events IS 'Individual read charges. State machine: provisional → accrued → platform_settled → writer_paid.';
-
-
---
 -- Name: reading_positions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2066,13 +1699,6 @@ CREATE TABLE public.reading_positions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT reading_positions_scroll_ratio_check CHECK (((scroll_ratio >= (0)::double precision) AND (scroll_ratio <= (1)::double precision)))
 );
-
-
---
--- Name: TABLE reading_positions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.reading_positions IS 'Scroll position saves for reading-history resumption.';
 
 
 --
@@ -2089,13 +1715,6 @@ CREATE TABLE public.reading_tabs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT reading_tabs_balance_non_negative CHECK ((balance_pence >= 0))
 );
-
-
---
--- Name: TABLE reading_tabs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.reading_tabs IS 'Stripe-backed reading tab per reader. Accumulates spend, settles at threshold or monthly.';
 
 
 --
@@ -2122,13 +1741,6 @@ CREATE TABLE public.relay_outbox (
 
 
 --
--- Name: TABLE relay_outbox; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.relay_outbox IS 'Durable queue for Nostr event relay publishing. Worker owns retry with advisory locks.';
-
-
---
 -- Name: resolver_async_results; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2142,13 +1754,6 @@ CREATE TABLE public.resolver_async_results (
 
 
 --
--- Name: TABLE resolver_async_results; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.resolver_async_results IS 'Phase B async resolution results. Initiator-bound, 60s TTL, pruned every 5 min.';
-
-
---
 -- Name: stripe_webhook_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2158,13 +1763,6 @@ CREATE TABLE public.stripe_webhook_events (
     processed_at timestamp with time zone,
     received_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE stripe_webhook_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.stripe_webhook_events IS 'Webhook deduplication. processed_at nullable for crash-between-receipt-and-completion.';
 
 
 --
@@ -2188,13 +1786,6 @@ CREATE TABLE public.subscription_events (
 
 
 --
--- Name: TABLE subscription_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.subscription_events IS 'Immutable log of subscription lifecycle events (create, renew, cancel, expire, reactivate).';
-
-
---
 -- Name: subscription_nudge_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2206,13 +1797,6 @@ CREATE TABLE public.subscription_nudge_log (
     converted boolean DEFAULT false NOT NULL,
     publication_id uuid
 );
-
-
---
--- Name: TABLE subscription_nudge_log; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.subscription_nudge_log IS 'Rate-limits subscription nudge UI to once per reader/publication/month.';
 
 
 --
@@ -2236,13 +1820,6 @@ CREATE TABLE public.subscription_offers (
     CONSTRAINT subscription_offers_discount_pct_check CHECK (((discount_pct >= 0) AND (discount_pct <= 100))),
     CONSTRAINT subscription_offers_mode_check CHECK ((mode = ANY (ARRAY['code'::text, 'grant'::text])))
 );
-
-
---
--- Name: TABLE subscription_offers; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.subscription_offers IS 'Time-limited promotional pricing for subscriptions.';
 
 
 --
@@ -2276,13 +1853,6 @@ CREATE TABLE public.subscriptions (
 
 
 --
--- Name: TABLE subscriptions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.subscriptions IS 'Writer and publication subscriptions with auto-renewal, free allowance, annual/monthly pricing.';
-
-
---
 -- Name: tab_settlements; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2305,13 +1875,6 @@ CREATE TABLE public.tab_settlements (
 
 
 --
--- Name: TABLE tab_settlements; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.tab_settlements IS 'Stripe PaymentIntent records for tab settlement charges.';
-
-
---
 -- Name: tags; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2320,13 +1883,6 @@ CREATE TABLE public.tags (
     name text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE tags; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.tags IS 'Normalised tag names for article categorisation.';
 
 
 --
@@ -2339,13 +1895,6 @@ CREATE TABLE public.trust_epochs (
     type text NOT NULL,
     CONSTRAINT trust_epochs_type_check CHECK ((type = ANY (ARRAY['full'::text, 'mopup'::text])))
 );
-
-
---
--- Name: TABLE trust_epochs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.trust_epochs IS 'Audit trail of trust aggregation runs (quarterly full + Mon/Thu mop-ups).';
 
 
 --
@@ -2363,13 +1912,6 @@ CREATE TABLE public.trust_layer1 (
     computed_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT trust_layer1_pip_status_check CHECK ((pip_status = ANY (ARRAY['known'::text, 'partial'::text, 'unknown'::text, 'contested'::text])))
 );
-
-
---
--- Name: TABLE trust_layer1; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.trust_layer1 IS 'Precomputed per-user trust signals (account age, paying readers, article count, Stripe KYC, NIP-05). Daily cron refresh.';
 
 
 --
@@ -2391,13 +1933,6 @@ CREATE TABLE public.trust_polls (
 
 
 --
--- Name: TABLE trust_polls; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.trust_polls IS 'Pip poll voting per subject — allows network to weigh in on trust signals.';
-
-
---
 -- Name: trust_profiles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2410,13 +1945,6 @@ CREATE TABLE public.trust_profiles (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT trust_profiles_dimension_check CHECK ((dimension = ANY (ARRAY['humanity'::text, 'encounter'::text, 'identity'::text, 'integrity'::text])))
 );
-
-
---
--- Name: TABLE trust_profiles; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.trust_profiles IS 'Dimension scores from epoch aggregation. Four dimensions: humanity, encounter, identity, integrity.';
 
 
 --
@@ -2433,13 +1961,6 @@ CREATE TABLE public.vault_keys (
     rotated_at timestamp with time zone,
     ciphertext text
 );
-
-
---
--- Name: TABLE vault_keys; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.vault_keys IS 'Encrypted content keys for paywalled articles. Envelope-encrypted with KMS master key.';
 
 
 --
@@ -2461,13 +1982,6 @@ CREATE TABLE public.vote_charges (
 
 
 --
--- Name: TABLE vote_charges; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.vote_charges IS 'Tab charges for votes (votes cost pence, tracked separately from reads).';
-
-
---
 -- Name: vote_tallies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2478,13 +1992,6 @@ CREATE TABLE public.vote_tallies (
     net_score integer DEFAULT 0 NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE vote_tallies; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.vote_tallies IS 'Precomputed net vote scores per target. Updated atomically via advisory locks.';
 
 
 --
@@ -2504,13 +2011,6 @@ CREATE TABLE public.votes (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT votes_direction_check CHECK ((direction = ANY (ARRAY['up'::text, 'down'::text])))
 );
-
-
---
--- Name: TABLE votes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.votes IS 'Per-user votes on articles/notes/comments. Exponential cost curve.';
 
 
 --
@@ -2537,13 +2037,6 @@ CREATE TABLE public.vouches (
 
 
 --
--- Name: TABLE vouches; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.vouches IS 'Per-attestor/subject/dimension endorsements. Values: affirm/contest. Visibility: public/aggregate.';
-
-
---
 -- Name: writer_payouts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2562,13 +2055,6 @@ CREATE TABLE public.writer_payouts (
 
 
 --
--- Name: TABLE writer_payouts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.writer_payouts IS 'Stripe Connect transfer records for writer earnings payouts.';
-
-
---
 -- Name: half_day_buckets; Type: TABLE; Schema: traffology; Owner: -
 --
 
@@ -2579,13 +2065,6 @@ CREATE TABLE traffology.half_day_buckets (
     is_day boolean NOT NULL,
     reader_count integer DEFAULT 0 NOT NULL
 );
-
-
---
--- Name: TABLE half_day_buckets; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.half_day_buckets IS 'AM/PM bucketed read distribution for time-of-day analysis.';
 
 
 --
@@ -2608,13 +2087,6 @@ CREATE TABLE traffology.nostr_events (
 
 
 --
--- Name: TABLE nostr_events; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.nostr_events IS 'Reserved for Phase 2: Nostr social signal ingestion (mentions, zaps, reposts).';
-
-
---
 -- Name: observations; Type: TABLE; Schema: traffology; Owner: -
 --
 
@@ -2629,13 +2101,6 @@ CREATE TABLE traffology.observations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT observations_priority_check CHECK (((priority >= 1) AND (priority <= 5)))
 );
-
-
---
--- Name: TABLE observations; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.observations IS 'AI-generated editorial observations about traffic patterns and anomalies.';
 
 
 --
@@ -2663,13 +2128,6 @@ CREATE TABLE traffology.piece_stats (
 
 
 --
--- Name: TABLE piece_stats; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.piece_stats IS 'Hourly aggregated per-article metrics (readers, time, new vs returning).';
-
-
---
 -- Name: pieces; Type: TABLE; Schema: traffology; Owner: -
 --
 
@@ -2686,13 +2144,6 @@ CREATE TABLE traffology.pieces (
     published_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE pieces; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.pieces IS 'Traffology mirror of articles — maps article_id to writer_id for analytics ownership.';
 
 
 --
@@ -2719,13 +2170,6 @@ CREATE TABLE traffology.public_mentions (
 
 
 --
--- Name: TABLE public_mentions; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.public_mentions IS 'Reserved for Phase 3: web mention discovery and tracking.';
-
-
---
 -- Name: publication_baselines; Type: TABLE; Schema: traffology; Owner: -
 --
 
@@ -2739,13 +2183,6 @@ CREATE TABLE traffology.publication_baselines (
     total_readers_this_month integer DEFAULT 0 NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE publication_baselines; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.publication_baselines IS 'Rolling publication-level baselines for anomaly detection.';
 
 
 --
@@ -2780,13 +2217,6 @@ CREATE TABLE traffology.sessions (
 
 
 --
--- Name: TABLE sessions; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.sessions IS 'Page-view sessions from beacon heartbeats. IP hashed with SHA-256 + salt, no raw PII stored.';
-
-
---
 -- Name: source_stats; Type: TABLE; Schema: traffology; Owner: -
 --
 
@@ -2802,13 +2232,6 @@ CREATE TABLE traffology.source_stats (
     bounce_rate real DEFAULT 0.0 NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE source_stats; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.source_stats IS 'Hourly aggregated per-source traffic metrics.';
 
 
 --
@@ -2831,13 +2254,6 @@ CREATE TABLE traffology.sources (
 
 
 --
--- Name: TABLE sources; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.sources IS 'Resolved traffic sources (referrer → categorised source with domain/path).';
-
-
---
 -- Name: topic_performance; Type: TABLE; Schema: traffology; Owner: -
 --
 
@@ -2850,13 +2266,6 @@ CREATE TABLE traffology.topic_performance (
     mean_search_readers real DEFAULT 0.0 NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE topic_performance; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.topic_performance IS 'Per-tag/topic performance aggregates for content strategy insights.';
 
 
 --
@@ -2875,13 +2284,6 @@ CREATE TABLE traffology.writer_baselines (
     monthly_revenue numeric(10,2) DEFAULT 0.00 NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: TABLE writer_baselines; Type: COMMENT; Schema: traffology; Owner: -
---
-
-COMMENT ON TABLE traffology.writer_baselines IS 'Rolling writer-level baselines for anomaly detection.';
 
 
 --
@@ -4322,6 +3724,13 @@ CREATE INDEX idx_ext_items_author_uri ON public.external_items USING btree (auth
 
 
 --
+-- Name: idx_ext_items_canonical; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ext_items_canonical ON public.external_items USING btree (canonical_url) WHERE (canonical_url IS NOT NULL);
+
+
+--
 -- Name: idx_ext_items_published_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4340,13 +3749,6 @@ CREATE INDEX idx_ext_items_source_id ON public.external_items USING btree (sourc
 --
 
 CREATE INDEX idx_ext_items_source_reply ON public.external_items USING btree (source_reply_uri) WHERE (source_reply_uri IS NOT NULL);
-
-
---
--- Name: idx_ext_items_canonical; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_ext_items_canonical ON public.external_items USING btree (canonical_url) WHERE (canonical_url IS NOT NULL);
 
 
 --
@@ -6635,110 +6037,5 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict poVcjSxjpCtbVUnohbJg5gJTXHM8pge5HhhT0kqaknaZ9guABrkHmuG3nmdhGmi
-
-
---
--- Data for Name: _migrations; Type: TABLE DATA; Schema: public
---
-
-INSERT INTO public._migrations VALUES (1, '001_add_email_and_magic_links.sql', '2026-03-31 16:53:25.513348+00');
-INSERT INTO public._migrations VALUES (2, '002_draft_upsert_index.sql', '2026-03-31 16:53:25.52481+00');
-INSERT INTO public._migrations VALUES (3, '003_comments.sql', '2026-03-31 16:53:25.527175+00');
-INSERT INTO public._migrations VALUES (4, '004_media_uploads.sql', '2026-03-31 16:53:25.52889+00');
-INSERT INTO public._migrations VALUES (5, '005_subscriptions.sql', '2026-03-31 16:53:25.531348+00');
-INSERT INTO public._migrations VALUES (6, '006_receipt_portability.sql', '2026-03-31 16:53:25.554578+00');
-INSERT INTO public._migrations VALUES (7, '007_subscription_nostr_event.sql', '2026-03-31 16:53:25.555895+00');
-INSERT INTO public._migrations VALUES (8, '008_deduplicate_articles.sql', '2026-03-31 16:53:25.557769+00');
-INSERT INTO public._migrations VALUES (9, '009_notifications.sql', '2026-03-31 16:53:25.561479+00');
-INSERT INTO public._migrations VALUES (10, '010_votes.sql', '2026-03-31 16:53:25.567687+00');
-INSERT INTO public._migrations VALUES (11, '011_store_ciphertext.sql', '2026-03-31 16:53:25.584776+00');
-INSERT INTO public._migrations VALUES (12, '012_notification_note_id.sql', '2026-03-31 16:53:25.585827+00');
-INSERT INTO public._migrations VALUES (13, '013_note_excerpt_fields.sql', '2026-03-31 16:53:25.587895+00');
-INSERT INTO public._migrations VALUES (14, '014_notification_dedup.sql', '2026-03-31 16:53:25.58891+00');
-INSERT INTO public._migrations VALUES (15, '015_access_mode_and_unlock_types.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (16, '016_direct_messages.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (17, '017_pledge_drives.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (18, '018_add_on_delete_clauses.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (19, '019_fix_notification_dedup.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (20, '020_notification_routing_columns.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (21, '021_missing_on_delete_clauses.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (22, '022_composite_index_read_events.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (23, '023_subscription_auto_renew.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (24, '024_annual_subscriptions.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (25, '025_comp_subscriptions.sql', '2026-04-02 19:15:55.670647+00');
-INSERT INTO public._migrations VALUES (26, '026_article_profile_pins.sql', '2026-04-02 19:16:00.778804+00');
-INSERT INTO public._migrations VALUES (27, '027_subscription_visibility.sql', '2026-04-02 19:16:00.789026+00');
-INSERT INTO public._migrations VALUES (28, '028_subscription_nudge.sql', '2026-05-15 21:48:54.566632+00');
-INSERT INTO public._migrations VALUES (29, '029_gift_links.sql', '2026-05-15 21:48:54.628308+00');
-INSERT INTO public._migrations VALUES (30, '030_commissions_expansion.sql', '2026-05-15 21:48:54.669508+00');
-INSERT INTO public._migrations VALUES (31, '031_fix_media_urls_domain.sql', '2026-05-15 21:48:54.687046+00');
-INSERT INTO public._migrations VALUES (32, '032_dm_likes.sql', '2026-05-15 21:48:54.712442+00');
-INSERT INTO public._migrations VALUES (33, '033_admin_account_ids_config.sql', '2026-05-15 21:48:54.755243+00');
-INSERT INTO public._migrations VALUES (34, '034_dm_replies.sql', '2026-05-15 21:48:54.767117+00');
-INSERT INTO public._migrations VALUES (35, '035_feed_scores.sql', '2026-05-15 21:48:54.782905+00');
-INSERT INTO public._migrations VALUES (36, '036_commission_conversation.sql', '2026-05-15 21:48:54.82839+00');
-INSERT INTO public._migrations VALUES (37, '037_subscription_offers.sql', '2026-05-15 21:48:54.845199+00');
-INSERT INTO public._migrations VALUES (38, '038_publications.sql', '2026-05-15 21:48:54.883396+00');
-INSERT INTO public._migrations VALUES (39, '039_default_article_price.sql', '2026-05-15 21:48:55.062638+00');
-INSERT INTO public._migrations VALUES (40, '040_traffology_schema.sql', '2026-05-15 21:48:55.068166+00');
-INSERT INTO public._migrations VALUES (41, '041_webhook_dedup_and_fk_fixes.sql', '2026-05-15 21:48:55.267579+00');
-INSERT INTO public._migrations VALUES (42, '042_email_on_publish.sql', '2026-05-15 21:48:55.324081+00');
-INSERT INTO public._migrations VALUES (43, '043_session_invalidation.sql', '2026-05-15 21:48:55.330058+00');
-INSERT INTO public._migrations VALUES (44, '044_email_on_publish_v2.sql', '2026-05-15 21:48:55.337202+00');
-INSERT INTO public._migrations VALUES (45, '045_article_price_mode.sql', '2026-05-15 21:48:55.342038+00');
-INSERT INTO public._migrations VALUES (46, '046_notification_preferences.sql', '2026-05-15 21:48:55.348839+00');
-INSERT INTO public._migrations VALUES (47, '047_bookmarks.sql', '2026-05-15 21:48:55.363893+00');
-INSERT INTO public._migrations VALUES (48, '048_tags.sql', '2026-05-15 21:48:55.375936+00');
-INSERT INTO public._migrations VALUES (49, '049_account_deletion.sql', '2026-05-15 21:48:55.398249+00');
-INSERT INTO public._migrations VALUES (50, '050_publication_management.sql', '2026-05-15 21:48:55.407743+00');
-INSERT INTO public._migrations VALUES (51, '051_article_scheduling.sql', '2026-05-15 21:48:55.413838+00');
-INSERT INTO public._migrations VALUES (52, '052_universal_feed_external.sql', '2026-05-15 21:48:55.421929+00');
-INSERT INTO public._migrations VALUES (53, '053_feed_items.sql', '2026-05-15 21:48:55.498329+00');
-INSERT INTO public._migrations VALUES (54, '054_feed_items_backfill.sql', '2026-05-15 21:48:55.563057+00');
-INSERT INTO public._migrations VALUES (55, '055_universal_feed_atproto.sql', '2026-05-15 21:48:55.850661+00');
-INSERT INTO public._migrations VALUES (56, '056_universal_feed_activitypub.sql', '2026-05-15 21:48:55.854713+00');
-INSERT INTO public._migrations VALUES (57, '057_universal_feed_outbound.sql', '2026-05-15 21:48:55.871381+00');
-INSERT INTO public._migrations VALUES (58, '058_outbound_nostr_queue.sql', '2026-05-15 21:48:55.920592+00');
-INSERT INTO public._migrations VALUES (59, '059_atproto_oauth_sessions.sql', '2026-05-15 21:48:55.924432+00');
-INSERT INTO public._migrations VALUES (60, '060_atproto_oauth_pending_states.sql', '2026-05-15 21:48:55.931929+00');
-INSERT INTO public._migrations VALUES (61, '061_resolver_async_results.sql', '2026-05-15 21:48:55.943382+00');
-INSERT INTO public._migrations VALUES (62, '062_outbound_posts_dedup.sql', '2026-05-15 21:48:55.957099+00');
-INSERT INTO public._migrations VALUES (63, '063_external_sources_gc.sql', '2026-05-15 21:48:55.962807+00');
-INSERT INTO public._migrations VALUES (64, '064_resolver_async_results_initiator_idx.sql', '2026-05-15 21:48:55.968783+00');
-INSERT INTO public._migrations VALUES (65, '065_trust_layer1.sql', '2026-05-15 21:48:55.976717+00');
-INSERT INTO public._migrations VALUES (66, '066_vouches_trust_profiles.sql', '2026-05-15 21:48:56.019659+00');
-INSERT INTO public._migrations VALUES (67, '067_trust_epochs.sql', '2026-05-15 21:48:56.053266+00');
-INSERT INTO public._migrations VALUES (68, '068_article_size_tier.sql', '2026-05-15 21:48:56.067508+00');
-INSERT INTO public._migrations VALUES (69, '069_reading_positions.sql', '2026-05-15 21:48:56.152269+00');
-INSERT INTO public._migrations VALUES (70, '070_harmonize_size_tier_trigger.sql', '2026-05-15 21:48:56.165303+00');
-INSERT INTO public._migrations VALUES (71, '071_stripe_webhook_processed_at_nullable.sql', '2026-05-15 21:48:56.169209+00');
-INSERT INTO public._migrations VALUES (72, '072_subscription_events_expiry_warning.sql', '2026-05-15 21:48:56.173873+00');
-INSERT INTO public._migrations VALUES (73, '073_dm_send_id.sql', '2026-05-15 21:48:56.178331+00');
-INSERT INTO public._migrations VALUES (74, '074_accounts_search_trgm.sql', '2026-05-15 21:48:56.220218+00');
-INSERT INTO public._migrations VALUES (75, '075_external_sources_metadata_updated_at.sql', '2026-05-15 21:48:56.251899+00');
-INSERT INTO public._migrations VALUES (76, '076_relay_outbox.sql', '2026-05-15 21:48:56.255181+00');
-INSERT INTO public._migrations VALUES (77, '077_workspace_feeds.sql', '2026-05-15 21:48:56.273287+00');
-INSERT INTO public._migrations VALUES (78, '078_trust_polls.sql', '2026-05-15 21:48:56.314011+00');
-INSERT INTO public._migrations VALUES (79, '079_pip_status_contested.sql', '2026-05-15 21:48:56.331785+00');
-INSERT INTO public._migrations VALUES (80, '080_feed_saves.sql', '2026-05-15 21:48:56.336917+00');
-INSERT INTO public._migrations VALUES (81, '081_article_cover_image.sql', '2026-05-15 21:48:56.352685+00');
-INSERT INTO public._migrations VALUES (82, '082_feed_sources_default_volume.sql', '2026-05-15 21:48:56.357509+00');
-INSERT INTO public._migrations VALUES (83, '083_search_content_trgm_index.sql', '2026-05-15 21:48:56.362116+00');
-INSERT INTO public._migrations VALUES (84, '084_email_verification_requested_at.sql', '2026-05-15 21:48:56.479038+00');
-INSERT INTO public._migrations VALUES (85, '085_settlement_status.sql', '2026-05-25 10:48:13.8342+00');
-INSERT INTO public._migrations VALUES (86, '086_reading_tabs_balance_check.sql', '2026-05-25 10:48:13.861306+00');
-INSERT INTO public._migrations VALUES (87, '087_schema_hardening.sql', '2026-05-25 10:48:13.867849+00');
-INSERT INTO public._migrations VALUES (88, '088_traffology_sources_unique.sql', '2026-05-25 10:48:13.93456+00');
-INSERT INTO public._migrations VALUES (89, '089_workspace_hardening.sql', '2026-05-25 10:48:13.946692+00');
-INSERT INTO public._migrations VALUES (90, '090_external_engagement_counts.sql', '2026-05-25 10:48:13.954489+00');
-INSERT INTO public._migrations VALUES (91, '091_external_items_context_only.sql', '2026-05-25 10:48:13.961761+00');
-INSERT INTO public._migrations VALUES (92, '092_interaction_foundation.sql', '2026-05-25 10:48:13.967455+00');
-INSERT INTO public._migrations VALUES (93, '093_content_warning.sql', '2026-05-25 10:48:13.973958+00');
-INSERT INTO public._migrations VALUES (94, '094_external_protocol_expansion.sql', '2026-05-25 10:48:13.979000+00');
-INSERT INTO public._migrations VALUES (95, '095_external_protocol_check_constraint.sql', '2026-05-25 10:48:13.984000+00');
-INSERT INTO public._migrations VALUES (96, '096_email_ingest.sql', '2026-05-25 10:48:13.990000+00');
-
-
-SELECT pg_catalog.setval('public._migrations_id_seq', 93, true);
+\unrestrict OdQJLwI4NGvEsV2kGZDvcoeOSDc4viyeqjnuEaW7k0R0xaavzrVebGf15bdgXDZ
 

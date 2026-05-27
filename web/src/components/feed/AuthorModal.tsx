@@ -232,10 +232,12 @@ function FollowButton({
           if (prev) {
             await feedsApi.remove(target.id);
           } else {
-            // For source follows from the modal, we don't have enough info
-            // to call subscribe (needs protocol/sourceUri). The user should
-            // use the subscriptions page. Show "subscribed" state only.
-            setFollowing(prev);
+            if (target.protocol && target.sourceUri) {
+              await feedsApi.subscribe({
+                protocol: target.protocol,
+                sourceUri: target.sourceUri,
+              });
+            }
           }
         }
       } catch {

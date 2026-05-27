@@ -1,7 +1,7 @@
 # CARD-BEHAVIOUR-ADR: Feed Card Interaction & Conversational Expansion
 
 **all.haus Architectural Decision Record**
-**Status:** Phases 1–3 shipped (May 2026) — Phase 4 remaining
+**Status:** Phases 1–3 shipped (May 2026), audit fix-up 2026-05-27 — Phase 4 remaining
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** UNIVERSAL-FEED-ADR, UI-DESIGN-SPEC
 **Affects:** `web/src/components/feed/*`, `gateway/src/routes/`, `feed-ingest/src/lib/*`, `schema.sql`, `migrations/`

@@ -60,6 +60,7 @@ export interface ExternalFeedItem {
   sourceAvatar: string | null;
   pipStatus?: "known" | "partial" | "unknown" | "contested";
   isReply?: boolean;
+  replyToAuthor?: string;
   biddabilityTier?: "A" | "B" | "C" | "D";
 }
 
@@ -228,7 +229,8 @@ export function ExternalCard({ item }: ExternalCardProps) {
         {/* Provenance — reply signalling (Slice 1D) */}
         {showProvenance && (
           <div className="label-ui text-grey-400 mb-1">
-            ↳ REPLYING TO A POST
+            ↳ REPLYING TO{" "}
+            {item.replyToAuthor ? `@${item.replyToAuthor}` : "A POST"}
           </div>
         )}
 
@@ -473,6 +475,21 @@ export function ExternalCard({ item }: ExternalCardProps) {
               Reply
             </button>
           )}
+          <span
+            className="[@media(hover:hover)]:hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ActionSheet
+              actions={[
+                {
+                  label: "SHARE",
+                  onClick: () => {
+                    navigator.clipboard?.writeText(viewOriginalUri);
+                  },
+                },
+              ]}
+            />
+          </span>
         </div>
       </div>
       {/* End anchor card */}

@@ -72,6 +72,7 @@ export interface NoteEvent {
   quotedAuthor?: string;
   pipStatus?: PipStatus;
   isReply?: boolean;
+  replyToAuthor?: string;
   biddabilityTier?: "A" | "B" | "C" | "D";
   savedAt?: number;
   externalParentId?: string;
@@ -129,6 +130,7 @@ export interface ExternalFeedItem {
   sourceAvatar: string | null;
   pipStatus?: PipStatus;
   isReply?: boolean;
+  replyToAuthor?: string;
   biddabilityTier?: "A" | "B" | "C" | "D";
 }
 

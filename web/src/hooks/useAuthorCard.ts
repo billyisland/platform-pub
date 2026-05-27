@@ -20,6 +20,8 @@ export interface AuthorCardData {
     type: "user" | "source";
     id: string;
     isFollowing: boolean;
+    protocol?: string;
+    sourceUri?: string;
   };
 }
 

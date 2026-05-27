@@ -160,6 +160,7 @@ export function FeedView() {
               pipStatus: item.pipStatus,
               sizeTier: item.sizeTier,
               isReply: item.isReply ?? false,
+              replyToAuthor: item.replyToAuthor,
               biddabilityTier: item.biddabilityTier ?? "A",
             };
           } else if (item.type === "note") {
@@ -176,6 +177,7 @@ export function FeedView() {
               quotedAuthor: item.quotedAuthor,
               pipStatus: item.pipStatus,
               isReply: item.isReply ?? false,
+              replyToAuthor: item.replyToAuthor,
               biddabilityTier: item.biddabilityTier ?? "A",
             };
           } else if (item.type === "external") {
@@ -203,6 +205,7 @@ export function FeedView() {
               sourceAvatar: item.sourceAvatar,
               pipStatus: item.pipStatus ?? "unknown",
               isReply: item.isReply ?? false,
+              replyToAuthor: item.replyToAuthor,
               biddabilityTier: item.biddabilityTier ?? "D",
             } as ExternalFeedItem;
           } else {
