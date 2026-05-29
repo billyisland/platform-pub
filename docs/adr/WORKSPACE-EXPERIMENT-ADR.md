@@ -1,6 +1,6 @@
 # WORKSPACE EXPERIMENT ADR
 
-_Date: 2026-05-01. Status: Active experiment, slices 1 + 1.5 + 2 + 2.5 + 2.6 + 2.7 + 2.8 + 3 + 4 + 5a + 5b + 5c + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 (retired) + 21 + 22 + 23 + 23b + 24 + 25 + 26 + 27 + 28 + 29 + 30 + 31 + 32 + 33 shipped on branch + refactoring pass + hardening pass. Branch: `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
+_Date: 2026-05-01. Status: Merged to `master` (2026-05-29, fast-forward). All slices (1–34), refactoring pass, hardening pass, card behaviour Phases 1–3, and full codebase review shipped. Originally on branch `workspace-experiment` (anchored at tag `pre-workspace-experiment`)._
 
 ## Context
 

@@ -1,6 +1,6 @@
 # Static Analysis Baseline — May 2026
 
-Measured 2026-05-15 against the `workspace-experiment` branch.
+Measured 2026-05-15 against the `workspace-experiment` branch (merged to `master` 2026-05-29).
 
 ---
 

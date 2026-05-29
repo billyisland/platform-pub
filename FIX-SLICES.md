@@ -2,7 +2,7 @@
 
 Actionable fix plan derived from the codebase review in `REVIEW-PLAN.md` (2026-05-15), verified against the actual codebase on 2026-05-16.
 
-**Branch:** `workspace-experiment`
+**Branch:** Merged to `master` (2026-05-29)
 **How to use:** Work through slices in order. Each slice is scoped for a single context window. When starting a slice, read this section, then read the files listed in the slice's table before making changes. Diagnosis numbers (D76, D91, etc.) reference the detailed analysis in `REVIEW-PLAN.md` if you need more context on why a fix is needed.
 
 **Important:** Many high-severity diagnoses in the review plan have **already been fixed** in the uncommitted working tree. The first task (Slice 0) is to commit those fixes. Do not re-implement anything listed in the "Already resolved" table — those are done, they just need committing.

@@ -1,6 +1,6 @@
 # The Big Redesign — Scope, Sequencing, and Open Questions
 
-> **Note (2026-05-15):** This document's anti-workspace stance is partially superseded by `WORKSPACE-EXPERIMENT-ADR.md`, which reintroduces a vessel-based workspace model on the `workspace-experiment` branch (slices 1–32 shipped, merge decision pending). The product thesis and design principles in this document remain valid; the structural claim that "there is no workspace to build" is under active re-evaluation.
+> **Note (2026-05-15, updated 2026-05-29):** This document's anti-workspace stance is superseded by `WORKSPACE-EXPERIMENT-ADR.md`, which reintroduces a vessel-based workspace model (slices 1–34, merged to `master` 2026-05-29). The product thesis and design principles in this document remain valid; the structural claim that "there is no workspace to build" has been resolved in favour of the workspace.
 
 A second revision, following a working session that pushed against the first revision's assumptions hard enough that most of them moved. The first revision retired the unified workspace in favour of three-and-a-fraction products (reader, writer, workspace, groups). This revision retires the workspace entirely. What replaces it is not a fourth product but a clearer account of what the product already is, once you stop trying to turn it into something else.
 

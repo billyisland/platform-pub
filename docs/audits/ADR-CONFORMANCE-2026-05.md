@@ -1,6 +1,6 @@
 # ADR Conformance Matrix — 2026-05-15
 
-Produced as Session 0.2 of the codebase review plan. Assessed all 18 files in `docs/adr/` against the `workspace-experiment` branch.
+Produced as Session 0.2 of the codebase review plan. Assessed all 18 files in `docs/adr/` against the `workspace-experiment` branch (merged to `master` 2026-05-29).
 
 ## Executive Summary
 

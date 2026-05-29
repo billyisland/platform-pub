@@ -1,6 +1,6 @@
 # Codebase Review & Refactoring Plan
 
-Produced 2026-05-15 against the `workspace-experiment` branch. Assessed against all 18 live ADRs, 8 audit documents, `feature-debt.md`, and the full codebase inventory (~3,700 .ts/.tsx files, 82 migrations, 8 workspaces, 11 Docker services).
+Produced 2026-05-15 against the `workspace-experiment` branch (merged to `master` 2026-05-29). Assessed against all 18 live ADRs, 8 audit documents, `feature-debt.md`, and the full codebase inventory (~3,700 .ts/.tsx files, 82 migrations, 8 workspaces, 11 Docker services).
 
 Each session is scoped for roughly 2–4 hours of focused Claude Code work. Sessions are grouped into phases; within a phase, sessions can run in any order unless noted. Cross-session dependencies are called out explicitly.
 
@@ -727,9 +727,9 @@ The workspace experiment is on a separate branch with 32 slices of unmerged work
 
 #### Merge Readiness Report
 
-**Branch:** `workspace-experiment` (52 commits ahead of master, anchored at `pre-workspace-experiment` tag)
-**Date:** 2026-05-15
-**Verdict:** NOT READY — 2 blockers, 5 high-risk items, significant uncommitted working-tree noise
+**Branch:** `workspace-experiment` (merged to `master` 2026-05-29 via fast-forward)
+**Date:** 2026-05-15 (report); merged 2026-05-29
+**Verdict (original):** NOT READY — 2 blockers, 5 high-risk items, significant uncommitted working-tree noise. Blockers and high-risk items were addressed in subsequent slices before merge
 
 ---
 

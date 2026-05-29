@@ -1,6 +1,6 @@
 # Workspace Full View — Diagnosis & Fixes
 
-**Branch:** `workspace-experiment`
+**Branch:** `workspace-experiment` (merged to `master` 2026-05-29)
 **Scope:** Three reported bugs against `WORKSPACE-FULL-VIEW-SPEC.md`
 **Date:** 2026-05-25
 
