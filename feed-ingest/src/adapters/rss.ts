@@ -1,6 +1,9 @@
 import Parser from "rss-parser";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
-import { sanitizeContent, stripHtml } from "../lib/sanitize.js";
+import {
+  sanitizeContent,
+  stripHtml,
+} from "@platform-pub/shared/lib/sanitize.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================

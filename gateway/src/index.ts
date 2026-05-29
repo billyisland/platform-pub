@@ -78,6 +78,7 @@ import logger, { pinoConfig } from "@platform-pub/shared/lib/logger.js";
 
 // Validate required env vars at startup — fail fast
 const SESSION_SECRET = requireEnvMinLength("SESSION_SECRET", 32);
+const COOKIE_SECRET = process.env.COOKIE_SECRET ?? SESSION_SECRET;
 const APP_URL = requireEnv("APP_URL");
 
 const app = Fastify({ logger: pinoConfig });
@@ -86,7 +87,7 @@ async function start() {
   // Plugins
   await app.register(sensible);
   await app.register(cookie, {
-    secret: SESSION_SECRET,
+    secret: COOKIE_SECRET,
   });
   await app.register(cors, {
     origin: APP_URL,

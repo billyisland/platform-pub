@@ -44,24 +44,24 @@ The 6 test files are likely false positives — knip can't see vitest's glob ent
 
 ### Unused exports (16)
 
-| Export                           | Kind     | Location                                        |
-| -------------------------------- | -------- | ----------------------------------------------- |
-| `CommissionsTab`                 | function | `src/components/dashboard/CommissionsTab.tsx:6` |
-| `PageHeader`                     | function | `src/components/ui/PageShell.tsx:11`            |
-| `BAR_H`                          | const    | `src/components/workspace/VesselBar.tsx:30`     |
-| `invalidateLinkedAccounts`       | function | `src/hooks/useLinkedAccounts.ts:32`             |
-| `ApiError`                       | class    | `src/lib/api/client.ts:13`                      |
-| `renderMarkdownSync`             | function | `src/lib/markdown.ts:85`                        |
-| `enhanceEmbedUrls`               | function | `src/lib/markdown.ts:124`                       |
-| `generateDTag`                   | function | `src/lib/publish.ts:222`                        |
-| `decryptVaultContentXChaCha`     | function | `src/lib/vault.ts:37`                           |
-| `decryptVaultContentAesGcm`      | function | `src/lib/vault.ts:56`                           |
-| `base64ToUint8Array`             | function | `src/lib/vault.ts:130`                          |
-| `VESSEL_DRAG_TRANSITION`         | const    | `src/lib/workspace/motion.ts:6`                 |
-| `VESSEL_DRAG_TRANSITION_REDUCED` | const    | `src/lib/workspace/motion.ts:13`                |
-| `ceremonyTotal`                  | function | `src/lib/workspace/motion.ts:75`                |
-| `matchToOptions`                 | function | `src/lib/workspace/resolve.ts:11`               |
-| `tagFallback`                    | function | `src/lib/workspace/resolve.ts:62`               |
+| Export                           | Kind         | Location                                        |
+| -------------------------------- | ------------ | ----------------------------------------------- |
+| `CommissionsTab`                 | function     | `src/components/dashboard/CommissionsTab.tsx:6` |
+| `PageHeader`                     | function     | `src/components/ui/PageShell.tsx:11`            |
+| `BAR_H`                          | const        | `src/components/workspace/VesselBar.tsx:30`     |
+| `invalidateLinkedAccounts`       | function     | `src/hooks/useLinkedAccounts.ts:32`             |
+| `ApiError`                       | class        | `src/lib/api/client.ts:13`                      |
+| ~~`renderMarkdownSync`~~         | ~~function~~ | ~~deleted — unsanitised, unused~~               |
+| ~~`enhanceEmbedUrls`~~           | ~~function~~ | ~~made private with iframe allowlist~~          |
+| `generateDTag`                   | function     | `src/lib/publish.ts:222`                        |
+| `decryptVaultContentXChaCha`     | function     | `src/lib/vault.ts:37`                           |
+| `decryptVaultContentAesGcm`      | function     | `src/lib/vault.ts:56`                           |
+| `base64ToUint8Array`             | function     | `src/lib/vault.ts:130`                          |
+| `VESSEL_DRAG_TRANSITION`         | const        | `src/lib/workspace/motion.ts:6`                 |
+| `VESSEL_DRAG_TRANSITION_REDUCED` | const        | `src/lib/workspace/motion.ts:13`                |
+| `ceremonyTotal`                  | function     | `src/lib/workspace/motion.ts:75`                |
+| `matchToOptions`                 | function     | `src/lib/workspace/resolve.ts:11`               |
+| `tagFallback`                    | function     | `src/lib/workspace/resolve.ts:62`               |
 
 ### Unused exported types (23)
 

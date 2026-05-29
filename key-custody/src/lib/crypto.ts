@@ -1,6 +1,12 @@
-import { generateSecretKey, getPublicKey, finalizeEvent, nip44, type EventTemplate } from 'nostr-tools'
-import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
-import { pool } from '@platform-pub/shared/db/client.js'
+import {
+  generateSecretKey,
+  getPublicKey,
+  finalizeEvent,
+  nip44,
+  type EventTemplate,
+} from "nostr-tools";
+import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { pool } from "@platform-pub/shared/db/client.js";
 
 // =============================================================================
 // Custodial keypair crypto
@@ -13,8 +19,8 @@ import { pool } from '@platform-pub/shared/db/client.js'
 // =============================================================================
 
 interface GeneratedKeypair {
-  pubkeyHex: string
-  privkeyEncrypted: string
+  pubkeyHex: string;
+  privkeyEncrypted: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -22,10 +28,10 @@ interface GeneratedKeypair {
 // ---------------------------------------------------------------------------
 
 export function generateKeypair(): GeneratedKeypair {
-  const privkey = generateSecretKey()
-  const pubkey = getPublicKey(privkey)
-  const privkeyEncrypted = encryptPrivkey(Buffer.from(privkey))
-  return { pubkeyHex: pubkey, privkeyEncrypted }
+  const privkey = generateSecretKey();
+  const pubkey = getPublicKey(privkey);
+  const privkeyEncrypted = encryptPrivkey(Buffer.from(privkey));
+  return { pubkeyHex: pubkey, privkeyEncrypted };
 }
 
 // ---------------------------------------------------------------------------
@@ -35,13 +41,15 @@ export function generateKeypair(): GeneratedKeypair {
 export async function signEvent(
   signerId: string,
   eventTemplate: EventTemplate,
-  signerType: 'account' | 'publication' = 'account'
+  signerType: "account" | "publication" = "account",
 ): Promise<ReturnType<typeof finalizeEvent>> {
-  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType);
+  const privkeyCopy = new Uint8Array(privkeyBytes);
   try {
-    return finalizeEvent(eventTemplate, new Uint8Array(privkeyBytes))
+    return finalizeEvent(eventTemplate, privkeyCopy);
   } finally {
-    privkeyBytes.fill(0)
+    privkeyBytes.fill(0);
+    privkeyCopy.fill(0);
   }
 }
 
@@ -55,16 +63,20 @@ export async function signEvent(
 export async function unwrapKey(
   signerId: string,
   encryptedKey: string,
-  signerType: 'account' | 'publication' = 'account'
+  signerType: "account" | "publication" = "account",
 ): Promise<string> {
-  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType);
+  const readerPrivkey = new Uint8Array(privkeyBytes);
   try {
-    const readerPrivkey = new Uint8Array(privkeyBytes)
-    const servicePubkey = getServicePubkey()
-    const conversationKey = nip44.getConversationKey(readerPrivkey, servicePubkey)
-    return nip44.decrypt(encryptedKey, conversationKey)
+    const servicePubkey = getServicePubkey();
+    const conversationKey = nip44.getConversationKey(
+      readerPrivkey,
+      servicePubkey,
+    );
+    return nip44.decrypt(encryptedKey, conversationKey);
   } finally {
-    privkeyBytes.fill(0)
+    privkeyBytes.fill(0);
+    readerPrivkey.fill(0);
   }
 }
 
@@ -74,51 +86,57 @@ export async function unwrapKey(
 
 async function getDecryptedPrivkey(
   signerId: string,
-  signerType: 'account' | 'publication' = 'account'
+  signerType: "account" | "publication" = "account",
 ): Promise<Buffer> {
-  const table = signerType === 'publication' ? 'publications' : 'accounts'
+  const table = signerType === "publication" ? "publications" : "accounts";
   const { rows } = await pool.query<{ nostr_privkey_enc: string | null }>(
     `SELECT nostr_privkey_enc FROM ${table} WHERE id = $1`,
-    [signerId]
-  )
-  if (rows.length === 0) throw new Error(`${signerType} not found: ${signerId}`)
-  const enc = rows[0].nostr_privkey_enc
-  if (!enc) throw new Error(`${signerType} ${signerId} has no custodial keypair`)
-  return decryptPrivkey(enc)
+    [signerId],
+  );
+  if (rows.length === 0)
+    throw new Error(`${signerType} not found: ${signerId}`);
+  const enc = rows[0].nostr_privkey_enc;
+  if (!enc)
+    throw new Error(`${signerType} ${signerId} has no custodial keypair`);
+  return decryptPrivkey(enc);
 }
 
 function getAccountKey(): Buffer {
-  const keyHex = process.env.ACCOUNT_KEY_HEX
-  if (!keyHex) throw new Error('ACCOUNT_KEY_HEX not set')
-  const key = Buffer.from(keyHex, 'hex')
-  if (key.length !== 32) throw new Error('ACCOUNT_KEY_HEX must be 32 bytes (64 hex chars)')
-  return key
+  const keyHex = process.env.ACCOUNT_KEY_HEX;
+  if (!keyHex) throw new Error("ACCOUNT_KEY_HEX not set");
+  const key = Buffer.from(keyHex, "hex");
+  if (key.length !== 32)
+    throw new Error("ACCOUNT_KEY_HEX must be 32 bytes (64 hex chars)");
+  return key;
 }
 
 function encryptPrivkey(privkeyBytes: Buffer): string {
-  const key = getAccountKey()
-  const iv = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', key, iv)
-  const encrypted = Buffer.concat([cipher.update(privkeyBytes), cipher.final()])
-  const authTag = cipher.getAuthTag()
-  return Buffer.concat([iv, authTag, encrypted]).toString('base64')
+  const key = getAccountKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(privkeyBytes),
+    cipher.final(),
+  ]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([iv, authTag, encrypted]).toString("base64");
 }
 
 function decryptPrivkey(encryptedBase64: string): Buffer {
-  const key = getAccountKey()
-  const combined = Buffer.from(encryptedBase64, 'base64')
-  const iv = combined.subarray(0, 12)
-  const authTag = combined.subarray(12, 28)
-  const ciphertext = combined.subarray(28)
-  const decipher = createDecipheriv('aes-256-gcm', key, iv)
-  decipher.setAuthTag(authTag)
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()])
+  const key = getAccountKey();
+  const combined = Buffer.from(encryptedBase64, "base64");
+  const iv = combined.subarray(0, 12);
+  const authTag = combined.subarray(12, 28);
+  const ciphertext = combined.subarray(28);
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 }
 
 function getServicePubkey(): string {
-  const privkeyHex = process.env.PLATFORM_SERVICE_PRIVKEY
-  if (!privkeyHex) throw new Error('PLATFORM_SERVICE_PRIVKEY not set')
-  return getPublicKey(Uint8Array.from(Buffer.from(privkeyHex, 'hex')))
+  const privkeyHex = process.env.PLATFORM_SERVICE_PRIVKEY;
+  if (!privkeyHex) throw new Error("PLATFORM_SERVICE_PRIVKEY not set");
+  return getPublicKey(Uint8Array.from(Buffer.from(privkeyHex, "hex")));
 }
 
 // ---------------------------------------------------------------------------
@@ -132,15 +150,19 @@ export async function nip44Encrypt(
   signerId: string,
   recipientPubkeyHex: string,
   plaintext: string,
-  signerType: 'account' | 'publication' = 'account'
+  signerType: "account" | "publication" = "account",
 ): Promise<string> {
-  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType);
+  const senderPrivkey = new Uint8Array(privkeyBytes);
   try {
-    const senderPrivkey = new Uint8Array(privkeyBytes)
-    const conversationKey = nip44.getConversationKey(senderPrivkey, recipientPubkeyHex)
-    return nip44.encrypt(plaintext, conversationKey)
+    const conversationKey = nip44.getConversationKey(
+      senderPrivkey,
+      recipientPubkeyHex,
+    );
+    return nip44.encrypt(plaintext, conversationKey);
   } finally {
-    privkeyBytes.fill(0)
+    privkeyBytes.fill(0);
+    senderPrivkey.fill(0);
   }
 }
 
@@ -152,17 +174,18 @@ export async function nip44EncryptBatch(
   signerId: string,
   recipientPubkeysHex: string[],
   plaintext: string,
-  signerType: 'account' | 'publication' = 'account'
+  signerType: "account" | "publication" = "account",
 ): Promise<string[]> {
-  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType);
+  const senderPrivkey = new Uint8Array(privkeyBytes);
   try {
-    const senderPrivkey = new Uint8Array(privkeyBytes)
-    return recipientPubkeysHex.map(pubkey => {
-      const conversationKey = nip44.getConversationKey(senderPrivkey, pubkey)
-      return nip44.encrypt(plaintext, conversationKey)
-    })
+    return recipientPubkeysHex.map((pubkey) => {
+      const conversationKey = nip44.getConversationKey(senderPrivkey, pubkey);
+      return nip44.encrypt(plaintext, conversationKey);
+    });
   } finally {
-    privkeyBytes.fill(0)
+    privkeyBytes.fill(0);
+    senderPrivkey.fill(0);
   }
 }
 
@@ -170,14 +193,18 @@ export async function nip44Decrypt(
   signerId: string,
   senderPubkeyHex: string,
   ciphertext: string,
-  signerType: 'account' | 'publication' = 'account'
+  signerType: "account" | "publication" = "account",
 ): Promise<string> {
-  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType)
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType);
+  const readerPrivkey = new Uint8Array(privkeyBytes);
   try {
-    const readerPrivkey = new Uint8Array(privkeyBytes)
-    const conversationKey = nip44.getConversationKey(readerPrivkey, senderPubkeyHex)
-    return nip44.decrypt(ciphertext, conversationKey)
+    const conversationKey = nip44.getConversationKey(
+      readerPrivkey,
+      senderPubkeyHex,
+    );
+    return nip44.decrypt(ciphertext, conversationKey);
   } finally {
-    privkeyBytes.fill(0)
+    privkeyBytes.fill(0);
+    readerPrivkey.fill(0);
   }
 }

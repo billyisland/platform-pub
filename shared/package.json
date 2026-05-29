@@ -16,6 +16,7 @@
     "@atproto/oauth-client-node": "^0.3.17",
     "@fastify/cookie": "^9.3.0",
     "dotenv": "^17.3.1",
+    "sanitize-html": "^2.17.4",
     "fastify": "^4.26.0",
     "jose": "^5.2.0",
     "pg": "^8.20.0",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@types/sanitize-html": "^2.11.0",
     "@types/pg": "^8.11.0",
     "typescript": "^5.4.0",
     "vitest": "^1.4.0"

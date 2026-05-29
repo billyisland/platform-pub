@@ -38,15 +38,15 @@ interface ScheduledDraft {
 }
 
 export async function publishScheduledDrafts(): Promise<void> {
-  // Atomically claim due drafts by nulling scheduled_at. This prevents
-  // concurrent scheduler runs from picking up the same drafts. On failure
-  // the draft is restored for retry next cycle.
+  // Atomically claim due drafts by pushing scheduled_at 5 minutes into the
+  // future. If the process hard-crashes after claim but before DELETE or the
+  // catch block, the draft naturally becomes due again — no orphan possible.
   const drafts = await withTransaction(async (client) => {
     const { rows } = await client.query<
       ScheduledDraft & { saved_scheduled_at: Date }
     >(
       `UPDATE article_drafts
-       SET scheduled_at = NULL
+       SET scheduled_at = now() + interval '5 minutes'
        WHERE id IN (
          SELECT id FROM article_drafts
          WHERE scheduled_at IS NOT NULL AND scheduled_at <= now()

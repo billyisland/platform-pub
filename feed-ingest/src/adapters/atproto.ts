@@ -1,6 +1,6 @@
 import { RichText } from "@atproto/api";
 import { escapeHtml } from "@platform-pub/shared/lib/text.js";
-import { sanitizeContent } from "../lib/sanitize.js";
+import { sanitizeContent } from "@platform-pub/shared/lib/sanitize.js";
 
 // =============================================================================
 // AT Protocol (Bluesky) normaliser

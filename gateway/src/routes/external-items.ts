@@ -5,6 +5,7 @@ import {
   enqueueRelayPublish,
   type SignedNostrEvent,
 } from "@platform-pub/shared/lib/relay-outbox.js";
+import { sanitizeContent } from "@platform-pub/shared/lib/sanitize.js";
 import { truncatePreview } from "@platform-pub/shared/lib/text.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
@@ -1128,7 +1129,7 @@ async function fetchMastodonParent(
         status.account.acct,
         status.account.avatar ?? null,
         status.account.url,
-        status.content,
+        sanitizeContent(status.content),
         JSON.stringify(media),
         null,
         JSON.stringify(interactionData),
@@ -1148,7 +1149,7 @@ async function fetchMastodonParent(
       authorAvatarUrl: status.account.avatar ?? null,
       authorUri: status.account.url,
       contentText: null,
-      contentHtml: status.content,
+      contentHtml: sanitizeContent(status.content),
       title: null,
       summary: null,
       likeCount: status.favourites_count ?? 0,
@@ -1335,7 +1336,7 @@ async function fetchMastodonThread(
       authorName: s.account.display_name || s.account.acct,
       authorHandle: s.account.acct,
       authorUri: s.account.url,
-      contentHtml: s.content ?? "",
+      contentHtml: sanitizeContent(s.content ?? ""),
       contentText: stripHtmlTags(s.content ?? ""),
       publishedAt: s.created_at,
       likeCount: s.favourites_count ?? 0,

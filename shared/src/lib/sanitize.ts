@@ -1,12 +1,5 @@
 import sanitizeHtml from "sanitize-html";
 
-// =============================================================================
-// HTML sanitisation for external content
-//
-// Strict allowlist per ADR §XVI.6. Applied at ingestion time — the database
-// never contains unsanitised external HTML.
-// =============================================================================
-
 const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
     "p",

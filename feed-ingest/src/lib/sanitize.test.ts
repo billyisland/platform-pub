@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeContent, stripHtml } from "./sanitize.js";
+import {
+  sanitizeContent,
+  stripHtml,
+} from "@platform-pub/shared/lib/sanitize.js";
 
 describe("sanitizeContent", () => {
   describe("allowed tags pass through", () => {

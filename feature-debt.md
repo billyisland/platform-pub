@@ -112,7 +112,7 @@ All high-priority bugs have been resolved:
 - ~~Security headers~~ — HSTS, X-Frame-Options, CSP, Referrer-Policy all in nginx.conf
 - ~~Non-root Docker containers~~ — all Dockerfiles have `addgroup/adduser` + `USER app`
 - ~~Remove internal service port bindings~~ — only postgres, strfry, gateway, web, nginx expose ports
-- ~~renderMarkdownSync XSS~~ — protocol allowlist (https, /, #), strips disallowed
+- ~~renderMarkdownSync XSS~~ — function deleted; only rehype-sanitize pipeline remains
 - ~~LIKE metacharacters unescaped~~ — `escapeLike()` escapes `%`, `_`, `\`
 - ~~Config cache never invalidated~~ — 5-minute TTL + `invalidateConfig()` method
 - ~~Notification type mismatch~~ — **resolved in this session:** phantom types `dm_payment_required` and `new_user` removed from frontend union (backend never creates them). Fallback renderer covers future types. Notification centre redesigned as permanent log (v5.11.0).
@@ -141,7 +141,7 @@ _(None — remaining items moved to Infrastructure backlog below.)_
 - ~~No CI/CD~~ — moved to infrastructure backlog
 - ~~TypeScript target mismatch~~ — moved to infrastructure backlog (cosmetic, no runtime impact)
 - ~~Accessibility gaps~~ — **resolved:** vote buttons already had aria-labels; paywall indicator uses price text (not colour-only); dropdown keyboard nav (Escape-to-close, aria-expanded, role="menu") added to AvatarDropdown and NotificationBell.
-- ~~Reduce JWT session lifetime~~ — **fixed:** 30-day JWT with 7-day refresh half-life (implementation). Active users stay logged in; `sessions_invalidated_at` provides server-side revocation.
+- ~~Reduce JWT session lifetime~~ — **fixed:** 30-day JWT with 7-day refresh threshold (~23% of lifetime). Active users stay logged in; `sessions_invalidated_at` provides server-side revocation.
 
 ---
 

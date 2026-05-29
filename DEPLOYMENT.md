@@ -88,7 +88,9 @@ Key variables:
 
 | Variable                                    | Service                           | Purpose                                                                                                                                                                                     |
 | ------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SESSION_SECRET`                            | gateway                           | JWT signing key and cookie secret (min 32 chars)                                                                                                                                            |
+| `SESSION_SECRET`                            | gateway                           | JWT signing key (min 32 chars)                                                                                                                                                              |
+| `COOKIE_SECRET`                             | gateway                           | `@fastify/cookie` signing secret (falls back to `SESSION_SECRET` if unset)                                                                                                                  |
+| `OAUTH_STATE_SECRET`                        | gateway                           | HMAC key for Google OAuth state tokens (falls back to `SESSION_SECRET` if unset)                                                                                                            |
 | `PLATFORM_SERVICE_PRIVKEY`                  | gateway, payment, key-service     | 64-hex Nostr private key for platform service events                                                                                                                                        |
 | `READER_HASH_KEY`                           | gateway                           | HMAC key for reader pubkey privacy hashing                                                                                                                                                  |
 | `INTERNAL_SECRET`                           | gateway, key-custody, key-service | Shared secret authenticating gateway→key-custody and gateway→key-service calls                                                                                                              |
@@ -158,7 +160,7 @@ cp web/.env.example web/.env
 Generate cryptographic secrets:
 
 ```bash
-openssl rand -hex 32   # SESSION_SECRET, READER_HASH_KEY
+openssl rand -hex 32   # SESSION_SECRET, COOKIE_SECRET, OAUTH_STATE_SECRET, READER_HASH_KEY
 openssl rand -hex 32   # ACCOUNT_KEY_HEX (key-custody only)
 openssl rand -hex 32   # KMS_MASTER_KEY_HEX (key-service only)
 openssl rand -base64 32  # INTERNAL_SECRET (gateway + key-custody + key-service)

@@ -5,6 +5,7 @@ import { createSession } from "@platform-pub/shared/auth/session.js";
 import { getAccount } from "@platform-pub/shared/auth/accounts.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 // =============================================================================
 // Google OAuth Routes
@@ -28,6 +29,19 @@ import { randomBytes, createHmac, timingSafeEqual } from "crypto";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_JWKS = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/oauth2/v3/certs"),
+);
+
+const STATE_MAX_AGE_SECONDS = 600;
+const consumedNonces = new Map<string, number>();
+
+setInterval(() => {
+  const cutoff = Math.floor(Date.now() / 1000) - STATE_MAX_AGE_SECONDS;
+  for (const [nonce, ts] of consumedNonces) {
+    if (ts < cutoff) consumedNonces.delete(nonce);
+  }
+}, 60_000).unref();
 
 function getGoogleConfig() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -123,11 +137,16 @@ export async function googleAuthRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "No id_token" });
       }
 
-      const payload = decodeIdToken(tokens.id_token);
+      const payload = await verifyIdToken(tokens.id_token);
 
       if (!payload.email) {
         logger.error("No email in Google ID token");
         return reply.status(400).send({ error: "No email in token" });
+      }
+
+      if (!payload.email_verified) {
+        logger.warn("Google ID token email not verified");
+        return reply.status(400).send({ error: "Email not verified" });
       }
 
       const email = payload.email.toLowerCase().trim();
@@ -192,8 +211,9 @@ export async function googleAuthRoutes(app: FastifyInstance) {
 // ---------------------------------------------------------------------------
 
 function getStateSecret(): string {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("SESSION_SECRET not set");
+  const secret = process.env.OAUTH_STATE_SECRET ?? process.env.SESSION_SECRET;
+  if (!secret)
+    throw new Error("OAUTH_STATE_SECRET or SESSION_SECRET must be set");
   return secret;
 }
 
@@ -207,50 +227,46 @@ function generateSignedState(): string {
   return `${payload}.${sig}`;
 }
 
-function verifySignedState(state: string, maxAgeSeconds = 600): boolean {
+function verifySignedState(state: string): boolean {
   const parts = state.split(".");
   if (parts.length !== 3) return false;
   const [nonce, ts, sig] = parts;
   const timestamp = parseInt(ts, 10);
   if (isNaN(timestamp)) return false;
-  if (Math.floor(Date.now() / 1000) - timestamp > maxAgeSeconds) return false;
+  if (Math.floor(Date.now() / 1000) - timestamp > STATE_MAX_AGE_SECONDS)
+    return false;
   const payload = `${nonce}.${ts}`;
   const expectedSig = createHmac("sha256", getStateSecret())
     .update(payload)
     .digest();
   const sigBuf = Buffer.from(sig, "hex");
   if (sigBuf.length !== expectedSig.length) return false;
-  return timingSafeEqual(sigBuf, expectedSig);
+  if (!timingSafeEqual(sigBuf, expectedSig)) return false;
+
+  if (consumedNonces.has(nonce)) return false;
+  consumedNonces.set(nonce, timestamp);
+  return true;
 }
 
-function decodeIdToken(idToken: string): {
+async function verifyIdToken(idToken: string): Promise<{
   email?: string;
+  email_verified?: boolean;
   name?: string;
   picture?: string;
   sub?: string;
-} {
-  const parts = idToken.split(".");
-  if (parts.length !== 3) throw new Error("Invalid ID token format");
-  const payload = JSON.parse(
-    Buffer.from(parts[1], "base64url").toString("utf-8"),
-  );
-
-  // Verify issuer, audience, and expiry claims
+}> {
   const { clientId } = getGoogleConfig();
-  if (
-    payload.iss !== "https://accounts.google.com" &&
-    payload.iss !== "accounts.google.com"
-  ) {
-    throw new Error("Invalid ID token issuer");
-  }
-  if (payload.aud !== clientId) {
-    throw new Error("Invalid ID token audience");
-  }
-  if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-    throw new Error("ID token expired");
-  }
-
-  return payload;
+  const { payload } = await jwtVerify(idToken, GOOGLE_JWKS, {
+    issuer: ["https://accounts.google.com", "accounts.google.com"],
+    audience: clientId,
+  });
+  return payload as {
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+    picture?: string;
+    sub?: string;
+  };
 }
 
 async function createGoogleAccount(

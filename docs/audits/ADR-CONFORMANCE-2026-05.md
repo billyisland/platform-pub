@@ -175,8 +175,8 @@ Produced as Session 0.2 of the codebase review plan. Assessed all 18 files in `d
 | --------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------- |
 | Credential encryption with `LINKED_ACCOUNT_KEY_HEX`                                                 | Conformant | `encryptJson/decryptJson` in `crypto.ts`    |
 | SSRF: private IP rejection, scheme check, 10s timeout, 5MB limit, 3 redirects, DNS-rebinding TOCTOU | Conformant | `http-client.ts` — all protections verified |
-| HTML sanitisation allowlist matches ADR exactly                                                     | Conformant | `sanitize.ts`                               |
-| Sanitisation at ingestion time (all 3 HTML-producing adapters)                                      | Conformant | Verified                                    |
+| HTML sanitisation allowlist matches ADR exactly                                                     | Conformant | `shared/src/lib/sanitize.ts`                |
+| Sanitisation at ingestion time (all adapters) and live-fetch paths                                  | Conformant | Verified                                    |
 
 ### Feed Rendering
 

@@ -1,4 +1,7 @@
-import { sanitizeContent, stripHtml } from "../lib/sanitize.js";
+import {
+  sanitizeContent,
+  stripHtml,
+} from "@platform-pub/shared/lib/sanitize.js";
 
 // =============================================================================
 // Email newsletter adapter — normalises Postmark inbound webhook payloads

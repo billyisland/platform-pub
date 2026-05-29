@@ -1,9 +1,9 @@
-import { unified } from 'unified'
-import remarkParse from 'remark-parse'
-import remarkGfm from 'remark-gfm'
-import remarkRehype from 'remark-rehype'
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
-import rehypeStringify from 'rehype-stringify'
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import remarkRehype from "remark-rehype";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import rehypeStringify from "rehype-stringify";
 
 // =============================================================================
 // NIP-23 Markdown Renderer
@@ -34,18 +34,18 @@ const sanitizeSchema = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
-    code: [...(defaultSchema.attributes?.code ?? []), 'className'],
-    img: ['src', 'alt', 'title', 'width', 'height', 'loading'],
-    a: ['href', 'title', 'rel', 'target'],
+    code: [...(defaultSchema.attributes?.code ?? []), "className"],
+    img: ["src", "alt", "title", "width", "height", "loading"],
+    a: ["href", "title", "rel", "target"],
   },
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), 'nostr'],
-    src: ['http', 'https'],
+    href: [...(defaultSchema.protocols?.href ?? []), "nostr"],
+    src: ["http", "https"],
   },
-}
+};
 
-let processor: any = null
+let processor: any = null;
 
 function getProcessor() {
   if (!processor) {
@@ -54,9 +54,9 @@ function getProcessor() {
       .use(remarkGfm)
       .use(remarkRehype, { allowDangerousHtml: false })
       .use(rehypeSanitize, sanitizeSchema)
-      .use(rehypeStringify)
+      .use(rehypeStringify);
   }
-  return processor
+  return processor;
 }
 
 /**
@@ -67,69 +67,60 @@ function getProcessor() {
  * Embeddable URLs on their own line are wrapped in responsive containers.
  */
 export async function renderMarkdown(markdown: string): Promise<string> {
-  const proc = getProcessor()
-  const file = await proc.process(markdown)
-  let html = String(file)
+  const proc = getProcessor();
+  const file = await proc.process(markdown);
+  let html = String(file);
 
   // Post-process: detect embeddable URLs and wrap in responsive containers
-  html = enhanceEmbedUrls(html)
+  html = enhanceEmbedUrls(html);
 
-  return html
-}
-
-/**
- * Synchronous version for use in components that can't await.
- * Uses a simpler regex-based approach as a fallback.
- * Prefer renderMarkdown() when possible.
- */
-export function renderMarkdownSync(markdown: string): string {
-  return markdown
-    // Block elements
-    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
-    .replace(/^---$/gm, '<hr />')
-    // Inline elements
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, (_match, text, href) => {
-      if (/^https?:\/\//.test(href) || href.startsWith('/') || href.startsWith('#')) {
-        return `<a href="${href}" rel="noopener noreferrer">${text}</a>`
-      }
-      return text // strip links with disallowed protocols (e.g. javascript:)
-    })
-    .replace(/!\[(.+?)\]\((.+?)\)/g, '<img src="$2" alt="$1" loading="lazy" />')
-    // Nostr URIs — link to njump.me for resolution
-    .replace(/nostr:(npub1[a-z0-9]+)/g, '<a href="https://njump.me/$1" rel="noopener noreferrer">@$1</a>')
-    .replace(/nostr:(note1[a-z0-9]+)/g, '<a href="https://njump.me/$1" rel="noopener noreferrer">$1</a>')
-    .replace(/nostr:(nevent1[a-z0-9]+)/g, '<a href="https://njump.me/$1" rel="noopener noreferrer">$1</a>')
-    // Paragraphs (double newline)
-    .replace(/\n\n+/g, '</p><p>')
-    .replace(/^(?!<)/, '<p>')
-    .replace(/(?!>)$/, '</p>')
+  return html;
 }
 
 // =============================================================================
 // Embed Enhancement
 // =============================================================================
 
-const EMBED_PATTERNS: Array<{ pattern: RegExp; getEmbed: (m: RegExpMatchArray) => string }> = [
-  { pattern: /https?:\/\/(www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/, getEmbed: m => `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${m[2]}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>` },
-  { pattern: /https?:\/\/youtu\.be\/([a-zA-Z0-9_-]+)/, getEmbed: m => `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${m[1]}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>` },
-]
+const TRUSTED_IFRAME_PREFIXES = ["https://www.youtube.com/embed/"];
 
-export function enhanceEmbedUrls(html: string): string {
+const EMBED_PATTERNS: Array<{
+  pattern: RegExp;
+  getEmbed: (m: RegExpMatchArray) => string;
+}> = [
+  {
+    pattern: /https?:\/\/(www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/,
+    getEmbed: (m) =>
+      `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${m[2]}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>`,
+  },
+  {
+    pattern: /https?:\/\/youtu\.be\/([a-zA-Z0-9_-]+)/,
+    getEmbed: (m) =>
+      `<div class="embed-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1em 0"><iframe src="https://www.youtube.com/embed/${m[1]}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen loading="lazy"></iframe></div>`,
+  },
+];
+
+function enhanceEmbedUrls(html: string): string {
   // Find paragraphs that contain only a URL
-  return html.replace(/<p><a href="(https?:\/\/[^"]+)"[^>]*>\1<\/a><\/p>/g, (match, url) => {
-    for (const { pattern, getEmbed } of EMBED_PATTERNS) {
-      const m = url.match(pattern)
-      if (m) {
-        return getEmbed(m)
+  html = html.replace(
+    /<p><a href="(https?:\/\/[^"]+)"[^>]*>\1<\/a><\/p>/g,
+    (match, url) => {
+      for (const { pattern, getEmbed } of EMBED_PATTERNS) {
+        const m = url.match(pattern);
+        if (m) {
+          return getEmbed(m);
+        }
       }
-    }
-    return match
-  })
+      return match;
+    },
+  );
+
+  // Strip any iframe whose src isn't in the trusted prefix list
+  return html.replace(
+    /<iframe\b[^>]*?src="([^"]*)"[^>]*>.*?<\/iframe>/gi,
+    (match, src) => {
+      return TRUSTED_IFRAME_PREFIXES.some((p) => src.startsWith(p))
+        ? match
+        : "";
+    },
+  );
 }

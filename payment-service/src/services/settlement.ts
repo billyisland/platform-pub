@@ -158,18 +158,7 @@ class SettlementService {
 
       const lockedBalance = lockedTab.rows[0].balance_pence;
 
-      // Use the locked balance (may have changed since the initial check)
-      const amountPence =
-        Math.min(lockedBalance, expectedAmountPence) > 0
-          ? Math.min(lockedBalance, expectedAmountPence) === expectedAmountPence
-            ? expectedAmountPence
-            : lockedBalance
-          : lockedBalance;
-
-      const actualAmount =
-        lockedBalance < expectedAmountPence
-          ? lockedBalance
-          : expectedAmountPence;
+      const actualAmount = Math.min(lockedBalance, expectedAmountPence);
 
       if (actualAmount < STRIPE_MIN_CHARGE_PENCE) {
         logger.info(
