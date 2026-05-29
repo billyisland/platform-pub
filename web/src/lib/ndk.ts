@@ -124,6 +124,8 @@ export interface ExternalFeedItem {
     height?: number;
     title?: string;
     description?: string;
+    duration_in_seconds?: number;
+    size_in_bytes?: number;
   }>;
   publishedAt: number;
   sourceName: string | null;

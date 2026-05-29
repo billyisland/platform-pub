@@ -4,7 +4,7 @@ Implementation plan for `docs/adr/CARD-BEHAVIOUR-ADR.md`. Unifies click
 semantics, conversational neighbourhood expansion, and author affordances
 across all feed card types.
 
-**Status:** Phase 1 shipped (2026-05-25). Phase 2 shipped (2026-05-26). Phase 3 shipped (2026-05-26). Audit fix-up (2026-05-27): migration 097 applied, provenance `@handle` wired, ExternalCard ActionSheet wired, source Follow in AuthorModal wired, ArticleCard bookmark in ActionSheet wired.
+**Status:** Phase 1 shipped (2026-05-25). Phase 2 shipped (2026-05-26). Phase 3 shipped (2026-05-26). Audit fix-up (2026-05-27): migration 097 applied, provenance `@handle` wired, ExternalCard ActionSheet wired, source Follow in AuthorModal wired, ArticleCard bookmark in ActionSheet wired. Cleanup (2026-05-29): keyboard `focus-within` parity on secondary actions, `activitypub` label corrected to `VIA FEDIVERSE`, ExternalCard type consolidated to canonical `ndk.ts` export.
 
 ## Scope
 

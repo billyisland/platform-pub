@@ -229,7 +229,7 @@ export function ArticleCard({
           </button>
         )}
         {/* Desktop: inline secondary actions; Touch: behind ⋯ */}
-        <span className="hidden [@media(hover:hover)]:contents">
+        <span className="hidden [@media(hover:hover)]:contents group-focus-within:contents">
           {showExtendedActions && user && onQuote && (
             <button
               onClick={handleQuote}
@@ -248,7 +248,7 @@ export function ArticleCard({
             initialMyVotes={myVoteCounts}
           />
         </span>
-        <span className="hidden [@media(hover:hover)]:contents">
+        <span className="hidden [@media(hover:hover)]:contents group-focus-within:contents">
           {showExtendedActions && (
             <>
               <span onClick={(e) => e.stopPropagation()}>

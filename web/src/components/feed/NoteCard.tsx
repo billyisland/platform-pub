@@ -171,7 +171,10 @@ export function NoteCard({
   const authorHref = writerInfo?.username ? `/${writerInfo.username}` : null;
 
   return (
-    <div style={{ borderLeft: "4px solid #111111", paddingLeft: "24px" }}>
+    <div
+      className="group"
+      style={{ borderLeft: "4px solid #111111", paddingLeft: "24px" }}
+    >
       {/* Provenance — reply signalling */}
       {note.isReply && (
         <div className="label-ui text-grey-400 mb-1">
@@ -257,7 +260,7 @@ export function NoteCard({
         >
           {replyCount > 0 ? `Reply (${replyCount})` : "Reply"}
         </button>
-        <span className="hidden [@media(hover:hover)]:contents">
+        <span className="hidden [@media(hover:hover)]:contents group-focus-within:contents">
           {user && onQuote && (
             <button
               onClick={handleQuote}

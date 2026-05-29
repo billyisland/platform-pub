@@ -5,6 +5,7 @@ import { formatDateRelative } from "../../lib/format";
 import { TrustPip } from "../ui/TrustPip";
 import { useAuth } from "../../stores/auth";
 import { useCompose } from "../../stores/compose";
+import type { ExternalFeedItem } from "../../lib/ndk";
 import { useNeighbourhood } from "../../hooks/useNeighbourhood";
 import {
   NeighbourhoodCard,
@@ -15,55 +16,6 @@ import {
 import { AuthorModal, useAuthorHover } from "./AuthorModal";
 import { ActionSheet } from "./ActionSheet";
 
-// =============================================================================
-// ExternalCard — renders external feed items (RSS, Nostr, Bluesky, Mastodon)
-//
-// Visual treatment: unified chassis with grey-300 left bar, mono-caps byline,
-// provenance badge inline in the byline. Replies route through the compose
-// overlay.
-// =============================================================================
-
-interface MediaAttachment {
-  type: "image" | "video" | "audio" | "link";
-  url: string;
-  thumbnail?: string;
-  alt?: string;
-  width?: number;
-  height?: number;
-  title?: string;
-  description?: string;
-  duration_in_seconds?: number;
-  size_in_bytes?: number;
-}
-
-export interface ExternalFeedItem {
-  type: "external";
-  id: string;
-  sourceProtocol: string;
-  sourceItemUri: string;
-  authorName: string | null;
-  authorHandle: string | null;
-  authorAvatarUrl: string | null;
-  authorUri: string | null;
-  contentText: string | null;
-  contentHtml: string | null;
-  title: string | null;
-  summary: string | null;
-  sourceReplyUri?: string | null;
-  sourceQuoteUri?: string | null;
-  likeCount?: number;
-  replyCount?: number;
-  repostCount?: number;
-  media: MediaAttachment[];
-  publishedAt: number;
-  sourceName: string | null;
-  sourceAvatar: string | null;
-  pipStatus?: "known" | "partial" | "unknown" | "contested";
-  isReply?: boolean;
-  replyToAuthor?: string;
-  biddabilityTier?: "A" | "B" | "C" | "D";
-}
-
 interface ExternalCardProps {
   item: ExternalFeedItem;
 }
@@ -71,7 +23,7 @@ interface ExternalCardProps {
 const PROTOCOL_LABELS: Record<string, string> = {
   rss: "VIA RSS",
   atproto: "VIA BLUESKY",
-  activitypub: "VIA MASTODON",
+  activitypub: "VIA FEDIVERSE",
   nostr_external: "VIA NOSTR",
   email: "VIA EMAIL",
 };
@@ -297,6 +249,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
         </div>
 
         {/* Title — clickable, opens source URL (Slice 1C) */}
+        {/* INTERIM: until external-item permalink page exists */}
         {item.title &&
           (viewOriginalUri ? (
             <a
