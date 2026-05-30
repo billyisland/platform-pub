@@ -871,9 +871,11 @@ Feeds retire the clunky name-label nameplate in favour of a numeral system. Each
 
 **Caught-up tile refined.** `EmptyFeedTile` `caught-up` variant updated: copy reads "You're caught up. Add new sources or strengthen current ones to see more." Both ADD SOURCES and DISMISS buttons dismiss the tile (parent-owned state). Scrolling up after the tile appears also dismisses it (`Vessel.tsx` uses a scroll listener for sized vessels + a wheel listener for default-height vessels where `scrollBodyRef` has no overflow scrolling). Tile only reappears after the next pull-to-refresh that finds no new content.
 
-### Slice 34 — feed numeral label (2026-05-25, updated 2026-05-26)
+### Slice 34 — feed numeral label (2026-05-25, updated 2026-05-26; restyled 2026-05-30)
 
-The feed numeral moves from an italic serif badge at the right end of VesselBar to the bottom-left corner of the vessel chassis. Rendered as plain `label-ui` text in `#1A1A18` at 50% opacity — no background shape, no circle, no border. The roundel treatment (26×26px black circle at the top-left corner) was an intermediate step that was replaced with this quieter bottom-corner placement.
+The feed numeral moves from an italic serif badge at the right end of VesselBar to the bottom-left corner of the vessel chassis. The roundel treatment (26×26px black circle at the top-left corner) was an intermediate step that was replaced with this quieter bottom-corner placement.
+
+**Numeral treatment (2026-05-30).** The numeral renders white (`#FFFFFF`) against the dark `VesselBar` background, sans-serif (`font-sans` / Jost) italic at 22px / weight 600 — as large as the 32px bar allows without crowding it. It occupies a `BAR_H`-wide (32px) square pinned to the bottom-left, vertically centred. `VesselBar`'s left padding is set to `BAR_H + 6` so the cycle controls (brightness, density, orientation, gear, hide) start to the right of the numeral and never sit under it. (Prior treatment, retired this date: `label-ui` mono text in `#1A1A18` at 50% opacity, 11px — near-invisible against the dark bar.)
 
 **Interactions.** Hover fades in a sharp-cornered `label-ui` chip above the numeral showing the feed's descriptive name (120ms ease-out opacity transition; hidden when no name exists; no `borderRadius` — rounded corners are not part of the design language). The native `title` tooltip was removed to avoid a duplicate hover state. Click-and-drag moves the vessel — the numeral is a plain `<div>` (not a `<button>`) so `startDrag` on the outer `motion.div` picks it up naturally, same as dragging any empty wall region. Double-click opens the `FeedComposer` modal via `onNameClick`.
 

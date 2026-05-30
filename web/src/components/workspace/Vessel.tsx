@@ -24,7 +24,7 @@ import {
   type Density,
   type Orientation,
 } from "./tokens";
-import { VesselBar } from "./VesselBar";
+import { VesselBar, BAR_H } from "./VesselBar";
 import { PullToRefresh } from "./PullToRefresh";
 
 // Vessel — the ⊔ chassis, per WIREFRAME-DECISIONS-CONSOLIDATED.md Step 1.
@@ -399,17 +399,23 @@ export function Vessel({
           onMouseEnter={() => setRoundelHovered(true)}
           onMouseLeave={() => setRoundelHovered(false)}
           onDoubleClick={() => onNameClick?.()}
-          className="label-ui select-none"
+          className="select-none font-sans italic"
           style={{
             position: "absolute",
             bottom: 0,
             left: 0,
-            padding: "4px 6px",
-            color: ROUNDEL_TOKENS.bg,
-            fontSize: 11,
+            height: BAR_H,
+            minWidth: BAR_H,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0 9px",
+            color: "#FFFFFF",
+            fontSize: 22,
+            fontWeight: 600,
+            lineHeight: 1,
             cursor: "grab",
-            zIndex: 5,
-            opacity: 0.5,
+            zIndex: 6,
           }}
         >
           {numeral}

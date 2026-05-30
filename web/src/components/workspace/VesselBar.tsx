@@ -87,7 +87,9 @@ export function VesselBar({
           display: "flex",
           alignItems: "center",
           gap: 2,
-          paddingLeft: 6,
+          // Reserve the bottom-left square for the vessel numeral (overlaid by
+          // Vessel.tsx) so the cycle controls don't crowd it.
+          paddingLeft: BAR_H + 6,
           paddingRight: 6,
         }}
       >
