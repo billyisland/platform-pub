@@ -34,6 +34,7 @@ import { InlineReplyBox } from "./InlineReplyBox";
 import { ContentWarning } from "./ContentWarning";
 import { PollDisplay } from "./PollDisplay";
 import { useReader } from "../../stores/reader";
+import { AuthorModal } from "../feed/AuthorModal";
 
 export type PipOpen = (
   pubkey: string,
@@ -568,8 +569,50 @@ function MediaBlock({
   const visualCount = items.filter(
     (m) => m.type === "image" || m.type === "video",
   ).length;
-  const overflowCount = hero ? visualCount - 1 : 0;
+  const overflowCount = hero && !expanded ? visualCount - 1 : 0;
   const playable = hero?.type === "video" && externalUrl;
+
+  // Expanded cards show media at natural dimensions bounded by the container
+  // width (task 5); collapsed cards keep the neat cropped 16:9 thumbnail.
+  const heroContainerStyle: React.CSSProperties = expanded
+    ? {
+        position: "relative",
+        marginTop: 10,
+        marginBottom: 6,
+        background: ctx.palette.interior,
+        overflow: "hidden",
+        cursor: playable ? "pointer" : undefined,
+      }
+    : {
+        position: "relative",
+        marginTop: 10,
+        marginBottom: 6,
+        background: ctx.palette.interior,
+        aspectRatio: "16 / 9",
+        overflow: "hidden",
+        cursor: playable ? "pointer" : undefined,
+      };
+  const heroImgStyle: React.CSSProperties = expanded
+    ? {
+        width: "100%",
+        height: "auto",
+        maxWidth: "100%",
+        display: "block",
+      }
+    : {
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        display: "block",
+      };
+
+  // When expanded, surface every image/video item full-width below the hero
+  // instead of folding extras into a +N pill.
+  const extraVisuals = expanded
+    ? items.filter(
+        (m) => (m.type === "image" || m.type === "video") && m !== hero,
+      )
+    : [];
 
   return (
     <>
@@ -580,15 +623,7 @@ function MediaBlock({
             e.stopPropagation();
             window.open(externalUrl, "_blank", "noopener,noreferrer");
           }}
-          style={{
-            position: "relative",
-            marginTop: 10,
-            marginBottom: 6,
-            background: ctx.palette.interior,
-            aspectRatio: "16 / 9",
-            overflow: "hidden",
-            cursor: playable ? "pointer" : undefined,
-          }}
+          style={heroContainerStyle}
         >
           {hero.type === "image" && (
             <img
@@ -596,12 +631,7 @@ function MediaBlock({
               alt={hero.alt ?? ""}
               loading="lazy"
               referrerPolicy="no-referrer"
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
+              style={heroImgStyle}
             />
           )}
           {hero.type === "video" && hero.thumbnail && (
@@ -610,12 +640,7 @@ function MediaBlock({
               alt={hero.alt ?? ""}
               loading="lazy"
               referrerPolicy="no-referrer"
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
+              style={heroImgStyle}
             />
           )}
           {hero.type === "video" && !embedLoading && (
@@ -677,6 +702,34 @@ function MediaBlock({
           )}
         </div>
       )}
+      {extraVisuals.map((m, i) => {
+        const src = m.type === "image" ? m.url : m.thumbnail;
+        if (!src) return null;
+        return (
+          <div
+            key={`extra-${i}`}
+            style={{
+              position: "relative",
+              marginBottom: 6,
+              background: ctx.palette.interior,
+              overflow: "hidden",
+            }}
+          >
+            <img
+              src={src}
+              alt={m.alt ?? ""}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              style={{
+                width: "100%",
+                height: "auto",
+                maxWidth: "100%",
+                display: "block",
+              }}
+            />
+          </div>
+        );
+      })}
       {linkItems.map((link, i) => (
         <LinkPreviewCard key={i} item={link} ctx={ctx} />
       ))}
@@ -1063,7 +1116,11 @@ function ArticleVesselCard({
               {standfirst}
             </p>
           )}
-          <MediaBlock items={article.media ?? []} ctx={ctx} />
+          <MediaBlock
+            items={article.media ?? []}
+            ctx={ctx}
+            expanded={expanded}
+          />
         </>
       )}
       {ctx.density === "full" && (
@@ -1198,7 +1255,7 @@ function NoteVesselCard({
           {expanded ? noteDisplayText : truncateText(noteDisplayText, 220)}
         </p>
       )}
-      <MediaBlock items={noteMedia} ctx={ctx} />
+      <MediaBlock items={noteMedia} ctx={ctx} expanded={expanded} />
       {ctx.density === "full" && (
         <SourceAttribution
           protocol="NOSTR"
@@ -1405,6 +1462,12 @@ function ExternalVesselCard({
     ? `/source/${external.externalSourceId}`
     : undefined;
 
+  // External pip is clickable → opens the minimal author-bio popover anchored
+  // to the pip (task 1). The trust panel keys on a platform user id external
+  // authors lack, so we use AuthorModal (keyed on the external item id) instead.
+  const pipRef = React.useRef<HTMLButtonElement>(null);
+  const [authorOpen, setAuthorOpen] = React.useState(false);
+
   const pipNodeCompact = (
     <span
       style={{
@@ -1417,9 +1480,25 @@ function ExternalVesselCard({
     </span>
   );
   const pipNodeByline = (
-    <span style={{ display: "inline-flex", opacity: ctx.palette.pipOpacity }}>
+    <button
+      ref={pipRef}
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setAuthorOpen((v) => !v);
+      }}
+      style={{
+        display: "inline-flex",
+        opacity: ctx.palette.pipOpacity,
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+      }}
+      aria-label="Author info"
+    >
       <TrustPip status={external.pipStatus} />
-    </span>
+    </button>
   );
 
   if (ctx.density === "compact") {
@@ -1443,6 +1522,15 @@ function ExternalVesselCard({
         publishedAt={external.publishedAt}
         ctx={ctx}
       />
+      {authorOpen && (
+        <AuthorModal
+          type="external"
+          id={external.id}
+          anchorRef={pipRef}
+          onClose={() => setAuthorOpen(false)}
+          dismissOnMouseLeave={false}
+        />
+      )}
       {external.sourceReplyUri && !showThread && (
         <ParentContextTile
           itemId={external.id}

@@ -10,6 +10,10 @@ interface AuthorModalProps {
   id: string;
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
+  // Hover-driven callers (feed ExternalCard) close on mouse-leave; click-driven
+  // callers (workspace external pip) pass false and rely on Escape /
+  // outside-pointerdown instead.
+  dismissOnMouseLeave?: boolean;
 }
 
 function formatCount(n: number): string {
@@ -23,6 +27,7 @@ export function AuthorModal({
   id,
   anchorRef,
   onClose,
+  dismissOnMouseLeave = true,
 }: AuthorModalProps) {
   const { data, loading } = useAuthorCard(type, id, true);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -43,6 +48,26 @@ export function AuthorModal({
     });
   }, [anchorRef]);
 
+  // Escape + outside-pointerdown dismissal (the anchor is excluded so a click
+  // on the trigger toggles rather than close-then-reopen).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (modalRef.current?.contains(target)) return;
+      if (anchorRef.current?.contains(target)) return;
+      onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [onClose, anchorRef]);
+
   if (!position) return null;
 
   const style: React.CSSProperties = {
@@ -60,7 +85,8 @@ export function AuthorModal({
       ref={modalRef}
       style={style}
       className="bg-white border border-grey-200 shadow-lg p-4"
-      onMouseLeave={onClose}
+      onMouseLeave={dismissOnMouseLeave ? onClose : undefined}
+      onClick={(e) => e.stopPropagation()}
     >
       {loading && <ModalSkeleton />}
       {data && !loading && <ModalContent data={data} onClose={onClose} />}
