@@ -105,11 +105,21 @@ interface PublicationOption {
 }
 
 export interface ReplyTarget {
+  // The event being threaded under. For a reply to a top-level note/article this
+  // is that event; for a reply to a comment this is the conversation ROOT (so
+  // target_event_id stays the root and the comment is linked via the parent
+  // fields below — see ConversationView).
   eventId: string
   eventKind: number
+  // The author being replied to (parent comment author for nested replies) —
+  // drives the NIP-10 `p` tag and the "Replying to …" line.
   authorPubkey: string
   authorName: string
   excerpt?: string
+  // Set when replying to a comment rather than a top-level post: the parent
+  // comment's UUID (index linkage) and its Nostr event id (NIP-10 `e` reply tag).
+  parentCommentId?: string
+  parentCommentEventId?: string
 }
 
 interface ComposerProps {
@@ -523,6 +533,8 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
           targetEventId: replyTarget.eventId,
           targetKind: replyTarget.eventKind,
           targetAuthorPubkey: replyTarget.authorPubkey,
+          parentCommentId: replyTarget.parentCommentId,
+          parentCommentEventId: replyTarget.parentCommentEventId,
         })
         onReplied?.(replyTarget.eventId)
         onPublished?.()

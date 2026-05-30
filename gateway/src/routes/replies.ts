@@ -29,6 +29,30 @@ const ToggleRepliesSchema = z.object({
   enabled: z.boolean(),
 });
 
+// A single normalised node in a native conversation tree, used by
+// GET /conversation/:eventId. The flat list + uniform parentEventId lets the
+// client re-root on any node entirely client-side.
+interface ConversationNode {
+  eventId: string;
+  // The comment's UUID (for delete); null for the root note/article.
+  commentId: string | null;
+  parentEventId: string | null;
+  kind: number;
+  isRoot: boolean;
+  author: {
+    id: string;
+    username: string | null;
+    displayName: string | null;
+    avatar: string | null;
+    pubkey: string;
+    pipStatus: "known" | "partial" | "unknown" | "contested";
+  };
+  content: string;
+  publishedAt: string;
+  isDeleted: boolean;
+  isMuted: boolean;
+}
+
 export async function replyRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // POST /replies — index a published reply
@@ -388,6 +412,261 @@ export async function replyRoutes(app: FastifyInstance) {
         totalCount: rows.filter((r) => !r.deleted_at).length,
         repliesEnabled,
         commentsEnabled: repliesEnabled, // backwards-compat alias
+      });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // GET /conversation/:eventId — full conversation for in-place neighbourhood
+  //
+  // Given ANY node in a native conversation (a top-level note/article event id,
+  // or a comment's own event id), resolve the conversation root and return the
+  // whole conversation as a flat list of normalised nodes. Each node carries a
+  // uniform `parentEventId` (null for the root; the root's event id for
+  // top-level comments; the parent comment's event id otherwise), so the client
+  // can re-root the view on any node — rendering that node's ancestors above it
+  // and its descendants below — without another fetch.
+  // ---------------------------------------------------------------------------
+
+  app.get<{ Params: { eventId: string } }>(
+    "/conversation/:eventId",
+    { preHandler: optionalAuth },
+    async (req, reply) => {
+      const { eventId } = req.params;
+      const currentUserId = req.session?.sub ?? null;
+
+      // 1. Resolve the conversation root. If the requested event is a comment,
+      //    the root is whatever it targets; otherwise the event IS the root.
+      const commentRow = await pool.query<{
+        target_event_id: string;
+        target_kind: number;
+      }>(
+        `SELECT target_event_id, target_kind FROM comments WHERE nostr_event_id = $1`,
+        [eventId],
+      );
+      const rootEventId = commentRow.rows[0]?.target_event_id ?? eventId;
+
+      // 2. Fetch the root node — a native note (kind 1) or an article (30023).
+      const rootNote = await pool.query<{
+        nostr_event_id: string;
+        content: string;
+        published_at: Date;
+        comments_enabled: boolean;
+        author_id: string;
+        author_username: string | null;
+        author_display_name: string | null;
+        author_avatar: string | null;
+        author_pubkey: string;
+        author_pip_status:
+          | "known"
+          | "partial"
+          | "unknown"
+          | "contested"
+          | null;
+      }>(
+        `SELECT n.nostr_event_id, n.content, n.published_at, n.comments_enabled,
+                n.author_id,
+                a.username AS author_username,
+                a.display_name AS author_display_name,
+                a.avatar_blossom_url AS author_avatar,
+                a.nostr_pubkey AS author_pubkey,
+                tl.pip_status AS author_pip_status
+         FROM notes n
+         JOIN accounts a ON a.id = n.author_id
+         LEFT JOIN trust_layer1 tl ON tl.user_id = n.author_id
+         WHERE n.nostr_event_id = $1`,
+        [rootEventId],
+      );
+
+      let rootNode: ConversationNode | null = null;
+      let rootKind = 1;
+      let repliesEnabled = true;
+
+      if (rootNote.rows.length > 0) {
+        const r = rootNote.rows[0];
+        repliesEnabled = r.comments_enabled;
+        rootNode = {
+          eventId: r.nostr_event_id,
+          commentId: null,
+          parentEventId: null,
+          kind: 1,
+          isRoot: true,
+          author: {
+            id: r.author_id,
+            username: r.author_username,
+            displayName: r.author_display_name,
+            avatar: r.author_avatar,
+            pubkey: r.author_pubkey,
+            pipStatus: r.author_pip_status ?? "unknown",
+          },
+          content: r.content,
+          publishedAt: r.published_at.toISOString(),
+          isDeleted: false,
+          isMuted: false,
+        };
+      } else {
+        // Root may be an article (kind 30023). Title stands in for content as the
+        // conversation anchor; paywalled article bodies are never exposed here.
+        const rootArticle = await pool.query<{
+          id: string;
+          nostr_event_id: string;
+          title: string | null;
+          comments_enabled: boolean;
+          access_mode: string;
+          writer_id: string;
+          publication_id: string | null;
+          published_at: Date | null;
+          author_username: string | null;
+          author_display_name: string | null;
+          author_avatar: string | null;
+          author_pubkey: string;
+          author_pip_status:
+            | "known"
+            | "partial"
+            | "unknown"
+            | "contested"
+            | null;
+        }>(
+          `SELECT ar.id, ar.nostr_event_id, ar.title, ar.comments_enabled,
+                  ar.access_mode, ar.writer_id, ar.publication_id, ar.published_at,
+                  a.username AS author_username,
+                  a.display_name AS author_display_name,
+                  a.avatar_blossom_url AS author_avatar,
+                  a.nostr_pubkey AS author_pubkey,
+                  tl.pip_status AS author_pip_status
+           FROM articles ar
+           JOIN accounts a ON a.id = ar.writer_id
+           LEFT JOIN trust_layer1 tl ON tl.user_id = ar.writer_id
+           WHERE ar.nostr_event_id = $1 AND ar.deleted_at IS NULL`,
+          [rootEventId],
+        );
+        if (rootArticle.rows.length > 0) {
+          const r = rootArticle.rows[0];
+          rootKind = 30023;
+          repliesEnabled = r.comments_enabled;
+          // Gate paywalled article conversations the same way /replies does.
+          if (r.access_mode === "paywalled") {
+            let hasAccess = false;
+            if (currentUserId) {
+              const access = await checkArticleAccess(
+                currentUserId,
+                r.id,
+                r.writer_id,
+                r.publication_id,
+              );
+              hasAccess = access.hasAccess;
+            }
+            if (!hasAccess) {
+              return reply.status(200).send({
+                rootEventId,
+                rootKind,
+                repliesEnabled,
+                paywallLocked: true,
+                nodes: [],
+              });
+            }
+          }
+          rootNode = {
+            eventId: r.nostr_event_id,
+            commentId: null,
+            parentEventId: null,
+            kind: 30023,
+            isRoot: true,
+            author: {
+              id: r.writer_id,
+              username: r.author_username,
+              displayName: r.author_display_name,
+              avatar: r.author_avatar,
+              pubkey: r.author_pubkey,
+              pipStatus: r.author_pip_status ?? "unknown",
+            },
+            content: r.title ?? "",
+            publishedAt: (r.published_at ?? new Date(0)).toISOString(),
+            isDeleted: false,
+            isMuted: false,
+          };
+        }
+      }
+
+      // 3. Fetch every comment in the conversation (same shape as /replies).
+      const { rows: commentRows } = await pool.query<{
+        id: string;
+        nostr_event_id: string;
+        parent_comment_id: string | null;
+        content: string;
+        published_at: Date;
+        deleted_at: Date | null;
+        author_id: string;
+        author_username: string | null;
+        author_display_name: string | null;
+        author_avatar: string | null;
+        author_pubkey: string;
+        author_pip_status: "known" | "partial" | "unknown" | "contested" | null;
+        parent_event_id: string | null;
+      }>(
+        `SELECT c.id, c.nostr_event_id, c.parent_comment_id,
+                c.content, c.published_at, c.deleted_at,
+                c.author_id,
+                a.username AS author_username,
+                a.display_name AS author_display_name,
+                a.avatar_blossom_url AS author_avatar,
+                a.nostr_pubkey AS author_pubkey,
+                tl.pip_status AS author_pip_status,
+                p.nostr_event_id AS parent_event_id
+         FROM comments c
+         JOIN accounts a ON a.id = c.author_id
+         LEFT JOIN trust_layer1 tl ON tl.user_id = c.author_id
+         LEFT JOIN comments p ON p.id = c.parent_comment_id
+         WHERE c.target_event_id = $1
+         ORDER BY c.published_at ASC`,
+        [rootEventId],
+      );
+
+      // Muted users for the viewer.
+      let mutedIds: Set<string> = new Set();
+      if (currentUserId) {
+        const mutes = await pool.query<{ muted_id: string }>(
+          "SELECT muted_id FROM mutes WHERE muter_id = $1",
+          [currentUserId],
+        );
+        mutedIds = new Set(mutes.rows.map((r) => r.muted_id));
+      }
+
+      const nodes: ConversationNode[] = [];
+      if (rootNode) nodes.push(rootNode);
+      for (const c of commentRows) {
+        nodes.push({
+          eventId: c.nostr_event_id,
+          commentId: c.id,
+          // Top-level comments hang off the root; nested ones off their parent
+          // comment. A NULL parent_event_id (orphaned nesting) falls back to the
+          // root so the node still attaches somewhere walkable.
+          parentEventId: c.parent_comment_id
+            ? (c.parent_event_id ?? rootEventId)
+            : rootEventId,
+          kind: 1,
+          isRoot: false,
+          author: {
+            id: c.author_id,
+            username: c.author_username,
+            displayName: c.author_display_name,
+            avatar: c.author_avatar,
+            pubkey: c.author_pubkey,
+            pipStatus: c.author_pip_status ?? "unknown",
+          },
+          content: c.deleted_at ? "[deleted]" : c.content,
+          publishedAt: c.published_at.toISOString(),
+          isDeleted: !!c.deleted_at,
+          isMuted: mutedIds.has(c.author_id),
+        });
+      }
+
+      return reply.status(200).send({
+        rootEventId,
+        rootKind,
+        repliesEnabled,
+        paywallLocked: false,
+        nodes,
       });
     },
   );

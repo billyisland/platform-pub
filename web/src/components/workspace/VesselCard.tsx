@@ -25,9 +25,11 @@ import { Byline } from "./Byline";
 import { ParentContextTile } from "./ParentContextTile";
 import { QuotedPostTile } from "./QuotedPostTile";
 import { ReplySection } from "../replies/ReplySection";
+import { ConversationView } from "./ConversationView";
 import { useLiveEngagement } from "../../hooks/useLiveEngagement";
 import { useExternalThread } from "../../hooks/useExternalThread";
 import { ExternalPlayscriptThread } from "./ExternalPlayscriptThread";
+import { ExternalAncestorRail } from "./ExternalAncestorRail";
 import { useLinkedAccounts } from "../../hooks/useLinkedAccounts";
 import { externalItems } from "../../lib/api/external-items";
 import { InlineReplyBox } from "./InlineReplyBox";
@@ -1242,7 +1244,13 @@ function NoteVesselCard({
         onReply={onReply}
       />
       {(expanded || threadExpanded) && (
-        <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
+        <ConversationView
+          hostEventId={note.id}
+          palette={ctx.palette}
+          bodyPx={ctx.bodyPx}
+          onReply={onReply}
+          refreshKey={threadRefreshKey}
+        />
       )}
     </CardShell>
   );
@@ -1433,6 +1441,12 @@ function ExternalVesselCard({
     ? `/source/${external.externalSourceId}`
     : undefined;
 
+  // Fetch the conversation once here so the ancestor rail (above the content)
+  // and the descendant thread (below) share a single request. Ancestors render
+  // above the focal card content — the post you opened — so the thread reads
+  // top-down from the start of the conversation.
+  const thread = useExternalThread(external.id, showThread);
+
   // External pip is clickable → opens the minimal author-bio popover anchored
   // to the pip (task 1). The trust panel keys on a platform user id external
   // authors lack, so we use AuthorModal (keyed on the external item id) instead.
@@ -1502,7 +1516,14 @@ function ExternalVesselCard({
           dismissOnMouseLeave={false}
         />
       )}
-      {external.sourceReplyUri && !showThread && (
+      {showThread ? (
+        <ExternalAncestorRail
+          ancestors={thread.ancestors}
+          palette={ctx.palette}
+          bodyPx={ctx.bodyPx}
+          sourceHref={sourceHref}
+        />
+      ) : external.sourceReplyUri ? (
         <ParentContextTile
           itemId={external.id}
           palette={ctx.palette}
@@ -1513,7 +1534,7 @@ function ExternalVesselCard({
             name: external.authorName ?? undefined,
           }}
         />
-      )}
+      ) : null}
       {expanded ? (
         <>
           {(() => {
@@ -1703,12 +1724,19 @@ function ExternalVesselCard({
           protocol={external.sourceProtocol}
           linkedAccount={matchingAccount ?? null}
           sourceHref={sourceHref}
+          descendants={thread.descendants}
+          loading={thread.loading}
+          error={thread.error}
         />
       )}
     </CardShell>
   );
 }
 
+// Descendant thread below an expanded external card. Ancestors are rendered
+// separately by ExternalAncestorRail above the card content, so this only draws
+// the replies — the data comes from the single useExternalThread fetch in
+// ExternalVesselCard.
 function ExternalCardThread({
   itemId,
   palette,
@@ -1716,6 +1744,9 @@ function ExternalCardThread({
   protocol,
   linkedAccount,
   sourceHref,
+  descendants,
+  loading,
+  error,
 }: {
   itemId: string;
   palette: VesselPalette;
@@ -1723,12 +1754,10 @@ function ExternalCardThread({
   protocol: string;
   linkedAccount: import("../../lib/api/linked-accounts").LinkedAccount | null;
   sourceHref?: string;
+  descendants: import("../../lib/api/feeds").ExternalThreadEntry[];
+  loading: boolean;
+  error: boolean;
 }) {
-  const { ancestors, descendants, loading, error } = useExternalThread(
-    itemId,
-    true,
-  );
-
   if (loading) {
     return (
       <div onClick={(e) => e.stopPropagation()} className="mt-4 ml-8">
@@ -1753,18 +1782,13 @@ function ExternalCardThread({
     );
   }
 
-  if (ancestors.length === 0 && descendants.length === 0) {
-    return (
-      <div onClick={(e) => e.stopPropagation()} className="mt-4 ml-8">
-        <p className="label-ui text-grey-400">No thread available</p>
-      </div>
-    );
-  }
+  // No replies → render nothing; any parent context already shows in the rail.
+  if (descendants.length === 0) return null;
 
   return (
     <div onClick={(e) => e.stopPropagation()} className="mt-4">
       <ExternalPlayscriptThread
-        ancestors={ancestors}
+        ancestors={[]}
         descendants={descendants}
         palette={palette}
         itemId={itemId}
