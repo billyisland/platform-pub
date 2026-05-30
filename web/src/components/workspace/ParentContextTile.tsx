@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { externalItems, type ParentItem } from "../../lib/api/feeds";
 import { formatDateRelative, truncateText } from "../../lib/format";
 import type { VesselPalette } from "./tokens";
@@ -8,6 +9,10 @@ import type { VesselPalette } from "./tokens";
 interface Props {
   itemId: string;
   palette: VesselPalette;
+  // Internal all.haus byline destination (the item's source surface). When
+  // absent, the parent author renders as plain text — never a link out to the
+  // native (Bluesky/Mastodon/…) profile.
+  sourceHref?: string;
 }
 
 // Module-level cache keyed by itemId
@@ -19,7 +24,7 @@ const cache = new Map<
   }
 >();
 
-export function ParentContextTile({ itemId, palette }: Props) {
+export function ParentContextTile({ itemId, palette, sourceHref }: Props) {
   const [parent, setParent] = useState<ParentItem | null>(
     cache.get(itemId)?.parent ?? null,
   );
@@ -86,7 +91,14 @@ export function ParentContextTile({ itemId, palette }: Props) {
         className="font-mono text-[11px] uppercase tracking-[0.06em] mb-1"
         style={{ color: palette.cardMeta }}
       >
-        {name} · {timestamp}
+        {sourceHref ? (
+          <Link href={sourceHref} className="hover:underline">
+            {name}
+          </Link>
+        ) : (
+          name
+        )}{" "}
+        · {timestamp}
       </div>
       {body && (
         <div

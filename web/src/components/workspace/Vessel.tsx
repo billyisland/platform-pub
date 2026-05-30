@@ -399,17 +399,16 @@ export function Vessel({
           onMouseEnter={() => setRoundelHovered(true)}
           onMouseLeave={() => setRoundelHovered(false)}
           onDoubleClick={() => onNameClick?.()}
-          className="select-none font-sans italic"
+          className="select-none font-sans"
           style={{
             position: "absolute",
             bottom: 0,
             left: 0,
+            width: BAR_H,
             height: BAR_H,
-            minWidth: BAR_H,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: "0 9px",
             color: "#FFFFFF",
             fontSize: 22,
             fontWeight: 600,

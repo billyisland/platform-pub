@@ -1299,6 +1299,12 @@ function ExternalVesselCard({
   // suppress the standalone ParentContextTile when it shows.
   const showThread = (!!expanded || !!threadExpanded) && !!threadTarget;
 
+  // Byline destination for the expanded neighbourhood (parent context + thread
+  // entries): the item's all.haus source surface, never the native profile.
+  const sourceHref = external.externalSourceId
+    ? `/source/${external.externalSourceId}`
+    : undefined;
+
   const pipNodeCompact = (
     <span
       style={{
@@ -1338,7 +1344,11 @@ function ExternalVesselCard({
         ctx={ctx}
       />
       {external.sourceReplyUri && !showThread && (
-        <ParentContextTile itemId={external.id} palette={ctx.palette} />
+        <ParentContextTile
+          itemId={external.id}
+          palette={ctx.palette}
+          sourceHref={sourceHref}
+        />
       )}
       {expanded ? (
         <>
@@ -1510,6 +1520,7 @@ function ExternalVesselCard({
           palette={ctx.palette}
           protocol={external.sourceProtocol}
           linkedAccount={matchingAccount ?? null}
+          sourceHref={sourceHref}
         />
       )}
     </CardShell>
@@ -1521,11 +1532,13 @@ function ExternalCardThread({
   palette,
   protocol,
   linkedAccount,
+  sourceHref,
 }: {
   itemId: string;
   palette: VesselPalette;
   protocol: string;
   linkedAccount: import("../../lib/api/linked-accounts").LinkedAccount | null;
+  sourceHref?: string;
 }) {
   const { ancestors, descendants, loading, error } = useExternalThread(
     itemId,
@@ -1573,6 +1586,7 @@ function ExternalCardThread({
         itemId={itemId}
         protocol={protocol}
         linkedAccount={linkedAccount}
+        sourceHref={sourceHref}
       />
     </div>
   );

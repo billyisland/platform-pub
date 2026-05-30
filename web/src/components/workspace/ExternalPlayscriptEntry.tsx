@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ExternalThreadEntry } from "../../lib/api/feeds";
 import type { VesselPalette } from "./tokens";
 
@@ -9,6 +10,10 @@ interface Props {
   palette: VesselPalette;
   onReply?: () => void;
   replyActive?: boolean;
+  // Internal all.haus destination for the speaker's byline (the expanded
+  // item's source surface). When absent, the byline renders as plain text —
+  // we never link out to the native (Bluesky/Mastodon/…) profile.
+  sourceHref?: string;
 }
 
 export function ExternalPlayscriptEntry({
@@ -17,6 +22,7 @@ export function ExternalPlayscriptEntry({
   palette,
   onReply,
   replyActive,
+  sourceHref,
 }: Props) {
   return (
     <div className="group relative">
@@ -35,16 +41,15 @@ export function ExternalPlayscriptEntry({
             />
           </>
         )}
-        {entry.authorUri ? (
-          <a
-            href={entry.authorUri}
-            target="_blank"
-            rel="noopener noreferrer"
+        {sourceHref ? (
+          <Link
+            href={sourceHref}
+            onClick={(e) => e.stopPropagation()}
             className="font-sans font-bold hover:underline"
             style={{ color: palette.cardTitle }}
           >
             {entry.authorName || entry.authorHandle}:
-          </a>
+          </Link>
         ) : (
           <span
             className="font-sans font-bold"

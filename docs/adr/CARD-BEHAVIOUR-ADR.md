@@ -559,3 +559,14 @@ the discipline in RELAY-OUTBOX-ADR §D2.
   external card.
 - A tracked backlog item for §VI.3 (constructed author profiles) exists in the
   project's progress-tracking markdown.
+
+
+## Addendum — Byline routing is canonical (2026-05-30)
+
+Author bylines never link to the origin platform's native profile. This holds for the card byline *and* for every author byline inside the expanded conversational neighbourhood (parent context tiles and playscript thread entries):
+
+- **Native authors** → their all.haus writer profile (`/{username}`).
+- **External authors** → the item's source surface (`/source/:id`, §VI.2). Because thread/parent payloads carry no per-entry source id, external neighbourhood bylines resolve to the *expanded item's* source surface; a participant who differs from the subscribed source therefore lands on that source's page rather than a page for them specifically. A true per-author external profile remains the deferred §VI.3 work.
+- The single route out to the origin platform stays the source-attribution line (§VI.4).
+
+Implemented via a `sourceHref` prop threaded from the card in `web/src/components/workspace/{ExternalPlayscriptEntry,ExternalPlayscriptThread,ParentContextTile,VesselCard}.tsx`.

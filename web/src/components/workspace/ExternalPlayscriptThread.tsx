@@ -16,6 +16,9 @@ interface Props {
   itemId: string;
   protocol: string;
   linkedAccount: LinkedAccount | null;
+  // Internal all.haus byline destination for thread entries (the expanded
+  // item's source surface).
+  sourceHref?: string;
 }
 
 export function ExternalPlayscriptThread({
@@ -25,6 +28,7 @@ export function ExternalPlayscriptThread({
   itemId,
   protocol,
   linkedAccount,
+  sourceHref,
 }: Props) {
   const [showAll, setShowAll] = useState(false);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
@@ -67,6 +71,7 @@ export function ExternalPlayscriptThread({
               entry={entry}
               replyingTo={replyingTo}
               palette={palette}
+              sourceHref={sourceHref}
               onReply={() =>
                 setReplyingToId(replyingToId === entry.id ? null : entry.id)
               }

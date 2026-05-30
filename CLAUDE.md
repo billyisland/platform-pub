@@ -238,6 +238,7 @@ All three feed card types (`ArticleCard`, `NoteCard`, `ExternalCard`) share a un
 
 - **Left bar**: 4px solid, full card height. Black (`#111111`) for native, crimson (`#B5242A`) for paid, grey-300 (`#BBBBBB`) for external. Applied via `borderLeft` inline style + `paddingLeft: '24px'`.
 - **Byline row**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600`). Order: TrustPip · Author name · middle-dot · timestamp · (optional price or protocol badge).
+- **Byline routing**: every author byline — on a card, and on every expanded parent or reply in the conversational neighbourhood — links to the internal all.haus surface, never the origin platform. Native authors route to their writer profile (`/{username}`); external authors route to the source surface (`/source/:id`, CARD-BEHAVIOUR-ADR §VI.2) until the constructed external author profile (§VI.3) ships. The only route out to the origin platform is the source-attribution line (§VI.4).
 - **Action row**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600`). `Reply` opens the compose overlay; `Quote`, `VoteControls`, `BookmarkButton`, `ShareButton` as appropriate per type.
 - **No avatars** in card bodies. The left bar + pip + mono-caps name carry identity.
 - **Feed rhythm**: 40px gap between all items (`space-y-[40px]`), no horizontal rules between cards.
