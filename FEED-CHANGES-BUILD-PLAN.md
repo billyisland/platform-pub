@@ -408,3 +408,112 @@ bylines.
 - `web/src/components/workspace/Byline.tsx` (new) — 9b
 - `web/src/stores/workspace.ts` — 8b
 - `web/src/components/feed/AuthorModal.tsx` — reused by 1 (verify Esc/outside-click close)
+
+---
+
+# 📋 Code review findings — TO ADDRESS NEXT SESSION
+
+**Audited 2026-05-30** across the full commit range `288e1ca^..HEAD` (the 7 commits
+above). Scope note: commits 1–5 implement the 9-task plan above; the last two commits
+(`5eecfc0` focal conversation view, `2cc3521` external refocus) are **not** in the plan and
+added the highest-risk surface — a new gateway endpoint (`GET /conversation/:eventId`), a
+`?focus=` param on `/external-items/:id/thread` (`deriveFocusItem`), and four new frontend
+files. **The SSRF surface in `deriveFocusItem` was reviewed and is correctly closed** — host
+comes from the trusted base row and the Mastodon status id is regex-gated to digits. Overall
+the work is solid and `tsc`-clean; items below are robustness/hygiene, none block shipping.
+
+## High — do first
+- [x] **H1 — Add a cycle guard to client thread walks.** ✅ Visited-`Set` guards added to
+  `ConversationView` ancestor `while` + descendant DFS. `ExternalAncestorRail` /
+  `ExternalPlayscriptThread` don't recurse (they map flat server-provided lists) so the
+  loop hazard doesn't apply there; added id-dedupe to both instead for `key` parity (see L4).
+  `web/src/components/workspace/ConversationView.tsx:84-90` (ancestor `while`) and `:97-105`
+  (descendant DFS) follow `parentEventId`/`childrenOf` links with no visited `Set`. A
+  `parentEventId` cycle or self-parent row → infinite recursion → hung tab. The server
+  *prevents* cycles (immutable `parent_comment_id`), so this needs DB corruption to trigger —
+  but the fix is a one-line `Set<string>` guard in both walks and the failure mode (frozen
+  render thread for every viewer of that conversation) is severe. Apply the same guard to
+  `ExternalAncestorRail.tsx` / `ExternalPlayscriptThread.tsx` for parity.
+- [x] **H2 — Bound `threadCache` (server).** ✅ Added `setThreadCache()` helper with a
+  1000-entry cap that sweeps expired entries first then evicts oldest insertions; the route
+  now writes through it. The other server caches are item-id-keyed (bounded by visible
+  content) so left as-is, with a note.
+  `gateway/src/routes/external-items.ts:42-46, 400, 436`. The cache is a plain `Map` with a
+  TTL field but no size cap and no expiry sweep. The new key `` `${id}|${focus}` `` makes the
+  keyspace attacker-controlled (`focus` is unbounded query input) — an authed user can mint a
+  permanent entry per distinct `focus` (30/min via rate limit, never reclaimed) → monotonic
+  gateway memory growth. Add an LRU cap or periodic expired-entry sweep.
+
+## Medium
+- [x] **M1 — `refreshKey` bump resets the focal node.** ✅ The reset effect now depends on
+  `[hostEventId]` only, so a `refreshKey` bump (publishing a reply) no longer yanks a
+  re-rooted reader back to the root. `ConversationView.tsx:59` —
+  `setFocalId(hostEventId)` fires on every `refreshKey` change, so publishing a reply yanks a
+  re-rooted user back to the conversation root. Confirm intended; if not, preserve `focalId`
+  when the node still exists.
+- [x] **M2 — Focal node absent from refetched tree renders a hole.** ✅ Added an effect: if
+  the focal id is gone from a refetched tree (and the tree is non-empty), reset to the host
+  root.
+  `ConversationView.tsx:166, 309` — `byId.get(focalId) ?? null` with no fallback; a stale/
+  deleted `focalId` leaves ancestors above an empty gap. Add a "not found → reset to root".
+- [x] **M3 — Unbounded + non-invalidating client caches.** ✅ Both hooks gained a shared
+  `readCache`/`writeCache` pair with a 60s TTL + 200-entry cap (insertion-order eviction).
+  `useConversation` now deletes the stale entry before a `refreshKey` refetch so a concurrent
+  mount can't read pre-reply nodes; `useExternalThread` entries now expire instead of going
+  stale for the whole session.
+  `web/src/hooks/useExternalThread.ts:13,38` (key `${itemId}|${focus}`, one permanent entry
+  per node clicked, **no refresh path** so external threads go stale for the whole session)
+  and `web/src/hooks/useConversation.ts:26,74` (refetch-around on `refreshKey` doesn't delete
+  the stale entry first, so a concurrent mount can read pre-reply nodes). Cap + add TTL; fix
+  the read-around. Pairs naturally with H2 — one consistent cache-bounding fix.
+- [ ] **M4 — Inconsistent "non-adjacent parent" arrow semantics.** _Deferred — purely
+  cosmetic, and there's no unambiguous "correct" ordering to converge on (native DFS vs
+  external chronological; the spec calls threads "chronological", which native itself
+  doesn't honour). Unifying it risks a visible reordering regression for no behavioural gain;
+  left for a dedicated typography/threading pass._
+  Native descendants are DFS-ordered (`ConversationView.tsx:97-105`); external descendants are
+  chronologically sorted (`external-items.ts:1752`), so the `→ PARENT:` arrow heuristic in
+  `ExternalAncestorRail.tsx:38-50` / `ExternalPlayscriptThread.tsx:52-64` fires on different
+  nodes than native. Cosmetic but visible divergence from the playscript spec.
+
+## Low
+- [x] **L1 — Outside-click while `AuthorModal` open both dismisses it and toggles card
+  expand.** ✅ `AuthorModal`'s outside-`pointerdown` handler now registers a one-shot
+  capture-phase `click` swallower (with a 0ms cleanup so only this gesture's click is caught)
+  before calling `onClose`, so dismissing the modal by clicking the card no longer fires the
+  card's expand handler. The anchor (pip) case still returns early, so toggling is unaffected.
+- [x] **L2 — Thumbnail-less extra videos vanish in expanded media.** ✅ A video extra with no
+  poster frame now renders a "▶ Watch video ↗" link to its URL instead of returning `null`.
+- [x] **L3 — Dead `CEREMONY_BOX_W/H` consts draw `next lint` warnings.** ✅ Silenced with
+  `eslint-disable-next-line @typescript-eslint/no-unused-vars` per the Task 7 keep-for-re-enable
+  decision (rather than removing, so the pending entrance-animation work can still use them).
+- [x] **L4 — Duplicate node ids → React key collisions.** ✅ `ConversationView` `<li>` keys are
+  now group-prefixed (`anc-`/`focal-`/`desc-`) so a node appearing in two groups can't collide;
+  `ExternalPlayscriptThread` and `ExternalAncestorRail` dedupe their entry lists by id.
+- [ ] **L5 — `GET /conversation/:eventId` fetches all comments unbounded.**
+  `replies.ts:620` — no `LIMIT`/pagination (inherited from `/replies`); the focal view renders
+  the entire set. _Deferred per the original "revisit if any conversation gets large" note —
+  it's a pre-existing `/replies` characteristic, not a regression from this work._
+- [x] **L6 — atproto `focus` is an authed open-proxy for any public Bluesky thread.** ✅
+  Comment-only: the thread-route comment no longer claims "ownership scoping" for atproto — it
+  now states plainly that `focus` is an unverified `at://` URI (authed read-proxy for public
+  Bluesky threads on the pinned AppView host, no SSRF since the host is fixed).
+
+## Cross-cutting
+- [ ] **Tests:** the undocumented focal-conversation backend (`/conversation/:eventId`,
+  `deriveFocusItem`) has **zero test coverage**. Add: root resolution from a comment id,
+  paywall-locked empty response, and a `deriveFocusItem` SSRF/regex-gate test. _Not yet done
+  — the robustness fixes above don't change this surface's behaviour; tracked as the remaining
+  open item from this review._
+- [x] **Cache bounding (H2 + M3)** ✅ Addressed consistently: server `threadCache`
+  (`setThreadCache`, cap + expiry sweep) and both client hooks (`readCache`/`writeCache`, TTL +
+  cap). The remaining server caches are item-id-keyed and intentionally left unbounded with a
+  note.
+
+### Verified correct (no action needed)
+`deriveFocusItem` Mastodon SSRF defense (path-traversal/query-injection/host-breakout all
+normalize safely); self-thread `null===null` non-match (`ParentContextTile.tsx:91-102`);
+refresh-collapse key collection + identity no-op (`WorkspaceView.tsx:370-387`); Zustand
+`setVesselTextSize` merge + forward-compatible persistence; `EmptyFeedTile` caught-up timer
+lifecycle; removed appearance-control props fully cleaned; paywalled article bodies never leak
+through `/conversation` (title only); no conditional-hook violations.

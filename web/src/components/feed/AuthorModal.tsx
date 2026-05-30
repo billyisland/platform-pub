@@ -58,6 +58,19 @@ export function AuthorModal({
       const target = e.target as Node;
       if (modalRef.current?.contains(target)) return;
       if (anchorRef.current?.contains(target)) return;
+      // Swallow the click this pointerdown is about to produce, so dismissing
+      // the modal by clicking the card underneath doesn't also fire the card's
+      // expand handler (L1). Capture-phase + a 0ms cleanup catches only the
+      // click from this same gesture. The anchor case returns above, so the pip
+      // trigger still toggles normally.
+      const swallowClick = (ce: MouseEvent) => {
+        ce.stopPropagation();
+        document.removeEventListener("click", swallowClick, true);
+      };
+      document.addEventListener("click", swallowClick, true);
+      setTimeout(() => {
+        document.removeEventListener("click", swallowClick, true);
+      }, 0);
       onClose();
     }
     document.addEventListener("keydown", onKeyDown);

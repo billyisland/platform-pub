@@ -609,3 +609,43 @@ When a card's neighbourhood is expanded, the conversation reads strictly top-dow
 - **External (Bluesky/Mastodon) — parents-above (full chain) + in-place re-focus.** `GET /external-items/:id/thread` returns the full `ancestors`/`descendants` and now accepts an optional `?focus=<sourceId>` query param that re-roots the returned thread on a clicked node (the gateway derives a synthetic item on the same source — see `deriveFocusItem`). `ExternalVesselCard` fetches the thread once (`useExternalThread(external.id, showThread, focusEntry?.id)`) and renders the **full ancestor chain above the card content** via `ExternalAncestorRail` (replacing the single immediate-parent `ParentContextTile` in the expanded state), with descendants below via `ExternalCardThread` (descendant-only, taking the shared fetch as props). **In-place re-focus now ships**: `ExternalVesselCard` holds a `focusEntry` state; clicking any ancestor/descendant entry (`ExternalPlayscriptEntry`'s body — the Reply control and the byline link keep their own behaviour via `stopPropagation`) re-roots via the `?focus=` param. Because each `ExternalThreadEntry.id` is a source URI / numeric status id, that id is exactly what's passed as `focus`. The focal node is rendered from the clicked `ExternalThreadEntry` itself (the refetched rail/thread payloads exclude the focal node) with a left-border focal treatment matching native's `opts.focal`; `↑ Full conversation` resets to the original card item. While re-rooted onto a lightweight entry the rich card body (content/media/polls/quotes/engagement/actions) is not shown — matching native focal entries, which are also lightweight. The collapsed-state single-parent `ParentContextTile` preview is unchanged.
 
 Implemented in `gateway/src/routes/replies.ts`, `gateway/src/routes/external-items.ts` (the `?focus=` param + `deriveFocusItem`), `web/src/lib/api/feed.ts`, `web/src/lib/api/feeds.ts` (`externalItems.thread(id, focus?)`), `web/src/hooks/useConversation.ts`, `web/src/hooks/useExternalThread.ts` (per-`(item, focus)` cache), and `web/src/components/workspace/{ConversationView,ExternalAncestorRail,ExternalPlayscriptThread,ExternalPlayscriptEntry,VesselCard}.tsx`.
+
+---
+
+## Addendum — focal-conversation robustness hardening (2026-05-30)
+
+Follow-up to the focal-conversation / external-refocus addendum above, addressing the
+review findings logged in `FEED-CHANGES-BUILD-PLAN.md`. No behavioural change to the
+documented model; these are correctness/robustness guarantees around it.
+
+- **Cycle-safe client thread walks.** `ConversationView`'s ancestor walk and descendant
+  DFS now carry a visited `Set`, so a corrupt `parentEventId` cycle (or self-parent) can
+  no longer loop forever and hang the tab. The external rail/thread render flat
+  server-provided lists (no recursion), so they instead **dedupe entries by id** to keep
+  React `key`s unique if a malformed chain repeats a node.
+- **Bounded caches.** The server thread cache (`gateway/src/routes/external-items.ts`)
+  embeds the attacker-controlled `focus` query param in its key, so it now writes through
+  `setThreadCache()` — a 1000-entry cap that sweeps expired entries first, then evicts
+  oldest insertions. The two client neighbourhood caches (`useConversation`,
+  `useExternalThread`) gained a 60s TTL + 200-entry cap; `useConversation` also deletes the
+  stale entry **before** a `refreshKey` refetch so a concurrent mount can't read pre-reply
+  nodes mid-refresh.
+- **Focal-node lifecycle.** A `refreshKey` bump (publishing a reply) no longer yanks a
+  re-rooted reader back to the conversation root — the reset effect keys on `hostEventId`
+  only. If a refetch drops the focal node (deleted upstream / stale id), the view falls
+  back to the root instead of rendering ancestors above an empty gap.
+- **`AuthorModal` dismiss.** Clicking the card to dismiss the author popover no longer also
+  toggles the card's expand handler: the outside-`pointerdown` handler registers a one-shot
+  capture-phase click swallower (0ms cleanup so only this gesture is caught). The pip
+  trigger still toggles normally (anchor case returns early).
+- **`focus` scoping note (atproto).** The thread-route comment no longer claims "ownership
+  scoping" for atproto: `focus` is an unverified `at://` URI, i.e. an authed read-proxy for
+  any public Bluesky thread on the pinned AppView host — no SSRF (host is fixed), and the
+  data is already public.
+- **Media affordance.** A poster-less video in expanded media renders a "▶ Watch video"
+  link rather than vanishing silently.
+
+Still open (tracked in the build plan): cosmetic non-adjacent-parent arrow ordering between
+native (DFS) and external (chronological) descendants; unbounded `GET /conversation/:eventId`
+comment fetch (inherited from `/replies`); and backend test coverage for
+`/conversation/:eventId` + `deriveFocusItem`.

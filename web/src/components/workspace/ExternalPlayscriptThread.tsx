@@ -40,7 +40,14 @@ export function ExternalPlayscriptThread({
   const [showAll, setShowAll] = useState(false);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
 
-  const allEntries = [...ancestors, ...descendants];
+  // Dedupe by id: an entry can in principle arrive in both ancestors and
+  // descendants, which would otherwise collide on the React `key` (L4).
+  const seenIds = new Set<string>();
+  const allEntries = [...ancestors, ...descendants].filter((e) => {
+    if (seenIds.has(e.id)) return false;
+    seenIds.add(e.id);
+    return true;
+  });
   if (allEntries.length === 0) return null;
 
   // Build id→entry map for parent lookup

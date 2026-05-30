@@ -10,10 +10,36 @@ interface ExternalThreadState {
   error: boolean;
 }
 
-const cache = new Map<
-  string,
-  { ancestors: ExternalThreadEntry[]; descendants: ExternalThreadEntry[] }
->();
+interface CachedThread {
+  ancestors: ExternalThreadEntry[];
+  descendants: ExternalThreadEntry[];
+  ts: number;
+}
+
+// Bounded by a TTL + entry cap so the keyspace (one entry per node clicked)
+// can't grow without limit and threads refresh after the TTL rather than going
+// stale for the whole session (M3).
+const cache = new Map<string, CachedThread>();
+const CACHE_TTL_MS = 60_000;
+const CACHE_MAX = 200;
+
+function readCache(key: string): CachedThread | undefined {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) {
+    cache.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
+function writeCache(key: string, entry: CachedThread): void {
+  cache.set(key, entry);
+  if (cache.size > CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+}
 
 export function useExternalThread(
   itemId: string,
@@ -37,7 +63,7 @@ export function useExternalThread(
     // different node refetches rather than reusing the base item's tree.
     const key = focus ? `${itemId}|${focus}` : itemId;
 
-    const cached = cache.get(key);
+    const cached = readCache(key);
     if (cached) {
       setState({
         ancestors: cached.ancestors,
@@ -54,9 +80,10 @@ export function useExternalThread(
     externalItems
       .thread(itemId, focus)
       .then((res) => {
-        cache.set(key, {
+        writeCache(key, {
           ancestors: res.ancestors,
           descendants: res.descendants,
+          ts: Date.now(),
         });
         if (cancelled) return;
         setState({

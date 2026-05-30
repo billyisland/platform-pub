@@ -48,9 +48,13 @@ const DEFAULT_FEED_NAME = "Founder's feed";
 const CEREMONY_SEEN_PREFIX = "workspace:ceremony_seen:";
 
 // Ceremony box dimensions (mirrors ForallCeremony's BOX_W / BOX_H — kept
-// duplicated locally so positioning math doesn't need to import the
-// component's internals).
+// duplicated locally so the positioning math doesn't need to import the
+// component's internals). Referenced only by the commented-out Task 7 entrance
+// animation today; retained for the pending re-enable, so silence the
+// unused-var lint until then (L3).
+/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
 const CEREMONY_BOX_W = 300;
+/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
 const CEREMONY_BOX_H = 300;
 
 interface PendingCeremony {

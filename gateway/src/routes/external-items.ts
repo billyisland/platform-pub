@@ -44,6 +44,32 @@ const threadCache = new Map<
   { data: ThreadResponse; expiresAt: number }
 >();
 const THREAD_CACHE_TTL_MS = 60_000;
+// The thread cache key embeds the attacker-controlled `focus` query param, so an
+// authed user can mint a distinct entry per `focus` value. Cap the entry count
+// and sweep expired entries on write so the keyspace can't grow without bound
+// (H2). The other caches above are keyed purely on item ids (bounded by content
+// the user can already see) so they don't need this.
+const THREAD_CACHE_MAX = 1000;
+
+function setThreadCache(
+  key: string,
+  value: { data: ThreadResponse; expiresAt: number },
+): void {
+  threadCache.set(key, value);
+  if (threadCache.size <= THREAD_CACHE_MAX) return;
+  const now = Date.now();
+  // Drop expired entries first; if still over cap, evict oldest insertions
+  // (Map iterates in insertion order).
+  for (const [k, v] of threadCache) {
+    if (threadCache.size <= THREAD_CACHE_MAX) break;
+    if (v.expiresAt <= now) threadCache.delete(k);
+  }
+  while (threadCache.size > THREAD_CACHE_MAX) {
+    const oldest = threadCache.keys().next().value;
+    if (oldest === undefined) break;
+    threadCache.delete(oldest);
+  }
+}
 
 // Outbound source fetches for the essential neighbourhood data (parent, quote,
 // thread) cap at 8s per CARD-BEHAVIOUR-ADR §VII.3 — tighter than the shared
@@ -392,9 +418,12 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       const { id } = req.params;
       // `focus` re-roots the thread on a source-platform node (a clicked
       // ancestor/descendant whose ExternalThreadEntry.id is a source URI/id, not
-      // an all.haus id). The base item id still scopes the lookup (ownership,
-      // protocol, host); focus only redirects which node the source thread is
-      // fetched relative to. See deriveFocusItem.
+      // an all.haus id). The base item row scopes protocol + host, so there is
+      // no SSRF surface (see deriveFocusItem). NOTE: for atproto, `focus` is an
+      // at:// URI that is NOT verified to belong to the base item's
+      // conversation — this is effectively an authed read-proxy for any public
+      // Bluesky thread on the pinned AppView host. Acceptable (the data is
+      // already public) but it is not "ownership scoping" (L6).
       const focus = req.query.focus?.trim() || null;
 
       const cacheKey = focus ? `${id}|${focus}` : id;
@@ -433,7 +462,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         else data = { ancestors: [], descendants: [], partial: true };
       }
 
-      threadCache.set(cacheKey, {
+      setThreadCache(cacheKey, {
         data,
         expiresAt: Date.now() + THREAD_CACHE_TTL_MS,
       });

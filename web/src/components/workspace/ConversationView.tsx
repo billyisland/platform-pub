@@ -56,7 +56,10 @@ export function ConversationView({
   // The node the conversation is currently rooted on. Defaults to the host
   // (the post the user expanded); clicking any ancestor/descendant re-roots.
   const [focalId, setFocalId] = useState(hostEventId);
-  useEffect(() => setFocalId(hostEventId), [hostEventId, refreshKey]);
+  // Reset to the host root only when the host card itself changes. A refreshKey
+  // bump (e.g. after publishing a reply) deliberately does NOT reset — a
+  // re-rooted reader stays on their focal node (M1).
+  useEffect(() => setFocalId(hostEventId), [hostEventId]);
 
   // Locally-deleted comment ids (optimistic; the module cache is immutable).
   const [deleted, setDeleted] = useState<Set<string>>(new Set());
@@ -81,10 +84,14 @@ export function ConversationView({
   const ancestors = useMemo<ConversationNode[]>(() => {
     if (focalId === hostEventId) return [];
     const chain: ConversationNode[] = [];
+    // Visited guard: a corrupt parentEventId cycle (or self-parent) would
+    // otherwise loop forever and hang the tab (H1).
+    const seen = new Set<string>([focalId]);
     let cur = byId.get(focalId)?.parentEventId ?? null;
-    while (cur && cur !== hostEventId) {
+    while (cur && cur !== hostEventId && !seen.has(cur)) {
       const node = byId.get(cur);
       if (!node) break;
+      seen.add(cur);
       chain.push(node);
       cur = node.parentEventId;
     }
@@ -96,8 +103,12 @@ export function ConversationView({
   // preceding entry, disambiguating a non-adjacent parent.
   const descendants = useMemo<FlatEntry[]>(() => {
     const flat: ConversationNode[] = [];
+    // Visited guard against parentEventId cycles (H1).
+    const seen = new Set<string>([focalId]);
     const walk = (parentId: string) => {
       for (const child of childrenOf.get(parentId) ?? []) {
+        if (seen.has(child.eventId)) continue;
+        seen.add(child.eventId);
         flat.push(child);
         walk(child.eventId);
       }
@@ -120,6 +131,14 @@ export function ConversationView({
       return { node, replyingTo };
     });
   }, [focalId, childrenOf, byId]);
+
+  // If a refetch drops the focal node (deleted upstream / stale id), fall back
+  // to the root so ancestors don't render above an empty gap (M2).
+  useEffect(() => {
+    if (focalId !== hostEventId && nodes.length > 0 && !byId.has(focalId)) {
+      setFocalId(hostEventId);
+    }
+  }, [focalId, hostEventId, byId, nodes.length]);
 
   async function handleDelete(node: ConversationNode) {
     if (!node.commentId) return;
@@ -299,18 +318,22 @@ export function ConversationView({
       )}
 
       <ol className="space-y-[32px]">
-        {/* Ancestors of the focal node, oldest-first, indented above it. */}
+        {/* Ancestors of the focal node, oldest-first, indented above it. Keys
+            are group-prefixed so a node appearing in more than one group can't
+            collide (L4). */}
         {ancestors.map((node) => (
-          <li key={node.eventId}>{entry(node, {})}</li>
+          <li key={`anc-${node.eventId}`}>{entry(node, {})}</li>
         ))}
 
         {/* The focal node anchor (only when re-rooted onto a reply; at the root
             the host card above is the anchor). */}
-        {isFocused && focal && <li>{entry(focal, { focal: true })}</li>}
+        {isFocused && focal && (
+          <li key={`focal-${focal.eventId}`}>{entry(focal, { focal: true })}</li>
+        )}
 
         {/* Descendants below the focal. */}
         {descendants.map(({ node, replyingTo }) => (
-          <li key={node.eventId}>{entry(node, { replyingTo })}</li>
+          <li key={`desc-${node.eventId}`}>{entry(node, { replyingTo })}</li>
         ))}
       </ol>
     </div>

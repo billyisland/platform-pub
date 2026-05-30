@@ -26,8 +26,17 @@ export function ExternalAncestorRail({
 }: Props) {
   if (ancestors.length === 0) return null;
 
+  // Dedupe by id so a malformed ancestor chain (e.g. a cycle from the source)
+  // can't collide on the React `key` (L4 parity).
+  const seenIds = new Set<string>();
+  const chain = ancestors.filter((e) => {
+    if (seenIds.has(e.id)) return false;
+    seenIds.add(e.id);
+    return true;
+  });
+
   const byId = new Map<string, ExternalThreadEntry>();
-  for (const e of ancestors) byId.set(e.id, e);
+  for (const e of chain) byId.set(e.id, e);
 
   return (
     <div
@@ -35,12 +44,12 @@ export function ExternalAncestorRail({
       style={{ borderBottom: `1px solid ${palette.cardMeta}33` }}
     >
       <ol className="space-y-[32px]">
-        {ancestors.map((entry, i) => {
+        {chain.map((entry, i) => {
           // Annotate a non-adjacent parent the same way the descendant
           // playscript does.
           let replyingTo: { name: string } | null = null;
           if (entry.parentId) {
-            const prev = i > 0 ? ancestors[i - 1] : null;
+            const prev = i > 0 ? chain[i - 1] : null;
             if (!prev || prev.id !== entry.parentId) {
               const parent = byId.get(entry.parentId);
               if (parent) {

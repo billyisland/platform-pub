@@ -673,7 +673,34 @@ function MediaBlock({
       )}
       {extraVisuals.map((m, i) => {
         const src = m.type === "image" ? m.url : m.thumbnail;
-        if (!src) return null;
+        if (!src) {
+          // A video with no poster frame would otherwise vanish silently —
+          // render a watch link so the affordance survives (L2).
+          if (m.type === "video" && m.url) {
+            return (
+              <a
+                key={`extra-${i}`}
+                href={m.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="font-mono no-underline hover:underline"
+                style={{
+                  display: "block",
+                  marginBottom: 6,
+                  padding: "8px 10px",
+                  fontSize: 11,
+                  letterSpacing: "0.04em",
+                  color: ctx.palette.cardMeta,
+                  background: ctx.palette.interior,
+                }}
+              >
+                ▶ Watch video ↗
+              </a>
+            );
+          }
+          return null;
+        }
         return (
           <div
             key={`extra-${i}`}
