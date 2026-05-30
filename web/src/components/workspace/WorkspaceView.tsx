@@ -367,6 +367,24 @@ export function WorkspaceView() {
   }
 
   const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
+    // A refresh collapses this vessel's conversations: remove every expand key
+    // belonging to its current items from both sets. Card expansion keys on
+    // `feedItemId ?? id`; thread expansion keys on `id` — so clear both forms.
+    const current = vesselsRef.current.find((v) => v.feed.id === feed.id);
+    if (current && current.items.length > 0) {
+      const keys = new Set<string>();
+      for (const it of current.items) {
+        if ("id" in it && it.id) keys.add(it.id);
+        if ("feedItemId" in it && it.feedItemId) keys.add(it.feedItemId);
+      }
+      const drop = (prev: Set<string>) => {
+        const next = new Set([...prev].filter((k) => !keys.has(k)));
+        return next.size === prev.size ? prev : next;
+      };
+      setExpandedCards(drop);
+      setExpandedThreads(drop);
+    }
+
     let prevIds: Set<string> | null = null;
     setVessels((prev) =>
       prev.map((v) => {
@@ -413,6 +431,9 @@ export function WorkspaceView() {
   vesselsRef.current = vessels;
 
   function refreshAll() {
+    // Refreshing every vessel collapses every expanded conversation.
+    setExpandedCards(new Set());
+    setExpandedThreads(new Set());
     vesselsRef.current.forEach((v) => void loadVesselItems(v.feed));
   }
 
@@ -543,7 +564,8 @@ export function WorkspaceView() {
       return next;
     });
     setNewFeedOpen(false);
-    setCeremony({ feedId: feed.id, pace: "responsive", target: slot });
+    // TODO: re-enable / refine entrance animation
+    // setCeremony({ feedId: feed.id, pace: "responsive", target: slot });
     void loadVesselItems(feed);
   }
 
@@ -641,13 +663,14 @@ export function WorkspaceView() {
             ? window.localStorage.getItem(ceremonySeenKey) === "true"
             : true;
         if (mintedFounderFeed && !seen && typeof window !== "undefined") {
-          const cx = window.innerWidth / 2 - CEREMONY_BOX_W / 2;
-          const cy = window.innerHeight / 2 - CEREMONY_BOX_H / 2;
-          setCeremony({
-            feedId: list[0].id,
-            pace: "ceremonial",
-            target: { x: cx, y: cy },
-          });
+          // TODO: re-enable / refine entrance animation
+          // const cx = window.innerWidth / 2 - CEREMONY_BOX_W / 2;
+          // const cy = window.innerHeight / 2 - CEREMONY_BOX_H / 2;
+          // setCeremony({
+          //   feedId: list[0].id,
+          //   pace: "ceremonial",
+          //   target: { x: cx, y: cy },
+          // });
         }
 
         for (const feed of list) {

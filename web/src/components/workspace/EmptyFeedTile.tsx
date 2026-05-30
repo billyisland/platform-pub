@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 interface EmptyFeedTileProps {
   variant: "no-sources" | "no-items" | "caught-up";
   onAddSources?: () => void;
@@ -29,33 +31,7 @@ export function EmptyFeedTile({
 
   if (variant === "caught-up") {
     return (
-      <div className="px-4 py-4 text-center">
-        <p className="text-ui-xs text-grey-500 mb-3">
-          You&rsquo;re caught up. Add new sources or strengthen current ones to
-          see more.
-        </p>
-        <div className="flex items-center justify-center gap-4">
-          {onAddSources && (
-            <button
-              type="button"
-              className="btn-text-muted"
-              onClick={() => {
-                onDismiss?.();
-                onAddSources();
-              }}
-            >
-              ADD SOURCES
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn-text-muted"
-            onClick={() => onDismiss?.()}
-          >
-            DISMISS
-          </button>
-        </div>
-      </div>
+      <CaughtUpTile onAddSources={onAddSources} onDismiss={onDismiss} />
     );
   }
 
@@ -70,6 +46,70 @@ export function EmptyFeedTile({
           ADD MORE
         </button>
       )}
+    </div>
+  );
+}
+
+// The caught-up tile auto-dismisses ~4s after it appears if untouched; hovering
+// pauses the countdown so it can't vanish under the cursor.
+function CaughtUpTile({
+  onAddSources,
+  onDismiss,
+}: {
+  onAddSources?: () => void;
+  onDismiss?: () => void;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const start = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onDismiss?.(), 4000);
+  };
+  const stop = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    start();
+    return stop;
+    // onDismiss is stable enough for this lifecycle; intentionally mount-only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      className="px-4 py-4 text-center"
+      onMouseEnter={stop}
+      onMouseLeave={start}
+    >
+      <p className="text-ui-xs text-grey-500 mb-3">
+        You&rsquo;re caught up. Add new sources or strengthen current ones to see
+        more.
+      </p>
+      <div className="flex items-center justify-center gap-4">
+        {onAddSources && (
+          <button
+            type="button"
+            className="btn-text-muted"
+            onClick={() => {
+              onDismiss?.();
+              onAddSources();
+            }}
+          >
+            ADD SOURCES
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn-text-muted"
+          onClick={() => onDismiss?.()}
+        >
+          DISMISS
+        </button>
+      </div>
     </div>
   );
 }

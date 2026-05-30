@@ -581,3 +581,12 @@ When an external post embeds rich media — quotes another post, or previews an 
 - **Link preview cards.** An external link previewed with title/description/thumbnail (Bluesky `app.bsky.embed.external` → `media[]` `{type:"link"}`; Mastodon's `card`, which lives only in the Mastodon REST API and is captured by the existing `external_engagement_refresh` `/statuses/:id` fetch) renders through `MediaBlock`'s `LinkPreviewCard`, so a previewed link looks identical regardless of source.
 
 Implemented in `web/src/components/workspace/{VesselCard,QuotedPostTile}.tsx`, `gateway/src/routes/external-items.ts`, `feed-ingest/src/adapters/activitypub.ts`, and `feed-ingest/src/tasks/{external-parent-prefetch,external-engagement-refresh}.ts`.
+
+## Addendum — Self-thread suppression & refresh collapse (2026-05-30)
+
+Two refinements to neighbourhood behaviour on the workspace surface:
+
+- **Self-thread parent suppression.** When a reply's parent shares the host card's author (a self-thread — e.g. someone replying to their own post), the inline `ParentContextTile` is suppressed: the parent already stands as its own feed item, so showing it inline merely reads as one merged card divided by a hairline. `ParentContextTile` takes an optional `selfAuthor` and `return null`s on a handle match (or a case-insensitive name match when neither side has a handle). Cross-author reply context is unchanged — showing what a post replies to is still wanted; only same-author redundancy goes. `ReplyGroupCard`'s once-rendered parent tile is likewise untouched.
+- **Refresh collapses expansions.** Refreshing a vessel (pull-to-refresh, drag-drop reload, or `refreshAll`) returns its cards to the collapsed state: `loadVesselItems` strips that vessel's item keys (`id` and `feedItemId`) from both `expandedCards` and `expandedThreads` before reloading; `refreshAll` clears both sets. A reload is a fresh read of the feed, not a continuation of a reading session, so stale expanded context is dropped rather than stranded above changed content.
+
+Implemented in `web/src/components/workspace/{ParentContextTile,VesselCard,WorkspaceView}.tsx`.

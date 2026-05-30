@@ -13,6 +13,10 @@ interface Props {
   // absent, the parent author renders as plain text — never a link out to the
   // native (Bluesky/Mastodon/…) profile.
   sourceHref?: string;
+  // The author of the card hosting this tile. When the fetched parent is the
+  // same author (a self-thread), the tile is suppressed so each post stands
+  // alone rather than reading as one merged card divided by a hairline.
+  selfAuthor?: { handle?: string; name?: string };
 }
 
 // Module-level cache keyed by itemId
@@ -24,7 +28,12 @@ const cache = new Map<
   }
 >();
 
-export function ParentContextTile({ itemId, palette, sourceHref }: Props) {
+export function ParentContextTile({
+  itemId,
+  palette,
+  sourceHref,
+  selfAuthor,
+}: Props) {
   const [parent, setParent] = useState<ParentItem | null>(
     cache.get(itemId)?.parent ?? null,
   );
@@ -69,6 +78,24 @@ export function ParentContextTile({ itemId, palette, sourceHref }: Props) {
   }
 
   if (!parent) return null;
+
+  // Suppress the inline parent for self-threads: when the parent shares the
+  // host card's author, the parent already stands as its own feed item, so the
+  // tile is redundant and visually merges the two posts. Prefer a handle match;
+  // fall back to a case-insensitive name match when handles are absent.
+  if (selfAuthor) {
+    const handleMatch =
+      !!selfAuthor.handle &&
+      !!parent.authorHandle &&
+      selfAuthor.handle === parent.authorHandle;
+    const nameMatch =
+      !selfAuthor.handle &&
+      !parent.authorHandle &&
+      !!selfAuthor.name &&
+      !!parent.authorName &&
+      selfAuthor.name.toLowerCase() === parent.authorName.toLowerCase();
+    if (handleMatch || nameMatch) return null;
+  }
 
   const name = parent.authorName || parent.authorHandle || "Unknown";
   const timestamp = formatDateRelative(parent.publishedAt);

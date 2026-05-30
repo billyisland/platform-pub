@@ -446,9 +446,6 @@ export function Vessel({
           onPointerDown={(e) => e.stopPropagation()}
           style={{
             padding: `${PAD}px`,
-            display: "flex",
-            flexDirection: isHorizontal ? "row" : "column",
-            gap: `${GAP}px`,
             flex: heightSet ? "1 1 0" : undefined,
             minHeight: 0,
             overflowY: heightSet && !isHorizontal ? "auto" : undefined,
@@ -456,12 +453,30 @@ export function Vessel({
             cursor: "default",
           }}
         >
+          {/* The gap lives on the element that actually contains the cards, not
+              on the scroll body (whose only direct child is PullToRefresh). */}
           {onRefresh ? (
             <PullToRefresh onRefresh={onRefresh} scrollRef={scrollBodyRef}>
-              {children}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: isHorizontal ? "row" : "column",
+                  gap: `${GAP}px`,
+                }}
+              >
+                {children}
+              </div>
             </PullToRefresh>
           ) : (
-            children
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isHorizontal ? "row" : "column",
+                gap: `${GAP}px`,
+              }}
+            >
+              {children}
+            </div>
           )}
         </div>
 

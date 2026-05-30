@@ -1187,6 +1187,7 @@ function NoteVesselCard({
         <ParentContextTile
           itemId={note.externalParentId}
           palette={ctx.palette}
+          selfAuthor={{ name }}
         />
       )}
       {noteDisplayText && (
@@ -1447,6 +1448,10 @@ function ExternalVesselCard({
           itemId={external.id}
           palette={ctx.palette}
           sourceHref={sourceHref}
+          selfAuthor={{
+            handle: external.authorHandle ?? undefined,
+            name: external.authorName ?? undefined,
+          }}
         />
       )}
       {expanded ? (
