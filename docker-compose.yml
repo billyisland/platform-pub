@@ -231,6 +231,10 @@ services:
         NEXT_PUBLIC_RELAY_URL: wss://all.haus/relay
         NEXT_PUBLIC_GATEWAY_URL: ""
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+        # Baked into the Next.js /api rewrite at build time (see web/Dockerfile).
+        # Must be the in-cluster gateway address the web server proxies to, else
+        # the proxy falls back to localhost:3000 and every API call ECONNRESETs.
+        GATEWAY_URL: http://gateway:3000
     restart: unless-stopped
     ports:
       - "3010:3000"

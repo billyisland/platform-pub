@@ -481,10 +481,13 @@ and collected here in priority order:
 2. ~~**Thread hydration endpoint shape (§V.4, §VII.3).**~~ **DONE (2026-05-30).** The
    capability still rides the `/external-items/:id/thread` + `/parent` pair (name/shape
    was always negotiable), but the three concrete sub-specs are now met: both routes
-   carry a per-route rate limit (`{ max: 30, timeWindow: "1 minute" }`); all outbound
-   source fetches reachable from them (parent, grandparent, and thread helpers for
-   Bluesky + Mastodon) pass `timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS` (5s) instead of
-   the shared client's 10s default; and `partial` is now a server-signalled field on
+   carry a per-route rate limit (`{ max: 30, timeWindow: "1 minute" }`); the outbound
+   source fetches for the essential data (parent, quote, and thread helpers for
+   Bluesky + Mastodon) pass `timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS` (8s — headroom
+   for a cold SSRF-pinned fetch that pays a full DNS+TLS handshake) instead of the
+   shared client's 10s default, while the optional grandparent-tag fetch runs on a
+   tighter `GRANDPARENT_FETCH_TIMEOUT_MS` (2.5s) so a slow secondary call can never
+   extend or jeopardise the parent response; and `partial` is now a server-signalled field on
    both `ThreadResponse` and `ParentContextResponse` (true when a source fetch
    fails/times out for a reply that expects content). `useNeighbourhood` prefers the
    server flag over inferring `partial` from a rejected promise.

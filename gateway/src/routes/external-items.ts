@@ -45,10 +45,19 @@ const threadCache = new Map<
 >();
 const THREAD_CACHE_TTL_MS = 60_000;
 
-// Outbound source fetches for neighbourhood hydration (parent + thread) cap at
-// ~5s per CARD-BEHAVIOUR-ADR §VII.3 — tighter than the shared client's 10s
-// default so a slow source platform can't hold a hydration request open.
-const NEIGHBOURHOOD_FETCH_TIMEOUT_MS = 5_000;
+// Outbound source fetches for the essential neighbourhood data (parent, quote,
+// thread) cap at 8s per CARD-BEHAVIOUR-ADR §VII.3 — tighter than the shared
+// client's 10s default so a slow source platform can't hold a hydration request
+// open, but with enough headroom for a cold fetch (every call builds a fresh
+// SSRF-pinned agent, so each pays a full DNS+TLS handshake with no pooling).
+const NEIGHBOURHOOD_FETCH_TIMEOUT_MS = 8_000;
+
+// The grandparent author tag is optional sugar ("→ in reply to X") and is also
+// populated independently by the external_parent_prefetch worker. It is awaited
+// on the parent fetch's critical path, so it gets a much tighter budget: a slow
+// grandparent must never extend or jeopardise the parent response, and /parent
+// must not balloon toward two full primary timeouts.
+const GRANDPARENT_FETCH_TIMEOUT_MS = 2_500;
 
 interface ExternalThreadEntry {
   id: string;
@@ -1136,7 +1145,7 @@ async function fetchBlueskyGrandparentTag(
 
     const res = await safeFetch(url.toString(), {
       headers: { Accept: "application/json" },
-      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
+      timeout: GRANDPARENT_FETCH_TIMEOUT_MS,
     });
 
     if (!res.ok) return null;
@@ -1304,7 +1313,7 @@ async function fetchMastodonGrandparentTag(
   try {
     const res = await safeFetch(`https://${host}/api/v1/statuses/${statusId}`, {
       headers: { Accept: "application/json" },
-      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
+      timeout: GRANDPARENT_FETCH_TIMEOUT_MS,
     });
 
     if (!res.ok) return null;
