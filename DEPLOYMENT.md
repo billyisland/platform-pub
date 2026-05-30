@@ -1,9 +1,12 @@
-# all.haus — Deployment Reference v5.29.0
+# all.haus — Deployment Reference
 
-**Date:** 13 April 2026
-**Replaces:** v5.28.0 (see bottom for change log)
+**Consolidated:** 29 May 2026
+**Baseline:** ~v5.36.0 (post workspace-experiment merge)
+**Supersedes:** v5.30.0 (13 April 2026)
 
 This is the single source of truth for deploying and operating all.haus.
+
+> **Doc provenance note.** The structural sections below (services, migrations, routes, pages, env) were re-verified against the repository at this consolidation. The granular per-release changelog between v5.30.0 and this consolidation was **not** reconstructed — those entries live in this file's git history. The "Consolidated update" changelog entry summarises that window by capability area, anchored to the migrations and ADRs that record each change.
 
 ---
 
@@ -33,24 +36,28 @@ Internal only:
   key-custody:3004 → postgres:5432
   traffology-ingest:3005 → postgres:5432
   traffology-worker      → postgres:5432 (Graphile Worker, no port)
+  feed-ingest            → postgres:5432, strfry:7777,
+                           external RSS / ActivityPub / Bluesky / email
+                           (background ingestion + outbound; no public port)
 ```
 
 ### Services
 
-| Service           | Image / Build                         | Port                        | Purpose                                                                             |
-| ----------------- | ------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
-| postgres          | postgres:16-alpine                    | 5432 (localhost only)       | Shared database                                                                     |
-| strfry            | dockurr/strfry:latest                 | 4848→7777                   | Nostr relay                                                                         |
-| gateway           | ./gateway/Dockerfile                  | 3000 (localhost only)       | API gateway, auth, media upload                                                     |
-| payment           | ./payment-service/Dockerfile          | 3001 (Docker internal only) | Stripe, settlement, payouts                                                         |
-| keyservice        | ./key-service/Dockerfile              | 3002 (Docker internal only) | Vault encryption, NIP-44 key issuance                                               |
-| key-custody       | ./key-custody/Dockerfile              | 3004 (Docker internal only) | Custodial Nostr keypair service                                                     |
-| web               | ./web/Dockerfile                      | 3010→3000                   | Next.js frontend                                                                    |
-| nginx             | nginx:alpine                          | 80, 443                     | Reverse proxy, TLS, static media                                                    |
-| traffology-ingest | ./traffology-ingest/Dockerfile        | 3005 (Docker internal only) | Analytics beacon receiver, session tracking                                         |
-| traffology-worker | ./traffology-worker/Dockerfile        | — (background)              | Graphile Worker: hourly/daily/weekly aggregation, source resolution, interpretation |
-| blossom           | ghcr.io/hzrd149/blossom-server:master | 3000 (Docker internal only) | Nostr media federation                                                              |
-| certbot           | certbot/certbot                       | —                           | TLS certificate renewal                                                             |
+| Service           | Image / Build                         | Port                        | Purpose                                                                                  |
+| ----------------- | ------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
+| postgres          | postgres:16-alpine                    | 5432 (localhost only)       | Shared database                                                                          |
+| strfry            | dockurr/strfry:latest                 | 4848→7777                   | Nostr relay                                                                              |
+| gateway           | ./gateway/Dockerfile                  | 3000 (localhost only)       | API gateway, auth, media upload, all client-facing API                                  |
+| payment           | ./payment-service/Dockerfile          | 3001 (Docker internal only) | Stripe, settlement, payouts                                                              |
+| keyservice        | ./key-service/Dockerfile              | 3002 (Docker internal only) | Vault encryption, NIP-44 key issuance                                                    |
+| key-custody       | ./key-custody/Dockerfile              | 3004 (Docker internal only) | Custodial Nostr keypair service (sole holder of `ACCOUNT_KEY_HEX`)                       |
+| feed-ingest       | ./feed-ingest/Dockerfile              | — (background)              | Universal Feed ingestion: RSS, ActivityPub/Mastodon, AT Protocol/Bluesky, Nostr, email; outbound cross-posting |
+| web               | ./web/Dockerfile                      | 3010→3000                   | Next.js frontend                                                                         |
+| nginx             | nginx:alpine                          | 80, 443                     | Reverse proxy, TLS, static media                                                         |
+| traffology-ingest | ./traffology-ingest/Dockerfile        | 3005 (Docker internal only) | Analytics beacon receiver, session tracking                                              |
+| traffology-worker | ./traffology-worker/Dockerfile        | — (background)              | Graphile Worker: hourly/daily/weekly aggregation, source resolution, interpretation      |
+| blossom           | ghcr.io/hzrd149/blossom-server:master | 3000 (Docker internal only) | Nostr media server — **not currently in the upload path**; kept for future BUD-02/federation. Gateway writes uploads directly to `media_data`. |
+| certbot           | certbot/certbot                       | —                           | TLS certificate renewal                                                                  |
 
 ### Docker volumes
 
@@ -65,6 +72,20 @@ Internal only:
 
 ---
 
+## How builds and migrations work — read this first
+
+Two operational facts cause almost every "I deployed but nothing changed" incident:
+
+1. **Host builds do nothing.** Every service runs inside a Docker container. Running `npm run build` / `npm run dev` / `next build` on the host has **no effect on the live site** — those outputs go to a local `.next/` (or `dist/`) the container never reads. All deploys go through `docker compose build <service>` then `docker compose up -d <service>`.
+
+2. **`up` does not rebuild, and nothing auto-runs migrations.** `docker compose up -d` (and `restart`) reuse the **existing image** unless you pass `--build`. And no Dockerfile, compose entry, entrypoint, or CI step runs the migration runner — migrations are always a **manual step**. A pull + `up` with no build and no migrate leaves both code and schema stale.
+
+The correct upgrade shape is therefore always: **pull → migrate → build → up → reload nginx.** See [Upgrading](#upgrading).
+
+If a feature is missing after a deploy, jump to [Troubleshooting: feature not appearing](#troubleshooting-feature-not-appearing-after-a-rebuild).
+
+---
+
 ## Prerequisites
 
 - Ubuntu 22.04+ or Debian 12+ server
@@ -74,7 +95,7 @@ Internal only:
 
 ### Required environment files
 
-Each service has a `.env.example`. Copy and fill:
+Each long-running API service reads a `.env`. Copy and fill:
 
 ```bash
 cp gateway/.env.example gateway/.env
@@ -82,70 +103,66 @@ cp payment-service/.env.example payment-service/.env
 cp key-service/.env.example key-service/.env
 cp key-custody/.env.example key-custody/.env
 cp web/.env.example web/.env
+# traffology-ingest needs IP_HASH_SALT (see below)
+cp traffology-ingest/.env.example traffology-ingest/.env  # if present
 ```
+
+`feed-ingest`, `traffology-worker`, and `web` (build args) draw their variables from the compose `environment:`/`args:` blocks, which reference the **root `.env`**. Ensure the root `.env` carries `POSTGRES_PASSWORD`, `LINKED_ACCOUNT_KEY_HEX`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and (optionally) `ATPROTO_PRIVATE_JWK` / `ATPROTO_CLIENT_BASE_URL`.
 
 Key variables:
 
-| Variable                                    | Service                           | Purpose                                                                                                                                                                                     |
-| ------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SESSION_SECRET`                            | gateway                           | JWT signing key (min 32 chars)                                                                                                                                                              |
-| `COOKIE_SECRET`                             | gateway                           | `@fastify/cookie` signing secret (falls back to `SESSION_SECRET` if unset)                                                                                                                  |
-| `OAUTH_STATE_SECRET`                        | gateway                           | HMAC key for Google OAuth state tokens (falls back to `SESSION_SECRET` if unset)                                                                                                            |
-| `PLATFORM_SERVICE_PRIVKEY`                  | gateway, payment, key-service     | 64-hex Nostr private key for platform service events                                                                                                                                        |
-| `READER_HASH_KEY`                           | gateway                           | HMAC key for reader pubkey privacy hashing                                                                                                                                                  |
-| `INTERNAL_SECRET`                           | gateway, key-custody, key-service | Shared secret authenticating gateway→key-custody and gateway→key-service calls                                                                                                              |
-| `INTERNAL_SERVICE_TOKEN`                    | gateway, payment-service          | Shared secret authenticating gateway→payment-service and cron→payment-service calls (all internal endpoints: `/gate-pass`, `/card-connected`, `/payout-cycle`, `/settlement-check/monthly`) |
-| `ACCOUNT_KEY_HEX`                           | key-custody **only**              | AES-256 key for encrypting custodial Nostr privkeys at rest                                                                                                                                 |
-| `KMS_MASTER_KEY_HEX`                        | key-service                       | AES-256 master key for vault content key envelope encryption                                                                                                                                |
-| `STRIPE_SECRET_KEY`                         | gateway, payment                  | Stripe API key (validated at startup — gateway will not boot without it)                                                                                                                    |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`        | web                               | Stripe publishable key (build fails if missing — no placeholder fallback)                                                                                                                   |
-| `KEY_SERVICE_URL`                           | gateway                           | Internal URL for key-service (**required** — no localhost fallback)                                                                                                                         |
-| `KEY_CUSTODY_URL`                           | gateway                           | Internal URL for key-custody (default: http://localhost:3004)                                                                                                                               |
-| `PAYMENT_SERVICE_URL`                       | gateway                           | Internal URL for payment-service (**required** — no localhost fallback)                                                                                                                     |
-| `PLATFORM_RELAY_WS_URL`                     | gateway, payment, key-service     | strfry WebSocket URL (default: ws://localhost:4848)                                                                                                                                         |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | gateway                           | Google OAuth credentials                                                                                                                                                                    |
-| `APP_URL`                                   | gateway                           | **Frontend** URL (Next.js). Used for OAuth redirect URIs, Stripe redirects, CORS, and magic links. Dev: `http://localhost:3010`. **Must not be the gateway URL.**                           |
-| `ADMIN_ACCOUNT_IDS`                         | gateway                           | Comma-separated UUIDs for admin access (fallback; prefer `admin_account_ids` in `platform_config` table — no redeploy needed)                                                               |
-| `EMAIL_PROVIDER`                            | gateway                           | `postmark`, `resend`, or `console`                                                                                                                                                          |
-| `POSTMARK_BROADCAST_STREAM`                 | gateway                           | Postmark broadcast message stream ID (default: `broadcast`)                                                                                                                                 |
-| `EMAIL_FROM_BROADCAST`                      | gateway                           | From address for publish notification emails (default: `posts@all.haus`)                                                                                                                    |
-| `BROADCAST_DAILY_SEND_LIMIT`                | gateway                           | Daily send cap for broadcast warm-up; `0` = unlimited (default: `50`)                                                                                                                       |
-| `TRAFFOLOGY_INGEST_URL`                     | gateway                           | Internal URL for traffology-ingest (default: http://localhost:3005)                                                                                                                         |
-| `IP_HASH_SALT`                              | traffology-ingest                 | Salt for SHA-256 IP hashing (must override default in production)                                                                                                                           |
-| `LINKED_ACCOUNT_KEY_HEX`                    | gateway, feed-ingest              | AES-256 key (64 hex chars) for encrypting linked-account OAuth credentials and `atproto_oauth_sessions.session_data_enc`. Must be identical across gateway and feed-ingest                  |
-| `ATPROTO_CLIENT_BASE_URL`                   | gateway, feed-ingest              | Public origin for the AT Protocol OAuth client metadata (e.g. `https://all.haus`). When unset or pointing at localhost, the code falls back to the loopback `client_id` (dev only)          |
-| `ATPROTO_PRIVATE_JWK`                       | gateway, feed-ingest              | ES256 signing JWK (JSON string) used for `private_key_jwt` confidential-client auth. Optional — when unset, Bluesky OAuth features are disabled but the gateway boots normally              |
-| `GATEWAY_URL`                               | web                               | Server-side SSR fetch URL for the gateway (e.g. `http://gateway:3000`). Used by all server-component pages that fetch from the API                                                          |
-| `GATEWAY_INTERNAL_URL`                      | web                               | Optional override for SSR fetches when Docker network name differs from public gateway URL. Takes precedence over `GATEWAY_URL`                                                             |
-| `POSTMARK_API_KEY`                          | gateway (shared)                  | Required when `EMAIL_PROVIDER=postmark`. Transactional + broadcast API key                                                                                                                  |
-| `RESEND_API_KEY`                            | gateway (shared)                  | Required when `EMAIL_PROVIDER=resend`. Alternative to Postmark                                                                                                                              |
-| `EMAIL_FROM`                                | gateway (shared)                  | From address for transactional emails — magic links, DM notifications (default: `login@all.haus`)                                                                                           |
-| `STRIPE_WEBHOOK_SECRET`                     | payment-service                   | Stripe webhook signing secret for signature verification                                                                                                                                    |
-| `MEDIA_DIR`                                 | gateway                           | Path to media storage volume (default: `/app/media`). Relevant for non-Docker deployments                                                                                                   |
-| `PUBLIC_MEDIA_URL`                          | gateway                           | Public URL prefix for served media (default: `https://all.haus/media`)                                                                                                                      |
-| `LINKED_ACCOUNT_KEY_VERSION`                | gateway, feed-ingest              | Integer controlling write-side key version for `LINKED_ACCOUNT_KEY_HEX` rotation (default: `1`)                                                                                             |
+| Variable                                    | Service                                | Purpose                                                                                                                              |
+| ------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `SESSION_SECRET`                            | gateway                                | JWT signing key, cookie secret, and OAuth-state HMAC (min 32 chars)                                                                  |
+| `PLATFORM_SERVICE_PRIVKEY`                  | gateway, payment, key-service          | 64-hex Nostr private key for platform service events                                                                                 |
+| `READER_HASH_KEY`                           | gateway                                | HMAC key for reader pubkey privacy hashing                                                                                            |
+| `INTERNAL_SECRET`                           | gateway, key-custody, key-service      | Shared secret authenticating gateway→key-custody and gateway→key-service calls                                                       |
+| `INTERNAL_SERVICE_TOKEN`                    | gateway, payment-service               | Shared secret authenticating gateway→payment and cron→payment calls (`/gate-pass`, `/card-connected`, `/payout-cycle`, `/settlement-check/monthly`) |
+| `ACCOUNT_KEY_HEX`                           | key-custody **only**                   | AES-256 key encrypting custodial Nostr privkeys at rest                                                                              |
+| `KMS_MASTER_KEY_HEX`                        | key-service                            | AES-256 master key for vault content-key envelope encryption                                                                         |
+| `STRIPE_SECRET_KEY`                         | gateway, payment                       | Stripe API key (validated at startup — gateway will not boot without it)                                                             |
+| `STRIPE_WEBHOOK_SECRET`                     | payment-service                        | Stripe webhook signing secret                                                                                                        |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`        | web (build arg)                        | Stripe publishable key (baked at build time)                                                                                         |
+| `KEY_SERVICE_URL` / `PAYMENT_SERVICE_URL`   | gateway                                | Internal service URLs (**required** — no localhost fallback)                                                                         |
+| `KEY_CUSTODY_URL`                           | gateway                                | Internal URL for key-custody (default: http://localhost:3004)                                                                        |
+| `TRAFFOLOGY_INGEST_URL`                     | gateway                                | Internal URL for traffology-ingest (default: http://localhost:3005)                                                                  |
+| `PLATFORM_RELAY_WS_URL`                     | gateway, payment, key-service, feed-ingest | strfry WebSocket URL (compose: `ws://strfry:7777`)                                                                              |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | gateway                                | Google OAuth credentials                                                                                                             |
+| `APP_URL`                                   | gateway, feed-ingest                   | **Frontend** URL. OAuth redirects, Stripe redirects, CORS, magic links. **Must not be the gateway URL.** Dev: `http://localhost:3010` |
+| `GATEWAY_URL` / `GATEWAY_INTERNAL_URL`      | web                                    | SSR fetch URL for the gateway (e.g. `http://gateway:3000`). `GATEWAY_INTERNAL_URL` takes precedence when set                         |
+| `LINKED_ACCOUNT_KEY_HEX`                    | gateway, **feed-ingest**               | AES-256 key (64 hex) encrypting linked-account OAuth credentials and `atproto_oauth_sessions.session_data_enc`. **Must be identical across gateway and feed-ingest.** |
+| `LINKED_ACCOUNT_KEY_VERSION`                | gateway, feed-ingest                   | Write-side key version for `LINKED_ACCOUNT_KEY_HEX` rotation (default: `1`)                                                          |
+| `ATPROTO_CLIENT_BASE_URL`                   | gateway, feed-ingest                   | Public origin for AT Protocol OAuth client metadata (e.g. `https://all.haus`). Loopback fallback in dev                              |
+| `ATPROTO_PRIVATE_JWK`                       | gateway, feed-ingest                   | ES256 signing JWK (JSON string) for `private_key_jwt`. Optional — when unset, Bluesky OAuth is disabled but services boot normally    |
+| `EMAIL_PROVIDER`                            | gateway                                | `postmark`, `resend`, or `console`                                                                                                  |
+| `POSTMARK_API_KEY` / `RESEND_API_KEY`       | gateway                                | Provider key (required for the chosen provider)                                                                                      |
+| `POSTMARK_BROADCAST_STREAM`                 | gateway                                | Postmark broadcast message stream ID (default: `broadcast`)                                                                          |
+| `EMAIL_FROM` / `EMAIL_FROM_BROADCAST`       | gateway                                | From addresses for transactional / publish-notification emails                                                                       |
+| `BROADCAST_DAILY_SEND_LIMIT`                | gateway                                | Daily broadcast cap for stream warm-up; `0` = unlimited (default: `50`)                                                              |
+| `ADMIN_ACCOUNT_IDS`                         | gateway                                | Comma-separated admin UUIDs (fallback; prefer `admin_account_ids` in `platform_config`)                                             |
+| `IP_HASH_SALT`                              | traffology-ingest                      | Salt for SHA-256 IP hashing (**must override in production**)                                                                        |
+| `MEDIA_DIR` / `PUBLIC_MEDIA_URL`            | gateway                                | Media volume path / public URL prefix                                                                                                |
 
-> **Security:** `ACCOUNT_KEY_HEX` must never be set on the gateway — the key-custody service is the sole holder of this key by design. The gateway cannot decrypt user private keys.
+> **Security:** `ACCOUNT_KEY_HEX` must never be set on any service other than key-custody. The gateway cannot decrypt user private keys by design.
 
-> **Startup validation (v4.2.0, strengthened in v5.7.0):** All services validate required environment variables at startup and refuse to boot if any are missing. `SESSION_SECRET` must be at least 32 characters. `ACCOUNT_KEY_HEX` and `KMS_MASTER_KEY_HEX` must be at least 32 characters. `APP_URL` is now required (no localhost fallback in production). As of v5.7.0, `STRIPE_SECRET_KEY`, `READER_HASH_KEY`, `KEY_SERVICE_URL`, and `PAYMENT_SERVICE_URL` are also validated at gateway startup (previously these had silent fallbacks or warnings). If a service exits immediately on boot, check its logs for `Missing required environment variable:` messages.
+> **Startup validation:** All services validate required env vars at startup and refuse to boot if any are missing (look for `Missing required environment variable:` in logs). `SESSION_SECRET`, `ACCOUNT_KEY_HEX`, `KMS_MASTER_KEY_HEX` must be ≥32 chars. `APP_URL`, `STRIPE_SECRET_KEY`, `READER_HASH_KEY`, `KEY_SERVICE_URL`, `PAYMENT_SERVICE_URL` are required on the gateway with no fallback.
 
 ---
 
 ## Fresh deployment
 
-### 1. Clone the repo
+### 1. Clone
 
 ```bash
 git clone https://github.com/billyisland/platform-pub /root/platform-pub
 cd /root/platform-pub
 ```
 
-The backend is an npm workspace (`shared`, `gateway`, `payment-service`, `key-service`, `key-custody`, `feed-ingest`, `traffology-ingest`, `traffology-worker`). One `npm ci` at the root installs every service — `@platform-pub/shared` is linked into each consumer's `node_modules/` automatically. Docker builds use multi-stage Dockerfiles: the build stage compiles TypeScript with all dependencies, and the production stage runs a clean `npm ci --omit=dev` with only the compiled output — no dev dependencies, no `npm prune`, no recursive `chown`. `web/` stays standalone (Next.js toolchain, its own lockfile).
+The backend is an npm workspace (`shared`, `gateway`, `payment-service`, `key-service`, `key-custody`, `feed-ingest`, `traffology-ingest`, `traffology-worker`). One root `npm ci` installs every service; `@platform-pub/shared` is linked into each consumer automatically. Docker builds use multi-stage Dockerfiles (build stage compiles TypeScript; production stage runs a clean `npm ci --omit=dev` with only compiled output). `web/` is standalone (its own Next.js toolchain and lockfile).
 
-### 2. Create environment files
+### 2. Environment files
 
 ```bash
-# Generate a strong Postgres password
 export POSTGRES_PASSWORD=$(openssl rand -base64 24)
 echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" > .env
 
@@ -154,64 +171,53 @@ cp payment-service/.env.example payment-service/.env
 cp key-service/.env.example key-service/.env
 cp key-custody/.env.example key-custody/.env
 cp web/.env.example web/.env
-# Edit each file with your actual keys
+# Edit each with real keys
 ```
 
-Generate cryptographic secrets:
+Generate secrets:
 
 ```bash
-openssl rand -hex 32   # SESSION_SECRET, COOKIE_SECRET, OAUTH_STATE_SECRET, READER_HASH_KEY
-openssl rand -hex 32   # ACCOUNT_KEY_HEX (key-custody only)
-openssl rand -hex 32   # KMS_MASTER_KEY_HEX (key-service only)
+openssl rand -hex 32     # SESSION_SECRET, READER_HASH_KEY
+openssl rand -hex 32     # ACCOUNT_KEY_HEX (key-custody only)
+openssl rand -hex 32     # KMS_MASTER_KEY_HEX (key-service only)
+openssl rand -hex 32     # LINKED_ACCOUNT_KEY_HEX (gateway + feed-ingest — must match)
+openssl rand -hex 32     # IP_HASH_SALT (traffology-ingest)
 openssl rand -base64 32  # INTERNAL_SECRET (gateway + key-custody + key-service)
 openssl rand -base64 32  # INTERNAL_SERVICE_TOKEN (gateway + payment-service)
-# For PLATFORM_SERVICE_PRIVKEY: generate a Nostr keypair — any hex ed25519 privkey
+# PLATFORM_SERVICE_PRIVKEY: any 64-hex Nostr/ed25519 private key
 ```
 
 ### 3. Start infrastructure
 
 ```bash
 docker compose up -d postgres strfry
-docker compose ps   # wait for postgres to be healthy
+docker compose ps   # wait for postgres healthy
 ```
 
-### 4. Apply schema and migrations
+### 4. Schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on first postgres boot via the `initdb.d` volume mount. `schema.sql` is generated from `pg_dump` of a fully-migrated database and the `_migrations` table is pre-seeded accordingly.
+The base schema (`schema.sql`) is auto-applied on **first** postgres boot via the `initdb.d` volume mount, and the `_migrations` table is pre-seeded accordingly. `schema.sql` is a `pg_dump` of a fully-migrated database and is **synced through migration 097** (88 public tables + the `traffology` schema).
 
-For **fresh** databases: no action needed — `schema.sql` includes all structural changes through migration 093 (as of 2026-05-25).
-
-For **existing** databases that were initialised with an earlier `schema.sql`, use the migration runner:
+- **Fresh DB:** no migration action needed — `schema.sql` is current.
+- **Existing DB initialised from an older `schema.sql`:** run the migration runner (below). It reads `migrations/` in order, checks `_migrations`, and applies only pending files in transactions.
 
 ```bash
-# From the host (with DATABASE_URL set):
+# From the host (Node required):
 DATABASE_URL=postgres://platformpub:$POSTGRES_PASSWORD@localhost:5432/platformpub \
   npx tsx shared/src/db/migrate.ts
 
-# Or via Docker:
-docker compose exec gateway npx tsx /app/shared/src/db/migrate.ts
+# Or apply a single file via Docker (no host Node):
+docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/NNN_name.sql
 ```
 
-The runner reads `migrations/` in order, checks the `_migrations` table, and applies only pending files inside transactions.
-
-Alternatively, apply migrations manually:
-
-```bash
-for f in migrations/*.sql; do
-  echo "Applying $f..."
-  docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < "$f"
-done
-```
-
-Verify:
+Verify (~88 public tables):
 
 ```bash
 docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "\dt"
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "SELECT count(*) FROM _migrations;"
 ```
 
-You should see 45+ tables.
-
-### 5. Build and start all services
+### 5. Build and start everything
 
 ```bash
 docker compose build
@@ -224,7 +230,6 @@ docker compose up -d
 docker compose run --rm certbot certonly \
   --webroot --webroot-path=/var/www/certbot \
   -d yourdomain.com --agree-tos -m you@example.com
-
 docker compose restart nginx
 ```
 
@@ -234,457 +239,77 @@ docker compose restart nginx
 bash scripts/harden-server.sh
 ```
 
-Configures UFW (ports 22, 80, 443 only), SSH key-only auth, and certbot auto-renewal.
+Configures UFW (22, 80, 443), SSH key-only auth, certbot auto-renewal.
 
-### 8. Seed data (staging / development only)
-
-The seed script (`scripts/seed.ts`) populates the database with realistic fake users, articles, follows, subscriptions, DMs, votes, pledge drives, and reading activity. **Do not run on production.**
+### 8. Seed data (staging / development only — never production)
 
 ```bash
-# Default: 200 writers, 800 readers (~1000 users), dense relationships
-ACCOUNT_KEY_HEX=<your key-custody ACCOUNT_KEY_HEX> \
+ACCOUNT_KEY_HEX=<key-custody ACCOUNT_KEY_HEX> \
+KMS_MASTER_KEY_HEX=<key-service KMS_MASTER_KEY_HEX> \
 DATABASE_URL=postgres://platformpub:$POSTGRES_PASSWORD@localhost:5432/platformpub \
-  npx tsx scripts/seed.ts --clean
-
-# Small dataset: 15 writers, 25 readers (fast, for quick testing)
-ACCOUNT_KEY_HEX=<...> npx tsx scripts/seed.ts --clean --small
-
-# Custom sizes:
-ACCOUNT_KEY_HEX=<...> npx tsx scripts/seed.ts --clean --writers 50 --readers 200 --articles 10
+  npx tsx scripts/seed.ts --clean          # default ~1000 users
+# --small for 15 writers / 25 readers; --writers N --readers N --articles N to tune
 ```
 
-> **Required env vars:** `ACCOUNT_KEY_HEX` (from key-custody `.env`) is required to generate encrypted Nostr keypairs for seeded accounts. `KMS_MASTER_KEY_HEX` (from key-service `.env`) is required for vault key generation on paywalled articles. Without these, the seed script will create accounts without custodial keypairs and skip vault key generation respectively.
-
-Options:
-
-- `--clean` — wipe all seeded data before re-seeding (preserves the `billyisland` account)
-- `--writers N` — number of writer accounts (default 200, or 15 with `--small`)
-- `--readers N` — number of reader-only accounts (default 800, or 25 with `--small`)
-- `--articles N` — max articles per writer (default 8, or 6 with `--small`)
-- `--small` — use small defaults (equivalent to `--writers 15 --readers 25 --articles 6`)
-
-The script generates: accounts, articles, notes, follows, subscriptions (monthly/annual/cancelled/comp), comments, reading tabs + read events, feed engagement, votes + tallies, DM conversations + messages, notifications, pledge drives + pledges, blocks, and mutes.
+`--clean` wipes seeded data (preserves the `billyisland` account). `ACCOUNT_KEY_HEX` is required to generate custodial keypairs; `KMS_MASTER_KEY_HEX` for vault keys on paywalled articles.
 
 ---
 
-## Upgrading from a previous version
+## Upgrading
 
-> **Important — how builds work:** The web (and all other) services run entirely inside Docker containers. Running `npm run build` or `npm run dev` locally on the host has **no effect on the live site** — those outputs go to a local `.next/` folder that the container never reads. All deployments must go through `docker compose build <service>` followed by `docker compose up -d <service>`.
-
-### From v5.29.0
-
-**Migration required (045).** Services changed: **gateway**, **web**. Deploy order: **migrate → rebuild gateway + web**.
-
-This release adds per-1000-words article pricing mode, fixes £ symbol rendering, and makes the editor toolbar responsive on mobile.
-
-**Backend (gateway):**
-
-- **Article price mode** (`publications.ts`, `publication-publisher.ts`): Publications can now set article pricing to "per article" (flat, existing behaviour) or "per 1,000 words" (price scales with word count, floored to full 1000-word multiples). Rate card GET/PATCH endpoints include the new `articlePriceMode` field.
-
-**Frontend (web):**
-
-- **Rate card pricing mode** (`RateCardTab.tsx`): Toggle between "Per article" and "Per 1,000 words" pricing with a live preview showing the floored calculation.
-- **£ symbol fix** (`RateCardTab.tsx`, `MessageThread.tsx`): Fixed `\u00a3` rendering as literal text in JSX — replaced with actual `£` character.
-- **Editor toolbar responsive** (`ArticleEditor.tsx`): Toolbar buttons now use tighter padding on mobile. H3 hides below 640px; H2, bullet list, and word count hide below 480px. Paywall button always visible.
-
-**Schema:**
-
-- **Migration 045**: Adds `article_price_mode` column to `publications` (default: `'per_article'`).
-- **schema.sql**: Synced with all migrations through 045. Migration tracking list updated.
-
-**Modified files:**
-
-- `gateway/src/routes/publications.ts` — rate card schema, GET, PATCH
-- `gateway/src/services/publication-publisher.ts` — word-count-based price resolution
-- `web/src/components/dashboard/RateCardTab.tsx` — pricing mode toggle, £ fix
-- `web/src/components/messages/MessageThread.tsx` — £ fix
-- `web/src/components/editor/ArticleEditor.tsx` — responsive toolbar
-- `web/src/lib/api.ts` — rate card type updated
-- `migrations/045_article_price_mode.sql` — new
-- `schema.sql` — synced with migrations through 045
-
-**Upgrade steps:**
+> **Always: pull → migrate → build → up → reload nginx.** Skipping migrate leaves the schema stale; skipping `--build` (or running `up`/`restart` alone) leaves the image stale. Use `--no-cache` on a service if a rebuild appears to produce no change.
 
 ```bash
 cd /root/platform-pub
 git pull origin master
 
-# Apply migration (045)
+# 1. Apply ALL pending migrations (nothing runs them automatically)
 DATABASE_URL=postgresql://platformpub:$POSTGRES_PASSWORD@127.0.0.1:5432/platformpub \
   npx tsx shared/src/db/migrate.ts
 
-# Build and deploy
-docker compose build gateway web
-docker compose up -d gateway web
-```
+# 2. Ensure new/required env vars are present in the relevant .env files
+#    (e.g. LINKED_ACCOUNT_KEY_HEX in root .env for feed-ingest; ATPROTO_* if using Bluesky)
 
-Verify:
-
-```bash
-# Rate card: Dashboard → publication → Rate Card tab
-# - £ symbols should display correctly (not \u00a3)
-# - "Per article" / "Per 1,000 words" toggle should appear
-# - Switching to per-1000-words shows floored price preview
-
-# Editor toolbar: open article composer on a mobile device
-# - Paywall button should be visible without scrolling or wrapping
-# - H3 hidden on tablets, H2/bullet/word count hidden on phones
-```
-
----
-
-### From v5.27.1
-
-**Migration required (041).** Services changed: **gateway**, **payment-service**, **key-service**, **web**, **traffology-ingest** (new), **traffology-worker** (new). Deploy order: **migrate → rebuild all changed services**.
-
-This release adds the Traffology analytics system (writer-facing traffic insights) and applies security hardening found during a full codebase audit.
-
-**New services:**
-
-- **traffology-ingest** (`traffology-ingest/Dockerfile`, port 3005): Receives page script beacons, tracks sessions, maintains live reader counts. Proxied by nginx at `/ingest/`.
-- **traffology-worker** (`traffology-worker/Dockerfile`, background): Graphile Worker running hourly/daily/weekly aggregation, source resolution, and observation generation.
-
-**Backend changes:**
-
-- **Stripe idempotency keys** (`settlement.ts`, `payout.ts`): All Stripe mutating calls (`paymentIntents.create`, `transfers.create`) now include `idempotencyKey` to prevent duplicate charges on network retries.
-- **Webhook event deduplication** (`webhook.ts`): `stripe_webhook_events` table prevents reprocessing of duplicate Stripe webhook events. Failed processing rolls back the dedup record so Stripe can retry.
-- **oEmbed fetch timeout** (`media.ts`): Added 5-second `AbortSignal.timeout` to the oEmbed proxy fetch.
-- **Key service pubkey validation** (`keys.ts`): `x-reader-pubkey` header now validated as 64-char hex string.
-
-**Frontend changes:**
-
-- **Traffology UI**: Feed view (`/traffology`), piece detail (`/traffology/piece/:pieceId`), overview (`/traffology/overview`).
-- **Template HTML escaping** (`traffology-templates.ts`): All interpolated values (source names, country names, fallback data) now escaped via `escapeHtml()`.
-
-**Schema:**
-
-- **Migration 039**: Default article price config.
-- **Migration 040**: Traffology analytics schema (13 tables in `traffology` schema + Graphile Worker queue).
-- **Migration 041**: `stripe_webhook_events` dedup table; `ON DELETE CASCADE` on `subscription_events.subscription_id`.
-- **schema.sql**: Synced with all migrations through 041. ON DELETE clauses from migrations 018/021/041 applied. `stripe_webhook_events` and migration tracking list updated.
-
-**Modified files:**
-
-- `payment-service/src/services/settlement.ts` — Stripe idempotency key
-- `payment-service/src/services/payout.ts` — Stripe idempotency keys (2 calls)
-- `payment-service/src/routes/webhook.ts` — event deduplication
-- `gateway/src/routes/media.ts` — oEmbed timeout
-- `gateway/src/routes/traffology.ts` — Traffology API routes
-- `key-service/src/routes/keys.ts` — pubkey format validation
-- `web/src/lib/traffology-templates.ts` — HTML escaping
-- `web/src/lib/traffology-api.ts` — API client
-- `web/src/app/traffology/` — all Traffology pages
-- `web/src/components/traffology/` — FeedItem, ProvenanceBar, TraffologyMeta
-- `web/public/traffology.js` — page tracking script
-- `traffology-ingest/` — new service
-- `traffology-worker/` — new service
-- `migrations/039_default_article_price.sql` — new
-- `migrations/040_traffology_schema.sql` — new
-- `migrations/041_webhook_dedup_and_fk_fixes.sql` — new
-- `schema.sql` — synced with migrations, dedup table added
-- `nginx.conf` — `/ingest/` proxy block for traffology-ingest
-- `docker-compose.yml` — traffology-ingest and traffology-worker services
-
-**New env vars:**
-
-| Variable                | Service           | Purpose                                                             |
-| ----------------------- | ----------------- | ------------------------------------------------------------------- |
-| `TRAFFOLOGY_INGEST_URL` | gateway           | Internal URL for traffology-ingest (default: http://localhost:3005) |
-| `IP_HASH_SALT`          | traffology-ingest | Salt for IP hashing (**must override in production**)               |
-
-**Upgrade steps:**
-
-```bash
-cd /root/platform-pub
-git pull origin master
-
-# Apply migrations (039, 040, 041)
-DATABASE_URL=postgresql://platformpub:$POSTGRES_PASSWORD@127.0.0.1:5432/platformpub \
-  npx tsx shared/src/db/migrate.ts
-
-# Add Traffology env vars
-echo 'IP_HASH_SALT=<generate with: openssl rand -hex 32>' >> traffology-ingest/.env
-# gateway/.env already has TRAFFOLOGY_INGEST_URL defaulting to http://localhost:3005
-# (use http://traffology-ingest:3005 in Docker)
-
-# Build and deploy
-docker compose build gateway payment web key-service traffology-ingest traffology-worker
+# 3. Rebuild changed services (or all of them) and recreate containers
+docker compose build --no-cache web gateway feed-ingest
 docker compose up -d
+
+# 4. Reload nginx
+docker compose exec nginx nginx -s reload
 ```
 
 Verify:
 
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# All services should show (healthy) after ~30s
-# traffology-ingest and traffology-worker should be running
-
-# Traffology check:
-# - Open an article page: network tab should show POST to /ingest/beacon
-# - /traffology: observation feed should load (empty until aggregation runs)
-# - Wait for :05 past the hour: aggregation populates piece_stats
-
-# Webhook deduplication check:
-# - Stripe test webhook: should process once, second delivery returns 200 (skipped)
-
-# oEmbed check:
-# - Paste a YouTube URL in the editor: embed should resolve within 5 seconds
+docker ps --format "table {{.Names}}\t{{.Status}}"   # all (healthy) after ~30s
+docker compose logs gateway --tail=20                # "Gateway started" — no boot errors
 ```
 
 ---
 
-### From v5.25.0
+## Troubleshooting: feature not appearing after a rebuild
 
-No migration. Services changed: **gateway**. Deploy order: **rebuild gateway**.
+Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviour doesn't show.
 
-This release fixes profile image uploads (and all media uploads) failing for files over ~1MB. The Fastify default body size limit (1MB) was rejecting multipart payloads before the `@fastify/multipart` plugin could process them, despite the plugin being configured for 12MB.
+1. **Confirm the running container actually has the new code.** Pick a string unique to the feature and grep the built output inside the container (the build lands at `/app/.next`, standard `next start`):
 
-**Backend (gateway):**
+   ```bash
+   docker compose exec web sh -c "grep -rl '<unique-string-from-the-feature>' /app/.next 2>/dev/null | head"
+   ```
 
-- **Media upload body limit fix** (`media.ts`): Added explicit `bodyLimit: 12 * 1024 * 1024` on the `POST /media/upload` route to match the `@fastify/multipart` file size limit. Previously, Fastify's default 1MB body parser limit silently rejected uploads before the multipart handler ran.
+   - **Nothing returned** → the container is a stale build. You either built on the host, ran `up`/`restart` without `--build`, or hit a cached `next build` layer. Fix: `docker compose build --no-cache web && docker compose up -d web && docker compose exec nginx nginx -s reload`, then hard-refresh the browser.
+   - **A file is returned** → the code is deployed; the issue is downstream (browser cache → hard-refresh/incognito, or the API not returning expected fields → check the relevant endpoint, or a missing migration → see below).
 
-**Modified files:**
+2. **Confirm the schema is migrated.** If a new feature's query selects a column that doesn't exist, the endpoint 500s rather than silently degrading:
 
-- `gateway/src/routes/media.ts` — bodyLimit added to upload route
+   ```bash
+   docker exec platform-pub-postgres-1 psql -U platformpub platformpub \
+     -c "SELECT filename FROM _migrations ORDER BY filename DESC LIMIT 5;"
+   ```
 
-**Upgrade steps:**
+   If the latest migrations aren't listed, run the migration runner ([§4](#4-schema-and-migrations)).
 
-```bash
-cd /root/platform-pub
-git pull origin master
-
-# No migration — backend fix only
-docker compose build gateway
-docker compose up -d gateway
-```
-
-Verify:
-
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# gateway should show (healthy) after ~30s
-
-# Upload test:
-# - /profile → Upload photo (use a >1MB image) → should succeed
-```
-
-No new env vars. No database changes.
-
----
-
-### From v5.24.0
-
-No migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
-
-This release adds paywall gating on article comments, fixes DM scroll-to-bottom on conversation open, fixes the data export download, removes the redundant "Export my data" button from the nav, and adds a publication creation flow to the dashboard.
-
-**Backend (gateway):**
-
-- **Paywall-gated comments** (`replies.ts`): `GET /replies/:targetEventId` now checks whether the target article is paywalled. If it is and the requesting user has not unlocked it (via ownership, purchase, or subscription), the endpoint returns `{ comments: [], totalCount: 0, paywallLocked: true }` — comment data never leaves the server for locked articles. Uses the existing `checkArticleAccess()` service.
-
-**Frontend (web):**
-
-- **Paywall-gated comments** (`ReplySection.tsx`, `ArticleReader.tsx`, `api.ts`): `ReplySection` accepts a new `isUnlocked` prop and handles the `paywallLocked` API response. When locked, displays "Unlock the article to read and leave replies." instead of the comment thread. Re-fetches comments automatically when the article is unlocked. `ReplyResponse` type extended with optional `paywallLocked` field.
-- **DM scroll-to-bottom fix** (`MessageThread.tsx`): Conversations now scroll to the most recent message on open. Previously, the auto-scroll effect only fired when the user was already near the bottom (within 150px), which never applied on initial load when scroll position is 0. Added an `initialScrollDone` ref — first load jumps instantly to the bottom; subsequent new messages still use the near-bottom guard. The ref resets when switching conversations.
-- **Export download fix** (`ExportModal.tsx`): The dynamically created `<a>` element is now appended to `document.body` before calling `.click()` and removed afterwards. Without DOM attachment, some browsers silently ignore programmatic download clicks.
-- **Nav export button removed** (`Nav.tsx`): Removed "Export my data" button from both the desktop avatar dropdown and the mobile navigation sheet. Export remains accessible from the Profile settings page. Cleaned up unused `ExportModal` import and `showExport` state.
-- **Publication creation UI** (`dashboard/page.tsx`): Added a "+ New publication" button to the dashboard context switcher. Clicking it reveals an inline form with name and auto-generated URL slug fields. On creation, the dashboard switches to the new publication's context. The button is always visible so users without existing publications can discover it.
-
-**Modified files:**
-
-- `gateway/src/routes/replies.ts` — paywall access check on comment fetch
-- `web/src/components/replies/ReplySection.tsx` — `isUnlocked` prop, `paywallLocked` handling
-- `web/src/components/article/ArticleReader.tsx` — passes `isUnlocked` to ReplySection
-- `web/src/lib/api.ts` — `paywallLocked` field on ReplyResponse
-- `web/src/components/messages/MessageThread.tsx` — initial scroll-to-bottom fix
-- `web/src/components/ExportModal.tsx` — DOM-attached download anchor
-- `web/src/components/layout/Nav.tsx` — export button removed from desktop + mobile nav
-- `web/src/app/dashboard/page.tsx` — publication creation form
-
-**Upgrade steps:**
-
-```bash
-cd /root/platform-pub
-git pull origin master
-
-# No migration — no schema changes
-docker compose build gateway web
-docker compose up -d gateway web
-```
-
-Verify:
-
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# gateway and web should show (healthy) after ~30s
-
-# Paywall comment gating:
-# - Open a paywalled article (logged out or without access): comments section shows lock message
-# - Unlock the article: comments appear immediately
-
-# DM scroll:
-# - Open /messages, select a conversation with history: should scroll to latest message
-
-# Export:
-# - /profile → Data → Export → "Portable receipts" button triggers a JSON download
-
-# Publication creation:
-# - /dashboard → click "+ New publication" → fill name → Create
-# - Dashboard switches to the new publication context
-```
-
-No new env vars. No database changes.
-
----
-
-### From v5.22.0
-
-No migration. Services changed: **web**. Deploy order: **rebuild web**.
-
-This release fixes a build-breaking type error in the `FeaturedWriters` homepage component. The v5.22.0 audit removed the unused `feed.featured()` API client method, but `FeaturedWriters.tsx` still called it, preventing the Next.js production build from compiling.
-
-**Frontend (web):**
-
-- **FeaturedWriters fix** (`FeaturedWriters.tsx`): Replaced `feedApi.featured()` (removed in v5.22.0) with `feedApi.get('explore', undefined, 3)`. Response field updated from `data.articles` to `data.items` to match the feed endpoint's actual response shape.
-
-**Modified files:**
-
-- `web/src/components/home/FeaturedWriters.tsx` — API call and response field fixed
-
-**Upgrade steps:**
-
-```bash
-cd /root/platform-pub
-git pull origin master
-
-# No migration — frontend fix only
-docker compose build web
-docker compose up -d web
-```
-
-Verify:
-
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# web should show (healthy) after ~30s
-
-# Visual checks:
-# - / (homepage, logged out): featured writers section loads with 3 articles
-```
-
-No new env vars. No database changes.
-
----
-
-### From v5.21.0
-
-No migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
-
-This release fixes critical bugs found during audit: gate-pass access for publication members/subscribers, schema ON DELETE clause sync, publication article deletion on the relay, and dead code removal. Editor title/subtitle sizing is also refined.
-
-**Backend (gateway):**
-
-- **Gate-pass publication access fix (critical):** `publication_id` now passed to `checkArticleAccess()` — publication members and subscribers were previously charged for their own publication's paywalled articles.
-- **Publication article kind 5 deletion:** `DELETE /publications/:id/articles/:articleId` now publishes a Nostr kind 5 deletion event to the relay.
-- **Publication PATCH updated_at:** `PATCH /publications/:id` now sets `updated_at = now()`.
-- **Dead code removal:** Deleted dead comment system (route, 3 components, lib file). Removed legacy `/feed/global` and `/feed/following` endpoints. Removed unused `feed.global()`, `feed.following()`, `feed.featured()` API client wrappers.
-
-**Schema:**
-
-- **schema.sql ON DELETE clauses:** Synced with migration 021 — added missing cascade/restrict/set-null clauses on FK constraints.
-
-**Frontend (web):**
-
-- **Editor sizing:** Title and subtitle card padding and font sizes reduced to match surrounding controls.
-
-**Modified files:**
-
-- `gateway/src/routes/articles.ts` — gate-pass publication_id lookup
-- `gateway/src/services/access.ts` — receives publication_id parameter
-- `gateway/src/routes/publications.ts` — kind 5 deletion, updated_at on PATCH
-- `gateway/src/routes/notes.ts` — dead feed endpoints removed
-- `schema.sql` — ON DELETE clauses synced
-- `web/src/lib/api.ts` — dead feed methods removed
-- `web/src/components/editor/ArticleEditor.tsx` — title/subtitle sizing
-
-**Upgrade steps:**
-
-```bash
-cd /root/platform-pub
-git pull origin master
-
-# No migration — but schema.sql updated for fresh installs
-docker compose build gateway web
-docker compose up -d gateway web
-```
-
-Verify:
-
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# gateway and web should show (healthy) after ~30s
-
-# Critical check — publication members can read paywalled articles without being charged:
-# - Log in as a publication member, read a paywalled publication article
-# - /account: no new debit entry for that read
-```
-
-No new env vars. No database changes.
-
----
-
-### From v5.20.0
-
-No new migration. Services changed: **gateway**, **web**. Deploy order: **rebuild gateway + web**.
-
-This release fixes a Fastify duplicate-route crash that prevented the gateway from starting. The public published-articles endpoint (`GET /publications/:slug/articles`) collided with the CMS article-list endpoint (`GET /publications/:id/articles`) because Fastify treats path parameters at the same position as identical regardless of name. The public route is now at `/publications/by-slug/:slug/articles`.
-
-**Backend (gateway):**
-
-- **Route path change** (`publications.ts`): `GET /publications/:slug/articles` → `GET /publications/by-slug/:slug/articles`. Resolves `FST_ERR_DUPLICATED_ROUTE` crash on startup.
-
-**Frontend (web):**
-
-- **API client** (`api.ts`): `getPublicArticles()` updated to call `/publications/by-slug/${slug}/articles`.
-- **Publication homepage** (`pub/[slug]/page.tsx`): SSR fetch updated to new route path.
-- **Publication archive** (`pub/[slug]/archive/page.tsx`): SSR fetch updated to new route path.
-
-**Modified files:**
-
-- `gateway/src/routes/publications.ts` — public articles route path changed
-- `web/src/lib/api.ts` — `getPublicArticles` path updated
-- `web/src/app/pub/[slug]/page.tsx` — SSR fetch path updated
-- `web/src/app/pub/[slug]/archive/page.tsx` — SSR fetch path updated
-
-**Upgrade steps:**
-
-```bash
-cd /root/platform-pub
-git pull origin master
-
-# No migration — route path fix only
-docker compose build gateway web
-docker compose up -d gateway web
-```
-
-Verify:
-
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# gateway and web should show (healthy) after ~30s
-
-# Critical check — gateway must not be crash-looping:
-docker compose logs gateway --tail=5
-# Should show "Server listening" — not FST_ERR_DUPLICATED_ROUTE
-
-# Visual checks:
-# - /pub/<slug>: publication homepage loads with articles
-# - /pub/<slug>/archive: archive page loads with full article list
-```
-
-No new env vars. No database changes.
-
-> **Older versions:** Upgrade instructions for v5.20.0 and earlier are available in this file's git history.
+3. **Confirm you're on the right surface.** Some affordances are viewport-gated (e.g. desktop hover modals vs touch action sheets) — test the right device before concluding a feature is missing.
 
 ---
 
@@ -692,66 +317,109 @@ No new env vars. No database changes.
 
 ### Schema
 
-`schema.sql` is the from-scratch path — applied automatically on first postgres boot.
+`schema.sql` is the from-scratch path, auto-applied on first postgres boot. Synced through migration 097. Keep it in sync when adding migrations so fresh databases match migrated ones.
 
 ### Migrations
 
-| Migration                            | Purpose                                                                                                                                                                                                                           |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 001_add_email_and_magic_links.sql    | Email column on accounts, magic_links table                                                                                                                                                                                       |
-| 002_draft_upsert_index.sql           | Partial unique index for draft upserts                                                                                                                                                                                            |
-| 003_comments.sql                     | Comments/replies table, replies_enabled on articles/notes                                                                                                                                                                         |
-| 004_media_uploads.sql                | Media uploads table with SHA-256 deduplication                                                                                                                                                                                    |
-| 005_subscriptions.sql                | Subscriptions, subscription_events, article_unlocks                                                                                                                                                                               |
-| 006_receipt_portability.sql          | `reader_pubkey` + `receipt_token` columns on read_events                                                                                                                                                                          |
-| 007_subscription_nostr_event.sql     | `nostr_event_id` column on subscriptions                                                                                                                                                                                          |
-| 008_deduplicate_articles.sql         | Deduplicate articles rows; add partial unique index on `(writer_id, nostr_d_tag) WHERE deleted_at IS NULL`                                                                                                                        |
-| 009_notifications.sql                | `notifications` table: new_follower and new_reply events, with actor/article/comment FK refs                                                                                                                                      |
-| 010_votes.sql                        | `votes`, `vote_tallies`, `vote_charges` tables for the upvote/downvote system                                                                                                                                                     |
-| 011_store_ciphertext.sql             | `ciphertext` column on `vault_keys` for storing encrypted content                                                                                                                                                                 |
-| 012_notification_note_id.sql         | `note_id` column on `notifications` for note-related notifications                                                                                                                                                                |
-| 013_note_excerpt_fields.sql          | `quoted_excerpt`, `quoted_title`, `quoted_author_display_name` on `notes`                                                                                                                                                         |
-| 014_notification_dedup.sql           | Deduplicate notification rows; add unique index (superseded by 019)                                                                                                                                                               |
-| 015_access_mode_and_unlock_types.sql | `access_mode` column on articles, `unlock_type` expansion on `article_unlocks`                                                                                                                                                    |
-| 016_direct_messages.sql              | `direct_messages` table for NIP-17 encrypted DMs                                                                                                                                                                                  |
-| 017_pledge_drives.sql                | `pledge_drives` and `pledges` tables for crowdfunding/commissions                                                                                                                                                                 |
-| 018_add_on_delete_clauses.sql        | ON DELETE CASCADE/SET NULL clauses for FKs in migrations 016–017                                                                                                                                                                  |
-| 019_fix_notification_dedup.sql       | Fix dedup index: partial unique index (`WHERE read = false`) so repeat notifications work                                                                                                                                         |
-| 020_notification_routing_columns.sql | Notification routing columns                                                                                                                                                                                                      |
-| 021_missing_on_delete_clauses.sql    | Missing ON DELETE clauses for FKs                                                                                                                                                                                                 |
-| 022_composite_index_read_events.sql  | Composite index on read_events                                                                                                                                                                                                    |
-| 023_subscription_auto_renew.sql      | `auto_renew` boolean on subscriptions                                                                                                                                                                                             |
-| 024_annual_subscriptions.sql         | `subscription_period` column on subscriptions                                                                                                                                                                                     |
-| 025_comp_subscriptions.sql           | `is_comp` boolean on subscriptions                                                                                                                                                                                                |
-| 026_article_profile_pins.sql         | `pinned_on_profile` and `profile_pin_order` on articles                                                                                                                                                                           |
-| 027_subscription_visibility.sql      | `hidden` boolean on subscriptions                                                                                                                                                                                                 |
-| 028_subscription_nudge.sql           | `subscription_nudge_log` table                                                                                                                                                                                                    |
-| 029_gift_links.sql                   | `gift_links` table                                                                                                                                                                                                                |
-| 030_commissions_expansion.sql        | Pledge drive expansion columns                                                                                                                                                                                                    |
-| 031_fix_media_urls_domain.sql        | Media URL domain migration                                                                                                                                                                                                        |
-| 032_dm_likes.sql                     | `dm_likes` table for DM reactions; marks stale `new_message` notifications as read                                                                                                                                                |
-| 033_admin_account_ids_config.sql     | Admin account IDs in platform_config                                                                                                                                                                                              |
-| 034_dm_replies.sql                   | `reply_to_id` column on `direct_messages` for threaded DM replies                                                                                                                                                                 |
-| 035_feed_scores.sql                  | `feed_scores` table + config rows for feed scoring weights                                                                                                                                                                        |
-| 036_commission_conversation.sql      | `parent_conversation_id` on `pledge_drives` for DM-linked commissions                                                                                                                                                             |
-| 037_subscription_offers.sql          | `subscription_offers` table; `offer_id` + `offer_periods_remaining` on `subscriptions`                                                                                                                                            |
-| 038_publications.sql                 | Publications schema: 7 new tables, 2 enums, publication columns on articles/drafts/subscriptions/feed_scores                                                                                                                      |
-| 039_default_article_price.sql        | Default article price config                                                                                                                                                                                                      |
-| 040_traffology_schema.sql            | Traffology analytics: 13 tables in `traffology` schema (pieces, sessions, sources, piece_stats, source_stats, half_day_buckets, writer_baselines, publication_baselines, topic_performance, observations) + Graphile Worker queue |
-| 041_webhook_dedup_and_fk_fixes.sql   | `stripe_webhook_events` dedup table; `ON DELETE CASCADE` on `subscription_events.subscription_id` FK                                                                                                                              |
-
-Run all pending migrations (requires Node on the host — substitute your `POSTGRES_PASSWORD`):
-
-```bash
-DATABASE_URL=postgresql://platformpub:<POSTGRES_PASSWORD>@127.0.0.1:5432/platformpub \
-  npx tsx shared/src/db/migrate.ts
-```
-
-Or apply a single migration directly via Docker (no Node required on the host):
-
-```bash
-docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/NNN_name.sql
-```
+| Migration | Purpose |
+| --------- | ------- |
+| 001 | Email column on accounts; `magic_links` |
+| 002 | Partial unique index for draft upserts |
+| 003 | Comments/replies; `replies_enabled` |
+| 004 | Media uploads (SHA-256 dedup) |
+| 005 | Subscriptions, subscription_events, article_unlocks |
+| 006 | `reader_pubkey` + `receipt_token` on read_events |
+| 007 | `nostr_event_id` on subscriptions |
+| 008 | Deduplicate articles; partial unique `(writer_id, nostr_d_tag) WHERE deleted_at IS NULL` |
+| 009 | `notifications` table |
+| 010 | `votes`, `vote_tallies`, `vote_charges` |
+| 011 | `ciphertext` on `vault_keys` |
+| 012 | `note_id` on notifications |
+| 013 | Quoted-note excerpt fields on `notes` |
+| 014 | Notification dedup index (superseded by 019) |
+| 015 | `access_mode` on articles; unlock_type expansion |
+| 016 | `direct_messages` (NIP-17 DMs) |
+| 017 | `pledge_drives`, `pledges` |
+| 018 | ON DELETE clauses for FKs in 016–017 |
+| 019 | Fix notification dedup (partial unique `WHERE read = false`) |
+| 020 | Notification routing columns |
+| 021 | Missing ON DELETE clauses |
+| 022 | Composite index on read_events |
+| 023 | `auto_renew` on subscriptions |
+| 024 | `subscription_period` on subscriptions |
+| 025 | `is_comp` on subscriptions |
+| 026 | Article profile pins |
+| 027 | Subscription `hidden` |
+| 028 | `subscription_nudge_log` |
+| 029 | `gift_links` |
+| 030 | Pledge-drive expansion columns |
+| 031 | Media URL domain migration |
+| 032 | `dm_likes`; mark stale message notifications read |
+| 033 | Admin account IDs in platform_config |
+| 034 | `reply_to_id` on direct_messages (threaded DM replies) |
+| 035 | `feed_scores` + config rows |
+| 036 | `parent_conversation_id` on pledge_drives |
+| 037 | `subscription_offers`; offer columns on subscriptions |
+| 038 | Publications: 7 tables, 2 enums, publication columns across articles/drafts/subscriptions/feed_scores |
+| 039 | Default article price config |
+| 040 | Traffology analytics schema (13 tables + Graphile Worker queue) |
+| 041 | `stripe_webhook_events` dedup; ON DELETE CASCADE on subscription_events |
+| 042 | Email-on-publish: subscriber opt-in |
+| 043 | Session invalidation (reject JWTs issued before logout timestamp) |
+| 044 | Email-on-publish v2: track per-article send |
+| 045 | Article pricing mode (`per_article` / `per_1000_words`) |
+| 046 | Notification preferences (per-category opt-out) |
+| 047 | Bookmarks |
+| 048 | Tags / topics for articles |
+| 049 | Account deletion/deactivation + email/username change fields |
+| 050 | Publication `homepage_layout` |
+| 051 | Article scheduling (`article_drafts.scheduled_at`) |
+| 052 | Universal Feed — external sources, subscriptions, items |
+| 053 | `feed_items` unified timeline table (Universal Feed Phase 2) |
+| 054 | Backfill `feed_items` from articles/notes/external_items |
+| 055 | Universal Feed — Bluesky / AT Protocol ingestion config |
+| 056 | Universal Feed — ActivityPub / Mastodon ingestion config |
+| 057 | Universal Feed Phase 5 — outbound reply router |
+| 058 | Phase 5B — migrate external Nostr outbound to `outbound_posts` queue |
+| 059 | Phase 5B — AT Protocol OAuth session storage |
+| 060 | Phase 5B — DB-backed atproto OAuth pending-state store |
+| 061 | DB-backed resolver async results (replaces in-memory map) |
+| 062 | Dedup `outbound_posts` |
+| 063 | `external_sources` orphaned_at + GC column |
+| 064 | Index on resolver_async_results (initiator_id, created_at DESC) |
+| 065 | Trust Layer 1 — precomputed trust signals |
+| 066 | Trust Phase 2 — vouches + trust_profiles |
+| 067 | Trust Phase 4 — epoch tracking (aggregation + decay) |
+| 068 | Article size tiers (lead / standard / brief) |
+| 069 | Reading-position resumption |
+| 070 | Harmonize size-tier trigger with backfill semantics |
+| 071 | Make `stripe_webhook_events.processed_at` nullable |
+| 072 | `expiry_warning_sent` on subscription_events |
+| 073 | DM send id |
+| 074 | Trigram GIN indexes on accounts.username + display_name |
+| 075 | `external_sources.metadata_updated_at` |
+| 076 | `relay_outbox` — durable queue for Nostr relay publishes |
+| 077 | `feeds` + `feed_sources` (workspace slice 3) |
+| 078 | `trust_polls` (workspace slice 15) |
+| 079 | `trust_layer1.pip_status` gains `contested` (workspace slice 17) |
+| 080 | `feed_saves` (workspace slice 20) |
+| 081 | Article cover images (workspace slice 23b) |
+| 082 | Default new source volume to step 5 |
+| 083 | Search content trigram index |
+| 084 | `accounts.email_verification_requested_at` |
+| 085 | `tab_settlements.status` — three-phase settlement pattern |
+| 086 | `reading_tabs` balance-non-negative CHECK |
+| 087 | Schema hardening — indexes, FK cascades, updated_at triggers, feed_items score tiebreaker |
+| 088 | Traffology `findOrCreateSource` race fix (unique constraint) |
+| 089 | Workspace hardening — tag-name constraint + feed_sources query index |
+| 090 | Engagement count columns on external_items |
+| 091 | `external_items.is_context_only` |
+| 092 | Interaction foundation (Phase 4A) |
+| 093 | `external_items.content_warning` |
+| 094 | External protocol expansion (enum values) |
+| 095 | External protocol CHECK constraint update |
+| 096 | Per-source ingest mailbox (email newsletter ingestion) |
+| 097 | `feed_items.is_reply` — reply signalling + filtering (Card Behaviour Phase 1A) |
 
 ### Backup
 
@@ -761,312 +429,169 @@ docker exec platform-pub-postgres-1 pg_dump -U platformpub platformpub | gzip > 
 
 ---
 
-## Key routes
+## Gateway route modules
+
+All API routes are served by the gateway under `/api/v1` (except RSS, inbound mail, and AT Protocol well-knowns). The gateway registers the following route modules (see `gateway/src/index.ts`). The detailed endpoint tables for the core modules follow.
+
+`auth`, `google-auth`, `signing`, `writers`, `articles` (incl. earnings, gate-pass, manage, publish, subscription-convert), `notes`, `drafts`, `replies`, `media`, `follows`, `moderation`, `search`, `rss`, `inbound-mail`, `subscriptions` (events, publication, settings, subscribers, writer), `unsubscribe`, `my-account`, `receipts`, `export`, `notifications`, `votes`, `history`, `gift-links`, `subscription-offers`, `messages`, `timeline`, `social`, `publications` (cms, core, members, public, revenue), `drives`, `traffology`, `bookmarks`, `tags`, `resolve`, `external-feeds`, `external-items`, `linked-accounts`, `trust`, `reading-positions`, `feeds` (workspace — mounted at `/api/v1/workspace`), `extract`, `author-card`.
+
+Well-known / unprefixed: `GET /.well-known/oauth-client-metadata.json`, `GET /.well-known/jwks.json`, `GET /rss`, `GET /rss/:username`, `GET /health`.
 
 ### Auth
 
-| Method | Path                         | Auth              | Purpose                              |
-| ------ | ---------------------------- | ----------------- | ------------------------------------ |
-| POST   | /api/v1/auth/signup          | —                 | Create account                       |
-| POST   | /api/v1/auth/login           | —                 | Request magic link                   |
-| POST   | /api/v1/auth/verify          | —                 | Verify magic link token              |
-| POST   | /api/v1/auth/logout          | session           | Clear session                        |
-| GET    | /api/v1/auth/me              | session           | Current user info (includes `bio`)   |
-| PATCH  | /api/v1/auth/profile         | session           | Update display name, bio, avatar URL |
-| GET    | /api/v1/auth/google          | —                 | Google OAuth redirect                |
-| POST   | /api/v1/auth/google/exchange | `{ code, state }` | Google OAuth code exchange           |
-| POST   | /api/v1/auth/upgrade-writer  | session           | Start Stripe Connect                 |
-| POST   | /api/v1/auth/connect-card    | session           | Save reader payment method           |
+| Method | Path | Auth | Purpose |
+| ------ | ---- | ---- | ------- |
+| POST | /api/v1/auth/signup | — | Create account |
+| POST | /api/v1/auth/login | — | Request magic link |
+| POST | /api/v1/auth/verify | — | Verify magic link token |
+| POST | /api/v1/auth/logout | session | Clear session |
+| GET | /api/v1/auth/me | session | Current user info |
+| PATCH | /api/v1/auth/profile | session | Update display name, bio, avatar URL |
+| GET | /api/v1/auth/google | — | Google OAuth redirect |
+| POST | /api/v1/auth/google/exchange | `{ code, state }` | Google OAuth code exchange |
+| POST | /api/v1/auth/upgrade-writer | session | Start Stripe Connect |
+| POST | /api/v1/auth/connect-card | session | Save reader payment method |
 
-### Content
+### Content & replies
 
-| Method | Path                                | Auth     | Purpose                                                                                                                 |
-| ------ | ----------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- |
-| POST   | /api/v1/articles                    | session  | Index published article                                                                                                 |
-| GET    | /api/v1/articles/:dTag              | optional | Article metadata by d-tag                                                                                               |
-| POST   | /api/v1/articles/:eventId/vault     | session  | Encrypt paywalled body, store vault key                                                                                 |
-| POST   | /api/v1/articles/:eventId/gate-pass | session  | Paywall gate pass                                                                                                       |
-| PATCH  | /api/v1/articles/:id                | session  | Update article metadata (replies toggle)                                                                                |
-| DELETE | /api/v1/articles/:id                | session  | Delete article (soft-delete + kind 5 to relay)                                                                          |
-| POST   | /api/v1/articles/:id/pin            | session  | Toggle article pin on writer's profile                                                                                  |
-| GET    | /api/v1/articles/deleted?pubkeys=   | session  | Recently deleted article event IDs + coordinates for given Nostr pubkeys (used by feed to cross-reference DB deletions) |
-| POST   | /api/v1/notes                       | session  | Index published note                                                                                                    |
-| DELETE | /api/v1/notes/:nostrEventId         | session  | Delete note (hard-delete + kind 5 to relay)                                                                             |
-| GET    | /api/v1/content/resolve?eventId=    | —        | Resolve event ID for quote cards                                                                                        |
-| POST   | /api/v1/drafts                      | session  | Save/upsert draft                                                                                                       |
-| GET    | /api/v1/drafts                      | session  | List drafts                                                                                                             |
-| POST   | /api/v1/media/upload                | session  | Upload image                                                                                                            |
+| Method | Path | Auth | Purpose |
+| ------ | ---- | ---- | ------- |
+| POST | /api/v1/articles | session | Index published article |
+| GET | /api/v1/articles/:dTag | optional | Article metadata by d-tag |
+| POST | /api/v1/articles/:eventId/vault | session | Encrypt paywalled body, store vault key |
+| POST | /api/v1/articles/:eventId/gate-pass | session | Paywall gate pass |
+| POST | /api/v1/articles/:eventId/key | session | Issue wrapped content key after gate-pass |
+| PATCH | /api/v1/articles/:id | session | Update article metadata |
+| DELETE | /api/v1/articles/:id | session | Soft-delete + kind 5 to relay |
+| POST | /api/v1/articles/:id/pin | session | Toggle profile pin |
+| POST | /api/v1/notes | session | Index published note |
+| DELETE | /api/v1/notes/:nostrEventId | session | Delete note + kind 5 |
+| POST | /api/v1/drafts | session | Save/upsert draft (supports `scheduled_at`) |
+| GET | /api/v1/drafts | session | List drafts |
+| POST | /api/v1/media/upload | session | Upload image (≤12 MB) |
+| POST | /api/v1/replies | session | Post a reply |
+| GET | /api/v1/replies/:targetEventId | optional | Replies for an event (paywall-gated) |
+| DELETE | /api/v1/replies/:replyId | session | Delete reply |
 
-### Replies
+### Feed, discovery & universal feed
 
-| Method | Path                           | Auth     | Purpose                   |
-| ------ | ------------------------------ | -------- | ------------------------- |
-| POST   | /api/v1/replies                | session  | Post a reply              |
-| GET    | /api/v1/replies/:targetEventId | optional | Get replies for an event  |
-| DELETE | /api/v1/replies/:replyId       | session  | Delete reply              |
-| PATCH  | /api/v1/articles/:id/replies   | session  | Toggle replies on article |
-| PATCH  | /api/v1/notes/:id/replies      | session  | Toggle replies on note    |
+| Method | Path | Auth | Purpose |
+| ------ | ---- | ---- | ------- |
+| GET | /api/v1/feed?reach=following\|explore | session | Unified feed (reach dial). Items carry `isReply`, `biddabilityTier`. Module: `timeline.ts` (path is `/feed`, not `/timeline`) |
+| GET | /api/v1/workspace/feeds | session | Owner-private workspace feed objects |
+| GET | /api/v1/search?q=&type= | optional | Search articles, writers, publications |
+| GET | /api/v1/resolve | optional | Universal identity/URL resolver |
+| GET | /api/v1/extract | optional | Readability extraction for the reader pane |
+| GET | /api/v1/author-card?type=&id= | session | Tier-aware author/source card for hover modals |
+| GET/POST | /api/v1/external-feeds | session | External feed subscriptions (RSS, Nostr, Bluesky, Mastodon, email) |
+| GET/POST | /api/v1/external-items/... | optional/session | External item context, parent, thread, engagement |
+| GET/POST | /api/v1/linked-accounts | session | Outbound cross-posting account links |
+| GET/POST | /api/v1/bookmarks | session | Save/list bookmarks (`/bookmarks/ids`) |
+| GET | /api/v1/tags | optional | Tag/topic listing |
+| GET/POST | /api/v1/me/reading-preferences | session | Reading-position + reader preferences |
 
-### Social
+### Trust
 
-| Method | Path                      | Auth    | Purpose                                   |
-| ------ | ------------------------- | ------- | ----------------------------------------- |
-| POST   | /api/v1/follows/:writerId | session | Follow writer                             |
-| DELETE | /api/v1/follows/:writerId | session | Unfollow writer                           |
-| GET    | /api/v1/follows           | session | List followed writers with display info   |
-| GET    | /api/v1/follows/pubkeys   | session | Followed writer pubkeys (for feed filter) |
-| GET    | /api/v1/follows/followers | session | List accounts who follow you              |
-| POST   | /api/v1/reports           | session | Submit content report                     |
-| GET    | /api/v1/my/blocks         | session | List blocked accounts with display info   |
-| POST   | /api/v1/my/blocks/:userId | session | Block a user                              |
-| DELETE | /api/v1/my/blocks/:userId | session | Unblock a user                            |
-| GET    | /api/v1/my/mutes          | session | List muted accounts with display info     |
-| POST   | /api/v1/my/mutes/:userId  | session | Mute a user                               |
-| DELETE | /api/v1/my/mutes/:userId  | session | Unmute a user                             |
+| Method | Path | Auth | Purpose |
+| ------ | ---- | ---- | ------- |
+| GET/POST | /api/v1/my/vouches | session | Vouch graph (Trust Phase 2) |
+| GET | /api/v1/trust/... | optional/session | Trust Layer 1 signals, profiles, polls |
 
-### Notifications
+### Social, notifications & messages
 
-| Method | Path                           | Auth    | Purpose                                                                                                                                                                               |
-| ------ | ------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | /api/v1/notifications          | session | List recent notifications (max 50). Excludes `new_message` type (DMs have separate unread tracking). Types: `new_follower`, `new_reply`, `new_subscriber`, `new_quote`, `new_mention` |
-| POST   | /api/v1/notifications/read-all | session | Mark all notifications as read                                                                                                                                                        |
-| GET    | /api/v1/unread-counts          | session | Lightweight badge counts: `{ notificationCount, dmCount }`. Notification count excludes DM notifications                                                                              |
-| POST   | /api/v1/notifications/:id/read | session | Mark a single notification as read                                                                                                                                                    |
+| Method | Path | Auth | Purpose |
+| ------ | ---- | ---- | ------- |
+| POST/DELETE | /api/v1/follows/:writerId | session | Follow / unfollow |
+| GET | /api/v1/follows, /follows/pubkeys, /follows/followers | session | Follow lists |
+| POST | /api/v1/reports | session | Submit content report |
+| GET/POST/DELETE | /api/v1/my/blocks, /my/mutes | session | Block / mute management |
+| GET | /api/v1/notifications | session | Recent notifications (excludes DMs) |
+| POST | /api/v1/notifications/read-all, /:id/read | session | Mark read |
+| GET | /api/v1/unread-counts | session | Badge counts `{ notificationCount, dmCount }` |
+| POST | /api/v1/conversations | session | Create DM conversation |
+| GET | /api/v1/messages | session | Inbox |
+| GET | /api/v1/messages/:conversationId | session | Conversation messages |
+| POST | /api/v1/messages/:conversationId | session | Send DM (NIP-44; 10/min) |
+| POST | /api/v1/dm/decrypt-batch | session | Batch-decrypt via key-custody |
 
-### Messages (DMs)
+### Votes, subscriptions, offers, drives
 
-| Method | Path                              | Auth    | Purpose                                                                                                     |
-| ------ | --------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
-| POST   | /api/v1/conversations             | session | Create a new DM conversation                                                                                |
-| POST   | /api/v1/conversations/:id/members | session | Add members to a conversation                                                                               |
-| GET    | /api/v1/messages                  | session | List conversations (inbox) with unread counts                                                               |
-| GET    | /api/v1/messages/:conversationId  | session | Load messages in a conversation (newest-first, paginated). Includes `likeCount` and `likedByMe` per message |
-| POST   | /api/v1/messages/:conversationId  | session | Send a DM (NIP-44 E2E encrypted). Rate limited: 10/min                                                      |
-| POST   | /api/v1/messages/:messageId/read  | session | Mark a message as read                                                                                      |
-| POST   | /api/v1/messages/:messageId/like  | session | Toggle like on a message (heart reaction)                                                                   |
-| POST   | /api/v1/dm/decrypt-batch          | session | Batch-decrypt messages client-side via key-custody                                                          |
-
-### Votes
-
-| Method | Path                                     | Auth    | Purpose                                                                                                                                                                                                                                    |
-| ------ | ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | /api/v1/votes                            | session | Cast an upvote or downvote on any content. Body: `{ targetEventId, targetKind, direction }`. Returns `{ ok, sequenceNumber, costPence, nextCostPence, tally }`. 1st upvote free; subsequent votes double in price. Self-voting returns 400 |
-| GET    | /api/v1/votes/tally?eventIds=id1,id2,... | —       | Batch fetch tallies for up to 200 event IDs. Returns `{ tallies: { [eventId]: { upvoteCount, downvoteCount, netScore } } }`. Missing IDs return zeroes                                                                                     |
-| GET    | /api/v1/votes/mine?eventIds=id1,id2,...  | session | Batch fetch the logged-in user's vote counts for up to 200 event IDs. Returns `{ voteCounts: { [eventId]: { upCount, downCount } } }`                                                                                                      |
-| GET    | /api/v1/votes/price?eventId=&direction=  | session | Server-authoritative next-vote price. Returns `{ sequenceNumber, costPence, direction }`                                                                                                                                                   |
-
-### Subscriptions
-
-| Method | Path                                       | Auth    | Purpose                                                                   |
-| ------ | ------------------------------------------ | ------- | ------------------------------------------------------------------------- |
-| POST   | /api/v1/subscriptions/:writerId            | session | Subscribe (charges immediately). Optional body: `{ period?, offerCode? }` |
-| DELETE | /api/v1/subscriptions/:writerId            | session | Cancel                                                                    |
-| GET    | /api/v1/subscriptions/mine                 | session | List my subscriptions                                                     |
-| GET    | /api/v1/subscriptions/check/:writerId      | session | Check subscription status                                                 |
-| GET    | /api/v1/subscribers                        | session | List my subscribers (writer)                                              |
-| PATCH  | /api/v1/subscriptions/:writerId/visibility | session | Toggle subscription visibility on public profile                          |
-| PATCH  | /api/v1/settings/subscription-price        | session | Set subscription price                                                    |
-
-### Subscription Offers
-
-| Method | Path                                     | Auth     | Purpose                                                                                                                                   |
-| ------ | ---------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | /api/v1/subscription-offers              | session  | Create offer (code or grant mode). Body: `{ label, mode, discountPct, durationMonths?, maxRedemptions?, expiresAt?, recipientUsername? }` |
-| GET    | /api/v1/subscription-offers              | session  | List writer's offers (active + revoked)                                                                                                   |
-| DELETE | /api/v1/subscription-offers/:offerId     | session  | Revoke an offer                                                                                                                           |
-| GET    | /api/v1/subscription-offers/redeem/:code | optional | Public lookup — offer details + calculated discounted price for redeem page                                                               |
+| Method | Path | Auth | Purpose |
+| ------ | ---- | ---- | ------- |
+| POST | /api/v1/votes | session | Cast vote (1st upvote free; price doubles thereafter) |
+| GET | /api/v1/votes/tally, /votes/mine, /votes/price | optional/session | Tallies and server-authoritative price |
+| POST/DELETE | /api/v1/subscriptions/:writerId | session | Subscribe / cancel |
+| GET | /api/v1/subscriptions/mine, /check/:writerId, /subscribers | session | Subscription status / lists |
+| PATCH | /api/v1/settings/subscription-price | session | Set price |
+| POST/GET/DELETE | /api/v1/subscription-offers | session | Discount codes & gifted subscriptions |
+| GET | /api/v1/subscription-offers/redeem/:code | optional | Public offer lookup |
+| GET/POST | /api/v1/drives, /my/commissions, /my/pledges | session | Pledge drives / crowdfunding / commissions |
+| POST/GET | /api/v1/gift-links | session | Capped shareable access tokens |
 
 ### Publications
 
-| Method | Path                                                   | Auth                      | Purpose                                          |
-| ------ | ------------------------------------------------------ | ------------------------- | ------------------------------------------------ |
-| POST   | /api/v1/publications                                   | session                   | Create publication (generates Nostr keypair)     |
-| GET    | /api/v1/publications/:slug                             | session                   | Get publication by slug                          |
-| PATCH  | /api/v1/publications/:id                               | session (owner/settings)  | Update publication metadata                      |
-| DELETE | /api/v1/publications/:id                               | session (owner)           | Archive publication                              |
-| GET    | /api/v1/publications/:id/members                       | session (member)          | List members                                     |
-| POST   | /api/v1/publications/:id/members/invite                | session (manage_members)  | Invite member                                    |
-| POST   | /api/v1/publications/:id/members/accept                | session                   | Accept invite                                    |
-| PATCH  | /api/v1/publications/:id/members/:memberId             | session (manage_members)  | Update member role/permissions                   |
-| DELETE | /api/v1/publications/:id/members/:memberId             | session (manage_members)  | Remove member                                    |
-| POST   | /api/v1/publications/:id/transfer-ownership            | session (owner)           | Transfer ownership                               |
-| GET    | /api/v1/publications/invites/:token                    | optional                  | Invite details                                   |
-| GET    | /api/v1/my/publications                                | session                   | My publication memberships                       |
-| POST   | /api/v1/publications/:id/articles                      | session (member)          | Submit article to publication CMS                |
-| GET    | /api/v1/publications/:id/articles                      | session (member)          | List CMS articles (filterable by status)         |
-| PATCH  | /api/v1/publications/:id/articles/:articleId           | session (edit_others)     | Edit article metadata                            |
-| DELETE | /api/v1/publications/:id/articles/:articleId           | session (edit_others)     | Delete article                                   |
-| POST   | /api/v1/publications/:id/articles/:articleId/publish   | session (can_publish)     | Approve and publish article                      |
-| POST   | /api/v1/publications/:id/articles/:articleId/unpublish | session (can_publish)     | Unpublish article                                |
-| GET    | /api/v1/publications/:slug/public                      | optional                  | Public publication profile                       |
-| GET    | /api/v1/publications/by-slug/:slug/articles            | optional                  | Published articles (paginated)                   |
-| GET    | /api/v1/publications/:slug/masthead                    | optional                  | Public member list                               |
-| POST   | /api/v1/subscriptions/publication/:id                  | session                   | Subscribe to publication                         |
-| DELETE | /api/v1/subscriptions/publication/:id                  | session                   | Cancel publication subscription                  |
-| POST   | /api/v1/follows/publication/:id                        | session                   | Follow publication                               |
-| DELETE | /api/v1/follows/publication/:id                        | session                   | Unfollow publication                             |
-| GET    | /api/v1/publications/:id/rate-card                     | session (manage_finances) | View publication pricing                         |
-| PATCH  | /api/v1/publications/:id/rate-card                     | session (manage_finances) | Update subscription/article pricing              |
-| GET    | /api/v1/publications/:id/payroll                       | session (manage_finances) | View standing shares and per-article overrides   |
-| PATCH  | /api/v1/publications/:id/payroll                       | session (manage_finances) | Update standing revenue shares                   |
-| PATCH  | /api/v1/publications/:id/payroll/article/:articleId    | session (manage_finances) | Set per-article share override                   |
-| GET    | /api/v1/publications/:id/earnings                      | session (manage_finances) | Revenue dashboard (totals, per-article, payouts) |
-| GET    | /api/v1/pub/:slug/rss                                  | —                         | Publication RSS feed                             |
+The full publications surface is unchanged — create/get/patch/delete, members (invite/accept/role/remove), ownership transfer, CMS (submit/list/edit/publish/unpublish), public (`/publications/by-slug/:slug/articles`, masthead), subscriptions/follows, rate-card, payroll, earnings, and `GET /pub/:slug/rss`. See `gateway/src/routes/publications/`.
 
-### Traffology (writer analytics)
+### Traffology
 
-| Method | Path                                   | Auth    | Purpose                                                                                                     |
-| ------ | -------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
-| GET    | /api/v1/traffology/feed                | session | Paginated observation feed (cursor-based, max 50/page)                                                      |
-| GET    | /api/v1/traffology/piece/:pieceId      | session | Piece detail: stats, source breakdown, half-day buckets, observations                                       |
-| GET    | /api/v1/traffology/overview            | session | Writer baseline, all pieces with provenance, topic performance                                              |
-| GET    | /api/v1/traffology/concurrent/:pieceId | session | Live reader count for a single piece (proxied from traffology-ingest)                                       |
-| GET    | /api/v1/traffology/concurrent          | session | Aggregated live reader counts across all writer's pieces                                                    |
-| POST   | /ingest/beacon                         | —       | Page script beacon (init/heartbeat/unload). Rate limited: 120/min/IP. Proxied by nginx to traffology-ingest |
+`GET /api/v1/traffology/feed | /piece/:id | /overview | /concurrent[/:id]` (session), and `POST /ingest/beacon` (public, 120/min/IP, proxied by nginx to traffology-ingest).
 
-### Reader account
+### Reader account & portability
 
-| Method | Path                         | Auth    | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------ | ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | /api/v1/my/tab               | session | Reader's tab balance, free allowance, and read history                                                                                                                                                                                                                                                                                                                                                                                              |
-| GET    | /api/v1/my/account-statement | session | Unified account statement: all credits (free allowance, article earnings, subscription earnings, upvote earnings) and debits (paywall reads, subscription charges, vote charges). Query params: `filter=all\|credits\|debits`, `limit` (default 30, max 200), `offset`. Returns `{ summary: { creditsTotalPence, debitsTotalPence, balancePence, lastSettledAt }, entries, totalEntries, hasMore }`. Summary totals reset on each Stripe settlement |
-
-### Portability & federation
-
-| Method | Path                    | Auth             | Purpose                                                    |
-| ------ | ----------------------- | ---------------- | ---------------------------------------------------------- |
-| GET    | /api/v1/platform-pubkey | —                | Platform's Nostr signing pubkey (for receipt verification) |
-| GET    | /api/v1/receipts/export | session          | Reader's portable receipt tokens (signed kind 9901 events) |
-| GET    | /api/v1/account/export  | session (writer) | Author migration bundle: content keys + receipt whitelist  |
-
-### Public
-
-| Method | Path                                    | Auth     | Purpose                                                 |
-| ------ | --------------------------------------- | -------- | ------------------------------------------------------- |
-| GET    | /api/v1/writers/:username               | optional | User profile (any active account, not just writers)     |
-| GET    | /api/v1/writers/:username/articles      | optional | User's published articles                               |
-| GET    | /api/v1/writers/:username/notes         | optional | User's published notes                                  |
-| GET    | /api/v1/writers/:username/replies       | optional | User's published replies (includes article author info) |
-| GET    | /api/v1/writers/:username/followers     | optional | Public paginated follower list                          |
-| GET    | /api/v1/writers/:username/following     | optional | Public paginated following list                         |
-| GET    | /api/v1/writers/:username/subscriptions | optional | Public subscription list (non-hidden only)              |
-| GET    | /api/v1/search?q=&type=                 | optional | Search articles, writers, and publications              |
-| GET    | /rss                                    | —        | Platform-wide RSS                                       |
-| GET    | /rss/:username                          | —        | Writer RSS                                              |
+`GET /api/v1/my/tab`, `GET /api/v1/my/account-statement` (session); `GET /api/v1/platform-pubkey` (public), `GET /api/v1/receipts/export` (session), `GET /api/v1/account/export` (writer).
 
 ---
 
 ## Nostr event types
 
-| Kind  | Type              | Publisher                             | Purpose                                                                                                                                                                                                                    |
-| ----- | ----------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Metadata          | User (via key-custody)                | Profile (name, bio, avatar)                                                                                                                                                                                                |
-| 1     | Note              | User (via key-custody)                | Short-form post                                                                                                                                                                                                            |
-| 3     | Contacts          | User (via key-custody)                | Follow list                                                                                                                                                                                                                |
-| 5     | Deletion          | User (via key-custody)                | Soft-delete article or note. Published by the gateway on article delete and note delete — used by feed clients to filter deleted events from relay query results                                                           |
-| 7003  | Subscription      | Platform service key                  | Subscription status (provisional NIP-88)                                                                                                                                                                                   |
-| 30023 | Long-form article | User or Publication (via key-custody) | NIP-23 article with optional `['payload', ciphertext, algorithm]` tag for paywalled content. Publication articles are signed with the publication's keypair (signerType='publication') and include author/publisher p-tags |
-| 30024 | Draft             | User (via key-custody)                | NIP-23 draft                                                                                                                                                                                                               |
-| 9901  | Receipt           | Platform service key                  | Gate-pass receipt (public relay: HMAC reader hash; private DB copy: actual reader pubkey)                                                                                                                                  |
+| Kind | Type | Publisher | Purpose |
+| ---- | ---- | --------- | ------- |
+| 0 | Metadata | User (via key-custody) | Profile |
+| 1 | Note | User | Short-form post |
+| 3 | Contacts | User | Follow list |
+| 5 | Deletion | User | Soft-delete article/note (published by gateway on delete) |
+| 7003 | Subscription | Platform service key | Subscription status (provisional NIP-88) |
+| 30023 | Long-form article | User or Publication | NIP-23 article; paywalled bodies carry `['payload', ciphertext, algorithm]` |
+| 30024 | Draft | User | NIP-23 draft |
+| 9901 | Receipt | Platform service key | Gate-pass receipt (HMAC reader hash public; actual pubkey in private DB copy) |
 
 ### Paywall content format
 
-Paywalled articles embed encrypted content directly in the kind 30023 event:
+Paywalled bodies embed ciphertext in the kind 30023 event:
 
 ```
 tag: ['payload', <base64 ciphertext>, 'xchacha20poly1305']
 ```
 
-Format: `base64(nonce[24] || ciphertext_with_tag)` — XChaCha20-Poly1305 via @noble/ciphers.
-
-The content key is issued via `POST /api/v1/articles/:eventId/key` (after gate-pass), wrapped with NIP-44 (ChaCha20-Poly1305) to the reader's Nostr pubkey.
-
-Legacy articles (pre-v3.0) used a separate kind 39701 vault event with AES-256-GCM. Both formats remain decryptable — the `algorithm` field in the key-service response drives the decryption path.
+Format: `base64(nonce[24] || ciphertext_with_tag)`, XChaCha20-Poly1305 via `@noble/ciphers`. The content key is issued via `POST /api/v1/articles/:eventId/key` after gate-pass, NIP-44-wrapped to the reader's pubkey. Legacy articles used a kind 39701 vault event with AES-256-GCM; both remain decryptable — the `algorithm` field drives the path.
 
 ---
 
 ## Key custody
 
-The `key-custody` service (port 3004) is the sole holder of all user and publication Nostr private keys. It holds `ACCOUNT_KEY_HEX` — the AES-256 key used to encrypt private keys at rest in `accounts.nostr_privkey_enc` and `publications.nostr_privkey_enc`. **No other service has access to this key.**
-
-The gateway calls key-custody for these operations:
-
-- `POST /keypairs/generate` — generate and store a new Nostr keypair for a new user
-- `POST /keypairs/sign` — sign a Nostr event with a user's or publication's private key
-- `POST /keypairs/unwrap-nip44` — NIP-44 decrypt (for reading encrypted DMs, key deliveries)
-- `POST /keypairs/nip44-encrypt` — NIP-44 encrypt
-- `POST /keypairs/nip44-decrypt` — NIP-44 decrypt
-
-All signing and encryption endpoints accept `signerId` + `signerType` (`'account'` | `'publication'`). When `signerType` is `'publication'`, the private key is looked up from the `publications` table. Backwards-compatible: `accountId` still accepted.
-
-All calls carry `x-internal-secret` (shared secret between gateway and key-custody). The key-custody service rejects any request missing this header.
+`key-custody` (port 3004) is the sole holder of all user and publication Nostr private keys and the only holder of `ACCOUNT_KEY_HEX`. The gateway calls it for `POST /keypairs/generate | /sign | /unwrap-nip44 | /nip44-encrypt | /nip44-decrypt`, all carrying `x-internal-secret`. Signing/encryption endpoints accept `signerId` + `signerType` (`account` | `publication`).
 
 ---
 
-## Author migration export
+## Author migration export & receipt portability
 
-Writers can export a complete migration bundle via `GET /api/v1/account/export`:
-
-```json
-{
-  "version": 1,
-  "exportedAt": "...",
-  "account": { "nostrPubkey": "...", "username": "...", "displayName": "..." },
-  "articles": [
-    {
-      "articleId": "...",
-      "nostrEventId": "...",
-      "dTag": "...",
-      "title": "...",
-      "isPaywalled": true,
-      "algorithm": "xchacha20poly1305",
-      "encryptedKey": "<NIP-44 wrapped to writer's own pubkey>",
-      "readerPubkeys": ["<hex>", ...]
-    }
-  ],
-  "summary": { "totalArticles": 5, "paywallArticles": 3, "contentKeysExported": 3, "uniqueReaders": 12 }
-}
-```
-
-- `encryptedKey` — decrypt with the writer's own Nostr private key (NIP-44, sender = platform service key) to get the 32-byte content key, then use `algorithm` to decrypt the article body.
-- `readerPubkeys` — readers who have paid for that article. A receiving host can honour these without re-charging.
-- Nostr events (profile, follow list, articles) are on the relay and fetchable by the writer's pubkey — they are not duplicated in the export.
-
----
-
-## Receipt portability
-
-Readers export their paid-access receipts via `GET /api/v1/receipts/export`. Each receipt is a signed Nostr kind 9901 event (signed by the platform service key) containing:
-
-```
-['e', articleEventId]     — article read
-['p', writerPubkey]       — writer
-['reader', readerPubkey]  — reader (actual pubkey)
-['amount', pence, 'GBP']  — amount charged
-['gate', 'passed']
-```
-
-A receiving host verifies receipts by:
-
-1. Fetching this host's signing pubkey: `GET /api/v1/platform-pubkey`
-2. Calling `verifyEvent(receipt)` from nostr-tools
-3. Checking `receipt.pubkey` matches the platform pubkey
+- **Author export** (`GET /api/v1/account/export`, writer): migration bundle of content keys (NIP-44-wrapped to the writer's own pubkey) + per-article reader whitelists. Nostr events are fetchable from the relay and not duplicated.
+- **Receipt export** (`GET /api/v1/receipts/export`, reader): signed kind 9901 events. A receiving host verifies via `GET /api/v1/platform-pubkey` + `verifyEvent`.
 
 ---
 
 ## Subscription system
 
-1. Writers set a monthly price (£1–£100, default £5)
-2. Subscribers are charged immediately via Stripe; access is immediate
-3. Active subscription unlocks all that writer's paywalled content at zero per-article cost
-4. Each subscription creates a kind 7003 Nostr event (signed by platform service key) for federation
-5. Unlocks are permanent — survive cancellation
-6. Cancellation grants access until period end
+1. Writers set a monthly price (£1–£100, default £5); annual periods supported.
+2. Subscribers are charged immediately; access is immediate.
+3. Active subscription unlocks all that writer's paywalled content at zero per-article cost.
+4. Each subscription emits a kind 7003 Nostr event for federation.
+5. Unlocks are permanent and survive cancellation; cancellation grants access until period end.
 
-### Access check priority
+### Access-check priority
 
 1. Own content → free
-2. Publication member (if article belongs to a publication) → free
+2. Publication member → free
 3. Permanent unlock (`article_unlocks`) → free, key reissued
 4. Active subscription (writer or publication) → free, creates permanent unlock + subscription_read log
 5. Payment flow → charges reading tab, creates permanent unlock
@@ -1075,238 +600,141 @@ A receiving host verifies receipts by:
 
 ## Media uploads
 
-Images uploaded via `POST /api/v1/media/upload` are resized (max 1200px), converted to WebP (quality 80), and written to the `media_data` volume at `/app/media/<sha256>.webp`. Nginx serves them at `/media/<sha256>.webp` with 1-year cache headers. Maximum upload size is 12MB (enforced by both Fastify `bodyLimit` and `@fastify/multipart` file size limit).
+`POST /api/v1/media/upload` resizes to max 1200px, converts to WebP (q80), and writes to `media_data` at `/app/media/<sha256>.webp`. Nginx serves `/media/<sha256>.webp` with 1-year cache headers. Max upload 12 MB (enforced by Fastify `bodyLimit` and `@fastify/multipart`).
 
 ---
 
 ## Frontend pages
 
-| Path                       | Purpose                                                                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| /                          | Landing (redirects to /feed if logged in)                                                                                               |
-| /feed                      | Sticky composer + Following / Add tabs                                                                                                  |
-| /profile                   | Identity (name, bio, avatar, username, pubkey), payment card, Stripe Connect, data export                                               |
-| /account                   | Balance, transaction ledger (paid/all reads toggle), subscriptions, pledges                                                             |
-| /following                 | Writers you follow, with unfollow action                                                                                                |
-| /followers                 | Accounts who follow you                                                                                                                 |
-| /notifications             | Recent notifications (new followers, replies, subscribers, quotes, mentions) — excludes DM notifications. Full-page view used on mobile |
-| /messages                  | Two-panel DM inbox: conversation list + message thread. Chronological order (newest at bottom). Like reactions on messages              |
-| /write                     | Article editor with paywall gate marker                                                                                                 |
-| /article/:dTag             | Article reader with paywall unlock (SSR, ISR 60s)                                                                                       |
-| /:username                 | Writer profile (SSR, ISR 60s)                                                                                                           |
-| /auth                      | Signup / login                                                                                                                          |
-| /auth/google/callback      | Google OAuth callback (handles Google redirect, exchanges code, sets session)                                                           |
-| /auth/verify               | Magic link verification                                                                                                                 |
-| /dashboard                 | Articles, drafts, pledge drives, offers, pricing                                                                                        |
-| /social                    | Feed reach dial, blocked accounts, muted accounts, DM fees                                                                              |
-| /settings                  | Redirects to /profile                                                                                                                   |
-| /history                   | Redirects to /account?filter=all                                                                                                        |
-| /pub/:slug                 | Publication homepage (blog/magazine/minimal layout)                                                                                     |
-| /pub/:slug/about           | Publication about/mission page                                                                                                          |
-| /pub/:slug/masthead        | Publication team listing                                                                                                                |
-| /pub/:slug/subscribe       | Publication subscription CTA                                                                                                            |
-| /pub/:slug/archive         | Publication full article archive                                                                                                        |
-| /pub/:slug/:articleSlug    | Article under publication branding                                                                                                      |
-| /invite/:token             | Publication invite acceptance page                                                                                                      |
-| /search                    | Article, writer, and publication search                                                                                                 |
-| /traffology                | Traffology feed: observation stream, live reader banner                                                                                 |
-| /traffology/piece/:pieceId | Piece detail: summary strip, provenance bars, source breakdown                                                                          |
-| /traffology/overview       | Writer overview: baseline stats, sortable piece grid, topic performance                                                                 |
-| /about                     | About page                                                                                                                              |
+| Path | Purpose |
+| ---- | ------- |
+| / | Landing (redirects to /feed if logged in) |
+| /feed | Main feed — composer + Following / Explore (renders ArticleCard / NoteCard / ExternalCard) |
+| /workspace | Workspace view (VesselCard-based; workspace experiment) |
+| /[username] | User profile (SSR, ISR 60s) |
+| /article/[dTag] | Article reader with paywall unlock (SSR, ISR 60s) |
+| /write | Article editor with paywall gate marker + scheduling |
+| /dashboard | Articles, drafts, pledge drives, offers, pricing, publication creation |
+| /profile | Identity, payment card, Stripe Connect, data export |
+| /settings | Account settings (email/username change, preferences) |
+| /account | Balance, transaction ledger, subscriptions, pledges |
+| /ledger | Account ledger + writer earnings view |
+| /library | Saved reading — Bookmarks / History tabs |
+| /bookmarks | Saved articles |
+| /history → /library?tab=history | Redirect |
+| /reading-history → /library?tab=history | Redirect |
+| /network | Following / followers + feed reach dial |
+| /following | Writers you follow |
+| /followers | Accounts who follow you |
+| /social | Feed reach dial, blocks, mutes, DM fees |
+| /subscriptions | Manage subscriptions + subscribe input |
+| /subscribe/[code] | Subscription offer redemption |
+| /messages, /messages/[conversationId] | DM inbox + thread |
+| /notifications | Notifications (excludes DMs) |
+| /search | Article / writer / publication search |
+| /tag/[tag] | Tag/topic listing |
+| /auth, /auth/verify, /auth/google/callback | Signup/login, magic-link verify, Google OAuth callback |
+| /admin, /admin/reports | Moderation/admin surfaces |
+| /traffology, /traffology/overview, /traffology/piece/[pieceId] | Writer analytics |
+| /pub/[slug] (+ /about, /masthead, /subscribe, /archive, /[articleSlug]) | Publication surfaces |
+| /invite/[token] | Publication invite acceptance |
+| /about | About page |
 
 ---
 
 ## Operational commands
 
-### Restart everything
-
 ```bash
+# Restart everything
 docker compose down && docker compose up -d
-```
 
-### Rebuild a single service
-
-```bash
+# Rebuild a single service (force, then recreate + reload proxy)
 docker compose build --no-cache gateway
 docker compose up -d gateway
 docker compose exec nginx nginx -s reload
-```
 
-### View logs
-
-```bash
+# Logs
 docker logs platform-pub-gateway-1 --tail 50 -f
-docker logs platform-pub-key-custody-1 --tail 50 -f
+docker logs platform-pub-feed-ingest-1 --tail 50 -f
 docker logs platform-pub-web-1 --tail 50 -f
-```
 
-### Check relay events
-
-```bash
-# From browser console:
-const ws = new WebSocket('wss://yourdomain.com/relay');
-ws.onmessage = (e) => console.log(JSON.parse(e.data));
-ws.onopen = () => ws.send(JSON.stringify(["REQ","test",{"limit":5}]));
-```
-
-### Database queries
-
-```bash
+# DB query
 docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "YOUR QUERY"
+
+# Relay sanity check (browser console)
+#   const ws = new WebSocket('wss://yourdomain.com/relay');
+#   ws.onopen = () => ws.send(JSON.stringify(["REQ","t",{"limit":5}]));
+
+# Certbot renewal
+docker compose run --rm certbot renew && docker compose restart nginx
 ```
-
-### Certbot renewal
-
-```bash
-docker compose run --rm certbot renew
-docker compose restart nginx
-```
-
-Auto-renewal is configured by `harden-server.sh` to run daily at 03:00.
 
 ---
 
-## Known limitations (v4.8.0)
+## Known limitations
 
-- RSS feed ingestion not yet built
-- NIP-07 browser extension support not yet built
-- Cash-out-at-will (writer-initiated payout) not yet implemented
-- Stripe payment collection not yet live — free allowance goes negative as a testing workaround
-- Email sending requires configuring `EMAIL_PROVIDER` — defaults to console logging
-- Broadcast stream warm-up: new Postmark broadcast streams start rate-limited; raise `BROADCAST_DAILY_SEND_LIMIT` gradually over 2-4 weeks
-- Publish email audience is paid subscribers only (Phase 2 adds followers)
-- Docker healthchecks on some Alpine containers report "unhealthy" due to missing `wget`/`curl` in the image, despite services running correctly
+- **Docker healthchecks** on some Alpine containers can report "unhealthy" due to a missing `wget`/`curl` in the image despite the service running correctly.
+- **Stripe collection** must be configured (test/live keys + webhook secret) before real money flows; verify `payment_intent.succeeded` and `transfer.paid` webhooks are reaching `/webhooks/stripe`.
+- **Email sending** requires `EMAIL_PROVIDER` (postmark/resend); defaults to console logging. New Postmark broadcast streams are rate-limited — raise `BROADCAST_DAILY_SEND_LIMIT` gradually over 2–4 weeks.
+- **Bluesky OAuth** features are disabled unless `ATPROTO_PRIVATE_JWK` is set on gateway + feed-ingest.
+- **Cash-out-at-will** (writer-initiated payout) is not implemented; payouts run on the scheduled cycle.
+- **NIP-07 browser extension** login is not built (all accounts are custodial).
+- **Lightning/Cashu payments**, **federation/self-hosted packaging**, and the **Mostr bridge** are post-launch.
 
 ---
 
 ## Change log
 
+### Consolidated update — 29 May 2026 (baseline ~v5.36.0)
+
+> This entry consolidates the v5.30.0 → current window. Granular per-release notes for this window were not reconstructed; capability areas are anchored to their migrations and ADRs. All earlier per-release entries below are retained.
+
+- **Universal Feed** (migrations 052–064, 075, 090–096; `docs/adr/UNIVERSAL-FEED-ADR.md`; new `feed-ingest` service). External source ingestion — RSS, ActivityPub/Mastodon, AT Protocol/Bluesky, external Nostr, and email newsletters — into a unified `feed_items` timeline; outbound cross-posting + reply router; AT Protocol OAuth (`private_key_jwt`); DB-backed identity resolver; external item context/parent/thread endpoints; engagement counts; content warnings. New env: `LINKED_ACCOUNT_KEY_HEX` (gateway + feed-ingest, must match), `ATPROTO_CLIENT_BASE_URL`, `ATPROTO_PRIVATE_JWK`.
+- **Trust layer** (migrations 065–067, 078, 079; trust routes + `/network`). Layer 1 precomputed signals, vouches + trust profiles, epoch-based aggregation/decay, trust polls, contested PIP status.
+- **Workspace experiment** (migrations 077, 080, 081, 089; `docs/adr/WORKSPACE-EXPERIMENT-ADR.md`; `/workspace`, `WorkspaceView`/`VesselCard`; `/api/v1/workspace/feeds`). Merged to master 29 May 2026 (fast-forward).
+- **Card behaviour** (migration 097; `docs/adr/CARD-BEHAVIOUR-ADR.md`, `CARD-BEHAVIOUR-BUILD-PLAN.md`). Phases 1–3 (25–26 May 2026): unified click region map, `is_reply` reply signalling, inline conversational-neighbourhood expansion, desktop author hover modal + touch action sheet. New: `feed_items.is_reply`, `timeline` response `isReply`/`biddabilityTier`, `GET /api/v1/author-card`, `AuthorModal`, `ActionSheet`, `NeighbourhoodCard`, `useNeighbourhood`, `useAuthorCard`.
+- **Relay outbox** (migration 076). Durable queue for Nostr relay publishes; article rows and outbound events commit together.
+- **Reading & product** (migrations 046–051, 068–070, 082–084, 088, 092). Notification preferences, bookmarks, tags, account deletion, publication homepage layouts, article scheduling, article size tiers, reading-position resumption, search trigram indexes, traffology source race fix, interaction foundation.
+- **Settlement & schema hardening** (migrations 071, 085–087). Three-phase settlement status on `tab_settlements`, nullable webhook `processed_at`, non-negative reading-tab balance constraint, broad index/FK/trigger hardening. `schema.sql` synced through 097.
+
 ### v5.30.0 — 13 April 2026
 
-**Per-1000-words article pricing, £ fix, responsive editor toolbar**
-
-Migration required (045). Services changed: gateway, web.
-
-- **Per-1000-words pricing mode:** Publications can now price paywalled articles per 1,000 words instead of a flat per-article rate. Price floors to the last full 1,000-word threshold (e.g. 3,800 words at £0.10/1k = £0.30). Rate card UI includes a toggle and live preview.
-- **£ symbol fix:** `\u00a3` Unicode escapes in JSX text content rendered as literal strings instead of the pound sign. Replaced with actual `£` characters in `RateCardTab.tsx` (3 instances) and `MessageThread.tsx` (1 instance).
-- **Responsive editor toolbar:** Toolbar buttons use tighter padding on mobile. Less essential buttons (H3, H2, bullet list, word count) progressively hide at narrow widths. Paywall button is always visible.
-
----
+Per-1000-words article pricing, £-symbol fix, responsive editor toolbar. Migration 045. Services: gateway, web.
 
 ### v5.29.0 — 13 April 2026
 
-**Email-on-publish v2 (Phase 1)**
-
-Migration required (044). Services changed: gateway, web. New env vars: `POSTMARK_BROADCAST_STREAM`, `EMAIL_FROM_BROADCAST`, `BROADCAST_DAILY_SEND_LIMIT`.
-
-**Postmark setup:** Before deploying, create a broadcast message stream named `broadcast` in the Postmark server dashboard and verify sender signature for `posts@all.haus` (or use domain-level DKIM). The broadcast stream manages List-Unsubscribe headers and bounce/complaint suppression automatically.
-
-- **Broadcast stream:** Publish notification emails now use Postmark's broadcast message stream (separate IP reputation from transactional emails). Configurable via `POSTMARK_BROADCAST_STREAM` env var.
-- **Writer email control:** Publish button is now two-step — confirmation panel with "Email subscribers" checkbox (checked by default). Writers opt out per article. Edits never re-send.
-- **Improved email template:** Publish emails now include writer avatar, article title, summary/excerpt (~150 words), "Read on all.haus" CTA button, and branded footer.
-- **Signed unsubscribe:** Email footer contains HMAC-signed unsubscribe link (`GET /api/v1/email/unsubscribe`). Readers unsubscribe without logging in. Endpoint is rate-limited (10 req/min per IP).
-- **Daily send cap:** `BROADCAST_DAILY_SEND_LIMIT` (default 50) caps broadcast emails per day for stream warm-up. Set to `0` once Postmark stream is warm (typically 2-4 weeks). Skipped recipients are not retried.
-- **email_sent_at tracking:** Articles table tracks when publish email was sent; prevents duplicate sends on edits.
-
----
+Email-on-publish v2 (Phase 1): broadcast stream, two-step publish with opt-out, improved template, signed unsubscribe, daily send cap. Migration 044. Services: gateway, web. New env: `POSTMARK_BROADCAST_STREAM`, `EMAIL_FROM_BROADCAST`, `BROADCAST_DAILY_SEND_LIMIT`.
 
 ### v5.28.0 — 12 April 2026
 
-**Traffology analytics + security audit hardening**
-
-Migration required (039, 040, 041). Services changed: gateway, payment-service, key-service, web, traffology-ingest (new), traffology-worker (new).
-
-- **Traffology Phase 1:** Complete writer analytics system — page tracking script, ingest service, hourly/daily/weekly aggregation, source resolution (170+ known domains, shortener following), observation generation (first-day summary, anomalies, milestones, source breakdown), feed UI, piece detail with provenance bars, overview with baseline stats and topic performance.
-- **Stripe idempotency keys:** `paymentIntents.create` and `transfers.create` calls now include idempotency keys to prevent duplicate charges on network retries.
-- **Webhook deduplication:** `stripe_webhook_events` table prevents reprocessing of Stripe events delivered more than once. Failed handler rolls back dedup record for retry.
-- **oEmbed timeout:** External oEmbed fetch now has 5-second timeout (was unbounded).
-- **Key service pubkey validation:** `x-reader-pubkey` validated as 64-char hex (defence in depth).
-- **Template HTML escaping:** All Traffology template values now pass through `escapeHtml()`.
-- **FK fix:** `subscription_events.subscription_id` gets `ON DELETE CASCADE` (missed by migration 021).
-- **schema.sql synced:** All ON DELETE clauses from migrations 018/021/041, dedup table, migration tracking updated through 041.
-
----
+Traffology analytics + security audit hardening: tracking script, ingest service, aggregation worker, source resolution, observation feed; Stripe idempotency keys, webhook deduplication, oEmbed timeout, key-service pubkey validation. Migrations 039–041. New services: traffology-ingest, traffology-worker. New env: `TRAFFOLOGY_INGEST_URL`, `IP_HASH_SALT`.
 
 ### v5.27.1 — 8 April 2026
 
-**Fix: notification/DM badge reliability — missed messages, mobile indicator, stale counts**
-
-No migration. Services changed: web.
-
-- **Polling interval reduced:** Unread-count polling interval reduced from 60s to 15s (`AuthProvider.tsx`). The 60-second window meant new DMs and notifications could go unnoticed for up to a minute.
-- **Mobile hamburger badge:** The mobile hamburger menu icon now displays the combined unread count badge (matching the desktop PFP avatar badge). Previously mobile users had no visual indicator until they opened the menu.
-- **Mark-read race condition:** All `refreshUnread()` calls in `MessageThread.tsx`, `NotificationBell.tsx`, and `notifications/page.tsx` now `await` the preceding `markRead`/`markAllRead` call. Previously the badge count query could race the write and return a stale (still-unread) count.
-- **Rebrand cleanup:** RSS feed titles/descriptions, export modal copy, and docs updated from "Platform" / "platform.pub" to "all.haus".
-
----
+Notification/DM badge reliability: 15s polling, mobile hamburger badge, mark-read race fix; rebrand cleanup to all.haus. No migration. Service: web.
 
 ### v5.26.0 — 7 April 2026
 
-**Fix: media upload body limit — profile images and large uploads failing**
-
-No migration. Services changed: gateway.
-
-- **Media upload body limit:** `POST /media/upload` route now sets `bodyLimit: 12 * 1024 * 1024` to match the `@fastify/multipart` file size limit. Fastify's default 1MB body parser limit was silently rejecting multipart payloads for any image over ~1MB before the multipart plugin could process them. This affected profile photo uploads and all image uploads from the editor.
-
----
+Media upload body-limit fix (`bodyLimit: 12 MB` on the upload route). No migration. Service: gateway.
 
 ### v5.25.0 — 7 April 2026
 
-**Paywall-gated comments, DM scroll, export download, publication creation UI**
-
-No migration. Services changed: gateway, web.
-
-- **Paywall-gated comments:** `GET /replies/:targetEventId` checks article paywall access; locked articles return empty comments with `paywallLocked: true`. Frontend shows lock message and re-fetches on unlock.
-- **DM scroll-to-bottom fix:** Conversations scroll to latest message on open via `initialScrollDone` ref.
-- **Export download fix:** Download anchor appended to DOM before click.
-- **Nav export button removed:** Export accessible only from Profile settings page.
-- **Publication creation UI:** "+ New publication" button in dashboard context switcher with inline creation form.
-
----
+Paywall-gated comments, DM scroll-to-bottom, export download fix, nav cleanup, publication creation UI. No migration. Services: gateway, web.
 
 ### v5.24.0 — 7 April 2026
 
-**CI pipeline, backend ESLint, pre-push hook**
-
-No migration. Services changed: gateway, payment-service, key-service, key-custody, web.
-
-- **CI pipeline:** GitHub Actions workflow for linting, type-checking, and tests across all services.
-- **Backend ESLint:** ESLint configured for all backend services with shared config.
-- **Pre-push hook:** Runs lint and type-check before push.
-
----
+CI pipeline (build, ESLint, Knip, Vitest, `next lint`, `npm audit`), backend ESLint, pre-push hook. No migration.
 
 ### v5.23.0 — 7 April 2026
 
-**Fix: FeaturedWriters build error — removed API method still referenced**
-
-No migration. Services changed: web.
-
-- **FeaturedWriters build fix:** `FeaturedWriters.tsx` called `feedApi.featured()` which was removed in v5.22.0's dead code cleanup, breaking the Next.js production build. Replaced with `feedApi.get('explore', undefined, 3)` and updated response field from `data.articles` to `data.items`.
-
----
+FeaturedWriters build fix (removed `feed.featured()` reference). No migration. Service: web.
 
 ### v5.22.0 — 7 April 2026
 
-**Audit fixes: critical bugs, dead code removal, editor polish**
-
-No new migration. Services changed: gateway, web. Schema updated: `schema.sql`.
-
-- **Gate-pass publication access fix (critical):** The gate-pass handler now SELECTs `publication_id` from the article and passes it to `checkArticleAccess()`. Previously publication members and subscribers were incorrectly charged for reading their own publication's paywalled articles.
-- **schema.sql ON DELETE clauses:** Synced `schema.sql` with migration 021 — added missing `ON DELETE CASCADE`, `ON DELETE RESTRICT`, and `ON DELETE SET NULL` clauses to FK constraints on `subscriptions`, `subscription_events`, `article_unlocks`, `vote_charges`, `pledges`, `conversations`, and `publication_payouts`. Fresh database instances from `schema.sql` now match migrated databases.
-- **Publication article kind 5 deletion:** `DELETE /publications/:id/articles/:articleId` now publishes a Nostr kind 5 deletion event to the relay (matching the personal article delete behaviour). Previously deleted publication articles lingered on the relay.
-- **Publication PATCH updated_at:** `PATCH /publications/:id` now sets `updated_at = now()`.
-- **Dead code removal:** Deleted dead comment system (gateway route, 3 frontend components, lib file — never registered or imported). Removed legacy `/feed/global` and `/feed/following` endpoints from `notes.ts` (broken column name, no block/mute filtering, duplicated by `feed.ts`). Removed unused `feed.global()`, `feed.following()`, `feed.featured()` API client wrappers.
-- **Editor title/subtitle sizing:** Reduced title card padding from `p-8 sm:p-10` to `px-5 py-4` and title font from `text-4xl sm:text-5xl` to `text-2xl sm:text-3xl`. Subtitle card padding similarly reduced. Fields now match the proportions of surrounding controls.
-
----
+Audit fixes: gate-pass publication access (critical), `schema.sql` ON DELETE sync, publication article kind 5 deletion, dead-code removal, editor polish. Service: gateway, web.
 
 ### v5.21.0 — 7 April 2026
 
-**Fix: gateway crash — duplicate route collision on publication articles**
+Gateway crash fix: duplicate route collision on publication articles (`/publications/by-slug/:slug/articles`). No migration. Services: gateway, web.
 
-No migration. Services changed: gateway, web.
-
-- **Route collision fix:** `GET /publications/:slug/articles` (public) and `GET /publications/:id/articles` (CMS) registered identical Fastify route patterns, causing `FST_ERR_DUPLICATED_ROUTE` and a gateway crash loop. Public route moved to `GET /publications/by-slug/:slug/articles`. Frontend callers (`api.ts`, `pub/[slug]/page.tsx`, `pub/[slug]/archive/page.tsx`) updated.
-
-> **Older versions:** Changelog entries for v5.21.0 and earlier are available in this file's git history.
+> Older entries (v5.20.0 and earlier) are available in this file's git history.
