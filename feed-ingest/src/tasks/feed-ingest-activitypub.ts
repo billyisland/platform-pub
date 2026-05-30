@@ -114,9 +114,10 @@ export const feedIngestActivityPub: Task = async (payload, helpers) => {
       });
       if (didInsert) {
         inserted++;
-        if (item.sourceReplyUri) {
+        if (item.sourceReplyUri || item.sourceQuoteUri) {
           await helpers.addJob("external_parent_prefetch", {
             sourceReplyUri: item.sourceReplyUri,
+            sourceQuoteUri: item.sourceQuoteUri,
             protocol: "activitypub",
             sourceId: source.id,
           });

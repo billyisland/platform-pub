@@ -350,6 +350,15 @@ export interface ParentItem {
   sourceReplyUri: string | null;
 }
 
+export interface QuoteResponse {
+  // The quoted post, rendered as a nested mini-card (reuses ParentItem's shape,
+  // which carries the post's own media). null when nothing is quoted or the
+  // source fetch failed.
+  quote: ParentItem | null;
+  // Server-signalled: a quote was expected but the source fetch failed/timed out.
+  partial: boolean;
+}
+
 export interface ExternalThreadEntry {
   id: string;
   authorName: string;
@@ -378,6 +387,8 @@ export const externalItems = {
 
   parent: (id: string) =>
     request<ParentContextResponse>(`/external-items/${id}/parent`),
+
+  quote: (id: string) => request<QuoteResponse>(`/external-items/${id}/quote`),
 
   thread: (id: string) =>
     request<ThreadResponse>(`/external-items/${id}/thread`),

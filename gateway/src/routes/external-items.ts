@@ -33,6 +33,12 @@ const parentCache = new Map<
 >();
 const PARENT_CACHE_TTL_MS = 120_000;
 
+const quoteCache = new Map<
+  string,
+  { data: QuoteResponse; expiresAt: number }
+>();
+const QUOTE_CACHE_TTL_MS = 120_000;
+
 const threadCache = new Map<
   string,
   { data: ThreadResponse; expiresAt: number }
@@ -84,6 +90,16 @@ interface ParentContextResponse {
   partial: boolean;
 }
 
+interface QuoteResponse {
+  // A quoted post is rendered as a nested mini-card; it carries the same shape
+  // as a parent (author + content + its own media). null when the item quotes
+  // nothing, or when the source fetch couldn't produce the quoted post.
+  quote: ParentItem | null;
+  // Server-signalled (CARD-BEHAVIOUR-ADR §VII.3): true when a quote was expected
+  // (source_quote_uri is set) but the source fetch failed / timed out.
+  partial: boolean;
+}
+
 interface ParentItem {
   id: string;
   sourceProtocol: string;
@@ -110,6 +126,7 @@ interface ExternalItemRow {
   protocol: string;
   source_item_uri: string;
   source_reply_uri: string | null;
+  source_quote_uri?: string | null;
   like_count: number;
   reply_count: number;
   repost_count: number;
@@ -271,6 +288,82 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       parentCache.set(id, {
         data,
         expiresAt: Date.now() + PARENT_CACHE_TTL_MS,
+      });
+
+      return reply.send(data);
+    },
+  );
+
+  // =========================================================================
+  // GET /external-items/:id/quote — quoted-post tile for quote posts.
+  // Mirrors /parent: a quoted post is hydrated (from external_items if already
+  // present, else fetched from the source platform) and rendered as a nested
+  // mini-card in our idiom. Same rate-limit / cache / partial-flag contract.
+  // =========================================================================
+  app.get<{ Params: { id: string } }>(
+    "/external-items/:id/quote",
+    {
+      preHandler: requireAuth,
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+    },
+    async (req, reply) => {
+      const { id } = req.params;
+
+      const cached = quoteCache.get(id);
+      if (cached && cached.expiresAt > Date.now()) {
+        return reply.send(cached.data);
+      }
+
+      const { rows } = await pool.query<ExternalItemRow>(
+        `SELECT id, source_id, protocol, source_item_uri, source_quote_uri,
+                like_count, reply_count, repost_count, interaction_data
+         FROM external_items WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      );
+
+      if (rows.length === 0) {
+        return reply.status(404).send({ error: "Item not found" });
+      }
+
+      const item = rows[0];
+
+      if (!item.source_quote_uri) {
+        const data: QuoteResponse = { quote: null, partial: false };
+        return reply.send(data);
+      }
+
+      // Already hydrated? (e.g. eager prefetch, or the quoted post is itself a
+      // subscribed item).
+      const { rows: quoteRows } = await pool.query(
+        `SELECT id, protocol, source_item_uri, source_reply_uri,
+                author_name, author_handle, author_avatar_url, author_uri,
+                content_text, content_html, title, summary, media,
+                like_count, reply_count, repost_count, interaction_data,
+                EXTRACT(EPOCH FROM published_at)::bigint AS published_at_epoch
+         FROM external_items
+         WHERE source_item_uri = $1 AND protocol = $2 AND deleted_at IS NULL
+         LIMIT 1`,
+        [item.source_quote_uri, item.protocol],
+      );
+
+      let quote: ParentItem | null = null;
+      let partial = false;
+
+      if (quoteRows.length > 0) {
+        quote = rowToParentItem(quoteRows[0]);
+      } else {
+        const fetched = await fetchQuoteFromSource(item);
+        if (fetched) {
+          quote = fetched;
+        } else {
+          partial = true;
+        }
+      }
+
+      const data: QuoteResponse = { quote, partial };
+      quoteCache.set(id, {
+        data,
+        expiresAt: Date.now() + QUOTE_CACHE_TTL_MS,
       });
 
       return reply.send(data);
@@ -1225,6 +1318,321 @@ async function fetchMastodonGrandparentTag(
       authorHandle: status.account.acct,
     };
   } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Quote-post fetch from source platform (mirrors the parent-context fetch)
+// ---------------------------------------------------------------------------
+
+interface QuoteMedia {
+  type: "image" | "video" | "audio" | "link";
+  url: string;
+  thumbnail?: string;
+  alt?: string;
+  title?: string;
+  description?: string;
+}
+
+// Mastodon's OpenGraph link preview (a `card` on the status — never in the AP
+// outbox) becomes the same {type:"link"} media entry we render for Bluesky's
+// app.bsky.embed.external, so a previewed link looks identical across sources.
+function mastodonCardToMedia(
+  card:
+    | {
+        url?: string;
+        title?: string;
+        description?: string;
+        image?: string | null;
+        type?: string;
+      }
+    | null
+    | undefined,
+): QuoteMedia | null {
+  if (!card?.url) return null;
+  if (card.type && card.type !== "link") return null;
+  return {
+    type: "link",
+    url: card.url,
+    thumbnail: card.image ?? undefined,
+    title: card.title || undefined,
+    description: card.description || undefined,
+  };
+}
+
+// Bluesky hydrated (#view) embeds carry full CDN URLs already. Extract media
+// from the quoted post's own embed; recordWithMedia carries media alongside the
+// nested record, which we deliberately do not recurse into (no quote-of-quote).
+function extractBlueskyViewMedia(embed: unknown): QuoteMedia[] {
+  const out: QuoteMedia[] = [];
+  const handle = (v: any) => {
+    const t: string | undefined = v?.$type;
+    if (!t) return;
+    if (t.startsWith("app.bsky.embed.images") && Array.isArray(v.images)) {
+      for (const img of v.images) {
+        if (img.fullsize)
+          out.push({
+            type: "image",
+            url: img.fullsize,
+            thumbnail: img.thumb,
+            alt: img.alt || undefined,
+          });
+      }
+    } else if (t.startsWith("app.bsky.embed.external") && v.external?.uri) {
+      out.push({
+        type: "link",
+        url: v.external.uri,
+        thumbnail: v.external.thumb,
+        title: v.external.title || undefined,
+        description: v.external.description || undefined,
+      });
+    } else if (t.startsWith("app.bsky.embed.video") && v.playlist) {
+      out.push({ type: "video", url: v.playlist, thumbnail: v.thumbnail });
+    }
+  };
+  const e = embed as any;
+  if (e?.$type?.startsWith("app.bsky.embed.recordWithMedia") && e.media) {
+    handle(e.media);
+  } else {
+    handle(e);
+  }
+  return out;
+}
+
+async function fetchQuoteFromSource(
+  item: ExternalItemRow,
+): Promise<ParentItem | null> {
+  const quoteUri = item.source_quote_uri!;
+  if (item.protocol === "atproto") {
+    return fetchBlueskyQuote(quoteUri, item.source_id);
+  }
+  if (item.protocol === "activitypub") {
+    return fetchMastodonQuote(quoteUri, item.source_id);
+  }
+  return null;
+}
+
+async function fetchBlueskyQuote(
+  quoteUri: string,
+  sourceId: string,
+): Promise<ParentItem | null> {
+  try {
+    const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getPosts`);
+    url.searchParams.append("uris", quoteUri);
+
+    const res = await safeFetch(url.toString(), {
+      headers: { Accept: "application/json" },
+      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
+    });
+
+    if (!res.ok) return null;
+
+    const data = JSON.parse(res.text) as {
+      posts: Array<{
+        uri: string;
+        cid: string;
+        author: {
+          did: string;
+          handle: string;
+          displayName?: string;
+          avatar?: string;
+        };
+        record: { text?: string; createdAt?: string };
+        likeCount?: number;
+        replyCount?: number;
+        repostCount?: number;
+        embed?: unknown;
+      }>;
+    };
+
+    const post = data.posts?.[0];
+    if (!post) return null;
+
+    const publishedAt = post.record.createdAt
+      ? Math.floor(new Date(post.record.createdAt).getTime() / 1000)
+      : Math.floor(Date.now() / 1000);
+    const media = extractBlueskyViewMedia(post.embed);
+
+    const insertResult = await pool.query(
+      `INSERT INTO external_items (
+        source_id, protocol, tier, source_item_uri,
+        author_name, author_handle, author_avatar_url, author_uri,
+        content_text, media, interaction_data,
+        like_count, reply_count, repost_count,
+        published_at, is_context_only
+      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
+      ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+        like_count = EXCLUDED.like_count,
+        reply_count = EXCLUDED.reply_count,
+        repost_count = EXCLUDED.repost_count,
+        media = EXCLUDED.media
+      RETURNING id`,
+      [
+        sourceId,
+        "atproto",
+        quoteUri,
+        post.author.displayName || post.author.handle,
+        post.author.handle,
+        post.author.avatar ?? null,
+        `https://bsky.app/profile/${post.author.did}`,
+        post.record.text ?? null,
+        JSON.stringify(media),
+        JSON.stringify({ uri: post.uri, cid: post.cid }),
+        post.likeCount ?? 0,
+        post.replyCount ?? 0,
+        post.repostCount ?? 0,
+        new Date(post.record.createdAt ?? Date.now()),
+      ],
+    );
+
+    return {
+      id: insertResult.rows[0].id,
+      sourceProtocol: "atproto",
+      sourceItemUri: quoteUri,
+      authorName: post.author.displayName || post.author.handle,
+      authorHandle: post.author.handle,
+      authorAvatarUrl: post.author.avatar ?? null,
+      authorUri: `https://bsky.app/profile/${post.author.did}`,
+      contentText: post.record.text ?? null,
+      contentHtml: null,
+      title: null,
+      summary: null,
+      likeCount: post.likeCount ?? 0,
+      replyCount: post.replyCount ?? 0,
+      repostCount: post.repostCount ?? 0,
+      media,
+      publishedAt,
+      sourceReplyUri: null,
+    };
+  } catch (err) {
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err), quoteUri },
+      "Bluesky quote fetch failed",
+    );
+    return null;
+  }
+}
+
+async function fetchMastodonQuote(
+  quoteUri: string,
+  sourceId: string,
+): Promise<ParentItem | null> {
+  const statusId = extractMastodonStatusId(quoteUri);
+  if (!statusId) return null;
+
+  try {
+    const host = new URL(quoteUri).hostname;
+    const res = await safeFetch(`https://${host}/api/v1/statuses/${statusId}`, {
+      headers: { Accept: "application/json" },
+      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
+    });
+
+    if (!res.ok) return null;
+
+    const status = JSON.parse(res.text) as {
+      id: string;
+      url: string;
+      uri: string;
+      content: string;
+      created_at: string;
+      account: {
+        acct: string;
+        display_name: string;
+        avatar: string;
+        url: string;
+      };
+      favourites_count?: number;
+      replies_count?: number;
+      reblogs_count?: number;
+      media_attachments?: Array<{
+        type: string;
+        url: string;
+        preview_url?: string;
+        description?: string;
+      }>;
+      card?: {
+        url?: string;
+        title?: string;
+        description?: string;
+        image?: string | null;
+        type?: string;
+      } | null;
+    };
+
+    const publishedAt = Math.floor(
+      new Date(status.created_at).getTime() / 1000,
+    );
+
+    const media: QuoteMedia[] = (status.media_attachments ?? []).map((m) => ({
+      type: (m.type === "image"
+        ? "image"
+        : m.type === "video"
+          ? "video"
+          : "link") as QuoteMedia["type"],
+      url: m.url,
+      thumbnail: m.preview_url,
+      alt: m.description,
+    }));
+    const link = mastodonCardToMedia(status.card);
+    if (link) media.push(link);
+
+    const insertResult = await pool.query(
+      `INSERT INTO external_items (
+        source_id, protocol, tier, source_item_uri,
+        author_name, author_handle, author_avatar_url, author_uri,
+        content_html, media, interaction_data,
+        like_count, reply_count, repost_count,
+        published_at, is_context_only
+      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
+      ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+        like_count = EXCLUDED.like_count,
+        reply_count = EXCLUDED.reply_count,
+        repost_count = EXCLUDED.repost_count,
+        media = EXCLUDED.media
+      RETURNING id`,
+      [
+        sourceId,
+        "activitypub",
+        status.url || quoteUri,
+        status.account.display_name || status.account.acct,
+        status.account.acct,
+        status.account.avatar ?? null,
+        status.account.url,
+        sanitizeContent(status.content),
+        JSON.stringify(media),
+        JSON.stringify({ id: status.uri, webUrl: status.url }),
+        status.favourites_count ?? 0,
+        status.replies_count ?? 0,
+        status.reblogs_count ?? 0,
+        new Date(status.created_at),
+      ],
+    );
+
+    return {
+      id: insertResult.rows[0].id,
+      sourceProtocol: "activitypub",
+      sourceItemUri: status.url || quoteUri,
+      authorName: status.account.display_name || status.account.acct,
+      authorHandle: status.account.acct,
+      authorAvatarUrl: status.account.avatar ?? null,
+      authorUri: status.account.url,
+      contentText: null,
+      contentHtml: sanitizeContent(status.content),
+      title: null,
+      summary: null,
+      likeCount: status.favourites_count ?? 0,
+      replyCount: status.replies_count ?? 0,
+      repostCount: status.reblogs_count ?? 0,
+      media,
+      publishedAt,
+      sourceReplyUri: null,
+    };
+  } catch (err) {
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err), quoteUri },
+      "Mastodon quote fetch failed",
+    );
     return null;
   }
 }

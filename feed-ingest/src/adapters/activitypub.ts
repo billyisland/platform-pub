@@ -57,7 +57,7 @@ export interface NormalisedActivityPubItem {
   language: string | null;
   media: MediaAttachment[];
   sourceReplyUri: string | null;
-  sourceQuoteUri: string | null; // ActivityPub has no quote primitive; always null
+  sourceQuoteUri: string | null; // FEP-044f `quote` / Fedibird `quoteUrl` / Misskey `_misskey_quote`
   contentWarning: string | null;
   publishedAt: Date;
   webUrl: string | null;
@@ -328,6 +328,7 @@ function normaliseNote(
   const media = extractAttachments(note.attachment);
   const sourceReplyUri =
     typeof note.inReplyTo === "string" ? note.inReplyTo : null;
+  const sourceQuoteUri = extractQuoteUri(note);
 
   const webUrl = typeof note.url === "string" ? note.url : null;
   const language = extractLanguage(note);
@@ -356,7 +357,7 @@ function normaliseNote(
     language,
     media,
     sourceReplyUri,
-    sourceQuoteUri: null,
+    sourceQuoteUri,
     contentWarning,
     publishedAt,
     webUrl,
@@ -369,6 +370,27 @@ function normaliseNote(
       ...(poll ? { poll } : {}),
     },
   };
+}
+
+// Quote posts have no single standard yet. Mastodon's forthcoming support and
+// FEP-044f use `quote`; Fedibird uses `quoteUrl`; Misskey uses `_misskey_quote`
+// (and a `quoteUri` alias). Each may be a bare URI string or an object with an
+// `id`/`href`. Probe the known keys and return the first usable URI.
+export function extractQuoteUri(note: any): string | null {
+  const candidates = [
+    note?.quote,
+    note?.quoteUrl,
+    note?.quoteUri,
+    note?._misskey_quote,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+    if (c && typeof c === "object") {
+      const uri = typeof c.id === "string" ? c.id : c.href;
+      if (typeof uri === "string" && uri.trim()) return uri.trim();
+    }
+  }
+  return null;
 }
 
 function extractPoll(note: any): {

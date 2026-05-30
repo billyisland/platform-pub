@@ -430,14 +430,16 @@ export class JetstreamListener {
         await insertAtprotoItem(client, source, item);
       });
 
-      // Eagerly prefetch parent post if this is a reply
-      if (item.sourceReplyUri) {
+      // Eagerly prefetch the parent post (if a reply) and/or the quoted post
+      // (if a quote post) so the /parent and /quote tiles render warm.
+      if (item.sourceReplyUri || item.sourceQuoteUri) {
         pool
           .query(
             `SELECT graphile_worker.add_job('external_parent_prefetch', $1)`,
             [
               JSON.stringify({
                 sourceReplyUri: item.sourceReplyUri,
+                sourceQuoteUri: item.sourceQuoteUri,
                 protocol: "atproto",
                 sourceId: source.id,
               }),

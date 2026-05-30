@@ -38,7 +38,7 @@ export async function insertActivityPubItem(
       $4, $5, $6, $7,
       $8, $9, $10,
       $11,
-      $12, NULL, FALSE,
+      $12, $16, FALSE,
       $13,
       $14,
       $15
@@ -62,6 +62,7 @@ export async function insertActivityPubItem(
       JSON.stringify(item.interactionData),
       item.contentWarning,
       item.publishedAt,
+      item.sourceQuoteUri,
     ],
   );
 

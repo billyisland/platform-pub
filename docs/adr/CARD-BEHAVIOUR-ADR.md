@@ -560,13 +560,21 @@ the discipline in RELAY-OUTBOX-ADR §D2.
 - A tracked backlog item for §VI.3 (constructed author profiles) exists in the
   project's progress-tracking markdown.
 
-
 ## Addendum — Byline routing is canonical (2026-05-30)
 
-Author bylines never link to the origin platform's native profile. This holds for the card byline *and* for every author byline inside the expanded conversational neighbourhood (parent context tiles and playscript thread entries):
+Author bylines never link to the origin platform's native profile. This holds for the card byline _and_ for every author byline inside the expanded conversational neighbourhood (parent context tiles and playscript thread entries):
 
 - **Native authors** → their all.haus writer profile (`/{username}`).
-- **External authors** → the item's source surface (`/source/:id`, §VI.2). Because thread/parent payloads carry no per-entry source id, external neighbourhood bylines resolve to the *expanded item's* source surface; a participant who differs from the subscribed source therefore lands on that source's page rather than a page for them specifically. A true per-author external profile remains the deferred §VI.3 work.
+- **External authors** → the item's source surface (`/source/:id`, §VI.2). Because thread/parent payloads carry no per-entry source id, external neighbourhood bylines resolve to the _expanded item's_ source surface; a participant who differs from the subscribed source therefore lands on that source's page rather than a page for them specifically. A true per-author external profile remains the deferred §VI.3 work.
 - The single route out to the origin platform stays the source-attribution line (§VI.4).
 
 Implemented via a `sourceHref` prop threaded from the card in `web/src/components/workspace/{ExternalPlayscriptEntry,ExternalPlayscriptThread,ParentContextTile,VesselCard}.tsx`.
+
+## Addendum — Rich embeds render in our idiom (2026-05-30)
+
+When an external post embeds rich media — quotes another post, or previews an outside link — the workspace card replicates that embedding in its own idiom rather than dropping it or linking out. Scope: Bluesky + Mastodon (Nostr/RSS deferred). Two embed kinds:
+
+- **Quoted posts.** A quote post (Bluesky `app.bsky.embed.record[WithMedia]`; Mastodon/FEP-044f `quote` / Fedibird `quoteUrl` / Misskey `_misskey_quote`) renders as a nested mini-card via `QuotedPostTile` — `↱ QUOTING author · time`, the quoted text, and the quoted post's **own** media (image / link card). It deliberately does not recurse into a quote-of-quote. Hydration mirrors the parent-context pattern exactly: the quote URI is stored on `external_items.source_quote_uri`; `external_parent_prefetch` eagerly hydrates the quoted post as a context-only row; and `GET /external-items/:id/quote` (same rate-limit / cache / `partial`-flag contract as `/parent`, §V.4–V.5) lazily fetches on a cold miss via `fetchBlueskyQuote` / `fetchMastodonQuote`. The quoted author byline is **plain text** — never a route out to the origin platform, and not a fabricated `/source/:id` link either (the quoted author often isn't the subscribed source), consistent with the byline-routing addendum above.
+- **Link preview cards.** An external link previewed with title/description/thumbnail (Bluesky `app.bsky.embed.external` → `media[]` `{type:"link"}`; Mastodon's `card`, which lives only in the Mastodon REST API and is captured by the existing `external_engagement_refresh` `/statuses/:id` fetch) renders through `MediaBlock`'s `LinkPreviewCard`, so a previewed link looks identical regardless of source.
+
+Implemented in `web/src/components/workspace/{VesselCard,QuotedPostTile}.tsx`, `gateway/src/routes/external-items.ts`, `feed-ingest/src/adapters/activitypub.ts`, and `feed-ingest/src/tasks/{external-parent-prefetch,external-engagement-refresh}.ts`.

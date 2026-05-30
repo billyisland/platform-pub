@@ -26,6 +26,63 @@ interface ExternalItemRow {
   protocol: string;
   source_item_uri: string;
   interaction_data: Record<string, unknown>;
+  media: MediaItem[];
+}
+
+interface MediaItem {
+  type: "image" | "video" | "audio" | "link";
+  url: string;
+  thumbnail?: string;
+  alt?: string;
+  title?: string;
+  description?: string;
+}
+
+// Mastodon attaches an OpenGraph link preview to a status as a `card` object
+// (Mastodon-API-only — it's never in the ActivityPub outbox the adapter polls).
+// Normalise it into the same {type:"link"} media entry our cards already render
+// for Bluesky's app.bsky.embed.external, so a previewed link looks identical
+// regardless of source.
+interface MastodonCard {
+  url?: string;
+  title?: string;
+  description?: string;
+  image?: string | null;
+  type?: string; // "link" | "photo" | "video" | "rich"
+}
+
+export function cardToLinkMedia(
+  card: MastodonCard | null | undefined,
+): MediaItem | null {
+  if (!card?.url) return null;
+  // Only "link" cards become preview tiles; photo/video cards are already
+  // represented by the status's media_attachments.
+  if (card.type && card.type !== "link") return null;
+  return {
+    type: "link",
+    url: card.url,
+    thumbnail: card.image ?? undefined,
+    title: card.title || undefined,
+    description: card.description || undefined,
+  };
+}
+
+// Replace any existing link entry with the fresh card, preserving image/video
+// media. Returns null when nothing changed so the caller can skip the write.
+export function mergeLinkMedia(
+  existing: MediaItem[],
+  link: MediaItem | null,
+): MediaItem[] | null {
+  const nonLink = (existing ?? []).filter((m) => m.type !== "link");
+  const current = existing ?? [];
+  const next = link ? [...nonLink, link] : nonLink;
+  if (
+    next.length === current.length &&
+    JSON.stringify(next) === JSON.stringify(current)
+  ) {
+    return null;
+  }
+  return next;
 }
 
 export const externalEngagementRefresh: Task = async (_payload, _helpers) => {
@@ -34,7 +91,7 @@ export const externalEngagementRefresh: Task = async (_payload, _helpers) => {
   ).toISOString();
 
   const { rows } = await pool.query<ExternalItemRow>(
-    `SELECT id, protocol, source_item_uri, interaction_data
+    `SELECT id, protocol, source_item_uri, interaction_data, media
      FROM external_items
      WHERE published_at >= $1
        AND deleted_at IS NULL
@@ -193,18 +250,36 @@ async function refreshMastodonHost(
         favourites_count?: number;
         replies_count?: number;
         reblogs_count?: number;
+        card?: MastodonCard | null;
       };
 
+      const mergedMedia = mergeLinkMedia(
+        item.media,
+        cardToLinkMedia(status.card),
+      );
+
       await pool.query(
-        `UPDATE external_items
-         SET like_count = $1, reply_count = $2, repost_count = $3
-         WHERE id = $4`,
-        [
-          status.favourites_count ?? 0,
-          status.replies_count ?? 0,
-          status.reblogs_count ?? 0,
-          item.id,
-        ],
+        mergedMedia
+          ? `UPDATE external_items
+             SET like_count = $1, reply_count = $2, repost_count = $3, media = $5
+             WHERE id = $4`
+          : `UPDATE external_items
+             SET like_count = $1, reply_count = $2, repost_count = $3
+             WHERE id = $4`,
+        mergedMedia
+          ? [
+              status.favourites_count ?? 0,
+              status.replies_count ?? 0,
+              status.reblogs_count ?? 0,
+              item.id,
+              JSON.stringify(mergedMedia),
+            ]
+          : [
+              status.favourites_count ?? 0,
+              status.replies_count ?? 0,
+              status.reblogs_count ?? 0,
+              item.id,
+            ],
       );
       updated++;
     } catch (err) {

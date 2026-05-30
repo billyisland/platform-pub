@@ -23,6 +23,7 @@ import { extractNoteMedia, stripMediaUrls } from "../../lib/media";
 import type { ReplyTarget } from "./Composer";
 import { PipTrigger } from "./PipTrigger";
 import { ParentContextTile } from "./ParentContextTile";
+import { QuotedPostTile } from "./QuotedPostTile";
 import { ReplySection } from "../replies/ReplySection";
 import { useLiveEngagement } from "../../hooks/useLiveEngagement";
 import { useExternalThread } from "../../hooks/useExternalThread";
@@ -460,6 +461,18 @@ interface MediaItemLike {
   url: string;
   thumbnail?: string;
   alt?: string;
+  title?: string;
+  description?: string;
+}
+
+// Strip the scheme + leading www. from a URL for the link-card host line.
+// Mirrors hostOf() in the feed ExternalCard so previews read identically.
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 const YOUTUBE_RE =
@@ -540,115 +553,201 @@ function MediaBlock({
     );
   }
 
-  // Pick the first image; if none, the first video. Audio + link items are
-  // skipped — link cards have a different mental model (the existing external
-  // card link-embed) and audio isn't part of the workspace's render budget.
+  // Pick the first image; if none, the first video as the visual hero. Audio
+  // is left to the feed card's audio player. Link items render as their own
+  // preview cards (below) so an external link previews in our idiom the way it
+  // does on the source platform.
+  const linkItems = items.filter((m) => m.type === "link" && m.url);
   const hero =
     items.find((m) => m.type === "image") ??
     items.find((m) => m.type === "video");
-  if (!hero) return null;
+  if (!hero && linkItems.length === 0) return null;
 
-  const overflowCount = items.length - 1;
-  const playable = hero.type === "video" && externalUrl;
+  // Overflow pill counts only additional image/video items beyond the hero —
+  // link cards render in full, so they never fold into the +N count.
+  const visualCount = items.filter(
+    (m) => m.type === "image" || m.type === "video",
+  ).length;
+  const overflowCount = hero ? visualCount - 1 : 0;
+  const playable = hero?.type === "video" && externalUrl;
 
   return (
-    <div
-      onClick={(e) => {
-        if (!playable) return;
-        e.stopPropagation();
-        window.open(externalUrl, "_blank", "noopener,noreferrer");
-      }}
-      style={{
-        position: "relative",
-        marginTop: 10,
-        marginBottom: 6,
-        background: ctx.palette.interior,
-        aspectRatio: "16 / 9",
-        overflow: "hidden",
-        cursor: playable ? "pointer" : undefined,
-      }}
-    >
-      {hero.type === "image" && (
-        <img
-          src={hero.url}
-          alt={hero.alt ?? ""}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            display: "block",
-          }}
-        />
-      )}
-      {hero.type === "video" && hero.thumbnail && (
-        <img
-          src={hero.thumbnail}
-          alt={hero.alt ?? ""}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            display: "block",
-          }}
-        />
-      )}
-      {hero.type === "video" && !embedLoading && (
+    <>
+      {hero && (
         <div
-          role="img"
-          aria-label="Play video"
+          onClick={(e) => {
+            if (!playable) return;
+            e.stopPropagation();
+            window.open(externalUrl, "_blank", "noopener,noreferrer");
+          }}
           style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: hero.thumbnail
-              ? "rgba(0,0,0,0.18)"
-              : "rgba(0,0,0,0.06)",
+            position: "relative",
+            marginTop: 10,
+            marginBottom: 6,
+            background: ctx.palette.interior,
+            aspectRatio: "16 / 9",
+            overflow: "hidden",
+            cursor: playable ? "pointer" : undefined,
           }}
         >
-          <span
-            aria-hidden="true"
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.92)",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M5 3.5v9l7-4.5z" fill="#1A1A18" />
-            </svg>
-          </span>
+          {hero.type === "image" && (
+            <img
+              src={hero.url}
+              alt={hero.alt ?? ""}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          )}
+          {hero.type === "video" && hero.thumbnail && (
+            <img
+              src={hero.thumbnail}
+              alt={hero.alt ?? ""}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          )}
+          {hero.type === "video" && !embedLoading && (
+            <div
+              role="img"
+              aria-label="Play video"
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: hero.thumbnail
+                  ? "rgba(0,0,0,0.18)"
+                  : "rgba(0,0,0,0.06)",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  background: "rgba(255,255,255,0.92)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path d="M5 3.5v9l7-4.5z" fill="#1A1A18" />
+                </svg>
+              </span>
+            </div>
+          )}
+          {overflowCount > 0 && (
+            <span
+              aria-hidden="true"
+              className="font-mono"
+              style={{
+                position: "absolute",
+                right: 8,
+                bottom: 8,
+                padding: "2px 8px",
+                background: "rgba(0,0,0,0.72)",
+                color: "#FFFFFF",
+                fontSize: 11,
+                letterSpacing: "0.04em",
+              }}
+            >
+              +{overflowCount}
+            </span>
+          )}
         </div>
       )}
-      {overflowCount > 0 && (
-        <span
-          aria-hidden="true"
-          className="font-mono"
+      {linkItems.map((link, i) => (
+        <LinkPreviewCard key={i} item={link} ctx={ctx} />
+      ))}
+    </>
+  );
+}
+
+function LinkPreviewCard({
+  item,
+  ctx,
+}: {
+  item: MediaItemLike;
+  ctx: CardContext;
+}) {
+  const border = `${ctx.palette.cardMeta}33`;
+  return (
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="no-underline"
+      style={{
+        display: "flex",
+        gap: 12,
+        marginTop: 10,
+        marginBottom: 6,
+        padding: 10,
+        border: `1px solid ${border}`,
+      }}
+    >
+      {item.thumbnail && (
+        <img
+          src={item.thumbnail}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
           style={{
-            position: "absolute",
-            right: 8,
-            bottom: 8,
-            padding: "2px 8px",
-            background: "rgba(0,0,0,0.72)",
-            color: "#FFFFFF",
-            fontSize: 11,
-            letterSpacing: "0.04em",
+            width: 64,
+            height: 64,
+            objectFit: "cover",
+            background: ctx.palette.interior,
+            flexShrink: 0,
           }}
-        >
-          +{overflowCount}
-        </span>
+        />
       )}
-    </div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        {item.title && (
+          <p
+            className="text-ui-sm font-semibold truncate"
+            style={{ color: ctx.palette.cardTitle }}
+          >
+            {item.title}
+          </p>
+        )}
+        {item.description && (
+          <p
+            className="text-ui-xs line-clamp-2"
+            style={{ color: ctx.palette.cardStandfirst, marginTop: 2 }}
+          >
+            {item.description}
+          </p>
+        )}
+        <p
+          className="text-mono-xs truncate"
+          style={{ color: ctx.palette.cardMeta, marginTop: 2 }}
+        >
+          {hostOf(item.url)}
+        </p>
+      </div>
+    </a>
   );
 }
 
@@ -1430,6 +1529,9 @@ function ExternalVesselCard({
             </>
           )}
         </>
+      )}
+      {external.sourceQuoteUri && (
+        <QuotedPostTile itemId={external.id} palette={ctx.palette} />
       )}
       <EngagementRow
         likeCount={engagement.likeCount + likeCountDelta}
