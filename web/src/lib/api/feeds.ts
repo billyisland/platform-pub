@@ -326,6 +326,8 @@ export interface EngagementResponse {
 export interface ParentContextResponse {
   parent: ParentItem | null;
   grandparentTag: { authorName: string; authorHandle: string } | null;
+  // Server-signalled: a parent was expected but the source fetch failed/timed out.
+  partial: boolean;
 }
 
 export interface ParentItem {
@@ -366,6 +368,8 @@ export interface ExternalThreadEntry {
 export interface ThreadResponse {
   ancestors: ExternalThreadEntry[];
   descendants: ExternalThreadEntry[];
+  // Server-signalled: the source thread could not be reached/completed.
+  partial: boolean;
 }
 
 export const externalItems = {
@@ -377,4 +381,28 @@ export const externalItems = {
 
   thread: (id: string) =>
     request<ThreadResponse>(`/external-items/${id}/thread`),
+};
+
+// External source surface (CARD-BEHAVIOUR-ADR §VI.2) — byline-click destination
+export interface SourceMeta {
+  id: string;
+  protocol: string;
+  sourceUri: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  description: string | null;
+}
+
+export interface SourceSurfaceResponse {
+  source: SourceMeta;
+  // External feed items, same shape the timeline returns; mapped client-side.
+  items: unknown[];
+  nextCursor?: string;
+}
+
+export const sources = {
+  get: (id: string, cursor?: string) =>
+    request<SourceSurfaceResponse>(
+      `/sources/${id}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+    ),
 };

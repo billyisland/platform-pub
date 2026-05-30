@@ -184,6 +184,7 @@ export function FeedView() {
             return {
               type: "external" as const,
               id: item.id,
+              externalSourceId: item.externalSourceId,
               sourceProtocol: item.sourceProtocol,
               sourceItemUri: item.sourceItemUri,
               authorName: item.authorName,

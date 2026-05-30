@@ -207,10 +207,24 @@ export function NeighbourhoodFailureStub({
   );
 }
 
-export function NeighbourhoodEmptyState() {
+// CARD-BEHAVIOUR-ADR §V.5: the empty state doubles as a reply affordance —
+// clicking it opens the composer. Falls back to an inert label when no reply
+// handler is available.
+export function NeighbourhoodEmptyState({ onReply }: { onReply?: () => void }) {
+  if (!onReply) {
+    return (
+      <div className="ml-8 label-ui text-grey-400 py-6 text-center">
+        NO CONVERSATION YET — BE THE FIRST TO REPLY
+      </div>
+    );
+  }
   return (
-    <div className="ml-8 label-ui text-grey-400 py-6 text-center">
+    <button
+      type="button"
+      onClick={onReply}
+      className="ml-8 label-ui text-grey-400 hover:text-black py-6 w-full text-center transition-colors"
+    >
       NO CONVERSATION YET — BE THE FIRST TO REPLY
-    </div>
+    </button>
   );
 }

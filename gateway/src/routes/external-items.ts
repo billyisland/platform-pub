@@ -39,6 +39,11 @@ const threadCache = new Map<
 >();
 const THREAD_CACHE_TTL_MS = 60_000;
 
+// Outbound source fetches for neighbourhood hydration (parent + thread) cap at
+// ~5s per CARD-BEHAVIOUR-ADR §VII.3 — tighter than the shared client's 10s
+// default so a slow source platform can't hold a hydration request open.
+const NEIGHBOURHOOD_FETCH_TIMEOUT_MS = 5_000;
+
 interface ExternalThreadEntry {
   id: string;
   authorName: string;
@@ -57,6 +62,10 @@ interface ExternalThreadEntry {
 interface ThreadResponse {
   ancestors: ExternalThreadEntry[];
   descendants: ExternalThreadEntry[];
+  // Server-signalled (CARD-BEHAVIOUR-ADR §VII.3): true when the source thread
+  // could not be reached or completed (fetch failure / timeout). The client no
+  // longer infers this from a rejected promise.
+  partial: boolean;
 }
 
 interface EngagementResponse {
@@ -70,6 +79,9 @@ interface EngagementResponse {
 interface ParentContextResponse {
   parent: ParentItem | null;
   grandparentTag: { authorName: string; authorHandle: string } | null;
+  // Server-signalled (CARD-BEHAVIOUR-ADR §VII.3): true when a parent was
+  // expected (the item is a reply) but the source fetch failed / timed out.
+  partial: boolean;
 }
 
 interface ParentItem {
@@ -186,7 +198,10 @@ export async function externalItemsRoutes(app: FastifyInstance) {
   // =========================================================================
   app.get<{ Params: { id: string } }>(
     "/external-items/:id/parent",
-    { preHandler: requireAuth },
+    {
+      preHandler: requireAuth,
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+    },
     async (req, reply) => {
       const { id } = req.params;
 
@@ -212,6 +227,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         const data: ParentContextResponse = {
           parent: null,
           grandparentTag: null,
+          partial: false,
         };
         return reply.send(data);
       }
@@ -232,6 +248,9 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       let parent: ParentItem | null = null;
       let grandparentTag: { authorName: string; authorHandle: string } | null =
         null;
+      // A parent is expected (source_reply_uri is set); if the source fetch
+      // can't produce it, the neighbourhood is partial.
+      let partial = false;
 
       if (parentRows.length > 0) {
         const row = parentRows[0];
@@ -243,10 +262,12 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         if (fetched) {
           parent = fetched.parent;
           grandparentTag = fetched.grandparentTag;
+        } else {
+          partial = true;
         }
       }
 
-      const data: ParentContextResponse = { parent, grandparentTag };
+      const data: ParentContextResponse = { parent, grandparentTag, partial };
       parentCache.set(id, {
         data,
         expiresAt: Date.now() + PARENT_CACHE_TTL_MS,
@@ -261,7 +282,10 @@ export async function externalItemsRoutes(app: FastifyInstance) {
   // =========================================================================
   app.get<{ Params: { id: string } }>(
     "/external-items/:id/thread",
-    { preHandler: requireAuth },
+    {
+      preHandler: requireAuth,
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+    },
     async (req, reply) => {
       const { id } = req.params;
 
@@ -282,16 +306,23 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       }
 
       const item = rows[0];
-      let data: ThreadResponse = { ancestors: [], descendants: [] };
+      let data: ThreadResponse = {
+        ancestors: [],
+        descendants: [],
+        partial: false,
+      };
 
       if (item.protocol === "atproto") {
         const thread = await fetchBlueskyThread(item);
+        // null = source unreachable / timed out → partial; nostr_external + rss
+        // intentionally return an empty (non-partial) thread.
         if (thread) data = thread;
+        else data = { ancestors: [], descendants: [], partial: true };
       } else if (item.protocol === "activitypub") {
         const thread = await fetchMastodonThread(item);
         if (thread) data = thread;
+        else data = { ancestors: [], descendants: [], partial: true };
       }
-      // nostr_external + rss: return empty thread
 
       threadCache.set(id, {
         data,
@@ -888,6 +919,7 @@ async function fetchBlueskyParent(
 
     const res = await safeFetch(url.toString(), {
       headers: { Accept: "application/json" },
+      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
     });
 
     if (!res.ok) return null;
@@ -1011,6 +1043,7 @@ async function fetchBlueskyGrandparentTag(
 
     const res = await safeFetch(url.toString(), {
       headers: { Accept: "application/json" },
+      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
     });
 
     if (!res.ok) return null;
@@ -1047,6 +1080,7 @@ async function fetchMastodonParent(
     const host = new URL(parentUri).hostname;
     const res = await safeFetch(`https://${host}/api/v1/statuses/${statusId}`, {
       headers: { Accept: "application/json" },
+      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
     });
 
     if (!res.ok) return null;
@@ -1177,6 +1211,7 @@ async function fetchMastodonGrandparentTag(
   try {
     const res = await safeFetch(`https://${host}/api/v1/statuses/${statusId}`, {
       headers: { Accept: "application/json" },
+      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
     });
 
     if (!res.ok) return null;
@@ -1257,6 +1292,7 @@ async function fetchBlueskyThread(
 
     const res = await safeFetch(url.toString(), {
       headers: { Accept: "application/json" },
+      timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
     });
 
     if (!res.ok) return null;
@@ -1294,7 +1330,7 @@ async function fetchBlueskyThread(
         new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime(),
     );
 
-    return { ancestors, descendants };
+    return { ancestors, descendants, partial: false };
   } catch (err) {
     logger.debug(
       {
@@ -1321,7 +1357,10 @@ async function fetchMastodonThread(
     const host = new URL(item.source_item_uri).hostname;
     const res = await safeFetch(
       `https://${host}/api/v1/statuses/${statusId}/context`,
-      { headers: { Accept: "application/json" } },
+      {
+        headers: { Accept: "application/json" },
+        timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
+      },
     );
 
     if (!res.ok) return null;
@@ -1349,6 +1388,7 @@ async function fetchMastodonThread(
     return {
       ancestors: data.ancestors.map(mapStatus),
       descendants: data.descendants.map(mapStatus),
+      partial: false,
     };
   } catch (err) {
     logger.debug(

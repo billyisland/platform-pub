@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useLayoutEffect } from "react";
+import Link from "next/link";
 import { formatDateRelative } from "../../lib/format";
 import { TrustPip } from "../ui/TrustPip";
 import { useAuth } from "../../stores/auth";
@@ -35,10 +36,6 @@ function atprotoWebUri(atUri: string): string | null {
   const match = atUri.match(/^at:\/\/([^/]+)\/app\.bsky\.feed\.post\/([^/]+)$/);
   if (!match) return null;
   return `https://bsky.app/profile/${match[1]}/post/${match[2]}`;
-}
-
-function atprotoProfileUri(authorUri: string): string {
-  return `https://bsky.app/profile/${authorUri}`;
 }
 
 function formatDuration(seconds: number): string {
@@ -77,11 +74,6 @@ export function ExternalCard({ item }: ExternalCardProps) {
   const viewOriginalUri = isAtproto
     ? (atprotoWebUri(item.sourceItemUri) ?? item.sourceItemUri)
     : item.sourceItemUri;
-  const authorWebUri =
-    isAtproto && item.authorUri
-      ? atprotoProfileUri(item.authorUri)
-      : item.authorUri;
-
   const imageMedia = item.media.filter((m) => m.type === "image");
   const linkEmbed = item.media.find((m) => m.type === "link");
   const videoMedia = item.media.find((m) => m.type === "video");
@@ -195,16 +187,18 @@ export function ExternalCard({ item }: ExternalCardProps) {
             onMouseLeave={hover.onMouseLeave}
             className="truncate"
           >
-            {authorWebUri ? (
-              <a
-                href={authorWebUri}
-                target="_blank"
-                rel="noopener noreferrer"
+            {/* Byline → internal source surface (CARD-BEHAVIOUR-ADR §VI.2).
+                The origin-platform link lives on the source-attribution line
+                below (§VI.4, the one route out). The richer constructed author
+                profile (§VI.3) lands later without changing this contract. */}
+            {item.externalSourceId ? (
+              <Link
+                href={`/source/${item.externalSourceId}`}
                 className="label-ui text-grey-600 hover:text-black transition-colors"
                 onClick={(e) => e.stopPropagation()}
               >
                 {authorDisplay}
-              </a>
+              </Link>
             ) : (
               <span className="label-ui text-grey-600">{authorDisplay}</span>
             )}
@@ -469,7 +463,9 @@ export function ExternalCard({ item }: ExternalCardProps) {
         !hasReplies &&
         !hasParentChain &&
         !neighbourhood.partial &&
-        (tier === "C" || tier === "D") && <NeighbourhoodEmptyState />}
+        (tier === "C" || tier === "D") && (
+          <NeighbourhoodEmptyState onReply={handleReply} />
+        )}
     </div>
   );
 }

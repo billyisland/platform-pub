@@ -47,6 +47,7 @@ import { tagRoutes } from "./routes/tags.js";
 import { resolveRoutes } from "./routes/resolve.js";
 import { externalFeedsRoutes } from "./routes/external-feeds.js";
 import { externalItemsRoutes } from "./routes/external-items.js";
+import { sourcesRoutes } from "./routes/sources.js";
 import { linkedAccountsRoutes } from "./routes/linked-accounts.js";
 import { trustRoutes } from "./routes/trust.js";
 import { readingPositionRoutes } from "./routes/reading-positions.js";
@@ -217,6 +218,9 @@ async function start() {
 
   // External item interactions (live engagement, parent context)
   await app.register(externalItemsRoutes, { prefix: "/api/v1" });
+
+  // External source surface — byline-click destination (CARD-BEHAVIOUR-ADR §VI.2)
+  await app.register(sourcesRoutes, { prefix: "/api/v1" });
 
   // Linked accounts for outbound cross-posting (Phase 5)
   await app.register(linkedAccountsRoutes, { prefix: "/api/v1" });

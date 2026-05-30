@@ -1,7 +1,7 @@
 # CARD-BEHAVIOUR-ADR: Feed Card Interaction & Conversational Expansion
 
 **all.haus Architectural Decision Record**
-**Status:** Phases 1–3 shipped (May 2026), audit fix-up 2026-05-27. Phase 4 (spec-conformance gaps from the 2026-05-29 verification audit — see §X): #1 done 2026-05-29, #2–#5 remaining
+**Status:** Phases 1–3 shipped (May 2026), audit fix-up 2026-05-27. Phase 4 (spec-conformance gaps from the 2026-05-29 verification audit — see §X) complete 2026-05-30: #1 done 2026-05-29; #2/#3/#4/#5 done 2026-05-30. The constructed external author profile (§VI.3) remains explicitly deferred to its own ADR.
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** UNIVERSAL-FEED-ADR, UI-DESIGN-SPEC
 **Affects:** `web/src/components/feed/*`, `gateway/src/routes/`, `feed-ingest/src/lib/*`, `schema.sql`, `migrations/`
@@ -478,20 +478,37 @@ and collected here in priority order:
    downward `ReplySection` never moves the anchor). Known limit: a reply nested under
    another comment anchors its parent-above at the thread root, since
    `/content/resolve` does not resolve comments.
-2. **Thread hydration endpoint shape (§V.4, §VII.3).** The capability ships via the
-   older `/external-items/:id/thread` + `/parent` pair rather than the spec'd
-   `GET /api/v1/external/thread`. Name/shape was always negotiable, but three concrete
-   sub-specs are unmet: per-route rate limit (30/min), ~5s outbound timeout (currently
-   the 10s default), and a server-signalled `partial` flag (currently derived
-   client-side).
-3. **External byline routing (§VI.2).** Byline links to the author's profile on the
-   _origin platform_ in a new tab, not the all.haus source surface the interim
-   contract fixes. (No internal source-surface route exists yet.)
-4. **NoteCard headline navigation (§IV).** Note content has no permalink-navigating
-   headline region — clicking note text expands. Likely fine until a note permalink
-   page exists, but mark it INTERIM in code as `ExternalCard` does for its headline.
-5. **Empty-state reply affordance (§V.5) — minor.** `NO CONVERSATION YET — BE THE
-FIRST TO REPLY` renders inert; it should open the composer on click.
+2. ~~**Thread hydration endpoint shape (§V.4, §VII.3).**~~ **DONE (2026-05-30).** The
+   capability still rides the `/external-items/:id/thread` + `/parent` pair (name/shape
+   was always negotiable), but the three concrete sub-specs are now met: both routes
+   carry a per-route rate limit (`{ max: 30, timeWindow: "1 minute" }`); all outbound
+   source fetches reachable from them (parent, grandparent, and thread helpers for
+   Bluesky + Mastodon) pass `timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS` (5s) instead of
+   the shared client's 10s default; and `partial` is now a server-signalled field on
+   both `ThreadResponse` and `ParentContextResponse` (true when a source fetch
+   fails/times out for a reply that expects content). `useNeighbourhood` prefers the
+   server flag over inferring `partial` from a rejected promise.
+3. ~~**External byline routing (§VI.2).**~~ **DONE (2026-05-30).** Built the minimal
+   internal source surface and pointed the byline at it. Gateway: `GET /api/v1/sources/:id`
+   (`gateway/src/routes/sources.ts`) returns source metadata + a chronological,
+   cursor-paginated page of that source's external items, reusing timeline's
+   now-exported `FEED_SELECT` / `FEED_JOINS` / `feedItemToResponse` / `parseCursor`.
+   `timeline.ts` now also returns `externalSourceId` (feeds.ts already did). Frontend:
+   new `/source/[id]` route (`SourceSurface` client component — source header + the
+   source's `ExternalCard` list with SHOW MORE paging). `ExternalCard`'s byline now
+   links via `next/link` to `/source/{externalSourceId}` instead of the origin
+   platform (the origin link stays on the §VI.4 source-attribution line — the one
+   route out); the byline degrades to a non-link span when no source id is present.
+   The richer constructed author profile (§VI.3) still lands later without changing
+   this contract.
+4. ~~**NoteCard headline navigation (§IV).**~~ **DONE (2026-05-30).** The body-expand
+   region in `NoteCard.tsx` now carries an INTERIM comment (mirroring `ExternalCard`'s
+   headline marker) noting that notes have no permalink region and the body click
+   expands until a note permalink page exists.
+5. ~~**Empty-state reply affordance (§V.5) — minor.**~~ **DONE (2026-05-30).**
+   `NeighbourhoodEmptyState` now takes an optional `onReply` handler; when present it
+   renders as a button (`hover:text-black`) that opens the composer, falling back to
+   the inert label when no handler is wired. `ExternalCard` passes its `handleReply`.
 
 Do not begin a phase before the previous one is green. Phase 1 carries the
 riskiest schema change (a dual-write column) deliberately first and alone, per

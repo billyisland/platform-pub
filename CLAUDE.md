@@ -260,7 +260,7 @@ Threads never use nested indentation, left borders between nested replies, quote
 
 - `feature-debt.md` — consolidated feature debt, outstanding work, and attack order
 - `FEED-INGEST-ATTACK-PLAN.md` — build plan for omnivorous stream ingestion (per-adapter contract, slices 0–9; 0–3 shipped, 4–9 planned)
-- `docs/adr/CARD-BEHAVIOUR-ADR.md` — unified card interaction model (click regions, conversational neighbourhood expansion, biddability tiers, author affordances)
+- `docs/adr/CARD-BEHAVIOUR-ADR.md` — unified card interaction model (click regions, conversational neighbourhood expansion, biddability tiers, author affordances). Phases 1–4 complete. External card bylines route to the internal **source surface** (`/source/[id]` page → `GET /api/v1/sources/:id` in `gateway/src/routes/sources.ts`), not the origin platform — the origin link lives on the source-attribution line. Neighbourhood hydration (`/external-items/:id/thread` + `/parent`) is rate-limited (30/min), 5s-timeout-capped, and returns a server-signalled `partial` flag. Only the §VI.3 constructed external author profile remains deferred (its own ADR)
 - `docs/adr/ALLHAUS-REDESIGN-SPEC.md` — redesign spec for topbar, feed, compose overlay, card family (Steps 1–4 shipped including article tiers, reading-history resumption, playscript threads; remaining: compose article mode, polish states)
 - `docs/adr/REDESIGN-SCOPE.md` — product scope document arguing what the product is (companion to the redesign spec)
 - `docs/adr/UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)

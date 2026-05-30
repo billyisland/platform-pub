@@ -25,7 +25,7 @@ const VALID_REACH = new Set<Reach>(["following", "explore"]);
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
-interface CursorParts {
+export interface CursorParts {
   score?: number; // explore-feed ranking score — undefined on legacy cursors
   ts: number;
   id: string;
@@ -39,7 +39,7 @@ const UNBOUNDED_SCORE = 1e18;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function parseCursor(raw: string | undefined): CursorParts | undefined {
+export function parseCursor(raw: string | undefined): CursorParts | undefined {
   if (!raw) return undefined;
   const parts = raw.split(":");
   // 3-part: "score:unix_seconds:uuid" — explore-feed compound cursor
@@ -78,7 +78,7 @@ function computeBiddabilityTier(row: any): "A" | "B" | "C" | "D" {
   }
 }
 
-function feedItemToResponse(row: any) {
+export function feedItemToResponse(row: any) {
   if (row.item_type === "article") {
     return {
       type: "article" as const,
@@ -131,6 +131,7 @@ function feedItemToResponse(row: any) {
   return {
     type: "external" as const,
     id: row.external_item_id,
+    externalSourceId: row.source_id ?? undefined,
     sourceProtocol: row.source_protocol,
     sourceItemUri: row.source_item_uri,
     authorName: row.ei_author_name,
@@ -161,7 +162,7 @@ function feedItemToResponse(row: any) {
 }
 
 // Shared SELECT columns — feed_items + LEFT JOINs for type-specific fields
-const FEED_SELECT = `
+export const FEED_SELECT = `
   fi.id AS fi_id, fi.item_type, fi.title, fi.article_id, fi.note_id, fi.external_item_id,
   fi.author_id, fi.nostr_event_id, fi.source_protocol, fi.source_item_uri,
   fi.source_id, COALESCE(ei.media, fi.media) AS media, fi.score, fi.tier,
@@ -206,7 +207,7 @@ const FEED_SELECT = `
   fi.is_reply
 `;
 
-const FEED_JOINS = `
+export const FEED_JOINS = `
   LEFT JOIN articles a ON a.id = fi.article_id
   LEFT JOIN notes n ON n.id = fi.note_id
   LEFT JOIN accounts acc ON acc.id = fi.author_id

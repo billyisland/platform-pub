@@ -151,8 +151,12 @@ export function useNeighbourhood(
       let partial = false;
       let instanceDomain: string | null = null;
 
-      if (parentResult.status === "fulfilled" && parentResult.value.parent) {
-        parent = parentItemToNeighbourhood(parentResult.value.parent);
+      if (parentResult.status === "fulfilled") {
+        if (parentResult.value.parent) {
+          parent = parentItemToNeighbourhood(parentResult.value.parent);
+        }
+        // Prefer the server-signalled partial flag over inferring from rejection.
+        if (parentResult.value.partial) partial = true;
       } else if (parentResult.status === "rejected") {
         partial = true;
       }
@@ -162,6 +166,9 @@ export function useNeighbourhood(
       if (threadResult.status === "fulfilled") {
         allReplies = threadResult.value.descendants;
         totalDescendants = allReplies.length;
+        if (threadResult.value.partial) partial = true;
+      } else if (threadResult.status === "rejected") {
+        partial = true;
       }
 
       if (partial) {

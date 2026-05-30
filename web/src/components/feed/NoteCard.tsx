@@ -321,7 +321,11 @@ export function NoteCard({
           )}
         </div>
 
-        {/* Body — click to expand neighbourhood (Phase 2) */}
+        {/* Body — click to expand neighbourhood (Phase 2).
+            INTERIM (CARD-BEHAVIOUR-ADR §IV): notes have no headline/permalink
+            region, so the body click expands rather than navigating to a
+            permalink. Replace with a permalink-navigating headline once a note
+            permalink page exists (cf. ExternalCard's headline). */}
         {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
         <div onClick={handleBodyExpand} className="cursor-pointer">
           {/* Content + media */}
