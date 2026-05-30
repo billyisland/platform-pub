@@ -4,20 +4,13 @@ import { useRef, useState } from "react";
 import { workspaceFeeds as workspaceFeedsApi } from "../../lib/api";
 import { useResolverInput } from "../../hooks/useResolverInput";
 import type { MatchOption } from "../../lib/workspace/resolve";
-import type { VesselPalette, Brightness, Density, Orientation } from "./tokens";
-import { nextBrightness, nextDensity, nextOrientation } from "./tokens";
+import type { VesselPalette } from "./tokens";
 
 const BAR_H = 32;
 
 interface VesselBarProps {
   feedId: string;
   palette: VesselPalette;
-  brightness: Brightness;
-  density: Density;
-  orientation: Orientation;
-  onBrightnessCommit?: (b: Brightness) => void;
-  onDensityCommit?: (d: Density) => void;
-  onOrientationCommit?: (o: Orientation) => void;
   onSourceAdded?: () => void;
   onNameClick?: () => void;
   onHide?: () => void;
@@ -28,12 +21,6 @@ export { BAR_H };
 export function VesselBar({
   feedId,
   palette,
-  brightness,
-  density,
-  orientation,
-  onBrightnessCommit,
-  onDensityCommit,
-  onOrientationCommit,
   onSourceAdded,
   onNameClick,
   onHide,
@@ -63,21 +50,6 @@ export function VesselBar({
     ri.query.trim().length > 0 &&
     (ri.matches.length > 0 || ri.resolving || ri.doneEmpty || ri.resolveError);
 
-  const brightnessGlyph: Record<Brightness, string> = {
-    primary: "○",
-    medium: "◐",
-    dim: "●",
-  };
-  const densityGlyph: Record<Density, string> = {
-    compact: "c",
-    standard: "s",
-    full: "f",
-  };
-  const orientationGlyph: Record<Orientation, string> = {
-    vertical: "|",
-    horizontal: "─",
-  };
-
   return (
     <div ref={barRef} style={{ position: "relative" }}>
       <div
@@ -88,40 +60,14 @@ export function VesselBar({
           alignItems: "center",
           gap: 2,
           // Reserve the bottom-left square for the vessel numeral (overlaid by
-          // Vessel.tsx) so the cycle controls don't crowd it.
+          // Vessel.tsx) so the controls don't crowd it.
           paddingLeft: BAR_H + 6,
           paddingRight: 6,
         }}
       >
-        {/* Cycle controls — left side */}
-        {onBrightnessCommit && (
-          <BarButton
-            label={`Brightness: ${brightness}`}
-            glyph={brightnessGlyph[brightness]}
-            color={palette.barText}
-            mutedColor={palette.barTextMuted}
-            onClick={() => onBrightnessCommit(nextBrightness(brightness))}
-          />
-        )}
-        {onDensityCommit && (
-          <BarButton
-            label={`Density: ${density}`}
-            glyph={densityGlyph[density]}
-            color={palette.barText}
-            mutedColor={palette.barTextMuted}
-            onClick={() => onDensityCommit(nextDensity(density))}
-          />
-        )}
-        {onOrientationCommit && (
-          <BarButton
-            label={`Orientation: ${orientation}`}
-            glyph={orientationGlyph[orientation]}
-            color={palette.barText}
-            mutedColor={palette.barTextMuted}
-            onClick={() => onOrientationCommit(nextOrientation(orientation))}
-          />
-        )}
-        {/* Gear button — opens the FeedComposer modal for rename/delete/full source list */}
+        {/* Appearance controls (brightness / density / orientation / text size)
+            now live in the FeedComposer modal — see task 8. */}
+        {/* Gear button — opens the FeedComposer modal for rename/delete/full source list + appearance */}
         {onNameClick && (
           <BarButton
             label="Feed settings"

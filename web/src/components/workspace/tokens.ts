@@ -116,3 +116,19 @@ export function nextDensity(d: Density): Density {
 export function nextOrientation(o: Orientation): Orientation {
   return o === 'vertical' ? 'horizontal' : 'vertical'
 }
+
+// Per-feed reading-text size (task 8/9). Governs the prose body of every card
+// in a feed (main, reply, parent) in lockstep; meta rows and bylines (mono
+// `label-ui`) stay fixed. Default step 3 = 13.5px keeps today's body size.
+export type TextSize = 1 | 2 | 3 | 4 | 5
+export const DEFAULT_TEXT_SIZE: TextSize = 3
+export const TEXT_SIZE_PX: Record<TextSize, number> = {
+  1: 11.5,
+  2: 12.5,
+  3: 13.5,
+  4: 15,
+  5: 16.5,
+}
+export function nextTextSize(t: TextSize): TextSize {
+  return t >= 5 ? 1 : ((t + 1) as TextSize)
+}

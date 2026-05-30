@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
   FeedItem,
@@ -22,6 +21,7 @@ import {
 import { extractNoteMedia, stripMediaUrls } from "../../lib/media";
 import type { ReplyTarget } from "./Composer";
 import { PipTrigger } from "./PipTrigger";
+import { Byline } from "./Byline";
 import { ParentContextTile } from "./ParentContextTile";
 import { QuotedPostTile } from "./QuotedPostTile";
 import { ReplySection } from "../replies/ReplySection";
@@ -45,8 +45,11 @@ import {
   PALETTES,
   DEFAULT_BRIGHTNESS,
   DEFAULT_DENSITY,
+  DEFAULT_TEXT_SIZE,
+  TEXT_SIZE_PX,
   type Brightness,
   type Density,
+  type TextSize,
   type VesselPalette,
 } from "./tokens";
 
@@ -61,6 +64,9 @@ import {
 interface CardContext {
   density: Density;
   palette: VesselPalette;
+  // Reading-content size in px, derived from the feed's text-size step. Bylines
+  // and meta rows (mono `label-ui`) are unaffected — this governs prose only.
+  bodyPx: number;
   dragData?: string;
 }
 
@@ -68,6 +74,7 @@ interface Props {
   item: FeedItem;
   density?: Density;
   brightness?: Brightness;
+  textSize?: TextSize;
   onReply?: (target: ReplyTarget) => void;
   onPipOpen?: PipOpen;
   dragData?: string;
@@ -89,6 +96,7 @@ export function VesselCard({
   item,
   density,
   brightness,
+  textSize,
   onReply,
   onPipOpen,
   threadExpanded,
@@ -100,6 +108,7 @@ export function VesselCard({
   const ctx: CardContext = {
     density: density ?? DEFAULT_DENSITY,
     palette: PALETTES[brightness ?? DEFAULT_BRIGHTNESS],
+    bodyPx: TEXT_SIZE_PX[textSize ?? DEFAULT_TEXT_SIZE],
     dragData,
   };
   if (item.type === "article")
@@ -323,50 +332,6 @@ function CompactRow({
         {pipNode}
       </span>
       <span className="truncate flex-1">{title}</span>
-      {trailing}
-    </div>
-  );
-}
-
-function Byline({
-  pipNode,
-  name,
-  nameHref,
-  publishedAt,
-  trailing,
-  ctx,
-}: {
-  pipNode: React.ReactNode;
-  name: string;
-  nameHref?: string;
-  publishedAt: number;
-  trailing?: React.ReactNode;
-  ctx: CardContext;
-}) {
-  return (
-    <div
-      className="flex items-center gap-2 mb-2 label-ui"
-      style={{ color: ctx.palette.cardMeta }}
-    >
-      {pipNode}
-      {nameHref ? (
-        <Link
-          href={nameHref}
-          onClick={(e) => e.stopPropagation()}
-          style={{ color: ctx.palette.cardTitle }}
-          className="font-medium hover:underline"
-        >
-          {name}
-        </Link>
-      ) : (
-        <span style={{ color: ctx.palette.cardTitle }} className="font-medium">
-          {name}
-        </span>
-      )}
-      <span>·</span>
-      <time dateTime={new Date(publishedAt * 1000).toISOString()}>
-        {formatDateRelative(publishedAt)}
-      </time>
       {trailing}
     </div>
   );
@@ -1070,7 +1035,7 @@ function ArticleVesselCard({
         name={name}
         publishedAt={article.publishedAt}
         trailing={pricePill}
-        ctx={ctx}
+        palette={ctx.palette}
       />
       <h3
         className="font-serif text-[17px] leading-[1.25] mb-1.5"
@@ -1238,19 +1203,24 @@ function NoteVesselCard({
         pipNode={pipNodeByline}
         name={name}
         publishedAt={note.publishedAt}
-        ctx={ctx}
+        palette={ctx.palette}
       />
       {note.externalParentId && (
         <ParentContextTile
           itemId={note.externalParentId}
           palette={ctx.palette}
+          bodyPx={ctx.bodyPx}
           selfAuthor={{ name }}
         />
       )}
       {noteDisplayText && (
         <p
-          className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
-          style={{ color: ctx.palette.cardTitle }}
+          className="whitespace-pre-wrap"
+          style={{
+            color: ctx.palette.cardTitle,
+            fontSize: ctx.bodyPx,
+            lineHeight: 1.5,
+          }}
         >
           {expanded ? noteDisplayText : truncateText(noteDisplayText, 220)}
         </p>
@@ -1298,6 +1268,7 @@ export function NewUserVesselCard({
   const ctx: CardContext = {
     density: density ?? DEFAULT_DENSITY,
     palette: PALETTES[brightness ?? DEFAULT_BRIGHTNESS],
+    bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
   };
   const name = item.displayName ?? item.username ?? "Someone";
 
@@ -1520,7 +1491,7 @@ function ExternalVesselCard({
             : undefined
         }
         publishedAt={external.publishedAt}
-        ctx={ctx}
+        palette={ctx.palette}
       />
       {authorOpen && (
         <AuthorModal
@@ -1535,6 +1506,7 @@ function ExternalVesselCard({
         <ParentContextTile
           itemId={external.id}
           palette={ctx.palette}
+          bodyPx={ctx.bodyPx}
           sourceHref={sourceHref}
           selfAuthor={{
             handle: external.authorHandle ?? undefined,
@@ -1549,14 +1521,22 @@ function ExternalVesselCard({
               <>
                 {external.contentHtml ? (
                   <div
-                    className="text-[13.5px] leading-[1.5] [&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:text-black [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-grey-300 [&_blockquote]:pl-3 [&_blockquote]:text-grey-600"
-                    style={{ color: ctx.palette.cardTitle }}
+                    className="[&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:text-black [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-grey-300 [&_blockquote]:pl-3 [&_blockquote]:text-grey-600"
+                    style={{
+                      color: ctx.palette.cardTitle,
+                      fontSize: ctx.bodyPx,
+                      lineHeight: 1.5,
+                    }}
                     dangerouslySetInnerHTML={{ __html: external.contentHtml }}
                   />
                 ) : fullBody ? (
                   <p
-                    className="text-[13.5px] leading-[1.5] whitespace-pre-wrap"
-                    style={{ color: ctx.palette.cardTitle }}
+                    className="whitespace-pre-wrap"
+                    style={{
+                      color: ctx.palette.cardTitle,
+                      fontSize: ctx.bodyPx,
+                      lineHeight: 1.5,
+                    }}
                   >
                     {fullBody}
                   </p>
@@ -1592,8 +1572,11 @@ function ExternalVesselCard({
             <ContentWarning warningText={external.contentWarning}>
               {body && (
                 <p
-                  className="text-[13.5px] leading-[1.5]"
-                  style={{ color: ctx.palette.cardTitle }}
+                  style={{
+                    color: ctx.palette.cardTitle,
+                    fontSize: ctx.bodyPx,
+                    lineHeight: 1.5,
+                  }}
                 >
                   {truncateText(body, 200)}
                 </p>
@@ -1608,8 +1591,11 @@ function ExternalVesselCard({
             <>
               {body && (
                 <p
-                  className="text-[13.5px] leading-[1.5]"
-                  style={{ color: ctx.palette.cardTitle }}
+                  style={{
+                    color: ctx.palette.cardTitle,
+                    fontSize: ctx.bodyPx,
+                    lineHeight: 1.5,
+                  }}
                 >
                   {truncateText(body, 200)}
                 </p>
@@ -1713,6 +1699,7 @@ function ExternalVesselCard({
         <ExternalCardThread
           itemId={external.id}
           palette={ctx.palette}
+          bodyPx={ctx.bodyPx}
           protocol={external.sourceProtocol}
           linkedAccount={matchingAccount ?? null}
           sourceHref={sourceHref}
@@ -1725,12 +1712,14 @@ function ExternalVesselCard({
 function ExternalCardThread({
   itemId,
   palette,
+  bodyPx,
   protocol,
   linkedAccount,
   sourceHref,
 }: {
   itemId: string;
   palette: VesselPalette;
+  bodyPx?: number;
   protocol: string;
   linkedAccount: import("../../lib/api/linked-accounts").LinkedAccount | null;
   sourceHref?: string;
@@ -1781,6 +1770,7 @@ function ExternalCardThread({
         itemId={itemId}
         protocol={protocol}
         linkedAccount={linkedAccount}
+        bodyPx={bodyPx}
         sourceHref={sourceHref}
       />
     </div>

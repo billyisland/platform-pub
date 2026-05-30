@@ -261,6 +261,7 @@ export function WorkspaceView() {
   const setVesselBrightness = useWorkspace((s) => s.setVesselBrightness);
   const setVesselDensity = useWorkspace((s) => s.setVesselDensity);
   const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation);
+  const setVesselTextSize = useWorkspace((s) => s.setVesselTextSize);
   const setVesselHidden = useWorkspace((s) => s.setVesselHidden);
   const removeVesselLayout = useWorkspace((s) => s.removeVessel);
   const batchUpdatePositions = useWorkspace((s) => s.batchUpdatePositions);
@@ -736,13 +737,6 @@ export function WorkspaceView() {
                   handleVesselDragEnd(v.feed.id, next)
                 }
                 onSizeCommit={(next) => setVesselSize(v.feed.id, next)}
-                onBrightnessCommit={(next) =>
-                  setVesselBrightness(v.feed.id, next)
-                }
-                onDensityCommit={(next) => setVesselDensity(v.feed.id, next)}
-                onOrientationCommit={(next) =>
-                  setVesselOrientation(v.feed.id, next)
-                }
                 onDragStart={() => handleVesselDragStart(v.feed.id)}
                 onDragFrame={(pos) => handleVesselDragFrame(v.feed.id, pos)}
                 hidden={ceremony?.feedId === v.feed.id}
@@ -805,6 +799,7 @@ export function WorkspaceView() {
                         group={item}
                         density={layout.density}
                         brightness={layout.brightness}
+                        textSize={layout.textSize}
                       />
                     ) : (
                       <VesselCard
@@ -812,6 +807,7 @@ export function WorkspaceView() {
                         item={item}
                         density={layout.density}
                         brightness={layout.brightness}
+                        textSize={layout.textSize}
                         onReply={(target) => {
                           setReplyTarget(target);
                           setComposerOpen("note");
@@ -894,6 +890,32 @@ export function WorkspaceView() {
         feed={feedComposerFor}
         deleteBlocked={
           vessels.filter((v) => !positions[v.feed.id]?.hidden).length <= 1
+        }
+        brightness={
+          feedComposerFor ? positions[feedComposerFor.id]?.brightness : undefined
+        }
+        density={
+          feedComposerFor ? positions[feedComposerFor.id]?.density : undefined
+        }
+        orientation={
+          feedComposerFor
+            ? positions[feedComposerFor.id]?.orientation
+            : undefined
+        }
+        textSize={
+          feedComposerFor ? positions[feedComposerFor.id]?.textSize : undefined
+        }
+        onBrightnessChange={(next) =>
+          feedComposerFor && setVesselBrightness(feedComposerFor.id, next)
+        }
+        onDensityChange={(next) =>
+          feedComposerFor && setVesselDensity(feedComposerFor.id, next)
+        }
+        onOrientationChange={(next) =>
+          feedComposerFor && setVesselOrientation(feedComposerFor.id, next)
+        }
+        onTextSizeChange={(next) =>
+          feedComposerFor && setVesselTextSize(feedComposerFor.id, next)
         }
         onClose={() => setFeedComposerFor(null)}
         onSourcesChanged={() => {

@@ -8,6 +8,20 @@ import {
 } from "../../lib/api";
 import { useResolverInput } from "../../hooks/useResolverInput";
 import type { MatchOption } from "../../lib/workspace/resolve";
+import {
+  type Brightness,
+  type Density,
+  type Orientation,
+  type TextSize,
+  nextBrightness,
+  nextDensity,
+  nextOrientation,
+  nextTextSize,
+  DEFAULT_BRIGHTNESS,
+  DEFAULT_DENSITY,
+  DEFAULT_ORIENTATION,
+  DEFAULT_TEXT_SIZE,
+} from "./tokens";
 
 const VOLUME_WEIGHTS = [1.0, 0.25, 0.5, 1.0, 2.0, 4.0];
 function weightToStep(weight: number): number {
@@ -49,6 +63,16 @@ interface FeedComposerProps {
    *  explaining why. Used to prevent the user from deleting their last feed
    *  (which would leave the floor empty until next bootstrap reseeds). */
   deleteBlocked?: boolean;
+  // Appearance controls (moved off the vessel bar — task 8). Current values +
+  // commit callbacks, wired from WorkspaceView against the workspace store.
+  brightness?: Brightness;
+  density?: Density;
+  orientation?: Orientation;
+  textSize?: TextSize;
+  onBrightnessChange?: (b: Brightness) => void;
+  onDensityChange?: (d: Density) => void;
+  onOrientationChange?: (o: Orientation) => void;
+  onTextSizeChange?: (t: TextSize) => void;
 }
 
 const NAME_LIMIT = 80;
@@ -61,6 +85,14 @@ export function FeedComposer({
   onRenamed,
   onDeleted,
   deleteBlocked,
+  brightness,
+  density,
+  orientation,
+  textSize,
+  onBrightnessChange,
+  onDensityChange,
+  onOrientationChange,
+  onTextSizeChange,
 }: FeedComposerProps) {
   const [sources, setSources] = useState<WorkspaceFeedSource[]>([]);
   const [loading, setLoading] = useState(false);
@@ -523,6 +555,98 @@ export function FeedComposer({
           </div>
         )}
 
+        {(onBrightnessChange ||
+          onDensityChange ||
+          onOrientationChange ||
+          onTextSizeChange) && (
+          <>
+            <div
+              className="label-ui"
+              style={{
+                color: TOKENS.hintFg,
+                marginTop: 20,
+                marginBottom: 8,
+              }}
+            >
+              Appearance
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 16,
+              }}
+            >
+              {onBrightnessChange && (
+                <AppearanceControl
+                  label="Brightness"
+                  glyph={
+                    { primary: "○", medium: "◐", dim: "●" }[
+                      brightness ?? DEFAULT_BRIGHTNESS
+                    ]
+                  }
+                  onClick={() =>
+                    onBrightnessChange(
+                      nextBrightness(brightness ?? DEFAULT_BRIGHTNESS),
+                    )
+                  }
+                />
+              )}
+              {onDensityChange && (
+                <AppearanceControl
+                  label="View"
+                  glyph={
+                    {
+                      compact: "Condensed",
+                      standard: "Standard",
+                      full: "Full",
+                    }[density ?? DEFAULT_DENSITY]
+                  }
+                  onClick={() =>
+                    onDensityChange(nextDensity(density ?? DEFAULT_DENSITY))
+                  }
+                />
+              )}
+              {onOrientationChange && (
+                <AppearanceControl
+                  label="Orientation"
+                  glyph={
+                    { vertical: "|", horizontal: "─" }[
+                      orientation ?? DEFAULT_ORIENTATION
+                    ]
+                  }
+                  onClick={() =>
+                    onOrientationChange(
+                      nextOrientation(orientation ?? DEFAULT_ORIENTATION),
+                    )
+                  }
+                />
+              )}
+              {onTextSizeChange && (
+                <AppearanceControl
+                  label="Text size"
+                  glyph={
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "baseline",
+                        gap: 2,
+                      }}
+                    >
+                      <span style={{ fontSize: 18, lineHeight: 1 }}>Ɐ</span>
+                      <span style={{ fontSize: 12, lineHeight: 1 }}>Ɐ</span>
+                    </span>
+                  }
+                  indicator={`${textSize ?? DEFAULT_TEXT_SIZE}/5`}
+                  onClick={() =>
+                    onTextSizeChange(nextTextSize(textSize ?? DEFAULT_TEXT_SIZE))
+                  }
+                />
+              )}
+            </div>
+          </>
+        )}
+
         <div
           style={{
             marginTop: 20,
@@ -605,6 +729,57 @@ export function FeedComposer({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AppearanceControl({
+  label,
+  glyph,
+  indicator,
+  onClick,
+}: {
+  label: string;
+  glyph: React.ReactNode;
+  indicator?: string;
+  onClick: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div className="label-ui" style={{ color: TOKENS.hintFg }}>
+        {label}
+      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        className="font-sans text-ui-sm"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          minWidth: 88,
+          padding: "6px 10px",
+          background: "transparent",
+          border: `1px solid ${TOKENS.inputBorder}`,
+          color: TOKENS.panelBorder,
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) =>
+          (e.currentTarget.style.background = TOKENS.matchHoverBg)
+        }
+        onMouseLeave={(e) =>
+          (e.currentTarget.style.background = "transparent")
+        }
+      >
+        <span style={{ display: "inline-flex", alignItems: "center" }}>
+          {glyph}
+        </span>
+        {indicator && (
+          <span className="label-ui" style={{ color: TOKENS.hintFg }}>
+            {indicator}
+          </span>
+        )}
+      </button>
     </div>
   );
 }

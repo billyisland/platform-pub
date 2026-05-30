@@ -4,6 +4,7 @@ import type {
   Brightness,
   Density,
   Orientation,
+  TextSize,
 } from "../components/workspace/tokens";
 
 // =============================================================================
@@ -32,6 +33,7 @@ export interface VesselLayout {
   brightness?: Brightness;
   density?: Density;
   orientation?: Orientation;
+  textSize?: TextSize;
   minimized?: boolean;
   hidden?: boolean;
 }
@@ -47,6 +49,7 @@ interface WorkspaceState {
   setVesselBrightness: (feedId: string, brightness: Brightness) => void;
   setVesselDensity: (feedId: string, density: Density) => void;
   setVesselOrientation: (feedId: string, orientation: Orientation) => void;
+  setVesselTextSize: (feedId: string, textSize: TextSize) => void;
   setVesselMinimized: (feedId: string, minimized: boolean) => void;
   setVesselHidden: (feedId: string, hidden: boolean) => void;
   batchUpdatePositions: (
@@ -151,6 +154,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     setVesselOrientation: (feedId, orientation) =>
       patchVessel(feedId, { orientation }),
+
+    setVesselTextSize: (feedId, textSize) => patchVessel(feedId, { textSize }),
 
     setVesselMinimized: (feedId, minimized) =>
       patchVessel(feedId, { minimized }),

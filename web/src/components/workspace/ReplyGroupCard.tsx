@@ -3,8 +3,14 @@
 import { useState } from "react";
 import type { ReplyGroupItem, ExternalFeedItem } from "../../lib/ndk";
 import type { ExternalThreadEntry } from "../../lib/api/feeds";
-import type { Brightness, Density } from "./tokens";
-import { PALETTES, DEFAULT_BRIGHTNESS, DEFAULT_DENSITY } from "./tokens";
+import type { Brightness, Density, TextSize } from "./tokens";
+import {
+  PALETTES,
+  DEFAULT_BRIGHTNESS,
+  DEFAULT_DENSITY,
+  DEFAULT_TEXT_SIZE,
+  TEXT_SIZE_PX,
+} from "./tokens";
 import { ParentContextTile } from "./ParentContextTile";
 import { ExternalPlayscriptEntry } from "./ExternalPlayscriptEntry";
 
@@ -14,6 +20,7 @@ interface Props {
   group: ReplyGroupItem;
   density?: Density;
   brightness?: Brightness;
+  textSize?: TextSize;
 }
 
 function externalToEntry(ext: ExternalFeedItem): ExternalThreadEntry {
@@ -33,9 +40,15 @@ function externalToEntry(ext: ExternalFeedItem): ExternalThreadEntry {
   };
 }
 
-export function ReplyGroupCard({ group, density, brightness }: Props) {
+export function ReplyGroupCard({
+  group,
+  density,
+  brightness,
+  textSize,
+}: Props) {
   const palette = PALETTES[brightness ?? DEFAULT_BRIGHTNESS];
   const d = density ?? DEFAULT_DENSITY;
+  const bodyPx = TEXT_SIZE_PX[textSize ?? DEFAULT_TEXT_SIZE];
   const [showAll, setShowAll] = useState(false);
 
   if (d === "compact") {
@@ -71,7 +84,11 @@ export function ReplyGroupCard({ group, density, brightness }: Props) {
         paddingLeft: "24px",
       }}
     >
-      <ParentContextTile itemId={group.replies[0].id} palette={palette} />
+      <ParentContextTile
+        itemId={group.replies[0].id}
+        palette={palette}
+        bodyPx={bodyPx}
+      />
 
       <div
         className="font-mono text-[11px] uppercase tracking-[0.06em] mb-3"
@@ -87,6 +104,7 @@ export function ReplyGroupCard({ group, density, brightness }: Props) {
               entry={entry}
               replyingTo={null}
               palette={palette}
+              bodyPx={bodyPx}
             />
           </li>
         ))}

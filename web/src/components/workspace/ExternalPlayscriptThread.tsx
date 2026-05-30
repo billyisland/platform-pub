@@ -16,6 +16,8 @@ interface Props {
   itemId: string;
   protocol: string;
   linkedAccount: LinkedAccount | null;
+  // Reading-content size in px, inherited from the host card.
+  bodyPx?: number;
   // Internal all.haus byline destination for thread entries (the expanded
   // item's source surface).
   sourceHref?: string;
@@ -28,6 +30,7 @@ export function ExternalPlayscriptThread({
   itemId,
   protocol,
   linkedAccount,
+  bodyPx,
   sourceHref,
 }: Props) {
   const [showAll, setShowAll] = useState(false);
@@ -71,6 +74,7 @@ export function ExternalPlayscriptThread({
               entry={entry}
               replyingTo={replyingTo}
               palette={palette}
+              bodyPx={bodyPx}
               sourceHref={sourceHref}
               onReply={() =>
                 setReplyingToId(replyingToId === entry.id ? null : entry.id)

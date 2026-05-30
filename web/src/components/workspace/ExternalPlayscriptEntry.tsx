@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import type { ExternalThreadEntry } from "../../lib/api/feeds";
 import type { VesselPalette } from "./tokens";
+import { TEXT_SIZE_PX, DEFAULT_TEXT_SIZE } from "./tokens";
+import { Byline } from "./Byline";
 
 interface Props {
   entry: ExternalThreadEntry;
@@ -10,6 +11,8 @@ interface Props {
   palette: VesselPalette;
   onReply?: () => void;
   replyActive?: boolean;
+  // Reading-content size in px, inherited from the host card.
+  bodyPx?: number;
   // Internal all.haus destination for the speaker's byline (the expanded
   // item's source surface). When absent, the byline renders as plain text —
   // we never link out to the native (Bluesky/Mastodon/…) profile.
@@ -22,67 +25,46 @@ export function ExternalPlayscriptEntry({
   palette,
   onReply,
   replyActive,
+  bodyPx = TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
   sourceHref,
 }: Props) {
+  // Reply bylines match main-card bylines (task 9b): the shared Byline carries
+  // name · time; the non-adjacent-parent "→ NAME" affordance rides as
+  // `replyingTo`. The bold-`Name:` playscript convention is dropped.
+  const publishedAtUnix = Math.floor(
+    new Date(entry.publishedAt).getTime() / 1000,
+  );
   return (
     <div className="group relative">
-      {/* Speaker line */}
-      <div className="label-ui text-grey-600 flex items-center gap-[6px]">
-        {replyingTo && (
-          <>
-            <span className="text-grey-400">&rarr;</span>
-            <span className="font-sans font-bold text-grey-400">
-              {replyingTo.name}
-            </span>
-            <span className="text-grey-400">:</span>
-            <span
-              aria-hidden="true"
-              style={{ display: "inline-block", width: "16px" }}
-            />
-          </>
-        )}
-        {sourceHref ? (
-          <Link
-            href={sourceHref}
-            onClick={(e) => e.stopPropagation()}
-            className="font-sans font-bold hover:underline"
-            style={{ color: palette.cardTitle }}
-          >
-            {entry.authorName || entry.authorHandle}:
-          </Link>
-        ) : (
-          <span
-            className="font-sans font-bold"
-            style={{ color: palette.cardTitle }}
-          >
-            {entry.authorName || entry.authorHandle}:
-          </span>
-        )}
-      </div>
+      <Byline
+        name={entry.authorName || entry.authorHandle}
+        nameHref={sourceHref}
+        publishedAt={publishedAtUnix}
+        replyingTo={replyingTo}
+        palette={palette}
+        className="mb-1"
+      />
 
       {/* Dialogue line */}
       <div className="mt-1">
         {entry.contentHtml ? (
           <div
-            className="font-sans text-[14.5px] leading-[1.55] [&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:underline"
-            style={{ color: palette.cardTitle }}
+            className="font-sans [&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:underline"
+            style={{ color: palette.cardTitle, fontSize: bodyPx, lineHeight: 1.5 }}
             dangerouslySetInnerHTML={{ __html: entry.contentHtml }}
           />
         ) : (
           <p
-            className="font-sans text-[14.5px] leading-[1.55] whitespace-pre-wrap"
-            style={{ color: palette.cardTitle }}
+            className="font-sans whitespace-pre-wrap"
+            style={{ color: palette.cardTitle, fontSize: bodyPx, lineHeight: 1.5 }}
           >
             {entry.contentText}
           </p>
         )}
       </div>
 
-      {/* Action row: timestamp + Reply */}
+      {/* Action row: Reply (timestamp now lives in the byline) */}
       <div className="mt-2 flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.02em] text-grey-400">
-        <time dateTime={entry.publishedAt}>
-          {formatRelativeTime(entry.publishedAt)}
-        </time>
         {onReply ? (
           <button
             type="button"
@@ -106,27 +88,4 @@ export function ExternalPlayscriptEntry({
       </div>
     </div>
   );
-}
-
-function formatRelativeTime(isoString: string): string {
-  const date = new Date(isoString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffMins < 1) return "NOW";
-  if (diffMins < 60) return `${diffMins}M`;
-  if (diffHours < 24) return `${diffHours}H`;
-  if (diffDays === 1) return "1D";
-  if (diffDays < 7) return `${diffDays}D`;
-
-  return date
-    .toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-    })
-    .toUpperCase();
 }

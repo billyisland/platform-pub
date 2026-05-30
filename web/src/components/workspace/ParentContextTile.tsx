@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { externalItems, type ParentItem } from "../../lib/api/feeds";
-import { formatDateRelative, truncateText } from "../../lib/format";
+import { truncateText } from "../../lib/format";
 import type { VesselPalette } from "./tokens";
+import { TEXT_SIZE_PX, DEFAULT_TEXT_SIZE } from "./tokens";
+import { Byline } from "./Byline";
 
 interface Props {
   itemId: string;
   palette: VesselPalette;
+  // Reading-content size in px, inherited from the host card so the parent body
+  // renders at the same size. Defaults to the standard step.
+  bodyPx?: number;
   // Internal all.haus byline destination (the item's source surface). When
   // absent, the parent author renders as plain text — never a link out to the
   // native (Bluesky/Mastodon/…) profile.
@@ -31,6 +35,7 @@ const cache = new Map<
 export function ParentContextTile({
   itemId,
   palette,
+  bodyPx = TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
   sourceHref,
   selfAuthor,
 }: Props) {
@@ -98,7 +103,6 @@ export function ParentContextTile({
   }
 
   const name = parent.authorName || parent.authorHandle || "Unknown";
-  const timestamp = formatDateRelative(parent.publishedAt);
   const body = parent.contentHtml || parent.contentText;
 
   return (
@@ -114,23 +118,21 @@ export function ParentContextTile({
           → REPLYING TO @{grandparentTag.authorHandle}
         </div>
       )}
-      <div
-        className="font-mono text-[11px] uppercase tracking-[0.06em] mb-1"
-        style={{ color: palette.cardMeta }}
-      >
-        {sourceHref ? (
-          <Link href={sourceHref} className="hover:underline">
-            {name}
-          </Link>
-        ) : (
-          name
-        )}{" "}
-        · {timestamp}
-      </div>
+      <Byline
+        name={name}
+        nameHref={sourceHref}
+        publishedAt={parent.publishedAt}
+        palette={palette}
+        className="mb-1"
+      />
       {body && (
         <div
-          className="text-[13.5px] leading-[1.5] [&_p]:mb-2"
-          style={{ color: palette.cardTitle }}
+          className="[&_p]:mb-2"
+          style={{
+            color: palette.cardTitle,
+            fontSize: bodyPx,
+            lineHeight: 1.5,
+          }}
           dangerouslySetInnerHTML={
             parent.contentHtml ? { __html: parent.contentHtml } : undefined
           }

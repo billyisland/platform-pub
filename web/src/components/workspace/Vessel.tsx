@@ -79,9 +79,6 @@ interface VesselProps {
   onHide?: () => void;
   onPositionCommit: (pos: { x: number; y: number }) => void;
   onSizeCommit?: (size: { w: number; h: number }) => void;
-  onBrightnessCommit?: (b: Brightness) => void;
-  onDensityCommit?: (d: Density) => void;
-  onOrientationCommit?: (o: Orientation) => void;
   onDragStart?: () => void;
   onDragFrame?: (pos: { x: number; y: number }) => void;
   dragConstraints?: RefObject<HTMLElement>;
@@ -107,9 +104,6 @@ export function Vessel({
   onHide,
   onPositionCommit,
   onSizeCommit,
-  onBrightnessCommit,
-  onDensityCommit,
-  onOrientationCommit,
   onDragStart: onDragStartProp,
   onDragFrame,
   dragConstraints,
@@ -480,16 +474,11 @@ export function Vessel({
           )}
         </div>
 
-        {/* VesselBar replaces the bottom wall — cycle controls + source input */}
+        {/* VesselBar replaces the bottom wall — gear + hide + source input.
+            Appearance controls moved into the FeedComposer modal (task 8). */}
         <VesselBar
           feedId={feedId}
           palette={palette}
-          brightness={effBrightness}
-          density={effDensity}
-          orientation={effOrientation}
-          onBrightnessCommit={onBrightnessCommit}
-          onDensityCommit={onDensityCommit}
-          onOrientationCommit={onOrientationCommit}
           onSourceAdded={onSourceAdded}
           onNameClick={onNameClick}
           onHide={onHide}

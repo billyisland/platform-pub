@@ -1,11 +1,10 @@
 # Feed / Vessel change requests — build plan
 
-**Status (2026-05-30).** Batch 1 shipped — tasks **2, 3, 4, 6, 7** implemented and
-typecheck-clean (`web` `tsc --noEmit`). Remaining: task **5** (media expansion), task **1**
-(external pip → author modal, needs the AuthorModal click-vs-hover refactor flagged in
-evaluation), and tasks **8 + 9** (text-size plumbing + typography unification, the latter
-pending the playscript-byline design-rule reconciliation). Per-task completion notes are
-inline below.
+**Status (2026-05-30).** All nine tasks shipped, typecheck-clean (`web` `tsc --noEmit`).
+Batch 1: tasks **2, 3, 4, 6, 7**. Batch 2: tasks **5** (media expansion) + **1** (external
+pip → author modal). Batch 3: tasks **8** (appearance controls → composer modal + text-size
+control) + **9** (text-size plumbing through `CardContext.bodyPx` + shared `Byline`). Per-task
+completion notes are inline below.
 
 Scope: the **workspace vessel system** only (`web/src/components/workspace/*`). The
 single-column `/feed` page (`web/src/components/feed/FeedView.tsx`) is being retired and
@@ -19,7 +18,14 @@ commit, as they touch the most files.
 
 ---
 
-## 1. Make the trust pip clickable on external cards (author bio)
+## 1. Make the trust pip clickable on external cards (author bio) — ✅ DONE
+
+> **Done.** External pip is now a `<button ref={pipRef}>` wrapping `<TrustPip>` whose
+> `onClick` stops propagation and toggles `authorOpen`; renders `<AuthorModal type="external"
+> id={external.id} anchorRef={pipRef} dismissOnMouseLeave={false}>`. `AuthorModal` gained
+> Escape + outside-`pointerdown` dismissal (anchor excluded so the trigger toggles rather
+> than close-then-reopen) and a `dismissOnMouseLeave` prop (default true) so hover-driven feed
+> usage is unchanged. Native note/article pips still open `PipPanel`.
 
 **Current behaviour.** On native note/article cards the byline pip is a `PipTrigger`
 (`web/src/components/workspace/PipTrigger.tsx`) → `onPipOpen` → `setPipPanel` →
@@ -164,7 +170,13 @@ or `refreshAll`) returns every card to collapsed.
 
 ---
 
-## 5. Expanding a card expands its media to full dimensions
+## 5. Expanding a card expands its media to full dimensions — ✅ DONE
+
+> **Done.** `MediaBlock` now branches its hero container/img style on `expanded`: expanded
+> drops `aspectRatio`/`objectFit:cover` for `width:100%; height:auto; maxWidth:100%`; collapsed
+> keeps the cropped 16:9. When expanded, extra image/video items render full-width stacked below
+> the hero and the `+N` pill is suppressed (`overflowCount` zeroed). `NoteVesselCard` and
+> `ArticleVesselCard` now pass `expanded` into `MediaBlock` (external already did).
 
 **Current behaviour.** `MediaBlock` (`VesselCard.tsx`) always renders the hero in a fixed
 `aspectRatio: 16/9` box with `objectFit: cover` (cropped). Its `expanded` prop currently
@@ -239,7 +251,17 @@ no console errors; feeds appear directly at their positions.
 
 ---
 
-## 8. Move appearance controls off the vessel bar into the composer modal; add a text-size control
+## 8. Move appearance controls off the vessel bar into the composer modal; add a text-size control — ✅ DONE
+
+> **Done.** 8a: `VesselBar` lost the brightness/density/orientation `BarButton`s + glyph maps +
+> the three `*Commit` props; `Vessel` dropped the now-dead commit props too (it still takes the
+> current values to resolve palette/layout). Bar = ⚙ · × · spacer · add-source. 8b: `tokens.ts`
+> gained `TextSize`/`DEFAULT_TEXT_SIZE`/`TEXT_SIZE_PX`/`nextTextSize`; the workspace store gained
+> `textSize?` on `VesselLayout` + a `setVesselTextSize` action (persists with the layout). 8c:
+> `FeedComposer` takes `brightness/density/orientation/textSize` + `on*Change` callbacks (wired
+> from `WorkspaceView` against the store, reading `positions[feed.id]`); renders an "Appearance"
+> section with four `AppearanceControl` cycle buttons — Brightness (○◐●), View
+> (Condensed/Standard/Full), Orientation (|/─), and Text size (two `Ɐ` glyphs + `n/5` indicator).
 
 **Current behaviour.** `VesselBar.tsx` holds, left-to-right: brightness `○◐●`, density
 `c/s/f`, orientation `|/─`, settings `⚙`, hide `×`, spacer, then the `+ add source` input.
@@ -303,7 +325,20 @@ control using inverted A glyphs. All four persist per feed across reload.
 
 ---
 
-## 9. Uniform text size/style across main / reply / parent; reply bylines match main bylines
+## 9. Uniform text size/style across main / reply / parent; reply bylines match main bylines — ✅ DONE
+
+> **Done.** 9a: `CardContext` gained `bodyPx`, set in `VesselCard` from
+> `TEXT_SIZE_PX[textSize ?? DEFAULT_TEXT_SIZE]` (`textSize` threaded in from the render loop).
+> All prose blocks now use `style={{ fontSize: ctx.bodyPx, lineHeight: 1.5 }}` instead of
+> hard-coded `text-[13.5px]`/`text-[14.5px]`: note body, external collapsed/expanded
+> (`contentHtml` + `fullBody`), parent body, and playscript dialogue (the 14.5→bodyPx fix).
+> `ParentContextTile`, `ExternalPlayscriptEntry`, `ExternalPlayscriptThread`, and
+> `ReplyGroupCard` take a `bodyPx` prop (default = standard step). Article serif content left
+> as-is (not in the catalogue). Meta/bylines stay fixed. 9b: extracted a shared
+> `web/src/components/workspace/Byline.tsx` (pip · name · time, with an optional `replyingTo`
+> "→ NAME" prefix in the same idiom); used by `VesselCard`'s three cards, `ParentContextTile`,
+> and `ExternalPlayscriptEntry`. The playscript bold-`Name:` speaker line + colon convention is
+> dropped; its timestamp moved into the byline (action row now just `Reply`).
 
 **Current divergences (catalogue before editing):**
 - Main note/external **body**: `text-[13.5px] leading-[1.5]`.
