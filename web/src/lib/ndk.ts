@@ -76,6 +76,17 @@ export interface NoteEvent {
   biddabilityTier?: "A" | "B" | "C" | "D";
   savedAt?: number;
   externalParentId?: string;
+  // Event kind of this item. Defaults to 1 (kind-1 note). Reply/comment cards
+  // surfaced through NoteCard (e.g. the profile Replies section) pass 1111 so
+  // vote/quote/delete use the correct comment semantics.
+  kind?: number;
+  // DB id for the comment-delete route (`DELETE /replies/:dbId`). Present only
+  // when this NoteEvent represents a kind-1111 comment rather than a note.
+  dbId?: string;
+  // Native parent event id (article or note) for conversational-neighbourhood
+  // expansion. When isReply is true, expanding the card hydrates this parent
+  // above the anchor via /content/resolve.
+  replyToEventId?: string;
 }
 
 export interface VaultEvent {

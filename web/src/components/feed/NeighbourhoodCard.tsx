@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { formatDateRelative } from "../../lib/format";
+import type { ResolvedContent } from "../../lib/api/articles";
 import type {
   NeighbourhoodParent,
   NeighbourhoodReply,
@@ -127,6 +129,57 @@ function EngagementMini({
           {repostCount}
         </span>
       )}
+    </div>
+  );
+}
+
+// Native parent (a kind-1 note or kind-30023 article resolved via
+// /content/resolve) rendered inset above a reply card. Shares the dimmed-bar,
+// mono-caps-byline grammar with NeighbourhoodCard so native and external
+// neighbourhoods read identically.
+export function NativeParentCard({ item }: { item: ResolvedContent }) {
+  const authorName =
+    item.author.displayName || item.author.username || "Unknown";
+
+  return (
+    <div style={{ borderLeft: "4px solid #CCCCCC", paddingLeft: "20px" }}>
+      <div className="flex items-center gap-2 mb-1">
+        {item.author.username ? (
+          <Link
+            href={`/${item.author.username}`}
+            onClick={(e) => e.stopPropagation()}
+            className="label-ui text-grey-400 hover:text-grey-600 transition-colors truncate"
+          >
+            {authorName}
+          </Link>
+        ) : (
+          <span className="label-ui text-grey-400 truncate">{authorName}</span>
+        )}
+        <span className="font-mono text-[10px] text-grey-400">&middot;</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.02em] text-grey-400 flex-shrink-0">
+          {formatDateRelative(item.publishedAt)}
+        </span>
+      </div>
+
+      {item.type === "article" ? (
+        item.dTag ? (
+          <Link
+            href={`/article/${item.dTag}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block font-serif text-[16px] leading-[1.4] text-grey-600 italic hover:text-crimson-dark transition-colors"
+          >
+            {item.title}
+          </Link>
+        ) : (
+          <p className="font-serif text-[16px] leading-[1.4] text-grey-600 italic">
+            {item.title}
+          </p>
+        )
+      ) : item.content ? (
+        <p className="text-[14px] leading-[1.5] text-grey-600 line-clamp-6 whitespace-pre-wrap">
+          {item.content}
+        </p>
+      ) : null}
     </div>
   );
 }

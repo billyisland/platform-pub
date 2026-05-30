@@ -1,7 +1,7 @@
 # CARD-BEHAVIOUR-ADR: Feed Card Interaction & Conversational Expansion
 
 **all.haus Architectural Decision Record**
-**Status:** Phases 1–3 shipped (May 2026), audit fix-up 2026-05-27 — Phase 4 remaining
+**Status:** Phases 1–3 shipped (May 2026), audit fix-up 2026-05-27. Phase 4 (spec-conformance gaps from the 2026-05-29 verification audit — see §X): #1 done 2026-05-29, #2–#5 remaining
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** UNIVERSAL-FEED-ADR, UI-DESIGN-SPEC
 **Affects:** `web/src/components/feed/*`, `gateway/src/routes/`, `feed-ingest/src/lib/*`, `schema.sql`, `migrations/`
@@ -462,6 +462,36 @@ body-click expansion with inset parent/replies (§V), tier-driven failure states
 **Phase 3 — author affordances.** The modal (§VI.1), the metadata endpoint
 (§VII.4), byline-click routing to the source surface (§VI.2), touch `⋯` sheet
 and action-sheet (§VIII).
+
+**Phase 4 — spec-conformance gaps.** A section-by-section verification of the
+shipped Phase 1–3 code against this ADR (2026-05-29) found five divergences. They
+are tracked in `feature-debt.md` ("Card behaviour — verified-against-spec gaps")
+and collected here in priority order:
+
+1. ~~**Neighbourhood expansion is ExternalCard-only (§V.1, §V.3) — substantive.**~~
+   **DONE (2026-05-29).** `NoteCard` is now kind-aware and hydrates its parent above
+   the anchor on expand (`useNativeParent` → `GET /content/resolve`) with the same
+   scroll-pinning as `ExternalCard`; new `NativeParentCard` shares the dimmed-bar
+   inset grammar. The profile Replies surface (`SocialTab`) now flows through
+   `NoteCard`, retiring the bespoke `ReplyCard`. `ArticleCard` is unchanged by design
+   (articles are always `is_reply = false`, so there is no parent-above and the
+   downward `ReplySection` never moves the anchor). Known limit: a reply nested under
+   another comment anchors its parent-above at the thread root, since
+   `/content/resolve` does not resolve comments.
+2. **Thread hydration endpoint shape (§V.4, §VII.3).** The capability ships via the
+   older `/external-items/:id/thread` + `/parent` pair rather than the spec'd
+   `GET /api/v1/external/thread`. Name/shape was always negotiable, but three concrete
+   sub-specs are unmet: per-route rate limit (30/min), ~5s outbound timeout (currently
+   the 10s default), and a server-signalled `partial` flag (currently derived
+   client-side).
+3. **External byline routing (§VI.2).** Byline links to the author's profile on the
+   _origin platform_ in a new tab, not the all.haus source surface the interim
+   contract fixes. (No internal source-surface route exists yet.)
+4. **NoteCard headline navigation (§IV).** Note content has no permalink-navigating
+   headline region — clicking note text expands. Likely fine until a note permalink
+   page exists, but mark it INTERIM in code as `ExternalCard` does for its headline.
+5. **Empty-state reply affordance (§V.5) — minor.** `NO CONVERSATION YET — BE THE
+FIRST TO REPLY` renders inert; it should open the composer on click.
 
 Do not begin a phase before the previous one is green. Phase 1 carries the
 riskiest schema change (a dual-write column) deliberately first and alone, per
