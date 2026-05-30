@@ -246,9 +246,14 @@ function BarButton({
         color: mutedColor,
         background: "transparent",
         border: "none",
-        padding: "0 5px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: BAR_H * 2,
+        padding: "0 12px",
+        fontSize: 22,
+        lineHeight: 1,
         cursor: "pointer",
-        lineHeight: `${BAR_H}px`,
       }}
       onMouseEnter={(e) => (e.currentTarget.style.color = color)}
       onMouseLeave={(e) => (e.currentTarget.style.color = mutedColor)}
