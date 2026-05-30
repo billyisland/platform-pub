@@ -12,6 +12,9 @@ interface Props {
   palette: VesselPalette;
   bodyPx?: number;
   sourceHref?: string;
+  // Re-roots the conversation onto the clicked ancestor. When provided, entries
+  // become clickable; when absent they render as static context.
+  onEntryClick?: (entry: ExternalThreadEntry) => void;
 }
 
 export function ExternalAncestorRail({
@@ -19,6 +22,7 @@ export function ExternalAncestorRail({
   palette,
   bodyPx,
   sourceHref,
+  onEntryClick,
 }: Props) {
   if (ancestors.length === 0) return null;
 
@@ -52,6 +56,7 @@ export function ExternalAncestorRail({
                 palette={palette}
                 bodyPx={bodyPx}
                 sourceHref={sourceHref}
+                onEntryClick={onEntryClick}
               />
             </li>
           );

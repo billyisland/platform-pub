@@ -390,8 +390,15 @@ export const externalItems = {
 
   quote: (id: string) => request<QuoteResponse>(`/external-items/${id}/quote`),
 
-  thread: (id: string) =>
-    request<ThreadResponse>(`/external-items/${id}/thread`),
+  // `focus` re-roots the returned thread on a source-platform node (an
+  // ExternalThreadEntry.id — an at:// URI for Bluesky, a numeric status id for
+  // Mastodon); the gateway derives a synthetic item on the same source.
+  thread: (id: string, focus?: string) =>
+    request<ThreadResponse>(
+      `/external-items/${id}/thread${
+        focus ? `?focus=${encodeURIComponent(focus)}` : ""
+      }`,
+    ),
 };
 
 // External source surface (CARD-BEHAVIOUR-ADR §VI.2) — byline-click destination

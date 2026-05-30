@@ -28,7 +28,9 @@ import { ReplySection } from "../replies/ReplySection";
 import { ConversationView } from "./ConversationView";
 import { useLiveEngagement } from "../../hooks/useLiveEngagement";
 import { useExternalThread } from "../../hooks/useExternalThread";
+import type { ExternalThreadEntry } from "../../lib/api/feeds";
 import { ExternalPlayscriptThread } from "./ExternalPlayscriptThread";
+import { ExternalPlayscriptEntry } from "./ExternalPlayscriptEntry";
 import { ExternalAncestorRail } from "./ExternalAncestorRail";
 import { useLinkedAccounts } from "../../hooks/useLinkedAccounts";
 import { externalItems } from "../../lib/api/external-items";
@@ -1441,11 +1443,24 @@ function ExternalVesselCard({
     ? `/source/${external.externalSourceId}`
     : undefined;
 
-  // Fetch the conversation once here so the ancestor rail (above the content)
-  // and the descendant thread (below) share a single request. Ancestors render
-  // above the focal card content — the post you opened — so the thread reads
-  // top-down from the start of the conversation.
-  const thread = useExternalThread(external.id, showThread);
+  // In-place re-focus: the thread entry the conversation is currently rooted on.
+  // `null` means the original card item is focal (rich body + rail + thread).
+  // Clicking any ancestor/descendant sets this to that entry, which re-roots the
+  // thread via the gateway's ?focus= param (entry.id is a source URI/id).
+  const [focusEntry, setFocusEntry] = useState<ExternalThreadEntry | null>(null);
+  // Clear the re-root when the card collapses or the underlying item recycles.
+  React.useEffect(() => {
+    if (!expanded) setFocusEntry(null);
+  }, [expanded]);
+  React.useEffect(() => {
+    setFocusEntry(null);
+  }, [external.id]);
+
+  // Fetch the conversation here so the ancestor rail (above the content) and the
+  // descendant thread (below) share a single request. Ancestors render above the
+  // focal node so the thread reads top-down from the start of the conversation.
+  // When re-rooted, `focusEntry.id` re-fetches the tree relative to that node.
+  const thread = useExternalThread(external.id, showThread, focusEntry?.id);
 
   // External pip is clickable → opens the minimal author-bio popover anchored
   // to the pip (task 1). The trust panel keys on a platform user id external
@@ -1516,12 +1531,27 @@ function ExternalVesselCard({
           dismissOnMouseLeave={false}
         />
       )}
+      {/* Re-root reset — shown when focused onto a thread entry. Mirrors
+          ConversationView's "↑ Full conversation" affordance. */}
+      {showThread && focusEntry ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setFocusEntry(null);
+          }}
+          className="mb-[24px] ml-8 block label-ui text-grey-400 hover:text-black hover:underline transition-colors"
+        >
+          ↑ Full conversation
+        </button>
+      ) : null}
       {showThread ? (
         <ExternalAncestorRail
           ancestors={thread.ancestors}
           palette={ctx.palette}
           bodyPx={ctx.bodyPx}
           sourceHref={sourceHref}
+          onEntryClick={setFocusEntry}
         />
       ) : external.sourceReplyUri ? (
         <ParentContextTile
@@ -1535,6 +1565,47 @@ function ExternalVesselCard({
           }}
         />
       ) : null}
+      {/* Re-rooted: the focal node is a lightweight thread entry (rendered from
+          the clicked entry — the refetched rail/thread exclude it). The rich
+          card body (content/media/polls/quotes/engagement/actions) is
+          intentionally not shown, matching native focal entries which are also
+          lightweight. */}
+      {focusEntry ? (
+        <div className="ml-8">
+          {thread.loading ? (
+            <div className="space-y-[32px] py-2">
+              {[1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-10 animate-pulse rounded"
+                  style={{ background: ctx.palette.interior }}
+                />
+              ))}
+            </div>
+          ) : thread.error ? (
+            <p className="label-ui text-grey-400">
+              Couldn&apos;t load conversation
+            </p>
+          ) : (
+            <div
+              style={{
+                borderLeft: `2px solid ${ctx.palette.cardTitle}`,
+                paddingLeft: 14,
+                marginLeft: -16,
+              }}
+            >
+              <ExternalPlayscriptEntry
+                entry={focusEntry}
+                replyingTo={null}
+                palette={ctx.palette}
+                bodyPx={ctx.bodyPx}
+                sourceHref={sourceHref}
+              />
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
       {expanded ? (
         <>
           {(() => {
@@ -1716,6 +1787,8 @@ function ExternalVesselCard({
         shareUrl={externalUrl}
         replyTarget={threadTarget}
       />
+        </>
+      )}
       {showThread && (
         <ExternalCardThread
           itemId={external.id}
@@ -1727,6 +1800,7 @@ function ExternalVesselCard({
           descendants={thread.descendants}
           loading={thread.loading}
           error={thread.error}
+          onEntryClick={setFocusEntry}
         />
       )}
     </CardShell>
@@ -1747,6 +1821,7 @@ function ExternalCardThread({
   descendants,
   loading,
   error,
+  onEntryClick,
 }: {
   itemId: string;
   palette: VesselPalette;
@@ -1754,9 +1829,10 @@ function ExternalCardThread({
   protocol: string;
   linkedAccount: import("../../lib/api/linked-accounts").LinkedAccount | null;
   sourceHref?: string;
-  descendants: import("../../lib/api/feeds").ExternalThreadEntry[];
+  descendants: ExternalThreadEntry[];
   loading: boolean;
   error: boolean;
+  onEntryClick?: (entry: ExternalThreadEntry) => void;
 }) {
   if (loading) {
     return (
@@ -1796,6 +1872,7 @@ function ExternalCardThread({
         linkedAccount={linkedAccount}
         bodyPx={bodyPx}
         sourceHref={sourceHref}
+        onEntryClick={onEntryClick}
       />
     </div>
   );

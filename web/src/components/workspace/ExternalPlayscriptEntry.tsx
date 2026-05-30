@@ -11,6 +11,10 @@ interface Props {
   palette: VesselPalette;
   onReply?: () => void;
   replyActive?: boolean;
+  // Re-roots the conversation onto this entry. When provided, the entry body
+  // (byline + dialogue) becomes clickable; the Reply control and the byline's
+  // name link stop propagation so they keep their own behaviour.
+  onEntryClick?: (entry: ExternalThreadEntry) => void;
   // Reading-content size in px, inherited from the host card.
   bodyPx?: number;
   // Internal all.haus destination for the speaker's byline (the expanded
@@ -25,6 +29,7 @@ export function ExternalPlayscriptEntry({
   palette,
   onReply,
   replyActive,
+  onEntryClick,
   bodyPx = TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
   sourceHref,
 }: Props) {
@@ -34,16 +39,44 @@ export function ExternalPlayscriptEntry({
   const publishedAtUnix = Math.floor(
     new Date(entry.publishedAt).getTime() / 1000,
   );
+  const clickable = !!onEntryClick;
   return (
-    <div className="group relative">
-      <Byline
-        name={entry.authorName || entry.authorHandle}
-        nameHref={sourceHref}
-        publishedAt={publishedAtUnix}
-        replyingTo={replyingTo}
-        palette={palette}
-        className="mb-1"
-      />
+    <div
+      className="group relative"
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={
+        clickable
+          ? (e) => {
+              e.stopPropagation();
+              onEntryClick(entry);
+            }
+          : undefined
+      }
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onEntryClick(entry);
+              }
+            }
+          : undefined
+      }
+      style={clickable ? { cursor: "pointer" } : undefined}
+    >
+      {/* Byline name link navigates; stop the re-root click from also firing. */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <Byline
+          name={entry.authorName || entry.authorHandle}
+          nameHref={sourceHref}
+          publishedAt={publishedAtUnix}
+          replyingTo={replyingTo}
+          palette={palette}
+          className="mb-1"
+        />
+      </div>
 
       {/* Dialogue line */}
       <div className="mt-1">

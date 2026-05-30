@@ -382,7 +382,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
   // =========================================================================
   // GET /external-items/:id/thread — full reply thread from source platform
   // =========================================================================
-  app.get<{ Params: { id: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { focus?: string } }>(
     "/external-items/:id/thread",
     {
       preHandler: requireAuth,
@@ -390,8 +390,15 @@ export async function externalItemsRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { id } = req.params;
+      // `focus` re-roots the thread on a source-platform node (a clicked
+      // ancestor/descendant whose ExternalThreadEntry.id is a source URI/id, not
+      // an all.haus id). The base item id still scopes the lookup (ownership,
+      // protocol, host); focus only redirects which node the source thread is
+      // fetched relative to. See deriveFocusItem.
+      const focus = req.query.focus?.trim() || null;
 
-      const cached = threadCache.get(id);
+      const cacheKey = focus ? `${id}|${focus}` : id;
+      const cached = threadCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
         return reply.send(cached.data);
       }
@@ -407,7 +414,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Item not found" });
       }
 
-      const item = rows[0];
+      const item = focus ? deriveFocusItem(rows[0], focus) : rows[0];
       let data: ThreadResponse = {
         ancestors: [],
         descendants: [],
@@ -426,7 +433,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         else data = { ancestors: [], descendants: [], partial: true };
       }
 
-      threadCache.set(id, {
+      threadCache.set(cacheKey, {
         data,
         expiresAt: Date.now() + THREAD_CACHE_TTL_MS,
       });
@@ -1884,4 +1891,30 @@ function extractMastodonStatusId(uri: string): string | null {
   } catch {
     return null;
   }
+}
+
+// Build a synthetic item row pointing at a different node in the same source
+// conversation, so the thread fetch re-roots on a clicked ancestor/descendant.
+// `focus` is the source-platform id carried on ExternalThreadEntry.id. The base
+// row supplies the trusted protocol + host; focus only redirects the node.
+function deriveFocusItem(base: ExternalItemRow, focus: string): ExternalItemRow {
+  if (base.protocol === "atproto") {
+    // Bluesky entry ids are self-contained at:// URIs; getPostThread takes one
+    // directly, and fetchBlueskyThread reads interaction_data.uri first.
+    return { ...base, source_item_uri: focus, interaction_data: { uri: focus } };
+  }
+  if (base.protocol === "activitypub") {
+    // Mastodon entry ids are local status ids on the base instance. Rebuild a
+    // URL on the base host so the host derivation + extractMastodonStatusId in
+    // fetchMastodonThread resolve to /api/v1/statuses/<id>/context. The id only
+    // ever reaches the source as a numeric path segment (no SSRF surface).
+    let host = "";
+    try {
+      host = new URL(base.source_item_uri).hostname;
+    } catch {
+      host = "";
+    }
+    return { ...base, source_item_uri: `https://${host}/x/${focus}` };
+  }
+  return base;
 }

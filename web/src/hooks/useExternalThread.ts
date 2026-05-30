@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { externalItems, type ExternalThreadEntry } from "../lib/api/feeds";
 
 interface ExternalThreadState {
@@ -18,6 +18,10 @@ const cache = new Map<
 export function useExternalThread(
   itemId: string,
   expanded: boolean,
+  // Source-platform id of a re-rooted node (ExternalThreadEntry.id). When set,
+  // the thread is fetched relative to that node instead of the base item — this
+  // is what powers in-place re-focus on external cards.
+  focus?: string,
 ): ExternalThreadState {
   const [state, setState] = useState<ExternalThreadState>({
     ancestors: [],
@@ -25,12 +29,15 @@ export function useExternalThread(
     loading: false,
     error: false,
   });
-  const fetched = useRef(false);
 
   useEffect(() => {
-    if (!expanded || fetched.current) return;
+    if (!expanded) return;
 
-    const cached = cache.get(itemId);
+    // Cache + request are keyed on the (item, focus) pair so re-focusing onto a
+    // different node refetches rather than reusing the base item's tree.
+    const key = focus ? `${itemId}|${focus}` : itemId;
+
+    const cached = cache.get(key);
     if (cached) {
       setState({
         ancestors: cached.ancestors,
@@ -41,16 +48,17 @@ export function useExternalThread(
       return;
     }
 
-    fetched.current = true;
-    setState((prev) => ({ ...prev, loading: true }));
+    let cancelled = false;
+    setState((prev) => ({ ...prev, loading: true, error: false }));
 
     externalItems
-      .thread(itemId)
+      .thread(itemId, focus)
       .then((res) => {
-        cache.set(itemId, {
+        cache.set(key, {
           ancestors: res.ancestors,
           descendants: res.descendants,
         });
+        if (cancelled) return;
         setState({
           ancestors: res.ancestors,
           descendants: res.descendants,
@@ -59,6 +67,7 @@ export function useExternalThread(
         });
       })
       .catch(() => {
+        if (cancelled) return;
         setState({
           ancestors: [],
           descendants: [],
@@ -66,7 +75,11 @@ export function useExternalThread(
           error: true,
         });
       });
-  }, [expanded, itemId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, itemId, focus]);
 
   return state;
 }

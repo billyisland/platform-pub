@@ -21,6 +21,9 @@ interface Props {
   // Internal all.haus byline destination for thread entries (the expanded
   // item's source surface).
   sourceHref?: string;
+  // Re-roots the conversation onto the clicked entry. When provided, the entry
+  // body becomes clickable (Reply control + byline keep their own behaviour).
+  onEntryClick?: (entry: ExternalThreadEntry) => void;
 }
 
 export function ExternalPlayscriptThread({
@@ -32,6 +35,7 @@ export function ExternalPlayscriptThread({
   linkedAccount,
   bodyPx,
   sourceHref,
+  onEntryClick,
 }: Props) {
   const [showAll, setShowAll] = useState(false);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
@@ -76,6 +80,7 @@ export function ExternalPlayscriptThread({
               palette={palette}
               bodyPx={bodyPx}
               sourceHref={sourceHref}
+              onEntryClick={onEntryClick}
               onReply={() =>
                 setReplyingToId(replyingToId === entry.id ? null : entry.id)
               }
