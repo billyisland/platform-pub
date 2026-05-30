@@ -510,6 +510,31 @@ and collected here in priority order:
    renders as a button (`hover:text-black`) that opens the composer, falling back to
    the inert label when no handler is wired. `ExternalCard` passes its `handleReply`.
 
+**Phase 5 — workspace vessel-card conformance (2026-05-30).** Phases 1–4 landed
+on the `web/src/components/feed/` cards (`ExternalCard`, `NoteCard`,
+`ArticleCard`). The parallel **workspace** card family
+(`web/src/components/workspace/VesselCard.tsx`), built during the workspace
+experiment, had diverged from this ADR and is now the surface that matters — the
+main feed is being retired. The vessel cards were brought in line:
+
+- **Body click expands the conversational neighbourhood (§V).** Expanding a card
+  now reveals its replies (and parent) in one gesture — the `ExternalCardThread`
+  playscript (parent ancestors + replies) for atproto/activitypub, and the
+  native `CardThread` for articles/notes — gated on `expanded || threadExpanded`.
+  The separate "Thread / Hide thread" toggle is deleted; `onToggleThread` is
+  removed from `VesselCard` and `WorkspaceView`. (`threadExpanded` survives only
+  as the composer's auto-reveal hook for a freshly-posted reply.) When the
+  playscript thread renders, the standalone `ParentContextTile` is suppressed to
+  avoid a duplicate parent.
+- **Source attribution is the one route out (§VI.4).** The crimson
+  `Open original →` button is deleted. The bottom `VIA {PROTOCOL} · {handle}`
+  line is now the single clickable route to the origin (RSS/email → reader pane,
+  others → new tab) and renders in standard density too, not just full. It
+  degrades to inert provenance text when no origin URL exists (tier D).
+- **Byline routes to the source surface (§VI.2).** The external byline name now
+  links via `next/link` to `/source/{externalSourceId}`, matching the feed card;
+  degrades to a plain span when no source id is present.
+
 Do not begin a phase before the previous one is green. Phase 1 carries the
 riskiest schema change (a dual-write column) deliberately first and alone, per
 the discipline in RELAY-OUTBOX-ADR §D2.

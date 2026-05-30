@@ -802,15 +802,6 @@ export function WorkspaceView() {
                           });
                         }}
                         threadExpanded={expandedThreads.has(item.id)}
-                        onToggleThread={(target) => {
-                          setExpandedThreads((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(target.eventId))
-                              next.delete(target.eventId);
-                            else next.add(target.eventId);
-                            return next;
-                          });
-                        }}
                         threadRefreshKey={threadRefreshTicks[item.id]}
                         expanded={expandedCards.has(
                           "feedItemId" in item && item.feedItemId

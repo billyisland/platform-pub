@@ -881,6 +881,14 @@ The feed numeral moves from an italic serif badge at the right end of VesselBar 
 
 **VesselBar simplification.** The `numeral` and `descriptiveName` props removed from `VesselBar`; the italic serif badge deleted. The gear `⚙` button remains as a secondary path to the feed composer (discoverable without knowing the double-click gesture).
 
+### Slice 35 — vessel cards conform to CARD-BEHAVIOUR-ADR (2026-05-30)
+
+The `VesselCard` family had diverged from `docs/adr/CARD-BEHAVIOUR-ADR.md` (click model + the one-route-out rule). Since the main `/feed/` cards are being retired and the workspace is now the surface that matters, the vessel cards were brought in line — see CARD-BEHAVIOUR-ADR §X Phase 5 for the full account. In brief:
+
+- **Body click expands the conversational neighbourhood**, not just the card's own content. The replies thread (`ExternalCardThread` playscript for atproto/activitypub; native `CardThread` for articles/notes) now renders on `expanded || threadExpanded`. The standalone "Thread / Hide thread" toggle is deleted; `onToggleThread` removed from `VesselCard` + `WorkspaceView`. `ParentContextTile` is suppressed when the playscript thread (which carries the parent chain) renders.
+- **The crimson `Open original →` button is deleted.** The bottom `VIA {PROTOCOL} · {handle}` source-attribution line is now the single clickable route to the origin (RSS/email → reader pane, others → new tab) and shows in standard density, not just full.
+- **The external byline links to the internal source surface** (`/source/{externalSourceId}`), matching the feed card.
+
 ## Deferred (TODO in code, not blocking the experiment)
 
 - DM/messages model (vessel vs `/messages` route).

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
   FeedItem,
@@ -69,7 +70,6 @@ interface Props {
   onPipOpen?: PipOpen;
   dragData?: string;
   threadExpanded?: boolean;
-  onToggleThread?: (target: ReplyTarget) => void;
   threadRefreshKey?: number;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
@@ -90,7 +90,6 @@ export function VesselCard({
   onReply,
   onPipOpen,
   threadExpanded,
-  onToggleThread,
   threadRefreshKey,
   expanded,
   onToggleExpand,
@@ -109,7 +108,6 @@ export function VesselCard({
         onReply={onReply}
         onPipOpen={onPipOpen}
         threadExpanded={threadExpanded}
-        onToggleThread={onToggleThread}
         threadRefreshKey={threadRefreshKey}
         expanded={expanded}
         onToggleExpand={onToggleExpand}
@@ -123,7 +121,6 @@ export function VesselCard({
         onReply={onReply}
         onPipOpen={onPipOpen}
         threadExpanded={threadExpanded}
-        onToggleThread={onToggleThread}
         threadRefreshKey={threadRefreshKey}
         expanded={expanded}
         onToggleExpand={onToggleExpand}
@@ -136,7 +133,6 @@ export function VesselCard({
       expanded={expanded}
       onToggleExpand={onToggleExpand}
       threadExpanded={threadExpanded}
-      onToggleThread={onToggleThread}
     />
   );
 }
@@ -200,8 +196,6 @@ function CardActions({
   replyTarget,
   shareUrl,
   onReply,
-  threadExpanded,
-  onToggleThread,
 }: {
   ctx: CardContext;
   voteEventId?: string;
@@ -210,8 +204,6 @@ function CardActions({
   replyTarget?: ReplyTarget;
   shareUrl?: string;
   onReply?: (target: ReplyTarget) => void;
-  threadExpanded?: boolean;
-  onToggleThread?: (target: ReplyTarget) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -255,22 +247,6 @@ function CardActions({
           className="hover:opacity-80"
         >
           Reply
-        </button>
-      )}
-      {replyTarget && onToggleThread && (
-        <button
-          type="button"
-          onClick={() => onToggleThread(replyTarget)}
-          style={{
-            background: "transparent",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-            color: ctx.palette.cardMeta,
-          }}
-          className="hover:opacity-80"
-        >
-          {threadExpanded ? "Hide thread" : "Thread"}
         </button>
       )}
       {shareUrl && (
@@ -353,12 +329,14 @@ function CompactRow({
 function Byline({
   pipNode,
   name,
+  nameHref,
   publishedAt,
   trailing,
   ctx,
 }: {
   pipNode: React.ReactNode;
   name: string;
+  nameHref?: string;
   publishedAt: number;
   trailing?: React.ReactNode;
   ctx: CardContext;
@@ -369,9 +347,20 @@ function Byline({
       style={{ color: ctx.palette.cardMeta }}
     >
       {pipNode}
-      <span style={{ color: ctx.palette.cardTitle }} className="font-medium">
-        {name}
-      </span>
+      {nameHref ? (
+        <Link
+          href={nameHref}
+          onClick={(e) => e.stopPropagation()}
+          style={{ color: ctx.palette.cardTitle }}
+          className="font-medium hover:underline"
+        >
+          {name}
+        </Link>
+      ) : (
+        <span style={{ color: ctx.palette.cardTitle }} className="font-medium">
+          {name}
+        </span>
+      )}
       <span>·</span>
       <time dateTime={new Date(publishedAt * 1000).toISOString()}>
         {formatDateRelative(publishedAt)}
@@ -389,27 +378,59 @@ const PROTOCOL_DISPLAY: Record<string, string> = {
   EMAIL: "EMAIL",
 };
 
+// The source-attribution line is the single route to the original in its
+// origin location (CARD-BEHAVIOUR-ADR §VI.4) — it replaces the old "Open
+// original" button. `onOpen` is provided when an origin URL exists; without it
+// the line renders as inert provenance text (tier D).
 function SourceAttribution({
   protocol,
   identifier,
   community,
+  onOpen,
   ctx,
 }: {
   protocol: string;
   identifier?: string;
   community?: string;
+  onOpen?: () => void;
   ctx: CardContext;
 }) {
   const label = PROTOCOL_DISPLAY[protocol] ?? protocol;
-  return (
-    <div
-      className="font-mono text-[10px] uppercase tracking-[0.06em] mt-2"
-      style={{ color: ctx.palette.cardMeta }}
-    >
+  const text = (
+    <>
       VIA {label}
       {community ? ` · ${community}` : ""}
       {identifier ? ` · ${identifier}` : ""}
-    </div>
+    </>
+  );
+  if (!onOpen) {
+    return (
+      <div
+        className="font-mono text-[10px] uppercase tracking-[0.06em] mt-2"
+        style={{ color: ctx.palette.cardMeta }}
+      >
+        {text}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      className="font-mono text-[10px] uppercase tracking-[0.06em] mt-2 text-left hover:opacity-80"
+      style={{
+        color: ctx.palette.cardMeta,
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+      }}
+    >
+      {text} →
+    </button>
   );
 }
 
@@ -797,7 +818,6 @@ function ArticleVesselCard({
   onReply,
   onPipOpen,
   threadExpanded,
-  onToggleThread,
   threadRefreshKey,
   expanded,
   onToggleExpand,
@@ -807,7 +827,6 @@ function ArticleVesselCard({
   onReply?: (target: ReplyTarget) => void;
   onPipOpen?: PipOpen;
   threadExpanded?: boolean;
-  onToggleThread?: (target: ReplyTarget) => void;
   threadRefreshKey?: number;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
@@ -963,10 +982,8 @@ function ArticleVesselCard({
         replyTarget={replyTarget}
         shareUrl={shareUrl}
         onReply={onReply}
-        threadExpanded={threadExpanded}
-        onToggleThread={onToggleThread}
       />
-      {threadExpanded && (
+      {(expanded || threadExpanded) && (
         <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
       )}
     </CardShell>
@@ -979,7 +996,6 @@ function NoteVesselCard({
   onReply,
   onPipOpen,
   threadExpanded,
-  onToggleThread,
   threadRefreshKey,
   expanded,
   onToggleExpand,
@@ -989,7 +1005,6 @@ function NoteVesselCard({
   onReply?: (target: ReplyTarget) => void;
   onPipOpen?: PipOpen;
   threadExpanded?: boolean;
-  onToggleThread?: (target: ReplyTarget) => void;
   threadRefreshKey?: number;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
@@ -1098,10 +1113,8 @@ function NoteVesselCard({
         isOwnContent={isOwnContent}
         replyTarget={replyTarget}
         onReply={onReply}
-        threadExpanded={threadExpanded}
-        onToggleThread={onToggleThread}
       />
-      {threadExpanded && (
+      {(expanded || threadExpanded) && (
         <CardThread target={replyTarget} refreshKey={threadRefreshKey} />
       )}
     </CardShell>
@@ -1169,14 +1182,12 @@ function ExternalVesselCard({
   expanded,
   onToggleExpand,
   threadExpanded,
-  onToggleThread,
 }: {
   external: ExternalFeedItem;
   ctx: CardContext;
   expanded?: boolean;
   onToggleExpand?: (itemId: string) => void;
   threadExpanded?: boolean;
-  onToggleThread?: (target: ReplyTarget) => void;
 }) {
   const name =
     external.authorName ??
@@ -1282,6 +1293,12 @@ function ExternalVesselCard({
         }
       : undefined;
 
+  // Body click expands the conversational neighbourhood (CARD-BEHAVIOUR-ADR
+  // §V). `threadExpanded` is still honoured for the composer's auto-reveal of a
+  // freshly-posted reply. The playscript thread carries the parent chain, so we
+  // suppress the standalone ParentContextTile when it shows.
+  const showThread = (!!expanded || !!threadExpanded) && !!threadTarget;
+
   const pipNodeCompact = (
     <span
       style={{
@@ -1312,18 +1329,15 @@ function ExternalVesselCard({
       <Byline
         pipNode={pipNodeByline}
         name={name}
-        publishedAt={external.publishedAt}
-        trailing={
-          ctx.density === "standard" ? (
-            <>
-              <span>·</span>
-              <span>VIA {protocol}</span>
-            </>
-          ) : null
+        nameHref={
+          external.externalSourceId
+            ? `/source/${external.externalSourceId}`
+            : undefined
         }
+        publishedAt={external.publishedAt}
         ctx={ctx}
       />
-      {external.sourceReplyUri && (
+      {external.sourceReplyUri && !showThread && (
         <ParentContextTile itemId={external.id} palette={ctx.palette} />
       )}
       {expanded ? (
@@ -1361,31 +1375,6 @@ function ExternalVesselCard({
               contentBlock
             );
           })()}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isRssArticle) {
-                openReader(
-                  externalUrl,
-                  external.title ?? undefined,
-                  external.sourceName ?? undefined,
-                );
-              } else if (typeof window !== "undefined") {
-                window.open(externalUrl, "_blank", "noopener,noreferrer");
-              }
-            }}
-            className="label-ui mt-3"
-            style={{
-              color: ctx.palette.crimson,
-              background: "none",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-            }}
-          >
-            Open original →
-          </button>
           {external.poll && (
             <PollDisplay
               poll={external.poll}
@@ -1489,22 +1478,33 @@ function ExternalVesselCard({
           onReplied={() => setReplyCountDelta((d) => d + 1)}
         />
       )}
-      {ctx.density === "full" && (
-        <SourceAttribution
-          protocol={protocol}
-          identifier={external.authorHandle ?? external.sourceName ?? undefined}
-          community={extractCommunityName(external.audience)}
-          ctx={ctx}
-        />
-      )}
+      <SourceAttribution
+        protocol={protocol}
+        identifier={external.authorHandle ?? external.sourceName ?? undefined}
+        community={extractCommunityName(external.audience)}
+        onOpen={
+          externalUrl
+            ? () => {
+                if (isRssArticle) {
+                  openReader(
+                    externalUrl,
+                    external.title ?? undefined,
+                    external.sourceName ?? undefined,
+                  );
+                } else if (typeof window !== "undefined") {
+                  window.open(externalUrl, "_blank", "noopener,noreferrer");
+                }
+              }
+            : undefined
+        }
+        ctx={ctx}
+      />
       <CardActions
         ctx={ctx}
         shareUrl={externalUrl}
         replyTarget={threadTarget}
-        threadExpanded={threadExpanded}
-        onToggleThread={onToggleThread}
       />
-      {threadExpanded && threadTarget && (
+      {showThread && (
         <ExternalCardThread
           itemId={external.id}
           palette={ctx.palette}
