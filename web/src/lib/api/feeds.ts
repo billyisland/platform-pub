@@ -377,6 +377,11 @@ export interface ExternalThreadEntry {
 export interface ThreadResponse {
   ancestors: ExternalThreadEntry[];
   descendants: ExternalThreadEntry[];
+  // The re-rooted focal node as a full card (author + content + own media +
+  // engagement counts), carrying a real all.haus id so it can be liked/reposted/
+  // replied to. Present only when the request re-roots (`?focus=`); null if the
+  // focus node's source fetch failed (client falls back to the lightweight focal).
+  focus?: ParentItem | null;
   // Server-signalled: the source thread could not be reached/completed.
   partial: boolean;
 }

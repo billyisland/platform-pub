@@ -1,11 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { externalItems, type ExternalThreadEntry } from "../lib/api/feeds";
+import {
+  externalItems,
+  type ExternalThreadEntry,
+  type ParentItem,
+} from "../lib/api/feeds";
 
 interface ExternalThreadState {
   ancestors: ExternalThreadEntry[];
   descendants: ExternalThreadEntry[];
+  // Rich re-rooted focal node (only set when `focus` is passed and the source
+  // fetch succeeded); rendered as the full focal card in place of the host body.
+  focus: ParentItem | null;
   loading: boolean;
   error: boolean;
 }
@@ -13,6 +20,7 @@ interface ExternalThreadState {
 interface CachedThread {
   ancestors: ExternalThreadEntry[];
   descendants: ExternalThreadEntry[];
+  focus: ParentItem | null;
   ts: number;
 }
 
@@ -52,6 +60,7 @@ export function useExternalThread(
   const [state, setState] = useState<ExternalThreadState>({
     ancestors: [],
     descendants: [],
+    focus: null,
     loading: false,
     error: false,
   });
@@ -68,6 +77,7 @@ export function useExternalThread(
       setState({
         ancestors: cached.ancestors,
         descendants: cached.descendants,
+        focus: cached.focus,
         loading: false,
         error: false,
       });
@@ -80,15 +90,18 @@ export function useExternalThread(
     externalItems
       .thread(itemId, focus)
       .then((res) => {
+        const focus = res.focus ?? null;
         writeCache(key, {
           ancestors: res.ancestors,
           descendants: res.descendants,
+          focus,
           ts: Date.now(),
         });
         if (cancelled) return;
         setState({
           ancestors: res.ancestors,
           descendants: res.descendants,
+          focus,
           loading: false,
           error: false,
         });
@@ -98,6 +111,7 @@ export function useExternalThread(
         setState({
           ancestors: [],
           descendants: [],
+          focus: null,
           loading: false,
           error: true,
         });

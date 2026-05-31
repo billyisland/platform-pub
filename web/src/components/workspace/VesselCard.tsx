@@ -26,9 +26,10 @@ import { ParentContextTile } from "./ParentContextTile";
 import { QuotedPostTile } from "./QuotedPostTile";
 import { ReplySection } from "../replies/ReplySection";
 import { ConversationView } from "./ConversationView";
+import type { ConversationNode } from "../../lib/api";
 import { useLiveEngagement } from "../../hooks/useLiveEngagement";
 import { useExternalThread } from "../../hooks/useExternalThread";
-import type { ExternalThreadEntry } from "../../lib/api/feeds";
+import type { ExternalThreadEntry, ParentItem } from "../../lib/api/feeds";
 import { ExternalPlayscriptThread } from "./ExternalPlayscriptThread";
 import { ExternalPlayscriptEntry } from "./ExternalPlayscriptEntry";
 import { ExternalAncestorRail } from "./ExternalAncestorRail";
@@ -1235,6 +1236,79 @@ function NoteVesselCard({
   // toggles between the two (untruncated text + expanded media when focal).
   const showConversation = !!expanded || !!threadExpanded;
 
+  // Renders any conversation node as a full-width rich focal body — the same
+  // grammar as the host's noteBody (byline + content + media + action row), so a
+  // re-rooted reply/ancestor reads as the focal card with no visual record that
+  // it wasn't the originally-opened note. Reply wires under the conversation root
+  // (`rootEventId`) with the node linked as parent, matching ConversationView's
+  // own entry() wiring.
+  const renderFocalNode = (node: ConversationNode, rootEventId: string) => {
+    const fName =
+      node.author.displayName ||
+      node.author.username ||
+      node.author.pubkey.slice(0, 12) + "…";
+    const fMedia = extractNoteMedia(node.content);
+    const fDisplay =
+      fMedia.length > 0 ? stripMediaUrls(node.content).displayText : node.content;
+    const fIsOwn = !!user && user.pubkey === node.author.pubkey;
+    const fPublishedAt = Math.floor(
+      new Date(node.publishedAt).getTime() / 1000,
+    );
+    return (
+      <>
+        <Byline
+          pipNode={
+            <span
+              style={{ display: "inline-flex", opacity: ctx.palette.pipOpacity }}
+            >
+              <TrustPip status={node.author.pipStatus} />
+            </span>
+          }
+          name={fName}
+          nameHref={node.author.username ? `/${node.author.username}` : undefined}
+          publishedAt={fPublishedAt}
+          palette={ctx.palette}
+        />
+        {fDisplay && (
+          <p
+            className="whitespace-pre-wrap"
+            style={{
+              color: ctx.palette.cardTitle,
+              fontSize: ctx.bodyPx,
+              lineHeight: 1.5,
+            }}
+          >
+            {fDisplay}
+          </p>
+        )}
+        <MediaBlock items={fMedia} ctx={ctx} expanded />
+        {ctx.density === "full" && (
+          <SourceAttribution
+            protocol="NOSTR"
+            identifier={node.author.pubkey.slice(0, 12) + "…"}
+            ctx={ctx}
+          />
+        )}
+        <CardActions
+          ctx={ctx}
+          voteEventId={node.eventId}
+          voteKind={1}
+          isOwnContent={fIsOwn}
+          replyTarget={{
+            eventId: rootEventId,
+            eventKind: 1,
+            authorPubkey: node.author.pubkey,
+            authorName: fName,
+            excerpt: node.content.slice(0, 120),
+            parentCommentId: node.commentId ?? undefined,
+            parentCommentEventId: node.eventId,
+          }}
+          onReply={onReply}
+        />
+      </>
+    );
+  };
+
   const noteBody = (full: boolean) => (
     <>
       <Byline
@@ -1294,6 +1368,7 @@ function NoteVesselCard({
           refreshKey={threadRefreshKey}
           onCollapse={onCardClick}
           renderFocal={() => noteBody(true)}
+          renderFocalNode={renderFocalNode}
         />
       ) : (
         noteBody(false)
@@ -1355,6 +1430,143 @@ export function NewUserVesselCard({
         joined the platform
       </p>
     </CardShell>
+  );
+}
+
+// The re-rooted focal node on an external card, rendered as a full focal card
+// identical in grammar to the host body (byline · content · media · engagement ·
+// source line) — no left bar, no lightweight stand-in. `focus` is the rich node
+// the gateway hydrated + persisted context-only, so it carries a real id and
+// like/repost/reply act on the focal node itself. Self-contained engagement state
+// keyed on focus.id (the host card's handlers are bound to its own id).
+function ExternalFocalBody({
+  focus,
+  ctx,
+}: {
+  focus: ParentItem;
+  ctx: CardContext;
+}) {
+  const protocol = focus.sourceProtocol;
+  const linkedAccounts = useLinkedAccounts();
+  const matchingAccount = linkedAccounts?.find(
+    (a) => a.protocol === protocol && a.isValid,
+  );
+
+  const [liked, setLiked] = React.useState(false);
+  const [likeDelta, setLikeDelta] = React.useState(0);
+  const handleLike = React.useCallback(() => {
+    if (!matchingAccount || liked) return;
+    setLiked(true);
+    setLikeDelta(1);
+    externalItems.like(focus.id, matchingAccount.id).catch(() => {
+      setLiked(false);
+      setLikeDelta(0);
+    });
+  }, [matchingAccount, liked, focus.id]);
+
+  const [reposted, setReposted] = React.useState(false);
+  const [repostDelta, setRepostDelta] = React.useState(0);
+  const handleRepost = React.useCallback(() => {
+    if (!matchingAccount || reposted) return;
+    setReposted(true);
+    setRepostDelta(1);
+    externalItems.repost(focus.id, matchingAccount.id).catch(() => {
+      setReposted(false);
+      setRepostDelta(0);
+    });
+  }, [matchingAccount, reposted, focus.id]);
+
+  const [replyOpen, setReplyOpen] = React.useState(false);
+  const [replyDelta, setReplyDelta] = React.useState(0);
+
+  const isRss = protocol === "rss";
+  const isEmail = protocol === "email";
+  const isNostr = protocol === "nostr_external";
+  const sourceUrl =
+    protocol === "atproto"
+      ? (atprotoWebUri(focus.sourceItemUri) ?? focus.authorUri ?? undefined)
+      : (focus.sourceItemUri ?? focus.authorUri ?? undefined);
+
+  return (
+    <>
+      <Byline
+        name={focus.authorName ?? focus.authorHandle ?? ""}
+        publishedAt={focus.publishedAt}
+        palette={ctx.palette}
+      />
+      {focus.contentHtml ? (
+        <div
+          className="[&_p]:mb-2 [&_p:last-child]:mb-0 [&_a]:text-black [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-grey-300 [&_blockquote]:pl-3 [&_blockquote]:text-grey-600"
+          style={{
+            color: ctx.palette.cardTitle,
+            fontSize: ctx.bodyPx,
+            lineHeight: 1.5,
+          }}
+          dangerouslySetInnerHTML={{ __html: focus.contentHtml }}
+        />
+      ) : focus.contentText ? (
+        <p
+          className="whitespace-pre-wrap"
+          style={{
+            color: ctx.palette.cardTitle,
+            fontSize: ctx.bodyPx,
+            lineHeight: 1.5,
+          }}
+        >
+          {focus.contentText}
+        </p>
+      ) : null}
+      <MediaBlock
+        items={(focus.media as MediaItemLike[]) ?? []}
+        ctx={ctx}
+        externalUrl={sourceUrl}
+        expanded
+      />
+      <EngagementRow
+        likeCount={focus.likeCount + likeDelta}
+        replyCount={focus.replyCount + replyDelta}
+        repostCount={focus.repostCount + repostDelta}
+        protocol={protocol}
+        ctx={ctx}
+        liked={liked}
+        onLike={!isRss && !isEmail && matchingAccount ? handleLike : undefined}
+        likeDisabled={!isRss && !isEmail && !matchingAccount}
+        reposted={reposted}
+        onRepost={
+          !isRss && !isEmail && !isNostr && matchingAccount
+            ? handleRepost
+            : undefined
+        }
+        repostDisabled={!isRss && !isEmail && !isNostr && !matchingAccount}
+        onReply={
+          !isRss && !isEmail ? () => setReplyOpen((p) => !p) : undefined
+        }
+        replyDisabled={!isRss && !isEmail && !matchingAccount}
+      />
+      {replyOpen && (
+        <InlineReplyBox
+          itemId={focus.id}
+          protocol={protocol}
+          linkedAccount={matchingAccount ?? null}
+          onClose={() => setReplyOpen(false)}
+          onReplied={() => setReplyDelta((d) => d + 1)}
+        />
+      )}
+      <SourceAttribution
+        protocol={protocol.toUpperCase()}
+        identifier={focus.authorHandle ?? undefined}
+        onOpen={
+          sourceUrl
+            ? () => {
+                if (typeof window !== "undefined") {
+                  window.open(sourceUrl, "_blank", "noopener,noreferrer");
+                }
+              }
+            : undefined
+        }
+        ctx={ctx}
+      />
+    </>
   );
 }
 
@@ -1617,11 +1829,12 @@ function ExternalVesselCard({
       {/* Host byline, below the ancestor rail when expanded (and not re-rooted
           onto another entry, which carries its own byline). */}
       {showThread && !focusEntry && hostByline}
-      {/* Re-rooted: the focal node is a lightweight thread entry (rendered from
-          the clicked entry — the refetched rail/thread exclude it). The rich
-          card body (content/media/polls/quotes/engagement/actions) is
-          intentionally not shown, matching native focal entries which are also
-          lightweight. */}
+      {/* Re-rooted: the clicked node becomes the focal card. The gateway hydrates
+          it (thread.focus) as a full rich node — content/media/engagement/actions
+          — rendered identically to the host body, with no left bar and no visual
+          record that it wasn't the originally-opened item. Only if that hydration
+          failed (thread.error / no focus) do we fall back to the lightweight entry
+          from the clicked stub, still without a bar. */}
       {focusEntry ? (
         <div className="ml-8">
           {thread.loading ? (
@@ -1634,25 +1847,15 @@ function ExternalVesselCard({
                 />
               ))}
             </div>
-          ) : thread.error ? (
-            <p className="label-ui text-grey-400">
-              Couldn&apos;t load conversation
-            </p>
+          ) : thread.focus ? (
+            <ExternalFocalBody focus={thread.focus} ctx={ctx} />
           ) : (
-            <div
-              style={{
-                borderLeft: `2px solid ${ctx.palette.cardTitle}`,
-                paddingLeft: 14,
-                marginLeft: -16,
-              }}
-            >
-              <ExternalPlayscriptEntry
-                entry={focusEntry}
-                replyingTo={null}
-                palette={ctx.palette}
-                bodyPx={ctx.bodyPx}
-              />
-            </div>
+            <ExternalPlayscriptEntry
+              entry={focusEntry}
+              replyingTo={null}
+              palette={ctx.palette}
+              bodyPx={ctx.bodyPx}
+            />
           )}
         </div>
       ) : (

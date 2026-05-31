@@ -32,10 +32,14 @@ interface Props {
   // instead of the lightweight playscript entry — so expanding reads as the
   // full post surrounded by its conversation (mirrors the external card). It
   // renders immediately (it doesn't depend on the conversation fetch); the
-  // context fills in around it. Re-rooting onto a reply/ancestor falls back to
-  // the lightweight entry, since only the host carries the data to render
-  // richly.
+  // context fills in around it.
   renderFocal?: () => ReactNode;
+  // Renders ANY conversation node as a rich focal body (same machinery as
+  // renderFocal, parameterised by the node). Used when re-rooting onto a
+  // reply/ancestor so the new focal reads as a full-width card identical to the
+  // host focal — no lightweight stand-in, no left bar. `rootEventId` is threaded
+  // through so the node's Reply wires under the conversation root.
+  renderFocalNode?: (node: ConversationNode, rootEventId: string) => ReactNode;
 }
 
 interface FlatEntry {
@@ -63,6 +67,7 @@ export function ConversationView({
   refreshKey,
   onCollapse,
   renderFocal,
+  renderFocalNode,
 }: Props) {
   const { user } = useAuth();
   const { nodes, loading, error, repliesEnabled, paywallLocked } =
@@ -256,16 +261,7 @@ export function ConversationView({
           }
         }}
         className="group relative transition-colors"
-        style={{
-          cursor: "pointer",
-          ...(opts.focal
-            ? {
-                borderLeft: `2px solid ${palette.cardTitle}`,
-                paddingLeft: 14,
-                marginLeft: -16,
-              }
-            : {}),
-        }}
+        style={{ cursor: "pointer" }}
       >
         <Byline
           pipNode={
@@ -360,17 +356,16 @@ export function ConversationView({
           <li key={`anc-${node.eventId}`}>{entry(node, {})}</li>
         ))}
 
-        {/* The focal node. At the host, render its rich body (full content +
-            media + actions) so the expansion reads as the whole post wrapped by
-            its conversation; clicking it collapses the card. Re-rooted onto a
-            reply/ancestor, fall back to the lightweight playscript entry with
-            the left bar. */}
+        {/* The focal node always renders as a full-width rich card — the host
+            via renderFocal, a re-rooted reply/ancestor via renderFocalNode
+            (same machinery, parameterised by the node). There is no left bar and
+            no lightweight stand-in: re-rooting reads as "this is now the focal
+            card", indistinguishable from the originally-opened note. Clicking the
+            body collapses the card (the byline link + action buttons stop
+            propagation, so they keep their own behaviour); `entry()` is only a
+            defensive fallback if no rich renderer was supplied. */}
         {showHostFocal ? (
           <li key={`focal-${focalId}`}>
-            {/* Click the body to collapse (the byline link + action buttons
-                stop propagation, so they keep their own behaviour). No
-                role=button here — the rich body nests its own interactive
-                elements. */}
             <div
               onClick={(e) => {
                 e.stopPropagation();
@@ -381,7 +376,20 @@ export function ConversationView({
             </div>
           </li>
         ) : focal ? (
-          <li key={`focal-${focal.eventId}`}>{entry(focal, { focal: true })}</li>
+          <li key={`focal-${focal.eventId}`}>
+            {renderFocalNode ? (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCollapse?.();
+                }}
+              >
+                {renderFocalNode(focal, rootEventId)}
+              </div>
+            ) : (
+              entry(focal, { focal: true })
+            )}
+          </li>
         ) : null}
 
         {/* Descendants below the focal. */}

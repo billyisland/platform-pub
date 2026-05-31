@@ -669,12 +669,10 @@ on both surfaces, and the raggedness the prior round left behind is cleaned up.
   `focusEntry = null`), and **clicking the focal node collapses the card**.
 - **Rich focal, light context.** The focal node renders its **full rich body** (content,
   media, action row), while ancestors/replies stay **lightweight playscript** (byline + text
-  + vote/reply), demarcated only by indent / left-bar. The rich body renders **immediately**
-  on expand — it does not wait on the conversation fetch — and context fills in around it.
-  Native wires this via a `renderFocal` render-prop from `NoteVesselCard` into
+  + vote/reply), demarcated only by indent — **never a left bar**. The rich body renders
+  **immediately** on expand — it does not wait on the conversation fetch — and context fills in
+  around it. Native wires this via a `renderFocal` render-prop from `NoteVesselCard` into
   `ConversationView`, keeping `MediaBlock`/`CardActions` in `VesselCard` (no circular import).
-  Re-rooting onto a reply/ancestor falls back to a lightweight focal on **both** surfaces,
-  since only the opened item carries the data to render richly.
 - **Byline routing fix (was a bug).** Every byline in the expanded conversation now routes to
   *its own* author. Native already did this (`/{username}` per node). External previously
   reused the **host** item's `/source/:id` for every participant — ancestor, reply, focal, and
@@ -686,7 +684,31 @@ on both surfaces, and the raggedness the prior round left behind is cleaned up.
 - **Hairlines.** Removed the 1px `borderBottom` dividers in `ExternalAncestorRail` and
   `ParentContextTile` (replaced with whitespace), per the sitewide no-hairlines invariant.
 
-Still open: re-rooted focals remain lightweight (no media) on both surfaces — extending the
-rich treatment to arbitrary re-rooted nodes needs the thread/conversation payloads to carry
-full media/engagement data; the pre-existing 1px `LinkPreviewCard` border in `VesselCard` is
-untracked-here hairline debt left for a separate sweep.
+### Sub-addendum — rich re-rooted focal + no focal bar (2026-05-31)
+
+The "re-rooted focals stay lightweight" carve-out above is now closed: **re-rooting renders the
+new focal as a full rich card on both surfaces, and the focal left bar is removed everywhere.**
+
+- **No focal bar.** The 2px `borderLeft` focal marker (native `ConversationView` `opts.focal`;
+  external `ExternalVesselCard` re-root branch) is deleted. A focal node is distinguished by its
+  rich body alone — there is no visual record that a re-rooted node wasn't the originally-opened
+  item.
+- **Native (zero new fetch).** The whole conversation tree is already in memory, so re-rooting
+  renders the focal node richly from it. `ConversationView` gains a `renderFocalNode(node,
+  rootEventId)` render-prop (sibling to `renderFocal`); `NoteVesselCard` implements it with the
+  same `Byline`/`MediaBlock`/`CardActions` grammar as the host body, wiring Reply under the
+  conversation root with the node linked as parent (mirrors the existing `entry()` wiring).
+- **External (one focus fetch).** `GET /external-items/:id/thread?focus=` now also returns a
+  rich `focus` node (`ParentItem`-shaped): for Bluesky the thread root post (`persistBlueskyFocus`,
+  media from its `#view` embed), for Mastodon a direct `/api/v1/statuses/:id` fetch
+  (`persistMastodonFocus`). Both **persist the node context-only** (the established parent/quote
+  pattern) so it carries a real `external_items.id` — like/repost/reply on the focal act on the
+  node itself. `useExternalThread` surfaces `focus`; `ExternalVesselCard` renders it through the
+  new self-contained `ExternalFocalBody` (byline · content · media · `EngagementRow` ·
+  `InlineReplyBox` · `SourceAttribution`), with its own engagement state keyed on `focus.id`. If
+  the focus fetch fails (`thread.focus` null), it degrades to the lightweight stub entry — still
+  no bar.
+
+Still open: the pre-existing 1px `LinkPreviewCard` border in `VesselCard` is untracked-here
+hairline debt left for a separate sweep. The §VI.3 constructed external author profile is still
+deferred, so re-rooted external bylines remain plain text.
