@@ -5,7 +5,6 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import {
   FEED_SELECT,
   FEED_JOINS,
-  parseCursor,
   type CursorParts,
 } from "./timeline.js";
 
@@ -116,7 +115,7 @@ const EXT_SELECT = `,
     WHEN ei.source_quote_uri IS NOT NULL THEN feed_items_derive_post_id(fi.source_protocol::text, ei.source_quote_uri)
   END AS quotes_post_id,
   (
-    exp(-ln(2) * GREATEST(EXTRACT(EPOCH FROM (now() - fi.published_at)), 0) / 3600.0 / $1)
+    exp(-ln(2) * GREATEST(EXTRACT(EPOCH FROM (to_timestamp($7) - fi.published_at)), 0) / 3600.0 / $1)
     + COALESCE($3 * b.mass / (b.mass + $4), 0)
   ) AS score_live`;
 
@@ -126,12 +125,13 @@ const EXT_JOINS = `
   LEFT JOIN boost b ON b.target_post_id = fi.post_id`;
 
 // boost mass CTE — decayed, trust-weighted boost mass + raw count per THING.
-// $2 = boost half-life hours. Grouped by target_post_id so two sources boosting
-// one THING resolve to one mass (the §5 cross-source dedup, edge side).
+// $2 = boost half-life hours, $7 = pinned reference epoch (cursor-stable decay).
+// Grouped by target_post_id so two sources boosting one THING resolve to one
+// mass (the §5 cross-source dedup, edge side).
 const BOOST_CTE = `
   boost AS (
     SELECT target_post_id,
-      SUM(trust_weight * exp(-ln(2) * GREATEST(EXTRACT(EPOCH FROM (now() - boosted_at)), 0) / 3600.0 / $2)) AS mass,
+      SUM(trust_weight * exp(-ln(2) * GREATEST(EXTRACT(EPOCH FROM (to_timestamp($7) - boosted_at)), 0) / 3600.0 / $2)) AS mass,
       COUNT(*) AS boost_count
     FROM repost_edges
     GROUP BY target_post_id
@@ -298,17 +298,59 @@ async function fetchAttribution(
   return out;
 }
 
-// shared cursor clause over the deduped, live-scored result
-function cursorClause(cursor: CursorParts | undefined, base: number): string {
+// =============================================================================
+// Cursor — score:ts:uuid:scoreNow
+//
+// The §5 hotness score is computed against a reference clock (timeDecay of
+// now − boost/publish age). If that clock advanced between page requests, the
+// boundary row's score would decay slightly BELOW the score snapshot embedded in
+// the cursor, so it would satisfy the strict `<` keyset filter and reappear on
+// the next page (observed: every page boundary duplicated its last row). So the
+// reference clock is PINNED at first-page time and carried in the cursor's 4th
+// field; all subsequent pages decay against that same `scoreNow`, making the
+// keyset stable. The first page (no cursor) pins `scoreNow = now()`.
+//
+// NOTE: this is post-feed's own cursor format — NOT timeline.ts's shared
+// parseCursor (which has no scoreNow component and stays the legacy contract).
+// =============================================================================
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface PostFeedCursor extends CursorParts {
+  score: number;
+  scoreNow: number; // pinned reference epoch (seconds) for decay across pages
+}
+
+function parsePostFeedCursor(raw: string | undefined): PostFeedCursor | undefined {
+  if (!raw) return undefined;
+  const parts = raw.split(":");
+  if (parts.length !== 4) return undefined;
+  const score = Number(parts[0]);
+  const ts = parseInt(parts[1], 10);
+  const id = parts[2];
+  const scoreNow = parseInt(parts[3], 10);
+  if (
+    Number.isFinite(score) &&
+    Number.isFinite(ts) &&
+    Number.isFinite(scoreNow) &&
+    UUID_RE.test(id)
+  ) {
+    return { score, ts, id, scoreNow };
+  }
+  return undefined;
+}
+
+// keyset clause over the deduped, live-scored result
+function cursorClause(cursor: PostFeedCursor | undefined, base: number): string {
   return cursor
     ? `WHERE (d.score_live, d.published_at_epoch, d.fi_id) < ($${base}::numeric, $${base + 1}::bigint, $${base + 2}::uuid)`
     : "";
 }
 
-function buildNextCursor(rows: any[]): string | undefined {
+function buildNextCursor(rows: any[], scoreNow: number): string | undefined {
   const last = rows[rows.length - 1];
   return last
-    ? `${Number(last.score_live)}:${Number(last.published_at_epoch)}:${last.fi_id}`
+    ? `${Number(last.score_live)}:${Number(last.published_at_epoch)}:${last.fi_id}:${scoreNow}`
     : undefined;
 }
 
@@ -318,10 +360,12 @@ function buildNextCursor(rows: any[]): string | undefined {
 async function followingPostFeed(
   cfg: ScoreConfig,
   readerId: string,
-  cursor: CursorParts | undefined,
+  cursor: PostFeedCursor | undefined,
   limit: number,
+  scoreNow: number,
 ) {
-  // params: $1 rhl $2 bhl $3 ceil $4 halfSat $5 readerId $6 limit [$7.. cursor]
+  // params: $1 rhl $2 bhl $3 ceil $4 halfSat $5 readerId $6 limit $7 scoreNow
+  //         [$8.. cursor]
   const params: any[] = [
     cfg.recencyHalflifeHours,
     cfg.boostHalflifeHours,
@@ -329,8 +373,9 @@ async function followingPostFeed(
     cfg.boostHalfSat,
     readerId,
     limit,
+    scoreNow,
   ];
-  if (cursor) params.push(cursor.score ?? 0, cursor.ts, cursor.id);
+  if (cursor) params.push(cursor.score, cursor.ts, cursor.id);
 
   const sql = `
     WITH ${BOOST_CTE},
@@ -385,7 +430,7 @@ async function followingPostFeed(
       ORDER BY post_id, score_live DESC, published_at_epoch DESC, fi_id DESC
     )
     SELECT * FROM deduped d
-    ${cursorClause(cursor, 7)}
+    ${cursorClause(cursor, 8)}
     ORDER BY d.score_live DESC, d.published_at_epoch DESC, d.fi_id DESC
     LIMIT $6
   `;
@@ -401,8 +446,9 @@ async function followingPostFeed(
 async function explorePostFeed(
   cfg: ScoreConfig,
   readerId: string,
-  cursor: CursorParts | undefined,
+  cursor: PostFeedCursor | undefined,
   limit: number,
+  scoreNow: number,
 ) {
   const params: any[] = [
     cfg.recencyHalflifeHours,
@@ -411,8 +457,9 @@ async function explorePostFeed(
     cfg.boostHalfSat,
     readerId,
     limit,
+    scoreNow,
   ];
-  if (cursor) params.push(cursor.score ?? 0, cursor.ts, cursor.id);
+  if (cursor) params.push(cursor.score, cursor.ts, cursor.id);
 
   const sql = `
     WITH ${BOOST_CTE},
@@ -439,7 +486,7 @@ async function explorePostFeed(
       ORDER BY post_id, score_live DESC, published_at_epoch DESC, fi_id DESC
     )
     SELECT * FROM deduped d
-    ${cursorClause(cursor, 7)}
+    ${cursorClause(cursor, 8)}
     ORDER BY d.score_live DESC, d.published_at_epoch DESC, d.fi_id DESC
     LIMIT $6
   `;
@@ -454,7 +501,10 @@ export async function postFeedRoutes(app: FastifyInstance) {
   }>("/feed/:feedId", { preHandler: requireAuth }, async (req, reply) => {
     const readerId = req.session!.sub;
     const feedId = req.params.feedId as FeedId;
-    const cursor = parseCursor(req.query.cursor);
+    const cursor = parsePostFeedCursor(req.query.cursor);
+    // Pin the §5 decay clock: reuse the cursor's reference epoch on later pages,
+    // otherwise stamp now() for the first page. Keeps the keyset score-stable.
+    const scoreNow = cursor?.scoreNow ?? Math.floor(Date.now() / 1000);
     const limit = Math.min(
       parseInt(req.query.limit ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT,
       MAX_LIMIT,
@@ -470,12 +520,12 @@ export async function postFeedRoutes(app: FastifyInstance) {
       const cfg = await loadScoreConfig();
       const rows =
         feedId === "following"
-          ? await followingPostFeed(cfg, readerId, cursor, limit)
-          : await explorePostFeed(cfg, readerId, cursor, limit);
+          ? await followingPostFeed(cfg, readerId, cursor, limit, scoreNow)
+          : await explorePostFeed(cfg, readerId, cursor, limit, scoreNow);
 
       const items = rows.map(feedItemToPost);
       const attribution = await fetchAttribution(items.map((p) => p.id));
-      const nextCursor = buildNextCursor(rows);
+      const nextCursor = buildNextCursor(rows, scoreNow);
 
       return reply.send({ items, attribution, nextCursor });
     } catch (err) {
