@@ -1539,6 +1539,25 @@ function ExternalVesselCard({
     </button>
   );
 
+  // The host item's own byline. Rendered in one of two slots depending on
+  // expansion (top when collapsed, below the ancestor rail when expanded), but
+  // identical either way — defined once so the two call sites can't drift. The
+  // name links to the host's source surface; participant bylines are plain text
+  // (see ExternalPlayscriptEntry).
+  const hostByline = (
+    <Byline
+      pipNode={pipNodeByline}
+      name={name}
+      nameHref={
+        external.externalSourceId
+          ? `/source/${external.externalSourceId}`
+          : undefined
+      }
+      publishedAt={external.publishedAt}
+      palette={ctx.palette}
+    />
+  );
+
   if (ctx.density === "compact") {
     return (
       <CardShell ctx={ctx} onClick={onCardClick}>
@@ -1549,25 +1568,11 @@ function ExternalVesselCard({
 
   return (
     <CardShell ctx={ctx} onClick={onCardClick}>
-      {/* The host item's own byline. Collapsed, it sits at the top of the card.
-          When expanded into the conversation it moves BELOW the ancestor rail
-          (rendered further down) so the reading order is parents → this post,
-          matching the native conversation. The byline links to the host's
-          source surface; participant bylines are plain text (see
-          ExternalPlayscriptEntry). */}
-      {!showThread && (
-        <Byline
-          pipNode={pipNodeByline}
-          name={name}
-          nameHref={
-            external.externalSourceId
-              ? `/source/${external.externalSourceId}`
-              : undefined
-          }
-          publishedAt={external.publishedAt}
-          palette={ctx.palette}
-        />
-      )}
+      {/* Collapsed: the host byline sits at the top of the card. When expanded
+          it moves BELOW the ancestor rail (rendered further down) so the
+          reading order is parents → this post, matching the native
+          conversation. */}
+      {!showThread && hostByline}
       {authorOpen && (
         <AuthorModal
           type="external"
@@ -1611,19 +1616,7 @@ function ExternalVesselCard({
       ) : null}
       {/* Host byline, below the ancestor rail when expanded (and not re-rooted
           onto another entry, which carries its own byline). */}
-      {showThread && !focusEntry && (
-        <Byline
-          pipNode={pipNodeByline}
-          name={name}
-          nameHref={
-            external.externalSourceId
-              ? `/source/${external.externalSourceId}`
-              : undefined
-          }
-          publishedAt={external.publishedAt}
-          palette={ctx.palette}
-        />
-      )}
+      {showThread && !focusEntry && hostByline}
       {/* Re-rooted: the focal node is a lightweight thread entry (rendered from
           the clicked entry — the refetched rail/thread exclude it). The rich
           card body (content/media/polls/quotes/engagement/actions) is
