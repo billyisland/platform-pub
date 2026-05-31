@@ -615,6 +615,14 @@ CREATE FUNCTION public.feed_items_post_identity() RETURNS trigger
 DECLARE
   v_pubkey TEXT;
   v_dtag   TEXT;
+  v_protocol      TEXT;
+  v_handle        TEXT;
+  v_tier          TEXT;
+  v_author_name   TEXT;
+  v_author_handle TEXT;
+  v_author_avatar TEXT;
+  v_author_uri    TEXT;
+  v_interaction   JSONB;
 BEGIN
   -- PostId is stable: mint once (NULL on INSERT/backfill), preserve thereafter.
   IF NEW.post_id IS NULL THEN
@@ -661,10 +669,8 @@ BEGIN
      AND NEW.item_type        IS NOT DISTINCT FROM OLD.item_type
      AND NEW.source_protocol  IS NOT DISTINCT FROM OLD.source_protocol
      AND NEW.external_item_id IS NOT DISTINCT FROM OLD.external_item_id THEN
-    RETURN NEW;  -- biddability inputs unchanged; keep existing value
-  END IF;
-
-  IF NEW.item_type IN ('article', 'note') THEN
+    NULL;  -- biddability inputs unchanged; fall through (author block still mint-once-guarded)
+  ELSIF NEW.item_type IN ('article', 'note') THEN
     NEW.biddability_tier := 'A';
   ELSIF NEW.source_protocol IN ('nostr_external', 'atproto') THEN
     NEW.biddability_tier := 'A';
@@ -676,6 +682,48 @@ BEGIN
       THEN 'C' ELSE 'D' END;
   ELSE
     NEW.biddability_tier := 'D';
+  END IF;
+
+  -- external-author identity (§4.4 / Phase 0b, migration 099). Mint once: only when
+  -- this row is an external THING with no author link yet AND it is tier A/B (the tiers
+  -- that carry a stable origin handle). Tier C/D (rss/email) keep external_author_id
+  -- NULL forever (plain-text byline); excluding them also keeps the hot score/author-
+  -- refresh UPDATE path off the external_items join.
+  IF NEW.external_item_id IS NOT NULL
+     AND NEW.external_author_id IS NULL
+     AND NEW.biddability_tier IN ('A', 'B') THEN
+    SELECT ei.author_name, ei.author_handle, ei.author_avatar_url, ei.author_uri, ei.interaction_data
+      INTO v_author_name, v_author_handle, v_author_avatar, v_author_uri, v_interaction
+      FROM external_items ei WHERE ei.id = NEW.external_item_id;
+
+    v_protocol := NEW.source_protocol;
+    IF v_protocol = 'nostr_external' THEN
+      v_handle := v_interaction->>'pubkey';   -- author_uri is null for nostr
+      v_tier   := 'A';
+    ELSIF v_protocol = 'atproto' THEN
+      v_handle := v_author_uri;               -- the DID
+      v_tier   := 'A';
+    ELSIF v_protocol = 'activitypub' THEN
+      v_handle := v_author_uri;               -- the actor URI
+      v_tier   := 'B';
+    ELSE
+      v_handle := NULL;                       -- rss/email -> tier C/D, no record
+    END IF;
+
+    IF v_handle IS NOT NULL AND v_handle <> '' THEN
+      INSERT INTO external_authors (protocol, stable_handle, tier, display_name, handle, handle_uri, avatar)
+      VALUES (v_protocol::public.external_protocol, v_handle, v_tier,
+              v_author_name, v_author_handle,
+              CASE WHEN v_protocol IN ('atproto', 'activitypub') THEN v_author_uri ELSE NULL END,
+              v_author_avatar)
+      ON CONFLICT (protocol, stable_handle) DO UPDATE
+        SET last_seen_at = now(),
+            display_name = COALESCE(EXCLUDED.display_name, external_authors.display_name),
+            handle       = COALESCE(EXCLUDED.handle,       external_authors.handle),
+            handle_uri   = COALESCE(EXCLUDED.handle_uri,   external_authors.handle_uri),
+            avatar       = COALESCE(EXCLUDED.avatar,       external_authors.avatar)
+      RETURNING id INTO NEW.external_author_id;
+    END IF;
   END IF;
 
   RETURN NEW;
@@ -1172,6 +1220,27 @@ CREATE TABLE public.dm_pricing (
 
 
 --
+-- Name: external_authors; Type: TABLE; Schema: public; Owner: -
+-- (migration 099 — external-author identity records, tier A/B)
+--
+
+CREATE TABLE public.external_authors (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    protocol public.external_protocol NOT NULL,
+    stable_handle text NOT NULL,
+    tier text NOT NULL,
+    account_id uuid,
+    display_name text,
+    handle text,
+    handle_uri text,
+    avatar text,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT external_authors_tier_check CHECK ((tier = ANY (ARRAY['A'::text, 'B'::text])))
+);
+
+
+--
 -- Name: external_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1294,6 +1363,7 @@ CREATE TABLE public.feed_items (
     post_id text,
     version text,
     biddability_tier text,
+    external_author_id uuid,
     CONSTRAINT feed_items_biddability_tier_check CHECK ((biddability_tier = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text]))),
     CONSTRAINT exactly_one_source CHECK ((((((article_id IS NOT NULL))::integer + ((note_id IS NOT NULL))::integer) + ((external_item_id IS NOT NULL))::integer) = 1)),
     CONSTRAINT feed_items_item_type_check CHECK ((item_type = ANY (ARRAY['article'::text, 'note'::text, 'external'::text]))),
@@ -6175,3 +6245,55 @@ CREATE INDEX idx_feed_items_post_id ON public.feed_items USING btree (post_id);
 --
 
 CREATE TRIGGER feed_items_post_identity_trg BEFORE INSERT OR UPDATE ON public.feed_items FOR EACH ROW EXECUTE FUNCTION public.feed_items_post_identity();
+
+
+--
+-- Name: external_authors external_authors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- (migration 099 — external-author identity; appended out of pg_dump section order)
+--
+
+ALTER TABLE ONLY public.external_authors
+    ADD CONSTRAINT external_authors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: external_authors external_authors_protocol_stable_handle_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- (migration 099 — external-author identity; appended out of pg_dump section order)
+--
+
+ALTER TABLE ONLY public.external_authors
+    ADD CONSTRAINT external_authors_protocol_stable_handle_key UNIQUE (protocol, stable_handle);
+
+
+--
+-- Name: idx_external_authors_account_id; Type: INDEX; Schema: public; Owner: -
+-- (migration 099 — external-author identity; appended out of pg_dump section order)
+--
+
+CREATE INDEX idx_external_authors_account_id ON public.external_authors USING btree (account_id);
+
+
+--
+-- Name: idx_feed_items_external_author_id; Type: INDEX; Schema: public; Owner: -
+-- (migration 099 — external-author identity; appended out of pg_dump section order)
+--
+
+CREATE INDEX idx_feed_items_external_author_id ON public.feed_items USING btree (external_author_id);
+
+
+--
+-- Name: external_authors external_authors_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- (migration 099 — external-author identity; appended out of pg_dump section order)
+--
+
+ALTER TABLE ONLY public.external_authors
+    ADD CONSTRAINT external_authors_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: feed_items feed_items_external_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- (migration 099 — external-author identity; appended out of pg_dump section order)
+--
+
+ALTER TABLE ONLY public.feed_items
+    ADD CONSTRAINT feed_items_external_author_id_fkey FOREIGN KEY (external_author_id) REFERENCES public.external_authors(id);
