@@ -1,6 +1,7 @@
 import { RichText } from "@atproto/api";
 import { escapeHtml } from "@platform-pub/shared/lib/text.js";
 import { sanitizeContent } from "@platform-pub/shared/lib/sanitize.js";
+import type { DetectedRepost } from "../lib/repost-edge.js";
 
 // =============================================================================
 // AT Protocol (Bluesky) normaliser
@@ -332,6 +333,76 @@ export function normaliseAtprotoCommit(
     record: commit.record,
     fallbackDate,
   });
+}
+
+// =============================================================================
+// Repost detection (UNIVERSAL-POST-ADR §2.2 / Phase 0c).
+//
+// A bare repost carries only a subject pointer, no body, so it is a RepostEdge,
+// not a THING. Two arrival paths: a `app.bsky.feed.repost` Jetstream commit
+// (live), and a getAuthorFeed entry with `reason: reasonRepost` (backfill /
+// poll fallback). Both yield the same DetectedRepost: the committing/by DID is
+// the booster, the subject/post uri is the boosted THING.
+// =============================================================================
+
+// The record shape of a app.bsky.feed.repost commit (distinct from a post).
+interface BskyRepostRecord {
+  subject?: { uri?: string; cid?: string };
+  createdAt?: string;
+}
+
+export function detectAtprotoRepostFromCommit(
+  event: JetstreamCommit,
+): DetectedRepost | null {
+  const commit = event.commit;
+  if (!commit) return null;
+  if (commit.collection !== "app.bsky.feed.repost") return null;
+  if (commit.operation !== "create" && commit.operation !== "update")
+    return null;
+  // A repost commit's record is a repost record, not a post record.
+  const record = commit.record as unknown as BskyRepostRecord | undefined;
+  const targetUri = record?.subject?.uri;
+  if (!targetUri) return null;
+  return {
+    protocol: "atproto",
+    targetProtocol: "atproto",
+    targetHandle: targetUri,
+    actorHandle: event.did,
+    boostedAt:
+      parseRepostDate(record?.createdAt) ?? new Date(event.time_us / 1000),
+    // The repost record's own AT-URI is the boost's origin id (idempotency key).
+    originUri: buildAtUri(event.did, "app.bsky.feed.repost", commit.rkey),
+  };
+}
+
+export function detectAtprotoRepostFromReason(args: {
+  reason:
+    | { $type?: string; by?: { did?: string }; indexedAt?: string }
+    | undefined;
+  postUri: string | undefined;
+  fallbackDate: Date;
+}): DetectedRepost | null {
+  const { reason, postUri, fallbackDate } = args;
+  if (!reason || reason.$type !== "app.bsky.feed.defs#reasonRepost") return null;
+  const actorDid = reason.by?.did;
+  if (!actorDid || !postUri) return null;
+  return {
+    protocol: "atproto",
+    targetProtocol: "atproto",
+    targetHandle: postUri,
+    actorHandle: actorDid,
+    boostedAt: parseRepostDate(reason.indexedAt) ?? fallbackDate,
+    // getAuthorFeed does not expose the repost record's uri.
+    originUri: null,
+  };
+}
+
+function parseRepostDate(s: string | undefined): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  if (d.getTime() > Date.now() + 24 * 60 * 60 * 1000) return null;
+  return d;
 }
 
 // =============================================================================

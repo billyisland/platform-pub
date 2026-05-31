@@ -3,6 +3,7 @@ import {
   sanitizeContent,
   stripHtml,
 } from "@platform-pub/shared/lib/sanitize.js";
+import type { DetectedRepost } from "../lib/repost-edge.js";
 
 // =============================================================================
 // ActivityPub (Mastodon) outbox adapter
@@ -149,7 +150,37 @@ interface OutboxFetchOptions {
 
 interface OutboxFetchResult {
   items: NormalisedActivityPubItem[];
+  reposts: DetectedRepost[]; // Announce boosts seen this run (UNIVERSAL-POST §2.2)
   newCursor: string | null; // id of the newest item we saw this run
+}
+
+// An `Announce` activity is a boost of another object — no body of its own — so
+// it is a RepostEdge, not a THING. `actor` is the booster; the announced object
+// uri is the boosted THING; the activity id is the boost's own origin id.
+export function detectActivityPubRepost(activity: any): DetectedRepost | null {
+  if (activity?.type !== "Announce") return null;
+  if (!isPublic(activity)) return null;
+  const actor =
+    typeof activity.actor === "string"
+      ? activity.actor
+      : typeof activity.actor?.id === "string"
+        ? activity.actor.id
+        : null;
+  const objectUri =
+    typeof activity.object === "string"
+      ? activity.object
+      : typeof activity.object?.id === "string"
+        ? activity.object.id
+        : null;
+  if (!actor || !objectUri) return null;
+  return {
+    protocol: "activitypub",
+    targetProtocol: "activitypub",
+    targetHandle: objectUri,
+    actorHandle: actor,
+    boostedAt: parseDate(activity.published) ?? new Date(),
+    originUri: typeof activity.id === "string" ? activity.id : null,
+  };
 }
 
 export async function fetchOutbox(
@@ -163,6 +194,7 @@ export async function fetchOutbox(
   );
 
   const items: NormalisedActivityPubItem[] = [];
+  const reposts: DetectedRepost[] = [];
   let nextUrl: string | null = firstPageUrl;
   let newCursor: string | null = null;
   let reachedCursor = false;
@@ -203,9 +235,19 @@ export async function fetchOutbox(
         break;
       }
 
+      // Announce (boost) → a RepostEdge, not a THING (UNIVERSAL-POST §2.2 /
+      // Phase 0c). Detect before the Create filter below drops it. The boost
+      // does not advance the cursor (it's not a Create we anchor dedup on) and
+      // does not count toward the item cutoff streak.
+      if (activityType === "Announce") {
+        const repost = detectActivityPubRepost(activity);
+        if (repost) reposts.push(repost);
+        continue;
+      }
+
       // We only ingest public Create→Note activities. Everything else
-      // (Announce boosts, Update, Delete, Follow, Like) is out of scope
-      // for read-only v1 ingestion.
+      // (Update, Delete, Follow, Like) is out of scope for read-only v1
+      // ingestion.
       if (activityType !== "Create") continue;
       if (!isPublic(activity)) continue;
       const note = activity.object;
@@ -246,7 +288,7 @@ export async function fetchOutbox(
     nextUrl = typeof body.next === "string" ? body.next : null;
   }
 
-  return { items, newCursor };
+  return { items, reposts, newCursor };
 }
 
 async function resolveFirstPageUrl(

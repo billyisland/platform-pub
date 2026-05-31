@@ -9,6 +9,10 @@ import {
   type PinnedWebSocketOptions,
 } from "@platform-pub/shared/lib/http-client.js";
 import { truncatePreview } from "@platform-pub/shared/lib/text.js";
+import {
+  recordRepostEdge,
+  type DetectedRepost,
+} from "../lib/repost-edge.js";
 
 // Reject events claiming timestamps more than this far in the future — prevents
 // a hostile relay from poisoning the cursor into year 2100.
@@ -108,6 +112,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     // Fetch events from all relay URLs, deduplicate by event ID
     const eventsMap = new Map<string, NostrEvent>();
     const deletionEvents: NostrEvent[] = [];
+    const repostEvents = new Map<string, NostrEvent>();
     let latestProfile: NostrEvent | null = null;
 
     const nowSecs = Math.floor(Date.now() / 1000);
@@ -173,6 +178,9 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
             if (!latestProfile || event.created_at > latestProfile.created_at) {
               latestProfile = event;
             }
+          } else if (event.kind === 6 || event.kind === 16) {
+            // NIP-18 repost / generic repost → a RepostEdge, not a THING.
+            repostEvents.set(event.id, event);
           } else {
             eventsMap.set(event.id, event);
           }
@@ -307,6 +315,30 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
       else if (outcome === "updated") updated++;
       if (event.created_at > newestCreatedAt)
         newestCreatedAt = event.created_at;
+    }
+
+    // Record NIP-18 reposts (kind 6/16) as edges. Pubkey + signature were
+    // verified above, so event.pubkey === the source pubkey (the booster).
+    let repostEdges = 0;
+    for (const event of repostEvents.values()) {
+      const repost = detectNostrRepost(event);
+      if (!repost) continue;
+      try {
+        const created = await withTransaction(async (client) =>
+          recordRepostEdge(client, repost),
+        );
+        if (created) repostEdges++;
+      } catch (err) {
+        logger.warn(
+          {
+            sourceId,
+            eventId: event.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "Failed to record nostr repost edge",
+        );
+      }
+      if (event.created_at > newestCreatedAt) newestCreatedAt = event.created_at;
     }
 
     // Handle kind 5 deletions. Pubkey + signature were already verified above,
@@ -445,12 +477,13 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
       ],
     );
 
-    if (inserted > 0 || updated > 0) {
+    if (inserted > 0 || updated > 0 || repostEdges > 0) {
       logger.info(
         {
           sourceId,
           inserted,
           updated,
+          repostEdges,
           total: events.length,
           deletions: cappedDeletes.length,
         },
@@ -540,7 +573,8 @@ function fetchFromRelay(
           "REQ",
           subId,
           {
-            kinds: [1, 5, 30023],
+            // 1 note, 5 deletion, 30023 long-form (THINGs); 6/16 reposts (edges).
+            kinds: [1, 5, 6, 16, 30023],
             authors: [pubkey],
             since,
           },
@@ -593,6 +627,36 @@ interface NormalisedNostrItem {
   title: string | null;
   sourceReplyUri: string | null;
   interactionData: { id: string; pubkey: string; relays: string[] };
+}
+
+// =============================================================================
+// Detect a NIP-18 repost (kind 6) / generic repost (kind 16) into an edge.
+//
+// The boosted THING is identified by the 'e' tag (event id, for note reposts)
+// or the 'a' tag ("kind:pubkey:d-tag" addressable coordinate). The booster is
+// the event pubkey; the kind-6/16 event id is the boost's own origin id.
+//
+// targetHandle is the RAW event id / addressable coordinate — relay-independent
+// and deterministic, so two sources boosting one event resolve to one
+// target_post_id (edge-level cross-source dedup). NOTE: this does not always
+// match the boosted THING's feed_items.post_id, which is derived from the
+// relay-encoded nevent/naddr (see repost-edge.ts known-limitation note); nostr
+// edge→THING binding is best-effort until nostr identity is relay-normalised.
+// =============================================================================
+export function detectNostrRepost(event: NostrEvent): DetectedRepost | null {
+  if (event.kind !== 6 && event.kind !== 16) return null;
+  const eTag = event.tags.find((t) => t[0] === "e" && t[1]);
+  const aTag = event.tags.find((t) => t[0] === "a" && t[1]);
+  const targetHandle = eTag?.[1] ?? aTag?.[1] ?? null;
+  if (!targetHandle) return null;
+  return {
+    protocol: "nostr_external",
+    targetProtocol: "nostr_external",
+    targetHandle,
+    actorHandle: event.pubkey,
+    boostedAt: new Date(event.created_at * 1000),
+    originUri: event.id,
+  };
 }
 
 function normaliseNostrEvent(

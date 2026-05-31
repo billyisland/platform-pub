@@ -6,10 +6,12 @@ import { pinnedWebSocketOptions } from "@platform-pub/shared/lib/http-client.js"
 import { ADVISORY_LOCKS } from "@platform-pub/shared/lib/advisory-locks.js";
 import {
   normaliseAtprotoCommit,
+  detectAtprotoRepostFromCommit,
   buildAtUri,
   type JetstreamCommit,
 } from "../adapters/atproto.js";
 import { insertAtprotoItem } from "../lib/atproto-ingest.js";
+import { recordRepostEdge } from "../lib/repost-edge.js";
 
 // =============================================================================
 // Jetstream listener
@@ -37,7 +39,8 @@ import { insertAtprotoItem } from "../lib/atproto-ingest.js";
 // =============================================================================
 
 const DEFAULT_JETSTREAM_URL = "wss://jetstream1.us-east.bsky.network/subscribe";
-const WANTED_COLLECTIONS = ["app.bsky.feed.post"];
+// Posts become THINGs; reposts become RepostEdges (UNIVERSAL-POST §2.2 / Phase 0c).
+const WANTED_COLLECTIONS = ["app.bsky.feed.post", "app.bsky.feed.repost"];
 const DID_REFRESH_INTERVAL_MS = 60_000;
 const INITIAL_BACKOFF_MS = 1000;
 // Session-scoped advisory lock key. Only one feed-ingest replica at a time
@@ -399,10 +402,24 @@ export class JetstreamListener {
 
     if (event.kind !== "commit") return;
     if (!event.commit) return;
-    if (event.commit.collection !== "app.bsky.feed.post") return;
+    const collection = event.commit.collection;
+    if (
+      collection !== "app.bsky.feed.post" &&
+      collection !== "app.bsky.feed.repost"
+    )
+      return;
 
     const source = this.sourceByDid.get(event.did);
     if (!source) return; // post by a DID we no longer subscribe to; ignore
+
+    // Reposts are boosts BY a subscribed DID → a RepostEdge, not a THING. We
+    // record create/update; a repost-record delete (un-repost) is not removed
+    // here — §5 time-decay sinks a stale boost without an explicit teardown.
+    if (collection === "app.bsky.feed.repost") {
+      if (event.commit.operation === "delete") return;
+      await this.ingestRepost(event);
+      return;
+    }
 
     if (event.commit.operation === "delete") {
       await this.handleDelete(
@@ -418,6 +435,24 @@ export class JetstreamListener {
     if (!item) return;
 
     await this.ingest(source, item, event.time_us);
+  }
+
+  private async ingestRepost(event: JetstreamCommit): Promise<void> {
+    const repost = detectAtprotoRepostFromCommit(event);
+    if (!repost) return;
+    try {
+      await withTransaction(async (client) => {
+        await recordRepostEdge(client, repost);
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          did: event.did,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "Failed to record atproto repost edge",
+      );
+    }
   }
 
   private async ingest(
