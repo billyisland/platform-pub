@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useConversation } from "../../hooks/useConversation";
 import { replies as repliesApi, type ConversationNode } from "../../lib/api";
 import { useAuth } from "../../stores/auth";
@@ -12,9 +12,10 @@ import { TEXT_SIZE_PX, DEFAULT_TEXT_SIZE } from "./tokens";
 import type { ReplyTarget } from "./Composer";
 
 interface Props {
-  // The conversation root — the note/article event id of the host card. The
-  // whole conversation is fetched once from this id; re-focusing on any node is
-  // a pure client-side re-root (no refetch).
+  // The note/article event id of the card the user opened. The whole
+  // conversation is fetched once from this id and the view defaults to it as
+  // the focal node; re-focusing on any node is a pure client-side re-root (no
+  // refetch). The host has no special pinned status — it is just one entry.
   hostEventId: string;
   palette: VesselPalette;
   bodyPx?: number;
@@ -23,6 +24,18 @@ interface Props {
   onReply?: (target: ReplyTarget) => void;
   // Bumped by the parent after a reply publishes so the thread refetches.
   refreshKey?: number;
+  // Collapses the expanded card. Wired to clicking the focal node — the note
+  // you opened reads as focal, and clicking it again closes the conversation.
+  onCollapse?: () => void;
+  // Renders the host item's rich body (full content + media + actions) in the
+  // focal slot. When provided and the host is the focal node, this is shown
+  // instead of the lightweight playscript entry — so expanding reads as the
+  // full post surrounded by its conversation (mirrors the external card). It
+  // renders immediately (it doesn't depend on the conversation fetch); the
+  // context fills in around it. Re-rooting onto a reply/ancestor falls back to
+  // the lightweight entry, since only the host carries the data to render
+  // richly.
+  renderFocal?: () => ReactNode;
 }
 
 interface FlatEntry {
@@ -48,13 +61,16 @@ export function ConversationView({
   bodyPx = TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
   onReply,
   refreshKey,
+  onCollapse,
+  renderFocal,
 }: Props) {
   const { user } = useAuth();
   const { nodes, loading, error, repliesEnabled, paywallLocked } =
     useConversation(hostEventId, true, refreshKey);
 
-  // The node the conversation is currently rooted on. Defaults to the host
-  // (the post the user expanded); clicking any ancestor/descendant re-roots.
+  // The node the conversation is currently rooted on. Defaults to the post the
+  // user opened; clicking any ancestor/descendant re-roots freely (and the new
+  // focal's own ancestors then walk all the way to the true root).
   const [focalId, setFocalId] = useState(hostEventId);
   // Reset to the host root only when the host card itself changes. A refreshKey
   // bump (e.g. after publishing a reply) deliberately does NOT reset — a
@@ -79,16 +95,23 @@ export function ConversationView({
     return { byId, childrenOf };
   }, [nodes]);
 
-  // Ancestors of the focal node, oldest-first, EXCLUDING the host root (it's
-  // the pinned card above this view) and the focal itself.
+  // The true conversation root (parentEventId === null). Used for the "full
+  // conversation" reset and as the target_event_id for new replies. Falls back
+  // to the host if the root node hasn't loaded yet.
+  const rootEventId = useMemo<string>(() => {
+    const root = nodes.find((n) => n.parentEventId === null);
+    return root?.eventId ?? hostEventId;
+  }, [nodes, hostEventId]);
+
+  // Ancestors of the focal node, oldest-first, walking all the way up to the
+  // true root (the host has no special status). Excludes the focal itself.
   const ancestors = useMemo<ConversationNode[]>(() => {
-    if (focalId === hostEventId) return [];
     const chain: ConversationNode[] = [];
     // Visited guard: a corrupt parentEventId cycle (or self-parent) would
     // otherwise loop forever and hang the tab (H1).
     const seen = new Set<string>([focalId]);
     let cur = byId.get(focalId)?.parentEventId ?? null;
-    while (cur && cur !== hostEventId && !seen.has(cur)) {
+    while (cur && !seen.has(cur)) {
       const node = byId.get(cur);
       if (!node) break;
       seen.add(cur);
@@ -96,7 +119,7 @@ export function ConversationView({
       cur = node.parentEventId;
     }
     return chain.reverse();
-  }, [focalId, hostEventId, byId]);
+  }, [focalId, byId]);
 
   // Descendants of the focal node as a flat chronological playscript. A
   // `replyingTo` arrow is set only when the parent isn't the immediately
@@ -133,7 +156,8 @@ export function ConversationView({
   }, [focalId, childrenOf, byId]);
 
   // If a refetch drops the focal node (deleted upstream / stale id), fall back
-  // to the root so ancestors don't render above an empty gap (M2).
+  // to the host (the opened item) so the rich focal re-appears rather than an
+  // empty gap (M2).
   useEffect(() => {
     if (focalId !== hostEventId && nodes.length > 0 && !byId.has(focalId)) {
       setFocalId(hostEventId);
@@ -150,27 +174,14 @@ export function ConversationView({
     }
   }
 
-  if (loading) {
-    return (
-      <div className="mt-4 ml-8 space-y-[32px]">
-        {[1, 2].map((i) => (
-          <div
-            key={i}
-            className="h-10 animate-pulse rounded"
-            style={{ background: palette.cardMeta, opacity: 0.15 }}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="mt-4 ml-8">
-        <p className="label-ui text-grey-400">Couldn&apos;t load conversation</p>
-      </div>
-    );
-  }
+  const focal = byId.get(focalId) ?? null;
+  // The host is the opened item — its rich body renders in the focal slot and
+  // "Full conversation" returns here. (Ancestors still walk above it to the
+  // true root regardless.)
+  const atHost = focalId === hostEventId;
+  // The host body renders immediately, even before the conversation loads, so
+  // expanding feels instant; ancestors/replies fill in once the fetch lands.
+  const showHostFocal = atHost && !!renderFocal;
 
   if (paywallLocked) {
     return (
@@ -182,11 +193,31 @@ export function ConversationView({
     );
   }
 
-  const focal = byId.get(focalId) ?? null;
-  const isFocused = focalId !== hostEventId;
-
-  if (!isFocused && descendants.length === 0) {
-    // Root with no replies — nothing to render below the host card.
+  // Only block the whole view when there's no host body to anchor it: a plain
+  // load, or a re-rooted focal whose node hasn't arrived yet.
+  if (!showHostFocal && !focal) {
+    if (loading) {
+      return (
+        <div className="mt-4 ml-8 space-y-[32px]">
+          {[1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-10 animate-pulse rounded"
+              style={{ background: palette.cardMeta, opacity: 0.15 }}
+            />
+          ))}
+        </div>
+      );
+    }
+    if (error) {
+      return (
+        <div className="mt-4 ml-8">
+          <p className="label-ui text-grey-400">
+            Couldn&apos;t load conversation
+          </p>
+        </div>
+      );
+    }
     return null;
   }
 
@@ -212,17 +243,21 @@ export function ConversationView({
         tabIndex={0}
         onClick={(e) => {
           e.stopPropagation();
-          if (!opts.focal) setFocalId(node.eventId);
+          // Clicking the focal node collapses the card; clicking any other
+          // entry re-roots the conversation onto it.
+          if (opts.focal) onCollapse?.();
+          else setFocalId(node.eventId);
         }}
         onKeyDown={(e) => {
-          if ((e.key === "Enter" || e.key === " ") && !opts.focal) {
+          if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            setFocalId(node.eventId);
+            if (opts.focal) onCollapse?.();
+            else setFocalId(node.eventId);
           }
         }}
         className="group relative transition-colors"
         style={{
-          cursor: opts.focal ? "default" : "pointer",
+          cursor: "pointer",
           ...(opts.focal
             ? {
                 borderLeft: `2px solid ${palette.cardTitle}`,
@@ -274,7 +309,7 @@ export function ConversationView({
                   onReply({
                     // Thread under the conversation root; link the comment as
                     // parent so it nests correctly (target_event_id stays root).
-                    eventId: hostEventId,
+                    eventId: rootEventId,
                     eventKind: 1,
                     authorPubkey: node.author.pubkey,
                     authorName: name,
@@ -307,7 +342,7 @@ export function ConversationView({
 
   return (
     <div onClick={(e) => e.stopPropagation()} className="mt-4 ml-8">
-      {isFocused && (
+      {!atHost && (
         <button
           type="button"
           onClick={() => setFocalId(hostEventId)}
@@ -318,18 +353,36 @@ export function ConversationView({
       )}
 
       <ol className="space-y-[32px]">
-        {/* Ancestors of the focal node, oldest-first, indented above it. Keys
-            are group-prefixed so a node appearing in more than one group can't
+        {/* Ancestors of the focal node, oldest-first, above it. Keys are
+            group-prefixed so a node appearing in more than one group can't
             collide (L4). */}
         {ancestors.map((node) => (
           <li key={`anc-${node.eventId}`}>{entry(node, {})}</li>
         ))}
 
-        {/* The focal node anchor (only when re-rooted onto a reply; at the root
-            the host card above is the anchor). */}
-        {isFocused && focal && (
+        {/* The focal node. At the host, render its rich body (full content +
+            media + actions) so the expansion reads as the whole post wrapped by
+            its conversation; clicking it collapses the card. Re-rooted onto a
+            reply/ancestor, fall back to the lightweight playscript entry with
+            the left bar. */}
+        {showHostFocal ? (
+          <li key={`focal-${focalId}`}>
+            {/* Click the body to collapse (the byline link + action buttons
+                stop propagation, so they keep their own behaviour). No
+                role=button here — the rich body nests its own interactive
+                elements. */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                onCollapse?.();
+              }}
+            >
+              {renderFocal!()}
+            </div>
+          </li>
+        ) : focal ? (
           <li key={`focal-${focal.eventId}`}>{entry(focal, { focal: true })}</li>
-        )}
+        ) : null}
 
         {/* Descendants below the focal. */}
         {descendants.map(({ node, replyingTo }) => (

@@ -13,13 +13,9 @@ interface Props {
   // Reading-content size in px, inherited from the host card so the parent body
   // renders at the same size. Defaults to the standard step.
   bodyPx?: number;
-  // Internal all.haus byline destination (the item's source surface). When
-  // absent, the parent author renders as plain text — never a link out to the
-  // native (Bluesky/Mastodon/…) profile.
-  sourceHref?: string;
   // The author of the card hosting this tile. When the fetched parent is the
   // same author (a self-thread), the tile is suppressed so each post stands
-  // alone rather than reading as one merged card divided by a hairline.
+  // alone rather than reading as one merged card.
   selfAuthor?: { handle?: string; name?: string };
 }
 
@@ -36,7 +32,6 @@ export function ParentContextTile({
   itemId,
   palette,
   bodyPx = TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
-  sourceHref,
   selfAuthor,
 }: Props) {
   const [parent, setParent] = useState<ParentItem | null>(
@@ -106,10 +101,7 @@ export function ParentContextTile({
   const body = parent.contentHtml || parent.contentText;
 
   return (
-    <div
-      className="mb-3 pb-3"
-      style={{ borderBottom: `1px solid ${palette.cardMeta}33` }}
-    >
+    <div className="mb-6">
       {grandparentTag && (
         <div
           className="font-mono text-[11px] uppercase tracking-[0.06em] mb-1"
@@ -120,7 +112,6 @@ export function ParentContextTile({
       )}
       <Byline
         name={name}
-        nameHref={sourceHref}
         publishedAt={parent.publishedAt}
         palette={palette}
         className="mb-1"

@@ -11,7 +11,6 @@ interface Props {
   ancestors: ExternalThreadEntry[];
   palette: VesselPalette;
   bodyPx?: number;
-  sourceHref?: string;
   // Re-roots the conversation onto the clicked ancestor. When provided, entries
   // become clickable; when absent they render as static context.
   onEntryClick?: (entry: ExternalThreadEntry) => void;
@@ -21,7 +20,6 @@ export function ExternalAncestorRail({
   ancestors,
   palette,
   bodyPx,
-  sourceHref,
   onEntryClick,
 }: Props) {
   if (ancestors.length === 0) return null;
@@ -39,10 +37,7 @@ export function ExternalAncestorRail({
   for (const e of chain) byId.set(e.id, e);
 
   return (
-    <div
-      className="mb-3 pb-3 ml-8"
-      style={{ borderBottom: `1px solid ${palette.cardMeta}33` }}
-    >
+    <div className="mb-6 ml-8">
       <ol className="space-y-[32px]">
         {chain.map((entry, i) => {
           // Annotate a non-adjacent parent the same way the descendant
@@ -64,7 +59,6 @@ export function ExternalAncestorRail({
                 replyingTo={replyingTo}
                 palette={palette}
                 bodyPx={bodyPx}
-                sourceHref={sourceHref}
                 onEntryClick={onEntryClick}
               />
             </li>

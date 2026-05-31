@@ -1228,11 +1228,19 @@ function NoteVesselCard({
     ? () => onToggleExpand(expandKey)
     : undefined;
 
-  return (
-    <CardShell ctx={ctx} onClick={onCardClick}>
+  // When expanded, the card reads as its conversation: the note's own rich body
+  // is the focal node (full content + media + actions), with its ancestors as
+  // lightweight playscript above and replies below; clicking any context entry
+  // re-roots in place. Collapsed, the same body renders truncated. `full`
+  // toggles between the two (untruncated text + expanded media when focal).
+  const showConversation = !!expanded || !!threadExpanded;
+
+  const noteBody = (full: boolean) => (
+    <>
       <Byline
         pipNode={pipNodeByline}
         name={name}
+        nameHref={writer?.username ? `/${writer.username}` : undefined}
         publishedAt={note.publishedAt}
         palette={ctx.palette}
       />
@@ -1253,10 +1261,10 @@ function NoteVesselCard({
             lineHeight: 1.5,
           }}
         >
-          {expanded ? noteDisplayText : truncateText(noteDisplayText, 220)}
+          {full ? noteDisplayText : truncateText(noteDisplayText, 220)}
         </p>
       )}
-      <MediaBlock items={noteMedia} ctx={ctx} expanded={expanded} />
+      <MediaBlock items={noteMedia} ctx={ctx} expanded={full} />
       {ctx.density === "full" && (
         <SourceAttribution
           protocol="NOSTR"
@@ -1272,14 +1280,23 @@ function NoteVesselCard({
         replyTarget={replyTarget}
         onReply={onReply}
       />
-      {(expanded || threadExpanded) && (
+    </>
+  );
+
+  return (
+    <CardShell ctx={ctx} onClick={onCardClick}>
+      {showConversation ? (
         <ConversationView
           hostEventId={note.id}
           palette={ctx.palette}
           bodyPx={ctx.bodyPx}
           onReply={onReply}
           refreshKey={threadRefreshKey}
+          onCollapse={onCardClick}
+          renderFocal={() => noteBody(true)}
         />
+      ) : (
+        noteBody(false)
       )}
     </CardShell>
   );
@@ -1464,12 +1481,6 @@ function ExternalVesselCard({
   // suppress the standalone ParentContextTile when it shows.
   const showThread = (!!expanded || !!threadExpanded) && !!threadTarget;
 
-  // Byline destination for the expanded neighbourhood (parent context + thread
-  // entries): the item's all.haus source surface, never the native profile.
-  const sourceHref = external.externalSourceId
-    ? `/source/${external.externalSourceId}`
-    : undefined;
-
   // In-place re-focus: the thread entry the conversation is currently rooted on.
   // `null` means the original card item is focal (rich body + rail + thread).
   // Clicking any ancestor/descendant sets this to that entry, which re-roots the
@@ -1538,17 +1549,25 @@ function ExternalVesselCard({
 
   return (
     <CardShell ctx={ctx} onClick={onCardClick}>
-      <Byline
-        pipNode={pipNodeByline}
-        name={name}
-        nameHref={
-          external.externalSourceId
-            ? `/source/${external.externalSourceId}`
-            : undefined
-        }
-        publishedAt={external.publishedAt}
-        palette={ctx.palette}
-      />
+      {/* The host item's own byline. Collapsed, it sits at the top of the card.
+          When expanded into the conversation it moves BELOW the ancestor rail
+          (rendered further down) so the reading order is parents → this post,
+          matching the native conversation. The byline links to the host's
+          source surface; participant bylines are plain text (see
+          ExternalPlayscriptEntry). */}
+      {!showThread && (
+        <Byline
+          pipNode={pipNodeByline}
+          name={name}
+          nameHref={
+            external.externalSourceId
+              ? `/source/${external.externalSourceId}`
+              : undefined
+          }
+          publishedAt={external.publishedAt}
+          palette={ctx.palette}
+        />
+      )}
       {authorOpen && (
         <AuthorModal
           type="external"
@@ -1577,7 +1596,6 @@ function ExternalVesselCard({
           ancestors={thread.ancestors}
           palette={ctx.palette}
           bodyPx={ctx.bodyPx}
-          sourceHref={sourceHref}
           onEntryClick={setFocusEntry}
         />
       ) : external.sourceReplyUri ? (
@@ -1585,13 +1603,27 @@ function ExternalVesselCard({
           itemId={external.id}
           palette={ctx.palette}
           bodyPx={ctx.bodyPx}
-          sourceHref={sourceHref}
           selfAuthor={{
             handle: external.authorHandle ?? undefined,
             name: external.authorName ?? undefined,
           }}
         />
       ) : null}
+      {/* Host byline, below the ancestor rail when expanded (and not re-rooted
+          onto another entry, which carries its own byline). */}
+      {showThread && !focusEntry && (
+        <Byline
+          pipNode={pipNodeByline}
+          name={name}
+          nameHref={
+            external.externalSourceId
+              ? `/source/${external.externalSourceId}`
+              : undefined
+          }
+          publishedAt={external.publishedAt}
+          palette={ctx.palette}
+        />
+      )}
       {/* Re-rooted: the focal node is a lightweight thread entry (rendered from
           the clicked entry — the refetched rail/thread exclude it). The rich
           card body (content/media/polls/quotes/engagement/actions) is
@@ -1626,7 +1658,6 @@ function ExternalVesselCard({
                 replyingTo={null}
                 palette={ctx.palette}
                 bodyPx={ctx.bodyPx}
-                sourceHref={sourceHref}
               />
             </div>
           )}
@@ -1823,7 +1854,6 @@ function ExternalVesselCard({
           bodyPx={ctx.bodyPx}
           protocol={external.sourceProtocol}
           linkedAccount={matchingAccount ?? null}
-          sourceHref={sourceHref}
           descendants={thread.descendants}
           loading={thread.loading}
           error={thread.error}
@@ -1844,7 +1874,6 @@ function ExternalCardThread({
   bodyPx,
   protocol,
   linkedAccount,
-  sourceHref,
   descendants,
   loading,
   error,
@@ -1855,7 +1884,6 @@ function ExternalCardThread({
   bodyPx?: number;
   protocol: string;
   linkedAccount: import("../../lib/api/linked-accounts").LinkedAccount | null;
-  sourceHref?: string;
   descendants: ExternalThreadEntry[];
   loading: boolean;
   error: boolean;
@@ -1898,7 +1926,6 @@ function ExternalCardThread({
         protocol={protocol}
         linkedAccount={linkedAccount}
         bodyPx={bodyPx}
-        sourceHref={sourceHref}
         onEntryClick={onEntryClick}
       />
     </div>

@@ -12,15 +12,11 @@ interface Props {
   onReply?: () => void;
   replyActive?: boolean;
   // Re-roots the conversation onto this entry. When provided, the entry body
-  // (byline + dialogue) becomes clickable; the Reply control and the byline's
-  // name link stop propagation so they keep their own behaviour.
+  // (byline + dialogue) becomes clickable; the Reply control stops propagation
+  // so it keeps its own behaviour.
   onEntryClick?: (entry: ExternalThreadEntry) => void;
   // Reading-content size in px, inherited from the host card.
   bodyPx?: number;
-  // Internal all.haus destination for the speaker's byline (the expanded
-  // item's source surface). When absent, the byline renders as plain text —
-  // we never link out to the native (Bluesky/Mastodon/…) profile.
-  sourceHref?: string;
 }
 
 export function ExternalPlayscriptEntry({
@@ -31,7 +27,6 @@ export function ExternalPlayscriptEntry({
   replyActive,
   onEntryClick,
   bodyPx = TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
-  sourceHref,
 }: Props) {
   // Reply bylines match main-card bylines (task 9b): the shared Byline carries
   // name · time; the non-adjacent-parent "→ NAME" affordance rides as
@@ -66,17 +61,18 @@ export function ExternalPlayscriptEntry({
       }
       style={clickable ? { cursor: "pointer" } : undefined}
     >
-      {/* Byline name link navigates; stop the re-root click from also firing. */}
-      <div onClick={(e) => e.stopPropagation()}>
-        <Byline
-          name={entry.authorName || entry.authorHandle}
-          nameHref={sourceHref}
-          publishedAt={publishedAtUnix}
-          replyingTo={replyingTo}
-          palette={palette}
-          className="mb-1"
-        />
-      </div>
+      {/* The speaker is an arbitrary external participant with no internal
+          surface, so the byline is plain text — never the host item's
+          /source link, and never a route out to the origin platform (mirrors
+          QuotedPostTile). The §VI.3 constructed external author profile will
+          give these a real destination later. */}
+      <Byline
+        name={entry.authorName || entry.authorHandle}
+        publishedAt={publishedAtUnix}
+        replyingTo={replyingTo}
+        palette={palette}
+        className="mb-1"
+      />
 
       {/* Dialogue line */}
       <div className="mt-1">

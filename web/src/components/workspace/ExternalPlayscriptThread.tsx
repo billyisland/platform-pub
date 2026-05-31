@@ -18,11 +18,8 @@ interface Props {
   linkedAccount: LinkedAccount | null;
   // Reading-content size in px, inherited from the host card.
   bodyPx?: number;
-  // Internal all.haus byline destination for thread entries (the expanded
-  // item's source surface).
-  sourceHref?: string;
   // Re-roots the conversation onto the clicked entry. When provided, the entry
-  // body becomes clickable (Reply control + byline keep their own behaviour).
+  // body becomes clickable (Reply control keeps its own behaviour).
   onEntryClick?: (entry: ExternalThreadEntry) => void;
 }
 
@@ -34,7 +31,6 @@ export function ExternalPlayscriptThread({
   protocol,
   linkedAccount,
   bodyPx,
-  sourceHref,
   onEntryClick,
 }: Props) {
   const [showAll, setShowAll] = useState(false);
@@ -86,7 +82,6 @@ export function ExternalPlayscriptThread({
               replyingTo={replyingTo}
               palette={palette}
               bodyPx={bodyPx}
-              sourceHref={sourceHref}
               onEntryClick={onEntryClick}
               onReply={() =>
                 setReplyingToId(replyingToId === entry.id ? null : entry.id)

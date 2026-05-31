@@ -229,9 +229,35 @@ Use `.toggle-chip` + `.toggle-chip-active` / `.toggle-chip-inactive` (combined w
 
 All top-level admin/settings/dashboard pages use `<PageShell>` from `web/src/components/ui/PageShell.tsx`. It fixes outer padding (`py-12`), title styling, and title→content gap (`mb-8`). Choose width by content type: `article` (640px) for single-column forms, `feed` (780px) for lists/cards/reading surfaces, `content` (960px) for tables and data-dense dashboards. Do not hand-roll `mx-auto max-w-* px-4 sm:px-6 py-*` wrappers on new pages. Use `<PageHeader>` standalone for sub-views that need the same title treatment.
 
-### Dividers
+### No hairlines, no outlines, no single-pixel anything
 
-Use `.slab-rule-4` for major section dividers. Do not use `h-[4px] bg-black` inline.
+This is an absolute, sitewide invariant — not a feed-and-thread guideline. **The site never renders a 1px line, anywhere, ever.** No hairline dividers, no 1px borders, no 1px outlines or rings, no 1px line elements, no `<hr>`, no `box-shadow` used as a line. Separation is whitespace and rhythm; emphasis is the 4px slab; structural enclosure, when genuinely needed, is `>= 2px`. There are no exceptions for "dense UI chrome" (dropdowns, menus, popovers, settings rows) — those were the prior loophole and it is now closed.
+
+Concretely, all of these are banned and must never be introduced:
+
+- `1px` in any inline style or CSS (`border: 1px …`, `borderBottom: '1px …'`, `box-shadow: 0 1px 0 …`, `outline: 1px …`).
+- Tailwind 1px-resolving utilities: bare `border` / `border-t|b|l|r|x|y` (these are 1px by default), `border-[1px]`, `divide-x` / `divide-y`, `ring-1` / `ring-px`, `outline-1` / `outline-px`, `h-px` / `w-px` / `h-[1px]` / `w-[1px]`.
+- The raw `<hr>` element.
+- Any `hairline` color token used to draw a line.
+
+What to use instead:
+
+- **Separation between items**: whitespace (`space-y-*`, `gap-*`) and the established feed/thread rhythm. Never a line.
+- **Major section divider**: `.slab-rule-4` (the 4px slab). Do not hand-roll `h-[4px] bg-black` inline, and never substitute a thin rule for it.
+- **Enclosure / emphasis** where a real border is unavoidable: `>= 2px` (e.g. the 2px a11y focus outlines in `globals.css` are correct and intentional — they are not hairlines).
+
+#### Failsafe — pre-ship hairline check (required)
+
+Before shipping any frontend change, run the tripwire and confirm it is clean:
+
+```bash
+scripts/check-hairlines.sh            # scans all of web/src
+scripts/check-hairlines.sh <paths…>   # scope to the files you touched
+```
+
+It greps for every 1px form listed above and exits non-zero if any are found. **Treat a non-zero exit as a blocking failure for the lines you introduced or touched** — a frontend change is not "done" until the check passes for your diff. The script is a heuristic, so read each match; a genuine, reviewed false positive (a `1px` that is a micro-transform, not a line) may carry a trailing `hairline-ok` marker with a written reason on the same line, but a real hairline must be removed, not suppressed.
+
+The repo currently has pre-existing hairline debt (the check will report it); cleaning that up is a tracked project. Until then, the rule for new work is strict: **do not add to the count, and prefer to remove any hairline you touch.**
 
 ### Feed card chassis
 
@@ -242,14 +268,14 @@ All three feed card types (`ArticleCard`, `NoteCard`, `ExternalCard`) share a un
 - **Byline routing**: every author byline — on a card, and on every expanded parent or reply in the conversational neighbourhood — links to the internal all.haus surface, never the origin platform. Native authors route to their writer profile (`/{username}`); external authors route to the source surface (`/source/:id`, CARD-BEHAVIOUR-ADR §VI.2) until the constructed external author profile (§VI.3) ships. The only route out to the origin platform is the source-attribution line (§VI.4).
 - **Action row**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.02em] text-grey-600`). `Reply` opens the compose overlay; `Quote`, `VoteControls`, `BookmarkButton`, `ShareButton` as appropriate per type.
 - **No avatars** in card bodies. The left bar + pip + mono-caps name carry identity.
-- **Feed rhythm**: 40px gap between all items (`space-y-[40px]`), no horizontal rules between cards.
+- **Feed rhythm**: 40px gap between all items (`space-y-[40px]`), no horizontal rules between cards (see No hairlines — absolute sitewide).
 
 ### Reply threads (playscripts)
 
 Threads never use nested indentation, left borders between nested replies, quote-of-parent blockquotes, or avatars. They render flat and chronological as a transcript.
 
 - **Thread step-in**: the thread container is indented 32px once (`ml-8`) from the parent card's content column. This is the only indentation in the thread system.
-- **Inter-entry rhythm**: 32px (`space-y-[32px]`). No hairline rules between entries.
+- **Inter-entry rhythm**: 32px (`space-y-[32px]`). No hairline rules between entries (see No hairlines — absolute sitewide).
 - **Speaker line**: mono-caps 11px (`font-mono text-[11px] uppercase tracking-[0.06em] text-grey-600`). Structure: `TrustPip` · bold Jost name · colon. Own replies read `YOU:` with no pip (the asymmetric 16px left-jog is deliberate — `YOU:` is the reader, not a named speaker).
 - **Non-adjacent parent**: when the reply's parent isn't the immediately-previous entry, prefix the speaker line with `→ PARENT:` in `grey-400` + 16px gap, then the speaker's own `NAME:`.
 - **Dialogue line**: Jost 14.5px (`text-[14.5px]`), 1.55 line height (`leading-[1.55]`), black. Directly under the speaker line at `mt-1`.
@@ -257,7 +283,12 @@ Threads never use nested indentation, left borders between nested replies, quote
 - **Action row**: `time · REPLY · DELETE · REPORT` at mono-caps 11px `text-grey-400`, revealed on hover/focus with an optional `#fafaf7` background tint on the entry.
 - **Pagination**: first 10 entries + `SHOW N MORE REPLIES` (mono-caps, grey-400, underlined on hover).
 - **Component surface**: `PlayscriptReply` + `PlayscriptThread` in `web/src/components/replies/`. `ReplySection.tsx` flattens the nested tree into `PlayscriptEntry[]`; the API still returns a nested tree with `parentCommentId` on each node.
-- **Focal node + parents-above (workspace)**: an expanded conversation reads strictly top-down — a focal node sits in the middle, its **ancestor chain renders above it** (same single `ml-8` flat indent — never a deepening nested cascade) walking up to the conversation root, and its descendants below. **Clicking any ancestor or reply re-roots the view on that node in place.** Native (notes/comments) has the full model via `GET /conversation/:eventId` → `useConversation` → `ConversationView` (a single fetch returns the whole tree; re-focus is client-side re-rooting); a reply to a re-focused comment threads under the root with the comment as `parentCommentId`. External cards render the full ancestor chain above the card content (`ExternalAncestorRail`); external in-place re-focus now ships too — `ExternalVesselCard` holds a `focusEntry` state and clicking any ancestor/descendant re-roots via `useExternalThread(external.id, showThread, focusEntry?.id)` against the gateway's `?focus=<sourceId>` thread param (mirroring native), with the focal node rendered from the clicked `ExternalThreadEntry` and `↑ Full conversation` resetting. See `docs/adr/CARD-BEHAVIOUR-ADR.md` addendum (2026-05-30).
+- **Focal node + parents-above (workspace)**: an expanded conversation reads strictly top-down — a focal node sits in the middle, its **ancestor chain renders above it** (same single `ml-8` flat indent — never a deepening nested cascade) walking up to the conversation root, and its descendants below. There is **no separate pinned card or duplicated byline at the top**: the opened item's byline lives on its own focal entry, beneath its ancestors. **Clicking any ancestor or reply re-roots the view on that node in place** (repeatable in any direction); **clicking the focal node collapses the card**, and `↑ Full conversation` returns to the opened item.
+  - **Rich focal, light context (uniform across native + external)**: the focal node renders its **full rich body** — full content, media, and the action row (vote/reply/share) — while ancestors and replies render as **lightweight playscript** entries (byline + text + vote/reply), demarcated from the focal only by indent/left-bar. The rich body renders **immediately** on expand (it does not wait for the conversation fetch); ancestors/replies fill in around it once loaded. Re-rooting onto a reply/ancestor falls back to a lightweight focal, since only the opened item carries the data to render richly — this limitation is identical on both surfaces.
+  - **Byline routing**: native bylines link per-author to `/{username}` (each node's own author, never the focal's). External: only the host item's byline links to its `/source/:id`; **every other external participant (ancestors, replies, quoted/parent authors) renders as plain text** — there is no internal surface for arbitrary external authors until the §VI.3 constructed external author profile ships, and we never fabricate a `/source` link or route out to the origin platform.
+  - **Native** (notes/comments): `GET /conversation/:eventId` → `useConversation` → `ConversationView` (a single fetch returns the whole tree from the true root; ancestors walk all the way up; re-focus is client-side re-rooting). `NoteVesselCard` feeds its rich body into `ConversationView` via a `renderFocal` render-prop (so `MediaBlock`/`CardActions` stay in `VesselCard` — no circular import); a reply to a re-focused comment threads under the root with the comment as `parentCommentId`.
+  - **External**: `ExternalVesselCard` holds a `focusEntry` state; the host renders its rich body with `ExternalAncestorRail` above and the descendant thread below. Clicking any ancestor/descendant re-roots via `useExternalThread(external.id, showThread, focusEntry?.id)` against the gateway's `?focus=<sourceId>` thread param, rendering the clicked `ExternalThreadEntry` as a lightweight focal. The host byline sits at the top when collapsed and **moves below the ancestor rail when expanded** (reading order parents → this post), and is suppressed entirely when re-rooted.
+  - See `docs/adr/CARD-BEHAVIOUR-ADR.md` addendum (2026-05-30).
 
 ## Key docs
 

@@ -649,3 +649,44 @@ Still open (tracked in the build plan): cosmetic non-adjacent-parent arrow order
 native (DFS) and external (chronological) descendants; unbounded `GET /conversation/:eventId`
 comment fetch (inherited from `/replies`); and backend test coverage for
 `/conversation/:eventId` + `deriveFocusItem`.
+
+## Addendum — unanchored re-root + rich focal, uniform across native & external (2026-05-31)
+
+This supersedes the focal-rendering details of the two 2026-05-30 addenda above (the
+pinned-host-card and lightweight-focal descriptions). The interaction model is now identical
+on both surfaces, and the raggedness the prior round left behind is cleaned up.
+
+- **No pinned host card, no duplicated byline.** Native no longer pins the opened note as a
+  separate card above `ConversationView` with the focal anchored to it. The opened item is
+  just the **default focal node** inside the flat conversation: its ancestors render above it
+  (walking all the way to the true root, not stopping at the opened item) and its replies
+  below. The byline lives on the focal entry itself, never duplicated at the top. External
+  matches: its host byline sits at the top only when collapsed and **moves below the ancestor
+  rail when expanded** (reading order parents → this post), suppressed entirely when re-rooted.
+- **Unanchored re-root.** Clicking any ancestor or reply re-roots onto that node in place,
+  repeatably and in any direction — the opened item has no privileged anchor. `↑ Full
+  conversation` returns to the opened item (native: `focalId = hostEventId`; external:
+  `focusEntry = null`), and **clicking the focal node collapses the card**.
+- **Rich focal, light context.** The focal node renders its **full rich body** (content,
+  media, action row), while ancestors/replies stay **lightweight playscript** (byline + text
+  + vote/reply), demarcated only by indent / left-bar. The rich body renders **immediately**
+  on expand — it does not wait on the conversation fetch — and context fills in around it.
+  Native wires this via a `renderFocal` render-prop from `NoteVesselCard` into
+  `ConversationView`, keeping `MediaBlock`/`CardActions` in `VesselCard` (no circular import).
+  Re-rooting onto a reply/ancestor falls back to a lightweight focal on **both** surfaces,
+  since only the opened item carries the data to render richly.
+- **Byline routing fix (was a bug).** Every byline in the expanded conversation now routes to
+  *its own* author. Native already did this (`/{username}` per node). External previously
+  reused the **host** item's `/source/:id` for every participant — ancestor, reply, focal, and
+  the single-parent `ParentContextTile` — so clicking any name went to the opened item's
+  source surface. Fixed: only the host item's byline links to its source; **every other
+  external participant renders as plain text**, matching the quoted-author rule in the rich
+  embeds addendum. The dead `sourceHref` plumbing through `ExternalPlayscriptEntry` /
+  `ExternalAncestorRail` / `ExternalPlayscriptThread` / `ParentContextTile` is removed.
+- **Hairlines.** Removed the 1px `borderBottom` dividers in `ExternalAncestorRail` and
+  `ParentContextTile` (replaced with whitespace), per the sitewide no-hairlines invariant.
+
+Still open: re-rooted focals remain lightweight (no media) on both surfaces — extending the
+rich treatment to arbitrary re-rooted nodes needs the thread/conversation payloads to carry
+full media/engagement data; the pre-existing 1px `LinkPreviewCard` border in `VesselCard` is
+untracked-here hairline debt left for a separate sweep.
