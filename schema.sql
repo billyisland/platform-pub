@@ -568,6 +568,122 @@ $$;
 
 
 --
+-- Name: feed_items_content_version(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.feed_items_content_version(p_external_item_id uuid) RETURNS text
+    LANGUAGE plpgsql STABLE
+    AS $$
+DECLARE
+  v_text  TEXT;
+  v_title TEXT;
+  v_media TEXT;
+BEGIN
+  SELECT
+    btrim(regexp_replace(regexp_replace(coalesce(ei.content_text, ''), E'\r\n?', E'\n', 'g'),
+                         E'[ \t]+\n', E'\n', 'g')),
+    coalesce(ei.title, ''),
+    coalesce((SELECT string_agg(coalesce(m->>'uri', m->>'url', ''), ',' ORDER BY ord)
+              FROM jsonb_array_elements(coalesce(ei.media, '[]'::jsonb)) WITH ORDINALITY x(m, ord)), '')
+  INTO v_text, v_title, v_media
+  FROM external_items ei
+  WHERE ei.id = p_external_item_id;
+
+  RETURN encode(digest(coalesce(v_text, '') || E'\x1f' || v_title || E'\x1f' || v_media, 'sha256'), 'hex');
+END;
+$$;
+
+
+--
+-- Name: feed_items_derive_post_id(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.feed_items_derive_post_id(p_protocol text, p_handle text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT encode(digest(p_protocol || E'\x1f' || p_handle, 'sha256'), 'hex');
+$$;
+
+
+--
+-- Name: feed_items_post_identity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.feed_items_post_identity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_pubkey TEXT;
+  v_dtag   TEXT;
+BEGIN
+  -- PostId is stable: mint once (NULL on INSERT/backfill), preserve thereafter.
+  IF NEW.post_id IS NULL THEN
+    IF NEW.article_id IS NOT NULL THEN
+      SELECT ac.nostr_pubkey, a.nostr_d_tag INTO v_pubkey, v_dtag
+      FROM articles a JOIN accounts ac ON ac.id = a.writer_id
+      WHERE a.id = NEW.article_id;
+      IF v_pubkey IS NOT NULL AND v_dtag IS NOT NULL THEN
+        NEW.post_id := feed_items_derive_post_id('nostr', '30023:' || v_pubkey || ':' || v_dtag);
+      ELSE
+        -- writer unlinked: fall back to the stable feed_items article identity
+        NEW.post_id := feed_items_derive_post_id('nostr_article', NEW.article_id::text);
+      END IF;
+    ELSIF NEW.note_id IS NOT NULL THEN
+      NEW.post_id := feed_items_derive_post_id('nostr', coalesce(NEW.nostr_event_id, NEW.note_id::text));
+    ELSIF NEW.external_item_id IS NOT NULL THEN
+      NEW.post_id := feed_items_derive_post_id(coalesce(NEW.source_protocol, 'unknown'),
+                                               coalesce(NEW.source_item_uri, NEW.external_item_id::text));
+    END IF;
+  END IF;
+
+  -- version: edit detector. Recompute only when identity/content-bearing columns
+  -- change, so hot UPDATEs that touch only `score` (feed_scores_refresh) or author
+  -- fields (feed_items_author_refresh) don't pay for the external_items join + hash.
+  -- The content-edit dual-write paths always rewrite content_preview/title/event id,
+  -- so this proxy detects every real edit.
+  IF TG_OP = 'INSERT'
+     OR NEW.version IS NULL  -- backfill / never-computed
+     OR NEW.nostr_event_id   IS DISTINCT FROM OLD.nostr_event_id
+     OR NEW.external_item_id IS DISTINCT FROM OLD.external_item_id
+     OR NEW.content_preview  IS DISTINCT FROM OLD.content_preview
+     OR NEW.title            IS DISTINCT FROM OLD.title
+  THEN
+    IF NEW.external_item_id IS NOT NULL THEN
+      NEW.version := feed_items_content_version(NEW.external_item_id);
+    ELSE
+      NEW.version := NEW.nostr_event_id;  -- native: the replaceable/immutable event token
+    END IF;
+  END IF;
+
+  -- biddability tier (§7). Inputs only change on INSERT or a (rare) protocol/source flip.
+  IF TG_OP = 'UPDATE'
+     AND NEW.biddability_tier IS NOT NULL  -- already computed (don't skip on backfill)
+     AND NEW.item_type        IS NOT DISTINCT FROM OLD.item_type
+     AND NEW.source_protocol  IS NOT DISTINCT FROM OLD.source_protocol
+     AND NEW.external_item_id IS NOT DISTINCT FROM OLD.external_item_id THEN
+    RETURN NEW;  -- biddability inputs unchanged; keep existing value
+  END IF;
+
+  IF NEW.item_type IN ('article', 'note') THEN
+    NEW.biddability_tier := 'A';
+  ELSIF NEW.source_protocol IN ('nostr_external', 'atproto') THEN
+    NEW.biddability_tier := 'A';
+  ELSIF NEW.source_protocol = 'activitypub' THEN
+    NEW.biddability_tier := 'B';
+  ELSIF NEW.source_protocol IN ('rss', 'email') THEN
+    NEW.biddability_tier := CASE
+      WHEN (SELECT ei.author_uri FROM external_items ei WHERE ei.id = NEW.external_item_id) IS NOT NULL
+      THEN 'C' ELSE 'D' END;
+  ELSE
+    NEW.biddability_tier := 'D';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: feed_sources_touch_parent(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1175,6 +1291,10 @@ CREATE TABLE public.feed_items (
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     is_reply boolean DEFAULT false NOT NULL,
+    post_id text,
+    version text,
+    biddability_tier text,
+    CONSTRAINT feed_items_biddability_tier_check CHECK ((biddability_tier = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text]))),
     CONSTRAINT exactly_one_source CHECK ((((((article_id IS NOT NULL))::integer + ((note_id IS NOT NULL))::integer) + ((external_item_id IS NOT NULL))::integer) = 1)),
     CONSTRAINT feed_items_item_type_check CHECK ((item_type = ANY (ARRAY['article'::text, 'note'::text, 'external'::text]))),
     CONSTRAINT tier_consistency CHECK ((((item_type = ANY (ARRAY['article'::text, 'note'::text])) AND (tier = 'tier1'::public.content_tier)) OR (item_type = 'external'::text)))
@@ -6039,3 +6159,19 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 
 \unrestrict OdQJLwI4NGvEsV2kGZDvcoeOSDc4viyeqjnuEaW7k0R0xaavzrVebGf15bdgXDZ
 
+
+
+--
+-- Name: idx_feed_items_post_id; Type: INDEX; Schema: public; Owner: -
+-- (migration 098 — Post identity; appended out of pg_dump section order)
+--
+
+CREATE INDEX idx_feed_items_post_id ON public.feed_items USING btree (post_id);
+
+
+--
+-- Name: feed_items feed_items_post_identity_trg; Type: TRIGGER; Schema: public; Owner: -
+-- (migration 098 — Post identity; appended out of pg_dump section order)
+--
+
+CREATE TRIGGER feed_items_post_identity_trg BEFORE INSERT OR UPDATE ON public.feed_items FOR EACH ROW EXECUTE FUNCTION public.feed_items_post_identity();
