@@ -4,6 +4,7 @@ import { optionalAuth } from "../middleware/auth.js";
 import { checkArticleAccess } from "../services/article-access/index.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { FEED_SELECT, FEED_JOINS } from "./timeline.js";
+import { collectDescendants } from "../lib/thread-walk.js";
 import {
   POST_SELECT,
   POST_JOINS,
@@ -256,15 +257,7 @@ function assembleNativeThread(
 
   // ── descendants: subtree under the focal, flattened chronologically.
   // (Flat chronological matches the playscript thread render — CLAUDE.md.)
-  const subtree: CommentRow[] = [];
-  const collect = (parentId: string) => {
-    const kids = childrenOf.get(parentId) ?? [];
-    for (const k of kids) {
-      subtree.push(k);
-      collect(k.derived_post_id);
-    }
-  };
-  collect(focalPostId);
+  const subtree: CommentRow[] = collectDescendants(focalPostId, childrenOf);
   subtree.sort(
     (a, b) =>
       a.published_at_epoch - b.published_at_epoch || (a.id < b.id ? -1 : 1),

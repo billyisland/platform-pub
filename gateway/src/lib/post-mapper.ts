@@ -81,6 +81,21 @@ export interface RepostEdgeDTO {
 // post_id (§2.3, the same SQL function migration 098 uses) so each Post carries
 // real inReplyTo/quotes edges that GET /thread can resolve.
 //
+// Article-target resolution (UNIVERSAL-POST P1-2 fix): a native article's post_id is
+// minted from its naddr COORDINATE '30023:<pubkey>:<dtag>' (migration 098), but a
+// kind-1 reply/quote stores the article's raw EVENT id in reply_to_event_id /
+// quoted_event_id. Deriving straight from the event id would mint a post_id that
+// matches no THING → dangling edge → orphaned thread node. So when the stored event
+// id is in fact an article's event id, resolve it to that article's coordinate before
+// deriving; otherwise (a note target) fall through to the event id, which is correct.
+// Read-side only — repairs existing rows with no migration / re-ingest.
+export const nostrTargetPostId = (col: string) => `feed_items_derive_post_id('nostr', COALESCE(
+    (SELECT '30023:' || ac2.nostr_pubkey || ':' || art2.nostr_d_tag
+       FROM articles art2 JOIN accounts ac2 ON ac2.id = art2.writer_id
+      WHERE art2.nostr_event_id = ${col}
+        AND ac2.nostr_pubkey IS NOT NULL AND art2.nostr_d_tag IS NOT NULL),
+    ${col}))`;
+
 // Leading comma: appended directly after FEED_SELECT in `SELECT ${FEED_SELECT}${POST_SELECT}`.
 export const POST_SELECT = `,
   fi.post_id AS post_id, fi.version AS version,
@@ -92,11 +107,11 @@ export const POST_SELECT = `,
   xa.handle AS xa_handle, xa.handle_uri AS xa_handle_uri, xa.avatar AS xa_avatar,
   vt.upvote_count AS vt_up, vt.downvote_count AS vt_down,
   CASE
-    WHEN n.reply_to_event_id IS NOT NULL THEN feed_items_derive_post_id('nostr', n.reply_to_event_id)
+    WHEN n.reply_to_event_id IS NOT NULL THEN ${nostrTargetPostId("n.reply_to_event_id")}
     WHEN ei.source_reply_uri IS NOT NULL THEN feed_items_derive_post_id(fi.source_protocol::text, ei.source_reply_uri)
   END AS in_reply_to_post_id,
   CASE
-    WHEN n.quoted_event_id IS NOT NULL THEN feed_items_derive_post_id('nostr', n.quoted_event_id)
+    WHEN n.quoted_event_id IS NOT NULL THEN ${nostrTargetPostId("n.quoted_event_id")}
     WHEN ei.source_quote_uri IS NOT NULL THEN feed_items_derive_post_id(fi.source_protocol::text, ei.source_quote_uri)
   END AS quotes_post_id`;
 
