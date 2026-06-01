@@ -99,6 +99,10 @@ export interface Post {
   isDeleted: boolean;
   isMuted: boolean;
   feedItemId: string | null; // client transitional: keys vote/quote/parent fetches
+  // client transitional: the external_item id the interact-back endpoints key on
+  // (externalItems.like/repost/reply/pollVote, engagement). Distinct from `id`
+  // (the deterministic post_id) and `feedItemId`. NULL for native posts.
+  externalItemId: string | null;
   pricePence?: number; // client transitional: gated-article CTA price
   // client transitional: native article d-tag — the reader-pane (§3.1 / Phase R)
   // opens native articles at /article/<dTag>. Null for notes + external.

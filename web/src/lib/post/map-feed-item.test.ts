@@ -85,6 +85,11 @@ describe("mapFeedItemToPost — native", () => {
     expect(p.author.pubkey).toBe("pub-def");
     expect(p.biddabilityTier).toBe("A");
   });
+
+  it("leaves externalItemId null for native posts", () => {
+    expect(mapFeedItemToPost(article).externalItemId).toBeNull();
+    expect(mapFeedItemToPost(note).externalItemId).toBeNull();
+  });
 });
 
 describe("mapFeedItemToPost — external tier derivation (§7 / migration 099)", () => {
@@ -129,5 +134,11 @@ describe("mapFeedItemToPost — external tier derivation (§7 / migration 099)",
     expect(p.originCounts).toEqual({ like: 5, reply: 2, repost: 1 });
     const n = mapFeedItemToPost(ext({ title: null }));
     expect(n.type).toBe("note");
+  });
+
+  it("surfaces externalItemId as the external_item id, distinct from post_id", () => {
+    const p = mapFeedItemToPost(ext({ id: "ext-99", postId: "deadbeef".repeat(8) }));
+    expect(p.id).toBe("deadbeef".repeat(8)); // post_id (the /thread key)
+    expect(p.externalItemId).toBe("ext-99"); // the interact-back key
   });
 });

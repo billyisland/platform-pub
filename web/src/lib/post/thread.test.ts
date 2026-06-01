@@ -43,6 +43,7 @@ function p(
     isDeleted: false,
     isMuted: false,
     feedItemId: null,
+    externalItemId: null,
   };
 }
 

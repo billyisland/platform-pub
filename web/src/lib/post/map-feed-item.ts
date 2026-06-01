@@ -73,6 +73,7 @@ function mapArticle(item: ArticleEvent): Post {
     isDeleted: false,
     isMuted: false,
     feedItemId: item.feedItemId ?? null,
+    externalItemId: null, // native
     pricePence: item.pricePence,
     // The reader pane opens native articles at /article/<dTag> (§3.1 / Phase R).
     dTag: item.dTag,
@@ -119,6 +120,7 @@ function mapNote(item: NoteEvent): Post {
     isDeleted: false,
     isMuted: false,
     feedItemId: item.feedItemId ?? null,
+    externalItemId: null, // native
     quotedPreview: item.quotedEventId
       ? {
           title: item.quotedTitle,
@@ -178,6 +180,9 @@ function mapExternal(item: ExternalFeedItem): Post {
     isDeleted: false,
     isMuted: false,
     feedItemId: item.feedItemId ?? null,
+    // The external_item id — the key for like/repost/reply/poll/engagement.
+    // Distinct from `id` (post_id) once the gateway surfaces post_id.
+    externalItemId: item.id,
   };
 }
 

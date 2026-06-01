@@ -30,6 +30,7 @@ function makePost(over: Partial<Post> = {}): Post {
     isDeleted: false,
     isMuted: false,
     feedItemId: null,
+    externalItemId: null,
     ...over,
   };
 }

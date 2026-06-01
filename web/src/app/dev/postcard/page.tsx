@@ -71,6 +71,7 @@ function basePost(over: Partial<Post>): Post {
     isDeleted: false,
     isMuted: false,
     feedItemId: "fi-sample-1",
+    externalItemId: null,
     quotedPreview: {
       author: "PRIOR VOICE",
       title: "On the address as identity",
