@@ -759,16 +759,17 @@ function AppearanceControl({
           gap: 8,
           minWidth: 88,
           padding: "6px 10px",
-          background: "transparent",
-          border: `1px solid ${TOKENS.inputBorder}`,
+          // Resting affordance is a subtle fill (the design system bans thin
+          // rules sitewide); hover deepens it.
+          background: TOKENS.matchHoverBg,
           color: TOKENS.panelBorder,
           cursor: "pointer",
         }}
         onMouseEnter={(e) =>
-          (e.currentTarget.style.background = TOKENS.matchHoverBg)
+          (e.currentTarget.style.background = TOKENS.inputBorder)
         }
         onMouseLeave={(e) =>
-          (e.currentTarget.style.background = "transparent")
+          (e.currentTarget.style.background = TOKENS.matchHoverBg)
         }
       >
         <span style={{ display: "inline-flex", alignItems: "center" }}>

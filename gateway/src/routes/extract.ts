@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
+import { sanitizeArticleContent } from "@platform-pub/shared/lib/sanitize.js";
 import { requireAuth } from "../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
@@ -79,7 +80,9 @@ export async function extractRoutes(app: FastifyInstance) {
 
         const result: ExtractResult = {
           title: article.title ?? "",
-          content: article.content,
+          // Readability does NOT sanitize — strip scripts/handlers/dangerous
+          // schemes before this reaches the client's dangerouslySetInnerHTML.
+          content: sanitizeArticleContent(article.content),
           siteName: article.siteName ?? parsed.hostname,
           excerpt: article.excerpt ?? "",
           byline: article.byline ?? "",

@@ -548,7 +548,11 @@ export async function postThreadRoutes(app: FastifyInstance) {
       // viewers get the focal THING (free portion only) but no comment bodies.
       if (rootPost.accessMode === "gated") {
         let hasAccess = false;
-        if (viewerId && focalFeedItem) {
+        if (viewerId) {
+          // Re-fetch article ids for the access check, keyed on the conversation
+          // ROOT THING (not the focal): a viewer deep-linking to a comment inside
+          // a gated article must still get the access check, else a paying reader
+          // is wrongly paywalled out of the thread.
           // re-fetch article ids for the access check
           const a = await pool.query<{
             id: string;

@@ -48,6 +48,26 @@ function isParameterizedReplaceable(kind: number): boolean {
   return kind >= 30000 && kind < 40000;
 }
 
+// Relay-FREE nostr THING identity (UNIVERSAL-POST §2.1, C1 fix).
+//
+// feed_items.post_id is derived from external_items.source_item_uri (the 098
+// trigger), and source_item_uri is also the (protocol, source_item_uri) upsert
+// dedup key. Relay hints therefore MUST NOT enter this encoding: if they did,
+//   (a) the same event from two relay sources would mint two different post_ids
+//       (and two THING rows), defeating §5 dedup-to-one, and
+//   (b) a boost — which only knows the target's id/coordinate, never the relay
+//       hints the THING happened to be fetched with — could never reconstruct
+//       the THING's key, so nostr boosts would never re-float or attribute.
+// Relay hints survive in external_items.interaction_data for fetch/links; they
+// are deliberately excluded from identity. Used by BOTH the THING path and
+// detectNostrRepost so the two encodings cannot drift (the original C1 hazard).
+function nostrEventUri(id: string): string {
+  return nip19.neventEncode({ id });
+}
+function nostrAddrUri(kind: number, pubkey: string, identifier: string): string {
+  return nip19.naddrEncode({ kind, pubkey, identifier });
+}
+
 export const feedIngestNostr: Task = async (payload, _helpers) => {
   const { sourceId } = payload as { sourceId: string };
 
@@ -394,12 +414,8 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
         )
           continue;
 
-        const naddr = nip19.naddrEncode({
-          identifier: dTag ?? "",
-          pubkey: aPubkey,
-          kind,
-          relays: source.relay_urls,
-        });
+        // Relay-free, to match the THING's relay-free source_item_uri.
+        const naddr = nostrAddrUri(kind, aPubkey, dTag ?? "");
 
         await pool.query(
           `UPDATE external_items SET deleted_at = now()
@@ -636,19 +652,35 @@ interface NormalisedNostrItem {
 // or the 'a' tag ("kind:pubkey:d-tag" addressable coordinate). The booster is
 // the event pubkey; the kind-6/16 event id is the boost's own origin id.
 //
-// targetHandle is the RAW event id / addressable coordinate — relay-independent
-// and deterministic, so two sources boosting one event resolve to one
-// target_post_id (edge-level cross-source dedup). NOTE: this does not always
-// match the boosted THING's feed_items.post_id, which is derived from the
-// relay-encoded nevent/naddr (see repost-edge.ts known-limitation note); nostr
-// edge→THING binding is best-effort until nostr identity is relay-normalised.
+// targetHandle is the boosted THING's RELAY-FREE source_item_uri, produced by
+// the SAME nostrEventUri/nostrAddrUri helpers the THING path uses (C1 fix). An
+// addressable target (long-form, stored under naddr) is referenced by the 'a'
+// tag and so takes precedence; a regular note (stored under nevent) by the 'e'
+// tag. Because both sides share the encoders, the edge's target_post_id now
+// equals the boosted THING's feed_items.post_id, so the boost re-floats and
+// attributes its THING (and two sources boosting one event still dedup to one
+// target_post_id, since the encoding carries no relay hints).
 // =============================================================================
 export function detectNostrRepost(event: NostrEvent): DetectedRepost | null {
   if (event.kind !== 6 && event.kind !== 16) return null;
-  const eTag = event.tags.find((t) => t[0] === "e" && t[1]);
   const aTag = event.tags.find((t) => t[0] === "a" && t[1]);
-  const targetHandle = eTag?.[1] ?? aTag?.[1] ?? null;
+  const eTag = event.tags.find((t) => t[0] === "e" && t[1]);
+
+  let targetHandle: string | null = null;
+  if (aTag) {
+    // 'a' coordinate is "<kind>:<pubkey>:<d-identifier>"; the d-identifier may
+    // itself contain ':' so keep everything after the second colon.
+    const [kindStr, pubkey, ...rest] = aTag[1].split(":");
+    const kind = parseInt(kindStr ?? "", 10);
+    if (Number.isFinite(kind) && pubkey) {
+      targetHandle = nostrAddrUri(kind, pubkey, rest.join(":"));
+    }
+  }
+  if (!targetHandle && eTag) {
+    targetHandle = nostrEventUri(eTag[1]);
+  }
   if (!targetHandle) return null;
+
   return {
     protocol: "nostr_external",
     targetProtocol: "nostr_external",
@@ -666,17 +698,14 @@ function normaliseNostrEvent(
   // Key parameterized-replaceable events (kind 30023 long-form, etc.) under
   // naddr so successive revisions of the same (pubkey, kind, d-tag) upsert
   // into one row. Everything else is keyed on event id via nevent.
+  // Relay-free identity (see nostrEventUri/nostrAddrUri). post_id + the upsert
+  // dedup key + reply-threading all key off these, so they must be relay-stable.
   let sourceItemUri: string;
   if (isParameterizedReplaceable(event.kind)) {
     const dTag = event.tags.find((t) => t[0] === "d")?.[1] ?? "";
-    sourceItemUri = nip19.naddrEncode({
-      identifier: dTag,
-      pubkey: event.pubkey,
-      kind: event.kind,
-      relays: relayUrls,
-    });
+    sourceItemUri = nostrAddrUri(event.kind, event.pubkey, dTag);
   } else {
-    sourceItemUri = nip19.neventEncode({ id: event.id, relays: relayUrls });
+    sourceItemUri = nostrEventUri(event.id);
   }
 
   // Extract reply target (NIP-10: last 'e' tag with 'reply' marker, or last 'e' tag)
@@ -686,10 +715,8 @@ function normaliseNostrEvent(
     eTags.find((t) => t[3] === "reply") ??
     (eTags.length > 0 ? eTags[eTags.length - 1] : null);
   if (replyTag) {
-    sourceReplyUri = nip19.neventEncode({
-      id: replyTag[1],
-      relays: replyTag[2] ? [replyTag[2]] : relayUrls,
-    });
+    // Relay-free so a reply's parent ref matches the parent THING's source_item_uri.
+    sourceReplyUri = nostrEventUri(replyTag[1]);
   }
 
   // For kind 30023 (long-form), extract title from tags

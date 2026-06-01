@@ -6,6 +6,7 @@ import {
 } from "../adapters/atproto.js";
 import { detectActivityPubRepost } from "../adapters/activitypub.js";
 import { detectNostrRepost } from "../tasks/feed-ingest-nostr.js";
+import { nip19 } from "nostr-tools";
 
 // =============================================================================
 // Phase 0c repost detection — pure-function coverage for every detecting
@@ -182,52 +183,91 @@ describe("detectActivityPubRepost", () => {
 });
 
 describe("detectNostrRepost", () => {
+  // Valid 32-byte hex (the encoders reject malformed ids/pubkeys).
+  const EVENT_ID = "a".repeat(64);
+  const AUTHOR_PK = "b".repeat(64);
   const base = {
-    id: "boostevent00",
-    pubkey: "boosterpubkey",
+    id: "c".repeat(64),
+    pubkey: "d".repeat(64),
     created_at: 1_780_000_000,
     sig: "sig",
     content: "",
   };
 
-  it("detects a kind-6 note repost via the e tag", () => {
+  it("encodes a kind-6 note repost as the THING's relay-free nevent", () => {
+    // C1 parity: the edge target equals the boosted note's relay-free
+    // source_item_uri — nip19.neventEncode({id}) with NO relay hints — so it
+    // joins the THING's feed_items.post_id. A relay hint on the tag is ignored.
     const r = detectNostrRepost({
       ...base,
       kind: 6,
-      tags: [["e", "originaleventid", "wss://relay.example"]],
+      tags: [["e", EVENT_ID, "wss://relay.example"]],
     });
     expect(r).not.toBeNull();
     expect(r!.protocol).toBe("nostr_external");
-    expect(r!.targetHandle).toBe("originaleventid");
-    expect(r!.actorHandle).toBe("boosterpubkey");
-    expect(r!.originUri).toBe("boostevent00");
+    expect(r!.targetHandle).toBe(nip19.neventEncode({ id: EVENT_ID }));
+    expect(r!.actorHandle).toBe(base.pubkey);
+    expect(r!.originUri).toBe(base.id);
     expect(r!.boostedAt.getTime()).toBe(1_780_000_000 * 1000);
   });
 
-  it("detects a kind-16 generic repost via the a tag", () => {
+  it("encodes a kind-16 addressable repost as the THING's relay-free naddr", () => {
     const r = detectNostrRepost({
       ...base,
       kind: 16,
-      tags: [["a", "30023:authorpubkey:my-article"]],
+      tags: [["a", `30023:${AUTHOR_PK}:my-article`]],
     });
-    expect(r!.targetHandle).toBe("30023:authorpubkey:my-article");
+    expect(r!.targetHandle).toBe(
+      nip19.naddrEncode({ kind: 30023, pubkey: AUTHOR_PK, identifier: "my-article" }),
+    );
   });
 
-  it("prefers the e tag over the a tag", () => {
+  it("prefers the addressable 'a' coordinate (naddr THING) over the 'e' tag", () => {
+    // An addressable target is stored under naddr, so when a boost carries both
+    // a specific-version 'e' and the 'a' coordinate, the 'a' tag is what joins.
     const r = detectNostrRepost({
       ...base,
-      kind: 6,
+      kind: 16,
       tags: [
-        ["a", "30023:authorpubkey:my-article"],
-        ["e", "originaleventid"],
+        ["a", `30023:${AUTHOR_PK}:my-article`],
+        ["e", EVENT_ID],
       ],
     });
-    expect(r!.targetHandle).toBe("originaleventid");
+    expect(r!.targetHandle).toBe(
+      nip19.naddrEncode({ kind: 30023, pubkey: AUTHOR_PK, identifier: "my-article" }),
+    );
+  });
+
+  it("keeps a ':' inside the d-identifier of an 'a' coordinate", () => {
+    const r = detectNostrRepost({
+      ...base,
+      kind: 16,
+      tags: [["a", `30023:${AUTHOR_PK}:weird:id:with:colons`]],
+    });
+    expect(r!.targetHandle).toBe(
+      nip19.naddrEncode({
+        kind: 30023,
+        pubkey: AUTHOR_PK,
+        identifier: "weird:id:with:colons",
+      }),
+    );
+  });
+
+  it("falls back to the 'e' tag when the 'a' coordinate is malformed", () => {
+    const r = detectNostrRepost({
+      ...base,
+      kind: 16,
+      tags: [
+        ["a", "not-a-coordinate"],
+        ["e", EVENT_ID],
+      ],
+    });
+    expect(r!.targetHandle).toBe(nip19.neventEncode({ id: EVENT_ID }));
   });
 
   it("ignores a kind-1 note (that is a THING)", () => {
     expect(
-      detectNostrRepost({ ...base, kind: 1, tags: [["e", "x"]] }),
+      detectNostrRepost({ ...base, kind: 1, tags: [["e", EVENT_ID]] }),
     ).toBeNull();
   });
 

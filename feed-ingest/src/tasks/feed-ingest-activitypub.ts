@@ -7,6 +7,7 @@ import {
   recordInstanceSuccess,
   recordInstanceFailure,
 } from "../lib/activitypub-ingest.js";
+import { recordRepostEdge } from "../lib/repost-edge.js";
 
 // =============================================================================
 // feed_ingest_activitypub — per-source Mastodon outbox poll.
@@ -99,7 +100,7 @@ export const feedIngestActivityPub: Task = async (payload, helpers) => {
   try {
     const actor = await fetchActor(source.source_uri);
 
-    const { items, newCursor } = await fetchOutbox(actor, {
+    const { items, reposts, newCursor } = await fetchOutbox(actor, {
       outboxUrl: actor.outbox,
       cursor: source.cursor,
       cutoffMs,
@@ -122,6 +123,22 @@ export const feedIngestActivityPub: Task = async (payload, helpers) => {
             sourceId: source.id,
           });
         }
+      }
+    }
+
+    // Record Announce boosts as repost edges (UNIVERSAL-POST §2.2): a boost has
+    // no body, so it is an edge to the boosted THING, not a THING of its own.
+    for (const repost of reposts) {
+      try {
+        await withTransaction(async (client) =>
+          recordRepostEdge(client, repost),
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(
+          { sourceId: source.id, originUri: repost.originUri, err: msg },
+          "Failed to record ActivityPub repost edge",
+        );
       }
     }
 

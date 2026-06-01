@@ -29,7 +29,7 @@ TARGETS=("${@:-$ROOT/web/src}")
 # focus outlines and 4px slab rules).
 PATTERNS=(
   "literal 1px (border/shadow/size)::(?<![0-9])1px"
-  "tailwind bare 1px border width::[\"'\` ]border(-[tblrxyse])?[\"'\` ]"
+  "tailwind bare 1px border width::[\"'\` :]border(-[tblrxyse])?[\"'\` ]"
   "tailwind 1px arbitrary border::border-\[1px\]|border-(t|b|l|r|x|y|s|e)-\[1px\]"
   "tailwind divide (1px between children)::\bdivide-[xy](?!-[0-9])"
   "tailwind 1px ring::\bring-(1|px)\b"

@@ -59,13 +59,11 @@ export function QuotedPostTile({ itemId, palette }: Props) {
       .finally(() => setLoading(false));
   }, [itemId]);
 
-  const border = `1px solid ${palette.cardMeta}33`;
-
   if (loading) {
     return (
       <div
         className="mt-2.5 mb-1.5 animate-pulse p-2.5"
-        style={{ opacity: 0.4, border }}
+        style={{ opacity: 0.4, background: palette.interior }}
       >
         <div
           className="h-3 rounded mb-2"
@@ -89,7 +87,10 @@ export function QuotedPostTile({ itemId, palette }: Props) {
   const link = media.find((m) => m.type === "link" && m.url);
 
   return (
-    <div className="mt-2.5 mb-1.5 p-2.5" style={{ border }}>
+    <div
+      className="mt-2.5 mb-1.5 p-2.5"
+      style={{ background: palette.interior }}
+    >
       <div
         className="font-mono text-[10px] uppercase tracking-[0.06em] mb-1.5"
         style={{ color: palette.cardMeta }}
@@ -129,7 +130,12 @@ export function QuotedPostTile({ itemId, palette }: Props) {
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
           className="no-underline mt-2"
-          style={{ display: "flex", gap: 10, padding: 8, border }}
+          style={{
+            display: "flex",
+            gap: 10,
+            padding: 8,
+            background: palette.cardBg,
+          }}
         >
           {link.thumbnail && (
             <img
