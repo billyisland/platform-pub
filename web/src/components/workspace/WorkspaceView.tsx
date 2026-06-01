@@ -24,7 +24,7 @@ import type {
 } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
 import { VesselCard, NewUserVesselCard, type NewUserItem } from "./VesselCard";
-import { PostCard } from "../post/PostCard";
+import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
 import type { Post } from "../../lib/post/types";
@@ -905,10 +905,11 @@ export function WorkspaceView() {
                           );
                         }
                         return (
-                          <PostCard
+                          <PostCardInteractive
                             key={item.id}
                             post={post}
                             level="feed"
+                            expanded={false}
                             ctx={ctx}
                             onPipOpen={onPipOpen}
                             onExpand={toggleExpand}

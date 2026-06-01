@@ -28,7 +28,7 @@ import React, { useEffect, useRef } from "react";
 import { usePostThread } from "../../hooks/usePostThread";
 import { deriveThreadView } from "../../lib/post/thread";
 import type { Post } from "../../lib/post/types";
-import { PostCard } from "./PostCard";
+import { PostCardInteractive } from "./PostCardInteractive";
 import type { CardContext, PipOpen } from "./chassis";
 
 export function PostThread({
@@ -137,12 +137,15 @@ export function PostThread({
         </button>
       )}
 
-      {/* Ancestors — root-first, above the focal (thread-parent level). */}
+      {/* Ancestors — root-first, above the focal (thread-parent level). Keyed by
+          p.id (not a level-prefix) so re-rooting among loaded nodes doesn't
+          needlessly remount and drop optimistic interact-back state. */}
       {ancestors.map((p) => (
-        <PostCard
-          key={`anc-${p.id}`}
+        <PostCardInteractive
+          key={p.id}
           post={p}
           level="thread-parent"
+          expanded={false}
           ctx={ctx}
           onPipOpen={onPipOpen}
           onReroot={(x) => thread.reroot(x.id)}
@@ -153,11 +156,14 @@ export function PostThread({
         />
       ))}
 
-      {/* Focal — full rich card; click collapses the whole card (§4 matrix). */}
+      {/* Focal — full rich card; click collapses the whole card (§4 matrix).
+          expanded → fresh-on-expand origin counters fetch for the focal only. */}
       <div ref={focalRef}>
-        <PostCard
+        <PostCardInteractive
+          key={focal.id}
           post={focal}
           level="focal"
+          expanded
           ctx={ctx}
           onPipOpen={onPipOpen}
           onCollapse={() => onCollapse?.()}
@@ -170,10 +176,11 @@ export function PostThread({
 
       {/* Replies — chronological, below the focal (thread-reply level). */}
       {descendants.map((p) => (
-        <PostCard
-          key={`rep-${p.id}`}
+        <PostCardInteractive
+          key={p.id}
           post={p}
           level="thread-reply"
+          expanded={false}
           ctx={ctx}
           onPipOpen={onPipOpen}
           onReroot={(x) => thread.reroot(x.id)}

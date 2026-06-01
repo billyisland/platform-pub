@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageShell } from "../../../components/ui/PageShell";
-import { PostCard } from "../../../components/post/PostCard";
+import { PostCardInteractive } from "../../../components/post/PostCardInteractive";
 import { PostThread } from "../../../components/post/PostThread";
 import type { CardContext } from "../../../components/post/chassis";
 import {
@@ -253,10 +253,11 @@ export function AuthorProfileView({ authorId }: { authorId: string }) {
                 onOpenReader={openReader}
               />
             ) : (
-              <PostCard
+              <PostCardInteractive
                 key={post.id}
                 post={post}
                 level="feed"
+                expanded={false}
                 ctx={CTX}
                 onExpand={() => toggleExpand(post.id)}
                 onOpenReader={openReader}
