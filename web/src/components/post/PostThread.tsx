@@ -37,6 +37,7 @@ export function PostThread({
   onCollapse,
   onReply,
   onReport,
+  onOpenReader,
   onPipOpen,
   currentUserPubkey,
 }: {
@@ -45,6 +46,9 @@ export function PostThread({
   onCollapse?: () => void;
   onReply?: (post: Post) => void;
   onReport?: (post: Post) => void;
+  // Article nodes (e.g. an article root rendered as a thread-parent) click
+  // through to the reader pane (§3.1) rather than re-rooting.
+  onOpenReader?: (post: Post) => void;
   onPipOpen?: PipOpen;
   currentUserPubkey?: string | null;
 }) {
@@ -142,6 +146,7 @@ export function PostThread({
           ctx={ctx}
           onPipOpen={onPipOpen}
           onReroot={(x) => thread.reroot(x.id)}
+          onOpenReader={onOpenReader}
           onReply={nativeReply(p)}
           onReport={nativeReport(p)}
           isOwnContent={isOwn(p)}
@@ -156,6 +161,7 @@ export function PostThread({
           ctx={ctx}
           onPipOpen={onPipOpen}
           onCollapse={() => onCollapse?.()}
+          onOpenReader={onOpenReader}
           onReply={nativeReply(focal)}
           onReport={nativeReport(focal)}
           isOwnContent={isOwn(focal)}
@@ -171,6 +177,7 @@ export function PostThread({
           ctx={ctx}
           onPipOpen={onPipOpen}
           onReroot={(x) => thread.reroot(x.id)}
+          onOpenReader={onOpenReader}
           onReply={nativeReply(p)}
           onReport={nativeReport(p)}
           isOwnContent={isOwn(p)}

@@ -46,7 +46,8 @@ import type { PipStatus } from "../../lib/ndk";
 import { NewFeedPrompt } from "./NewFeedPrompt";
 import { FeedComposer } from "./FeedComposer";
 import { ForallCeremony } from "./ForallCeremony";
-import { ReaderPane } from "./ReaderPane";
+import { ReaderOverlay } from "./ReaderOverlay";
+import { useReader } from "../../stores/reader";
 import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
 import { NotificationsAnchor } from "./NotificationsAnchor";
@@ -875,6 +876,21 @@ export function WorkspaceView() {
                           });
                           setComposerOpen("note");
                         };
+                        // Article click → reader pane (§3.1 / Phase R). Native by
+                        // d-tag (/article/<dTag>), external by URL (/reader/<postId>).
+                        // Actions are stable refs, so getState() avoids subscribing.
+                        const openReaderFromPost = (p: Post) => {
+                          const reader = useReader.getState();
+                          if (p.author.pubkey) {
+                            if (p.dTag) reader.openNative(p.dTag, { postId: p.id });
+                          } else {
+                            reader.openExternal(p.origin.uri, {
+                              postId: p.id,
+                              title: p.body.title,
+                              siteName: p.origin.sourceName,
+                            });
+                          }
+                        };
                         if (isExpanded && post.type !== "article") {
                           return (
                             <PostThread
@@ -883,6 +899,7 @@ export function WorkspaceView() {
                               ctx={ctx}
                               onCollapse={toggleExpand}
                               onReply={replyFromPost}
+                              onOpenReader={openReaderFromPost}
                               onPipOpen={onPipOpen}
                             />
                           );
@@ -895,6 +912,7 @@ export function WorkspaceView() {
                             ctx={ctx}
                             onPipOpen={onPipOpen}
                             onExpand={toggleExpand}
+                            onOpenReader={openReaderFromPost}
                             onReply={
                               post.author.pubkey
                                 ? () => replyFromPost(post)
@@ -1125,7 +1143,7 @@ export function WorkspaceView() {
           }}
         />
       )}
-      <ReaderPane />
+      <ReaderOverlay />
     </Floor>
   );
 }

@@ -71,6 +71,7 @@ describe("mapFeedItemToPost — native", () => {
     expect(p.biddabilityTier).toBe("A");
     expect(p.originCounts).toBeNull(); // native (§6)
     expect(p.body.title).toBe("An Essay");
+    expect(p.dTag).toBe("my-essay"); // Phase R: reader pane opens /article/<dTag>
   });
 
   it("maps a note, keeping full text and empty media (extracted at render)", () => {

@@ -100,6 +100,9 @@ export interface Post {
   isMuted: boolean;
   feedItemId: string | null; // client transitional: keys vote/quote/parent fetches
   pricePence?: number; // client transitional: gated-article CTA price
+  // client transitional: native article d-tag — the reader-pane (§3.1 / Phase R)
+  // opens native articles at /article/<dTag>. Null for notes + external.
+  dTag?: string | null;
   // client transitional: native note quote preview (the gateway model resolves
   // `quotes` to a child Post via /thread; until that is wired, the workspace
   // payload carries an inline excerpt we render as the quoted-level mini).

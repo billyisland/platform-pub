@@ -74,6 +74,8 @@ function mapArticle(item: ArticleEvent): Post {
     isMuted: false,
     feedItemId: item.feedItemId ?? null,
     pricePence: item.pricePence,
+    // The reader pane opens native articles at /article/<dTag> (§3.1 / Phase R).
+    dTag: item.dTag,
   };
 }
 

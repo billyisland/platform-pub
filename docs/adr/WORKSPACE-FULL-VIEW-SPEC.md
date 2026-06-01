@@ -458,7 +458,7 @@ All interaction endpoints (`like`, `repost`, `reply`, `poll-vote`) require auth 
 
 | Component          | Location                                            | Purpose                                                            |
 | ------------------ | --------------------------------------------------- | ------------------------------------------------------------------ |
-| `ReaderPane`       | `web/src/components/workspace/ReaderPane.tsx`       | Article overlay with Readability-extracted content                 |
+| `ReaderOverlay`    | `web/src/components/workspace/ReaderOverlay.tsx`    | Unified article reader overlay (native + external; superseded `ReaderPane`, UNIVERSAL-POST Phase R) |
 | `InlineReplyBox`   | `web/src/components/workspace/InlineReplyBox.tsx`   | Text field for replying to external items within thread expansion  |
 | `EngagementCounts` | `web/src/components/workspace/EngagementCounts.tsx` | Normalised heart/speech-bubble/repost display with live-fetch hook |
 | `ContentWarning`   | `web/src/components/workspace/ContentWarning.tsx`   | Collapsible CW wrapper for Mastodon spoiler text                   |
