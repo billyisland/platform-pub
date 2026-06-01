@@ -17,7 +17,7 @@ import type { Level, BiddabilityTier, Post } from "./types";
 // here it only governs parent/reply offset in the harness.
 const INDENT_STEP_PX = 32;
 
-const GAP_PX = { feed: 40, tight: 32, none: 0 } as const; // CLAUDE feed/thread rhythm
+const GAP_PX = { feed: 10, tight: 5, none: 0 } as const; // CLAUDE feed/thread rhythm
 
 type BodyMode = "expanded" | "full" | "one-line";
 type MediaMode = "full-width" | "sized" | "single-thumbnail" | "none";
@@ -47,7 +47,7 @@ export const LEVEL_SPEC: Record<Level, LevelSpec> = {
   focal: {
     textScale: 1.0,
     indentStep: 0,
-    gapBelow: "none",
+    gapBelow: "tight",
     body: "expanded",
     media: "full-width",
     video: "autoplay-unmute",

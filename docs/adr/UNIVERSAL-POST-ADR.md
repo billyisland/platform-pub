@@ -152,7 +152,7 @@ Affordance columns are subject to the biddability gate in §7 (e.g. "origin coun
 |---|---|---|---|---|---|---|
 | **text size** | base (100%) | 100% | 90% | 90% | 85% | 85% |
 | **indent** | 0 | 0 | +1 step | +1 step | inside host | 0 |
-| **gap below** | — | feed gap | tight | tight | — | tight |
+| **gap below** | tight | feed gap | tight | tight | — | tight |
 | **byline + pip** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **origin tag** (handle@site → origin) | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
 | **body text** | full | full | full | full | full | 1 line, truncated |
@@ -169,6 +169,7 @@ Notes:
 - **Quoted** is deliberately minimal — **byline + body only** (text, plus one media thumbnail since that is body content). No origin tag, no actions, no counters, no nested quote. The whole card remains clickable to re-root into it.
 - **Parent and reply are identical in capability**; they differ only in position (above vs below the focal) and re-root behaviour is the same.
 - **condensed** is provisional — the condensed-feed mode was never fully specified. The row above is a sensible minimum (byline + one-line body + inline numerals + expand-on-click) pending its own spec.
+- **Gap values** (`GAP_PX`, `web/src/lib/post/level-spec.ts`, applied as each card's `marginBottom` — there is no wrapping `space-y`): **feed gap = 10px** between independent feed items; **tight = 5px** within an expanded conversational chain. As of 2026-06-01 the focal's own gap-below was widened from none (`—`) to `tight` so it sits 5px above its first reply, making the whole chain (ancestors · focal · replies) a uniform 5px beat. (Tightened from the original 40px feed / 32px tight at the same time.)
 - **Context-only / deleted / muted Posts** (the §2.2 flags) never appear as feed cards: `isContextOnly` Posts surface only inside a thread walk, `isDeleted` renders a tombstone entry in threads (never a card), and `isMuted` collapses by default with a reveal affordance.
 
 ### 4.1 Expansion behaviour (feed → focal)
