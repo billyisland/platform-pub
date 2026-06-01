@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { nostrTargetPostId, POST_SELECT } from "../src/lib/post-mapper.js";
+import {
+  nostrTargetPostId,
+  POST_SELECT,
+  feedItemToPost,
+} from "../src/lib/post-mapper.js";
 
 // These guard the P1-2 fix: a native kind-1 reply/quote stores the target's raw
 // nostr EVENT id, but a native article's deterministic post_id is minted from its
@@ -62,5 +66,42 @@ describe("POST_SELECT routes nostr reply/quote edges through the resolver", () =
     expect(POST_SELECT).toContain(
       "feed_items_derive_post_id(fi.source_protocol::text, ei.source_quote_uri)",
     );
+  });
+});
+
+// Guards the Phase-5 KNOWN GAP fix: the /thread projector must surface the
+// external_item id as Post.externalItemId so the focal card's like/repost/reply
+// interact-back enables (web's usePostInteractions gates `active` on it). Before
+// the fix the field was never emitted → buttons rendered inert for every external
+// thread node despite a valid linked account.
+describe("feedItemToPost surfaces the external interact-back key", () => {
+  it("emits externalItemId for an external THING", () => {
+    const post = feedItemToPost({
+      item_type: "external",
+      external_item_id: "ext-123",
+      post_id: "deadbeef",
+      source_protocol: "atproto",
+      published_at_epoch: 1000,
+    });
+    expect(post.externalItemId).toBe("ext-123");
+  });
+
+  it("leaves externalItemId null for a native THING (scoresheet, not interact-back)", () => {
+    expect(
+      feedItemToPost({
+        item_type: "note",
+        external_item_id: null,
+        post_id: "cafe",
+        published_at_epoch: 1000,
+      }).externalItemId,
+    ).toBeNull();
+    expect(
+      feedItemToPost({
+        item_type: "article",
+        external_item_id: null,
+        post_id: "f00d",
+        published_at_epoch: 1000,
+      }).externalItemId,
+    ).toBeNull();
   });
 });

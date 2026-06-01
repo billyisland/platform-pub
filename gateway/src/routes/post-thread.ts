@@ -133,6 +133,7 @@ function commentToPost(
     isDeleted: !!c.deleted_at,
     isMuted: mutedIds.has(c.author_id),
     feedItemId: null,
+    externalItemId: null, // native comment — engagement is the all.haus scoresheet
   };
 }
 

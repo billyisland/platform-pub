@@ -63,6 +63,7 @@ export interface Post {
   isDeleted: boolean;
   isMuted: boolean;
   feedItemId: string | null; // legacy id, transitional
+  externalItemId: string | null; // external_items uuid — the origin interact-back key (like/repost/reply); null native
 }
 
 export interface RepostEdgeDTO {
@@ -238,5 +239,9 @@ export function feedItemToPost(row: any): Post {
     isMuted: false,
     // legacy id retained transitionally for clients still keyed on feed_items.id
     feedItemId: row.fi_id ?? null,
+    // external interact-back key: like/repost/reply dispatch to the origin via the
+    // external_items row (FEED_SELECT carries fi.external_item_id). Null for native —
+    // native engagement is the all.haus scoresheet, not an origin interact-back.
+    externalItemId: isExternal ? (row.external_item_id ?? null) : null,
   };
 }
