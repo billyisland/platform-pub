@@ -23,6 +23,14 @@ import type { VesselPalette } from "../workspace/tokens";
 
 type BodyMode = "expanded" | "full" | "one-line";
 
+// Poll voting is supplied by usePostInteractions (external interact-back); absent
+// ⇒ the poll renders read-only (native, tiers C/D, or non-interactive renders).
+export interface PollVote {
+  canVote: boolean;
+  voting: boolean;
+  onVote: (choices: number[]) => void;
+}
+
 const NOTE_COLLAPSE_CHARS = 220; // matches NoteVesselCard collapse
 const EXTERNAL_COLLAPSE_CHARS = 200; // matches ExternalVesselCard collapse
 const ONE_LINE_CHARS = 90;
@@ -32,14 +40,16 @@ export function PostBody({
   bodyPx,
   mode,
   palette,
+  pollVote,
 }: {
   post: Post;
   bodyPx: number;
   mode: BodyMode;
   palette: VesselPalette;
+  pollVote?: PollVote;
 }) {
   const body = (
-    <BodyInner post={post} bodyPx={bodyPx} mode={mode} palette={palette} />
+    <BodyInner post={post} bodyPx={bodyPx} mode={mode} palette={palette} pollVote={pollVote} />
   );
   if (post.body.contentWarning) {
     return <ContentWarning warningText={post.body.contentWarning}>{body}</ContentWarning>;
@@ -52,11 +62,13 @@ function BodyInner({
   bodyPx,
   mode,
   palette,
+  pollVote,
 }: {
   post: Post;
   bodyPx: number;
   mode: BodyMode;
   palette: VesselPalette;
+  pollVote?: PollVote;
 }) {
   const titlePx = Math.round(bodyPx + 3.5);
 
@@ -131,7 +143,7 @@ function BodyInner({
           }}
           dangerouslySetInnerHTML={{ __html: post.body.html }}
         />
-        {post.body.poll && <PollBlock post={post} />}
+        {post.body.poll && <PollBlock post={post} pollVote={pollVote} />}
       </>
     );
   }
@@ -170,20 +182,21 @@ function BodyInner({
           {text}
         </p>
       )}
-      {post.body.poll && mode !== "one-line" && <PollBlock post={post} />}
+      {post.body.poll && mode !== "one-line" && <PollBlock post={post} pollVote={pollVote} />}
     </>
   );
 }
 
-// Read-only poll this phase — voting wires in Phase 3 (external item id path).
-function PollBlock({ post }: { post: Post }) {
+// Poll voting comes from usePostInteractions (external interact-back). Absent ⇒
+// read-only (native, tiers C/D, or non-interactive renders).
+function PollBlock({ post, pollVote }: { post: Post; pollVote?: PollVote }) {
   if (!post.body.poll) return null;
   return (
     <PollDisplay
       poll={post.body.poll}
-      canVote={false}
-      onVote={() => {}}
-      voting={false}
+      canVote={pollVote?.canVote ?? false}
+      onVote={pollVote?.onVote ?? (() => {})}
+      voting={pollVote?.voting ?? false}
     />
   );
 }

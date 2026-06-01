@@ -11,6 +11,7 @@ import { QuotedEmbed } from "./QuotedEmbed";
 import { PostCounters } from "./PostCounters";
 import { PostActions } from "./PostActions";
 import { PostOriginTag } from "./PostOriginTag";
+import type { PostInteractions } from "../../hooks/usePostInteractions";
 
 // =============================================================================
 // PostCard — the ONE card. Renders a Post at any §3 level via the §4 matrix.
@@ -41,6 +42,9 @@ export function PostCard({
   onReroot,
   onOpenReader,
   isOwnContent,
+  interactions,
+  header,
+  footer,
 }: {
   post: Post;
   level: Level;
@@ -53,12 +57,27 @@ export function PostCard({
   onReroot?: (post: Post) => void;
   onOpenReader?: (post: Post) => void;
   isOwnContent?: boolean;
+  // External interact-back (usePostInteractions), supplied by PostCardInteractive
+  // when the card is interactive. Absent ⇒ read-only counters + read-only poll.
+  interactions?: PostInteractions;
+  // Slots rendered inside the shell: `header` above the byline (parent-context
+  // tile), `footer` below the actions (inline reply box). Owned by the container.
+  header?: React.ReactNode;
+  footer?: React.ReactNode;
 }) {
   const spec = resolveSpec(level, post.biddabilityTier, post);
   const bodyPx = Math.max(
     Math.round(ctx.bodyPx * spec.textScale * 10) / 10,
     READABILITY_FLOOR_PX,
   );
+
+  const pollVote = interactions
+    ? {
+        canVote: interactions.canVote,
+        voting: interactions.pollVoting,
+        onVote: interactions.onPollVote,
+      }
+    : undefined;
 
   const onClick = (() => {
     switch (spec.click) {
@@ -89,11 +108,12 @@ export function PostCard({
 
   return (
     <PostCardShell ctx={ctx} indentPx={spec.indentPx} gapBelowPx={spec.gapBelowPx} onClick={onClick}>
+      {header}
       <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} />
-      <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} />
+      <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} pollVote={pollVote} />
       <PostMedia post={post} mode={spec.media} palette={ctx.palette} density={ctx.density} />
       <QuotedEmbed post={post} mode={spec.quoteEmbed} palette={ctx.palette} />
-      <PostCounters post={post} mode={spec.originCounters} palette={ctx.palette} />
+      <PostCounters post={post} mode={spec.originCounters} palette={ctx.palette} interactions={interactions} />
       <PostActions
         post={post}
         haus={spec.haus}
@@ -107,6 +127,7 @@ export function PostCard({
       {spec.showOriginTag && (
         <PostOriginTag post={post} palette={ctx.palette} sourceOnly={spec.originTagSourceOnly} />
       )}
+      {footer}
     </PostCardShell>
   );
 }
