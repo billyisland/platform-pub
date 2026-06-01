@@ -135,6 +135,7 @@ function mapExternalApiItem(
   return {
     type: "external",
     id: item.id,
+    postId: item.postId, // §2.3 post_id — Phase 3 id bridge for GET /thread/:postId
     feedItemId: item.feedItemId,
     externalSourceId: item.externalSourceId,
     sourceProtocol: item.sourceProtocol,
@@ -166,6 +167,7 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
     return {
       type: "article",
       id: item.nostrEventId,
+      postId: item.postId, // §2.3 post_id — Phase 3 id bridge for GET /thread/:postId
       feedItemId: item.feedItemId,
       authorId: item.authorId,
       pubkey: item.pubkey,
@@ -189,6 +191,7 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
     return {
       type: "note",
       id: item.nostrEventId,
+      postId: item.postId, // §2.3 post_id — Phase 3 id bridge for GET /thread/:postId
       feedItemId: item.feedItemId,
       authorId: item.authorId,
       pubkey: item.pubkey,

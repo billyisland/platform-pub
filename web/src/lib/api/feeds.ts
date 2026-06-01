@@ -28,6 +28,7 @@ type SizeTier = "lead" | "standard" | "brief";
 export interface WorkspaceFeedApiArticle {
   type: "article";
   feedItemId: string;
+  postId?: string; // §2.3 deterministic post_id — the key for GET /thread/:postId
   authorId?: string;
   nostrEventId: string;
   pubkey: string;
@@ -51,6 +52,7 @@ export interface WorkspaceFeedApiArticle {
 export interface WorkspaceFeedApiNote {
   type: "note";
   feedItemId: string;
+  postId?: string; // §2.3 deterministic post_id — the key for GET /thread/:postId
   authorId?: string;
   nostrEventId: string;
   pubkey: string;
@@ -71,6 +73,7 @@ export interface WorkspaceFeedApiNote {
 export interface WorkspaceFeedApiExternal {
   type: "external";
   feedItemId: string;
+  postId?: string; // §2.3 deterministic post_id — the key for GET /thread/:postId
   externalSourceId?: string;
   id: string;
   sourceProtocol: string;
