@@ -1,0 +1,97 @@
+"use client";
+
+import React from "react";
+import { QuotedPostTile } from "../workspace/QuotedPostTile";
+import { truncateText } from "../../lib/format";
+import type { Post } from "../../lib/post/types";
+import type { VesselPalette } from "../workspace/tokens";
+
+// =============================================================================
+// QuotedEmbed — the depth-1 quoted post (§4 quote-embed row).
+//
+//   "full-child" (focal) → rendered as "mini" THIS PHASE. The §4.1 promotion to
+//        a full feed-level child needs the /thread quote resolution (Phase 3);
+//        documented scope cut.
+//   "mini" (feed/parent/reply) → quoted-level mini (byline + body only).
+//   "stub" / "none" (quoted/condensed) → a "quoted a post →" stub, or nothing.
+//
+// External quotes hydrate async via QuotedPostTile (keyed on the host item id).
+// Native quotes render from the inline quotedPreview the adapter carries.
+// =============================================================================
+
+type QuoteMode = "full-child" | "mini" | "stub" | "none";
+
+export function QuotedEmbed({
+  post,
+  mode,
+  palette,
+}: {
+  post: Post;
+  mode: QuoteMode;
+  palette: VesselPalette;
+}) {
+  if (mode === "none" || !post.quotes) return null;
+
+  if (mode === "stub") {
+    return (
+      <button
+        type="button"
+        onClick={(e) => e.stopPropagation() /* Phase 3: re-root onto the quoted post */}
+        className="font-mono text-[11px] uppercase tracking-[0.06em] mt-2 hover:opacity-80"
+        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: palette.cardMeta }}
+      >
+        Quoted a post →
+      </button>
+    );
+  }
+
+  // External: async tile by the host item id (full-child folds to mini this phase).
+  const native = post.origin.protocol === "nostr" && !!post.author.pubkey;
+  if (!native) {
+    if (!post.feedItemId) return null;
+    return <QuotedPostTile itemId={post.feedItemId} palette={palette} />;
+  }
+
+  // Native: render the inline preview as a quoted-level mini.
+  const preview = post.quotedPreview;
+  if (!preview || (!preview.title && !preview.excerpt)) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => e.stopPropagation()}
+        className="font-mono text-[11px] uppercase tracking-[0.06em] mt-2 hover:opacity-80"
+        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: palette.cardMeta }}
+      >
+        Quoted a post →
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="mt-2"
+      style={{ background: palette.interior, padding: "10px 12px" }}
+    >
+      {preview.author && (
+        <div
+          className="font-mono text-[11px] uppercase tracking-[0.06em]"
+          style={{ color: palette.cardMeta }}
+        >
+          {preview.author}
+        </div>
+      )}
+      {preview.title && (
+        <div className="font-serif" style={{ color: palette.cardTitle, fontSize: 14, marginTop: 2 }}>
+          {preview.title}
+        </div>
+      )}
+      {preview.excerpt && (
+        <div
+          style={{ color: palette.cardStandfirst, fontSize: 13, lineHeight: 1.5, marginTop: 2 }}
+        >
+          {truncateText(preview.excerpt, 160)}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -24,6 +24,17 @@ import type {
 } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
 import { VesselCard, NewUserVesselCard, type NewUserItem } from "./VesselCard";
+import { PostCard } from "../post/PostCard";
+import type { CardContext } from "../post/chassis";
+import { mapFeedItemToPost } from "../../lib/post/map-feed-item";
+import { usePostCardFlag } from "../../lib/post/flags";
+import {
+  PALETTES,
+  TEXT_SIZE_PX,
+  DEFAULT_BRIGHTNESS,
+  DEFAULT_DENSITY,
+  DEFAULT_TEXT_SIZE,
+} from "./tokens";
 import { ReplyGroupCard } from "./ReplyGroupCard";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { Composer, type ReplyTarget } from "./Composer";
@@ -217,6 +228,9 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
 export function WorkspaceView() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  // UNIVERSAL-POST-ADR Phase 2 — when on, the feed renders the unified PostCard
+  // (collapsed feed level) instead of VesselCard; expansion/threads stay legacy.
+  const postCardFlag = usePostCardFlag();
   const [vessels, setVessels] = useState<VesselState[]>([]);
   const [bootstrap, setBootstrap] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -804,6 +818,68 @@ export function WorkspaceView() {
                         density={layout.density}
                         brightness={layout.brightness}
                         textSize={layout.textSize}
+                      />
+                    ) : postCardFlag ? (
+                      <PostCard
+                        key={item.id}
+                        post={mapFeedItemToPost(item)}
+                        level="feed"
+                        ctx={
+                          {
+                            density: layout.density ?? DEFAULT_DENSITY,
+                            palette:
+                              PALETTES[layout.brightness ?? DEFAULT_BRIGHTNESS],
+                            bodyPx:
+                              TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
+                            dragData: (() => {
+                              const fsId = matchItemToSource(item, v.sources);
+                              return fsId
+                                ? JSON.stringify({
+                                    feedId: v.feed.id,
+                                    feedSourceId: fsId,
+                                  })
+                                : undefined;
+                            })(),
+                          } as CardContext
+                        }
+                        onPipOpen={(pubkey, rect, status) =>
+                          setPipPanel({
+                            pubkey,
+                            rect,
+                            status,
+                            feedId: v.feed.id,
+                          })
+                        }
+                        onExpand={() => {
+                          const id =
+                            "feedItemId" in item && item.feedItemId
+                              ? item.feedItemId
+                              : item.id;
+                          setExpandedCards((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(id)) next.delete(id);
+                            else next.add(id);
+                            return next;
+                          });
+                        }}
+                        onReply={
+                          "pubkey" in item && item.pubkey
+                            ? () => {
+                                setReplyTarget({
+                                  eventId: item.id,
+                                  eventKind:
+                                    item.type === "article" ? 30023 : 1,
+                                  authorPubkey: item.pubkey,
+                                  authorName: "",
+                                  excerpt:
+                                    "content" in item
+                                      ? (item.content ?? "").slice(0, 120)
+                                      : "",
+                                });
+                                setComposerOpen("note");
+                              }
+                            : undefined
+                        }
                       />
                     ) : (
                       <VesselCard
