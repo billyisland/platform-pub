@@ -37,6 +37,7 @@ import { subscriptionOfferRoutes } from "./routes/subscription-offers.js";
 import { messageRoutes } from "./routes/messages.js";
 import { timelineRoutes } from "./routes/timeline.js";
 import { postFeedRoutes } from "./routes/post-feed.js";
+import { postThreadRoutes } from "./routes/post-thread.js";
 import { socialRoutes } from "./routes/social.js";
 import { publicationRoutes } from "./routes/publications/index.js";
 import { driveRoutes } from "./routes/drives.js";
@@ -196,6 +197,11 @@ async function start() {
   // Post-model feed (UNIVERSAL-POST-ADR Phase 1 — GET /feed/:feedId, scored + deduped).
   // Coexists with timelineRoutes' legacy GET /feed until Phase 5 cutover.
   await app.register(postFeedRoutes, { prefix: "/api/v1" });
+
+  // Post-model thread (UNIVERSAL-POST-ADR Phase 1 — GET /thread/:postId). Coexists
+  // with the legacy native /conversation + external /external-items/:id/thread
+  // reads until the Phase 5 cutover.
+  await app.register(postThreadRoutes, { prefix: "/api/v1" });
 
   // Social (blocks, mutes)
   await app.register(socialRoutes, { prefix: "/api/v1" });
