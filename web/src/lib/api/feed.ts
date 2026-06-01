@@ -21,46 +21,9 @@ export interface ReplyResponse {
   paywallLocked?: boolean
 }
 
-// =============================================================================
-// Conversation (in-place neighbourhood: ancestors above + descendants below)
-// =============================================================================
-
-export interface ConversationNode {
-  eventId: string
-  commentId: string | null
-  parentEventId: string | null
-  kind: number
-  isRoot: boolean
-  author: {
-    id: string
-    username: string | null
-    displayName: string | null
-    avatar: string | null
-    pubkey: string
-    pipStatus: 'known' | 'partial' | 'unknown' | 'contested'
-  }
-  content: string
-  publishedAt: string
-  isDeleted: boolean
-  isMuted: boolean
-}
-
-export interface ConversationResponse {
-  rootEventId: string
-  rootKind: number
-  repliesEnabled: boolean
-  paywallLocked: boolean
-  nodes: ConversationNode[]
-}
-
 export const replies = {
   getForTarget: (targetEventId: string) =>
     request<ReplyResponse>(`/replies/${targetEventId}`),
-
-  // Whole conversation keyed by any node's event id — the client re-roots on
-  // any node without refetching.
-  conversation: (eventId: string) =>
-    request<ConversationResponse>(`/conversation/${eventId}`),
 
   deleteReply: (replyId: string) =>
     request<{ ok: boolean }>(`/replies/${replyId}`, { method: 'DELETE' }),
