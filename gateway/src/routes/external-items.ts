@@ -44,30 +44,31 @@ const threadCache = new Map<
   { data: ThreadResponse; expiresAt: number }
 >();
 const THREAD_CACHE_TTL_MS = 60_000;
-// The thread cache key embeds the attacker-controlled `focus` query param, so an
-// authed user can mint a distinct entry per `focus` value. Cap the entry count
-// and sweep expired entries on write so the keyspace can't grow without bound
-// (H2). The other caches above are keyed purely on item ids (bounded by content
-// the user can already see) so they don't need this.
-const THREAD_CACHE_MAX = 1000;
 
-function setThreadCache(
+// All four caches above use a TTL but never sweep, so over a long-lived process
+// their keyspace grows monotonically: the thread cache key embeds the
+// attacker-controlled `focus` param (a distinct entry per value), and the
+// id-keyed caches accumulate one permanent entry per external item ever viewed.
+// `setCapped` bounds every cache to CACHE_MAX_ENTRIES, sweeping expired entries
+// first and then evicting oldest insertions (Map iterates insertion order).
+const CACHE_MAX_ENTRIES = 1000;
+
+function setCapped<V extends { expiresAt: number }>(
+  cache: Map<string, V>,
   key: string,
-  value: { data: ThreadResponse; expiresAt: number },
+  value: V,
 ): void {
-  threadCache.set(key, value);
-  if (threadCache.size <= THREAD_CACHE_MAX) return;
+  cache.set(key, value);
+  if (cache.size <= CACHE_MAX_ENTRIES) return;
   const now = Date.now();
-  // Drop expired entries first; if still over cap, evict oldest insertions
-  // (Map iterates in insertion order).
-  for (const [k, v] of threadCache) {
-    if (threadCache.size <= THREAD_CACHE_MAX) break;
-    if (v.expiresAt <= now) threadCache.delete(k);
+  for (const [k, v] of cache) {
+    if (cache.size <= CACHE_MAX_ENTRIES) break;
+    if (v.expiresAt <= now) cache.delete(k);
   }
-  while (threadCache.size > THREAD_CACHE_MAX) {
-    const oldest = threadCache.keys().next().value;
+  while (cache.size > CACHE_MAX_ENTRIES) {
+    const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
-    threadCache.delete(oldest);
+    cache.delete(oldest);
   }
 }
 
@@ -246,7 +247,10 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         fetchedAt: new Date().toISOString(),
       };
 
-      engagementCache.set(id, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+      setCapped(engagementCache, id, {
+        data,
+        expiresAt: Date.now() + CACHE_TTL_MS,
+      });
 
       return reply.send(data);
     },
@@ -327,7 +331,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       }
 
       const data: ParentContextResponse = { parent, grandparentTag, partial };
-      parentCache.set(id, {
+      setCapped(parentCache, id, {
         data,
         expiresAt: Date.now() + PARENT_CACHE_TTL_MS,
       });
@@ -403,7 +407,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       }
 
       const data: QuoteResponse = { quote, partial };
-      quoteCache.set(id, {
+      setCapped(quoteCache, id, {
         data,
         expiresAt: Date.now() + QUOTE_CACHE_TTL_MS,
       });
@@ -472,7 +476,7 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         else data = { ancestors: [], descendants: [], partial: true };
       }
 
-      setThreadCache(cacheKey, {
+      setCapped(threadCache, cacheKey, {
         data,
         expiresAt: Date.now() + THREAD_CACHE_TTL_MS,
       });

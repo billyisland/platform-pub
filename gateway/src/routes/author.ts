@@ -270,7 +270,13 @@ export async function authorRoutes(app: FastifyInstance) {
         );
 
         const items = result.rows.map(feedItemToPost);
-        const lastRow = result.rows[result.rows.length - 1];
+        // Only hand out a cursor when the page was full — a short page is the
+        // last page, so emitting one there would cost the client one extra
+        // round-trip that returns nothing.
+        const lastRow =
+          result.rows.length === limit
+            ? result.rows[result.rows.length - 1]
+            : undefined;
         const nextCursor = lastRow
           ? `${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
           : undefined;

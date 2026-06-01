@@ -51,13 +51,22 @@ interface ReaderState {
   _handlePop: () => void;
 }
 
-function pushReaderUrl(targetUrl: string): boolean {
+// Push our reader URL, OR replace it if we already own a pushed entry. Opening a
+// second article while the overlay is open (a link inside a reader, a stacked
+// open) must not push a *second* entry — close() pops only one, so the extra
+// would leak into history and the URL would desync from the overlay. Replacing
+// keeps exactly one entry that close() reliably pops.
+function pushReaderUrl(targetUrl: string, alreadyPushed: boolean): boolean {
   if (typeof window === "undefined") return false;
   try {
-    window.history.pushState({ allhausReader: true }, "", targetUrl);
+    if (alreadyPushed) {
+      window.history.replaceState({ allhausReader: true }, "", targetUrl);
+    } else {
+      window.history.pushState({ allhausReader: true }, "", targetUrl);
+    }
     return true;
   } catch {
-    return false;
+    return alreadyPushed;
   }
 }
 
@@ -68,7 +77,11 @@ export const useReader = create<ReaderState>((set, get) => ({
 
   openExternal: (url, opts) => {
     const postId = opts?.postId ?? null;
-    const didPush = postId ? pushReaderUrl(`/reader/${postId}`) : false;
+    const reuse = get().didPush;
+    // No postId ⇒ no addressable URL; keep whatever entry we already own.
+    const didPush = postId
+      ? pushReaderUrl(`/reader/${postId}`, reuse)
+      : reuse;
     set({
       isOpen: true,
       target: {
@@ -83,7 +96,7 @@ export const useReader = create<ReaderState>((set, get) => ({
   },
 
   openNative: (dTag, opts) => {
-    const didPush = pushReaderUrl(`/article/${dTag}`);
+    const didPush = pushReaderUrl(`/article/${dTag}`, get().didPush);
     set({
       isOpen: true,
       target: { kind: "native", dTag, postId: opts?.postId ?? null },

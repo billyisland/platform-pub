@@ -58,7 +58,18 @@ interface CachedNeighbourhood {
   instanceDomain: string | null;
 }
 
+// Module-level session cache. Bounded so it can't grow without limit as a user
+// expands neighbourhood after neighbourhood over a long session; oldest insertion
+// is evicted first (Map iterates in insertion order).
 const cache = new Map<string, CachedNeighbourhood>();
+const CACHE_MAX = 200;
+
+function cacheSet(key: string, value: CachedNeighbourhood): void {
+  cache.set(key, value);
+  if (cache.size <= CACHE_MAX) return;
+  const oldest = cache.keys().next().value;
+  if (oldest !== undefined) cache.delete(oldest);
+}
 
 function extractDomain(uri: string | null | undefined): string | null {
   if (!uri) return null;
@@ -114,6 +125,17 @@ export function useNeighbourhood(
   const fetched = useRef(false);
   const [replyPage, setReplyPage] = useState(1);
   const allRepliesRef = useRef<NeighbourhoodReply[]>([]);
+
+  // The parent/thread fetches and loadParent settle asynchronously; if the card
+  // collapses or unmounts first, a setState would warn and waste a render. Track
+  // mount state and gate every async setState on it.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!expanded || fetched.current) return;
@@ -175,7 +197,6 @@ export function useNeighbourhood(
         instanceDomain = extractDomain(sourceItemUri);
       }
 
-      allRepliesRef.current = allReplies;
       const cacheEntry: CachedNeighbourhood = {
         parent,
         replies: allReplies,
@@ -183,7 +204,10 @@ export function useNeighbourhood(
         partial,
         instanceDomain,
       };
-      cache.set(itemId, cacheEntry);
+      cacheSet(itemId, cacheEntry);
+
+      if (!mounted.current) return;
+      allRepliesRef.current = allReplies;
 
       setState({
         parent,
@@ -217,7 +241,7 @@ export function useNeighbourhood(
     externalItems
       .parent(topParent.id)
       .then((res) => {
-        if (res.parent) {
+        if (res.parent && mounted.current) {
           const grandparent = parentItemToNeighbourhood(res.parent);
           setState((s) => ({
             ...s,
