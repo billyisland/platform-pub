@@ -36,7 +36,10 @@ function deriveExternalTier(item: ExternalFeedItem): BiddabilityTier {
 
 function mapArticle(item: ArticleEvent): Post {
   return {
-    id: item.id,
+    // Post.id is the deterministic post_id when the gateway surfaces it
+    // (Phase 3 bridge); the origin event id is the fallback for any legacy
+    // payload that predates the column. The thread engine keys /thread on this.
+    id: item.postId ?? item.id,
     version: item.id, // native: the nostr event id is both version and vote target
     origin: { protocol: "nostr", uri: item.id, sourceName: null },
     author: {
@@ -76,7 +79,7 @@ function mapArticle(item: ArticleEvent): Post {
 
 function mapNote(item: NoteEvent): Post {
   return {
-    id: item.id,
+    id: item.postId ?? item.id, // post_id (Phase 3 bridge); see mapArticle
     version: item.id,
     origin: { protocol: "nostr", uri: item.id, sourceName: null },
     author: {
@@ -127,7 +130,7 @@ function mapNote(item: NoteEvent): Post {
 function mapExternal(item: ExternalFeedItem): Post {
   const poll: Poll | null = item.poll ?? null;
   return {
-    id: item.id,
+    id: item.postId ?? item.id, // post_id (Phase 3 bridge); see mapArticle
     version: null, // external version (content hash) is server-side; unused at render
     origin: {
       protocol: item.sourceProtocol,

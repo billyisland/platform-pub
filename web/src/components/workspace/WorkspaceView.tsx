@@ -25,7 +25,9 @@ import type {
 import { Vessel } from "./Vessel";
 import { VesselCard, NewUserVesselCard, type NewUserItem } from "./VesselCard";
 import { PostCard } from "../post/PostCard";
+import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
+import type { Post } from "../../lib/post/types";
 import { mapFeedItemToPost } from "../../lib/post/map-feed-item";
 import { usePostCardFlag } from "../../lib/post/flags";
 import {
@@ -820,67 +822,87 @@ export function WorkspaceView() {
                         textSize={layout.textSize}
                       />
                     ) : postCardFlag ? (
-                      <PostCard
-                        key={item.id}
-                        post={mapFeedItemToPost(item)}
-                        level="feed"
-                        ctx={
-                          {
-                            density: layout.density ?? DEFAULT_DENSITY,
-                            palette:
-                              PALETTES[layout.brightness ?? DEFAULT_BRIGHTNESS],
-                            bodyPx:
-                              TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
-                            dragData: (() => {
-                              const fsId = matchItemToSource(item, v.sources);
-                              return fsId
-                                ? JSON.stringify({
-                                    feedId: v.feed.id,
-                                    feedSourceId: fsId,
-                                  })
-                                : undefined;
-                            })(),
-                          } as CardContext
-                        }
-                        onPipOpen={(pubkey, rect, status) =>
-                          setPipPanel({
-                            pubkey,
-                            rect,
-                            status,
-                            feedId: v.feed.id,
-                          })
-                        }
-                        onExpand={() => {
-                          const id =
-                            "feedItemId" in item && item.feedItemId
-                              ? item.feedItemId
-                              : item.id;
+                      (() => {
+                        // UNIVERSAL-POST-ADR Phase 3 — flag-on render. Collapsed
+                        // cards are PostCard level="feed"; expanding a note/external
+                        // mounts the unified PostThread (ancestors/focal/replies on
+                        // the same PostCard). Articles open the reader pane (Phase R),
+                        // so they have no inline thread and stay feed cards.
+                        const post = mapFeedItemToPost(item);
+                        const expandKey =
+                          "feedItemId" in item && item.feedItemId
+                            ? item.feedItemId
+                            : item.id;
+                        const isExpanded = expandedCards.has(expandKey);
+                        const ctx = {
+                          density: layout.density ?? DEFAULT_DENSITY,
+                          palette:
+                            PALETTES[layout.brightness ?? DEFAULT_BRIGHTNESS],
+                          bodyPx:
+                            TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
+                          dragData: (() => {
+                            const fsId = matchItemToSource(item, v.sources);
+                            return fsId
+                              ? JSON.stringify({
+                                  feedId: v.feed.id,
+                                  feedSourceId: fsId,
+                                })
+                              : undefined;
+                          })(),
+                        } as CardContext;
+                        const toggleExpand = () =>
                           setExpandedCards((prev) => {
                             const next = new Set(prev);
-                            if (next.has(id)) next.delete(id);
-                            else next.add(id);
+                            if (next.has(expandKey)) next.delete(expandKey);
+                            else next.add(expandKey);
                             return next;
                           });
-                        }}
-                        onReply={
-                          "pubkey" in item && item.pubkey
-                            ? () => {
-                                setReplyTarget({
-                                  eventId: item.id,
-                                  eventKind:
-                                    item.type === "article" ? 30023 : 1,
-                                  authorPubkey: item.pubkey,
-                                  authorName: "",
-                                  excerpt:
-                                    "content" in item
-                                      ? (item.content ?? "").slice(0, 120)
-                                      : "",
-                                });
-                                setComposerOpen("note");
-                              }
-                            : undefined
+                        const onPipOpen = (
+                          pubkey: string,
+                          rect: DOMRect,
+                          status: typeof post.author.pipStatus | undefined,
+                        ) => setPipPanel({ pubkey, rect, status, feedId: v.feed.id });
+                        // Native reply only (external interact-back is a Phase 2/3
+                        // documented cut). version = the all.haus event id (vote +
+                        // reply target); type picks the kind.
+                        const replyFromPost = (p: Post) => {
+                          setReplyTarget({
+                            eventId: p.version ?? p.id,
+                            eventKind: p.type === "article" ? 30023 : 1,
+                            authorPubkey: p.author.pubkey ?? "",
+                            authorName: "",
+                            excerpt: (p.body.text ?? "").slice(0, 120),
+                          });
+                          setComposerOpen("note");
+                        };
+                        if (isExpanded && post.type !== "article") {
+                          return (
+                            <PostThread
+                              key={item.id}
+                              rootPostId={post.id}
+                              ctx={ctx}
+                              onCollapse={toggleExpand}
+                              onReply={replyFromPost}
+                              onPipOpen={onPipOpen}
+                            />
+                          );
                         }
-                      />
+                        return (
+                          <PostCard
+                            key={item.id}
+                            post={post}
+                            level="feed"
+                            ctx={ctx}
+                            onPipOpen={onPipOpen}
+                            onExpand={toggleExpand}
+                            onReply={
+                              post.author.pubkey
+                                ? () => replyFromPost(post)
+                                : undefined
+                            }
+                          />
+                        );
+                      })()
                     ) : (
                       <VesselCard
                         key={item.id}

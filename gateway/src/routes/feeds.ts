@@ -1035,7 +1035,7 @@ function parseSaveCursor(
 // -----------------------------------------------------------------------------
 
 const FEED_SELECT = `
-  fi.id AS fi_id, fi.item_type, fi.article_id, fi.note_id, fi.external_item_id,
+  fi.id AS fi_id, fi.post_id AS post_id, fi.item_type, fi.article_id, fi.note_id, fi.external_item_id,
   fi.author_id, fi.nostr_event_id, fi.source_protocol, fi.source_item_uri,
   fi.source_id, COALESCE(ei.media, fi.media) AS media, fi.score, fi.tier,
   EXTRACT(EPOCH FROM fi.published_at)::bigint AS published_at_epoch,
@@ -1131,6 +1131,11 @@ function rowToItem(row: any) {
     return {
       type: "article" as const,
       feedItemId: row.fi_id,
+      // UNIVERSAL-POST-ADR Phase 3 — the deterministic per-THING post_id (§2.3),
+      // the key the unified /thread endpoint resolves. Carried so the PostCard
+      // adapter (map-feed-item.ts) sets Post.id to a real post_id, not the origin
+      // handle, and the thread engine can fetch GET /thread/:postId.
+      postId: row.post_id ?? undefined,
       authorId: row.author_id ?? undefined,
       nostrEventId: row.nostr_event_id,
       pubkey: row.nostr_pubkey,
@@ -1156,6 +1161,7 @@ function rowToItem(row: any) {
     return {
       type: "note" as const,
       feedItemId: row.fi_id,
+      postId: row.post_id ?? undefined, // §2.3 post_id — see article branch
       authorId: row.author_id ?? undefined,
       nostrEventId: row.nostr_event_id,
       pubkey: row.nostr_pubkey,
@@ -1178,6 +1184,7 @@ function rowToItem(row: any) {
   return {
     type: "external" as const,
     feedItemId: row.fi_id,
+    postId: row.post_id ?? undefined, // §2.3 post_id — see article branch
     externalSourceId: row.source_id ?? undefined,
     id: row.external_item_id,
     sourceProtocol: row.source_protocol,

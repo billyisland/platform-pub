@@ -23,6 +23,10 @@ export interface ArticleEvent {
   type?: "article";
   id: string;
   feedItemId?: string;
+  // UNIVERSAL-POST-ADR §2.3 deterministic post_id — the key GET /thread/:postId
+  // resolves. Surfaced by the gateway workspace payload (feeds.ts rowToItem);
+  // the PostCard adapter sets Post.id from it so the thread engine can fetch.
+  postId?: string;
   authorId?: string;
   pubkey: string;
   dTag: string;
@@ -61,6 +65,8 @@ export interface NoteEvent {
   type: "note";
   id: string;
   feedItemId?: string;
+  postId?: string; // §2.3 post_id — see ArticleEvent
+
   authorId?: string;
   pubkey: string;
   content: string;
@@ -101,6 +107,8 @@ export interface ExternalFeedItem {
   type: "external";
   id: string;
   feedItemId?: string;
+  postId?: string; // §2.3 post_id — see ArticleEvent
+
   externalSourceId?: string;
   savedAt?: number;
   sourceProtocol: string;

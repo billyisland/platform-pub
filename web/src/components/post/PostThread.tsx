@@ -1,0 +1,209 @@
+"use client";
+
+// =============================================================================
+// PostThread — UNIVERSAL-POST-ADR §4.3 / §8 (Phase 3)
+//
+// ONE thread engine over Post[] + edges, replacing ConversationView (native) and
+// the external ancestor rail / playscript (external). It mounts when a feed card
+// expands: ancestors above (thread-parent), the focal in the middle (focal),
+// replies below (thread-reply) — all the same PostCard, so native and external
+// threads are visually indistinguishable (§10 Accept).
+//
+//  - Re-root: clicking any ancestor/reply makes it the focal in place, no
+//    residue (§4.3). Pure client-side over the loaded pool; an unloaded subtree
+//    fetches and merges (usePostThread).
+//  - Scroll-centres the focal on expand and on every re-root (§4.3).
+//  - "↑ Full conversation" returns to the opened item; the focal click collapses
+//    the whole card (§4 matrix focal click = collapse).
+//  - Gutter overflow arrows when ancestors/replies extend past the viewport.
+//  - "Show more replies" paginates the focal's descendants (§8 lazy).
+//
+// Scope cuts (documented, consistent with Phase 2): external inline reply +
+// external all.haus reactions stay deferred; native reply opens the compose
+// overlay via onReply. Boost attribution (edges) is threaded but unrendered
+// until threads accumulate boosts.
+// =============================================================================
+
+import React, { useEffect, useRef } from "react";
+import { usePostThread } from "../../hooks/usePostThread";
+import { deriveThreadView } from "../../lib/post/thread";
+import type { Post } from "../../lib/post/types";
+import { PostCard } from "./PostCard";
+import type { CardContext, PipOpen } from "./chassis";
+
+export function PostThread({
+  rootPostId,
+  ctx,
+  onCollapse,
+  onReply,
+  onReport,
+  onPipOpen,
+  currentUserPubkey,
+}: {
+  rootPostId: string;
+  ctx: CardContext;
+  onCollapse?: () => void;
+  onReply?: (post: Post) => void;
+  onReport?: (post: Post) => void;
+  onPipOpen?: PipOpen;
+  currentUserPubkey?: string | null;
+}) {
+  const thread = usePostThread(rootPostId, true);
+  const focalRef = useRef<HTMLDivElement>(null);
+  const topSentinel = useRef<HTMLDivElement>(null);
+  const bottomSentinel = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = React.useState({ up: false, down: false });
+
+  const view =
+    thread.focalId !== null
+      ? deriveThreadView(thread.pool, thread.focalId)
+      : null;
+
+  // Scroll-centre the focal on expand and on every re-root (§4.3). Keyed on the
+  // focal id so a client-side re-root re-centres without a fetch.
+  useEffect(() => {
+    if (!view) return;
+    focalRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [thread.focalId, view !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Gutter overflow arrows: show ↑ while content above the focal is off-screen,
+  // ↓ while content below is off-screen (§4.3). Sentinels sit at the band edges.
+  useEffect(() => {
+    const top = topSentinel.current;
+    const bottom = bottomSentinel.current;
+    if (!top && !bottom) return;
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.target === top) setOverflow((o) => ({ ...o, up: !e.isIntersecting }));
+        if (e.target === bottom)
+          setOverflow((o) => ({ ...o, down: !e.isIntersecting }));
+      }
+    });
+    if (top) io.observe(top);
+    if (bottom) io.observe(bottom);
+    return () => io.disconnect();
+  }, [view !== null]);
+
+  if (thread.loading || !view) {
+    return (
+      <div className="ml-8 py-4 label-ui text-grey-400">
+        {thread.error ? "Couldn’t load this thread." : "Loading thread…"}
+      </div>
+    );
+  }
+
+  const { focal, ancestors, descendants } = view;
+  const atRoot = thread.focalId === thread.rootId;
+  const moreCount = Math.max(thread.totalDescendants - descendants.length, 0);
+
+  const isOwn = (p: Post) =>
+    !!currentUserPubkey && p.author.pubkey === currentUserPubkey;
+  // Native posts carry a pubkey → reply/report target the all.haus event.
+  const nativeReply = (p: Post) =>
+    onReply && p.author.pubkey ? () => onReply(p) : undefined;
+  const nativeReport = (p: Post) =>
+    onReport && p.author.pubkey ? () => onReport(p) : undefined;
+
+  return (
+    <div className="relative">
+      <div ref={topSentinel} aria-hidden />
+
+      {/* Gutter overflow arrows — discreet, in the 32px thread gutter (§4.3). */}
+      {overflow.up && (
+        <button
+          type="button"
+          aria-label="Scroll to the start of the conversation"
+          onClick={() =>
+            topSentinel.current?.scrollIntoView({ block: "start", behavior: "smooth" })
+          }
+          className="sticky top-2 z-10 ml-1 block text-grey-400 hover:text-black"
+        >
+          ↑
+        </button>
+      )}
+
+      {/* ↑ Full conversation — returns to the opened item after a re-root (§4.3). */}
+      {!atRoot && (
+        <button
+          type="button"
+          onClick={thread.backToRoot}
+          className="mb-3 ml-8 label-ui text-grey-400 hover:text-black hover:underline"
+        >
+          ↑ Full conversation
+        </button>
+      )}
+
+      {/* Ancestors — root-first, above the focal (thread-parent level). */}
+      {ancestors.map((p) => (
+        <PostCard
+          key={`anc-${p.id}`}
+          post={p}
+          level="thread-parent"
+          ctx={ctx}
+          onPipOpen={onPipOpen}
+          onReroot={(x) => thread.reroot(x.id)}
+          onReply={nativeReply(p)}
+          onReport={nativeReport(p)}
+          isOwnContent={isOwn(p)}
+        />
+      ))}
+
+      {/* Focal — full rich card; click collapses the whole card (§4 matrix). */}
+      <div ref={focalRef}>
+        <PostCard
+          post={focal}
+          level="focal"
+          ctx={ctx}
+          onPipOpen={onPipOpen}
+          onCollapse={() => onCollapse?.()}
+          onReply={nativeReply(focal)}
+          onReport={nativeReport(focal)}
+          isOwnContent={isOwn(focal)}
+        />
+      </div>
+
+      {/* Replies — chronological, below the focal (thread-reply level). */}
+      {descendants.map((p) => (
+        <PostCard
+          key={`rep-${p.id}`}
+          post={p}
+          level="thread-reply"
+          ctx={ctx}
+          onPipOpen={onPipOpen}
+          onReroot={(x) => thread.reroot(x.id)}
+          onReply={nativeReply(p)}
+          onReport={nativeReport(p)}
+          isOwnContent={isOwn(p)}
+        />
+      ))}
+
+      {thread.hasMoreReplies && (
+        <button
+          type="button"
+          onClick={thread.loadMore}
+          disabled={thread.loadingMore}
+          className="ml-8 mt-2 label-ui text-grey-400 hover:text-black hover:underline disabled:opacity-50"
+        >
+          {thread.loadingMore
+            ? "Loading…"
+            : `Show ${moreCount > 0 ? moreCount : "more"} more repl${moreCount === 1 ? "y" : "ies"}`}
+        </button>
+      )}
+
+      <div ref={bottomSentinel} aria-hidden />
+
+      {overflow.down && (descendants.length > 0 || thread.hasMoreReplies) && (
+        <button
+          type="button"
+          aria-label="Scroll to the end of the conversation"
+          onClick={() =>
+            bottomSentinel.current?.scrollIntoView({ block: "end", behavior: "smooth" })
+          }
+          className="sticky bottom-2 z-10 ml-1 block text-grey-400 hover:text-black"
+        >
+          ↓
+        </button>
+      )}
+    </div>
+  );
+}
