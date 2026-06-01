@@ -1130,7 +1130,7 @@ async function fetchBlueskyParent(
         content_text, media, source_reply_uri, interaction_data,
         like_count, reply_count, repost_count,
         published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
+      ) VALUES ($1, $2, 'tier3', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
       ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
         like_count = EXCLUDED.like_count,
         reply_count = EXCLUDED.reply_count,
@@ -1300,7 +1300,7 @@ async function fetchMastodonParent(
         content_html, media, source_reply_uri, interaction_data,
         like_count, reply_count, repost_count,
         published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
+      ) VALUES ($1, $2, 'tier3', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
       ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
         like_count = EXCLUDED.like_count,
         reply_count = EXCLUDED.reply_count,
@@ -1520,7 +1520,7 @@ async function fetchBlueskyQuote(
         content_text, media, interaction_data,
         like_count, reply_count, repost_count,
         published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
+      ) VALUES ($1, $2, 'tier3', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
       ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
         like_count = EXCLUDED.like_count,
         reply_count = EXCLUDED.reply_count,
@@ -1643,7 +1643,7 @@ async function fetchMastodonQuote(
         content_html, media, interaction_data,
         like_count, reply_count, repost_count,
         published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
+      ) VALUES ($1, $2, 'tier3', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
       ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
         like_count = EXCLUDED.like_count,
         reply_count = EXCLUDED.reply_count,
@@ -1770,7 +1770,7 @@ async function persistBlueskyFocus(
         content_text, media, source_reply_uri, interaction_data,
         like_count, reply_count, repost_count,
         published_at, is_context_only
-      ) VALUES ($1, 'atproto', 'post', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
+      ) VALUES ($1, 'atproto', 'tier3', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
       ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
         like_count = EXCLUDED.like_count,
         reply_count = EXCLUDED.reply_count,
@@ -2027,7 +2027,7 @@ async function persistMastodonFocus(
         content_html, media, source_reply_uri, interaction_data,
         like_count, reply_count, repost_count,
         published_at, is_context_only
-      ) VALUES ($1, 'activitypub', 'post', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
+      ) VALUES ($1, 'activitypub', 'tier3', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
       ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
         like_count = EXCLUDED.like_count,
         reply_count = EXCLUDED.reply_count,
@@ -2095,6 +2095,314 @@ interface MastodonStatus {
   replies_count?: number;
   reblogs_count?: number;
   in_reply_to_id: string | null;
+}
+
+// ===========================================================================
+// Live thread hydration → DB (UNIVERSAL-POST-ADR §8, /thread parity fix)
+//
+// The unified /thread projector (post-thread.ts) is pure-DB: it walks
+// source_reply_uri over INGESTED external_items. But we ingest only a source's
+// own posts, not the full reply graph around them — so a Bluesky/Mastodon item
+// that advertises N replies on-origin would expand to nothing. The legacy
+// /external-items/:id/thread papered over this with a LIVE source-API walk that
+// rendered transient entries; the Phase-5 cutover dropped that path.
+//
+// This restores parity by HYDRATING the live source thread into the substrate
+// the projector reads: each ancestor/descendant is persisted context-only into
+// external_items + feed_items (the identity trigger mints post_id / version /
+// biddability_tier / external_author_id), so /thread then resolves them exactly
+// like natively-ingested nodes. is_context_only keeps them out of the main feed
+// (post-feed.ts / timeline.ts filter on it); external-context-gc reclaims them.
+//
+// Best-effort and throttled: a per-item TTL guard prevents a re-write storm on
+// repeated expands, and any source/DB failure leaves the request to fall back to
+// whatever was already ingested.
+// ===========================================================================
+
+interface HydratedNode {
+  sourceItemUri: string;
+  sourceReplyUri: string | null;
+  authorName: string;
+  authorHandle: string | null;
+  authorAvatarUrl: string | null;
+  authorUri: string | null;
+  contentText: string | null;
+  contentHtml: string | null;
+  media: unknown[];
+  interactionData: Record<string, unknown>;
+  likeCount: number;
+  replyCount: number;
+  repostCount: number;
+  publishedAt: Date;
+}
+
+// Throttle: skip the live fetch + re-write when we hydrated this item recently.
+const hydrateGuard = new Map<string, number>();
+const HYDRATE_TTL_MS = 60_000;
+
+// Dual-write a batch of hydrated nodes (external_items + feed_items) in one
+// transaction. Context-only; deduped by (protocol, source_item_uri) so a node
+// already ingested for real is left as a counts refresh, never duplicated.
+async function persistHydratedThreadNodes(
+  sourceId: string,
+  protocol: "atproto" | "activitypub",
+  nodes: HydratedNode[],
+): Promise<void> {
+  if (nodes.length === 0) return;
+  // atproto + activitypub both map to content_tier 'tier3' (migration 099 §7).
+  const tier = "tier3";
+  await withTransaction(async (client) => {
+    for (const n of nodes) {
+      const ins = await client.query<{ id: string }>(
+        `INSERT INTO external_items (
+           source_id, protocol, tier, source_item_uri,
+           author_name, author_handle, author_avatar_url, author_uri,
+           content_text, content_html, media,
+           source_reply_uri, interaction_data,
+           like_count, reply_count, repost_count,
+           published_at, is_context_only
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, TRUE)
+         ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+           like_count = EXCLUDED.like_count,
+           reply_count = EXCLUDED.reply_count,
+           repost_count = EXCLUDED.repost_count,
+           interaction_data = EXCLUDED.interaction_data
+         RETURNING id`,
+        [
+          sourceId,
+          protocol,
+          tier,
+          n.sourceItemUri,
+          n.authorName,
+          n.authorHandle,
+          n.authorAvatarUrl,
+          n.authorUri,
+          n.contentText,
+          n.contentHtml,
+          JSON.stringify(n.media),
+          n.sourceReplyUri,
+          JSON.stringify(n.interactionData),
+          n.likeCount,
+          n.replyCount,
+          n.repostCount,
+          n.publishedAt,
+        ],
+      );
+      const extId = ins.rows[0]?.id;
+      if (!extId) continue;
+      // feed_items dual-write; the BEFORE INSERT identity trigger mints
+      // post_id/version/biddability_tier/external_author_id from these columns.
+      await client.query(
+        `INSERT INTO feed_items (
+           item_type, external_item_id,
+           author_name, author_avatar,
+           title, content_preview,
+           tier, published_at,
+           source_protocol, source_item_uri, source_id, media,
+           is_reply
+         ) VALUES (
+           'external', $1,
+           $2, $3,
+           NULL, $4,
+           $5, $6,
+           $7, $8, $9, $10,
+           $11
+         )
+         ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING`,
+        [
+          extId,
+          n.authorName,
+          n.authorAvatarUrl,
+          truncatePreview(n.contentText ?? ""),
+          tier,
+          n.publishedAt,
+          protocol,
+          n.sourceItemUri,
+          sourceId,
+          JSON.stringify(n.media),
+          n.sourceReplyUri != null,
+        ],
+      );
+    }
+  });
+}
+
+// Walk a Bluesky getPostThread response into hydrated nodes (parent chain +
+// focal + flattened replies). Keyed by at:// URIs, which are exactly the
+// (protocol, source_item_uri) the projector + identity trigger derive post_id
+// from, so reply edges connect to the focal already in feed_items.
+function collectBlueskyThreadNodes(
+  root: BlueskyThreadViewPost,
+): HydratedNode[] {
+  const out: HydratedNode[] = [];
+  const seen = new Set<string>();
+  const add = (tvp: BlueskyThreadViewPost) => {
+    const post = tvp.post;
+    if (!post?.uri || seen.has(post.uri)) return;
+    seen.add(post.uri);
+    out.push({
+      sourceItemUri: post.uri,
+      sourceReplyUri: post.record.reply?.parent.uri ?? null,
+      authorName: post.author.displayName || post.author.handle,
+      authorHandle: post.author.handle,
+      authorAvatarUrl: post.author.avatar ?? null,
+      authorUri: `https://bsky.app/profile/${post.author.did}`,
+      contentText: post.record.text ?? null,
+      contentHtml: null,
+      media: extractBlueskyViewMedia(post.embed),
+      interactionData: { uri: post.uri, cid: post.cid },
+      likeCount: post.likeCount ?? 0,
+      replyCount: post.replyCount ?? 0,
+      repostCount: post.repostCount ?? 0,
+      publishedAt: new Date(post.record.createdAt ?? Date.now()),
+    });
+  };
+
+  // ancestors (parent chain)
+  let cur = root.parent;
+  while (cur && isThreadViewPost(cur)) {
+    add(cur);
+    cur = cur.parent;
+  }
+  // focal + descendants (BFS)
+  add(root);
+  const queue: BlueskyThreadViewPost[] = [];
+  for (const r of root.replies ?? []) if (isThreadViewPost(r)) queue.push(r);
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    add(node);
+    for (const r of node.replies ?? []) if (isThreadViewPost(r)) queue.push(r);
+  }
+  return out;
+}
+
+async function hydrateBlueskyThread(item: ExternalItemRow): Promise<void> {
+  const atUri =
+    (item.interaction_data as { uri?: string }).uri ?? item.source_item_uri;
+  const url = new URL(`${APPVIEW}/xrpc/app.bsky.feed.getPostThread`);
+  url.searchParams.append("uri", atUri);
+  url.searchParams.append("depth", "50");
+  url.searchParams.append("parentHeight", "100");
+
+  const res = await safeFetch(url.toString(), {
+    headers: { Accept: "application/json" },
+    timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS,
+  });
+  if (!res.ok) return;
+  const data = JSON.parse(res.text) as { thread: BlueskyThreadViewPost };
+  if (!isThreadViewPost(data.thread)) return;
+
+  await persistHydratedThreadNodes(
+    item.source_id,
+    "atproto",
+    collectBlueskyThreadNodes(data.thread),
+  );
+}
+
+async function hydrateMastodonThread(item: ExternalItemRow): Promise<void> {
+  const statusId = extractMastodonStatusId(item.source_item_uri);
+  if (!statusId) return;
+  const host = new URL(item.source_item_uri).hostname;
+  const res = await safeFetch(
+    `https://${host}/api/v1/statuses/${statusId}/context`,
+    { headers: { Accept: "application/json" }, timeout: NEIGHBOURHOOD_FETCH_TIMEOUT_MS },
+  );
+  if (!res.ok) return;
+
+  interface RichStatus extends MastodonStatus {
+    account: MastodonStatus["account"] & { avatar?: string };
+    media_attachments?: Array<{
+      type: string;
+      url: string;
+      preview_url?: string;
+      description?: string;
+    }>;
+  }
+  const data = JSON.parse(res.text) as {
+    ancestors: RichStatus[];
+    descendants: RichStatus[];
+  };
+
+  // in_reply_to_id is a LOCAL status id, but the projector threads on
+  // source_reply_uri. Map every id in the conversation (incl. the focal, whose
+  // stored uri is item.source_item_uri) to the canonical uri we persist, so a
+  // reply's source_reply_uri equals its parent's source_item_uri.
+  const canonicalUri = (s: RichStatus) => s.url || s.uri;
+  const idToUri = new Map<string, string>();
+  idToUri.set(statusId, item.source_item_uri);
+  for (const s of [...data.ancestors, ...data.descendants]) {
+    idToUri.set(s.id, canonicalUri(s));
+  }
+
+  const toNode = (s: RichStatus): HydratedNode => ({
+    sourceItemUri: canonicalUri(s),
+    sourceReplyUri: s.in_reply_to_id
+      ? (idToUri.get(s.in_reply_to_id) ?? null)
+      : null,
+    authorName: s.account.display_name || s.account.acct,
+    authorHandle: s.account.acct,
+    authorAvatarUrl: s.account.avatar ?? null,
+    authorUri: s.account.url,
+    contentText: stripHtmlTags(s.content ?? ""),
+    contentHtml: sanitizeContent(s.content ?? ""),
+    media: (s.media_attachments ?? []).map((m) => ({
+      type: m.type === "image" ? "image" : m.type === "video" ? "video" : "link",
+      url: m.url,
+      thumbnail: m.preview_url,
+      alt: m.description,
+    })),
+    interactionData: { id: s.uri, webUrl: s.url },
+    likeCount: s.favourites_count ?? 0,
+    replyCount: s.replies_count ?? 0,
+    repostCount: s.reblogs_count ?? 0,
+    publishedAt: new Date(s.created_at),
+  });
+
+  await persistHydratedThreadNodes(item.source_id, "activitypub", [
+    ...data.ancestors.map(toNode),
+    ...data.descendants.map(toNode),
+  ]);
+}
+
+// Public entrypoint: best-effort, throttled hydration of an external item's live
+// source thread into external_items + feed_items, so the pure-DB /thread
+// projector can then resolve its ancestors + replies. Never throws.
+export async function hydrateExternalThreadContext(item: {
+  id: string;
+  source_id: string;
+  protocol: string;
+  source_item_uri: string;
+  interaction_data: Record<string, unknown> | null;
+}): Promise<void> {
+  if (item.protocol !== "atproto" && item.protocol !== "activitypub") return;
+  const until = hydrateGuard.get(item.id);
+  if (until && until > Date.now()) return;
+  hydrateGuard.set(item.id, Date.now() + HYDRATE_TTL_MS);
+  if (hydrateGuard.size > CACHE_MAX_ENTRIES) {
+    const oldest = hydrateGuard.keys().next().value;
+    if (oldest !== undefined) hydrateGuard.delete(oldest);
+  }
+
+  const row: ExternalItemRow = {
+    id: item.id,
+    source_id: item.source_id,
+    protocol: item.protocol,
+    source_item_uri: item.source_item_uri,
+    source_reply_uri: null,
+    like_count: 0,
+    reply_count: 0,
+    repost_count: 0,
+    interaction_data: item.interaction_data ?? {},
+  };
+  try {
+    if (item.protocol === "atproto") await hydrateBlueskyThread(row);
+    else await hydrateMastodonThread(row);
+  } catch (err) {
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err), id: item.id },
+      "External thread hydration failed",
+    );
+  }
 }
 
 function stripHtmlTags(html: string): string {

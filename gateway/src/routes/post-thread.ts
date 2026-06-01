@@ -5,6 +5,7 @@ import { checkArticleAccess } from "../services/article-access/index.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { FEED_SELECT, FEED_JOINS } from "./timeline.js";
 import { collectDescendants } from "../lib/thread-walk.js";
+import { hydrateExternalThreadContext } from "./external-items.js";
 import {
   POST_SELECT,
   POST_JOINS,
@@ -36,9 +37,13 @@ import {
 //     derivation) so it is addressable + re-rootable like any Post.
 //   • native comment focal      → same conversation; ancestors walk parent_comment_id
 //     up to the root article/note; descendants are the focal's subtree.
-//   • external focal            → ancestors/descendants over INGESTED external_items
-//     via source_reply_uri. The LIVE source-API walk (Bluesky/Mastodon) stays in
-//     /external-items/:id/thread; /thread is pure-DB (parity with the /feed slice).
+//   • external focal            → ancestors/descendants over external_items via
+//     source_reply_uri. For atproto/activitypub the live source thread is first
+//     HYDRATED into external_items + feed_items (hydrateExternalThreadContext,
+//     best-effort + throttled) so the DB walk resolves the full reply graph the
+//     projector would otherwise miss — we only ingest a source's own posts, not
+//     the replies around them. (The legacy /external-items/:id/thread live walk is
+//     still used by /feed + /source via useNeighbourhood.)
 //
 // Like the /feed slice, this endpoint reads the persisted Phase 0a/0b columns and
 // the same feed_items_derive_post_id() the identity trigger uses, so inReplyTo /
@@ -302,14 +307,14 @@ interface ExtNode {
   itemId: string; // external_items uuid (cursor id)
   sourceItemUri: string;
   sourceReplyUri: string | null;
+  sourceId: string; // external_sources id (for hydration dual-write)
+  protocol: string;
+  interactionData: Record<string, unknown> | null;
 }
 
 async function loadExternalNode(postId: string): Promise<ExtNode | null> {
   const { rows } = await pool.query<any>(
-    `SELECT ${FEED_SELECT}${POST_SELECT},
-            fi.external_item_id AS ext_item_id,
-            ei.source_item_uri AS ext_source_item_uri,
-            ei.source_reply_uri AS ext_source_reply_uri
+    `SELECT ${FEED_SELECT}${POST_SELECT}${EXT_NODE_COLS}
        FROM feed_items fi
        ${FEED_JOINS}
        ${POST_JOINS}
@@ -317,22 +322,33 @@ async function loadExternalNode(postId: string): Promise<ExtNode | null> {
       LIMIT 1`,
     [postId],
   );
-  const r = rows[0];
-  if (!r) return null;
+  return rows[0] ? rowToExtNode(rows[0]) : null;
+}
+
+// Shared projection of an external-thread feed_items row → ExtNode.
+function rowToExtNode(r: any): ExtNode {
   return {
     post: feedItemToPost(r),
     itemId: r.ext_item_id,
     sourceItemUri: r.ext_source_item_uri,
     sourceReplyUri: r.ext_source_reply_uri,
+    sourceId: r.ext_source_id,
+    protocol: r.ext_protocol,
+    interactionData: r.ext_interaction_data ?? null,
   };
 }
 
-async function loadExternalByUri(uri: string): Promise<ExtNode | null> {
-  const { rows } = await pool.query<any>(
-    `SELECT ${FEED_SELECT}${POST_SELECT},
+const EXT_NODE_COLS = `,
             fi.external_item_id AS ext_item_id,
             ei.source_item_uri AS ext_source_item_uri,
-            ei.source_reply_uri AS ext_source_reply_uri
+            ei.source_reply_uri AS ext_source_reply_uri,
+            ei.source_id AS ext_source_id,
+            ei.protocol AS ext_protocol,
+            ei.interaction_data AS ext_interaction_data`;
+
+async function loadExternalByUri(uri: string): Promise<ExtNode | null> {
+  const { rows } = await pool.query<any>(
+    `SELECT ${FEED_SELECT}${POST_SELECT}${EXT_NODE_COLS}
        FROM feed_items fi
        ${FEED_JOINS}
        ${POST_JOINS}
@@ -340,34 +356,19 @@ async function loadExternalByUri(uri: string): Promise<ExtNode | null> {
       LIMIT 1`,
     [uri],
   );
-  const r = rows[0];
-  if (!r) return null;
-  return {
-    post: feedItemToPost(r),
-    itemId: r.ext_item_id,
-    sourceItemUri: r.ext_source_item_uri,
-    sourceReplyUri: r.ext_source_reply_uri,
-  };
+  return rows[0] ? rowToExtNode(rows[0]) : null;
 }
 
 async function loadExternalReplies(parentUri: string): Promise<ExtNode[]> {
   const { rows } = await pool.query<any>(
-    `SELECT ${FEED_SELECT}${POST_SELECT},
-            fi.external_item_id AS ext_item_id,
-            ei.source_item_uri AS ext_source_item_uri,
-            ei.source_reply_uri AS ext_source_reply_uri
+    `SELECT ${FEED_SELECT}${POST_SELECT}${EXT_NODE_COLS}
        FROM feed_items fi
        ${FEED_JOINS}
        ${POST_JOINS}
       WHERE ei.source_reply_uri = $1 AND fi.item_type = 'external' AND fi.deleted_at IS NULL`,
     [parentUri],
   );
-  return rows.map((r) => ({
-    post: feedItemToPost(r),
-    itemId: r.ext_item_id,
-    sourceItemUri: r.ext_source_item_uri,
-    sourceReplyUri: r.ext_source_reply_uri,
-  }));
+  return rows.map(rowToExtNode);
 }
 
 async function assembleExternalThread(
@@ -494,6 +495,21 @@ export async function postThreadRoutes(app: FastifyInstance) {
       if (focalFeedItem && focalFeedItem.origin.protocol !== "nostr") {
         const node = await loadExternalNode(postId);
         if (!node) return reply.status(404).send({ error: "Thread not found" });
+        // Hydrate the live source thread (Bluesky/Mastodon) into the DB so the
+        // pure-DB walk below can resolve ancestors + replies the projector would
+        // otherwise miss (we only ingest a source's own posts, not the full reply
+        // graph). Best-effort + throttled; on failure we fall back to whatever was
+        // already ingested. Only on the first/cursorless page — pagination walks
+        // the already-hydrated subtree. See §8 parity fix in external-items.ts.
+        if (!replyCursor) {
+          await hydrateExternalThreadContext({
+            id: node.itemId,
+            source_id: node.sourceId,
+            protocol: node.protocol,
+            source_item_uri: node.sourceItemUri,
+            interaction_data: node.interactionData,
+          });
+        }
         const result = await assembleExternalThread(
           node,
           replyLimit,
