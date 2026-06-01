@@ -23,7 +23,8 @@ import type {
   NoteEvent,
 } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
-import { VesselCard, NewUserVesselCard, type NewUserItem } from "./VesselCard";
+import { VesselCard } from "./VesselCard";
+import { NewUserVesselCard, type NewUserItem } from "./NewUserVesselCard";
 import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";

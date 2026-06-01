@@ -1377,62 +1377,6 @@ function NoteVesselCard({
   );
 }
 
-export interface NewUserItem {
-  type: "new_user";
-  username: string;
-  displayName: string | null;
-  avatar: string | null;
-  joinedAt: number;
-}
-
-export function NewUserVesselCard({
-  item,
-  density,
-  brightness,
-}: {
-  item: NewUserItem;
-  density?: Density;
-  brightness?: Brightness;
-}) {
-  const ctx: CardContext = {
-    density: density ?? DEFAULT_DENSITY,
-    palette: PALETTES[brightness ?? DEFAULT_BRIGHTNESS],
-    bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
-  };
-  const name = item.displayName ?? item.username ?? "Someone";
-
-  if (ctx.density === "compact") {
-    return (
-      <CardShell ctx={ctx}>
-        <CompactRow pipNode={null} title={`${name} joined`} ctx={ctx} />
-      </CardShell>
-    );
-  }
-
-  return (
-    <CardShell ctx={ctx}>
-      <div
-        className="flex items-center gap-2 label-ui"
-        style={{ color: ctx.palette.cardMeta }}
-      >
-        <span style={{ color: ctx.palette.cardTitle }} className="font-medium">
-          {name}
-        </span>
-        <span>·</span>
-        <time dateTime={new Date(item.joinedAt * 1000).toISOString()}>
-          {formatDateRelative(item.joinedAt)}
-        </time>
-      </div>
-      <p
-        className="text-ui-xs leading-[1.45] mt-1.5"
-        style={{ color: ctx.palette.cardStandfirst }}
-      >
-        joined the platform
-      </p>
-    </CardShell>
-  );
-}
-
 // The re-rooted focal node on an external card, rendered as a full focal card
 // identical in grammar to the host body (byline · content · media · engagement ·
 // source line) — no left bar, no lightweight stand-in. `focus` is the rich node
