@@ -150,8 +150,14 @@ export interface PostThreadApi {
 export function usePostThread(
   rootPostId: string | null,
   enabled: boolean,
+  // Bumping this busts the host's cached thread and refetches — used after a
+  // reply is published so the new node appears without waiting out the TTL.
+  refreshKey?: number,
 ): PostThreadApi {
   const [state, dispatch] = useReducer(reducer, INITIAL);
+  // The refreshKey we've already serviced; lets us tell a real refresh from the
+  // initial mount (where cache-first is correct).
+  const servicedKey = useRef<number | undefined>(undefined);
 
   // Latest state for callbacks (reroot/loadMore read current meta/focal).
   const stateRef = useRef(state);
@@ -169,7 +175,14 @@ export function usePostThread(
   // Initial host fetch (on expand). Cache-first, like the legacy thread hooks.
   useEffect(() => {
     if (!enabled || !rootPostId) return;
-    const cached = readCache(rootPostId);
+    // A changed refreshKey (after first mount) forces a network refetch.
+    const isRefresh =
+      refreshKey !== undefined &&
+      servicedKey.current !== undefined &&
+      refreshKey !== servicedKey.current;
+    servicedKey.current = refreshKey;
+    if (isRefresh) cache.delete(rootPostId);
+    const cached = isRefresh ? undefined : readCache(rootPostId);
     if (cached) {
       dispatch({ kind: "ingest", res: cached, root: true });
       return;
@@ -189,7 +202,7 @@ export function usePostThread(
     return () => {
       cancelled = true;
     };
-  }, [enabled, rootPostId]);
+  }, [enabled, rootPostId, refreshKey]);
 
   const fetchFocal = useCallback((id: string) => {
     const seq = ++reqSeq.current;

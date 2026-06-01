@@ -40,6 +40,7 @@ export function PostThread({
   onOpenReader,
   onPipOpen,
   currentUserPubkey,
+  refreshKey,
 }: {
   rootPostId: string;
   ctx: CardContext;
@@ -51,8 +52,10 @@ export function PostThread({
   onOpenReader?: (post: Post) => void;
   onPipOpen?: PipOpen;
   currentUserPubkey?: string | null;
+  // Bump to force a thread refetch (e.g. after publishing a reply).
+  refreshKey?: number;
 }) {
-  const thread = usePostThread(rootPostId, true);
+  const thread = usePostThread(rootPostId, true, refreshKey);
   const focalRef = useRef<HTMLDivElement>(null);
   const topSentinel = useRef<HTMLDivElement>(null);
   const bottomSentinel = useRef<HTMLDivElement>(null);

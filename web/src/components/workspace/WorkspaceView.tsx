@@ -23,14 +23,12 @@ import type {
   NoteEvent,
 } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
-import { VesselCard } from "./VesselCard";
 import { NewUserVesselCard, type NewUserItem } from "./NewUserVesselCard";
 import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
 import type { Post } from "../../lib/post/types";
 import { mapFeedItemToPost } from "../../lib/post/map-feed-item";
-import { usePostCardFlag } from "../../lib/post/flags";
 import {
   PALETTES,
   TEXT_SIZE_PX,
@@ -232,9 +230,6 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
 export function WorkspaceView() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  // UNIVERSAL-POST-ADR Phase 2 — when on, the feed renders the unified PostCard
-  // (collapsed feed level) instead of VesselCard; expansion/threads stay legacy.
-  const postCardFlag = usePostCardFlag();
   const [vessels, setVessels] = useState<VesselState[]>([]);
   const [bootstrap, setBootstrap] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -247,12 +242,9 @@ export function WorkspaceView() {
   // refresh-tick map so an overlay-Composer reply nudges that card's
   // ReplySection to refetch (matching the canonical store).
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
-  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(
-    new Set(),
-  );
-  const [threadRefreshTicks, setThreadRefreshTicks] = useState<
-    Record<string, number>
-  >({});
+  // A single global tick: bumped after a reply publishes so any open PostThread
+  // busts its cache and refetches (replaces the legacy per-target refresh map).
+  const [threadRefreshTick, setThreadRefreshTick] = useState(0);
   const [pipPanel, setPipPanel] = useState<{
     pubkey: string;
     status?: PipStatus;
@@ -405,7 +397,6 @@ export function WorkspaceView() {
         return next.size === prev.size ? prev : next;
       };
       setExpandedCards(drop);
-      setExpandedThreads(drop);
     }
 
     let prevIds: Set<string> | null = null;
@@ -456,7 +447,6 @@ export function WorkspaceView() {
   function refreshAll() {
     // Refreshing every vessel collapses every expanded conversation.
     setExpandedCards(new Set());
-    setExpandedThreads(new Set());
     vesselsRef.current.forEach((v) => void loadVesselItems(v.feed));
   }
 
@@ -823,13 +813,14 @@ export function WorkspaceView() {
                         brightness={layout.brightness}
                         textSize={layout.textSize}
                       />
-                    ) : postCardFlag ? (
+                    ) : (
                       (() => {
-                        // UNIVERSAL-POST-ADR Phase 3 — flag-on render. Collapsed
-                        // cards are PostCard level="feed"; expanding a note/external
-                        // mounts the unified PostThread (ancestors/focal/replies on
-                        // the same PostCard). Articles open the reader pane (Phase R),
-                        // so they have no inline thread and stay feed cards.
+                        // UNIVERSAL-POST-ADR Phase 5 — the unified card is the only
+                        // feed path. Collapsed cards are PostCardInteractive
+                        // level="feed"; expanding a note/external mounts the unified
+                        // PostThread (ancestors/focal/replies on the same PostCard).
+                        // Articles open the reader pane (Phase R), so they have no
+                        // inline thread and stay feed cards.
                         const post = mapFeedItemToPost(item);
                         const expandKey =
                           "feedItemId" in item && item.feedItemId
@@ -902,6 +893,7 @@ export function WorkspaceView() {
                               onReply={replyFromPost}
                               onOpenReader={openReaderFromPost}
                               onPipOpen={onPipOpen}
+                              refreshKey={threadRefreshTick}
                             />
                           );
                         }
@@ -923,49 +915,6 @@ export function WorkspaceView() {
                           />
                         );
                       })()
-                    ) : (
-                      <VesselCard
-                        key={item.id}
-                        item={item}
-                        density={layout.density}
-                        brightness={layout.brightness}
-                        textSize={layout.textSize}
-                        onReply={(target) => {
-                          setReplyTarget(target);
-                          setComposerOpen("note");
-                        }}
-                        onPipOpen={(pubkey, rect, status) => {
-                          setPipPanel({
-                            pubkey,
-                            rect,
-                            status,
-                            feedId: v.feed.id,
-                          });
-                        }}
-                        threadExpanded={expandedThreads.has(item.id)}
-                        threadRefreshKey={threadRefreshTicks[item.id]}
-                        expanded={expandedCards.has(
-                          "feedItemId" in item && item.feedItemId
-                            ? item.feedItemId
-                            : item.id,
-                        )}
-                        onToggleExpand={(itemId) => {
-                          setExpandedCards((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(itemId)) next.delete(itemId);
-                            else next.add(itemId);
-                            return next;
-                          });
-                        }}
-                        dragData={(() => {
-                          const fsId = matchItemToSource(item, v.sources);
-                          if (!fsId) return undefined;
-                          return JSON.stringify({
-                            feedId: v.feed.id,
-                            feedSourceId: fsId,
-                          });
-                        })()}
-                      />
                     ),
                   )}
               </Vessel>
@@ -987,19 +936,10 @@ export function WorkspaceView() {
           setReplyTarget(null);
         }}
         onPublished={refreshAll}
-        onReplied={(targetEventId) => {
-          // Bump the per-target tick so any expanded inline thread refetches.
-          // Also auto-expand so a reply published from the overlay is visible
-          // without a second click.
-          setThreadRefreshTicks((prev) => ({
-            ...prev,
-            [targetEventId]: (prev[targetEventId] ?? 0) + 1,
-          }));
-          setExpandedThreads((prev) => {
-            const next = new Set(prev);
-            next.add(targetEventId);
-            return next;
-          });
+        onReplied={() => {
+          // Bump the global thread tick so an open PostThread busts its cache and
+          // refetches, surfacing the just-published reply.
+          setThreadRefreshTick((t) => t + 1);
         }}
       />
       <NewFeedPrompt
