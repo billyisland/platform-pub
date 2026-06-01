@@ -4,6 +4,7 @@ import React from "react";
 import { Byline } from "../workspace/Byline";
 import { PipTrigger } from "../workspace/PipTrigger";
 import { TrustPip } from "../ui/TrustPip";
+import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import { useWriterName } from "../../hooks/useWriterName";
 import type { VesselPalette } from "../workspace/tokens";
 import type { Post } from "../../lib/post/types";
@@ -18,11 +19,15 @@ import type { PipOpen } from "./chassis";
 // workspace API never carries native names — while ExternalByline reads the
 // name straight off the Post.
 //
-// Byline ROUTING (current-phase reading of §4.4):
+// Byline ROUTING (§4.4, flipped for tier A/B in Phase 4):
 //  - native → /{username} when known (clickable profile)
-//  - external A/B → plain text THIS PHASE. §4.4 flips the rule to route A/B
-//    bylines to /author/:id, but that profile route ships in Phase 4 — see TODO.
+//  - external A/B → /author/:authorId (the constructed external-author profile)
 //  - external C/D → plain text (C: no reliable key; D: no author).
+//
+// HOVER (§4.4): every linked byline (native + tier A/B) anchors a debounced,
+// session-cached profile preview (AuthorModal, type "author"). The 300 ms rest
+// debounce + per-author cache live in useAuthorHover/useAuthorCard. Tier C/D and
+// the quoted level (bylineProfile=false) have no linked byline, so no hover.
 // =============================================================================
 
 export function PostByline({
@@ -56,6 +61,7 @@ export function PostByline({
     <ExternalByline
       post={post}
       palette={palette}
+      bylineProfile={bylineProfile}
       trailing={trailing}
       replyingTo={replyingTo}
     />
@@ -99,27 +105,48 @@ function NativeByline({
   const name = writer?.displayName ?? post.author.pubkey!.slice(0, 12) + "…";
   const nameHref =
     bylineProfile && writer?.username ? `/${writer.username}` : undefined;
+  // Hover keys on the persistent author.id (accounts.id) — null disables it on
+  // the quoted level / when there is no profile to link.
+  const hover = useAuthorHover(
+    "author",
+    bylineProfile ? post.author.id : null,
+  );
   return (
-    <Byline
-      pipNode={pipNode(post, palette, onPipOpen)}
-      name={name}
-      nameHref={nameHref}
-      publishedAt={post.publishedAt}
-      replyingTo={replyingTo}
-      trailing={trailing}
-      palette={palette}
-    />
+    <>
+      <Byline
+        pipNode={pipNode(post, palette, onPipOpen)}
+        name={name}
+        nameHref={nameHref}
+        publishedAt={post.publishedAt}
+        replyingTo={replyingTo}
+        trailing={trailing}
+        palette={palette}
+        nameRef={hover.bylineRef}
+        onNameMouseEnter={hover.onMouseEnter}
+        onNameMouseLeave={hover.onMouseLeave}
+      />
+      {hover.open && hover.id && (
+        <AuthorModal
+          type="author"
+          id={hover.id}
+          anchorRef={hover.bylineRef}
+          onClose={hover.onModalClose}
+        />
+      )}
+    </>
   );
 }
 
 function ExternalByline({
   post,
   palette,
+  bylineProfile,
   trailing,
   replyingTo,
 }: {
   post: Post;
   palette: VesselPalette;
+  bylineProfile: boolean;
   trailing?: React.ReactNode;
   replyingTo?: { name: string } | null;
 }) {
@@ -128,17 +155,33 @@ function ExternalByline({
     post.author.handle ??
     post.origin.sourceName ??
     "External";
-  // Phase 4: route tier-A/B external bylines to /author/${post.author.id}
-  // (the constructed external-author profile, ADR §4.4 / §VI.3). Until that
-  // route exists, external bylines stay plain text — never fabricate a link.
+  // Tier A/B carry an author.id (external_authors record) → link + hover to the
+  // constructed profile. Tier C/D have author.id = null → plain text, no hover.
+  const linkable = bylineProfile && !!post.author.id;
+  const nameHref = linkable ? `/author/${post.author.id}` : undefined;
+  const hover = useAuthorHover("author", linkable ? post.author.id : null);
   return (
-    <Byline
-      pipNode={<TrustPip status={post.author.pipStatus} />}
-      name={name}
-      publishedAt={post.publishedAt}
-      replyingTo={replyingTo}
-      trailing={trailing}
-      palette={palette}
-    />
+    <>
+      <Byline
+        pipNode={<TrustPip status={post.author.pipStatus} />}
+        name={name}
+        nameHref={nameHref}
+        publishedAt={post.publishedAt}
+        replyingTo={replyingTo}
+        trailing={trailing}
+        palette={palette}
+        nameRef={hover.bylineRef}
+        onNameMouseEnter={hover.onMouseEnter}
+        onNameMouseLeave={hover.onMouseLeave}
+      />
+      {hover.open && hover.id && (
+        <AuthorModal
+          type="author"
+          id={hover.id}
+          anchorRef={hover.bylineRef}
+          onClose={hover.onModalClose}
+        />
+      )}
+    </>
   );
 }

@@ -569,6 +569,7 @@ Author bylines never link to the origin platform's native profile. This holds fo
 
 - **Native authors** → their all.haus writer profile (`/{username}`).
 - **External authors** → the item's source surface (`/source/:id`, §VI.2). Because thread/parent payloads carry no per-entry source id, external neighbourhood bylines resolve to the _expanded item's_ source surface; a participant who differs from the subscribed source therefore lands on that source's page rather than a page for them specifically. A true per-author external profile remains the deferred §VI.3 work.
+  - **SUPERSEDED for tier A/B by UNIVERSAL-POST-ADR Phase 4 (2026-06-01).** §VI.3 has now shipped, scoped to tiers with a stable identity record: in the Post-model surfaces (the flag-on workspace `PostCard`/`PostThread`), **tier-A/B external bylines route per-author to the constructed profile `/author/:authorId`** (keyed on the persistent `external_authors.id`, aggregating that author's posts across sources), not to `/source/:id`. **Tier-C/D** (rss/email — no stable handle) **stay plain text.** The legacy `/feed` `ExternalCard` (flag-off) keeps the `/source/:id` behaviour above until the Phase 5 cutover.
 - The single route out to the origin platform stays the source-attribution line (§VI.4).
 
 Implemented via a `sourceHref` prop threaded from the card in `web/src/components/workspace/{ExternalPlayscriptEntry,ExternalPlayscriptThread,ParentContextTile,VesselCard}.tsx`.

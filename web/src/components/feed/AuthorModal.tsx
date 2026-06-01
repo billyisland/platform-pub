@@ -2,11 +2,15 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useAuthorCard, type AuthorCardData } from "../../hooks/useAuthorCard";
+import {
+  useAuthorCard,
+  type AuthorCardData,
+  type AuthorCardType,
+} from "../../hooks/useAuthorCard";
 import { follows as followsApi, feeds as feedsApi } from "../../lib/api";
 
 interface AuthorModalProps {
-  type: "native" | "external";
+  type: AuthorCardType;
   id: string;
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
@@ -97,7 +101,7 @@ export function AuthorModal({
     <div
       ref={modalRef}
       style={style}
-      className="bg-white border border-grey-200 shadow-lg p-4"
+      className="bg-white shadow-lg p-4"
       onMouseLeave={dismissOnMouseLeave ? onClose : undefined}
       onClick={(e) => e.stopPropagation()}
     >
@@ -303,7 +307,7 @@ function FollowButton({
   );
 }
 
-export function useAuthorHover(type: "native" | "external", id: string | null) {
+export function useAuthorHover(type: AuthorCardType, id: string | null) {
   const [open, setOpen] = useState(false);
   const bylineRef = useRef<HTMLElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

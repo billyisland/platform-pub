@@ -22,6 +22,9 @@ export function Byline({
   trailing,
   palette,
   className = "mb-2",
+  nameRef,
+  onNameMouseEnter,
+  onNameMouseLeave,
 }: {
   pipNode?: React.ReactNode;
   name: string;
@@ -31,7 +34,15 @@ export function Byline({
   trailing?: React.ReactNode;
   palette: VesselPalette;
   className?: string;
+  // Byline-hover modal (§4.4): the author name anchors the profile preview.
+  nameRef?: React.Ref<HTMLElement>;
+  onNameMouseEnter?: () => void;
+  onNameMouseLeave?: () => void;
 }) {
+  const nameHover = {
+    onMouseEnter: onNameMouseEnter,
+    onMouseLeave: onNameMouseLeave,
+  };
   return (
     <div
       className={`flex items-center gap-2 label-ui ${className}`}
@@ -48,14 +59,21 @@ export function Byline({
       {nameHref ? (
         <Link
           href={nameHref}
+          ref={nameRef as React.Ref<HTMLAnchorElement>}
           onClick={(e) => e.stopPropagation()}
           style={{ color: palette.cardTitle }}
           className="font-medium hover:underline"
+          {...nameHover}
         >
           {name}
         </Link>
       ) : (
-        <span style={{ color: palette.cardTitle }} className="font-medium">
+        <span
+          ref={nameRef as React.Ref<HTMLSpanElement>}
+          style={{ color: palette.cardTitle }}
+          className="font-medium"
+          {...nameHover}
+        >
           {name}
         </span>
       )}

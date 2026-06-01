@@ -1,29 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { AuthorProfile } from "../lib/api/post";
 
-export interface AuthorCardData {
-  tier: "A" | "B" | "C" | "D";
-  displayName?: string;
-  handle?: string;
-  avatarUrl?: string;
-  bio?: string;
-  followerCount?: number;
-  followingCount?: number;
-  postCount?: number;
-  sourceName?: string;
-  sourceDescription?: string;
-  sourceUrl?: string;
-  sourceProtocol?: string;
-  partial?: boolean;
-  followTarget?: {
-    type: "user" | "source";
-    id: string;
-    isFollowing: boolean;
-    protocol?: string;
-    sourceUri?: string;
-  };
-}
+// One author DTO across the codebase — the gateway AuthorCardResponse, defined
+// canonically in lib/api/post.ts. Re-exported here so AuthorModal's existing
+// import keeps working.
+export type AuthorCardData = AuthorProfile;
+
+// "native" / "external" hit the legacy item-keyed /author-card; "author" hits
+// the Phase-4 /author/:id/profile keyed on the persistent author.id.
+export type AuthorCardType = "native" | "external" | "author";
 
 interface AuthorCardState {
   data: AuthorCardData | null;
@@ -40,14 +27,15 @@ const cache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<AuthorCardData | null>>();
 
 async function fetchAuthorCard(
-  type: "native" | "external",
+  type: AuthorCardType,
   id: string,
 ): Promise<AuthorCardData | null> {
   try {
-    const res = await fetch(
-      `/api/v1/author-card?type=${type}&id=${encodeURIComponent(id)}`,
-      { credentials: "include" },
-    );
+    const url =
+      type === "author"
+        ? `/api/v1/author/${encodeURIComponent(id)}/profile`
+        : `/api/v1/author-card?type=${type}&id=${encodeURIComponent(id)}`;
+    const res = await fetch(url, { credentials: "include" });
     if (!res.ok) return null;
     return (await res.json()) as AuthorCardData;
   } catch {
@@ -56,7 +44,7 @@ async function fetchAuthorCard(
 }
 
 export function useAuthorCard(
-  type: "native" | "external",
+  type: AuthorCardType,
   id: string | null,
   enabled: boolean,
 ): AuthorCardState & { refresh: () => void } {
