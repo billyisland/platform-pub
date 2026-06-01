@@ -17,7 +17,7 @@ import type { Level, BiddabilityTier, Post } from "./types";
 // here it only governs parent/reply offset in the harness.
 const INDENT_STEP_PX = 32;
 
-const GAP_PX = { feed: 10, tight: 5, none: 0 } as const; // CLAUDE feed/thread rhythm
+const GAP_PX = { feed: 8, tight: 5, none: 0 } as const; // CLAUDE feed/thread rhythm
 
 type BodyMode = "expanded" | "full" | "one-line";
 type MediaMode = "full-width" | "sized" | "single-thumbnail" | "none";
