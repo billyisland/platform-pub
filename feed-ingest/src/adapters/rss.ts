@@ -4,7 +4,6 @@ import {
   sanitizeContent,
   stripHtml,
 } from "@platform-pub/shared/lib/sanitize.js";
-import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
 // RSS / Atom ingestion adapter

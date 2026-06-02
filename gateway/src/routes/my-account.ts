@@ -78,7 +78,6 @@ export async function myAccountRoutes(app: FastifyInstance) {
         if (accountRow.rowCount === 0) {
           return reply.status(404).send({ error: "Account not found" });
         }
-        const account = accountRow.rows[0];
 
         const settlementRow = await pool.query<{ settled_at: string }>(
           `SELECT settled_at FROM tab_settlements WHERE reader_id = $1 ORDER BY settled_at DESC LIMIT 1`,

@@ -4,7 +4,6 @@
 // =============================================================================
 
 export type ReadState = 'provisional' | 'accrued' | 'platform_settled' | 'writer_paid'
-type PayoutStatus = 'pending' | 'initiated' | 'completed' | 'failed'
 
 // -----------------------------------------------------------------------------
 // Config — all monetary values in pence (integers, never floats)
@@ -72,39 +71,6 @@ export interface ReadingTab {
 }
 
 // -----------------------------------------------------------------------------
-// Tab settlement — Stage 2: reader's card charged
-// -----------------------------------------------------------------------------
-
-export interface TabSettlement {
-  id: string
-  readerId: string
-  tabId: string
-  amountPence: number
-  platformFeePence: number
-  netToWritersPence: number
-  stripePaymentIntentId: string | null
-  stripeChargeId: string | null
-  triggerType: 'threshold' | 'monthly_fallback'
-  settledAt: Date
-}
-
-// -----------------------------------------------------------------------------
-// Writer payout — Stage 3: platform pays writer
-// -----------------------------------------------------------------------------
-
-interface WriterPayout {
-  id: string
-  writerId: string
-  amountPence: number
-  stripeTransferId: string | null
-  stripeConnectId: string
-  status: PayoutStatus
-  triggeredAt: Date
-  completedAt: Date | null
-  failedReason: string | null
-}
-
-// -----------------------------------------------------------------------------
 // Writer earnings view — what the dashboard reads
 // (platform_settled + writer_paid reads only — provisional and accrued hidden)
 //
@@ -136,18 +102,3 @@ export interface ArticleEarnings {
   pendingPence: number             // platform_settled portion
   paidPence: number                // writer_paid portion
 }
-
-// -----------------------------------------------------------------------------
-// Stripe webhook event types we handle
-//
-// FIX #14: Changed 'transfer.created' to 'transfer.paid'. transfer.created
-// fires on object creation, not when funds arrive. Payouts should only be
-// confirmed when funds are actually transferred.
-// -----------------------------------------------------------------------------
-
-type HandledStripeEvent =
-  | 'payment_intent.succeeded'
-  | 'payment_intent.payment_failed'
-  | 'transfer.paid'
-  | 'transfer.failed'
-  | 'account.updated'              // Stripe Connect KYC completion

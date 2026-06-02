@@ -1,4 +1,4 @@
-import { nip44, generateSecretKey, getPublicKey } from 'nostr-tools'
+import { nip44, getPublicKey } from 'nostr-tools'
 
 // =============================================================================
 // NIP-44 Key Wrapping

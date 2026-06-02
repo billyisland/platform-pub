@@ -2,7 +2,6 @@ import { URL } from "node:url";
 import dns from "node:dns/promises";
 import net, { type LookupFunction } from "node:net";
 import { Agent, fetch as undiciFetch } from "undici";
-import logger from "./logger.js";
 
 // =============================================================================
 // SSRF-hardened HTTP client
@@ -444,14 +443,4 @@ export async function pinnedWebSocketOptions(
       }
     }) as LookupFunction,
   };
-}
-
-// Back-compat: validate without returning pin options. Kept for callers
-// that only need the allow/reject decision. New call sites should use
-// pinnedWebSocketOptions and thread the result into the WebSocket ctor.
-export async function validateWebSocketUrl(
-  url: string,
-  maxLength = 2048,
-): Promise<void> {
-  await pinnedWebSocketOptions(url, maxLength);
 }

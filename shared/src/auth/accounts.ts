@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { pool, withTransaction } from '../db/client.js'
-import { createSession, destroySession } from './session.js'
+import { createSession } from './session.js'
 import logger from '../lib/logger.js'
 import type { FastifyReply } from 'fastify'
 

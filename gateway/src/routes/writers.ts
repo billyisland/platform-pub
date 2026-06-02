@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { optionalAuth } from '../middleware/auth.js'
-import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Writer Routes

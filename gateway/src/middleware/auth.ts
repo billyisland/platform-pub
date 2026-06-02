@@ -1,7 +1,6 @@
 import type {
   FastifyRequest,
   FastifyReply,
-  HookHandlerDoneFunction,
 } from "fastify";
 import {
   verifySession,
@@ -10,7 +9,6 @@ import {
   type SessionPayload,
 } from "@platform-pub/shared/auth/session.js";
 import { pool } from "@platform-pub/shared/db/client.js";
-import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
 // Auth Middleware

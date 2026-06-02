@@ -36,7 +36,7 @@ function isQuarterlyBoundary(): boolean {
   return now.getDate() === 1 && [0, 3, 6, 9].includes(now.getMonth());
 }
 
-export const trustEpochAggregate: Task = async (_payload, helpers) => {
+export const trustEpochAggregate: Task = async (_payload, _helpers) => {
   const payload = (_payload ?? {}) as {
     dryRun?: boolean;
     forceType?: "full" | "mopup";

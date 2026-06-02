@@ -5,7 +5,6 @@ import {
   normaliseAtprotoCommit,
   type BskyPostRecord,
   type JetstreamCommit,
-  type NormalisedAtprotoItem,
 } from "./atproto.js";
 
 const DID = "did:plc:testuser123";

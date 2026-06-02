@@ -1,5 +1,4 @@
 import type { EventTemplate } from 'nostr-tools'
-import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
 // Key Custody Client

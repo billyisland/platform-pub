@@ -1,6 +1,5 @@
 import { sendEmail } from "./email.js";
 import { pool } from "../db/client.js";
-import logger from "./logger.js";
 import { escapeHtml } from "./text.js";
 
 // =============================================================================

@@ -1,8 +1,6 @@
-import type { PoolClient } from "pg";
 import type {
   GatePassEvent,
   ReadEvent,
-  ReadingTab,
   PlatformConfig,
 } from "../types/index.js";
 import {
@@ -80,8 +78,6 @@ class AccrualService {
   async recordGatePass(
     event: GatePassEvent,
   ): Promise<{ readEvent: ReadEvent; allowanceJustExhausted: boolean }> {
-    const config = await this.getConfig();
-
     const result = await withTransaction(async (client) => {
       const readerRow = await client.query<{
         stripe_customer_id: string | null;

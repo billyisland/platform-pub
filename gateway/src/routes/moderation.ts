@@ -221,7 +221,7 @@ export async function moderationRoutes(app: FastifyInstance) {
 
       const adminId = req.session!.sub
       const { reportId } = req.params
-      const { action, reason } = parsed.data
+      const { action } = parsed.data
 
       return withTransaction(async (client) => {
         // Fetch the report

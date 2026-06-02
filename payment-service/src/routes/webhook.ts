@@ -3,7 +3,6 @@ import Stripe from 'stripe'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
-import { accrualService } from '../services/accrual.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================

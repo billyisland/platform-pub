@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { JobHelpers, Task } from 'graphile-worker'
+import type { Task } from 'graphile-worker'
 
 const mockClient = {
   query: vi.fn(),

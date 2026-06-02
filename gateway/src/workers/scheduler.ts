@@ -23,7 +23,6 @@ import { truncatePreview } from "@platform-pub/shared/lib/text.js";
 
 const PAYWALL_GATE_MARKER = "<!-- paywall-gate -->";
 const KEY_SERVICE_URL = process.env.KEY_SERVICE_URL ?? "http://localhost:3002";
-const INTERNAL_SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN ?? "";
 
 interface ScheduledDraft {
   id: string;

@@ -1,4 +1,4 @@
-import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
+import { withTransaction } from '@platform-pub/shared/db/client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
