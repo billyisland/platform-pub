@@ -33,7 +33,7 @@ export default function AdminReportsPage() {
     finally { setDataLoading(false) }
   }
 
-  useEffect(() => { if (user?.isAdmin) fetchReports() }, [user, filter])
+  useEffect(() => { if (user?.isAdmin) void fetchReports() }, [user, filter])
 
   if (loading || !user?.isAdmin) {
     return (

@@ -52,9 +52,9 @@ export default function SearchPage() {
   // Auto-search on mount if there's a query param
   useEffect(() => {
     if (initialQ.trim().length >= 2) {
-      handleSearch(initialQ)
+      void handleSearch(initialQ)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])  
 
   const articleCount = articleResults.length
   const writerCount = writerResults.length

@@ -8,7 +8,7 @@ export function PledgesSection() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         const data = await drivesApi.myPledges()
         setPledges(data.pledges)

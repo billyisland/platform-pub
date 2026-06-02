@@ -27,7 +27,7 @@ export function ReadingHistory() {
     finally { setLoading(false); setLoadingMore(false) }
   }
 
-  useEffect(() => { fetchItems(0, false) }, [])
+  useEffect(() => { void fetchItems(0, false) }, [])
 
   if (loading) return <div className="h-12 animate-pulse bg-white" />
   if (items.length === 0) return null

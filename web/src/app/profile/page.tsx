@@ -33,7 +33,7 @@ export default function ProfilePage() {
 
   const onboardingComplete = searchParams.get('onboarding') === 'complete'
 
-  useEffect(() => { if (onboardingComplete) fetchMe() }, [onboardingComplete, fetchMe])
+  useEffect(() => { if (onboardingComplete) void fetchMe() }, [onboardingComplete, fetchMe])
 
   // Initialise form from auth state once loaded
   if (!loading && user && !initialised) {

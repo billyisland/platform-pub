@@ -165,7 +165,7 @@ export function useNeighbourhood(
     fetched.current = true;
     setState((prev) => ({ ...prev, loading: true }));
 
-    Promise.allSettled([
+    void Promise.allSettled([
       externalItems.parent(itemId),
       externalItems.thread(itemId),
     ]).then(([parentResult, threadResult]) => {

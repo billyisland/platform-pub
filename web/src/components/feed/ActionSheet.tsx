@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, forwardRef } from "react";
 import { createPortal } from "react-dom";
 
 interface ActionSheetAction {
@@ -70,8 +70,6 @@ export function ActionSheet({ actions }: ActionSheetProps) {
     </span>
   );
 }
-
-import { forwardRef } from "react";
 
 const ActionSheetPopover = forwardRef<
   HTMLDivElement,

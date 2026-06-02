@@ -71,7 +71,7 @@ export function PostThread({
   useEffect(() => {
     if (!view) return;
     focalRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [thread.focalId, view !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [thread.focalId, view !== null]);  
 
   // Gutter overflow arrows: show ↑ while content above the focal is off-screen,
   // ↓ while content below is off-screen (§4.3). Sentinels sit at the band edges.

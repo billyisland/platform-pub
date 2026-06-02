@@ -20,7 +20,7 @@ export function LinkedAccountsPanel() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { void load() }, [])
 
   async function handleConnectMastodon() {
     const trimmed = instanceUrl.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
@@ -121,7 +121,7 @@ export function LinkedAccountsPanel() {
               placeholder="mastodon.social"
               autoFocus
               className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
-              onKeyDown={e => { if (e.key === 'Enter') handleConnectMastodon() }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleConnectMastodon() }}
             />
             <div className="flex gap-3 mt-3">
               <button onClick={handleConnectMastodon} disabled={connecting || !instanceUrl.trim()} className="btn-text">
@@ -142,7 +142,7 @@ export function LinkedAccountsPanel() {
               placeholder="alice.bsky.social"
               autoFocus
               className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
-              onKeyDown={e => { if (e.key === 'Enter') handleConnectBluesky() }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleConnectBluesky() }}
             />
             <div className="flex gap-3 mt-3">
               <button onClick={handleConnectBluesky} disabled={connecting || !blueskyHandle.trim()} className="btn-text">

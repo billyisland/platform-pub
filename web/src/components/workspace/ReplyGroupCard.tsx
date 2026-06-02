@@ -3,8 +3,10 @@
 import { useState } from "react";
 import type { ReplyGroupItem, ExternalFeedItem } from "../../lib/ndk";
 import type { ExternalThreadEntry } from "../../lib/api/feeds";
-import type { Brightness, Density, TextSize } from "./tokens";
 import {
+  type Brightness,
+  type Density,
+  type TextSize,
   PALETTES,
   DEFAULT_BRIGHTNESS,
   DEFAULT_DENSITY,

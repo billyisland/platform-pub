@@ -76,7 +76,7 @@ function CaughtUpTile({
     start();
     return stop;
     // onDismiss is stable enough for this lifecycle; intentionally mount-only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   return (

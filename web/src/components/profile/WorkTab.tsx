@@ -83,7 +83,7 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
         // Fetch vote tallies for articles
         const eventIds = work
           .filter(i => i.kind === 'article')
-          .map(i => (i.data as DbArticle).nostrEventId)
+          .map(i => (i.data).nostrEventId)
         if (eventIds.length > 0) {
           const idsParam = eventIds.join(',')
           const [talliesRes, myVotesRes] = await Promise.all([
@@ -100,7 +100,7 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
       } catch { /* silently fail */ }
       finally { setLoading(false) }
     }
-    load()
+    void load()
   }, [username, writer.id])
 
   const handleTogglePin = useCallback(async (articleId: string) => {
@@ -112,8 +112,8 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
       if (res.ok) {
         const { pinned } = await res.json()
         setItems(prev => prev.map(item =>
-          item.kind === 'article' && (item.data as DbArticle).id === articleId
-            ? { ...item, pinned, data: { ...item.data as DbArticle, pinnedOnProfile: pinned } }
+          item.kind === 'article' && (item.data).id === articleId
+            ? { ...item, pinned, data: { ...item.data, pinnedOnProfile: pinned } }
             : item
         ))
       }
@@ -138,7 +138,7 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
 
   function renderItem(item: WorkItem) {
     if (item.kind === 'article') {
-      const a = item.data as DbArticle
+      const a = item.data
       const articleEvent: ArticleEvent & { type: 'article' } = {
         type: 'article',
         id: a.nostrEventId,
@@ -173,7 +173,7 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
       )
     }
 
-    const d = item.data as PledgeDrive
+    const d = item.data
     return <ProfileDriveCard key={d.id} drive={d} />
   }
 

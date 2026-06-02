@@ -73,10 +73,10 @@ export function useAuthorCard(
     if (!existing) {
       existing = fetchAuthorCard(type, id);
       inflight.set(cacheKey, existing);
-      existing.finally(() => inflight.delete(cacheKey));
+      void existing.finally(() => inflight.delete(cacheKey));
     }
 
-    existing.then((data) => {
+    void existing.then((data) => {
       if (data) {
         cache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS });
       }
@@ -96,7 +96,7 @@ export function useAuthorCard(
     cache.delete(cacheKey);
     fetchedRef.current = false;
     setState({ data: null, loading: true });
-    fetchAuthorCard(type, id).then((data) => {
+    void fetchAuthorCard(type, id).then((data) => {
       if (data) {
         cache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS });
       }

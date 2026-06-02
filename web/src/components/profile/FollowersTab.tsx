@@ -34,7 +34,7 @@ export function FollowersTab({ username, isOwnProfile }: { username: string; isO
       } catch { /* silently fail */ }
       finally { setLoading(false) }
     }
-    load()
+    void load()
   }, [username])
 
   async function loadMore() {

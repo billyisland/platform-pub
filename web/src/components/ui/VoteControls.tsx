@@ -85,7 +85,7 @@ export function VoteControls({
     const cost = voteCostPence(direction, seq)
 
     if (cost === 0) {
-      castVote(direction)
+      castVote(direction).catch((e) => console.error('Failed to cast vote', e))
     } else {
       setPendingDirection(direction)
     }
@@ -100,7 +100,7 @@ export function VoteControls({
         upCount: direction === 'up' ? prev.upCount + 1 : prev.upCount,
         downCount: direction === 'down' ? prev.downCount + 1 : prev.downCount,
       }))
-      useAuth.getState().fetchMe()
+      void useAuth.getState().fetchMe()
     } catch { /* silent */ }
     finally {
       setSubmitting(false)

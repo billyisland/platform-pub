@@ -42,7 +42,7 @@ interface EditorProps {
   editingDTag?: string
   publicationMemberships?: PublicationContext[]
   initialPublicationId?: string | null
-  onPublish?: (data: PublishData) => void
+  onPublish?: (data: PublishData) => void | Promise<void>
   onSchedule?: (data: PublishData, scheduledAt: string) => Promise<void>
 }
 
@@ -265,7 +265,7 @@ export function ArticleEditor({
   const handlePublishClick = useCallback(() => {
     const isSubmitForReview = selectedPub && !selectedPub.can_publish
     if (isEditing || isSubmitForReview) {
-      handlePublish()
+      void handlePublish()
     } else {
       setSendEmail(true)
       setShowPublishConfirm(true)
@@ -364,7 +364,7 @@ export function ArticleEditor({
               className="w-32 sm:w-40 bg-grey-200"
               style={{ aspectRatio: '16 / 9' }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img
                 src={coverImageUrl}
                 alt=""
@@ -383,7 +383,7 @@ export function ArticleEditor({
                   input.accept = 'image/jpeg,image/png,image/gif,image/webp'
                   input.onchange = (e) => {
                     const file = (e.target as HTMLInputElement).files?.[0]
-                    if (file) handleCoverUpload(file)
+                    if (file) void handleCoverUpload(file)
                   }
                   input.click()
                 }}
@@ -411,7 +411,7 @@ export function ArticleEditor({
               input.accept = 'image/jpeg,image/png,image/gif,image/webp'
               input.onchange = (e) => {
                 const file = (e.target as HTMLInputElement).files?.[0]
-                if (file) handleCoverUpload(file)
+                if (file) void handleCoverUpload(file)
               }
               input.click()
             }}

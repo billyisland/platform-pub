@@ -19,8 +19,7 @@ import React, { useEffect, useState } from "react";
 import { useReader } from "../../stores/reader";
 import { ExternalArticleReader } from "../article/ExternalArticleReader";
 import { ArticleReader } from "../article/ArticleReader";
-import { articles } from "../../lib/api";
-import type { ArticleMetadata } from "../../lib/api";
+import { articles, type ArticleMetadata } from "../../lib/api";
 
 export function ReaderOverlay() {
   const { isOpen, target, close, _handlePop } = useReader();

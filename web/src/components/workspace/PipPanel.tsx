@@ -138,7 +138,7 @@ export function PipPanel({
     setWriter(null)
     setTrustProfile(null)
 
-    ;(async () => {
+    void (async () => {
       try {
         const writerRes = await fetch(`/api/v1/writers/by-pubkey/${pubkey}`, {
           credentials: 'include',
@@ -824,7 +824,7 @@ function EncounterRow({
       const prev = viewerVouch
       setViewerVouch(null)
       try {
-        await trustApi.withdrawVouch(prev!.id)
+        await trustApi.withdrawVouch(prev.id)
       } catch {
         // Re-affirm on failure to recover.
         setCount((c) => c + 1)

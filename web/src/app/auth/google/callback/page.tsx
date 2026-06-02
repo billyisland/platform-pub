@@ -50,7 +50,7 @@ export default function GoogleCallbackPage() {
       .catch(() => {
         router.replace('/auth?mode=login&error=google_failed')
       })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])  
 
   return (
     <div className="flex min-h-screen items-center justify-center">

@@ -54,7 +54,7 @@ export function GiftLinkModal({ articleDbId, onClose }: GiftLinkModalProps) {
               onClick={(e) => (e.target as HTMLInputElement).select()}
             />
             <button
-              onClick={() => { navigator.clipboard.writeText(url) }}
+              onClick={() => { void navigator.clipboard.writeText(url) }}
               className="btn text-sm"
             >
               Copy link

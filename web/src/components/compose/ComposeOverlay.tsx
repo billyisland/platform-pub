@@ -88,7 +88,7 @@ export function ComposeOverlay() {
 
   function handleScrimClick(e: React.MouseEvent) {
     if (e.target === scrimRef.current) {
-      if (mode === "article") handleArticleDismiss();
+      if (mode === "article") handleArticleDismiss().catch((e) => console.error("Article dismiss flush failed", e));
       else handleDismiss();
     }
   }
@@ -148,7 +148,7 @@ export function ComposeOverlay() {
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handlePost();
+      void handlePost();
     }
   }
 

@@ -60,7 +60,7 @@ export function AccountLedger({ initialIncludeFreeReads = false }: { initialIncl
     finally { setLoading(false); setLoadingMore(false) }
   }
 
-  useEffect(() => { fetchEntries(filter, 0, false, includeFreeReads) }, [filter, includeFreeReads])
+  useEffect(() => { void fetchEntries(filter, 0, false, includeFreeReads) }, [filter, includeFreeReads])
 
   return (
     <div className="mb-10">

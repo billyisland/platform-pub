@@ -21,7 +21,7 @@ export default function LedgerPage() {
 
   useEffect(() => {
     if (!user) return
-    ;(async () => {
+    void (async () => {
       try {
         const [tabData, earningsData] = await Promise.all([
           accountApi.getTab(),

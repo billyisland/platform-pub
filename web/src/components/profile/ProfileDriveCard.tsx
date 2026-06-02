@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { PledgeDrive } from '../../lib/api'
-import { drives } from '../../lib/api'
+import { drives, type PledgeDrive } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
 import { formatDateFromISO } from '../../lib/format'
 

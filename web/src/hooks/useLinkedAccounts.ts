@@ -31,7 +31,7 @@ async function load(): Promise<LinkedAccount[]> {
 
 export function invalidateLinkedAccounts(): void {
   cachedAccounts = null
-  load()
+  void load()
 }
 
 export function useLinkedAccounts(): LinkedAccount[] | null {
@@ -42,7 +42,7 @@ export function useLinkedAccounts(): LinkedAccount[] | null {
     if (loading || !user) return
     const cb = (a: LinkedAccount[] | null) => setAccounts(a)
     subscribers.add(cb)
-    if (cachedAccounts === null) load()
+    if (cachedAccounts === null) void load()
     else setAccounts(cachedAccounts)
     return () => { subscribers.delete(cb) }
   }, [user, loading])

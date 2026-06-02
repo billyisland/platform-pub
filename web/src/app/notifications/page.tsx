@@ -167,7 +167,7 @@ export default function NotificationsPage() {
     }
   }, [])
 
-  useEffect(() => { if (user) fetchPage() }, [user, fetchPage])
+  useEffect(() => { if (user) void fetchPage() }, [user, fetchPage])
 
   async function handleRead(id: string, href: string) {
     // Mark as read locally (bold → normal)

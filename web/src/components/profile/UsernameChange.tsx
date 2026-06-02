@@ -95,7 +95,7 @@ export function UsernameChange() {
             maxLength={30}
             autoFocus
             className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none"
-            onKeyDown={e => { if (e.key === 'Enter' && availability === 'available') handleSave() }}
+            onKeyDown={e => { if (e.key === 'Enter' && availability === 'available') void handleSave() }}
           />
 
           {/* Availability feedback */}

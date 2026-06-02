@@ -64,7 +64,7 @@ export function InlineReplyBox({
     }
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      handleSubmit();
+      void handleSubmit();
     }
   }
 

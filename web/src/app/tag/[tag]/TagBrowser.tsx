@@ -25,7 +25,7 @@ export function TagBrowser({ tagName }: { tagName: string }) {
     finally { setLoading(false) }
   }, [tagName])
 
-  useEffect(() => { load(0) }, [load])
+  useEffect(() => { void load(0) }, [load])
 
   return (
     <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">

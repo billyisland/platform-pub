@@ -84,8 +84,8 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
         ? stripHeroImage(article.content, heroImage)
         : article.content
 
-  useEffect(() => { if (!preRenderedFreeHtml) renderMarkdown(contentWithoutHero).then(setFreeHtml) }, [contentWithoutHero, preRenderedFreeHtml])
-  useEffect(() => { if (paywallBody) renderMarkdown(paywallBody).then(setPaywallHtml) }, [paywallBody])
+  useEffect(() => { if (!preRenderedFreeHtml) void renderMarkdown(contentWithoutHero).then(setFreeHtml) }, [contentWithoutHero, preRenderedFreeHtml])
+  useEffect(() => { if (paywallBody) void renderMarkdown(paywallBody).then(setPaywallHtml) }, [paywallBody])
   useEffect(() => {
     if (!article.isPaywalled) return
     const cached = sessionStorage.getItem(`unlocked:${article.id}`)
@@ -118,7 +118,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
     try {
       await fetch(`/api/v1/subscriptions/${writerId}`, { method: 'POST', credentials: 'include' })
       setIsSubscribed(true)
-      handleUnlock()
+      await handleUnlock()
     } catch { setUnlockError('Failed to subscribe. Try again.') }
     finally { setSubscribing(false) }
   }

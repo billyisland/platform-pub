@@ -25,7 +25,7 @@ export default function RedeemOfferPage() {
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       setLoading(true)
       try {
         const result = await subscriptionOffers.lookup(params.code)

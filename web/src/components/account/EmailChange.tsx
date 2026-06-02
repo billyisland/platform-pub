@@ -51,7 +51,7 @@ export function EmailChange() {
               placeholder="new@example.com"
               autoFocus
               className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
-              onKeyDown={e => { if (e.key === 'Enter') handleSave() }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
             />
             {error && <p className="text-ui-xs text-red-600 mt-2">{error}</p>}
             <div className="flex gap-3 mt-3">

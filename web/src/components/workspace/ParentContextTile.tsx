@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { externalItems, type ParentItem } from "../../lib/api/feeds";
 import { truncateText } from "../../lib/format";
-import type { VesselPalette } from "./tokens";
-import { TEXT_SIZE_PX, DEFAULT_TEXT_SIZE } from "./tokens";
+import { type VesselPalette, TEXT_SIZE_PX, DEFAULT_TEXT_SIZE } from "./tokens";
 import { Byline } from "./Byline";
 
 interface Props {

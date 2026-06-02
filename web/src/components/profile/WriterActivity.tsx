@@ -8,6 +8,7 @@ import {
   messages as messagesApi,
   trust as trustApi,
   type TrustProfileResponse,
+  type WriterProfile,
 } from "../../lib/api";
 import { useCompose } from "../../stores/compose";
 import { WorkTab } from "./WorkTab";
@@ -16,7 +17,6 @@ import { FollowersTab } from "./FollowersTab";
 import { FollowingTab } from "./FollowingTab";
 import { TrustProfile } from "../trust/TrustProfile";
 import { VouchModal } from "../trust/VouchModal";
-import type { WriterProfile } from "../../lib/api";
 import type { QuoteTarget } from "../../lib/publishNote";
 
 type ProfileTab = "work" | "social" | "followers" | "following";
@@ -86,14 +86,14 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
       try {
         const [followRes, subRes] = await Promise.all([
           fetch("/api/v1/follows", { credentials: "include" }),
-          fetch(`/api/v1/subscriptions/check/${writer!.id}`, {
+          fetch(`/api/v1/subscriptions/check/${writer.id}`, {
             credentials: "include",
           }),
         ]);
         if (followRes.ok) {
           const data = await followRes.json();
           setFollowing(
-            (data.writers ?? []).some((w: any) => w.id === writer!.id),
+            (data.writers ?? []).some((w: any) => w.id === writer.id),
           );
         }
         if (subRes.ok) {
@@ -103,7 +103,7 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
         setSubStatus({ subscribed: false });
       }
     }
-    checkStatus();
+    void checkStatus();
   }, [user, writer]);
 
   // Fetch trust data for vouch modal (viewer's existing vouches)

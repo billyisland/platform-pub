@@ -79,7 +79,7 @@ function BookmarksTab() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { loadBookmarks(0) }, [loadBookmarks])
+  useEffect(() => { void loadBookmarks(0) }, [loadBookmarks])
 
   if (loading) {
     return (

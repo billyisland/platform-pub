@@ -160,7 +160,7 @@ export function MessageThread({
     setReplyTo(null)
     latestCreatedAt.current = null
     initialScrollDone.current = false
-    fetchMessages()
+    void fetchMessages()
 
     pollRef.current = setInterval(pollForNew, POLL_INTERVAL)
     return () => {
@@ -470,7 +470,7 @@ export function MessageThread({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              handleSend(e)
+              void handleSend(e)
             }
           }}
           placeholder={replyTo ? 'Write a reply\u2026' : 'Write a message\u2026'}

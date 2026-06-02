@@ -39,7 +39,7 @@ export function ProposalsTab({ userId }: { userId: string }) {
     }
   }
 
-  useEffect(() => { fetchAll() }, [userId])
+  useEffect(() => { void fetchAll() }, [userId])
 
   if (loading) {
     return (
@@ -102,14 +102,14 @@ export function ProposalsTab({ userId }: { userId: string }) {
       {/* Drive creation form */}
       {showDriveForm && (
         <div className="mb-8">
-          <DriveCreateForm onCreated={() => { setShowDriveForm(false); fetchAll() }} onCancel={() => setShowDriveForm(false)} />
+          <DriveCreateForm onCreated={() => { setShowDriveForm(false); void fetchAll() }} onCancel={() => setShowDriveForm(false)} />
         </div>
       )}
 
       {/* Offer creation form */}
       {offerFormMode && (
         <div className="mb-8">
-          <OfferCreateForm mode={offerFormMode} onCreated={() => { setOfferFormMode(null); fetchAll() }} onCancel={() => setOfferFormMode(null)} />
+          <OfferCreateForm mode={offerFormMode} onCreated={() => { setOfferFormMode(null); void fetchAll() }} onCancel={() => setOfferFormMode(null)} />
         </div>
       )}
 
@@ -167,7 +167,7 @@ function OffersSection({ offers, onUpdate }: { offers: SubscriptionOffer[]; onUp
 
   function copyUrl(code: string, offerId: string) {
     const url = `${window.location.origin}/subscribe/${code}`
-    navigator.clipboard.writeText(url)
+    void navigator.clipboard.writeText(url)
     setCopiedId(offerId)
     setTimeout(() => setCopiedId(null), 2000)
   }

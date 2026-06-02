@@ -43,7 +43,7 @@ export default function SubscriptionsPage() {
   }, [])
 
   useEffect(() => {
-    if (user) loadSubscriptions()
+    if (user) void loadSubscriptions()
   }, [user, loadSubscriptions])
 
   const handleRemove = useCallback(async (id: string) => {

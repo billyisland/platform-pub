@@ -371,7 +371,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
       const res = await resolver.poll(requestId)
       setResolverResult(res)
       if (res.status === 'pending') {
-        pollForResults(requestId)
+        void pollForResults(requestId)
       } else {
         setResolving(false)
       }
@@ -395,7 +395,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
         const res = await resolver.resolve(value.trim(), 'dm')
         setResolverResult(res)
         if (res.requestId && res.status === 'pending') {
-          pollForResults(res.requestId)
+          void pollForResults(res.requestId)
         } else {
           setResolving(false)
         }
@@ -1284,7 +1284,7 @@ function ArticleModePanel({
                 flexShrink: 0,
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img
                 src={coverImageUrl}
                 alt=""

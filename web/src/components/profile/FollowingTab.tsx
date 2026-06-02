@@ -4,8 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { Avatar } from "../ui/Avatar";
 import { formatDateFromISO } from "../../lib/format";
-import { account, subscribe as apiSubscribe } from "../../lib/api";
-import type { MySubscription } from "../../lib/api";
+import { account, subscribe as apiSubscribe, type MySubscription } from "../../lib/api";
 
 interface Following {
   id: string;
@@ -85,7 +84,7 @@ export function FollowingTab({
         setLoading(false);
       }
     }
-    load();
+    void load();
   }, [username, isOwnProfile]);
 
   async function loadMore() {

@@ -12,7 +12,7 @@ export function SubscriptionsSection() {
   const [togglingNotify, setTogglingNotify] = useState<string | null>(null)
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         const data = await accountApi.getMySubscriptions()
         setSubs(data.subscriptions)

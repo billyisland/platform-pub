@@ -40,7 +40,9 @@ docker compose build web   # Rebuild one service image
 
 ### Per-service scripts
 
-Backend services (`gateway/`, `payment-service/`, `key-service/`, `key-custody/`) and `shared/` share the same npm scripts: `npm run dev` (tsx watch), `npm run build` (tsc → `dist/`), `npm run test` / `npm run test:watch` (Vitest). The web frontend (`web/`) uses `npm run dev` (Next.js, port 3010), `npm run build`, and `npm run lint` (ESLint via next lint).
+Backend services (`gateway/`, `payment-service/`, `key-service/`, `key-custody/`) and `shared/` share the same npm scripts: `npm run dev` (tsx watch), `npm run build` (tsc → `dist/`), `npm run test` / `npm run test:watch` (Vitest). The web frontend (`web/`) uses `npm run dev` (Next.js, port 3010), `npm run build`, and `npm run lint` (next lint — React/hooks/a11y/next-image; currently dormant).
+
+**Linting.** The root `eslint.config.mjs` (flat config, `npm run lint` at the repo root) is the type-aware pass covering **all workspaces including `web/src`** — its reason to exist is promise safety (`no-floating-promises`/`no-misused-promises`/`await-thenable`), applied identically to backend and frontend via a shared rule set. The web block sets `checksVoidReturn.attributes: false` (React ignores a handler's returned promise) and carries no-op stubs for the React/hooks/a11y/next-image rule names so the source's inline `eslint-disable` directives stay valid — those rules are enforced by `web`'s own `next lint`, not here. `npm run lint` must stay at **0 errors** (warnings — `no-explicit-any`, `no-unused-vars` — are accepted hygiene debt).
 
 ### Database migrations
 

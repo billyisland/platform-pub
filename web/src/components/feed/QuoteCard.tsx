@@ -80,7 +80,7 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
       if (!cancelled) setLoading(false)
     }
 
-    fetchData()
+    void fetchData()
     return () => { cancelled = true }
   }, [eventId])
 

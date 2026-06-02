@@ -11,6 +11,7 @@ import {
 import { snap } from "../../lib/workspace/grid";
 import {
   workspaceFeeds as workspaceFeedsApi,
+  follows as followsApi,
   type WorkspaceFeed,
   type WorkspaceFeedSource,
   type WorkspaceFeedApiItem,
@@ -21,6 +22,7 @@ import type {
   ReplyGroupItem,
   ArticleEvent,
   NoteEvent,
+  PipStatus,
 } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
 import { NewUserVesselCard, type NewUserItem } from "./NewUserVesselCard";
@@ -40,8 +42,6 @@ import { ReplyGroupCard } from "./ReplyGroupCard";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { Composer, type ReplyTarget } from "./Composer";
 import { PipPanel } from "./PipPanel";
-import { follows as followsApi } from "../../lib/api";
-import type { PipStatus } from "../../lib/ndk";
 import { NewFeedPrompt } from "./NewFeedPrompt";
 import { FeedComposer } from "./FeedComposer";
 import { ForallCeremony } from "./ForallCeremony";
@@ -622,7 +622,7 @@ export function WorkspaceView() {
     if (!user || !hydrated) return;
     let cancelled = false;
     setBootstrap("loading");
-    (async () => {
+    void (async () => {
       try {
         let { feeds: list } = await workspaceFeedsApi.list();
         let mintedFounderFeed = false;

@@ -35,7 +35,7 @@ export default function MessagesPage() {
     ))
   }, [activeConvId])
 
-  useEffect(() => { if (user) fetchConversations() }, [user])
+  useEffect(() => { if (user) void fetchConversations() }, [user])
 
   // Auto-select conversation from hash (for deep-linking from /messages/:id redirect)
   // or default to the most recent conversation
@@ -64,7 +64,7 @@ export default function MessagesPage() {
       setActiveConvId(result.conversationId)
       setShowNewMessage(false)
       setNewRecipient('')
-      fetchConversations()
+      void fetchConversations()
     } catch { alert('Failed to start conversation.') }
     finally { setCreating(false) }
   }

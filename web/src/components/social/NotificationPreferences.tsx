@@ -57,7 +57,7 @@ export function NotificationPreferences() {
             <span className="text-ui-sm text-black">{cat.label}</span>
             <div className="flex">
               <button
-                onClick={() => { if (!prefs[cat.key]) return; toggle(cat.key) }}
+                onClick={() => { if (!prefs[cat.key]) return; void toggle(cat.key) }}
                 className={`label-ui toggle-chip ${
                   prefs[cat.key] ? 'toggle-chip-active' : 'toggle-chip-inactive'
                 }`}
@@ -65,7 +65,7 @@ export function NotificationPreferences() {
                 On
               </button>
               <button
-                onClick={() => { if (prefs[cat.key] === false) return; toggle(cat.key) }}
+                onClick={() => { if (prefs[cat.key] === false) return; void toggle(cat.key) }}
                 className={`label-ui toggle-chip ${
                   prefs[cat.key] === false ? 'toggle-chip-active' : 'toggle-chip-inactive'
                 }`}

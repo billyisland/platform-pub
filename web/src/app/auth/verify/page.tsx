@@ -50,7 +50,7 @@ export default function VerifyPage() {
       }
     }
 
-    verify()
+    void verify()
   }, [searchParams, router, fetchMe])
 
   return (

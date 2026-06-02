@@ -77,7 +77,7 @@ export function useReadingPosition({ nostrEventId, enabled }: Options) {
       }
     }
 
-    maybeRestore()
+    void maybeRestore()
 
     let saveTimer: ReturnType<typeof setTimeout> | null = null
 

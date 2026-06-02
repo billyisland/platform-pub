@@ -18,7 +18,7 @@ export function GiftLinksPanel({ articleId, dTag }: GiftLinksPanelProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       setLoading(true)
       try {
         const res = await giftLinks.list(articleId)
@@ -65,7 +65,7 @@ export function GiftLinksPanel({ articleId, dTag }: GiftLinksPanelProps) {
 
   function copyUrl(token: string, linkId: string) {
     const url = `${window.location.origin}/article/${dTag}?gift=${token}`
-    navigator.clipboard.writeText(url)
+    void navigator.clipboard.writeText(url)
     setCopiedId(linkId)
     setTimeout(() => setCopiedId(null), 2000)
   }

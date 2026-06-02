@@ -33,10 +33,10 @@ export function useWriterName(pubkey: string): WriterInfo | null {
     if (!pending.has(pubkey)) {
       const promise = fetchWriterByPubkey(pubkey)
       pending.set(pubkey, promise)
-      promise.finally(() => pending.delete(pubkey))
+      void promise.finally(() => pending.delete(pubkey))
     }
 
-    pending.get(pubkey)!.then((result) => {
+    void pending.get(pubkey)!.then((result) => {
       if (result) {
         cache.set(pubkey, result)
         if (!cancelled) setInfo(result)

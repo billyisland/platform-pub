@@ -6,12 +6,11 @@ import { useRouter } from "next/navigation";
 import type { ArticleEvent } from "../../lib/ndk";
 import { useWriterName } from "../../hooks/useWriterName";
 import { useAuth } from "../../stores/auth";
-import { replies as repliesApi, bookmarks } from "../../lib/api";
+import { replies as repliesApi, bookmarks, type VoteTally, type MyVoteCount } from "../../lib/api";
 import { ReplySection } from "../replies/ReplySection";
 import { VoteControls } from "../ui/VoteControls";
 import { BookmarkButton } from "../ui/BookmarkButton";
 import { ShareButton } from "../ui/ShareButton";
-import type { VoteTally, MyVoteCount } from "../../lib/api";
 import type { QuoteTarget } from "../../lib/publishNote";
 import {
   formatDateRelative,
@@ -174,7 +173,7 @@ export function ArticleCard({
       </Link>
 
       {/* Body — click to expand neighbourhood (Phase 2) */}
-      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+      { }
       <div onClick={handleBodyExpand} className="cursor-pointer">
         {/* Excerpt — Literata roman (omitted for briefs) */}
         {!isBrief && (
@@ -291,7 +290,7 @@ export function ArticleCard({
                 {
                   label: "SHARE",
                   onClick: () => {
-                    navigator.clipboard?.writeText(
+                    void navigator.clipboard?.writeText(
                       `${window.location.origin}/article/${article.dTag}`,
                     );
                   },

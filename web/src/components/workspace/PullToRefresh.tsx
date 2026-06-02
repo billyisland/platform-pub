@@ -45,7 +45,7 @@ export function PullToRefresh({
   const doRefresh = useCallback(() => {
     setRefreshing(true);
     setPullDistance(THRESHOLD * 0.6);
-    onRefresh().finally(() => {
+    void onRefresh().finally(() => {
       setRefreshing(false);
       setPullDistance(0);
       setPulling(false);

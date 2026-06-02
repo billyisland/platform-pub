@@ -62,7 +62,7 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
         // Poll while the server reports pending Phase B work.
         if (res.requestId && res.status === "pending") {
           pollCountRef.current = 0;
-          pollForResults(res.requestId);
+          void pollForResults(res.requestId);
         } else {
           setResolving(false);
         }
@@ -87,7 +87,7 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
       setResult(res);
 
       if (res.status === "pending") {
-        pollForResults(requestId);
+        void pollForResults(requestId);
       } else {
         setResolving(false);
       }

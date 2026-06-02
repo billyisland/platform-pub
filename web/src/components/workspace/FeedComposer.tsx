@@ -801,7 +801,7 @@ function SourceRow({
   const [committing, setCommitting] = useState(false);
   const isMuted = source.mutedAt !== null;
   const currentStep = isMuted ? 0 : weightToStep(source.weight);
-  const sampling = source.samplingMode as "random" | "top";
+  const sampling = source.samplingMode;
 
   async function commitStep(nextStep: number) {
     if (committing) return;

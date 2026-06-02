@@ -110,7 +110,7 @@ export const PaywallGateNode = Node.create({
 
           if (existingPos !== null) {
             return chain()
-              .deleteRange({ from: existingPos, to: existingPos + 1 })
+              .deleteRange({ from: existingPos, to: Number(existingPos) + 1 })
               .insertContent({ type: this.name })
               .run();
           }
@@ -133,7 +133,7 @@ export const PaywallGateNode = Node.create({
           if (gatePos !== null) {
             return commands.deleteRange({
               from: gatePos,
-              to: gatePos + 1,
+              to: Number(gatePos) + 1,
             });
           }
 

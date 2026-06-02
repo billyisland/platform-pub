@@ -11,10 +11,9 @@ import { MediaContent } from "../ui/MediaContent";
 import { ReplySection } from "../replies/ReplySection";
 import { QuoteCard } from "./QuoteCard";
 import { VoteControls } from "../ui/VoteControls";
-import type { VoteTally, MyVoteCount } from "../../lib/api";
 import type { QuoteTarget } from "../../lib/publishNote";
 import { formatDateRelative } from "../../lib/format";
-import { content as contentApi } from "../../lib/api";
+import { content as contentApi, type VoteTally, type MyVoteCount } from "../../lib/api";
 import type { ResolvedContent } from "../../lib/api/articles";
 import { TrustPip } from "../ui/TrustPip";
 import { AuthorModal, useAuthorHover } from "./AuthorModal";
@@ -326,7 +325,7 @@ export function NoteCard({
             region, so the body click expands rather than navigating to a
             permalink. Replace with a permalink-navigating headline once a note
             permalink page exists (cf. ExternalCard's headline). */}
-        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+        { }
         <div onClick={handleBodyExpand} className="cursor-pointer">
           {/* Content + media */}
           <div className="mt-1">

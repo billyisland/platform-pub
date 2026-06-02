@@ -91,7 +91,7 @@ export function ReplySection({
       }
     }
 
-    loadReplies()
+    void loadReplies()
   }, [targetEventId, isUnlocked, refreshKey])
 
   const handleNewReply = useCallback((reply: ReplyData) => {

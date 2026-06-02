@@ -125,7 +125,7 @@ export function ReplyComposer({
             onChange={handleChange}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost() } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handlePost() } }}
             placeholder="Reply..."
             rows={1}
             className={`w-full resize-none text-ui-sm text-black placeholder:text-grey-300 focus:outline-none leading-relaxed transition-all ${

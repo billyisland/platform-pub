@@ -48,7 +48,7 @@ export const ImageUpload = Extension.create<ImageUploadOptions>({
             event.preventDefault()
 
             for (const file of imageFiles) {
-              handleFileUpload(file, view, options)
+              void handleFileUpload(file, view, options)
             }
 
             return true
@@ -66,7 +66,7 @@ export const ImageUpload = Extension.create<ImageUploadOptions>({
             event.preventDefault()
 
             for (const file of imageFiles) {
-              handleFileUpload(file, view, options)
+              void handleFileUpload(file, view, options)
             }
 
             return true

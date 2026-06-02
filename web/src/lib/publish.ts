@@ -61,7 +61,7 @@ export async function publishArticle(
         kind: KIND_DELETION,
         content: '',
         tags: [
-          ['e', signedV1.id!],
+          ['e', signedV1.id],
           ['a', `30023:${writerPubkey}:${dTag}`],
         ],
       })

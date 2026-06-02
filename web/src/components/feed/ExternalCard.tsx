@@ -262,7 +262,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
           ))}
 
         {/* Body — click to expand neighbourhood (Phase 2); cursor signals interactivity */}
-        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+        { }
         <div onClick={handleBodyExpand} className="cursor-pointer">
           {item.title ? (
             item.contentHtml ? (
@@ -431,7 +431,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
                 {
                   label: "SHARE",
                   onClick: () => {
-                    navigator.clipboard?.writeText(viewOriginalUri);
+                    void navigator.clipboard?.writeText(viewOriginalUri);
                   },
                 },
               ]}

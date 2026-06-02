@@ -12,12 +12,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchUnread = useUnreadCounts((s) => s.fetch)
 
   useEffect(() => {
-    fetchMe()
+    void fetchMe()
   }, [fetchMe])
 
   useEffect(() => {
     if (!user) return
-    fetchUnread()
+    void fetchUnread()
     const id = setInterval(fetchUnread, POLL_INTERVAL)
     return () => clearInterval(id)
   }, [user, fetchUnread])

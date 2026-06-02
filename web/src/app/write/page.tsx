@@ -4,7 +4,7 @@ import { useAuth } from "../../stores/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import type { PublishData } from "../../components/editor/ArticleEditor";
+import type { PublishData, PublicationContext } from "../../components/editor/ArticleEditor";
 
 const ArticleEditor = dynamic(
   () =>
@@ -28,7 +28,6 @@ import {
   publications as publicationsApi,
   tags as tagsApi,
 } from "../../lib/api";
-import type { PublicationContext } from "../../components/editor/ArticleEditor";
 
 // =============================================================================
 // Write Page
@@ -174,7 +173,7 @@ export default function WritePage() {
       setEditorReady(true);
     }
 
-    loadEditData();
+    void loadEditData();
   }, [user, editEventId, draftId]);
 
   async function handlePublish(data: PublishData) {

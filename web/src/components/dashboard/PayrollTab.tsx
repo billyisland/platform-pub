@@ -41,7 +41,7 @@ export function PayrollTab({ publicationId }: Props) {
   const [msg, setMsg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { load() }, [publicationId])
+  useEffect(() => { void load() }, [publicationId])
 
   async function load() {
     setLoading(true)
@@ -76,7 +76,7 @@ export function PayrollTab({ publicationId }: Props) {
       const res = await pubApi.updatePayroll(publicationId, shares)
       setTotalBps(res.totalBps)
       setMsg('Payroll updated.')
-      load()
+      void load()
     } catch { setMsg('Failed to save.') }
     finally { setSaving(false) }
   }

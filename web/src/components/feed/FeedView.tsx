@@ -244,7 +244,7 @@ export function FeedView() {
         setGlobalLoading(false);
       }
     }
-    loadFeed();
+    void loadFeed();
   }, [user, reach, retryKey]);
 
   const handleNotePublished = useCallback((note: NoteEvent) => {
@@ -350,7 +350,7 @@ export function FeedView() {
                       isBookmarked={bookmarkedIds.has(item.id)}
                     />
                   ) : item.type === "external" ? (
-                    <ExternalCard item={item as ExternalFeedItem} />
+                    <ExternalCard item={item} />
                   ) : (
                     <NoteCard
                       note={item}

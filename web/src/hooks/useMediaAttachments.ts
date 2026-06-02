@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { uploadImage, isEmbeddableUrl, extractUrls, fetchOEmbed } from '../lib/media'
-import type { OEmbedResult } from '../lib/media'
+import { uploadImage, isEmbeddableUrl, extractUrls, fetchOEmbed, type OEmbedResult } from '../lib/media'
 
 export interface MediaAttachment {
   url: string

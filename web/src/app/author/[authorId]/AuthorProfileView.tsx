@@ -184,7 +184,7 @@ export function AuthorProfileView({ authorId }: { authorId: string }) {
         )}
         <div className="flex items-start gap-3">
           {profile.avatarUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img
               src={profile.avatarUrl}
               alt=""

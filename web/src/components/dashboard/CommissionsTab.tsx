@@ -16,7 +16,7 @@ export function CommissionsTab() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchCommissions() }, [])
+  useEffect(() => { void fetchCommissions() }, [])
 
   if (loading) {
     return (

@@ -105,7 +105,7 @@ export function SocialTab({ username, writer, onQuote }: SocialTabProps) {
         setLoading(false);
       }
     }
-    load();
+    void load();
   }, [username]);
 
   const handleNoteDeleted = useCallback((id: string) => {

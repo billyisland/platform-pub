@@ -40,7 +40,7 @@ export default function TraffologyFeedPage() {
         if (!cancelled) setLoading(false)
       }
     }
-    load()
+    void load()
     return () => { cancelled = true }
   }, [user])
 

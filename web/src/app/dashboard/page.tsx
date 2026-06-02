@@ -69,7 +69,7 @@ export default function DashboardPage() {
       }
     } else {
       if (tab && ['articles', 'subscribers', 'proposals', 'pricing', 'analytics'].includes(tab)) {
-        setActiveTab(tab as DashboardTab)
+        setActiveTab(tab)
       }
     }
   }, [rawTab, selectedContext])
@@ -227,39 +227,39 @@ export default function DashboardPage() {
                 )
               })}
             </div>
-            <Link href={`/write?pub=${selectedPub!.slug}`} className="btn">New article</Link>
+            <Link href={`/write?pub=${selectedPub.slug}`} className="btn">New article</Link>
           </div>
           {pubTab === 'articles' && (
             <PublicationArticlesTab
-              publicationId={selectedPub!.id}
-              publicationSlug={selectedPub!.slug}
-              canPublish={selectedPub!.can_publish}
-              canEditOthers={selectedPub!.can_edit_others}
+              publicationId={selectedPub.id}
+              publicationSlug={selectedPub.slug}
+              canPublish={selectedPub.can_publish}
+              canEditOthers={selectedPub.can_edit_others}
             />
           )}
           {pubTab === 'members' && (
             <MembersTab
-              publicationId={selectedPub!.id}
-              publicationName={selectedPub!.name}
-              canManageMembers={selectedPub!.can_manage_members}
-              isOwner={selectedPub!.is_owner}
+              publicationId={selectedPub.id}
+              publicationName={selectedPub.name}
+              canManageMembers={selectedPub.can_manage_members}
+              isOwner={selectedPub.is_owner}
             />
           )}
-          {pubTab === 'settings' && selectedPub!.can_manage_settings && (
+          {pubTab === 'settings' && selectedPub.can_manage_settings && (
             <PublicationSettingsTab
-              publicationId={selectedPub!.id}
-              publicationSlug={selectedPub!.slug}
-              isOwner={selectedPub!.is_owner}
+              publicationId={selectedPub.id}
+              publicationSlug={selectedPub.slug}
+              isOwner={selectedPub.is_owner}
             />
           )}
-          {pubTab === 'rate-card' && selectedPub!.can_manage_finances && (
-            <RateCardTab publicationId={selectedPub!.id} />
+          {pubTab === 'rate-card' && selectedPub.can_manage_finances && (
+            <RateCardTab publicationId={selectedPub.id} />
           )}
-          {pubTab === 'payroll' && selectedPub!.can_manage_finances && (
-            <PayrollTab publicationId={selectedPub!.id} />
+          {pubTab === 'payroll' && selectedPub.can_manage_finances && (
+            <PayrollTab publicationId={selectedPub.id} />
           )}
-          {pubTab === 'earnings' && selectedPub!.can_manage_finances && (
-            <PublicationEarningsTab publicationId={selectedPub!.id} />
+          {pubTab === 'earnings' && selectedPub.can_manage_finances && (
+            <PublicationEarningsTab publicationId={selectedPub.id} />
           )}
           {pubTab === 'analytics' && <AnalyticsTab />}
         </>
@@ -312,7 +312,7 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
   const [scheduleDateTime, setScheduleDateTime] = useState('')
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       setLoading(true)
       try {
         const [articleRes, drafts] = await Promise.all([
