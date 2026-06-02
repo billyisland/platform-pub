@@ -32,9 +32,8 @@ import type { CardContext } from "../post/chassis";
 import type { Post } from "../../lib/post/types";
 import { mapFeedItemToPost } from "../../lib/post/map-feed-item";
 import {
-  PALETTES,
+  paletteFor,
   TEXT_SIZE_PX,
-  DEFAULT_BRIGHTNESS,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
 } from "./tokens";
@@ -881,8 +880,7 @@ export function WorkspaceView() {
                           expandedByFeed[v.feed.id] === expandKey;
                         const ctx = {
                           density: layout.density ?? DEFAULT_DENSITY,
-                          palette:
-                            PALETTES[layout.brightness ?? DEFAULT_BRIGHTNESS],
+                          palette: paletteFor(layout.brightness),
                           bodyPx:
                             TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
                           dragData: (() => {

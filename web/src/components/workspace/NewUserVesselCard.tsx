@@ -2,9 +2,8 @@
 
 import React from "react";
 import {
-  PALETTES,
+  paletteFor,
   TEXT_SIZE_PX,
-  DEFAULT_BRIGHTNESS,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
   type Brightness,
@@ -40,7 +39,7 @@ export function NewUserVesselCard({
   brightness?: Brightness;
 }) {
   const d = density ?? DEFAULT_DENSITY;
-  const palette = PALETTES[brightness ?? DEFAULT_BRIGHTNESS];
+  const palette = paletteFor(brightness);
   const name = item.displayName ?? item.username ?? "Someone";
 
   const shellStyle: React.CSSProperties = {

@@ -7,8 +7,7 @@ import {
   type Brightness,
   type Density,
   type TextSize,
-  PALETTES,
-  DEFAULT_BRIGHTNESS,
+  paletteFor,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
   TEXT_SIZE_PX,
@@ -48,7 +47,7 @@ export function ReplyGroupCard({
   brightness,
   textSize,
 }: Props) {
-  const palette = PALETTES[brightness ?? DEFAULT_BRIGHTNESS];
+  const palette = paletteFor(brightness);
   const d = density ?? DEFAULT_DENSITY;
   const bodyPx = TEXT_SIZE_PX[textSize ?? DEFAULT_TEXT_SIZE];
   const [showAll, setShowAll] = useState(false);

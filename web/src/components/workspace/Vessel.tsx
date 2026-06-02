@@ -16,8 +16,7 @@ import {
 import { prefersReducedMotion } from "../../lib/workspace/motion";
 import { snap, GRID } from "../../lib/workspace/grid";
 import {
-  PALETTES,
-  DEFAULT_BRIGHTNESS,
+  paletteFor,
   DEFAULT_DENSITY,
   DEFAULT_ORIENTATION,
   type Brightness,
@@ -137,10 +136,9 @@ export function Vessel({
     maxH: number;
   } | null>(null);
 
-  const effBrightness = brightness ?? DEFAULT_BRIGHTNESS;
   const effDensity = density ?? DEFAULT_DENSITY;
   const effOrientation = orientation ?? DEFAULT_ORIENTATION;
-  const palette = PALETTES[effBrightness];
+  const palette = paletteFor(brightness);
   const isHorizontal = effOrientation === "horizontal";
 
   const isDraggingRef = useRef(false);

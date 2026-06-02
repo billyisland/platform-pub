@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { snap } from "../lib/workspace/grid";
+import { normalizeBrightness } from "../components/workspace/tokens";
 import type {
   Brightness,
   Density,
@@ -85,8 +86,13 @@ function readFromStorage(userId: string): Record<string, VesselLayout> {
         typeof v.y === "number" &&
         Number.isFinite(v.x) &&
         Number.isFinite(v.y)
-      )
-        clean[key] = v as unknown as VesselLayout;
+      ) {
+        const layout = v as unknown as VesselLayout;
+        // Retire stale brightness values ('medium'/'dim') from older builds.
+        if (layout.brightness !== undefined)
+          layout.brightness = normalizeBrightness(layout.brightness);
+        clean[key] = layout;
+      }
     }
     return clean;
   } catch {

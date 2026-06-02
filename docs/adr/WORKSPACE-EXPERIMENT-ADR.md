@@ -889,6 +889,15 @@ The `VesselCard` family had diverged from `docs/adr/CARD-BEHAVIOUR-ADR.md` (clic
 - **The crimson `Open original →` button is deleted.** The bottom `VIA {PROTOCOL} · {handle}` source-attribution line is now the single clickable route to the origin (RSS/email → reader pane, others → new tab) and shows in standard density, not just full.
 - **The external byline links to the internal source surface** (`/source/{externalSourceId}`), matching the feed card.
 
+### Slice 36 — brightness becomes a light/dark toggle; text-size range widened; feed-composer flicker fixed (2026-06-02)
+
+Three quickfire changes to the feed-composer (`FeedComposer.tsx`) Appearance controls and their backing tokens.
+
+- **Dark mode replaces the intermediate dimness step.** `Brightness` was a three-state grey ramp (`primary | medium | dim`) that was neither a useful brightness range nor a real dark mode. It is now a straight `primary | dark` toggle (`tokens.ts`): `primary` is the existing light reading surface; `dark` is a proper dark mode (`#000` walls, `#1A1A18` interior, `#232320` cards, light text `#F0EFEB`, brightened crimson `#D9555A` for contrast on dark). The `medium`/`dim` palettes are deleted. `DEFAULT_BRIGHTNESS` flips `medium → primary`. The brightness control is now a two-state toggle rendering `○ LIGHT` / `● DARK`. This retires the long-deferred "Dark mode" and "Medium-bright pixel value" items above; the two-finger-vertical-drag *continuous* brightness gesture (ADR §5) remains deferred — the axis is just binary now, not continuous.
+  - **Migration safety.** Old `localStorage` layouts may hold `'medium'`/`'dim'`, which would crash `PALETTES[...]` lookups under the new keying. Added `normalizeBrightness()` (any stale/unknown value → `primary`) and a `paletteFor()` accessor; the four dynamic `PALETTES[brightness]` call sites (`Vessel`, `ReplyGroupCard`, `NewUserVesselCard`, `WorkspaceView`) now route through it, and `useWorkspace` hydration rewrites stale values to `primary` on read. The modal chrome itself still uses its own `TOKENS` (stays light in both modes) — only the feed reading surface goes dark.
+- **Text-size range widened.** `TEXT_SIZE_PX` went from `11.5 / 12.5 / 13.5 / 15 / 16.5` (5px spread) to `11 / 12.25 / 13.5 / 15.75 / 18` (7px spread). Step 3 stays `13.5px` so the default body size is unchanged; the end steps now read as distinctly denser / more generous.
+- **Feed-composer flicker fixed.** The `AppearanceControl` buttons sized to their content (`minWidth: 88`, `inline-flex`, no fixed height), so cycling a control changed its width (`Condensed → Standard → Full`) or height (the taller text-size glyph) — the wrap row reflowed and the whole modal visibly resized on every interaction. The buttons now have a fixed `104×34` footprint with centred, `nowrap`/clipped content: the glyph/indicator/label still swap, but each step recentres inside a stable box, so the row never reflows and the modal never resizes.
+
 ## Deferred (TODO in code, not blocking the experiment)
 
 - DM/messages model (vessel vs `/messages` route).
@@ -898,8 +907,8 @@ The `VesselCard` family had diverged from `docs/adr/CARD-BEHAVIOUR-ADR.md` (clic
 - Per-source mode mixing inside one feed (slice 16 picks a feed-level dominant mode).
 - Random-mode stable pagination (slice 16 re-rolls per query).
 - Anonymous attestation pipeline (slice 15 ships attributable polls; trust-system-proper rewrites the storage backend).
-- Dark mode.
-- "Medium-bright" pixel value.
+- ~~Dark mode.~~ Shipped — see Slice 36 (brightness is now a light/dark toggle).
+- ~~"Medium-bright" pixel value.~~ Moot — the `medium`/`dim` grey steps were retired in Slice 36.
 - Long-note truncation.
 - Tags in article mode.
 - Cross-protocol reply semantics (slice 13 inline thread is native-only; external cards still have no Reply / Thread affordances).

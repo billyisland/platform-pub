@@ -17,6 +17,7 @@ import {
   nextDensity,
   nextOrientation,
   nextTextSize,
+  normalizeBrightness,
   DEFAULT_BRIGHTNESS,
   DEFAULT_DENSITY,
   DEFAULT_ORIENTATION,
@@ -580,10 +581,9 @@ export function FeedComposer({
               {onBrightnessChange && (
                 <AppearanceControl
                   label="Brightness"
-                  glyph={
-                    { primary: "○", medium: "◐", dim: "●" }[
-                      brightness ?? DEFAULT_BRIGHTNESS
-                    ]
+                  glyph={normalizeBrightness(brightness) === "dark" ? "●" : "○"}
+                  indicator={
+                    normalizeBrightness(brightness) === "dark" ? "Dark" : "Light"
                   }
                   onClick={() =>
                     onBrightnessChange(
@@ -754,16 +754,25 @@ function AppearanceControl({
         onClick={onClick}
         className="font-sans text-ui-sm"
         style={{
+          // Fixed footprint: the glyph/indicator/label swap as the control
+          // cycles, but the button must never change size — otherwise the
+          // wrap row reflows and the whole modal visibly jumps. Content is
+          // centred so each step recentres inside a stable box.
           display: "inline-flex",
           alignItems: "center",
+          justifyContent: "center",
           gap: 8,
-          minWidth: 88,
-          padding: "6px 10px",
+          width: 104,
+          height: 34,
+          padding: "0 10px",
+          boxSizing: "border-box",
           // Resting affordance is a subtle fill (the design system bans thin
           // rules sitewide); hover deepens it.
           background: TOKENS.matchHoverBg,
           color: TOKENS.panelBorder,
           cursor: "pointer",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
         }}
         onMouseEnter={(e) =>
           (e.currentTarget.style.background = TOKENS.inputBorder)
