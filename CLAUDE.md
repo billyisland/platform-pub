@@ -48,6 +48,16 @@ Backend services (`gateway/`, `payment-service/`, `key-service/`, `key-custody/`
 
 Migrations are numbered SQL files in `migrations/`. The shared migration runner applies them in order. Each backend service also has its own `db/migrate.ts` (run via `npm run migrate` in `payment-service`).
 
+**`schema.sql` is the genesis base, not a derivative.** A fresh DB (dev `initdb.d` and prod) boots from `schema.sql`, *then* `migrate.ts` applies anything newer on top. So the two halves must always agree: `schema.sql` must already contain every migration's effect **and** seed `_migrations` with every migration filename (so `migrate.ts` is a clean no-op on a fresh boot). There is no genesis migration — migration `001` already ALTERs tables that only `schema.sql` ever created — so the chain cannot be replayed from empty; `schema.sql` is load-bearing.
+
+After **adding a migration** or otherwise changing the schema, regenerate `schema.sql` with `pg_dump` from a fully-migrated DB (never hand-edit it — hand-edits break canonical round-trip) and re-append the `_migrations` seed, then run the drift guard:
+
+```bash
+scripts/check-schema-drift.sh   # 0: seed lists all migrations · 1: migrate is a no-op on a schema.sql DB · 2: schema.sql round-trips clean
+```
+
+It builds throwaway DBs in the dev Postgres container (read-only w.r.t. your real dev DB) and exits non-zero with a diff on drift. **This is enforced in CI** (`.github/workflows/ci.yml` `schema` job) — a stale `schema.sql` fails the build before it can break a fresh deploy.
+
 ## Architecture
 
 ### Request flow

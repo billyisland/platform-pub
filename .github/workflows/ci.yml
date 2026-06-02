@@ -52,6 +52,36 @@ jobs:
       - run: cd web && npx next lint
       - run: cd web && npx vitest run
 
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      # Same image as dev/prod, so pg_dump output matches the committed schema.sql.
+      - name: Start Postgres 16
+        run: |
+          docker run -d --name schemacheck-pg \
+            -e POSTGRES_USER=platformpub \
+            -e POSTGRES_PASSWORD=ci-postgres-pw \
+            -e POSTGRES_DB=platformpub \
+            -p 5432:5432 postgres:16-alpine
+          for _ in $(seq 1 30); do
+            docker exec schemacheck-pg pg_isready -U platformpub && break
+            sleep 1
+          done
+      # Fails if schema.sql has drifted from migrations/ (missing seed row,
+      # pending migration on a schema.sql-built DB, or a non-canonical dump).
+      - name: schema.sql ↔ migrations consistency
+        env:
+          PG_CONTAINER: schemacheck-pg
+          POSTGRES_PASSWORD: ci-postgres-pw
+        run: scripts/check-schema-drift.sh
+
   audit:
     runs-on: ubuntu-latest
     steps:
