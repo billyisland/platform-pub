@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useUnreadCounts } from "../../stores/unread";
+import { NotificationsPanel } from "./NotificationsPanel";
+import { SearchPanel } from "./SearchPanel";
 
 const TOKENS = {
   buttonBg: "#1A1A18",
@@ -9,17 +13,13 @@ const TOKENS = {
   menuBg: "#FFFFFF",
   menuBorder: "#1A1A18",
   itemFg: "#1A1A18",
-  itemHoverBg: "#F0EFEB",
   itemFocusBg: "#E6E5E0",
   itemMuted: "#8A8880",
+  badgeBg: "#B5242A",
+  badgeFg: "#FFFFFF",
 };
 
 export type ForallAction = "new-feed" | "new-note" | "new-article";
-
-interface MenuItem {
-  key: ForallAction;
-  label: string;
-}
 
 export interface HiddenFeed {
   id: string;
@@ -32,43 +32,92 @@ interface ForallMenuProps {
   onRestore?: (feedId: string) => void;
 }
 
+type View = "closed" | "menu" | "search" | "notifications";
+
+// Flattened, keyboard-navigable menu rows. Order here is the arrow-key order.
+type FocusRow =
+  | { kind: "action"; key: ForallAction; label: string }
+  | { kind: "open"; target: "search" | "notifications"; label: string; count: number }
+  | { kind: "link"; href: string; label: string; count: number }
+  | { kind: "restore"; id: string; label: string };
+
 export function ForallMenu({
   onAction,
   hiddenFeeds = [],
   onRestore,
 }: ForallMenuProps) {
-  const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const dmCount = useUnreadCounts((s) => s.dmCount);
+  const notificationCount = useUnreadCounts((s) => s.notificationCount);
+  const totalUnread = dmCount + notificationCount;
+
+  const [view, setView] = useState<View>("closed");
   const [activeIndex, setActiveIndex] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const items: MenuItem[] = [
-    { key: "new-feed", label: "New feed" },
-    { key: "new-note", label: "New note" },
-    { key: "new-article", label: "Write an article" },
+  const createRows: FocusRow[] = [
+    { kind: "action", key: "new-feed", label: "New feed" },
+    { kind: "action", key: "new-note", label: "New note" },
+    { kind: "action", key: "new-article", label: "Write an article" },
   ];
+  const navRows: FocusRow[] = [
+    { kind: "open", target: "search", label: "Search", count: 0 },
+    { kind: "link", href: "/messages", label: "Messages", count: dmCount },
+    {
+      kind: "open",
+      target: "notifications",
+      label: "Notifications",
+      count: notificationCount,
+    },
+  ];
+  const restoreRows: FocusRow[] = hiddenFeeds.map((hf) => ({
+    kind: "restore",
+    id: hf.id,
+    label: hf.name,
+  }));
+  const rows: FocusRow[] = [...createRows, ...navRows, ...restoreRows];
 
-  const allItemCount = items.length + hiddenFeeds.length;
-
-  function selectItem(key: ForallAction) {
-    setOpen(false);
+  function closeAll() {
+    setView("closed");
     buttonRef.current?.focus();
-    onAction(key);
   }
 
+  function selectRow(row: FocusRow) {
+    switch (row.kind) {
+      case "action":
+        setView("closed");
+        buttonRef.current?.focus();
+        onAction(row.key);
+        return;
+      case "open":
+        setView(row.target);
+        return;
+      case "link":
+        setView("closed");
+        buttonRef.current?.focus();
+        router.push(row.href);
+        return;
+      case "restore":
+        setView("closed");
+        buttonRef.current?.focus();
+        onRestore?.(row.id);
+        return;
+    }
+  }
+
+  // Outside-click + Esc close any open surface (menu or panel). The panels
+  // render inside this same container, so one handler covers all of them.
   useEffect(() => {
-    if (!open) return;
-    setActiveIndex(0);
+    if (view === "closed") return;
     const onDocClick = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (menuRef.current?.contains(t)) return;
-      if (buttonRef.current?.contains(t)) return;
-      setOpen(false);
+      if (containerRef.current?.contains(e.target as Node)) return;
+      setView("closed");
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setOpen(false);
+        setView("closed");
         buttonRef.current?.focus();
       }
     };
@@ -78,33 +127,40 @@ export function ForallMenu({
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [view]);
+
+  // Reset + focus the first menu row each time the menu opens.
+  useEffect(() => {
+    if (view === "menu") setActiveIndex(0);
+  }, [view]);
 
   useEffect(() => {
-    if (open) itemRefs.current[activeIndex]?.focus();
-  }, [open, activeIndex]);
+    if (view === "menu") itemRefs.current[activeIndex]?.focus();
+  }, [view, activeIndex]);
 
   function onMenuKey(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => (i + 1) % allItemCount);
+      setActiveIndex((i) => (i + 1) % rows.length);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActiveIndex((i) => (i - 1 + allItemCount) % allItemCount);
+      setActiveIndex((i) => (i - 1 + rows.length) % rows.length);
     } else if (e.key === "Home") {
       e.preventDefault();
       setActiveIndex(0);
     } else if (e.key === "End") {
       e.preventDefault();
-      setActiveIndex(allItemCount - 1);
+      setActiveIndex(rows.length - 1);
     }
   }
 
   return (
-    <div style={{ position: "fixed", right: 24, bottom: 24, zIndex: 50 }}>
-      {open && (
+    <div
+      ref={containerRef}
+      style={{ position: "fixed", right: 24, bottom: 24, zIndex: 50 }}
+    >
+      {view === "menu" && (
         <div
-          ref={menuRef}
           role="menu"
           aria-label="Workspace actions"
           onKeyDown={onMenuKey}
@@ -114,78 +170,58 @@ export function ForallMenu({
             bottom: 64,
             minWidth: 240,
             background: TOKENS.menuBg,
-            border: `1px solid ${TOKENS.menuBorder}`,
+            border: `2px solid ${TOKENS.menuBorder}`,
             padding: 4,
             boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
           }}
         >
-          {items.map((item, i) => (
-            <button
-              key={item.key}
+          {createRows.map((row, i) => (
+            <MenuRow
+              key={`create:${i}`}
               ref={(el) => {
                 itemRefs.current[i] = el;
               }}
-              role="menuitem"
-              type="button"
-              onClick={() => selectItem(item.key)}
-              onMouseEnter={() => setActiveIndex(i)}
-              className="font-sans text-ui-sm block w-full text-left"
-              style={{
-                color: TOKENS.itemFg,
-                padding: "10px 14px",
-                background:
-                  i === activeIndex ? TOKENS.itemFocusBg : "transparent",
-                transition: "background 80ms linear",
-                outline: "none",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              {item.label}
-            </button>
+              row={row}
+              active={i === activeIndex}
+              onSelect={() => selectRow(row)}
+              onHover={() => setActiveIndex(i)}
+            />
           ))}
-          {hiddenFeeds.length > 0 && (
-            <>
-              <div
-                style={{
-                  height: 1,
-                  background: TOKENS.menuBorder,
-                  margin: "4px 14px",
-                  opacity: 0.2,
+
+          <div style={{ height: 8 }} />
+
+          {navRows.map((row, ni) => {
+            const idx = createRows.length + ni;
+            return (
+              <MenuRow
+                key={`nav:${ni}`}
+                ref={(el) => {
+                  itemRefs.current[idx] = el;
                 }}
+                row={row}
+                active={idx === activeIndex}
+                onSelect={() => selectRow(row)}
+                onHover={() => setActiveIndex(idx)}
               />
-              {hiddenFeeds.map((hf, hi) => {
-                const idx = items.length + hi;
+            );
+          })}
+
+          {restoreRows.length > 0 && (
+            <>
+              <div style={{ height: 8 }} />
+              {restoreRows.map((row, ri) => {
+                const idx = createRows.length + navRows.length + ri;
                 return (
-                  <button
-                    key={`restore:${hf.id}`}
+                  <MenuRow
+                    key={`restore:${row.kind === "restore" ? row.id : ri}`}
                     ref={(el) => {
                       itemRefs.current[idx] = el;
                     }}
-                    role="menuitem"
-                    type="button"
-                    onClick={() => {
-                      setOpen(false);
-                      buttonRef.current?.focus();
-                      onRestore?.(hf.id);
-                    }}
-                    onMouseEnter={() => setActiveIndex(idx)}
-                    className="label-ui block w-full text-left"
-                    style={{
-                      color: TOKENS.itemMuted,
-                      padding: "8px 14px 8px 24px",
-                      background:
-                        idx === activeIndex
-                          ? TOKENS.itemFocusBg
-                          : "transparent",
-                      transition: "background 80ms linear",
-                      outline: "none",
-                      border: "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {hf.name}
-                  </button>
+                    row={row}
+                    active={idx === activeIndex}
+                    onSelect={() => selectRow(row)}
+                    onHover={() => setActiveIndex(idx)}
+                  />
                 );
               })}
             </>
@@ -193,21 +229,27 @@ export function ForallMenu({
         </div>
       )}
 
+      {view === "search" && <SearchPanel onClose={closeAll} />}
+      {view === "notifications" && <NotificationsPanel onClose={closeAll} />}
+
       <button
         ref={buttonRef}
         type="button"
-        aria-label="Workspace actions"
+        aria-label={`Workspace actions${
+          totalUnread > 0 ? ` (${totalUnread} unread)` : ""
+        }`}
         aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        aria-expanded={view !== "closed"}
+        onClick={() => setView((v) => (v === "closed" ? "menu" : "closed"))}
         className="font-serif"
         style={{
+          position: "relative",
           width: 56,
           height: 56,
           borderRadius: "50%",
           background: TOKENS.buttonBg,
           color: TOKENS.buttonFg,
-          border: `1px solid ${TOKENS.buttonRing}`,
+          border: `2px solid ${TOKENS.buttonRing}`,
           boxShadow: "0 4px 12px rgba(0, 0, 0, 0.18)",
           fontSize: 26,
           lineHeight: 1,
@@ -216,11 +258,94 @@ export function ForallMenu({
           justifyContent: "center",
           cursor: "pointer",
           transition: "transform 120ms ease-out",
-          transform: open ? "scale(1.04)" : "scale(1)",
+          transform: view !== "closed" ? "scale(1.04)" : "scale(1)",
         }}
       >
         ∀
+        {totalUnread > 0 && (
+          <span
+            aria-hidden="true"
+            className="font-mono"
+            style={{
+              position: "absolute",
+              top: -2,
+              right: -2,
+              minWidth: 20,
+              height: 20,
+              padding: "0 6px",
+              borderRadius: 10,
+              background: TOKENS.badgeBg,
+              color: TOKENS.badgeFg,
+              fontSize: 11,
+              fontWeight: 600,
+              lineHeight: "20px",
+              textAlign: "center",
+              border: `2px solid ${TOKENS.buttonBg}`,
+            }}
+          >
+            {totalUnread > 99 ? "99+" : totalUnread}
+          </span>
+        )}
       </button>
     </div>
   );
 }
+
+interface MenuRowProps {
+  row: FocusRow;
+  active: boolean;
+  onSelect: () => void;
+  onHover: () => void;
+}
+
+const MenuRow = forwardRef<HTMLButtonElement, MenuRowProps>(function MenuRow(
+  { row, active, onSelect, onHover },
+  ref,
+) {
+  const isRestore = row.kind === "restore";
+  const count = row.kind === "open" || row.kind === "link" ? row.count : 0;
+  return (
+    <button
+      ref={ref}
+      role="menuitem"
+      type="button"
+      onClick={onSelect}
+      onMouseEnter={onHover}
+      className={`${isRestore ? "label-ui" : "font-sans text-ui-sm"} block w-full text-left`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        color: isRestore ? TOKENS.itemMuted : TOKENS.itemFg,
+        padding: isRestore ? "8px 14px 8px 24px" : "10px 14px",
+        background: active ? TOKENS.itemFocusBg : "transparent",
+        transition: "background 80ms linear",
+        outline: "none",
+        border: "none",
+        cursor: "pointer",
+      }}
+    >
+      <span>{row.label}</span>
+      {count > 0 && (
+        <span
+          className="font-mono"
+          style={{
+            minWidth: 18,
+            height: 18,
+            padding: "0 5px",
+            borderRadius: 9,
+            background: TOKENS.badgeBg,
+            color: TOKENS.badgeFg,
+            fontSize: 10,
+            fontWeight: 600,
+            lineHeight: "18px",
+            textAlign: "center",
+          }}
+        >
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </button>
+  );
+});

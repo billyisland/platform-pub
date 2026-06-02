@@ -48,8 +48,6 @@ import { ReaderOverlay } from "./ReaderOverlay";
 import { useReader } from "../../stores/reader";
 import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
-import { NotificationsAnchor } from "./NotificationsAnchor";
-import { SearchAnchor } from "./SearchAnchor";
 
 const FLOOR = "#F0EFEB"; // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed";
@@ -980,8 +978,6 @@ export function WorkspaceView() {
         hiddenFeeds={hiddenFeeds}
         onRestore={handleRestoreHiddenFeed}
       />
-      <NotificationsAnchor />
-      <SearchAnchor />
       <Composer
         open={!!composerOpen}
         initialMode={composerOpen === "article" ? "article" : "note"}
