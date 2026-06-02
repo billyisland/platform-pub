@@ -126,13 +126,14 @@ export function VesselBar({
         </div>
       </div>
 
-      {/* Dropdown — renders below the bar */}
+      {/* Dropdown — renders above the bar so it can't drop off the bottom of
+          the screen (the bar sits at the vessel's bottom edge). */}
       {showDropdown && (
         <div
           style={{
             position: "absolute",
             right: 6,
-            top: BAR_H,
+            bottom: BAR_H,
             width: 280,
             maxHeight: 200,
             overflowY: "auto",

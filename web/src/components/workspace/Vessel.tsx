@@ -84,6 +84,10 @@ interface VesselProps {
   dragConstraints?: RefObject<HTMLElement>;
   onCardDrop?: (data: string) => void;
   onRefresh?: () => Promise<void>;
+  /** Infinite scroll: called when the scroll body nears its end so the host can
+   *  append the next (older) page. The host guards against concurrent/exhausted
+   *  loads. */
+  onLoadMore?: (feedId: string) => void;
   caughtUp?: boolean;
   onCaughtUpDismiss?: () => void;
 }
@@ -109,6 +113,7 @@ export function Vessel({
   dragConstraints,
   onCardDrop,
   onRefresh,
+  onLoadMore,
   caughtUp,
   onCaughtUpDismiss,
 }: VesselProps) {
@@ -166,6 +171,25 @@ export function Vessel({
       el.removeEventListener("wheel", onWheel);
     };
   }, [caughtUp, onCaughtUpDismiss]);
+
+  // Infinite scroll: fire onLoadMore when the scroll position nears the end so
+  // older content keeps flowing in. The threshold (a card-or-two ahead of the
+  // edge) makes the load feel seamless. Fires on the active axis only.
+  useEffect(() => {
+    if (!onLoadMore) return;
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    const THRESHOLD = 320;
+    function onScroll() {
+      if (!el) return;
+      const nearEnd = isHorizontal
+        ? el.scrollWidth - el.scrollLeft - el.clientWidth < THRESHOLD
+        : el.scrollHeight - el.scrollTop - el.clientHeight < THRESHOLD;
+      if (nearEnd) onLoadMore!(feedId);
+    }
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [onLoadMore, feedId, isHorizontal]);
 
   useEffect(() => {
     if (isDraggingRef.current) return;

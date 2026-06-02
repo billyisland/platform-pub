@@ -50,7 +50,7 @@ export function EmptyFeedTile({
   );
 }
 
-// The caught-up tile auto-dismisses ~4s after it appears if untouched; hovering
+// The caught-up tile auto-dismisses 2s after it appears if untouched; hovering
 // pauses the countdown so it can't vanish under the cursor.
 function CaughtUpTile({
   onAddSources,
@@ -63,7 +63,7 @@ function CaughtUpTile({
 
   const start = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => onDismiss?.(), 4000);
+    timerRef.current = setTimeout(() => onDismiss?.(), 2000);
   };
   const stop = () => {
     if (timerRef.current) {

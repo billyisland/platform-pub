@@ -127,6 +127,10 @@ interface VesselState {
   sources: WorkspaceFeedSource[];
   status: "loading" | "ready" | "error";
   caughtUp?: boolean;
+  // Infinite scroll: cursor for the next (older) page — null once exhausted,
+  // undefined before the first load. `loadingMore` gates concurrent fetches.
+  nextCursor?: string | null;
+  loadingMore?: boolean;
 }
 
 function mapExternalApiItem(
@@ -241,10 +245,12 @@ export function WorkspaceView() {
     false,
   );
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
-  // Slice 13: which cards have their inline thread expanded, plus a per-target
-  // refresh-tick map so an overlay-Composer reply nudges that card's
-  // ReplySection to refetch (matching the canonical store).
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  // At most one conversation is expanded per feed: this maps a feed id to the
+  // expand key (`feedItemId ?? id`) of its single open card. Opening another
+  // card in the same feed replaces the entry, collapsing the previous one.
+  const [expandedByFeed, setExpandedByFeed] = useState<Record<string, string>>(
+    {},
+  );
   // A single global tick: bumped after a reply publishes so any open PostThread
   // busts its cache and refetches (replaces the legacy per-target refresh map).
   const [threadRefreshTick, setThreadRefreshTick] = useState(0);
@@ -385,22 +391,13 @@ export function WorkspaceView() {
   }
 
   const loadVesselItems = useCallback(async (feed: WorkspaceFeed) => {
-    // A refresh collapses this vessel's conversations: remove every expand key
-    // belonging to its current items from both sets. Card expansion keys on
-    // `feedItemId ?? id`; thread expansion keys on `id` — so clear both forms.
-    const current = vesselsRef.current.find((v) => v.feed.id === feed.id);
-    if (current && current.items.length > 0) {
-      const keys = new Set<string>();
-      for (const it of current.items) {
-        if ("id" in it && it.id) keys.add(it.id);
-        if ("feedItemId" in it && it.feedItemId) keys.add(it.feedItemId);
-      }
-      const drop = (prev: Set<string>) => {
-        const next = new Set([...prev].filter((k) => !keys.has(k)));
-        return next.size === prev.size ? prev : next;
-      };
-      setExpandedCards(drop);
-    }
+    // A refresh collapses this vessel's open conversation.
+    setExpandedByFeed((prev) => {
+      if (!(feed.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[feed.id];
+      return next;
+    });
 
     let prevIds: Set<string> | null = null;
     setVessels((prev) =>
@@ -430,6 +427,8 @@ export function WorkspaceView() {
                 items: mapped,
                 status: "ready",
                 caughtUp,
+                nextCursor: data.nextCursor ?? null,
+                loadingMore: false,
               }
             : v,
         ),
@@ -444,12 +443,60 @@ export function WorkspaceView() {
     }
   }, []);
 
+  // Infinite scroll: pull the next page of older content for a vessel and append
+  // it. Guarded against concurrent / exhausted loads via the live vessel state
+  // (read from the ref so the callback stays stable). New keys are de-duped
+  // against what's already shown so a cursor overlap can't double a card.
+  const loadMoreVesselItems = useCallback(async (feedId: string) => {
+    const current = vesselsRef.current.find((v) => v.feed.id === feedId);
+    if (
+      !current ||
+      current.status !== "ready" ||
+      current.loadingMore ||
+      !current.nextCursor
+    ) {
+      return;
+    }
+    const cursor = current.nextCursor;
+    setVessels((prev) =>
+      prev.map((v) =>
+        v.feed.id === feedId ? { ...v, loadingMore: true } : v,
+      ),
+    );
+    try {
+      const data = await workspaceFeedsApi.items(feedId, { cursor });
+      const mapped = (data.items ?? [])
+        .map(mapApiItem)
+        .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null);
+      setVessels((prev) =>
+        prev.map((v) => {
+          if (v.feed.id !== feedId) return v;
+          const seen = new Set(v.items.map(itemKey));
+          const additions = mapped.filter((m) => !seen.has(itemKey(m)));
+          return {
+            ...v,
+            items: [...v.items, ...additions],
+            nextCursor: data.nextCursor ?? null,
+            loadingMore: false,
+          };
+        }),
+      );
+    } catch (err) {
+      console.error("Vessel load-more error:", err);
+      setVessels((prev) =>
+        prev.map((v) =>
+          v.feed.id === feedId ? { ...v, loadingMore: false } : v,
+        ),
+      );
+    }
+  }, []);
+
   const vesselsRef = useRef(vessels);
   vesselsRef.current = vessels;
 
   function refreshAll() {
     // Refreshing every vessel collapses every expanded conversation.
-    setExpandedCards(new Set());
+    setExpandedByFeed({});
     vesselsRef.current.forEach((v) => void loadVesselItems(v.feed));
   }
 
@@ -758,6 +805,7 @@ export function WorkspaceView() {
                 dragConstraints={floorRef}
                 onCardDrop={(raw) => handleCardDrop(v.feed.id, raw)}
                 onRefresh={() => loadVesselItems(v.feed)}
+                onLoadMore={loadMoreVesselItems}
                 caughtUp={v.caughtUp}
                 onCaughtUpDismiss={() =>
                   setVessels((prev) =>
@@ -800,7 +848,7 @@ export function WorkspaceView() {
                   />
                 )}
                 {v.status === "ready" &&
-                  v.items.slice(0, 12).map((item) =>
+                  v.items.map((item) =>
                     item.type === "new_user" ? (
                       <NewUserVesselCard
                         key={`new-user-${item.username}-${item.joinedAt}`}
@@ -829,7 +877,8 @@ export function WorkspaceView() {
                           "feedItemId" in item && item.feedItemId
                             ? item.feedItemId
                             : item.id;
-                        const isExpanded = expandedCards.has(expandKey);
+                        const isExpanded =
+                          expandedByFeed[v.feed.id] === expandKey;
                         const ctx = {
                           density: layout.density ?? DEFAULT_DENSITY,
                           palette:
@@ -846,12 +895,17 @@ export function WorkspaceView() {
                               : undefined;
                           })(),
                         } as CardContext;
+                        // One conversation open per feed: opening this card
+                        // replaces whatever was open in this feed; clicking the
+                        // open card again collapses it.
                         const toggleExpand = () =>
-                          setExpandedCards((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(expandKey)) next.delete(expandKey);
-                            else next.add(expandKey);
-                            return next;
+                          setExpandedByFeed((prev) => {
+                            if (prev[v.feed.id] === expandKey) {
+                              const next = { ...prev };
+                              delete next[v.feed.id];
+                              return next;
+                            }
+                            return { ...prev, [v.feed.id]: expandKey };
                           });
                         const onPipOpen = (
                           pubkey: string,

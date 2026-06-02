@@ -7,17 +7,20 @@ import { usePostInteractions } from "../../hooks/usePostInteractions";
 import { PostCard } from "./PostCard";
 import type { CardContext, PipOpen } from "./chassis";
 import { InlineReplyBox } from "../workspace/InlineReplyBox";
-import { ParentContextTile } from "../workspace/ParentContextTile";
 
 // =============================================================================
 // PostCardInteractive — the stateful entry point for an interactive card.
 //
 // UNIVERSAL-POST-ADR Phase 5. Wraps the dumb PostCard with the external
-// interact-back state machine (usePostInteractions) and mounts the two
-// container-owned children: the parent-context tile (above the byline, for a
-// collapsed feed reply) and the inline reply box (below the actions). Hosts
-// (WorkspaceView feed, PostThread, /author) mount this anywhere a card is
-// interactive; bare PostCard stays for quoted/condensed/non-interactive renders.
+// interact-back state machine (usePostInteractions) and mounts the inline reply
+// box (below the actions). Hosts (WorkspaceView feed, PostThread, /author) mount
+// this anywhere a card is interactive; bare PostCard stays for
+// quoted/condensed/non-interactive renders.
+//
+// One post per card is an absolute rule: a card never inlines another post's
+// body. Reply context (the parent) is shown by expanding the card into the
+// PostThread, never as a fused parent tile — so the threading grammar reads the
+// same in every context.
 //
 // IMPORTANT: hosts must key this by `post.id` (stable across level changes) so a
 // re-root that re-labels a node feed↔focal does not unmount it and lose the
@@ -45,22 +48,6 @@ export function PostCardInteractive(props: {
     interactBack: spec.interactBack,
   });
 
-  // Parent-context tile: a collapsed external reply in the feed shows its parent
-  // inline (the thread view shows full ancestors instead, so only at feed level).
-  const showParentTile =
-    level === "feed" && !!post.externalItemId && !!post.inReplyTo;
-  const header = showParentTile ? (
-    <ParentContextTile
-      itemId={post.externalItemId as string}
-      palette={ctx.palette}
-      bodyPx={ctx.bodyPx}
-      selfAuthor={{
-        handle: post.author.handle ?? undefined,
-        name: post.author.displayName ?? undefined,
-      }}
-    />
-  ) : undefined;
-
   // Inline reply box (interact-back), mounted inside the shell below the actions.
   const footer =
     interactions.replyOpen && interactions.externalItemId ? (
@@ -79,7 +66,6 @@ export function PostCardInteractive(props: {
       level={level}
       ctx={ctx}
       interactions={interactions}
-      header={header}
       footer={footer}
       {...rest}
     />

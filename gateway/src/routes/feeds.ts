@@ -1591,48 +1591,6 @@ function weightToStep(weight: number): number {
 // honest first cut.
 // -----------------------------------------------------------------------------
 
-function groupReplies(items: ReturnType<typeof rowToItem>[]) {
-  const groups = new Map<string, { index: number; item: any }[]>();
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    if (it.type !== "external" || !it.sourceReplyUri) continue;
-    let arr = groups.get(it.sourceReplyUri);
-    if (!arr) {
-      arr = [];
-      groups.set(it.sourceReplyUri, arr);
-    }
-    arr.push({ index: i, item: it });
-  }
-
-  const remove = new Set<number>();
-  const replace = new Map<number, any>();
-
-  for (const [uri, members] of groups) {
-    if (members.length < 2) continue;
-    const sorted = [...members].sort(
-      (a, b) => a.item.publishedAt - b.item.publishedAt,
-    );
-    const maxPublishedAt = sorted[sorted.length - 1].item.publishedAt;
-    const firstIndex = Math.min(...members.map((m) => m.index));
-    for (const m of members) {
-      if (m.index !== firstIndex) remove.add(m.index);
-    }
-    replace.set(firstIndex, {
-      type: "reply_group" as const,
-      sourceReplyUri: uri,
-      publishedAt: maxPublishedAt,
-      replies: sorted.map((m) => m.item),
-    });
-  }
-
-  const out: any[] = [];
-  for (let i = 0; i < items.length; i++) {
-    if (remove.has(i)) continue;
-    out.push(replace.get(i) ?? items[i]);
-  }
-  return out;
-}
-
 async function sourceFilteredItems(
   readerId: string,
   feedId: string,
@@ -1708,8 +1666,11 @@ async function sourceFilteredItems(
     params,
   );
 
+  // One post per card is an absolute rule (consistent threading grammar), so we
+  // no longer collapse a burst of replies into a single reply_group card — each
+  // reply flows through as its own item and the client renders it as its own
+  // card. Context is reached by expanding into the thread, never by fusing.
   const items = result.rows.map(rowToItem);
-  const grouped = groupReplies(items);
   const lastRow = result.rows[result.rows.length - 1];
   const nextCursor = lastRow
     ? encodeFeedCursor({
@@ -1719,7 +1680,7 @@ async function sourceFilteredItems(
       })
     : undefined;
 
-  return { items: grouped, nextCursor };
+  return { items, nextCursor };
 }
 
 async function placeholderExploreItems(
