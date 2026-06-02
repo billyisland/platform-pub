@@ -196,7 +196,7 @@ docker compose ps   # wait for postgres healthy
 
 ### 4. Schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on **first** postgres boot via the `initdb.d` volume mount, and the `_migrations` table is pre-seeded accordingly. `schema.sql` is a `pg_dump` of a fully-migrated database and is **synced through migration 097** (88 public tables + the `traffology` schema).
+The base schema (`schema.sql`) is auto-applied on **first** postgres boot via the `initdb.d` volume mount. `schema.sql` is a `pg_dump` of a fully-migrated database and is **synced through migration 101** (73 public tables + the `traffology` and `graphile_worker` schemas). It ends with an `INSERT` that **seeds the `_migrations` table** with every migration baked into the dump, so a fresh DB records all 101 as already-applied — the runner is then a clean no-op on a fresh DB and applies only genuinely-new files on an existing one. Regenerate `schema.sql` from a fully-migrated, `_migrations`-seeded DB whenever you add a migration so the two paths can't drift.
 
 - **Fresh DB:** no migration action needed — `schema.sql` is current.
 - **Existing DB initialised from an older `schema.sql`:** run the migration runner (below). It reads `migrations/` in order, checks `_migrations`, and applies only pending files. Each file runs inside a `BEGIN/COMMIT` and rolls back on failure, except statements Postgres forbids inside a transaction block — `ALTER TYPE … ADD VALUE` and `CREATE/DROP INDEX CONCURRENTLY` — which the runner detects and applies outside a transaction (and therefore cannot roll back).
@@ -210,7 +210,7 @@ DATABASE_URL=postgres://platformpub:$POSTGRES_PASSWORD@localhost:5432/platformpu
 docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/NNN_name.sql
 ```
 
-Verify (~88 public tables):
+Verify (73 public tables; a fresh DB shows 101 seeded migrations):
 
 ```bash
 docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "\dt"
@@ -317,7 +317,7 @@ Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviou
 
 ### Schema
 
-`schema.sql` is the from-scratch path, auto-applied on first postgres boot. Synced through migration 097. Keep it in sync when adding migrations so fresh databases match migrated ones.
+`schema.sql` is the from-scratch path, auto-applied on first postgres boot. Synced through migration 101 and ends with a `_migrations` seed so the runner is a no-op on a fresh DB. Keep it in sync when adding migrations so fresh databases match migrated ones.
 
 ### Migrations
 
@@ -420,6 +420,10 @@ Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviou
 | 095 | External protocol CHECK constraint update |
 | 096 | Per-source ingest mailbox (email newsletter ingestion) |
 | 097 | `feed_items.is_reply` — reply signalling + filtering (Card Behaviour Phase 1A) |
+| 098 | Deterministic `feed_items.post_id` / `version` / `biddability_tier` + identity trigger (UNIVERSAL-POST Phase 0a) |
+| 099 | `external_authors` identity table + `feed_items.external_author_id` (UNIVERSAL-POST Phase 0b) |
+| 100 | `repost_edges` — boost detection + cross-source dedup (UNIVERSAL-POST Phase 0c) |
+| 101 | Relay-free nostr identity — retire relay-bearing nostr cache (UNIVERSAL-POST C1 fix; data-only, no-op on a fresh DB) |
 
 ### Backup
 
@@ -695,7 +699,7 @@ docker compose run --rm certbot renew && docker compose restart nginx
 - **Card behaviour** (migration 097; `docs/adr/CARD-BEHAVIOUR-ADR.md`, `CARD-BEHAVIOUR-BUILD-PLAN.md`). Phases 1–3 (25–26 May 2026): unified click region map, `is_reply` reply signalling, inline conversational-neighbourhood expansion, desktop author hover modal + touch action sheet. New: `feed_items.is_reply`, `timeline` response `isReply`/`biddabilityTier`, `GET /api/v1/author-card`, `AuthorModal`, `ActionSheet`, `NeighbourhoodCard`, `useNeighbourhood`, `useAuthorCard`.
 - **Relay outbox** (migration 076). Durable queue for Nostr relay publishes; article rows and outbound events commit together.
 - **Reading & product** (migrations 046–051, 068–070, 082–084, 088, 092). Notification preferences, bookmarks, tags, account deletion, publication homepage layouts, article scheduling, article size tiers, reading-position resumption, search trigram indexes, traffology source race fix, interaction foundation.
-- **Settlement & schema hardening** (migrations 071, 085–087). Three-phase settlement status on `tab_settlements`, nullable webhook `processed_at`, non-negative reading-tab balance constraint, broad index/FK/trigger hardening. `schema.sql` synced through 097.
+- **Settlement & schema hardening** (migrations 071, 085–087). Three-phase settlement status on `tab_settlements`, nullable webhook `processed_at`, non-negative reading-tab balance constraint, broad index/FK/trigger hardening.
 
 ### v5.30.0 — 13 April 2026
 

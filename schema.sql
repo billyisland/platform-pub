@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict OdQJLwI4NGvEsV2kGZDvcoeOSDc4viyeqjnuEaW7k0R0xaavzrVebGf15bdgXDZ
+\restrict gU1yYGfFyQq4r1OO6n81Cz87OZpQxYRj59FPTeysTqqtuh2YqSE0lDHmBx0ujyY
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -40,10 +40,24 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 
 --
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+
+
+--
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
 --
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
 
 
 --
@@ -1221,7 +1235,6 @@ CREATE TABLE public.dm_pricing (
 
 --
 -- Name: external_authors; Type: TABLE; Schema: public; Owner: -
--- (migration 099 — external-author identity records, tier A/B)
 --
 
 CREATE TABLE public.external_authors (
@@ -1364,8 +1377,8 @@ CREATE TABLE public.feed_items (
     version text,
     biddability_tier text,
     external_author_id uuid,
-    CONSTRAINT feed_items_biddability_tier_check CHECK ((biddability_tier = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text]))),
     CONSTRAINT exactly_one_source CHECK ((((((article_id IS NOT NULL))::integer + ((note_id IS NOT NULL))::integer) + ((external_item_id IS NOT NULL))::integer) = 1)),
+    CONSTRAINT feed_items_biddability_tier_check CHECK ((biddability_tier = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text]))),
     CONSTRAINT feed_items_item_type_check CHECK ((item_type = ANY (ARRAY['article'::text, 'note'::text, 'external'::text]))),
     CONSTRAINT tier_consistency CHECK ((((item_type = ANY (ARRAY['article'::text, 'note'::text])) AND (tier = 'tier1'::public.content_tier)) OR (item_type = 'external'::text)))
 );
@@ -1927,6 +1940,23 @@ CREATE TABLE public.relay_outbox (
     sent_at timestamp with time zone,
     CONSTRAINT relay_outbox_entity_type_check CHECK ((entity_type = ANY (ARRAY['article'::text, 'article_deletion'::text, 'note'::text, 'note_deletion'::text, 'subscription'::text, 'receipt'::text, 'drive'::text, 'drive_deletion'::text, 'signing_passthrough'::text, 'conversation_pulse'::text, 'account_deletion'::text]))),
     CONSTRAINT relay_outbox_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text, 'abandoned'::text])))
+);
+
+
+--
+-- Name: repost_edges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repost_edges (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    protocol public.external_protocol NOT NULL,
+    target_post_id text NOT NULL,
+    actor_handle text NOT NULL,
+    actor_external_author_id uuid,
+    trust_weight numeric DEFAULT 1 NOT NULL,
+    boosted_at timestamp with time zone NOT NULL,
+    origin_uri text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -2804,6 +2834,22 @@ ALTER TABLE ONLY public.dm_pricing
 
 
 --
+-- Name: external_authors external_authors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_authors
+    ADD CONSTRAINT external_authors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: external_authors external_authors_protocol_stable_handle_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_authors
+    ADD CONSTRAINT external_authors_protocol_stable_handle_key UNIQUE (protocol, stable_handle);
+
+
+--
 -- Name: external_items external_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3193,6 +3239,14 @@ ALTER TABLE ONLY public.reading_tabs
 
 ALTER TABLE ONLY public.relay_outbox
     ADD CONSTRAINT relay_outbox_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: repost_edges repost_edges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repost_edges
+    ADD CONSTRAINT repost_edges_pkey PRIMARY KEY (id);
 
 
 --
@@ -3984,6 +4038,13 @@ CREATE INDEX idx_ext_subs_subscriber ON public.external_subscriptions USING btre
 
 
 --
+-- Name: idx_external_authors_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_external_authors_account_id ON public.external_authors USING btree (account_id);
+
+
+--
 -- Name: idx_feed_engagement_author; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4026,10 +4087,24 @@ CREATE UNIQUE INDEX idx_feed_items_external ON public.feed_items USING btree (ex
 
 
 --
+-- Name: idx_feed_items_external_author_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_feed_items_external_author_id ON public.feed_items USING btree (external_author_id);
+
+
+--
 -- Name: idx_feed_items_note; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_feed_items_note ON public.feed_items USING btree (note_id) WHERE (note_id IS NOT NULL);
+
+
+--
+-- Name: idx_feed_items_post_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_feed_items_post_id ON public.feed_items USING btree (post_id);
 
 
 --
@@ -4415,6 +4490,34 @@ CREATE INDEX idx_reading_tabs_reader_id ON public.reading_tabs USING btree (read
 --
 
 CREATE INDEX idx_reports_status ON public.moderation_reports USING btree (status, created_at DESC);
+
+
+--
+-- Name: idx_repost_edges_actor_author; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repost_edges_actor_author ON public.repost_edges USING btree (actor_external_author_id);
+
+
+--
+-- Name: idx_repost_edges_origin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_repost_edges_origin ON public.repost_edges USING btree (protocol, origin_uri) WHERE (origin_uri IS NOT NULL);
+
+
+--
+-- Name: idx_repost_edges_synthetic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_repost_edges_synthetic ON public.repost_edges USING btree (protocol, target_post_id, actor_handle) WHERE (origin_uri IS NULL);
+
+
+--
+-- Name: idx_repost_edges_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repost_edges_target ON public.repost_edges USING btree (target_post_id);
 
 
 --
@@ -4831,6 +4934,13 @@ CREATE TRIGGER articles_size_tier_default BEFORE INSERT ON public.articles FOR E
 
 
 --
+-- Name: feed_items feed_items_post_identity_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER feed_items_post_identity_trg BEFORE INSERT OR UPDATE ON public.feed_items FOR EACH ROW EXECUTE FUNCTION public.feed_items_post_identity();
+
+
+--
 -- Name: feed_sources feed_sources_touch_parent; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5176,6 +5286,14 @@ ALTER TABLE ONLY public.dm_pricing
 
 
 --
+-- Name: external_authors external_authors_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_authors
+    ADD CONSTRAINT external_authors_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
 -- Name: external_items external_items_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5229,6 +5347,14 @@ ALTER TABLE ONLY public.feed_items
 
 ALTER TABLE ONLY public.feed_items
     ADD CONSTRAINT feed_items_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: feed_items feed_items_external_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_items
+    ADD CONSTRAINT feed_items_external_author_id_fkey FOREIGN KEY (external_author_id) REFERENCES public.external_authors(id);
 
 
 --
@@ -5792,6 +5918,14 @@ ALTER TABLE ONLY public.reading_tabs
 
 
 --
+-- Name: repost_edges repost_edges_actor_external_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repost_edges
+    ADD CONSTRAINT repost_edges_actor_external_author_id_fkey FOREIGN KEY (actor_external_author_id) REFERENCES public.external_authors(id) ON DELETE SET NULL;
+
+
+--
 -- Name: resolver_async_results resolver_async_results_initiator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6227,73 +6361,124 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict OdQJLwI4NGvEsV2kGZDvcoeOSDc4viyeqjnuEaW7k0R0xaavzrVebGf15bdgXDZ
-
-
-
---
--- Name: idx_feed_items_post_id; Type: INDEX; Schema: public; Owner: -
--- (migration 098 — Post identity; appended out of pg_dump section order)
---
-
-CREATE INDEX idx_feed_items_post_id ON public.feed_items USING btree (post_id);
+\unrestrict gU1yYGfFyQq4r1OO6n81Cz87OZpQxYRj59FPTeysTqqtuh2YqSE0lDHmBx0ujyY
 
 
 --
--- Name: feed_items feed_items_post_identity_trg; Type: TRIGGER; Schema: public; Owner: -
--- (migration 098 — Post identity; appended out of pg_dump section order)
+-- Seed _migrations: record every migration folded into this dump as applied.
+--
+-- A fresh database is bootstrapped from this file (docker-entrypoint-initdb.d),
+-- which builds the schema THROUGH the latest migration but leaves _migrations
+-- empty. Without this seed the runner (shared/src/db/migrate.ts) would treat
+-- all migrations/ files as pending on a fresh DB and re-run 001+ against the
+-- already-built schema, which fails. With it, migrate is a clean no-op on a
+-- fresh DB and applies only genuinely-new files on an existing one.
+--
+-- KEEP IN SYNC: when you add a migration and fold it into this schema.sql,
+-- add its filename below (regenerating this file from a fully-migrated DB
+-- with a seeded _migrations table does this automatically).
 --
 
-CREATE TRIGGER feed_items_post_identity_trg BEFORE INSERT OR UPDATE ON public.feed_items FOR EACH ROW EXECUTE FUNCTION public.feed_items_post_identity();
+INSERT INTO public._migrations (filename) VALUES
+    ('001_add_email_and_magic_links.sql'),
+    ('002_draft_upsert_index.sql'),
+    ('003_comments.sql'),
+    ('004_media_uploads.sql'),
+    ('005_subscriptions.sql'),
+    ('006_receipt_portability.sql'),
+    ('007_subscription_nostr_event.sql'),
+    ('008_deduplicate_articles.sql'),
+    ('009_notifications.sql'),
+    ('010_votes.sql'),
+    ('011_store_ciphertext.sql'),
+    ('012_notification_note_id.sql'),
+    ('013_note_excerpt_fields.sql'),
+    ('014_notification_dedup.sql'),
+    ('015_access_mode_and_unlock_types.sql'),
+    ('016_direct_messages.sql'),
+    ('017_pledge_drives.sql'),
+    ('018_add_on_delete_clauses.sql'),
+    ('019_fix_notification_dedup.sql'),
+    ('020_notification_routing_columns.sql'),
+    ('021_missing_on_delete_clauses.sql'),
+    ('022_composite_index_read_events.sql'),
+    ('023_subscription_auto_renew.sql'),
+    ('024_annual_subscriptions.sql'),
+    ('025_comp_subscriptions.sql'),
+    ('026_article_profile_pins.sql'),
+    ('027_subscription_visibility.sql'),
+    ('028_subscription_nudge.sql'),
+    ('029_gift_links.sql'),
+    ('030_commissions_expansion.sql'),
+    ('031_fix_media_urls_domain.sql'),
+    ('032_dm_likes.sql'),
+    ('033_admin_account_ids_config.sql'),
+    ('034_dm_replies.sql'),
+    ('035_feed_scores.sql'),
+    ('036_commission_conversation.sql'),
+    ('037_subscription_offers.sql'),
+    ('038_publications.sql'),
+    ('039_default_article_price.sql'),
+    ('040_traffology_schema.sql'),
+    ('041_webhook_dedup_and_fk_fixes.sql'),
+    ('042_email_on_publish.sql'),
+    ('043_session_invalidation.sql'),
+    ('044_email_on_publish_v2.sql'),
+    ('045_article_price_mode.sql'),
+    ('046_notification_preferences.sql'),
+    ('047_bookmarks.sql'),
+    ('048_tags.sql'),
+    ('049_account_deletion.sql'),
+    ('050_publication_management.sql'),
+    ('051_article_scheduling.sql'),
+    ('052_universal_feed_external.sql'),
+    ('053_feed_items.sql'),
+    ('054_feed_items_backfill.sql'),
+    ('055_universal_feed_atproto.sql'),
+    ('056_universal_feed_activitypub.sql'),
+    ('057_universal_feed_outbound.sql'),
+    ('058_outbound_nostr_queue.sql'),
+    ('059_atproto_oauth_sessions.sql'),
+    ('060_atproto_oauth_pending_states.sql'),
+    ('061_resolver_async_results.sql'),
+    ('062_outbound_posts_dedup.sql'),
+    ('063_external_sources_gc.sql'),
+    ('064_resolver_async_results_initiator_idx.sql'),
+    ('065_trust_layer1.sql'),
+    ('066_vouches_trust_profiles.sql'),
+    ('067_trust_epochs.sql'),
+    ('068_article_size_tier.sql'),
+    ('069_reading_positions.sql'),
+    ('070_harmonize_size_tier_trigger.sql'),
+    ('071_stripe_webhook_processed_at_nullable.sql'),
+    ('072_subscription_events_expiry_warning.sql'),
+    ('073_dm_send_id.sql'),
+    ('074_accounts_search_trgm.sql'),
+    ('075_external_sources_metadata_updated_at.sql'),
+    ('076_relay_outbox.sql'),
+    ('077_workspace_feeds.sql'),
+    ('078_trust_polls.sql'),
+    ('079_pip_status_contested.sql'),
+    ('080_feed_saves.sql'),
+    ('081_article_cover_image.sql'),
+    ('082_feed_sources_default_volume.sql'),
+    ('083_search_content_trgm_index.sql'),
+    ('084_email_verification_requested_at.sql'),
+    ('085_settlement_status.sql'),
+    ('086_reading_tabs_balance_check.sql'),
+    ('087_schema_hardening.sql'),
+    ('088_traffology_sources_unique.sql'),
+    ('089_workspace_hardening.sql'),
+    ('090_external_engagement_counts.sql'),
+    ('091_external_items_context_only.sql'),
+    ('092_interaction_foundation.sql'),
+    ('093_content_warning.sql'),
+    ('094_external_protocol_expansion.sql'),
+    ('095_external_protocol_check_constraint.sql'),
+    ('096_email_ingest.sql'),
+    ('097_feed_items_is_reply.sql'),
+    ('098_feed_items_post_identity.sql'),
+    ('099_external_author_identity.sql'),
+    ('100_repost_edges.sql'),
+    ('101_nostr_relay_free_identity.sql');
 
-
---
--- Name: external_authors external_authors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
--- (migration 099 — external-author identity; appended out of pg_dump section order)
---
-
-ALTER TABLE ONLY public.external_authors
-    ADD CONSTRAINT external_authors_pkey PRIMARY KEY (id);
-
-
---
--- Name: external_authors external_authors_protocol_stable_handle_key; Type: CONSTRAINT; Schema: public; Owner: -
--- (migration 099 — external-author identity; appended out of pg_dump section order)
---
-
-ALTER TABLE ONLY public.external_authors
-    ADD CONSTRAINT external_authors_protocol_stable_handle_key UNIQUE (protocol, stable_handle);
-
-
---
--- Name: idx_external_authors_account_id; Type: INDEX; Schema: public; Owner: -
--- (migration 099 — external-author identity; appended out of pg_dump section order)
---
-
-CREATE INDEX idx_external_authors_account_id ON public.external_authors USING btree (account_id);
-
-
---
--- Name: idx_feed_items_external_author_id; Type: INDEX; Schema: public; Owner: -
--- (migration 099 — external-author identity; appended out of pg_dump section order)
---
-
-CREATE INDEX idx_feed_items_external_author_id ON public.feed_items USING btree (external_author_id);
-
-
---
--- Name: external_authors external_authors_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
--- (migration 099 — external-author identity; appended out of pg_dump section order)
---
-
-ALTER TABLE ONLY public.external_authors
-    ADD CONSTRAINT external_authors_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
-
-
---
--- Name: feed_items feed_items_external_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
--- (migration 099 — external-author identity; appended out of pg_dump section order)
---
-
-ALTER TABLE ONLY public.feed_items
-    ADD CONSTRAINT feed_items_external_author_id_fkey FOREIGN KEY (external_author_id) REFERENCES public.external_authors(id);
