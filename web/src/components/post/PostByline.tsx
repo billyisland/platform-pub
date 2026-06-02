@@ -131,6 +131,8 @@ function NativeByline({
           id={hover.id}
           anchorRef={hover.bylineRef}
           onClose={hover.onModalClose}
+          onMouseEnter={hover.onModalMouseEnter}
+          onMouseLeave={hover.onModalMouseLeave}
         />
       )}
     </>
@@ -180,6 +182,8 @@ function ExternalByline({
           id={hover.id}
           anchorRef={hover.bylineRef}
           onClose={hover.onModalClose}
+          onMouseEnter={hover.onModalMouseEnter}
+          onMouseLeave={hover.onModalMouseLeave}
         />
       )}
     </>

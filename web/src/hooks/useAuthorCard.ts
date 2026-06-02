@@ -26,6 +26,13 @@ const CACHE_TTL_MS = 5 * 60_000;
 const cache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<AuthorCardData | null>>();
 
+// Drop every cached profile. Called after a follow/unfollow so the next hover
+// re-fetches the live follow state instead of re-asserting a stale snapshot.
+// The cache only holds lightweight hover previews, so a full clear is cheap.
+export function invalidateAuthorCardCache(): void {
+  cache.clear();
+}
+
 async function fetchAuthorCard(
   type: AuthorCardType,
   id: string,

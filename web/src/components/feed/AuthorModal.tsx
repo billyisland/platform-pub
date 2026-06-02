@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   useAuthorCard,
+  invalidateAuthorCardCache,
   type AuthorCardData,
   type AuthorCardType,
 } from "../../hooks/useAuthorCard";
@@ -18,6 +19,12 @@ interface AuthorModalProps {
   // callers (workspace external pip) pass false and rely on Escape /
   // outside-pointerdown instead.
   dismissOnMouseLeave?: boolean;
+  // Hover bridge: when the modal itself is the hover target, the trigger's
+  // useAuthorHover hands these in so moving the pointer onto the modal cancels
+  // the pending close (and leaving the modal re-arms it). Without them the modal
+  // vanishes the instant the pointer leaves the byline, before it can be reached.
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
 function formatCount(n: number): string {
@@ -32,6 +39,8 @@ export function AuthorModal({
   anchorRef,
   onClose,
   dismissOnMouseLeave = true,
+  onMouseEnter,
+  onMouseLeave,
 }: AuthorModalProps) {
   const { data, loading } = useAuthorCard(type, id, true);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -102,7 +111,10 @@ export function AuthorModal({
       ref={modalRef}
       style={style}
       className="bg-white shadow-lg p-4"
-      onMouseLeave={dismissOnMouseLeave ? onClose : undefined}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={
+        onMouseLeave ?? (dismissOnMouseLeave ? onClose : undefined)
+      }
       onClick={(e) => e.stopPropagation()}
     >
       {loading && <ModalSkeleton />}
@@ -256,6 +268,13 @@ function FollowButton({
   const [following, setFollowing] = useState(target.isFollowing);
   const [busy, setBusy] = useState(false);
 
+  // Track the freshly-fetched state: useState only seeds on mount, so without
+  // this a cached/re-fetched profile (e.g. after toggling elsewhere) would keep
+  // showing the stale snapshot the button first mounted with.
+  useEffect(() => {
+    setFollowing(target.isFollowing);
+  }, [target.isFollowing]);
+
   const handleClick = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -283,6 +302,10 @@ function FollowButton({
             }
           }
         }
+        // The shared 5-min author-card cache now holds a stale isFollowing for
+        // this author; drop it so the next hover reflects the change instead of
+        // re-asserting the old "FOLLOWING"/"FOLLOW" state.
+        invalidateAuthorCardCache();
       } catch {
         setFollowing(prev);
       } finally {
@@ -310,48 +333,80 @@ function FollowButton({
 export function useAuthorHover(type: AuthorCardType, id: string | null) {
   const [open, setOpen] = useState(false);
   const bylineRef = useRef<HTMLElement>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const modalEnteredRef = useRef(false);
+  // Two independent timers: one arms the open after a rest debounce, the other
+  // is the close grace period. Keeping them separate is what makes the hover
+  // bridge work — entering the modal cancels the close without touching open.
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const supportsHover =
     typeof window !== "undefined" &&
     window.matchMedia("(hover: hover)").matches;
 
+  const clearOpenTimer = useCallback(() => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+  }, []);
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  // 220ms grace: long enough for the pointer to cross the gap between the byline
+  // and the modal (and between regions of the modal) without it disappearing
+  // mid-reach.
+  const scheduleClose = useCallback(() => {
+    clearCloseTimer();
+    closeTimerRef.current = setTimeout(() => setOpen(false), 220);
+  }, [clearCloseTimer]);
+
   const onMouseEnter = useCallback(() => {
     if (!supportsHover || !id) return;
-    timerRef.current = setTimeout(() => {
-      setOpen(true);
-    }, 300);
-  }, [supportsHover, id]);
+    clearCloseTimer();
+    clearOpenTimer();
+    openTimerRef.current = setTimeout(() => setOpen(true), 300);
+  }, [supportsHover, id, clearCloseTimer, clearOpenTimer]);
 
   const onMouseLeave = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    setTimeout(() => {
-      if (!modalEnteredRef.current) {
-        setOpen(false);
-      }
-    }, 100);
-  }, []);
+    clearOpenTimer();
+    scheduleClose();
+  }, [clearOpenTimer, scheduleClose]);
+
+  // Pointer reached the modal → cancel the pending close so it stays open while
+  // the user moves to its buttons; leaving the modal re-arms the close.
+  const onModalMouseEnter = useCallback(() => {
+    clearCloseTimer();
+  }, [clearCloseTimer]);
+
+  const onModalMouseLeave = useCallback(() => {
+    scheduleClose();
+  }, [scheduleClose]);
 
   const onModalClose = useCallback(() => {
-    modalEnteredRef.current = false;
+    clearOpenTimer();
+    clearCloseTimer();
     setOpen(false);
-  }, []);
+  }, [clearOpenTimer, clearCloseTimer]);
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      clearOpenTimer();
+      clearCloseTimer();
     };
-  }, []);
+  }, [clearOpenTimer, clearCloseTimer]);
 
   return {
     bylineRef,
     open,
     onMouseEnter,
     onMouseLeave,
+    onModalMouseEnter,
+    onModalMouseLeave,
     onModalClose,
     type,
     id,

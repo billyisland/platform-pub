@@ -145,6 +145,8 @@ export function ArticleCard({
             id={hover.id}
             anchorRef={hover.bylineRef}
             onClose={hover.onModalClose}
+            onMouseEnter={hover.onModalMouseEnter}
+            onMouseLeave={hover.onModalMouseLeave}
           />
         )}
         <span>·</span>

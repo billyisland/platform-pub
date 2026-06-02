@@ -1,11 +1,11 @@
 import { create } from "zustand";
 import { snap } from "../lib/workspace/grid";
-import { normalizeBrightness } from "../components/workspace/tokens";
-import type {
-  Brightness,
-  Density,
-  Orientation,
-  TextSize,
+import {
+  normalizeBrightness,
+  type Brightness,
+  type Density,
+  type Orientation,
+  type TextSize,
 } from "../components/workspace/tokens";
 
 // =============================================================================

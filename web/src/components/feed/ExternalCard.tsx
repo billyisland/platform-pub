@@ -209,6 +209,8 @@ export function ExternalCard({ item }: ExternalCardProps) {
               id={hover.id}
               anchorRef={hover.bylineRef}
               onClose={hover.onModalClose}
+              onMouseEnter={hover.onModalMouseEnter}
+              onMouseLeave={hover.onModalMouseLeave}
             />
           )}
           <span className="font-mono text-mono-xs text-grey-600">&middot;</span>

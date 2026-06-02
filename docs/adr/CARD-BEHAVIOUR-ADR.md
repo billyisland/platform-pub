@@ -713,3 +713,28 @@ new focal as a full rich card on both surfaces, and the focal left bar is remove
 Still open: the pre-existing 1px `LinkPreviewCard` border in `VesselCard` is untracked-here
 hairline debt left for a separate sweep. The §VI.3 constructed external author profile is still
 deferred, so re-rooted external bylines remain plain text.
+
+## Addendum — byline hover modal: reachable bridge + live follow state (2026-06-02)
+
+Two bugs in the §4.4 byline hover modal (`AuthorModal` + `useAuthorHover`, `web/src/components/feed/AuthorModal.tsx`), fixed together.
+
+- **Hover bridge (was unreachable).** `useAuthorHover` ran a single timer plus a
+  `modalEnteredRef` flag that was **never set true** — nothing on the modal flipped it — so the
+  100ms close grace always elapsed with the flag false and the modal vanished the instant the
+  pointer left the byline, before it could cross the gap to the FOLLOW button. The hook now runs
+  **two independent timers** (a 300ms open-debounce and a 220ms close-grace) and exposes
+  `onModalMouseEnter`/`onModalMouseLeave`: entering the modal cancels the pending close, leaving
+  it re-arms it. `AuthorModal` gained optional `onMouseEnter`/`onMouseLeave` props (falling back
+  to the existing `dismissOnMouseLeave ? onClose` behaviour) and all six call sites
+  (`PostByline` ×2, `NoteCard`, `ArticleCard`, `ExternalCard`) wire the two handlers. This is the
+  hover bridge that keeps the modal alive while the user reaches its buttons.
+- **Stale follow state (always "FOLLOWING").** The gateway follow/subscription queries
+  (`resolveNativeAuthor`, `resolveExternalAuthor*`) are correct; the staleness was client-side.
+  `FollowButton` snapshotted `target.isFollowing` once via `useState` and never resynced, and the
+  shared `useAuthorCard` cache (5-min TTL) was never busted on a follow/unfollow — so after
+  toggling, the next hover re-asserted the old state. Fix: `FollowButton` now resyncs to the
+  freshly-fetched `target.isFollowing` via an effect, and a successful toggle calls
+  `invalidateAuthorCardCache()` (new export in `useAuthorCard.ts`, clears the module cache). The
+  workspace path (`GET /author/:id/profile`) has no server cache, so once the client cache is
+  dropped the displayed state is authoritative. (The legacy `/feed` `/author-card` route keeps its
+  own 5-min per-viewer server cache — acceptable since those cards are being retired.)
