@@ -199,7 +199,7 @@ docker compose ps   # wait for postgres healthy
 The base schema (`schema.sql`) is auto-applied on **first** postgres boot via the `initdb.d` volume mount, and the `_migrations` table is pre-seeded accordingly. `schema.sql` is a `pg_dump` of a fully-migrated database and is **synced through migration 097** (88 public tables + the `traffology` schema).
 
 - **Fresh DB:** no migration action needed — `schema.sql` is current.
-- **Existing DB initialised from an older `schema.sql`:** run the migration runner (below). It reads `migrations/` in order, checks `_migrations`, and applies only pending files in transactions.
+- **Existing DB initialised from an older `schema.sql`:** run the migration runner (below). It reads `migrations/` in order, checks `_migrations`, and applies only pending files. Each file runs inside a `BEGIN/COMMIT` and rolls back on failure, except statements Postgres forbids inside a transaction block — `ALTER TYPE … ADD VALUE` and `CREATE/DROP INDEX CONCURRENTLY` — which the runner detects and applies outside a transaction (and therefore cannot roll back).
 
 ```bash
 # From the host (Node required):

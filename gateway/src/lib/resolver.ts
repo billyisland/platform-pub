@@ -28,9 +28,10 @@ import {
 // (for subscription), or both.
 //
 // Per ADR §V.5: input classification is deterministic, not probabilistic.
-// Phase 1 supports: URLs (RSS discovery), platform usernames, npub/nprofile,
-// hex pubkeys, NIP-05, and free-text search. Bluesky/fediverse chains are
-// stubs returning "coming soon".
+// Supported: URLs (RSS discovery), platform usernames, npub/nprofile, hex
+// pubkeys, NIP-05, free-text search, and — via Phase-B async chains backed by
+// resolveAtproto / resolveActivityPubHandle / resolveActivityPubByActor —
+// Bluesky handles/DIDs and fediverse handles.
 // =============================================================================
 
 type InputType =

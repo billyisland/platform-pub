@@ -76,7 +76,16 @@ async function migrate() {
 
       console.log(`  Applying: ${filename}`);
 
-      const needsNoTxn = /ALTER\s+TYPE\s+\S+\s+ADD\s+VALUE/i.test(sql);
+      // Statements Postgres refuses to run inside a transaction block. Both
+      // must run outside BEGIN/COMMIT, so they cannot be rolled back on failure.
+      //   - ALTER TYPE … ADD VALUE (new enum members)
+      //   - CREATE/DROP INDEX CONCURRENTLY (e.g. migrations 022, 083)
+      const noTxnReason = /ALTER\s+TYPE\s+\S+\s+ADD\s+VALUE/i.test(sql)
+        ? "ALTER TYPE ADD VALUE"
+        : /\bCONCURRENTLY\b/i.test(sql)
+          ? "CONCURRENTLY"
+          : null;
+      const needsNoTxn = noTxnReason !== null;
 
       if (needsNoTxn) {
         try {
@@ -84,7 +93,7 @@ async function migrate() {
           await client.query("INSERT INTO _migrations (filename) VALUES ($1)", [
             filename,
           ]);
-          console.log(`  ✓ ${filename} (no-transaction: ALTER TYPE ADD VALUE)`);
+          console.log(`  ✓ ${filename} (no-transaction: ${noTxnReason})`);
         } catch (err) {
           console.error(
             `  ✗ ${filename} — failed (no-transaction, cannot rollback)`,

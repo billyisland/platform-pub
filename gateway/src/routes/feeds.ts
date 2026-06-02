@@ -1081,30 +1081,54 @@ const FEED_JOINS = `
   LEFT JOIN trust_layer1 tl ON tl.user_id = fi.author_id
 `;
 
-interface CursorParts {
-  score?: number;
-  ts: number;
-  id: string;
-}
-
+// Unified, format-tagged cursor codec for GET /feeds/:id/items. Two pagination
+// shapes coexist on this one endpoint and used to share two bare, untyped
+// formats whose 2-part interpretations disagreed (one read `ts:id`, the other
+// `score:id`):
+//   - "scored"  (score:id)     — the source-filtered path (sourceFilteredItems)
+//   - "explore" (score:ts:id)  — the empty-vessel placeholder path
+// A feed can gain or lose its first source mid-session, swapping which branch
+// serves the next page. Tagging the wire format means a cursor minted by one
+// branch can never be silently mis-read by the other: a foreign or stale tag
+// decodes to `undefined` → a clean restart from page 1, never a mis-ordered
+// page. (One-time effect on deploy: cursors held by in-flight paginators are
+// untagged, so they decode to undefined and restart once — the same graceful
+// degradation this endpoint already had for the source-transition case.)
 const UNBOUNDED_SCORE = 1e18;
 
-function parseCursor(raw: string | undefined): CursorParts | undefined {
+type FeedCursor =
+  | { kind: "scored"; score: number; id: string }
+  | { kind: "explore"; score: number; ts: number; id: string };
+
+function encodeFeedCursor(c: FeedCursor): string {
+  return c.kind === "scored"
+    ? `scored:${c.score}:${c.id}`
+    : `explore:${c.score}:${c.ts}:${c.id}`;
+}
+
+// The tag is the discriminant, so a decoded cursor is self-describing; each
+// caller narrows to the `kind` its branch expects and treats the other kind as
+// undefined (→ restart). A bare/untyped string matches no tag → undefined too.
+function decodeFeedCursor(raw: string | undefined): FeedCursor | undefined {
   if (!raw) return undefined;
   const parts = raw.split(":");
-  if (parts.length === 3) {
-    const score = Number(parts[0]);
-    const ts = parseInt(parts[1], 10);
+  if (parts[0] === "scored") {
+    if (parts.length !== 3) return undefined;
+    const score = Number(parts[1]);
     const id = parts[2];
-    if (!isNaN(score) && !isNaN(ts) && UUID_RE.test(id))
-      return { score, ts, id };
+    if (Number.isNaN(score) || !UUID_RE.test(id)) return undefined;
+    return { kind: "scored", score, id };
   }
-  if (parts.length === 2) {
-    const ts = parseInt(parts[0], 10);
-    const id = parts[1];
-    if (!isNaN(ts) && UUID_RE.test(id)) return { ts, id };
+  if (parts[0] === "explore") {
+    if (parts.length !== 4) return undefined;
+    const score = Number(parts[1]);
+    const ts = parseInt(parts[2], 10);
+    const id = parts[3];
+    if (Number.isNaN(score) || Number.isNaN(ts) || !UUID_RE.test(id))
+      return undefined;
+    return { kind: "explore", score, ts, id };
   }
-  return undefined;
+  return undefined; // foreign/stale shape → restart from page 1
 }
 
 function computeBiddabilityTier(row: any): "A" | "B" | "C" | "D" {
@@ -1615,7 +1639,8 @@ async function sourceFilteredItems(
   rawCursor: string | undefined,
   limit: number,
 ) {
-  const cursor = parseScoredCursor(rawCursor);
+  const decoded = decodeFeedCursor(rawCursor);
+  const cursor = decoded?.kind === "scored" ? decoded : undefined;
   const cursorClause = cursor
     ? `AND (effective_score, fi_id) < ($4::float8, $5::uuid)`
     : "";
@@ -1687,26 +1712,14 @@ async function sourceFilteredItems(
   const grouped = groupReplies(items);
   const lastRow = result.rows[result.rows.length - 1];
   const nextCursor = lastRow
-    ? `${Number(lastRow.effective_score)}:${lastRow.fi_id}`
+    ? encodeFeedCursor({
+        kind: "scored",
+        score: Number(lastRow.effective_score),
+        id: lastRow.fi_id,
+      })
     : undefined;
 
   return { items: grouped, nextCursor };
-}
-
-// Slice 16 cursor: (effective_score:float, id:uuid). Distinct from
-// parseCursor's 2-part shape (which the slice-4 chronological branch used as
-// (ts:int, id)) — the float vs int parse matters because parseInt would
-// truncate fractional weights.
-function parseScoredCursor(
-  raw: string | undefined,
-): { score: number; id: string } | undefined {
-  if (!raw) return undefined;
-  const parts = raw.split(":");
-  if (parts.length !== 2) return undefined;
-  const score = Number(parts[0]);
-  const id = parts[1];
-  if (Number.isNaN(score) || !UUID_RE.test(id)) return undefined;
-  return { score, id };
 }
 
 async function placeholderExploreItems(
@@ -1714,7 +1727,8 @@ async function placeholderExploreItems(
   rawCursor: string | undefined,
   limit: number,
 ) {
-  const cursor = parseCursor(rawCursor);
+  const decoded = decodeFeedCursor(rawCursor);
+  const cursor = decoded?.kind === "explore" ? decoded : undefined;
   const scoreCursor = cursor?.score ?? UNBOUNDED_SCORE;
   const cursorClause = cursor
     ? `AND (fi.score, fi.published_at, fi.id) < ($3::numeric, to_timestamp($4), $5::uuid)`
@@ -1749,7 +1763,12 @@ async function placeholderExploreItems(
   const items = result.rows.map(rowToItem);
   const lastRow = result.rows[result.rows.length - 1];
   const nextCursor = lastRow
-    ? `${lastRow.score ?? 0}:${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
+    ? encodeFeedCursor({
+        kind: "explore",
+        score: lastRow.score ?? 0,
+        ts: Number(lastRow.published_at_epoch),
+        id: lastRow.fi_id,
+      })
     : undefined;
 
   return { items, nextCursor };
