@@ -912,7 +912,7 @@ Reverses the slices 21–22 cluster geometry. The bottom-right floor carried thr
 - **Hairlines.** The panels' pre-existing 1px enclosures + row/section dividers came along in the rename; since the new files now author those lines, they were made compliant rather than reintroduced — structural enclosures (panel/menu/button) bumped to 2px, internal divider lines replaced with whitespace (the search input loses its border, relying on its `#FAFAF7` fill). `scripts/check-hairlines.sh` clean on all three files.
 - **Scope.** Workspace dock only. The topbar `Nav.tsx` (its own search input + avatar dropdown with Messages/Notifications) is a separate surface and is untouched.
 
-`tsc --noEmit` clean (web); `npm run lint` 0 errors; not yet browser-verified (visual smoke of the menu + in-place panels + badge is the remaining manual step).
+`tsc --noEmit` clean (web); `npm run lint` 0 errors; **browser-verified 2026-06-03** (headless Chromium, logged in as `billyisland`): a single ∀ disc (no standalone bell/search), the drop-up menu in order `New feed · New note · Write an article — Search · Messages(54) · Notifications(42)`, Search/Notifications open their rich panels in place above the ∀, Messages routes to `/messages`, and the combined badge reads `96 = 54 dmCount + 42 notificationCount`. Probed the badge-sync claim: MARK ALL READ dropped the ∀ badge by exactly the notification count (93 → 51, DMs untouched), confirming `NotificationsPanel` refreshes the shared store after mark-read; outside-click also closes the panel.
 
 ## Deferred (TODO in code, not blocking the experiment)
 
