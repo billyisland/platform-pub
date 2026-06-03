@@ -8,7 +8,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import CharacterCount from '@tiptap/extension-character-count'
 import { Markdown } from 'tiptap-markdown'
 import { useAuth } from '../../stores/auth'
-import { publishNote, type CrossPostTarget } from '../../lib/publishNote'
+import { publishNote, type CrossPostTarget, type QuoteTarget } from '../../lib/publishNote'
 import { publishReply } from '../../lib/replies'
 import { publishArticle, publishToPublication } from '../../lib/publish'
 import { createAutoSaver, saveDraft } from '../../lib/drafts'
@@ -126,6 +126,9 @@ interface ComposerProps {
   open: boolean
   initialMode?: ComposerMode
   replyTarget?: ReplyTarget | null
+  // When set, the note is published as a NIP-18 quote embedding this target.
+  // Mutually exclusive with replyTarget.
+  quoteTarget?: QuoteTarget | null
   onClose: () => void
   onPublished?: () => void
   // Slice 13: separate signal for reply publishes so the parent can refetch
@@ -133,7 +136,7 @@ interface ComposerProps {
   onReplied?: (targetEventId: string) => void
 }
 
-export function Composer({ open, initialMode = 'note', replyTarget, onClose, onPublished, onReplied }: ComposerProps) {
+export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget, onClose, onPublished, onReplied }: ComposerProps) {
   const { user } = useAuth()
   const [mode, setMode] = useState<ComposerMode>(initialMode)
   const [chips, setChips] = useState<ToChip[]>([])
@@ -245,7 +248,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
 
   useEffect(() => {
     if (!open) return
-    setMode(replyTarget ? 'note' : initialMode)
+    setMode(replyTarget || quoteTarget ? 'note' : initialMode)
     setChips([])
     setToQuery('')
     setResolverResult(null)
@@ -509,13 +512,14 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
   const isSubmitForReview = !!selectedPub && !selectedPub.canPublish
 
   const isReply = !!replyTarget && mode === 'note'
+  const isQuote = !!quoteTarget && mode === 'note'
 
   const canPublishNote =
     !!user &&
     !!body.trim() &&
     !overLimit &&
     !publishing &&
-    (isReply || (!isMixed && (isPrivate || broadcastNostrSelected)))
+    (isReply || isQuote || (!isMixed && (isPrivate || broadcastNostrSelected)))
 
   const canPublishArticle =
     !!user && !publishing && !!title.trim() && wordCount >= 10 && !hasPersonChip
@@ -527,6 +531,12 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
     setPublishing(true)
     setError(null)
     try {
+      if (isQuote && quoteTarget) {
+        await publishNote(body, user.pubkey, quoteTarget)
+        onPublished?.()
+        onClose()
+        return
+      }
       if (isReply && replyTarget) {
         await publishReply({
           content: body,
@@ -646,7 +656,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
       onMouseDown={onScrimClick}
       role="dialog"
       aria-modal="true"
-      aria-label={isReply ? 'Reply' : mode === 'article' ? 'Write an article' : 'New note'}
+      aria-label={isReply ? 'Reply' : isQuote ? 'Quote' : mode === 'article' ? 'Write an article' : 'New note'}
       style={{
         position: 'fixed',
         inset: 0,
@@ -693,7 +703,39 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
           </div>
         )}
 
-        {!isReply && !hasPersonChip && (
+        {isQuote && quoteTarget && (
+          <div
+            style={{
+              background: TOKENS.bannerBg,
+              padding: '10px 12px',
+              marginBottom: 16,
+              borderLeft: `4px solid ${TOKENS.panelBorder}`,
+            }}
+          >
+            <div className="label-ui" style={{ color: TOKENS.hintFg }}>
+              Quoting{' '}
+              {quoteTarget.previewAuthorName ?? `${quoteTarget.authorPubkey.slice(0, 10)}…`}
+            </div>
+            {quoteTarget.previewTitle && (
+              <p
+                className="font-sans text-ui-xs mt-1"
+                style={{ color: TOKENS.bannerFg, fontWeight: 500 }}
+              >
+                {quoteTarget.previewTitle}
+              </p>
+            )}
+            {quoteTarget.previewContent && (
+              <p
+                className="font-serif italic text-[13px] mt-1"
+                style={{ color: TOKENS.bannerFg, lineHeight: 1.45 }}
+              >
+                {quoteTarget.previewContent}
+              </p>
+            )}
+          </div>
+        )}
+
+        {!isReply && !isQuote && !hasPersonChip && (
           <div
             className="label-ui"
             style={{
@@ -707,7 +749,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
           </div>
         )}
 
-        {!isReply && (
+        {!isReply && !isQuote && (
         <label
           className="label-ui block"
           htmlFor="composer-to"
@@ -717,7 +759,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
         </label>
         )}
 
-        {!isReply && (
+        {!isReply && !isQuote && (
         <div
           style={{
             border: `1px solid ${TOKENS.inputBorder}`,
@@ -878,7 +920,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
         </div>
         )}
 
-        {!isReply && mode === 'note' && chips.length === 0 && (
+        {!isReply && !isQuote && mode === 'note' && chips.length === 0 && (
           <ProtocolSelector
             enabled={enabledProtocols}
             linked={linkedByProtocol}
@@ -954,7 +996,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
                 </span>
               </div>
             )}
-            {!isReply && (
+            {!isReply && !isQuote && (
               <div style={{ marginTop: 8, textAlign: 'right' }}>
                 <button
                   type="button"
@@ -1009,7 +1051,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
           <div className="font-mono text-mono-xs" style={{ color: TOKENS.hintFg }}>
             {error ? (
               <span style={{ color: TOKENS.errorFg }}>{error}</span>
-            ) : isReply ? (
+            ) : isReply || isQuote ? (
               <span style={{ color: overLimit ? TOKENS.errorFg : TOKENS.hintFg }}>
                 {charCount}/{NOTE_CHAR_LIMIT}
               </span>
@@ -1088,11 +1130,15 @@ export function Composer({ open, initialMode = 'note', replyTarget, onClose, onP
               {publishing
                 ? isReply
                   ? 'Replying…'
-                  : isPrivate
-                    ? 'Sending…'
-                    : 'Publishing…'
+                  : isQuote
+                    ? 'Quoting…'
+                    : isPrivate
+                      ? 'Sending…'
+                      : 'Publishing…'
                 : isReply
                   ? 'Reply'
+                  : isQuote
+                  ? 'Quote'
                   : mode === 'article'
                   ? isSubmitForReview
                     ? 'Submit for review'

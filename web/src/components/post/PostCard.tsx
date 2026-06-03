@@ -36,6 +36,7 @@ export function PostCard({
   ctx,
   onPipOpen,
   onReply,
+  onQuote,
   onReport,
   onExpand,
   onCollapse,
@@ -51,6 +52,7 @@ export function PostCard({
   ctx: CardContext;
   onPipOpen?: PipOpen;
   onReply?: () => void;
+  onQuote?: () => void;
   onReport?: () => void;
   onExpand?: (post: Post) => void;
   onCollapse?: (post: Post) => void;
@@ -122,6 +124,7 @@ export function PostCard({
         density={ctx.density}
         isOwnContent={isOwnContent}
         onReply={onReply}
+        onQuote={onQuote}
         onReport={onReport}
       />
       {spec.showOriginTag && (

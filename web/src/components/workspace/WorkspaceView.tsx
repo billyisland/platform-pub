@@ -40,6 +40,7 @@ import {
 import { ReplyGroupCard } from "./ReplyGroupCard";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { Composer, type ReplyTarget } from "./Composer";
+import type { QuoteTarget } from "../../lib/publishNote";
 import { PipPanel } from "./PipPanel";
 import { NewFeedPrompt } from "./NewFeedPrompt";
 import { FeedComposer } from "./FeedComposer";
@@ -243,6 +244,9 @@ export function WorkspaceView() {
     false,
   );
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  // Quote target — set when Quote is clicked on a card; the composer publishes a
+  // NIP-18 quote note embedding it. Mutually exclusive with replyTarget.
+  const [quoteTarget, setQuoteTarget] = useState<QuoteTarget | null>(null);
   // At most one conversation is expanded per feed: this maps a feed id to the
   // expand key (`feedItemId ?? id`) of its single open card. Opening another
   // card in the same feed replaces the entry, collapsing the previous one.
@@ -501,11 +505,13 @@ export function WorkspaceView() {
   function handleForallAction(key: ForallAction) {
     if (key === "new-note") {
       setReplyTarget(null);
+      setQuoteTarget(null);
       setComposerOpen("note");
       return;
     }
     if (key === "new-article") {
       setReplyTarget(null);
+      setQuoteTarget(null);
       setComposerOpen("article");
       return;
     }
@@ -913,12 +919,30 @@ export function WorkspaceView() {
                         // documented cut). version = the all.haus event id (vote +
                         // reply target); type picks the kind.
                         const replyFromPost = (p: Post) => {
+                          setQuoteTarget(null);
                           setReplyTarget({
                             eventId: p.version ?? p.id,
                             eventKind: p.type === "article" ? 30023 : 1,
                             authorPubkey: p.author.pubkey ?? "",
                             authorName: "",
                             excerpt: (p.body.text ?? "").slice(0, 120),
+                          });
+                          setComposerOpen("note");
+                        };
+                        // Native quote → a NIP-18 quote note that embeds this post.
+                        // version = the nostr event id of the thing being quoted.
+                        const quoteFromPost = (p: Post) => {
+                          setReplyTarget(null);
+                          setQuoteTarget({
+                            eventId: p.version ?? p.id,
+                            eventKind: p.type === "article" ? 30023 : 1,
+                            authorPubkey: p.author.pubkey ?? "",
+                            previewTitle: p.body.title ?? undefined,
+                            previewContent:
+                              (p.body.summary ?? p.body.text ?? "").slice(0, 200) ||
+                              undefined,
+                            previewAuthorName:
+                              p.author.displayName ?? p.author.handle ?? undefined,
                           });
                           setComposerOpen("note");
                         };
@@ -945,6 +969,7 @@ export function WorkspaceView() {
                               ctx={ctx}
                               onCollapse={toggleExpand}
                               onReply={replyFromPost}
+                              onQuote={quoteFromPost}
                               onOpenReader={openReaderFromPost}
                               onPipOpen={onPipOpen}
                               refreshKey={threadRefreshTick}
@@ -966,6 +991,11 @@ export function WorkspaceView() {
                                 ? () => replyFromPost(post)
                                 : undefined
                             }
+                            onQuote={
+                              post.author.pubkey
+                                ? () => quoteFromPost(post)
+                                : undefined
+                            }
                           />
                         );
                       })()
@@ -983,9 +1013,11 @@ export function WorkspaceView() {
         open={!!composerOpen}
         initialMode={composerOpen === "article" ? "article" : "note"}
         replyTarget={replyTarget}
+        quoteTarget={quoteTarget}
         onClose={() => {
           setComposerOpen(false);
           setReplyTarget(null);
+          setQuoteTarget(null);
         }}
         onPublished={refreshAll}
         onReplied={() => {

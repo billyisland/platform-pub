@@ -36,6 +36,7 @@ export function PostThread({
   ctx,
   onCollapse,
   onReply,
+  onQuote,
   onReport,
   onOpenReader,
   onPipOpen,
@@ -46,6 +47,7 @@ export function PostThread({
   ctx: CardContext;
   onCollapse?: () => void;
   onReply?: (post: Post) => void;
+  onQuote?: (post: Post) => void;
   onReport?: (post: Post) => void;
   // Article nodes (e.g. an article root rendered as a thread-parent) click
   // through to the reader pane (§3.1) rather than re-rooting.
@@ -108,6 +110,8 @@ export function PostThread({
   // Native posts carry a pubkey → reply/report target the all.haus event.
   const nativeReply = (p: Post) =>
     onReply && p.author.pubkey ? () => onReply(p) : undefined;
+  const nativeQuote = (p: Post) =>
+    onQuote && p.author.pubkey ? () => onQuote(p) : undefined;
   const nativeReport = (p: Post) =>
     onReport && p.author.pubkey ? () => onReport(p) : undefined;
 
@@ -154,6 +158,7 @@ export function PostThread({
           onReroot={(x) => thread.reroot(x.id)}
           onOpenReader={onOpenReader}
           onReply={nativeReply(p)}
+          onQuote={nativeQuote(p)}
           onReport={nativeReport(p)}
           isOwnContent={isOwn(p)}
         />
@@ -172,6 +177,7 @@ export function PostThread({
           onCollapse={() => onCollapse?.()}
           onOpenReader={onOpenReader}
           onReply={nativeReply(focal)}
+          onQuote={nativeQuote(focal)}
           onReport={nativeReport(focal)}
           isOwnContent={isOwn(focal)}
         />
@@ -189,6 +195,7 @@ export function PostThread({
           onReroot={(x) => thread.reroot(x.id)}
           onOpenReader={onOpenReader}
           onReply={nativeReply(p)}
+          onQuote={nativeQuote(p)}
           onReport={nativeReport(p)}
           isOwnContent={isOwn(p)}
         />

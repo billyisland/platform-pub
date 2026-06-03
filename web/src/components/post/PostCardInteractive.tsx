@@ -34,6 +34,7 @@ export function PostCardInteractive(props: {
   expanded?: boolean; // focal nodes are expanded (drives fresh-on-expand counters)
   onPipOpen?: PipOpen;
   onReply?: () => void;
+  onQuote?: () => void;
   onReport?: () => void;
   onExpand?: (post: Post) => void;
   onCollapse?: (post: Post) => void;

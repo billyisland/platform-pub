@@ -6,13 +6,13 @@ import type { Post } from "../../lib/post/types";
 import type { VesselPalette } from "../workspace/tokens";
 
 // =============================================================================
-// PostActions — the all.haus reaction row (vote / repost / save / report).
+// PostActions — the all.haus reaction row (vote / reply / quote / report).
 //
-// §7: the all.haus scoresheet is minted for EVERY THING, so vote/repost/save are
-// available at every tier. Native content votes through the existing VoteControls
-// (keyed on the nostr event id = post.version). External all.haus reactions ride
-// the greenfield POST /post/:postId/react endpoint (ADR §9), not built yet — so
-// external repost/save render as quiet placeholder affordances this phase.
+// §7: the all.haus scoresheet is minted for EVERY THING, so votes are available
+// at every tier. Native content votes through the existing VoteControls (keyed on
+// the nostr event id = post.version). Reply and Quote open the workspace composer
+// (Quote → a NIP-18 quote note embedding this post); both are native-only and so
+// are supplied by the host only when the post carries an author pubkey.
 //
 // haus mode:  "full" → buttons | "numerals-only" (condensed) → tally numeral only
 //             | "none" (quoted) → nothing.
@@ -32,6 +32,7 @@ export function PostActions({
   density,
   isOwnContent,
   onReply,
+  onQuote,
   onReport,
 }: {
   post: Post;
@@ -41,6 +42,7 @@ export function PostActions({
   density: string;
   isOwnContent?: boolean;
   onReply?: () => void;
+  onQuote?: () => void;
   onReport?: () => void;
 }) {
   if (density === "compact") return null;
@@ -83,16 +85,16 @@ export function PostActions({
           Reply
         </button>
       )}
-      {/* Phase 3: wire repost/save to POST /post/:postId/react (scoresheet). */}
-      <button
-        type="button"
-        disabled
-        className="font-mono text-[11px] uppercase tracking-[0.02em] opacity-50"
-        style={{ background: "none", border: "none", padding: 0, cursor: "default", color: palette.cardMeta }}
-        title="Coming soon"
-      >
-        Save
-      </button>
+      {onQuote && (
+        <button
+          type="button"
+          onClick={onQuote}
+          className={ACTION_CLS}
+          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: palette.cardMeta }}
+        >
+          Quote
+        </button>
+      )}
       {showReport && (
         <button
           type="button"
