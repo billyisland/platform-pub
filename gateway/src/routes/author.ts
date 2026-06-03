@@ -9,6 +9,7 @@ import {
   resolveNativeAuthor,
   fetchBlueskyProfile,
   fetchAPProfile,
+  buildExternalProfileUrl,
 } from "../lib/author-resolve.js";
 
 // =============================================================================
@@ -164,12 +165,20 @@ async function resolveExternalAuthorById(
   }
 
   // Stored fields are the always-present base; live origin data overlays them.
+  // profilePath is the internal constructed-profile route (the display-name link);
+  // externalUrl is the origin-platform profile page (the @handle link).
   const base: AuthorCardResponse = {
     tier: xa.tier,
     displayName: xa.display_name ?? undefined,
     handle: xa.handle ?? undefined,
     avatarUrl: xa.avatar ?? undefined,
     sourceProtocol: xa.protocol,
+    profilePath: `/author/${xa.id}`,
+    externalUrl: buildExternalProfileUrl(xa.protocol, {
+      handle: xa.handle,
+      handleUri: xa.handle_uri,
+      stableHandle: xa.stable_handle,
+    }),
     followTarget,
   };
 
@@ -186,6 +195,12 @@ async function resolveExternalAuthorById(
         followerCount: profile.followersCount,
         followingCount: profile.followsCount,
         postCount: profile.postsCount,
+        // Live handle yields the prettier bsky.app/profile/<handle> URL.
+        externalUrl: buildExternalProfileUrl("atproto", {
+          handle: profile.handle,
+          handleUri: xa.handle_uri,
+          stableHandle: xa.stable_handle,
+        }),
       };
     }
     return { ...base, partial: true };

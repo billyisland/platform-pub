@@ -1,4 +1,5 @@
 import { pool } from "@platform-pub/shared/db/client.js";
+import { nip19 } from "nostr-tools";
 import { getProfile } from "./atproto-resolve.js";
 import { fetchActorProfile } from "./activitypub-resolve.js";
 import logger from "@platform-pub/shared/lib/logger.js";
@@ -28,6 +29,12 @@ export interface AuthorCardResponse {
   sourceDescription?: string;
   sourceUrl?: string;
   sourceProtocol?: string;
+  // Internal all.haus profile route the display name links to (native → /:username,
+  // external A/B → /author/:authorId). Absent ⇒ name renders as plain text.
+  profilePath?: string;
+  // The author's profile page on the ORIGIN platform (Bluesky / Fediverse / Nostr),
+  // linked from the @handle. Absent ⇒ handle renders as plain text.
+  externalUrl?: string;
   partial?: boolean;
   followTarget?: {
     type: "user" | "source";
@@ -53,6 +60,55 @@ export function computeTier(
       return authorUri ? "C" : "D";
     default:
       return "D";
+  }
+}
+
+function extractDid(s: string | null | undefined): string | null {
+  if (!s) return null;
+  return s.match(/did:(?:plc|web):[a-zA-Z0-9.:_-]+/)?.[0] ?? null;
+}
+
+// The author's profile page on the ORIGIN platform, for the @handle link.
+// Returns undefined when no browser-resolvable URL can be derived (the handle
+// then renders as plain text — the correct, safe default).
+export function buildExternalProfileUrl(
+  protocol: string,
+  opts: {
+    handle?: string | null;
+    handleUri?: string | null;
+    stableHandle?: string | null;
+  },
+): string | undefined {
+  const { handle, handleUri, stableHandle } = opts;
+  switch (protocol) {
+    case "atproto": {
+      // bsky.app/profile/<actor> resolves a human handle or a bare DID; prefer
+      // the prettier handle, fall back to the DID embedded in the stored URI.
+      const actor =
+        handle?.replace(/^@/, "") ||
+        extractDid(handleUri ?? stableHandle) ||
+        stableHandle ||
+        undefined;
+      return actor ? `https://bsky.app/profile/${actor}` : undefined;
+    }
+    case "activitypub": {
+      // The stored actor URI is itself a browser-resolvable profile page
+      // (Mastodon and friends redirect /users/x → the public profile).
+      const uri = handleUri ?? stableHandle ?? undefined;
+      return uri && /^https:\/\//.test(uri) ? uri : undefined;
+    }
+    case "nostr_external": {
+      // njump.me renders any nostr profile; encode the stored hex pubkey to npub.
+      const hex = (stableHandle ?? "").match(/^[0-9a-f]{64}$/i)?.[0];
+      if (!hex) return undefined;
+      try {
+        return `https://njump.me/${nip19.npubEncode(hex)}`;
+      } catch {
+        return undefined;
+      }
+    }
+    default:
+      return undefined;
   }
 }
 
@@ -108,6 +164,7 @@ export async function resolveNativeAuthor(
     handle: account.username,
     avatarUrl: account.avatar_blossom_url ?? undefined,
     bio: account.bio ?? undefined,
+    profilePath: `/${account.username}`,
     followerCount: parseInt(followerResult.rows[0].count, 10),
     followingCount: parseInt(followingResult.rows[0].count, 10),
     postCount: parseInt(articleResult.rows[0].count, 10),

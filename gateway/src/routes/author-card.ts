@@ -7,6 +7,7 @@ import {
   resolveNativeAuthor,
   fetchBlueskyProfile,
   fetchAPProfile,
+  buildExternalProfileUrl,
 } from "../lib/author-resolve.js";
 
 const CACHE_TTL_MS = 5 * 60_000;
@@ -180,6 +181,10 @@ async function resolveExternalAuthor(
         followingCount: profile.followsCount,
         postCount: profile.postsCount,
         sourceProtocol: "atproto",
+        externalUrl: buildExternalProfileUrl("atproto", {
+          handle: profile.handle,
+          handleUri: item.author_uri,
+        }),
         followTarget,
       };
     }
@@ -213,6 +218,9 @@ async function resolveExternalAuthor(
         followingCount: profile.followingCount,
         postCount: profile.postsCount,
         sourceProtocol: "activitypub",
+        externalUrl: buildExternalProfileUrl("activitypub", {
+          handleUri: item.author_uri,
+        }),
         followTarget,
         partial: profile.partial,
       };
@@ -223,6 +231,9 @@ async function resolveExternalAuthor(
       handle: item.author_handle ?? undefined,
       avatarUrl: item.author_avatar_url ?? undefined,
       sourceProtocol: "activitypub",
+      externalUrl: buildExternalProfileUrl("activitypub", {
+        handleUri: item.author_uri,
+      }),
       followTarget,
       partial: true,
     };

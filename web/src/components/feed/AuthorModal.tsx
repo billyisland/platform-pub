@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import {
   useAuthorCard,
   invalidateAuthorCardCache,
@@ -199,16 +200,40 @@ function ModalContent({
           />
         )}
         <div className="min-w-0 flex-1">
-          {data.displayName && (
-            <p className="text-ui-sm font-medium truncate">
-              {data.displayName}
-            </p>
-          )}
-          {data.handle && (
-            <p className="text-mono-xs text-grey-400 truncate">
-              @{data.handle}
-            </p>
-          )}
+          {data.displayName &&
+            (data.profilePath ? (
+              // The name links to the author's all.haus profile (native
+              // /:username, external A/B /author/:id).
+              <Link
+                href={data.profilePath}
+                onClick={onClose}
+                className="block text-ui-sm font-medium truncate hover:underline"
+              >
+                {data.displayName}
+              </Link>
+            ) : (
+              <p className="text-ui-sm font-medium truncate">
+                {data.displayName}
+              </p>
+            ))}
+          {data.handle &&
+            (data.externalUrl ? (
+              // The handle links out to the author's profile on the origin
+              // platform (Bluesky / Fediverse / Nostr).
+              <a
+                href={data.externalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="block text-mono-xs text-grey-400 truncate hover:text-grey-600 hover:underline"
+              >
+                @{data.handle}
+              </a>
+            ) : (
+              <p className="text-mono-xs text-grey-400 truncate">
+                @{data.handle}
+              </p>
+            ))}
         </div>
       </div>
 

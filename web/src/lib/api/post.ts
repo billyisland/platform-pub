@@ -49,6 +49,12 @@ export interface AuthorProfile {
   sourceDescription?: string;
   sourceUrl?: string;
   sourceProtocol?: string;
+  // Internal all.haus profile route for the display-name link (native → /:username,
+  // external A/B → /author/:authorId). Absent ⇒ name is plain text.
+  profilePath?: string;
+  // The author's profile page on the origin platform, for the @handle link.
+  // Absent ⇒ handle is plain text.
+  externalUrl?: string;
   partial?: boolean;
   followTarget?: {
     type: "user" | "source";
