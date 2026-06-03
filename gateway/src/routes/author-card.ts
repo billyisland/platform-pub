@@ -107,30 +107,65 @@ async function resolveExternalAuthor(
   );
   const source = sourceRows[0] ?? null;
 
-  // `id` is the unfollow handle — the viewer's subscription-row id, since
-  // DELETE /feeds/:id keys on external_subscriptions.id, NOT the source id.
-  // Emit that id (when subscribed) so the hover modal's "FOLLOWING" →
-  // unsubscribe deletes a row instead of 404ing and snapping back. When
-  // unsubscribed there is no row, so fall back to the source id — only the
-  // subscribe path runs then, keyed off protocol + sourceUri.
-  const { rows: subRows } = await pool.query<{ id: string }>(
-    `SELECT id FROM external_subscriptions
-      WHERE subscriber_id = $1 AND source_id = $2
-      LIMIT 1`,
-    [viewerId, item.source_id],
-  );
-  const subId = subRows[0]?.id ?? null;
-  const isFollowing = subId !== null;
+  // Follow state must key on the AUTHOR'S identity, not the item's source.
+  // Thread-context hydration files every participant under the FOCAL author's
+  // source_id (see routes/external-items.ts), so source-based follow state marks
+  // every participant in an expanded external conversation as followed. For the
+  // hydrated protocols (atproto/activitypub) derive the author's own subscribe
+  // URI (the DID / actor URI) and match a subscription on it; rss/email/nostr
+  // keep source-based (their source IS the followable feed / is per-author).
+  //
+  // `id` is the unfollow handle — the viewer's subscription-row id, since DELETE
+  // /feeds/:id keys on external_subscriptions.id. When unsubscribed there's no
+  // row, so fall back to the subscribe URI — only the subscribe path runs then,
+  // keyed off protocol + sourceUri.
+  let authorUri: string | null = null;
+  if (item.protocol === "atproto" && item.author_uri) {
+    authorUri = item.author_uri.match(/did:(?:plc|web):[a-zA-Z0-9.:_-]+/)?.[0] ?? null;
+  } else if (
+    item.protocol === "activitypub" &&
+    item.author_uri &&
+    /^https:\/\//.test(item.author_uri)
+  ) {
+    authorUri = item.author_uri;
+  }
 
-  const followTarget = source
-    ? {
-        type: "source" as const,
-        id: subId ?? item.source_id,
-        isFollowing,
-        protocol: source.protocol,
-        sourceUri: source.source_uri,
-      }
-    : undefined;
+  let followTarget: AuthorCardResponse["followTarget"];
+  if (authorUri) {
+    const { rows: subRows } = await pool.query<{ id: string }>(
+      `SELECT sub.id
+         FROM external_subscriptions sub
+         JOIN external_sources es ON es.id = sub.source_id
+        WHERE sub.subscriber_id = $1
+          AND es.protocol = $2::external_protocol
+          AND es.source_uri = $3
+        LIMIT 1`,
+      [viewerId, item.protocol, authorUri],
+    );
+    const subId = subRows[0]?.id ?? null;
+    followTarget = {
+      type: "source",
+      id: subId ?? authorUri,
+      isFollowing: subId !== null,
+      protocol: item.protocol,
+      sourceUri: authorUri,
+    };
+  } else if (source) {
+    const { rows: subRows } = await pool.query<{ id: string }>(
+      `SELECT id FROM external_subscriptions
+        WHERE subscriber_id = $1 AND source_id = $2
+        LIMIT 1`,
+      [viewerId, item.source_id],
+    );
+    const subId = subRows[0]?.id ?? null;
+    followTarget = {
+      type: "source",
+      id: subId ?? item.source_id,
+      isFollowing: subId !== null,
+      protocol: source.protocol,
+      sourceUri: source.source_uri,
+    };
+  }
 
   if (tier === "A" && item.protocol === "atproto" && item.author_uri) {
     const profile = await fetchBlueskyProfile(item.author_uri);

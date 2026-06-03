@@ -76,9 +76,35 @@ async function isNativeAccount(id: string): Promise<boolean> {
   return rows[0]?.exists ?? false;
 }
 
+// The value the subscribe API expects as `sourceUri` for this author's own feed
+// — and the source_uri an existing subscription to this author carries:
+//   atproto        → bare DID (did:plc:… / did:web:…)
+//   activitypub    → actor URI (https…)
+//   nostr_external → 64-hex pubkey
+// The stored handle is usually already in this shape, but hydration-only authors
+// can carry a bsky.app profile URL — so for atproto we extract the embedded DID.
+// Returns null when no subscribable identity can be derived (⇒ "not followed",
+// and no subscribe affordance), which is the correct, safe default.
+function authorFollowUri(xa: ExternalAuthorRow): string | null {
+  const h = xa.handle_uri ?? xa.stable_handle;
+  switch (xa.protocol) {
+    case "atproto":
+      return h.match(/did:(?:plc|web):[a-zA-Z0-9.:_-]+/)?.[0] ?? null;
+    case "activitypub":
+      return /^https:\/\//.test(h) ? h : null;
+    case "nostr_external":
+      return /^[0-9a-f]{64}$/i.test(xa.stable_handle)
+        ? xa.stable_handle
+        : null;
+    default:
+      return null;
+  }
+}
+
 // Constructed external-author profile: stored identity fields + live-origin
-// stats. A representative external_item gives the source (for add-as-source)
-// and a host for the Mastodon REST fallback.
+// stats. Follow state is computed from the author's own identity
+// (authorFollowUri); a representative external_item is used only for the
+// activitypub Mastodon-REST host fallback.
 async function resolveExternalAuthorById(
   xa: ExternalAuthorRow,
   viewerId: string,
@@ -96,42 +122,45 @@ async function resolveExternalAuthorById(
      LIMIT 1`,
     [xa.id],
   );
+  // `rep` is kept ONLY for the activitypub host fallback below (Mastodon REST
+  // counts). It must NOT drive follow state: thread-context hydration files
+  // every participant's post under the FOCAL author's source_id (see
+  // routes/external-items.ts), so the representative item's source is the focal
+  // author's source for anyone who appears only inside an expanded conversation.
+  // Keying isFollowing off it made every participant in an external thread
+  // inherit the focal author's "FOLLOWING" state.
   const rep = repRows[0] ?? null;
 
-  // add-as-source target: the representative source (the author may span
-  // several; "add this source" mirrors the legacy hover-card affordance).
+  // Follow state keys on the AUTHOR'S OWN IDENTITY, not where their items happen
+  // to be stored. An external author is "followed" iff the viewer subscribes to
+  // a source whose source_uri is this author's stable handle (the DID / actor
+  // URI / pubkey — the exact value the subscribe API expects as sourceUri).
+  const followUri = authorFollowUri(xa);
   let followTarget: AuthorCardResponse["followTarget"];
-  if (rep?.source_id) {
-    const { rows: srcRows } = await pool.query<{
-      protocol: string;
-      source_uri: string;
-    }>(`SELECT protocol, source_uri FROM external_sources WHERE id = $1`, [
-      rep.source_id,
-    ]);
-    const src = srcRows[0];
-    if (src) {
-      // For a source followTarget, `id` is the unfollow handle — the viewer's
-      // subscription-row id, since DELETE /feeds/:id keys on
-      // external_subscriptions.id, NOT the source id. Emit that id (when
-      // subscribed) so the hover modal's "FOLLOWING" → unsubscribe actually
-      // deletes a row instead of 404ing and snapping back to FOLLOWING. When
-      // unsubscribed there is no row, so fall back to the source id — only the
-      // subscribe path runs then, and it keys off protocol + sourceUri.
-      const { rows: subRows } = await pool.query<{ id: string }>(
-        `SELECT id FROM external_subscriptions
-         WHERE subscriber_id = $1 AND source_id = $2
-         LIMIT 1`,
-        [viewerId, rep.source_id],
-      );
-      const subId = subRows[0]?.id ?? null;
-      followTarget = {
-        type: "source",
-        id: subId ?? rep.source_id,
-        isFollowing: subId !== null,
-        protocol: src.protocol,
-        sourceUri: src.source_uri,
-      };
-    }
+  if (followUri) {
+    // `id` is the unfollow handle — the viewer's subscription-row id, since
+    // DELETE /feeds/:id keys on external_subscriptions.id. Emit it when
+    // subscribed so "FOLLOWING" → unsubscribe deletes the right row; when not
+    // subscribed there's no row, so fall back to followUri — only the subscribe
+    // path runs then, and it keys off protocol + sourceUri.
+    const { rows: subRows } = await pool.query<{ id: string }>(
+      `SELECT sub.id
+         FROM external_subscriptions sub
+         JOIN external_sources es ON es.id = sub.source_id
+        WHERE sub.subscriber_id = $1
+          AND es.protocol = $2::external_protocol
+          AND es.source_uri = $3
+        LIMIT 1`,
+      [viewerId, xa.protocol, followUri],
+    );
+    const subId = subRows[0]?.id ?? null;
+    followTarget = {
+      type: "source",
+      id: subId ?? followUri,
+      isFollowing: subId !== null,
+      protocol: xa.protocol,
+      sourceUri: followUri,
+    };
   }
 
   // Stored fields are the always-present base; live origin data overlays them.
