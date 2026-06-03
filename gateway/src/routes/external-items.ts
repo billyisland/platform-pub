@@ -2166,7 +2166,26 @@ async function persistHydratedThreadNodes(
            like_count = EXCLUDED.like_count,
            reply_count = EXCLUDED.reply_count,
            repost_count = EXCLUDED.repost_count,
-           interaction_data = EXCLUDED.interaction_data
+           interaction_data = EXCLUDED.interaction_data,
+           -- Fill the parent linkage when we didn't already have it. The ancestor
+           -- walk (assembleExternalThread → loadExternalByUri) climbs via
+           -- source_reply_uri; a row first seen as a standalone feed item has a
+           -- NULL link, so hydration is the only place it can be learned. COALESCE
+           -- so a context-only hydrate only *fills* a gap, never clobbers an
+           -- authoritative ingested linkage.
+           source_reply_uri = COALESCE(external_items.source_reply_uri, EXCLUDED.source_reply_uri),
+           -- Backfill body/media only when the existing copy is empty, so the
+           -- thin row a standalone ingest left behind gains the richer hydrated
+           -- content (parents were rendering blank), without overwriting a row
+           -- that was already ingested in full.
+           content_text = COALESCE(external_items.content_text, EXCLUDED.content_text),
+           content_html = COALESCE(external_items.content_html, EXCLUDED.content_html),
+           media = CASE
+             WHEN external_items.media IS NULL
+               OR jsonb_array_length(COALESCE(external_items.media, '[]'::jsonb)) = 0
+             THEN EXCLUDED.media
+             ELSE external_items.media
+           END
          RETURNING id`,
         [
           sourceId,

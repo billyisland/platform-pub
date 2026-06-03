@@ -137,6 +137,7 @@ function mapExternalApiItem(
     type: "external",
     id: item.id,
     postId: item.postId, // §2.3 post_id — Phase 3 id bridge for GET /thread/:postId
+    authorId: item.authorId, // §4.4 external_authors id — byline link + hover key
     feedItemId: item.feedItemId,
     externalSourceId: item.externalSourceId,
     sourceProtocol: item.sourceProtocol,

@@ -142,9 +142,10 @@ function mapExternal(item: ExternalFeedItem): Post {
       sourceName: item.sourceName,
     },
     author: {
-      // external_author_id is server-side (Phase 0b); not in the workspace
-      // payload, so leave null this phase. Byline renders from name/handle.
-      id: null,
+      // tier-A/B external_authors id, now surfaced in the workspace payload (the
+      // §4.4 byline id-bridge). Drives the /author/:id link + hover modal on the
+      // collapsed feed card; null for tier C/D → plain-text byline, no hover.
+      id: item.authorId ?? null,
       accountId: null,
       displayName: item.authorName,
       handle: item.authorHandle,

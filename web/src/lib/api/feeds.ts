@@ -74,6 +74,7 @@ export interface WorkspaceFeedApiExternal {
   type: "external";
   feedItemId: string;
   postId?: string; // §2.3 deterministic post_id — the key for GET /thread/:postId
+  authorId?: string; // tier-A/B external_authors id — byline link + hover key (§4.4)
   externalSourceId?: string;
   id: string;
   sourceProtocol: string;

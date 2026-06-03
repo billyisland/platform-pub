@@ -54,6 +54,11 @@ export interface Post {
   body: PostBody;
   inReplyTo: string | null; // parent post_id
   quotes: string | null; // quoted post_id (depth-1)
+  // Inline preview of a native note's quoted post (title/excerpt/author), carried
+  // from the notes.quoted_* columns so the thread renders the rich quote card
+  // rather than a bare "Quoted a post →" stub. External quotes hydrate async via
+  // the host item id, so they leave this undefined.
+  quotedPreview?: { title?: string; excerpt?: string; author?: string };
   originCounts: { like: number; reply: number; repost: number } | null; // external only; null native (§6)
   scoresheet: { up: number; down: number; reposts: number };
   biddabilityTier: "A" | "B" | "C" | "D";
@@ -217,6 +222,17 @@ export function feedItemToPost(row: any): Post {
     body,
     inReplyTo: row.in_reply_to_post_id ?? null,
     quotes: row.quotes_post_id ?? null,
+    // Native note quote preview from the notes.quoted_* columns (FEED_SELECT
+    // already carries them). Mirrors the workspace adapter's mapNote so the same
+    // quoted note reads identically in the feed and in an expanded thread.
+    quotedPreview:
+      !isExternal && row.quoted_event_id
+        ? {
+            title: row.quoted_title ?? undefined,
+            excerpt: row.quoted_excerpt ?? undefined,
+            author: row.quoted_author ?? undefined,
+          }
+        : undefined,
     // §6: native counts come from the canonical scoresheet (originCounts null);
     // external carry the origin platform's tallies.
     originCounts: isExternal

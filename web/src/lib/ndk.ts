@@ -108,6 +108,7 @@ export interface ExternalFeedItem {
   id: string;
   feedItemId?: string;
   postId?: string; // §2.3 post_id — see ArticleEvent
+  authorId?: string; // tier-A/B external_authors id — byline link + hover key (§4.4)
 
   externalSourceId?: string;
   savedAt?: number;
