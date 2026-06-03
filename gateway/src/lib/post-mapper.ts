@@ -58,7 +58,7 @@ export interface Post {
   // from the notes.quoted_* columns so the thread renders the rich quote card
   // rather than a bare "Quoted a post →" stub. External quotes hydrate async via
   // the host item id, so they leave this undefined.
-  quotedPreview?: { title?: string; excerpt?: string; author?: string };
+  quotedPreview?: { title?: string; excerpt?: string; author?: string; source?: string; url?: string };
   originCounts: { like: number; reply: number; repost: number } | null; // external only; null native (§6)
   scoresheet: { up: number; down: number; reposts: number };
   biddabilityTier: "A" | "B" | "C" | "D";
@@ -118,6 +118,7 @@ export const POST_SELECT = `,
   END AS in_reply_to_post_id,
   CASE
     WHEN n.quoted_event_id IS NOT NULL THEN ${nostrTargetPostId("n.quoted_event_id")}
+    WHEN n.quoted_post_id IS NOT NULL THEN n.quoted_post_id
     WHEN ei.source_quote_uri IS NOT NULL THEN feed_items_derive_post_id(fi.source_protocol::text, ei.source_quote_uri)
   END AS quotes_post_id`;
 
@@ -226,11 +227,14 @@ export function feedItemToPost(row: any): Post {
     // already carries them). Mirrors the workspace adapter's mapNote so the same
     // quoted note reads identically in the feed and in an expanded thread.
     quotedPreview:
-      !isExternal && row.quoted_event_id
+      !isExternal && (row.quoted_event_id || row.quoted_post_id)
         ? {
             title: row.quoted_title ?? undefined,
             excerpt: row.quoted_excerpt ?? undefined,
             author: row.quoted_author ?? undefined,
+            // External quote (migration 102): origin label + clickable permalink.
+            source: row.quoted_source ?? undefined,
+            url: row.quoted_url ?? undefined,
           }
         : undefined,
     // §6: native counts come from the canonical scoresheet (originCounts null);

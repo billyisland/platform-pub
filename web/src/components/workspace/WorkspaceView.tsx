@@ -31,6 +31,7 @@ import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
 import type { Post } from "../../lib/post/types";
 import { mapFeedItemToPost } from "../../lib/post/map-feed-item";
+import { originWebUrl } from "../../lib/post/origin-url";
 import {
   paletteFor,
   TEXT_SIZE_PX,
@@ -53,6 +54,17 @@ import { MergeFeedConfirm } from "./MergeFeedConfirm";
 
 const FLOOR = "#F0EFEB"; // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed";
+
+// Friendly origin label shown on the quoted-mini when quoting an external post
+// (mirrors PostOriginTag / SourceAttribution). Falls back to the source name,
+// then the upper-cased protocol.
+const EXTERNAL_QUOTE_LABEL: Record<string, string> = {
+  atproto: "BLUESKY",
+  activitypub: "FEDIVERSE",
+  nostr_external: "NOSTR",
+  rss: "RSS",
+  email: "EMAIL",
+};
 
 // Slice 9: first-login ceremony plays once per user. Storage flag survives
 // across logouts on the same browser; the responsive (new-feed) ceremony has
@@ -206,6 +218,9 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
       quotedExcerpt: item.quotedExcerpt,
       quotedTitle: item.quotedTitle,
       quotedAuthor: item.quotedAuthor,
+      quotedPostId: item.quotedPostId,
+      quotedUrl: item.quotedUrl,
+      quotedSource: item.quotedSource,
       pipStatus: item.pipStatus,
       savedAt: item.savedAt,
       externalParentId: item.externalParentId,
@@ -933,6 +948,32 @@ export function WorkspaceView() {
                         // Native quote → a NIP-18 quote note that embeds this post.
                         // version = the nostr event id of the thing being quoted.
                         const quoteFromPost = (p: Post) => {
+                          // External post (no nostr pubkey): quote as a native note
+                          // that references the origin by post_id + public URL,
+                          // rendering the same rich quoted-mini (migration 102).
+                          if (!p.author.pubkey) {
+                            setReplyTarget(null);
+                            setQuoteTarget({
+                              eventId: "",
+                              eventKind: 1,
+                              authorPubkey: "",
+                              isExternal: true,
+                              quotedPostId: p.id,
+                              quotedUrl: originWebUrl(p) ?? undefined,
+                              quotedSource:
+                                p.origin.sourceName ??
+                                EXTERNAL_QUOTE_LABEL[p.origin.protocol] ??
+                                p.origin.protocol.toUpperCase(),
+                              previewTitle: p.body.title ?? undefined,
+                              previewContent:
+                                (p.body.summary ?? p.body.text ?? "").slice(0, 200) ||
+                                undefined,
+                              previewAuthorName:
+                                p.author.displayName ?? p.author.handle ?? undefined,
+                            });
+                            setComposerOpen("note");
+                            return;
+                          }
                           const eventId = p.version ?? p.id;
                           const pubkey = p.author.pubkey ?? "";
                           // Native display names aren't on the workspace Post (the
@@ -1011,11 +1052,7 @@ export function WorkspaceView() {
                                 ? () => replyFromPost(post)
                                 : undefined
                             }
-                            onQuote={
-                              post.author.pubkey
-                                ? () => quoteFromPost(post)
-                                : undefined
-                            }
+                            onQuote={() => quoteFromPost(post)}
                           />
                         );
                       })()

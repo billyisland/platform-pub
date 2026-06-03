@@ -111,7 +111,7 @@ function mapNote(item: NoteEvent): Post {
     },
     // Origin ids this phase (not yet resolved to post_ids); used only as hints.
     inReplyTo: item.replyToEventId ?? item.externalParentId ?? null,
-    quotes: item.quotedEventId ?? null,
+    quotes: item.quotedEventId ?? item.quotedPostId ?? null,
     originCounts: null,
     scoresheet: { up: 0, down: 0, reposts: 0 },
     biddabilityTier: item.biddabilityTier ?? "A",
@@ -121,13 +121,17 @@ function mapNote(item: NoteEvent): Post {
     isMuted: false,
     feedItemId: item.feedItemId ?? null,
     externalItemId: null, // native
-    quotedPreview: item.quotedEventId
-      ? {
-          title: item.quotedTitle,
-          excerpt: item.quotedExcerpt,
-          author: item.quotedAuthor,
-        }
-      : undefined,
+    quotedPreview:
+      item.quotedEventId || item.quotedPostId
+        ? {
+            title: item.quotedTitle,
+            excerpt: item.quotedExcerpt,
+            author: item.quotedAuthor,
+            // External quote (migration 102): origin label + clickable permalink.
+            source: item.quotedSource,
+            url: item.quotedUrl,
+          }
+        : undefined,
   };
 }
 

@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { Post } from "../../lib/post/types";
+import { originWebUrl } from "../../lib/post/origin-url";
 import type { VesselPalette } from "../workspace/tokens";
 
 // =============================================================================
@@ -22,16 +23,6 @@ const PROTOCOL_DISPLAY: Record<string, string> = {
   nostr_external: "NOSTR",
   email: "EMAIL",
 };
-
-// at:// → bsky.app web URL (mirrors VesselCard's atprotoWebUri).
-function originWebUrl(post: Post): string | null {
-  const uri = post.origin.uri;
-  if (!uri) return null;
-  const at = uri.match(/^at:\/\/([^/]+)\/app\.bsky\.feed\.post\/([^/]+)$/);
-  if (at) return `https://bsky.app/profile/${at[1]}/post/${at[2]}`;
-  if (/^https?:\/\//.test(uri)) return uri;
-  return null;
-}
 
 export function PostOriginTag({
   post,

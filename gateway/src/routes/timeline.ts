@@ -182,6 +182,7 @@ export const FEED_SELECT = `
   n.content AS note_content, n.is_quote_comment,
   n.quoted_event_id, n.quoted_event_kind,
   n.quoted_excerpt, n.quoted_title, n.quoted_author,
+  n.quoted_post_id, n.quoted_url, n.quoted_source,
   n.external_parent_id,
   -- External-specific (NULL for non-external)
   ei.author_name AS ei_author_name, ei.author_handle AS ei_author_handle,

@@ -67,17 +67,18 @@ export function QuotedEmbed({
     );
   }
 
-  return (
-    <div
-      className="mt-2"
-      style={{ background: palette.interior, padding: "10px 12px" }}
-    >
-      {preview.author && (
+  // Byline reads "Author · SOURCE" for an external quote (migration 102); native
+  // quotes carry no source.
+  const byline = [preview.author, preview.source].filter(Boolean).join(" · ");
+
+  const inner = (
+    <>
+      {byline && (
         <div
           className="font-mono text-[11px] uppercase tracking-[0.06em]"
           style={{ color: palette.cardMeta }}
         >
-          {preview.author}
+          {byline}
         </div>
       )}
       {preview.title && (
@@ -92,6 +93,32 @@ export function QuotedEmbed({
           {truncateText(preview.excerpt, 160)}
         </div>
       )}
+    </>
+  );
+
+  // External quote with a permalink → the tile links out to the origin (the one
+  // sanctioned route to the source platform). Click must not bubble to the card.
+  if (preview.url) {
+    return (
+      <a
+        href={preview.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="mt-2 block hover:opacity-90"
+        style={{ background: palette.interior, padding: "10px 12px" }}
+      >
+        {inner}
+      </a>
+    );
+  }
+
+  return (
+    <div
+      className="mt-2"
+      style={{ background: palette.interior, padding: "10px 12px" }}
+    >
+      {inner}
     </div>
   );
 }

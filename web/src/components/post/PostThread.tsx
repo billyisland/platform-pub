@@ -110,8 +110,10 @@ export function PostThread({
   // Native posts carry a pubkey → reply/report target the all.haus event.
   const nativeReply = (p: Post) =>
     onReply && p.author.pubkey ? () => onReply(p) : undefined;
-  const nativeQuote = (p: Post) =>
-    onQuote && p.author.pubkey ? () => onQuote(p) : undefined;
+  // Quote works for external posts too — the host (quoteFromPost) builds a native
+  // quote-note that references the external origin (migration 102).
+  const quoteFor = (p: Post) =>
+    onQuote ? () => onQuote(p) : undefined;
   const nativeReport = (p: Post) =>
     onReport && p.author.pubkey ? () => onReport(p) : undefined;
 
@@ -158,7 +160,7 @@ export function PostThread({
           onReroot={(x) => thread.reroot(x.id)}
           onOpenReader={onOpenReader}
           onReply={nativeReply(p)}
-          onQuote={nativeQuote(p)}
+          onQuote={quoteFor(p)}
           onReport={nativeReport(p)}
           isOwnContent={isOwn(p)}
         />
@@ -177,7 +179,7 @@ export function PostThread({
           onCollapse={() => onCollapse?.()}
           onOpenReader={onOpenReader}
           onReply={nativeReply(focal)}
-          onQuote={nativeQuote(focal)}
+          onQuote={quoteFor(focal)}
           onReport={nativeReport(focal)}
           isOwnContent={isOwn(focal)}
         />
@@ -195,7 +197,7 @@ export function PostThread({
           onReroot={(x) => thread.reroot(x.id)}
           onOpenReader={onOpenReader}
           onReply={nativeReply(p)}
-          onQuote={nativeQuote(p)}
+          onQuote={quoteFor(p)}
           onReport={nativeReport(p)}
           isOwnContent={isOwn(p)}
         />

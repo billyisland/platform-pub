@@ -236,7 +236,7 @@ Concretely, the following fusions are banned and must not be reintroduced:
 - **Parent-context tile** — a collapsed reply must not inline its parent above the byline. (Removed from `PostCardInteractive`; reply context comes from thread expansion.)
 - **Reply groups** — a burst of replies sharing one parent must not be collapsed into a single multi-reply card. The gateway feed query (`gateway/src/routes/feeds.ts`) emits each reply as its own item; there is no `reply_group` envelope.
 
-Quote embeds are a distinct grammar (a quote *is* one post that references another) and are not covered by this rule.
+Quote embeds are a distinct grammar (a quote *is* one post that references another) and are not covered by this rule. The Quote action is available on **all** card tiers, native and external: quoting an external (Bluesky/Mastodon/RSS) post publishes a native note that embeds the origin as a `QuotedEmbed` mini (author · source · excerpt, linked to the permalink) — there is no NIP-18 `q` tag, the reference is carried by `notes.quoted_post_id`/`quoted_url`/`quoted_source` (migration 102). See UNIVERSAL-POST-ADR's external-quote note.
 
 ### Feed card chassis
 

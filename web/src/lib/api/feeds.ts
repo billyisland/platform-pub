@@ -63,6 +63,11 @@ export interface WorkspaceFeedApiNote {
   quotedExcerpt?: string;
   quotedTitle?: string;
   quotedAuthor?: string;
+  // External quote-note (migration 102): the quoted thing is a Bluesky/Mastodon/etc.
+  // post, referenced by its deterministic post_id + public URL + origin label.
+  quotedPostId?: string;
+  quotedUrl?: string;
+  quotedSource?: string;
   publishedAt: number;
   score?: number;
   pipStatus: PipStatus;

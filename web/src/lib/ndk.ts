@@ -76,6 +76,9 @@ export interface NoteEvent {
   quotedExcerpt?: string;
   quotedTitle?: string;
   quotedAuthor?: string;
+  quotedPostId?: string;
+  quotedUrl?: string;
+  quotedSource?: string;
   pipStatus?: PipStatus;
   isReply?: boolean;
   replyToAuthor?: string;

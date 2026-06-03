@@ -714,7 +714,10 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
           >
             <div className="label-ui" style={{ color: TOKENS.hintFg }}>
               Quoting{' '}
-              {quoteTarget.previewAuthorName ?? `${quoteTarget.authorPubkey.slice(0, 10)}…`}
+              {quoteTarget.previewAuthorName ??
+                (quoteTarget.authorPubkey
+                  ? `${quoteTarget.authorPubkey.slice(0, 10)}…`
+                  : (quoteTarget.quotedSource ?? 'a post'))}
             </div>
             {quoteTarget.previewTitle && (
               <p

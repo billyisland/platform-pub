@@ -110,7 +110,9 @@ export interface Post {
   // client transitional: native note quote preview (the gateway model resolves
   // `quotes` to a child Post via /thread; until that is wired, the workspace
   // payload carries an inline excerpt we render as the quoted-level mini).
-  quotedPreview?: { title?: string; excerpt?: string; author?: string };
+  // `source` + `url` are set when the quoted post is external (migration 102):
+  // the origin label (e.g. "BLUESKY") and the clickable public permalink.
+  quotedPreview?: { title?: string; excerpt?: string; author?: string; source?: string; url?: string };
 }
 
 // Bare reposts are edges, not Posts (§2.2). Mirror of gateway RepostEdgeDTO.

@@ -34,6 +34,12 @@ const IndexNoteSchema = z.object({
   quotedExcerpt: z.string().optional(),
   quotedTitle: z.string().optional(),
   quotedAuthor: z.string().optional(),
+  // External quote-note (quoting a Bluesky/Mastodon/etc. post): the quoted thing
+  // has no nostr event id, so quotedEventId/Kind stay unset and these carry the
+  // reference (deterministic post_id + public URL + origin label). Migration 102.
+  quotedPostId: z.string().optional(),
+  quotedUrl: z.string().optional(),
+  quotedSource: z.string().optional(),
   // Optional: full signed Nostr event for outbound relay publishing (Phase 2)
   signedEvent: z
     .object({
@@ -91,8 +97,9 @@ export async function noteRoutes(app: FastifyInstance) {
           `INSERT INTO notes (
              author_id, nostr_event_id, content, char_count, tier, published_at,
              is_quote_comment, quoted_event_id, quoted_event_kind,
-             quoted_excerpt, quoted_title, quoted_author
-           ) VALUES ($1, $2, $3, $4, 'tier1', now(), $5, $6, $7, $8, $9, $10)
+             quoted_excerpt, quoted_title, quoted_author,
+             quoted_post_id, quoted_url, quoted_source
+           ) VALUES ($1, $2, $3, $4, 'tier1', now(), $5, $6, $7, $8, $9, $10, $11, $12, $13)
            ON CONFLICT (nostr_event_id) DO NOTHING
            RETURNING id`,
           [
@@ -106,6 +113,9 @@ export async function noteRoutes(app: FastifyInstance) {
             data.quotedExcerpt ?? null,
             data.quotedTitle ?? null,
             data.quotedAuthor ?? null,
+            data.quotedPostId ?? null,
+            data.quotedUrl ?? null,
+            data.quotedSource ?? null,
           ],
         );
 

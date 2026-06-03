@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict gU1yYGfFyQq4r1OO6n81Cz87OZpQxYRj59FPTeysTqqtuh2YqSE0lDHmBx0ujyY
+\restrict vcOL57EtTOALh9jmPrCaONvteaeUfqetmYNYXV3OQxrC076dhnd4ViluXLL9NzK
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1578,7 +1578,10 @@ CREATE TABLE public.notes (
     quoted_excerpt text,
     quoted_title text,
     quoted_author text,
-    external_parent_id uuid
+    external_parent_id uuid,
+    quoted_post_id text,
+    quoted_url text,
+    quoted_source text
 );
 
 
@@ -6361,7 +6364,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict gU1yYGfFyQq4r1OO6n81Cz87OZpQxYRj59FPTeysTqqtuh2YqSE0lDHmBx0ujyY
+\unrestrict vcOL57EtTOALh9jmPrCaONvteaeUfqetmYNYXV3OQxrC076dhnd4ViluXLL9NzK
+
 
 
 --
@@ -6480,5 +6484,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('098_feed_items_post_identity.sql'),
     ('099_external_author_identity.sql'),
     ('100_repost_edges.sql'),
-    ('101_nostr_relay_free_identity.sql');
-
+    ('101_nostr_relay_free_identity.sql'),
+    ('102_notes_external_quote.sql');
