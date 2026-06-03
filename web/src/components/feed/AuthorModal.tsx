@@ -267,13 +267,23 @@ function FollowButton({
 }) {
   const [following, setFollowing] = useState(target.isFollowing);
   const [busy, setBusy] = useState(false);
+  // For a source, unsubscribe deletes by subscription-row id. The gateway seeds
+  // target.id with that id when already subscribed; when we subscribe here we
+  // capture the freshly-minted id so an immediate unfollow in the same modal
+  // still targets the right row (target.id is then the source-id fallback).
+  const [subscriptionId, setSubscriptionId] = useState<string | null>(
+    target.type === "source" && target.isFollowing ? target.id : null,
+  );
 
   // Track the freshly-fetched state: useState only seeds on mount, so without
   // this a cached/re-fetched profile (e.g. after toggling elsewhere) would keep
   // showing the stale snapshot the button first mounted with.
   useEffect(() => {
     setFollowing(target.isFollowing);
-  }, [target.isFollowing]);
+    setSubscriptionId(
+      target.type === "source" && target.isFollowing ? target.id : null,
+    );
+  }, [target.isFollowing, target.id, target.type]);
 
   const handleClick = useCallback(
     async (e: React.MouseEvent) => {
@@ -292,13 +302,18 @@ function FollowButton({
           }
         } else {
           if (prev) {
-            await feedsApi.remove(target.id);
+            // Unsubscribe by subscription-row id; without one there is nothing
+            // to delete, so surface it as a failure and let the catch revert.
+            if (!subscriptionId) throw new Error("missing subscription id");
+            await feedsApi.remove(subscriptionId);
+            setSubscriptionId(null);
           } else {
             if (target.protocol && target.sourceUri) {
-              await feedsApi.subscribe({
+              const res = await feedsApi.subscribe({
                 protocol: target.protocol,
                 sourceUri: target.sourceUri,
               });
+              setSubscriptionId(res.subscriptionId);
             }
           }
         }
@@ -312,7 +327,7 @@ function FollowButton({
         setBusy(false);
       }
     },
-    [target, following, busy],
+    [target, following, busy, subscriptionId],
   );
 
   return (

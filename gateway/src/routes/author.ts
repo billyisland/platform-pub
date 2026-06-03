@@ -110,17 +110,24 @@ async function resolveExternalAuthorById(
     ]);
     const src = srcRows[0];
     if (src) {
-      const { rows: subRows } = await pool.query<{ exists: boolean }>(
-        `SELECT EXISTS(
-           SELECT 1 FROM external_subscriptions
-           WHERE subscriber_id = $1 AND source_id = $2
-         ) AS exists`,
+      // For a source followTarget, `id` is the unfollow handle — the viewer's
+      // subscription-row id, since DELETE /feeds/:id keys on
+      // external_subscriptions.id, NOT the source id. Emit that id (when
+      // subscribed) so the hover modal's "FOLLOWING" → unsubscribe actually
+      // deletes a row instead of 404ing and snapping back to FOLLOWING. When
+      // unsubscribed there is no row, so fall back to the source id — only the
+      // subscribe path runs then, and it keys off protocol + sourceUri.
+      const { rows: subRows } = await pool.query<{ id: string }>(
+        `SELECT id FROM external_subscriptions
+         WHERE subscriber_id = $1 AND source_id = $2
+         LIMIT 1`,
         [viewerId, rep.source_id],
       );
+      const subId = subRows[0]?.id ?? null;
       followTarget = {
         type: "source",
-        id: rep.source_id,
-        isFollowing: subRows[0]?.exists ?? false,
+        id: subId ?? rep.source_id,
+        isFollowing: subId !== null,
         protocol: src.protocol,
         sourceUri: src.source_uri,
       };
