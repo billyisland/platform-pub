@@ -18,6 +18,28 @@ interface WriterInfo {
 const cache = new Map<string, WriterInfo>()
 const pending = new Map<string, Promise<WriterInfo | null>>()
 
+// Synchronous read of the resolved-name cache — for non-React call sites (e.g.
+// building a QuoteTarget on click) where the byline has usually already warmed
+// the cache. Returns null on a cache miss; pair with resolveWriterName to fill it.
+export function getCachedWriterName(pubkey: string): string | null {
+  return cache.get(pubkey)?.displayName ?? null
+}
+
+// Cache-or-fetch resolver (same backing cache as the hook), for imperative call
+// sites that need the name outside render. Resolves null if the lookup fails.
+export async function resolveWriterName(pubkey: string): Promise<WriterInfo | null> {
+  const cached = cache.get(pubkey)
+  if (cached) return cached
+  if (!pending.has(pubkey)) {
+    const promise = fetchWriterByPubkey(pubkey)
+    pending.set(pubkey, promise)
+    void promise.finally(() => pending.delete(pubkey))
+  }
+  const result = await pending.get(pubkey)!
+  if (result) cache.set(pubkey, result)
+  return result
+}
+
 export function useWriterName(pubkey: string): WriterInfo | null {
   const [info, setInfo] = useState<WriterInfo | null>(cache.get(pubkey) ?? null)
 

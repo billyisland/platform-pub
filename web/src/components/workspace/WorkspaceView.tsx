@@ -41,6 +41,7 @@ import { ReplyGroupCard } from "./ReplyGroupCard";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { Composer, type ReplyTarget } from "./Composer";
 import type { QuoteTarget } from "../../lib/publishNote";
+import { getCachedWriterName, resolveWriterName } from "../../hooks/useWriterName";
 import { PipPanel } from "./PipPanel";
 import { NewFeedPrompt } from "./NewFeedPrompt";
 import { FeedComposer } from "./FeedComposer";
@@ -932,19 +933,38 @@ export function WorkspaceView() {
                         // Native quote → a NIP-18 quote note that embeds this post.
                         // version = the nostr event id of the thing being quoted.
                         const quoteFromPost = (p: Post) => {
+                          const eventId = p.version ?? p.id;
+                          const pubkey = p.author.pubkey ?? "";
+                          // Native display names aren't on the workspace Post (the
+                          // byline resolves them via useWriterName), so read that
+                          // warm cache for the "Quoting …" banner; fall back to the
+                          // handle, then patch in an async resolve on a cold cache.
+                          const cachedName = pubkey
+                            ? getCachedWriterName(pubkey)
+                            : null;
                           setReplyTarget(null);
                           setQuoteTarget({
-                            eventId: p.version ?? p.id,
+                            eventId,
                             eventKind: p.type === "article" ? 30023 : 1,
-                            authorPubkey: p.author.pubkey ?? "",
+                            authorPubkey: pubkey,
                             previewTitle: p.body.title ?? undefined,
                             previewContent:
                               (p.body.summary ?? p.body.text ?? "").slice(0, 200) ||
                               undefined,
                             previewAuthorName:
-                              p.author.displayName ?? p.author.handle ?? undefined,
+                              p.author.displayName ?? cachedName ?? p.author.handle ?? undefined,
                           });
                           setComposerOpen("note");
+                          if (pubkey && !p.author.displayName && !cachedName) {
+                            void resolveWriterName(pubkey).then((info) => {
+                              if (!info) return;
+                              setQuoteTarget((prev) =>
+                                prev && prev.eventId === eventId
+                                  ? { ...prev, previewAuthorName: info.displayName }
+                                  : prev,
+                              );
+                            });
+                          }
                         };
                         // Article click → reader pane (§3.1 / Phase R). Native by
                         // d-tag (/article/<dTag>), external by URL (/reader/<postId>).
