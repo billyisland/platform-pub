@@ -474,3 +474,128 @@ at a time and confirm the build stays green after each.
 §18 (workspaces) and §26 (outbox) — each a week-ish project, done when
 the organisational appetite is there. §29-30 are the next audit round, not
 work.
+
+---
+
+# Audit round — 2026-06-03 (last two days of commits)
+
+Deep audit of the 22 commits spanning 2026-06-01..03 (external-quote feature,
+byline/author-identity, workspace dock redesign, one-post-per-card, deploy/
+schema/lint hygiene). Findings ranked as before. **Two HIGH items were fixed in
+the same pass and are recorded here as Done for the trail; the rest are open.**
+
+## Fixed in this pass
+
+### A1 (was HIGH) — Stored XSS via `quoted_url` on external quote-notes — ✅ FIXED
+
+**Verified:** `gateway/src/routes/notes.ts:41` accepted `quotedUrl:
+z.string().optional()` with no protocol guard; stored verbatim (`:117`) and
+rendered as `<a href={preview.url}>` in `web/src/components/post/QuotedEmbed.tsx:101`.
+React does not strip `javascript:`/`data:` URIs from `href`. An authenticated
+user could POST `{ isQuoteComment, quotedPostId, quotedUrl: "javascript:…" }`
+straight to `/api/v1/notes`; the payload fires for any viewer who clicks the
+quoted tile (stored XSS, not self-XSS). Normal UI only emits `https://` via
+`originWebUrl`, so it was invisible in manual testing.
+
+**Fix applied:** `notes.ts` now refines `quotedUrl` to `^https?://` (primary,
+server-side); `QuotedEmbed.tsx` additionally only assigns `href` when the value
+passes the same `^https?://` test (defence in depth). Feature is two days old
+(migration 102) so no malicious rows exist to backfill.
+
+### A2 (was MEDIUM) — Over-limit external quote orphans a relay event — ✅ FIXED
+
+**Verified:** `web/src/lib/publishNote.ts:52` appends `"\n\n" + quotedUrl` to the
+published body, but `Composer.tsx:471` counted only `body.length` against the
+1000-char limit. A body within the box limit could exceed `content.max(1000)`
+at the gateway (`notes.ts:30`); because `signPublishAndIndex` publishes to the
+relay *before* indexing, the index POST 400s and leaves a live-but-unindexed
+Nostr event.
+
+**Fix applied:** `Composer.tsx` reserves `quotedUrl.length + 2` in `charCount`
+for external quotes, so the box gate matches the published body length.
+
+## Open — P1 (drift hazard / false confidence, not actively broken)
+
+### B1 — Schema-drift guard's blind spot contradicts the CLAUDE.md claim
+
+**Verified:** `scripts/check-schema-drift.sh` runs three checks, none of which
+builds a DB *from migrations* to compare against `schema.sql`. If a migration's
+filename is in the `_migrations` seed but its object body is absent from
+`schema.sql`, Check 0 passes (file is seeded), Check 1 passes (migrate.ts sees
+it already-applied → "All migrations already applied"), Check 2 passes (round-
+trips consistently without the object). The common mistake — add a migration,
+forget to regenerate `schema.sql` — *is* caught (seed won't list it → Check 0
+fails). The blind spot opens only on a hand-edited/partial regen (seed lists the
+file, dump body stale). CLAUDE.md/the script header still imply the guard catches
+"seeded but effect-missing" drift; it does not. The script's own NOTE concedes a
+true `schema == migrations-from-zero` check needs a `000_base.sql` genesis.
+**Fix:** the CLAUDE.md wording has been corrected (2026-06-03) to state the guard's
+real scope and the seeded-but-effect-missing blind spot. **Remaining (open):**
+fully closing it requires extracting a `000_base.sql` genesis migration and adding
+a fourth build-from-migrations diff check.
+
+### B2 — Infinite-scroll duplicate-fetch race
+
+**Verified:** `web/src/components/workspace/WorkspaceView.tsx:468`
+(`loadMoreVesselItems`) reads the `loadingMore` guard from `vesselsRef.current`,
+which only updates on a committed render, while `Vessel.tsx:181` fires
+`onLoadMore` on every near-end scroll event with no throttle. A single fling can
+fire 2+ requests with the same cursor before React commits the guard; interleaved
+responses can skip or re-fetch a page (visible cards de-dupe, but `nextCursor`
+gets overwritten). **Fix:** a synchronous imperative latch (`Set<feedId>` ref
+set/cleared in the callback), not React state.
+
+## Open — P2 (housekeeping / latent)
+
+### C1 — Latent multi-statement `CONCURRENTLY` hazard in migrate runner
+
+**Verified:** `shared/src/db/migrate.ts:84`. The no-txn guard matches
+`\bCONCURRENTLY\b` against the whole file *including comments* (migrations 022/083
+only contain the word in comment text — no real CONCURRENTLY statement), and runs
+the file via one `client.query(sql)`. A future file mixing `CREATE INDEX
+CONCURRENTLY` with any other statement would still throw "cannot run inside a
+transaction block" (libpq wraps a multi-statement simple-query in an implicit
+txn). Not a regression — no such file exists — but the guard doesn't deliver the
+general safety the commit implied. **Fix:** match real statements (strip comments
+first) and split no-txn files statement-by-statement.
+
+### C2 — Stray `{ }` JSX dropped five next-lint suppressions
+
+**Verified:** the promise-safety lint pass (f9cbf3f) replaced
+`eslint-disable-next-line` comments with empty `{ }` expressions at
+`ArticleEditor.tsx:367`, `ArticleCard.tsx:178`, `ExternalCard.tsx:267`,
+`NoteCard.tsx:330`, `Composer.tsx:1336`, silently dropping
+`no-img-element`/`click-events-have-key-events` suppressions. Harmless only while
+`next lint` is dormant; those lines will error the moment it's wired up. **Fix:**
+restore the disable comments (or address the underlying lint).
+
+### C3 — External-Nostr quotes drop the permalink
+
+**Verified:** `web/src/lib/post/origin-url.ts:11`. `nevent`/`naddr` URIs (relay-
+free, migration 101) match neither the atproto nor the `^https?://` branch →
+returns `null`, so quoting an external Nostr post produces a linkless mini and no
+URL appended to the body. Renders fine, degrades silently. **Fix:** construct an
+`njump.me` URL for the nostr branch.
+
+### C4 — Dead code after one-post-per-card
+
+**Verified:** `web/src/components/workspace/ParentContextTile.tsx` and
+`ReplyGroupCard.tsx` are unreachable (gateway dropped the `reply_group` envelope,
+`feeds.ts`), and `PostCard.tsx`'s `header` prop is now unused. Inert. **Fix:**
+delete the orphaned components + prop.
+
+### C5 — Orphaned `expandedByFeed` keys
+
+**Verified:** `WorkspaceView.tsx` clears `expandedByFeed` on per-feed refresh and
+`refreshAll`, but not on feed delete/merge/hide. Inert (vessel ids are unique and
+gone, never re-read). **Fix:** drop the key in `onDeleted`/merge/hide handlers.
+
+### C6 — Cosmetic doc/label drift
+
+- `buildExternalProfileUrl` (`gateway/src/lib/author-resolve.ts:87`) interpolates
+  an atproto handle into a URL without `encodeURIComponent` (not a `javascript:`/
+  redirect vector — scheme is hardcoded `https://bsky.app`).
+- The "unified feed cursor codec" (6ec3ada) is a raw `tag:value:value` string,
+  not base64 as the commit/CLAUDE.md framing implies (decode is properly
+  defensive — no injection). Cosmetic wording mismatch.
+- CLAUDE.md still references the removed `validateWebSocketUrl` helper (d23f464).

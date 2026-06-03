@@ -98,10 +98,13 @@ export function QuotedEmbed({
 
   // External quote with a permalink → the tile links out to the origin (the one
   // sanctioned route to the source platform). Click must not bubble to the card.
-  if (preview.url) {
+  // Only http(s) is a permitted href — the gateway already enforces this, but
+  // guard here too so a non-http(s) value can never reach href (no javascript:).
+  const safeUrl = preview.url && /^https?:\/\//i.test(preview.url) ? preview.url : null;
+  if (safeUrl) {
     return (
       <a
-        href={preview.url}
+        href={safeUrl}
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}

@@ -468,7 +468,13 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
 
   if (!open) return null
 
-  const charCount = body.length
+  // External quotes append "\n\n<url>" to the published body (see publishNote),
+  // so reserve that length here. Otherwise a body within the limit in the box
+  // produces an over-limit note: the relay accepts the signed event but the
+  // index POST (content.max(1000)) rejects it, orphaning the event on the relay.
+  const quoteUrlReserve =
+    quoteTarget?.isExternal && quoteTarget.quotedUrl ? quoteTarget.quotedUrl.length + 2 : 0
+  const charCount = body.length + quoteUrlReserve
   const overLimit = mode === 'note' && charCount > NOTE_CHAR_LIMIT
   const hasPersonChip = chips.some((c) => c.kind === 'person')
   const hasBroadcastChip = chips.some((c) => c.kind === 'broadcast')

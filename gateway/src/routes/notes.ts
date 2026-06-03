@@ -38,7 +38,15 @@ const IndexNoteSchema = z.object({
   // has no nostr event id, so quotedEventId/Kind stay unset and these carry the
   // reference (deterministic post_id + public URL + origin label). Migration 102.
   quotedPostId: z.string().optional(),
-  quotedUrl: z.string().optional(),
+  // Rendered as an <a href> on the quoted mini (QuotedEmbed). React does not
+  // strip javascript:/data: URIs from href, so an http(s)-only guard here is the
+  // primary defence against a stored-XSS payload POSTed straight to this route.
+  quotedUrl: z
+    .string()
+    .refine((u) => /^https?:\/\//i.test(u), {
+      message: "quotedUrl must be an http(s) URL",
+    })
+    .optional(),
   quotedSource: z.string().optional(),
   // Optional: full signed Nostr event for outbound relay publishing (Phase 2)
   signedEvent: z
