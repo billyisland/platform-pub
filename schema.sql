@@ -6532,4 +6532,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('102_notes_external_quote.sql'),
     ('103_subscription_events_publication.sql'),
     ('104_repost_edges_boosted_at.sql'),
-    ('105_feed_items_reply_to_author.sql');
+    ('105_feed_items_reply_to_author.sql'),
+    ('106_feed_ingest_enqueue_cap.sql');

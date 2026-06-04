@@ -19,7 +19,7 @@
 -- UPDATEs) never clobber the maintained value; reply_to_author is not in the
 -- version-recompute column set, so refreshing it costs no version churn.
 
-ALTER TABLE feed_items ADD COLUMN reply_to_author text;
+ALTER TABLE feed_items ADD COLUMN IF NOT EXISTS reply_to_author text;
 
 -- ── trigger: extend feed_items_post_identity with reply-author resolution ────
 -- Replaces the Phase 0b function (migration 099) verbatim plus a final

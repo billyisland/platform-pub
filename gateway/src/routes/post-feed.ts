@@ -292,7 +292,6 @@ async function followingPostFeed(
       WHERE fi.deleted_at IS NULL
         AND (
           (fi.item_type IN ('article', 'note')
-           AND fi.published_at > now() - INTERVAL '30 days'
            AND (
              fi.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $5)
              OR fi.author_id = $5
