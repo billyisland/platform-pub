@@ -60,6 +60,16 @@ const LEADER_POLL_MS = 30_000;
 // Bluesky subscriptions without sharding.
 const WILDCARD_DID_THRESHOLD = 150;
 
+// Cursor write batching (#5 / B2). The per-event cursor UPDATE used to fire one
+// row-update to external_sources for every ingested post — in wildcard mode,
+// one write per matched event off the firehose. Instead we accumulate the
+// max(time_us) per source in memory and flush a single batched UPDATE every
+// CURSOR_FLUSH_MS, or sooner once CURSOR_FLUSH_EVENT_THRESHOLD events pile up.
+// The GREATEST guard keeps it idempotent; on crash we lose at most one flush
+// window of cursor progress, re-ingested (and deduped) on the next resume.
+const CURSOR_FLUSH_MS = 5_000;
+const CURSOR_FLUSH_EVENT_THRESHOLD = 500;
+
 type SourceRow = {
   id: string;
   source_uri: string;
@@ -82,6 +92,10 @@ export class JetstreamListener {
   private leaderClient: PoolClient | null = null;
   private leaderPollTimer: NodeJS.Timeout | null = null;
   private isLeader = false;
+  // Per-source max(time_us) awaiting a batched durable flush (#5 / B2).
+  private pendingCursors: Map<string, bigint> = new Map();
+  private cursorFlushTimer: NodeJS.Timeout | null = null;
+  private eventsSinceFlush = 0;
 
   constructor(url?: string) {
     this.url = url ?? process.env.JETSTREAM_URL ?? DEFAULT_JETSTREAM_URL;
@@ -107,6 +121,9 @@ export class JetstreamListener {
         // ignore
       }
     }
+    // Persist any cursor progress accumulated since the last flush before we
+    // give up leadership.
+    await this.flushCursors();
     await this.releaseLeadership();
     await this.setHealthy(false);
     logger.info("Jetstream listener stopped");
@@ -219,6 +236,11 @@ export class JetstreamListener {
   // --- DID set management -----------------------------------------------------
 
   private async refreshDids(): Promise<void> {
+    // Flush pending cursor progress before reloading rows, otherwise the fresh
+    // sourceByDid would carry stale (older) cursors and oldestCursor() could
+    // rewind on the next reconnect.
+    await this.flushCursors();
+
     const { rows } = await pool.query<SourceRow>(`
       SELECT id, source_uri, cursor, display_name, avatar_url
       FROM external_sources
@@ -299,6 +321,85 @@ export class JetstreamListener {
       }
     }
     return oldest === null ? null : oldest.toString();
+  }
+
+  // --- Batched cursor flush (#5 / B2) -----------------------------------------
+
+  // Record a source's latest time_us for a later batched durable flush. The
+  // in-memory mirror (sourceByDid[*].cursor) is updated eagerly by the caller
+  // so oldestCursor() on reconnect is always current; this only debounces the
+  // DB write.
+  private recordCursor(sourceId: string, timeUs: number): void {
+    const t = BigInt(timeUs);
+    const existing = this.pendingCursors.get(sourceId);
+    if (existing === undefined || t > existing) {
+      this.pendingCursors.set(sourceId, t);
+    }
+    this.eventsSinceFlush++;
+    if (this.eventsSinceFlush >= CURSOR_FLUSH_EVENT_THRESHOLD) {
+      void this.flushCursors();
+    } else {
+      this.scheduleCursorFlush();
+    }
+  }
+
+  private scheduleCursorFlush(): void {
+    if (this.cursorFlushTimer || this.stopping) return;
+    this.cursorFlushTimer = setTimeout(() => {
+      this.cursorFlushTimer = null;
+      void this.flushCursors();
+    }, CURSOR_FLUSH_MS);
+  }
+
+  // Flush all pending cursors in one UPDATE ... FROM (VALUES ...). The GREATEST
+  // guard preserves idempotency under out-of-order delivery. On failure the
+  // batch is merged back so progress isn't lost.
+  private async flushCursors(): Promise<void> {
+    if (this.cursorFlushTimer) {
+      clearTimeout(this.cursorFlushTimer);
+      this.cursorFlushTimer = null;
+    }
+    this.eventsSinceFlush = 0;
+    if (this.pendingCursors.size === 0) return;
+
+    // Snapshot + clear so events arriving during the await accumulate into the
+    // next batch rather than being dropped.
+    const batch = [...this.pendingCursors.entries()];
+    this.pendingCursors.clear();
+
+    const params: unknown[] = [];
+    const values = batch.map(([id, cursor]) => {
+      const b = params.length;
+      params.push(id, cursor.toString());
+      return b === 0 ? `($1::uuid, $2::bigint)` : `($${b + 1}, $${b + 2})`;
+    });
+
+    try {
+      await pool.query(
+        `UPDATE external_sources AS s
+         SET cursor = GREATEST(COALESCE(s.cursor::BIGINT, 0), v.cursor)::TEXT,
+             last_fetched_at = now(),
+             error_count = 0,
+             last_error = NULL,
+             updated_at = now()
+         FROM (VALUES ${values.join(", ")}) AS v(id, cursor)
+         WHERE s.id = v.id`,
+        params,
+      );
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Jetstream cursor flush failed — re-queuing batch",
+      );
+      // Merge the failed batch back in (GREATEST makes re-applying safe).
+      for (const [id, cursor] of batch) {
+        const existing = this.pendingCursors.get(id);
+        if (existing === undefined || cursor > existing) {
+          this.pendingCursors.set(id, cursor);
+        }
+      }
+      this.scheduleCursorFlush();
+    }
   }
 
   // --- WebSocket connection ---------------------------------------------------
@@ -486,20 +587,10 @@ export class JetstreamListener {
           .catch(() => {});
       }
 
-      // Advance this source's cursor. Use max(existing, timeUs) so
-      // out-of-order delivery does not regress the cursor.
-      await pool.query(
-        `
-        UPDATE external_sources
-        SET cursor = GREATEST(COALESCE(cursor::BIGINT, 0), $2)::TEXT,
-            last_fetched_at = now(),
-            error_count = 0,
-            last_error = NULL,
-            updated_at = now()
-        WHERE id = $1
-      `,
-        [source.id, timeUs],
-      );
+      // Advance this source's cursor. The durable write is debounced into a
+      // batched flush (#5 / B2); GREATEST(existing, timeUs) there keeps it
+      // idempotent under out-of-order delivery.
+      this.recordCursor(source.id, timeUs);
 
       // Keep in-memory source cursor in sync for oldestCursor() on reconnect.
       // Mirror the DB's GREATEST guard: Jetstream can deliver out-of-order
@@ -541,13 +632,8 @@ export class JetstreamListener {
           [sourceId, uri],
         );
       });
-      await pool.query(
-        `UPDATE external_sources
-         SET cursor = GREATEST(COALESCE(cursor::BIGINT, 0), $2)::TEXT,
-             updated_at = now()
-         WHERE id = $1`,
-        [sourceId, timeUs],
-      );
+      // Debounced batched cursor advance (#5 / B2).
+      this.recordCursor(sourceId, timeUs);
     } catch (err) {
       logger.warn(
         {

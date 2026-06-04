@@ -2,24 +2,36 @@ import type { Task } from "graphile-worker";
 import { pool } from "@platform-pub/shared/db/client.js";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import { getPlatformConfig } from "../lib/platform-config.js";
 
 // =============================================================================
 // external_engagement_refresh — periodic snapshot of engagement counts
 //
-// For external items published in the last 7 days, batch-fetch current
-// like/reply/repost counts from source platforms and update the denormalised
-// columns on external_items. Runs every 30 minutes via cron.
+// Batch-fetches current like/reply/repost counts from source platforms and
+// updates the denormalised columns on external_items. Runs every 30 minutes
+// via cron, but **age-tiers** which items it touches per run (#7 / B6):
+//   - <6h  old → every run (every 30m)   — engagement is moving fast
+//   - <24h old → top-of-hour runs only    — hourly
+//   - <7d  old → one daily run            — long-tail decay
+// Engagement is long-tail decay, so a 6-day-old item polled as often as a
+// 1-hour-old one is wasted load on public.api.bsky.app / Mastodon instances.
+// A per-run budget cap bounds the worst case.
 //
 // Bluesky:  batch getPosts (up to 25 URIs per call)
 // Mastodon: individual GET /statuses/:id, parallelised per instance
 // Nostr:    skipped (relay REQ latency makes periodic refresh impractical)
 // RSS:      no counts; always 0
+//
+// Writes are batched into one UPDATE ... FROM (VALUES ...) per platform and
+// skip rows whose counts are unchanged (#8 / B3).
 // =============================================================================
 
 const APPVIEW = "https://public.api.bsky.app";
 const BSKY_BATCH_SIZE = 25;
 const MASTODON_CONCURRENCY = 5;
-const LOOKBACK_DAYS = 7;
+const MAX_LOOKBACK_DAYS = 7;
+// UTC hour whose top-of-hour run performs the full <7d daily sweep.
+const DAILY_REFRESH_HOUR_UTC = 4;
 
 interface ExternalItemRow {
   id: string;
@@ -27,6 +39,33 @@ interface ExternalItemRow {
   source_item_uri: string;
   interaction_data: Record<string, unknown>;
   media: MediaItem[];
+  like_count: number;
+  reply_count: number;
+  repost_count: number;
+}
+
+interface CountUpdate {
+  id: string;
+  like: number;
+  reply: number;
+  repost: number;
+}
+
+/**
+ * Decide how far back this run reaches, given the wall-clock minute/hour.
+ * The cron fires at :00 and :30. A :30 run only touches the <6h tier; a :00
+ * run also sweeps <24h; the :00 run at DAILY_REFRESH_HOUR_UTC sweeps the full
+ * <7d window. A wider cutoff supersets the narrower tiers, so a single
+ * published_at bound expresses all three. (#7 / B6)
+ */
+export function engagementLookbackHours(now: Date): number {
+  // Allow scheduling jitter — a "top of hour" run is anything in the first
+  // quarter of the hour (the cron's :00 slot).
+  const isTopOfHour = now.getUTCMinutes() < 15;
+  if (isTopOfHour && now.getUTCHours() === DAILY_REFRESH_HOUR_UTC) {
+    return MAX_LOOKBACK_DAYS * 24;
+  }
+  return isTopOfHour ? 24 : 6;
 }
 
 interface MediaItem {
@@ -86,21 +125,36 @@ export function mergeLinkMedia(
 }
 
 export const externalEngagementRefresh: Task = async (_payload, _helpers) => {
+  const config = await getPlatformConfig();
+  const maxItems =
+    parseInt(config.get("feed_ingest_engagement_max_items") ?? "", 10) || 2000;
+
+  const lookbackHours = engagementLookbackHours(new Date());
   const cutoff = new Date(
-    Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+    Date.now() - lookbackHours * 60 * 60 * 1000,
   ).toISOString();
 
+  // Freshest-first within the budget — newest items decay fastest and matter
+  // most; the cap is a safety valve well above expected volume at this scale.
   const { rows } = await pool.query<ExternalItemRow>(
-    `SELECT id, protocol, source_item_uri, interaction_data, media
+    `SELECT id, protocol, source_item_uri, interaction_data, media,
+            like_count, reply_count, repost_count
      FROM external_items
      WHERE published_at >= $1
        AND deleted_at IS NULL
        AND protocol IN ('atproto', 'activitypub')
-     ORDER BY published_at DESC`,
-    [cutoff],
+     ORDER BY published_at DESC
+     LIMIT $2`,
+    [cutoff, maxItems],
   );
 
   if (rows.length === 0) return;
+  if (rows.length === maxItems) {
+    logger.warn(
+      { maxItems, lookbackHours },
+      "engagement refresh hit the per-run budget cap — older items deferred to next run",
+    );
+  }
 
   const atprotoItems = rows.filter((r) => r.protocol === "atproto");
   const mastodonItems = rows.filter((r) => r.protocol === "activitypub");
@@ -124,11 +178,36 @@ export const externalEngagementRefresh: Task = async (_payload, _helpers) => {
 };
 
 // ---------------------------------------------------------------------------
+// Batched count write — one UPDATE ... FROM (VALUES ...) for the whole set.
+// Callers pre-filter to only the rows whose counts actually changed (#8 / B3).
+// ---------------------------------------------------------------------------
+
+async function batchUpdateCounts(rows: CountUpdate[]): Promise<void> {
+  if (rows.length === 0) return;
+  const params: unknown[] = [];
+  const values = rows.map((r) => {
+    const b = params.length;
+    params.push(r.id, r.like, r.reply, r.repost);
+    // Cast the first tuple so the planner knows the VALUES column types.
+    return b === 0
+      ? `($1::uuid, $2::int, $3::int, $4::int)`
+      : `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4})`;
+  });
+  await pool.query(
+    `UPDATE external_items AS ei
+     SET like_count = v.like_count, reply_count = v.reply_count, repost_count = v.repost_count
+     FROM (VALUES ${values.join(", ")}) AS v(id, like_count, reply_count, repost_count)
+     WHERE ei.id = v.id`,
+    params,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Bluesky — batch getPosts (25 URIs per call)
 // ---------------------------------------------------------------------------
 
 async function refreshBlueskyBatch(items: ExternalItemRow[]): Promise<number> {
-  let updated = 0;
+  const changed: CountUpdate[] = [];
 
   for (let i = 0; i < items.length; i += BSKY_BATCH_SIZE) {
     const batch = items.slice(i, i + BSKY_BATCH_SIZE);
@@ -167,18 +246,18 @@ async function refreshBlueskyBatch(items: ExternalItemRow[]): Promise<number> {
         const post = postMap.get(item.source_item_uri);
         if (!post) continue;
 
-        await pool.query(
-          `UPDATE external_items
-           SET like_count = $1, reply_count = $2, repost_count = $3
-           WHERE id = $4`,
-          [
-            post.likeCount ?? 0,
-            post.replyCount ?? 0,
-            post.repostCount ?? 0,
-            item.id,
-          ],
-        );
-        updated++;
+        const like = post.likeCount ?? 0;
+        const reply = post.replyCount ?? 0;
+        const repost = post.repostCount ?? 0;
+        // Skip the write when nothing moved.
+        if (
+          like === item.like_count &&
+          reply === item.reply_count &&
+          repost === item.repost_count
+        ) {
+          continue;
+        }
+        changed.push({ id: item.id, like, reply, repost });
       }
     } catch (err) {
       logger.warn(
@@ -188,16 +267,22 @@ async function refreshBlueskyBatch(items: ExternalItemRow[]): Promise<number> {
     }
   }
 
-  return updated;
+  await batchUpdateCounts(changed);
+  return changed.length;
 }
 
 // ---------------------------------------------------------------------------
 // Mastodon — individual GET /api/v1/statuses/:id per instance
 // ---------------------------------------------------------------------------
 
-async function refreshMastodonBatch(items: ExternalItemRow[]): Promise<number> {
-  let updated = 0;
+// A pending Mastodon write: counts plus, when the OpenGraph card changed, the
+// re-merged media JSON. Count-only rows (media === null) flush in one batched
+// UPDATE; the rare media rows write individually.
+interface MastodonUpdate extends CountUpdate {
+  media: string | null;
+}
 
+async function refreshMastodonBatch(items: ExternalItemRow[]): Promise<number> {
   // Group items by instance host to respect per-instance rate limits
   const byHost = new Map<string, ExternalItemRow[]>();
   for (const item of items) {
@@ -211,7 +296,9 @@ async function refreshMastodonBatch(items: ExternalItemRow[]): Promise<number> {
     }
   }
 
-  // Process hosts in parallel (up to MASTODON_CONCURRENCY)
+  // Fetch per host (parallel up to MASTODON_CONCURRENCY), collecting pending
+  // writes; then flush once at the end.
+  const pending: MastodonUpdate[] = [];
   const hosts = [...byHost.entries()];
   for (let i = 0; i < hosts.length; i += MASTODON_CONCURRENCY) {
     const hostBatch = hosts.slice(i, i + MASTODON_CONCURRENCY);
@@ -221,18 +308,31 @@ async function refreshMastodonBatch(items: ExternalItemRow[]): Promise<number> {
       ),
     );
     for (const result of results) {
-      if (result.status === "fulfilled") updated += result.value;
+      if (result.status === "fulfilled") pending.push(...result.value);
     }
   }
 
-  return updated;
+  // Count-only rows → one batched UPDATE. Media rows → individual writes.
+  const countOnly = pending.filter((u) => u.media === null);
+  const withMedia = pending.filter((u) => u.media !== null);
+  await batchUpdateCounts(countOnly);
+  for (const u of withMedia) {
+    await pool.query(
+      `UPDATE external_items
+       SET like_count = $1, reply_count = $2, repost_count = $3, media = $5
+       WHERE id = $4`,
+      [u.like, u.reply, u.repost, u.id, u.media],
+    );
+  }
+
+  return pending.length;
 }
 
 async function refreshMastodonHost(
   host: string,
   items: ExternalItemRow[],
-): Promise<number> {
-  let updated = 0;
+): Promise<MastodonUpdate[]> {
+  const updates: MastodonUpdate[] = [];
 
   for (const item of items) {
     const statusId = extractMastodonStatusId(item.source_item_uri);
@@ -253,35 +353,28 @@ async function refreshMastodonHost(
         card?: MastodonCard | null;
       };
 
+      const like = status.favourites_count ?? 0;
+      const reply = status.replies_count ?? 0;
+      const repost = status.reblogs_count ?? 0;
+      // mergeLinkMedia returns null when the card is unchanged.
       const mergedMedia = mergeLinkMedia(
         item.media,
         cardToLinkMedia(status.card),
       );
+      const countsUnchanged =
+        like === item.like_count &&
+        reply === item.reply_count &&
+        repost === item.repost_count;
+      // Nothing moved and no media change → skip the write entirely.
+      if (countsUnchanged && !mergedMedia) continue;
 
-      await pool.query(
-        mergedMedia
-          ? `UPDATE external_items
-             SET like_count = $1, reply_count = $2, repost_count = $3, media = $5
-             WHERE id = $4`
-          : `UPDATE external_items
-             SET like_count = $1, reply_count = $2, repost_count = $3
-             WHERE id = $4`,
-        mergedMedia
-          ? [
-              status.favourites_count ?? 0,
-              status.replies_count ?? 0,
-              status.reblogs_count ?? 0,
-              item.id,
-              JSON.stringify(mergedMedia),
-            ]
-          : [
-              status.favourites_count ?? 0,
-              status.replies_count ?? 0,
-              status.reblogs_count ?? 0,
-              item.id,
-            ],
-      );
-      updated++;
+      updates.push({
+        id: item.id,
+        like,
+        reply,
+        repost,
+        media: mergedMedia ? JSON.stringify(mergedMedia) : null,
+      });
     } catch (err) {
       logger.debug(
         {
@@ -294,7 +387,7 @@ async function refreshMastodonHost(
     }
   }
 
-  return updated;
+  return updates;
 }
 
 function extractMastodonStatusId(uri: string): string | null {

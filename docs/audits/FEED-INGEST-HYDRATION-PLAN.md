@@ -72,9 +72,39 @@ and route the reads through it. No behaviour change at steady state.
 
 ---
 
-## Tranche B — batching + cadence [behaviour-equivalent, test with care]
+## Tranche B — batching + cadence [✅ DONE 2026-06-04]
 
 Each item is independently shippable. Target ~2–3 days.
+
+**Status:** all of B1–B6 shipped. No migration / `schema.sql` change (all new knobs are
+`platform_config` keys with code defaults; B6 gates internally so the cron stays `*/30`).
+feed-ingest builds clean, `npm run lint` 0 errors, 154 tests green (10 new in
+`src/tasks/feed-batching.test.ts` covering `nextRssInterval` + `engagementLookbackHours`).
+- **B1** RSS dual-write: per-item `withTransaction` loop → two batched statements (multi-row
+  `external_items` insert `RETURNING id, source_item_uri`, then one `feed_items` insert keyed
+  off the returned ids) in a single transaction; in-fetch dedup by `source_item_uri`.
+- **B5** adaptive RSS interval: `nextRssInterval` — multiplicative back-off on 304/no-new,
+  tighten on new items, clamp to `[feed_ingest_rss_min_interval_seconds (60),
+  feed_ingest_rss_max_interval_seconds (3600)]`; factors
+  `feed_ingest_rss_interval_backoff_factor` (1.5) /
+  `feed_ingest_rss_interval_decay_factor` (0.5). Source SELECT now reads
+  `fetch_interval_seconds`. New config keys documented in UNIVERSAL-FEED-ADR §IV.9.
+- **B3** engagement writes: `batchUpdateCounts` — one `UPDATE … FROM (VALUES …)` per platform,
+  skipping rows whose counts are unchanged (SELECT now reads `like_count/reply_count/repost_count`).
+  Mastodon collects pending writes per host then flushes; count-only rows batch, the rare
+  card-media rows write individually.
+- **B6** engagement cadence: `engagementLookbackHours(now)` widens the lookback by wall-clock
+  slot — `:30` → 6h, `:00` → 24h, `:00` at 04:00 UTC → 7d — plus a per-run budget cap
+  (`feed_ingest_engagement_max_items`, default 2000, logs when it truncates).
+- **B2** Jetstream cursor: per-event `UPDATE external_sources … cursor` → debounced batched
+  flush (`pendingCursors` map, flush every `CURSOR_FLUSH_MS` 5s / `CURSOR_FLUSH_EVENT_THRESHOLD`
+  500 events, on `refreshDids`, and on `stop`); keeps the `GREATEST` guard + in-memory mirror,
+  re-queues the batch on flush failure.
+- **B4** parent/quote prefetch: atproto requests route through a 250ms / 25-URI debounce
+  accumulator (`enqueueAtprotoPrefetch`) that coalesces concurrent reply jobs into batched
+  `getPosts` calls (one batched `storedAtprotoUris` SELECT, one union `getPostsBatched`, one
+  second batched round for grandparent tags); the job awaits its batch so worker backpressure
+  still applies. ActivityPub keeps the per-item path (outbox-polled, no batch API).
 
 ### B1 · #2 — batch the RSS dual-write
 `feed-ingest/src/tasks/feed-ingest-rss.ts:92-165` wraps **each** item in its own

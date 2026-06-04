@@ -5,8 +5,12 @@ Scope: `feed-ingest/*` (poll dispatcher, RSS, Jetstream, engagement refresh, par
 > **Status (2026-06-04):** Tranche A shipped — #11 (A1, `ei_reply_to_handle` composite-index
 > fix), #10b (A2, boost CTE scoped to candidates), #13 (A3, attribution `LATERAL` limit),
 > #10a (A4, recency-bound boost + migration 104), #4 (A5, `platform_config` process cache),
-> and #14 (`following` native 30-day bound). Remaining: Tranche B (#2/#5/#8/#9/#3/#7) and
-> Tranche C (#1/#6/#12/#11-denormalise). See `FEED-INGEST-HYDRATION-PLAN.md`.
+> and #14 (`following` native 30-day bound). Tranche B shipped — #2 (B1, batched RSS
+> dual-write), #3 (B5, multiplicative adaptive RSS interval), #8 (B3, batched engagement
+> writes + skip-unchanged), #7 (B6, age-tiered engagement cadence + budget cap), #5 (B2,
+> debounced batched Jetstream cursor flush), #9 (B4, debounce-batched atproto parent/quote
+> prefetch). Remaining: Tranche C (#1/#6/#12/#11-denormalise). See
+> `FEED-INGEST-HYDRATION-PLAN.md`.
 
 Severity is **scaling severity**, not launch severity. At 20–30 writers nothing here hurts. The HIGHs are what break as `repost_edges` / external-item count / followee-history grow.
 

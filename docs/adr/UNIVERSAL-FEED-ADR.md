@@ -444,9 +444,13 @@ When a user connects a Mastodon account, the gateway checks for an existing `oau
 ```sql
 INSERT INTO platform_config (key, value, description) VALUES
   ('feed_ingest_rss_interval_seconds',    '300',   'Default RSS polling interval (5 min)'),
-  ('feed_ingest_rss_min_interval_seconds','60',    'Minimum RSS polling interval'),
+  ('feed_ingest_rss_min_interval_seconds','60',    'Minimum RSS polling interval (adaptive floor — B5)'),
+  ('feed_ingest_rss_max_interval_seconds','3600',  'Maximum RSS polling interval (adaptive ceiling — B5)'),
+  ('feed_ingest_rss_interval_backoff_factor','1.5','RSS interval multiplier on a 304 / no-new fetch (B5)'),
+  ('feed_ingest_rss_interval_decay_factor', '0.5', 'RSS interval multiplier on a fetch with new items (B5)'),
   ('feed_ingest_ap_interval_seconds',     '120',   'Default ActivityPub outbox polling interval'),
   ('feed_ingest_max_items_per_fetch',     '50',    'Max items to ingest per poll cycle'),
+  ('feed_ingest_engagement_max_items',    '2000',  'Per-run cap on items refreshed by external_engagement_refresh (B6)'),
   ('feed_ingest_error_backoff_factor',    '2',     'Exponential backoff multiplier on fetch errors'),
   ('feed_ingest_max_error_count',         '10',    'Deactivate source after N consecutive errors'),
   ('feed_ingest_daily_cap_default',       '100',   'Default max items/day per source (safety valve)'),
