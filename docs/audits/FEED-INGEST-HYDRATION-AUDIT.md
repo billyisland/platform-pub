@@ -5,7 +5,7 @@ Scope: `feed-ingest/*` (poll dispatcher, RSS, Jetstream, engagement refresh, par
 > **Status (2026-06-04):** Tranche A shipped — #11 (A1, `ei_reply_to_handle` composite-index
 > fix), #10b (A2, boost CTE scoped to candidates), #13 (A3, attribution `LATERAL` limit),
 > #10a (A4, recency-bound boost + migration 104), #4 (A5, `platform_config` process cache),
-> and #14 (`following` native 30-day bound). Tranche B shipped — #2 (B1, batched RSS
+> and #14 (`following` native 30-day bound — **REVERTED 2026-06-04, see follow-up below**). Tranche B shipped — #2 (B1, batched RSS
 > dual-write), #3 (B5, multiplicative adaptive RSS interval), #8 (B3, batched engagement
 > writes + skip-unchanged), #7 (B6, age-tiered engagement cadence + budget cap), #5 (B2,
 > debounced batched Jetstream cursor flush), #9 (B4, debounce-batched atproto parent/quote
@@ -19,6 +19,23 @@ Scope: `feed-ingest/*` (poll dispatcher, RSS, Jetstream, engagement refresh, par
 > (atproto + activitypub ingest both share one transaction). Remaining (all deferred until
 > metrics demand): #1 per-host relocation (C2 full), #6 (C3), #12 (C1 heavy). See
 > `FEED-INGEST-HYDRATION-PLAN.md`.
+>
+> **Follow-up correction (2026-06-04, commit 30750f4 — "feeds not loading" audit):**
+> two of the above shipped with defects that the next audit pass caught and fixed:
+> - **#14 REVERTED.** The 30-day bound was added to the `following` **native** arm, but
+>   the legacy `followingFeed` it mirrors bounds only the **external** (`capped_external`)
+>   arm — native is unbounded there. So #14 was a silent candidate-parity regression, not
+>   the "behaviour-preserving" change Tranche A claimed: it filtered out all followed
+>   content older than 30 days. Measured against a 30-follow reader the following feed
+>   collapsed **266 → 1 items**, presenting as an empty/broken feed. The bound is removed;
+>   native parity with legacy is restored. (#12's worst case still wants *some* bound, but
+>   it must be applied symmetrically and only as part of the #12 two-phase rewrite — not as
+>   a lone divergence from the legacy feed.)
+> - **C2 cap was inert.** `feed_ingest_max_enqueue_per_tick` was never seeded, so the
+>   `max_enqueue_per_tick || max_concurrent || 100` fallback resolved to the seeded
+>   `feed_ingest_max_concurrent='10'` — the ceiling lift never took effect on any DB that
+>   ran migration 052. **Migration 106** now seeds the key to `'100'` so the decoupling
+>   actually applies.
 
 Severity is **scaling severity**, not launch severity. At 20–30 writers nothing here hurts. The HIGHs are what break as `repost_edges` / external-item count / followee-history grow.
 
@@ -130,8 +147,15 @@ It pulls **every** `repost_edge` for the page's `post_id`s with `ROW_NUMBER()`, 
 
 **Fix:** push the limit into SQL — wrap in a subquery with `WHERE rn <= 25`, or `LATERAL (… ORDER BY boosted_at DESC LIMIT 25)`. The `target_post_id` index makes the LATERAL cheap.
 
-### #14 — Membership asymmetry [LOW / decision]
+### #14 — Membership asymmetry [LOW / decision — bound attempt REVERTED]
 `explore` keeps a 48h hard membership window; `following` native is unbounded. Deliberate-looking but it's the root of #12's worst case. Make it an explicit decision, not an accident.
+
+> **REVERTED 2026-06-04 (commit 30750f4).** Tranche A bounded the `following` native arm to
+> 30 days, but the legacy `followingFeed` (`timeline.ts`) bounds only its external arm, so
+> this silently dropped all followed content older than 30 days (266 → 1 items for a
+> 30-follow reader) and broke candidate parity. The bound is removed. The asymmetry is
+> intentional and stays: `following` native is unbounded, matching legacy. Any future bound
+> must be symmetric with legacy and land as part of the #12 two-phase rewrite, not alone.
 
 ### #15 — Verify the big-CTE plan [LOW]
 `follows`/`publication_follows` IN-subqueries are fine on indexes (PKs `(follower_id, …)` cover the lookups), and the `blocks`/`mutes` `NOT EXISTS` are proper semijoins. But the whole `scored` CTE is large — `EXPLAIN ANALYZE` it against a seeded large dataset to confirm the planner hashes the follow sets once rather than re-probing, and watch the correlated-subquery line items from #11.

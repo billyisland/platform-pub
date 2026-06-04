@@ -457,8 +457,8 @@ INSERT INTO platform_config (key, value, description) VALUES
   ('feed_ingest_max_error_count',         '10',    'Deactivate source after N consecutive errors'),
   ('feed_ingest_daily_cap_default',       '100',   'Default max items/day per source (safety valve)'),
   ('feed_ingest_max_per_host',           '2',     'Max fetch jobs enqueued per hostname per poll tick (per-host politeness)'),
-  ('feed_ingest_max_enqueue_per_tick',   '100',   'Max fetch jobs enqueued per 60s poll tick (audit #1/C2 — decoupled from runner concurrency)'),
-  ('feed_ingest_max_concurrent',         '10',    'Legacy per-tick enqueue cap — fallback for feed_ingest_max_enqueue_per_tick if set'),
+  ('feed_ingest_max_enqueue_per_tick',   '100',   'Max fetch jobs enqueued per 60s poll tick (audit #1/C2 — decoupled from runner concurrency; seeded by migration 106, NOT 052 — must outrank the legacy max_concurrent fallback)'),
+  ('feed_ingest_max_concurrent',         '10',    'Legacy per-tick enqueue cap — fallback for feed_ingest_max_enqueue_per_tick if the latter is unset'),
   ('outbound_max_retries',               '3',     'Max retry attempts for outbound cross-posts'),
   ('outbound_retry_delay_seconds',       '30',    'Base delay between outbound retries'),
   ('external_items_retention_days',      '90',    'Days to retain external items before pruning'),
@@ -519,7 +519,7 @@ The `feed_ingest_poll` job must enforce per-host concurrency limits when enqueui
 Implementation: the poll job groups sources by hostname and enqueues at most **2 fetch jobs per host per tick** (per-host politeness). The number of jobs *actually running at once* is bounded by the Graphile Worker pool's `concurrency: 10` plus the per-source `jobKey` (one in-flight job per source), **not** by the poll's per-tick enqueue cap — these were historically conflated at 10, which capped steady-state throughput at ~10/min ≈ 50 sources (audit #1). The per-tick enqueue cap is now decoupled and defaults to enqueueing all due sources each tick. Configurable via `platform_config`:
 
 - `feed_ingest_max_per_host` (default 2): max fetch jobs enqueued for the same hostname per poll tick
-- `feed_ingest_max_enqueue_per_tick` (default 100, = the source SELECT LIMIT): max fetch jobs enqueued per 60s poll tick; lifts the throughput ceiling without touching per-host politeness or runner concurrency (C2 safe path)
+- `feed_ingest_max_enqueue_per_tick` (default 100, = the source SELECT LIMIT): max fetch jobs enqueued per 60s poll tick; lifts the throughput ceiling without touching per-host politeness or runner concurrency (C2 safe path). **Seeded by migration 106** — it must be present so it outranks the legacy `feed_ingest_max_concurrent='10'` fallback, otherwise the lift is inert on any DB seeded by migration 052.
 - `feed_ingest_max_concurrent` (legacy, default 10): honoured as a fallback for `feed_ingest_max_enqueue_per_tick` if the latter is unset
 
 ### V.3 Jetstream listener (standalone process)

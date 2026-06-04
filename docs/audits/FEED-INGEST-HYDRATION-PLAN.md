@@ -11,10 +11,15 @@ wins and defers the structural rewrites until feed p95 actually starts tracking
 `repost_edges` / followee-history size.
 
 **Decisions taken (this pass):**
-- **#14 — `following` native recency bound: 30 days.** Mirror the external arm's
-  existing `INTERVAL '30 days'` cap so the native arm stops scoring the full history of
-  every followee. This is the root cause of #12's worst case; bounding it is a
-  prerequisite, not an optimisation.
+- **#14 — `following` native recency bound: 30 days. ⚠️ REVERTED 2026-06-04 (commit 30750f4).**
+  ~~Mirror the external arm's existing `INTERVAL '30 days'` cap so the native arm stops
+  scoring the full history of every followee.~~ This was wrong: the legacy `followingFeed`
+  bounds only its **external** arm, so adding the bound to the **native** arm broke
+  candidate parity and silently dropped all followed content older than 30 days
+  (266 → 1 items for a 30-follow reader) — it read as an empty/broken feed. The bound is
+  removed; native stays unbounded, matching legacy. #12's worst case still wants a bound,
+  but it must be symmetric with legacy and land *inside* the #12 two-phase rewrite, not as
+  a standalone divergence.
 
 ---
 
@@ -22,7 +27,8 @@ wins and defers the structural rewrites until feed p95 actually starts tracking
 
 Localised, behaviour-preserving, kills the worst read-path cliffs. Target ~half a day.
 
-**Status:** all of A1–A5 + C1#14 shipped. Migration 104 added (`idx_repost_edges_target_boosted`
+**Status:** A1–A5 shipped (C1#14 shipped then **REVERTED 2026-06-04, commit 30750f4** — see
+the Decisions note above and C1 below). Migration 104 added (`idx_repost_edges_target_boosted`
 composite, redundant `idx_repost_edges_target` dropped); `schema.sql` regenerated via pg_dump
 and `scripts/check-schema-drift.sh` passes all three checks. gateway + feed-ingest build clean,
 `npm run lint` 0 errors, gateway (95) + feed-ingest (144) tests green. `EXPLAIN` confirms the
@@ -160,10 +166,12 @@ Premature at current scale. Build the design before you need it; you'll know you
 feed p95 starts tracking total `repost_edges` size / followee history.
 
 ### C1 · #14 + #12 — bound `following`, then reduce pagination work
-- **#14 (cheap, do alongside Tranche A if convenient):** add
-  `AND fi.published_at > now() - INTERVAL '30 days'` to the `following` native membership in
-  `gateway/src/routes/post-feed.ts` (the scored CTE, ~lines 270-292), mirroring the external
-  arm. **Decision taken: 30 days.**
+- **#14 — ⚠️ ATTEMPTED & REVERTED 2026-06-04 (commit 30750f4).** The "mirror the external arm"
+  framing was wrong: legacy `followingFeed` bounds only its external arm, so adding
+  `AND fi.published_at > now() - INTERVAL '30 days'` to the **native** membership broke
+  candidate parity and dropped all followed content older than 30 days (266 → 1 items for a
+  30-follow reader) — an empty/broken feed. **Do not re-add a lone native bound.** A bound is
+  only safe applied symmetrically and *inside* the #12 two-phase rewrite below.
 - **#12 (heavy):** live `score_live` can't be indexed (function of `now()` + live
   `repost_edges`), so the `scored → deduped` CTE materialises and sorts the whole candidate set
   every page; page 10 redoes page 1's work. Real fix is a **two-phase read** (cheap candidate-id
@@ -183,11 +191,15 @@ matters:
   concurrency. Removes the throughput ceiling immediately; the per-host relocation is the
   prerequisite for actually enqueueing *all* due sources.
 
-**Status: safe one-liner shipped 2026-06-04.** The per-tick enqueue cap is decoupled from
-runner concurrency in `feed-ingest-poll.ts` — new config key
-`feed_ingest_max_enqueue_per_tick` (default **100**, = the source SELECT LIMIT, so the poll
+**Status: safe one-liner shipped 2026-06-04; key seeded by migration 106 (commit 30750f4).**
+The per-tick enqueue cap is decoupled from runner concurrency in `feed-ingest-poll.ts` — config
+key `feed_ingest_max_enqueue_per_tick` (default **100**, = the source SELECT LIMIT, so the poll
 enqueues all due sources each tick), with legacy `feed_ingest_max_concurrent` honoured as a
-fallback. Per-host politeness (`maxPerHost`, ≤2/host/tick) and runner `concurrency: 10` are
+fallback. **Caveat caught 2026-06-04:** the key was initially never seeded, so the
+`max_enqueue_per_tick || max_concurrent || 100` fallback resolved to the seeded
+`max_concurrent='10'` and the lift was inert on any DB that ran migration 052. Migration 106
+now seeds `feed_ingest_max_enqueue_per_tick='100'` so the decoupling actually takes effect.
+Per-host politeness (`maxPerHost`, ≤2/host/tick) and runner `concurrency: 10` are
 untouched, so there's no thundering-herd risk: actual fetch concurrency is still bounded by
 the runner pool + per-source `jobKey`. This lifts the ~50-source throughput ceiling. The
 **per-host relocation (steps 1–2 above)** — moving politeness into the fetch task via a
