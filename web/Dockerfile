@@ -1,5 +1,10 @@
 FROM node:20-alpine AS build
 WORKDIR /app
+# Make npm resilient to transient registry resets (ECONNRESET) during parallel builds
+ENV npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000 \
+    npm_config_fetch_timeout=600000
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ .
