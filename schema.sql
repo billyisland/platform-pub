@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict nvmf3vj0QYdJk71zdWhWLiNBhzyWFJts5qSCNfAU7WpFS0td0OmRKPQlmtpIljp
+\restrict BNpadgIrG92vzXAxQNNJ4G3DUwlQPuhqz57nFdVNm5WHq8IllCL5d17d3I0E4xr
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -629,14 +629,14 @@ CREATE FUNCTION public.feed_items_post_identity() RETURNS trigger
 DECLARE
   v_pubkey TEXT;
   v_dtag   TEXT;
-  v_protocol      TEXT;
-  v_handle        TEXT;
-  v_tier          TEXT;
-  v_author_name   TEXT;
+  v_protocol     TEXT;
+  v_handle       TEXT;
+  v_tier         TEXT;
+  v_author_name  TEXT;
   v_author_handle TEXT;
   v_author_avatar TEXT;
-  v_author_uri    TEXT;
-  v_interaction   JSONB;
+  v_author_uri   TEXT;
+  v_interaction  JSONB;
 BEGIN
   -- PostId is stable: mint once (NULL on INSERT/backfill), preserve thereafter.
   IF NEW.post_id IS NULL THEN
@@ -698,11 +698,11 @@ BEGIN
     NEW.biddability_tier := 'D';
   END IF;
 
-  -- external-author identity (§4.4 / Phase 0b, migration 099). Mint once: only when
-  -- this row is an external THING with no author link yet AND it is tier A/B (the tiers
-  -- that carry a stable origin handle). Tier C/D (rss/email) keep external_author_id
-  -- NULL forever (plain-text byline); excluding them also keeps the hot score/author-
-  -- refresh UPDATE path off the external_items join.
+  -- external-author identity (§4.4 / Phase 0b). Mint once: only when this row is an
+  -- external THING with no author link yet AND it is tier A/B (the tiers that carry a
+  -- stable origin handle). Tier C/D (rss/email) keep external_author_id NULL forever
+  -- (plain-text byline); excluding them here also keeps the hot score/author-refresh
+  -- UPDATE path off the external_items join — biddability_tier is already set above.
   IF NEW.external_item_id IS NOT NULL
      AND NEW.external_author_id IS NULL
      AND NEW.biddability_tier IN ('A', 'B') THEN
@@ -726,7 +726,7 @@ BEGIN
 
     IF v_handle IS NOT NULL AND v_handle <> '' THEN
       INSERT INTO external_authors (protocol, stable_handle, tier, display_name, handle, handle_uri, avatar)
-      VALUES (v_protocol::public.external_protocol, v_handle, v_tier,
+      VALUES (v_protocol::external_protocol, v_handle, v_tier,
               v_author_name, v_author_handle,
               CASE WHEN v_protocol IN ('atproto', 'activitypub') THEN v_author_uri ELSE NULL END,
               v_author_avatar)
@@ -737,6 +737,31 @@ BEGIN
             handle_uri   = COALESCE(EXCLUDED.handle_uri,   external_authors.handle_uri),
             avatar       = COALESCE(EXCLUDED.avatar,       external_authors.avatar)
       RETURNING id INTO NEW.external_author_id;
+    END IF;
+  END IF;
+
+  -- reply-parent author (§C4 / #11 denormalise). Resolve once on INSERT for reply
+  -- rows; best-effort (NULL if the parent isn't ingested yet — feed_items_author_refresh
+  -- fills it later). INSERT-only so the cron's maintenance UPDATEs are never clobbered.
+  -- Mirrors the read-path subqueries this replaces: native -> parent note author's
+  -- display_name; external -> parent item's author_handle (constrained on protocol so
+  -- the lookup hits the UNIQUE(protocol, source_item_uri) composite).
+  IF TG_OP = 'INSERT' AND NEW.is_reply THEN
+    IF NEW.note_id IS NOT NULL THEN
+      SELECT acc_p.display_name INTO NEW.reply_to_author
+      FROM notes n
+      JOIN notes n_p ON n_p.nostr_event_id = n.reply_to_event_id
+      JOIN accounts acc_p ON acc_p.id = n_p.author_id
+      WHERE n.id = NEW.note_id
+      LIMIT 1;
+    ELSIF NEW.external_item_id IS NOT NULL THEN
+      SELECT ei_p.author_handle INTO NEW.reply_to_author
+      FROM external_items ei
+      JOIN external_items ei_p
+        ON ei_p.protocol = ei.protocol
+       AND ei_p.source_item_uri = ei.source_reply_uri
+      WHERE ei.id = NEW.external_item_id
+      LIMIT 1;
     END IF;
   END IF;
 
@@ -1377,6 +1402,7 @@ CREATE TABLE public.feed_items (
     version text,
     biddability_tier text,
     external_author_id uuid,
+    reply_to_author text,
     CONSTRAINT exactly_one_source CHECK ((((((article_id IS NOT NULL))::integer + ((note_id IS NOT NULL))::integer) + ((external_item_id IS NOT NULL))::integer) = 1)),
     CONSTRAINT feed_items_biddability_tier_check CHECK ((biddability_tier = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text]))),
     CONSTRAINT feed_items_item_type_check CHECK ((item_type = ANY (ARRAY['article'::text, 'note'::text, 'external'::text]))),
@@ -6381,7 +6407,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict nvmf3vj0QYdJk71zdWhWLiNBhzyWFJts5qSCNfAU7WpFS0td0OmRKPQlmtpIljp
+\unrestrict BNpadgIrG92vzXAxQNNJ4G3DUwlQPuhqz57nFdVNm5WHq8IllCL5d17d3I0E4xr
 
 
 
@@ -6505,4 +6531,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('101_nostr_relay_free_identity.sql'),
     ('102_notes_external_quote.sql'),
     ('103_subscription_events_publication.sql'),
-    ('104_repost_edges_boosted_at.sql');
+    ('104_repost_edges_boosted_at.sql'),
+    ('105_feed_items_reply_to_author.sql');

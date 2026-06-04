@@ -190,12 +190,30 @@ subscribes to the **whole** Bluesky firehose and `JSON.parse`s every event clien
 into K filtered WebSockets each carrying ≤150 `wantedDids` (server-side filter) so CPU/bandwidth
 stay proportional to subscription count. Only matters past ~200 subscriptions.
 
-### C4 · #11 (denormalise) — carry reply-parent author on the row [migration]
+### C4 · #11 (denormalise) — carry reply-parent author on the row [migration] [✅ DONE 2026-06-04]
 The cleaner long-term form of A1: convert the per-row reply-author lookups to denormalised
 columns. Add `feed_items.reply_to_author` (migration), populate it at ingest, and extend
 `feed-ingest/src/tasks/feed-items-author-refresh.ts` (currently refreshes `author_name` /
 `author_avatar` / `author_username`) to maintain it — native via `notes.reply_to_event_id`,
 external via `external_items.source_reply_uri`. Migration + cron change + `schema.sql` regen.
+
+**Shipped (migration 105):** `feed_items.reply_to_author text`. Population mirrors the
+existing denormalised author columns — rather than thread a parent lookup through all 11
+`feed_items` insert sites, derivation lives in the one existing `feed_items_post_identity`
+BEFORE INSERT/UPDATE trigger (same home as post_id / version / biddability / external_author_id,
+migrations 098/099): an INSERT-only block gated on the already-set `NEW.is_reply` resolves the
+parent author (native → parent note author's `display_name`; external → parent item's
+`author_handle`, constrained on protocol to hit `UNIQUE(protocol, source_item_uri)`),
+best-effort (NULL if the parent isn't ingested yet). `feed_items_author_refresh` gained two
+maintenance passes (native + external) that fill late-arriving parents and track renames; both
+are `IS DISTINCT FROM`-guarded, and the trigger block is INSERT-only so the cron's UPDATEs are
+never clobbered (reply_to_author is also outside the version-recompute column set → no version
+churn). Both `FEED_SELECT` copies (`timeline.ts` shared + `feeds.ts` local) now read
+`fi.reply_to_author` in place of the two per-candidate correlated subqueries
+(`note_reply_to_name` / `ei_reply_to_handle`), and their mappers read `row.reply_to_author`.
+Migration backfills existing reply rows; `schema.sql` regenerated via pg_dump + seed re-append,
+`scripts/check-schema-drift.sh` passes all three checks. gateway (95) + feed-ingest (154) tests
+green, `npm run lint` 0 errors, both build clean.
 
 ---
 

@@ -121,7 +121,7 @@ export function feedItemToResponse(row: any) {
       score: row.score != null ? Number(row.score) : undefined,
       pipStatus: row.pip_status ?? "unknown",
       externalParentId: row.external_parent_id ?? undefined,
-      replyToAuthor: row.note_reply_to_name ?? undefined,
+      replyToAuthor: row.reply_to_author ?? undefined,
       isReply: row.is_reply ?? false,
       biddabilityTier: "A" as const,
     };
@@ -155,7 +155,7 @@ export function feedItemToResponse(row: any) {
     sourceName: row.source_display_name,
     sourceAvatar: row.source_avatar_url,
     pipStatus: "unknown" as const,
-    replyToAuthor: row.ei_reply_to_handle ?? undefined,
+    replyToAuthor: row.reply_to_author ?? undefined,
     isReply: row.is_reply ?? false,
     biddabilityTier: computeBiddabilityTier(row),
   };
@@ -198,16 +198,11 @@ export const FEED_SELECT = `
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
   -- Trust Layer 1 pip (NULL for external items — they default to 'unknown')
   tl.pip_status,
-  -- Parent author for reply provenance (external items).
-  -- Constrain on protocol too so the lookup hits the UNIQUE(protocol, source_item_uri)
-  -- composite prefix (protocol-leading) instead of seq-scanning per candidate row.
-  (SELECT ei_p.author_handle FROM external_items ei_p
-   WHERE ei_p.protocol = ei.protocol
-     AND ei_p.source_item_uri = ei.source_reply_uri LIMIT 1) AS ei_reply_to_handle,
-  -- Parent author for reply provenance (native notes)
-  (SELECT acc_p.display_name FROM notes n_p
-   JOIN accounts acc_p ON acc_p.id = n_p.author_id
-   WHERE n_p.nostr_event_id = n.reply_to_event_id LIMIT 1) AS note_reply_to_name,
+  -- Parent author for reply provenance — denormalised onto the row at ingest by the
+  -- feed_items_post_identity trigger + maintained by feed_items_author_refresh
+  -- (migration 105, audit C4 / #11). Replaces the per-candidate correlated subqueries
+  -- (native parent note author's display_name; external parent item's author_handle).
+  fi.reply_to_author,
   fi.is_reply
 `;
 

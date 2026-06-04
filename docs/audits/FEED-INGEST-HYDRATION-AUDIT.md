@@ -9,7 +9,10 @@ Scope: `feed-ingest/*` (poll dispatcher, RSS, Jetstream, engagement refresh, par
 > dual-write), #3 (B5, multiplicative adaptive RSS interval), #8 (B3, batched engagement
 > writes + skip-unchanged), #7 (B6, age-tiered engagement cadence + budget cap), #5 (B2,
 > debounced batched Jetstream cursor flush), #9 (B4, debounce-batched atproto parent/quote
-> prefetch). Remaining: Tranche C (#1/#6/#12/#11-denormalise). See
+> prefetch). Tranche C in progress — #11-denormalise shipped (C4, `feed_items.reply_to_author`
+> + migration 105: trigger resolves it on INSERT, `feed_items_author_refresh` maintains it,
+> both `FEED_SELECT` copies now read the column instead of per-candidate correlated
+> subqueries). Remaining: Tranche C #1 (C2), #6 (C3), #12 (C1 heavy). See
 > `FEED-INGEST-HYDRATION-PLAN.md`.
 
 Severity is **scaling severity**, not launch severity. At 20–30 writers nothing here hurts. The HIGHs are what break as `repost_edges` / external-item count / followee-history grow.

@@ -1065,11 +1065,9 @@ const FEED_SELECT = `
   ei.interaction_data AS ei_interaction_data,
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
   tl.pip_status,
-  (SELECT ei_p.author_handle FROM external_items ei_p
-   WHERE ei_p.source_item_uri = ei.source_reply_uri LIMIT 1) AS ei_reply_to_handle,
-  (SELECT acc_p.display_name FROM notes n_p
-   JOIN accounts acc_p ON acc_p.id = n_p.author_id
-   WHERE n_p.nostr_event_id = n.reply_to_event_id LIMIT 1) AS note_reply_to_name,
+  -- Parent author for reply provenance — denormalised at ingest (migration 105,
+  -- audit C4 / #11). Replaces the per-candidate correlated subqueries.
+  fi.reply_to_author,
   fi.is_reply
 `;
 
@@ -1204,7 +1202,7 @@ function rowToItem(row: any) {
       score: row.score != null ? Number(row.score) : undefined,
       pipStatus: row.pip_status ?? "unknown",
       externalParentId: row.external_parent_id ?? undefined,
-      replyToAuthor: row.note_reply_to_name ?? undefined,
+      replyToAuthor: row.reply_to_author ?? undefined,
       isReply: row.is_reply ?? false,
       biddabilityTier: "A" as const,
     };
@@ -1241,7 +1239,7 @@ function rowToItem(row: any) {
     sourceName: row.source_display_name,
     sourceAvatar: row.source_avatar_url,
     pipStatus: "unknown" as const,
-    replyToAuthor: row.ei_reply_to_handle ?? undefined,
+    replyToAuthor: row.reply_to_author ?? undefined,
     isReply: row.is_reply ?? false,
     biddabilityTier: computeBiddabilityTier(row),
   };

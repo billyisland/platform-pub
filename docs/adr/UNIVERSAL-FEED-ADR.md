@@ -319,6 +319,8 @@ This is a deliberate denormalisation trade-off. The write path does slightly mor
 
 The `author_name`, `author_avatar`, and `author_username` columns are snapshots taken at write time. When a native user changes their display name or avatar, or when `source_metadata_refresh` updates an external source's metadata, the corresponding `feed_items` rows must be updated. The `feed_items_author_refresh` worker job (see §V.2) handles this propagation. Staleness window: up to 24 hours for native authors, up to 24 hours for external sources (matching the `source_metadata_refresh` cron). This is acceptable — author metadata changes are infrequent, and the feed is not the system of record for identity.
 
+The `reply_to_author` column (migration 105, audit C4 / #11) is the same denormalisation applied to a reply's *parent* author — replacing a per-candidate correlated subquery in the feed `FEED_SELECT` (native: parent note author's `display_name`; external: parent item's `author_handle`). It is resolved best-effort on INSERT by the `feed_items_post_identity` trigger (gated on `is_reply`; NULL if the parent isn't ingested yet) and maintained by `feed_items_author_refresh`, which gained two passes that fill late-arriving parents and track parent renames. Same 24h staleness window and rationale.
+
 Content edits (article title, preview text) are propagated synchronously in the edit transaction, not by a background job — content staleness is not acceptable for the author's own posts.
 
 **Column population by `item_type`:**
@@ -506,7 +508,7 @@ The service has no HTTP API. Health is inferred from Graphile Worker's heartbeat
 | `outbound_token_refresh`    | Cron: every 30min | 5     | Refreshes OAuth tokens nearing expiry in `linked_accounts`                                                              |
 | `external_items_prune`      | Cron: daily       | 1     | Deletes `external_items` older than retention period, excluding items with user interactions (see §XV.3)                |
 | `source_metadata_refresh`   | Cron: daily       | 1     | Refreshes `display_name`, `avatar_url`, `description` on active sources                                                 |
-| `feed_items_author_refresh` | Cron: daily       | 2     | Propagates changed author metadata (native accounts + external sources) to denormalised `feed_items` rows               |
+| `feed_items_author_refresh` | Cron: daily       | 2     | Propagates changed author metadata (native accounts + external sources) to denormalised `feed_items` rows, incl. `reply_to_author` (parent author of replies — fills late-arriving parents + tracks renames) |
 | `feed_items_reconcile`      | Cron: daily       | 2     | Checks for orphaned or missing `feed_items` rows and repairs them (see §XV.7)                                           |
 
 **Per-host ingestion rate limiting:**
