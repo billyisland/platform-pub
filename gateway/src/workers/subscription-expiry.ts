@@ -23,57 +23,83 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
   let processed = 0;
 
   // --- Phase 1: Auto-renew subscriptions ---
+  // LEFT JOIN both targets: a subscription is to a writer (writer_id) XOR a
+  // publication (publication_id) — see subscriptions_target_check. Inner-joining
+  // accounts would silently drop every publication subscription from renewal.
   const renewable = await pool.query<{
     id: string;
     reader_id: string;
-    writer_id: string;
+    writer_id: string | null;
+    publication_id: string | null;
     price_pence: number;
     current_period_end: Date;
     reader_pubkey: string;
     writer_pubkey: string;
     subscription_period: string;
     offer_periods_remaining: number | null;
-    writer_standard_price: number;
+    writer_standard_price: number | null;
+    writer_annual_discount_pct: number | null;
   }>(
-    `SELECT s.id, s.reader_id, s.writer_id, s.price_pence,
+    `SELECT s.id, s.reader_id, s.writer_id, s.publication_id, s.price_pence,
             s.current_period_end,
             r.nostr_pubkey AS reader_pubkey,
-            w.nostr_pubkey AS writer_pubkey,
+            COALESCE(w.nostr_pubkey, p.nostr_pubkey) AS writer_pubkey,
             COALESCE(s.subscription_period, 'monthly') AS subscription_period,
             s.offer_periods_remaining,
-            w.subscription_price_pence AS writer_standard_price
+            w.subscription_price_pence AS writer_standard_price,
+            w.annual_discount_pct AS writer_annual_discount_pct
      FROM subscriptions s
      JOIN accounts r ON r.id = s.reader_id
-     JOIN accounts w ON w.id = s.writer_id
+     LEFT JOIN accounts w ON w.id = s.writer_id
+     LEFT JOIN publications p ON p.id = s.publication_id
      WHERE s.status = 'active'
        AND s.auto_renew = TRUE
        AND s.current_period_end < now()`,
   );
 
   for (const sub of renewable.rows) {
-    try {
-      const periodDays = sub.subscription_period === "annual" ? 365 : 30;
-      const newPeriodStart = sub.current_period_end;
-      const newPeriodEnd = new Date(
-        newPeriodStart.getTime() + periodDays * 24 * 60 * 60 * 1000,
+    const periodDays = sub.subscription_period === "annual" ? 365 : 30;
+    const newPeriodStart = sub.current_period_end;
+    const newPeriodEnd = new Date(
+      newPeriodStart.getTime() + periodDays * 24 * 60 * 60 * 1000,
+    );
+
+    // subscription_events.writer_id holds the publication_id for publication
+    // subscriptions (mirrors the subscribe path in routes/subscriptions/*).
+    const earningTargetId = sub.writer_id ?? sub.publication_id;
+    if (!earningTargetId) {
+      logger.error(
+        { subscriptionId: sub.id },
+        "Subscription has neither writer nor publication target; skipping",
       );
+      continue;
+    }
 
-      // Check if the offer period is expiring — revert to standard price
-      let renewalPrice = sub.price_pence;
-      const offerExpiring =
-        sub.offer_periods_remaining !== null &&
-        sub.offer_periods_remaining <= 1;
+    // Check if the offer period is expiring — revert to standard price. Offers
+    // only attach to writer subscriptions, so writer_standard_price is present
+    // whenever offer_periods_remaining is.
+    let renewalPrice = sub.price_pence;
+    const offerExpiring =
+      sub.offer_periods_remaining !== null && sub.offer_periods_remaining <= 1;
 
-      if (offerExpiring) {
-        renewalPrice =
-          sub.subscription_period === "annual"
-            ? Math.round(sub.writer_standard_price * 12 * 0.85)
-            : sub.writer_standard_price;
-      }
+    if (offerExpiring && sub.writer_standard_price !== null) {
+      const annualDiscountPct = sub.writer_annual_discount_pct ?? 15;
+      renewalPrice =
+        sub.subscription_period === "annual"
+          ? Math.round(
+              sub.writer_standard_price * 12 * (1 - annualDiscountPct / 100),
+            )
+          : sub.writer_standard_price;
+    }
 
-      await withTransaction(async (client) => {
+    const renewInTransaction = () =>
+      withTransaction(async (client) => {
+        // The reading tab (free_allowance_remaining_pence) accrues negative —
+        // it is settled via Stripe later. Match the subscribe paths, which
+        // deduct without a floor; an earlier GREATEST(..,0) here silently
+        // undercharged the reader while still crediting the writer in full.
         await client.query(
-          `UPDATE accounts SET free_allowance_remaining_pence = GREATEST(free_allowance_remaining_pence - $1, 0), updated_at = now() WHERE id = $2`,
+          `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
           [renewalPrice, sub.reader_id],
         );
 
@@ -110,6 +136,7 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
           renewalPrice,
           newPeriodStart,
           newPeriodEnd,
+          sub.publication_id,
         );
 
         const renewalEvent = signSubscriptionEvent({
@@ -132,29 +159,50 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
         });
       });
 
-      sendSubscriptionRenewedEmail(
-        sub.reader_id,
-        sub.writer_id,
-        renewalPrice,
-        newPeriodEnd,
-      ).catch((err) =>
-        logger.warn({ err, subscriptionId: sub.id }, "Renewal email failed"),
-      );
+    try {
+      // Retry once before giving up — a transient DB blip or a signing hiccup
+      // shouldn't permanently kill a paid subscription (spec: retry once, then
+      // expire). The transaction is atomic, so a failed first attempt leaves no
+      // partial charge to undo.
+      try {
+        await renewInTransaction();
+      } catch (firstErr) {
+        logger.warn(
+          { err: firstErr, subscriptionId: sub.id },
+          "Subscription renewal failed, retrying once",
+        );
+        await renewInTransaction();
+      }
+
+      // Renewal emails are reader-facing and look up the writer as an account;
+      // publication subscriptions have no account writer, so skip them (the
+      // email would silently no-op on the null lookup anyway).
+      if (sub.writer_id) {
+        sendSubscriptionRenewedEmail(
+          sub.reader_id,
+          sub.writer_id,
+          renewalPrice,
+          newPeriodEnd,
+        ).catch((err) =>
+          logger.warn({ err, subscriptionId: sub.id }, "Renewal email failed"),
+        );
+      }
 
       logger.info(
         {
           subscriptionId: sub.id,
           readerId: sub.reader_id,
           writerId: sub.writer_id,
+          publicationId: sub.publication_id,
         },
         "Subscription renewed",
       );
       processed++;
     } catch (err) {
-      // Renewal failed (e.g. DB error) — expire the subscription
+      // Both attempts failed — expire the subscription.
       logger.error(
         { err, subscriptionId: sub.id },
-        "Subscription renewal failed, expiring",
+        "Subscription renewal failed after retry, expiring",
       );
       await pool
         .query(
@@ -191,10 +239,11 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
   const expiringSoon = await pool.query<{
     id: string;
     reader_id: string;
-    writer_id: string;
+    writer_id: string | null;
+    publication_id: string | null;
     current_period_end: Date;
   }>(
-    `SELECT s.id, s.reader_id, s.writer_id, s.current_period_end
+    `SELECT s.id, s.reader_id, s.writer_id, s.publication_id, s.current_period_end
      FROM subscriptions s
      WHERE s.status IN ('active', 'cancelled')
        AND s.auto_renew = FALSE
@@ -208,22 +257,28 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
   );
 
   for (const sub of expiringSoon.rows) {
-    sendSubscriptionExpiryWarningEmail(
-      sub.reader_id,
-      sub.writer_id,
-      sub.current_period_end,
-    ).catch((err) =>
-      logger.warn(
-        { err, subscriptionId: sub.id },
-        "Expiry warning email failed",
-      ),
-    );
+    // The warning email resolves the writer as an account; publication subs
+    // have no account writer, so skip the email (it would no-op on the null
+    // lookup) but still record the marker so the warning isn't retried forever.
+    if (sub.writer_id) {
+      sendSubscriptionExpiryWarningEmail(
+        sub.reader_id,
+        sub.writer_id,
+        sub.current_period_end,
+      ).catch((err) =>
+        logger.warn(
+          { err, subscriptionId: sub.id },
+          "Expiry warning email failed",
+        ),
+      );
+    }
     // Await: a missing insert after a successful email send means the next
-    // cycle re-sends.
+    // cycle re-sends. subscription_events requires a writer XOR publication
+    // target (migration 103).
     await pool.query(
-      `INSERT INTO subscription_events (subscription_id, event_type, reader_id, writer_id, amount_pence, description)
-       VALUES ($1, 'expiry_warning_sent', $2, $3, 0, 'Expiry warning sent')`,
-      [sub.id, sub.reader_id, sub.writer_id],
+      `INSERT INTO subscription_events (subscription_id, event_type, reader_id, writer_id, publication_id, amount_pence, description)
+       VALUES ($1, 'expiry_warning_sent', $2, $3, $4, 0, 'Expiry warning sent')`,
+      [sub.id, sub.reader_id, sub.writer_id, sub.publication_id],
     );
   }
 

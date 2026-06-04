@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict vcOL57EtTOALh9jmPrCaONvteaeUfqetmYNYXV3OQxrC076dhnd4ViluXLL9NzK
+\restrict x8EqGqGdrxWCwIhp51Del29zBxyxSCbm50Ao8ec7jiTrSuD0RybfRsGCn0B0pqQ
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1997,14 +1997,16 @@ CREATE TABLE public.subscription_events (
     subscription_id uuid NOT NULL,
     event_type text NOT NULL,
     reader_id uuid NOT NULL,
-    writer_id uuid NOT NULL,
+    writer_id uuid,
     article_id uuid,
     amount_pence integer DEFAULT 0 NOT NULL,
     period_start timestamp with time zone,
     period_end timestamp with time zone,
     description text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT subscription_events_event_type_check CHECK ((event_type = ANY (ARRAY['subscription_charge'::text, 'subscription_earning'::text, 'subscription_read'::text, 'expiry_warning_sent'::text])))
+    publication_id uuid,
+    CONSTRAINT subscription_events_event_type_check CHECK ((event_type = ANY (ARRAY['subscription_charge'::text, 'subscription_earning'::text, 'subscription_read'::text, 'expiry_warning_sent'::text]))),
+    CONSTRAINT subscription_events_target_check CHECK (((writer_id IS NOT NULL) OR (publication_id IS NOT NULL)))
 );
 
 
@@ -4587,6 +4589,13 @@ CREATE INDEX idx_sub_offers_writer ON public.subscription_offers USING btree (wr
 
 
 --
+-- Name: idx_subscription_events_publication; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_subscription_events_publication ON public.subscription_events USING btree (publication_id) WHERE (publication_id IS NOT NULL);
+
+
+--
 -- Name: idx_subscriptions_period_end; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5945,6 +5954,14 @@ ALTER TABLE ONLY public.subscription_events
 
 
 --
+-- Name: subscription_events subscription_events_publication_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_publication_id_fkey FOREIGN KEY (publication_id) REFERENCES public.publications(id);
+
+
+--
 -- Name: subscription_events subscription_events_reader_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6364,7 +6381,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict vcOL57EtTOALh9jmPrCaONvteaeUfqetmYNYXV3OQxrC076dhnd4ViluXLL9NzK
+\unrestrict x8EqGqGdrxWCwIhp51Del29zBxyxSCbm50Ao8ec7jiTrSuD0RybfRsGCn0B0pqQ
 
 
 
@@ -6485,4 +6502,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('099_external_author_identity.sql'),
     ('100_repost_edges.sql'),
     ('101_nostr_relay_free_identity.sql'),
-    ('102_notes_external_quote.sql');
+    ('102_notes_external_quote.sql'),
+    ('103_subscription_events_publication.sql');

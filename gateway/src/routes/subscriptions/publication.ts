@@ -84,10 +84,11 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
             client,
             sub.id,
             readerId,
-            publicationId,
+            null,
             pricePence,
             now,
             periodEnd,
+            publicationId,
           );
 
           const reactivateEvent = signSubscriptionEvent({
@@ -145,10 +146,11 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
           client,
           subscriptionId,
           readerId,
-          publicationId,
+          null,
           pricePence,
           now,
           periodEnd,
+          publicationId,
         );
 
         const createEvent = signSubscriptionEvent({
