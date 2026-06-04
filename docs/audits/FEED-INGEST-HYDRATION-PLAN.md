@@ -183,6 +183,18 @@ matters:
   concurrency. Removes the throughput ceiling immediately; the per-host relocation is the
   prerequisite for actually enqueueing *all* due sources.
 
+**Status: safe one-liner shipped 2026-06-04.** The per-tick enqueue cap is decoupled from
+runner concurrency in `feed-ingest-poll.ts` — new config key
+`feed_ingest_max_enqueue_per_tick` (default **100**, = the source SELECT LIMIT, so the poll
+enqueues all due sources each tick), with legacy `feed_ingest_max_concurrent` honoured as a
+fallback. Per-host politeness (`maxPerHost`, ≤2/host/tick) and runner `concurrency: 10` are
+untouched, so there's no thundering-herd risk: actual fetch concurrency is still bounded by
+the runner pool + per-source `jobKey`. This lifts the ~50-source throughput ceiling. The
+**per-host relocation (steps 1–2 above)** — moving politeness into the fetch task via a
+per-host advisory lock so *all* due sources can be enqueued without an enqueue-layer throttle
+— remains deferred until metrics demand. feed-ingest builds clean, `npm run lint` 0 errors,
+154 tests green. Config key documented in UNIVERSAL-FEED-ADR §V.2.
+
 ### C3 · #6 — shard the Jetstream firehose
 `feed-ingest/src/jetstream/listener.ts:60` — above `WILDCARD_DID_THRESHOLD` (150) the listener
 subscribes to the **whole** Bluesky firehose and `JSON.parse`s every event client-side
@@ -223,9 +235,11 @@ green, `npm run lint` 0 errors, both build clean.
   add numbered SQL in `migrations/`, regenerate `schema.sql` with `pg_dump` from a fully-migrated
   DB, re-append the `_migrations` seed in the same step, run `scripts/check-schema-drift.sh`
   (CI-enforced). Never hand-edit `schema.sql` or the seed line.
-- **Dual-write invariant (verdict §):** confirm `insertAtprotoItem` (`lib/atproto-ingest.ts`) and
-  `insertActivityPubItem` (`lib/activitypub-ingest.ts`) keep both writes in one transaction (RSS
-  does after B1) so drift is only ever missed rows, never partial writes.
+- **Dual-write invariant (verdict §): ✅ confirmed 2026-06-04.** `insertAtprotoItem`
+  (`lib/atproto-ingest.ts`) and `insertActivityPubItem` (`lib/activitypub-ingest.ts`) each take a
+  single `client` and do both inserts on it; all three callers wrap them in `withTransaction`
+  (`feed-ingest-atproto-backfill.ts:141`, `feed-ingest-activitypub.ts:103`, `listener.ts:567`).
+  RSS shares one transaction after B1. So drift is only ever missed rows, never partial writes.
 - **Keep untouched:** conditional GET, leader-election advisory lock, backoff + source
   deactivation, pinned-IP SSRF defence, `GREATEST` cursor idempotency, `jobKey` dedup.
 - **#15 — verify the plan:** `EXPLAIN ANALYZE` the `scored` CTE against a seeded large dataset

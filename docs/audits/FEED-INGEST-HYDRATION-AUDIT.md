@@ -12,7 +12,12 @@ Scope: `feed-ingest/*` (poll dispatcher, RSS, Jetstream, engagement refresh, par
 > prefetch). Tranche C in progress — #11-denormalise shipped (C4, `feed_items.reply_to_author`
 > + migration 105: trigger resolves it on INSERT, `feed_items_author_refresh` maintains it,
 > both `FEED_SELECT` copies now read the column instead of per-candidate correlated
-> subqueries). Remaining: Tranche C #1 (C2), #6 (C3), #12 (C1 heavy). See
+> subqueries). C2 safe one-liner shipped — #1's per-tick enqueue cap is decoupled from
+> runner concurrency (`feed_ingest_max_enqueue_per_tick`, default 100), lifting the
+> ~50-source throughput ceiling without touching per-host politeness; the full per-host
+> relocation stays deferred. Cross-cutting checklist: dual-write invariant confirmed
+> (atproto + activitypub ingest both share one transaction). Remaining (all deferred until
+> metrics demand): #1 per-host relocation (C2 full), #6 (C3), #12 (C1 heavy). See
 > `FEED-INGEST-HYDRATION-PLAN.md`.
 
 Severity is **scaling severity**, not launch severity. At 20–30 writers nothing here hurts. The HIGHs are what break as `repost_edges` / external-item count / followee-history grow.

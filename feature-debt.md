@@ -325,6 +325,15 @@ Phase 1 complete (build status archived: `planning-archive/TRAFFOLOGY-BUILD-STAT
 - Phase 3: Outbound URL search (Bluesky, Reddit, HN, Mastodon APIs) + pattern observations
 - Phase 4: Publication editor view
 
+**Feed-ingest + hydration scaling — `docs/audits/FEED-INGEST-HYDRATION-AUDIT.md` + `…-PLAN.md`**
+
+Deep audit of the ingest workers + feed read path. Every finding is **scaling** severity (harmless at 20–30 writers; bites as `repost_edges` / external-item count / followee history grow). **Tranche A** (read-path scoping: composite-index fix, candidate-scoped + recency-bound boost CTE, LATERAL attribution limit, `platform_config` cache, `following` 30-day bound), **Tranche B** (batching + cadence: batched RSS dual-write, adaptive RSS interval, batched/skip-unchanged engagement writes, age-tiered engagement cadence, debounced Jetstream cursor flush, debounce-batched atproto parent prefetch), **C4** (`feed_items.reply_to_author` denormalisation, migration 105), **C1#14**, and the **C2 safe one-liner** (decoupled per-tick poll enqueue cap → `feed_ingest_max_enqueue_per_tick`, default 100, lifts the ~50-source throughput ceiling) all shipped (2026-06-04). Cross-cutting: dual-write invariant confirmed. **Tranche C — deferred until metrics demand** (build the design before you need it; the trigger is feed p95 starting to track total `repost_edges` size / followee history):
+
+- **C2 (#1) — per-host politeness relocation.** The safe one-liner lifted the throughput ceiling but per-host politeness is still an enqueue-layer throttle (`maxPerHost`, ≤2/host/tick). To enqueue *all* due sources without a herd, move per-host bounding into the fetch task (per-host advisory lock or per-host job queue), *then* drop the per-tick cap entirely.
+- **C3 (#6) — Jetstream firehose sharding.** Above `WILDCARD_DID_THRESHOLD` (150 subs) the listener subscribes to the whole Bluesky firehose and `JSON.parse`s every event client-side (single-process CPU cliff scaling with Bluesky, not subscriptions). Shard into K filtered WebSockets each carrying ≤150 server-side-filtered `wantedDids`. Only matters past ~200 subscriptions.
+- **C1 heavy (#12) — pagination work reduction.** Live `score_live` (function of `now()` + live `repost_edges`) can't be indexed, so the `scored → deduped` CTE materialises + sorts the whole candidate set every page (page 10 redoes page 1). Largest single item. Real fix: two-phase read (cheap candidate-id pull, then hydrate only the page) or a materialised per-reader candidate pool refreshed by a worker; also bound max page depth.
+- **#15 — verify the plan.** `EXPLAIN ANALYZE` the `scored` CTE against a *seeded large dataset* to confirm the Tranche A scoping collapsed the correlated-subquery line items and the planner hashes the follow sets once. Needs a seeded large dataset to be meaningful (dev at 20–30 writers won't surface it).
+
 **Frontend audit — `docs/audits/all-haus-frontend-audit.md`**
 
 12-item ranked audit. 6/12 resolved. Outstanding items:

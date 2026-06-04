@@ -15,8 +15,19 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
   const config = await getPlatformConfig();
   const maxPerHost =
     parseInt(config.get("feed_ingest_max_per_host") ?? "", 10) || 2;
-  const maxConcurrent =
-    parseInt(config.get("feed_ingest_max_concurrent") ?? "", 10) || 10;
+  // Per-tick enqueue cap (audit #1 / C2). This bounds how many fetch jobs the
+  // poll enqueues per 60s tick — NOT how many run at once. Actual fetch
+  // concurrency is the worker runner's `concurrency` (index.ts) plus the
+  // per-source `jobKey` (one in-flight job per source); per-host politeness is
+  // `maxPerHost` (≤N/host/tick), preserved below. The two were historically
+  // conflated at 10, which capped steady-state throughput at ~10/min ≈ 50
+  // sources before they fell behind. Decoupled: default 100 (= the SELECT
+  // LIMIT, i.e. enqueue all due sources each tick) so the ceiling is gone.
+  // Legacy `feed_ingest_max_concurrent` is still honoured as a fallback.
+  const maxEnqueuePerTick =
+    parseInt(config.get("feed_ingest_max_enqueue_per_tick") ?? "", 10) ||
+    parseInt(config.get("feed_ingest_max_concurrent") ?? "", 10) ||
+    100;
   // atproto sources are normally pushed by the Jetstream listener. Only
   // fall back to polling via getAuthorFeed if the listener has reported
   // itself unhealthy — otherwise we'd duplicate work.
@@ -80,7 +91,7 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
   for (const [_hostname, hostSources] of byHost) {
     const toEnqueue = hostSources.slice(0, maxPerHost);
     for (const source of toEnqueue) {
-      if (totalEnqueued >= maxConcurrent) break;
+      if (totalEnqueued >= maxEnqueuePerTick) break;
 
       const taskName =
         source.protocol === "rss"
@@ -104,7 +115,7 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
       );
       totalEnqueued++;
     }
-    if (totalEnqueued >= maxConcurrent) break;
+    if (totalEnqueued >= maxEnqueuePerTick) break;
   }
 
   if (totalEnqueued > 0) {
