@@ -9,6 +9,7 @@ import { useLayoutModeContext } from './LayoutShell'
 import { ForAllMark } from '../icons/ForAllMark'
 import { useUnreadCounts } from '../../stores/unread'
 import { useCompose } from '../../stores/compose'
+import { useReader } from '../../stores/reader'
 
 function Badge({ count, className = '' }: { count: number; className?: string }) {
   if (count <= 0) return null
@@ -246,6 +247,10 @@ export function Nav() {
   const dmCount = useUnreadCounts((s) => s.dmCount)
   const notificationCount = useUnreadCounts((s) => s.notificationCount)
   const totalUnread = dmCount + notificationCount
+  // The workspace reader overlay pushes /article|/reader, flipping the layout to
+  // canvas. While it's open we strip the top beam down to just the ∀ (see canvas
+  // branch below) so the reader floats over frosted glass with one crisp nav mark.
+  const readerOpen = useReader((s) => s.isOpen)
 
   useEffect(() => { setMenuOpen(false); setDropdownOpen(false) }, [pathname])
 
@@ -290,6 +295,12 @@ export function Nav() {
   // ── Canvas mode: minimal black bar, white ∀ ────────────────────────────────
 
   if (mode === 'canvas') {
+    // Reader overlay open: lose the black top toolbar entirely. The only nav
+    // affordance while reading is the workspace ForallMenu (bottom-right), which
+    // floats crisp above the frosted scrim. (Direct full-page /article|/reader
+    // visits keep the normal beam — readerOpen is false there.)
+    if (readerOpen) return null
+
     return (
       <>
         <header className="fixed top-0 inset-x-0 z-50 bg-black">

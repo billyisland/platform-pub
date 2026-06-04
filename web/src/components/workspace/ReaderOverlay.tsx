@@ -49,17 +49,18 @@ export function ReaderOverlay() {
 
   return (
     <>
-      {/* Scrim — below the topbar (60px), click to close. */}
+      {/* Frosted scrim — full viewport (covers where the top toolbar was), a very
+          slight blur so the workspace reads as frosted glass behind the reader.
+          z-[55] sits above the workspace so it blurs; the ForallMenu (z-60) stays
+          crisp above it as the sole nav affordance. Click to close. */}
       <div
-        className="fixed inset-0 z-40 bg-black/40"
-        style={{ top: 60 }}
+        className="fixed inset-0 z-[55] bg-black/20 backdrop-blur-[3px]"
         onClick={close}
       />
 
       {/* Pane */}
       <div
-        className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto"
-        style={{ top: 60 }}
+        className="fixed inset-0 z-[56] flex items-start justify-center overflow-y-auto"
         onClick={close}
       >
         <div

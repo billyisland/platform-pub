@@ -157,7 +157,7 @@ export function ForallMenu({
   return (
     <div
       ref={containerRef}
-      style={{ position: "fixed", right: 24, bottom: 24, zIndex: 50 }}
+      style={{ position: "fixed", right: 24, bottom: 24, zIndex: 60 }}
     >
       {view === "menu" && (
         <div

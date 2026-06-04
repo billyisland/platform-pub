@@ -71,8 +71,17 @@ export function ExternalArticleReader({
   return (
     <article>
       {/* Header — separation is whitespace, no rule (sitewide). */}
-      <div className="px-8 pt-8 pb-5">
-        {displaySite && <p className="label-ui text-grey-400 mb-2">{displaySite}</p>}
+      <div className="px-12 pt-8 pb-5">
+        {displaySite && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="label-ui text-grey-400 hover:text-black transition-colors mb-2 inline-block"
+          >
+            {displaySite}
+          </a>
+        )}
         {displayTitle && (
           <h1 className="font-serif text-2xl leading-snug text-black">
             {displayTitle}
@@ -84,7 +93,7 @@ export function ExternalArticleReader({
       </div>
 
       {/* Body */}
-      <div className="px-8 pb-8">
+      <div className="px-12 pb-8">
         {loading && (
           <div className="space-y-3 animate-pulse">
             <div className="h-4 bg-grey-100 rounded w-full" />
