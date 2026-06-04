@@ -22,6 +22,7 @@
     "@tiptap/react": "^2.3.0",
     "@tiptap/starter-kit": "^2.3.0",
     "framer-motion": "^11.18.2",
+    "hls.js": "^1.6.16",
     "next": "^14.2.0",
     "prosemirror-state": "^1.4.0",
     "react": "^18.3.0",

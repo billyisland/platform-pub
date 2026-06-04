@@ -14,13 +14,22 @@ import type { VesselPalette } from "../workspace/tokens";
 //   "none"              (condensed)          — render nothing
 //
 // Adapted from VesselCard's MediaBlock. Note media lives inline in the text, so
-// for native notes we extract image URLs here (matching VesselCard). Video uses
-// a poster + play glyph (autoplay-on-focal is a documented Phase-3 follow-up).
+// for native notes we extract image URLs here (matching VesselCard).
+//
+// Video is governed by the §4 `video` mode, uniformly across every source
+// (ActivityPub/Mastodon, Bluesky HLS, RSS enclosures, …):
+//   "static"          (feed/parent/reply) — poster + play glyph; a click does NOT
+//                       escape to a new tab, it bubbles to the card so the card
+//                       expands (→ focal), where the video then plays.
+//   "autoplay-unmute" (focal)             — a real <video>, muted-autoplay with
+//                       controls so the reader can unmute. HLS (.m3u8, Bluesky)
+//                       plays via hls.js (native on Safari).
 //
 // Separation rule: link previews use a background fill + padding, no edge lines.
 // =============================================================================
 
 type MediaMode = "full-width" | "sized" | "single-thumbnail" | "none";
+type VideoMode = "autoplay-unmute" | "static" | "none";
 
 function hostOf(url: string): string {
   try {
@@ -42,11 +51,13 @@ function mediaForPost(post: Post): MediaItem[] {
 export function PostMedia({
   post,
   mode,
+  video,
   palette,
   density,
 }: {
   post: Post;
   mode: MediaMode;
+  video: VideoMode;
   palette: VesselPalette;
   density: string;
 }) {
@@ -87,7 +98,10 @@ export function PostMedia({
     (m) => m.type === "image" || m.type === "video",
   ).length;
   const overflowCount = hero && !expanded ? visualCount - 1 : 0;
-  const playable = hero?.type === "video";
+  const heroIsVideo = hero?.type === "video";
+  // A real, playing element only at focal (autoplay-unmute). Everywhere else a
+  // video is a poster + glyph whose click bubbles to the card (→ expand).
+  const inlineVideo = heroIsVideo && video === "autoplay-unmute";
 
   const heroContainerStyle: React.CSSProperties = {
     position: "relative",
@@ -95,7 +109,8 @@ export function PostMedia({
     marginBottom: 6,
     background: palette.interior,
     overflow: "hidden",
-    cursor: playable ? "pointer" : undefined,
+    // Static video signals "click to expand"; the inline player owns its cursor.
+    cursor: heroIsVideo && !inlineVideo ? "pointer" : undefined,
     ...(expanded ? {} : { aspectRatio: "16 / 9" }),
   };
   const heroImgStyle: React.CSSProperties = expanded
@@ -109,14 +124,7 @@ export function PostMedia({
   return (
     <>
       {hero && (
-        <div
-          onClick={(e) => {
-            if (!playable || !hero.url) return;
-            e.stopPropagation();
-            window.open(hero.url, "_blank", "noopener,noreferrer");
-          }}
-          style={heroContainerStyle}
-        >
+        <div style={heroContainerStyle}>
           {hero.type === "image" && (
             <img
               src={hero.url}
@@ -126,16 +134,23 @@ export function PostMedia({
               style={heroImgStyle}
             />
           )}
-          {hero.type === "video" && hero.thumbnail && (
-            <img
-              src={hero.thumbnail}
-              alt={hero.alt ?? ""}
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              style={heroImgStyle}
-            />
+          {inlineVideo && (
+            <InlineVideo item={hero} expanded={expanded} />
           )}
-          {hero.type === "video" && <PlayGlyph hasPoster={!!hero.thumbnail} />}
+          {heroIsVideo && !inlineVideo && (
+            <>
+              {hero.thumbnail && (
+                <img
+                  src={hero.thumbnail}
+                  alt={hero.alt ?? ""}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  style={heroImgStyle}
+                />
+              )}
+              <PlayGlyph hasPoster={!!hero.thumbnail} />
+            </>
+          )}
           {overflowCount > 0 && (
             <span
               aria-hidden="true"
@@ -183,6 +198,67 @@ export function PostMedia({
         <LinkPreview key={i} item={link} palette={palette} />
       ))}
     </>
+  );
+}
+
+// Inline player for the focal video. Direct files (Mastodon/RSS MP4/WebM) play
+// via the native <video src>. HLS playlists (.m3u8 — Bluesky) play natively on
+// Safari and via a lazily-imported hls.js everywhere else; if neither can play
+// the poster simply remains. Muted so the browser honours autoplay; controls let
+// the reader unmute. stopPropagation keeps scrubbing from collapsing the card.
+function InlineVideo({ item, expanded }: { item: MediaItem; expanded: boolean }) {
+  const ref = React.useRef<HTMLVideoElement>(null);
+  const isHls = /\.m3u8(\?|#|$)/i.test(item.url);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el || !isHls) return;
+    // Safari (and iOS) play HLS natively.
+    if (el.canPlayType("application/vnd.apple.mpegurl")) {
+      el.src = item.url;
+      return;
+    }
+    let destroyed = false;
+    let hls: { destroy: () => void } | null = null;
+    void import("hls.js")
+      .then(({ default: Hls }) => {
+        if (destroyed || !ref.current || !Hls.isSupported()) return;
+        const instance = new Hls();
+        hls = instance;
+        instance.loadSource(item.url);
+        instance.attachMedia(ref.current);
+        instance.on(Hls.Events.MANIFEST_PARSED, () => {
+          void ref.current?.play().catch(() => {});
+        });
+      })
+      .catch(() => {});
+    return () => {
+      destroyed = true;
+      hls?.destroy();
+    };
+  }, [item.url, isHls]);
+
+  return (
+    <video
+      ref={ref}
+      src={isHls ? undefined : item.url}
+      poster={item.thumbnail || undefined}
+      muted
+      autoPlay
+      playsInline
+      controls
+      preload="metadata"
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        display: "block",
+        background: "#000",
+        ...(expanded
+          ? { height: "auto", maxHeight: "75vh" }
+          : { height: "100%", objectFit: "cover" }),
+      }}
+    />
   );
 }
 

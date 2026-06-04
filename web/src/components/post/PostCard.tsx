@@ -103,7 +103,7 @@ export function PostCard({
       <div style={{ cursor: onClick ? "pointer" : undefined }} onClick={onClick}>
         <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} />
         <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} />
-        <PostMedia post={post} mode={spec.media} palette={ctx.palette} density={ctx.density} />
+        <PostMedia post={post} mode={spec.media} video={spec.video} palette={ctx.palette} density={ctx.density} />
       </div>
     );
   }
@@ -113,7 +113,7 @@ export function PostCard({
       {header}
       <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} />
       <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} pollVote={pollVote} />
-      <PostMedia post={post} mode={spec.media} palette={ctx.palette} density={ctx.density} />
+      <PostMedia post={post} mode={spec.media} video={spec.video} palette={ctx.palette} density={ctx.density} />
       <QuotedEmbed post={post} mode={spec.quoteEmbed} palette={ctx.palette} />
       <PostCounters post={post} mode={spec.originCounters} palette={ctx.palette} interactions={interactions} />
       <PostActions
