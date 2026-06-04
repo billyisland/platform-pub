@@ -3,13 +3,13 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUnreadCounts } from "../../stores/unread";
+import { useMessagesOverlay } from "../../stores/messagesOverlay";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { SearchPanel } from "./SearchPanel";
 
 const TOKENS = {
   buttonBg: "#1A1A18",
   buttonFg: "#F0EFEB",
-  buttonRing: "#4A4A47",
   menuBg: "#FFFFFF",
   menuBorder: "#1A1A18",
   itemFg: "#1A1A18",
@@ -38,6 +38,7 @@ type View = "closed" | "menu" | "search" | "notifications";
 type FocusRow =
   | { kind: "action"; key: ForallAction; label: string }
   | { kind: "open"; target: "search" | "notifications"; label: string; count: number }
+  | { kind: "overlay"; onOpen: () => void; label: string; count: number }
   | { kind: "link"; href: string; label: string; count: number }
   | { kind: "restore"; id: string; label: string };
 
@@ -64,7 +65,12 @@ export function ForallMenu({
   ];
   const navRows: FocusRow[] = [
     { kind: "open", target: "search", label: "Search", count: 0 },
-    { kind: "link", href: "/messages", label: "Messages", count: dmCount },
+    {
+      kind: "overlay",
+      onOpen: () => useMessagesOverlay.getState().open(),
+      label: "Messages",
+      count: dmCount,
+    },
     {
       kind: "open",
       target: "notifications",
@@ -93,6 +99,11 @@ export function ForallMenu({
         return;
       case "open":
         setView(row.target);
+        return;
+      case "overlay":
+        setView("closed");
+        buttonRef.current?.focus();
+        row.onOpen();
         return;
       case "link":
         setView("closed");
@@ -249,7 +260,7 @@ export function ForallMenu({
           borderRadius: "50%",
           background: TOKENS.buttonBg,
           color: TOKENS.buttonFg,
-          border: `2px solid ${TOKENS.buttonRing}`,
+          border: "none",
           boxShadow: "0 4px 12px rgba(0, 0, 0, 0.18)",
           fontSize: 26,
           lineHeight: 1,
@@ -303,7 +314,10 @@ const MenuRow = forwardRef<HTMLButtonElement, MenuRowProps>(function MenuRow(
   ref,
 ) {
   const isRestore = row.kind === "restore";
-  const count = row.kind === "open" || row.kind === "link" ? row.count : 0;
+  const count =
+    row.kind === "open" || row.kind === "link" || row.kind === "overlay"
+      ? row.count
+      : 0;
   return (
     <button
       ref={ref}

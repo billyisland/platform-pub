@@ -199,6 +199,12 @@ Use `.toggle-chip` + `.toggle-chip-active` / `.toggle-chip-inactive` (combined w
 
 All top-level admin/settings/dashboard pages use `<PageShell>` from `web/src/components/ui/PageShell.tsx`. It fixes outer padding (`py-12`), title styling, and title→content gap (`mb-8`). Choose width by content type: `article` (640px) for single-column forms, `feed` (780px) for lists/cards/reading surfaces, `content` (960px) for tables and data-dense dashboards. Do not hand-roll `mx-auto max-w-* px-4 sm:px-6 py-*` wrappers on new pages. Use `<PageHeader>` standalone for sub-views that need the same title treatment.
 
+### Glasshouse (frosted workspace overlay)
+
+Any surface that opens **over the workspace** — the reader pane, direct messages, and future panels — uses the canonical `<Glasshouse>` primitive (`web/src/components/workspace/Glasshouse.tsx`). It is the single source of the pattern: a full-viewport frosted scrim (`z-[55]`, `bg-black/20 backdrop-blur-[3px]`, click-to-close), a centred white pane (`z-[56]`) with the 6px black slab top + elevation shadow, Escape-to-close, and body scroll-lock. Mount it conditionally and pass `onClose` + `maxWidth` (+ optional `ariaLabel`); it owns only the chrome — URL-sync/history (e.g. the reader's shareable `/article`·`/reader` entries) is layered on top by the caller's store, not by Glasshouse.
+
+The defining invariant: the **ForallMenu stays crisp above the frost** as the sole nav affordance. It lives at `z-60` in `WorkspaceView`, so it floats sharp over any Glasshouse simply because Glasshouse never reaches `z-60`. Never raise a Glasshouse above `z-[56]`, and never blur or dim the ForallMenu. Do not hand-roll a frosted scrim + centred pane anywhere — reuse `<Glasshouse>`. Per-surface stores follow the `useReader` / `useMessagesOverlay` shape (an `isOpen` + `open`/`close` zustand store); the surface's body should be a shared panel component (e.g. `MessagesPanel`) reused by both its Glasshouse and any standalone page.
+
 ### No hairlines, no outlines, no single-pixel anything
 
 This is an absolute, sitewide invariant — not a feed-and-thread guideline. **The site never renders a 1px line, anywhere, ever.** No hairline dividers, no 1px borders, no 1px outlines or rings, no 1px line elements, no `<hr>`, no `box-shadow` used as a line. Separation is whitespace and rhythm; emphasis is the 4px slab; structural enclosure, when genuinely needed, is `>= 2px`. There are no exceptions for "dense UI chrome" (dropdowns, menus, popovers, settings rows) — those were the prior loophole and it is now closed.

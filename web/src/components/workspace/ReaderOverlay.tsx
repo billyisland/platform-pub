@@ -17,6 +17,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useReader } from "../../stores/reader";
+import { Glasshouse } from "./Glasshouse";
 import { ExternalArticleReader } from "../article/ExternalArticleReader";
 import { ArticleReader } from "../article/ArticleReader";
 import { articles, type ArticleMetadata } from "../../lib/api";
@@ -24,23 +25,14 @@ import { articles, type ArticleMetadata } from "../../lib/api";
 export function ReaderOverlay() {
   const { isOpen, target, close, _handlePop } = useReader();
 
-  // Close on Escape; close on browser Back (popstate pops our pushed entry); lock
-  // body scroll while open. One listener each, gated on isOpen.
+  // Glasshouse owns the chrome, Escape, and scroll-lock. The reader keeps only
+  // the URL-sync concern: browser Back pops our pushed /article·/reader entry,
+  // so _handlePop must run on popstate to finalise close. Gated on isOpen.
   useEffect(() => {
     if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    window.addEventListener("keydown", onKey);
     window.addEventListener("popstate", _handlePop);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("popstate", _handlePop);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [isOpen, close, _handlePop]);
+    return () => window.removeEventListener("popstate", _handlePop);
+  }, [isOpen, _handlePop]);
 
   if (!isOpen || !target) return null;
 
@@ -48,49 +40,17 @@ export function ReaderOverlay() {
   const maxWidth = isNative ? 820 : 640;
 
   return (
-    <>
-      {/* Frosted scrim — full viewport (covers where the top toolbar was), a very
-          slight blur so the workspace reads as frosted glass behind the reader.
-          z-[55] sits above the workspace so it blurs; the ForallMenu (z-60) stays
-          crisp above it as the sole nav affordance. Click to close. */}
-      <div
-        className="fixed inset-0 z-[55] bg-black/20 backdrop-blur-[3px]"
-        onClick={close}
-      />
-
-      {/* Pane */}
-      <div
-        className="fixed inset-0 z-[56] flex items-start justify-center overflow-y-auto"
-        onClick={close}
-      >
-        <div
-          className="relative w-full bg-white my-8 mx-4 shadow-lg"
-          style={{ maxWidth, borderTop: "6px solid #111111" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Close — floats top-right over the reader content. */}
-          <button
-            type="button"
-            onClick={close}
-            aria-label="Close reader"
-            className="absolute right-4 top-4 z-10 text-grey-400 hover:text-black text-lg leading-none"
-            style={{ background: "none", border: "none", cursor: "pointer" }}
-          >
-            ✕
-          </button>
-
-          {target.kind === "external" ? (
-            <ExternalArticleReader
-              url={target.url}
-              title={target.title}
-              siteName={target.siteName}
-            />
-          ) : (
-            <NativeArticleBody dTag={target.dTag} />
-          )}
-        </div>
-      </div>
-    </>
+    <Glasshouse onClose={close} maxWidth={maxWidth} ariaLabel="Reader">
+      {target.kind === "external" ? (
+        <ExternalArticleReader
+          url={target.url}
+          title={target.title}
+          siteName={target.siteName}
+        />
+      ) : (
+        <NativeArticleBody dTag={target.dTag} />
+      )}
+    </Glasshouse>
   );
 }
 

@@ -48,6 +48,7 @@ import { NewFeedPrompt } from "./NewFeedPrompt";
 import { FeedComposer } from "./FeedComposer";
 import { ForallCeremony } from "./ForallCeremony";
 import { ReaderOverlay } from "./ReaderOverlay";
+import { MessagesOverlay } from "./MessagesOverlay";
 import { useReader } from "../../stores/reader";
 import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
@@ -1227,6 +1228,7 @@ export function WorkspaceView() {
         />
       )}
       <ReaderOverlay />
+      <MessagesOverlay />
     </Floor>
   );
 }
