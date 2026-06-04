@@ -2346,7 +2346,13 @@ async function hydrateMastodonThread(item: ExternalItemRow): Promise<void> {
   // source_reply_uri. Map every id in the conversation (incl. the focal, whose
   // stored uri is item.source_item_uri) to the canonical uri we persist, so a
   // reply's source_reply_uri equals its parent's source_item_uri.
-  const canonicalUri = (s: RichStatus) => s.url || s.uri;
+  // Key on the federated ActivityPub id (`uri`), NOT the human web `url`: the
+  // ingestion adapter stores source_item_uri = note.id and source_reply_uri =
+  // note.inReplyTo, both of which are the `uri` form. Persisting ancestors under
+  // `url` would mint a parallel id-space, so the focal's source_reply_uri never
+  // matches a hydrated parent's source_item_uri and the ancestor walk finds
+  // nothing (parents go missing). `uri` is always present on a Mastodon status.
+  const canonicalUri = (s: RichStatus) => s.uri || s.url;
   const idToUri = new Map<string, string>();
   idToUri.set(statusId, item.source_item_uri);
   for (const s of [...data.ancestors, ...data.descendants]) {
