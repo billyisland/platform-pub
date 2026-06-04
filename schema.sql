@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict x8EqGqGdrxWCwIhp51Del29zBxyxSCbm50Ao8ec7jiTrSuD0RybfRsGCn0B0pqQ
+\restrict nvmf3vj0QYdJk71zdWhWLiNBhzyWFJts5qSCNfAU7WpFS0td0OmRKPQlmtpIljp
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -4519,10 +4519,10 @@ CREATE UNIQUE INDEX idx_repost_edges_synthetic ON public.repost_edges USING btre
 
 
 --
--- Name: idx_repost_edges_target; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_repost_edges_target_boosted; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_repost_edges_target ON public.repost_edges USING btree (target_post_id);
+CREATE INDEX idx_repost_edges_target_boosted ON public.repost_edges USING btree (target_post_id, boosted_at);
 
 
 --
@@ -6381,7 +6381,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict x8EqGqGdrxWCwIhp51Del29zBxyxSCbm50Ao8ec7jiTrSuD0RybfRsGCn0B0pqQ
+\unrestrict nvmf3vj0QYdJk71zdWhWLiNBhzyWFJts5qSCNfAU7WpFS0td0OmRKPQlmtpIljp
+
 
 
 
@@ -6503,4 +6504,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('100_repost_edges.sql'),
     ('101_nostr_relay_free_identity.sql'),
     ('102_notes_external_quote.sql'),
-    ('103_subscription_events_publication.sql');
+    ('103_subscription_events_publication.sql'),
+    ('104_repost_edges_boosted_at.sql');

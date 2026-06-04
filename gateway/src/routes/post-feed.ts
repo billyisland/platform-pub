@@ -112,12 +112,26 @@ const EXT_JOINS = `${POST_JOINS}
 // $2 = boost half-life hours, $7 = pinned reference epoch (cursor-stable decay).
 // Grouped by target_post_id so two sources boosting one THING resolve to one
 // mass (the §5 cross-source dedup, edge side).
+//
+// SCOPED (audit #10a/#10b): the aggregate is bounded two ways instead of
+// scanning the whole repost graph on every page —
+//   • semijoin to `candidates`: only THINGs that can appear in this feed page
+//     contribute, so the GROUP BY touches ~candidate-set rows, not the table.
+//   • recency window: boosts older than BOOST_HALFLIFE_WINDOW_MULT × half-life
+//     contribute <3% of the saturation ceiling, so they're dropped. Backed by
+//     idx_repost_edges_target_boosted (migration 104).
+// Pinned to to_timestamp($7) (not now()) so the window is cursor-stable across
+// pages, same reference clock as the decay term.
+const BOOST_HALFLIFE_WINDOW_MULT = 5;
+
 const BOOST_CTE = `
   boost AS (
     SELECT target_post_id,
       SUM(trust_weight * exp(-ln(2) * GREATEST(EXTRACT(EPOCH FROM (to_timestamp($7) - boosted_at)), 0) / 3600.0 / $2)) AS mass,
       COUNT(*) AS boost_count
     FROM repost_edges
+    WHERE target_post_id IN (SELECT cand_post_id FROM candidates)
+      AND boosted_at > to_timestamp($7 - $2 * ${BOOST_HALFLIFE_WINDOW_MULT} * 3600)
     GROUP BY target_post_id
   )`;
 
@@ -134,24 +148,30 @@ async function fetchAttribution(
   postIds: string[],
 ): Promise<Record<string, any[]>> {
   if (postIds.length === 0) return {};
+  // Per-Post top-N pushed into SQL via LATERAL: for each requested post_id, take
+  // only the most-recent ATTRIBUTION_PER_POST edges. A viral post with thousands
+  // of edges no longer ships every row to be discarded in JS. The composite
+  // idx_repost_edges_target_boosted (target_post_id, boosted_at) makes the
+  // ordered limit an index scan.
   const { rows } = await pool.query<any>(
     `
     SELECT re.target_post_id, re.actor_handle, re.actor_external_author_id,
            re.trust_weight, re.origin_uri,
            EXTRACT(EPOCH FROM re.boosted_at)::bigint AS boosted_at_epoch,
-           xa.display_name AS actor_display_name, xa.handle AS actor_handle_name,
-           ROW_NUMBER() OVER (
-             PARTITION BY re.target_post_id ORDER BY re.boosted_at DESC
-           ) AS rn
-    FROM repost_edges re
+           xa.display_name AS actor_display_name, xa.handle AS actor_handle_name
+    FROM unnest($1::text[]) AS t(target_post_id)
+    CROSS JOIN LATERAL (
+      SELECT * FROM repost_edges re_i
+      WHERE re_i.target_post_id = t.target_post_id
+      ORDER BY re_i.boosted_at DESC
+      LIMIT $2
+    ) re
     LEFT JOIN external_authors xa ON xa.id = re.actor_external_author_id
-    WHERE re.target_post_id = ANY($1)
     `,
-    [postIds],
+    [postIds, ATTRIBUTION_PER_POST],
   );
   const out: Record<string, any[]> = {};
   for (const r of rows) {
-    if (Number(r.rn) > ATTRIBUTION_PER_POST) continue;
     (out[r.target_post_id] ??= []).push({
       targetPostId: r.target_post_id,
       actorId: r.actor_external_author_id ?? null,
@@ -245,8 +265,7 @@ async function followingPostFeed(
   if (cursor) params.push(cursor.score, cursor.ts, cursor.id);
 
   const sql = `
-    WITH ${BOOST_CTE},
-    capped_external AS (
+    WITH capped_external AS (
       SELECT fi_inner.id AS feed_item_id,
              ROW_NUMBER() OVER (
                PARTITION BY fi_inner.source_id
@@ -262,14 +281,18 @@ async function followingPostFeed(
         AND fi_inner.deleted_at IS NULL
         AND fi_inner.published_at > now() - INTERVAL '30 days'
     ),
-    scored AS (
-      SELECT ${FEED_SELECT}${EXT_SELECT}
+    -- Candidate THINGs passing membership (cheap projection). Materialised once
+    -- (referenced by both boost and scored), so the heavy membership subqueries
+    -- run a single time and scope the boost aggregate (audit #10b).
+    candidates AS (
+      SELECT fi.id AS cand_fi_id, fi.post_id AS cand_post_id
       FROM feed_items fi
-      ${FEED_JOINS}
-      ${EXT_JOINS}
+      LEFT JOIN notes n ON n.id = fi.note_id
+      LEFT JOIN external_items ei ON ei.id = fi.external_item_id
       WHERE fi.deleted_at IS NULL
         AND (
           (fi.item_type IN ('article', 'note')
+           AND fi.published_at > now() - INTERVAL '30 days'
            AND (
              fi.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $5)
              OR fi.author_id = $5
@@ -290,6 +313,14 @@ async function followingPostFeed(
         )
         AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
         AND (fi.item_type != 'external' OR ei.is_context_only IS NOT TRUE)
+    ),
+    ${BOOST_CTE},
+    scored AS (
+      SELECT ${FEED_SELECT}${EXT_SELECT}
+      FROM candidates c
+      JOIN feed_items fi ON fi.id = c.cand_fi_id
+      ${FEED_JOINS}
+      ${EXT_JOINS}
     ),
     deduped AS (
       SELECT DISTINCT ON (post_id) *
@@ -329,12 +360,10 @@ async function explorePostFeed(
   if (cursor) params.push(cursor.score, cursor.ts, cursor.id);
 
   const sql = `
-    WITH ${BOOST_CTE},
-    scored AS (
-      SELECT ${FEED_SELECT}${EXT_SELECT}
+    WITH candidates AS (
+      SELECT fi.id AS cand_fi_id, fi.post_id AS cand_post_id
       FROM feed_items fi
-      ${FEED_JOINS}
-      ${EXT_JOINS}
+      LEFT JOIN notes n ON n.id = fi.note_id
       WHERE fi.deleted_at IS NULL
         AND fi.published_at > now() - INTERVAL '48 hours'
         AND fi.item_type IN ('article', 'note')
@@ -346,6 +375,14 @@ async function explorePostFeed(
           SELECT 1 FROM mutes WHERE muter_id = $5 AND muted_id = fi.author_id
         )
         AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
+    ),
+    ${BOOST_CTE},
+    scored AS (
+      SELECT ${FEED_SELECT}${EXT_SELECT}
+      FROM candidates c
+      JOIN feed_items fi ON fi.id = c.cand_fi_id
+      ${FEED_JOINS}
+      ${EXT_JOINS}
     ),
     deduped AS (
       SELECT DISTINCT ON (post_id) *

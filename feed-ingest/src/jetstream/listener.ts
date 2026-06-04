@@ -12,6 +12,7 @@ import {
 } from "../adapters/atproto.js";
 import { insertAtprotoItem } from "../lib/atproto-ingest.js";
 import { recordRepostEdge } from "../lib/repost-edge.js";
+import { getPlatformConfig } from "../lib/platform-config.js";
 
 // =============================================================================
 // Jetstream listener
@@ -206,10 +207,12 @@ export class JetstreamListener {
   }
 
   private async loadMaxBackoff(): Promise<void> {
-    const { rows } = await pool.query<{ value: string }>(
-      `SELECT value FROM platform_config WHERE key = 'feed_ingest_atproto_reconnect_max_seconds'`,
+    // Process-cached, 30s TTL (A5)
+    const config = await getPlatformConfig();
+    const parsed = parseInt(
+      config.get("feed_ingest_atproto_reconnect_max_seconds") ?? "30",
+      10,
     );
-    const parsed = parseInt(rows[0]?.value ?? "30", 10);
     if (!isNaN(parsed) && parsed > 0) this.maxBackoffMs = parsed * 1000;
   }
 

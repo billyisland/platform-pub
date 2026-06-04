@@ -198,9 +198,12 @@ export const FEED_SELECT = `
   xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
   -- Trust Layer 1 pip (NULL for external items — they default to 'unknown')
   tl.pip_status,
-  -- Parent author for reply provenance (external items)
+  -- Parent author for reply provenance (external items).
+  -- Constrain on protocol too so the lookup hits the UNIQUE(protocol, source_item_uri)
+  -- composite prefix (protocol-leading) instead of seq-scanning per candidate row.
   (SELECT ei_p.author_handle FROM external_items ei_p
-   WHERE ei_p.source_item_uri = ei.source_reply_uri LIMIT 1) AS ei_reply_to_handle,
+   WHERE ei_p.protocol = ei.protocol
+     AND ei_p.source_item_uri = ei.source_reply_uri LIMIT 1) AS ei_reply_to_handle,
   -- Parent author for reply provenance (native notes)
   (SELECT acc_p.display_name FROM notes n_p
    JOIN accounts acc_p ON acc_p.id = n_p.author_id

@@ -13,6 +13,7 @@ import {
   recordRepostEdge,
   type DetectedRepost,
 } from "../lib/repost-edge.js";
+import { getPlatformConfig } from "../lib/platform-config.js";
 
 // Reject events claiming timestamps more than this far in the future — prevents
 // a hostile relay from poisoning the cursor into year 2100.
@@ -99,13 +100,8 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     return;
   }
 
-  // Load config
-  const { rows: configRows } = await pool.query<{ key: string; value: string }>(
-    `SELECT key, value FROM platform_config
-     WHERE key IN ('feed_ingest_max_items_per_fetch', 'feed_ingest_max_error_count',
-                    'feed_ingest_error_backoff_factor')`,
-  );
-  const config = new Map(configRows.map((r) => [r.key, r.value]));
+  // Load config (process-cached, 30s TTL — A5)
+  const config = await getPlatformConfig();
   const maxItems = parseInt(
     config.get("feed_ingest_max_items_per_fetch") ?? "50",
     10,

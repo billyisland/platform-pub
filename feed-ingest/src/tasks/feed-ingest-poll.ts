@@ -1,6 +1,7 @@
 import type { Task } from "graphile-worker";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import { getPlatformConfig } from "../lib/platform-config.js";
 
 // =============================================================================
 // feed_ingest_poll — scheduled every 60 seconds
@@ -10,12 +11,8 @@ import logger from "@platform-pub/shared/lib/logger.js";
 // =============================================================================
 
 export const feedIngestPoll: Task = async (_payload, helpers) => {
-  // Load config values
-  const { rows: configRows } = await pool.query<{ key: string; value: string }>(
-    `SELECT key, value FROM platform_config
-     WHERE key IN ('feed_ingest_max_per_host', 'feed_ingest_max_concurrent', 'jetstream_healthy')`,
-  );
-  const config = new Map(configRows.map((r) => [r.key, r.value]));
+  // Load config values (process-cached, 30s TTL — A5)
+  const config = await getPlatformConfig();
   const maxPerHost =
     parseInt(config.get("feed_ingest_max_per_host") ?? "", 10) || 2;
   const maxConcurrent =

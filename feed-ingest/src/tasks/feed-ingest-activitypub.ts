@@ -8,6 +8,7 @@ import {
   recordInstanceFailure,
 } from "../lib/activitypub-ingest.js";
 import { recordRepostEdge } from "../lib/repost-edge.js";
+import { getPlatformConfig } from "../lib/platform-config.js";
 
 // =============================================================================
 // feed_ingest_activitypub — per-source Mastodon outbox poll.
@@ -44,19 +45,8 @@ export const feedIngestActivityPub: Task = async (payload, helpers) => {
     return;
   }
 
-  const { rows: configRows } = await pool.query<{ key: string; value: string }>(
-    `SELECT key, value FROM platform_config
-     WHERE key IN (
-       'feed_ingest_max_items_per_fetch',
-       'feed_ingest_max_error_count',
-       'feed_ingest_error_backoff_factor',
-       'feed_ingest_ap_page_limit',
-       'feed_ingest_ap_items_per_page',
-       'feed_ingest_ap_backfill_hours',
-       'feed_ingest_ap_default_interval'
-     )`,
-  );
-  const cfg = new Map(configRows.map((r) => [r.key, r.value]));
+  // Config (process-cached, 30s TTL — A5)
+  const cfg = await getPlatformConfig();
   const maxItems = parseInt(
     cfg.get("feed_ingest_max_items_per_fetch") ?? "50",
     10,
