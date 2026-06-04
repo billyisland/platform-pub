@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { externalItems, type ParentItem } from "../../lib/api/feeds";
 import { formatDateRelative, truncateText } from "../../lib/format";
 import type { VesselPalette } from "./tokens";
@@ -8,6 +8,9 @@ import type { VesselPalette } from "./tokens";
 interface Props {
   itemId: string;
   palette: VesselPalette;
+  // When set, the tile is clickable and re-roots the thread onto the quoted
+  // post (the host wires this to thread.reroot). Absent ⇒ static tile.
+  onOpen?: () => void;
 }
 
 // Shape of the quoted post's own media (mirrors the feed media array). ParentItem
@@ -38,7 +41,7 @@ function hostOf(url: string): string {
 // does there. The author is plain text, never a link out to the origin platform
 // (the quoted author may not be a subscribed source, so we don't fabricate an
 // internal /source link either; CARD-BEHAVIOUR-ADR byline-routing rule).
-export function QuotedPostTile({ itemId, palette }: Props) {
+export function QuotedPostTile({ itemId, palette, onOpen }: Props) {
   const [quote, setQuote] = useState<ParentItem | null>(
     cache.get(itemId) ?? null,
   );
@@ -88,8 +91,26 @@ export function QuotedPostTile({ itemId, palette }: Props) {
 
   return (
     <div
-      className="mt-2.5 mb-1.5 p-2.5"
+      className={`mt-2.5 mb-1.5 p-2.5${onOpen ? " cursor-pointer hover:opacity-90" : ""}`}
       style={{ background: palette.interior }}
+      {...(onOpen
+        ? {
+            role: "button" as const,
+            tabIndex: 0,
+            "aria-label": `Open quoted post by ${name}`,
+            onClick: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              onOpen();
+            },
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpen();
+              }
+            },
+          }
+        : {})}
     >
       <div
         className="font-mono text-[10px] uppercase tracking-[0.06em] mb-1.5"

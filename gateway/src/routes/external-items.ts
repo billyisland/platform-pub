@@ -406,6 +406,12 @@ export async function externalItemsRoutes(app: FastifyInstance) {
         }
       }
 
+      // Make the quoted post resolvable as a re-root target (best-effort: a
+      // failure here only means re-root falls back to a no-op, never a 500).
+      if (quote) {
+        await ensureQuoteFeedItem(quote.id).catch(() => {});
+      }
+
       const data: QuoteResponse = { quote, partial };
       setCapped(quoteCache, id, {
         data,
@@ -1459,6 +1465,68 @@ function extractBlueskyViewMedia(embed: unknown): QuoteMedia[] {
   return out;
 }
 
+// Pull the quoted post's at:// URI out of a Bluesky hydrated (#view) embed.
+// record#view nests the quoted post at e.record.uri; recordWithMedia#view wraps
+// a record#view at e.record.record.uri. (recordWithMedia is checked first — its
+// $type also starts with "app.bsky.embed.record".) Mirrors the adapter's
+// ingest-time extraction so a quote learned via thread hydration keys the same
+// source_quote_uri the quote tile resolves from. Detached/blocked/not-found
+// quoted records still carry a uri; the quote endpoint resolves it best-effort.
+function extractBlueskyViewQuoteUri(embed: unknown): string | null {
+  const e = embed as any;
+  const t: string | undefined = e?.$type;
+  if (!t) return null;
+  if (t.startsWith("app.bsky.embed.recordWithMedia")) {
+    const uri = e.record?.record?.uri;
+    return typeof uri === "string" ? uri : null;
+  }
+  if (t.startsWith("app.bsky.embed.record")) {
+    const uri = e.record?.uri;
+    return typeof uri === "string" ? uri : null;
+  }
+  return null;
+}
+
+// Re-root target enablement: give a quoted post a context-only feed_items row so
+// GET /thread/:postId can resolve it when the reader clicks the quote tile to
+// re-root onto it. The thread projector resolves an external focal via
+// `feed_items WHERE post_id = $1`; a quote inserted into external_items alone
+// (the on-demand fetch + the prefetch worker both write external_items only)
+// has no post_id until the daily feed_items_reconcile backfills it, so re-root
+// would 404 until then. This mirrors reconcile case 3 for a single row, runs at
+// the moment the tile is displayed (the only time re-root is reachable), and is
+// idempotent. The feed query filters is_context_only, so it never surfaces in
+// the timeline. The identity trigger mints post_id from (protocol,
+// source_item_uri) — identical to the host's source_quote_uri derivation — so
+// the minted post_id equals the host Post's `quotes`, which is the re-root id.
+async function ensureQuoteFeedItem(externalItemId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO feed_items (
+       item_type, external_item_id,
+       author_name, author_avatar,
+       title, content_preview,
+       tier, published_at,
+       source_protocol, source_item_uri, source_id, media,
+       is_reply
+     )
+     SELECT
+       'external', ei.id,
+       COALESCE(ei.author_name, xs.display_name, 'Unknown'),
+       COALESCE(ei.author_avatar_url, xs.avatar_url),
+       ei.title,
+       LEFT(COALESCE(ei.content_text, ei.summary), 200),
+       ei.tier, ei.published_at,
+       ei.protocol::text, ei.source_item_uri, ei.source_id, ei.media,
+       ei.source_reply_uri IS NOT NULL
+     FROM external_items ei
+     JOIN external_sources xs ON xs.id = ei.source_id
+     WHERE ei.id = $1 AND ei.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.external_item_id = ei.id)
+     ON CONFLICT DO NOTHING`,
+    [externalItemId],
+  );
+}
+
 async function fetchQuoteFromSource(
   item: ExternalItemRow,
 ): Promise<ParentItem | null> {
@@ -2122,6 +2190,7 @@ interface MastodonStatus {
 interface HydratedNode {
   sourceItemUri: string;
   sourceReplyUri: string | null;
+  sourceQuoteUri: string | null;
   authorName: string;
   authorHandle: string | null;
   authorAvatarUrl: string | null;
@@ -2160,8 +2229,8 @@ async function persistHydratedThreadNodes(
            content_text, content_html, media,
            source_reply_uri, interaction_data,
            like_count, reply_count, repost_count,
-           published_at, is_context_only
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, TRUE)
+           published_at, source_quote_uri, is_context_only
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, TRUE)
          ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
            like_count = EXCLUDED.like_count,
            reply_count = EXCLUDED.reply_count,
@@ -2174,6 +2243,11 @@ async function persistHydratedThreadNodes(
            -- so a context-only hydrate only *fills* a gap, never clobbers an
            -- authoritative ingested linkage.
            source_reply_uri = COALESCE(external_items.source_reply_uri, EXCLUDED.source_reply_uri),
+           -- Same gap-fill for the quote linkage: a row first seen as a standalone
+           -- feed item (or via reply-only hydration) has a NULL quote uri, so a
+           -- later thread hydration is where the quoted post is learned. COALESCE
+           -- only fills, never clobbers an authoritative ingested value.
+           source_quote_uri = COALESCE(external_items.source_quote_uri, EXCLUDED.source_quote_uri),
            -- Backfill body/media only when the existing copy is empty, so the
            -- thin row a standalone ingest left behind gains the richer hydrated
            -- content (parents were rendering blank), without overwriting a row
@@ -2205,6 +2279,7 @@ async function persistHydratedThreadNodes(
           n.replyCount,
           n.repostCount,
           n.publishedAt,
+          n.sourceQuoteUri,
         ],
       );
       const extId = ins.rows[0]?.id;
@@ -2262,6 +2337,7 @@ function collectBlueskyThreadNodes(
     out.push({
       sourceItemUri: post.uri,
       sourceReplyUri: post.record.reply?.parent.uri ?? null,
+      sourceQuoteUri: extractBlueskyViewQuoteUri(post.embed),
       authorName: post.author.displayName || post.author.handle,
       authorHandle: post.author.handle,
       authorAvatarUrl: post.author.avatar ?? null,
@@ -2364,6 +2440,9 @@ async function hydrateMastodonThread(item: ExternalItemRow): Promise<void> {
     sourceReplyUri: s.in_reply_to_id
       ? (idToUri.get(s.in_reply_to_id) ?? null)
       : null,
+    // Mastodon's status context carries no quote linkage; quotes for fedi posts
+    // are resolved on demand by the quote endpoint, not via hydration.
+    sourceQuoteUri: null,
     authorName: s.account.display_name || s.account.acct,
     authorHandle: s.account.acct,
     authorAvatarUrl: s.account.avatar ?? null,

@@ -25,10 +25,15 @@ export function QuotedEmbed({
   post,
   mode,
   palette,
+  onQuoteOpen,
 }: {
   post: Post;
   mode: QuoteMode;
   palette: VesselPalette;
+  // Re-root onto the quoted post (the host wires this to thread.reroot). When
+  // absent the quote tile stays static. The id is the quoted post's deterministic
+  // post_id, carried on the host as `post.quotes`.
+  onQuoteOpen?: (quotedPostId: string) => void;
 }) {
   if (mode === "none" || !post.quotes) return null;
 
@@ -45,11 +50,23 @@ export function QuotedEmbed({
     );
   }
 
-  // External: async tile by the host item id (full-child folds to mini this phase).
+  // External: async tile by the external_items id (full-child folds to mini this
+  // phase). Must key on externalItemId — the /external-items/:id/quote endpoint
+  // looks up `external_items WHERE id = $1`. feedItemId is the feed_items uuid
+  // (a different id-space) and 404s, leaving the tile silently empty.
   const native = post.origin.protocol === "nostr" && !!post.author.pubkey;
   if (!native) {
-    if (!post.feedItemId) return null;
-    return <QuotedPostTile itemId={post.feedItemId} palette={palette} />;
+    if (!post.externalItemId) return null;
+    const quotedId = post.quotes;
+    return (
+      <QuotedPostTile
+        itemId={post.externalItemId}
+        palette={palette}
+        onOpen={
+          onQuoteOpen && quotedId ? () => onQuoteOpen(quotedId) : undefined
+        }
+      />
+    );
   }
 
   // Native: render the inline preview as a quoted-level mini.

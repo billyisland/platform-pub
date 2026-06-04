@@ -1,6 +1,8 @@
 import type { Task } from "graphile-worker";
-import { pool } from "@platform-pub/shared/db/client.js";
+import type { PoolClient } from "pg";
+import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
+import { truncatePreview } from "@platform-pub/shared/lib/text.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
@@ -9,10 +11,68 @@ import logger from "@platform-pub/shared/lib/logger.js";
 //
 // Enqueued when a new external_items row is inserted with source_reply_uri
 // and/or source_quote_uri. Fetches the related post from the source platform
-// and stores it as a context-only item (never inserted into feed_items). This
-// means the gateway's /parent and /quote endpoints can serve from DB instead of
-// hitting the source API live on the first render.
+// and stores it as a context-only item. This means the gateway's /parent and
+// /quote endpoints can serve from DB instead of hitting the source API live on
+// the first render.
+//
+// Each insert dual-writes external_items + a context-only feed_items row in one
+// transaction (the same invariant every other ingestion path holds: no
+// external_items row without a feed_items row). The feed query filters
+// is_context_only so these never surface in the timeline, but the feed_items row
+// gives the post a deterministic post_id so /thread/:postId can resolve it —
+// which is what lets the reader re-root onto a quoted post. Without it, prefetch
+// would leave a row feed_items_reconcile flags as drift.
 // =============================================================================
+
+// Dual-write the context-only feed_items twin of a freshly-inserted external
+// item. Mirrors the atproto/activitypub ingest dual-write (insertAtprotoItem):
+// title NULL, tier3, ON CONFLICT DO NOTHING. Caller runs it in the same
+// transaction as the external_items insert, only when that insert created a new
+// row (a dedupe hit already has its twin).
+async function dualWriteContextFeedItem(
+  client: PoolClient,
+  args: {
+    externalItemId: string;
+    protocol: "atproto" | "activitypub";
+    sourceId: string;
+    sourceItemUri: string;
+    authorName: string;
+    authorAvatar: string | null;
+    contentText: string | null;
+    media: unknown;
+    publishedAt: Date;
+    isReply: boolean;
+  },
+): Promise<void> {
+  await client.query(
+    `INSERT INTO feed_items (
+       item_type, external_item_id,
+       author_name, author_avatar,
+       title, content_preview,
+       tier, published_at,
+       source_protocol, source_item_uri, source_id, media,
+       is_reply
+     ) VALUES (
+       'external', $1, $2, $3, NULL, $4, 'tier3', $5, $6, $7, $8, $9, $10
+     )
+     ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING`,
+    [
+      args.externalItemId,
+      args.authorName,
+      args.authorAvatar,
+      // Match reconcile's LEFT(COALESCE(content_text, summary), 200) exactly so
+      // the drift pass never rewrites this row: empty/absent text → NULL, not "".
+      // (Mastodon stores content in content_html, leaving content_text NULL.)
+      truncatePreview(args.contentText) || null,
+      args.publishedAt,
+      args.protocol,
+      args.sourceItemUri,
+      args.sourceId,
+      JSON.stringify(args.media),
+      args.isReply,
+    ],
+  );
+}
 
 const APPVIEW = "https://public.api.bsky.app";
 const GETPOSTS_MAX_URIS = 25;
@@ -276,34 +336,52 @@ async function insertBlueskyParent(
   };
   if (grandparent) interactionData.grandparent = grandparent;
 
+  const authorName = post.author.displayName || post.author.handle;
+  const publishedAt = new Date(post.record.createdAt ?? Date.now());
   try {
-    await pool.query(
-      `INSERT INTO external_items (
-        source_id, protocol, tier, source_item_uri,
-        author_name, author_handle, author_avatar_url, author_uri,
-        content_text, media, source_reply_uri, interaction_data,
-        like_count, reply_count, repost_count,
-        published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
-      ON CONFLICT (protocol, source_item_uri) DO NOTHING`,
-      [
+    await withTransaction(async (client) => {
+      const { rows, rowCount } = await client.query<{ id: string }>(
+        `INSERT INTO external_items (
+          source_id, protocol, tier, source_item_uri,
+          author_name, author_handle, author_avatar_url, author_uri,
+          content_text, media, source_reply_uri, interaction_data,
+          like_count, reply_count, repost_count,
+          published_at, is_context_only
+        ) VALUES ($1, $2, 'tier3', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
+        ON CONFLICT (protocol, source_item_uri) DO NOTHING
+        RETURNING id`,
+        [
+          sourceId,
+          "atproto",
+          parentUri,
+          authorName,
+          post.author.handle,
+          post.author.avatar ?? null,
+          `https://bsky.app/profile/${post.author.did}`,
+          post.record.text ?? null,
+          JSON.stringify([]),
+          parentReplyUri,
+          JSON.stringify(interactionData),
+          post.likeCount ?? 0,
+          post.replyCount ?? 0,
+          post.repostCount ?? 0,
+          publishedAt,
+        ],
+      );
+      if (!rowCount) return; // dedupe hit — twin already exists
+      await dualWriteContextFeedItem(client, {
+        externalItemId: rows[0].id,
+        protocol: "atproto",
         sourceId,
-        "atproto",
-        parentUri,
-        post.author.displayName || post.author.handle,
-        post.author.handle,
-        post.author.avatar ?? null,
-        `https://bsky.app/profile/${post.author.did}`,
-        post.record.text ?? null,
-        JSON.stringify([]),
-        parentReplyUri,
-        JSON.stringify(interactionData),
-        post.likeCount ?? 0,
-        post.replyCount ?? 0,
-        post.repostCount ?? 0,
-        new Date(post.record.createdAt ?? Date.now()),
-      ],
-    );
+        sourceItemUri: parentUri,
+        authorName,
+        authorAvatar: post.author.avatar ?? null,
+        contentText: post.record.text ?? null,
+        media: [],
+        publishedAt,
+        isReply: parentReplyUri != null,
+      });
+    });
     logger.debug({ parentUri }, "Prefetched Bluesky parent");
   } catch (err) {
     logger.debug(
@@ -374,34 +452,55 @@ async function prefetchMastodonParent(
     };
     if (grandparent) interactionData.grandparent = grandparent;
 
-    await pool.query(
-      `INSERT INTO external_items (
-        source_id, protocol, tier, source_item_uri,
-        author_name, author_handle, author_avatar_url, author_uri,
-        content_html, content_text, media, source_reply_uri, interaction_data,
-        like_count, reply_count, repost_count,
-        published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, TRUE)
-      ON CONFLICT (protocol, source_item_uri) DO NOTHING`,
-      [
+    const authorName = status.account.display_name || status.account.acct;
+    const sourceItemUri = status.url || parentUri;
+    const publishedAt = new Date(status.created_at);
+    await withTransaction(async (client) => {
+      const { rows, rowCount } = await client.query<{ id: string }>(
+        `INSERT INTO external_items (
+          source_id, protocol, tier, source_item_uri,
+          author_name, author_handle, author_avatar_url, author_uri,
+          content_html, content_text, media, source_reply_uri, interaction_data,
+          like_count, reply_count, repost_count,
+          published_at, is_context_only
+        ) VALUES ($1, $2, 'tier3', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, TRUE)
+        ON CONFLICT (protocol, source_item_uri) DO NOTHING
+        RETURNING id`,
+        [
+          sourceId,
+          "activitypub",
+          sourceItemUri,
+          authorName,
+          status.account.acct,
+          status.account.avatar ?? null,
+          status.account.url,
+          status.content,
+          null,
+          JSON.stringify(media),
+          null,
+          JSON.stringify(interactionData),
+          status.favourites_count ?? 0,
+          status.replies_count ?? 0,
+          status.reblogs_count ?? 0,
+          publishedAt,
+        ],
+      );
+      if (!rowCount) return; // dedupe hit — twin already exists
+      await dualWriteContextFeedItem(client, {
+        externalItemId: rows[0].id,
+        protocol: "activitypub",
         sourceId,
-        "activitypub",
-        status.url || parentUri,
-        status.account.display_name || status.account.acct,
-        status.account.acct,
-        status.account.avatar ?? null,
-        status.account.url,
-        status.content,
-        null,
-        JSON.stringify(media),
-        null,
-        JSON.stringify(interactionData),
-        status.favourites_count ?? 0,
-        status.replies_count ?? 0,
-        status.reblogs_count ?? 0,
-        new Date(status.created_at),
-      ],
-    );
+        sourceItemUri,
+        authorName,
+        authorAvatar: status.account.avatar ?? null,
+        // Mastodon stores its body in content_html; content_text is NULL, so the
+        // preview resolves to NULL (matching reconcile).
+        contentText: null,
+        media,
+        publishedAt,
+        isReply: false,
+      });
+    });
 
     logger.debug({ parentUri }, "Prefetched Mastodon parent");
   } catch (err) {
@@ -482,35 +581,53 @@ async function insertBlueskyQuote(
   sourceId: string,
   post: BlueskyPost,
 ): Promise<void> {
+  const authorName = post.author.displayName || post.author.handle;
+  const publishedAt = new Date(post.record.createdAt ?? Date.now());
   try {
     const media = extractBlueskyViewMedia(post.embed);
 
-    await pool.query(
-      `INSERT INTO external_items (
-        source_id, protocol, tier, source_item_uri,
-        author_name, author_handle, author_avatar_url, author_uri,
-        content_text, media, interaction_data,
-        like_count, reply_count, repost_count,
-        published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
-      ON CONFLICT (protocol, source_item_uri) DO NOTHING`,
-      [
+    await withTransaction(async (client) => {
+      const { rows, rowCount } = await client.query<{ id: string }>(
+        `INSERT INTO external_items (
+          source_id, protocol, tier, source_item_uri,
+          author_name, author_handle, author_avatar_url, author_uri,
+          content_text, media, interaction_data,
+          like_count, reply_count, repost_count,
+          published_at, is_context_only
+        ) VALUES ($1, $2, 'tier3', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)
+        ON CONFLICT (protocol, source_item_uri) DO NOTHING
+        RETURNING id`,
+        [
+          sourceId,
+          "atproto",
+          quoteUri,
+          authorName,
+          post.author.handle,
+          post.author.avatar ?? null,
+          `https://bsky.app/profile/${post.author.did}`,
+          post.record.text ?? null,
+          JSON.stringify(media),
+          JSON.stringify({ uri: post.uri, cid: post.cid }),
+          post.likeCount ?? 0,
+          post.replyCount ?? 0,
+          post.repostCount ?? 0,
+          publishedAt,
+        ],
+      );
+      if (!rowCount) return; // dedupe hit — twin already exists
+      await dualWriteContextFeedItem(client, {
+        externalItemId: rows[0].id,
+        protocol: "atproto",
         sourceId,
-        "atproto",
-        quoteUri,
-        post.author.displayName || post.author.handle,
-        post.author.handle,
-        post.author.avatar ?? null,
-        `https://bsky.app/profile/${post.author.did}`,
-        post.record.text ?? null,
-        JSON.stringify(media),
-        JSON.stringify({ uri: post.uri, cid: post.cid }),
-        post.likeCount ?? 0,
-        post.replyCount ?? 0,
-        post.repostCount ?? 0,
-        new Date(post.record.createdAt ?? Date.now()),
-      ],
-    );
+        sourceItemUri: quoteUri,
+        authorName,
+        authorAvatar: post.author.avatar ?? null,
+        contentText: post.record.text ?? null,
+        media,
+        publishedAt,
+        isReply: false,
+      });
+    });
 
     logger.debug({ quoteUri }, "Prefetched Bluesky quote");
   } catch (err) {
@@ -573,33 +690,52 @@ async function prefetchMastodonQuote(
     const link = mastodonCardToMedia(status.card);
     if (link) media.push(link);
 
-    await pool.query(
-      `INSERT INTO external_items (
-        source_id, protocol, tier, source_item_uri,
-        author_name, author_handle, author_avatar_url, author_uri,
-        content_html, content_text, media, interaction_data,
-        like_count, reply_count, repost_count,
-        published_at, is_context_only
-      ) VALUES ($1, $2, 'post', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
-      ON CONFLICT (protocol, source_item_uri) DO NOTHING`,
-      [
+    const authorName = status.account.display_name || status.account.acct;
+    const sourceItemUri = status.url || quoteUri;
+    const publishedAt = new Date(status.created_at);
+    await withTransaction(async (client) => {
+      const { rows, rowCount } = await client.query<{ id: string }>(
+        `INSERT INTO external_items (
+          source_id, protocol, tier, source_item_uri,
+          author_name, author_handle, author_avatar_url, author_uri,
+          content_html, content_text, media, interaction_data,
+          like_count, reply_count, repost_count,
+          published_at, is_context_only
+        ) VALUES ($1, $2, 'tier3', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)
+        ON CONFLICT (protocol, source_item_uri) DO NOTHING
+        RETURNING id`,
+        [
+          sourceId,
+          "activitypub",
+          sourceItemUri,
+          authorName,
+          status.account.acct,
+          status.account.avatar ?? null,
+          status.account.url,
+          status.content,
+          null,
+          JSON.stringify(media),
+          JSON.stringify({ id: status.uri, webUrl: status.url }),
+          status.favourites_count ?? 0,
+          status.replies_count ?? 0,
+          status.reblogs_count ?? 0,
+          publishedAt,
+        ],
+      );
+      if (!rowCount) return; // dedupe hit — twin already exists
+      await dualWriteContextFeedItem(client, {
+        externalItemId: rows[0].id,
+        protocol: "activitypub",
         sourceId,
-        "activitypub",
-        status.url || quoteUri,
-        status.account.display_name || status.account.acct,
-        status.account.acct,
-        status.account.avatar ?? null,
-        status.account.url,
-        status.content,
-        null,
-        JSON.stringify(media),
-        JSON.stringify({ id: status.uri, webUrl: status.url }),
-        status.favourites_count ?? 0,
-        status.replies_count ?? 0,
-        status.reblogs_count ?? 0,
-        new Date(status.created_at),
-      ],
-    );
+        sourceItemUri,
+        authorName,
+        authorAvatar: status.account.avatar ?? null,
+        contentText: null, // body is in content_html → preview NULL (matches reconcile)
+        media,
+        publishedAt,
+        isReply: false,
+      });
+    });
 
     logger.debug({ quoteUri }, "Prefetched Mastodon quote");
   } catch (err) {

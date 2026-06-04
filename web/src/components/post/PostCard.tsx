@@ -41,6 +41,7 @@ export function PostCard({
   onExpand,
   onCollapse,
   onReroot,
+  onQuoteOpen,
   onOpenReader,
   isOwnContent,
   interactions,
@@ -57,6 +58,8 @@ export function PostCard({
   onExpand?: (post: Post) => void;
   onCollapse?: (post: Post) => void;
   onReroot?: (post: Post) => void;
+  // Re-root onto this post's quoted post (external quote tile click).
+  onQuoteOpen?: (quotedPostId: string) => void;
   onOpenReader?: (post: Post) => void;
   isOwnContent?: boolean;
   // External interact-back (usePostInteractions), supplied by PostCardInteractive
@@ -114,7 +117,7 @@ export function PostCard({
       <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} />
       <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} pollVote={pollVote} />
       <PostMedia post={post} mode={spec.media} video={spec.video} palette={ctx.palette} density={ctx.density} />
-      <QuotedEmbed post={post} mode={spec.quoteEmbed} palette={ctx.palette} />
+      <QuotedEmbed post={post} mode={spec.quoteEmbed} palette={ctx.palette} onQuoteOpen={onQuoteOpen} />
       <PostCounters post={post} mode={spec.originCounters} palette={ctx.palette} interactions={interactions} />
       <PostActions
         post={post}

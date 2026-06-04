@@ -39,6 +39,7 @@ export function PostCardInteractive(props: {
   onExpand?: (post: Post) => void;
   onCollapse?: (post: Post) => void;
   onReroot?: (post: Post) => void;
+  onQuoteOpen?: (quotedPostId: string) => void;
   onOpenReader?: (post: Post) => void;
   isOwnContent?: boolean;
 }) {

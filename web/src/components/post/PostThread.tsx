@@ -158,6 +158,7 @@ export function PostThread({
           ctx={ctx}
           onPipOpen={onPipOpen}
           onReroot={(x) => thread.reroot(x.id)}
+          onQuoteOpen={(qid) => thread.reroot(qid)}
           onOpenReader={onOpenReader}
           onReply={nativeReply(p)}
           onQuote={quoteFor(p)}
@@ -177,6 +178,7 @@ export function PostThread({
           ctx={ctx}
           onPipOpen={onPipOpen}
           onCollapse={() => onCollapse?.()}
+          onQuoteOpen={(qid) => thread.reroot(qid)}
           onOpenReader={onOpenReader}
           onReply={nativeReply(focal)}
           onQuote={quoteFor(focal)}
@@ -195,6 +197,7 @@ export function PostThread({
           ctx={ctx}
           onPipOpen={onPipOpen}
           onReroot={(x) => thread.reroot(x.id)}
+          onQuoteOpen={(qid) => thread.reroot(qid)}
           onOpenReader={onOpenReader}
           onReply={nativeReply(p)}
           onQuote={quoteFor(p)}
