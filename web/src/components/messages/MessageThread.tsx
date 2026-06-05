@@ -427,7 +427,7 @@ export function MessageThread({
 
       {/* Reply preview bar */}
       {replyTo && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-grey-100/80 border-t border-grey-200">
+        <div className="flex items-center gap-2 px-4 py-2 bg-grey-100/80">
           <div className="flex-1 min-w-0 border-l-2 border-crimson pl-2">
             <p className="text-[11px] font-sans font-semibold text-grey-500">
               Replying to {replyTo.senderDisplayName ?? replyTo.senderUsername}
@@ -448,7 +448,7 @@ export function MessageThread({
 
       {/* Media preview strip */}
       {(media.attachments.length > 0 || media.uploading) && (
-        <div className="px-4 border-t border-grey-200">
+        <div className="px-4 pt-2">
           <MediaPreview
             attachments={media.attachments}
             onRemove={media.removeAttachment}
