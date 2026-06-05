@@ -14,7 +14,15 @@ import { MessageThread } from './MessageThread'
 // mounts when authenticated).
 // =============================================================================
 
-export function MessagesPanel({ className = '' }: { className?: string }) {
+export function MessagesPanel({
+  className = '',
+  inOverlay = false,
+}: {
+  className?: string
+  // True when hosted in a Glasshouse overlay — reserves room in the thread
+  // header for the overlay's floating close ✕.
+  inOverlay?: boolean
+}) {
   const { user } = useAuth()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConvId, setActiveConvId] = useState<string | null>(null)
@@ -125,6 +133,7 @@ export function MessagesPanel({ className = '' }: { className?: string }) {
             memberId={activeMemberId}
             onBack={() => setActiveConvId(null)}
             onMessagesRead={handleMessagesRead}
+            headerRightInset={inOverlay}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

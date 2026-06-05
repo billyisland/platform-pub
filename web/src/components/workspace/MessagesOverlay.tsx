@@ -19,7 +19,7 @@ export function MessagesOverlay() {
   // minus its 64px (my-8) vertical margin.
   return (
     <Glasshouse onClose={close} maxWidth={960} ariaLabel="Direct messages">
-      <MessagesPanel className="h-[calc(100vh-64px)] min-h-[400px]" />
+      <MessagesPanel className="h-[calc(100vh-64px)] min-h-[400px]" inOverlay />
     </Glasshouse>
   );
 }

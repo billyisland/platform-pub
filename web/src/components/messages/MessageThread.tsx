@@ -22,12 +22,16 @@ export function MessageThread({
   memberId,
   onBack,
   onMessagesRead,
+  headerRightInset = false,
 }: {
   conversationId: string
   memberName: string
   memberId?: string
   onBack?: () => void
   onMessagesRead?: () => void
+  // When rendered inside a Glasshouse overlay, the floating close ✕ sits at the
+  // pane's top-right — reserve room so the Commission button clears it.
+  headerRightInset?: boolean
 }) {
   const { user } = useAuth()
   const refreshUnread = useUnreadCounts((s) => s.fetch)
@@ -304,7 +308,7 @@ export function MessageThread({
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0">
+      <div className={`flex items-center justify-between py-3 flex-shrink-0 pl-4 ${headerRightInset ? 'pr-12' : 'pr-4'}`}>
         <div className="flex items-center gap-3">
           {onBack && (
             <button onClick={onBack} className="font-mono text-[12px] text-grey-400 hover:text-black uppercase tracking-[0.04em]">
