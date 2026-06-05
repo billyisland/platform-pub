@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   workspaceFeeds as workspaceFeedsApi,
   type WorkspaceFeed,
@@ -8,6 +9,8 @@ import {
 } from "../../lib/api";
 import { useResolverInput } from "../../hooks/useResolverInput";
 import type { MatchOption } from "../../lib/workspace/resolve";
+import { Glasshouse } from "./Glasshouse";
+import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import {
   type Brightness,
   type Density,
@@ -38,19 +41,22 @@ function weightToStep(weight: number): number {
   return best;
 }
 
+// The composer is an always-light Glasshouse surface (white pane, dark text), so
+// these are fixed tokens, not a brightness palette. Separation is fill + space —
+// no borders anywhere (the site never renders thin rules). Recessed fields and
+// chips read as filled wells; emphasis is a dark fill.
 const TOKENS = {
-  scrim: "rgba(26, 26, 24, 0.4)",
-  panelBg: "#FFFFFF",
   panelBorder: "#1A1A18",
   rowBg: "#F0EFEB",
+  fieldBg: "#E6E5E0",
   hintFg: "#8A8880",
   errorFg: "#B5242A",
-  inputBorder: "#E6E5E0",
-  closeBg: "#1A1A18",
-  closeFg: "#F0EFEB",
   matchHoverBg: "#F0EFEB",
   removeFg: "#8A8880",
   removeHoverFg: "#B5242A",
+  // The hover author-card portals above the Glasshouse pane (z-56); 70 also
+  // clears the ForallMenu (z-60) so the transient card is never clipped.
+  hoverZ: 70,
 };
 
 interface FeedComposerProps {
@@ -109,7 +115,6 @@ export function FeedComposer({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const scrimRef = useRef<HTMLDivElement>(null);
 
   const refreshSources = useCallback(async (feedId: string) => {
     setLoading(true);
@@ -123,6 +128,8 @@ export function FeedComposer({
     }
   }, []);
 
+  // Escape + scroll-lock are owned by Glasshouse; this effect only resets the
+  // composer's own state and loads sources when it opens.
   useEffect(() => {
     if (!open || !feed) return;
     ri.reset();
@@ -135,15 +142,8 @@ export function FeedComposer({
     setDeleting(false);
     void refreshSources(feed.id);
     const t = setTimeout(() => inputRef.current?.focus(), 0);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, feed, onClose, refreshSources]);
+    return () => clearTimeout(t);
+  }, [open, feed, refreshSources]);
 
   async function handleAdd(opt: MatchOption) {
     if (!feed || busyKey) return;
@@ -231,183 +231,140 @@ export function FeedComposer({
     }
   }
 
-  function onScrimClick(e: React.MouseEvent) {
-    if (e.target === scrimRef.current) onClose();
-  }
-
   if (!open || !feed) return null;
 
+  const showAppearance =
+    onBrightnessChange ||
+    onDensityChange ||
+    onOrientationChange ||
+    onTextSizeChange;
+
   return (
-    <div
-      ref={scrimRef}
-      onMouseDown={onScrimClick}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Feed composer: ${feed.name}`}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: TOKENS.scrim,
-        zIndex: 60,
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        paddingTop: 96,
-      }}
+    <Glasshouse
+      onClose={onClose}
+      maxWidth={520}
+      ariaLabel={`Feed composer: ${feed.name}`}
     >
-      <div
-        style={{
-          width: 520,
-          maxWidth: "calc(100vw - 48px)",
-          background: TOKENS.panelBg,
-          border: `1px solid ${TOKENS.panelBorder}`,
-          padding: 24,
-          boxShadow: "0 24px 48px rgba(0, 0, 0, 0.18)",
-          maxHeight: "calc(100vh - 144px)",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            marginBottom: 16,
-            gap: 12,
-          }}
-        >
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="label-ui" style={{ color: TOKENS.hintFg }}>
-              Feed composer
-            </div>
-            {editingName ? (
-              <div
+      {/* Right padding clears the Glasshouse ✕ at top-right. */}
+      <div style={{ padding: 24 }}>
+        <div style={{ marginBottom: 16, paddingRight: 28 }}>
+          <div className="label-ui" style={{ color: TOKENS.hintFg }}>
+            Feed composer
+          </div>
+          {editingName ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 2,
+              }}
+            >
+              <input
+                ref={nameInputRef}
+                type="text"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void commitRename();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cancelRename();
+                  }
+                }}
+                placeholder="Optional descriptive name"
+                className="font-sans text-[18px]"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginTop: 2,
+                  flex: 1,
+                  background: TOKENS.fieldBg,
+                  border: "none",
+                  padding: "6px 8px",
+                  outline: "none",
+                  color: TOKENS.panelBorder,
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void commitRename()}
+                disabled={savingName}
+                className="label-ui"
+                style={{
+                  padding: "6px 10px",
+                  background: "transparent",
+                  color: TOKENS.panelBorder,
+                  border: "none",
+                  cursor: savingName ? "default" : "pointer",
                 }}
               >
-                <input
-                  ref={nameInputRef}
-                  type="text"
-                  value={nameDraft}
-                  onChange={(e) => setNameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void commitRename();
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      cancelRename();
-                    }
-                  }}
-                  placeholder="Optional descriptive name"
+                {savingName ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={cancelRename}
+                disabled={savingName}
+                className="label-ui"
+                style={{
+                  padding: "6px 10px",
+                  background: "transparent",
+                  color: TOKENS.hintFg,
+                  border: "none",
+                  cursor: savingName ? "default" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 2,
+              }}
+            >
+              {feed.name ? (
+                <div
                   className="font-sans text-[18px]"
                   style={{
-                    flex: 1,
-                    border: `1px solid ${TOKENS.inputBorder}`,
-                    padding: "6px 8px",
-                    outline: "none",
                     color: TOKENS.panelBorder,
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => void commitRename()}
-                  disabled={savingName}
-                  className="label-ui"
-                  style={{
-                    padding: "6px 10px",
-                    background: "transparent",
-                    color: TOKENS.panelBorder,
-                    border: "none",
-                    cursor: savingName ? "default" : "pointer",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  {savingName ? "Saving…" : "Save"}
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelRename}
-                  disabled={savingName}
-                  className="label-ui"
+                  {feed.name}
+                </div>
+              ) : (
+                <div
+                  className="font-sans text-[18px]"
                   style={{
-                    padding: "6px 10px",
-                    background: "transparent",
                     color: TOKENS.hintFg,
-                    border: "none",
-                    cursor: savingName ? "default" : "pointer",
+                    fontStyle: "italic",
                   }}
                 >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <div
+                  No name
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={startRename}
+                className="label-ui"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginTop: 2,
+                  padding: "4px 8px",
+                  background: "transparent",
+                  color: TOKENS.hintFg,
+                  border: "none",
+                  cursor: "pointer",
                 }}
               >
-                {feed.name ? (
-                  <div
-                    className="font-sans text-[18px]"
-                    style={{
-                      color: TOKENS.panelBorder,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {feed.name}
-                  </div>
-                ) : (
-                  <div
-                    className="font-sans text-[18px]"
-                    style={{
-                      color: TOKENS.hintFg,
-                      fontStyle: "italic",
-                    }}
-                  >
-                    No name
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={startRename}
-                  className="label-ui"
-                  style={{
-                    padding: "4px 8px",
-                    background: "transparent",
-                    color: TOKENS.hintFg,
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  {feed.name ? "Rename" : "Add name"}
-                </button>
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="label-ui"
-            style={{
-              padding: "6px 10px",
-              background: "transparent",
-              color: TOKENS.hintFg,
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            Close
-          </button>
+                {feed.name ? "Rename" : "Add name"}
+              </button>
+            </div>
+          )}
         </div>
 
         <div
@@ -422,6 +379,7 @@ export function FeedComposer({
             flexDirection: "column",
             gap: 6,
             marginBottom: 16,
+            maxHeight: 320,
             overflowY: "auto",
           }}
         >
@@ -453,8 +411,8 @@ export function FeedComposer({
                 setSources((prev) =>
                   prev.map((p) => (p.id === updated.id ? updated : p)),
                 );
-                onSourcesChanged?.();
               }}
+              onCommitted={() => onSourcesChanged?.()}
             />
           ))}
         </div>
@@ -473,12 +431,14 @@ export function FeedComposer({
           placeholder="Username, URL, npub, DID, #tag…"
           className="font-sans text-ui-sm w-full"
           style={{
-            border: `1px solid ${TOKENS.inputBorder}`,
+            background: TOKENS.fieldBg,
+            border: "none",
             padding: "10px 12px",
             outline: "none",
             marginBottom: 8,
           }}
         />
+        {/* Reserve the match well so resolving/results don't grow the pane. */}
         <div style={{ minHeight: 24 }}>
           {ri.resolving && (
             <div
@@ -497,7 +457,7 @@ export function FeedComposer({
             </div>
           )}
           {ri.matches.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {ri.matches.map((opt) => (
                 <button
                   key={opt.key}
@@ -512,7 +472,6 @@ export function FeedComposer({
                     padding: "8px 10px",
                     background: "transparent",
                     border: "none",
-                    borderTop: `1px solid ${TOKENS.inputBorder}`,
                     color: TOKENS.panelBorder,
                     cursor: busyKey === opt.key ? "default" : "pointer",
                     textAlign: "left",
@@ -556,10 +515,7 @@ export function FeedComposer({
           </div>
         )}
 
-        {(onBrightnessChange ||
-          onDensityChange ||
-          onOrientationChange ||
-          onTextSizeChange) && (
+        {showAppearance && (
           <>
             <div
               className="label-ui"
@@ -611,9 +567,9 @@ export function FeedComposer({
                 <AppearanceControl
                   label="Orientation"
                   glyph={
-                    { vertical: "|", horizontal: "─" }[
-                      orientation ?? DEFAULT_ORIENTATION
-                    ]
+                    <OrientationGlyph
+                      orientation={orientation ?? DEFAULT_ORIENTATION}
+                    />
                   }
                   onClick={() =>
                     onOrientationChange(
@@ -650,8 +606,6 @@ export function FeedComposer({
         <div
           style={{
             marginTop: 20,
-            paddingTop: 16,
-            borderTop: `1px solid ${TOKENS.inputBorder}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "flex-end",
@@ -729,7 +683,33 @@ export function FeedComposer({
           )}
         </div>
       </div>
-    </div>
+    </Glasshouse>
+  );
+}
+
+// The orientation glyph depicts the feed container itself — a tall portrait
+// vessel for vertical, a wide landscape vessel for horizontal. A 2px stroke
+// keeps it clear of the sitewide thin-rule ban.
+function OrientationGlyph({ orientation }: { orientation: Orientation }) {
+  const portrait = orientation === "vertical";
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect
+        x={portrait ? 4.5 : 1.5}
+        y={portrait ? 1.5 : 4.5}
+        width={portrait ? 7 : 13}
+        height={portrait ? 13 : 7}
+        rx={1.5}
+        stroke="currentColor"
+        strokeWidth={2}
+      />
+    </svg>
   );
 }
 
@@ -775,7 +755,7 @@ function AppearanceControl({
           overflow: "hidden",
         }}
         onMouseEnter={(e) =>
-          (e.currentTarget.style.background = TOKENS.inputBorder)
+          (e.currentTarget.style.background = TOKENS.fieldBg)
         }
         onMouseLeave={(e) =>
           (e.currentTarget.style.background = TOKENS.matchHoverBg)
@@ -800,47 +780,86 @@ function SourceRow({
   busy,
   onRemove,
   onChanged,
+  onCommitted,
 }: {
   source: WorkspaceFeedSource;
   feedId: string;
   busy: boolean;
   onRemove: () => void;
+  // Optimistic local update of the composer's source list (no feed reload).
   onChanged: (updated: WorkspaceFeedSource) => void;
+  // Fired once after a change is committed server-side, so the parent can
+  // reload the feed behind the glass exactly once (not on the optimistic tick).
+  onCommitted: () => void;
 }) {
   const [committing, setCommitting] = useState(false);
   const isMuted = source.mutedAt !== null;
   const currentStep = isMuted ? 0 : weightToStep(source.weight);
   const sampling = source.samplingMode;
+  const excludeReplies = source.excludeReplies;
 
-  async function commitStep(nextStep: number) {
+  // Account sources route + hover exactly like a feed-card byline; the hover
+  // author-card portals above the Glasshouse via the zIndex override.
+  const hover = useAuthorHover(
+    "author",
+    source.sourceType === "account" ? (source.accountId ?? null) : null,
+  );
+
+  // Every commit updates the row optimistically (instant, no shudder) and
+  // reconciles with the authoritative row, reverting on failure. The feed
+  // behind the glass reloads once, after the commit settles.
+  async function commit(
+    optimistic: WorkspaceFeedSource,
+    body: {
+      step?: number;
+      sampling?: "random" | "top";
+      muted?: boolean;
+      excludeReplies?: boolean;
+    },
+  ) {
     if (committing) return;
+    const prev = source;
     setCommitting(true);
+    onChanged(optimistic);
     try {
       const { source: updated } = await workspaceFeedsApi.patchSource(
         feedId,
         source.id,
-        { step: nextStep, muted: nextStep === 0 },
+        body,
       );
       onChanged(updated);
+      onCommitted();
+    } catch {
+      onChanged(prev);
     } finally {
       setCommitting(false);
     }
   }
 
-  async function commitSampling(next: "random" | "top") {
-    if (committing) return;
-    setCommitting(true);
-    try {
-      const { source: updated } = await workspaceFeedsApi.patchSource(
-        feedId,
-        source.id,
-        { sampling: next },
-      );
-      onChanged(updated);
-    } finally {
-      setCommitting(false);
-    }
+  function commitStep(nextStep: number) {
+    void commit(
+      {
+        ...source,
+        mutedAt: nextStep === 0 ? new Date().toISOString() : null,
+        weight: nextStep === 0 ? source.weight : VOLUME_WEIGHTS[nextStep],
+      },
+      { step: nextStep, muted: nextStep === 0 },
+    );
   }
+
+  function commitSampling(next: "random" | "top") {
+    void commit({ ...source, samplingMode: next }, { sampling: next });
+  }
+
+  function commitExcludeReplies(next: boolean) {
+    void commit(
+      { ...source, excludeReplies: next },
+      { excludeReplies: next },
+    );
+  }
+
+  const label = source.display.label;
+  const href = source.display.href;
 
   return (
     <div style={{ background: TOKENS.rowBg, padding: "8px 10px" }}>
@@ -852,17 +871,36 @@ function SourceRow({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <div
-            className="font-sans text-ui-xs"
-            style={{
-              color: isMuted ? TOKENS.hintFg : TOKENS.panelBorder,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              textDecoration: isMuted ? "line-through" : undefined,
-            }}
-          >
-            {source.display.label}
-          </div>
+          {href ? (
+            <Link
+              href={href}
+              ref={hover.bylineRef as React.Ref<HTMLAnchorElement>}
+              onMouseEnter={hover.onMouseEnter}
+              onMouseLeave={hover.onMouseLeave}
+              className="font-sans text-ui-xs hover:underline"
+              style={{
+                color: isMuted ? TOKENS.hintFg : TOKENS.panelBorder,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                textDecoration: isMuted ? "line-through" : undefined,
+              }}
+            >
+              {label}
+            </Link>
+          ) : (
+            <div
+              className="font-sans text-ui-xs"
+              style={{
+                color: isMuted ? TOKENS.hintFg : TOKENS.panelBorder,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                textDecoration: isMuted ? "line-through" : undefined,
+              }}
+            >
+              {label}
+            </div>
+          )}
           {source.display.sublabel && (
             <div className="label-ui" style={{ color: TOKENS.hintFg }}>
               {source.display.sublabel}
@@ -873,7 +911,7 @@ function SourceRow({
           type="button"
           onClick={onRemove}
           disabled={busy}
-          aria-label={`Remove ${source.display.label}`}
+          aria-label={`Remove ${label}`}
           style={{
             background: "transparent",
             border: "none",
@@ -891,70 +929,133 @@ function SourceRow({
         </button>
       </div>
 
-      {/* Volume: 0=mute, 1..5 = quieter→louder. Step 3 = default weight. */}
+      {/* Controls always render (even when muted, dimmed) so toggling never
+          reflows the row — the prior mute-driven show/hide was the shudder. */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 3,
+          gap: 6,
           marginTop: 6,
+          flexWrap: "wrap",
         }}
       >
-        {[0, 1, 2, 3, 4, 5].map((s) => {
-          const active = !isMuted && s > 0 && s <= currentStep;
-          const muteActive = isMuted && s === 0;
-          return (
-            <button
-              key={s}
-              type="button"
-              onClick={() => void commitStep(s)}
-              disabled={committing}
-              aria-label={s === 0 ? "Mute" : `Volume ${s}`}
-              style={{
-                width: s === 0 ? 20 : 16,
-                height: 16,
-                background: muteActive
-                  ? TOKENS.errorFg
-                  : active
-                    ? TOKENS.panelBorder
-                    : TOKENS.inputBorder,
-                border: "none",
-                cursor: committing ? "default" : "pointer",
-                padding: 0,
-                fontSize: 9,
-                color: muteActive ? "#FFFFFF" : TOKENS.hintFg,
-                fontFamily: "IBM Plex Mono, ui-monospace, monospace",
-              }}
-            >
-              {s === 0 ? "×" : ""}
-            </button>
-          );
-        })}
-
-        {!isMuted && (
-          <div style={{ display: "flex", gap: 3, marginLeft: 6 }}>
-            {(["random", "top"] as const).map((mode) => (
+        {/* Volume: 0=mute, 1..5 = quieter→louder. Step 3 = default weight. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+          {[0, 1, 2, 3, 4, 5].map((s) => {
+            const active = !isMuted && s > 0 && s <= currentStep;
+            const muteActive = isMuted && s === 0;
+            return (
               <button
-                key={mode}
+                key={s}
                 type="button"
-                onClick={() => void commitSampling(mode)}
+                onClick={() => commitStep(s)}
                 disabled={committing}
-                className="font-mono text-[10px] uppercase tracking-[0.04em]"
+                aria-label={s === 0 ? "Mute" : `Volume ${s}`}
                 style={{
-                  background:
-                    sampling === mode ? TOKENS.panelBorder : "transparent",
-                  color: sampling === mode ? "#FFFFFF" : TOKENS.hintFg,
-                  border: `1px solid ${sampling === mode ? TOKENS.panelBorder : TOKENS.inputBorder}`,
+                  width: s === 0 ? 20 : 16,
+                  height: 16,
+                  background: muteActive
+                    ? TOKENS.errorFg
+                    : active
+                      ? TOKENS.panelBorder
+                      : TOKENS.fieldBg,
+                  border: "none",
                   cursor: committing ? "default" : "pointer",
-                  padding: "2px 6px",
+                  padding: 0,
+                  fontSize: 9,
+                  color: muteActive ? "#FFFFFF" : TOKENS.hintFg,
+                  fontFamily: "IBM Plex Mono, ui-monospace, monospace",
                 }}
               >
-                {mode}
+                {s === 0 ? "×" : ""}
               </button>
-            ))}
+            );
+          })}
+        </div>
+
+        {/* Sampling + no-replies are moot while muted — dimmed but kept in place
+            so unmuting doesn't jump the layout. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            opacity: isMuted ? 0.4 : 1,
+          }}
+        >
+          <div style={{ display: "flex", gap: 3 }}>
+            {(["random", "top"] as const).map((mode) => {
+              const on = sampling === mode;
+              return (
+                <Chip
+                  key={mode}
+                  label={mode}
+                  active={on}
+                  disabled={committing || isMuted}
+                  onClick={() => commitSampling(mode)}
+                />
+              );
+            })}
           </div>
-        )}
+          <Chip
+            label="no replies"
+            active={excludeReplies}
+            disabled={committing || isMuted}
+            onClick={() => commitExcludeReplies(!excludeReplies)}
+            title="Only freestanding posts — hide replies from this source"
+          />
+        </div>
       </div>
+
+      {hover.open && hover.id && (
+        <AuthorModal
+          type="author"
+          id={hover.id}
+          anchorRef={hover.bylineRef}
+          onClose={hover.onModalClose}
+          onMouseEnter={hover.onModalMouseEnter}
+          onMouseLeave={hover.onModalMouseLeave}
+          zIndex={TOKENS.hoverZ}
+        />
+      )}
     </div>
+  );
+}
+
+// Borderless mono-caps toggle chip — active is a dark fill, inactive a recessed
+// fill. Fixed by its (constant) label text so toggling only swaps colour, never
+// width, keeping the row steady.
+function Chip({
+  label,
+  active,
+  disabled,
+  onClick,
+  title,
+}: {
+  label: string;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className="font-mono text-[10px] uppercase tracking-[0.04em]"
+      style={{
+        background: active ? TOKENS.panelBorder : TOKENS.fieldBg,
+        color: active ? "#FFFFFF" : TOKENS.hintFg,
+        border: "none",
+        cursor: disabled ? "default" : "pointer",
+        padding: "3px 7px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </button>
   );
 }

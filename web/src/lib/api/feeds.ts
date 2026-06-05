@@ -156,6 +156,7 @@ export interface WorkspaceFeedSource {
   externalSourceId?: string;
   weight: number;
   samplingMode: "random" | "top";
+  excludeReplies: boolean;
   mutedAt: string | null;
   createdAt: string;
   display: {
@@ -163,6 +164,10 @@ export interface WorkspaceFeedSource {
     label: string;
     sublabel: string | null;
     avatar: string | null;
+    // In-app destination for the source name — the surface a byline links to on
+    // a feed card (account → /:username, publication → /pub/:slug, external →
+    // /source/:id, tag → /tag/:name). null when the target is deleted.
+    href: string | null;
   };
 }
 
@@ -244,7 +249,12 @@ export const workspaceFeeds = {
   patchSource: (
     id: string,
     sourceId: string,
-    body: { step?: number; sampling?: "random" | "top"; muted?: boolean },
+    body: {
+      step?: number;
+      sampling?: "random" | "top";
+      muted?: boolean;
+      excludeReplies?: boolean;
+    },
   ) =>
     request<{ source: WorkspaceFeedSource }>(
       `/workspace/feeds/${id}/sources/${sourceId}`,

@@ -26,6 +26,9 @@ interface AuthorModalProps {
   // vanishes the instant the pointer leaves the byline, before it can be reached.
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  // Stacking override for callers that open the modal above a frosted overlay
+  // (the FeedComposer Glasshouse sits at z-56, above this modal's default 50).
+  zIndex?: number;
 }
 
 function formatCount(n: number): string {
@@ -42,6 +45,7 @@ export function AuthorModal({
   dismissOnMouseLeave = true,
   onMouseEnter,
   onMouseLeave,
+  zIndex = 50,
 }: AuthorModalProps) {
   const { data, loading } = useAuthorCard(type, id, true);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -101,7 +105,7 @@ export function AuthorModal({
     position: "fixed",
     left: position.left,
     width: 300,
-    zIndex: 50,
+    zIndex,
     ...(position.below
       ? { top: position.top }
       : { bottom: window.innerHeight - position.top }),

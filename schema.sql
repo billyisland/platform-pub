@@ -1455,6 +1455,7 @@ CREATE TABLE public.feed_sources (
     sampling_mode text DEFAULT 'chronological'::text NOT NULL,
     muted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    exclude_replies boolean DEFAULT false NOT NULL,
     CONSTRAINT feed_sources_sampling_mode_check CHECK ((sampling_mode = ANY (ARRAY['chronological'::text, 'scored'::text, 'random'::text]))),
     CONSTRAINT feed_sources_source_type_check CHECK ((source_type = ANY (ARRAY['account'::text, 'publication'::text, 'external_source'::text, 'tag'::text]))),
     CONSTRAINT feed_sources_tag_name_length CHECK (((tag_name IS NULL) OR ((char_length(tag_name) >= 1) AND (char_length(tag_name) <= 64)))),
@@ -6533,4 +6534,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('103_subscription_events_publication.sql'),
     ('104_repost_edges_boosted_at.sql'),
     ('105_feed_items_reply_to_author.sql'),
-    ('106_feed_ingest_enqueue_cap.sql');
+    ('106_feed_ingest_enqueue_cap.sql'),
+    ('107_feed_sources_exclude_replies.sql');

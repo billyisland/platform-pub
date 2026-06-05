@@ -46,6 +46,7 @@ const patchSourceSchema = z.object({
   step: z.number().int().min(0).max(5).optional(),
   sampling: z.enum(["random", "top"]).optional(),
   muted: z.boolean().optional(),
+  excludeReplies: z.boolean().optional(),
 });
 
 // POST /feeds/:id/sources — native targets pass an existing UUID, external
@@ -443,6 +444,7 @@ export async function feedsRoutes(app: FastifyInstance) {
       // display fields without ambiguity.
       const { rows } = await pool.query(
         `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
+           fs.exclude_replies,
            fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
            acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
            pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
@@ -793,8 +795,13 @@ export async function feedsRoutes(app: FastifyInstance) {
           .status(400)
           .send({ error: "Invalid body", details: parsed.error.flatten() });
       }
-      const { step, sampling, muted } = parsed.data;
-      if (step === undefined && sampling === undefined && muted === undefined) {
+      const { step, sampling, muted, excludeReplies } = parsed.data;
+      if (
+        step === undefined &&
+        sampling === undefined &&
+        muted === undefined &&
+        excludeReplies === undefined
+      ) {
         return reply.status(400).send({ error: "Nothing to update" });
       }
 
@@ -826,6 +833,11 @@ export async function feedsRoutes(app: FastifyInstance) {
         vals.push(muted ? new Date() : null);
         paramIdx++;
       }
+      if (excludeReplies !== undefined) {
+        sets.push(`exclude_replies = $${paramIdx}`);
+        vals.push(excludeReplies);
+        paramIdx++;
+      }
 
       const { rowCount } = await pool.query(
         `UPDATE feed_sources SET ${sets.join(", ")}
@@ -838,6 +850,7 @@ export async function feedsRoutes(app: FastifyInstance) {
       // Re-fetch the full hydrated row for the response.
       const { rows } = await pool.query<SourceRow>(
         `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
+           fs.exclude_replies,
            fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
            acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
            pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
@@ -1252,6 +1265,7 @@ interface SourceRow {
   sampling_mode: string;
   muted_at: Date | null;
   created_at: Date;
+  exclude_replies: boolean;
   account_id: string | null;
   publication_id: string | null;
   external_source_id: string | null;
@@ -1272,6 +1286,10 @@ function sourceRowToResponse(row: SourceRow) {
   // The display block is what the UI renders in the source list. Each branch
   // returns a small, self-describing object so the client doesn't have to
   // re-derive labels from foreign keys.
+  // `href` is the in-app destination for the source name — the same surface a
+  // byline links to on a feed card, so the composer's source names route
+  // identically (account → /:username, publication → /pub/:slug, external →
+  // /source/:id, tag → /tag/:name). null when the target is deleted.
   let display: Record<string, string | null> = {};
   if (row.source_type === "account") {
     display = {
@@ -1280,6 +1298,7 @@ function sourceRowToResponse(row: SourceRow) {
         row.account_display_name ?? row.account_username ?? "(deleted account)",
       sublabel: row.account_username ? `@${row.account_username}` : null,
       avatar: row.account_avatar,
+      href: row.account_username ? `/${row.account_username}` : null,
     };
   } else if (row.source_type === "publication") {
     display = {
@@ -1288,6 +1307,7 @@ function sourceRowToResponse(row: SourceRow) {
         row.publication_name ?? row.publication_slug ?? "(deleted publication)",
       sublabel: row.publication_slug ? `/pub/${row.publication_slug}` : null,
       avatar: row.publication_avatar,
+      href: row.publication_slug ? `/pub/${row.publication_slug}` : null,
     };
   } else if (row.source_type === "external_source") {
     display = {
@@ -1298,6 +1318,7 @@ function sourceRowToResponse(row: SourceRow) {
         "(deleted source)",
       sublabel: row.external_protocol,
       avatar: row.external_avatar,
+      href: row.external_source_id ? `/source/${row.external_source_id}` : null,
     };
   } else {
     display = {
@@ -1305,6 +1326,7 @@ function sourceRowToResponse(row: SourceRow) {
       label: `#${row.tag_name}`,
       sublabel: null,
       avatar: null,
+      href: row.tag_name ? `/tag/${encodeURIComponent(row.tag_name)}` : null,
     };
   }
   return {
@@ -1314,6 +1336,7 @@ function sourceRowToResponse(row: SourceRow) {
     externalSourceId: row.external_source_id ?? undefined,
     weight: Number(row.weight),
     samplingMode: row.sampling_mode === "scored" ? "top" : "random",
+    excludeReplies: row.exclude_replies,
     mutedAt: row.muted_at?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
     display,
@@ -1517,6 +1540,7 @@ async function insertSource(
     // the client sees the same shape on create as on list.
     const { rows: hydrated } = await db.query<SourceRow>(
       `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
+         fs.exclude_replies,
          fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
          acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
          pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
@@ -1623,7 +1647,8 @@ async function sourceFilteredItems(
         LIMIT 1
     ),
     matched AS (
-      SELECT fi.id AS fi_id, MAX(fs.weight)::float8 AS weight
+      SELECT fi.id AS fi_id, MAX(fs.weight)::float8 AS weight,
+             bool_or(NOT fs.exclude_replies) AS allow_replies
         FROM feed_items fi
         LEFT JOIN articles a ON a.id = fi.article_id
         JOIN feed_sources fs
@@ -1663,6 +1688,9 @@ async function sourceFilteredItems(
         )
         AND (fi.item_type != 'note' OR n.reply_to_event_id IS NULL)
         AND (fi.item_type != 'external' OR ei.is_context_only IS NOT TRUE)
+        -- Per-source "no replies": drop reply items unless at least one
+        -- matching source still admits replies (migration 107).
+        AND (fi.is_reply IS NOT TRUE OR m.allow_replies)
     )
     SELECT * FROM scored
     WHERE TRUE ${cursorClause}
