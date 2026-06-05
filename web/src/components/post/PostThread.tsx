@@ -129,7 +129,7 @@ export function PostThread({
           onClick={() =>
             topSentinel.current?.scrollIntoView({ block: "start", behavior: "smooth" })
           }
-          className="sticky top-2 z-10 ml-1 block text-grey-400 hover:text-black"
+          className="sticky top-2 z-10 ml-1 block text-grey-400 transition-opacity hover:opacity-70"
         >
           ↑
         </button>
@@ -140,7 +140,7 @@ export function PostThread({
         <button
           type="button"
           onClick={thread.backToRoot}
-          className="mb-3 ml-8 label-ui text-grey-400 hover:text-black hover:underline"
+          className="mb-3 ml-8 label-ui text-grey-400 hover:underline"
         >
           ↑ Full conversation
         </button>
@@ -211,7 +211,7 @@ export function PostThread({
           type="button"
           onClick={thread.loadMore}
           disabled={thread.loadingMore}
-          className="ml-8 mt-2 label-ui text-grey-400 hover:text-black hover:underline disabled:opacity-50"
+          className="ml-8 mt-2 label-ui text-grey-400 hover:underline disabled:opacity-50"
         >
           {thread.loadingMore
             ? "Loading…"
@@ -228,7 +228,7 @@ export function PostThread({
           onClick={() =>
             bottomSentinel.current?.scrollIntoView({ block: "end", behavior: "smooth" })
           }
-          className="sticky bottom-2 z-10 ml-1 block text-grey-400 hover:text-black"
+          className="sticky bottom-2 z-10 ml-1 block text-grey-400 transition-opacity hover:opacity-70"
         >
           ↓
         </button>

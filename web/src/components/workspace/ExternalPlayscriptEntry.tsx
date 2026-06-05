@@ -100,8 +100,9 @@ export function ExternalPlayscriptEntry({
               e.stopPropagation();
               onReply();
             }}
-            className={`hover:text-black transition-colors ${replyActive ? "text-black" : ""}`}
+            className="transition-opacity hover:opacity-70"
             style={{
+              color: replyActive ? palette.cardTitle : undefined,
               background: "none",
               border: "none",
               padding: 0,

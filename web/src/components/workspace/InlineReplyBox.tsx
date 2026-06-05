@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { LinkedAccount } from "../../lib/api/linked-accounts";
 import { externalItems } from "../../lib/api/external-items";
+import { isDarkPalette, type VesselPalette } from "./tokens";
 
 const PROTOCOL_LABELS: Record<string, string> = {
   atproto: "BLUESKY",
@@ -16,6 +17,7 @@ interface Props {
   itemId: string;
   protocol: string;
   linkedAccount: LinkedAccount | null;
+  palette: VesselPalette;
   onClose: () => void;
   onReplied: () => void;
 }
@@ -24,6 +26,7 @@ export function InlineReplyBox({
   itemId,
   protocol,
   linkedAccount,
+  palette,
   onClose,
   onReplied,
 }: Props) {
@@ -31,6 +34,12 @@ export function InlineReplyBox({
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Inset-panel fill replaces the old thin grey borders (lines are banned
+  // sitewide). A dark wash reads on the light card, a light wash on the dark card.
+  const panelWash = isDarkPalette(palette)
+    ? "rgba(255,255,255,0.05)"
+    : "rgba(0,0,0,0.04)";
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -72,11 +81,16 @@ export function InlineReplyBox({
     return (
       <div
         onClick={(e) => e.stopPropagation()}
-        className="mt-3 py-3 px-4 border border-grey-200 rounded"
+        className="mt-3 py-3 px-4 rounded"
+        style={{ background: panelWash }}
       >
-        <p className="text-ui-xs text-grey-500">
+        <p className="text-ui-xs" style={{ color: palette.cardStandfirst }}>
           Connect your {PROTOCOL_LABELS[protocol] ?? protocol} account to reply.{" "}
-          <a href="/settings" className="underline text-black">
+          <a
+            href="/settings"
+            className="underline"
+            style={{ color: palette.cardTitle }}
+          >
             Settings →
           </a>
         </p>
@@ -90,16 +104,18 @@ export function InlineReplyBox({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="mt-3 border border-grey-200 rounded overflow-hidden"
+      className="mt-3 rounded overflow-hidden"
+      style={{ background: panelWash }}
     >
-      <div className="px-3 py-2 flex items-center justify-between border-b border-grey-100">
-        <span className="label-ui text-grey-400">
+      <div className="px-3 pt-2 flex items-center justify-between">
+        <span className="label-ui" style={{ color: palette.cardMeta }}>
           REPLYING VIA {platformLabel}
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="text-grey-400 hover:text-black text-[16px] leading-none"
+          className="text-[16px] leading-none transition-opacity hover:opacity-70"
+          style={{ color: palette.cardMeta }}
           aria-label="Close reply"
         >
           ×
@@ -118,10 +134,11 @@ export function InlineReplyBox({
         maxLength={MAX_CHARS}
         rows={2}
         className="w-full px-3 py-2 text-ui-sm resize-none outline-none bg-transparent"
+        style={{ color: palette.cardTitle, caretColor: palette.cardTitle }}
         disabled={publishing}
       />
 
-      <div className="px-3 py-2 flex items-center justify-between border-t border-grey-100">
+      <div className="px-3 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {error && (
             <span className="text-ui-xs" style={{ color: "#B5242A" }}>

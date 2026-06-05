@@ -94,6 +94,13 @@ export function paletteFor(
   return PALETTES[normalizeBrightness(b)]
 }
 
+// True when the palette is the dark interior. Lets palette-only consumers pick a
+// mode-aware translucent wash (a dark wash reads on light cards, a light wash on
+// dark cards) without also threading `brightness` through.
+export function isDarkPalette(p: VesselPalette): boolean {
+  return p.cardBg === PALETTES.dark.cardBg
+}
+
 export function nextBrightness(b: Brightness): Brightness {
   return normalizeBrightness(b) === 'dark' ? 'primary' : 'dark'
 }

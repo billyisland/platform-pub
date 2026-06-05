@@ -52,7 +52,11 @@ export function PostBody({
     <BodyInner post={post} bodyPx={bodyPx} mode={mode} palette={palette} pollVote={pollVote} />
   );
   if (post.body.contentWarning) {
-    return <ContentWarning warningText={post.body.contentWarning}>{body}</ContentWarning>;
+    return (
+      <ContentWarning warningText={post.body.contentWarning} palette={palette}>
+        {body}
+      </ContentWarning>
+    );
   }
   return body;
 }
@@ -143,7 +147,7 @@ function BodyInner({
           }}
           dangerouslySetInnerHTML={{ __html: post.body.html }}
         />
-        {post.body.poll && <PollBlock post={post} pollVote={pollVote} />}
+        {post.body.poll && <PollBlock post={post} palette={palette} pollVote={pollVote} />}
       </>
     );
   }
@@ -182,14 +186,24 @@ function BodyInner({
           {text}
         </p>
       )}
-      {post.body.poll && mode !== "one-line" && <PollBlock post={post} pollVote={pollVote} />}
+      {post.body.poll && mode !== "one-line" && (
+        <PollBlock post={post} palette={palette} pollVote={pollVote} />
+      )}
     </>
   );
 }
 
 // Poll voting comes from usePostInteractions (external interact-back). Absent ⇒
 // read-only (native, tiers C/D, or non-interactive renders).
-function PollBlock({ post, pollVote }: { post: Post; pollVote?: PollVote }) {
+function PollBlock({
+  post,
+  palette,
+  pollVote,
+}: {
+  post: Post;
+  palette: VesselPalette;
+  pollVote?: PollVote;
+}) {
   if (!post.body.poll) return null;
   return (
     <PollDisplay
@@ -197,6 +211,7 @@ function PollBlock({ post, pollVote }: { post: Post; pollVote?: PollVote }) {
       canVote={pollVote?.canVote ?? false}
       onVote={pollVote?.onVote ?? (() => {})}
       voting={pollVote?.voting ?? false}
+      palette={palette}
     />
   );
 }

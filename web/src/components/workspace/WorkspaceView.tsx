@@ -845,17 +845,20 @@ export function WorkspaceView() {
                   (v.sources.length === 0 ? (
                     <EmptyFeedTile
                       variant="no-sources"
+                      brightness={layout.brightness}
                       onAddSources={() => setFeedComposerFor(v.feed)}
                     />
                   ) : (
                     <EmptyFeedTile
                       variant="no-items"
+                      brightness={layout.brightness}
                       onAddSources={() => setFeedComposerFor(v.feed)}
                     />
                   ))}
                 {v.status === "ready" && v.caughtUp && v.items.length > 0 && (
                   <EmptyFeedTile
                     variant="caught-up"
+                    brightness={layout.brightness}
                     onAddSources={() => setFeedComposerFor(v.feed)}
                     onDismiss={() =>
                       setVessels((prev) =>

@@ -57,6 +57,7 @@ export function PostCardInteractive(props: {
         itemId={interactions.externalItemId}
         protocol={interactions.protocol}
         linkedAccount={interactions.linkedAccount}
+        palette={ctx.palette}
         onClose={interactions.closeReply}
         onReplied={interactions.onReplied}
       />

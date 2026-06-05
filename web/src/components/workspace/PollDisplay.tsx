@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { isDarkPalette, type VesselPalette } from "./tokens";
 
 interface PollOption {
   title: string;
@@ -17,6 +18,7 @@ interface PollDisplayProps {
   canVote: boolean;
   onVote: (choices: number[]) => void;
   voting: boolean;
+  palette: VesselPalette;
 }
 
 export function PollDisplay({
@@ -24,10 +26,19 @@ export function PollDisplay({
   canVote,
   onVote,
   voting,
+  palette,
 }: PollDisplayProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const totalVotes = poll.options.reduce((s, o) => s + o.votesCount, 0);
   const showResults = poll.closed || !canVote;
+  // Options are filled chips (no thin outline — lines are banned sitewide).
+  // `trackWash` is the unfilled chip; `resultWash` the stronger fill that reads
+  // as the result bar against it. Both are mode-aware: a dark wash on the light
+  // card, a light wash on the dark card (a black wash vanishes there).
+  const dark = isDarkPalette(palette);
+  const trackWash = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)";
+  const resultWash = dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.10)";
+  const selectedWash = "rgba(181,36,42,0.14)"; // crimson tint marks selection
 
   function toggleOption(index: number) {
     if (!canVote || voting) return;
@@ -56,9 +67,9 @@ export function PollDisplay({
             type="button"
             disabled={!canVote || voting || poll.closed}
             onClick={() => toggleOption(i)}
-            className="relative w-full text-left rounded px-3 py-1.5 overflow-hidden border transition-colors"
+            className="relative w-full text-left rounded px-3 py-1.5 overflow-hidden transition-colors"
             style={{
-              borderColor: isSelected ? "#B5242A" : "#ddd",
+              background: isSelected ? selectedWash : trackWash,
               cursor:
                 canVote && !voting && !poll.closed ? "pointer" : "default",
             }}
@@ -68,27 +79,33 @@ export function PollDisplay({
                 className="absolute inset-0 rounded"
                 style={{
                   width: `${pct}%`,
-                  backgroundColor: "rgba(0,0,0,0.06)",
+                  backgroundColor: resultWash,
                   transition: "width 0.3s ease",
                 }}
               />
             )}
             <div className="relative flex items-center justify-between gap-2">
-              <span className="text-ui-xs flex items-center gap-2">
+              <span
+                className="text-ui-xs flex items-center gap-2"
+                style={{ color: palette.cardTitle }}
+              >
                 {canVote && !poll.closed && (
                   <span
-                    className="inline-block w-3.5 h-3.5 border border-grey-400 flex-shrink-0"
+                    className="inline-block w-3.5 h-3.5 border-2 flex-shrink-0"
                     style={{
                       borderRadius: poll.multiple ? "2px" : "50%",
                       backgroundColor: isSelected ? "#B5242A" : "transparent",
-                      borderColor: isSelected ? "#B5242A" : undefined,
+                      borderColor: isSelected ? "#B5242A" : palette.cardMeta,
                     }}
                   />
                 )}
                 {opt.title}
               </span>
               {showResults && (
-                <span className="label-ui text-grey-400 flex-shrink-0">
+                <span
+                  className="label-ui flex-shrink-0"
+                  style={{ color: palette.cardMeta }}
+                >
                   {pct}%
                 </span>
               )}
@@ -103,7 +120,8 @@ export function PollDisplay({
             type="button"
             className="label-ui"
             style={{
-              color: selected.size > 0 && !voting ? "#B5242A" : "#999",
+              color:
+                selected.size > 0 && !voting ? "#B5242A" : palette.cardMeta,
               background: "none",
               border: "none",
               padding: 0,
@@ -115,14 +133,16 @@ export function PollDisplay({
             {voting ? "VOTING..." : "VOTE"}
           </button>
         )}
-        <span className="label-ui text-grey-400">
+        <span className="label-ui" style={{ color: palette.cardMeta }}>
           {totalVotes} {totalVotes === 1 ? "VOTE" : "VOTES"}
         </span>
         {poll.closed && (
-          <span className="label-ui text-grey-400">POLL CLOSED</span>
+          <span className="label-ui" style={{ color: palette.cardMeta }}>
+            POLL CLOSED
+          </span>
         )}
         {!poll.closed && poll.expiresAt && (
-          <span className="label-ui text-grey-400">
+          <span className="label-ui" style={{ color: palette.cardMeta }}>
             ENDS {new Date(poll.expiresAt).toLocaleDateString()}
           </span>
         )}

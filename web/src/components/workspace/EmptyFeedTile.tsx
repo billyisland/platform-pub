@@ -1,23 +1,56 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { paletteFor, type Brightness, type VesselPalette } from "./tokens";
 
 interface EmptyFeedTileProps {
   variant: "no-sources" | "no-items" | "caught-up";
+  brightness?: Brightness;
   onAddSources?: () => void;
   onDismiss?: () => void;
 }
 
+// A muted text-link button whose colour tracks the live palette — replaces
+// `.btn-text-muted` here, whose #111 hover is invisible on the dark interior.
+function MutedAction({
+  palette,
+  onClick,
+  children,
+}: {
+  palette: VesselPalette;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="label-ui transition-opacity hover:opacity-70"
+      style={{ color: palette.cardMeta, background: "none", padding: 0 }}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function EmptyFeedTile({
   variant,
+  brightness,
   onAddSources,
   onDismiss,
 }: EmptyFeedTileProps) {
+  const palette = paletteFor(brightness);
+
   if (variant === "no-sources") {
     return (
       <div className="px-6 py-8 text-center">
-        <p className="label-ui text-grey-400 mb-2">NO SOURCES</p>
-        <p className="text-ui-xs text-grey-500 mb-4">
+        <p className="label-ui mb-2" style={{ color: palette.cardMeta }}>
+          NO SOURCES
+        </p>
+        <p
+          className="text-ui-xs mb-4"
+          style={{ color: palette.cardStandfirst }}
+        >
           Add feeds, accounts, or publications to fill this vessel.
         </p>
         {onAddSources && (
@@ -31,21 +64,23 @@ export function EmptyFeedTile({
 
   if (variant === "caught-up") {
     return (
-      <CaughtUpTile onAddSources={onAddSources} onDismiss={onDismiss} />
+      <CaughtUpTile
+        palette={palette}
+        onAddSources={onAddSources}
+        onDismiss={onDismiss}
+      />
     );
   }
 
   return (
     <div className="px-6 py-8 text-center">
-      <p className="label-ui text-grey-400 mb-2">NO ITEMS YET</p>
-      <p className="text-ui-xs text-grey-500 mb-4">
+      <p className="label-ui mb-2" style={{ color: palette.cardMeta }}>
+        NO ITEMS YET
+      </p>
+      <p className="text-ui-xs mb-4" style={{ color: palette.cardStandfirst }}>
         No new items. Add more sources or check back later.
       </p>
-      {onAddSources && (
-        <button type="button" className="btn-text-muted" onClick={onAddSources}>
-          ADD MORE
-        </button>
-      )}
+      {onAddSources && <MutedAction palette={palette} onClick={onAddSources}>ADD MORE</MutedAction>}
     </div>
   );
 }
@@ -53,9 +88,11 @@ export function EmptyFeedTile({
 // The caught-up tile auto-dismisses 2s after it appears if untouched; hovering
 // pauses the countdown so it can't vanish under the cursor.
 function CaughtUpTile({
+  palette,
   onAddSources,
   onDismiss,
 }: {
+  palette: VesselPalette;
   onAddSources?: () => void;
   onDismiss?: () => void;
 }) {
@@ -85,30 +122,25 @@ function CaughtUpTile({
       onMouseEnter={stop}
       onMouseLeave={start}
     >
-      <p className="text-ui-xs text-grey-500 mb-3">
+      <p className="text-ui-xs mb-3" style={{ color: palette.cardStandfirst }}>
         You&rsquo;re caught up. Add new sources or strengthen current ones to see
         more.
       </p>
       <div className="flex items-center justify-center gap-4">
         {onAddSources && (
-          <button
-            type="button"
-            className="btn-text-muted"
+          <MutedAction
+            palette={palette}
             onClick={() => {
               onDismiss?.();
               onAddSources();
             }}
           >
             ADD SOURCES
-          </button>
+          </MutedAction>
         )}
-        <button
-          type="button"
-          className="btn-text-muted"
-          onClick={() => onDismiss?.()}
-        >
+        <MutedAction palette={palette} onClick={() => onDismiss?.()}>
           DISMISS
-        </button>
+        </MutedAction>
       </div>
     </div>
   );
