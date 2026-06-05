@@ -927,6 +927,15 @@ A polish + capability pass over `FeedComposer.tsx`, plus one schema column.
 
 Schema: migration 107 + `schema.sql` regenerated; `scripts/check-schema-drift.sh` all-green. `tsc --noEmit` clean (gateway + web); `npm run lint` 0 errors; hairline tripwire clean on touched files.
 
+### Slice 39 — ∀ glyph rendered through the circle as an aperture (2026-06-05)
+
+A purely visual refinement of the `ForallMenu` button. The ∀ (U+2200) was small and fully enclosed — `fontSize: 26` centred in the 56px disc (~46% of the diameter), floating with margin all round. It now reads as an **aperture**: the glyph is enlarged past the disc and the circumference clips it, so we see only as much of the letter as fits the frame — its feet and tip just cut off by the edge.
+
+- **Clip lives on an inner span, not the button.** The unread badge is absolutely positioned *outside* the disc (`top/right: -2`), so `overflow: hidden` on the button would clip the badge too. The glyph moved into an inner aperture `<span>` (`position: absolute; inset: 0; border-radius: 50%; overflow: hidden`, flex-centred, `fontSize: 84`, `lineHeight: 1`); the badge stays an unclipped sibling on the button, which keeps the disc fill, shadow, and visible overflow.
+- **Tuning knobs.** If the crop reads off, two levers on the span: `fontSize` (↑ crops harder, ↓ reveals more letter) and an optional `transform: translateY(±2px)` if Literata seats the ∀ ink high/low in its em box and the top/bottom cuts look uneven.
+
+Touched only `web/src/components/workspace/ForallMenu.tsx`; `scripts/check-hairlines.sh` clean. Not yet browser-verified (`web` is a baked prod image — needs `docker compose build web && up -d web`).
+
 ## Deferred (TODO in code, not blocking the experiment)
 
 - DM/messages model (vessel vs `/messages` route).

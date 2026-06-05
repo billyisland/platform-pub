@@ -262,17 +262,32 @@ export function ForallMenu({
           color: TOKENS.buttonFg,
           border: "none",
           boxShadow: "0 4px 12px rgba(0, 0, 0, 0.18)",
-          fontSize: 26,
-          lineHeight: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          padding: 0,
           cursor: "pointer",
           transition: "transform 120ms ease-out",
           transform: view !== "closed" ? "scale(1.04)" : "scale(1)",
         }}
       >
-        ∀
+        {/* Aperture: the circle clips the oversized glyph so only the
+            letter that fits inside the frame is seen — its feet and tip are
+            just cut off by the circumference. Kept on an inner span so the
+            unread badge below stays outside the clip. */}
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 84,
+            lineHeight: 1,
+          }}
+        >
+          ∀
+        </span>
         {totalUnread > 0 && (
           <span
             aria-hidden="true"
