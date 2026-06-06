@@ -293,11 +293,11 @@ export function ForallMenu({
             fill="none"
           >
             {/* left diagonal: bottom point → upper-left rim */}
-            <line x1="28" y1="56" x2="5" y2="12" />
+            <line x1="28" y1="56" x2="12" y2="-2" />
             {/* right diagonal: bottom point → upper-right rim */}
-            <line x1="28" y1="56" x2="51" y2="12" />
+            <line x1="28" y1="56" x2="44" y2="-2" />
             {/* crossbar: joins the diagonals across the central region */}
-            <line x1="14.5" y1="30" x2="41.5" y2="30" strokeLinecap="round" />
+            <line x1="20.8" y1="30" x2="35.2" y2="30" strokeLinecap="round" />
           </g>
         </svg>
         {totalUnread > 0 && (
