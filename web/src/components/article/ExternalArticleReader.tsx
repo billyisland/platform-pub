@@ -31,10 +31,15 @@ export function ExternalArticleReader({
   url,
   title: initialTitle,
   siteName: initialSiteName,
+  paddingX = "px-12",
 }: {
   url: string;
   title?: string | null;
   siteName?: string | null;
+  /** Horizontal padding utility for the header + body columns. The reader-pane
+   *  overlay passes a wider value for roomier side margins; the full-page route
+   *  keeps the default. */
+  paddingX?: string;
 }) {
   const [article, setArticle] = useState<ExtractResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -71,7 +76,7 @@ export function ExternalArticleReader({
   return (
     <article>
       {/* Header — separation is whitespace, no rule (sitewide). */}
-      <div className="px-12 pt-8 pb-5">
+      <div className={`${paddingX} pt-8 pb-5`}>
         {displaySite && (
           <a
             href={url}
@@ -93,7 +98,7 @@ export function ExternalArticleReader({
       </div>
 
       {/* Body */}
-      <div className="px-12 pb-8">
+      <div className={`${paddingX} pb-8`}>
         {loading && (
           <div className="space-y-3 animate-pulse">
             <div className="h-4 bg-grey-100 rounded w-full" />

@@ -57,10 +57,12 @@ export function Glasshouse({
 
   return (
     <>
-      {/* Frosted scrim — full viewport, slight blur, click to close. z-[55] sits
-          above the workspace (so it blurs) but below the ForallMenu (z-60). */}
+      {/* Frosted scrim — full viewport, blur only (no tint, so the ground colour
+          is preserved and the ForallMenu disc keeps its contrast), click to
+          close. z-[55] sits above the workspace (so it blurs) but below the
+          ForallMenu (z-60). */}
       <div
-        className="fixed inset-0 z-[55] bg-black/20 backdrop-blur-[3px]"
+        className="fixed inset-0 z-[55] backdrop-blur-[3px]"
         onClick={onClose}
       />
 

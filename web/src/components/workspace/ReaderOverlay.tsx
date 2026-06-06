@@ -37,7 +37,10 @@ export function ReaderOverlay() {
   if (!isOpen || !target) return null;
 
   const isNative = target.kind === "native";
-  const maxWidth = isNative ? 820 : 640;
+  // Wider panes in the overlay than the full-page routes so the text column
+  // keeps its reading measure while the side whitespace roughly doubles
+  // (native ~90px → ~180px; external 48px → 96px each side).
+  const maxWidth = isNative ? 1000 : 736;
 
   return (
     <Glasshouse onClose={close} maxWidth={maxWidth} ariaLabel="Reader">
@@ -46,6 +49,7 @@ export function ReaderOverlay() {
           url={target.url}
           title={target.title}
           siteName={target.siteName}
+          paddingX="px-24"
         />
       ) : (
         <NativeArticleBody dTag={target.dTag} />
