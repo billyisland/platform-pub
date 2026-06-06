@@ -267,31 +267,38 @@ export function ForallMenu({
           transform: view !== "closed" ? "scale(1.04)" : "scale(1)",
         }}
       >
-        {/* The ∀ is constructed, not typed: three bars forming the A skeleton
-            (two diagonals from a shared apex at the bottom + a crossbar), drawn
-            in the workspace floor colour so they read as the ground showing
-            through the black disc. The figure is held fully inside the disc —
-            the bars never touch the rim — so a ring of black always separates
-            the (floor-coloured) A from the surrounding (floor-coloured) ground;
-            that ring is what keeps the boundary between workspace and A legible.
-            Inner SVG so the unread badge stays an unclipped sibling. */}
+        {/* The ∀ is constructed, not typed: three bars forming the A skeleton,
+            in the workspace floor colour, dividing the black disc. The two
+            diagonals run from a shared point at the bottom of the rim up to the
+            rim on each side — each cutting off a *complete* circle segment — and
+            the crossbar joins them across the central region. The bars are
+            clipped to the disc so they terminate flush on the circumference;
+            the floor-coloured bars read as the ground cutting through the disc,
+            and the black segments they carve out are what mark the disc against
+            the ground. Inner SVG so the unread badge stays an unclipped sibling. */}
         <svg
           aria-hidden="true"
           viewBox="0 0 56 56"
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
         >
+          <defs>
+            <clipPath id="forall-disc">
+              <circle cx="28" cy="28" r="28" />
+            </clipPath>
+          </defs>
           <g
+            clipPath="url(#forall-disc)"
             stroke={TOKENS.glyphFg}
             strokeWidth={5}
             strokeLinecap="round"
             fill="none"
           >
-            {/* left diagonal: apex → upper-left */}
-            <line x1="28" y1="49" x2="17" y2="9" />
-            {/* right diagonal: apex → upper-right */}
-            <line x1="28" y1="49" x2="39" y2="9" />
+            {/* left diagonal: bottom rim → upper-left rim (cuts off a segment) */}
+            <line x1="28" y1="56" x2="8.5" y2="5" />
+            {/* right diagonal: bottom rim → upper-right rim (cuts off a segment) */}
+            <line x1="28" y1="56" x2="47.5" y2="5" />
             {/* crossbar: joins the diagonals across the central region */}
-            <line x1="22.5" y1="29" x2="33.5" y2="29" />
+            <line x1="18.1" y1="30" x2="37.9" y2="30" />
           </g>
         </svg>
         {totalUnread > 0 && (
