@@ -10,7 +10,7 @@ import { SearchPanel } from "./SearchPanel";
 const TOKENS = {
   buttonBg: "#1A1A18",
   buttonFg: "#F0EFEB",
-  glyphFg: "#B5242A",
+  glyphFg: "#FFFFFF",
   menuBg: "#FFFFFF",
   menuBorder: "#1A1A18",
   itemFg: "#1A1A18",
@@ -268,7 +268,7 @@ export function ForallMenu({
           transform: view !== "closed" ? "scale(1.04)" : "scale(1)",
         }}
       >
-        {/* The ∀ is constructed, not typed: three crimson bars dividing the
+        {/* The ∀ is constructed, not typed: three white bars dividing the
             black disc. Two symmetric diagonals run from a shared point at the
             bottom of the circle up to the rim (each cutting off a segment),
             and a horizontal bar joins them across the central region. The bars
@@ -293,11 +293,11 @@ export function ForallMenu({
             fill="none"
           >
             {/* left diagonal: bottom point → upper-left rim */}
-            <line x1="28" y1="56" x2="12" y2="-2" />
+            <line x1="28" y1="56" x2="8.5" y2="5" />
             {/* right diagonal: bottom point → upper-right rim */}
-            <line x1="28" y1="56" x2="44" y2="-2" />
+            <line x1="28" y1="56" x2="47.5" y2="5" />
             {/* crossbar: joins the diagonals across the central region */}
-            <line x1="20.8" y1="30" x2="35.2" y2="30" strokeLinecap="round" />
+            <line x1="18.1" y1="30" x2="37.9" y2="30" strokeLinecap="round" />
           </g>
         </svg>
         {totalUnread > 0 && (
