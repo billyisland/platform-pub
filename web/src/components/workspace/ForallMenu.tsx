@@ -269,25 +269,24 @@ export function ForallMenu({
       >
         {/* The ∀ is constructed, not typed: three bars forming the A skeleton,
             in the workspace floor colour, dividing the black disc. The two
-            diagonals run from a shared point at the bottom of the rim up to the
-            rim on each side — each cutting off a *complete* circle segment — and
-            the crossbar joins them across the central region. The bars are
-            clipped to the disc so they terminate flush on the circumference;
-            the floor-coloured bars read as the ground cutting through the disc,
-            and the black segments they carve out are what mark the disc against
-            the ground. Inner SVG so the unread badge stays an unclipped sibling. */}
+            diagonals run from the bottom of the rim up to the rim on each side
+            — each cutting off a *complete* circle segment — and the crossbar
+            joins them across the central region.
+
+            The diagonals are deliberately NOT clipped to the disc: their upper
+            ends extend just past the circumference (to r≈30) and the apex's
+            round cap spills just past the bottom. Painted on top of the disc,
+            this overshoot covers the disc's anti-aliased edge pixels at the
+            three contact points, so no dark seam shows between the bar and the
+            ground; the overshoot itself is invisible (floor-on-floor) and
+            the visible bar still ends at the rim, where the black disc does.
+            Inner SVG so the unread badge stays a sibling on the button. */}
         <svg
           aria-hidden="true"
           viewBox="0 0 56 56"
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
         >
-          <defs>
-            <clipPath id="forall-disc">
-              <circle cx="28" cy="28" r="28" />
-            </clipPath>
-          </defs>
           <g
-            clipPath="url(#forall-disc)"
             stroke={TOKENS.glyphFg}
             strokeWidth={5}
             strokeLinecap="round"
