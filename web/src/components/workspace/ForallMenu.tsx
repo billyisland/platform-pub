@@ -253,7 +253,6 @@ export function ForallMenu({
         aria-haspopup="menu"
         aria-expanded={view !== "closed"}
         onClick={() => setView((v) => (v === "closed" ? "menu" : "closed"))}
-        className="font-serif"
         style={{
           position: "relative",
           width: 56,
@@ -269,26 +268,38 @@ export function ForallMenu({
           transform: view !== "closed" ? "scale(1.04)" : "scale(1)",
         }}
       >
-        {/* The ∀ glyph sits fully inside the circle (no flush-cut edge, so no
-            cream/red slivers reading as an outline along the rim), optically
-            centred, in the site crimson. Kept on an inner span so the unread
-            badge below stays outside it. */}
-        <span
+        {/* The ∀ is constructed, not typed: three crimson bars dividing the
+            black disc. Two symmetric diagonals run from a shared point at the
+            bottom of the circle up to the rim (each cutting off a segment),
+            and a horizontal bar joins them across the central region. The bars
+            are clipped to the disc so their outer ends sit flush on the rim —
+            the figure reads as a geometric division of the circle rather than
+            a floating letterform. Inner SVG so the unread badge stays outside
+            the clip. */}
+        <svg
           aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: TOKENS.glyphFg,
-            fontSize: 40,
-            lineHeight: 1,
-            transform: "translateY(2px)",
-          }}
+          viewBox="0 0 56 56"
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
         >
-          ∀
-        </span>
+          <defs>
+            <clipPath id="forall-disc">
+              <circle cx="28" cy="28" r="28" />
+            </clipPath>
+          </defs>
+          <g
+            clipPath="url(#forall-disc)"
+            stroke={TOKENS.glyphFg}
+            strokeWidth={5}
+            fill="none"
+          >
+            {/* left diagonal: bottom point → upper-left rim */}
+            <line x1="28" y1="56" x2="5" y2="12" />
+            {/* right diagonal: bottom point → upper-right rim */}
+            <line x1="28" y1="56" x2="51" y2="12" />
+            {/* crossbar: joins the diagonals across the central region */}
+            <line x1="14.5" y1="30" x2="41.5" y2="30" strokeLinecap="round" />
+          </g>
+        </svg>
         {totalUnread > 0 && (
           <span
             aria-hidden="true"

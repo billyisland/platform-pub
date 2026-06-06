@@ -936,13 +936,14 @@ A purely visual refinement of the `ForallMenu` button. The ∀ (U+2200) was smal
 
 Touched only `web/src/components/workspace/ForallMenu.tsx`; `scripts/check-hairlines.sh` clean. Not yet browser-verified (`web` is a baked prod image — needs `docker compose build web && up -d web`).
 
-### Slice 40 — ∀ glyph: fully enclosed, crimson, recentred (2026-06-06)
+### Slice 40 — ∀ constructed as crimson bars dividing the disc (2026-06-06)
 
-Walks back the aperture crop from Slice 39. The flush-cut edge left slivers of the clipped glyph running along the disc's circumference, which read as a fine outline hugging the rim; the disc also looked to sit high relative to the letter. The ∀ now sits **fully inside** the circle again, in the **site crimson** (`#B5242A`, the same value as the unread badge — consistent with the crimson ∀ wordmark in `ALLHAUS-REDESIGN-SPEC.md`).
+Retires the typed glyph entirely. Both Slice 39 (aperture crop) and the first cut of this slice (a shrunk, fully-enclosed `∀` character in crimson) leaned on the font's `∀` (U+2200), which never seated cleanly in the disc — the crop left rim slivers reading as a fine outline, and the enclosed character looked low/uncentred regardless of nudging. The mark is now **constructed geometry**, not a letter: three crimson bars dividing the black disc.
 
-- **No clip.** Dropped `overflow: hidden` / `border-radius` from the inner span and shrank `fontSize` 84 → 40 so the whole glyph fits with margin — nothing touches the rim, so there are no rim slivers / no apparent outline. The span stays an inner sibling so the unread badge remains an unclipped sibling on the button.
-- **Crimson.** New `TOKENS.glyphFg = "#B5242A"`; the glyph span sets `color: TOKENS.glyphFg` (overriding the button's cream `buttonFg`).
-- **Optical centre.** `transform: translateY(2px)` nudges the ink down — Literata seats the ∀ (which has no descender ink, apex pointing to the baseline) slightly high in its em box, so flex-centring the line box alone reads high. Flip the sign / magnitude here if it still looks off once rendered.
+- **The figure.** Stop thinking of it as an inverted A; think of it as dividing the circle with three lines. Two symmetric diagonals run from a shared point at the **bottom of the circle** up to the rim — each cutting off a circle **segment** on its outer side — and a horizontal **crossbar** joins the two diagonals across the central region (the part that isn't one of the two segments). The bars are bold (`strokeWidth: 5`), not hairlines.
+- **Inline SVG, clipped to the disc.** The glyph span is replaced by an inner `<svg viewBox="0 0 56 56">` (`position:absolute; inset:0`). A `clipPath` of the disc circle (`cx/cy 28, r 28`) clips the bars so their outer ends sit **flush on the rim** — that flush-to-circumference termination is the point (the bars *define* the segments), and because the bars are crimson on black with no rim slivers of a clipped letter, there's no apparent outline. Coordinates: left diagonal `(28,56)→(5,12)`, right diagonal `(28,56)→(51,12)`, crossbar `(14.5,30)→(41.5,30)` (round cap; endpoints computed to land on the diagonals at `y=30`). The SVG stays an inner sibling so the unread badge remains unclipped on the button.
+- **Crimson.** `stroke={TOKENS.glyphFg}` (`#B5242A`, same value as the unread badge — consistent with the crimson ∀ wordmark in `ALLHAUS-REDESIGN-SPEC.md`). The button's `font-serif` class is dropped (no text to set a face on).
+- **Tuning knobs.** Diagonal rim points (`5,12` / `51,12`) set the splay; the shared `(28,56)` is the bottom point; crossbar `y` (30) and its leg-intersection x's (`14.5`/`41.5`) set its height. `strokeWidth` sets bar weight.
 
 Touched only `web/src/components/workspace/ForallMenu.tsx`; `scripts/check-hairlines.sh` clean. Not yet browser-verified (`web` is a baked prod image — needs `docker compose build web && up -d web`).
 
