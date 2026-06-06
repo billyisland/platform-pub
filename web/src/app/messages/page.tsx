@@ -1,27 +1,28 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
-import { MessagesPanel } from '../../components/messages/MessagesPanel'
 
+// Direct messages is now a workspace Glasshouse overlay (opened from the
+// ForallMenu or via /workspace?overlay=messages). This route is retained only as
+// a compatibility shim. It must be a client component to forward the
+// `#conversationId` hash (legacy deep-link form) — that fragment never reaches
+// the server — into the overlay's ?conversation= seed param.
 export default function MessagesPage() {
-  const { user, loading } = useAuth()
   const router = useRouter()
 
-  useEffect(() => { if (!loading && !user) router.push('/auth?mode=login') }, [user, loading, router])
-
-  if (loading || !user) {
-    return (
-      <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
-        <div className="h-[600px] animate-pulse bg-white" />
-      </div>
+  useEffect(() => {
+    const conv = window.location.hash.slice(1)
+    router.replace(
+      conv
+        ? `/workspace?overlay=messages&conversation=${encodeURIComponent(conv)}`
+        : '/workspace?overlay=messages',
     )
-  }
+  }, [router])
 
   return (
     <div className="mx-auto max-w-content px-4 sm:px-6 py-10">
-      <MessagesPanel className="bg-white h-[calc(100vh-160px)] min-h-[400px]" />
+      <div className="h-[600px] animate-pulse bg-white" />
     </div>
   )
 }

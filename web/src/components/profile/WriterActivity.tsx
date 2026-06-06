@@ -196,9 +196,9 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
     setMsgLoading(true);
     try {
       const result = await messagesApi.createConversation([writer.id]);
-      router.push(`/messages#${result.conversationId}`);
+      router.push(`/workspace?overlay=messages&conversation=${result.conversationId}`);
     } catch {
-      router.push("/messages");
+      router.push("/workspace?overlay=messages");
     } finally {
       setMsgLoading(false);
     }

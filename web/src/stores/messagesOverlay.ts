@@ -3,18 +3,23 @@ import { create } from "zustand";
 // =============================================================================
 // useMessagesOverlay — opens the direct-messages surface in a workspace
 // Glasshouse (frosted overlay, ForallMenu stays crisp above). In-memory only:
-// unlike the reader, it pushes no shareable URL — the /messages page remains
-// the addressable surface for deep links.
+// it pushes no shareable URL. Deep links arrive as /workspace?overlay=messages
+// [&conversation=<id>] (the retired /messages + /messages/[id] routes redirect
+// into that), handled by the deep-link dispatcher in WorkspaceView. Callers may
+// seed an initial conversation to pre-select.
 // =============================================================================
 
 interface MessagesOverlayState {
   isOpen: boolean;
-  open: () => void;
+  conversationId: string | null;
+  open: (opts?: { conversationId?: string | null }) => void;
   close: () => void;
 }
 
 export const useMessagesOverlay = create<MessagesOverlayState>((set) => ({
   isOpen: false,
-  open: () => set({ isOpen: true }),
+  conversationId: null,
+  open: (opts) =>
+    set({ isOpen: true, conversationId: opts?.conversationId ?? null }),
   close: () => set({ isOpen: false }),
 }));

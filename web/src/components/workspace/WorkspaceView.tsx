@@ -50,8 +50,12 @@ import { ForallCeremony } from "./ForallCeremony";
 import { ReaderOverlay } from "./ReaderOverlay";
 import { MessagesOverlay } from "./MessagesOverlay";
 import { DashboardOverlay } from "./DashboardOverlay";
+import { NotificationsOverlay } from "./NotificationsOverlay";
 import { useReader } from "../../stores/reader";
-import { useDashboardOverlay } from "../../stores/dashboardOverlay";
+import {
+  openOverlayFromParams,
+  OVERLAY_PARAM_KEYS,
+} from "../../lib/workspace/overlays";
 import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
 
@@ -659,21 +663,15 @@ export function WorkspaceView() {
     if (!loading && !user) router.push("/auth?mode=login");
   }, [user, loading, router]);
 
-  // Deep-link → overlay. The retired /dashboard route (and any link still
-  // pointing at it) redirects here as /workspace?overlay=dashboard[&tab&context];
-  // open the dashboard Glasshouse seeded with that tab/context, then strip the
+  // Deep-link → overlay. Retired routes (dashboard, messages, notifications)
+  // redirect here as /workspace?overlay=<name>[&…seed params]; the dispatcher
+  // opens the matching Glasshouse seeded from the query, then we strip the
   // params so the workspace URL stays clean. Read once on mount via
   // window.location (no useSearchParams → no Suspense boundary needed).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("overlay") !== "dashboard") return;
-    useDashboardOverlay.getState().open({
-      tab: params.get("tab"),
-      context: params.get("context"),
-    });
-    params.delete("overlay");
-    params.delete("tab");
-    params.delete("context");
+    if (!openOverlayFromParams(params)) return;
+    OVERLAY_PARAM_KEYS.forEach((k) => params.delete(k));
     const qs = params.toString();
     window.history.replaceState({}, "", `/workspace${qs ? `?${qs}` : ""}`);
   }, []);
@@ -1254,6 +1252,7 @@ export function WorkspaceView() {
       <ReaderOverlay />
       <MessagesOverlay />
       <DashboardOverlay />
+      <NotificationsOverlay />
     </Floor>
   );
 }

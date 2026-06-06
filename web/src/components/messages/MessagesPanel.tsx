@@ -17,11 +17,15 @@ import { MessageThread } from './MessageThread'
 export function MessagesPanel({
   className = '',
   inOverlay = false,
+  initialConversationId = null,
 }: {
   className?: string
   // True when hosted in a Glasshouse overlay — reserves room in the thread
   // header for the overlay's floating close ✕.
   inOverlay?: boolean
+  // Pre-selected conversation. The overlay seeds this from the store (the
+  // workspace URL carries no #hash); the standalone page reads the hash instead.
+  initialConversationId?: string | null
 }) {
   const { user } = useAuth()
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -47,16 +51,18 @@ export function MessagesPanel({
 
   useEffect(() => { if (user) void fetchConversations() }, [user])
 
-  // Auto-select conversation from hash (for deep-linking from /messages/:id redirect)
-  // or default to the most recent conversation
+  // Auto-select the seeded conversation (overlay: store prop; page: URL hash),
+  // else default to the most recent conversation.
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const hash = window.location.hash.slice(1)
-      if (hash) setActiveConvId(hash)
+    const hash =
+      typeof window !== 'undefined' ? window.location.hash.slice(1) : ''
+    const seed = initialConversationId || hash
+    if (seed) {
+      setActiveConvId(seed)
     } else if (conversations.length > 0 && !activeConvId) {
       setActiveConvId(conversations[0].id)
     }
-  }, [conversations])
+  }, [conversations, initialConversationId])
 
   async function handleNewConversation(e: React.FormEvent) {
     e.preventDefault()

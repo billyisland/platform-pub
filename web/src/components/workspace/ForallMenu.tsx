@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useUnreadCounts } from "../../stores/unread";
 import { useMessagesOverlay } from "../../stores/messagesOverlay";
 import { useDashboardOverlay } from "../../stores/dashboardOverlay";
-import { NotificationsPanel } from "./NotificationsPanel";
+import { useNotificationsOverlay } from "../../stores/notificationsOverlay";
 import { SearchPanel } from "./SearchPanel";
 
 const TOKENS = {
@@ -34,12 +34,12 @@ interface ForallMenuProps {
   onRestore?: (feedId: string) => void;
 }
 
-type View = "closed" | "menu" | "search" | "notifications";
+type View = "closed" | "menu" | "search";
 
 // Flattened, keyboard-navigable menu rows. Order here is the arrow-key order.
 type FocusRow =
   | { kind: "action"; key: ForallAction; label: string }
-  | { kind: "open"; target: "search" | "notifications"; label: string; count: number }
+  | { kind: "open"; target: "search"; label: string; count: number }
   | { kind: "overlay"; onOpen: () => void; label: string; count: number }
   | { kind: "link"; href: string; label: string; count: number }
   | { kind: "restore"; id: string; label: string };
@@ -80,8 +80,8 @@ export function ForallMenu({
       count: dmCount,
     },
     {
-      kind: "open",
-      target: "notifications",
+      kind: "overlay",
+      onOpen: () => useNotificationsOverlay.getState().open(),
       label: "Notifications",
       count: notificationCount,
     },
@@ -255,7 +255,6 @@ export function ForallMenu({
       )}
 
       {view === "search" && <SearchPanel onClose={closeAll} />}
-      {view === "notifications" && <NotificationsPanel onClose={closeAll} />}
 
       <button
         ref={buttonRef}

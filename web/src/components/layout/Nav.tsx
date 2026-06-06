@@ -94,13 +94,13 @@ function AvatarDropdown({ user, onLogout, onClose }: {
         {/* Group 1 */}
         <div className="py-1">
           <Link href="/profile" onClick={onClose} className={linkClass}>Profile</Link>
-          <Link href="/messages" onClick={onClose} className={linkClass}>
+          <Link href="/workspace?overlay=messages" onClick={onClose} className={linkClass}>
             <span className="flex items-center justify-between">
               <span>Messages</span>
               <Badge count={dmCount} />
             </span>
           </Link>
-          <Link href="/notifications" onClick={onClose} className={linkClass}>
+          <Link href="/workspace?overlay=notifications" onClick={onClose} className={linkClass}>
             <span className="flex items-center justify-between">
               <span>Notifications</span>
               <Badge count={notificationCount} />
@@ -195,10 +195,10 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
-          <Link href="/messages" onClick={onClose} className={linkClass('/messages')}>
+          <Link href="/workspace?overlay=messages" onClick={onClose} className={linkClass('/messages')}>
             <span className="flex items-center gap-2">Messages<Badge count={dmCount} /></span>
           </Link>
-          <Link href="/notifications" onClick={onClose} className={linkClass('/notifications')}>
+          <Link href="/workspace?overlay=notifications" onClick={onClose} className={linkClass('/notifications')}>
             <span className="flex items-center gap-2">Notifications<Badge count={notificationCount} /></span>
           </Link>
 

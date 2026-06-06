@@ -3,19 +3,18 @@
 import { useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 
-// This route exists for notification deep-linking.
-// It redirects to the main messages page with the conversation pre-selected.
-// The actual conversation is rendered on /messages via query state.
-
+// Compatibility shim for notification deep-linking to a specific conversation.
+// Direct messages is now a workspace Glasshouse overlay; forward the path param
+// into the overlay's ?conversation= seed.
 export default function ConversationPage() {
   const router = useRouter()
   const params = useParams()
   const conversationId = params.conversationId as string
 
   useEffect(() => {
-    // Redirect to the inbox with a hash to signal which conversation to open.
-    // The messages page reads this on mount.
-    router.replace(`/messages#${conversationId}`)
+    router.replace(
+      `/workspace?overlay=messages&conversation=${encodeURIComponent(conversationId)}`,
+    )
   }, [conversationId, router])
 
   return (
