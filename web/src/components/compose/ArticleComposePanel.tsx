@@ -339,11 +339,8 @@ export function ArticleComposePanel() {
 
   return (
     <>
-      {/* Top zone: title + publication selector */}
-      <div
-        className="px-6 py-4 space-y-2"
-        style={{ borderBottom: "4px solid #E5E5E5" }}
-      >
+      {/* Top zone: title + publication selector. pr-12 clears the floating ✕. */}
+      <div className="px-6 py-4 pr-12 space-y-2">
         <input
           type="text"
           value={title}
@@ -386,10 +383,7 @@ export function ArticleComposePanel() {
       </div>
 
       {/* Inline toolbar */}
-      <div
-        className="px-6 py-2 flex items-center gap-1"
-        style={{ borderBottom: "1px solid #F0F0F0" }}
-      >
+      <div className="px-6 py-2 flex items-center gap-1">
         <TB
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive("bold")}
@@ -449,7 +443,7 @@ export function ArticleComposePanel() {
         >
           {uploading ? "…" : "IMG"}
         </TB>
-        <span className="mx-1 text-grey-300">|</span>
+        <span className="w-3" />
         <TB
           onClick={() => {
             if (gateInserted) editor.commands.removePaywallGate();
@@ -466,10 +460,7 @@ export function ArticleComposePanel() {
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <EditorContent editor={editor} />
         {gateInserted && (
-          <div
-            className="mt-4 flex items-center gap-3 py-2"
-            style={{ borderTop: "1px solid #F0F0F0" }}
-          >
+          <div className="mt-4 flex items-center gap-3 py-2">
             <span className="label-ui text-grey-400">PRICE</span>
             <span className="font-mono text-mono-xs text-grey-600">£</span>
             <input
@@ -489,10 +480,7 @@ export function ArticleComposePanel() {
       </div>
 
       {/* Controls zone */}
-      <div
-        className="px-6 py-3 flex items-center gap-4"
-        style={{ borderTop: "4px solid #E5E5E5" }}
-      >
+      <div className="px-6 py-3 flex items-center gap-4">
         <span className="font-mono text-mono-xs text-grey-400 min-w-[80px]">
           {saveStatus ?? (loadingDraft ? "LOADING…" : draftId ? "DRAFT" : "")}
         </span>
@@ -525,10 +513,7 @@ export function ArticleComposePanel() {
 
       {/* Schedule picker */}
       {showSchedule && (
-        <div
-          className="px-6 py-3 flex items-center gap-3"
-          style={{ borderTop: "1px solid #F0F0F0" }}
-        >
+        <div className="px-6 py-3 flex items-center gap-3">
           <input
             type="datetime-local"
             value={scheduleDateTime}
@@ -557,10 +542,7 @@ export function ArticleComposePanel() {
 
       {/* Error row */}
       {publishError && (
-        <div
-          className="px-6 py-2 flex items-center justify-between"
-          style={{ borderTop: "1px solid #F0F0F0" }}
-        >
+        <div className="px-6 py-2 flex items-center justify-between">
           <p className="text-ui-xs text-crimson">{publishError}</p>
           <button
             onClick={() => setPublishError(null)}
@@ -589,8 +571,8 @@ function TB({
     "px-2 py-1 label-ui rounded transition-colors";
   const tone = accent
     ? active
-      ? "text-crimson border border-crimson"
-      : "text-crimson hover:bg-grey-100 border border-transparent"
+      ? "bg-crimson text-white"
+      : "text-crimson hover:bg-grey-100"
     : active
       ? "bg-grey-100 text-black"
       : "text-grey-400 hover:bg-grey-100 hover:text-black";

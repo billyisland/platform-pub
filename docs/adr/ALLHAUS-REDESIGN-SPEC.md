@@ -120,6 +120,8 @@ The feed is already single-column, so the mobile treatment is largely the same a
 
 ## 3. The compose surface (note + reply + article modes shipped)
 
+> **Update (2026-06-06) — Glasshouse migration.** The overlay now renders through the canonical `<Glasshouse>` primitive (`components/workspace/Glasshouse.tsx`) rather than its own bespoke scrim/pane. This supersedes the presentational specifics below: the **40% black scrim → a full-viewport frosted blur** (`backdrop-blur-[3px]`, no tint), the pane is **centred** (no longer 80px-offset / topbar-anchored), the **internal 4px grey zone rules are gone** (zones separated by whitespace only, per the sitewide no-thin-line rule), and there is **one centred pane for desktop and mobile** (the old full-screen bottom sheet is removed). Dismiss is unchanged in spirit — Glasshouse's scrim / floating ✕ / Escape route to a single handler; article mode flushes the draft first, note/reply keeps the two-step "Discard this? Press Escape or click away again to confirm." The mode/affordance behaviour (note/reply/article, controls zones, publication selector, paywall) is otherwise as documented.
+
 ### What it is
 
 Compose is a mode, not a page. It is the one place the user initiates new content — whether that content is a short note, a reply, a DM, a cliquey thread, or a long-form article. Triggered from the topbar (button or `⌘K`), it opens as an overlay over whatever the user was doing, and dismisses back to context. This is the scope doc's "composing is entered from anywhere, written, sent, and exited back to where the user was" principle made concrete.

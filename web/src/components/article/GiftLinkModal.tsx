@@ -24,7 +24,15 @@ export function GiftLinkModal({ articleDbId, onClose }: GiftLinkModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
-      <div className="bg-white border border-grey-200 shadow-lg w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white shadow-lg w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 text-grey-400 hover:text-black text-lg leading-none"
+        >
+          ✕
+        </button>
         <h3 className="font-serif text-[20px] font-medium text-black mb-1">Create gift link</h3>
         <p className="text-ui-xs font-sans text-grey-400 mb-4">Generate a shareable link that grants free access.</p>
         {!url ? (
@@ -61,9 +69,6 @@ export function GiftLinkModal({ articleDbId, onClose }: GiftLinkModalProps) {
             </button>
           </>
         )}
-        <button onClick={onClose} className="mt-4 block text-[12px] font-mono text-grey-400 hover:text-black transition-colors">
-          Close
-        </button>
       </div>
     </div>
   )
