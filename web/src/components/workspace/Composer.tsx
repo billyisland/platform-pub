@@ -17,13 +17,11 @@ import { ImageUpload } from '../editor/ImageUpload'
 import { EmbedNode } from '../editor/EmbedNode'
 import { PaywallGateNode, PAYWALL_GATE_MARKER } from '../editor/PaywallGateNode'
 import {
-  resolver,
   messages as messagesApi,
   linkedAccounts as linkedAccountsApi,
   publications as publicationsApi,
   type LinkedAccount,
   type ResolverMatch,
-  type ResolverResult,
 } from '../../lib/api'
 import { Glasshouse } from './Glasshouse'
 
@@ -69,24 +67,14 @@ const PROTOCOL_LABELS: Record<Protocol, string> = {
   activitypub: 'ACTIVITYPUB',
 }
 
-// Native protocols always available (allhaus + nostr ride the same custodial
-// signing key). The other two require a linked_accounts row before they can
-// receive a cross-post.
-const NATIVE_PROTOCOLS: ReadonlySet<Protocol> = new Set(['allhaus', 'nostr'])
-
+// Maps a linked-account protocol to the cross-post protocol the publish path
+// fans out to. nostr_external/rss can't receive an original cross-post.
 const PROTOCOL_FROM_LINKED: Record<LinkedAccount['protocol'], Protocol | null> = {
   atproto: 'atproto',
   activitypub: 'activitypub',
   nostr_external: null,
   rss: null,
 }
-
-const BROADCAST_TOKENS: { id: string; label: string; protocol: Protocol }[] = [
-  { id: 'broadcast:allhaus', label: 'Everyone on all.haus', protocol: 'allhaus' },
-  { id: 'broadcast:nostr', label: 'Everyone on Nostr', protocol: 'nostr' },
-  { id: 'broadcast:atproto', label: 'Everyone on Bluesky', protocol: 'atproto' },
-  { id: 'broadcast:activitypub', label: 'Everyone on the fediverse', protocol: 'activitypub' },
-]
 
 interface ToChip {
   kind: 'person' | 'broadcast'
@@ -140,14 +128,16 @@ interface ComposerProps {
 export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget, onClose, onPublished, onReplied }: ComposerProps) {
   const { user } = useAuth()
   const [mode, setMode] = useState<ComposerMode>(initialMode)
-  const [chips, setChips] = useState<ToChip[]>([])
-  const [toQuery, setToQuery] = useState('')
-  const [resolverResult, setResolverResult] = useState<ResolverResult | null>(null)
-  const [resolving, setResolving] = useState(false)
+  // chips stays empty now that the recipient "To" field is gone — every send is
+  // a public broadcast. Retained because the publish path keys its
+  // public/private branch off it.
+  const [chips] = useState<ToChip[]>([])
   const [body, setBody] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [enabledProtocols, setEnabledProtocols] = useState<Set<Protocol>>(
+  // All native + linked protocols broadcast by default now that the per-send
+  // protocol toggle is gone; a fresh note fans out to every connected network.
+  const [enabledProtocols] = useState<Set<Protocol>>(
     () => new Set<Protocol>(['allhaus', 'nostr', 'atproto', 'activitypub']),
   )
   const [linkedByProtocol, setLinkedByProtocol] = useState<Partial<Record<Protocol, LinkedAccount>>>({})
@@ -168,9 +158,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
   const [showNudge, setShowNudge] = useState(false)
 
   const bodyRef = useRef<HTMLTextAreaElement>(null)
-  const toInputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pollCountRef = useRef(0)
   const titleRef = useRef(title)
   titleRef.current = title
   const dekRef = useRef(dek)
@@ -249,10 +236,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
   useEffect(() => {
     if (!open) return
     setMode(replyTarget || quoteTarget ? 'note' : initialMode)
-    setChips([])
-    setToQuery('')
-    setResolverResult(null)
-    setResolving(false)
     setBody('')
     setError(null)
     setPublishing(false)
@@ -317,7 +300,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
     return () => {
       cancelled = true
       clearTimeout(t)
-      if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [open, initialMode])
 
@@ -357,109 +339,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
     const wordCount = body.trim() === '' ? 0 : body.trim().split(/\s+/).length
     if (wordCount >= NUDGE_WORDS_THRESHOLD) setShowNudge(true)
   }, [mode, body, nudgeDismissed])
-
-  const pollForResults = useCallback(async (requestId: string) => {
-    pollCountRef.current++
-    if (pollCountRef.current > 3) {
-      setResolving(false)
-      return
-    }
-    await new Promise((r) => setTimeout(r, 1000))
-    try {
-      const res = await resolver.poll(requestId)
-      setResolverResult(res)
-      if (res.status === 'pending') {
-        void pollForResults(requestId)
-      } else {
-        setResolving(false)
-      }
-    } catch {
-      setResolving(false)
-    }
-  }, [])
-
-  function onToQueryChange(value: string) {
-    setToQuery(value)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!value.trim()) {
-      setResolverResult(null)
-      setResolving(false)
-      return
-    }
-    debounceRef.current = setTimeout(async () => {
-      setResolving(true)
-      pollCountRef.current = 0
-      try {
-        const res = await resolver.resolve(value.trim(), 'dm')
-        setResolverResult(res)
-        if (res.requestId && res.status === 'pending') {
-          void pollForResults(res.requestId)
-        } else {
-          setResolving(false)
-        }
-      } catch {
-        setResolving(false)
-      }
-    }, 300)
-  }
-
-  function addPersonChip(match: ResolverMatch) {
-    if (match.type !== 'native_account' || !match.account) return
-    const id = `person:${match.account.id}`
-    if (chips.some((c) => c.id === id)) return
-    setChips((prev) => [
-      ...prev,
-      {
-        kind: 'person',
-        id,
-        label: match.account!.displayName || `@${match.account!.username}`,
-        match,
-      },
-    ])
-    setToQuery('')
-    setResolverResult(null)
-    toInputRef.current?.focus()
-  }
-
-  function addBroadcastChip(token: (typeof BROADCAST_TOKENS)[number]) {
-    if (chips.some((c) => c.id === token.id)) return
-    setChips((prev) => [
-      ...prev,
-      { kind: 'broadcast', id: token.id, label: token.label, protocol: token.protocol },
-    ])
-    setToQuery('')
-    setResolverResult(null)
-    toInputRef.current?.focus()
-  }
-
-  function removeChip(id: string) {
-    setChips((prev) => prev.filter((c) => c.id !== id))
-    toInputRef.current?.focus()
-  }
-
-  function onToKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Backspace' && toQuery === '' && chips.length > 0) {
-      e.preventDefault()
-      setChips((prev) => prev.slice(0, -1))
-      return
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      const top = resolverResult?.matches.find(
-        (m) => m.type === 'native_account' && m.account,
-      )
-      if (top) addPersonChip(top)
-    }
-  }
-
-  function toggleProtocol(p: Protocol) {
-    setEnabledProtocols((prev) => {
-      const next = new Set(prev)
-      if (next.has(p)) next.delete(p)
-      else next.add(p)
-      return next
-    })
-  }
 
   if (!open) return null
 
@@ -642,17 +521,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
     if (!publishing) onClose()
   }
 
-  const personMatches = (resolverResult?.matches ?? []).filter(
-    (m) => m.type === 'native_account' && m.account,
-  )
-  const filteredBroadcasts = toQuery.trim()
-    ? BROADCAST_TOKENS.filter((t) =>
-        t.label.toLowerCase().includes(toQuery.trim().toLowerCase()),
-      )
-    : []
-  const showResolverDropdown =
-    !!toQuery.trim() && (personMatches.length > 0 || filteredBroadcasts.length > 0 || resolving)
-
   return (
     <Glasshouse
       onClose={handleClose}
@@ -660,6 +528,13 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
       ariaLabel={isReply ? 'Reply' : isQuote ? 'Quote' : mode === 'article' ? 'Write an article' : 'New note'}
     >
       <div style={{ padding: 24 }}>
+        {/* Mode label — also reserves top-right clearance for the Glasshouse ✕. */}
+        <div
+          className="label-ui"
+          style={{ color: TOKENS.hintFg, marginBottom: 16, paddingRight: 32 }}
+        >
+          {isReply ? 'REPLY' : isQuote ? 'QUOTE' : mode === 'article' ? 'ARTICLE' : 'NOTE'}
+        </div>
         {isReply && replyTarget && (
           <div
             style={{
@@ -718,198 +593,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
               </p>
             )}
           </div>
-        )}
-
-        {!isReply && !isQuote && !hasPersonChip && (
-          <div
-            className="label-ui"
-            style={{
-              background: TOKENS.bannerBg,
-              color: TOKENS.bannerFg,
-              padding: '8px 12px',
-              marginBottom: 16,
-            }}
-          >
-            Publishing publicly
-          </div>
-        )}
-
-        {!isReply && !isQuote && (
-        <label
-          className="label-ui block"
-          htmlFor="composer-to"
-          style={{ color: TOKENS.hintFg, marginBottom: 6 }}
-        >
-          To
-        </label>
-        )}
-
-        {!isReply && !isQuote && (
-        <div
-          style={{
-            background: TOKENS.fieldBg,
-            padding: '6px 8px',
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 6,
-            position: 'relative',
-            marginBottom: 16,
-          }}
-          onClick={() => toInputRef.current?.focus()}
-        >
-          {chips.map((chip) => (
-            <span
-              key={chip.id}
-              className="label-ui"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 8px',
-                background: chip.kind === 'broadcast' ? TOKENS.chipBroadcastBg : TOKENS.chipBg,
-                color: chip.kind === 'broadcast' ? TOKENS.chipBroadcastFg : TOKENS.chipFg,
-              }}
-            >
-              {chip.label}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  removeChip(chip.id)
-                }}
-                aria-label={`Remove ${chip.label}`}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'inherit',
-                  cursor: 'pointer',
-                  padding: 0,
-                  fontSize: 14,
-                  lineHeight: 1,
-                }}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          <input
-            id="composer-to"
-            ref={toInputRef}
-            type="text"
-            value={toQuery}
-            onChange={(e) => onToQueryChange(e.target.value)}
-            onKeyDown={onToKey}
-            placeholder={chips.length === 0 ? '∀  (everyone, everywhere)' : ''}
-            className="font-sans text-ui-sm"
-            style={{
-              flex: 1,
-              minWidth: 160,
-              border: 'none',
-              outline: 'none',
-              padding: '4px 4px',
-              background: 'transparent',
-            }}
-          />
-          {resolving && (
-            <span
-              aria-hidden
-              style={{
-                width: 12,
-                height: 12,
-                border: '2px solid #BBBBBB',
-                borderTopColor: '#1A1A18',
-                borderRadius: '50%',
-                animation: 'spin 0.8s linear infinite',
-              }}
-            />
-          )}
-
-          {showResolverDropdown && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                marginTop: 4,
-                background: TOKENS.panelBg,
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
-                zIndex: 1,
-                maxHeight: 240,
-                overflowY: 'auto',
-              }}
-              onMouseDown={(e) => e.preventDefault()}
-            >
-              {personMatches.map((m, i) => (
-                <button
-                  key={`person-${i}`}
-                  type="button"
-                  onClick={() => addPersonChip(m)}
-                  className="font-sans text-ui-sm block w-full text-left"
-                  style={{
-                    padding: '8px 12px',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                  onMouseEnter={(e) => {
-                    ;(e.currentTarget as HTMLButtonElement).style.background = TOKENS.matchHoverBg
-                  }}
-                  onMouseLeave={(e) => {
-                    ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-                  }}
-                >
-                  <span style={{ fontWeight: 500 }}>{m.account?.displayName}</span>
-                  <span
-                    className="font-mono text-mono-xs"
-                    style={{ color: TOKENS.hintFg, marginLeft: 8 }}
-                  >
-                    @{m.account?.username}
-                  </span>
-                </button>
-              ))}
-              {filteredBroadcasts.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => addBroadcastChip(t)}
-                  className="font-sans text-ui-sm block w-full text-left"
-                  style={{
-                    padding: '8px 12px',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                  onMouseEnter={(e) => {
-                    ;(e.currentTarget as HTMLButtonElement).style.background = TOKENS.matchHoverBg
-                  }}
-                  onMouseLeave={(e) => {
-                    ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-                  }}
-                >
-                  {t.label}
-                </button>
-              ))}
-              {!resolving && personMatches.length === 0 && filteredBroadcasts.length === 0 && (
-                <div
-                  className="font-mono text-mono-xs"
-                  style={{ color: TOKENS.hintFg, padding: '8px 12px' }}
-                >
-                  No matches.
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        )}
-
-        {!isReply && !isQuote && mode === 'note' && chips.length === 0 && (
-          <ProtocolSelector
-            enabled={enabledProtocols}
-            linked={linkedByProtocol}
-            onToggle={toggleProtocol}
-          />
         )}
 
         {mode === 'note' ? (
@@ -1127,71 +810,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
         }
       `}</style>
     </Glasshouse>
-  )
-}
-
-function ProtocolSelector({
-  enabled,
-  linked,
-  onToggle,
-}: {
-  enabled: Set<Protocol>
-  linked: Partial<Record<Protocol, LinkedAccount>>
-  onToggle: (p: Protocol) => void
-}) {
-  const order: Protocol[] = ['allhaus', 'nostr', 'atproto', 'activitypub']
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: 8,
-      }}
-    >
-      <span
-        className="label-ui"
-        style={{ color: TOKENS.hintFg, marginRight: 4 }}
-      >
-        Send via
-      </span>
-      {order.map((p) => {
-        const isNative = NATIVE_PROTOCOLS.has(p)
-        const isConnected = isNative || !!linked[p]
-        const isOn = enabled.has(p) && isConnected
-        const handleClick = () => {
-          if (!isConnected) return
-          onToggle(p)
-        }
-        return (
-          <button
-            key={p}
-            type="button"
-            onClick={handleClick}
-            disabled={!isConnected}
-            className="label-ui"
-            title={
-              isConnected
-                ? undefined
-                : `Connect ${PROTOCOL_LABELS[p]} in Settings → Linked accounts to broadcast there.`
-            }
-            style={{
-              padding: '4px 10px',
-              background: isOn ? TOKENS.toggleOnBg : TOKENS.fieldBg,
-              color: isOn
-                ? TOKENS.toggleOnFg
-                : isConnected
-                  ? TOKENS.toggleOffFg
-                  : TOKENS.toggleDisabledFg,
-              border: 'none',
-              cursor: isConnected ? 'pointer' : 'not-allowed',
-            }}
-          >
-            {PROTOCOL_LABELS[p]}
-          </button>
-        )
-      })}
-    </div>
   )
 }
 
