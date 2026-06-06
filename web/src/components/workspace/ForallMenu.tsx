@@ -10,6 +10,7 @@ import { SearchPanel } from "./SearchPanel";
 const TOKENS = {
   buttonBg: "#1A1A18",
   buttonFg: "#F0EFEB",
+  glyphFg: "#B5242A",
   menuBg: "#FFFFFF",
   menuBorder: "#1A1A18",
   itemFg: "#1A1A18",
@@ -268,22 +269,22 @@ export function ForallMenu({
           transform: view !== "closed" ? "scale(1.04)" : "scale(1)",
         }}
       >
-        {/* Aperture: the circle clips the oversized glyph so only the
-            letter that fits inside the frame is seen — its feet and tip are
-            just cut off by the circumference. Kept on an inner span so the
-            unread badge below stays outside the clip. */}
+        {/* The ∀ glyph sits fully inside the circle (no flush-cut edge, so no
+            cream/red slivers reading as an outline along the rim), optically
+            centred, in the site crimson. Kept on an inner span so the unread
+            badge below stays outside it. */}
         <span
           aria-hidden="true"
           style={{
             position: "absolute",
             inset: 0,
-            borderRadius: "50%",
-            overflow: "hidden",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 84,
+            color: TOKENS.glyphFg,
+            fontSize: 40,
             lineHeight: 1,
+            transform: "translateY(2px)",
           }}
         >
           ∀

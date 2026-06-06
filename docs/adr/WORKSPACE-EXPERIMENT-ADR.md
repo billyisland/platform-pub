@@ -936,6 +936,16 @@ A purely visual refinement of the `ForallMenu` button. The ∀ (U+2200) was smal
 
 Touched only `web/src/components/workspace/ForallMenu.tsx`; `scripts/check-hairlines.sh` clean. Not yet browser-verified (`web` is a baked prod image — needs `docker compose build web && up -d web`).
 
+### Slice 40 — ∀ glyph: fully enclosed, crimson, recentred (2026-06-06)
+
+Walks back the aperture crop from Slice 39. The flush-cut edge left slivers of the clipped glyph running along the disc's circumference, which read as a fine outline hugging the rim; the disc also looked to sit high relative to the letter. The ∀ now sits **fully inside** the circle again, in the **site crimson** (`#B5242A`, the same value as the unread badge — consistent with the crimson ∀ wordmark in `ALLHAUS-REDESIGN-SPEC.md`).
+
+- **No clip.** Dropped `overflow: hidden` / `border-radius` from the inner span and shrank `fontSize` 84 → 40 so the whole glyph fits with margin — nothing touches the rim, so there are no rim slivers / no apparent outline. The span stays an inner sibling so the unread badge remains an unclipped sibling on the button.
+- **Crimson.** New `TOKENS.glyphFg = "#B5242A"`; the glyph span sets `color: TOKENS.glyphFg` (overriding the button's cream `buttonFg`).
+- **Optical centre.** `transform: translateY(2px)` nudges the ink down — Literata seats the ∀ (which has no descender ink, apex pointing to the baseline) slightly high in its em box, so flex-centring the line box alone reads high. Flip the sign / magnitude here if it still looks off once rendered.
+
+Touched only `web/src/components/workspace/ForallMenu.tsx`; `scripts/check-hairlines.sh` clean. Not yet browser-verified (`web` is a baked prod image — needs `docker compose build web && up -d web`).
+
 ## Deferred (TODO in code, not blocking the experiment)
 
 - DM/messages model (vessel vs `/messages` route).
