@@ -25,6 +25,7 @@ import {
   type ResolverMatch,
   type ResolverResult,
 } from '../../lib/api'
+import { Glasshouse } from './Glasshouse'
 
 const NOTE_CHAR_LIMIT = 1000
 const NUDGE_WORDS_THRESHOLD = 400
@@ -168,7 +169,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
 
   const bodyRef = useRef<HTMLTextAreaElement>(null)
   const toInputRef = useRef<HTMLInputElement>(null)
-  const scrimRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollCountRef = useRef(0)
   const titleRef = useRef(title)
@@ -273,10 +273,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
         bodyRef.current?.focus()
       }
     }, 0)
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !publishing) onClose()
-    }
-    document.addEventListener('keydown', onKey)
 
     // Fetch linked accounts so the protocol toggles know which non-native
     // protocols can actually receive a cross-post. Failure is non-fatal —
@@ -321,10 +317,9 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
     return () => {
       cancelled = true
       clearTimeout(t)
-      document.removeEventListener('keydown', onKey)
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [open, initialMode, onClose, publishing])
+  }, [open, initialMode])
 
   // Note→article elevation. One-way per slice 10 — once switched, the
   // textarea content lands as the editor's initial value and the editor
@@ -641,8 +636,10 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
     return handlePublishArticle()
   }
 
-  function onScrimClick(e: React.MouseEvent) {
-    if (e.target === scrimRef.current && !publishing) onClose()
+  // Glasshouse owns the scrim / ✕ / Escape; route all three here so a publish
+  // in flight can't be dismissed out from under itself.
+  function handleClose() {
+    if (!publishing) onClose()
   }
 
   const personMatches = (resolverResult?.matches ?? []).filter(
@@ -657,33 +654,12 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
     !!toQuery.trim() && (personMatches.length > 0 || filteredBroadcasts.length > 0 || resolving)
 
   return (
-    <div
-      ref={scrimRef}
-      onMouseDown={onScrimClick}
-      role="dialog"
-      aria-modal="true"
-      aria-label={isReply ? 'Reply' : isQuote ? 'Quote' : mode === 'article' ? 'Write an article' : 'New note'}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: TOKENS.scrim,
-        zIndex: 60,
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        paddingTop: 96,
-      }}
+    <Glasshouse
+      onClose={handleClose}
+      maxWidth={640}
+      ariaLabel={isReply ? 'Reply' : isQuote ? 'Quote' : mode === 'article' ? 'Write an article' : 'New note'}
     >
-      <div
-        style={{
-          width: 640,
-          maxWidth: 'calc(100vw - 48px)',
-          background: TOKENS.panelBg,
-          border: `1px solid ${TOKENS.panelBorder}`,
-          padding: 24,
-          boxShadow: '0 24px 48px rgba(0, 0, 0, 0.18)',
-        }}
-      >
+      <div style={{ padding: 24 }}>
         {isReply && replyTarget && (
           <div
             style={{
@@ -771,7 +747,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
         {!isReply && !isQuote && (
         <div
           style={{
-            border: `1px solid ${TOKENS.inputBorder}`,
+            background: TOKENS.fieldBg,
             padding: '6px 8px',
             display: 'flex',
             flexWrap: 'wrap',
@@ -858,7 +834,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
                 right: 0,
                 marginTop: 4,
                 background: TOKENS.panelBg,
-                border: `1px solid ${TOKENS.panelBorder}`,
                 boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
                 zIndex: 1,
                 maxHeight: 240,
@@ -946,7 +921,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
               placeholder="What are you thinking?"
               className="font-serif text-[16px] w-full"
               style={{
-                border: `1px solid ${TOKENS.inputBorder}`,
+                background: TOKENS.fieldBg,
                 padding: '12px 14px',
                 minHeight: 160,
                 resize: 'vertical',
@@ -1106,21 +1081,6 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               type="button"
-              onClick={onClose}
-              disabled={publishing}
-              className="font-sans text-ui-xs"
-              style={{
-                padding: '8px 14px',
-                background: 'transparent',
-                color: TOKENS.bannerFg,
-                border: 'none',
-                cursor: publishing ? 'default' : 'pointer',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
               onClick={handlePublish}
               disabled={!canPublish}
               className="font-sans text-ui-xs"
@@ -1166,7 +1126,7 @@ export function Composer({ open, initialMode = 'note', replyTarget, quoteTarget,
           }
         }
       `}</style>
-    </div>
+    </Glasshouse>
   )
 }
 
@@ -1217,13 +1177,13 @@ function ProtocolSelector({
             }
             style={{
               padding: '4px 10px',
-              background: isOn ? TOKENS.toggleOnBg : TOKENS.toggleOffBg,
+              background: isOn ? TOKENS.toggleOnBg : TOKENS.fieldBg,
               color: isOn
                 ? TOKENS.toggleOnFg
                 : isConnected
                   ? TOKENS.toggleOffFg
                   : TOKENS.toggleDisabledFg,
-              border: `1px solid ${isOn ? TOKENS.toggleOnBg : TOKENS.inputBorder}`,
+              border: 'none',
               cursor: isConnected ? 'pointer' : 'not-allowed',
             }}
           >
@@ -1479,9 +1439,21 @@ function ArticleToolbar({
       className="font-sans text-ui-xs"
       style={{
         padding: '4px 8px',
-        background: active ? TOKENS.bannerBg : 'transparent',
-        color: accent ? TOKENS.paywallFg : active ? TOKENS.toolbarActive : TOKENS.toolbarFg,
-        border: accent ? `1px solid ${active ? TOKENS.paywallFg : 'transparent'}` : 'none',
+        background: accent
+          ? active
+            ? TOKENS.paywallFg
+            : 'transparent'
+          : active
+            ? TOKENS.bannerBg
+            : 'transparent',
+        color: accent
+          ? active
+            ? '#FFFFFF'
+            : TOKENS.paywallFg
+          : active
+            ? TOKENS.toolbarActive
+            : TOKENS.toolbarFg,
+        border: 'none',
         cursor: 'pointer',
         fontWeight: 500,
       }}
@@ -1497,7 +1469,6 @@ function ArticleToolbar({
         alignItems: 'center',
         gap: 4,
         padding: '4px 0',
-        borderBottom: `1px solid ${TOKENS.inputBorder}`,
         marginTop: 4,
       }}
     >
@@ -1533,7 +1504,7 @@ function ArticleToolbar({
         }
         input.click()
       })}
-      <span style={{ color: '#BBBBBB', padding: '0 4px' }}>|</span>
+      <span style={{ display: 'inline-block', width: 8 }} />
       {btn(gateInserted ? 'PAYWALL ✓' : 'PAYWALL', gateInserted, true, () => {
         if (gateInserted) editor.commands.removePaywallGate()
         else editor.commands.insertPaywallGate()
