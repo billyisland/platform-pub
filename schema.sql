@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict BNpadgIrG92vzXAxQNNJ4G3DUwlQPuhqz57nFdVNm5WHq8IllCL5d17d3I0E4xr
+\restrict onI46j7hnaW5pnrjeiahuI2efghI6TfxQMbEL1tOCjtrzOx3jHpMqks3a3muPHc
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1007,6 +1007,9 @@ CREATE TABLE public.accounts (
     email_verification_token text,
     always_open_articles_at_top boolean DEFAULT false NOT NULL,
     email_verification_requested_at timestamp with time zone,
+    publish_follow_graph boolean DEFAULT true NOT NULL,
+    follow_list_dirty boolean DEFAULT false NOT NULL,
+    discovery_synced_at timestamp with time zone,
     CONSTRAINT accounts_annual_discount_pct_check CHECK (((annual_discount_pct >= 0) AND (annual_discount_pct <= 30))),
     CONSTRAINT accounts_hosting_type_check CHECK ((hosting_type = ANY (ARRAY['hosted'::text, 'self_hosted'::text])))
 );
@@ -1968,7 +1971,7 @@ CREATE TABLE public.relay_outbox (
     last_attempt_at timestamp with time zone,
     last_error text,
     sent_at timestamp with time zone,
-    CONSTRAINT relay_outbox_entity_type_check CHECK ((entity_type = ANY (ARRAY['article'::text, 'article_deletion'::text, 'note'::text, 'note_deletion'::text, 'subscription'::text, 'receipt'::text, 'drive'::text, 'drive_deletion'::text, 'signing_passthrough'::text, 'conversation_pulse'::text, 'account_deletion'::text]))),
+    CONSTRAINT relay_outbox_entity_type_check CHECK ((entity_type = ANY (ARRAY['article'::text, 'article_deletion'::text, 'note'::text, 'note_deletion'::text, 'subscription'::text, 'receipt'::text, 'drive'::text, 'drive_deletion'::text, 'signing_passthrough'::text, 'conversation_pulse'::text, 'account_deletion'::text, 'profile'::text, 'follow_list'::text, 'relay_list'::text]))),
     CONSTRAINT relay_outbox_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text, 'abandoned'::text])))
 );
 
@@ -3661,6 +3664,20 @@ CREATE INDEX jobs_main_index ON graphile_worker._private_jobs USING btree (prior
 --
 
 CREATE INDEX jobs_no_queue_index ON graphile_worker._private_jobs USING btree (priority, run_at) INCLUDE (id, task_id) WHERE ((is_available = true) AND (job_queue_id IS NULL));
+
+
+--
+-- Name: accounts_discovery_sweep_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX accounts_discovery_sweep_idx ON public.accounts USING btree (discovery_synced_at NULLS FIRST) WHERE (status = 'active'::public.account_status);
+
+
+--
+-- Name: accounts_follow_list_dirty_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX accounts_follow_list_dirty_idx ON public.accounts USING btree (id) WHERE follow_list_dirty;
 
 
 --
@@ -6408,7 +6425,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict BNpadgIrG92vzXAxQNNJ4G3DUwlQPuhqz57nFdVNm5WHq8IllCL5d17d3I0E4xr
+\unrestrict onI46j7hnaW5pnrjeiahuI2efghI6TfxQMbEL1tOCjtrzOx3jHpMqks3a3muPHc
 
 
 
@@ -6535,4 +6552,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('104_repost_edges_boosted_at.sql'),
     ('105_feed_items_reply_to_author.sql'),
     ('106_feed_ingest_enqueue_cap.sql'),
-    ('107_feed_sources_exclude_replies.sql');
+    ('107_feed_sources_exclude_replies.sql'),
+    ('108_nostr_outbound_discovery.sql');

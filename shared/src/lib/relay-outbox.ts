@@ -26,6 +26,10 @@ export type RelayOutboxEntityType =
   | 'signing_passthrough'
   | 'conversation_pulse'
   | 'account_deletion'
+  // Nostr outbound interop — replaceable discovery events (NOSTR-OUTBOUND-INTEROP-ADR)
+  | 'profile'       // kind 0  — profile metadata
+  | 'follow_list'   // kind 3  — NIP-02 contact list
+  | 'relay_list'    // kind 10002 — NIP-65 relay list
 
 export interface SignedNostrEvent {
   id: string

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireAdmin } from "./moderation.js";
+import { markFollowListDirty } from "../lib/discovery-publish.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
 // Per-protocol validation for subscribe input. Returns null if valid, or a
@@ -320,6 +321,12 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
           );
         }
 
+        // External Nostr follows belong in the user's published kind-3 list.
+        if (protocol === "nostr_external") {
+          markFollowListDirty(readerId).catch((err) =>
+            logger.warn({ err, readerId }, "Failed to mark follow list dirty"));
+        }
+
         return reply.status(201).send({
           subscriptionId: result.subscriptionId,
           sourceId: result.sourceId,
@@ -414,15 +421,28 @@ export async function externalFeedsRoutes(app: FastifyInstance) {
       // orphaned in the same transaction. external_sources_gc also catches
       // missed stamps via its Phase 0, so a race that skips this update
       // only delays deactivation by one GC cycle.
-      const { rows } = await pool.query<{ source_id: string }>(
-        `DELETE FROM external_subscriptions
-        WHERE id = $1 AND subscriber_id = $2
-        RETURNING source_id`,
+      const { rows } = await pool.query<{
+        source_id: string;
+        protocol: string;
+      }>(
+        `WITH deleted AS (
+           DELETE FROM external_subscriptions
+            WHERE id = $1 AND subscriber_id = $2
+           RETURNING source_id
+         )
+         SELECT d.source_id, s.protocol
+           FROM deleted d JOIN external_sources s ON s.id = d.source_id`,
         [id, readerId],
       );
 
       if (rows.length === 0) {
         return reply.status(404).send({ error: "Subscription not found" });
+      }
+
+      // Unsubscribing from an external Nostr account removes it from kind 3.
+      if (rows[0].protocol === "nostr_external") {
+        markFollowListDirty(readerId).catch((err) =>
+          logger.warn({ err, readerId }, "Failed to mark follow list dirty"));
       }
 
       await pool.query(

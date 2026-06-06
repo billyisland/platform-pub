@@ -15,6 +15,7 @@ export const ADVISORY_LOCKS = {
   DRIVES: 100002,
   // 100003 intentionally skipped
   SCHEDULER: 100004,
+  DISCOVERY: 100005, // Nostr discovery sweep (coalesce + backfill + self-heal)
 
   // feed-ingest
   JETSTREAM: 0x4a455453, // "JETS" in ASCII; session-scoped leader election

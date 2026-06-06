@@ -24,6 +24,7 @@ import {
 } from "@platform-pub/shared/lib/email.js";
 import { requireAuth } from "../middleware/auth.js";
 import { generateKeypair, signEvent } from "../lib/key-custody-client.js";
+import { republishProfile } from "../lib/discovery-publish.js";
 import {
   enqueueRelayPublish,
   type SignedNostrEvent,
@@ -310,6 +311,11 @@ export async function authRoutes(app: FastifyInstance) {
         avatarBlossomUrl:
           parsed.data.avatar === null ? null : parsed.data.avatar,
       });
+
+      // Republish kind-0 profile metadata to the Nostr mesh (no-op when
+      // discovery is disabled). Fire-and-forget — never block the response.
+      republishProfile(accountId).catch((err) =>
+        logger.warn({ err, accountId }, "Failed to republish profile (kind 0)"));
 
       return reply.status(200).send({ ok: true });
     },
@@ -916,6 +922,11 @@ export async function authRoutes(app: FastifyInstance) {
        WHERE id = $3`,
         [newUsername, oldUsername, accountId],
       );
+
+      // Username drives the kind-0 nip05 field — republish so the NIP-05
+      // identifier on the mesh follows the change (no-op when disabled).
+      republishProfile(accountId).catch((err) =>
+        logger.warn({ err, accountId }, "Failed to republish profile after username change"));
 
       logger.info({ accountId, oldUsername, newUsername }, "Username changed");
       return reply.status(200).send({ ok: true, username: newUsername });

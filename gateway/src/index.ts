@@ -53,12 +53,15 @@ import { sourcesRoutes } from "./routes/sources.js";
 import { linkedAccountsRoutes } from "./routes/linked-accounts.js";
 import { trustRoutes } from "./routes/trust.js";
 import { readingPositionRoutes } from "./routes/reading-positions.js";
+import { privacyPreferencesRoutes } from "./routes/privacy-preferences.js";
 import { feedsRoutes } from "./routes/feeds.js";
 import { extractRoutes } from "./routes/extract.js";
 import { authorCardRoutes } from "./routes/author-card.js";
 import { authorRoutes } from "./routes/author.js";
 import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
 import { publishScheduledDrafts } from "./workers/scheduler.js";
+import { runDiscoverySweep } from "./lib/discovery-publish.js";
+import { relayForAccount } from "./lib/nostr-events.js";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger, { pinoConfig } from "@platform-pub/shared/lib/logger.js";
 
@@ -243,6 +246,9 @@ async function start() {
   // Reading-position resumption (per-user, per-article scroll snapshot)
   await app.register(readingPositionRoutes, { prefix: "/api/v1" });
 
+  // Privacy/sharing preferences (e.g. publish follow graph to the Nostr mesh)
+  await app.register(privacyPreferencesRoutes, { prefix: "/api/v1" });
+
   // Readability article extraction for reader pane.
   await app.register(extractRoutes, { prefix: "/api/v1" });
 
@@ -274,6 +280,52 @@ async function start() {
     const client = await getAtprotoClient();
     return client.jwks;
   });
+
+  // NIP-05 — resolve <name>@all.haus to a hex pubkey + relay hint, so outside
+  // Nostr clients can add an all.haus user by handle (NOSTR-OUTBOUND-INTEROP
+  // §3.2). Anonymous + unauthenticated by spec; rate-limited against
+  // username→pubkey enumeration. Must send ACAO:* and must not be cached long
+  // (a username change has to propagate within the redirect window).
+  app.get<{ Querystring: { name?: string } }>(
+    "/.well-known/nostr.json",
+    { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      reply
+        .type("application/json")
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Cache-Control", "no-store");
+
+      const name = (req.query.name ?? "").toLowerCase().trim();
+      if (!name) return { names: {} };
+
+      const { rows } = await pool.query<{
+        username: string;
+        nostr_pubkey: string;
+        hosting_type: string | null;
+        self_hosted_relay_url: string | null;
+      }>(
+        `SELECT username, nostr_pubkey, hosting_type, self_hosted_relay_url
+           FROM accounts
+          WHERE lower(username) = $1 AND status = 'active'
+          LIMIT 1`,
+        [name],
+      );
+      if (rows.length === 0) return { names: {} };
+
+      const a = rows[0];
+      return {
+        names: { [a.username]: a.nostr_pubkey },
+        relays: {
+          [a.nostr_pubkey]: [
+            relayForAccount({
+              hostingType: a.hosting_type,
+              selfHostedRelayUrl: a.self_hosted_relay_url,
+            }),
+          ],
+        },
+      };
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // Service proxies
@@ -324,6 +376,7 @@ async function start() {
   const LOCK_SUBSCRIPTIONS = ADVISORY_LOCKS.SUBSCRIPTIONS;
   const LOCK_DRIVES = ADVISORY_LOCKS.DRIVES;
   const LOCK_SCHEDULER = ADVISORY_LOCKS.SCHEDULER;
+  const LOCK_DISCOVERY = ADVISORY_LOCKS.DISCOVERY;
   const SCHEDULER_INTERVAL_MS = 60 * 1000; // 1 minute
 
   async function withAdvisoryLock(
@@ -370,6 +423,11 @@ async function start() {
       "Scheduled publishing",
       publishScheduledDrafts,
     ).catch((err) => logger.error({ err }, "Scheduler worker failed"));
+    withAdvisoryLock(
+      LOCK_DISCOVERY,
+      "Nostr discovery sweep",
+      runDiscoverySweep,
+    ).catch((err) => logger.error({ err }, "Discovery sweep worker failed"));
   }, SCHEDULER_INTERVAL_MS);
 
   // Run once on startup
@@ -388,6 +446,11 @@ async function start() {
     "Scheduled publishing",
     publishScheduledDrafts,
   ).catch((err) => logger.error({ err }, "Scheduler worker failed (startup)"));
+  withAdvisoryLock(
+    LOCK_DISCOVERY,
+    "Nostr discovery sweep",
+    runDiscoverySweep,
+  ).catch((err) => logger.error({ err }, "Discovery sweep worker failed (startup)"));
 }
 
 start().catch((err) => {

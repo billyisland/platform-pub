@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
+import { markFollowListDirty } from '../lib/discovery-publish.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -59,6 +60,10 @@ export async function followRoutes(app: FastifyInstance) {
         [writerId, followerId]
       ).catch((err) => logger.warn({ err }, 'Failed to insert new_follower notification'))
 
+      // Coalesced kind-3 republish — the scheduler sweep rebuilds from state.
+      markFollowListDirty(followerId).catch((err) =>
+        logger.warn({ err, followerId }, 'Failed to mark follow list dirty'))
+
       logger.info({ followerId, writerId }, 'Follow created')
 
       return reply.status(200).send({ ok: true })
@@ -80,6 +85,9 @@ export async function followRoutes(app: FastifyInstance) {
         'DELETE FROM follows WHERE follower_id = $1 AND followee_id = $2',
         [followerId, writerId]
       )
+
+      markFollowListDirty(followerId).catch((err) =>
+        logger.warn({ err, followerId }, 'Failed to mark follow list dirty'))
 
       logger.info({ followerId, writerId }, 'Follow removed')
 

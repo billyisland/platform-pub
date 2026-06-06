@@ -91,6 +91,15 @@ services:
       LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX}
       ATPROTO_CLIENT_BASE_URL: ${ATPROTO_CLIENT_BASE_URL:-https://all.haus}
       ATPROTO_PRIVATE_JWK: ${ATPROTO_PRIVATE_JWK}
+      # Nostr outbound interop (discovery). Ships dark: DISCOVERY_PUBLISH_ENABLED
+      # off ⇒ no kind 0/3/10002 produced. With it on, PUBLIC_FANOUT_RELAY_URLS
+      # empty ⇒ in-house relay only; set it to fan discovery events to the public
+      # mesh. PLATFORM_RELAY_WS_URL is the internal fan-out target; PUBLIC_RELAY_URL
+      # is the relay we *advertise* in kind 10002 / NIP-05.
+      DISCOVERY_PUBLISH_ENABLED: ${DISCOVERY_PUBLISH_ENABLED:-0}
+      PLATFORM_RELAY_WS_URL: ws://strfry:7777
+      PUBLIC_RELAY_URL: ${PUBLIC_RELAY_URL:-wss://all.haus/relay}
+      PUBLIC_FANOUT_RELAY_URLS: ${PUBLIC_FANOUT_RELAY_URLS:-}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 10s

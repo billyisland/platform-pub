@@ -1,6 +1,6 @@
 # Nostr Outbound Interop — public-content discoverability
 
-**Status:** Proposed (2026-06-06)
+**Status:** Accepted — Phase A implemented, ships dark (2026-06-06). See §8 for as-built notes and deviations.
 **Scope:** Make all.haus users and their *public* content discoverable and readable by the wider Nostr network, using the existing `relay_outbox` worker. Paywalled-content unlock and custodial-key portability (NIP-46) are explicitly out of scope.
 
 ---
@@ -200,3 +200,21 @@ With Phase A deployed and `PUBLIC_FANOUT_RELAY_URLS` set:
 2. A stock Nostr client (e.g. Damus) can add `<user>@all.haus`, see their profile (kind 0), and load their public notes/articles — fetched from `wss://all.haus/relay` via the kind 10002 hint.
 3. Querying a public relay (e.g. `wss://nos.lol`) for `authors:[<pubkey>], kinds:[0,3,10002]` returns the three discovery events.
 4. Paywalled articles still show only the free portion externally (unchanged).
+
+---
+
+## 8. As-built notes & deviations (2026-06-06)
+
+Phase A is implemented and **ships dark** behind `DISCOVERY_PUBLISH_ENABLED` (default `0`). With it on, `PUBLIC_FANOUT_RELAY_URLS` (default empty) controls public-mesh reach — empty ⇒ in-house relay only. The implementation follows the design above with the following deliberate deviations, all driven by a constraint discovered during the build: **feed-ingest cannot sign Nostr events** — only the gateway can reach key-custody (`feed-ingest` exclusively publishes pre-signed events). That single fact reshaped the coalescing and backfill mechanisms.
+
+1. **Coalescing + backfill + self-heal run in the gateway scheduler, not as a feed-ingest graphile task.** The gateway already runs a 60s advisory-locked worker loop (`publishScheduledDrafts`); a second sweep (`runDiscoverySweep`, advisory lock `DISCOVERY`) was added there because that is where signing is possible. So the ADR's "deferred `republish_follow_list_<accountId>` graphile job, job_key-coalesced" (§3.4) is realised instead as an `accounts.follow_list_dirty` marker set on follow/unfollow + external-nostr sub/unsub, drained once per cycle by the sweep (rebuild-from-state → sign → enqueue → clear flag). This preserves both properties the ADR wanted from the job_key approach — burst coalescing and final-state correctness — without a cross-service signing path.
+
+2. **One sweep does backfill *and* self-heal**, keyed on a new `accounts.discovery_synced_at` column (NULL = never published; re-published at least every 7 days). New accounts (NULL, sorted first) are picked up within a cycle, so **account-creation triggers were not wired** at `signup()`/`createGoogleAccount()` — the sweep covers them (≤60s latency, acceptable for discovery). This is the "self-heal first" sequencing the durability decision called for; the per-relay ACK worker change (§3.3 item 1, Risk #1) is **deferred** to a fast-follow as agreed.
+
+3. **kind 0 / kind 10002 republish promptly on edit** (profile edit, username change) via fire-and-forget calls in `routes/auth.ts`; there is **no kind-10002 trigger on hosting/relay change** because no code path currently mutates `accounts.hosting_type`/`self_hosted_relay_url` — a future relay-settings change converges via the 7-day self-heal sweep (or should add a trigger then).
+
+4. **Follow graph defaults on, with disclosure** (Risk #3 decision). New column `accounts.publish_follow_graph` (default `true`); a settings → **Privacy** toggle (`PrivacyPreferences.tsx`, `PUT /me/privacy-preferences`) flips it. The toggle copy is the user-facing disclosure that the list becomes world-readable. Turning it **off** retracts via an empty kind 3 (`retractFollowList`); turning it **on** marks dirty for republish.
+
+5. **Schema (migration 108):** `relay_outbox_entity_type_check` gains `profile`/`follow_list`/`relay_list`; `accounts` gains `publish_follow_graph`, `follow_list_dirty`, `discovery_synced_at` (+ two partial indexes for the sweep). Note Risk #6's caveat is now stale: `account_deletion` was already present in both the TS union and the CHECK before this work.
+
+6. **Key files:** `gateway/src/lib/nostr-events.ts` (builders + `discoveryRelayTargets`/`relayForAccount`/`discoveryEnabled`), `gateway/src/lib/discovery-publish.ts` (republishers + `markFollowListDirty` + `runDiscoverySweep`), NIP-05 route in `gateway/src/index.ts`, `gateway/src/routes/privacy-preferences.ts`, nginx `location = /.well-known/nostr.json`.
