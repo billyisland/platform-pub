@@ -1,4 +1,14 @@
-<svg viewBox="0 0 40 46" xmlns="http://www.w3.org/2000/svg">
-  <path d="M0 0L16.5 46H23.5L40 0H32.5L20 35.5L7.5 0H0Z" fill="#B5242A"/>
-  <rect x="9" y="6" width="22" height="5" fill="#B5242A"/>
+<svg viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+  <!-- Scaled-down ForallMenu mark: a black disc divided by three floor-coloured
+       bars into the ∀ (two diagonals carving complete segments + a crossbar).
+       Bars are clipped to the disc here so the tab corners stay transparent. -->
+  <defs>
+    <clipPath id="disc"><circle cx="28" cy="28" r="28"/></clipPath>
+  </defs>
+  <circle cx="28" cy="28" r="28" fill="#1A1A18"/>
+  <g clip-path="url(#disc)" fill="none" stroke="#F0EFEB" stroke-width="5" stroke-linecap="round">
+    <line x1="28" y1="56" x2="8.5" y2="5"/>
+    <line x1="28" y1="56" x2="47.5" y2="5"/>
+    <line x1="18.1" y1="30" x2="37.9" y2="30"/>
+  </g>
 </svg>
