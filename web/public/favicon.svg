@@ -6,9 +6,9 @@
     <clipPath id="disc"><circle cx="28" cy="28" r="28"/></clipPath>
   </defs>
   <circle cx="28" cy="28" r="28" fill="#1A1A18"/>
-  <g clip-path="url(#disc)" fill="none" stroke="#F0EFEB" stroke-width="5" stroke-linecap="round">
+  <g clip-path="url(#disc)" fill="none" stroke="#F0EFEB" stroke-width="6" stroke-linecap="round">
     <line x1="28" y1="56" x2="8.5" y2="5"/>
     <line x1="28" y1="56" x2="47.5" y2="5"/>
-    <line x1="18.1" y1="30" x2="37.9" y2="30"/>
+    <line x1="17.3" y1="28" x2="38.7" y2="28"/>
   </g>
 </svg>

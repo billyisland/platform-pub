@@ -55,6 +55,8 @@ export function ForallMenu({
 
   const [view, setView] = useState<View>("closed");
   const [activeIndex, setActiveIndex] = useState(0);
+  // Bumped on each mouse-enter to retrigger the one-shot spin of the ∀ glyph.
+  const [spin, setSpin] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -253,6 +255,7 @@ export function ForallMenu({
         aria-haspopup="menu"
         aria-expanded={view !== "closed"}
         onClick={() => setView((v) => (v === "closed" ? "menu" : "closed"))}
+        onMouseEnter={() => setSpin((n) => n + 1)}
         style={{
           position: "relative",
           width: 56,
@@ -282,13 +285,21 @@ export function ForallMenu({
             the visible bar still ends at the rim, where the black disc does.
             Inner SVG so the unread badge stays a sibling on the button. */}
         <svg
+          key={spin}
           aria-hidden="true"
           viewBox="0 0 56 56"
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            transformOrigin: "center",
+            animation: spin > 0 ? "forall-spin 600ms ease-in-out" : undefined,
+          }}
         >
           <g
             stroke={TOKENS.glyphFg}
-            strokeWidth={5}
+            strokeWidth={6}
             strokeLinecap="round"
             fill="none"
           >
@@ -296,8 +307,9 @@ export function ForallMenu({
             <line x1="28" y1="56" x2="8.5" y2="5" />
             {/* right diagonal: bottom rim → upper-right rim (cuts off a segment) */}
             <line x1="28" y1="56" x2="47.5" y2="5" />
-            {/* crossbar: joins the diagonals across the central region */}
-            <line x1="18.1" y1="30" x2="37.9" y2="30" />
+            {/* crossbar: raised to pass through the disc centre (y=28); the x
+                endpoints sit on the diagonals' centrelines at that height. */}
+            <line x1="17.3" y1="28" x2="38.7" y2="28" />
           </g>
         </svg>
         {totalUnread > 0 && (
@@ -325,6 +337,14 @@ export function ForallMenu({
           </span>
         )}
       </button>
+
+      <style jsx>{`
+        @keyframes forall-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 }

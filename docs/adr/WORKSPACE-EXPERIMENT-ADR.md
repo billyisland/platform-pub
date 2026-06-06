@@ -949,6 +949,17 @@ Retires the typed glyph entirely. Both Slice 39 (aperture crop) and the first cu
 
 Touched only `web/src/components/workspace/ForallMenu.tsx`; `scripts/check-hairlines.sh` clean. Not yet browser-verified (`web` is a baked prod image — needs `docker compose build web && up -d web`).
 
+### Slice 41 — ∀ mark refinement: heavier bars, centred crossbar, spin-on-hover (2026-06-06)
+
+Three tweaks to the Slice 40 mark, in `ForallMenu.tsx` and the favicon assets:
+
+- **Heavier bars.** `strokeWidth` 5 → **6** (a touch bolder; same round caps, same not-hairlines).
+- **Crossbar through the disc centre.** Raised from `y=30` to `y=28` (the disc centre in the 56×56 viewBox). Its x endpoints are recomputed to land on the diagonals' centrelines at that height: `18.1`/`37.9` → **`17.3`/`38.7`** (left leg `28 − 19.5·(56−28)/51 ≈ 17.3`, right leg symmetric). New crossbar: `(17.3,28)→(38.7,28)`. The "Tuning knobs" from Slice 40 still hold — these are just new values for crossbar `y` and its leg-intersection x's.
+- **Spin-on-hover.** The ∀ glyph spins once (360°, 600ms ease-in-out) on each mouse-enter of the button. A `spin` counter state bumps on `onMouseEnter` and is keyed onto the inner `<svg>` so React remounts it and the one-shot CSS animation replays every hover (animation only applies once `spin > 0`, so no spin on initial mount). Only the glyph SVG spins — the unread badge is a sibling and stays put. Keyframes (`@keyframes forall-spin`) live in a `<style jsx>` block, mirroring the existing `Composer.tsx` spinner pattern (inline `animation` + styled-jsx keyframes).
+- **Favicon kept in lockstep.** `web/public/favicon.svg` takes the same `stroke-width: 6` and centred crossbar `(17.3,28)→(38.7,28)`; the two PNG fallbacks (`icon-32.png` 32×32, `apple-touch-icon.png` 180×180 flattened on disc black) are re-rasterised from it with `sharp` (same recipe as Slice 40). The favicon has no hover state, so no spin — it stays the static disc.
+
+`scripts/check-hairlines.sh` clean; `tsc` clean. Not browser-verified (baked prod image — needs `docker compose build web && up -d web`).
+
 ## Deferred (TODO in code, not blocking the experiment)
 
 - DM/messages model (vessel vs `/messages` route).
