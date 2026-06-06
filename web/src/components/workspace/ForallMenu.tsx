@@ -55,8 +55,12 @@ export function ForallMenu({
 
   const [view, setView] = useState<View>("closed");
   const [activeIndex, setActiveIndex] = useState(0);
-  // Bumped on each mouse-enter to retrigger the one-shot spin of the ∀ glyph.
-  const [spin, setSpin] = useState(0);
+  // ∀ glyph rotation. Hover rotates it to 180° (a right-side-up A) and holds;
+  // leaving completes the turn to 360° (back to ∀), then snaps to 0 for next
+  // time. `spinTransition` is dropped to "none" only for that invisible
+  // 360°→0° reset so it doesn't visibly unwind.
+  const [glyphRot, setGlyphRot] = useState(0);
+  const [spinTransition, setSpinTransition] = useState(true);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -255,7 +259,14 @@ export function ForallMenu({
         aria-haspopup="menu"
         aria-expanded={view !== "closed"}
         onClick={() => setView((v) => (v === "closed" ? "menu" : "closed"))}
-        onMouseEnter={() => setSpin((n) => n + 1)}
+        onMouseEnter={() => {
+          setSpinTransition(true);
+          setGlyphRot(180);
+        }}
+        onMouseLeave={() => {
+          setSpinTransition(true);
+          setGlyphRot(360);
+        }}
         style={{
           position: "relative",
           width: 56,
@@ -285,16 +296,24 @@ export function ForallMenu({
             the visible bar still ends at the rim, where the black disc does.
             Inner SVG so the unread badge stays a sibling on the button. */}
         <svg
-          key={spin}
           aria-hidden="true"
           viewBox="0 0 56 56"
+          onTransitionEnd={() => {
+            // The completing turn has landed back at ∀ — snap 360°→0° with no
+            // transition so the next hover starts cleanly from upside-down.
+            if (glyphRot === 360) {
+              setSpinTransition(false);
+              setGlyphRot(0);
+            }
+          }}
           style={{
             position: "absolute",
             inset: 0,
             width: "100%",
             height: "100%",
             transformOrigin: "center",
-            animation: spin > 0 ? "forall-spin 600ms ease-in-out" : undefined,
+            transform: `rotate(${glyphRot}deg)`,
+            transition: spinTransition ? "transform 480ms ease-in-out" : "none",
           }}
         >
           <g
@@ -337,14 +356,6 @@ export function ForallMenu({
           </span>
         )}
       </button>
-
-      <style jsx>{`
-        @keyframes forall-spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
     </div>
   );
 }
