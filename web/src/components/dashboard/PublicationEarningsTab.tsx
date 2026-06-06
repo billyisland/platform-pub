@@ -52,7 +52,7 @@ export function PublicationEarningsTab({ publicationId }: Props) {
               </thead>
               <tbody>
                 {articles.map(a => (
-                  <tr key={a.articleId} className="border-b border-grey-200 last:border-b-0">
+                  <tr key={a.articleId} className="border-b-2 border-grey-200 last:border-b-0">
                     <td className="px-3 py-2 text-black truncate max-w-[300px]">{a.title}</td>
                     <td className="px-3 py-2 text-right text-grey-600 tabular-nums">{a.readCount}</td>
                     <td className="px-3 py-2 text-right text-black tabular-nums">{fmt(a.netPence)}</td>
@@ -70,7 +70,7 @@ export function PublicationEarningsTab({ publicationId }: Props) {
           <p className="label-ui text-grey-400 mb-4">Payout history</p>
           <div className="space-y-4">
             {payouts.map(p => (
-              <div key={p.id} className="border border-grey-200 p-4">
+              <div key={p.id} className="bg-grey-50 p-4">
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-ui-xs text-black">

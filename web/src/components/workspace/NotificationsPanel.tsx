@@ -63,12 +63,12 @@ function destUrl(n: Notification): string {
     case 'commission_request':
     case 'drive_funded':
     case 'pledge_fulfilled':
-      return '/dashboard?tab=proposals'
+      return '/workspace?overlay=dashboard&tab=proposals'
     case 'pub_article_submitted':
     case 'pub_article_published':
       return n.article?.slug ? `/article/${n.article.slug}` : '#'
     case 'pub_invite_received':
-      return '/dashboard'
+      return '/workspace?overlay=dashboard'
     case 'pub_new_subscriber':
     case 'pub_member_joined':
     case 'pub_member_left':

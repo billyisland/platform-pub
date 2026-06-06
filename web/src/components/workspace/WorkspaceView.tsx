@@ -49,7 +49,9 @@ import { FeedComposer } from "./FeedComposer";
 import { ForallCeremony } from "./ForallCeremony";
 import { ReaderOverlay } from "./ReaderOverlay";
 import { MessagesOverlay } from "./MessagesOverlay";
+import { DashboardOverlay } from "./DashboardOverlay";
 import { useReader } from "../../stores/reader";
+import { useDashboardOverlay } from "../../stores/dashboardOverlay";
 import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
 
@@ -657,6 +659,25 @@ export function WorkspaceView() {
     if (!loading && !user) router.push("/auth?mode=login");
   }, [user, loading, router]);
 
+  // Deep-link → overlay. The retired /dashboard route (and any link still
+  // pointing at it) redirects here as /workspace?overlay=dashboard[&tab&context];
+  // open the dashboard Glasshouse seeded with that tab/context, then strip the
+  // params so the workspace URL stays clean. Read once on mount via
+  // window.location (no useSearchParams → no Suspense boundary needed).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("overlay") !== "dashboard") return;
+    useDashboardOverlay.getState().open({
+      tab: params.get("tab"),
+      context: params.get("context"),
+    });
+    params.delete("overlay");
+    params.delete("tab");
+    params.delete("context");
+    const qs = params.toString();
+    window.history.replaceState({}, "", `/workspace${qs ? `?${qs}` : ""}`);
+  }, []);
+
   // Slice 12: fetch the user's followed pubkeys once on mount so the pip
   // panel can render its initial follow state without a per-open round-trip.
   // Failure is non-fatal — panel just defaults to "not following."
@@ -1232,6 +1253,7 @@ export function WorkspaceView() {
       )}
       <ReaderOverlay />
       <MessagesOverlay />
+      <DashboardOverlay />
     </Floor>
   );
 }

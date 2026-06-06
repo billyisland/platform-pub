@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUnreadCounts } from "../../stores/unread";
 import { useMessagesOverlay } from "../../stores/messagesOverlay";
+import { useDashboardOverlay } from "../../stores/dashboardOverlay";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { SearchPanel } from "./SearchPanel";
 
@@ -83,6 +84,12 @@ export function ForallMenu({
       target: "notifications",
       label: "Notifications",
       count: notificationCount,
+    },
+    {
+      kind: "overlay",
+      onOpen: () => useDashboardOverlay.getState().open(),
+      label: "Dashboard",
+      count: 0,
     },
   ];
   const restoreRows: FocusRow[] = hiddenFeeds.map((hf) => ({

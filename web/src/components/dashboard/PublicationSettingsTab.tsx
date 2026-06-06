@@ -107,7 +107,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
     setDangerMsg(null)
     try {
       await pubApi.archive(publicationId)
-      window.location.href = '/dashboard'
+      window.location.href = '/workspace?overlay=dashboard'
     } catch {
       setDangerMsg('Failed to archive.')
       setArchiving(false)
@@ -120,7 +120,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
     setDangerMsg(null)
     try {
       await pubApi.transferOwnership(publicationId, selectedNewOwner)
-      window.location.href = '/dashboard?msg=ownership-transferred'
+      window.location.href = '/workspace?overlay=dashboard'
     } catch {
       setDangerMsg('Failed to transfer ownership.')
       setTransferring(false)
@@ -132,7 +132,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
     setDangerMsg(null)
     try {
       await pubApi.archive(publicationId)
-      window.location.href = '/dashboard'
+      window.location.href = '/workspace?overlay=dashboard'
     } catch {
       setDangerMsg('Failed to delete.')
       setDeleting(false)
@@ -276,7 +276,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
                       <div className="flex-1 h-1.5 bg-grey-200 rounded" />
                       <div className="flex-1 h-1.5 bg-grey-200 rounded" />
                     </div>
-                    <div className="w-full h-px bg-grey-200 my-1" />
+                    <div className="w-full h-0.5 bg-grey-200 my-1" />
                     <div className="w-full flex gap-2">
                       <div className="flex-1 h-1.5 bg-grey-200 rounded" />
                       <div className="flex-1 h-1.5 bg-grey-200 rounded" />
@@ -313,8 +313,6 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
               </button>
             </div>
 
-            <div className="border-t border-grey-200 my-6" />
-
             {/* Transfer ownership */}
             <div className="bg-white px-6 py-5 mb-6">
               <p className="text-sm text-black font-medium">Transfer ownership</p>
@@ -330,8 +328,6 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
                 Transfer ownership
               </button>
             </div>
-
-            <div className="border-t border-grey-200 my-6" />
 
             {/* Delete */}
             <div className="bg-white px-6 py-5">

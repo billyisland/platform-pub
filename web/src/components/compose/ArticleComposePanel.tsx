@@ -285,12 +285,12 @@ export function ArticleComposePanel() {
         const slug =
           memberships.find((m) => m.id === data.publicationId!)?.slug ?? "";
         close();
-        router.push(`/dashboard?context=${slug}&tab=articles`);
+        router.push(`/workspace?overlay=dashboard&context=${slug}&tab=articles`);
         return result;
       }
       const result = await publishArticle(data, user.pubkey);
       close();
-      router.push("/dashboard?tab=articles");
+      router.push("/workspace?overlay=dashboard&tab=articles");
       return result;
     } catch (err) {
       setPublishError(
@@ -310,7 +310,7 @@ export function ArticleComposePanel() {
       if (!id) throw new Error("Draft save failed");
       await scheduleDraft(id, new Date(scheduleDateTime).toISOString());
       close();
-      router.push("/dashboard?tab=articles");
+      router.push("/workspace?overlay=dashboard&tab=articles");
     } catch (err) {
       setPublishError(
         err instanceof Error ? err.message : "Scheduling failed.",

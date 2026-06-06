@@ -87,7 +87,7 @@ export function RateCardTab({ publicationId }: Props) {
             </p>
           )}
 
-          <div className="pt-4 border-t border-grey-200">
+          <div className="pt-6">
             <p className="label-ui text-grey-400 mb-3">Default per-article price</p>
             <div className="flex gap-2 mb-3">
               <button

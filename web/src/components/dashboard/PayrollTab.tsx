@@ -163,7 +163,7 @@ export function PayrollTab({ publicationId }: Props) {
               </thead>
               <tbody>
                 {articleShares.map(s => (
-                  <tr key={s.id} className="border-b border-grey-200 last:border-b-0">
+                  <tr key={s.id} className="border-b-2 border-grey-200 last:border-b-0">
                     <td className="px-3 py-2 text-black truncate max-w-[200px]">{s.articleTitle}</td>
                     <td className="px-3 py-2 text-grey-600">{s.displayName || s.username}</td>
                     <td className="px-3 py-2 text-right text-grey-400">

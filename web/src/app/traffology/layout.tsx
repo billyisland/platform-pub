@@ -21,7 +21,7 @@ export default function TraffologyLayout({ children }: { children: React.ReactNo
             ∀ Traffology
           </span>
           <Link
-            href="/dashboard"
+            href="/workspace?overlay=dashboard"
             className="btn-text-muted"
           >
             Dashboard

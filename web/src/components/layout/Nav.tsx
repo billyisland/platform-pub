@@ -179,7 +179,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
       ) : user ? (
         <>
           <Link href="/feed" onClick={onClose} className={linkClass('/feed')}>Feed</Link>
-          <Link href="/dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
+          <Link href="/workspace?overlay=dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />
 
@@ -359,7 +359,7 @@ export function Nav() {
               ) : user ? (
                 <>
                   <Link href="/feed" className={navLinkClass(isActive('/feed'))}>Feed</Link>
-                  <Link href="/dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
+                  <Link href="/workspace?overlay=dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
                 </>
               ) : (
                 <>

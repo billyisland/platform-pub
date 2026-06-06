@@ -130,7 +130,7 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
     setLeaving(true)
     try {
       await pubApi.leave(publicationId)
-      window.location.href = '/dashboard?msg=left-publication'
+      window.location.href = '/workspace?overlay=dashboard'
     } catch {
       setError('Failed to leave publication.')
       setLeaving(false)

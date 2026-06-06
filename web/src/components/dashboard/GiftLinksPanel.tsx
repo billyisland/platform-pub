@@ -102,7 +102,7 @@ export function GiftLinksPanel({ articleId, dTag }: GiftLinksPanelProps) {
       {active.length > 0 && (
         <table className="w-full text-ui-xs">
           <thead>
-            <tr className="border-b border-grey-200">
+            <tr className="border-b-2 border-grey-200">
               <th className="py-1 text-left label-ui text-grey-400">Link</th>
               <th className="py-1 text-right label-ui text-grey-400">Redeemed</th>
               <th className="py-1 text-right label-ui text-grey-400">Created</th>
@@ -111,7 +111,7 @@ export function GiftLinksPanel({ articleId, dTag }: GiftLinksPanelProps) {
           </thead>
           <tbody>
             {active.map(link => (
-              <tr key={link.id} className="border-b border-grey-100 last:border-b-0">
+              <tr key={link.id} className="border-b-2 border-grey-100 last:border-b-0">
                 <td className="py-1.5">
                   <button
                     onClick={() => copyUrl(link.token, link.id)}

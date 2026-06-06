@@ -187,11 +187,11 @@ export default function WritePage() {
         initialData?.editingDTag,
       );
       const pub = pubMemberships.find((p) => p.id === data.publicationId);
-      router.push(`/dashboard?context=${pub?.slug ?? ""}&tab=articles`);
+      router.push(`/workspace?overlay=dashboard&context=${pub?.slug ?? ""}&tab=articles`);
     } else {
       // Personal article — existing client-side pipeline
       await publishArticle(data, user.pubkey, initialData?.editingDTag);
-      router.push("/dashboard?tab=articles");
+      router.push("/workspace?overlay=dashboard&tab=articles");
     }
   }
 
@@ -214,7 +214,7 @@ export default function WritePage() {
     });
 
     await scheduleDraft(saved.draftId, scheduledAt);
-    router.push("/dashboard?tab=articles");
+    router.push("/workspace?overlay=dashboard&tab=articles");
   }
 
   if (loading || !user) {
@@ -230,7 +230,7 @@ export default function WritePage() {
       <div className="mx-auto max-w-article px-4 sm:px-6 pt-16 pb-16 lg:pt-8 text-center">
         <p className="text-red-600 mb-4">{loadError}</p>
         <a
-          href="/dashboard"
+          href="/workspace?overlay=dashboard"
           className="text-sm text-crimson hover:text-crimson-dark"
         >
           Back to dashboard
