@@ -690,7 +690,7 @@ nothing fixed yet.
 
 ## Open — MEDIUM
 
-- [ ] **D4 — Subscription retry-once can double-charge on a commit failure.**
+- [x] **D4 — Subscription retry-once can double-charge on a commit failure.** ✅ FIXED 2026-06-07
   **Verified:** `gateway/src/workers/subscription-expiry.ts:162-175`. The retry
   assumes the renewal transaction is atomic, but a failure of the COMMIT itself
   (or a connection drop after commit) throws to the caller while the DB applied
@@ -701,20 +701,42 @@ nothing fixed yet.
   key. (Tab clamp, annual discount, publication routing, migration 103 all
   verified correct & well-tested.) **Carried (product call):** catch-up
   multi-charge after downtime — one charge per missed period per hourly tick.
+  **Fix applied:** the period-roll `UPDATE` is now the transaction's first
+  mutation, gated `AND current_period_end < now()` (precision-safe vs. keying on
+  the exact `Date`). On a committed-but-unacked retry the period has already
+  moved into the future ⇒ 0 rows ⇒ the transaction returns early before the tab
+  deduct / `logSubscriptionCharge` / signing, so the renewal is idempotent. New
+  regression test in `gateway/tests/subscription-expiry.test.ts` covers the
+  0-row guard path; existing 5 renewal tests unchanged & green.
 
-- [ ] **D5 — Discovery dirty-flag clear race drops a coalesced follow update.**
+- [x] **D5 — Discovery dirty-flag clear race drops a coalesced follow update.** ✅ FIXED 2026-06-07
   **Verified:** `gateway/src/lib/discovery-publish.ts:209-218`. A follow/unfollow
   landing between the follow-list read inside `republishFollowList` and the
   `follow_list_dirty = FALSE` clear is lost until the 7-day self-heal. **Fix:**
   conditional clear / claim pattern (clear only if unchanged, or clear-before-read).
+  **Fix applied:** switched Phase A to a claim pattern — the dirty flag is now
+  cleared *before* `republishFollowList` reads the follow set, so a concurrent
+  follow/unfollow re-marks the row (via `markFollowListDirty`) and is caught next
+  cycle instead of being clobbered by a post-publish clear. On republish failure
+  the flag is restored (guarded on `status='active' AND publish_follow_graph`) so
+  no work is dropped. Worst case is one idempotent double-publish of a replaceable
+  kind-3, never a lost update.
 
-- [ ] **D6 — Discovery outbox marks `sent` when *any* relay accepts.**
+- [x] **D6 — Discovery outbox marks `sent` when *any* relay accepts.** ✅ FIXED 2026-06-07
   **Verified:** `feed-ingest/src/tasks/relay-publish.ts:90`; in-house relay is
   first in the target list, so a row is `sent` even if every public fan-out relay
   rejected — defeats public-mesh delivery once `PUBLIC_FANOUT_RELAY_URLS` is set.
   Already noted as a deferred fast-follow in NOSTR-OUTBOUND-INTEROP-ADR §3.3;
   ships dark, so Medium. **Fix:** per-relay ACK accounting on discovery rows
   before the flag is flipped in prod.
+  **Fix applied:** added `publishNostrToRelaysDetailed` (returns `{eventId,
+  succeeded[], failed[]}`; `publishNostrToRelays` is now a thin back-compat
+  wrapper for the cross-post caller). `relay-publish.ts` gates discovery entity
+  types (`profile`/`follow_list`/`relay_list`): when public fan-out relays were
+  targeted but none accepted (in-house-only ACK), it routes through
+  `failAndMaybeRetry` instead of marking `sent`. Non-discovery rows keep the
+  one-accepts rule. New regression tests cover the in-house-only retry and the
+  public-accepted→sent paths.
 
 - [ ] **D7 — Composer dead-code residue from f9e07f1.** **Verified:**
   `web/src/components/workspace/Composer.tsx` — the commit removed the recipient/

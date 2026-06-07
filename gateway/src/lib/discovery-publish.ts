@@ -207,14 +207,29 @@ export async function runDiscoverySweep(): Promise<void> {
     [DIRTY_BATCH],
   );
   for (const { id } of dirty) {
+    // Claim before read (D5): clear the dirty flag *before* republishFollowList
+    // reads the follow set. A follow/unfollow landing during the republish
+    // re-marks the row (markFollowListDirty), so the next cycle re-publishes
+    // with the new set — whereas clearing *after* the read would clobber that
+    // mark and strand the update until the 7-day self-heal. On failure we
+    // restore the flag so the work isn't dropped.
+    await pool.query(`UPDATE accounts SET follow_list_dirty = FALSE WHERE id = $1`, [id]);
     try {
       // allowEmpty: an unfollow-to-zero is a legitimate state to publish.
       await republishFollowList(id, { allowEmpty: true });
     } catch (err) {
       logger.warn({ err, accountId: id }, "discovery sweep: follow-list republish failed");
-      continue; // leave dirty set so a later cycle retries
+      await pool
+        .query(
+          `UPDATE accounts SET follow_list_dirty = TRUE
+             WHERE id = $1 AND status = 'active' AND publish_follow_graph = TRUE`,
+          [id],
+        )
+        .catch((e) =>
+          logger.warn({ err: e, accountId: id }, "discovery sweep: failed to restore dirty flag"),
+        );
+      continue; // restored dirty (when still opted-in) so a later cycle retries
     }
-    await pool.query(`UPDATE accounts SET follow_list_dirty = FALSE WHERE id = $1`, [id]);
   }
   // Clear any dirty flags on opted-out accounts so they don't spin the sweep.
   await pool.query(

@@ -94,39 +94,60 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
 
     const renewInTransaction = () =>
       withTransaction(async (client) => {
-        // The reading tab (free_allowance_remaining_pence) accrues negative —
-        // it is settled via Stripe later. Match the subscribe paths, which
-        // deduct without a floor; an earlier GREATEST(..,0) here silently
-        // undercharged the reader while still crediting the writer in full.
+        // Idempotency guard (D4): roll the subscription period FIRST, gated on
+        // the period still being due (`current_period_end < now()`). The retry
+        // below re-runs this whole transaction on failure; if the first attempt
+        // actually committed but the client never saw the ACK (connection drop
+        // after COMMIT), the period has already moved into the future, so this
+        // UPDATE matches 0 rows and we abort before charging the reader again.
+        // Keying on `< now()` (not the exact Date) avoids a timestamptz vs JS
+        // millisecond-precision mismatch.
+        let rolled;
+        if (offerExpiring) {
+          rolled = await client.query(
+            `UPDATE subscriptions
+             SET current_period_start = $1, current_period_end = $2,
+                 price_pence = $3, offer_id = NULL, offer_periods_remaining = NULL, updated_at = now()
+             WHERE id = $4 AND current_period_end < now()`,
+            [newPeriodStart, newPeriodEnd, renewalPrice, sub.id],
+          );
+        } else if (sub.offer_periods_remaining !== null) {
+          rolled = await client.query(
+            `UPDATE subscriptions
+             SET current_period_start = $1, current_period_end = $2,
+                 offer_periods_remaining = offer_periods_remaining - 1, updated_at = now()
+             WHERE id = $3 AND current_period_end < now()`,
+            [newPeriodStart, newPeriodEnd, sub.id],
+          );
+        } else {
+          rolled = await client.query(
+            `UPDATE subscriptions
+             SET current_period_start = $1, current_period_end = $2, updated_at = now()
+             WHERE id = $3 AND current_period_end < now()`,
+            [newPeriodStart, newPeriodEnd, sub.id],
+          );
+        }
+
+        // 0 rows ⇒ a prior (commit-ambiguous) attempt already renewed this
+        // period. No-op: the empty transaction commits, the outer path sends
+        // the renewal email exactly once and counts it processed.
+        if (rolled.rowCount === 0) {
+          logger.warn(
+            { subscriptionId: sub.id },
+            "Subscription renewal skipped — period already rolled (idempotency guard)",
+          );
+          return;
+        }
+
+        // Period rolled exactly once. Now charge the reader. The reading tab
+        // (free_allowance_remaining_pence) accrues negative — it is settled via
+        // Stripe later. Match the subscribe paths, which deduct without a floor;
+        // an earlier GREATEST(..,0) here silently undercharged the reader while
+        // still crediting the writer in full.
         await client.query(
           `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
           [renewalPrice, sub.reader_id],
         );
-
-        if (offerExpiring) {
-          await client.query(
-            `UPDATE subscriptions
-             SET current_period_start = $1, current_period_end = $2,
-                 price_pence = $3, offer_id = NULL, offer_periods_remaining = NULL, updated_at = now()
-             WHERE id = $4`,
-            [newPeriodStart, newPeriodEnd, renewalPrice, sub.id],
-          );
-        } else if (sub.offer_periods_remaining !== null) {
-          await client.query(
-            `UPDATE subscriptions
-             SET current_period_start = $1, current_period_end = $2,
-                 offer_periods_remaining = offer_periods_remaining - 1, updated_at = now()
-             WHERE id = $3`,
-            [newPeriodStart, newPeriodEnd, sub.id],
-          );
-        } else {
-          await client.query(
-            `UPDATE subscriptions
-             SET current_period_start = $1, current_period_end = $2, updated_at = now()
-             WHERE id = $3`,
-            [newPeriodStart, newPeriodEnd, sub.id],
-          );
-        }
 
         await logSubscriptionCharge(
           client,
@@ -162,8 +183,9 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
     try {
       // Retry once before giving up — a transient DB blip or a signing hiccup
       // shouldn't permanently kill a paid subscription (spec: retry once, then
-      // expire). The transaction is atomic, so a failed first attempt leaves no
-      // partial charge to undo.
+      // expire). Safe to re-run: a rolled-back first attempt leaves no partial
+      // charge, and a committed-but-unacked first attempt is caught by the
+      // `current_period_end < now()` idempotency guard inside the transaction.
       try {
         await renewInTransaction();
       } catch (firstErr) {

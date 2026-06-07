@@ -172,6 +172,29 @@ describe('expireAndRenewSubscriptions — renewal', () => {
     expect(expired).toBeUndefined()
   })
 
+  it('skips the charge when the period was already rolled (idempotency guard, D4)', async () => {
+    routePool([writerSub()])
+    // Simulate a commit-ambiguous retry: the period-roll UPDATE now matches 0
+    // rows because a prior (committed-but-unacked) attempt already moved
+    // current_period_end into the future.
+    withTransactionImpl.mockImplementationOnce(async (cb: (client: any) => Promise<any>) => {
+      const client = {
+        query: (sql: string, params: any[] = []) => {
+          txCalls.push({ sql, params })
+          const isRoll = /UPDATE subscriptions/.test(sql) && /current_period_end < now\(\)/.test(sql)
+          return Promise.resolve({ rows: [], rowCount: isRoll ? 0 : 1 })
+        },
+      }
+      return cb(client)
+    })
+    await expireAndRenewSubscriptions()
+
+    // Guard matched 0 rows → no tab deduction, no ledger entry, no signing/publish.
+    expect(txCalls.find((c) => /free_allowance_remaining_pence/.test(c.sql))).toBeUndefined()
+    expect(logSubscriptionCharge).not.toHaveBeenCalled()
+    expect(enqueueRelayPublish).not.toHaveBeenCalled()
+  })
+
   it('expires the subscription when both attempts fail', async () => {
     routePool([writerSub()])
     withTransactionImpl.mockImplementation(async () => {

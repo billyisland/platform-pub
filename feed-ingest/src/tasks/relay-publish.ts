@@ -2,7 +2,12 @@ import type { Task } from 'graphile-worker'
 import type { PoolClient } from 'pg'
 import { pool } from '@platform-pub/shared/db/client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
-import { publishNostrToRelays, type NostrSignedEvent } from '../adapters/nostr-outbound.js'
+import { publishNostrToRelaysDetailed, type NostrSignedEvent } from '../adapters/nostr-outbound.js'
+
+// Discovery events (kind 0/3/10002) must reach the public mesh, not just the
+// in-house relay. For these entity types a row is only 'sent' if at least one
+// *public fan-out* relay accepted; an in-house-only ACK is retried (D6).
+const DISCOVERY_ENTITY_TYPES = new Set(['profile', 'follow_list', 'relay_list'])
 
 // =============================================================================
 // relay_publish — publish a queued signed Nostr event to one or more relays.
@@ -22,7 +27,9 @@ import { publishNostrToRelays, type NostrSignedEvent } from '../adapters/nostr-o
 // fresh job with a versioned job_key.
 //
 // Partial success (some relays accept, some reject) is treated as sent per
-// the §71 one-accepts rule; publishNostrToRelays logs per-relay rejections.
+// the §71 one-accepts rule; publishNostrToRelaysDetailed logs per-relay
+// rejections. Exception: discovery rows (kind 0/3/10002) require at least one
+// *public* fan-out relay to accept — an in-house-only ACK is retried (D6).
 // =============================================================================
 
 interface RelayOutboxRow {
@@ -88,7 +95,28 @@ export const relayPublish: Task = async (payload, helpers) => {
     }
 
     try {
-      await publishNostrToRelays(row.signed_event, relayUrls)
+      const result = await publishNostrToRelaysDetailed(row.signed_event, relayUrls)
+
+      // Discovery rows: require public-mesh delivery before marking sent. If
+      // public fan-out relays were targeted but none accepted (only the
+      // in-house relay did), retry rather than silently declaring success —
+      // otherwise public delivery never happens once PUBLIC_FANOUT_RELAY_URLS
+      // is configured (D6). Re-publishing a replaceable discovery event to the
+      // relays that already accepted is idempotent.
+      if (DISCOVERY_ENTITY_TYPES.has(row.entity_type)) {
+        const platformUrl = process.env.PLATFORM_RELAY_WS_URL
+        const publicTargets = relayUrls.filter((u) => u !== platformUrl)
+        const publicAccepted = publicTargets.some((u) => result.succeeded.includes(u))
+        if (publicTargets.length > 0 && !publicAccepted) {
+          await failAndMaybeRetry(
+            client, row,
+            `Discovery event reached in-house relay only; all ${publicTargets.length} public fan-out relay(s) rejected`,
+            helpers,
+          )
+          return
+        }
+      }
+
       await client.query(
         `UPDATE relay_outbox
            SET status = 'sent',

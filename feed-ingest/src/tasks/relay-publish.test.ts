@@ -17,8 +17,18 @@ vi.mock('@platform-pub/shared/lib/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 vi.mock('../adapters/nostr-outbound.js', () => ({
-  publishNostrToRelays: publishMock,
+  publishNostrToRelaysDetailed: publishMock,
 }))
+
+// The detailed adapter resolves to { eventId, succeeded, failed }. Helper to
+// build that shape; by default every target relay accepted.
+function ok(relayUrls: string[], failed: string[] = []) {
+  return {
+    eventId: SIGNED_EVENT.id,
+    succeeded: relayUrls.filter((u) => !failed.includes(u)),
+    failed,
+  }
+}
 
 const { relayPublish, computeBackoff } = await import('./relay-publish.js')
 
@@ -125,6 +135,57 @@ describe('relayPublish', () => {
     // Final command in the script is COMMIT (not ROLLBACK)
     expect(calls.at(-1)?.sql).toBe('COMMIT')
     expect(mockClient.release).toHaveBeenCalledOnce()
+  })
+
+  it('discovery row: retries when only the in-house relay accepted (D6)', async () => {
+    const prev = process.env.PLATFORM_RELAY_WS_URL
+    process.env.PLATFORM_RELAY_WS_URL = 'wss://in-house.test'
+    try {
+      const row = baseRow({
+        entity_type: 'follow_list',
+        target_relay_urls: ['wss://in-house.test', 'wss://public.test'],
+        attempts: 0,
+      })
+      const calls = scriptClient(row)
+      // In-house accepted, the public fan-out relay rejected.
+      publishMock.mockResolvedValueOnce(ok(row.target_relay_urls, ['wss://public.test']))
+      const helpers = makeHelpers()
+
+      await relayPublish({ outboxId: row.id }, helpers)
+
+      const updates = calls.filter(c => /^UPDATE relay_outbox/i.test(c.sql))
+      expect(updates).toHaveLength(1)
+      expect(updates[0].sql).toMatch(/status = 'failed'/)
+      expect(updates[0].params[3]).toMatch(/in-house relay only/)
+      expect(helpers.addJob).toHaveBeenCalledOnce()
+    } finally {
+      if (prev === undefined) delete process.env.PLATFORM_RELAY_WS_URL
+      else process.env.PLATFORM_RELAY_WS_URL = prev
+    }
+  })
+
+  it('discovery row: marks sent when a public relay accepted (D6)', async () => {
+    const prev = process.env.PLATFORM_RELAY_WS_URL
+    process.env.PLATFORM_RELAY_WS_URL = 'wss://in-house.test'
+    try {
+      const row = baseRow({
+        entity_type: 'profile',
+        target_relay_urls: ['wss://in-house.test', 'wss://public.test'],
+      })
+      const calls = scriptClient(row)
+      publishMock.mockResolvedValueOnce(ok(row.target_relay_urls)) // both accepted
+      const helpers = makeHelpers()
+
+      await relayPublish({ outboxId: row.id }, helpers)
+
+      const updates = calls.filter(c => /^UPDATE relay_outbox/i.test(c.sql))
+      expect(updates).toHaveLength(1)
+      expect(updates[0].sql).toMatch(/status = 'sent'/)
+      expect(helpers.addJob).not.toHaveBeenCalled()
+    } finally {
+      if (prev === undefined) delete process.env.PLATFORM_RELAY_WS_URL
+      else process.env.PLATFORM_RELAY_WS_URL = prev
+    }
   })
 
   it('on relay failure → UPDATE status=failed + schedules retry', async () => {

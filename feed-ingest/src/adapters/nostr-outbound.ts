@@ -24,22 +24,36 @@ export interface NostrSignedEvent {
 
 const RELAY_TIMEOUT_MS = 5_000
 
-export async function publishNostrToRelays(
+export interface RelayPublishResult {
+  eventId: string
+  /** Relay URLs that ACKed the event with OK,true. */
+  succeeded: string[]
+  /** Relay URLs that rejected, errored, or timed out. */
+  failed: string[]
+}
+
+// Detailed variant: returns which relays accepted vs. rejected so callers can
+// apply per-target delivery policy (e.g. discovery rows must reach the public
+// mesh, not just the in-house relay — see relay-publish.ts D6). Throws only
+// when *every* relay rejects, preserving the all-fail contract below.
+export async function publishNostrToRelaysDetailed(
   event: NostrSignedEvent,
   relayUrls: string[]
-): Promise<string> {
+): Promise<RelayPublishResult> {
   if (relayUrls.length === 0) throw new Error('No relay URLs to publish to')
 
   const results = await Promise.allSettled(
     relayUrls.map(url => publishOne(url, event))
   )
 
-  let succeeded = 0
+  const succeeded: string[] = []
+  const failed: string[] = []
   for (let i = 0; i < results.length; i++) {
     const r = results[i]
     if (r.status === 'fulfilled') {
-      succeeded++
+      succeeded.push(relayUrls[i])
     } else {
+      failed.push(relayUrls[i])
       logger.warn(
         { relayUrl: relayUrls[i], eventId: event.id, err: r.reason?.message ?? String(r.reason) },
         'Outbound Nostr relay publish failed'
@@ -47,14 +61,24 @@ export async function publishNostrToRelays(
     }
   }
 
-  if (succeeded === 0) throw new Error('All relays rejected or timed out')
-  if (succeeded < relayUrls.length) {
+  if (succeeded.length === 0) throw new Error('All relays rejected or timed out')
+  if (failed.length > 0) {
     logger.warn(
-      { eventId: event.id, succeeded, total: relayUrls.length },
+      { eventId: event.id, succeeded: succeeded.length, total: relayUrls.length },
       'Outbound Nostr publish partially succeeded — some relays rejected or timed out'
     )
   }
-  return event.id
+  return { eventId: event.id, succeeded, failed }
+}
+
+// Back-compat wrapper: returns the event id on any non-total-failure (the
+// "one accepts" contract used by outbound-cross-post.ts).
+export async function publishNostrToRelays(
+  event: NostrSignedEvent,
+  relayUrls: string[]
+): Promise<string> {
+  const { eventId } = await publishNostrToRelaysDetailed(event, relayUrls)
+  return eventId
 }
 
 async function publishOne(relayUrl: string, event: NostrSignedEvent): Promise<void> {
