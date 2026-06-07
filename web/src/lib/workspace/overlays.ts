@@ -20,6 +20,7 @@
 import { useDashboardOverlay } from "../../stores/dashboardOverlay";
 import { useMessagesOverlay } from "../../stores/messagesOverlay";
 import { useNotificationsOverlay } from "../../stores/notificationsOverlay";
+import { useLedgerOverlay } from "../../stores/ledgerOverlay";
 
 export const OVERLAY_PARAM_KEYS = [
   "overlay",
@@ -45,6 +46,9 @@ export function openOverlayFromParams(params: URLSearchParams): boolean {
       return true;
     case "notifications":
       useNotificationsOverlay.getState().open();
+      return true;
+    case "ledger":
+      useLedgerOverlay.getState().open();
       return true;
     default:
       return false;

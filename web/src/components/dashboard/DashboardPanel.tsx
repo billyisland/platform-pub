@@ -29,6 +29,8 @@ import { PayrollTab } from './PayrollTab'
 import { PublicationEarningsTab } from './PublicationEarningsTab'
 import { SubscribersTab } from './SubscribersTab'
 import { AnalyticsTab } from './AnalyticsTab'
+import { useDashboardOverlay } from '../../stores/dashboardOverlay'
+import { useLedgerOverlay } from '../../stores/ledgerOverlay'
 
 type DashboardTab = 'articles' | 'subscribers' | 'proposals' | 'pricing' | 'analytics'
 
@@ -299,7 +301,18 @@ export function DashboardPanel({
               })}
             </div>
             <div className="flex items-center gap-4">
-              <Link href="/ledger" className="btn-text-muted underline underline-offset-4">View ledger</Link>
+              <button
+                type="button"
+                onClick={() => {
+                  if (inOverlay) {
+                    useDashboardOverlay.getState().close()
+                    useLedgerOverlay.getState().open()
+                  } else {
+                    router.push('/workspace?overlay=ledger')
+                  }
+                }}
+                className="btn-text-muted underline underline-offset-4"
+              >View ledger</button>
               <Link href="/write" className="btn">New article</Link>
             </div>
           </div>

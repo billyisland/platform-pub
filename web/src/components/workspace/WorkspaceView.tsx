@@ -51,6 +51,7 @@ import { ReaderOverlay } from "./ReaderOverlay";
 import { MessagesOverlay } from "./MessagesOverlay";
 import { DashboardOverlay } from "./DashboardOverlay";
 import { NotificationsOverlay } from "./NotificationsOverlay";
+import { LedgerOverlay } from "./LedgerOverlay";
 import { useReader } from "../../stores/reader";
 import {
   openOverlayFromParams,
@@ -1253,6 +1254,7 @@ export function WorkspaceView() {
       <MessagesOverlay />
       <DashboardOverlay />
       <NotificationsOverlay />
+      <LedgerOverlay />
     </Floor>
   );
 }
