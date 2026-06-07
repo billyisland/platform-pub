@@ -12,9 +12,21 @@ confusion-inducing but not actively broken. P2 items are housekeeping.
 Two audit claims did not hold up on verification and are called out at the end
 (§ Rejected).
 
+> **STATUS — 2026-06-07: Round 1 (§1–§25) is fully resolved.** Re-verified
+> item-by-item against `master`; every P0/P1/P2 finding below is fixed, mostly
+> via refactors this doc predates (route files → directories, `access.ts` →
+> `article-access/`, workers → `gateway/src/workers/`, shared `slug.ts` /
+> `advisory-locks.ts`, npm workspaces). The detailed entries are kept as a
+> historical trail — **do not treat the P0/P1 sections as open work.** Two
+> findings were resolved differently than proposed: §23 — `feeds.ts` was *not*
+> renamed (`feeds.ts` = timeline and `external-feeds.ts` = CRUD now coexist);
+> §24 — root `.md` count is now **9**, not the 22 it was trimmed toward. The
+> P3 items (§26 outbox — now partly shipped per RELAY-OUTBOX-ADR; §28–30) and
+> everything from the 2026-06-03 round onward remain the live backlog.
+
 ---
 
-## P0 — correctness bugs (fix before anything else)
+## P0 — correctness bugs (fix before anything else) — ✅ ALL RESOLVED (2026-06-07)
 
 ### 1. Scheduler: v2 encryption failure leaves a paywalled article with no vault
 
@@ -97,7 +109,7 @@ One-line fix + test.
 
 ---
 
-## P1 — drift hazards, inconsistencies, sealing
+## P1 — drift hazards, inconsistencies, sealing — ✅ ALL RESOLVED (2026-06-07)
 
 ### 7. Duplicated `generateDTag` (three live definitions, one tested-equal)
 
@@ -242,7 +254,7 @@ Flagging as P1 rather than P0 because it works today.
 
 ---
 
-## P2 — housekeeping, naming, dead code
+## P2 — housekeeping, naming, dead code — ✅ ALL RESOLVED (2026-06-07; §23/§24 resolved differently — see status note)
 
 ### 18. Adopt npm workspaces (or pnpm workspaces)
 
@@ -446,7 +458,10 @@ and they're all auth-extraction shortcuts — is true (§12).
 
 ---
 
-## Suggested attack order
+## Suggested attack order — ✅ COMPLETED (Round 1 work all landed)
+
+_Historical: this was the plan when §1–§25 were open. All of it shipped; kept
+for the trail._
 
 A week of focused work, roughly:
 
@@ -598,7 +613,9 @@ gone, never re-read). **Fix:** drop the key in `onDeleted`/merge/hide handlers.
 - The "unified feed cursor codec" (6ec3ada) is a raw `tag:value:value` string,
   not base64 as the commit/CLAUDE.md framing implies (decode is properly
   defensive — no injection). Cosmetic wording mismatch.
-- CLAUDE.md still references the removed `validateWebSocketUrl` helper (d23f464).
+- ~~CLAUDE.md still references the removed `validateWebSocketUrl` helper (d23f464).~~
+  ✅ FIXED 2026-06-07 — the SSRF invariant now cites `pinnedWebSocketOptions`
+  (`shared/src/lib/http-client.ts:407`), the real ws:/wss: helper.
 
 ---
 
