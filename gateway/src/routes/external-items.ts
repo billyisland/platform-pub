@@ -1316,7 +1316,7 @@ async function fetchMastodonParent(
       [
         sourceId,
         "activitypub",
-        status.url || parentUri,
+        status.uri || status.url || parentUri,
         status.account.display_name || status.account.acct,
         status.account.acct,
         status.account.avatar ?? null,
@@ -1335,7 +1335,7 @@ async function fetchMastodonParent(
     const parent: ParentItem = {
       id: insertResult.rows[0].id,
       sourceProtocol: "activitypub",
-      sourceItemUri: status.url || parentUri,
+      sourceItemUri: status.uri || status.url || parentUri,
       authorName: status.account.display_name || status.account.acct,
       authorHandle: status.account.acct,
       authorAvatarUrl: status.account.avatar ?? null,
@@ -1721,7 +1721,7 @@ async function fetchMastodonQuote(
       [
         sourceId,
         "activitypub",
-        status.url || quoteUri,
+        status.uri || status.url || quoteUri,
         status.account.display_name || status.account.acct,
         status.account.acct,
         status.account.avatar ?? null,
@@ -1739,7 +1739,7 @@ async function fetchMastodonQuote(
     return {
       id: insertResult.rows[0].id,
       sourceProtocol: "activitypub",
-      sourceItemUri: status.url || quoteUri,
+      sourceItemUri: status.uri || status.url || quoteUri,
       authorName: status.account.display_name || status.account.acct,
       authorHandle: status.account.acct,
       authorAvatarUrl: status.account.avatar ?? null,

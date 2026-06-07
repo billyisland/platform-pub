@@ -599,3 +599,156 @@ gone, never re-read). **Fix:** drop the key in `onDeleted`/merge/hide handlers.
   not base64 as the commit/CLAUDE.md framing implies (decode is properly
   defensive — no injection). Cosmetic wording mismatch.
 - CLAUDE.md still references the removed `validateWebSocketUrl` helper (d23f464).
+
+---
+
+# Audit round — 2026-06-07 (last three days of commits)
+
+Deep audit of the ~45 commits spanning 2026-06-04..07 (subscription auto-renewal
+hardening, feed-ingest perf tranches A–C, Nostr outbound interop Phase A,
+feed/thread display fixes, the Glasshouse overlay refactor). Five parallel
+work-stream audits; the two HIGH items were re-verified directly against source
+and the live dev DB. Mechanical guards both green for this range (schema drift
+0/1/2; hairline tripwire — no *new* 1px treatments). To-do checkboxes below;
+nothing fixed yet.
+
+## Open — HIGH
+
+- [x] **D1 — Feed throughput cap (migration 106) is inert on every real DB.** ✅ FIXED 2026-06-07
+  **Verified (live dev DB):** `migrations/106_feed_ingest_enqueue_cap.sql` is
+  config-only (`INSERT INTO platform_config`), but `schema.sql` carries **no**
+  `platform_config` seed data while its `_migrations` seed marks 106
+  already-applied. So on any schema.sql-bootstrapped DB (dev `initdb.d` + prod
+  fresh boots) `migrate.ts` skips 106 and the key is never created;
+  `feed-ingest-poll.ts:27-30` resolves `max_enqueue_per_tick || max_concurrent
+  || 100` → falls back to **10**, the exact ceiling 602d7d7/30750f4 set out to
+  lift. Confirmed `feed_ingest_max_enqueue_per_tick` absent on the live dev DB
+  (`feed_ingest_max_concurrent=10` present). This is the "seeded filename,
+  omitted body" gap CLAUDE.md warns passes all three drift checks. **Same
+  omission strands** `feed_ingest_rss_max_interval_seconds`, backoff/decay
+  factors, and the engagement cap — all on code defaults, none operator-tunable.
+  **Fix:** add `platform_config` seed rows to `schema.sql` (then re-run the
+  drift guard), or default the poll code to 100 instead of relying on the seed.
+  **Fix applied:** took the code option — `feed-ingest-poll.ts` now resolves
+  `feed_ingest_max_enqueue_per_tick || 100`, dropping the `feed_ingest_max_concurrent`
+  fallback that pinned the cap at 10. This restores migration 106's intended
+  default on every DB (legacy *and* fresh) with no schema/migration risk.
+  **Remaining (broader, not D1):** `platform_config` carries **zero** seed rows
+  in `schema.sql`, so all operator-tunable keys (rss interval, backoff/decay,
+  engagement cap, …) are absent on fresh prod boots and run on code defaults.
+  Closing that is the genesis-seed work tracked under B1 — out of scope here.
+
+- [x] **D2 — Mastodon thread/quote id-space fixed in only 1 of 4 write paths.** ✅ FIXED 2026-06-07
+  **Verified:** b2f64ac keyed *hydration* on the federated `uri`, but
+  `fetchMastodonParent` (`gateway/src/routes/external-items.ts:1319`),
+  `fetchQuoteFromSource` (`:1724/1742`), and both prefetch-worker inserts
+  (`feed-ingest/src/tasks/external-parent-prefetch.ts:456/472/493/694`) still
+  store `source_item_uri = status.url` (human web URL). Consequences: (a) dedup
+  forks — `ON CONFLICT (protocol, source_item_uri)` never matches the
+  ingest-stored federated-uri row, recreating the duplicate `external_items` row
+  b2f64ac claims to eliminate (silent; first render still works); (b) Mastodon
+  quote **re-root is broken** — `derive_post_id` over the web URL ≠ the host's
+  federated `source_quote_uri`, so clicking a Mastodon quote tile re-roots to
+  nothing (Bluesky at:// uris match, so Bluesky works). **Fix:** `status.uri ||
+  status.url` applied at all four call sites (same one-liner as b2f64ac).
+  **Fix applied:** `sourceItemUri` now keys on `status.uri || status.url || …`
+  in `fetchMastodonParent` + `fetchQuoteFromSource` (gateway `external-items.ts`)
+  and both prefetch-worker inserts (`external-parent-prefetch.ts`). **Note:** any
+  `url`-keyed forked rows already in a DB stay as orphans; new fetches key
+  correctly and the live duplicate stops being minted (no backfill required —
+  feature is days old).
+
+- [x] **D3 — Unsanitized Mastodon HTML stored in the prefetch worker (latent
+  stored-XSS).** ✅ FIXED 2026-06-07 **Verified:** `external-parent-prefetch.ts:477` and `:715`
+  insert raw `status.content` into `content_html` with **no** `sanitizeContent`
+  (the call appears nowhere in that file), unlike every other path. `content_html`
+  is rendered via `dangerouslySetInnerHTML` in `QuotedPostTile.tsx:126` /
+  `ExternalPlayscriptEntry.tsx:82`. Currently latent *only because* D2's keying
+  bug means these rows are never served — fixing D2 without adding sanitize turns
+  it live. **Fix:** wrap `status.content` in `sanitizeContent` regardless of D2;
+  do not let a bug be the mitigation.
+  **Fix applied:** imported `sanitizeContent` into `external-parent-prefetch.ts`
+  and wrapped `status.content` in both inserts (parent + quote), matching every
+  other ingest path.
+
+## Open — MEDIUM
+
+- [ ] **D4 — Subscription retry-once can double-charge on a commit failure.**
+  **Verified:** `gateway/src/workers/subscription-expiry.ts:162-175`. The retry
+  assumes the renewal transaction is atomic, but a failure of the COMMIT itself
+  (or a connection drop after commit) throws to the caller while the DB applied
+  the debit + period roll. The retry re-runs with no idempotency guard — the
+  renewal `UPDATE` keys only on `id`, and `logSubscriptionCharge` always INSERTs
+  a fresh charge/earning pair. **Fix:** add a `WHERE current_period_end < now()`
+  precondition (treat `rowCount=0` as already-done) or a per-period idempotency
+  key. (Tab clamp, annual discount, publication routing, migration 103 all
+  verified correct & well-tested.) **Carried (product call):** catch-up
+  multi-charge after downtime — one charge per missed period per hourly tick.
+
+- [ ] **D5 — Discovery dirty-flag clear race drops a coalesced follow update.**
+  **Verified:** `gateway/src/lib/discovery-publish.ts:209-218`. A follow/unfollow
+  landing between the follow-list read inside `republishFollowList` and the
+  `follow_list_dirty = FALSE` clear is lost until the 7-day self-heal. **Fix:**
+  conditional clear / claim pattern (clear only if unchanged, or clear-before-read).
+
+- [ ] **D6 — Discovery outbox marks `sent` when *any* relay accepts.**
+  **Verified:** `feed-ingest/src/tasks/relay-publish.ts:90`; in-house relay is
+  first in the target list, so a row is `sent` even if every public fan-out relay
+  rejected — defeats public-mesh delivery once `PUBLIC_FANOUT_RELAY_URLS` is set.
+  Already noted as a deferred fast-follow in NOSTR-OUTBOUND-INTEROP-ADR §3.3;
+  ships dark, so Medium. **Fix:** per-relay ACK accounting on discovery rows
+  before the flag is flipped in prod.
+
+- [ ] **D7 — Composer dead-code residue from f9e07f1.** **Verified:**
+  `web/src/components/workspace/Composer.tsx` — the commit removed the recipient/
+  broadcast UI but not the machinery; `chips` is now permanently `[]`, making
+  `isPrivate`, the private-DM send branch (the sole remaining use of the
+  `messagesApi` import, lines 434-446), and the crossPost chip paths unreachable.
+  Misleading (contradicts the commit), not a runtime bug. **Fix:** delete the
+  dead chip/resolver paths and the now-unused `messagesApi` import.
+
+- [ ] **D8 — `FeedComposer` source row bypasses `ProfileLink`.** **Verified:**
+  `web/src/components/workspace/FeedComposer.tsx:879` — account sources render
+  `source.display.href` (`/:username`) as a bare `next/link` `<Link>`, full-page-
+  navigating instead of opening the URL-synced profile overlay. Violates the
+  sitewide ProfileLink rule. (Publication/external/tag hrefs on the same
+  component are legitimately non-profile.) **Fix:** route through `<ProfileLink>`
+  or `openProfileHref`/`isModifiedClick` for the account branch only.
+
+## Open — LOW / NIT
+
+- [ ] **D9 — Per-host enqueue throttle silently caps total throughput.**
+  `feed-ingest/src/tasks/feed-ingest-poll.ts:91-119` — even with the per-tick cap
+  raised, `hostSources.slice(0, maxPerHost)` (2) means effective ceiling is
+  `2 × distinct_hosts`/tick with no skip log; nostr sources bucket by relay and
+  can starve. **Fix:** add a skipped-due-to-host log; consider per-host relocation.
+- [ ] **D10 — Stale `reply_to_author` never re-NULLed** when a parent is
+  deleted/unresolvable (`feed-ingest/src/tasks/feed-items-author-refresh.ts:54-78`,
+  migration 105) — the JOIN-only refresh leaves the old denormalised name in place.
+- [ ] **D11 — `signAndEnqueue` signs outside the enqueue transaction**
+  (`gateway/src/lib/discovery-publish.ts:104-122`) — safe for discovery
+  specifically (event derived from already-committed state) but diverges from the
+  canonical relay-outbox invariant; a future co-committed side effect would break
+  silently. Flag/comment, no functional fix needed.
+- [ ] **D12 — Inline `<video>` omits `referrerPolicy="no-referrer"`**
+  (`web/src/components/post/PostMedia.tsx:242-261`) — leaks the all.haus referrer
+  to third-party media hosts on play (poster `<img>` paths already set it).
+  Cleanup/autoplay logic itself is correct.
+- [ ] **D13 — Latent overlay history/scroll-lock edge cases.** `_handlePop` in
+  `stores/reader.ts:119` / `stores/profileOverlay.ts:93` has no entry-ownership
+  guard (stacked-overlay Back collision); `Glasshouse.tsx:50-55` scroll-lock can
+  leak if two Glasshouses unmount out of LIFO order. Both unreachable in current
+  UI — fix if overlay stacking is ever enabled.
+- [ ] **D14 — `feed-batching.test.ts` covers only the pure helpers** — the
+  multi-row VALUES builders / `$${b+1}` param-offset arithmetic, in-fetch dedup,
+  atproto debounce reset, and cursor-flush merge-back are untested (correct now,
+  unguarded against regression).
+
+## Verified clean (no action)
+Glasshouse z-index contract (scrim 55 / pane 56 / ForallMenu crisp at 60),
+✕-only dismissal, all redirect shims (incl. `/messages` `#hash` client forward),
+`overlays.ts` param handling, palette discipline, one-post-per-card (quote
+embeds the only exempt grammar), Bluesky quote/re-root paths, native↔external
+id-space separation, discovery dark-launch defaults + advisory-lock
+acquire/release, NIP-05 response safety, subscription tab clamp / annual discount
+/ publication routing / migration 103.

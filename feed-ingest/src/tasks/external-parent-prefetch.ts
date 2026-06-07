@@ -2,6 +2,7 @@ import type { Task } from "graphile-worker";
 import type { PoolClient } from "pg";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
+import { sanitizeContent } from "@platform-pub/shared/lib/sanitize.js";
 import { truncatePreview } from "@platform-pub/shared/lib/text.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
@@ -453,7 +454,11 @@ async function prefetchMastodonParent(
     if (grandparent) interactionData.grandparent = grandparent;
 
     const authorName = status.account.display_name || status.account.acct;
-    const sourceItemUri = status.url || parentUri;
+    // Key on the federated ActivityPub id (`uri`), not the human web `url`:
+    // ingestion stores source_item_uri/source_reply_uri as note.id/note.inReplyTo
+    // (the `uri` form), so keying on `url` forks the (protocol, source_item_uri)
+    // dedup and breaks the ancestor/quote re-root walk (audit D2; matches b2f64ac).
+    const sourceItemUri = status.uri || status.url || parentUri;
     const publishedAt = new Date(status.created_at);
     await withTransaction(async (client) => {
       const { rows, rowCount } = await client.query<{ id: string }>(
@@ -474,7 +479,7 @@ async function prefetchMastodonParent(
           status.account.acct,
           status.account.avatar ?? null,
           status.account.url,
-          status.content,
+          sanitizeContent(status.content),
           null,
           JSON.stringify(media),
           null,
@@ -691,7 +696,8 @@ async function prefetchMastodonQuote(
     if (link) media.push(link);
 
     const authorName = status.account.display_name || status.account.acct;
-    const sourceItemUri = status.url || quoteUri;
+    // Federated `uri`, not web `url` — see the parent-prefetch note above (D2).
+    const sourceItemUri = status.uri || status.url || quoteUri;
     const publishedAt = new Date(status.created_at);
     await withTransaction(async (client) => {
       const { rows, rowCount } = await client.query<{ id: string }>(
@@ -712,7 +718,7 @@ async function prefetchMastodonQuote(
           status.account.acct,
           status.account.avatar ?? null,
           status.account.url,
-          status.content,
+          sanitizeContent(status.content),
           null,
           JSON.stringify(media),
           JSON.stringify({ id: status.uri, webUrl: status.url }),

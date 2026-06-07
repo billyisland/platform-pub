@@ -23,11 +23,17 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
   // conflated at 10, which capped steady-state throughput at ~10/min ≈ 50
   // sources before they fell behind. Decoupled: default 100 (= the SELECT
   // LIMIT, i.e. enqueue all due sources each tick) so the ceiling is gone.
-  // Legacy `feed_ingest_max_concurrent` is still honoured as a fallback.
+  //
+  // The default is 100 in code, NOT via the `feed_ingest_max_enqueue_per_tick`
+  // seed (migration 106): that seed is config-only and absent from schema.sql,
+  // so it never lands on a schema.sql-bootstrapped DB (dev initdb / fresh prod)
+  // while `_migrations` marks 106 applied — migrate.ts then skips it (audit D1).
+  // We must NOT fall back to the legacy `feed_ingest_max_concurrent` (seeded at
+  // 10 on existing DBs): that resurrects the very coupling 106 set out to remove
+  // and silently pins throughput at 10. Honour an explicit per-tick override if
+  // an operator sets one; otherwise 100, unconditionally.
   const maxEnqueuePerTick =
-    parseInt(config.get("feed_ingest_max_enqueue_per_tick") ?? "", 10) ||
-    parseInt(config.get("feed_ingest_max_concurrent") ?? "", 10) ||
-    100;
+    parseInt(config.get("feed_ingest_max_enqueue_per_tick") ?? "", 10) || 100;
   // atproto sources are normally pushed by the Jetstream listener. Only
   // fall back to polling via getAuthorFeed if the listener has reported
   // itself unhealthy — otherwise we'd duplicate work.
