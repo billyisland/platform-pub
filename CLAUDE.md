@@ -60,81 +60,27 @@ It builds throwaway DBs in the dev Postgres container (read-only w.r.t. your rea
 
 ## Architecture
 
-### Request flow
+Browser → Nginx (80/443) → `/api/*` to gateway, `/` to web. The Next.js app rewrites `/api/*` to `GATEWAY_URL`; the frontend never calls backend services directly.
 
-Browser → Nginx (80/443) → routes `/api/*` to gateway, `/` to web. The Next.js app rewrites `/api/*` calls to the gateway at `GATEWAY_URL`, so the frontend never calls backend services directly.
+Orientation only (the cited ADRs / code are the source of truth):
 
-### Auth
+- **Auth**: magic links + Google OAuth (no passwords); httpOnly JWT cookies set by the gateway. `gateway/src/middleware/auth.ts` exports `requireAuth` / `optionalAuth`. Custodial Nostr keypairs: key-custody holds private keys; key-service wraps/issues NIP-44 keys to readers for gated content.
+- **Nostr**: articles are kind 30023 (NIP-23) replaceable events signed via key-custody; the platform runs its own strfry relay. Web reads via NDK (`web/src/lib/ndk.ts`). Soft-delete publishes a kind 5 tombstone.
+- **Payments**: readers accrue a Stripe tab as they read gated articles; payouts via Stripe Connect (`payment-service/src/services/`). Article access logic in `gateway/src/services/article-access/`; `/articles/:id/gate-pass` is a thin wrapper over `performGatePass()`.
+- **Media**: uploaded via `gateway/src/routes/media.ts`, stored in a Docker volume, served at `/media/`; Blossom configured but local is primary. oEmbed proxied in the same route.
+- **Editor**: TipTap (`web/src/components/editor/`) with a paywall gate node; markdown via `tiptap-markdown`.
+- **Feed & search**: full-text search via `pg_trgm` (`gateway/src/routes/search.ts`); feed ranking `planning-archive/FEED-ALGORITHM.md` (Phase 1).
+- **External feeds (Universal Feed)**: RSS/Atom/JSON, external Nostr, Bluesky, Mastodon/Lemmy/threadiverse, and email are ingested by `feed-ingest/` (Graphile Worker + Jetstream listener; adapters in `feed-ingest/src/adapters/`). Data model `external_sources`/`external_subscriptions`/`external_items`, denormalised into the unified `feed_items` timeline by transactional dual-write (each row carries `post_id`, `version`, `biddability_tier`). Subscription CRUD `gateway/src/routes/external-feeds.ts` (protocols `rss`/`nostr_external`/`atproto`/`activitypub`). Live workspace reads via the Post-model endpoints (`GET /feed/:feedId`, `GET /thread/:postId` projector). Spec: `docs/adr/UNIVERSAL-FEED-ADR.md`; workspace full view: `docs/adr/WORKSPACE-FULL-VIEW-SPEC.md`.
+- **Trust graph**: Layer 1 (`trust_layer1`, daily cron) + `trust_polls` compose the `TrustPip` four-state glyph on all feed cards (`feed-ingest/src/lib/trust-pip.ts`). Layer 2 vouches (`vouches`/`trust_profiles`/`trust_epochs`); Layer 4 relational ("N writers you follow endorse this"). Gateway `trust.ts`; UI `/network?tab=vouches`; `TRUST_DRY_RUN=1` for dry runs. Spec: `docs/adr/ALLHAUS-OMNIBUS.md`.
 
-- Magic links + Google OAuth (no passwords)
-- Auth cookies are httpOnly JWTs set by the gateway
-- `gateway/src/middleware/auth.ts` exports `requireAuth` and `optionalAuth` Fastify hooks
-- Custodial Nostr keypairs: key-custody holds private keys, key-service wraps/issues NIP-44 encrypted keys to readers for unlocking gated content
+### Invariants (these are rules, not orientation)
 
-### Nostr integration
-
-- Articles are Nostr kind 30023 (NIP-23) replaceable long-form events, signed via key-custody
-- The platform runs its own strfry relay; events are published via `gateway/src/lib/nostr-publisher.ts`
-- The web client uses NDK (`@nostr-dev-kit/ndk`) for reading events; `web/src/lib/ndk.ts` handles event parsing
-- Soft-delete: articles are marked deleted in the DB and a Nostr kind 5 deletion event is published
-- **Relay outbox**: every write path that publishes a signed Nostr event to the platform relay enqueues into `relay_outbox` inside the caller's transaction via `shared/src/lib/relay-outbox.ts::enqueueRelayPublish`; the `feed-ingest` `relay_publish` worker owns publish + retry. So `POST /sign-and-publish` and the publication publish routes mean "signed and durably queued", not "on relay" — relay blips become invisible worker retries, not 5xx. Spec: `planning-archive/RELAY-OUTBOX-ADR.md`
-- **Outbound discovery (NIP-05 + kind 0/3/10002)**: makes users + their public content discoverable on the wider Nostr mesh. NIP-05 served at gateway `/.well-known/nostr.json` (read-only, always on). The three replaceable discovery events are produced from DB state by `gateway/src/lib/discovery-publish.ts` (signed via key-custody, enqueued through `relay_outbox`): kind 0/10002 republish on profile/username edit; kind 3 (follow list = internal follows ∪ external nostr subs) is coalesced via `accounts.follow_list_dirty` and drained — together with backfill + self-heal over `accounts.discovery_synced_at` — by the gateway scheduler sweep (`runDiscoverySweep`, advisory lock `DISCOVERY`). All publishing is gated by `DISCOVERY_PUBLISH_ENABLED` (ships dark); `PUBLIC_FANOUT_RELAY_URLS` controls public-mesh fan-out (empty ⇒ in-house relay only). kind 3 is per-user opt-out via `accounts.publish_follow_graph` (default on; settings → Privacy). Spec: `docs/adr/NOSTR-OUTBOUND-INTEROP-ADR.md`
-
-### Payments
-
-- Readers accumulate a tab (Stripe PaymentIntent) as they read gated articles
-- `payment-service/src/services/` contains accrual, settlement, and payout logic
-- Payouts go to writers via Stripe Connect
-- Article access logic lives in `gateway/src/services/article-access/` (`access-check.ts`, `unlock-records.ts`, `gate-pass.ts` orchestrator + `index.ts` barrel). The `/articles/:id/gate-pass` route in `gateway/src/routes/articles/gate-pass.ts` is a thin HTTP wrapper translating `performGatePass()`'s typed result into status codes
-
-### Media
-
-- Uploaded via gateway (`gateway/src/routes/media.ts`), stored in a Docker volume, served via Nginx at `/media/`
-- Blossom is configured for Nostr-native media federation but primary storage is local
-- oEmbed proxying handled in `gateway/src/routes/media.ts`
-
-### Editor
-
-- TipTap (ProseMirror-based) in `web/src/components/editor/`
-- Supports a paywall gate node — content below the gate requires payment to unlock
-- Markdown serialization via `tiptap-markdown`
-
-### Compose overlay
-
-- `ComposeOverlay` (`web/src/components/compose/ComposeOverlay.tsx`) is the single global compose surface, mounted in `app/layout.tsx`. The only other compose surface is the workspace `Composer` — do not add a third.
-- Three modes via Zustand store `web/src/stores/compose.ts`: _note_ (default; topbar COMPOSE or `⌘K`), _reply_ (Reply on a card, or QuoteSelector), _article_ (`Write an article →` in note mode, or `openArticle({ draftId?, publicationSlug? })`). `open(mode, replyTarget)` / `openArticle(opts)` / `setMode(mode)` to escalate mid-compose.
-- Article mode is a dedicated panel (`ArticleComposePanel.tsx`) with its own Tiptap instance, title, `PUBLISH AS:` selector, paywall gate + price, autosave to drafts, `OPEN IN FULL EDITOR ↗` (`/write?draft=<id>[&pub=<slug>]`), `SCHEDULE`, Publish. Pane is 760px in article mode, 640px for note/reply; dek/tags/email/comments toggles deferred to the full editor.
-- Renders through `<Glasshouse>`. Scrim / ✕ / Escape route to a single `dismiss` (article flushes the draft first; note/reply uses a two-step confirm when dirty).
-- Full spec: `docs/adr/ALLHAUS-REDESIGN-SPEC.md` §3
-
-### Feed & search
-
-- Feed ranking spec in `planning-archive/FEED-ALGORITHM.md` (Phase 1 implemented)
-- Full-text search uses PostgreSQL trigrams (`pg_trgm`), see `gateway/src/routes/search.ts`
-
-### External feeds (Universal Feed)
-
-External content (RSS/Atom/JSON Feed, external Nostr, Bluesky, Mastodon/Lemmy/threadiverse, email newsletters) is ingested by `feed-ingest/` (Graphile Worker + a long-lived Jetstream WebSocket listener, no HTTP port). Each protocol has an adapter in `feed-ingest/src/adapters/` and a shared dual-write helper in `feed-ingest/src/lib/`. This section is orientation only — per-phase history, migration numbers, and cron cadences live in `docs/adr/UNIVERSAL-FEED-ADR.md`.
-
-- **Data model**: `external_sources` (shared canonical feeds), `external_subscriptions` (per-user), `external_items` (normalised content). `feed_items` is the denormalised unified timeline — articles, notes, external items all land here via transactional dual-write; each row carries a deterministic per-THING `post_id`, an edit-detecting `version`, a `biddability_tier`, and (tier-A/B external only) `external_author_id` → `external_authors`. Bare reposts/boosts are edges in `repost_edges`, not rows. Two **invariants**: (1) Nostr identity is relay-free — `source_item_uri`/`post_id`/the `(protocol, source_item_uri)` dedup key encode `nevent`/`naddr` *without* relay hints (else two relays mint two `post_id`s); relay hints live only in `external_items.interaction_data`. (2) native `feed_items.author_id` (→ `accounts`) and `external_author_id` (→ `external_authors`) are separate id-spaces; tier-C/D rss/email rows have no stable handle, so `external_author_id` stays NULL (plain-text byline).
-- **Feed query**: the live workspace uses the Post-model endpoints — `post-feed.ts` (`GET /feed/:feedId`, hotness scoring + dedup-to-one by `post_id`) and `post-thread.ts` (`GET /thread/:postId`, a *projector* resolving the focal by `post_id` then projecting native `comments` + `external_items` into the `Post` shape via `gateway/src/lib/post-mapper.ts`). For an external focal the projector first hydrates the live source thread context-only (best-effort, GC'd by `external_context_gc`) so the pure-DB walk resolves the full origin reply graph. Legacy chronological reads (`timeline.ts` `/feed`, `replies.ts` `/conversation`, `/external-items/:id/thread`) remain for non-workspace surfaces only.
-- **Adapters**: RSS/Atom/JSON + podcast (`adapters/rss.ts`); external Nostr via temporary source-relay WebSockets (`feed-ingest-nostr.ts`); Bluesky via leader-elected Jetstream listener (`jetstream/listener.ts`) + `getAuthorFeed` backfill (`adapters/atproto.ts`); Mastodon/Lemmy/threadiverse via outbox polling (`adapters/activitypub.ts`, read-only); email via Postmark inbound webhook (`gateway/src/routes/inbound-mail.ts` → `adapters/email.ts`, push-only).
-- **Resolver** (`gateway/src/lib/resolver.ts`, `POST /api/v1/resolve`): omnivorous identity resolution — see Omnivorous input below and UNIVERSAL-FEED-ADR §V.5.
-- **Subscription CRUD** (`gateway/src/routes/external-feeds.ts`): subscribe/list/remove/mute/refresh. Supported protocols: `rss`, `nostr_external`, `atproto`, `activitypub` — the `external_protocol` enum also carries values rejected at subscribe time (`farcaster`/`matrix`/`telegram`/`email`) until their adapters ship.
-- **Rendering**: `ExternalCard` / `VesselCard` render external items. `SourceAttribution` maps protocols to labels (`ACTIVITYPUB`→`FEDIVERSE`, `ATPROTO`→`BLUESKY`, `NOSTR_EXTERNAL`→`NOSTR`); `at://` URIs rewritten to `bsky.app` at render time.
-- **SSRF hardening** (invariant): all outbound fetches must use the hardened HTTP client in `shared/src/lib/http-client.ts` (undici `Agent` with a pinned `connect.lookup` closing the DNS-rebinding TOCTOU); `validateWebSocketUrl` covers ws:/wss:.
-- **Engagement / interactions**: `external_items` carries denormalised like/reply/repost counts plus parent/quote/thread hydration via `GET /api/v1/external-items/:id/{engagement,parent,quote,thread}`; like/repost/reply back to origin via `POST /api/v1/external-items/:id/{like,repost,reply}` (validated against linked-account ownership + protocol, dispatched by `feed-ingest`). Capability matrix in UNIVERSAL-FEED-ADR §5.5.
-- **Outbound cross-posting** (Mastodon/Bluesky/external Nostr): encrypted OAuth creds in `linked_accounts`, audit/retry in `outbound_posts`; `POST /notes` accepts `crossPost`. AT Protocol OAuth (PKCE/DPoP/PAR) in `shared/src/lib/atproto-oauth.ts`.
-- **Crons**: `feed_items_reconcile` / `feed_items_author_refresh` catch dual-write drift; `feed_scores_refresh` computes the score in feed-ingest so scoring failures can't affect the public API.
-- Workspace Full View (content warnings, polls, reader pane, inline video, pull-to-refresh): `docs/adr/WORKSPACE-FULL-VIEW-SPEC.md`. Full spec: `docs/adr/UNIVERSAL-FEED-ADR.md`.
-
-### Trust graph
-
-- **Layer 1** (`trust_layer1`): precomputed per-user signals (account age, paying readers, article count, Stripe KYC, NIP-05), daily cron. The `TrustPip` four-state glyph (`known`/`partial`/`unknown`/`contested`) composes L1 + `trust_polls` (`feed-ingest/src/lib/trust-pip.ts`) and renders on all feed cards.
-- **Layer 2 — vouches** (`vouches`, `trust_profiles`, `trust_epochs`): per-attestor/subject/dimension endorsements (dimensions humanity/encounter/identity/integrity; affirm/contest; contests aggregate-only; one per attestor/subject/dimension; soft-delete withdrawal; freshness decay), aggregated into epochs by `trust-epoch-aggregate.ts`. `TRUST_DRY_RUN=1` for dry runs.
-- **Layer 4 — relational**: viewer's valued set (follows + active subscriptions) ∩ subject's public endorsements → "N writers you follow endorse this person".
-- **API + frontend**: gateway `trust.ts`; `TrustProfile`, `VouchModal`, `VouchList` on `/network?tab=vouches`.
-- Full spec: `docs/adr/ALLHAUS-OMNIBUS.md`
+- **Relay outbox**: every write path that publishes a signed Nostr event enqueues into `relay_outbox` inside the caller's transaction (`shared/src/lib/relay-outbox.ts::enqueueRelayPublish`); the `feed-ingest` `relay_publish` worker owns publish + retry. So `POST /sign-and-publish` and the publication publish routes mean "signed and durably queued", not "on relay" — relay blips become invisible worker retries, not 5xx. Spec: `docs/adr/RELAY-OUTBOX-ADR.md` (+ `RELAY-OUTBOX-PHASE-4-ADR.md`).
+- **Outbound discovery (NIP-05 + kind 0/3/10002)**: NIP-05 served at gateway `/.well-known/nostr.json` (read-only, always on). The three replaceable discovery events are produced from DB state by `gateway/src/lib/discovery-publish.ts` (signed via key-custody, enqueued through `relay_outbox`) and drained by the gateway scheduler sweep (`runDiscoverySweep`, advisory lock `DISCOVERY`; kind 3 coalesced via `accounts.follow_list_dirty`). All publishing ships dark behind `DISCOVERY_PUBLISH_ENABLED`; `PUBLIC_FANOUT_RELAY_URLS` controls public-mesh fan-out (empty ⇒ in-house relay only); kind 3 is per-user opt-out via `accounts.publish_follow_graph`. Spec: `docs/adr/NOSTR-OUTBOUND-INTEROP-ADR.md`.
+- **Relay-free Nostr identity**: external-nostr `source_item_uri`/`post_id`/the `(protocol, source_item_uri)` dedup key encode `nevent`/`naddr` *without* relay hints (else two relays mint two `post_id`s); relay hints live only in `external_items.interaction_data`.
+- **Separate id-spaces**: native `feed_items.author_id` (→ `accounts`) and `external_author_id` (→ `external_authors`) never mix; tier-C/D rss/email rows have no stable handle, so `external_author_id` stays NULL (plain-text byline).
+- **SSRF hardening**: all outbound fetches must use the hardened HTTP client in `shared/src/lib/http-client.ts` (undici `Agent` with a pinned `connect.lookup` closing the DNS-rebinding TOCTOU); `validateWebSocketUrl` covers ws:/wss:.
+- **Compose surfaces**: exactly two — the global `ComposeOverlay` (`web/src/components/compose/ComposeOverlay.tsx`, mounted in `app/layout.tsx`) and the workspace `Composer`. Do not add a third. Three modes (note/reply/article) via `web/src/stores/compose.ts`; renders through `<Glasshouse>`. Spec: `planning-archive/ALLHAUS-REDESIGN-SPEC.md` §3.
 
 ## Omnivorous input (identity resolution)
 
@@ -195,23 +141,21 @@ Use `.toggle-chip` + `.toggle-chip-active` / `.toggle-chip-inactive` (with `.lab
 
 All top-level admin/settings/dashboard pages use `<PageShell>` (`web/src/components/ui/PageShell.tsx`) — it fixes outer padding (`py-12`), title styling, and title→content gap (`mb-8`). Choose width by content: `article` (640px) single-column forms, `feed` (780px) lists/cards/reading, `content` (960px) tables/dense dashboards. Do not hand-roll `mx-auto max-w-* px-4 sm:px-6 py-*` wrappers. Use `<PageHeader>` standalone for sub-views needing the same title treatment.
 
-### Workspace brightness — derive colours from the palette, never hard-code
+### Workspace brightness — colour from the palette, never hard-code
 
-The workspace has two brightness modes (`web/src/components/workspace/tokens.ts`): `primary` (light) and `dark` (a real dark mode). `PALETTES[brightness]` is a `VesselPalette` whose fields (`cardBg`, `cardTitle`, `cardStandfirst`, `cardMeta`, `interior`, `barText`, …) flip between modes.
+Two modes in `web/src/components/workspace/tokens.ts`: `primary` (light) and `dark`. `PALETTES[brightness]` is a `VesselPalette` (`cardBg`/`cardTitle`/`cardMeta`/`interior`/`barText`/…) that flips between modes.
 
-**Any component rendering inside the themed vessel interior or a card must take the palette (`palette: VesselPalette` prop, or `brightness` + `paletteFor(brightness)`) and colour every text/background element from it.** Never hard-code a text/background colour (`text-black`/`text-white`/`text-grey-800`/`text-grey-900`, inline `color:'#111'`/`'#fff'`, `bg-white`) on an interior surface — it doesn't invert, so it goes invisible in one mode. This includes **hover and selected/active states** (`hover:text-black` over the dark interior is invisible on hover): drive emphasis from a palette field (e.g. hover → `palette.cardTitle`) or a mode-agnostic affordance (`hover:opacity-70`, `hover:underline`). For a translucent wash that must read on either card, pick it with `isDarkPalette(palette)` — a fixed `rgba(0,0,0,…)` wash vanishes in dark mode.
-
-Note: `text-grey-500`/`700`/`800`/`900` are **not defined** in `web/tailwind.config.js` (only `100/200/300/400/600`) — those class names emit no rule and silently inherit the ambient colour (dark-on-dark in dark mode). Use a palette field, not an undefined grey.
-
-Exempt: intentionally **always-light** surfaces — the Glasshouse frosted pane and overlay panels that define their own fixed `panelBg:'#FFFFFF'` with dark text (Reader, Messages, Dashboard, Notifications, Search, PipPanel, Composer, ForallMenu). They never consume `PALETTES`, so they never invert; keep their text dark.
+- **Any component inside a themed vessel interior or card takes the palette** (`palette: VesselPalette` prop, or `paletteFor(brightness)`) and colours every text/background — **including hover and active states** — from it. Never hard-code `text-black`/`text-white`/`bg-white`/inline `color` on an interior surface; it won't invert. Drive emphasis from a palette field (hover → `palette.cardTitle`) or a mode-agnostic affordance (`hover:opacity-70`); pick translucent washes via `isDarkPalette(palette)`.
+- **Greys `500`/`700`/`800`/`900` are not defined** in `web/tailwind.config.js` (only `100/200/300/400/600`) — they emit no rule and silently inherit (dark-on-dark). Use a palette field, never an undefined grey.
+- **Exempt:** always-light surfaces (the Glasshouse pane + overlay panels with fixed `panelBg:'#FFFFFF'`) never consume `PALETTES`; keep their text dark.
 
 ### Glasshouse (frosted workspace overlay)
 
-Any surface that opens **over the workspace** — reader pane, direct messages (`MessagesOverlay.tsx` → shared `MessagesPanel.tsx`), notifications (`NotificationsOverlay.tsx` → shared `NotificationsPanel.tsx`), the writer/publication dashboard (`DashboardOverlay.tsx` → shared `DashboardPanel.tsx`), the workspace note/article composer (`Composer.tsx`), the feed-settings modal (`FeedComposer.tsx`), the global compose overlay, future panels — uses the canonical `<Glasshouse>` primitive (`web/src/components/workspace/Glasshouse.tsx`). It owns the chrome: full-viewport frosted scrim (`z-[55]`, blur-only `backdrop-blur-[3px]` with no tint, click-to-close), a centred white pane (`z-[56]`) with the 6px black slab top + elevation shadow, Escape-to-close, body scroll-lock. Mount it conditionally; pass `onClose` + `maxWidth` (+ optional `ariaLabel`). URL-sync/history is layered on by the caller's store, not Glasshouse. A child popover above the pane (e.g. the feed composer's `AuthorModal`) must raise its own `z-index` above `z-[56]` (`AuthorModal` takes a `zIndex` prop).
+Every surface that opens **over the workspace** (reader, messages, notifications, dashboard, composer, feed-settings, compose overlay, …) uses the canonical `<Glasshouse>` primitive (`web/src/components/workspace/Glasshouse.tsx`) — never a hand-rolled frosted scrim + centred pane. It owns the chrome: frosted scrim (`z-[55]`, blur-only, no tint, click-to-close), centred white pane (`z-[56]`, 6px black slab top + shadow), Escape-close, body scroll-lock. Mount conditionally; pass `onClose` + `maxWidth` (+ optional `ariaLabel`); the caller's store layers on URL-sync. A child popover above the pane raises its own `z-index` above `z-[56]` (e.g. `AuthorModal`'s `zIndex` prop).
 
-The defining invariant: the **ForallMenu stays crisp above the frost** as the sole nav affordance. It lives at `z-60` in `WorkspaceView`; Glasshouse never reaches `z-60`. Never raise a Glasshouse above `z-[56]`, never blur or dim the ForallMenu, and never hand-roll a frosted scrim + centred pane — reuse `<Glasshouse>`. Per-surface stores follow the `useReader` / `useMessagesOverlay` shape (`isOpen` + `open`/`close` zustand); the surface body should be a shared panel component (e.g. `MessagesPanel`, `DashboardPanel`) reused by both its Glasshouse and any standalone page.
+**Invariant — the ForallMenu stays crisp above the frost** as the sole nav affordance: it sits at `z-60`, Glasshouse never reaches `z-60`. Never raise a Glasshouse above `z-[56]`, never blur or dim the ForallMenu. Per-surface stores follow the `useReader`/`useMessagesOverlay` shape (`isOpen` + `open`/`close`); the body is a shared panel component (`MessagesPanel`, `DashboardPanel`) reused by both the overlay and any standalone page.
 
-**Retiring a route into an overlay** (the direction of travel — everything that isn't the workspace or an overlay thereof is being retired): keep the old path as a thin **redirect shim** to `/workspace?overlay=<name>[&…seed params]` (deep links, notification/email hrefs, and bookmarks must keep resolving) — a server component for simple cases, a client component when it must forward a `#hash` the server never sees (e.g. `/messages` forwards `#conversationId` → `?conversation=`). Overlay routing is centralised in `web/src/lib/workspace/overlays.ts`: `WorkspaceView` reads `window.location.search` once on mount (not `useSearchParams` — that would force a Suspense boundary on the prerendered `/workspace`) and calls `openOverlayFromParams` to `open()` the matching overlay store seeded from the query, then strips `OVERLAY_PARAM_KEYS` via `replaceState`. In-app links / `router.push` targets point straight at `/workspace?overlay=<name>` to skip the redirect bounce; for navigations that happen **while already in the workspace** (e.g. a notification row → messages/dashboard overlay), call `routeToOverlay(href)` first — it opens the overlay in place and returns true so the caller skips a no-op `router.push` to the same pathname. Reference implementations: dashboard (`useDashboardOverlay`), messages (`useMessagesOverlay`, with conversation seed), notifications (`useNotificationsOverlay`).
+**Retiring a route into an overlay** (the direction of travel — everything that isn't the workspace or an overlay is being retired): keep the old path as a thin redirect shim to `/workspace?overlay=<name>[&seed]` so deep links/bookmarks resolve (a client component if it must forward a `#hash`, e.g. `/messages` → `?conversation=`). Routing is centralised in `web/src/lib/workspace/overlays.ts`: `WorkspaceView` reads `window.location.search` once on mount (not `useSearchParams` — it would force a Suspense boundary on prerendered `/workspace`), `openOverlayFromParams` opens the seeded store, then strips `OVERLAY_PARAM_KEYS` via `replaceState`. In-app targets point straight at `/workspace?overlay=<name>`; for navigations **already inside** the workspace, call `routeToOverlay(href)` first (opens in place, returns true so the caller skips a no-op `router.push`). Refs: `useDashboardOverlay`, `useMessagesOverlay`, `useNotificationsOverlay`.
 
 ### Profile navigation (ProfileLink + profile overlay)
 
@@ -279,16 +223,25 @@ Threads render flat and chronological as a transcript — never nested indentati
 
 ## Key docs
 
-- `feature-debt.md` — consolidated feature debt, outstanding work, attack order
-- `FEED-INGEST-ATTACK-PLAN.md` — build plan for omnivorous stream ingestion (slices 0–9; 0–3 shipped)
-- `docs/adr/UNIVERSAL-POST-ADR.md` — unified **Post** model, feed assembly/ordering, single thread engine, full-view rendering matrix. The workspace's only card path (unified `PostCard` in `web/src/components/post/`, fed by `GET /feed/:feedId` + the `GET /thread/:postId` projector; reader pane = `useReader` + `ReaderOverlay`, URL-synced). Supersedes node-identity + thread-rendering portions of UNIVERSAL-FEED-ADR and CARD-BEHAVIOUR-ADR. **Scoped to the workspace** — standalone `/feed` + `/source/[id]` + `components/feed/` left for a later pass.
-- `docs/adr/CARD-BEHAVIOUR-ADR.md` — card interaction model (click regions, neighbourhood expansion, biddability tiers, author affordances, rich embeds). Largely superseded by UNIVERSAL-POST-ADR.
-- `docs/adr/UNIVERSAL-FEED-ADR.md` — universal social reader spec (external feeds, resolver, outbound posting)
-- `docs/adr/ALLHAUS-REDESIGN-SPEC.md` — redesign spec (topbar, feed, compose overlay, card family); `docs/adr/REDESIGN-SCOPE.md` — product scope companion
-- `docs/adr/ALLHAUS-OMNIBUS.md` — trust graph spec (Layer 1/2/4, Phase A/B anonymity)
-- `docs/adr/WORKSPACE-FULL-VIEW-SPEC.md` — workspace full view (Compact/Full fidelity, engagement counts, threads, reader pane, content warnings, polls, inline video, pull-to-refresh). **Note:** its `reply_group` + inline parent-context-tile features were removed by **one post per card**; the workspace feed now has cursor-paged infinite scroll, ≤1 conversation expanded per feed.
-- `docs/adr/` — active ADRs and specs (publications, email-on-publish, traffology, currency strategy, etc.)
-- `docs/audits/` — code reviews, audits, fix programmes (`FIX-PROGRAMME.md`, `platform-pub-review.md`, `AUDIT-BACKLOG.md`)
-- `DEPLOYMENT.md` — full production deployment guide
-- `schema.sql` — full PostgreSQL schema (source of truth for DB structure)
-- `planning-archive/` — completed specs (FEATURES.md, DESIGN-BRIEF.md, FEED-ALGORITHM.md, RESILIENCE.md, RELAY-OUTBOX-ADR.md, etc.)
+**Charter & principles**
+- `PRINCIPLES.md` — strategic charter; every feature is answerable to it.
+- `docs/adr/REDESIGN-SCOPE.md` — product thesis (note: its anti-workspace stance is reversed; the principles stand).
+
+**Live specs (source of truth for behaviour)**
+- `docs/adr/UNIVERSAL-POST-ADR.md` — unified **Post** model, feed assembly/ordering, single thread engine, full-view matrix. The workspace's only card path (`web/src/components/post/`, `GET /feed/:feedId` + `GET /thread/:postId` projector; reader pane = `useReader` + `ReaderOverlay`). Supersedes node-identity + thread-rendering portions of UNIVERSAL-FEED-ADR and CARD-BEHAVIOUR-ADR. Scoped to the workspace; standalone `/feed` + `/source/[id]` left for later.
+- `docs/adr/UNIVERSAL-FEED-ADR.md` — universal social reader (external feeds, resolver, outbound posting, adapters, schema).
+- `docs/adr/CARD-BEHAVIOUR-ADR.md` — card interaction model. Largely superseded by UNIVERSAL-POST-ADR; the 2026-05-30 addendum is still current.
+- `docs/adr/WORKSPACE-FULL-VIEW-SPEC.md` — workspace full view (fidelity, threads, reader pane, warnings, polls, video, pull-to-refresh). `reply_group` + inline parent-context-tile removed by **one post per card**; feed is cursor-paged infinite scroll, ≤1 conversation expanded.
+- `docs/adr/ALLHAUS-OMNIBUS.md` — trust graph (Layer 1/2/4, Phase A/B anonymity).
+- `WORKSPACE-DESIGN-SPEC.md`, `WIREFRAME-DECISIONS-CONSOLIDATED.md`, `CARDS-AND-PIP-PANEL-HANDOFF.md` — workspace UX semantics, committed wireframe decisions, card/pip grammar.
+- `docs/adr/` — other active ADRs: publications, email-on-publish, traffology, gateway-decomposition, code-quality, nostr-outbound-interop, relay-outbox (+ phase 4), UI-DESIGN-SPEC.
+
+**Trackers (live, outstanding work)**
+- `feature-debt.md` — consolidated feature debt, outstanding work, attack order.
+- `FEED-INGEST-ATTACK-PLAN.md` — omnivorous ingestion roadmap (slices 0–9; 0–3 + 9 shipped, 4–8 gated/deferred).
+- `docs/audits/` — `FIX-PROGRAMME.md` (master work log), `AUDIT-BACKLOG.md`, `ADR-CONFORMANCE-2026-05.md`, `SCHEMA-REFERENCE-2026-05.md`, `SUBSCRIPTIONS-GAP-ANALYSIS.md`, `FEED-INGEST-HYDRATION-PLAN.md`, `all-haus-frontend-audit.md`.
+
+**Operations & reference**
+- `DEPLOYMENT.md` — production deployment guide.
+- `schema.sql` — full PostgreSQL schema (source of truth for DB structure).
+- `planning-archive/ARCHIVE-INDEX.md` — **single ledger of every retired/shipped/superseded doc** (what it was, status, what replaced it). Start here before opening anything in `planning-archive/`.
