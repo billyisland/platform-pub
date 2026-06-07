@@ -687,11 +687,17 @@ export function FeedComposer({
   );
 }
 
-// The orientation glyph depicts the feed container itself — a tall portrait
-// vessel for vertical, a wide landscape vessel for horizontal. A 2px stroke
-// keeps it clear of the sitewide thin-rule ban.
+// The orientation glyph depicts the feed container itself as an open ⊔ vessel,
+// open on the side it grows from: a tall portrait U open at the top for
+// vertical, the same U on its side open to the right for horizontal. A 2px
+// stroke keeps it clear of the sitewide thin-rule ban.
 function OrientationGlyph({ orientation }: { orientation: Orientation }) {
   const portrait = orientation === "vertical";
+  // Portrait: tall U open at top (left wall, floor, right wall).
+  // Horizontal: wide U on its side open to the right (top wall, left wall, floor).
+  const path = portrait
+    ? "M4.5 1.5 L4.5 14.5 L11.5 14.5 L11.5 1.5"
+    : "M14.5 4.5 L1.5 4.5 L1.5 11.5 L14.5 11.5";
   return (
     <svg
       width={16}
@@ -700,14 +706,12 @@ function OrientationGlyph({ orientation }: { orientation: Orientation }) {
       fill="none"
       aria-hidden="true"
     >
-      <rect
-        x={portrait ? 4.5 : 1.5}
-        y={portrait ? 1.5 : 4.5}
-        width={portrait ? 7 : 13}
-        height={portrait ? 13 : 7}
-        rx={1.5}
+      <path
+        d={path}
         stroke="currentColor"
         strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
