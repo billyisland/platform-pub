@@ -17,6 +17,11 @@ interface PullToRefreshProps {
 
 const THRESHOLD = 60;
 const WHEEL_DECAY_MS = 400;
+// How long the feed must rest at the top (no upward wheel events) before a
+// fresh scroll-up is treated as an intentional refresh gesture. This keeps the
+// single continuous scroll-to-top that opens the top card's conversation from
+// rolling straight into a refresh — the user must stop, then scroll up again.
+const ARM_IDLE_MS = 220;
 
 function findScrollParent(el: HTMLElement): HTMLElement {
   let cur = el.parentElement;
@@ -41,8 +46,18 @@ export function PullToRefresh({
   const active = useRef(false);
   const wheelAccum = useRef(0);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Refresh is "armed" only once the feed has settled at the top; until then,
+  // upward wheel deltas are ignored so the scroll-to-top gesture itself can't
+  // trigger a refresh.
+  const armed = useRef(false);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const doRefresh = useCallback(() => {
+    armed.current = false;
+    if (armTimer.current) {
+      clearTimeout(armTimer.current);
+      armTimer.current = null;
+    }
     setRefreshing(true);
     setPullDistance(THRESHOLD * 0.6);
     void onRefresh().finally(() => {
@@ -102,11 +117,30 @@ export function PullToRefresh({
       if (!el) return;
       const scroller = scrollRef?.current ?? findScrollParent(el);
       if (scroller.scrollTop > 0 || e.deltaY >= 0) {
+        // Scrolling through content or downward: disarm. Reaching the top via
+        // this gesture must not count toward a refresh.
         wheelAccum.current = 0;
+        armed.current = false;
+        if (armTimer.current) {
+          clearTimeout(armTimer.current);
+          armTimer.current = null;
+        }
         if (pullDistance > 0 && !refreshing) {
           setPullDistance(0);
           setPulling(false);
         }
+        return;
+      }
+      // At the top, scrolling up. If not yet armed, this is (the tail of) the
+      // gesture that brought us here — don't accumulate. Instead wait for a
+      // quiet gap: a continuous gesture keeps resetting this timer, so it only
+      // fires once the feed has come to rest, arming the next scroll-up.
+      if (!armed.current) {
+        if (armTimer.current) clearTimeout(armTimer.current);
+        armTimer.current = setTimeout(() => {
+          armed.current = true;
+          armTimer.current = null;
+        }, ARM_IDLE_MS);
         return;
       }
       wheelAccum.current += Math.abs(e.deltaY);
@@ -136,6 +170,7 @@ export function PullToRefresh({
   useEffect(() => {
     return () => {
       if (wheelTimer.current) clearTimeout(wheelTimer.current);
+      if (armTimer.current) clearTimeout(armTimer.current);
     };
   }, []);
 

@@ -378,6 +378,8 @@ Full mode renders all media at full fidelity:
 
 Overscroll gesture: when the user is at the top of the feed and scrolls up, a refresh indicator appears. Releasing triggers a feed refresh. Works on both desktop (wheel event accumulation while scrollTop is 0, 400ms decay timer resets between scroll bursts) and mobile (touch overscroll via `findScrollParent` DOM traversal). `PullToRefresh` does not create its own scroll container — it delegates to the Vessel's content div.
 
+**Refresh requires a distinct second scroll-up (2026-06-07).** On desktop, the continuous scroll-up that brings the feed to the top (and is often used to read the first message of the top card's expanded conversation — a refresh would collapse it) must not roll straight into a refresh. The wheel handler "arms" only after the feed comes to rest at the top: upward wheel deltas are ignored until a quiet gap of `ARM_IDLE_MS` (220ms) with no upward events fires the arm timer — a continuous gesture (including trackpad momentum) keeps resetting that timer, so it only arms once scrolling settles. The next scroll-up then accumulates toward the 60px threshold normally. Scrolling down, scrolling through content, or completing a refresh all disarm, so each refresh needs a deliberate stop-then-scroll. The mobile touch path already required a fresh finger-down at the top (`onTouchStart` only activates when `scrollTop === 0`), so it was unchanged.
+
 ### 8.2 Refresh behaviour
 
 Re-fetches the feed from the gateway with no cursor (latest items). New items prepend to the top of the feed.
