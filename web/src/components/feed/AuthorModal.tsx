@@ -10,6 +10,7 @@ import {
   type AuthorCardType,
 } from "../../hooks/useAuthorCard";
 import { follows as followsApi, feeds as feedsApi } from "../../lib/api";
+import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
 
 interface AuthorModalProps {
   type: AuthorCardType;
@@ -210,7 +211,14 @@ function ModalContent({
               // /:username, external A/B /author/:id).
               <Link
                 href={data.profilePath}
-                onClick={onClose}
+                onClick={(e) => {
+                  // Plain click opens the profile overlay in place; modified
+                  // clicks (new tab) fall through to the real link.
+                  if (!isModifiedClick(e) && openProfileHref(data.profilePath!)) {
+                    e.preventDefault();
+                  }
+                  onClose();
+                }}
                 className="block text-ui-sm font-medium truncate hover:underline"
               >
                 {data.displayName}

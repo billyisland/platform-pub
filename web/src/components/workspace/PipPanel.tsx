@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { useAuth } from '../../stores/auth'
 import { TrustPip } from '../ui/TrustPip'
 import {
@@ -295,7 +295,7 @@ export function PipPanel({
             >
               <TrustPip status={pipStatus} />
             </span>
-            <Link
+            <ProfileLink
               href={profileHref}
               onClick={onClose}
               className="font-serif"
@@ -309,7 +309,7 @@ export function PipPanel({
             >
               {writer.displayName || writer.username}
               <span style={{ color: TOKENS.hint, marginLeft: 6 }}>›</span>
-            </Link>
+            </ProfileLink>
             {!isOwn && user && (
               <button
                 type="button"
@@ -421,7 +421,7 @@ export function PipPanel({
                 textAlign: 'right',
               }}
             >
-              <Link
+              <ProfileLink
                 href={`/${writer.username}`}
                 onClick={onClose}
                 className="label-ui"
@@ -432,7 +432,7 @@ export function PipPanel({
                 }}
               >
                 SUBSCRIBE · £{(subscriptionPence / 100).toFixed(2)}/MO ›
-              </Link>
+              </ProfileLink>
             </div>
           )}
         </>

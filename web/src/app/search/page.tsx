@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
+import { ProfileLink } from '../../components/ui/ProfileLink'
 import { useSearchParams } from 'next/navigation'
 
 interface ArticleResult { id: string; dTag: string; title: string; summary: string | null; wordCount: number | null; isPaywalled: boolean; publishedAt: string; writer: { username: string; displayName: string | null }; relevance: number }
@@ -135,7 +136,7 @@ export default function SearchPage() {
         ) : (
           <div className="space-y-1">
             {writerResults.map(w => (
-              <Link key={w.id} href={`/${w.username}`} className="flex items-center gap-4 bg-white p-4 group">
+              <ProfileLink key={w.id} href={`/${w.username}`} className="flex items-center gap-4 bg-white p-4 group">
                 {w.avatar ? (
                   <img src={w.avatar} alt="" className="h-9 w-9  object-cover" />
                 ) : (
@@ -147,7 +148,7 @@ export default function SearchPage() {
                   <p className="text-ui-sm text-black group-hover:opacity-70 transition-opacity">{w.displayName ?? w.username}</p>
                   <p className="text-ui-xs text-grey-300">@{w.username} / {w.articleCount} article{w.articleCount !== 1 ? 's' : ''}</p>
                 </div>
-              </Link>
+              </ProfileLink>
             ))}
           </div>
         )

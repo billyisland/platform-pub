@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageShell } from "../../../components/ui/PageShell";
@@ -54,8 +54,34 @@ const CTX: CardContext = {
   bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
 };
 
-export function AuthorProfileView({ authorId }: { authorId: string }) {
+export function AuthorProfileView({
+  authorId,
+  inOverlay = false,
+}: {
+  authorId: string;
+  inOverlay?: boolean;
+}) {
   const router = useRouter();
+
+  // Hosted full-page → PageShell (width + padding + title). Hosted in the profile
+  // overlay → bare body; the Glasshouse pane owns the frame. Article clicks
+  // router-navigate either way; in the overlay the ProfileOverlay pathname watcher
+  // dismisses the overlay as the route leaves /author/:id.
+  const frame = (children: ReactNode, title?: string) =>
+    inOverlay ? (
+      <div>
+        {title && (
+          <h1 className="font-sans text-2xl font-medium text-black tracking-tight mb-8">
+            {title}
+          </h1>
+        )}
+        {children}
+      </div>
+    ) : (
+      <PageShell width="feed" title={title}>
+        {children}
+      </PageShell>
+    );
   const [profile, setProfile] = useState<AuthorProfile | null>(null);
   const [items, setItems] = useState<Post[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -135,33 +161,29 @@ export function AuthorProfileView({ authorId }: { authorId: string }) {
   }, []);
 
   if (loading) {
-    return (
-      <PageShell width="feed">
-        <div className="label-ui text-grey-400 py-12 text-center">LOADING…</div>
-      </PageShell>
+    return frame(
+      <div className="label-ui text-grey-400 py-12 text-center">LOADING…</div>,
     );
   }
 
   if (notFound) {
-    return (
-      <PageShell width="feed" title="Author not found">
-        <p className="font-sans text-ui-sm text-grey-600">
-          This author isn&apos;t available.{" "}
-          <Link href="/feed" className="btn-text">
-            Back to feed
-          </Link>
-        </p>
-      </PageShell>
+    return frame(
+      <p className="font-sans text-ui-sm text-grey-600">
+        This author isn&apos;t available.{" "}
+        <Link href="/feed" className="btn-text">
+          Back to feed
+        </Link>
+      </p>,
+      "Author not found",
     );
   }
 
   if (error || !profile) {
-    return (
-      <PageShell width="feed" title="Couldn’t load author">
-        <p className="font-sans text-ui-sm text-grey-600">
-          Something went wrong loading this profile.
-        </p>
-      </PageShell>
+    return frame(
+      <p className="font-sans text-ui-sm text-grey-600">
+        Something went wrong loading this profile.
+      </p>,
+      "Couldn’t load author",
     );
   }
 
@@ -175,8 +197,8 @@ export function AuthorProfileView({ authorId }: { authorId: string }) {
     profile.followingCount != null ||
     profile.postCount != null;
 
-  return (
-    <PageShell width="feed">
+  return frame(
+    <>
       {/* Author header */}
       <div className="mb-8">
         {protocolLabel && (
@@ -282,6 +304,6 @@ export function AuthorProfileView({ authorId }: { authorId: string }) {
           </button>
         </div>
       )}
-    </PageShell>
+    </>,
   );
 }

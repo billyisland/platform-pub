@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { ProfileLink } from "../ui/ProfileLink";
 import { useRouter } from "next/navigation";
 import type { ArticleEvent } from "../../lib/ndk";
 import { useWriterName } from "../../hooks/useWriterName";
@@ -127,12 +128,12 @@ export function ArticleCard({
           onMouseLeave={hover.onMouseLeave}
         >
           {authorHref ? (
-            <Link
+            <ProfileLink
               href={authorHref}
               className="hover:text-black transition-colors"
             >
               {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + "..."}
-            </Link>
+            </ProfileLink>
           ) : (
             <span>
               {writerInfo?.displayName ?? article.pubkey.slice(0, 12) + "..."}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { account as accountApi, type MySubscription } from '../../lib/api'
 
 export function SubscriptionsSection() {
@@ -49,9 +49,9 @@ export function SubscriptionsSection() {
                 </span>
               )}
               <div className="min-w-0">
-                <Link href={`/${s.writerUsername}`} className="text-ui-sm font-sans font-medium text-black hover:opacity-70 truncate block">
+                <ProfileLink href={`/${s.writerUsername}`} className="text-ui-sm font-sans font-medium text-black hover:opacity-70 truncate block">
                   {s.writerDisplayName ?? s.writerUsername}
-                </Link>
+                </ProfileLink>
                 <p className="label-ui text-grey-300">
                   {s.status === 'cancelled'
                     ? `Access until ${new Date(s.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`

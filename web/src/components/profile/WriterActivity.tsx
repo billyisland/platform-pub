@@ -34,9 +34,13 @@ interface SubStatus {
 interface WriterActivityProps {
   username: string;
   writer: WriterProfile;
+  // Hosted inside the profile overlay (NativeProfilePanel). The overlay's pushed
+  // URL is /<username>, so we ignore the ambient ?tab the workspace URL may carry
+  // and drive tab state internally (switchTab still reflects it onto the URL).
+  inOverlay?: boolean;
 }
 
-export function WriterActivity({ username, writer }: WriterActivityProps) {
+export function WriterActivity({ username, writer, inOverlay = false }: WriterActivityProps) {
   const { user, loading: authLoading } = useAuth();
   const searchParams = useSearchParams();
 
@@ -44,7 +48,7 @@ export function WriterActivity({ username, writer }: WriterActivityProps) {
   const tabs =
     writer.articleCount > 0 ? ALL_TABS : ALL_TABS.filter((t) => t !== "work");
 
-  const rawTab = searchParams.get("tab");
+  const rawTab = inOverlay ? null : searchParams.get("tab");
   const defaultTab = tabs[0];
   const initialTab: ProfileTab =
     rawTab && tabs.includes(rawTab as ProfileTab)

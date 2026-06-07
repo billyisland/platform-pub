@@ -1,3 +1,5 @@
+import { request } from './client'
+
 export interface WriterProfile {
   id: string
   pubkey: string
@@ -13,4 +15,11 @@ export interface WriterProfile {
   hasPaywalledArticle: boolean
   followerCount: number
   followingCount: number
+}
+
+// GET /writers/:username → native writer profile header. The /[username] page
+// fetches this server-side; the profile overlay (NativeProfilePanel) needs it
+// client-side.
+export function getWriter(username: string): Promise<WriterProfile> {
+  return request<WriterProfile>(`/writers/${encodeURIComponent(username)}`)
 }

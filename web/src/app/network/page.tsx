@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { ProfileLink } from "../../components/ui/ProfileLink";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../../stores/auth";
 import { FeedDial } from "../../components/social/FeedDial";
@@ -178,7 +179,7 @@ export default function NetworkPage() {
             <div className="space-y-1">
               {writers.map((w) => (
                 <div key={w.id} className="flex items-center gap-4 py-4">
-                  <Link href={`/${w.username}`} className="flex-shrink-0">
+                  <ProfileLink href={`/${w.username}`} className="flex-shrink-0">
                     {w.avatar ? (
                       <img
                         src={w.avatar}
@@ -190,14 +191,14 @@ export default function NetworkPage() {
                         {(w.displayName ?? w.username)[0].toUpperCase()}
                       </span>
                     )}
-                  </Link>
+                  </ProfileLink>
                   <div className="flex-1 min-w-0">
-                    <Link href={`/${w.username}`} className="group">
+                    <ProfileLink href={`/${w.username}`} className="group">
                       <p className="font-sans text-base font-medium text-black group-hover:opacity-75 transition-opacity truncate">
                         {w.displayName ?? w.username}
                       </p>
                       <p className="text-ui-xs text-grey-400">@{w.username}</p>
-                    </Link>
+                    </ProfileLink>
                   </div>
                   <button
                     onClick={() => handleUnfollow(w.id)}
@@ -233,7 +234,7 @@ export default function NetworkPage() {
             <div className="space-y-1">
               {followers.map((f) => (
                 <div key={f.id} className="flex items-center gap-4 py-4">
-                  <Link href={`/${f.username}`} className="flex-shrink-0">
+                  <ProfileLink href={`/${f.username}`} className="flex-shrink-0">
                     {f.avatar ? (
                       <img
                         src={f.avatar}
@@ -245,9 +246,9 @@ export default function NetworkPage() {
                         {(f.displayName ?? f.username)[0].toUpperCase()}
                       </span>
                     )}
-                  </Link>
+                  </ProfileLink>
                   <div className="flex-1 min-w-0">
-                    <Link href={`/${f.username}`} className="group">
+                    <ProfileLink href={`/${f.username}`} className="group">
                       <p className="font-sans text-base font-medium text-black group-hover:opacity-75 transition-opacity truncate">
                         {f.displayName ?? f.username}
                       </p>
@@ -257,7 +258,7 @@ export default function NetworkPage() {
                           <span className="ml-2 text-grey-300">· writer</span>
                         )}
                       </p>
-                    </Link>
+                    </ProfileLink>
                   </div>
                 </div>
               ))}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
+import { ProfileLink } from "../ui/ProfileLink";
 import {
   trust,
   type TrustProfileResponse,
@@ -177,12 +177,12 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
                     name={e.attestor.displayName ?? e.attestor.username}
                     size={16}
                   />
-                  <Link
+                  <ProfileLink
                     href={`/${e.attestor.username}`}
                     className="text-[11px] font-sans text-grey-600 hover:text-black"
                   >
                     {e.attestor.displayName ?? e.attestor.username}
-                  </Link>
+                  </ProfileLink>
                   <span className="label-ui text-grey-300">{e.dimension}</span>
                 </div>
               ))}
@@ -205,12 +205,12 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
                   name={e.attestor.displayName ?? e.attestor.username}
                   size={20}
                 />
-                <Link
+                <ProfileLink
                   href={`/${e.attestor.username}`}
                   className="text-ui-xs text-grey-600 hover:text-black"
                 >
                   {e.attestor.displayName ?? e.attestor.username}
-                </Link>
+                </ProfileLink>
                 <span className="label-ui text-grey-300">{e.dimension}</span>
               </div>
             ))}

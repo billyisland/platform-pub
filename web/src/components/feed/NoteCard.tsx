@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import Link from "next/link";
+import { ProfileLink } from "../ui/ProfileLink";
 import type { NoteEvent } from "../../lib/ndk";
 import { useWriterName } from "../../hooks/useWriterName";
 import { useAuth } from "../../stores/auth";
@@ -280,12 +281,12 @@ export function NoteCard({
             onMouseLeave={hover.onMouseLeave}
           >
             {authorHref ? (
-              <Link
+              <ProfileLink
                 href={authorHref}
                 className="label-ui text-grey-600 hover:text-black transition-colors"
               >
                 {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + "..."}
-              </Link>
+              </ProfileLink>
             ) : (
               <span className="label-ui text-grey-600">
                 {writerInfo?.displayName ?? note.pubkey.slice(0, 12) + "..."}

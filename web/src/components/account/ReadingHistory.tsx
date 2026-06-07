@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { readingHistory, type ReadingHistoryItem } from '../../lib/api'
 import { Avatar } from '../ui/Avatar'
 
@@ -46,9 +47,9 @@ export function ReadingHistory() {
           return (
             <div key={`${item.articleId}-${item.readAt}`} className="flex items-center gap-3 px-6 py-4">
               {item.writer.username ? (
-                <Link href={`/@${item.writer.username}`} className="flex-shrink-0">
+                <ProfileLink href={`/@${item.writer.username}`} className="flex-shrink-0">
                   <Avatar src={item.writer.avatar} name={item.writer.displayName || item.writer.username} size={28} />
-                </Link>
+                </ProfileLink>
               ) : (
                 <Avatar src={item.writer.avatar} name={item.writer.displayName || '?'} size={28} />
               )}

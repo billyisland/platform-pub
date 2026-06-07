@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { ProfileLink } from '../../../components/ui/ProfileLink'
 import { useAuth } from '../../../stores/auth'
 import { subscriptionOffers, subscribe, type OfferLookup } from '../../../lib/api'
 
@@ -99,7 +100,7 @@ export default function RedeemOfferPage() {
           <p className="label-ui text-grey-400 mb-2">Subscription offer</p>
           <h1 className="font-serif text-3xl italic mb-2">{offer.label}</h1>
           <p className="text-ui-sm text-grey-600 mb-8">
-            Subscribe to <Link href={`/${offer.writerUsername}`} className="text-black underline underline-offset-4">{writerName}</Link>
+            Subscribe to <ProfileLink href={`/${offer.writerUsername}`} className="text-black underline underline-offset-4">{writerName}</ProfileLink>
           </p>
 
           <div className="bg-white px-6 py-6 mb-6 space-y-3">

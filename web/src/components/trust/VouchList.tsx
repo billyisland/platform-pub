@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { trust, type MyVouch } from '../../lib/api'
 import { Avatar } from '../ui/Avatar'
 
@@ -74,19 +74,19 @@ export function VouchList() {
     <div className="space-y-1">
       {vouches.map(v => (
         <div key={v.id} className="flex items-center gap-4 py-4">
-          <Link href={`/${v.subject.username}`} className="flex-shrink-0">
+          <ProfileLink href={`/${v.subject.username}`} className="flex-shrink-0">
             <Avatar
               src={v.subject.avatar}
               name={v.subject.displayName ?? v.subject.username}
               size={44}
             />
-          </Link>
+          </ProfileLink>
           <div className="flex-1 min-w-0">
-            <Link href={`/${v.subject.username}`} className="group">
+            <ProfileLink href={`/${v.subject.username}`} className="group">
               <p className="font-sans text-base font-medium text-black group-hover:opacity-75 transition-opacity truncate">
                 {v.subject.displayName ?? v.subject.username}
               </p>
-            </Link>
+            </ProfileLink>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="label-ui text-grey-400">{DIMENSION_LABELS[v.dimension]}</span>
               <span className="label-ui text-grey-300">

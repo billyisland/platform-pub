@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { account as accountApi, type Subscriber } from '../../lib/api'
 import { Avatar } from '../ui/Avatar'
 
@@ -106,10 +107,10 @@ export function SubscribersTab() {
               return (
                 <tr key={s.subscriptionId} className="border-b-2 border-grey-200 last:border-b-0">
                   <td className="px-4 py-3">
-                    <Link href={`/${s.readerUsername}`} className="flex items-center gap-2 hover:opacity-80">
+                    <ProfileLink href={`/${s.readerUsername}`} className="flex items-center gap-2 hover:opacity-80">
                       <Avatar src={s.readerAvatar} name={s.readerDisplayName ?? s.readerUsername} size={32} />
                       <span className="text-black">{s.readerDisplayName ?? s.readerUsername}</span>
-                    </Link>
+                    </ProfileLink>
                   </td>
                   <td className="px-4 py-3 text-grey-400">{since}</td>
                   <td className="px-4 py-3 text-grey-400">{plan}</td>

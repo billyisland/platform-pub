@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ProfileLink } from "../ui/ProfileLink";
 import { formatDateRelative } from "../../lib/format";
 import type { ResolvedContent } from "../../lib/api/articles";
 import type {
@@ -145,13 +146,13 @@ export function NativeParentCard({ item }: { item: ResolvedContent }) {
     <div style={{ borderLeft: "4px solid #CCCCCC", paddingLeft: "20px" }}>
       <div className="flex items-center gap-2 mb-1">
         {item.author.username ? (
-          <Link
+          <ProfileLink
             href={`/${item.author.username}`}
             onClick={(e) => e.stopPropagation()}
             className="label-ui text-grey-400 hover:text-grey-600 transition-colors truncate"
           >
             {authorName}
-          </Link>
+          </ProfileLink>
         ) : (
           <span className="label-ui text-grey-400 truncate">{authorName}</span>
         )}

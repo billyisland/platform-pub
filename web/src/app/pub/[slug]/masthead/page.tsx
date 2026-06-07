@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import { ProfileLink } from '../../../../components/ui/ProfileLink'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
 
@@ -60,9 +60,9 @@ export default async function MastheadPage({ params }: { params: { slug: string 
               <div className="w-12 h-12 rounded-full bg-grey-200" />
             )}
             <div>
-              <Link href={`/@${m.username}`} className="font-medium text-black hover:opacity-70">
+              <ProfileLink href={`/@${m.username}`} className="font-medium text-black hover:opacity-70">
                 {m.display_name || m.username}
-              </Link>
+              </ProfileLink>
               <p className="text-ui-xs text-grey-400">
                 {m.title || m.role}
                 {m.contributor_type !== 'staff' && ` \u00b7 ${m.contributor_type}`}

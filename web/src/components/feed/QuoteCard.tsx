@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { ProfileLink, openProfileHref, isModifiedClick } from '../ui/ProfileLink'
 import { isImageUrl, extractUrls } from '../../lib/media'
 
 interface ResolvedContent {
@@ -25,7 +25,6 @@ interface QuoteCardProps {
 }
 
 function ArticlePennant({ data }: { data: ResolvedContent }) {
-  const router = useRouter()
   const authorIsProfile = data.author.username.length < 40
   const barColor = data.isPaywalled ? '#B5242A' : '#111111'
 
@@ -43,7 +42,7 @@ function ArticlePennant({ data }: { data: ResolvedContent }) {
           {authorIsProfile ? (
             <span
               className="hover:underline underline-offset-2 cursor-pointer"
-              onClick={e => { e.preventDefault(); e.stopPropagation(); router.push(`/${data.author.username}`) }}
+              onClick={e => { e.stopPropagation(); if (!isModifiedClick(e)) { e.preventDefault(); openProfileHref(`/${data.author.username}`) } }}
             >
               {data.author.displayName}
             </span>
@@ -107,7 +106,7 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
   for (const url of imageUrls) displayContent = displayContent.replace(url, '').trim()
 
   return (
-    <Link
+    <ProfileLink
       href={noteHref ?? '#'}
       onClick={e => { e.stopPropagation(); if (!noteHref) e.preventDefault() }}
       className="block mt-2.5 ml-[38px] hover:opacity-90 transition-opacity"
@@ -137,6 +136,6 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
           ))}
         </div>
       )}
-    </Link>
+    </ProfileLink>
   )
 }

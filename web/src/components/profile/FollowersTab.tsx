@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { Avatar } from '../ui/Avatar'
 import { formatDateFromISO } from '../../lib/format'
 
@@ -61,7 +61,7 @@ export function FollowersTab({ username, isOwnProfile }: { username: string; isO
     <div>
       <div className="space-y-1">
         {followers.map(f => (
-          <Link
+          <ProfileLink
             key={f.id}
             href={`/${f.username}`}
             className="flex items-center gap-3 px-4 py-3 hover:bg-grey-100 transition-colors"
@@ -83,7 +83,7 @@ export function FollowersTab({ username, isOwnProfile }: { username: string; isO
             <time className="text-ui-xs text-grey-300 flex-shrink-0">
               {formatDateFromISO(f.followedAt)}
             </time>
-          </Link>
+          </ProfileLink>
         ))}
       </div>
 

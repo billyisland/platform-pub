@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import Link from "next/link";
+import { ProfileLink } from "../ui/ProfileLink";
 import { useAuth } from "../../stores/auth";
 import { useRouter } from "next/navigation";
 import { ArticleCard } from "../feed/ArticleCard";
@@ -393,12 +393,12 @@ function NewUserCard({ item }: { item: NewUserItem }) {
       )}
       <p className="text-ui-xs text-grey-400 flex-1 min-w-0">
         {item.username ? (
-          <Link
+          <ProfileLink
             href={`/${item.username}`}
             className="font-medium text-black hover:underline"
           >
             {name}
-          </Link>
+          </ProfileLink>
         ) : (
           <span className="font-medium text-black">{name}</span>
         )}{" "}

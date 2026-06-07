@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { social, type BlockedUser } from '../../lib/api'
 
 export function BlockList() {
@@ -36,10 +36,10 @@ export function BlockList() {
         <div className="bg-white divide-y divide-grey-200/50">
           {blocks.map(b => (
             <div key={b.userId} className="flex items-center justify-between px-4 py-3">
-              <Link href={`/${b.username}`} className="text-ui-sm text-black hover:opacity-70">
+              <ProfileLink href={`/${b.username}`} className="text-ui-sm text-black hover:opacity-70">
                 {b.displayName ?? b.username}
                 <span className="text-grey-300 ml-1">@{b.username}</span>
-              </Link>
+              </ProfileLink>
               <button
                 onClick={() => handleUnblock(b.userId)}
                 disabled={unblocking === b.userId}

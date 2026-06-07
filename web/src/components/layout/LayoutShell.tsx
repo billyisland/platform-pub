@@ -5,7 +5,9 @@ import { useLayoutMode, type LayoutMode } from '../../hooks/useLayoutMode'
 import { Nav } from './Nav'
 import { Footer } from './Footer'
 import { ComposeOverlay } from '../compose/ComposeOverlay'
+import { ProfileOverlay } from '../workspace/ProfileOverlay'
 import { useReader } from '../../stores/reader'
+import { useProfile } from '../../stores/profileOverlay'
 
 const LayoutModeContext = createContext<LayoutMode>('platform')
 
@@ -20,7 +22,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // chromeless too, else opening the reader mounts the top beam + footer and adds
   // 60px top padding, shifting the (blurred) workspace down behind the overlay.
   const readerOpen = useReader((s) => s.isOpen)
-  const chromeless = mode === 'workspace' || readerOpen
+  // The profile overlay pushes /<username> | /author/<id>, flipping the URL-derived
+  // mode to canvas while the underlying surface is unchanged — treat it as
+  // chromeless too (same reasoning as the reader), so opening a profile from the
+  // workspace doesn't mount the top beam + footer behind the frosted overlay.
+  const profileOpen = useProfile((s) => s.isOpen)
+  const chromeless = mode === 'workspace' || readerOpen || profileOpen
 
   return (
     <LayoutModeContext.Provider value={mode}>
@@ -31,6 +38,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
         {!chromeless && <Footer />}
+        {/* Mounted unconditionally — bylines anywhere (incl. the workspace) open it. */}
+        <ProfileOverlay />
       </div>
     </LayoutModeContext.Provider>
   )

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { ReportButton } from '../ui/ReportButton'
 import { MediaContent } from '../ui/MediaContent'
 import { VoteControls } from '../ui/VoteControls'
@@ -102,12 +103,12 @@ export function PlayscriptReply({
         {isSelf ? (
           <span className="font-sans font-bold text-black">YOU:</span>
         ) : reply.author.username ? (
-          <Link
+          <ProfileLink
             href={`/${reply.author.username}`}
             className="font-sans font-bold text-black hover:underline"
           >
             {authorName}:
-          </Link>
+          </ProfileLink>
         ) : (
           <span className="font-sans font-bold text-black">{authorName}:</span>
         )}

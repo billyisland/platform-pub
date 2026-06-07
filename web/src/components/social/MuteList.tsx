@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { social, type MutedUser } from '../../lib/api'
 
 export function MuteList() {
@@ -36,10 +36,10 @@ export function MuteList() {
         <div className="bg-white divide-y divide-grey-200/50">
           {mutes.map(m => (
             <div key={m.userId} className="flex items-center justify-between px-4 py-3">
-              <Link href={`/${m.username}`} className="text-ui-sm text-black hover:opacity-70">
+              <ProfileLink href={`/${m.username}`} className="text-ui-sm text-black hover:opacity-70">
                 {m.displayName ?? m.username}
                 <span className="text-grey-300 ml-1">@{m.username}</span>
-              </Link>
+              </ProfileLink>
               <button
                 onClick={() => handleUnmute(m.userId)}
                 disabled={unmuting === m.userId}

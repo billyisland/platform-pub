@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Link from 'next/link'
+import { ProfileLink } from '../ui/ProfileLink'
 import { ForAllMark } from '../icons/ForAllMark'
 
 interface PaywallGateProps {
@@ -138,9 +138,9 @@ export function PaywallGate({
                 {subscribing ? 'Subscribing...' : 'Subscribe'}
               </button>
             ) : writerUsername ? (
-              <Link href={`/${writerUsername}`} className="btn inline-block">
+              <ProfileLink href={`/${writerUsername}`} className="btn inline-block">
                 Subscribe
-              </Link>
+              </ProfileLink>
             ) : null}
 
             {/* Spend-threshold subscription nudge */}

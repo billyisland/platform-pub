@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { formatDateRelative } from "../../lib/format";
+import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
 import type { VesselPalette } from "./tokens";
 
 // Shared byline row for the workspace card family (task 9b). One visual
@@ -60,7 +61,15 @@ export function Byline({
         <Link
           href={nameHref}
           ref={nameRef as React.Ref<HTMLAnchorElement>}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            // Don't let the card's own click handler fire.
+            e.stopPropagation();
+            // Plain left-click opens the profile overlay in place; modified
+            // clicks (new tab) fall through to the real link.
+            if (!isModifiedClick(e) && openProfileHref(nameHref)) {
+              e.preventDefault();
+            }
+          }}
           style={{ color: palette.cardTitle }}
           className="font-medium hover:underline"
           {...nameHover}

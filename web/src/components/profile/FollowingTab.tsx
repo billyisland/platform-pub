@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { ProfileLink } from "../ui/ProfileLink";
 import { Avatar } from "../ui/Avatar";
 import { formatDateFromISO } from "../../lib/format";
 import { account, subscribe as apiSubscribe, type MySubscription } from "../../lib/api";
@@ -259,7 +260,7 @@ export function FollowingTab({
                 key={f.id}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-grey-100 transition-colors"
               >
-                <Link
+                <ProfileLink
                   href={`/${f.username}`}
                   className="flex items-center gap-3 min-w-0 flex-1"
                 >
@@ -274,7 +275,7 @@ export function FollowingTab({
                     </p>
                     <p className="text-ui-xs text-grey-300">@{f.username}</p>
                   </div>
-                </Link>
+                </ProfileLink>
 
                 {isOwnProfile ? (
                   <div className="flex items-center gap-2 flex-shrink-0">
