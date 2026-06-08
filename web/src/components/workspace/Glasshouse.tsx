@@ -7,8 +7,10 @@
 // pane, direct messages, future panels):
 //   - a full-viewport frosted scrim (z-[55]) — a slight backdrop blur so the
 //     workspace reads as frosted glass behind, click-to-close;
-//   - a centred white pane (z-[56]) with the 6px black slab top + elevation
-//     shadow, click-through guarded;
+//   - a centred warm mid-light pane (z-[56], `bg-glasshouse`) with the 6px black
+//     slab top + elevation shadow, click-through guarded. The pane is darker than
+//     the light ground so it separates against bright feeds, lighter than the dark
+//     ground so it separates in dark mode; fields inside it are the bright wells;
 //   - Escape closes; body scroll is locked while mounted.
 //
 // The ForallMenu lives separately at z-60, so it floats CRISP above the frost
@@ -116,7 +118,7 @@ export function Glasshouse({
           role="dialog"
           aria-modal="true"
           aria-label={ariaLabel}
-          className="relative w-full bg-white my-8 mx-4 shadow-lg"
+          className="relative w-full bg-glasshouse my-8 mx-4 shadow-lg"
           style={{ maxWidth, borderTop: "6px solid #111111" }}
           onClick={(e) => e.stopPropagation()}
         >

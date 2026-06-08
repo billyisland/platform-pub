@@ -25,7 +25,8 @@ const TOKENS = {
   publishBg: '#1A1A18',
   publishFg: '#F0EFEB',
   publishDisabled: '#BBBBBB',
-  fieldBg: '#F0EFEB',
+  // Bright raised well on the warm mid-light Glasshouse pane (bg-glasshouse).
+  fieldBg: '#FFFFFF',
 }
 
 type Protocol = 'allhaus' | 'nostr' | 'atproto' | 'activitypub'

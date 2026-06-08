@@ -43,14 +43,15 @@ function weightToStep(weight: number): number {
   return best;
 }
 
-// The composer is an always-light Glasshouse surface (white pane, dark text), so
-// these are fixed tokens, not a brightness palette. Separation is fill + space —
-// no borders anywhere (the site never renders thin rules). Recessed fields and
-// chips read as filled wells; emphasis is a dark fill.
+// The composer is an always-light Glasshouse surface (warm mid-light pane, dark
+// text), so these are fixed tokens, not a brightness palette. Separation is fill
+// + space — no borders anywhere (the site never renders thin rules). Fields read
+// as bright (white) raised wells on the pane; rows are a lighter tile; emphasis
+// is a dark fill.
 const TOKENS = {
   panelBorder: "#1A1A18",
   rowBg: "#F0EFEB",
-  fieldBg: "#E6E5E0",
+  fieldBg: "#FFFFFF",
   hintFg: "#8A8880",
   errorFg: "#B5242A",
   matchHoverBg: "#F0EFEB",

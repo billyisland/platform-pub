@@ -24,6 +24,13 @@ module.exports = {
           DEFAULT: '#B5242A',
           dark: '#921D22',
         },
+        // Glasshouse pane fill. A warm mid-light surface — deliberately darker
+        // than the light workspace ground (#F0EFEB) so a frosted pane separates
+        // against bright feeds, yet far lighter than the dark ground (#1A1A18)
+        // so it still separates in dark mode. Fields inside it are the bright
+        // (white) raised wells. Fixed (does not track brightness); text stays
+        // dark. See the Glasshouse design-system rule in CLAUDE.md.
+        glasshouse: '#DCDAD3',
       },
       typography: {
         DEFAULT: {
