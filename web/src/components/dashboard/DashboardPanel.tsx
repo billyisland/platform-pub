@@ -31,6 +31,8 @@ import { SubscribersTab } from './SubscribersTab'
 import { AnalyticsTab } from './AnalyticsTab'
 import { useDashboardOverlay } from '../../stores/dashboardOverlay'
 import { useLedgerOverlay } from '../../stores/ledgerOverlay'
+import { useReader } from '../../stores/reader'
+import { useCompose } from '../../stores/compose'
 
 type DashboardTab = 'articles' | 'subscribers' | 'proposals' | 'pricing' | 'analytics'
 
@@ -260,6 +262,7 @@ export function DashboardPanel({
               publicationSlug={selectedPub.slug}
               canPublish={selectedPub.can_publish}
               canEditOthers={selectedPub.can_edit_others}
+              inOverlay={inOverlay}
             />
           )}
           {pubTab === 'members' && (
@@ -313,10 +316,21 @@ export function DashboardPanel({
                 }}
                 className="btn-text-muted underline underline-offset-4"
               >View ledger</button>
-              <Link href="/write" className="btn">New article</Link>
+              {inOverlay ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    useDashboardOverlay.getState().close()
+                    useCompose.getState().open('article')
+                  }}
+                  className="btn"
+                >New article</button>
+              ) : (
+                <Link href="/write" className="btn">New article</Link>
+              )}
             </div>
           </div>
-          {activeTab === 'articles' && <ArticlesTab userId={user.id} pubkey={user.pubkey} />}
+          {activeTab === 'articles' && <ArticlesTab userId={user.id} pubkey={user.pubkey} inOverlay={inOverlay} />}
           {activeTab === 'subscribers' && <SubscribersTab />}
           {activeTab === 'proposals' && <ProposalsTab userId={user.id} />}
           {activeTab === 'pricing' && <PricingTab stripeReady={user.stripeConnectKycComplete} />}
@@ -335,7 +349,7 @@ type ContentItem =
   | { kind: 'published'; data: MyArticle }
   | { kind: 'draft'; data: { draftId: string; title: string; autoSavedAt: string; scheduledAt: string | null } }
 
-function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
+function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pubkey: string; inOverlay?: boolean }) {
   const [items, setItems] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -445,7 +459,7 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
 
   if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
   if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
-  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No articles or drafts yet.</p><Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link></div>
+  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No articles or drafts yet.</p>{inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useCompose.getState().open('article') }} className="btn-text underline underline-offset-4">Write your first article</button> : <Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link>}</div>
 
   return (
     <div className="overflow-x-auto bg-white">
@@ -515,7 +529,7 @@ function ArticlesTab({ userId, pubkey }: { userId: string; pubkey: string }) {
           return (
             <React.Fragment key={a.id}>
             <tr className="border-b-2 border-grey-200 last:border-b-0">
-              <td className="px-4 py-3"><Link href={`/article/${a.dTag}`} className="text-black hover:opacity-70">{a.title}</Link></td>
+              <td className="px-4 py-3">{inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useReader.getState().openNative(a.dTag) }} className="text-black hover:opacity-70 text-left">{a.title}</button> : <Link href={`/article/${a.dTag}`} className="text-black hover:opacity-70">{a.title}</Link>}</td>
               <td className="px-4 py-3">{a.isPaywalled ? <span className="text-black">£{((a.pricePence??0)/100).toFixed(2)}</span> : <span className="text-grey-400">Free</span>}</td>
               <td className="px-4 py-3 text-right tabular-nums">{a.readCount}</td>
               <td className="px-4 py-3 text-right text-black tabular-nums">£{(a.netEarningsPence/100).toFixed(2)}</td>

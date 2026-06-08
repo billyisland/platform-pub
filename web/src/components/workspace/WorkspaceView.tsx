@@ -53,6 +53,7 @@ import { DashboardOverlay } from "./DashboardOverlay";
 import { NotificationsOverlay } from "./NotificationsOverlay";
 import { LedgerOverlay } from "./LedgerOverlay";
 import { useReader } from "../../stores/reader";
+import { useCompose } from "../../stores/compose";
 import {
   openOverlayFromParams,
   OVERLAY_PARAM_KEYS,
@@ -267,6 +268,20 @@ export function WorkspaceView() {
   const [composerOpen, setComposerOpen] = useState<false | "note" | "article">(
     false,
   );
+  // Bridge the global compose store into the workspace's local Composer. The
+  // global ComposeOverlay is not mounted in the chromeless workspace, so any
+  // in-workspace surface that lives outside this component (e.g. the Dashboard
+  // overlay's "New article" button) requests a compose by calling
+  // useCompose.open('note'|'article'); we mirror that into local state here.
+  const composeReqOpen = useCompose((s) => s.isOpen);
+  const composeReqMode = useCompose((s) => s.mode);
+  useEffect(() => {
+    if (composeReqOpen && (composeReqMode === "note" || composeReqMode === "article")) {
+      setReplyTarget(null);
+      setQuoteTarget(null);
+      setComposerOpen(composeReqMode);
+    }
+  }, [composeReqOpen, composeReqMode]);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   // Quote target — set when Quote is clicked on a card; the composer publishes a
   // NIP-18 quote note embedding it. Mutually exclusive with replyTarget.
@@ -1099,6 +1114,9 @@ export function WorkspaceView() {
           setComposerOpen(false);
           setReplyTarget(null);
           setQuoteTarget(null);
+          // Keep the global compose store (the bridge trigger) in sync so a
+          // re-open request from outside this component fires the effect again.
+          if (useCompose.getState().isOpen) useCompose.getState().close();
         }}
         onPublished={refreshAll}
         onReplied={() => {

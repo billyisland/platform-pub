@@ -8,6 +8,8 @@ import {
   type SearchWriterResult,
   type SearchPublicationResult,
 } from "../../lib/api";
+import { useReader } from "../../stores/reader";
+import { useProfile } from "../../stores/profileOverlay";
 
 const TOKENS = {
   panelBg: "#FFFFFF",
@@ -112,6 +114,24 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
       router.push(href);
     },
     [onClose, router],
+  );
+
+  // Writers and articles open as workspace overlays (profile / reader) rather
+  // than navigating to a black-topbar page; publications have no overlay yet,
+  // so they still fall back to navigate() (flagged for overlay work).
+  const openWriter = useCallback(
+    (username: string) => {
+      onClose();
+      useProfile.getState().openNative(username);
+    },
+    [onClose],
+  );
+  const openArticle = useCallback(
+    (dTag: string) => {
+      onClose();
+      useReader.getState().openNative(dTag);
+    },
+    [onClose],
   );
 
   const totalResults =
@@ -220,7 +240,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               <button
                 key={w.id}
                 type="button"
-                onClick={() => navigate(`/${w.username}`)}
+                onClick={() => openWriter(w.username)}
                 style={rowStyle}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = TOKENS.rowHoverBg;
@@ -253,7 +273,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
               <button
                 key={a.id}
                 type="button"
-                onClick={() => navigate(`/article/${a.dTag}`)}
+                onClick={() => openArticle(a.dTag)}
                 style={rowStyle}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = TOKENS.rowHoverBg;

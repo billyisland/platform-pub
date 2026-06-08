@@ -3,15 +3,18 @@
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { publications as pubApi } from '../../lib/api'
+import { useReader } from '../../stores/reader'
+import { useDashboardOverlay } from '../../stores/dashboardOverlay'
 
 interface Props {
   publicationId: string
   publicationSlug: string
   canPublish: boolean
   canEditOthers: boolean
+  inOverlay?: boolean
 }
 
-export function PublicationArticlesTab({ publicationId, publicationSlug, canPublish, canEditOthers }: Props) {
+export function PublicationArticlesTab({ publicationId, publicationSlug, canPublish, canEditOthers, inOverlay = false }: Props) {
   const [articles, setArticles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -79,9 +82,19 @@ export function PublicationArticlesTab({ publicationId, publicationSlug, canPubl
               {articles.map(a => (
                 <tr key={a.id} className="border-b-2 border-grey-200 last:border-b-0">
                   <td className="px-4 py-3">
-                    <Link href={a.d_tag ? `/article/${a.d_tag}` : '#'} className="text-black hover:opacity-70">
-                      {a.title}
-                    </Link>
+                    {inOverlay && a.d_tag ? (
+                      <button
+                        type="button"
+                        onClick={() => { useDashboardOverlay.getState().close(); useReader.getState().openNative(a.d_tag) }}
+                        className="text-black hover:opacity-70 text-left"
+                      >
+                        {a.title}
+                      </button>
+                    ) : (
+                      <Link href={a.d_tag ? `/article/${a.d_tag}` : '#'} className="text-black hover:opacity-70">
+                        {a.title}
+                      </Link>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-grey-400">
                     {a.author_display_name || a.author_username}
