@@ -7,8 +7,8 @@
 // pane, direct messages, future panels):
 //   - a full-viewport frosted scrim (z-[55]) — a slight backdrop blur so the
 //     workspace reads as frosted glass behind, click-to-close;
-//   - a centred crimson (#B5242A) housing (z-[56]) wrapping a white inner
-//     surface + elevation shadow, click-through guarded;
+//   - a centred white pane (z-[56]) with the 6px black slab top + elevation
+//     shadow, click-through guarded;
 //   - Escape closes; body scroll is locked while mounted.
 //
 // The ForallMenu lives separately at z-60, so it floats CRISP above the frost
@@ -20,7 +20,7 @@
 // not here. Mount it conditionally — it runs its scroll-lock on mount/unmount.
 //
 // Separation inside the pane is whitespace + the slab rules, per the sitewide
-// no-thin-line rule; the crimson housing and the elevation shadow are not lines.
+// no-thin-line rule; the 6px slab top and the elevation shadow are not lines.
 // =============================================================================
 
 import React, { useEffect } from "react";
@@ -75,25 +75,22 @@ export function Glasshouse({
           role="dialog"
           aria-modal="true"
           aria-label={ariaLabel}
-          className="relative w-full my-8 mx-4 shadow-lg p-3"
-          style={{ maxWidth, background: "#B5242A" }}
+          className="relative w-full bg-white my-8 mx-4 shadow-lg"
+          style={{ maxWidth, borderTop: "6px solid #111111" }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* White inner surface — the content sits inside the crimson housing. */}
-          <div className="relative bg-white">
-            {/* Close — floats top-right over the pane content. */}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="absolute right-4 top-4 z-10 text-grey-400 hover:text-black text-lg leading-none"
-              style={{ background: "none", border: "none", cursor: "pointer" }}
-            >
-              ✕
-            </button>
+          {/* Close — floats top-right over the pane content. */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute right-4 top-4 z-10 text-grey-400 hover:text-black text-lg leading-none"
+            style={{ background: "none", border: "none", cursor: "pointer" }}
+          >
+            ✕
+          </button>
 
-            {children}
-          </div>
+          {children}
         </div>
       </div>
     </>
