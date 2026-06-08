@@ -8,6 +8,9 @@ const MAX_POLLS = 8;
 export interface UseResolverInput {
   query: string;
   onQueryChange: (value: string) => void;
+  /** Explicit submit (Enter) — re-runs resolution with the discovery fallback
+   *  enabled (§V.5.8), searching the external world for the current query. */
+  submit: () => void;
   matches: MatchOption[];
   resolving: boolean;
   resolveError: boolean;
@@ -63,6 +66,28 @@ export function useResolverInput(opts?: {
     [maxPolls],
   );
 
+  const runResolve = useCallback(
+    async (value: string, gen: number, discover: boolean) => {
+      if (gen !== genRef.current) return;
+      setResolving(true);
+      setResolveError(false);
+      pollCountRef.current = 0;
+      try {
+        const res = await resolver.resolve(value.trim(), context, discover);
+        if (gen !== genRef.current) return;
+        setResult(res);
+        if (res.requestId && res.status === "pending")
+          void pollForResults(res.requestId, gen);
+        else setResolving(false);
+      } catch {
+        if (gen !== genRef.current) return;
+        setResolveError(true);
+        setResolving(false);
+      }
+    },
+    [context, pollForResults],
+  );
+
   const onQueryChange = useCallback(
     (value: string) => {
       setQuery(value);
@@ -76,27 +101,22 @@ export function useResolverInput(opts?: {
       }
       genRef.current++;
       const gen = genRef.current;
-      debounceRef.current = setTimeout(async () => {
-        if (gen !== genRef.current) return;
-        setResolving(true);
-        setResolveError(false);
-        pollCountRef.current = 0;
-        try {
-          const res = await resolver.resolve(value.trim(), context);
-          if (gen !== genRef.current) return;
-          setResult(res);
-          if (res.requestId && res.status === "pending")
-            void pollForResults(res.requestId, gen);
-          else setResolving(false);
-        } catch {
-          if (gen !== genRef.current) return;
-          setResolveError(true);
-          setResolving(false);
-        }
+      // Keystroke path never triggers discovery — typeahead stays cheap.
+      debounceRef.current = setTimeout(() => {
+        void runResolve(value, gen, false);
       }, DEBOUNCE_MS);
     },
-    [pollForResults],
+    [runResolve],
   );
+
+  // Explicit submit (Enter): cancel any pending debounce and re-resolve the
+  // current query with the discovery fallback enabled (§V.5.8).
+  const submit = useCallback(() => {
+    if (!query.trim()) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    genRef.current++;
+    void runResolve(query, genRef.current, true);
+  }, [query, runResolve]);
 
   const reset = useCallback(() => {
     genRef.current++;
@@ -117,6 +137,7 @@ export function useResolverInput(opts?: {
   return {
     query,
     onQueryChange,
+    submit,
     matches,
     resolving,
     resolveError,

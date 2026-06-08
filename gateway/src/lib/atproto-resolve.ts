@@ -56,6 +56,66 @@ export function extractFromBskyUrl(url: URL): string | null {
 }
 
 // =============================================================================
+// searchActors: free-text name → candidate profiles (discovery fallback)
+//
+// app.bsky.actor.searchActors is the public AppView's purpose-built typeahead.
+// Unlike resolveHandle/getProfile (exact identifier → one result) this takes a
+// partial name ("Guardian") and returns ranked candidate accounts. Used by the
+// resolver's discovery fallback (UNIVERSAL-FEED-ADR §V.5.8, branch 1) to turn a
+// name the deterministic chains can't resolve into a pickable candidate list.
+// No auth required.
+// =============================================================================
+
+export async function searchActors(
+  query: string,
+  limit = 5,
+): Promise<AtprotoProfile[]> {
+  const q = query.trim();
+  if (!q) return [];
+  // Clamp to the lexicon's allowed range (1–100) — we only want a short list.
+  const clamped = Math.min(Math.max(limit, 1), 100);
+  try {
+    const res = await safeFetch(
+      `${APPVIEW}/xrpc/app.bsky.actor.searchActors?q=${encodeURIComponent(q)}&limit=${clamped}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return [];
+    const data = JSON.parse(res.text) as { actors?: unknown };
+    if (!Array.isArray(data.actors)) return [];
+    const profiles: AtprotoProfile[] = [];
+    for (const raw of data.actors) {
+      if (typeof raw !== "object" || raw === null) continue;
+      const actor = raw as {
+        did?: unknown;
+        handle?: unknown;
+        displayName?: unknown;
+        description?: unknown;
+        avatar?: unknown;
+      };
+      if (typeof actor.did !== "string" || !isDid(actor.did)) continue;
+      if (typeof actor.handle !== "string") continue;
+      profiles.push({
+        did: actor.did,
+        handle: actor.handle,
+        displayName:
+          typeof actor.displayName === "string"
+            ? actor.displayName
+            : undefined,
+        description:
+          typeof actor.description === "string"
+            ? actor.description
+            : undefined,
+        avatar: typeof actor.avatar === "string" ? actor.avatar : undefined,
+      });
+    }
+    return profiles;
+  } catch (err) {
+    logger.warn({ query: q, err }, "searchActors failed");
+    return [];
+  }
+}
+
+// =============================================================================
 // resolveHandle: handle → DID
 // =============================================================================
 

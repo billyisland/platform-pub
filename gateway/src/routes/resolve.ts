@@ -14,12 +14,12 @@ export async function resolveRoutes(app: FastifyInstance) {
 
   // POST /resolve — resolve an arbitrary input string
   app.post<{
-    Body: { query: string; context?: ResolveContext }
+    Body: { query: string; context?: ResolveContext; discover?: boolean }
   }>('/resolve', {
     preHandler: requireAuth,
     config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
   }, async (req, reply) => {
-    const { query, context } = req.body ?? {}
+    const { query, context, discover } = req.body ?? {}
 
     if (!query || typeof query !== 'string') {
       return reply.status(400).send({ error: 'query is required' })
@@ -30,7 +30,9 @@ export async function resolveRoutes(app: FastifyInstance) {
     }
 
     try {
-      const result = await resolve(query.trim(), context ?? 'general', req.session!.sub)
+      // discover=true (explicit submit only) opts into the §V.5.8 discovery
+      // fallback — external candidate search for names the exact chains miss.
+      const result = await resolve(query.trim(), context ?? 'general', req.session!.sub, discover === true)
       return reply.send(result)
     } catch (err) {
       logger.error({ err, query }, 'Resolver error')

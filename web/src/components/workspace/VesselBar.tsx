@@ -105,6 +105,12 @@ export function VesselBar({
             type="text"
             value={ri.query}
             onChange={(e) => ri.onQueryChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                ri.submit();
+              }
+            }}
             onFocus={() => setFocused(true)}
             onBlur={() => {
               setTimeout(() => setFocused(false), 150);
@@ -163,7 +169,7 @@ export function VesselBar({
               className="font-mono text-[11px] uppercase tracking-[0.04em]"
               style={{ padding: "8px 10px", color: palette.barTextMuted }}
             >
-              No match — try a URL, @user, npub, or #tag
+              No match — press Enter to search, or try a URL, @user, npub, #tag
             </div>
           )}
           {ri.matches.map((opt) => (

@@ -34,10 +34,17 @@ export interface ResolverResult {
 }
 
 export const resolver = {
-  resolve: (query: string, context?: 'subscribe' | 'invite' | 'dm' | 'general') =>
+  // discover=true opts into the §V.5.8 discovery fallback (external candidate
+  // search for names the exact chains miss). Pass it only on explicit submit,
+  // never on the debounced-keystroke typeahead path.
+  resolve: (
+    query: string,
+    context?: 'subscribe' | 'invite' | 'dm' | 'general',
+    discover?: boolean,
+  ) =>
     request<ResolverResult>('/resolve', {
       method: 'POST',
-      body: JSON.stringify({ query, context }),
+      body: JSON.stringify({ query, context, discover }),
     }),
 
   poll: (requestId: string) =>

@@ -428,6 +428,12 @@ export function FeedComposer({
           type="text"
           value={ri.query}
           onChange={(e) => ri.onQueryChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              ri.submit();
+            }
+          }}
           placeholder="Username, URL, npub, DID, #tag…"
           className="font-sans text-ui-sm w-full"
           style={{
@@ -453,7 +459,8 @@ export function FeedComposer({
               className="font-mono text-mono-xs"
               style={{ color: TOKENS.hintFg }}
             >
-              No match. Try a full URL, an @username, an npub, or a #tag.
+              No match. Press Enter to search, or try a full URL, an @username,
+              an npub, or a #tag.
             </div>
           )}
           {ri.matches.length > 0 && (

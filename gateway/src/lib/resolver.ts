@@ -10,6 +10,7 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import {
   getProfile as atprotoGetProfile,
   resolveHandle as atprotoResolveHandle,
+  searchActors as atprotoSearchActors,
   extractFromBskyUrl,
   isDid as isAtprotoDid,
 } from "./atproto-resolve.js";
@@ -205,6 +206,10 @@ export async function resolve(
   query: string,
   context: ResolveContext = "general",
   initiatorId?: string,
+  // Discovery fallback (§V.5.8) is opt-in per request: only an explicit submit
+  // sets this, never the debounced-keystroke typeahead path. Default false so
+  // every existing caller behaves exactly as before.
+  discover = false,
 ): Promise<ResolverResult> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -230,6 +235,11 @@ export async function resolve(
       } else {
         const fuzzy = await searchPlatform(usernameQuery);
         matches.push(...fuzzy);
+        // No exact native account — fall back to external discovery (§V.5.8)
+        // so a bare name like "Guardian" can surface subscribable sources.
+        if (discover && !skipExternal) {
+          pendingResolutions.push("bluesky_discovery");
+        }
       }
       break;
     }
@@ -345,6 +355,11 @@ export async function resolve(
     case "free_text": {
       const searchResults = await searchPlatform(usernameQuery);
       matches.push(...searchResults);
+      // Free-text is never an exact identifier — if discovery is requested,
+      // search the external world for candidates (§V.5.8).
+      if (discover && !skipExternal) {
+        pendingResolutions.push("bluesky_discovery");
+      }
       break;
     }
   }
@@ -383,6 +398,7 @@ export async function resolve(
       inputType,
       matches,
       context,
+      discover,
     ).catch((err) => {
       logger.warn({ err, requestId }, "Async resolution failed");
     });
@@ -402,6 +418,7 @@ async function resolveAsync(
   inputType: InputType,
   existingMatches: ResolverMatch[],
   context: ResolveContext,
+  discover = false,
 ): Promise<void> {
   const matches = [...existingMatches];
   // External Phase B chains (URL/RSS, atproto, activitypub) only ever produce
@@ -507,6 +524,20 @@ async function resolveAsync(
     }
   }
 
+  // Discovery fallback (§V.5.8, branch 1): a bare name the deterministic chains
+  // couldn't resolve. Search the Bluesky AppView for candidate accounts and
+  // return them as speculative nominations — selecting one re-enters the exact
+  // resolver to mint the real external_source. Gated identically to the other
+  // external chains (invite/dm never discover) and only when explicitly asked.
+  if (
+    discover &&
+    !skipExternal &&
+    (inputType === "free_text" || inputType === "platform_username")
+  ) {
+    const candidates = await discoverBluesky(query, matches);
+    matches.push(...candidates);
+  }
+
   // Persist the fully-resolved result; overwrites the partial row seeded by resolve().
   await storeAsyncResult(requestId, initiatorId, {
     inputType,
@@ -514,6 +545,38 @@ async function resolveAsync(
     status: "complete",
     pendingResolutions: [],
   });
+}
+
+// Bluesky actor search → speculative external_source matches. Dedupes against
+// any atproto matches already present (by DID) so a candidate isn't offered
+// twice. Caps at 5 per §V.5.8 (the searchActors limit already enforces this).
+async function discoverBluesky(
+  query: string,
+  existing: ResolverMatch[],
+): Promise<ResolverMatch[]> {
+  const seen = new Set(
+    existing
+      .filter((m) => m.externalSource?.protocol === "atproto")
+      .map((m) => m.externalSource!.sourceUri),
+  );
+  const profiles = await atprotoSearchActors(query, 5);
+  const out: ResolverMatch[] = [];
+  for (const p of profiles) {
+    if (seen.has(p.did)) continue;
+    seen.add(p.did);
+    out.push({
+      type: "external_source",
+      confidence: "speculative",
+      externalSource: {
+        protocol: "atproto",
+        sourceUri: p.did,
+        displayName: p.displayName ?? `@${p.handle}`,
+        description: p.description,
+        avatar: p.avatar,
+      },
+    });
+  }
+  return out;
 }
 
 // =============================================================================

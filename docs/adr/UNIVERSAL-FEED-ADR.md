@@ -749,6 +749,40 @@ RSS well-known path probing is parallelised (`Promise.all` across the fixed path
 
 This avoids the worst case (user stares at a spinner for 10 seconds) without requiring WebSockets or SSE. The resolution request ID is ephemeral — stored in memory or a short-TTL cache, not in the database.
 
+#### V.5.8 Discovery fallback — name → external candidates (design addendum, 2026-06-08)
+
+**The gap.** Classification (§V.5.1) is deterministic and exact: it routes a *well-formed* identifier to a chain and resolves it. The one branch that tolerates a vague or partial string — `free_text` / the ILIKE fallback on `platform_username` — searches **only the `accounts` and `publications` tables**. So "Guardian", "@jack" (no domain), or a half-remembered name matches natives fuzzily but is blind to the entire external world: Bluesky, Nostr, and the open RSS web are reachable only by exact identifier. A user who types "Guardian" expecting to find *The Guardian's* feed gets nothing.
+
+This violates the spirit of principle #9 ("throw anything at the field and get a good result"). The fix is a **discovery fallback**: a stage that turns a name into a *candidate list* of external sources the user can pick from. It does not resolve — it nominates. The chosen candidate then re-enters the existing exact resolver (§V.5.2/§V.5.4) to mint the real `external_source`. No adapter changes: adapters stay exact-only; discovery lives entirely in the resolver, where discovery already lives.
+
+**Trigger.** The discovery fallback runs as a Phase B chain (§V.5.7) **only when** the deterministic chains yield no `exact`/`probable` match — i.e. `inputType` is `free_text`, or `platform_username` produced no exact hit, or any chain completed empty. It never delays or competes with a clean resolution. It is gated by `context` exactly as the other external chains are (§V.5.6): `invite`/`dm` skip it (those flows require native accounts); `subscribe`/`general` run it. Because its branches do network I/O against third-party search APIs, the fallback fires on **explicit submit only**, never on the debounced-keystroke path that drives typeahead — this bounds cost and avoids fanning out a query on every character.
+
+**Branches.** Each returns `confidence: 'speculative'` matches (the value already exists in `ResolverMatch`, §V.5.4) using the existing `external_source` / `rss_feed` shapes — no new match fields, no new `inputType`. Ordered by effort-to-value:
+
+| # | Branch                          | Source                                                                 | Cost      | Precision | Notes                                                                                                                                                |
+| - | ------------------------------- | ---------------------------------------------------------------------- | --------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | **Bluesky actor search**        | `app.bsky.actor.searchActors` on the public AppView (no auth)          | low       | high      | Purpose-built typeahead. "Guardian" → real candidate accounts in one fast call. Reuses the existing atproto resolve plumbing. **First slice — shipped 2026-06-08.** |
+| 2 | **Nostr name search**           | NIP-50 on a search relay, or the nostr.band search API                 | low       | medium    | Free, partial-friendly. Returns npub candidates that re-enter the npub chain.                                                                         |
+| 3 | **Curated publication catalog** | Local seed table: common name → canonical feed URL (Guardian, BBC, NYT…) | instant   | very high | Covers the head of the distribution cheaply. Low recall by design — one precise branch among several, not the whole answer.                          |
+| 4 | **Web-search → URL bridge**     | Web search API → top results → existing RSS autodiscovery (§V.5.2 step 3) | high      | low–med   | The long-tail / true "all means all" branch. External API key + latency + ranking noise. **Feature-flagged, last to ship.**                          |
+
+Branches run concurrently (`Promise.all`) and persist incrementally via the existing `storeAsyncResult` path, so cheap/precise hits (catalog, Bluesky) render before the slow web-search branch returns — the same partial-result pattern already used for `dotted_host` (§V.5.1).
+
+**Candidate → source.** A discovery match is a *nomination*, not a subscription. Selecting one sends its canonical identifier (npub, DID/handle, or feed URL) back through `POST /api/resolve` (or directly to subscribe), where the normal exact chain validates it, fetches profile metadata, and mints the `external_source`. This keeps a single authoritative path to source creation and means discovery can be lossy without risk — a wrong guess just doesn't get picked.
+
+**Guardrails (precision over recall).** A free-text fan-out is the resolver's highest-noise surface; the design leans deliberately conservative:
+- **Submit-only**, never per-keystroke (above).
+- **Context-gated** — `invite`/`dm` never see it.
+- **Capped** — each branch returns ≤5 candidates; the merged list is deduped by canonical identifier and truncated.
+- **Cheap-and-precise first** — catalog + Bluesky (branches 1–3) carry the experience; the web-search branch (4) is opt-in behind a flag so the head case never depends on a paid API or absorbs its latency/noise.
+- All external fetches use the hardened HTTP client (SSRF rules, timeouts, size caps) per §V.5.2.
+
+**Interplay with the search pre-pass (§V.5.5).** These are complementary, not the same: the search pre-pass detects when a *search query* is actually an identifier and resolves it; the discovery fallback detects when an *identifier query* is actually just a name and searches for it. Wired together, the sitewide identity field and the content-search field converge — a name resolves toward subscribable sources, an identifier resolves toward an exact entity, from either entry point.
+
+**Phasing.** Branch 1 (Bluesky `searchActors` on the empty/`free_text` path) is the self-contained first slice — small, no new dependencies, immediately makes names and typo'd handles produce pickable candidates. Branches 2–3 follow incrementally; branch 4 ships last behind a feature flag once the cheap branches prove the seam.
+
+**Implementation status (branch 1, shipped 2026-06-08).** The submit-only guardrail is enforced server-side by a `discover: boolean` flag on `POST /api/resolve` (default `false`): only an explicit submit (Enter) sets it, so the debounced-keystroke typeahead never triggers external search. With `discover: true`, the `free_text` case and the no-exact-hit `platform_username` branch register a `bluesky_discovery` Phase B chain that calls `atproto-resolve.ts::searchActors` (public AppView, hardened `safeFetch`) and emits `speculative` atproto `external_source` matches, deduped by DID. No schema change — reuses `resolver_async_results` (migration 061) and the existing `speculative` confidence. Surfaces: `gateway/src/lib/{atproto-resolve,resolver}.ts`, `gateway/src/routes/resolve.ts`; frontend `web/src/hooks/useResolverInput.ts` (`submit()`), `FeedComposer`/`VesselBar` (Enter → `submit`). Tests: `gateway/tests/atproto-discovery.test.ts`. Branches 2–4 remain unimplemented.
+
 ---
 
 ## VI. Protocol-specific design
