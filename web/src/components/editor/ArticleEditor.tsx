@@ -346,9 +346,9 @@ export function ArticleEditor({
           The cards span the full width (matching the body editor below); only the
           title card — the row that pins under the floating ✕ when scrolled — gets
           its own right inset (pr-12) so a long title still clears it. */}
-      <div className={isOverlay ? 'sticky top-0 z-20 bg-white pb-4 mb-6' : 'sticky top-[53px] lg:top-0 z-20 bg-white pb-4 mb-6'}>
+      <div className={isOverlay ? 'sticky top-0 z-20 bg-glasshouse pb-4 mb-6' : 'sticky top-[53px] lg:top-0 z-20 bg-glasshouse pb-4 mb-6'}>
       {/* Title card */}
-      <div className={`bg-grey-100 py-4 mb-2 pl-5 ${isOverlay ? 'pr-12' : 'pr-5'}`}>
+      <div className={`bg-white/40 py-4 mb-2 pl-5 ${isOverlay ? 'pr-12' : 'pr-5'}`}>
         <input
           type="text"
           value={title}
@@ -360,7 +360,7 @@ export function ArticleEditor({
       </div>
 
       {/* Standfirst card */}
-      <div className="bg-grey-100 px-5 py-4 mb-2">
+      <div className="bg-white/40 px-5 py-4 mb-2">
         <input
           type="text"
           value={dek}
@@ -371,7 +371,7 @@ export function ArticleEditor({
       </div>
 
       {/* Cover card */}
-      <div className="bg-grey-100 px-5 py-4 mb-2">
+      <div className="bg-white/40 px-5 py-4 mb-2">
         {coverImageUrl ? (
           <div className="flex items-start gap-4">
             <div
@@ -436,7 +436,7 @@ export function ArticleEditor({
       </div>
 
       {/* Editor toolbar */}
-      <div className="flex items-center gap-0.5 sm:gap-1 bg-white px-2 sm:px-4 py-2.5">
+      <div className="flex items-center gap-0.5 sm:gap-1 px-2 sm:px-4 py-2.5">
         <ToolbarButton
           active={editor.isActive('bold')}
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -537,8 +537,8 @@ export function ArticleEditor({
       </div>
       </div>{/* end sticky */}
 
-      {/* Editor content — solid writing area */}
-      <div className="bg-grey-100 p-8 sm:p-10">
+      {/* Editor content — the clean white "page" the article is written on */}
+      <div className="bg-white p-8 sm:p-10">
         <EditorContent editor={editor} />
       </div>
 
@@ -548,7 +548,7 @@ export function ArticleEditor({
       </div>
 
       {/* Article settings card — publishing, price, replies */}
-      <div className="mt-3 bg-grey-100 px-5 py-4 space-y-3">
+      <div className="mt-3 bg-white/40 px-5 py-4 space-y-3">
         {/* Publishing as */}
         {publicationMemberships.length > 0 && (
           <div className="flex items-center gap-3 flex-wrap">
@@ -556,7 +556,7 @@ export function ArticleEditor({
             <select
               value={selectedPublicationId ?? ''}
               onChange={(e) => setSelectedPublicationId(e.target.value || null)}
-              className="bg-grey-100 px-3 py-1.5 text-sm text-black"
+              className="bg-white px-3 py-1.5 text-sm text-black"
             >
               <option value="">Yourself</option>
               {publicationMemberships.map(pub => (
@@ -615,7 +615,7 @@ export function ArticleEditor({
 
       {/* Publish confirmation panel */}
       {showPublishConfirm && (
-        <div className="mt-6 bg-grey-100 px-5 py-4 rounded">
+        <div className="mt-6 bg-white/40 px-5 py-4 rounded">
           <p className="text-sm text-grey-600 mb-3">Your article will be published.</p>
           <label className="flex items-center gap-2 mb-4 cursor-pointer">
             <input
@@ -709,7 +709,7 @@ export function ArticleEditor({
             value={scheduleDateTime}
             onChange={e => setScheduleDateTime(e.target.value)}
             min={new Date().toISOString().slice(0, 16)}
-            className="bg-grey-100 px-3 py-1.5 text-sm focus:outline-none"
+            className="bg-white px-3 py-1.5 text-sm focus:outline-none"
           />
           <button
             onClick={handleScheduleSubmit}

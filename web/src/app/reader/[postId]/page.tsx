@@ -71,7 +71,7 @@ export default async function ReaderPage({ params }: { params: { postId: string 
     <div className="min-h-screen bg-grey-50 py-8">
       <div
         className="mx-auto w-full bg-white shadow-sm"
-        style={{ maxWidth: 640, borderTop: '6px solid #111111' }}
+        style={{ maxWidth: 640 }}
       >
         <ExternalArticleReader
           url={target.url}
