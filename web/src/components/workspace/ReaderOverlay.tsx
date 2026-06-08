@@ -93,7 +93,7 @@ function NativeArticleBody({ dTag }: { dTag: string }) {
   if (error) {
     return (
       <div className="px-8 py-16 text-center">
-        <p className="text-ui-xs text-grey-500">Could not load this article.</p>
+        <p className="text-ui-xs text-grey-600">Could not load this article.</p>
       </div>
     );
   }

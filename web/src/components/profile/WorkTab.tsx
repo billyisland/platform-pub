@@ -121,11 +121,11 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
   }, [])
 
   if (loading) {
-    return <div className="py-10 text-center text-ui-sm text-grey-300">Loading...</div>
+    return <div className="py-10 text-center text-ui-sm text-grey-600">Loading...</div>
   }
 
   if (items.length === 0) {
-    return <p className="text-ui-sm text-grey-400 py-10">No articles yet.</p>
+    return <p className="text-ui-sm text-grey-600 py-10">No articles yet.</p>
   }
 
   const pinned = items
@@ -182,7 +182,7 @@ export function WorkTab({ username, writer, isOwnProfile, onQuote }: WorkTabProp
       {/* Pinned section */}
       {pinned.length > 0 && (
         <>
-          <h3 className="label-ui text-grey-300 mb-4">
+          <h3 className="label-ui text-grey-600 mb-4">
             Pinned
           </h3>
           <div className="space-y-3 mb-8">

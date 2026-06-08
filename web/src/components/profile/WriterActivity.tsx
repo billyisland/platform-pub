@@ -296,7 +296,7 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
         <div className="mb-6 -mt-6">
           <Link
             href="/auth?mode=login"
-            className="btn-text-muted transition-colors"
+            className="text-ui-xs text-grey-600 hover:text-black transition-colors"
           >
             Log in to follow
           </Link>

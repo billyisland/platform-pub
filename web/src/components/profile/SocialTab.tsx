@@ -118,7 +118,7 @@ export function SocialTab({ username, writer, onQuote }: SocialTabProps) {
 
   if (loading) {
     return (
-      <div className="py-10 text-center text-ui-sm text-grey-300">
+      <div className="py-10 text-center text-ui-sm text-grey-600">
         Loading...
       </div>
     );
@@ -129,7 +129,7 @@ export function SocialTab({ username, writer, onQuote }: SocialTabProps) {
 
   if (!hasNotes && !hasReplies) {
     return (
-      <p className="text-ui-sm text-grey-400 py-10">No notes or replies yet.</p>
+      <p className="text-ui-sm text-grey-600 py-10">No notes or replies yet.</p>
     );
   }
 
@@ -138,7 +138,7 @@ export function SocialTab({ username, writer, onQuote }: SocialTabProps) {
       {/* Notes section */}
       {hasNotes && (
         <>
-          <h3 className="label-ui text-grey-300 mb-4">Notes</h3>
+          <h3 className="label-ui text-grey-600 mb-4">Notes</h3>
           <div className="space-y-3">
             {notes.map((n) => {
               const noteEvent: NoteEvent = {
@@ -174,7 +174,7 @@ export function SocialTab({ username, writer, onQuote }: SocialTabProps) {
       {hasReplies && (
         <>
           {hasNotes && <div className="rule-inset my-8" />}
-          <h3 className="label-ui text-grey-300 mb-4">Replies</h3>
+          <h3 className="label-ui text-grey-600 mb-4">Replies</h3>
           <div className="space-y-3">
             {replies.map((r) => {
               // A profile reply is a kind-1111 comment. Render it through the

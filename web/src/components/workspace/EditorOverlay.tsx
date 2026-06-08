@@ -61,7 +61,7 @@ export function EditorOverlay() {
         ) : (editEventId || draftId) && !init.editorReady ? (
           <div className="px-6 sm:px-10 py-12 text-center">
             <div className="h-8 w-48 mx-auto animate-pulse rounded bg-grey-100" />
-            <p className="mt-4 text-sm text-grey-300">Loading…</p>
+            <p className="mt-4 text-sm text-grey-600">Loading…</p>
           </div>
         ) : (
           <ArticleEditor

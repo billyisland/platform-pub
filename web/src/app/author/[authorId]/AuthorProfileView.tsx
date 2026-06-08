@@ -162,7 +162,7 @@ export function AuthorProfileView({
 
   if (loading) {
     return frame(
-      <div className="label-ui text-grey-400 py-12 text-center">LOADING…</div>,
+      <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>,
     );
   }
 
@@ -202,7 +202,7 @@ export function AuthorProfileView({
       {/* Author header */}
       <div className="mb-8">
         {protocolLabel && (
-          <div className="label-ui text-grey-400 mb-1">{protocolLabel}</div>
+          <div className="label-ui text-grey-600 mb-1">{protocolLabel}</div>
         )}
         <div className="flex items-start gap-3">
           {profile.avatarUrl && (
@@ -219,7 +219,7 @@ export function AuthorProfileView({
               {name}
             </h1>
             {profile.handle && (
-              <p className="text-mono-xs text-grey-400">@{profile.handle}</p>
+              <p className="text-mono-xs text-grey-600">@{profile.handle}</p>
             )}
           </div>
         </div>
@@ -259,7 +259,7 @@ export function AuthorProfileView({
       </div>
 
       {items.length === 0 ? (
-        <div className="label-ui text-grey-400 py-12 text-center">
+        <div className="label-ui text-grey-600 py-12 text-center">
           NO POSTS YET
         </div>
       ) : (
@@ -298,7 +298,7 @@ export function AuthorProfileView({
             type="button"
             onClick={loadMore}
             disabled={loadingMore}
-            className="btn-text-muted"
+            className="text-ui-xs text-grey-600 hover:text-black transition-colors"
           >
             {loadingMore ? "LOADING…" : "SHOW MORE"}
           </button>

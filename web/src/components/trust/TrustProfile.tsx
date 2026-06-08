@@ -97,7 +97,7 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
 
   if (loading)
     return (
-      <div className="text-ui-xs text-grey-300">Loading trust profile…</div>
+      <div className="text-ui-xs text-grey-600">Loading trust profile…</div>
     );
   if (error || !data) return null;
 
@@ -106,7 +106,7 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
       {/* Layer 1 summary */}
       <div className="flex items-center gap-2">
         <TrustPip status={data.layer1.pipStatus} />
-        <span className="text-ui-xs text-grey-400">
+        <span className="text-ui-xs text-grey-600">
           {data.layer1.accountAgeDays > 365
             ? `${Math.floor(data.layer1.accountAgeDays / 365)}yr account`
             : `${data.layer1.accountAgeDays}d account`}
@@ -135,7 +135,7 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
           return (
             <div key={dim}>
               <div
-                className="label-ui text-grey-400 mb-1.5"
+                className="label-ui text-grey-600 mb-1.5"
                 id={`trust-dim-${dim}`}
               >
                 {label.name}
@@ -153,7 +153,7 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
                   style={{ width: `${fillPct}%`, backgroundColor: color }}
                 />
               </div>
-              <div className="text-[11px] font-sans text-grey-400 leading-[1.4] mt-1">
+              <div className="text-[11px] font-sans text-grey-600 leading-[1.4] mt-1">
                 {glossText(d.attestationCount)}
               </div>
             </div>
@@ -164,8 +164,8 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
       {/* Layer 4 — your network says */}
       {data.layer4 && (
         <div>
-          <div className="label-ui text-grey-400 mb-1.5">YOUR NETWORK SAYS</div>
-          <p className="text-[11px] font-sans text-grey-400 leading-[1.4] italic">
+          <div className="label-ui text-grey-600 mb-1.5">YOUR NETWORK SAYS</div>
+          <p className="text-[11px] font-sans text-grey-600 leading-[1.4] italic">
             {data.layer4.networkSays}
           </p>
           {data.layer4.attributedEndorsements.length > 0 && !compact && (
@@ -183,7 +183,7 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
                   >
                     {e.attestor.displayName ?? e.attestor.username}
                   </ProfileLink>
-                  <span className="label-ui text-grey-300">{e.dimension}</span>
+                  <span className="label-ui text-grey-600">{e.dimension}</span>
                 </div>
               ))}
             </div>
@@ -194,7 +194,7 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
       {/* Public endorsements */}
       {!compact && data.publicEndorsements.length > 0 && (
         <div>
-          <div className="label-ui text-grey-400 mb-2">
+          <div className="label-ui text-grey-600 mb-2">
             PUBLIC ENDORSEMENTS ({data.publicEndorsements.length})
           </div>
           <div className="space-y-2">
@@ -211,7 +211,7 @@ export function TrustProfile({ userId, compact = false }: TrustProfileProps) {
                 >
                   {e.attestor.displayName ?? e.attestor.username}
                 </ProfileLink>
-                <span className="label-ui text-grey-300">{e.dimension}</span>
+                <span className="label-ui text-grey-600">{e.dimension}</span>
               </div>
             ))}
           </div>

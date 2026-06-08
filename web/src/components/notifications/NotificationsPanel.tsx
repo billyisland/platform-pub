@@ -100,7 +100,7 @@ function NotificationRow({ n, onActivate }: { n: Notification; onActivate: (n: N
       {n.actor?.avatar ? (
         <img src={n.actor.avatar} alt="" className="h-10 w-10 object-cover flex-shrink-0 mt-0.5" />
       ) : (
-        <span className="flex h-10 w-10 items-center justify-center bg-grey-100 text-sm font-medium text-grey-400 flex-shrink-0 mt-0.5">
+        <span className="flex h-10 w-10 items-center justify-center bg-grey-100 text-sm font-medium text-grey-600 flex-shrink-0 mt-0.5">
           {(n.actor?.displayName ?? n.actor?.username ?? '?')[0].toUpperCase()}
         </span>
       )}
@@ -114,7 +114,7 @@ function NotificationRow({ n, onActivate }: { n: Notification; onActivate: (n: N
               {n.article?.title && <>{' to '}<span className="italic">{n.article.title}</span></>}
             </p>
             {n.comment?.content && (
-              <p className="text-sm text-grey-400 mt-1 line-clamp-2 leading-snug">{n.comment.content}</p>
+              <p className="text-sm text-grey-600 mt-1 line-clamp-2 leading-snug">{n.comment.content}</p>
             )}
           </>
         ) : (
@@ -123,7 +123,7 @@ function NotificationRow({ n, onActivate }: { n: Notification; onActivate: (n: N
             {' '}{labels[n.type] ?? 'sent you a notification'}
           </p>
         )}
-        <p className="text-xs text-grey-400 mt-1">{timeAgo(n.createdAt)}</p>
+        <p className="text-xs text-grey-600 mt-1">{timeAgo(n.createdAt)}</p>
       </div>
 
       {isUnread && (
@@ -213,13 +213,13 @@ export function NotificationsPanel({
       <div className={`flex items-baseline justify-between mb-6 ${inOverlay ? 'pr-10' : ''}`}>
         <div>
           <h1 className="font-sans text-2xl font-medium text-black tracking-tight">Notifications</h1>
-          <p className="text-ui-sm text-grey-400 mt-1">Your activity log</p>
+          <p className="text-ui-sm text-grey-600 mt-1">Your activity log</p>
         </div>
         <button
           type="button"
           onClick={handleReadAll}
           disabled={!hasUnread}
-          className="label-ui text-grey-400 enabled:hover:text-black disabled:opacity-50"
+          className="label-ui text-grey-600 enabled:hover:text-black disabled:opacity-50"
         >
           Mark all read
         </button>
@@ -240,7 +240,7 @@ export function NotificationsPanel({
           </div>
         ) : items.length === 0 ? (
           <div className="py-20 text-center">
-            <p className="text-ui-sm text-grey-400">No notifications yet</p>
+            <p className="text-ui-sm text-grey-600">No notifications yet</p>
           </div>
         ) : (
           <div>
@@ -255,7 +255,7 @@ export function NotificationsPanel({
                 <button
                   onClick={() => fetchPage(nextCursor)}
                   disabled={loadingMore}
-                  className="text-sm font-sans text-grey-400 hover:text-black transition-colors"
+                  className="text-sm font-sans text-grey-600 hover:text-black transition-colors"
                 >
                   {loadingMore ? 'Loading…' : 'Load older notifications'}
                 </button>

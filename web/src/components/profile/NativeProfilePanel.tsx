@@ -92,7 +92,7 @@ export function NativeProfilePanel({ username }: { username: string }) {
             >
               {writer.displayName ?? username}
             </h1>
-            <p className="text-ui-xs text-grey-300 mt-0.5">@{username}</p>
+            <p className="text-ui-xs text-grey-600 mt-0.5">@{username}</p>
           </div>
         </div>
 
@@ -104,7 +104,7 @@ export function NativeProfilePanel({ username }: { username: string }) {
             {writer.bio}
           </p>
         )}
-        <p className="mt-4 text-ui-xs text-grey-300">
+        <p className="mt-4 text-ui-xs text-grey-600">
           {writer.articleCount} article{writer.articleCount !== 1 ? "s" : ""}
           {" · "}
           {writer.followerCount} follower{writer.followerCount !== 1 ? "s" : ""}
@@ -113,7 +113,7 @@ export function NativeProfilePanel({ username }: { username: string }) {
           {" · "}
           <a
             href={`/rss/${username}`}
-            className="label-ui text-grey-300 hover:text-black"
+            className="label-ui text-grey-600 hover:text-black"
           >
             RSS
           </a>

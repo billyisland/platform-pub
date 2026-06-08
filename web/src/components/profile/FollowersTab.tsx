@@ -50,11 +50,11 @@ export function FollowersTab({ username, isOwnProfile }: { username: string; isO
   }
 
   if (loading) {
-    return <div className="py-10 text-center text-ui-sm text-grey-300">Loading followers...</div>
+    return <div className="py-10 text-center text-ui-sm text-grey-600">Loading followers...</div>
   }
 
   if (followers.length === 0) {
-    return <p className="text-ui-sm text-grey-400 py-10">No followers yet.</p>
+    return <p className="text-ui-sm text-grey-600 py-10">No followers yet.</p>
   }
 
   return (
@@ -78,9 +78,9 @@ export function FollowersTab({ username, isOwnProfile }: { username: string; isO
                   </span>
                 )}
               </div>
-              <p className="text-ui-xs text-grey-300">@{f.username}</p>
+              <p className="text-ui-xs text-grey-600">@{f.username}</p>
             </div>
-            <time className="text-ui-xs text-grey-300 flex-shrink-0">
+            <time className="text-ui-xs text-grey-600 flex-shrink-0">
               {formatDateFromISO(f.followedAt)}
             </time>
           </ProfileLink>

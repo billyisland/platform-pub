@@ -103,7 +103,7 @@ export function SourceSurface({ id }: { id: string }) {
   if (loading) {
     return (
       <PageShell width="feed">
-        <div className="label-ui text-grey-400 py-12 text-center">LOADING…</div>
+        <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>
       </PageShell>
     );
   }
@@ -139,7 +139,7 @@ export function SourceSurface({ id }: { id: string }) {
     <PageShell width="feed">
       {/* Source header */}
       <div className="mb-8">
-        <div className="label-ui text-grey-400 mb-1">{protocolLabel}</div>
+        <div className="label-ui text-grey-600 mb-1">{protocolLabel}</div>
         <h1 className="font-sans text-2xl font-medium text-black tracking-tight">
           {name}
         </h1>
@@ -151,7 +151,7 @@ export function SourceSurface({ id }: { id: string }) {
       </div>
 
       {items.length === 0 ? (
-        <div className="label-ui text-grey-400 py-12 text-center">
+        <div className="label-ui text-grey-600 py-12 text-center">
           NO ITEMS YET
         </div>
       ) : (

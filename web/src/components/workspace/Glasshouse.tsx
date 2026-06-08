@@ -128,7 +128,7 @@ export function Glasshouse({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="absolute right-4 top-4 z-10 text-grey-400 hover:text-black text-lg leading-none"
+            className="absolute right-4 top-4 z-10 text-grey-600 hover:text-black text-lg leading-none"
             style={{ background: "none", border: "none", cursor: "pointer" }}
           >
             ✕

@@ -218,7 +218,7 @@ export function FollowingTab({
 
   if (loading) {
     return (
-      <div className="py-10 text-center text-ui-sm text-grey-300">
+      <div className="py-10 text-center text-ui-sm text-grey-600">
         Loading...
       </div>
     );
@@ -243,7 +243,7 @@ export function FollowingTab({
 
       {/* Following list */}
       {following.length === 0 ? (
-        <p className="text-ui-sm text-grey-400 py-10">
+        <p className="text-ui-sm text-grey-600 py-10">
           Not following anyone yet.
         </p>
       ) : (
@@ -273,7 +273,7 @@ export function FollowingTab({
                     <p className="text-ui-sm font-sans text-black truncate">
                       {f.displayName ?? f.username}
                     </p>
-                    <p className="text-ui-xs text-grey-300">@{f.username}</p>
+                    <p className="text-ui-xs text-grey-600">@{f.username}</p>
                   </div>
                 </ProfileLink>
 
@@ -321,13 +321,13 @@ export function FollowingTab({
                     <button
                       onClick={() => handleUnfollow(f.id)}
                       disabled={unfollowingId === f.id}
-                      className="btn-ghost py-1 px-3 text-[11px] text-grey-300 hover:text-red-600 disabled:opacity-50 transition-colors"
+                      className="btn-ghost py-1 px-3 text-[11px] text-grey-600 hover:text-red-600 disabled:opacity-50 transition-colors"
                     >
                       {unfollowingId === f.id ? "..." : "Unfollow"}
                     </button>
                   </div>
                 ) : (
-                  <time className="text-ui-xs text-grey-300 flex-shrink-0">
+                  <time className="text-ui-xs text-grey-600 flex-shrink-0">
                     {formatDateFromISO(f.followedAt)}
                   </time>
                 )}
@@ -355,7 +355,7 @@ export function FollowingTab({
       {!isOwnProfile && subscriptions.length > 0 && (
         <>
           <div className="rule-inset my-8" />
-          <h3 className="label-ui text-grey-300 mb-4">Subscribes to</h3>
+          <h3 className="label-ui text-grey-600 mb-4">Subscribes to</h3>
           <div className="space-y-1">
             {subscriptions.map((s) => (
               <Link
@@ -372,7 +372,7 @@ export function FollowingTab({
                   <p className="text-ui-sm font-sans text-black truncate">
                     {s.writerDisplayName ?? s.writerUsername}
                   </p>
-                  <p className="text-ui-xs text-grey-300">
+                  <p className="text-ui-xs text-grey-600">
                     @{s.writerUsername}
                   </p>
                 </div>
@@ -446,14 +446,14 @@ function UnsubscribeModal({
         >
           Cancel subscription?
         </h3>
-        <p className="text-ui-sm text-grey-400 mb-1">
+        <p className="text-ui-sm text-grey-600 mb-1">
           Are you sure you want to cancel your subscription to{" "}
           <strong className="text-black">
             {confirmWriter.displayName ?? confirmWriter.username}
           </strong>
           ?
         </p>
-        <p className="text-ui-sm text-grey-400 mb-6">
+        <p className="text-ui-sm text-grey-600 mb-6">
           Your subscription will remain active until the end of your current
           billing period
           {confirmSub?.currentPeriodEnd && (

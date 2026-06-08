@@ -156,7 +156,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
                 ?.sourceReplyUri && (
                 <button
                   onClick={neighbourhood.loadParent}
-                  className="label-ui text-grey-400 hover:text-grey-600 transition-colors mb-2"
+                  className="label-ui text-grey-600 hover:text-black transition-colors mb-2"
                 >
                   ↳ SHOW PARENT
                 </button>
@@ -172,7 +172,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
       >
         {/* Provenance — reply signalling (Slice 1D) */}
         {showProvenance && (
-          <div className="label-ui text-grey-400 mb-1">
+          <div className="label-ui text-grey-600 mb-1">
             ↳ REPLYING TO{" "}
             {item.replyToAuthor ? `@${item.replyToAuthor}` : "A POST"}
           </div>
@@ -224,13 +224,13 @@ export function ExternalCard({ item }: ExternalCardProps) {
               href={viewOriginalUri}
               target="_blank"
               rel="noopener noreferrer"
-              className="label-ui text-grey-400 hover:text-grey-600 transition-colors flex-shrink-0"
+              className="label-ui text-grey-600 hover:text-black transition-colors flex-shrink-0"
               onClick={(e) => e.stopPropagation()}
             >
               {badge} · {item.authorHandle ?? item.sourceName ?? "source"}
             </a>
           ) : (
-            <span className="label-ui text-grey-400 flex-shrink-0">
+            <span className="label-ui text-grey-600 flex-shrink-0">
               {badge} · {item.authorHandle ?? item.sourceName ?? "source"}
             </span>
           )}
@@ -332,9 +332,9 @@ export function ExternalCard({ item }: ExternalCardProps) {
                   href={viewOriginalUri}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-2.5 flex items-center gap-2 border border-grey-200 hover:border-grey-300 transition-colors px-3 py-2 no-underline"
+                  className="mt-2.5 flex items-center gap-2 bg-grey-100 hover:bg-grey-200 transition-colors px-3 py-2 no-underline"
                 >
-                  <span className="label-ui text-grey-400">VIDEO</span>
+                  <span className="label-ui text-grey-600">VIDEO</span>
                   <span className="text-ui-xs text-grey-600">
                     Watch on {isAtproto ? "Bluesky" : "source"}
                   </span>
@@ -344,9 +344,9 @@ export function ExternalCard({ item }: ExternalCardProps) {
 
           {/* Audio (podcast episodes) */}
           {audioMedia && (
-            <div className="mt-2.5 border border-grey-200 px-3 py-2">
+            <div className="mt-2.5 bg-grey-100 px-3 py-2">
               <div className="flex items-center gap-2 mb-1.5">
-                <span className="label-ui text-grey-400">AUDIO</span>
+                <span className="label-ui text-grey-600">AUDIO</span>
                 {audioMedia.duration_in_seconds != null && (
                   <span className="text-mono-xs text-grey-600">
                     {formatDuration(audioMedia.duration_in_seconds)}
@@ -370,7 +370,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
               rel="noopener noreferrer"
               className="mt-2.5 block border-l-2 border-grey-300 pl-3 py-1 hover:border-black transition-colors no-underline"
             >
-              <span className="label-ui text-grey-400">QUOTING</span>
+              <span className="label-ui text-grey-600">QUOTING</span>
               <span className="text-ui-xs text-grey-600 ml-2">
                 View quoted post &rarr;
               </span>
@@ -383,7 +383,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
               href={linkEmbed.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2.5 flex gap-3 border border-grey-200 hover:border-grey-300 transition-colors p-2.5 no-underline"
+              className="mt-2.5 flex gap-3 bg-grey-100 hover:bg-grey-200 transition-colors p-2.5 no-underline"
             >
               {linkEmbed.thumbnail && (
                 <img
@@ -405,7 +405,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
                     {linkEmbed.description}
                   </p>
                 )}
-                <p className="text-mono-xs text-grey-400 truncate mt-0.5">
+                <p className="text-mono-xs text-grey-600 truncate mt-0.5">
                   {hostOf(linkEmbed.url)}
                 </p>
               </div>
@@ -452,7 +452,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
           {remainingReplies > 0 && (
             <button
               onClick={neighbourhood.loadMoreReplies}
-              className="label-ui text-grey-400 hover:text-grey-600 hover:underline transition-colors"
+              className="label-ui text-grey-600 hover:text-black hover:underline transition-colors"
             >
               SHOW {remainingReplies} MORE{" "}
               {remainingReplies === 1 ? "REPLY" : "REPLIES"}

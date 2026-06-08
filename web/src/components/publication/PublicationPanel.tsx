@@ -63,7 +63,7 @@ export function PublicationPanel({ slug }: { slug: string }) {
   if (loading) {
     return (
       <div className="mx-auto max-w-feed px-4 sm:px-6 py-12">
-        <div className="label-ui text-grey-400 py-12 text-center">LOADING…</div>
+        <div className="label-ui text-grey-600 py-12 text-center">LOADING…</div>
       </div>
     );
   }
@@ -100,7 +100,7 @@ export function PublicationPanel({ slug }: { slug: string }) {
           />
           <a
             href={`/api/v1/pub/${pub.slug}/rss`}
-            className="label-ui text-grey-300 hover:text-black"
+            className="label-ui text-grey-600 hover:text-black"
           >
             RSS
           </a>
@@ -108,7 +108,7 @@ export function PublicationPanel({ slug }: { slug: string }) {
       </div>
 
       {articles.length === 0 ? (
-        <div className="label-ui text-grey-400 py-12 text-center">
+        <div className="label-ui text-grey-600 py-12 text-center">
           NO ARTICLES YET
         </div>
       ) : (

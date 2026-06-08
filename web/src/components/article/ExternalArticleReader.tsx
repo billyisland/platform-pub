@@ -82,7 +82,7 @@ export function ExternalArticleReader({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="label-ui text-grey-400 hover:text-black transition-colors mb-2 inline-block"
+            className="label-ui text-grey-600 hover:text-black transition-colors mb-2 inline-block"
           >
             {displaySite}
           </a>
@@ -93,7 +93,7 @@ export function ExternalArticleReader({
           </h1>
         )}
         {article?.byline && (
-          <p className="text-ui-xs text-grey-500 mt-2">{article.byline}</p>
+          <p className="text-ui-xs text-grey-600 mt-2">{article.byline}</p>
         )}
       </div>
 
@@ -111,7 +111,7 @@ export function ExternalArticleReader({
 
         {error && (
           <div className="text-center py-8">
-            <p className="text-ui-xs text-grey-500 mb-4">
+            <p className="text-ui-xs text-grey-600 mb-4">
               Could not extract this page.
             </p>
             <a

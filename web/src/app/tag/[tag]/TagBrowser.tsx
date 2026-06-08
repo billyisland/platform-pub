@@ -39,7 +39,7 @@ export function TagBrowser({ tagName, inOverlay = false }: { tagName: string; in
       <h1 className="font-mono text-2xl uppercase tracking-[0.02em] text-black">
         #{tagName}
       </h1>
-      <p className="label-ui text-grey-400 mt-1 mb-10">
+      <p className="label-ui text-grey-600 mt-1 mb-10">
         {total} article{total !== 1 ? 's' : ''}
       </p>
 
@@ -49,7 +49,7 @@ export function TagBrowser({ tagName, inOverlay = false }: { tagName: string; in
         </div>
       ) : articles.length === 0 ? (
         <div className="py-20 text-center">
-          <p className="text-ui-sm text-grey-400">#{tagName} — No articles yet.</p>
+          <p className="text-ui-sm text-grey-600">#{tagName} — No articles yet.</p>
         </div>
       ) : (
         <div className="space-y-0">
