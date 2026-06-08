@@ -52,6 +52,7 @@ import { MessagesOverlay } from "./MessagesOverlay";
 import { DashboardOverlay } from "./DashboardOverlay";
 import { NotificationsOverlay } from "./NotificationsOverlay";
 import { LedgerOverlay } from "./LedgerOverlay";
+import { SettingsOverlay } from "./SettingsOverlay";
 import { useReader } from "../../stores/reader";
 import { useCompose } from "../../stores/compose";
 import { useEditorOverlay } from "../../stores/editorOverlay";
@@ -1269,6 +1270,7 @@ export function WorkspaceView() {
       <DashboardOverlay />
       <NotificationsOverlay />
       <LedgerOverlay />
+      <SettingsOverlay />
     </Floor>
   );
 }

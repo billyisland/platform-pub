@@ -40,7 +40,7 @@ export function EmailChange() {
 
   return (
     <div className="mb-10">
-      <p className="label-ui text-grey-400 mb-4">Email</p>
+      <p className="label-ui text-grey-600 mb-4">Email</p>
       <div className="bg-white px-6 py-5">
         {editing ? (
           <div>

@@ -71,7 +71,7 @@ export function LinkedAccountsPanel() {
 
   return (
     <div>
-      <p className="label-ui text-grey-400 mb-4">Connected accounts</p>
+      <p className="label-ui text-grey-600 mb-4">Connected accounts</p>
       <div className="bg-white px-6 py-5">
         <p className="text-ui-xs text-grey-600 mb-4 leading-relaxed">
           Connect external accounts to cross-post your replies and quotes back to their original platforms.
@@ -84,7 +84,7 @@ export function LinkedAccountsPanel() {
         ) : (
           <ul className="space-y-3 mb-4">
             {accounts.map(acct => (
-              <li key={acct.id} className="flex items-center justify-between gap-4 border-b border-grey-100 pb-3 last:border-b-0 last:pb-0">
+              <li key={acct.id} className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="label-ui text-grey-500">{protocolLabel(acct.protocol)}</span>
@@ -112,7 +112,7 @@ export function LinkedAccountsPanel() {
         )}
 
         {showConnect === 'mastodon' ? (
-          <div className="border-t border-grey-100 pt-4">
+          <div className="pt-4">
             <p className="label-ui text-grey-400 mb-2">Mastodon instance</p>
             <input
               type="text"
@@ -133,7 +133,7 @@ export function LinkedAccountsPanel() {
             </div>
           </div>
         ) : showConnect === 'bluesky' ? (
-          <div className="border-t border-grey-100 pt-4">
+          <div className="pt-4">
             <p className="label-ui text-grey-400 mb-2">Bluesky handle</p>
             <input
               type="text"

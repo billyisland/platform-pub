@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { LinkedAccount } from "../../lib/api/linked-accounts";
 import { externalItems } from "../../lib/api/external-items";
+import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { isDarkPalette, type VesselPalette } from "./tokens";
 
 const PROTOCOL_LABELS: Record<string, string> = {
@@ -86,13 +87,14 @@ export function InlineReplyBox({
       >
         <p className="text-ui-xs" style={{ color: palette.cardStandfirst }}>
           Connect your {PROTOCOL_LABELS[protocol] ?? protocol} account to reply.{" "}
-          <a
-            href="/settings"
+          <button
+            type="button"
+            onClick={() => useSettingsOverlay.getState().open()}
             className="underline"
             style={{ color: palette.cardTitle }}
           >
             Settings →
-          </a>
+          </button>
         </p>
       </div>
     );

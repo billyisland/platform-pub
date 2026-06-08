@@ -60,7 +60,7 @@ export function DangerZone() {
           </button>
         </div>
 
-        <div className="border-t border-grey-200 my-6" />
+        <div className="h-6" />
 
         {/* Delete */}
         <div className="bg-white px-6 py-5">

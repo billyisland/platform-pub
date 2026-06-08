@@ -120,7 +120,7 @@ function AvatarDropdown({ user, onLogout, onClose }: {
               </span>
             </span>
           </Link>
-          <Link href="/settings" onClick={onClose} className={linkClass}>Settings</Link>
+          <Link href="/workspace?overlay=settings" onClick={onClose} className={linkClass}>Settings</Link>
           <Link href="/library" onClick={onClose} className={linkClass}>Library</Link>
         </div>
 
@@ -206,7 +206,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
 
           <Link href="/profile" onClick={onClose} className={linkClass('/profile')}>Profile</Link>
           <Link href="/workspace?overlay=ledger" onClick={onClose} className={linkClass('/ledger')}>Ledger</Link>
-          <Link href="/settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
+          <Link href="/workspace?overlay=settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
           <Link href="/library" onClick={onClose} className={linkClass('/library')}>Library</Link>
 
           <div style={{ height: '4px', background: '#333' }} className="my-3" />

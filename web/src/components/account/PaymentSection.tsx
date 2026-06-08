@@ -25,8 +25,8 @@ export function PaymentSection() {
 
   return (
     <div className="mb-10">
-      <p className="label-ui text-grey-400 mb-4">Payment &amp; payouts</p>
-      <div className="bg-white divide-y divide-grey-200/50">
+      <p className="label-ui text-grey-600 mb-4">Payment &amp; payouts</p>
+      <div className="bg-white">
         {/* Card on file */}
         <div className="px-6 py-4">
           {user.hasPaymentMethod ? (

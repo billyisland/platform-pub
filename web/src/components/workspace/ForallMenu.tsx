@@ -7,6 +7,7 @@ import { useMessagesOverlay } from "../../stores/messagesOverlay";
 import { useDashboardOverlay } from "../../stores/dashboardOverlay";
 import { useNotificationsOverlay } from "../../stores/notificationsOverlay";
 import { useLedgerOverlay } from "../../stores/ledgerOverlay";
+import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { SearchPanel } from "./SearchPanel";
 
 const TOKENS = {
@@ -96,6 +97,12 @@ export function ForallMenu({
       kind: "overlay",
       onOpen: () => useLedgerOverlay.getState().open(),
       label: "Ledger",
+      count: 0,
+    },
+    {
+      kind: "overlay",
+      onOpen: () => useSettingsOverlay.getState().open(),
+      label: "Settings",
       count: 0,
     },
   ];
