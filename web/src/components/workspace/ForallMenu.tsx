@@ -14,11 +14,9 @@ const TOKENS = {
   buttonBg: "#1A1A18",
   buttonFg: "#F0EFEB",
   glyphFg: "#F0EFEB", // workspace floor colour (FLOOR in WorkspaceView)
-  menuBg: "#FFFFFF",
-  menuBorder: "#1A1A18",
   itemFg: "#1A1A18",
-  itemFocusBg: "#E6E5E0",
-  itemMuted: "#8A8880",
+  itemFocusBg: "rgba(17, 17, 17, 0.06)", // subtle dark wash on the warm pane
+  itemMuted: "#666666", // grey-600 — legible on the mid-light glasshouse pane
   badgeBg: "#B5242A",
   badgeFg: "#FFFFFF",
 };
@@ -68,13 +66,19 @@ export function ForallMenu({
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
+  // Rows are grouped find → make → go: search first (the way in), then the
+  // create actions, then the destinations, then any hidden-feed restores. The
+  // groups render with a tight gap between them and flatten into `rows` for
+  // arrow-key navigation.
+  const findRows: FocusRow[] = [
+    { kind: "open", target: "search", label: "Search", count: 0 },
+  ];
   const createRows: FocusRow[] = [
-    { kind: "action", key: "new-feed", label: "New feed" },
     { kind: "action", key: "new-note", label: "New note" },
     { kind: "action", key: "new-article", label: "Write an article" },
+    { kind: "action", key: "new-feed", label: "New feed" },
   ];
-  const navRows: FocusRow[] = [
-    { kind: "open", target: "search", label: "Search", count: 0 },
+  const goRows: FocusRow[] = [
     {
       kind: "overlay",
       onOpen: () => useMessagesOverlay.getState().open(),
@@ -111,7 +115,13 @@ export function ForallMenu({
     id: hf.id,
     label: hf.name,
   }));
-  const rows: FocusRow[] = [...createRows, ...navRows, ...restoreRows];
+  const groups: FocusRow[][] = [
+    findRows,
+    createRows,
+    goRows,
+    restoreRows,
+  ].filter((g) => g.length > 0);
+  const rows: FocusRow[] = groups.flat();
 
   function closeAll() {
     setView("closed");
@@ -203,68 +213,37 @@ export function ForallMenu({
           role="menu"
           aria-label="Workspace actions"
           onKeyDown={onMenuKey}
+          className="bg-glasshouse shadow-lg"
           style={{
             position: "absolute",
             right: 0,
             bottom: 64,
             minWidth: 240,
-            background: TOKENS.menuBg,
-            border: `2px solid ${TOKENS.menuBorder}`,
-            padding: 4,
-            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
+            padding: 6,
           }}
         >
-          {createRows.map((row, i) => (
-            <MenuRow
-              key={`create:${i}`}
-              ref={(el) => {
-                itemRefs.current[i] = el;
-              }}
-              row={row}
-              active={i === activeIndex}
-              onSelect={() => selectRow(row)}
-              onHover={() => setActiveIndex(i)}
-            />
-          ))}
-
-          <div style={{ height: 8 }} />
-
-          {navRows.map((row, ni) => {
-            const idx = createRows.length + ni;
-            return (
-              <MenuRow
-                key={`nav:${ni}`}
-                ref={(el) => {
-                  itemRefs.current[idx] = el;
-                }}
-                row={row}
-                active={idx === activeIndex}
-                onSelect={() => selectRow(row)}
-                onHover={() => setActiveIndex(idx)}
-              />
-            );
-          })}
-
-          {restoreRows.length > 0 && (
-            <>
-              <div style={{ height: 8 }} />
-              {restoreRows.map((row, ri) => {
-                const idx = createRows.length + navRows.length + ri;
-                return (
-                  <MenuRow
-                    key={`restore:${row.kind === "restore" ? row.id : ri}`}
-                    ref={(el) => {
-                      itemRefs.current[idx] = el;
-                    }}
-                    row={row}
-                    active={idx === activeIndex}
-                    onSelect={() => selectRow(row)}
-                    onHover={() => setActiveIndex(idx)}
-                  />
-                );
-              })}
-            </>
-          )}
+          {(() => {
+            let flat = 0;
+            return groups.map((group, gi) => (
+              <div key={gi} style={gi > 0 ? { marginTop: 6 } : undefined}>
+                {group.map((row) => {
+                  const idx = flat++;
+                  return (
+                    <MenuRow
+                      key={idx}
+                      ref={(el) => {
+                        itemRefs.current[idx] = el;
+                      }}
+                      row={row}
+                      active={idx === activeIndex}
+                      onSelect={() => selectRow(row)}
+                      onHover={() => setActiveIndex(idx)}
+                    />
+                  );
+                })}
+              </div>
+            ));
+          })()}
         </div>
       )}
 

@@ -12,13 +12,12 @@ import { useReader } from "../../stores/reader";
 import { useProfile } from "../../stores/profileOverlay";
 
 const TOKENS = {
-  panelBg: "#FFFFFF",
-  panelBorder: "#1A1A18",
-  rowHoverBg: "#F0EFEB",
-  inputBg: "#FAFAF7",
+  rowHoverBg: "rgba(17, 17, 17, 0.06)", // subtle dark wash on the warm pane
+  inputBg: "#FFFFFF", // bright well — the glasshouse field convention
+  sectionBg: "rgba(17, 17, 17, 0.04)",
   text: "#1A1A18",
-  meta: "#8A8880",
-  hint: "#9C9A94",
+  meta: "#666666", // grey-600 — legible on the mid-light pane
+  hint: "#666666",
 };
 
 const DEBOUNCE_MS = 200;
@@ -147,15 +146,13 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
     <div
       role="dialog"
       aria-label="Search"
+      className="bg-glasshouse shadow-lg"
       style={{
         position: "absolute",
         right: 0,
         bottom: 72,
         width: 380,
         maxHeight: "min(480px, calc(100vh - 120px))",
-        background: TOKENS.panelBg,
-        border: `2px solid ${TOKENS.panelBorder}`,
-        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
         display: "flex",
         flexDirection: "column",
       }}
@@ -369,7 +366,7 @@ function Section({
         style={{
           color: TOKENS.meta,
           padding: "10px 16px 6px 16px",
-          background: TOKENS.inputBg,
+          background: TOKENS.sectionBg,
         }}
       >
         {label}
