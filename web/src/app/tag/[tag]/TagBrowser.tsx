@@ -4,8 +4,15 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { tags as tagsApi } from '../../../lib/api'
 import { formatDateRelative, truncateText, stripMarkdown } from '../../../lib/format'
+import { useReader } from '../../../stores/reader'
+import { isModifiedClick } from '../../../components/ui/ProfileLink'
 
-export function TagBrowser({ tagName }: { tagName: string }) {
+// `inOverlay` is set when TagBrowser renders inside the surface overlay
+// (useSurfaceOverlay): article rows then open the reader overlay in place rather
+// than navigating to /article/:dTag and escaping the workspace to the black
+// topbar. The standalone /tag/[tag] page leaves it false (full-page links).
+export function TagBrowser({ tagName, inOverlay = false }: { tagName: string; inOverlay?: boolean }) {
+  const openArticle = useReader((s) => s.openNative)
   const [articles, setArticles] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -56,6 +63,14 @@ export function TagBrowser({ tagName }: { tagName: string }) {
               <Link
                 key={a.nostr_event_id}
                 href={`/article/${a.nostr_d_tag}`}
+                onClick={(e) => {
+                  // In the overlay, open the reader in place; modified clicks
+                  // (new tab) still follow the real link.
+                  if (inOverlay && !isModifiedClick(e) && a.nostr_d_tag) {
+                    e.preventDefault()
+                    openArticle(a.nostr_d_tag)
+                  }
+                }}
                 className="group block mt-9"
                 style={{ borderLeft: `6px solid ${barColor}`, paddingLeft: '28px' }}
               >

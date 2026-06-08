@@ -1,0 +1,87 @@
+"use client";
+
+// =============================================================================
+// SurfaceOverlay — the single non-profile content-surface environment, opened
+// over whatever surface the user is on. Driven by the useSurfaceOverlay store;
+// mounted once globally in LayoutShell so a source / tag / publication link
+// anywhere (e.g. the FeedComposer source rows) opens it in place rather than
+// escaping the workspace to the black topbar. Renders, by target kind:
+//   - source      → SourceSurface     (external feed surface, by id)
+//   - tag         → TagBrowser         (tag browser, by name)
+//   - publication → PublicationPanel   (publication homepage, by slug)
+// backed by a real URL (the store pushes /source/<id>, /tag/<name>, /pub/<slug>),
+// so Back / Esc / scrim all close and restore the prior URL. Direct visits render
+// the same surfaces full-page. Mirrors workspace/ProfileOverlay.tsx.
+// =============================================================================
+
+import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
+import { useSurfaceOverlay, surfaceUrl } from "../../stores/surfaceOverlay";
+import { Glasshouse } from "./Glasshouse";
+import { SourceSurface } from "../../app/source/[id]/SourceSurface";
+import { TagBrowser } from "../../app/tag/[tag]/TagBrowser";
+import { PublicationPanel } from "../publication/PublicationPanel";
+
+export function SurfaceOverlay() {
+  const { isOpen, target, close, dismiss, _handlePop } = useSurfaceOverlay();
+
+  // Glasshouse owns the chrome, Escape, and scroll-lock. We keep two URL-sync
+  // concerns: (1) browser Back pops our pushed entry → _handlePop finalises
+  // close on popstate; (2) a link *inside* the overlay router-navigates away —
+  // pathname leaves our target, so we dismiss without fighting that
+  // navigation's own history entry. Mirrors ProfileOverlay.
+  useEffect(() => {
+    if (!isOpen) return;
+    window.addEventListener("popstate", _handlePop);
+    return () => window.removeEventListener("popstate", _handlePop);
+  }, [isOpen, _handlePop]);
+
+  const pathname = usePathname();
+  // Only dismiss on navigation *after* the pushed URL has settled to our target,
+  // so the initial open (pathname still on the prior surface for a tick) doesn't
+  // self-dismiss.
+  const settledRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen || !target) {
+      settledRef.current = false;
+      return;
+    }
+    const targetPath = surfaceUrl(target);
+    const current = decodeURIComponent(pathname ?? "");
+    if (current === decodeURIComponent(targetPath)) {
+      settledRef.current = true;
+    } else if (settledRef.current) {
+      dismiss();
+    }
+  }, [pathname, isOpen, target, dismiss]);
+
+  if (!isOpen || !target) return null;
+
+  const ariaLabel =
+    target.kind === "source"
+      ? "Source"
+      : target.kind === "tag"
+        ? "Tag"
+        : "Publication";
+
+  return (
+    <Glasshouse
+      onClose={close}
+      onSupersede={dismiss}
+      maxWidth={780}
+      ariaLabel={ariaLabel}
+    >
+      {/* Each surface body supplies its own inner padding (PageShell / mx-auto
+          wrapper); we only own the scroll container. */}
+      <div className="overflow-y-auto max-h-[calc(100vh-64px)]">
+        {target.kind === "source" && <SourceSurface id={target.id} />}
+        {target.kind === "tag" && (
+          <TagBrowser tagName={target.name.toLowerCase()} inOverlay />
+        )}
+        {target.kind === "publication" && (
+          <PublicationPanel slug={target.slug} />
+        )}
+      </div>
+    </Glasshouse>
+  );
+}

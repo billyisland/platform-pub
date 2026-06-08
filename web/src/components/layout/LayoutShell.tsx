@@ -6,9 +6,11 @@ import { Nav } from './Nav'
 import { Footer } from './Footer'
 import { ComposeOverlay } from '../compose/ComposeOverlay'
 import { ProfileOverlay } from '../workspace/ProfileOverlay'
+import { SurfaceOverlay } from '../workspace/SurfaceOverlay'
 import { EditorOverlay } from '../workspace/EditorOverlay'
 import { useReader } from '../../stores/reader'
 import { useProfile } from '../../stores/profileOverlay'
+import { useSurfaceOverlay } from '../../stores/surfaceOverlay'
 import { useEditorOverlay } from '../../stores/editorOverlay'
 
 const LayoutModeContext = createContext<LayoutMode>('platform')
@@ -34,7 +36,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // don't mount behind the frosted editor — and so the note→article handoff from
   // a platform page gives a clean full-screen writing surface.
   const editorOpen = useEditorOverlay((s) => s.isOpen)
-  const chromeless = mode === 'workspace' || readerOpen || profileOpen || editorOpen
+  // The surface overlay (source / tag / publication) pushes /source|/tag|/pub,
+  // flipping the URL-derived mode while the underlying surface is unchanged —
+  // treat it as chromeless too (same reasoning as the reader/profile), so the
+  // topbar + footer don't mount behind the frosted overlay.
+  const surfaceOpen = useSurfaceOverlay((s) => s.isOpen)
+  const chromeless =
+    mode === 'workspace' || readerOpen || profileOpen || editorOpen || surfaceOpen
 
   return (
     <LayoutModeContext.Provider value={mode}>
@@ -47,6 +55,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         {!chromeless && <Footer />}
         {/* Mounted unconditionally — bylines anywhere (incl. the workspace) open it. */}
         <ProfileOverlay />
+        {/* Mounted unconditionally — source/tag/publication links anywhere (e.g.
+            the FeedComposer source rows) open it without escaping the workspace. */}
+        <SurfaceOverlay />
         {/* Mounted unconditionally — "write an article" is reachable from the
             workspace, the dashboard overlay, and the note→article handoff. */}
         <EditorOverlay />

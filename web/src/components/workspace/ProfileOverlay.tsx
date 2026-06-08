@@ -58,7 +58,12 @@ export function ProfileOverlay() {
   if (!isOpen || !target) return null;
 
   return (
-    <Glasshouse onClose={close} maxWidth={860} ariaLabel="Profile">
+    <Glasshouse
+      onClose={close}
+      onSupersede={dismiss}
+      maxWidth={860}
+      ariaLabel="Profile"
+    >
       <div className="overflow-y-auto max-h-[calc(100vh-64px)] px-6 sm:px-10 py-12">
         {target.kind === "native" ? (
           <NativeProfilePanel username={target.username} />

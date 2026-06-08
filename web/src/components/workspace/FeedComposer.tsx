@@ -11,6 +11,8 @@ import { useResolverInput } from "../../hooks/useResolverInput";
 import type { MatchOption } from "../../lib/workspace/resolve";
 import { Glasshouse } from "./Glasshouse";
 import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
+import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
+import { openSurfaceHref } from "../../stores/surfaceOverlay";
 import {
   type Brightness,
   type Density,
@@ -888,6 +890,26 @@ function SourceRow({
               ref={hover.bylineRef as React.Ref<HTMLAnchorElement>}
               onMouseEnter={hover.onMouseEnter}
               onMouseLeave={hover.onMouseLeave}
+              onClick={(e) => {
+                // Open the matching URL-synced Glasshouse overlay in place —
+                // never a full-page navigation that would escape the workspace
+                // to the black topbar. Account → profile overlay; publication /
+                // external source / tag → surface overlay. Gate the account case
+                // strictly on the source type: openProfileHref reads the href
+                // alone and would mis-classify /pub/:slug, /source/:id and
+                // /tag/:name as a native profile, so route those through
+                // openSurfaceHref instead. Modified clicks (new tab) fall
+                // through to the real link.
+                if (isModifiedClick(e)) return;
+                const handled =
+                  source.sourceType === "account"
+                    ? openProfileHref(href)
+                    : openSurfaceHref(href);
+                if (handled) {
+                  e.preventDefault();
+                  hover.onModalClose();
+                }
+              }}
               className="font-sans text-ui-xs hover:underline"
               style={{
                 color: isMuted ? TOKENS.hintFg : TOKENS.panelBorder,

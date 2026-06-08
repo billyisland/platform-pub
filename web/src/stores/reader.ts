@@ -47,6 +47,10 @@ interface ReaderState {
   open: (url: string, title?: string, siteName?: string) => void;
 
   close: () => void;
+  /** Clear overlay state without touching history — for when the reader is
+   *  superseded by another Glasshouse (the newcomer owns the top history entry,
+   *  so a history.back here would pop its URL, not ours). */
+  dismiss: () => void;
   /** Internal — invoked by the overlay's popstate listener. */
   _handlePop: () => void;
 }
@@ -114,6 +118,10 @@ export const useReader = create<ReaderState>((set, get) => ({
     } else {
       set({ isOpen: false, target: null, didPush: false });
     }
+  },
+
+  dismiss: () => {
+    if (get().isOpen) set({ isOpen: false, target: null, didPush: false });
   },
 
   _handlePop: () => {

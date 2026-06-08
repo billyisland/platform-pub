@@ -21,13 +21,33 @@
 //
 // Separation inside the pane is whitespace + the slab rules, per the sitewide
 // no-thin-line rule; the 6px slab top and the elevation shadow are not lines.
+//
+// INVARIANT — one Glasshouse at a time. Frosted panes never stack: opening any
+// Glasshouse supersedes whichever was open before. This is enforced here, in the
+// primitive, so every surface participates automatically (incl. the workspace-
+// local Composer / FeedComposer driven by local state, not a store). The active
+// instance is tracked module-level; a newly-mounted pane closes the previous one
+// via its `supersede` callback. `supersede` is a STATE-ONLY close (never
+// history.back): for URL-synced overlays (reader / profile / surface) the caller
+// passes `onSupersede={dismiss}`, because the newcomer already owns the top
+// history entry and a history.back here would pop *its* URL, not the old pane's.
+// Ephemeral overlays omit it — their onClose is already state-only.
 // =============================================================================
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
+
+// The currently-open Glasshouse (or null). `token` is a per-instance identity so
+// the unmount cleanup only clears the slot when it still owns it (never clobbers
+// a successor that already claimed it).
+let activeGlasshouse: { token: object; supersede: () => void } | null = null;
 
 interface GlasshouseProps {
   /** Invoked by the scrim, the close button, and Escape. */
   onClose: () => void;
+  /** State-only close used when this pane is superseded by a newer Glasshouse.
+   *  Defaults to onClose; URL-synced callers (reader/profile/surface) pass their
+   *  store's `dismiss` so superseding never triggers a history.back. */
+  onSupersede?: () => void;
   /** Max width of the centred pane, in px. */
   maxWidth: number;
   /** Accessible label for the pane dialog. */
@@ -37,10 +57,31 @@ interface GlasshouseProps {
 
 export function Glasshouse({
   onClose,
+  onSupersede,
   maxWidth,
   ariaLabel,
   children,
 }: GlasshouseProps) {
+  // Keep the supersede handler fresh (callers pass inline closures) without
+  // re-running the register-on-mount effect.
+  const tokenRef = useRef<object>({});
+  const supersedeRef = useRef<() => void>(() => {});
+  supersedeRef.current = onSupersede ?? onClose;
+
+  // Register as the active Glasshouse on mount and supersede the prior one;
+  // release the slot on unmount (only if we still hold it).
+  useEffect(() => {
+    const token = tokenRef.current;
+    const prev = activeGlasshouse;
+    activeGlasshouse = { token, supersede: () => supersedeRef.current() };
+    if (prev && prev.token !== token) prev.supersede();
+    return () => {
+      if (activeGlasshouse && activeGlasshouse.token === token) {
+        activeGlasshouse = null;
+      }
+    };
+  }, []);
+
   // Escape closes; lock body scroll while the Glasshouse is mounted.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
