@@ -286,13 +286,14 @@ export function ForallMenu({
             — each cutting off a *complete* circle segment — and the crossbar
             joins them across the central region.
 
-            The diagonals are deliberately NOT clipped to the disc: their upper
-            ends extend just past the circumference (to r≈30) and the apex's
-            round cap spills just past the bottom. Painted on top of the disc,
-            this overshoot covers the disc's anti-aliased edge pixels at the
-            three contact points, so no dark seam shows between the bar and the
-            ground; the overshoot itself is invisible (floor-on-floor) and
-            the visible bar still ends at the rim, where the black disc does.
+            The diagonals' endpoints overshoot the circumference (to r≈30) and
+            the apex's cap spills past the bottom, so each leg fully reaches the
+            rim with no anti-aliased gap — but the bar group is then *clipped to
+            the disc* (`#forall-clip`, r=28). The overshoot lands the leg exactly
+            on the rim while the clip guarantees nothing paints outside it, so no
+            pale leg-ends ever poke past the edge (the old floor-on-floor trick
+            leaked them once the open-menu scale + spin transforms stopped the
+            compositor cancelling them against the floor).
             Inner SVG so the unread badge stays a sibling on the button. */}
         <svg
           aria-hidden="true"
@@ -315,7 +316,17 @@ export function ForallMenu({
             transition: spinTransition ? "transform 480ms ease-in-out" : "none",
           }}
         >
+          <defs>
+            {/* The disc itself — clips the bars so their overshoot can never
+                paint past the rim. Centred on the rotation origin, so a circle
+                is invariant under the spin and stays aligned with the button's
+                border-radius disc. */}
+            <clipPath id="forall-clip">
+              <circle cx="28" cy="28" r="28" />
+            </clipPath>
+          </defs>
           <g
+            clipPath="url(#forall-clip)"
             stroke={TOKENS.glyphFg}
             strokeWidth={6}
             strokeLinecap="round"
