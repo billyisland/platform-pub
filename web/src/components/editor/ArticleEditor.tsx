@@ -342,11 +342,13 @@ export function ArticleEditor({
   return (
     <div className={isOverlay ? 'px-6 sm:px-10 py-12' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8'}>
       {/* Sticky title + toolbar — stays visible while scrolling the body.
-          Overlay: sticks to the Glasshouse pane top (no black topbar to offset),
-          with pr-10 clearance for the floating ✕. */}
-      <div className={isOverlay ? 'sticky top-0 z-20 bg-white pb-4 mb-6 pr-10' : 'sticky top-[53px] lg:top-0 z-20 bg-white pb-4 mb-6'}>
+          Overlay: sticks to the Glasshouse pane top (no black topbar to offset).
+          The cards span the full width (matching the body editor below); only the
+          title card — the row that pins under the floating ✕ when scrolled — gets
+          its own right inset (pr-12) so a long title still clears it. */}
+      <div className={isOverlay ? 'sticky top-0 z-20 bg-white pb-4 mb-6' : 'sticky top-[53px] lg:top-0 z-20 bg-white pb-4 mb-6'}>
       {/* Title card */}
-      <div className="bg-grey-100 px-5 py-4 mb-2">
+      <div className={`bg-grey-100 py-4 mb-2 pl-5 ${isOverlay ? 'pr-12' : 'pr-5'}`}>
         <input
           type="text"
           value={title}

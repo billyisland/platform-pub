@@ -7,8 +7,8 @@
 // pane, direct messages, future panels):
 //   - a full-viewport frosted scrim (z-[55]) — a slight backdrop blur so the
 //     workspace reads as frosted glass behind, click-to-close;
-//   - a centred white pane (z-[56]) with the 6px black slab top + elevation
-//     shadow, click-through guarded;
+//   - a centred white pane (z-[56]) with a 6px crimson (#B5242A) frame on all
+//     four sides + elevation shadow, click-through guarded;
 //   - Escape closes; body scroll is locked while mounted.
 //
 // The ForallMenu lives separately at z-60, so it floats CRISP above the frost
@@ -20,7 +20,7 @@
 // not here. Mount it conditionally — it runs its scroll-lock on mount/unmount.
 //
 // Separation inside the pane is whitespace + the slab rules, per the sitewide
-// no-thin-line rule; the 6px slab top and the elevation shadow are not lines.
+// no-thin-line rule; the 6px crimson frame and the elevation shadow are not lines.
 // =============================================================================
 
 import React, { useEffect } from "react";
@@ -76,7 +76,7 @@ export function Glasshouse({
           aria-modal="true"
           aria-label={ariaLabel}
           className="relative w-full bg-white my-8 mx-4 shadow-lg"
-          style={{ maxWidth, borderTop: "6px solid #111111" }}
+          style={{ maxWidth, border: "6px solid #B5242A" }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Close — floats top-right over the pane content. */}
