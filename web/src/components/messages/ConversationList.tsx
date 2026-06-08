@@ -41,7 +41,7 @@ export function ConversationList({
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
           <div className="px-4 py-8 text-center">
-            <p className="text-ui-xs font-sans text-grey-300">
+            <p className="text-ui-xs font-sans text-grey-600">
               No conversations yet.
             </p>
           </div>
@@ -80,13 +80,13 @@ export function ConversationList({
                       </p>
                     </div>
                     {conv.lastMessage && (
-                      <p className="text-ui-xs font-sans text-grey-400 truncate mt-0.5">
+                      <p className="text-ui-xs font-sans text-grey-600 truncate mt-0.5">
                         {conv.lastMessage.content}
                       </p>
                     )}
                   </div>
                   {conv.lastMessage && (
-                    <span className="font-mono text-[12px] text-grey-300 uppercase flex-shrink-0">
+                    <span className="font-mono text-[12px] text-grey-600 uppercase flex-shrink-0">
                       {timeAgo(conv.lastMessage.createdAt)}
                     </span>
                   )}

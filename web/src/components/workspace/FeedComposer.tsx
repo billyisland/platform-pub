@@ -52,10 +52,10 @@ const TOKENS = {
   panelBorder: "#1A1A18",
   rowBg: "#F0EFEB",
   fieldBg: "#FFFFFF",
-  hintFg: "#8A8880",
+  hintFg: "#666666",
   errorFg: "#B5242A",
   matchHoverBg: "#F0EFEB",
-  removeFg: "#8A8880",
+  removeFg: "#666666",
   removeHoverFg: "#B5242A",
   // The hover author-card portals above the Glasshouse pane (z-56); 70 also
   // clears the ForallMenu (z-60) so the transient card is never clipped.

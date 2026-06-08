@@ -311,7 +311,7 @@ export function MessageThread({
       <div className={`flex items-center justify-between py-3 flex-shrink-0 pl-4 ${headerRightInset ? 'pr-12' : 'pr-4'}`}>
         <div className="flex items-center gap-3">
           {onBack && (
-            <button onClick={onBack} className="font-mono text-[12px] text-grey-400 hover:text-black uppercase tracking-[0.04em]">
+            <button onClick={onBack} className="font-mono text-[12px] text-grey-600 hover:text-black uppercase tracking-[0.04em]">
               &#8592;
             </button>
           )}
@@ -320,7 +320,7 @@ export function MessageThread({
         {memberId && (
           <button
             onClick={() => setShowCommission(true)}
-            className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-400 hover:text-black transition-colors"
+            className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-600 hover:text-black transition-colors"
           >
             Commission
           </button>
@@ -334,7 +334,7 @@ export function MessageThread({
             <button
               onClick={() => fetchMessages(nextCursor)}
               disabled={loadingMore}
-              className="text-[12px] font-sans text-grey-300 hover:text-black"
+              className="text-[12px] font-sans text-grey-600 hover:text-black"
             >
               {loadingMore ? 'Loading\u2026' : 'Load older messages'}
             </button>
@@ -344,7 +344,7 @@ export function MessageThread({
         {loading || decrypting ? (
           <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-8 animate-pulse bg-grey-100 rounded" />)}</div>
         ) : msgs.length === 0 ? (
-          <p className="text-center text-ui-xs font-sans text-grey-300 py-8">No messages yet. Start the conversation.</p>
+          <p className="text-center text-ui-xs font-sans text-grey-600 py-8">No messages yet. Start the conversation.</p>
         ) : (
           msgs.map(msg => {
             const isMine = msg.senderId === user?.id
@@ -355,10 +355,10 @@ export function MessageThread({
                   {msg.replyTo && (
                     <div className={`flex items-start gap-1.5 mb-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
                       <div className="bg-grey-100/60 px-3 py-1.5 border-l-2 border-grey-300">
-                        <p className="text-[11px] font-sans font-semibold text-grey-400">
+                        <p className="text-[11px] font-sans font-semibold text-grey-600">
                           {msg.replyTo.senderUsername ?? 'Unknown'}
                         </p>
-                        <p className="text-[12px] font-sans text-grey-400 truncate max-w-[200px]">
+                        <p className="text-[12px] font-sans text-grey-600 truncate max-w-[200px]">
                           {msg.replyToContent ?? <span className="italic">Encrypted message</span>}
                         </p>
                       </div>
@@ -378,11 +378,11 @@ export function MessageThread({
                         textClassName={`text-ui-sm font-sans leading-relaxed whitespace-pre-wrap ${isMine ? 'text-white' : 'text-black'}`}
                       />
                     ) : (
-                      <p className="text-ui-sm font-sans leading-relaxed whitespace-pre-wrap italic text-grey-300">
+                      <p className="text-ui-sm font-sans leading-relaxed whitespace-pre-wrap italic text-grey-600">
                         Could not decrypt
                       </p>
                     )}
-                    <p className={`text-[10px] font-mono mt-1 ${isMine ? 'text-grey-400' : 'text-grey-300'}`}>
+                    <p className={`text-[10px] font-mono mt-1 ${isMine ? 'text-grey-400' : 'text-grey-600'}`}>
                       {timeStamp(msg.createdAt)}
                     </p>
                   </div>
@@ -392,7 +392,7 @@ export function MessageThread({
                     {/* Reply — hover-reveal on desktop, always visible on mobile */}
                     <button
                       onClick={() => handleReply(msg)}
-                      className="text-[11px] font-sans text-grey-300 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-black"
+                      className="text-[11px] font-sans text-grey-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-black"
                     >
                       Reply
                     </button>
@@ -410,7 +410,7 @@ export function MessageThread({
                     ) : (
                       <button
                         onClick={() => handleToggleLike(msg.id)}
-                        className="text-[12px] text-grey-300 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-black"
+                        className="text-[12px] text-grey-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-black"
                         aria-label="Like"
                       >
                         {'\u2661'}
@@ -429,16 +429,16 @@ export function MessageThread({
       {replyTo && (
         <div className="flex items-center gap-2 px-4 py-2 bg-grey-100/80">
           <div className="flex-1 min-w-0 border-l-2 border-crimson pl-2">
-            <p className="text-[11px] font-sans font-semibold text-grey-500">
+            <p className="text-[11px] font-sans font-semibold text-grey-600">
               Replying to {replyTo.senderDisplayName ?? replyTo.senderUsername}
             </p>
-            <p className="text-[12px] font-sans text-grey-400 truncate">
+            <p className="text-[12px] font-sans text-grey-600 truncate">
               {replyTo.content ?? 'Encrypted message'}
             </p>
           </div>
           <button
             onClick={() => setReplyTo(null)}
-            className="text-[12px] text-grey-400 hover:text-black flex-shrink-0"
+            className="text-[12px] text-grey-600 hover:text-black flex-shrink-0"
             aria-label="Cancel reply"
           >
             &#10005;
@@ -461,7 +461,7 @@ export function MessageThread({
       {media.error && (
         <div className="px-4 py-1.5 bg-grey-100 text-crimson text-[12px] font-sans flex items-center justify-between">
           <span>{media.error}</span>
-          <button onClick={media.clearError} className="ml-2 text-grey-300 hover:text-crimson">×</button>
+          <button onClick={media.clearError} className="ml-2 text-grey-600 hover:text-crimson">×</button>
         </div>
       )}
 
@@ -486,7 +486,7 @@ export function MessageThread({
           type="button"
           onClick={media.triggerImageUpload}
           disabled={media.uploading}
-          className="text-grey-300 hover:text-grey-400 disabled:opacity-40 transition-colors p-1.5"
+          className="text-grey-600 hover:text-black disabled:opacity-40 transition-colors p-1.5"
           title="Add image"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

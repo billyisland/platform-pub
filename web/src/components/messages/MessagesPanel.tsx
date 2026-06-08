@@ -109,7 +109,7 @@ export function MessagesPanel({
             <div className="flex items-center gap-3 px-4 py-3 mb-1">
               <button
                 onClick={() => setShowNewMessage(false)}
-                className="font-mono text-[12px] text-grey-400 hover:text-black uppercase tracking-[0.04em]"
+                className="font-mono text-[12px] text-grey-600 hover:text-black uppercase tracking-[0.04em]"
               >
                 &#8592;
               </button>
@@ -143,7 +143,7 @@ export function MessagesPanel({
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
-            <p className="text-ui-sm font-sans text-grey-300">Select a conversation or start a new one.</p>
+            <p className="text-ui-sm font-sans text-grey-600">Select a conversation or start a new one.</p>
           </div>
         )}
       </div>

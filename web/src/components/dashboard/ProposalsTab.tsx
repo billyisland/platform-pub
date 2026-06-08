@@ -115,15 +115,15 @@ export function ProposalsTab({ userId }: { userId: string }) {
 
       {isEmpty && (
         <div className="py-20 text-center">
-          <p className="text-ui-sm text-grey-400 mb-4">No proposals yet.</p>
-          <p className="text-ui-xs text-grey-300">Commission requests from readers, your pledge drives, and subscription offers will appear here.</p>
+          <p className="text-ui-sm text-grey-600 mb-4">No proposals yet.</p>
+          <p className="text-ui-xs text-grey-600">Commission requests from readers, your pledge drives, and subscription offers will appear here.</p>
         </div>
       )}
 
       {/* Commissions section */}
       {showCommissions && commissions.length > 0 && (
         <div className="mb-8">
-          <p className="label-ui text-grey-400 mb-4">Commissions</p>
+          <p className="label-ui text-grey-600 mb-4">Commissions</p>
           <div className="space-y-2">
             {commissions.map(c => <CommissionCard key={c.id} commission={c} onUpdate={fetchAll} />)}
           </div>
@@ -133,7 +133,7 @@ export function ProposalsTab({ userId }: { userId: string }) {
       {/* Pledge drives section */}
       {showDrives && drives.length > 0 && (
         <div className="mb-8">
-          <p className="label-ui text-grey-400 mb-4">Pledge drives</p>
+          <p className="label-ui text-grey-600 mb-4">Pledge drives</p>
           <div className="space-y-2">
             {drives.map(d => <DriveCard key={d.id} drive={d} onUpdate={fetchAll} />)}
           </div>
@@ -177,7 +177,7 @@ function OffersSection({ offers, onUpdate }: { offers: SubscriptionOffer[]; onUp
 
   return (
     <div className="mb-8">
-      <p className="label-ui text-grey-400 mb-4">Offers</p>
+      <p className="label-ui text-grey-600 mb-4">Offers</p>
 
       {active.length > 0 && (
         <div className="overflow-x-auto bg-white">

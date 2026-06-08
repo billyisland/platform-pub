@@ -168,10 +168,10 @@ export function DashboardPanel({
       <div className="flex items-center gap-2 mb-6 text-ui-xs flex-wrap">
         {pubMemberships.length > 0 && (
           <>
-            <span className="text-grey-400">Dashboard:</span>
+            <span className="text-grey-600">Dashboard:</span>
             <button
               onClick={() => switchContext(null)}
-              className={`px-2 py-1 ${!isPublicationContext ? 'text-black font-medium' : 'text-grey-400 hover:text-black'}`}
+              className={`px-2 py-1 ${!isPublicationContext ? 'text-black font-medium' : 'text-grey-600 hover:text-black'}`}
             >
               Personal
             </button>
@@ -179,17 +179,17 @@ export function DashboardPanel({
               <button
                 key={p.slug}
                 onClick={() => switchContext(p.slug)}
-                className={`px-2 py-1 ${selectedContext === p.slug ? 'text-black font-medium' : 'text-grey-400 hover:text-black'}`}
+                className={`px-2 py-1 ${selectedContext === p.slug ? 'text-black font-medium' : 'text-grey-600 hover:text-black'}`}
               >
                 {p.name}
               </button>
             ))}
-            <span className="text-grey-200">|</span>
+            <span className="text-grey-600">|</span>
           </>
         )}
         <button
           onClick={() => setShowNewPub(v => !v)}
-          className="px-2 py-1 text-grey-400 hover:text-black transition-colors"
+          className="px-2 py-1 text-grey-600 hover:text-black transition-colors"
         >
           + New publication
         </button>
@@ -463,7 +463,7 @@ function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pu
 
   if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
   if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
-  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No articles or drafts yet.</p>{inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open() }} className="btn-text underline underline-offset-4">Write your first article</button> : <Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link>}</div>
+  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-600 mb-4">No articles or drafts yet.</p>{inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open() }} className="btn-text underline underline-offset-4">Write your first article</button> : <Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link>}</div>
 
   return (
     <div className="overflow-x-auto bg-white">

@@ -29,7 +29,7 @@ export function CommissionsTab() {
   if (commissions.length === 0) {
     return (
       <div className="py-20 text-center">
-        <p className="text-ui-sm text-grey-400">No commission requests yet.</p>
+        <p className="text-ui-sm text-grey-600">No commission requests yet.</p>
       </div>
     )
   }
@@ -42,7 +42,7 @@ export function CommissionsTab() {
     <div>
       {pending.length > 0 && (
         <div className="mb-8">
-          <p className="label-ui text-grey-400 mb-4">Pending</p>
+          <p className="label-ui text-grey-600 mb-4">Pending</p>
           <div className="space-y-2">
             {pending.map(c => <CommissionCard key={c.id} commission={c} onUpdate={fetchCommissions} />)}
           </div>
@@ -51,7 +51,7 @@ export function CommissionsTab() {
 
       {accepted.length > 0 && (
         <div className="mb-8">
-          <p className="label-ui text-grey-400 mb-4">Accepted</p>
+          <p className="label-ui text-grey-600 mb-4">Accepted</p>
           <div className="space-y-2">
             {accepted.map(c => <CommissionCard key={c.id} commission={c} onUpdate={fetchCommissions} />)}
           </div>
@@ -60,7 +60,7 @@ export function CommissionsTab() {
 
       {other.length > 0 && (
         <div className="mb-8">
-          <p className="label-ui text-grey-400 mb-4">Completed &amp; declined</p>
+          <p className="label-ui text-grey-600 mb-4">Completed &amp; declined</p>
           <div className="space-y-2">
             {other.map(c => <CommissionCard key={c.id} commission={c} onUpdate={fetchCommissions} />)}
           </div>

@@ -20,7 +20,7 @@ const TOKENS = {
   panelBorder: '#1A1A18',
   bannerBg: '#F0EFEB',
   bannerFg: '#1A1A18',
-  hintFg: '#8A8880',
+  hintFg: '#666666',
   errorFg: '#B5242A',
   publishBg: '#1A1A18',
   publishFg: '#F0EFEB',
