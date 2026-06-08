@@ -73,6 +73,7 @@ export function PostActions({
           targetEventId={post.version}
           targetKind={post.type === "article" ? 30023 : 1}
           isOwnContent={!!isOwnContent}
+          palette={palette}
         />
       )}
       {onReply && (

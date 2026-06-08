@@ -5,6 +5,7 @@ import { useAuth } from '../../stores/auth'
 import { voteCostPence } from '../../lib/voting'
 import { votes as votesApi } from '../../lib/api'
 import { VoteConfirmModal } from './VoteConfirmModal'
+import type { VesselPalette } from '../workspace/tokens'
 
 export interface VoteTally {
   upvoteCount: number
@@ -21,7 +22,9 @@ interface VoteControlsProps {
   targetEventId: string
   targetKind: number
   isOwnContent: boolean
-  dark?: boolean  // kept for API compat but no longer changes styling
+  /** Themed-vessel palette (light/dark). Omit on fixed-light surfaces (the
+   *  Glasshouse pane / white legacy cards) → muted text defaults to grey-600. */
+  palette?: VesselPalette
 
   initialTally?: VoteTally
   initialMyVotes?: MyVoteCount
@@ -31,6 +34,7 @@ export function VoteControls({
   targetEventId,
   targetKind,
   isOwnContent,
+  palette,
   initialTally,
   initialMyVotes,
 }: VoteControlsProps) {
@@ -110,6 +114,12 @@ export function VoteControls({
 
   const disabled = !user || isOwnContent || submitting
 
+  // Muted/active colours: on a themed vessel they track the palette (so they read
+  // on a dark card); on a fixed-light surface (no palette) they fall back to
+  // grey-600 / crimson. Hover is the mode-agnostic opacity fade used sitewide.
+  const mutedColor = palette?.cardMeta ?? '#666666'
+  const accentColor = palette?.crimson ?? '#B5242A'
+
   const totalSpentPence = computeTotalSpent(myVotes)
 
   const pendingSeq = pendingDirection
@@ -125,18 +135,16 @@ export function VoteControls({
           disabled={disabled}
           title={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Upvote'}
           aria-label={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Upvote'}
-          className={`px-1.5 py-0.5 text-ui-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed
-            ${myVotes.upCount > 0
-              ? 'text-crimson font-medium'
-              : 'text-grey-300 hover:text-black hover:bg-grey-100'
-            }`}
+          className="px-1.5 py-0.5 text-ui-xs transition-opacity hover:opacity-70 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ color: myVotes.upCount > 0 ? accentColor : mutedColor, fontWeight: myVotes.upCount > 0 ? 500 : undefined }}
         >
           ▲
         </button>
 
         <div className="relative">
           <button
-            className="text-ui-xs min-w-[1.5rem] text-center transition-colors text-grey-400 hover:text-black"
+            className="text-ui-xs min-w-[1.5rem] text-center transition-opacity hover:opacity-70"
+            style={{ color: mutedColor }}
             onMouseEnter={() => setShowTooltip(true)}
             onMouseLeave={() => setShowTooltip(false)}
           >
@@ -156,11 +164,8 @@ export function VoteControls({
           disabled={disabled}
           title={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Downvote'}
           aria-label={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Downvote'}
-          className={`px-1.5 py-0.5 text-ui-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed
-            ${myVotes.downCount > 0
-              ? 'text-crimson font-medium'
-              : 'text-grey-300 hover:text-black hover:bg-grey-100'
-            }`}
+          className="px-1.5 py-0.5 text-ui-xs transition-opacity hover:opacity-70 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ color: myVotes.downCount > 0 ? accentColor : mutedColor, fontWeight: myVotes.downCount > 0 ? 500 : undefined }}
         >
           ▼
         </button>
