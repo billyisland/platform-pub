@@ -116,7 +116,7 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
         {data.author.avatar ? (
           <img src={data.author.avatar} alt="" className="h-[18px] w-[18px] object-cover flex-shrink-0" />
         ) : (
-          <span className="flex h-[18px] w-[18px] items-center justify-center text-[8px] font-mono uppercase flex-shrink-0 bg-grey-200 text-grey-400">
+          <span className="flex h-[18px] w-[18px] items-center justify-center text-[8px] font-mono uppercase flex-shrink-0 bg-grey-200 text-grey-600">
             {(data.author.displayName?.[0] ?? '?').toUpperCase()}
           </span>
         )}

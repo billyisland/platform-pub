@@ -37,7 +37,7 @@ export function BookmarkButton({ articleId, initialBookmarked = false, showLabel
   return (
     <button
       onClick={toggle}
-      className={`transition-colors ${bookmarked ? 'text-black' : 'text-grey-300 hover:text-black'}`}
+      className={`transition-colors ${bookmarked ? 'text-black' : 'text-grey-600 hover:text-black'}`}
       title={bookmarked ? 'Remove bookmark' : 'Bookmark'}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill={bookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

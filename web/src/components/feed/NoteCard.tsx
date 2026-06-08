@@ -266,7 +266,7 @@ export function NoteCard({
       >
         {/* Provenance — reply signalling */}
         {note.isReply && (
-          <div className="label-ui text-grey-400 mb-1">
+          <div className="label-ui text-grey-600 mb-1">
             ↳ REPLYING TO{" "}
             {note.replyToAuthor ? `@${note.replyToAuthor}` : "A POST"}
           </div>

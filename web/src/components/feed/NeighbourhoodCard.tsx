@@ -33,9 +33,9 @@ export function NeighbourhoodCard({ item, variant }: NeighbourhoodCardProps) {
   return (
     <div style={{ borderLeft: `4px solid ${barColor}`, paddingLeft: "20px" }}>
       <div className="flex items-center gap-2 mb-1">
-        <span className="label-ui text-grey-400 truncate">{authorName}</span>
-        <span className="font-mono text-[10px] text-grey-400">&middot;</span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.02em] text-grey-400 flex-shrink-0">
+        <span className="label-ui text-grey-600 truncate">{authorName}</span>
+        <span className="font-mono text-[10px] text-grey-600">&middot;</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.02em] text-grey-600 flex-shrink-0">
           {formatDateRelative(ts)}
         </span>
       </div>
@@ -75,7 +75,7 @@ function EngagementMini({
 }) {
   if (likeCount === 0 && replyCount === 0 && repostCount === 0) return null;
   return (
-    <div className="flex items-center gap-3 mt-1 font-mono text-[10px] uppercase tracking-[0.02em] text-grey-300">
+    <div className="flex items-center gap-3 mt-1 font-mono text-[10px] uppercase tracking-[0.02em] text-grey-600">
       {likeCount > 0 && (
         <span className="flex items-center gap-1">
           <svg
@@ -149,15 +149,15 @@ export function NativeParentCard({ item }: { item: ResolvedContent }) {
           <ProfileLink
             href={`/${item.author.username}`}
             onClick={(e) => e.stopPropagation()}
-            className="label-ui text-grey-400 hover:text-grey-600 transition-colors truncate"
+            className="label-ui text-grey-600 hover:text-black transition-colors truncate"
           >
             {authorName}
           </ProfileLink>
         ) : (
-          <span className="label-ui text-grey-400 truncate">{authorName}</span>
+          <span className="label-ui text-grey-600 truncate">{authorName}</span>
         )}
-        <span className="font-mono text-[10px] text-grey-400">&middot;</span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.02em] text-grey-400 flex-shrink-0">
+        <span className="font-mono text-[10px] text-grey-600">&middot;</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.02em] text-grey-600 flex-shrink-0">
           {formatDateRelative(item.publishedAt)}
         </span>
       </div>
@@ -201,7 +201,7 @@ export function NeighbourhoodFailureStub({
   instanceDomain: string | null;
 }) {
   return (
-    <div className="ml-8 label-ui text-grey-400 py-3">
+    <div className="ml-8 label-ui text-grey-600 py-3">
       ↳ PARENT POST · COULDN&apos;T REACH{" "}
       {instanceDomain ? instanceDomain.toUpperCase() : "SOURCE"}
     </div>
@@ -214,7 +214,7 @@ export function NeighbourhoodFailureStub({
 export function NeighbourhoodEmptyState({ onReply }: { onReply?: () => void }) {
   if (!onReply) {
     return (
-      <div className="ml-8 label-ui text-grey-400 py-6 text-center">
+      <div className="ml-8 label-ui text-grey-600 py-6 text-center">
         NO CONVERSATION YET — BE THE FIRST TO REPLY
       </div>
     );
@@ -223,7 +223,7 @@ export function NeighbourhoodEmptyState({ onReply }: { onReply?: () => void }) {
     <button
       type="button"
       onClick={onReply}
-      className="ml-8 label-ui text-grey-400 hover:text-black py-6 w-full text-center transition-colors"
+      className="ml-8 label-ui text-grey-600 hover:text-black py-6 w-full text-center transition-colors"
     >
       NO CONVERSATION YET — BE THE FIRST TO REPLY
     </button>

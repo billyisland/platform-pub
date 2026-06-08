@@ -74,14 +74,14 @@ export function ShareButton({ url, title, onGiftLink }: ShareButtonProps) {
     <div ref={containerRef} className="relative">
       <button
         onClick={handleClick}
-        className="text-ui-xs transition-colors text-grey-300 hover:text-black"
+        className="text-ui-xs transition-colors text-grey-600 hover:text-black"
         aria-label="Share"
       >
         {copied ? 'Copied!' : 'Share'}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-6 z-20 w-44 border border-grey-200 bg-white shadow-lg py-1">
+        <div className="absolute right-0 top-6 z-20 w-44 bg-white shadow-lg py-1">
           <button
             onClick={copyLink}
             className="w-full text-left px-3 py-2 text-xs text-black hover:bg-grey-100 transition-colors"
@@ -102,7 +102,7 @@ export function ShareButton({ url, title, onGiftLink }: ShareButtonProps) {
           </button>
           {onGiftLink && (
             <>
-              <div className="border-t border-grey-200 my-1" />
+              <div className="my-1.5" />
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(false); onGiftLink() }}
                 className="w-full text-left px-3 py-2 text-xs text-black hover:bg-grey-100 transition-colors"
