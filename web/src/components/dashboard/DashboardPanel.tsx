@@ -32,7 +32,7 @@ import { AnalyticsTab } from './AnalyticsTab'
 import { useDashboardOverlay } from '../../stores/dashboardOverlay'
 import { useLedgerOverlay } from '../../stores/ledgerOverlay'
 import { useReader } from '../../stores/reader'
-import { useCompose } from '../../stores/compose'
+import { useEditorOverlay } from '../../stores/editorOverlay'
 
 type DashboardTab = 'articles' | 'subscribers' | 'proposals' | 'pricing' | 'analytics'
 
@@ -254,7 +254,11 @@ export function DashboardPanel({
                 )
               })}
             </div>
-            <Link href={`/write?pub=${selectedPub.slug}`} className="btn">New article</Link>
+            {inOverlay ? (
+              <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open({ publicationSlug: selectedPub.slug }) }} className="btn">New article</button>
+            ) : (
+              <Link href={`/write?pub=${selectedPub.slug}`} className="btn">New article</Link>
+            )}
           </div>
           {pubTab === 'articles' && (
             <PublicationArticlesTab
@@ -321,7 +325,7 @@ export function DashboardPanel({
                   type="button"
                   onClick={() => {
                     useDashboardOverlay.getState().close()
-                    useCompose.getState().open('article')
+                    useEditorOverlay.getState().open()
                   }}
                   className="btn"
                 >New article</button>
@@ -459,7 +463,7 @@ function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pu
 
   if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
   if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
-  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No articles or drafts yet.</p>{inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useCompose.getState().open('article') }} className="btn-text underline underline-offset-4">Write your first article</button> : <Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link>}</div>
+  if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-400 mb-4">No articles or drafts yet.</p>{inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open() }} className="btn-text underline underline-offset-4">Write your first article</button> : <Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link>}</div>
 
   return (
     <div className="overflow-x-auto bg-white">
@@ -473,7 +477,7 @@ function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pu
               <React.Fragment key={`draft-${d.draftId}`}>
               <tr className="border-b-2 border-grey-200 last:border-b-0">
                 <td className="px-4 py-3">
-                  <Link href={`/write?draft=${d.draftId}`} className="text-black hover:opacity-70">{d.title || 'Untitled'}</Link>
+                  {inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open({ draftId: d.draftId }) }} className="text-black hover:opacity-70 text-left">{d.title || 'Untitled'}</button> : <Link href={`/write?draft=${d.draftId}`} className="text-black hover:opacity-70">{d.title || 'Untitled'}</Link>}
                   <p className="text-[11px] text-grey-300 mt-0.5">Saved {new Date(d.autoSavedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
                 </td>
                 <td className="px-4 py-3">
@@ -488,7 +492,7 @@ function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pu
                 <td className="px-4 py-3 text-center text-grey-300">&mdash;</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-3">
-                    <Link href={`/write?draft=${d.draftId}`} className="text-grey-400 hover:text-black">Edit</Link>
+                    {inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open({ draftId: d.draftId }) }} className="text-grey-400 hover:text-black">Edit</button> : <Link href={`/write?draft=${d.draftId}`} className="text-grey-400 hover:text-black">Edit</Link>}
                     {isScheduled ? (
                       <>
                         <button onClick={() => { setSchedulePickerDraftId(d.draftId); setScheduleDateTime(d.scheduledAt!.slice(0, 16)) }} className="text-grey-400 hover:text-black">Reschedule</button>
@@ -539,7 +543,7 @@ function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pu
                   {a.isPaywalled && (
                     <button onClick={() => setGiftLinksOpenId(giftLinksOpenId === a.id ? null : a.id)} className={`text-grey-300 hover:text-black ${giftLinksOpenId === a.id ? 'text-black' : ''}`}>Gifts</button>
                   )}
-                  <Link href={`/write?edit=${a.nostrEventId}`} className="text-grey-400 hover:text-black">Edit</Link>
+                  {inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open({ editEventId: a.nostrEventId }) }} className="text-grey-400 hover:text-black">Edit</button> : <Link href={`/write?edit=${a.nostrEventId}`} className="text-grey-400 hover:text-black">Edit</Link>}
                   <button onClick={() => handleUnpublish(a.id)} disabled={unpublishingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{unpublishingId===a.id ? '...' : 'Unpublish'}</button>
                   <button onClick={() => handleDeleteArticle(a.id)} disabled={deletingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{deletingId===a.id ? '...' : 'Delete'}</button>
                 </div>

@@ -2,9 +2,8 @@
 
 import { useAuth } from "../../stores/auth";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import dynamic from "next/dynamic";
-import type { PublishData, PublicationContext } from "../../components/editor/ArticleEditor";
 
 const ArticleEditor = dynamic(
   () =>
@@ -21,16 +20,14 @@ const ArticleEditor = dynamic(
     ),
   },
 );
-import { publishArticle, publishToPublication } from "../../lib/publish";
-import { loadDraft, saveDraft, scheduleDraft } from "../../lib/drafts";
-import {
-  articles as articlesApi,
-  publications as publicationsApi,
-  tags as tagsApi,
-} from "../../lib/api";
+import { useArticleEditorInit } from "../../hooks/useArticleEditorInit";
 
 // =============================================================================
-// Write Page
+// Write Page — the standalone, addressable full-page article editor (kept for
+// direct visits / bookmarks / deep-links alongside the workspace EditorOverlay,
+// which renders the same ArticleEditor in a Glasshouse). Data-loading and
+// publish/schedule logic live in the shared useArticleEditorInit hook so the
+// two surfaces can't drift.
 //
 // Three modes:
 //   1. New article: /write (no params)
@@ -47,175 +44,32 @@ export default function WritePage() {
   const draftId = searchParams.get("draft");
   const pubSlug = searchParams.get("pub");
 
-  const [editorReady, setEditorReady] = useState(false);
-  const [initialData, setInitialData] = useState<{
-    title: string;
-    dek: string;
-    content: string;
-    gatePosition: number;
-    price: number;
-    commentsEnabled: boolean;
-    tags?: string[];
-    editingEventId?: string;
-    editingDTag?: string;
-    publicationId?: string | null;
-    coverImageUrl?: string | null;
-  } | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [pubMemberships, setPubMemberships] = useState<PublicationContext[]>(
-    [],
-  );
-  const [initialPubId, setInitialPubId] = useState<string | null>(null);
-
   useEffect(() => {
     if (!loading && !user) {
       router.push("/auth?mode=login");
     }
   }, [user, loading, router]);
 
-  // Load publication memberships
-  useEffect(() => {
-    if (!user) return;
-    publicationsApi
-      .myMemberships()
-      .then((res) => {
-        const ctx: PublicationContext[] = res.publications.map((p) => ({
-          id: p.id,
-          slug: p.slug,
-          name: p.name,
-          can_publish: p.can_publish,
-        }));
-        setPubMemberships(ctx);
-        // Pre-select from ?pub= query param
-        if (pubSlug) {
-          const match = ctx.find((p) => p.slug === pubSlug);
-          if (match) setInitialPubId(match.id);
-        }
-      })
-      .catch(() => {
-        /* non-critical */
-      });
-  }, [user, pubSlug]);
-
-  // Load edit or draft data
-  useEffect(() => {
-    if (!user) return;
-
-    async function loadEditData() {
-      if (editEventId) {
-        try {
-          // Fetch article data from gateway by event ID
-          // The gateway stores the free content which is enough to populate the editor
-          const res = await fetch(`/api/v1/articles/by-event/${editEventId}`, {
-            credentials: "include",
-          });
-          if (!res.ok) {
-            // Fallback: try to find by searching my articles
-            setLoadError("Could not find the article to edit.");
-            return;
-          }
-          const meta = await res.json();
-
-          let existingTags: string[] = [];
-          if (meta.id) {
-            try {
-              existingTags = (await tagsApi.getForArticle(meta.id)).tags;
-            } catch {
-              /* non-fatal */
-            }
-          }
-
-          let content = meta.contentFree ?? "";
-          if (meta.contentPaywall) {
-            content = `${meta.contentFree ?? ""}\n\n<!-- paywall-gate -->\n\n${meta.contentPaywall}`;
-          }
-
-          setInitialData({
-            title: meta.title ?? "",
-            dek: meta.summary ?? "",
-            content,
-            gatePosition: meta.gatePositionPct ?? 50,
-            price: meta.pricePence ?? 0,
-            commentsEnabled: true,
-            tags: existingTags,
-            editingEventId: editEventId,
-            editingDTag: meta.dTag ?? "",
-            coverImageUrl: meta.coverImageUrl ?? null,
-          });
-        } catch (err) {
-          console.error("Failed to load article for editing:", err);
-          setLoadError("Failed to load article for editing.");
-        }
-      } else if (draftId) {
-        try {
-          const draft = await loadDraft(draftId);
-          if (!draft) {
-            setLoadError("Draft not found.");
-            return;
-          }
-          setInitialData({
-            title: draft.title ?? "",
-            dek: draft.dek ?? "",
-            content: draft.content ?? "",
-            gatePosition: draft.gatePositionPct ?? 50,
-            price: draft.pricePence ?? 0,
-            commentsEnabled: true,
-            editingDTag: draft.dTag ?? undefined,
-            coverImageUrl: draft.coverImageUrl ?? null,
-          });
-        } catch {
-          setLoadError("Failed to load draft.");
-        }
-      } else {
-        // New article — no initial data needed
-        setInitialData(null);
-      }
-      setEditorReady(true);
-    }
-
-    void loadEditData();
-  }, [user, editEventId, draftId]);
-
-  async function handlePublish(data: PublishData) {
-    if (!user) return;
-
-    if (data.publicationId) {
-      // Publication article — server-side pipeline
-      const result = await publishToPublication(
-        data.publicationId,
-        { ...data, showOnWriterProfile: data.showOnWriterProfile },
-        initialData?.editingDTag,
-      );
-      const pub = pubMemberships.find((p) => p.id === data.publicationId);
-      router.push(`/workspace?overlay=dashboard&context=${pub?.slug ?? ""}&tab=articles`);
-    } else {
-      // Personal article — existing client-side pipeline
-      await publishArticle(data, user.pubkey, initialData?.editingDTag);
-      router.push("/workspace?overlay=dashboard&tab=articles");
-    }
-  }
-
-  async function handleSchedule(data: PublishData, scheduledAt: string) {
-    if (!user) return;
-
-    // Save the draft with the paywall marker intact so the scheduler can split it
-    const content =
-      data.isPaywalled && data.freeContent && data.paywallContent
-        ? `${data.freeContent}\n\n<!-- paywall-gate -->\n\n${data.paywallContent}`
-        : data.content;
-    const saved = await saveDraft({
-      title: data.title,
-      dek: data.dek,
-      content,
-      gatePositionPct: data.gatePositionPct,
-      pricePence: data.pricePence,
-      dTag: initialData?.editingDTag,
-      coverImageUrl: data.coverImageUrl ?? null,
-    });
-
-    await scheduleDraft(saved.draftId, scheduledAt);
-    router.push("/workspace?overlay=dashboard&tab=articles");
-  }
+  const {
+    initialData,
+    pubMemberships,
+    initialPubId,
+    editorReady,
+    loadError,
+    handlePublish,
+    handleSchedule,
+  } = useArticleEditorInit({
+    editEventId,
+    draftId,
+    pubSlug,
+    // Standalone page navigates the route; the overlay closes itself instead.
+    onComplete: (dest) => {
+      const params = new URLSearchParams({ overlay: dest.overlay });
+      if (dest.tab) params.set("tab", dest.tab);
+      if (dest.context) params.set("context", dest.context);
+      router.push(`/workspace?${params.toString()}`);
+    },
+  });
 
   if (loading || !user) {
     return (

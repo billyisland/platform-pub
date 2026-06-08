@@ -54,6 +54,7 @@ import { NotificationsOverlay } from "./NotificationsOverlay";
 import { LedgerOverlay } from "./LedgerOverlay";
 import { useReader } from "../../stores/reader";
 import { useCompose } from "../../stores/compose";
+import { useEditorOverlay } from "../../stores/editorOverlay";
 import {
   openOverlayFromParams,
   OVERLAY_PARAM_KEYS,
@@ -265,21 +266,19 @@ export function WorkspaceView() {
   const [bootstrap, setBootstrap] = useState<"loading" | "ready" | "error">(
     "loading",
   );
-  const [composerOpen, setComposerOpen] = useState<false | "note" | "article">(
-    false,
-  );
+  const [composerOpen, setComposerOpen] = useState<false | "note">(false);
   // Bridge the global compose store into the workspace's local Composer. The
   // global ComposeOverlay is not mounted in the chromeless workspace, so any
-  // in-workspace surface that lives outside this component (e.g. the Dashboard
-  // overlay's "New article" button) requests a compose by calling
-  // useCompose.open('note'|'article'); we mirror that into local state here.
+  // in-workspace surface that lives outside this component requests a note
+  // compose by calling useCompose.open('note'); we mirror that into local state
+  // here. (Article writing is the global EditorOverlay, opened directly.)
   const composeReqOpen = useCompose((s) => s.isOpen);
   const composeReqMode = useCompose((s) => s.mode);
   useEffect(() => {
-    if (composeReqOpen && (composeReqMode === "note" || composeReqMode === "article")) {
+    if (composeReqOpen && composeReqMode === "note") {
       setReplyTarget(null);
       setQuoteTarget(null);
-      setComposerOpen(composeReqMode);
+      setComposerOpen("note");
     }
   }, [composeReqOpen, composeReqMode]);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
@@ -549,9 +548,7 @@ export function WorkspaceView() {
       return;
     }
     if (key === "new-article") {
-      setReplyTarget(null);
-      setQuoteTarget(null);
-      setComposerOpen("article");
+      useEditorOverlay.getState().open();
       return;
     }
     if (key === "new-feed") {
@@ -1107,7 +1104,6 @@ export function WorkspaceView() {
       />
       <Composer
         open={!!composerOpen}
-        initialMode={composerOpen === "article" ? "article" : "note"}
         replyTarget={replyTarget}
         quoteTarget={quoteTarget}
         onClose={() => {

@@ -124,6 +124,8 @@ The ∀ sits in the bottom-right corner of the workspace floor.
 
 ### Architectural decision: one component, two modes
 
+> **Superseded (2026-06-08).** This Step-5 decision (fold article-writing *into* the `Composer` as a second mode) was reversed. Carrying article mode inside the lightweight composer produced **three** drifted TipTap editors (`ArticleComposePanel`, the `Composer` article mode, and the full `ArticleEditor`), each silently dropping article metadata (dek/tags/cover/comments/schedule). The decision now: **article-writing graduates *out* of the composer into a single full editor.** The full `ArticleEditor` is the one article surface, rendered both as the `/write` page and inside the global **EditorOverlay** (a `<Glasshouse>`); the note→article transition opens that overlay seeded with the in-progress note body (heading→title promotion preserved). The lightweight compose surfaces stay **note/reply only**. `ArticleComposePanel` and the composer's article mode were deleted. See CLAUDE.md › "Article writing — one surface" and the 2026-06-08 feature-debt entry. The original decision and its rationale are kept below as the historical record.
+
 The existing codebase's three writing surfaces (ComposeOverlay, ArticleComposePanel, ArticleEditor) collapse into a single `Composer` component with two rendering modes: **note** and **article**. The mode controls which chrome is visible around the same TipTap editor instance.
 
 **Rationale.** The spec requires that the note→article transition feel like "the writing surface getting more room, not like a modal transition." Two separate editor instances cannot deliver this.

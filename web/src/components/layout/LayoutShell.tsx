@@ -6,8 +6,10 @@ import { Nav } from './Nav'
 import { Footer } from './Footer'
 import { ComposeOverlay } from '../compose/ComposeOverlay'
 import { ProfileOverlay } from '../workspace/ProfileOverlay'
+import { EditorOverlay } from '../workspace/EditorOverlay'
 import { useReader } from '../../stores/reader'
 import { useProfile } from '../../stores/profileOverlay'
+import { useEditorOverlay } from '../../stores/editorOverlay'
 
 const LayoutModeContext = createContext<LayoutMode>('platform')
 
@@ -27,7 +29,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // chromeless too (same reasoning as the reader), so opening a profile from the
   // workspace doesn't mount the top beam + footer behind the frosted overlay.
   const profileOpen = useProfile((s) => s.isOpen)
-  const chromeless = mode === 'workspace' || readerOpen || profileOpen
+  // The article editor opens as a global Glasshouse over any surface; treat it as
+  // chromeless too (same reasoning as the reader/profile), so the topbar + footer
+  // don't mount behind the frosted editor — and so the note→article handoff from
+  // a platform page gives a clean full-screen writing surface.
+  const editorOpen = useEditorOverlay((s) => s.isOpen)
+  const chromeless = mode === 'workspace' || readerOpen || profileOpen || editorOpen
 
   return (
     <LayoutModeContext.Provider value={mode}>
@@ -40,6 +47,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         {!chromeless && <Footer />}
         {/* Mounted unconditionally — bylines anywhere (incl. the workspace) open it. */}
         <ProfileOverlay />
+        {/* Mounted unconditionally — "write an article" is reachable from the
+            workspace, the dashboard overlay, and the note→article handoff. */}
+        <EditorOverlay />
       </div>
     </LayoutModeContext.Provider>
   )

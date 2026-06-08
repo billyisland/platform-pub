@@ -13,21 +13,13 @@ import { useLinkedAccounts } from "../../hooks/useLinkedAccounts";
 import { MediaPreview } from "../ui/MediaPreview";
 import type { LinkedAccount } from "../../lib/api";
 import { Glasshouse } from "../workspace/Glasshouse";
-import { ArticleComposePanel } from "./ArticleComposePanel";
+import { useEditorOverlay, seedFromNote } from "../../stores/editorOverlay";
 
 const NOTE_CHAR_LIMIT = 1000;
 
 export function ComposeOverlay() {
   const { user } = useAuth();
-  const {
-    isOpen,
-    mode,
-    replyTarget,
-    close,
-    onPublished,
-    setMode,
-    articleFlush,
-  } = useCompose();
+  const { isOpen, mode, replyTarget, close, onPublished } = useCompose();
   const [content, setContent] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,22 +47,16 @@ export function ComposeOverlay() {
     content.trim().length > 0 ||
     media.attachments.filter((a) => a.type === "image").length > 0;
 
-  // Single close path, wired to Glasshouse's scrim / ✕ / Escape. Article mode
-  // flushes the draft first; note/reply uses a two-step confirm when dirty.
+  // Single close path, wired to Glasshouse's scrim / ✕ / Escape. Note/reply uses
+  // a two-step confirm when dirty. (Articles are written in the EditorOverlay.)
   const dismiss = useCallback(() => {
-    if (mode === "article") {
-      Promise.resolve(articleFlush?.())
-        .then(() => close())
-        .catch((e) => console.error("Article dismiss flush failed", e));
-      return;
-    }
     if (hasContent && !confirmDismiss) {
       setConfirmDismiss(true);
       return;
     }
     setConfirmDismiss(false);
     close();
-  }, [mode, hasContent, confirmDismiss, close, articleFlush]);
+  }, [hasContent, confirmDismiss, close]);
 
   const charCount = media.totalCharCount(content);
   const isOver = charCount > NOTE_CHAR_LIMIT;
@@ -144,19 +130,12 @@ export function ComposeOverlay() {
 
   const displayError = error ?? media.error;
   const validAccounts = (linkedAccounts ?? []).filter((a) => a.isValid);
-  const isArticle = mode === "article";
 
   return (
     <Glasshouse
       onClose={dismiss}
-      maxWidth={isArticle ? 760 : 640}
-      ariaLabel={
-        isArticle
-          ? "Compose article"
-          : mode === "reply"
-            ? "Compose reply"
-            : "Compose note"
-      }
+      maxWidth={640}
+      ariaLabel={mode === "reply" ? "Compose reply" : "Compose note"}
     >
       {/* Bounded-height column so the body scrolls internally rather than the
           whole pane growing past the viewport. Separation is whitespace — no
@@ -165,138 +144,136 @@ export function ComposeOverlay() {
         className="flex flex-col"
         style={{ maxHeight: "calc(100vh - 64px)" }}
       >
-        {isArticle ? (
-          <ArticleComposePanel />
-        ) : (
-          <>
-            {/* Top zone — pr-12 keeps content clear of the floating ✕. */}
-            <div className="px-6 pt-5 pb-3 pr-12">
-              {mode === "reply" && replyTarget ? (
-                <ReplyPreview target={replyTarget} onClear={() => close()} />
-              ) : (
-                <span className="label-ui text-grey-400">NOTE</span>
-              )}
+        {/* Top zone — pr-12 keeps content clear of the floating ✕. */}
+        <div className="px-6 pt-5 pb-3 pr-12">
+          {mode === "reply" && replyTarget ? (
+            <ReplyPreview target={replyTarget} onClear={() => close()} />
+          ) : (
+            <span className="label-ui text-grey-400">NOTE</span>
+          )}
+        </div>
+
+        {/* Editing zone */}
+        <div className="flex-1 overflow-y-auto px-6 pb-4">
+          <textarea
+            ref={ref}
+            value={content}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              mode === "reply"
+                ? "Add your thoughts..."
+                : "What's on your mind?"
+            }
+            rows={4}
+            className="w-full resize-none bg-transparent font-sans text-[16px] text-black placeholder:text-grey-400 focus:outline-none leading-[1.6] border-none"
+          />
+          <MediaPreview
+            attachments={media.attachments}
+            onRemove={media.removeAttachment}
+            uploading={media.uploading}
+          />
+        </div>
+
+        {/* Controls zone */}
+        <div className="px-6 py-3 flex items-center gap-4">
+          {/* Image upload */}
+          <button
+            onClick={media.triggerImageUpload}
+            disabled={media.uploading}
+            className="text-grey-600 hover:text-black disabled:opacity-40 transition-colors"
+            title="Add image"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+              <circle cx="5.5" cy="5.5" r="1" />
+              <path d="M14.5 10.5L11 7L3.5 14.5" />
+            </svg>
+          </button>
+
+          {/* Cross-post toggle */}
+          {validAccounts.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="label-ui text-grey-400">ALSO POST TO:</span>
+              {validAccounts.map((account) => (
+                <CrossPostPill
+                  key={account.id}
+                  account={account}
+                  active={crossPostIds.has(account.id)}
+                  onToggle={() => toggleCrossPost(account.id)}
+                />
+              ))}
             </div>
+          )}
 
-            {/* Editing zone */}
-            <div className="flex-1 overflow-y-auto px-6 pb-4">
-              <textarea
-                ref={ref}
-                value={content}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  mode === "reply"
-                    ? "Add your thoughts..."
-                    : "What's on your mind?"
-                }
-                rows={4}
-                className="w-full resize-none bg-transparent font-sans text-[16px] text-black placeholder:text-grey-400 focus:outline-none leading-[1.6] border-none"
-              />
-              <MediaPreview
-                attachments={media.attachments}
-                onRemove={media.removeAttachment}
-                uploading={media.uploading}
-              />
-            </div>
+          <span className="flex-1" />
 
-            {/* Controls zone */}
-            <div className="px-6 py-3 flex items-center gap-4">
-              {/* Image upload */}
-              <button
-                onClick={media.triggerImageUpload}
-                disabled={media.uploading}
-                className="text-grey-600 hover:text-black disabled:opacity-40 transition-colors"
-                title="Add image"
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
-                  <circle cx="5.5" cy="5.5" r="1" />
-                  <path d="M14.5 10.5L11 7L3.5 14.5" />
-                </svg>
-              </button>
+          {/* Character counter */}
+          {charCount > 0 && (
+            <span
+              className={`font-mono text-mono-xs transition-colors ${isOver ? "text-crimson font-medium" : charCount > NOTE_CHAR_LIMIT - 50 ? "text-crimson" : "text-grey-600"}`}
+            >
+              {charCount}/{NOTE_CHAR_LIMIT}
+            </span>
+          )}
 
-              {/* Cross-post toggle */}
-              {validAccounts.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="label-ui text-grey-400">ALSO POST TO:</span>
-                  {validAccounts.map((account) => (
-                    <CrossPostPill
-                      key={account.id}
-                      account={account}
-                      active={crossPostIds.has(account.id)}
-                      onToggle={() => toggleCrossPost(account.id)}
-                    />
-                  ))}
-                </div>
-              )}
+          {/* Mode switch: escalate a note-in-progress into the article editor */}
+          {mode === "note" && (
+            <button
+              type="button"
+              onClick={() => {
+                const seed = seedFromNote(content);
+                useEditorOverlay.getState().open(seed);
+                close();
+              }}
+              className="label-ui text-grey-600 hover:text-black transition-colors"
+            >
+              Write an article &rarr;
+            </button>
+          )}
 
-              <span className="flex-1" />
+          {/* Post button */}
+          <button
+            onClick={handlePost}
+            disabled={!canPost}
+            className="btn disabled:opacity-30 py-1.5 px-5 text-[12px] font-sans font-semibold"
+          >
+            {publishing ? "Posting…" : "Post"}
+          </button>
+        </div>
 
-              {/* Character counter */}
-              {charCount > 0 && (
-                <span
-                  className={`font-mono text-mono-xs transition-colors ${isOver ? "text-crimson font-medium" : charCount > NOTE_CHAR_LIMIT - 50 ? "text-crimson" : "text-grey-600"}`}
-                >
-                  {charCount}/{NOTE_CHAR_LIMIT}
-                </span>
-              )}
-
-              {/* Mode switch: escalate a note-in-progress into an article */}
-              {mode === "note" && (
+        {/* Error / confirm dismiss */}
+        {(displayError || confirmDismiss) && (
+          <div className="px-6 pb-3">
+            {confirmDismiss && (
+              <p className="text-ui-sm text-grey-600">
+                Discard this? Press Escape or click away again to confirm.
+              </p>
+            )}
+            {displayError && (
+              <div className="flex items-center justify-between">
+                <p className="text-ui-xs text-crimson">{displayError}</p>
                 <button
-                  type="button"
-                  onClick={() => setMode("article", content)}
-                  className="label-ui text-grey-600 hover:text-black transition-colors"
+                  onClick={() => {
+                    setError(null);
+                    media.clearError();
+                  }}
+                  className="text-grey-600 hover:text-crimson text-sm ml-2"
                 >
-                  Write an article &rarr;
+                  &times;
                 </button>
-              )}
-
-              {/* Post button */}
-              <button
-                onClick={handlePost}
-                disabled={!canPost}
-                className="btn disabled:opacity-30 py-1.5 px-5 text-[12px] font-sans font-semibold"
-              >
-                {publishing ? "Posting…" : "Post"}
-              </button>
-            </div>
-
-            {/* Error / confirm dismiss */}
-            {(displayError || confirmDismiss) && (
-              <div className="px-6 pb-3">
-                {confirmDismiss && (
-                  <p className="text-ui-sm text-grey-600">
-                    Discard this? Press Escape or click away again to confirm.
-                  </p>
-                )}
-                {displayError && (
-                  <div className="flex items-center justify-between">
-                    <p className="text-ui-xs text-crimson">{displayError}</p>
-                    <button
-                      onClick={() => {
-                        setError(null);
-                        media.clearError();
-                      }}
-                      className="text-grey-600 hover:text-crimson text-sm ml-2"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                )}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </Glasshouse>

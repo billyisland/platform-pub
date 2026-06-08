@@ -21,12 +21,16 @@ import { useDashboardOverlay } from "../../stores/dashboardOverlay";
 import { useMessagesOverlay } from "../../stores/messagesOverlay";
 import { useNotificationsOverlay } from "../../stores/notificationsOverlay";
 import { useLedgerOverlay } from "../../stores/ledgerOverlay";
+import { useEditorOverlay } from "../../stores/editorOverlay";
 
 export const OVERLAY_PARAM_KEYS = [
   "overlay",
   "tab",
   "context",
   "conversation",
+  "draft",
+  "edit",
+  "pub",
 ] as const;
 
 /** Open the overlay named by `params.overlay`, seeded from the query. Returns
@@ -49,6 +53,13 @@ export function openOverlayFromParams(params: URLSearchParams): boolean {
       return true;
     case "ledger":
       useLedgerOverlay.getState().open();
+      return true;
+    case "editor":
+      useEditorOverlay.getState().open({
+        draftId: params.get("draft"),
+        editEventId: params.get("edit"),
+        publicationSlug: params.get("pub"),
+      });
       return true;
     default:
       return false;

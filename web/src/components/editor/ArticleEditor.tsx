@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
@@ -44,6 +44,9 @@ interface EditorProps {
   initialPublicationId?: string | null
   onPublish?: (data: PublishData) => void | Promise<void>
   onSchedule?: (data: PublishData, scheduledAt: string) => Promise<void>
+  /** 'page' = standalone /write (full-page frame + topbar-offset sticky bar);
+   *  'overlay' = inside the EditorOverlay Glasshouse pane (no frame/offset). */
+  chrome?: 'page' | 'overlay'
 }
 
 export interface PublicationContext {
@@ -86,8 +89,10 @@ export function ArticleEditor({
   initialPublicationId = null,
   onPublish,
   onSchedule,
+  chrome = 'page',
 }: EditorProps) {
   const { user } = useAuth()
+  const isOverlay = chrome === 'overlay'
 
   const [title, setTitle] = useState(initialTitle)
   const [dek, setDek] = useState(initialDek)
@@ -124,6 +129,11 @@ export function ArticleEditor({
   coverImageUrlRef.current = coverImageUrl
 
   const autoSaver = useMemo(() => createAutoSaver(3000), [])
+
+  // Cancel any pending debounced save on unmount — in the EditorOverlay this
+  // component closes far more often than the standalone /write page ever
+  // unmounted, so a queued save must not fire after teardown.
+  useEffect(() => () => autoSaver.cancel(), [autoSaver])
 
   const handleCoverUpload = useCallback(async (file: File) => {
     setCoverUploading(true)
@@ -330,9 +340,11 @@ export function ArticleEditor({
   const gateInserted = hasGateMarker()
 
   return (
-    <div className="mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8">
-      {/* Sticky title + toolbar — stays visible while scrolling the body */}
-      <div className="sticky top-[53px] lg:top-0 z-20 bg-white pb-4 mb-6">
+    <div className={isOverlay ? 'px-6 sm:px-10 py-12' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8'}>
+      {/* Sticky title + toolbar — stays visible while scrolling the body.
+          Overlay: sticks to the Glasshouse pane top (no black topbar to offset),
+          with pr-10 clearance for the floating ✕. */}
+      <div className={isOverlay ? 'sticky top-0 z-20 bg-white pb-4 mb-6 pr-10' : 'sticky top-[53px] lg:top-0 z-20 bg-white pb-4 mb-6'}>
       {/* Title card */}
       <div className="bg-grey-100 px-5 py-4 mb-2">
         <input
@@ -733,8 +745,8 @@ function ToolbarButton({
 }) {
   const accentStyles = accent
     ? active
-      ? 'bg-grey-100 text-crimson border border-crimson'
-      : 'text-crimson hover:bg-grey-100 border border-transparent'
+      ? 'bg-grey-100 text-crimson border-2 border-crimson'
+      : 'text-crimson hover:bg-grey-100 border-2 border-transparent'
     : active
       ? 'bg-grey-100 text-black'
       : 'text-grey-400 hover:bg-grey-100 hover:text-black'
