@@ -20,6 +20,7 @@ import {
   extractFromMastodonUrl,
   extractFromThreadiverseUrl,
 } from "./activitypub-resolve.js";
+import { searchCatalog } from "./discovery-catalog.js";
 
 // =============================================================================
 // Universal Resolver
@@ -238,7 +239,11 @@ export async function resolve(
         // No exact native account — fall back to external discovery (§V.5.8)
         // so a bare name like "Guardian" can surface subscribable sources.
         if (discover && !skipExternal) {
-          pendingResolutions.push("bluesky_discovery");
+          pendingResolutions.push(
+            "catalog_discovery",
+            "bluesky_discovery",
+            "nostr_discovery",
+          );
         }
       }
       break;
@@ -358,7 +363,11 @@ export async function resolve(
       // Free-text is never an exact identifier — if discovery is requested,
       // search the external world for candidates (§V.5.8).
       if (discover && !skipExternal) {
-        pendingResolutions.push("bluesky_discovery");
+        pendingResolutions.push(
+          "catalog_discovery",
+          "bluesky_discovery",
+          "nostr_discovery",
+        );
       }
       break;
     }
@@ -524,18 +533,52 @@ async function resolveAsync(
     }
   }
 
-  // Discovery fallback (§V.5.8, branch 1): a bare name the deterministic chains
-  // couldn't resolve. Search the Bluesky AppView for candidate accounts and
-  // return them as speculative nominations — selecting one re-enters the exact
-  // resolver to mint the real external_source. Gated identically to the other
-  // external chains (invite/dm never discover) and only when explicitly asked.
+  // Discovery fallback (§V.5.8): a bare name the deterministic chains couldn't
+  // resolve. Each branch returns speculative nominations — selecting one
+  // re-enters the exact resolver to mint the real external_source. Gated
+  // identically to the other external chains (invite/dm never discover) and
+  // only when explicitly asked. Branches persist incrementally so cheap/precise
+  // hits render before slow network branches return.
   if (
     discover &&
     !skipExternal &&
     (inputType === "free_text" || inputType === "platform_username")
   ) {
-    const candidates = await discoverBluesky(query, matches);
-    matches.push(...candidates);
+    const storeDiscoveryPartial = async () => {
+      await storeAsyncResult(requestId, initiatorId, {
+        inputType,
+        matches: [...matches],
+        status: "pending",
+        pendingResolutions: [],
+      }).catch(() => {});
+    };
+
+    // Branch 3 (curated catalog) is instant and zero-I/O — resolve it
+    // synchronously and surface it first, so the head case ("Guardian")
+    // renders without waiting on the network branches.
+    const catalogMatches = discoverCatalog(query, matches);
+    if (catalogMatches.length > 0) {
+      matches.push(...catalogMatches);
+      await storeDiscoveryPartial();
+    }
+
+    // Branches 1 (Bluesky) + 2 (Nostr) do network I/O — run concurrently and
+    // persist partials as each returns. Each dedupes against its own protocol's
+    // existing matches, so concurrent pushes touch disjoint key-spaces.
+    await Promise.all([
+      discoverBluesky(query, matches).then(async (candidates) => {
+        if (candidates.length > 0) {
+          matches.push(...candidates);
+          await storeDiscoveryPartial();
+        }
+      }),
+      discoverNostr(query, matches).then(async (candidates) => {
+        if (candidates.length > 0) {
+          matches.push(...candidates);
+          await storeDiscoveryPartial();
+        }
+      }),
+    ]);
   }
 
   // Persist the fully-resolved result; overwrites the partial row seeded by resolve().
@@ -573,6 +616,69 @@ async function discoverBluesky(
         displayName: p.displayName ?? `@${p.handle}`,
         description: p.description,
         avatar: p.avatar,
+      },
+    });
+  }
+  return out;
+}
+
+// Curated catalog (§V.5.8, branch 3) → speculative rss_feed matches. Pure,
+// instant, no I/O. Dedupes against any rss_feed matches already present by
+// feed URL. Selecting one re-enters the exact resolver via its feedUrl.
+function discoverCatalog(
+  query: string,
+  existing: ResolverMatch[],
+): ResolverMatch[] {
+  const seen = new Set(
+    existing
+      .filter((m) => m.type === "rss_feed" && m.rssFeed)
+      .map((m) => m.rssFeed!.feedUrl),
+  );
+  const out: ResolverMatch[] = [];
+  for (const c of searchCatalog(query, 5)) {
+    if (seen.has(c.feedUrl)) continue;
+    seen.add(c.feedUrl);
+    out.push({
+      type: "rss_feed",
+      confidence: "speculative",
+      rssFeed: {
+        feedUrl: c.feedUrl,
+        title: c.title,
+        description: c.description,
+      },
+    });
+  }
+  return out;
+}
+
+// Nostr name search (§V.5.8, branch 2) → speculative nostr_external matches.
+// Runs NIP-50 full-text search against a search relay and returns candidate
+// pubkeys with their kind-0 metadata. Dedupes against any nostr_external
+// matches already present (by hex pubkey). Selecting one re-enters the npub /
+// hex_pubkey chain to mint the real external_source.
+async function discoverNostr(
+  query: string,
+  existing: ResolverMatch[],
+): Promise<ResolverMatch[]> {
+  const seen = new Set(
+    existing
+      .filter((m) => m.externalSource?.protocol === "nostr_external")
+      .map((m) => m.externalSource!.sourceUri),
+  );
+  const candidates = await searchNostrProfiles(query, 5);
+  const out: ResolverMatch[] = [];
+  for (const c of candidates) {
+    if (seen.has(c.pubkey)) continue;
+    seen.add(c.pubkey);
+    out.push({
+      type: "external_source",
+      confidence: "speculative",
+      externalSource: {
+        protocol: "nostr_external",
+        sourceUri: c.pubkey,
+        displayName: c.displayName,
+        description: c.about,
+        avatar: c.picture,
       },
     });
   }
@@ -936,6 +1042,27 @@ function getDefaultProfileRelays(): string[] {
     .filter(Boolean);
 }
 
+// Parse a kind-0 metadata event's JSON content into the fields we surface.
+// Shared by single-profile enrichment (fetchNostrProfile) and name search
+// (searchNostrProfiles). Returns null on malformed JSON.
+export function parseNostrProfileContent(content: string): NostrProfile | null {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    return {
+      displayName:
+        typeof parsed.display_name === "string" && parsed.display_name
+          ? parsed.display_name
+          : typeof parsed.name === "string"
+            ? parsed.name
+            : undefined,
+      about: typeof parsed.about === "string" ? parsed.about : undefined,
+      picture: typeof parsed.picture === "string" ? parsed.picture : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchNostrProfile(
   pubkey: string,
   relayHints?: string[],
@@ -959,21 +1086,132 @@ async function fetchNostrProfile(
     }
   }
   if (!best) return null;
+  return parseNostrProfileContent(best.event.content);
+}
+
+// =============================================================================
+// Nostr name search (NIP-50) — discovery fallback branch 2 (§V.5.8)
+//
+// Opens a temporary WebSocket to a search relay and runs a NIP-50 full-text
+// query (`{ kinds: [0], search }`) for profiles matching a bare name. Returns
+// candidate pubkeys with their kind-0 metadata. Mirrors fetchKind0FromRelay's
+// connection lifecycle; the only difference is the search filter and that we
+// collect multiple results (newest kind-0 per pubkey wins).
+// =============================================================================
+
+const NOSTR_SEARCH_TIMEOUT_MS = 4_000;
+const DEFAULT_NOSTR_SEARCH_RELAY = "wss://relay.nostr.band";
+
+interface NostrCandidate {
+  pubkey: string;
+  displayName?: string;
+  about?: string;
+  picture?: string;
+}
+
+function getNostrSearchRelay(): string {
+  return (
+    process.env.NOSTR_SEARCH_RELAY ?? DEFAULT_NOSTR_SEARCH_RELAY
+  ).trim();
+}
+
+async function searchNostrProfiles(
+  query: string,
+  limit = 5,
+): Promise<NostrCandidate[]> {
+  const q = query.trim();
+  if (!q) return [];
+
+  const relayUrl = getNostrSearchRelay();
+  let wsOpts;
   try {
-    const parsed = JSON.parse(best.event.content) as Record<string, unknown>;
-    return {
-      displayName:
-        typeof parsed.display_name === "string" && parsed.display_name
-          ? parsed.display_name
-          : typeof parsed.name === "string"
-            ? parsed.name
-            : undefined,
-      about: typeof parsed.about === "string" ? parsed.about : undefined,
-      picture: typeof parsed.picture === "string" ? parsed.picture : undefined,
-    };
-  } catch {
-    return null;
+    wsOpts = await pinnedWebSocketOptions(relayUrl);
+  } catch (err) {
+    logger.warn(
+      { relayUrl, err },
+      "Nostr search relay rejected by SSRF guard",
+    );
+    return [];
   }
+
+  return new Promise((resolve) => {
+    const ws = new WebSocket(relayUrl, wsOpts);
+    const subId = `resolver-search-${randomUUID()}`;
+    // Newest kind-0 per pubkey wins, so a relay returning stale + fresh
+    // metadata for the same author collapses to one candidate.
+    const collected = new Map<string, { content: string; created_at: number }>();
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        ws.send(JSON.stringify(["CLOSE", subId]));
+      } catch {}
+      try {
+        ws.close();
+      } catch {}
+      const out: NostrCandidate[] = [];
+      for (const [pubkey, ev] of collected) {
+        const profile = parseNostrProfileContent(ev.content);
+        out.push({
+          pubkey,
+          displayName: profile?.displayName,
+          about: profile?.about,
+          picture: profile?.picture,
+        });
+        if (out.length >= limit) break;
+      }
+      resolve(out);
+    };
+
+    const timeout = setTimeout(finish, NOSTR_SEARCH_TIMEOUT_MS);
+
+    ws.on("open", () => {
+      ws.send(
+        JSON.stringify(["REQ", subId, { kinds: [0], search: q, limit }]),
+      );
+    });
+
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg[0] === "EVENT" && msg[1] === subId) {
+          const event = msg[2];
+          if (
+            event &&
+            typeof event.content === "string" &&
+            typeof event.created_at === "number" &&
+            typeof event.pubkey === "string" &&
+            HEX_64.test(event.pubkey)
+          ) {
+            const prev = collected.get(event.pubkey);
+            if (!prev || event.created_at > prev.created_at) {
+              collected.set(event.pubkey, {
+                content: event.content,
+                created_at: event.created_at,
+              });
+            }
+          }
+        } else if (msg[0] === "EOSE" && msg[1] === subId) {
+          clearTimeout(timeout);
+          finish();
+        }
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    ws.on("error", () => {
+      clearTimeout(timeout);
+      finish();
+    });
+
+    ws.on("close", () => {
+      clearTimeout(timeout);
+      finish();
+    });
+  });
 }
 
 function fetchKind0FromRelay(
