@@ -340,7 +340,7 @@ export function ArticleEditor({
   const gateInserted = hasGateMarker()
 
   return (
-    <div className={isOverlay ? 'px-6 sm:px-10 py-12' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8'}>
+    <div className={isOverlay ? 'px-6 sm:px-10 py-12' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8 bg-glasshouse min-h-screen'}>
       {/* Sticky title + toolbar — stays visible while scrolling the body.
           Overlay: sticks to the Glasshouse pane top (no black topbar to offset).
           The cards span the full width (matching the body editor below); only the
@@ -348,7 +348,7 @@ export function ArticleEditor({
           its own right inset (pr-12) so a long title still clears it. */}
       <div className={isOverlay ? 'sticky top-0 z-20 bg-glasshouse pb-4 mb-6' : 'sticky top-[53px] lg:top-0 z-20 bg-glasshouse pb-4 mb-6'}>
       {/* Title card */}
-      <div className={`bg-white/40 py-4 mb-2 pl-5 ${isOverlay ? 'pr-12' : 'pr-5'}`}>
+      <div className={`bg-white py-4 mb-2 pl-5 ${isOverlay ? 'pr-12' : 'pr-5'}`}>
         <input
           type="text"
           value={title}
@@ -360,7 +360,7 @@ export function ArticleEditor({
       </div>
 
       {/* Standfirst card */}
-      <div className="bg-white/40 px-5 py-4 mb-2">
+      <div className="bg-white px-5 py-4 mb-2">
         <input
           type="text"
           value={dek}
@@ -516,7 +516,7 @@ export function ArticleEditor({
         </ToolbarButton>
 
         {/* Paywall gate button */}
-        <span className="mx-1 text-grey-300">|</span>
+        <span className="mx-1 text-grey-600">|</span>
         <ToolbarButton
           active={gateInserted}
           accent
@@ -531,7 +531,7 @@ export function ArticleEditor({
           {gateInserted ? 'Paywall ✓' : 'Paywall'}
         </ToolbarButton>
 
-        <div className="ml-auto shrink-0 text-xs text-grey-300 max-[479px]:hidden">
+        <div className="ml-auto shrink-0 text-xs text-grey-600 max-[479px]:hidden">
           {wordCount} words &middot; {readMinutes} min read
         </div>
       </div>
@@ -552,7 +552,7 @@ export function ArticleEditor({
         {/* Publishing as */}
         {publicationMemberships.length > 0 && (
           <div className="flex items-center gap-3 flex-wrap">
-            <label className="label-ui text-grey-400">Publishing as</label>
+            <label className="label-ui text-grey-600">Publishing as</label>
             <select
               value={selectedPublicationId ?? ''}
               onChange={(e) => setSelectedPublicationId(e.target.value || null)}
@@ -570,7 +570,7 @@ export function ArticleEditor({
                   checked={showOnWriterProfile}
                   onChange={(e) => setShowOnWriterProfile(e.target.checked)}
                 />
-                <span className="text-ui-xs text-grey-400">Also show on personal profile</span>
+                <span className="text-ui-xs text-grey-600">Also show on personal profile</span>
               </label>
             )}
           </div>
@@ -579,9 +579,9 @@ export function ArticleEditor({
         {/* Price — only when paywall gate is inserted */}
         {gateInserted && (
           <div className="flex items-center gap-4">
-            <label className="label-ui text-grey-400">Price</label>
+            <label className="label-ui text-grey-600">Price</label>
             <div className="flex items-center gap-2">
-              <span className="text-ui-xs text-grey-400">&pound;</span>
+              <span className="text-ui-xs text-grey-600">&pound;</span>
               <input
                 type="number"
                 min={0.01}
@@ -593,7 +593,7 @@ export function ArticleEditor({
                 }}
                 className="w-24 bg-white border-none px-3 py-1.5 text-sm focus:outline-none"
               />
-              <span className="text-mono-xs text-grey-300">
+              <span className="text-mono-xs text-grey-600">
                 Suggested: &pound;{priceDisplay} based on {wordCount} words
               </span>
             </div>
@@ -607,7 +607,7 @@ export function ArticleEditor({
             checked={commentsEnabled}
             onChange={(e) => setCommentsEnabled(e.target.checked)}
           />
-          <span className="text-ui-xs text-grey-400">
+          <span className="text-ui-xs text-grey-600">
             Allow replies
           </span>
         </label>
@@ -637,7 +637,7 @@ export function ArticleEditor({
             </button>
             <button
               onClick={() => setShowPublishConfirm(false)}
-              className="text-sm text-grey-300 hover:text-grey-600 transition-colors"
+              className="text-sm text-grey-600 hover:text-black transition-colors"
             >
               Cancel
             </button>
@@ -670,7 +670,7 @@ export function ArticleEditor({
           <button
             onClick={() => setShowSchedulePicker(!showSchedulePicker)}
             disabled={publishing || !title.trim() || wordCount < 10}
-            className="text-sm text-grey-400 hover:text-black transition-colors disabled:opacity-50"
+            className="text-sm text-grey-600 hover:text-black transition-colors disabled:opacity-50"
           >
             Schedule
           </button>
@@ -696,7 +696,7 @@ export function ArticleEditor({
           Save draft
         </button>
         {draftStatus && (
-          <span className="text-xs text-grey-300">{draftStatus}</span>
+          <span className="text-xs text-grey-600">{draftStatus}</span>
         )}
       </div>
       )}
@@ -720,7 +720,7 @@ export function ArticleEditor({
           </button>
           <button
             onClick={() => { setShowSchedulePicker(false); setScheduleDateTime('') }}
-            className="text-sm text-grey-300 hover:text-black"
+            className="text-sm text-grey-600 hover:text-black"
           >
             Cancel
           </button>
@@ -751,7 +751,7 @@ function ToolbarButton({
       : 'text-crimson hover:bg-grey-100 border-2 border-transparent'
     : active
       ? 'bg-grey-100 text-black'
-      : 'text-grey-400 hover:bg-grey-100 hover:text-black'
+      : 'text-grey-600 hover:bg-grey-100 hover:text-black'
 
   return (
     <button

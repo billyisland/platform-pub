@@ -76,24 +76,24 @@ export function TagInput({ value, onChange, max = 5 }: Props) {
 
   return (
     <div ref={containerRef} className="relative">
-      <div className="bg-grey-100 px-3 py-2 flex flex-wrap items-center gap-2">
+      <div className="bg-white px-3 py-2 flex flex-wrap items-center gap-2">
         {value.map(tag => (
           <span
             key={tag}
-            className="bg-white px-2 py-0.5 label-ui text-black flex items-center gap-1"
+            className="bg-grey-200 px-2 py-0.5 label-ui text-black flex items-center gap-1"
           >
             {tag}
             <button
               type="button"
               onClick={() => removeTag(tag)}
-              className="text-grey-300 hover:text-black"
+              className="text-grey-600 hover:text-black"
             >
               &times;
             </button>
           </span>
         ))}
         {atMax ? (
-          <span className="text-ui-xs text-grey-300">5 tags maximum</span>
+          <span className="text-ui-xs text-grey-600">5 tags maximum</span>
         ) : (
           <input
             type="text"
@@ -107,7 +107,7 @@ export function TagInput({ value, onChange, max = 5 }: Props) {
       </div>
 
       {showDropdown && (
-        <div className="absolute z-10 top-full left-0 right-0 bg-white border border-grey-200 shadow-sm mt-1">
+        <div className="absolute z-10 top-full left-0 right-0 bg-white shadow-lg mt-1">
           {suggestions.map(s => (
             <button
               key={s.name}

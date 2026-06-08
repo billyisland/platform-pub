@@ -124,7 +124,7 @@ Never hand-roll `font-mono text-[12px] uppercase tracking-[0.06em]` — that is 
 
 ### Form labels
 
-Always use `.label-ui text-grey-400` for form labels. Not `text-ui-xs uppercase tracking-wider` or `text-sm text-grey-600`.
+Always use `.label-ui text-grey-400` for form labels. Not `text-ui-xs uppercase tracking-wider` or `text-sm text-grey-600`. **Exception — on the mid-light Glasshouse interior (`bg-glasshouse`), labels are `.label-ui text-grey-600`**: `grey-400` loses contrast on the `#DCDAD3` pane (see the Glasshouse exempt-surface rule).
 
 ### Buttons
 
@@ -148,7 +148,9 @@ Two modes in `web/src/components/workspace/tokens.ts`: `primary` (light) and `da
 
 - **Any component inside a themed vessel interior or card takes the palette** (`palette: VesselPalette` prop, or `paletteFor(brightness)`) and colours every text/background — **including hover and active states** — from it. Never hard-code `text-black`/`text-white`/`bg-white`/inline `color` on an interior surface; it won't invert. Drive emphasis from a palette field (hover → `palette.cardTitle`) or a mode-agnostic affordance (`hover:opacity-70`); pick translucent washes via `isDarkPalette(palette)`.
 - **Greys `500`/`700`/`800`/`900` are not defined** in `web/tailwind.config.js` (only `100/200/300/400/600`) — they emit no rule and silently inherit (dark-on-dark). Use a palette field, never an undefined grey.
-- **Exempt:** always-light surfaces (the Glasshouse pane, fixed `bg-glasshouse` `#DCDAD3` — a warm mid-light, not white; + overlay panels with fixed light `panelBg`) never consume `PALETTES`; keep their text dark. Text-entry fields inside the pane are the bright (`#FFFFFF`) raised wells.
+- **Exempt:** always-light surfaces (the Glasshouse pane, fixed `bg-glasshouse` `#DCDAD3` — a warm mid-light, not white; + overlay panels with fixed light `panelBg`) never consume `PALETTES`; keep their text dark. Two fixed conventions on this mid-light interior:
+  - **Text fields are solid white (`bg-white`).** One treatment everywhere a text-entry field is defined against a modal interior (article editor title/standfirst/tags, composers, messages, …) — the maximally-contrasting bright well. Don't introduce a second field colour (`bg-grey-100`/washes/transparent) for an input on the pane. Container panels that merely *group* controls (cover/settings cards) may stay soft `bg-white/40` washes; only the entry fields themselves are white. (The standalone `/write` editor carries its own `bg-glasshouse` surface so the same white fields read there too.)
+  - **Secondary text is `text-grey-600` or darker.** `grey-300`/`grey-400` are tuned for white surfaces and lose contrast on the `#DCDAD3` pane — text on the interior must be noticeably lighter or darker than the ground, never a mid-grey. Use black for primary, `grey-600` for secondary/labels; keep `grey-300` only for placeholders *inside* white fields.
 
 ### Glasshouse (frosted workspace overlay)
 
