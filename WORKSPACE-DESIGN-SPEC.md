@@ -86,7 +86,7 @@ Controls that live on the feed container — the ⊔ vessel itself. Every feed c
 
 *Composer.* The configuration depth of the feed — the list of sources, add-source-by-URL, per-source weights, feed renaming, deletion. Reached via a gesture on the vessel (long-press on the name label, or an affordance adjacent to it). Not visible at rest. The composer is the ⊔ expression exposed as editable text; the ambient controls on content are the fast path.
 
-*Position.* Drag to move. The vessel goes where you put it. Other vessels reflow to accommodate the new position. No auto-arranging, no grid snapping. Position persists.
+*Position.* Drag to move. The vessel goes where you put it. Other vessels reflow to accommodate the new position. No auto-arranging. Movement snaps to an unobtrusive 20px lattice (`web/src/lib/workspace/grid.ts`) — invisible at the gesture level, it just keeps edges tidy. 20px is deliberate: it is LCM(10, 4), so the vessel floor stays in phase with the 4px design rhythm (Tailwind spacing + the 4px slab) and content shares a lattice with the chrome. Position persists.
 
 *Size.* Pinch to resize, or drag a corner. Vessels have a minimum size (below which content becomes illegible) and no maximum. Size persists.
 
