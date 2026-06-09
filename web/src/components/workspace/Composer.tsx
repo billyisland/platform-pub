@@ -274,6 +274,7 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
       maxWidth={640}
       ariaLabel={isReply ? 'Reply' : isQuote ? 'Quote' : 'New note'}
       persistKey="composer"
+      resizable
     >
       <div className="overflow-y-auto max-h-[var(--gh-h)]" style={{ padding: 24 }}>
         {/* Mode label — also reserves top-right clearance for the Glasshouse ✕. */}

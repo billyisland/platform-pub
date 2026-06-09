@@ -46,6 +46,9 @@ import { snap } from "../../lib/workspace/grid";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
 const MARGIN = 20;
+// Floors for a resizable pane (the writers). On the 20px lattice.
+const MIN_W = 320;
+const MIN_H = 240;
 
 const clampN = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
@@ -67,6 +70,28 @@ function readPos(key: string): { x: number; y: number } | null {
 function writePos(key: string, pos: { x: number; y: number }) {
   try {
     localStorage.setItem(posStoreKey(key), JSON.stringify(pos));
+  } catch {
+    /* ignore */
+  }
+}
+
+// Persisted pane size, for resizable overlays. Separate key from position so the
+// two gestures (drag, stretch) persist independently.
+const sizeStoreKey = (key: string) => `ah:overlay-size:${key}`;
+function readSize(key: string): { w: number; h: number } | null {
+  try {
+    const raw = localStorage.getItem(sizeStoreKey(key));
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (typeof s?.w === "number" && typeof s?.h === "number") return s;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+function writeSize(key: string, size: { w: number; h: number }) {
+  try {
+    localStorage.setItem(sizeStoreKey(key), JSON.stringify(size));
   } catch {
     /* ignore */
   }
@@ -100,12 +125,27 @@ const centreX = (maxWidth: number, vw: number) =>
 
 // Glasshouse only ever mounts client-side (on a user action, post-hydration), so
 // measuring in the state initialiser is safe.
-function usePanePlacement(maxWidth: number, persistKey?: string) {
+//
+// When `resizable`, the pane also carries an explicit width/height the user sets
+// via a bottom-right stretch handle (mirrors the vessel resize). Width overrides
+// the centred default (anchored top-left, grows right); height switches the body
+// from content-driven to a fixed box. Both snap to the lattice on release and
+// persist per overlay. Either is always re-clamped to keep the pane on-screen.
+function usePanePlacement(
+  maxWidth: number,
+  persistKey?: string,
+  resizable?: boolean,
+) {
+  const paneRef = useRef<HTMLDivElement | null>(null);
   const [vp, setVp] = useState(() =>
     typeof window === "undefined"
       ? { vw: 1024, vh: 768 }
       : { vw: window.innerWidth, vh: window.innerHeight },
   );
+  const [size, setSize] = useState<{ w: number; h: number } | null>(() => {
+    if (typeof window === "undefined" || !persistKey || !resizable) return null;
+    return readSize(persistKey);
+  });
   const [pos, setPos] = useState(() => {
     if (typeof window === "undefined") return { x: 0, y: MARGIN * 2 };
     const { innerWidth: vw, innerHeight: vh } = window;
@@ -158,12 +198,51 @@ function usePanePlacement(maxWidth: number, persistKey?: string) {
     window.addEventListener("pointerup", onUp);
   };
 
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const { innerWidth: vw, innerHeight: vh } = window;
+    const startW = paneRef.current?.offsetWidth ?? widthFor(maxWidth, vw);
+    const startH = paneRef.current?.offsetHeight ?? MIN_H;
+    const { clientX: startX, clientY: startY } = e;
+    // Cap so the stretched pane keeps a gutter to the right / bottom edge.
+    const maxW = Math.max(MIN_W, vw - pos.x - MARGIN);
+    const maxH = Math.max(MIN_H, vh - pos.y - MARGIN);
+    const resolve = (ev: PointerEvent) => ({
+      w: snap(clampN(startW + (ev.clientX - startX), MIN_W, maxW)),
+      h: snap(clampN(startH + (ev.clientY - startY), MIN_H, maxH)),
+    });
+    const onMove = (ev: PointerEvent) => setSize(resolve(ev));
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const next = resolve(ev);
+      setSize(next);
+      if (persistKey) writeSize(persistKey, next);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Available on-screen height below the drop position; `--gh-h` and the pane's
+  // own clamp both derive from it.
+  const maxHeight = vp.vh - pos.y - MARGIN;
+  const effW = resizable
+    ? clampN(size?.w ?? widthFor(maxWidth, vp.vw), MIN_W, Math.max(MIN_W, vp.vw - pos.x - MARGIN))
+    : widthFor(maxWidth, vp.vw);
+  // Explicit height only when resized vertically; otherwise content-driven (null).
+  const effH = resizable && size?.h != null ? Math.min(size.h, maxHeight) : null;
+  const ghH = effH ?? maxHeight;
+
   return {
-    paneWidth: widthFor(maxWidth, vp.vw),
+    paneRef,
     x: pos.x,
     y: pos.y,
-    maxHeight: vp.vh - pos.y - MARGIN,
+    width: effW,
+    height: effH,
+    ghH,
     startDrag,
+    startResize: resizable ? startResize : null,
   };
 }
 
@@ -184,8 +263,12 @@ interface GlasshouseProps {
   /** Accessible label for the pane dialog. */
   ariaLabel?: string;
   /** Stable id for this surface; when set, the pane remembers its dragged spot
-   *  in localStorage between appearances. Omit to drag without persisting. */
+   *  (and, when resizable, its size) in localStorage between appearances. Omit to
+   *  drag without persisting. */
   persistKey?: string;
+  /** Add a bottom-right stretch handle so the pane can be resized (the writers).
+   *  `maxWidth` then seeds the default width but no longer caps it. */
+  resizable?: boolean;
   children: React.ReactNode;
 }
 
@@ -195,9 +278,10 @@ export function Glasshouse({
   maxWidth,
   ariaLabel,
   persistKey,
+  resizable,
   children,
 }: GlasshouseProps) {
-  const pane = usePanePlacement(maxWidth, persistKey);
+  const pane = usePanePlacement(maxWidth, persistKey, resizable);
 
   // Keep the supersede handler fresh (callers pass inline closures) without
   // re-running the register-on-mount effect.
@@ -247,22 +331,25 @@ export function Glasshouse({
       {/* Pane wrapper — click outside the pane closes. */}
       <div className="fixed inset-0 z-[56]" onClick={onClose}>
         <div
+          ref={pane.paneRef}
           role="dialog"
           aria-modal="true"
           aria-label={ariaLabel}
           className="absolute bg-glasshouse shadow-lg overflow-hidden"
           // `--gh-h` is the on-screen height available to the body — it tracks the
-          // drag position, so each body sizes its own scroll region against it
-          // (`max-h-[var(--gh-h)]` / `h-[var(--gh-h)]`) instead of a fixed 100vh.
-          // The pane itself clips (overflow-hidden) so the pinned chrome never
-          // scrolls; the body owns the scroll.
+          // drag position (and an explicit resized height), so each body sizes its
+          // own scroll region against it (`max-h-[var(--gh-h)]` / `h-[var(--gh-h)]`)
+          // instead of a fixed 100vh. The pane itself clips (overflow-hidden) so the
+          // pinned chrome never scrolls; the body owns the scroll. `height` is set
+          // only when the pane was stretched vertically; otherwise content-driven.
           style={
             {
               left: pane.x,
               top: pane.y,
-              width: pane.paneWidth,
-              maxHeight: pane.maxHeight,
-              "--gh-h": `${pane.maxHeight}px`,
+              width: pane.width,
+              height: pane.height ?? undefined,
+              maxHeight: pane.ghH,
+              "--gh-h": `${pane.ghH}px`,
             } as React.CSSProperties
           }
           onClick={(e) => e.stopPropagation()}
@@ -290,6 +377,37 @@ export function Glasshouse({
           </button>
 
           {children}
+
+          {/* Stretch handle — bottom-right corner, a 2px L-glyph (not a thin
+              rule). Mirrors the vessel resize. Only on resizable panes. */}
+          {pane.startResize && (
+            <div
+              role="button"
+              aria-label="Resize"
+              title="Drag to resize"
+              onPointerDown={pane.startResize}
+              className="absolute bottom-0 right-0 z-10 text-grey-600"
+              style={{
+                width: 16,
+                height: 16,
+                cursor: "nwse-resize",
+                touchAction: "none",
+              }}
+            >
+              <span
+                className="absolute block"
+                style={{
+                  right: 3,
+                  bottom: 3,
+                  width: 8,
+                  height: 8,
+                  borderRight: "2px solid currentColor",
+                  borderBottom: "2px solid currentColor",
+                  opacity: 0.6,
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
     </>
