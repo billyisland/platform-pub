@@ -16,6 +16,8 @@ import {
 } from "./NeighbourhoodCard";
 import { AuthorModal, useAuthorHover } from "./AuthorModal";
 import { ActionSheet } from "./ActionSheet";
+import { openSurfaceHref } from "../../stores/surfaceOverlay";
+import { isModifiedClick } from "../ui/ProfileLink";
 
 interface ExternalCardProps {
   item: ExternalFeedItem;
@@ -190,12 +192,21 @@ export function ExternalCard({ item }: ExternalCardProps) {
             {/* Byline → internal source surface (CARD-BEHAVIOUR-ADR §VI.2).
                 The origin-platform link lives on the source-attribution line
                 below (§VI.4, the one route out). The richer constructed author
-                profile (§VI.3) lands later without changing this contract. */}
+                profile (§VI.3) lands later without changing this contract.
+                A real <Link> preserves SSR / new-tab / copy-link; a plain
+                left-click opens the source surface overlay in place (this card
+                renders inside SourceSurface inside the surface overlay) rather
+                than a full-page navigation that would escape to the topbar. */}
             {item.externalSourceId ? (
               <Link
                 href={`/source/${item.externalSourceId}`}
                 className="label-ui text-grey-600 hover:text-black transition-colors"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isModifiedClick(e)) return;
+                  if (openSurfaceHref(`/source/${item.externalSourceId}`))
+                    e.preventDefault();
+                }}
               >
                 {authorDisplay}
               </Link>
