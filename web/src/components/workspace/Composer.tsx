@@ -276,7 +276,14 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
       persistKey="composer"
       resizable
     >
-      <div className="overflow-y-auto max-h-[var(--gh-h)]" style={{ padding: 24 }}>
+      {/* Flex column that fills the pane: when the pane is content-sized (default)
+          `h-full` resolves to auto so the textarea stays compact; when the pane is
+          stretched it resolves to the explicit height, giving the flex-1 textarea
+          free space to fill. */}
+      <div
+        className="flex flex-col h-full max-h-[var(--gh-h)] overflow-y-auto"
+        style={{ padding: 24 }}
+      >
         {/* Mode label — also reserves top-right clearance for the Glasshouse ✕. */}
         <div
           className="label-ui"
@@ -349,12 +356,12 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder="What are you thinking?"
-          className="font-serif text-[16px] w-full"
+          className="font-serif text-[16px] w-full flex-1"
           style={{
             background: TOKENS.fieldBg,
             padding: '12px 14px',
             minHeight: 160,
-            resize: 'vertical',
+            resize: 'none',
             outline: 'none',
             lineHeight: 1.55,
             marginTop: 16,
