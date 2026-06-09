@@ -9,6 +9,13 @@ import { create } from "zustand";
 //   - tag         → /tag/<name>      (tag browser; TagBrowser)
 //   - publication → /pub/<slug>      (publication homepage; PublicationPanel)
 //
+// The publication kind carries a `view` (home/about/masthead/archive) so the
+// publication's sub-routes (/pub/<slug>/{about,masthead,archive}) all render
+// inside the same overlay instead of escaping the workspace full-page; the
+// store pushes the matching real URL for each, and PublicationPanel renders the
+// sub-view + an in-overlay nav to switch between them. Articles never get a
+// surface view — a pub article row opens the reader overlay (useReader).
+//
 // Opening pushes the surface's real URL into history so the overlay is
 // shareable and the browser Back button closes it; close() pops that entry.
 // Direct visits to those URLs still render the same surfaces full-page. Mounted
@@ -17,10 +24,13 @@ import { create } from "zustand";
 // black topbar.
 // =============================================================================
 
+/** Publication sub-views; each maps to a /pub/<slug>[/<view>] URL. */
+export type PubView = "home" | "about" | "masthead" | "archive";
+
 export type SurfaceTarget =
   | { kind: "source"; id: string }
   | { kind: "tag"; name: string }
-  | { kind: "publication"; slug: string };
+  | { kind: "publication"; slug: string; view: PubView };
 
 /** The canonical full-page URL for a surface target. */
 export function surfaceUrl(target: SurfaceTarget): string {
@@ -29,9 +39,32 @@ export function surfaceUrl(target: SurfaceTarget): string {
       return `/source/${encodeURIComponent(target.id)}`;
     case "tag":
       return `/tag/${encodeURIComponent(target.name)}`;
-    case "publication":
-      return `/pub/${encodeURIComponent(target.slug)}`;
+    case "publication": {
+      const base = `/pub/${encodeURIComponent(target.slug)}`;
+      return target.view === "home" ? base : `${base}/${target.view}`;
+    }
   }
+}
+
+/** The surface's stable base path (ignoring a publication's sub-view). */
+function surfaceBaseUrl(target: SurfaceTarget): string {
+  if (target.kind === "publication")
+    return `/pub/${encodeURIComponent(target.slug)}`;
+  return surfaceUrl(target);
+}
+
+// True while `pathname` is still within the surface. Used by SurfaceOverlay to
+// distinguish "a link navigated away → dismiss" from "the publication switched
+// sub-view (home↔about↔masthead↔archive) → stay open" — the latter changes the
+// pushed URL in lockstep with `target`, so an exact-URL check would falsely
+// dismiss on the transient lag between replaceState and usePathname catching up.
+export function surfacePathMatches(
+  target: SurfaceTarget,
+  pathname: string,
+): boolean {
+  const base = decodeURIComponent(surfaceBaseUrl(target));
+  const current = decodeURIComponent(pathname);
+  return current === base || current.startsWith(`${base}/`);
 }
 
 interface SurfaceState {
@@ -43,7 +76,7 @@ interface SurfaceState {
   open: (target: SurfaceTarget) => void;
   openSource: (id: string) => void;
   openTag: (name: string) => void;
-  openPublication: (slug: string) => void;
+  openPublication: (slug: string, view?: PubView) => void;
 
   close: () => void;
   /** Clear overlay state without touching history — for when a link inside the
@@ -84,7 +117,8 @@ export const useSurfaceOverlay = create<SurfaceState>((set, get) => ({
 
   openSource: (id) => get().open({ kind: "source", id }),
   openTag: (name) => get().open({ kind: "tag", name: name.replace(/^#/, "") }),
-  openPublication: (slug) => get().open({ kind: "publication", slug }),
+  openPublication: (slug, view = "home") =>
+    get().open({ kind: "publication", slug, view }),
 
   close: () => {
     if (get().didPush && typeof window !== "undefined") {
@@ -123,12 +157,22 @@ export function openSurfaceHref(href: string): boolean {
     useSurfaceOverlay.getState().openTag(decodeURIComponent(tag[1]));
     return true;
   }
-  // /pub/:slug only — deeper /pub/:slug/:article (masthead, about, an article)
-  // stay full-page navigations, not the homepage overlay.
-  const pub = href.match(/^\/pub\/([^/?#]+)\/?$/);
+  // /pub/:slug and its named sub-routes (about · masthead · archive) open the
+  // publication overlay on the matching view. A deeper /pub/:slug/:article
+  // (anything else) is an article d-tag, not a surface — left to the caller's
+  // reader-overlay path, so we don't claim it here.
+  const pub = href.match(/^\/pub\/([^/?#]+)(?:\/([^/?#]+))?\/?(?:[?#]|$)/);
   if (pub) {
-    useSurfaceOverlay.getState().openPublication(decodeURIComponent(pub[1]));
-    return true;
+    const slug = decodeURIComponent(pub[1]);
+    const sub = pub[2];
+    if (!sub) {
+      useSurfaceOverlay.getState().openPublication(slug, "home");
+      return true;
+    }
+    if (sub === "about" || sub === "masthead" || sub === "archive") {
+      useSurfaceOverlay.getState().openPublication(slug, sub);
+      return true;
+    }
   }
   return false;
 }

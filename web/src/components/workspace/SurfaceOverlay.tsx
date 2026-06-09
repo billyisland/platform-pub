@@ -8,7 +8,7 @@
 // escaping the workspace to the black topbar. Renders, by target kind:
 //   - source      → SourceSurface     (external feed surface, by id)
 //   - tag         → TagBrowser         (tag browser, by name)
-//   - publication → PublicationPanel   (publication homepage, by slug)
+//   - publication → PublicationPanel   (publication home/about/masthead/archive)
 // backed by a real URL (the store pushes /source/<id>, /tag/<name>, /pub/<slug>),
 // so Back / Esc / scrim all close and restore the prior URL. Direct visits render
 // the same surfaces full-page. Mirrors workspace/ProfileOverlay.tsx.
@@ -16,7 +16,10 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { useSurfaceOverlay, surfaceUrl } from "../../stores/surfaceOverlay";
+import {
+  useSurfaceOverlay,
+  surfacePathMatches,
+} from "../../stores/surfaceOverlay";
 import { Glasshouse } from "./Glasshouse";
 import { SourceSurface } from "../../app/source/[id]/SourceSurface";
 import { TagBrowser } from "../../app/tag/[tag]/TagBrowser";
@@ -39,16 +42,16 @@ export function SurfaceOverlay() {
   const pathname = usePathname();
   // Only dismiss on navigation *after* the pushed URL has settled to our target,
   // so the initial open (pathname still on the prior surface for a tick) doesn't
-  // self-dismiss.
+  // self-dismiss. We match the surface's *base* path (not the exact URL) so a
+  // publication switching sub-view (home↔about↔masthead↔archive) stays open and
+  // only a real navigation away dismisses.
   const settledRef = useRef(false);
   useEffect(() => {
     if (!isOpen || !target) {
       settledRef.current = false;
       return;
     }
-    const targetPath = surfaceUrl(target);
-    const current = decodeURIComponent(pathname ?? "");
-    if (current === decodeURIComponent(targetPath)) {
+    if (surfacePathMatches(target, pathname ?? "")) {
       settledRef.current = true;
     } else if (settledRef.current) {
       dismiss();
@@ -79,7 +82,7 @@ export function SurfaceOverlay() {
           <TagBrowser tagName={target.name.toLowerCase()} inOverlay />
         )}
         {target.kind === "publication" && (
-          <PublicationPanel slug={target.slug} />
+          <PublicationPanel slug={target.slug} view={target.view} />
         )}
       </div>
     </Glasshouse>
