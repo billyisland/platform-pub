@@ -19,8 +19,8 @@ export function NotificationsOverlay() {
   // 640px — the activity log is a single reading column. The inner scroll fills
   // the pane minus its 64px (my-8) vertical margin.
   return (
-    <Glasshouse onClose={close} maxWidth={640} ariaLabel="Notifications">
-      <div className="px-6 sm:px-10 py-12 h-[calc(100vh-64px)] min-h-[400px] flex flex-col">
+    <Glasshouse onClose={close} maxWidth={640} ariaLabel="Notifications" persistKey="notifications">
+      <div className="px-6 sm:px-10 py-12 h-[var(--gh-h)] min-h-[400px] flex flex-col">
         <NotificationsPanel className="flex-1 min-h-0" inOverlay onClose={close} />
       </div>
     </Glasshouse>

@@ -18,9 +18,9 @@ export function MessagesOverlay() {
   // 960px mirrors the /messages page's max-w-content. Height fills the pane
   // minus its 64px (my-8) vertical margin.
   return (
-    <Glasshouse onClose={close} maxWidth={960} ariaLabel="Direct messages">
+    <Glasshouse onClose={close} maxWidth={960} ariaLabel="Direct messages" persistKey="messages">
       <MessagesPanel
-        className="h-[calc(100vh-64px)] min-h-[400px]"
+        className="h-[var(--gh-h)] min-h-[400px]"
         inOverlay
         initialConversationId={conversationId}
       />

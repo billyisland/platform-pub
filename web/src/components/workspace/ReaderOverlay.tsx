@@ -48,17 +48,20 @@ export function ReaderOverlay() {
       onSupersede={dismiss}
       maxWidth={maxWidth}
       ariaLabel="Reader"
+      persistKey="reader"
     >
-      {target.kind === "external" ? (
-        <ExternalArticleReader
-          url={target.url}
-          title={target.title}
-          siteName={target.siteName}
-          paddingX="px-24"
-        />
-      ) : (
-        <NativeArticleBody dTag={target.dTag} />
-      )}
+      <div className="overflow-y-auto max-h-[var(--gh-h)]">
+        {target.kind === "external" ? (
+          <ExternalArticleReader
+            url={target.url}
+            title={target.title}
+            siteName={target.siteName}
+            paddingX="px-24"
+          />
+        ) : (
+          <NativeArticleBody dTag={target.dTag} />
+        )}
+      </div>
     </Glasshouse>
   );
 }

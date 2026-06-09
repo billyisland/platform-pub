@@ -73,10 +73,11 @@ export function SurfaceOverlay() {
       onSupersede={dismiss}
       maxWidth={780}
       ariaLabel={ariaLabel}
+      persistKey="surface"
     >
       {/* Each surface body supplies its own inner padding (PageShell / mx-auto
           wrapper); we only own the scroll container. */}
-      <div className="overflow-y-auto max-h-[calc(100vh-64px)]">
+      <div className="overflow-y-auto max-h-[var(--gh-h)]">
         {target.kind === "source" && <SourceSurface id={target.id} />}
         {target.kind === "tag" && (
           <TagBrowser tagName={target.name.toLowerCase()} inOverlay />

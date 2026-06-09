@@ -21,8 +21,8 @@ export function SettingsOverlay() {
   // max-w-md within); the inner scroll fills the pane minus its 64px (my-8)
   // vertical margin.
   return (
-    <Glasshouse onClose={close} maxWidth={720} ariaLabel="Settings">
-      <div className="overflow-y-auto max-h-[calc(100vh-64px)] px-6 sm:px-10 py-12">
+    <Glasshouse onClose={close} maxWidth={720} ariaLabel="Settings" persistKey="settings">
+      <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
         <SettingsPanel inOverlay initialLinked={linked} />
       </div>
     </Glasshouse>

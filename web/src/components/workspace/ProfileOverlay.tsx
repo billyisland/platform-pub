@@ -63,8 +63,9 @@ export function ProfileOverlay() {
       onSupersede={dismiss}
       maxWidth={860}
       ariaLabel="Profile"
+      persistKey="profile"
     >
-      <div className="overflow-y-auto max-h-[calc(100vh-64px)] px-6 sm:px-10 py-12">
+      <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
         {target.kind === "native" ? (
           <NativeProfilePanel username={target.username} />
         ) : (

@@ -21,8 +21,8 @@ export function DashboardOverlay() {
   // pane minus its 64px (my-8) vertical margin; the left-aligned context
   // switcher clears the Glasshouse close ✕ (top-right).
   return (
-    <Glasshouse onClose={close} maxWidth={1040} ariaLabel="Dashboard">
-      <div className="overflow-y-auto max-h-[calc(100vh-64px)] px-6 sm:px-10 py-12">
+    <Glasshouse onClose={close} maxWidth={1040} ariaLabel="Dashboard" persistKey="dashboard">
+      <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
         <DashboardPanel inOverlay initialTab={initialTab} initialContext={initialContext} />
       </div>
     </Glasshouse>

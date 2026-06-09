@@ -247,9 +247,10 @@ export function FeedComposer({
       onClose={onClose}
       maxWidth={520}
       ariaLabel={`Feed composer: ${feed.name}`}
+      persistKey="feed-composer"
     >
       {/* Right padding clears the Glasshouse ✕ at top-right. */}
-      <div style={{ padding: 24 }}>
+      <div className="overflow-y-auto max-h-[var(--gh-h)]" style={{ padding: 24 }}>
         <div style={{ marginBottom: 16, paddingRight: 28 }}>
           <div className="label-ui" style={{ color: TOKENS.hintFg }}>
             Feed composer
