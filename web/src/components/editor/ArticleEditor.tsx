@@ -179,7 +179,9 @@ export function ArticleEditor({
     content: initialContent,
     editorProps: {
       attributes: {
-        class: 'prose prose-lg max-w-none focus:outline-none min-h-[400px]',
+        // `flex-1` fills the white page when its parent is a flex column (the
+        // overlay); inert on /write, where the parent is plain flow.
+        class: 'prose prose-lg max-w-none focus:outline-none min-h-[400px] flex-1',
       },
     },
     onUpdate: ({ editor }) => {
@@ -340,7 +342,7 @@ export function ArticleEditor({
   const gateInserted = hasGateMarker()
 
   return (
-    <div className={isOverlay ? 'px-6 sm:px-10 py-12' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8 bg-glasshouse min-h-screen'}>
+    <div className={isOverlay ? 'px-6 sm:px-10 py-12 flex-1 flex flex-col' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8 bg-glasshouse min-h-screen'}>
       {/* Sticky title + toolbar — stays visible while scrolling the body.
           Overlay: sticks to the Glasshouse pane top (no black topbar to offset).
           The cards span the full width (matching the body editor below); only the
@@ -537,9 +539,14 @@ export function ArticleEditor({
       </div>
       </div>{/* end sticky */}
 
-      {/* Editor content — the clean white "page" the article is written on */}
-      <div className="bg-white p-8 sm:p-10">
-        <EditorContent editor={editor} />
+      {/* Editor content — the clean white "page" the article is written on. In
+          the overlay it grows to fill a stretched-taller pane (flex-1) so the whole
+          white canvas stays writable; long articles still grow past it and scroll. */}
+      <div className={`bg-white p-8 sm:p-10 ${isOverlay ? 'flex-1 flex flex-col' : ''}`}>
+        <EditorContent
+          editor={editor}
+          className={isOverlay ? 'flex-1 flex flex-col' : undefined}
+        />
       </div>
 
       {/* Tags */}

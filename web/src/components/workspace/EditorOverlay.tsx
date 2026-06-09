@@ -53,7 +53,7 @@ export function EditorOverlay() {
 
   return (
     <Glasshouse onClose={close} maxWidth={780} ariaLabel="Write an article" persistKey="editor" resizable>
-      <div className="overflow-y-auto max-h-[var(--gh-h)]">
+      <div className="flex flex-col h-full max-h-[var(--gh-h)] overflow-y-auto">
         {init.loadError ? (
           <div className="px-6 sm:px-10 py-12 text-center">
             <p className="text-red-600">{init.loadError}</p>
