@@ -57,6 +57,16 @@ export async function unwrapKey(
   return post('/api/v1/keypairs/unwrap', { signerId, signerType, encryptedKey })
 }
 
+// Export the owner's decrypted Nostr secret key (hex + nsec) for migration.
+// The caller MUST have already authorised the requester as the owner of
+// signerId — key-custody trusts the internal secret and does not re-check.
+export async function exportSecretKey(
+  signerId: string,
+  signerType: 'account' | 'publication' = 'account'
+): Promise<{ privkeyHex: string; nsec: string }> {
+  return post('/api/v1/keypairs/export', { signerId, signerType })
+}
+
 // Batch variant — encrypts the same plaintext for N recipients in one HTTP
 // hop, used by the DM send path. The order of returned ciphertexts mirrors
 // the order of `recipientPubkeys`.

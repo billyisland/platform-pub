@@ -30,12 +30,17 @@ import {
 // realised as a `follow_list_dirty` marker drained by the gateway scheduler
 // sweep (runDiscoverySweep), which also doubles as backfill + self-heal.
 //
-// All of this no-ops unless DISCOVERY_PUBLISH_ENABLED=1 (ships dark).
+// Two gates compose: the operator master switch DISCOVERY_PUBLISH_ENABLED=1
+// (ships the feature dark) AND the per-user opt-in accounts.discovery_enabled
+// (NETWORK-CONCIERGE-ADR §7). Both must be true before anything is published.
+// retractFollowList is the exception — it cleans up on opt-OUT, so it is gated
+// only by the master switch.
 // =============================================================================
 
 interface DiscoveryAccountRow extends ProfileFields, RelayListFields {
   id: string;
   status: string;
+  discoveryEnabled: boolean;
   publishFollowGraph: boolean;
 }
 
@@ -49,10 +54,12 @@ async function loadAccount(accountId: string): Promise<DiscoveryAccountRow | nul
     avatar_blossom_url: string | null;
     hosting_type: string | null;
     self_hosted_relay_url: string | null;
+    discovery_enabled: boolean;
     publish_follow_graph: boolean;
   }>(
     `SELECT id, status, username, display_name, bio, avatar_blossom_url,
-            hosting_type, self_hosted_relay_url, publish_follow_graph
+            hosting_type, self_hosted_relay_url, discovery_enabled,
+            publish_follow_graph
        FROM accounts WHERE id = $1`,
     [accountId],
   );
@@ -67,6 +74,7 @@ async function loadAccount(accountId: string): Promise<DiscoveryAccountRow | nul
     avatarBlossomUrl: r.avatar_blossom_url,
     hostingType: r.hosting_type,
     selfHostedRelayUrl: r.self_hosted_relay_url,
+    discoveryEnabled: r.discovery_enabled,
     publishFollowGraph: r.publish_follow_graph,
   };
 }
@@ -127,6 +135,7 @@ export async function republishProfile(accountId: string): Promise<void> {
   if (!discoveryEnabled()) return;
   const account = await loadAccount(accountId);
   if (!account || account.status !== "active") return;
+  if (!account.discoveryEnabled) return;
   await signAndEnqueue(accountId, "profile", buildProfileEvent(account));
 }
 
@@ -137,6 +146,7 @@ export async function republishRelayList(accountId: string): Promise<void> {
   if (!discoveryEnabled()) return;
   const account = await loadAccount(accountId);
   if (!account || account.status !== "active") return;
+  if (!account.discoveryEnabled) return;
   await signAndEnqueue(accountId, "relay_list", buildRelayListEvent(account));
 }
 
@@ -152,6 +162,7 @@ export async function republishFollowList(
   if (!discoveryEnabled()) return;
   const account = await loadAccount(accountId);
   if (!account || account.status !== "active") return;
+  if (!account.discoveryEnabled) return;
   if (!account.publishFollowGraph) return;
   const pubkeys = await getFollowListPubkeys(accountId);
   if (pubkeys.length === 0 && !opts.allowEmpty) return;
@@ -181,7 +192,8 @@ export async function markFollowListDirty(
 ): Promise<void> {
   await exec.query(
     `UPDATE accounts SET follow_list_dirty = TRUE
-       WHERE id = $1 AND status = 'active' AND publish_follow_graph = TRUE`,
+       WHERE id = $1 AND status = 'active'
+         AND discovery_enabled = TRUE AND publish_follow_graph = TRUE`,
     [accountId],
   );
 }
@@ -201,7 +213,7 @@ export async function runDiscoverySweep(): Promise<void> {
   // Phase A — drain coalesced follow-list republishes.
   const { rows: dirty } = await pool.query<{ id: string }>(
     `SELECT id FROM accounts
-       WHERE follow_list_dirty AND status = 'active'
+       WHERE follow_list_dirty AND status = 'active' AND discovery_enabled
        ORDER BY id
        LIMIT $1`,
     [DIRTY_BATCH],
@@ -222,7 +234,8 @@ export async function runDiscoverySweep(): Promise<void> {
       await pool
         .query(
           `UPDATE accounts SET follow_list_dirty = TRUE
-             WHERE id = $1 AND status = 'active' AND publish_follow_graph = TRUE`,
+             WHERE id = $1 AND status = 'active'
+               AND discovery_enabled = TRUE AND publish_follow_graph = TRUE`,
           [id],
         )
         .catch((e) =>
@@ -231,16 +244,18 @@ export async function runDiscoverySweep(): Promise<void> {
       continue; // restored dirty (when still opted-in) so a later cycle retries
     }
   }
-  // Clear any dirty flags on opted-out accounts so they don't spin the sweep.
+  // Clear any dirty flags on opted-out accounts (discovery off, or follow-graph
+  // opt-out within a discovery-on account) so they don't spin the sweep.
   await pool.query(
     `UPDATE accounts SET follow_list_dirty = FALSE
-       WHERE follow_list_dirty AND publish_follow_graph = FALSE`,
+       WHERE follow_list_dirty
+         AND (discovery_enabled = FALSE OR publish_follow_graph = FALSE)`,
   );
 
-  // Phase B — backfill + self-heal: least-recently-synced active accounts.
+  // Phase B — backfill + self-heal: least-recently-synced opted-in accounts.
   const { rows: heal } = await pool.query<{ id: string }>(
     `SELECT id FROM accounts
-       WHERE status = 'active' AND nostr_pubkey IS NOT NULL
+       WHERE status = 'active' AND discovery_enabled AND nostr_pubkey IS NOT NULL
          AND (discovery_synced_at IS NULL
               OR discovery_synced_at < now() - ($2)::interval)
        ORDER BY discovery_synced_at NULLS FIRST

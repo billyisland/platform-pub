@@ -74,18 +74,21 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
     const { rows } = await pool.query<{
       id: string;
       protocol: string;
+      provenance: string;
+      lifecycle_state: string;
       external_id: string;
-      external_handle: string | null;
-      instance_url: string | null;
+      handle: string | null;
+      service_url: string | null;
       is_valid: boolean;
       cross_post_default: boolean;
       token_expires_at: Date | null;
       created_at: Date;
     }>(
       `
-      SELECT id, protocol, external_id, external_handle, instance_url,
+      SELECT id, protocol, provenance, lifecycle_state, external_id,
+             handle, service_url,
              is_valid, cross_post_default, token_expires_at, created_at
-      FROM linked_accounts
+      FROM network_presences
       WHERE account_id = $1
       ORDER BY created_at DESC
     `,
@@ -96,9 +99,11 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       accounts: rows.map((r) => ({
         id: r.id,
         protocol: r.protocol,
+        provenance: r.provenance,
+        lifecycleState: r.lifecycle_state,
         externalId: r.external_id,
-        externalHandle: r.external_handle,
-        instanceUrl: r.instance_url,
+        externalHandle: r.handle,
+        instanceUrl: r.service_url,
         isValid: r.is_valid,
         crossPostDefault: r.cross_post_default,
         tokenExpiresAt: r.token_expires_at,
@@ -117,7 +122,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.session!.sub;
       const { rowCount } = await pool.query(
-        `DELETE FROM linked_accounts WHERE id = $1 AND account_id = $2`,
+        `DELETE FROM network_presences WHERE id = $1 AND account_id = $2`,
         [req.params.id, userId],
       );
       if (rowCount === 0) return reply.status(404).send({ error: "Not found" });
@@ -141,7 +146,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: body.error.flatten() });
 
       const { rowCount } = await pool.query(
-        `UPDATE linked_accounts
+        `UPDATE network_presences
            SET cross_post_default = $3, updated_at = now()
          WHERE id = $1 AND account_id = $2`,
         [req.params.id, userId, body.data.crossPostDefault],
@@ -238,7 +243,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
   // GET /linked-accounts/callback — handles Mastodon OAuth return
   //
   // Reads the state cookie, exchanges the code for a token, fetches the
-  // user's external identity, and upserts linked_accounts.
+  // user's external identity, and upserts network_presences.
   // Always redirects to /settings with a query flag indicating outcome.
   // ---------------------------------------------------------------------------
 
@@ -302,16 +307,19 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
 
         await pool.query(
           `
-          INSERT INTO linked_accounts (
-            account_id, protocol, external_id, external_handle,
-            instance_url, credentials_enc, is_valid,
+          INSERT INTO network_presences (
+            account_id, protocol, provenance, external_id, handle,
+            service_url, credentials_enc, is_valid,
             last_refreshed_at, updated_at
-          ) VALUES ($1, 'activitypub', $2, $3, $4, $5, TRUE, now(), now())
-          ON CONFLICT (account_id, protocol, external_id)
+          ) VALUES ($1, 'activitypub', 'linked', $2, $3, $4, $5, TRUE, now(), now())
+          ON CONFLICT (account_id, protocol)
           DO UPDATE SET
-            external_handle   = EXCLUDED.external_handle,
-            instance_url      = EXCLUDED.instance_url,
+            external_id       = EXCLUDED.external_id,
+            handle            = EXCLUDED.handle,
+            service_url       = EXCLUDED.service_url,
             credentials_enc   = EXCLUDED.credentials_enc,
+            provenance        = 'linked',
+            lifecycle_state   = 'active',
             is_valid          = TRUE,
             last_refreshed_at = now(),
             updated_at        = now()
@@ -420,9 +428,9 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
   //
   // NodeOAuthClient.callback(params) verifies state, exchanges code (with DPoP
   // proof), stores the session via our SessionStore, and returns the OAuthSession.
-  // We then look up the user from the signed cookie and insert a linked_accounts
-  // row with external_id = did, credentials_enc = NULL (the @atproto lib owns
-  // the token storage in atproto_oauth_sessions).
+  // We then look up the user from the signed cookie and insert a network_presences
+  // row (provenance 'linked') with external_id = did, credentials_enc = NULL (the
+  // @atproto lib owns the token storage in atproto_oauth_sessions).
   // ---------------------------------------------------------------------------
 
   app.get<{ Querystring: Record<string, string> }>(
@@ -459,7 +467,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         const { session } = await client.callback(params);
         const did = session.did;
 
-        // Pull handle/display name from the AppView for a nicer external_handle.
+        // Pull handle/display name from the AppView for a nicer handle.
         let handle: string = did;
         try {
           const profile = await getProfile(did);
@@ -470,14 +478,17 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
 
         await pool.query(
           `
-          INSERT INTO linked_accounts (
-            account_id, protocol, external_id, external_handle,
-            instance_url, credentials_enc, is_valid,
+          INSERT INTO network_presences (
+            account_id, protocol, provenance, external_id, handle,
+            service_url, credentials_enc, is_valid,
             last_refreshed_at, updated_at
-          ) VALUES ($1, 'atproto', $2, $3, NULL, NULL, TRUE, now(), now())
-          ON CONFLICT (account_id, protocol, external_id)
+          ) VALUES ($1, 'atproto', 'linked', $2, $3, NULL, NULL, TRUE, now(), now())
+          ON CONFLICT (account_id, protocol)
           DO UPDATE SET
-            external_handle   = EXCLUDED.external_handle,
+            external_id       = EXCLUDED.external_id,
+            handle            = EXCLUDED.handle,
+            provenance        = 'linked',
+            lifecycle_state   = 'active',
             is_valid          = TRUE,
             last_refreshed_at = now(),
             updated_at        = now()

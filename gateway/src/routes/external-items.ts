@@ -528,15 +528,16 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       const { rows: la } = await pool.query<{
         protocol: string;
         is_valid: boolean;
+        lifecycle_state: string;
       }>(
-        `SELECT protocol, is_valid FROM linked_accounts
+        `SELECT protocol, is_valid, lifecycle_state FROM network_presences
          WHERE id = $1 AND account_id = $2`,
         [linkedAccountId, accountId],
       );
       if (la.length === 0) {
         return reply.status(403).send({ error: "Linked account not found" });
       }
-      if (!la[0].is_valid) {
+      if (la[0].lifecycle_state !== "active" || !la[0].is_valid) {
         return reply
           .status(422)
           .send({ error: "Linked account is invalid — reconnect in settings" });
@@ -618,15 +619,16 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       const { rows: la } = await pool.query<{
         protocol: string;
         is_valid: boolean;
+        lifecycle_state: string;
       }>(
-        `SELECT protocol, is_valid FROM linked_accounts
+        `SELECT protocol, is_valid, lifecycle_state FROM network_presences
          WHERE id = $1 AND account_id = $2`,
         [linkedAccountId, accountId],
       );
       if (la.length === 0) {
         return reply.status(403).send({ error: "Linked account not found" });
       }
-      if (!la[0].is_valid) {
+      if (la[0].lifecycle_state !== "active" || !la[0].is_valid) {
         return reply
           .status(422)
           .send({ error: "Linked account is invalid — reconnect in settings" });
@@ -697,15 +699,16 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       const { rows: la } = await pool.query<{
         protocol: string;
         is_valid: boolean;
+        lifecycle_state: string;
       }>(
-        `SELECT protocol, is_valid FROM linked_accounts
+        `SELECT protocol, is_valid, lifecycle_state FROM network_presences
          WHERE id = $1 AND account_id = $2`,
         [linkedAccountId, accountId],
       );
       if (la.length === 0) {
         return reply.status(403).send({ error: "Linked account not found" });
       }
-      if (!la[0].is_valid) {
+      if (la[0].lifecycle_state !== "active" || !la[0].is_valid) {
         return reply
           .status(422)
           .send({ error: "Linked account is invalid — reconnect in settings" });
@@ -796,15 +799,16 @@ export async function externalItemsRoutes(app: FastifyInstance) {
       const { rows: la } = await pool.query<{
         protocol: string;
         is_valid: boolean;
+        lifecycle_state: string;
       }>(
-        `SELECT protocol, is_valid FROM linked_accounts
+        `SELECT protocol, is_valid, lifecycle_state FROM network_presences
          WHERE id = $1 AND account_id = $2`,
         [linkedAccountId, accountId],
       );
       if (la.length === 0) {
         return reply.status(403).send({ error: "Linked account not found" });
       }
-      if (!la[0].is_valid) {
+      if (la[0].lifecycle_state !== "active" || !la[0].is_valid) {
         return reply
           .status(422)
           .send({ error: "Linked account is invalid — reconnect in settings" });

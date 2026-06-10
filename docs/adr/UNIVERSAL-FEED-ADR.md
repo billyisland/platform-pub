@@ -345,6 +345,8 @@ The `feed_items` table is polymorphic — different columns are populated depend
 
 ### IV.6 `linked_accounts` — user credentials for outbound posting
 
+> **Superseded by NETWORK-CONCIERGE-ADR (migration 109, 2026-06).** This table is renamed and generalised to **`network_presences`**: `external_handle`→`handle`, `instance_url`→`service_url`, plus `provenance` (`linked`|`concierge`) and `lifecycle_state`. The uniqueness is now `(account_id, protocol)` — one presence per network per account (v1), so the "multiple accounts per protocol" note below no longer holds. Everything else (credential storage, the atproto OAuth-session split, the outbound dispatch path) is unchanged. See `docs/adr/NETWORK-CONCIERGE-ADR.md` §5.2; the CLAUDE.md "Network presences" invariant is the live rule.
+
 Stores OAuth tokens and credentials for the user's accounts on external platforms. Multiple accounts per protocol are allowed (e.g. accounts on different Mastodon instances).
 
 ```sql

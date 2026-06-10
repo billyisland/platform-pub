@@ -27,7 +27,7 @@ import { appendWithinBudget } from "../lib/text.js";
 // Payload: { outboundPostId: UUID }
 //
 // Responsibilities:
-//   - Load outbound_posts row + linked_accounts + source external_items (if any)
+//   - Load outbound_posts row + network_presences + source external_items (if any)
 //   - Decrypt credentials, call the protocol-specific adapter
 //   - On success: set status='sent', external_post_uri, sent_at
 //   - On failure: increment retry_count; if below max_retries, mark 'retrying'
@@ -53,11 +53,12 @@ interface OutboundRow {
   max_retries: number;
   // Poster username — used to build the all.haus permalink for truncated posts.
   author_username: string | null;
-  // Linked account fields (NULL for nostr_external)
+  // Network presence fields (NULL for nostr_external)
   la_external_id: string | null;
   la_instance_url: string | null;
   la_credentials_enc: string | null;
   la_is_valid: boolean | null;
+  la_lifecycle_state: string | null;
   // Source item fields (nullable — NULL for top-level posts)
   ei_source_item_uri: string | null;
   // atproto strong-ref data from external_items.interaction_data
@@ -93,15 +94,16 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
       op.signed_event, op.status, op.retry_count, op.max_retries,
       acc.username         AS author_username,
       la.external_id       AS la_external_id,
-      la.instance_url      AS la_instance_url,
+      la.service_url       AS la_instance_url,
       la.credentials_enc   AS la_credentials_enc,
       la.is_valid          AS la_is_valid,
+      la.lifecycle_state   AS la_lifecycle_state,
       ei.source_item_uri   AS ei_source_item_uri,
       ei.interaction_data  AS ei_interaction_data,
       xs.relay_urls        AS ei_source_relay_urls
     FROM outbound_posts op
-    LEFT JOIN accounts acc       ON acc.id = op.account_id
-    LEFT JOIN linked_accounts la ON la.id = op.linked_account_id
+    LEFT JOIN accounts acc           ON acc.id = op.account_id
+    LEFT JOIN network_presences la   ON la.id = op.linked_account_id
     LEFT JOIN external_items ei  ON ei.id = op.source_item_id
     LEFT JOIN external_sources xs ON xs.id = ei.source_id
     WHERE op.id = $1
@@ -115,8 +117,12 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
   }
   if (row.status === "sent") return;
   if (row.status === "failed") return;
-  // Linked account is required for OAuth-backed protocols only.
-  if (row.protocol !== "nostr_external" && !row.la_is_valid) {
+  // A network presence is required for OAuth-backed protocols only, and must be
+  // active (lifecycle_state) as well as valid (credentials/handle healthy).
+  if (
+    row.protocol !== "nostr_external" &&
+    (!row.la_is_valid || row.la_lifecycle_state !== "active")
+  ) {
     await markFailed(row.id, "Linked account invalid — reconnect in settings");
     return;
   }

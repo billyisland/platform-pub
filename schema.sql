@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict onI46j7hnaW5pnrjeiahuI2efghI6TfxQMbEL1tOCjtrzOx3jHpMqks3a3muPHc
+\restrict ITICJt9IRwUVP5yRnzADUoEoQMzOqiuveF9W8arZCv52JqLSO46qmdXJkBz57kj
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1010,6 +1010,7 @@ CREATE TABLE public.accounts (
     publish_follow_graph boolean DEFAULT true NOT NULL,
     follow_list_dirty boolean DEFAULT false NOT NULL,
     discovery_synced_at timestamp with time zone,
+    discovery_enabled boolean DEFAULT false NOT NULL,
     CONSTRAINT accounts_annual_discount_pct_check CHECK (((annual_discount_pct >= 0) AND (annual_discount_pct <= 30))),
     CONSTRAINT accounts_hosting_type_check CHECK ((hosting_type = ANY (ARRAY['hosted'::text, 'self_hosted'::text])))
 );
@@ -1509,27 +1510,6 @@ CREATE TABLE public.gift_links (
 
 
 --
--- Name: linked_accounts; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.linked_accounts (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    account_id uuid NOT NULL,
-    protocol public.external_protocol NOT NULL,
-    external_id text NOT NULL,
-    external_handle text,
-    instance_url text,
-    credentials_enc text,
-    token_expires_at timestamp with time zone,
-    last_refreshed_at timestamp with time zone,
-    is_valid boolean DEFAULT true NOT NULL,
-    cross_post_default boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: magic_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1584,6 +1564,31 @@ CREATE TABLE public.mutes (
     muter_id uuid NOT NULL,
     muted_id uuid NOT NULL,
     muted_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: network_presences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.network_presences (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    protocol public.external_protocol NOT NULL,
+    external_id text NOT NULL,
+    handle text,
+    service_url text,
+    credentials_enc text,
+    token_expires_at timestamp with time zone,
+    last_refreshed_at timestamp with time zone,
+    is_valid boolean DEFAULT true NOT NULL,
+    cross_post_default boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    provenance text DEFAULT 'linked'::text NOT NULL,
+    lifecycle_state text DEFAULT 'active'::text NOT NULL,
+    CONSTRAINT network_presences_lifecycle_state_check CHECK ((lifecycle_state = ANY (ARRAY['provisioning'::text, 'active'::text, 'suspended'::text, 'deprovisioned'::text]))),
+    CONSTRAINT network_presences_provenance_check CHECK ((provenance = ANY (ARRAY['linked'::text, 'concierge'::text])))
 );
 
 
@@ -2989,14 +2994,6 @@ ALTER TABLE ONLY public.gift_links
 
 
 --
--- Name: linked_accounts linked_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.linked_accounts
-    ADD CONSTRAINT linked_accounts_pkey PRIMARY KEY (id);
-
-
---
 -- Name: magic_links magic_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3034,6 +3031,22 @@ ALTER TABLE ONLY public.moderation_reports
 
 ALTER TABLE ONLY public.mutes
     ADD CONSTRAINT mutes_pkey PRIMARY KEY (muter_id, muted_id);
+
+
+--
+-- Name: network_presences network_presences_account_protocol_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.network_presences
+    ADD CONSTRAINT network_presences_account_protocol_key UNIQUE (account_id, protocol);
+
+
+--
+-- Name: network_presences network_presences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.network_presences
+    ADD CONSTRAINT network_presences_pkey PRIMARY KEY (id);
 
 
 --
@@ -3434,14 +3447,6 @@ ALTER TABLE ONLY public.publication_members
 
 ALTER TABLE ONLY public.oauth_app_registrations
     ADD CONSTRAINT unique_app_registration UNIQUE (protocol, instance_url);
-
-
---
--- Name: linked_accounts unique_linked_identity; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.linked_accounts
-    ADD CONSTRAINT unique_linked_identity UNIQUE (account_id, protocol, external_id);
 
 
 --
@@ -4241,20 +4246,6 @@ CREATE INDEX idx_key_issuances_vault_key_id ON public.content_key_issuances USIN
 
 
 --
--- Name: idx_linked_accounts_account; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_linked_accounts_account ON public.linked_accounts USING btree (account_id);
-
-
---
--- Name: idx_linked_accounts_refresh; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_linked_accounts_refresh ON public.linked_accounts USING btree (token_expires_at) WHERE ((is_valid = true) AND (credentials_enc IS NOT NULL));
-
-
---
 -- Name: idx_magic_links_expires; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4280,6 +4271,20 @@ CREATE INDEX idx_media_uploads_sha256 ON public.media_uploads USING btree (sha25
 --
 
 CREATE INDEX idx_media_uploads_uploader ON public.media_uploads USING btree (uploader_id);
+
+
+--
+-- Name: idx_network_presences_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_network_presences_account ON public.network_presences USING btree (account_id);
+
+
+--
+-- Name: idx_network_presences_refresh; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_network_presences_refresh ON public.network_presences USING btree (token_expires_at) WHERE ((is_valid = true) AND (credentials_enc IS NOT NULL));
 
 
 --
@@ -5046,10 +5051,10 @@ CREATE TRIGGER trg_external_sources_updated_at BEFORE UPDATE ON public.external_
 
 
 --
--- Name: linked_accounts trg_linked_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: -
+-- Name: network_presences trg_network_presences_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_linked_accounts_updated_at BEFORE UPDATE ON public.linked_accounts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE TRIGGER trg_network_presences_updated_at BEFORE UPDATE ON public.network_presences FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -5566,14 +5571,6 @@ ALTER TABLE ONLY public.gift_links
 
 
 --
--- Name: linked_accounts linked_accounts_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.linked_accounts
-    ADD CONSTRAINT linked_accounts_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
-
-
---
 -- Name: magic_links magic_links_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5627,6 +5624,14 @@ ALTER TABLE ONLY public.mutes
 
 ALTER TABLE ONLY public.mutes
     ADD CONSTRAINT mutes_muter_id_fkey FOREIGN KEY (muter_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: network_presences network_presences_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.network_presences
+    ADD CONSTRAINT network_presences_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
@@ -5722,7 +5727,7 @@ ALTER TABLE ONLY public.outbound_posts
 --
 
 ALTER TABLE ONLY public.outbound_posts
-    ADD CONSTRAINT outbound_posts_linked_account_id_fkey FOREIGN KEY (linked_account_id) REFERENCES public.linked_accounts(id) ON DELETE CASCADE;
+    ADD CONSTRAINT outbound_posts_linked_account_id_fkey FOREIGN KEY (linked_account_id) REFERENCES public.network_presences(id) ON DELETE CASCADE;
 
 
 --
@@ -6425,9 +6430,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict onI46j7hnaW5pnrjeiahuI2efghI6TfxQMbEL1tOCjtrzOx3jHpMqks3a3muPHc
-
-
+\unrestrict ITICJt9IRwUVP5yRnzADUoEoQMzOqiuveF9W8arZCv52JqLSO46qmdXJkBz57kj
 
 
 --
@@ -6553,4 +6556,6 @@ INSERT INTO public._migrations (filename) VALUES
     ('105_feed_items_reply_to_author.sql'),
     ('106_feed_ingest_enqueue_cap.sql'),
     ('107_feed_sources_exclude_replies.sql'),
-    ('108_nostr_outbound_discovery.sql');
+    ('108_nostr_outbound_discovery.sql'),
+    ('109_network_presences.sql'),
+    ('110_accounts_discovery_enabled.sql');

@@ -2,6 +2,7 @@ import {
   generateSecretKey,
   getPublicKey,
   finalizeEvent,
+  nip19,
   nip44,
   type EventTemplate,
 } from "nostr-tools";
@@ -77,6 +78,32 @@ export async function unwrapKey(
   } finally {
     privkeyBytes.fill(0);
     readerPrivkey.fill(0);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// exportSecretKey — return the owner's decrypted Nostr private key
+//
+// Backs the "export-mandatory" invariant (NETWORK-CONCIERGE-ADR §4 #4): every
+// custodial identity must be exportable so the user can migrate off-platform.
+// The gateway calls this only for the authenticated owner of `signerId`; the
+// raw key is never logged. Returns both hex and bech32 nsec forms.
+// ---------------------------------------------------------------------------
+
+export async function exportSecretKey(
+  signerId: string,
+  signerType: "account" | "publication" = "account",
+): Promise<{ privkeyHex: string; nsec: string }> {
+  const privkeyBytes = await getDecryptedPrivkey(signerId, signerType);
+  const privkeyCopy = new Uint8Array(privkeyBytes);
+  try {
+    return {
+      privkeyHex: Buffer.from(privkeyCopy).toString("hex"),
+      nsec: nip19.nsecEncode(privkeyCopy),
+    };
+  } finally {
+    privkeyBytes.fill(0);
+    privkeyCopy.fill(0);
   }
 }
 

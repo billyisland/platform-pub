@@ -6,22 +6,23 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // =============================================================================
 // outbound_token_refresh — daemon-style cron job
 //
-// Walks linked_accounts and refreshes any OAuth credentials that are inside
-// the configured refresh window. Mastodon tokens issued by the standard
-// /oauth/token endpoint do not expire (the Mastodon docs are explicit) and
-// have no refresh_token, so they are skipped here. The job becomes load-
-// bearing when the Bluesky AT Protocol adapter ships, since AT Protocol
+// Walks network_presences and refreshes any OAuth credentials that are inside
+// the configured refresh window. Only 'linked' presences carry OAuth tokens;
+// 'concierge' presences sign via key-custody and have no session to refresh.
+// Mastodon tokens issued by the standard /oauth/token endpoint do not expire
+// (the Mastodon docs are explicit) and have no refresh_token, so they are
+// skipped here. The job is load-bearing for linked Bluesky, since AT Protocol
 // access tokens are short-lived and DPoP-bound.
 //
-// On refresh failure the linked account is marked is_valid=FALSE; the user
-// sees a "reconnect" prompt the next time settings is opened, and any
-// queued outbound_posts for that account will short-circuit to 'failed'.
+// On refresh failure the presence is marked is_valid=FALSE; the user sees a
+// "reconnect" prompt the next time settings is opened, and any queued
+// outbound_posts for that account short-circuit to 'failed'.
 // =============================================================================
 
 interface DueRow {
   id: string
   protocol: string
-  external_handle: string | null
+  handle: string | null
   token_expires_at: Date
 }
 
@@ -32,9 +33,11 @@ export const outboundTokenRefresh: Task = async () => {
   // total lifetime (last_refreshed_at → token_expires_at). Accounts with no
   // expires_at are non-expiring (Mastodon) and are skipped.
   const { rows } = await pool.query<DueRow>(`
-    SELECT id, protocol, external_handle, token_expires_at
-    FROM linked_accounts
+    SELECT id, protocol, handle, token_expires_at
+    FROM network_presences
     WHERE is_valid = TRUE
+      AND provenance = 'linked'
+      AND lifecycle_state = 'active'
       AND credentials_enc IS NOT NULL
       AND token_expires_at IS NOT NULL
       AND last_refreshed_at IS NOT NULL
@@ -54,7 +57,7 @@ export const outboundTokenRefresh: Task = async () => {
 
   // ---------------------------------------------------------------------------
   // AT Protocol: tokens live in atproto_oauth_sessions (credentials_enc IS NULL
-  // in linked_accounts). The @atproto/oauth-client-node lib auto-refreshes on
+  // in network_presences). The @atproto/oauth-client-node lib auto-refreshes on
   // use, but dormant accounts risk letting the refresh token expire. We
   // proactively touch each atproto session once a week by calling restore()
   // with refresh='auto' — the lib decides whether to refresh based on its
@@ -67,8 +70,10 @@ export const outboundTokenRefresh: Task = async () => {
   const { rows: atpRows } = await pool.query<{ id: string; external_id: string; has_session: boolean }>(`
     SELECT la.id, la.external_id,
            EXISTS (SELECT 1 FROM atproto_oauth_sessions s WHERE s.did = la.external_id) AS has_session
-    FROM linked_accounts la
+    FROM network_presences la
     WHERE la.protocol = 'atproto'
+      AND la.provenance = 'linked'
+      AND la.lifecycle_state = 'active'
       AND la.is_valid = TRUE
       AND (la.last_refreshed_at IS NULL OR la.last_refreshed_at < now() - INTERVAL '7 days')
     ORDER BY la.last_refreshed_at ASC NULLS FIRST
@@ -82,7 +87,7 @@ export const outboundTokenRefresh: Task = async () => {
     if (!row.has_session) {
       logger.info({ id: row.id, did: row.external_id }, 'atproto session missing; marking invalid')
       await pool.query(
-        `UPDATE linked_accounts SET is_valid = FALSE, updated_at = now() WHERE id = $1`,
+        `UPDATE network_presences SET is_valid = FALSE, updated_at = now() WHERE id = $1`,
         [row.id]
       )
       continue
@@ -90,7 +95,7 @@ export const outboundTokenRefresh: Task = async () => {
     try {
       await client.restore(row.external_id, 'auto')
       await pool.query(
-        `UPDATE linked_accounts SET last_refreshed_at = now(), updated_at = now() WHERE id = $1`,
+        `UPDATE network_presences SET last_refreshed_at = now(), updated_at = now() WHERE id = $1`,
         [row.id]
       )
       logger.debug({ did: row.external_id }, 'atproto session touched')
@@ -109,7 +114,7 @@ export const outboundTokenRefresh: Task = async () => {
       } else {
         logger.warn({ errName, errMessage, id: row.id, did: row.external_id }, 'atproto session restore failed; marking invalid')
         await pool.query(
-          `UPDATE linked_accounts SET is_valid = FALSE, updated_at = now() WHERE id = $1`,
+          `UPDATE network_presences SET is_valid = FALSE, updated_at = now() WHERE id = $1`,
           [row.id]
         )
       }

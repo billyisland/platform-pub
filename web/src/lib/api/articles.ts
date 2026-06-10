@@ -279,14 +279,17 @@ export const readingPreferences = {
 
 export const privacyPreferences = {
   get: () =>
-    request<{ publishFollowGraph: boolean }>("/me/privacy-preferences"),
-
-  update: (publishFollowGraph: boolean) =>
-    request<{ ok: boolean; publishFollowGraph: boolean }>(
+    request<{ discoveryEnabled: boolean; publishFollowGraph: boolean }>(
       "/me/privacy-preferences",
-      {
-        method: "PUT",
-        body: JSON.stringify({ publishFollowGraph }),
-      },
     ),
+
+  update: (prefs: { discoveryEnabled?: boolean; publishFollowGraph?: boolean }) =>
+    request<{
+      ok: boolean;
+      discoveryEnabled: boolean;
+      publishFollowGraph: boolean;
+    }>("/me/privacy-preferences", {
+      method: "PUT",
+      body: JSON.stringify(prefs),
+    }),
 };

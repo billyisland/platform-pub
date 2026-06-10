@@ -4,7 +4,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 // AES-256-GCM credential encryption
 //
 // Used to encrypt OAuth access / refresh tokens and Mastodon client secrets
-// stored in linked_accounts.credentials_enc, oauth_app_registrations.
+// stored in network_presences.credentials_enc, oauth_app_registrations.
 // client_secret_enc, and atproto_oauth_sessions.session_data_enc.
 //
 // Storage format (base64url, single string):
@@ -123,7 +123,7 @@ export function decryptCredentials(blob: string): string {
 }
 
 // Convenience: encrypt/decrypt a JSON-serialisable credentials object.
-// Used for the DecryptedCredentials bag stored on linked_accounts.
+// Used for the DecryptedCredentials bag stored on network_presences.
 export function encryptJson(value: unknown): string {
   return encryptCredentials(JSON.stringify(value))
 }

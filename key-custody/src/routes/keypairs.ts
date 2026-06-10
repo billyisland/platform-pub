@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { generateKeypair, signEvent, unwrapKey, nip44Encrypt, nip44EncryptBatch, nip44Decrypt } from '../lib/crypto.js'
+import { generateKeypair, signEvent, unwrapKey, exportSecretKey, nip44Encrypt, nip44EncryptBatch, nip44Decrypt } from '../lib/crypto.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -13,6 +13,7 @@ import logger from '../lib/logger.js'
 // POST /api/v1/keypairs/generate   — generate a keypair for a new account
 // POST /api/v1/keypairs/sign       — sign a Nostr event for an account
 // POST /api/v1/keypairs/unwrap     — unwrap a NIP-44 content key for a reader
+// POST /api/v1/keypairs/export     — export the owner's secret key (migration)
 // =============================================================================
 
 function requireInternalSecret(req: any, reply: any, done: () => void) {
@@ -50,6 +51,12 @@ export const UnwrapKeySchema = z.object({
   signerType: signerTypeEnum,
   accountId: z.string().uuid().optional(),  // backwards compat
   encryptedKey: z.string().min(1),
+}).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
+
+export const ExportKeySchema = z.object({
+  signerId: z.string().uuid().optional(),
+  signerType: signerTypeEnum,
+  accountId: z.string().uuid().optional(),  // backwards compat
 }).refine(d => d.signerId || d.accountId, { message: 'signerId or accountId required' })
 
 const HEX64_RE = /^[0-9a-f]{64}$/
@@ -170,6 +177,34 @@ export async function keypairRoutes(app: FastifyInstance) {
     } catch (err) {
       logger.error({ err, signerId, signerType }, 'Key unwrapping failed')
       return reply.status(500).send({ error: 'Key unwrapping failed' })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // POST /api/v1/keypairs/export
+  //
+  // Returns the owner's decrypted Nostr private key (hex + nsec) so the gateway
+  // can include it in the authenticated owner's migration export. The gateway
+  // is responsible for authorising the caller as the owner of signerId; this
+  // service trusts the internal secret. The key is never logged.
+  // ---------------------------------------------------------------------------
+
+  app.post('/keypairs/export', { preHandler: requireInternalSecret }, async (req, reply) => {
+    const parsed = ExportKeySchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.flatten() })
+    }
+
+    const { signerType } = parsed.data
+    const signerId = resolveSignerId(parsed.data)
+
+    try {
+      const exported = await exportSecretKey(signerId, signerType)
+      logger.info({ signerId, signerType }, 'Secret key exported')
+      return reply.status(200).send(exported)
+    } catch (err) {
+      logger.error({ err, signerId, signerType }, 'Secret key export failed')
+      return reply.status(500).send({ error: 'Export failed' })
     }
   })
 

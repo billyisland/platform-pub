@@ -7,14 +7,14 @@ import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 // in a single transaction. The worker (feed-ingest/src/tasks/outbound-cross-post)
 // picks it up, decrypts credentials, and dispatches to the right adapter.
 //
-// Validates that the linked_account belongs to the requesting user and is still
-// valid — callers should still treat failures as non-fatal (the native note is
-// already indexed, cross-posting is best-effort).
+// Validates that the network presence belongs to the requesting user and is
+// active + valid — callers should still treat failures as non-fatal (the native
+// note is already indexed, cross-posting is best-effort).
 // =============================================================================
 
 interface EnqueueCrossPostInput {
   accountId: string; // all.haus user id
-  linkedAccountId: string; // linked_accounts.id
+  linkedAccountId: string; // network_presences.id
   // Required for reply/quote (the external_items.id being responded to);
   // omitted for 'original' (top-level broadcast — no source).
   sourceItemId?: string;
@@ -67,13 +67,16 @@ export async function enqueueCrossPost(
   const { rows: la } = await pool.query<{
     protocol: string;
     is_valid: boolean;
+    lifecycle_state: string;
   }>(
-    `SELECT protocol, is_valid FROM linked_accounts
+    `SELECT protocol, is_valid, lifecycle_state FROM network_presences
      WHERE id = $1 AND account_id = $2`,
     [input.linkedAccountId, input.accountId],
   );
-  if (la.length === 0) throw new Error("Linked account not found");
-  if (!la[0].is_valid) throw new Error("Linked account is marked invalid");
+  if (la.length === 0) throw new Error("Network presence not found");
+  if (la[0].lifecycle_state !== "active")
+    throw new Error("Network presence is not active");
+  if (!la[0].is_valid) throw new Error("Network presence is marked invalid");
 
   // Wrap the audit INSERT + add_job in a single transaction so a crash between
   // them can't leave a 'pending' outbound_posts row with no matching worker job.
@@ -127,8 +130,8 @@ export async function enqueueCrossPost(
 }
 
 // =============================================================================
-// Nostr-external variant — no linked_accounts row, signed event ships with the
-// audit row so the worker can replay it onto the source's relays.
+// Nostr-external variant — no network_presences row, signed event ships with
+// the audit row so the worker can replay it onto the source's relays.
 // =============================================================================
 
 export async function enqueueNostrOutbound(
@@ -188,13 +191,16 @@ export async function enqueueLike(input: EnqueueLikeInput): Promise<void> {
   const { rows: la } = await pool.query<{
     protocol: string;
     is_valid: boolean;
+    lifecycle_state: string;
   }>(
-    `SELECT protocol, is_valid FROM linked_accounts
+    `SELECT protocol, is_valid, lifecycle_state FROM network_presences
      WHERE id = $1 AND account_id = $2`,
     [input.linkedAccountId, input.accountId],
   );
-  if (la.length === 0) throw new Error("Linked account not found");
-  if (!la[0].is_valid) throw new Error("Linked account is marked invalid");
+  if (la.length === 0) throw new Error("Network presence not found");
+  if (la[0].lifecycle_state !== "active")
+    throw new Error("Network presence is not active");
+  if (!la[0].is_valid) throw new Error("Network presence is marked invalid");
 
   const syntheticEventId = `like:${input.sourceItemId}`;
 
@@ -251,13 +257,16 @@ export async function enqueueRepost(input: EnqueueRepostInput): Promise<void> {
   const { rows: la } = await pool.query<{
     protocol: string;
     is_valid: boolean;
+    lifecycle_state: string;
   }>(
-    `SELECT protocol, is_valid FROM linked_accounts
+    `SELECT protocol, is_valid, lifecycle_state FROM network_presences
      WHERE id = $1 AND account_id = $2`,
     [input.linkedAccountId, input.accountId],
   );
-  if (la.length === 0) throw new Error("Linked account not found");
-  if (!la[0].is_valid) throw new Error("Linked account is marked invalid");
+  if (la.length === 0) throw new Error("Network presence not found");
+  if (la[0].lifecycle_state !== "active")
+    throw new Error("Network presence is not active");
+  if (!la[0].is_valid) throw new Error("Network presence is marked invalid");
 
   const syntheticEventId = `repost:${input.sourceItemId}`;
 
@@ -315,13 +324,16 @@ export async function enqueuePollVote(
   const { rows: la } = await pool.query<{
     protocol: string;
     is_valid: boolean;
+    lifecycle_state: string;
   }>(
-    `SELECT protocol, is_valid FROM linked_accounts
+    `SELECT protocol, is_valid, lifecycle_state FROM network_presences
      WHERE id = $1 AND account_id = $2`,
     [input.linkedAccountId, input.accountId],
   );
-  if (la.length === 0) throw new Error("Linked account not found");
-  if (!la[0].is_valid) throw new Error("Linked account is marked invalid");
+  if (la.length === 0) throw new Error("Network presence not found");
+  if (la[0].lifecycle_state !== "active")
+    throw new Error("Network presence is not active");
+  if (!la[0].is_valid) throw new Error("Network presence is marked invalid");
 
   const syntheticEventId = `poll_vote:${input.sourceItemId}`;
 

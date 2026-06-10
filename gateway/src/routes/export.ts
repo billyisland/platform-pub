@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
+import { exportSecretKey } from '../lib/key-custody-client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -11,7 +12,10 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // Returns a portable bundle of all data a writer needs to leave the platform
 // and re-host their content elsewhere:
 //
-//   account       — Nostr pubkey, username, display name
+//   account       — Nostr pubkey + secret key (hex + nsec), username, display
+//                   name. The secret key is the migration anchor: it lets the
+//                   writer re-sign and re-host their identity off-platform
+//                   (NETWORK-CONCIERGE-ADR §4 "export-mandatory").
 //   articles      — list of published articles with nostrEventId + dTag so the
 //                   writer can re-fetch the signed events from the relay
 //   contentKeys   — each paywalled article's content key wrapped with NIP-44
@@ -135,6 +139,17 @@ export async function exportRoutes(app: FastifyInstance) {
       return reply.status(502).send({ error: 'Failed to retrieve content keys' })
     }
 
+    // Fetch the writer's own Nostr secret key (the migration anchor). Fail the
+    // whole export rather than ship a keyless "full account export" — the key is
+    // the one thing the writer can't recover from anywhere else.
+    let secretKey: { privkeyHex: string; nsec: string }
+    try {
+      secretKey = await exportSecretKey(writerId, 'account')
+    } catch (err) {
+      logger.error({ err, writerId }, 'Failed to export secret key from key-custody')
+      return reply.status(502).send({ error: 'Failed to retrieve account key' })
+    }
+
     const contentKeysByArticleId = new Map(contentKeys.map(k => [k.articleId, k]))
 
     // Build articles list with key info merged in
@@ -170,6 +185,8 @@ export async function exportRoutes(app: FastifyInstance) {
       exportedAt: new Date().toISOString(),
       account: {
         nostrPubkey: account.nostr_pubkey,
+        nostrPrivkeyHex: secretKey.privkeyHex,
+        nostrPrivkeyNsec: secretKey.nsec,
         username: account.username,
         displayName: account.display_name,
       },

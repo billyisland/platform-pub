@@ -164,7 +164,7 @@ Partial indexes (with WHERE clauses) encode the query patterns the application a
 | `idx_outbound_posts_pending`  | `outbound_posts`  | `(status)`           | `status IN ('pending','retrying')`                | Cross-post worker queue scan        |
 | `idx_magic_links_token_hash`  | `magic_links`     | `(token_hash)`       | `used_at IS NULL`                                 | Unused magic link verification      |
 | `idx_magic_links_expires`     | `magic_links`     | `(expires_at)`       | `used_at IS NULL`                                 | Expiry cleanup of unused links      |
-| `idx_linked_accounts_refresh` | `linked_accounts` | `(token_expires_at)` | `is_valid = true AND credentials_enc IS NOT NULL` | OAuth token refresh cron            |
+| `idx_network_presences_refresh` | `network_presences` | `(token_expires_at)` | `is_valid = true AND credentials_enc IS NOT NULL` | OAuth token refresh cron (was `idx_linked_accounts_refresh` on `linked_accounts`; renamed by migration 109) |
 
 ### Traffology partial indexes
 
@@ -300,7 +300,7 @@ These tables have an `updated_at` column defaulting to `now()` but no BEFORE UPD
 | Table                         | Domain        | Risk                                                                                                           |
 | ----------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------- |
 | `subscriptions`               | Payments      | High -- frequently updated (status, period, auto_renew). Stale `updated_at` could mislead expiry/renewal logic |
-| `linked_accounts`             | Outbound      | Medium -- updated on token refresh, validity changes                                                           |
+| `network_presences`           | Outbound      | Medium -- updated on token refresh, validity changes (was `linked_accounts`; renamed + extended by migration 109, NETWORK-CONCIERGE-ADR) |
 | `external_sources`            | Feeds         | Medium -- updated on fetch cycle, error_count changes                                                          |
 | `activitypub_instance_health` | Feeds         | Low -- counter table, updated by UPSERT                                                                        |
 | `notification_preferences`    | Notifications | Low -- rarely updated                                                                                          |
