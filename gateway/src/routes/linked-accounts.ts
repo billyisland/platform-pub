@@ -546,7 +546,6 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         return redirectOk("error");
       }
       if (statePayload.protocol !== "atproto") return redirectOk("error");
-      if (req.query.state !== statePayload.nonce) return redirectOk("error");
 
       const userId = req.session!.sub;
       if (statePayload.userId !== userId) return redirectOk("error");
@@ -560,7 +559,14 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       try {
         const client = await getAtprotoClient();
         const params = new URLSearchParams(req.query);
-        const { session } = await client.callback(params);
+        // The @atproto client puts its OWN generated nonce in the OAuth `state`
+        // query param and verifies it internally (against its stateStore). The
+        // value we passed via authorize({ state: nonce }) comes back as the
+        // returned application state — NOT as req.query.state. So our CSRF tie
+        // must compare the *returned* appState to our cookie nonce; comparing
+        // req.query.state would never match and silently drop every callback.
+        const { session, state: appState } = await client.callback(params);
+        if (appState !== statePayload.nonce) return redirectOk("error");
         const did = session.did;
 
         // Pull handle/display name from the AppView for a nicer handle.
