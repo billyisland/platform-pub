@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { LinkedAccount } from "../../lib/api/linked-accounts";
+import {
+  linkedAccounts,
+  getNetworkCapabilities,
+  ASSISTED_BLUESKY_CONSENT,
+  type LinkedAccount,
+} from "../../lib/api/linked-accounts";
 import { externalItems } from "../../lib/api/external-items";
 import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { isDarkPalette, type VesselPalette } from "./tokens";
@@ -34,7 +39,31 @@ export function InlineReplyBox({
   const [content, setContent] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assistedAvailable, setAssistedAvailable] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ASSISTED "set one up" is Bluesky-only on Phase 2 (§6.1); gate on the
+  // server flag so the prompt stays "coming soon" when dark.
+  useEffect(() => {
+    if (protocol !== "atproto") return;
+    let live = true;
+    void getNetworkCapabilities().then((c) => {
+      if (live) setAssistedAvailable(c.assistedBluesky);
+    });
+    return () => {
+      live = false;
+    };
+  }, [protocol]);
+
+  async function handleAssisted() {
+    if (!window.confirm(ASSISTED_BLUESKY_CONSENT)) return;
+    try {
+      const { authorizeUrl } = await linkedAccounts.assistedBluesky();
+      window.location.href = authorizeUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start setup");
+    }
+  }
 
   // Inset-panel fill replaces the old thin grey borders (lines are banned
   // sitewide). A dark wash reads on the light card, a light wash on the dark card.
@@ -97,8 +126,27 @@ export function InlineReplyBox({
           </button>
         </p>
         <p className="text-ui-xs mt-1" style={{ color: palette.cardMeta }}>
-          Don&apos;t have one? all.haus can set one up for you — coming soon.
+          {assistedAvailable ? (
+            <>
+              Don&apos;t have one?{" "}
+              <button
+                type="button"
+                onClick={handleAssisted}
+                className="underline"
+                style={{ color: palette.cardTitle }}
+              >
+                all.haus can set one up for you →
+              </button>
+            </>
+          ) : (
+            <>Don&apos;t have one? all.haus can set one up for you — coming soon.</>
+          )}
         </p>
+        {error && (
+          <p className="text-ui-xs mt-1" style={{ color: "#B5242A" }}>
+            {error}
+          </p>
+        )}
       </div>
     );
   }

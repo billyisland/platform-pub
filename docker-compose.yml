@@ -91,6 +91,12 @@ services:
       LINKED_ACCOUNT_KEY_HEX: ${LINKED_ACCOUNT_KEY_HEX}
       ATPROTO_CLIENT_BASE_URL: ${ATPROTO_CLIENT_BASE_URL:-https://all.haus}
       ATPROTO_PRIVATE_JWK: ${ATPROTO_PRIVATE_JWK}
+      # ASSISTED atproto ("set one up for me" → Bluesky). Ships dark:
+      # ATPROTO_ASSISTED_ENABLED off ⇒ POST /linked-accounts/bluesky/assisted 503s
+      # and the UI keeps the "Set one up · soon" affordance. Do NOT flip on until
+      # the S0 spike passes against the real bsky.social (NETWORK-CONCIERGE-ADR §6.1.1).
+      ATPROTO_ASSISTED_ENABLED: ${ATPROTO_ASSISTED_ENABLED:-0}
+      ATPROTO_DEFAULT_PDS: ${ATPROTO_DEFAULT_PDS:-https://bsky.social}
       # Nostr outbound interop (discovery). Ships dark: DISCOVERY_PUBLISH_ENABLED
       # off ⇒ no kind 0/3/10002 produced. With it on, PUBLIC_FANOUT_RELAY_URLS
       # empty ⇒ in-house relay only; set it to fan discovery events to the public

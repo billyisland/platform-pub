@@ -38,6 +38,15 @@ const CALLBACK_PATH = "/api/v1/linked-accounts/callback";
 const MASTODON_SCOPES = "read:accounts write:statuses";
 const CLIENT_NAME = "all.haus";
 
+// ASSISTED atproto (NETWORK-CONCIERGE-ADR §6.1, Phase 2). The "set one up for
+// me" path reuses the LINKED OAuth machinery verbatim — the only deltas are
+// seeding authorize() with a PDS hostname (so Bluesky renders native signup
+// mid-flow) and the provenance written. Ships dark behind ATPROTO_ASSISTED_ENABLED.
+const ATPROTO_DEFAULT_PDS =
+  process.env.ATPROTO_DEFAULT_PDS?.trim() || "https://bsky.social";
+const ATPROTO_SCOPE = "atproto transition:generic";
+const assistedEnabled = () => process.env.ATPROTO_ASSISTED_ENABLED === "1";
+
 // ---- Mastodon API shapes we care about --------------------------------------
 
 interface MastodonAppResponse {
@@ -109,6 +118,9 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         tokenExpiresAt: r.token_expires_at,
         createdAt: r.created_at,
       })),
+      // Single source of truth for the dark-ship flag so the UI shows the
+      // ASSISTED affordance only when the server can honour it (§6.1.1 S6).
+      capabilities: { assistedBluesky: assistedEnabled() },
     };
   });
 
@@ -394,6 +406,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           protocol: "atproto",
           userId,
           nonce,
+          provenance: "linked",
         }),
         {
           signed: true,
@@ -409,7 +422,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         const client = await getAtprotoClient();
         const url = await client.authorize(identifier, {
           state: nonce,
-          scope: "atproto transition:generic",
+          scope: ATPROTO_SCOPE,
         });
         return { authorizeUrl: url.toString() };
       } catch (err) {
@@ -419,6 +432,68 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           .send({
             error: "Could not start Bluesky OAuth — check the handle is valid",
           });
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // POST /linked-accounts/bluesky/assisted — "set one up for me" (ASSISTED)
+  //
+  // No body. Reuses the LINKED OAuth flow (§6.1.1 S1) but seeds authorize()
+  // with the PDS hostname instead of a user handle, so Bluesky renders its own
+  // native signup (handle, ToS, anti-abuse) mid-redirect and returns already
+  // authorized. Bluesky custodies the keys; we only hold the OAuth grant — so
+  // the shared callback (and the outbound dispatcher) treat it exactly like a
+  // linked account, differing only by the provenance label in the state cookie.
+  // ---------------------------------------------------------------------------
+
+  app.post(
+    "/linked-accounts/bluesky/assisted",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!assistedEnabled()) {
+        return reply
+          .status(503)
+          .send({ error: "Assisted setup is not available yet" });
+      }
+      const userId = req.session!.sub;
+
+      const nonce = crypto.randomBytes(16).toString("hex");
+      reply.setCookie(
+        "oauth_state_bluesky",
+        JSON.stringify({
+          protocol: "atproto",
+          userId,
+          nonce,
+          provenance: "assisted",
+        }),
+        {
+          signed: true,
+          path: "/",
+          httpOnly: true,
+          sameSite: "lax",
+          secure: APP_URL.startsWith("https://"),
+          maxAge: 600,
+        },
+      );
+
+      try {
+        const client = await getAtprotoClient();
+        // Seed with the PDS hostname, not a handle — atproto account-creation-
+        // in-flow (§2). The installed oauth-client resolver accepts a PDS URL.
+        const url = await client.authorize(ATPROTO_DEFAULT_PDS, {
+          state: nonce,
+          scope: ATPROTO_SCOPE,
+        });
+        return { authorizeUrl: url.toString() };
+      } catch (err) {
+        logger.warn(
+          { err, pds: ATPROTO_DEFAULT_PDS },
+          "Bluesky assisted authorize() failed",
+        );
+        return reply
+          .status(502)
+          .send({ error: "Could not start Bluesky setup — try again shortly" });
       }
     },
   );
@@ -449,7 +524,12 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       if (!unsigned.valid || !unsigned.value) return redirectOk("error");
       reply.clearCookie("oauth_state_bluesky", { path: "/" });
 
-      let statePayload: { protocol: string; userId: string; nonce: string };
+      let statePayload: {
+        protocol: string;
+        userId: string;
+        nonce: string;
+        provenance?: string;
+      };
       try {
         statePayload = JSON.parse(unsigned.value);
       } catch {
@@ -460,6 +540,12 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
 
       const userId = req.session!.sub;
       if (statePayload.userId !== userId) return redirectOk("error");
+
+      // The state cookie is the only channel that survives the redirect to tell
+      // this shared callback which flow returned (§6.1.1 S3). Default to
+      // 'linked' for back-compat with cookies minted before this column existed.
+      const provenance =
+        statePayload.provenance === "assisted" ? "assisted" : "linked";
 
       try {
         const client = await getAtprotoClient();
@@ -482,21 +568,24 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
             account_id, protocol, provenance, external_id, handle,
             service_url, credentials_enc, is_valid,
             last_refreshed_at, updated_at
-          ) VALUES ($1, 'atproto', 'linked', $2, $3, NULL, NULL, TRUE, now(), now())
+          ) VALUES ($1, 'atproto', $4, $2, $3, NULL, NULL, TRUE, now(), now())
           ON CONFLICT (account_id, protocol)
           DO UPDATE SET
             external_id       = EXCLUDED.external_id,
             handle            = EXCLUDED.handle,
-            provenance        = 'linked',
+            provenance        = EXCLUDED.provenance,
             lifecycle_state   = 'active',
             is_valid          = TRUE,
             last_refreshed_at = now(),
             updated_at        = now()
         `,
-          [userId, did, handle],
+          [userId, did, handle, provenance],
         );
 
-        logger.info({ userId, did, handle }, "Bluesky account linked");
+        logger.info(
+          { userId, did, handle, provenance },
+          "Bluesky account linked",
+        );
         return redirectOk("bluesky");
       } catch (err) {
         logger.warn({ err }, "Bluesky OAuth callback failed");

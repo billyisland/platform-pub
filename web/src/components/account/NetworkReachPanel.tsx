@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from 'react'
 import { linkedAccounts, privacyPreferences, type LinkedAccount } from '../../lib/api'
+import { ASSISTED_BLUESKY_CONSENT, type NetworkCapabilities } from '../../lib/api/linked-accounts'
 
 type SatelliteKey = 'mastodon' | 'bluesky'
 
@@ -31,11 +32,14 @@ const SATELLITES: {
 
 export function NetworkReachPanel() {
   const [accounts, setAccounts] = useState<LinkedAccount[] | null>(null)
+  const [capabilities, setCapabilities] = useState<NetworkCapabilities | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [instanceUrl, setInstanceUrl] = useState('')
   const [blueskyHandle, setBlueskyHandle] = useState('')
   const [showConnect, setShowConnect] = useState<null | SatelliteKey>(null)
+  // The ASSISTED consent gate (§6.1.1 S5) — distinct from the link form above.
+  const [showAssisted, setShowAssisted] = useState<null | SatelliteKey>(null)
 
   // Nostr presence (the degenerate concierge) — relocated from PrivacyPreferences.
   const [discoveryEnabled, setDiscoveryEnabled] = useState<boolean | null>(null)
@@ -43,8 +47,9 @@ export function NetworkReachPanel() {
 
   async function load() {
     try {
-      const { accounts } = await linkedAccounts.list()
+      const { accounts, capabilities } = await linkedAccounts.list()
       setAccounts(accounts)
+      setCapabilities(capabilities ?? { assistedBluesky: false })
     } catch (err: any) {
       setError(err.message ?? 'Failed to load network presences')
     }
@@ -110,6 +115,18 @@ export function NetworkReachPanel() {
       window.location.href = authorizeUrl
     } catch (err: any) {
       setError(err.message ?? 'Failed to start connection')
+      setConnecting(false)
+    }
+  }
+
+  async function handleAssistedBluesky() {
+    setConnecting(true)
+    setError(null)
+    try {
+      const { authorizeUrl } = await linkedAccounts.assistedBluesky()
+      window.location.href = authorizeUrl
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to start setup')
       setConnecting(false)
     }
   }
@@ -208,6 +225,9 @@ export function NetworkReachPanel() {
           ) : (
             SATELLITES.map(net => {
               const acct = linkedFor(net.protocol)
+              // ASSISTED clears for Bluesky on Phase 2 (§6.1); Mastodon stays
+              // "soon" pending Phase 3's instance question.
+              const assistedAvailable = net.key === 'bluesky' && !!capabilities?.assistedBluesky
               return (
                 <div key={net.key}>
                   <div className="flex items-center justify-between gap-4">
@@ -240,27 +260,54 @@ export function NetworkReachPanel() {
                           Disconnect
                         </button>
                       </div>
-                    ) : showConnect === net.key ? null : (
+                    ) : (showConnect === net.key || showAssisted === net.key) ? null : (
                       <div className="flex items-center gap-4 shrink-0">
                         <button onClick={() => setShowConnect(net.key)} className="btn-text">
                           Link yours
                         </button>
-                        <span
-                          className="label-ui text-grey-300 cursor-not-allowed"
-                          title={`Coming soon: all.haus mints you a ${net.conciergeHandle} handle and runs it for you.`}
-                        >
-                          Set one up · soon
-                        </span>
+                        {assistedAvailable ? (
+                          <button onClick={() => setShowAssisted(net.key)} className="btn-text">
+                            Set one up
+                          </button>
+                        ) : (
+                          <span
+                            className="label-ui text-grey-300 cursor-not-allowed"
+                            title={`Coming soon: all.haus will set up a ${net.label} account for you.`}
+                          >
+                            Set one up · soon
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* Concierge promise — honest about custody + the export escape hatch (§10). */}
-                  {!acct && (
+                  {/* "Set one up" promise — honest about who holds the keys (§10). For
+                      ASSISTED (Bluesky, Phase 2) the network custodies; the future
+                      custodial branded-handle path (Phase 4) is the "soon" framing. */}
+                  {!acct && showAssisted !== net.key && (
                     <p className="text-ui-xs text-grey-400 mt-2 leading-relaxed">
-                      Don&apos;t have a {net.label} account? Soon all.haus will set one up for you
-                      ({net.conciergeHandle}) — custodial, and yours to export and take with you anytime.
+                      {assistedAvailable
+                        ? `Don't have a ${net.label} account? all.haus can set one up for you — you'll create a normal ${net.label} account that ${net.label} holds the keys to; all.haus just connects it.`
+                        : `Don't have a ${net.label} account? Soon all.haus will set one up for you — guiding you through ${net.label}'s own signup so the account is yours.`}
                     </p>
+                  )}
+
+                  {/* ASSISTED consent gate (§6.1.1 S5) — explicit acknowledgement
+                      that a real network account is being created mid-redirect. */}
+                  {showAssisted === net.key && (
+                    <div className="pt-4">
+                      <p className="text-ui-xs text-grey-600 leading-relaxed max-w-md">
+                        {ASSISTED_BLUESKY_CONSENT}
+                      </p>
+                      <div className="flex gap-3 mt-3">
+                        <button onClick={handleAssistedBluesky} disabled={connecting} className="btn-text">
+                          {connecting ? 'Redirecting…' : `Create ${net.label} account`}
+                        </button>
+                        <button onClick={() => setShowAssisted(null)} className="btn-text-muted">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   )}
 
                   {/* Link-yours OAuth form (per network) */}
