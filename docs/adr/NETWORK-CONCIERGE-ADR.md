@@ -1,6 +1,6 @@
 # Network Concierge — Nostr root + optional satellite presences
 
-**Status:** Accepted (2026-06-09). **Phase 0 + Phase 1 shipped** (2026-06-10): `network_presences` table (migration 109, subsuming `linked_accounts`), key-custody gated secret-key export + nsec backfill in `/account/export`, and the per-user Nostr public-presence opt-in `accounts.discovery_enabled` (migration 110). **UI reframe shipped** (2026-06-10, §10): `NetworkReachPanel` replaces `LinkedAccountsPanel` — per-network reach model, Nostr root folded in as the live (degenerate) concierge, atproto/AP concierge affordances rendered disabled ("coming soon"); dual-path contextual prompt in `InlineReplyBox`. Phases 2–3 (atproto/AP concierge backend) remain gated by §8.1. This document records the model and the decisions taken in design discussion.
+**Status:** Accepted (2026-06-09). **Phase 0 + Phase 1 shipped** (2026-06-10): `network_presences` table (migration 109, subsuming `linked_accounts`), key-custody gated secret-key export + nsec backfill in `/account/export`, and the per-user Nostr public-presence opt-in `accounts.discovery_enabled` (migration 110). **UI reframe shipped** (2026-06-10, §10): `NetworkReachPanel` replaces `LinkedAccountsPanel` — per-network reach model, Nostr root folded in as the live (degenerate) concierge, atproto/AP concierge affordances rendered disabled ("coming soon"); dual-path contextual prompt in `InlineReplyBox`. Phases 2–3 (atproto/AP concierge backend) remain gated by §8.1; **proposed resolutions to the §8.1 gates are in §8.2 (pending operator ratification), and the Phase 2 build is planned in §13.** This document records the model and the decisions taken in design discussion.
 **Scope:** Generalise all.haus from "custodial Nostr identity + read/link of other networks" to "custodial **Nostr root** identity + optional, on-demand, custodial presences on other networks that all.haus provisions on the user's behalf." This document specifies the model in full and the **atproto** satellite concretely; **ActivityPub** is named as a future phase with a stub (§9). NIP-46 remote signing and paywalled-content unlock across networks are out of scope.
 
 ---
@@ -136,9 +136,27 @@ Each phase ships dark behind its own flag, mirroring `DISCOVERY_PUBLISH_ENABLED`
 
 Minting `did:plc` identities and running a PDS converts all.haus from "publishes signed events" into "custodies cross-network identities and persists their canonical repos." That is qualitatively heavier than the relay, so the following are **prerequisites to P2 shipping**, promoted out of §11's open-questions list:
 
-1. **Rotation-key custody posture decided.** A compromise of `ACCOUNT_KEY_HEX` after P2 leaks did:plc rotation keys — i.e. permanent theft of cross-network identities, not just relay impersonation. Invariant 3 ("custody parity") is convenient but pulls against this: rotation keys may warrant a stronger envelope than parity-of-mechanism (separate key, HSM, or split custody). Resolve before, not during, P2.
-2. **Deprovision/tombstone path implemented** (§6) and wired to lifecycle GC for abandoned presences. No P2 ship with provision-only.
-3. **PDS durability SLA stated and met.** `network_presences` is a projection; the PDS store now holds canonical identity repos. Backups, blob storage, and uptime are part of users' identity persistence — losing the PDS loses their Bluesky presence. Define the durability/restore story explicitly (§11 names the impedance; this makes it a gate).
+1. **Rotation-key custody posture decided.** A compromise of `ACCOUNT_KEY_HEX` after P2 leaks did:plc rotation keys — i.e. permanent theft of cross-network identities, not just relay impersonation. Invariant 3 ("custody parity") is convenient but pulls against this: rotation keys may warrant a stronger envelope than parity-of-mechanism (separate key, HSM, or split custody). Resolve before, not during, P2. **→ proposed resolution in §8.2.**
+2. **Deprovision/tombstone path implemented** (§6) and wired to lifecycle GC for abandoned presences. No P2 ship with provision-only. **→ build work, specified as §13 W6.**
+3. **PDS durability SLA stated and met.** `network_presences` is a projection; the PDS store now holds canonical identity repos. Backups, blob storage, and uptime are part of users' identity persistence — losing the PDS loses their Bluesky presence. Define the durability/restore story explicitly (§11 names the impedance; this makes it a gate). **→ proposed targets in §8.2.**
+
+### 8.2 Phase 2 entry-criteria — resolutions (**Proposed — pending operator ratification**)
+
+Gates §8.1.1 and §8.1.3 are security/infra decisions, not code. The resolutions below are **proposed with rationale and must be ratified by the operator before P2 build starts** (W0 of §13); they are not yet Accepted. Gate §8.1.2 (deprovision) is build work — see §13 W6.
+
+**§8.1.1 — Rotation-key custody. → Proposed: split custody by key *role*, not parity-for-all.**
+The tension between invariant 3 (parity, simple) and blast radius (rotation key = permanent cross-network identity) dissolves once the two atproto keys are *not* treated alike:
+- **Signing key (hot, per-post).** Reached by the dispatcher on every outbound post. Keep at **parity** — AES-256-GCM under `ACCOUNT_KEY_HEX`, exactly like `nostr_privkey_enc`. Its compromise is bounded: impersonated posts, recoverable by rotating the signing key *via* the rotation key.
+- **Rotation key (cold, lifecycle-only).** Touched only at provision, handle/DID-doc change, and deprovision — never on the post path. Give it the **elevated envelope**: encrypted under a *separate* `ROTATION_KEY_HEX` (distinct secret, distinct storage + rotation lifecycle from `ACCOUNT_KEY_HEX`) so a compromise of the app's primary account-key does **not** by itself leak rotation keys. Documented migration path to a cloud KMS / HSM-backed wrap (decrypt-on-use, key never resident in app memory) once volume justifies the operational cost.
+
+This refines invariant 3 *for atproto*: parity for the hot signing key, elevation for the cold rotation key. CLAUDE.md's custody-parity line gets a one-line carve-out pointer here. **Operator decision needed:** ratify the two-tier split, and whether the launch floor is `ROTATION_KEY_HEX` separate-envelope (software) or KMS/HSM from day one. Recommendation: separate-envelope at launch, KMS migration as a tracked fast-follow.
+
+**§8.1.3 — PDS durability. → Proposed targets** (ratify against infra budget; these are launch *floors*, not aspirations — if budget can't meet them, P2 does not ship):
+- **Repo store (PDS SQLite/Postgres):** WAL archiving / streaming replication for point-in-time recovery, **RPO ≤ 5 min**; nightly encrypted off-box full backup, **30-day retention**.
+- **Blobs (media):** durable object storage with replication; same backup cadence.
+- **Restore:** documented, *tested* runbook, **RTO ≤ 4 h**.
+- **Uptime:** **99.5%** target for the PDS *and* the handle-resolution endpoint (handle resolution down ⇒ the identity stops resolving on bsky.app).
+- **Pre-mint gate:** provisioning refuses to mint a `did:plc` unless backups are confirmed healthy — never create an identity we can't durably keep.
 
 ---
 
@@ -172,3 +190,43 @@ Deferred, recorded for completeness. all.haus would lazily materialise an actor 
 ## 12. CLAUDE.md additions (on acceptance)
 
 Add an invariant block under "Architecture → Invariants" stating: Nostr-root (signup mints the canonical custodial Nostr key); LINKED vs CONCIERGE distinction; concierge-is-lazy; custody-parity in key-custody; export-mandatory; concierge-presence-is-native-not-external. Rule-plus-pointer to this ADR.
+
+---
+
+## 13. Phase 2 atproto concierge — implementation plan
+
+Builds the §6 flow into ordered workstreams. **Status: not started** — gated on §8.2 ratification (W0). Ships dark behind its own flag `ATPROTO_CONCIERGE_ENABLED` (mirroring `DISCOVERY_PUBLISH_ENABLED`, §8). The schema already receives it: `network_presences.provenance`/`lifecycle_state` exist (P0), and the dispatcher has the `provenance='linked'` path with an empty slot for the concierge branch (W5). Sequencing: **W0 → (W1 ∥ W2) → W3 → W4 → W5 → W6 → W7 → W8.** W6 is non-optional for first ship (§8.1.2).
+
+**W0 — Ratify §8.2 + provision infra (no app code).** Operator ratifies the two-tier custody split (§8.1.1) and durability targets (§8.1.3). Stand up: `ROTATION_KEY_HEX`; the PDS host + durable volume; wildcard DNS `*.all.haus` + TLS cert; object storage for blobs; the WAL/backup pipeline. **Gate: backups proven restorable before any mint.**
+
+**W1 — PDS sibling service.** Add `@atproto/pds` as a docker service (the strfry pattern; §4 / §11 "sibling-service seam"). Own store + blobstore on the W0 volume; into the backup pipeline + a health check. Config: service DID, hostname, admin auth. `network_presences` is its *projection*, not its source of truth. No all.haus wiring yet — stand it up, verify it serves `com.atproto.*` locally. *(New deps: `@atproto/pds`.)*
+
+**W2 — key-custody generalisation.** Generalise the secret store from `(signerId, signerType)`→nostr to `(owner_id, protocol, purpose)`→secret (§5.3):
+- `purpose ∈ {nostr_sign, atproto_sign, atproto_rotation}`; signing secrets under `ACCOUNT_KEY_HEX`, rotation secrets under `ROTATION_KEY_HEX` (§8.2).
+- Protocol-aware signer: keep `finalizeEvent` for nostr; add a **k256 repo-commit signer** for atproto (`@atproto/crypto`).
+- `provision(owner, protocol)` → mints signing + rotation keypair, returns public material.
+- Extend the gated `POST /keypairs/export` (already shipped for nsec) to also return the atproto signing key **and** rotation key (invariant 4 — the rotation key is the migration anchor).
+- Unit-test signer + export round-trip; **the existing nostr path must be unchanged** (regression guard). *(New deps: `@atproto/crypto`.)*
+
+**W3 — did:plc mint + repo creation.** Server-side provisioning job, lazy per invariant 2, idempotent + resumable (each step checkpointed in `lifecycle_state` so a mid-flight failure never orphans a half-registered DID):
+1. key-custody `provision` (W2) → signing + rotation keys.
+2. Register `did:plc` at `plc.directory` (rotation key as DID-doc rotation authority; `@atproto/identity`). Rate-limit aware — external dependency (§11).
+3. `com.atproto.server.createAccount` on our PDS (W1); set handle `username.all.haus`.
+4. Write the `network_presences` row `provenance='concierge'`, `lifecycle_state` `provisioning`→`active`, `external_id=did`, `handle`, `service_url`=our PDS. *(New deps: `@atproto/identity`.)*
+
+**W4 — handle resolution.** Serve `https://username.all.haus/.well-known/atproto-did` per-`Host` over the W0 wildcard cert — the direct analog of the DB-driven `/.well-known/nostr.json`. Driven from `network_presences` (handle→did). Follows username changes (DID stable, handle mutable; `accounts.username_changed_at`/`previous_username` already exist): rename republishes resolution + updates the PDS handle.
+
+**W5 — Relay crawl + outbound dispatch.**
+- `requestCrawl` to Bluesky's Relay after provision so the AppView indexes us (§6.5; may rate-limit/decline — surfaced via lifecycle/UI, §10).
+- Add the **concierge branch** to `feed-ingest/src/tasks/outbound-cross-post.ts`: `provenance='concierge'` → sign the commit via key-custody (W2) → write to our PDS. `provenance='linked'` stays the existing OAuth-session path. Dispatch already gates on `lifecycle_state='active' AND is_valid`.
+
+**W6 — Deprovision / tombstone (§8.1.2 — ships *with* P2, not after).** On user request or lifecycle GC of an abandoned presence:
+1. **Offer export first** (invariant 4) — rotation key out before teardown, so the user can migrate the identity off-platform.
+2. `lifecycle_state='deprovisioned'`; stop outbound dispatch; stop serving handle resolution (W4).
+3. Tombstone: DID-doc deactivation at `plc.directory` (authorised by the rotation key) so the identity can't be impersonated-by-silence.
+4. Zero key-custody secrets only **after** export is declined or confirmed complete.
+Wire to a lifecycle GC sweep for dormant `provisioning`/abandoned presences (the §11 dormancy risk).
+
+**W7 — Frontend.** Wire the stubbed "Set one up · soon" button (§10 as-built) to the provision API. Show `lifecycle_state` ("Setting up… / Active") and `is_valid=false` (handle/credential breakage) **distinctly** from healthy-but-unindexed; carry the §10 expectation-setting copy ("published to your all.haus PDS; Bluesky may take time to index them, or decline"). Surface the export + deprovision affordances.
+
+**W8 — Validation + dark→live.** Schema/lint/hairline guards; integration-test the full arc (provision → post appears via our PDS → resolves on bsky.app → deprovision tombstones). Ship dark behind `ATPROTO_CONCIERGE_ENABLED`; enable for internal accounts first; document the operator runbook in `DEPLOYMENT.md`.
