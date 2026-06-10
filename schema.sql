@@ -1588,7 +1588,7 @@ CREATE TABLE public.network_presences (
     provenance text DEFAULT 'linked'::text NOT NULL,
     lifecycle_state text DEFAULT 'active'::text NOT NULL,
     CONSTRAINT network_presences_lifecycle_state_check CHECK ((lifecycle_state = ANY (ARRAY['provisioning'::text, 'active'::text, 'suspended'::text, 'deprovisioned'::text]))),
-    CONSTRAINT network_presences_provenance_check CHECK ((provenance = ANY (ARRAY['linked'::text, 'concierge'::text])))
+    CONSTRAINT network_presences_provenance_check CHECK ((provenance = ANY (ARRAY['linked'::text, 'assisted'::text, 'concierge'::text])))
 );
 
 
@@ -6558,4 +6558,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('107_feed_sources_exclude_replies.sql'),
     ('108_nostr_outbound_discovery.sql'),
     ('109_network_presences.sql'),
-    ('110_accounts_discovery_enabled.sql');
+    ('110_accounts_discovery_enabled.sql'),
+    ('111_network_presences_assisted_provenance.sql');
