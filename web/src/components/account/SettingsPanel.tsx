@@ -19,10 +19,9 @@ import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
 import { EmailChange } from './EmailChange'
 import { PaymentSection } from './PaymentSection'
-import { LinkedAccountsPanel } from './LinkedAccountsPanel'
+import { NetworkReachPanel } from './NetworkReachPanel'
 import { NotificationPreferences } from '../social/NotificationPreferences'
 import { ReadingPreferences } from './ReadingPreferences'
-import { PrivacyPreferences } from './PrivacyPreferences'
 import { ExportModal } from '../ExportModal'
 import { DangerZone } from './DangerZone'
 import { PageShell, PageHeader } from '../ui/PageShell'
@@ -84,7 +83,7 @@ export function SettingsPanel({
 
         <PaymentSection />
 
-        <LinkedAccountsPanel />
+        <NetworkReachPanel />
 
         <section className="bg-white px-6 py-5">
           <NotificationPreferences />
@@ -92,10 +91,6 @@ export function SettingsPanel({
 
         <section className="bg-white px-6 py-5">
           <ReadingPreferences />
-        </section>
-
-        <section className="bg-white px-6 py-5">
-          <PrivacyPreferences />
         </section>
 
         <div className="bg-white px-6 py-5">

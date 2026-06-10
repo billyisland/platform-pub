@@ -96,6 +96,9 @@ export function InlineReplyBox({
             Settings →
           </button>
         </p>
+        <p className="text-ui-xs mt-1" style={{ color: palette.cardMeta }}>
+          Don&apos;t have one? all.haus can set one up for you — coming soon.
+        </p>
       </div>
     );
   }

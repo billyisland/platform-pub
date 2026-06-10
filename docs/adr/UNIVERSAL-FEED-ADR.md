@@ -1482,7 +1482,7 @@ Split into two sessions to match the "one coherent commit per phase" rhythm.
 - Gateway `/api/v1/linked-accounts/*` — list/remove/update + Mastodon OAuth start + callback; dynamic client registration cached per instance in `oauth_app_registrations`
 - `POST /notes` accepts optional `crossPost: { linkedAccountId, sourceItemId, actionType }` and calls `enqueueCrossPost` (best-effort)
 - feed-ingest `outbound_cross_post` task + `activitypub-outbound` adapter — `POST /api/v1/statuses` with `Idempotency-Key`, federated reply target resolution via `/api/v2/search?resolve=true`, exponential backoff retries, terminal `status = 'failed'`
-- `LinkedAccountsPanel` on `/settings` — connect/disconnect + per-account `cross_post_default` toggle; `?linked=mastodon|error` callback banner
+- `LinkedAccountsPanel` on `/settings` — connect/disconnect + per-account `cross_post_default` toggle; `?linked=mastodon|error` callback banner *(superseded 2026-06-10 by `NetworkReachPanel`, per NETWORK-CONCIERGE-ADR §10)*
 
 **Session B (shipped):**
 

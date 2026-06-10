@@ -202,7 +202,7 @@ First 10 entries, then `SHOW N MORE REPLIES` (mono-caps, grey-400, underlined on
 All interactions require a **linked account** for the source platform. If the user doesn't have one:
 
 - Action buttons render **greyed out**
-- Clicking a greyed action shows a prompt: "Connect your [Platform] account to interact" with a link to `/settings` (LinkedAccountsPanel)
+- Clicking a greyed action shows a prompt: "Connect your [Platform] account to interact" opening the settings overlay (`NetworkReachPanel`); as of 2026-06-10 the prompt is dual-path — also "Don't have one? all.haus can set one up for you — coming soon" (NETWORK-CONCIERGE-ADR §10)
 
 ### 5.1 Reply
 
