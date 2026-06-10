@@ -17,6 +17,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
+import { invalidateLinkedAccounts } from '../../hooks/useLinkedAccounts'
 import { EmailChange } from './EmailChange'
 import { PaymentSection } from './PaymentSection'
 import { NetworkReachPanel } from './NetworkReachPanel'
@@ -56,6 +57,16 @@ export function SettingsPanel({
     const t = setTimeout(() => setBanner(null), 5000)
     return () => clearTimeout(t)
   }, [banner])
+
+  // A successful social connect just changed the user's network presences, but
+  // useLinkedAccounts holds a module-level cache that otherwise survives until a
+  // full reload — so a card's reply box would keep showing "set one up" until
+  // then. Bust the cache on return so every open surface refreshes in place.
+  useEffect(() => {
+    if (initialLinked === 'bluesky' || initialLinked === 'mastodon') {
+      invalidateLinkedAccounts()
+    }
+  }, [initialLinked])
 
   if (loading || !user) {
     const skeleton = (

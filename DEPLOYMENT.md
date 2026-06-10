@@ -137,7 +137,7 @@ Key variables:
 | `LINKED_ACCOUNT_KEY_HEX`                    | gateway, **feed-ingest**               | AES-256 key (64 hex) encrypting linked-account OAuth credentials and `atproto_oauth_sessions.session_data_enc`. **Must be identical across gateway and feed-ingest.** |
 | `LINKED_ACCOUNT_KEY_VERSION`                | gateway, feed-ingest                   | Write-side key version for `LINKED_ACCOUNT_KEY_HEX` rotation (default: `1`)                                                          |
 | `ATPROTO_CLIENT_BASE_URL`                   | gateway, feed-ingest                   | Public origin for AT Protocol OAuth client metadata (e.g. `https://all.haus`). Loopback fallback in dev                              |
-| `ATPROTO_PRIVATE_JWK`                       | gateway, feed-ingest                   | ES256 signing JWK (JSON string) for `private_key_jwt`. Optional — when unset, Bluesky OAuth is disabled but services boot normally    |
+| `ATPROTO_PRIVATE_JWK`                       | gateway, feed-ingest                   | ES256 signing JWK (JSON string) for `private_key_jwt`. Required for **any** Bluesky OAuth (link *and* "set one up") when `ATPROTO_CLIENT_BASE_URL` is a public origin — without it `getAtprotoClient()` throws and the connect 502s; services still boot. Generate with `npx tsx scripts/gen-atproto-jwk.ts` (see below). The public half is auto-served at `/.well-known/jwks.json` |
 | `ATPROTO_ASSISTED_ENABLED`                  | gateway                                | Master switch for ASSISTED atproto ("set one up for me" → Bluesky via OAuth account-creation-in-flow). `0`/unset = ships dark (`POST /linked-accounts/bluesky/assisted` 503s, UI keeps "Set one up · soon"); `1` = enabled. **Do not enable until the S0 spike passes against the real `bsky.social`.** See `docs/adr/NETWORK-CONCIERGE-ADR.md` §6.1.1 |
 | `ATPROTO_DEFAULT_PDS`                        | gateway                                | PDS hostname the ASSISTED flow seeds `authorize()` with. Defaults to `https://bsky.social`                                          |
 | `EMAIL_PROVIDER`                            | gateway                                | `postmark`, `resend`, or `console`                                                                                                  |
@@ -686,7 +686,14 @@ docker compose run --rm certbot renew && docker compose restart nginx
 - **Docker healthchecks** on some Alpine containers can report "unhealthy" due to a missing `wget`/`curl` in the image despite the service running correctly.
 - **Stripe collection** must be configured (test/live keys + webhook secret) before real money flows; verify `payment_intent.succeeded` and `transfer.paid` webhooks are reaching `/webhooks/stripe`.
 - **Email sending** requires `EMAIL_PROVIDER` (postmark/resend); defaults to console logging. New Postmark broadcast streams are rate-limited — raise `BROADCAST_DAILY_SEND_LIMIT` gradually over 2–4 weeks.
-- **Bluesky OAuth** features are disabled unless `ATPROTO_PRIVATE_JWK` is set on gateway + feed-ingest.
+- **Bluesky OAuth** features (link an existing account *and* the ASSISTED "set one up for me" flow) are disabled unless `ATPROTO_PRIVATE_JWK` is set on gateway + feed-ingest. On a public origin its absence makes the connect endpoint 502 (not a graceful skip). Generate the key once per environment and put it in the root `.env`:
+
+  ```bash
+  echo "ATPROTO_PRIVATE_JWK=$(npx tsx scripts/gen-atproto-jwk.ts)" >> .env
+  docker compose up -d gateway feed-ingest    # recreate so they pick it up
+  # verify: the public key is now served
+  curl -s https://<host>/.well-known/jwks.json | head -c 200   # must NOT contain a "d" field
+  ```
 - **Cash-out-at-will** (writer-initiated payout) is not implemented; payouts run on the scheduled cycle.
 - **NIP-07 browser extension** login is not built (all accounts are custodial).
 - **Lightning/Cashu payments**, **federation/self-hosted packaging**, and the **Mostr bridge** are post-launch.
