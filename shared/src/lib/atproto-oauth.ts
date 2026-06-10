@@ -58,10 +58,13 @@ class DbSessionStore implements NodeSavedSessionStore {
 // different gateway replica than the one that issued the authorize URL, so
 // the PKCE verifier + DPoP key must be persisted centrally.
 class DbStateStore implements NodeSavedStateStore {
-  // 15min TTL gives a margin over the 5min prune cadence so a callback
-  // arriving right at its notional expiry can't lose to a prune that
-  // fires in the same window.
-  private ttlMs = 15 * 60 * 1000
+  // 45min TTL: must outlive the longest authorize→callback round-trip. The
+  // ASSISTED atproto flow (NETWORK-CONCIERGE-ADR §6.1) has the user create a
+  // whole Bluesky account mid-flow (handle, email, captcha, ToS), so its state
+  // cookie runs 30min (gateway linked-accounts.ts); this server-side entry must
+  // exceed that — else client.callback() can't find the PKCE verifier + DPoP key
+  // and the exchange throws. Still a comfortable margin over the 5min prune.
+  private ttlMs = 45 * 60 * 1000
   async get(key: string): Promise<NodeSavedState | undefined> {
     const { rows } = await pool.query<{ state_data_enc: string }>(
       'SELECT state_data_enc FROM atproto_oauth_pending_states WHERE key = $1 AND expires_at > now()',

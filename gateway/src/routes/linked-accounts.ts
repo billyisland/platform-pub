@@ -47,6 +47,16 @@ const ATPROTO_DEFAULT_PDS =
 const ATPROTO_SCOPE = "atproto transition:generic";
 const assistedEnabled = () => process.env.ATPROTO_ASSISTED_ENABLED === "1";
 
+// State-cookie lifetimes. LINKED is a quick "log in + approve" (10 min is ample).
+// ASSISTED makes the user create a whole account mid-flow — handle, email,
+// captcha, ToS — which routinely exceeds 10 min, so its state cookie must live
+// long enough to survive that or the callback silently drops the round-trip
+// (the cookie guard returns before the logging try/catch). Must stay <= the
+// DbStateStore TTL in shared/src/lib/atproto-oauth.ts, which client.callback()
+// reads for the PKCE verifier + DPoP key.
+const OAUTH_COOKIE_TTL_SECONDS = 600; // 10 min — LINKED
+const ASSISTED_OAUTH_COOKIE_TTL_SECONDS = 30 * 60; // 30 min — ASSISTED signup
+
 // ---- Mastodon API shapes we care about --------------------------------------
 
 interface MastodonAppResponse {
@@ -414,7 +424,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           httpOnly: true,
           sameSite: "lax",
           secure: APP_URL.startsWith("https://"),
-          maxAge: 600,
+          maxAge: OAUTH_COOKIE_TTL_SECONDS,
         },
       );
 
@@ -473,7 +483,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           httpOnly: true,
           sameSite: "lax",
           secure: APP_URL.startsWith("https://"),
-          maxAge: 600,
+          maxAge: ASSISTED_OAUTH_COOKIE_TTL_SECONDS,
         },
       );
 
