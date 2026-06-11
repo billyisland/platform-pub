@@ -38,9 +38,34 @@ const createFeedSchema = z.object({
   name: z.string().trim().max(80).default(""),
 });
 
-const patchFeedSchema = z.object({
-  name: z.string().trim().max(80),
-});
+// Curated per-feed colour schemes (migration 112). Must mirror the scheme ids
+// in web/src/components/workspace/tokens.ts — adding a scheme touches both.
+// The web client normalises unknown ids to the light default, so a stale
+// client against a newer server degrades gracefully; the enum here just stops
+// junk reaching the row.
+const FEED_SCHEME_IDS = [
+  "primary",
+  "dark",
+  "blush",
+  "sage",
+  "slate",
+  "sand",
+] as const;
+
+// PATCH accepts either/both of name + appearance. Appearance is merged into
+// the existing JSONB (not replaced) so future appearance keys written by
+// another surface survive a scheme-only update.
+const patchFeedSchema = z
+  .object({
+    name: z.string().trim().max(80).optional(),
+    appearance: z
+      .object({ scheme: z.enum(FEED_SCHEME_IDS) })
+      .strict()
+      .optional(),
+  })
+  .refine((b) => b.name !== undefined || b.appearance !== undefined, {
+    message: "Nothing to update",
+  });
 
 const patchSourceSchema = z.object({
   step: z.number().int().min(0).max(5).optional(),
@@ -113,6 +138,7 @@ type AddSourceInput = z.infer<typeof addSourceSchema>;
 interface FeedRow {
   id: string;
   name: string;
+  appearance: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
   source_count: number;
@@ -122,6 +148,7 @@ function feedRowToResponse(row: FeedRow) {
   return {
     id: row.id,
     name: row.name,
+    appearance: row.appearance ?? {},
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     sourceCount: Number(row.source_count),
@@ -133,7 +160,7 @@ async function loadFeed(
   ownerId: string,
 ): Promise<FeedRow | null> {
   const { rows } = await pool.query<FeedRow>(
-    `SELECT f.id, f.name, f.created_at, f.updated_at,
+    `SELECT f.id, f.name, f.appearance, f.created_at, f.updated_at,
        (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
      FROM feeds f
      WHERE f.id = $1 AND f.owner_id = $2`,
@@ -149,7 +176,7 @@ export async function feedsRoutes(app: FastifyInstance) {
   app.get("/feeds", { preHandler: requireAuth }, async (req, reply) => {
     const ownerId = req.session!.sub;
     const { rows } = await pool.query<FeedRow>(
-      `SELECT f.id, f.name, f.created_at, f.updated_at,
+      `SELECT f.id, f.name, f.appearance, f.created_at, f.updated_at,
          (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
        FROM feeds f
        WHERE f.owner_id = $1
@@ -175,7 +202,7 @@ export async function feedsRoutes(app: FastifyInstance) {
       }
       const { rows } = await pool.query<FeedRow>(
         `INSERT INTO feeds (owner_id, name) VALUES ($1, $2)
-       RETURNING id, name, created_at, updated_at, 0::int AS source_count`,
+       RETURNING id, name, appearance, created_at, updated_at, 0::int AS source_count`,
         [ownerId, parsed.data.name],
       );
       return reply.status(201).send({ feed: feedRowToResponse(rows[0]) });
@@ -183,7 +210,7 @@ export async function feedsRoutes(app: FastifyInstance) {
   );
 
   // ---------------------------------------------------------------------------
-  // PATCH /feeds/:id — rename
+  // PATCH /feeds/:id — rename and/or set appearance (colour scheme)
   // ---------------------------------------------------------------------------
   app.patch<{ Params: { id: string }; Body: unknown }>(
     "/feeds/:id",
@@ -201,12 +228,28 @@ export async function feedsRoutes(app: FastifyInstance) {
           .send({ error: "Invalid body", details: parsed.error.flatten() });
       }
 
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      let paramIdx = 3; // $1=id, $2=ownerId
+      if (parsed.data.name !== undefined) {
+        sets.push(`name = $${paramIdx}`);
+        vals.push(parsed.data.name);
+        paramIdx++;
+      }
+      if (parsed.data.appearance !== undefined) {
+        // JSONB merge, not replace — future appearance keys survive a
+        // scheme-only update.
+        sets.push(`appearance = appearance || $${paramIdx}::jsonb`);
+        vals.push(JSON.stringify(parsed.data.appearance));
+        paramIdx++;
+      }
+
       const { rows } = await pool.query<FeedRow>(
-        `UPDATE feeds SET name = $1
-         WHERE id = $2 AND owner_id = $3
-         RETURNING id, name, created_at, updated_at,
+        `UPDATE feeds SET ${sets.join(", ")}
+         WHERE id = $1 AND owner_id = $2
+         RETURNING id, name, appearance, created_at, updated_at,
            (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = feeds.id) AS source_count`,
-        [parsed.data.name, id, ownerId],
+        [id, ownerId, ...vals],
       );
       if (rows.length === 0)
         return reply.status(404).send({ error: "Feed not found" });

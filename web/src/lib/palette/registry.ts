@@ -61,6 +61,24 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   { slug: 'off-white', hex: '#FAFAFA', label: 'Provenance bar ground' },
   { slug: 'blush', hex: '#F5D5D6', label: 'Profile avatar gradient start' },
   { slug: 'blush-deep', hex: '#E8A5A7', label: 'Profile avatar gradient end' },
+  // --- Per-feed colour-scheme surfaces (feature-debt §3) -------------------
+  // Each curated scheme contributes three surfaces (walls double as the bar);
+  // every text colour is DERIVED from these by luminance in
+  // components/workspace/tokens.ts — tune surfaces here/in the devtool and the
+  // text family follows. Keep each scheme's card surface clearly light or
+  // clearly dark: mid-luminance cards defeat both tuned text ramps.
+  { slug: 'blush-walls', hex: '#5C2E30', label: 'Feed scheme Blush — vessel walls & bar' },
+  { slug: 'blush-interior', hex: '#EFDCDC', label: 'Feed scheme Blush — vessel interior' },
+  { slug: 'blush-card', hex: '#FAF3F3', label: 'Feed scheme Blush — card surface' },
+  { slug: 'sage-walls', hex: '#2E4438', label: 'Feed scheme Sage — vessel walls & bar' },
+  { slug: 'sage-interior', hex: '#E3E9E0', label: 'Feed scheme Sage — vessel interior' },
+  { slug: 'sage-card', hex: '#F6FAF4', label: 'Feed scheme Sage — card surface' },
+  { slug: 'sand-walls', hex: '#54452B', label: 'Feed scheme Sand — vessel walls & bar' },
+  { slug: 'sand-interior', hex: '#EAE2CF', label: 'Feed scheme Sand — vessel interior' },
+  { slug: 'sand-card', hex: '#FAF5E9', label: 'Feed scheme Sand — card surface' },
+  { slug: 'slate-walls', hex: '#0D131F', label: 'Feed scheme Slate — vessel walls & bar (dark)' },
+  { slug: 'slate-interior', hex: '#1B2535', label: 'Feed scheme Slate — vessel interior (dark)' },
+  { slug: 'slate-card', hex: '#243248', label: 'Feed scheme Slate — card surface (dark)' },
 ]
 
 export const PALETTE_STORAGE_KEY = 'ah:palette-overrides'

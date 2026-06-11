@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ITICJt9IRwUVP5yRnzADUoEoQMzOqiuveF9W8arZCv52JqLSO46qmdXJkBz57kj
+\restrict Ud79Pflto6CqMBEE6fYAkjA0EulWgqkD0vJEMuKHPVb3rIbqhxLxx0ASssDeRgN
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1477,6 +1477,7 @@ CREATE TABLE public.feeds (
     name text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    appearance jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT feeds_name_length CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80)))
 );
 
@@ -6430,7 +6431,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ITICJt9IRwUVP5yRnzADUoEoQMzOqiuveF9W8arZCv52JqLSO46qmdXJkBz57kj
+\unrestrict Ud79Pflto6CqMBEE6fYAkjA0EulWgqkD0vJEMuKHPVb3rIbqhxLxx0ASssDeRgN
 
 
 --
@@ -6559,4 +6560,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('108_nostr_outbound_discovery.sql'),
     ('109_network_presences.sql'),
     ('110_accounts_discovery_enabled.sql'),
-    ('111_network_presences_assisted_provenance.sql');
+    ('111_network_presences_assisted_provenance.sql'),
+    ('112_feeds_appearance.sql');

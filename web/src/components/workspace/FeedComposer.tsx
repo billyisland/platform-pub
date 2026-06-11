@@ -14,16 +14,16 @@ import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
 import { openSurfaceHref } from "../../stores/surfaceOverlay";
 import {
-  type Brightness,
+  type FeedScheme,
   type Density,
   type Orientation,
   type TextSize,
-  nextBrightness,
   nextDensity,
   nextOrientation,
   nextTextSize,
   normalizeBrightness,
-  DEFAULT_BRIGHTNESS,
+  PALETTES,
+  SCHEME_OPTIONS,
   DEFAULT_DENSITY,
   DEFAULT_ORIENTATION,
   DEFAULT_TEXT_SIZE,
@@ -74,12 +74,13 @@ interface FeedComposerProps {
    *  (which would leave the floor empty until next bootstrap reseeds). */
   deleteBlocked?: boolean;
   // Appearance controls (moved off the vessel bar — task 8). Current values +
-  // commit callbacks, wired from WorkspaceView against the workspace store.
-  brightness?: Brightness;
+  // commit callbacks, wired from WorkspaceView against the workspace store
+  // (and, for scheme, the server-side feeds.appearance — feature-debt §3).
+  scheme?: FeedScheme;
   density?: Density;
   orientation?: Orientation;
   textSize?: TextSize;
-  onBrightnessChange?: (b: Brightness) => void;
+  onSchemeChange?: (s: FeedScheme) => void;
   onDensityChange?: (d: Density) => void;
   onOrientationChange?: (o: Orientation) => void;
   onTextSizeChange?: (t: TextSize) => void;
@@ -95,11 +96,11 @@ export function FeedComposer({
   onRenamed,
   onDeleted,
   deleteBlocked,
-  brightness,
+  scheme,
   density,
   orientation,
   textSize,
-  onBrightnessChange,
+  onSchemeChange,
   onDensityChange,
   onOrientationChange,
   onTextSizeChange,
@@ -237,7 +238,7 @@ export function FeedComposer({
   if (!open || !feed) return null;
 
   const showAppearance =
-    onBrightnessChange ||
+    onSchemeChange ||
     onDensityChange ||
     onOrientationChange ||
     onTextSizeChange;
@@ -538,6 +539,12 @@ export function FeedComposer({
             >
               Appearance
             </div>
+            {onSchemeChange && (
+              <SchemePicker
+                value={normalizeBrightness(scheme)}
+                onChange={onSchemeChange}
+              />
+            )}
             <div
               style={{
                 display: "flex",
@@ -545,20 +552,6 @@ export function FeedComposer({
                 gap: 16,
               }}
             >
-              {onBrightnessChange && (
-                <AppearanceControl
-                  label="Brightness"
-                  glyph={normalizeBrightness(brightness) === "dark" ? "●" : "○"}
-                  indicator={
-                    normalizeBrightness(brightness) === "dark" ? "Dark" : "Light"
-                  }
-                  onClick={() =>
-                    onBrightnessChange(
-                      nextBrightness(brightness ?? DEFAULT_BRIGHTNESS),
-                    )
-                  }
-                />
-              )}
               {onDensityChange && (
                 <AppearanceControl
                   label="View"
@@ -725,6 +718,73 @@ function OrientationGlyph({ orientation }: { orientation: Orientation }) {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+// The colour-scheme picker (feature-debt §3) — a curated row of surface
+// swatches replacing the old Light/Dark toggle. Each swatch is a miniature of
+// the scheme's user-picked surfaces (4px walls strip · interior ground · card
+// chip); every text colour derives from those surfaces in tokens.ts, so the
+// picker can't produce an illegible feed. Selection commits immediately via
+// onChange (local store + server PATCH, wired in WorkspaceView) and the
+// vessel behind the glass repaints live.
+function SchemePicker({
+  value,
+  onChange,
+}: {
+  value: FeedScheme;
+  onChange: (s: FeedScheme) => void;
+}) {
+  const current = SCHEME_OPTIONS.find((o) => o.id === value);
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div
+        className="label-ui"
+        style={{ color: TOKENS.hintFg, marginBottom: 6 }}
+      >
+        Colour — {current?.label}
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        {SCHEME_OPTIONS.map((opt) => {
+          const pal = PALETTES[opt.id];
+          const selected = opt.id === value;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              title={opt.label}
+              aria-label={`Colour scheme: ${opt.label}`}
+              aria-pressed={selected}
+              onClick={() => onChange(opt.id)}
+              style={{
+                width: 44,
+                height: 32,
+                padding: 0,
+                border: "none",
+                background: pal.interior,
+                // Echo the vessel grammar: walls on the left, card inside.
+                borderLeft: `4px solid ${pal.walls}`,
+                outline: selected ? "2px solid var(--ah-ink-925)" : "none",
+                outlineOffset: 2,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <span
+                style={{
+                  display: "block",
+                  width: 22,
+                  height: 14,
+                  background: pal.cardBg,
+                }}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

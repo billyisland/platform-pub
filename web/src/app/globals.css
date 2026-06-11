@@ -83,6 +83,31 @@
   --ah-blush: rgb(var(--ah-blush-rgb));
   --ah-blush-deep-rgb: 232 165 167;
   --ah-blush-deep: rgb(var(--ah-blush-deep-rgb));
+  /* Per-feed colour-scheme surfaces (feature-debt §3) */
+  --ah-blush-walls-rgb: 92 46 48;
+  --ah-blush-walls: rgb(var(--ah-blush-walls-rgb));
+  --ah-blush-interior-rgb: 239 220 220;
+  --ah-blush-interior: rgb(var(--ah-blush-interior-rgb));
+  --ah-blush-card-rgb: 250 243 243;
+  --ah-blush-card: rgb(var(--ah-blush-card-rgb));
+  --ah-sage-walls-rgb: 46 68 56;
+  --ah-sage-walls: rgb(var(--ah-sage-walls-rgb));
+  --ah-sage-interior-rgb: 227 233 224;
+  --ah-sage-interior: rgb(var(--ah-sage-interior-rgb));
+  --ah-sage-card-rgb: 246 250 244;
+  --ah-sage-card: rgb(var(--ah-sage-card-rgb));
+  --ah-sand-walls-rgb: 84 69 43;
+  --ah-sand-walls: rgb(var(--ah-sand-walls-rgb));
+  --ah-sand-interior-rgb: 234 226 207;
+  --ah-sand-interior: rgb(var(--ah-sand-interior-rgb));
+  --ah-sand-card-rgb: 250 245 233;
+  --ah-sand-card: rgb(var(--ah-sand-card-rgb));
+  --ah-slate-walls-rgb: 13 19 31;
+  --ah-slate-walls: rgb(var(--ah-slate-walls-rgb));
+  --ah-slate-interior-rgb: 27 37 53;
+  --ah-slate-interior: rgb(var(--ah-slate-interior-rgb));
+  --ah-slate-card-rgb: 36 50 72;
+  --ah-slate-card: rgb(var(--ah-slate-card-rgb));
 }
 
 /* ── Self-hosted fonts ───────────────────────────────────────────────────────── */

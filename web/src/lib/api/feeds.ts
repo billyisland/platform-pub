@@ -6,6 +6,12 @@ import { request } from "./client";
 export interface WorkspaceFeed {
   id: string;
   name: string;
+  // Per-feed appearance (migration 112). `scheme` is a curated colour-scheme
+  // id from components/workspace/tokens.ts; absent means "never picked"
+  // (client falls back to the legacy per-device brightness, then the light
+  // default). Server-side because a feed's colour is feed character — it
+  // travels with the feed, not the device.
+  appearance?: { scheme?: string };
   createdAt: string;
   updatedAt: string;
   sourceCount: number;
@@ -199,6 +205,14 @@ export const workspaceFeeds = {
     request<{ feed: WorkspaceFeed }>(`/workspace/feeds/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ name }),
+    }),
+
+  // Server-side merge: other appearance keys on the row survive a
+  // scheme-only update.
+  setAppearance: (id: string, appearance: { scheme: string }) =>
+    request<{ feed: WorkspaceFeed }>(`/workspace/feeds/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ appearance }),
     }),
 
   remove: (id: string) =>

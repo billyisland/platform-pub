@@ -23,6 +23,7 @@ import { PaymentSection } from './PaymentSection'
 import { NetworkReachPanel } from './NetworkReachPanel'
 import { NotificationPreferences } from '../social/NotificationPreferences'
 import { ReadingPreferences } from './ReadingPreferences'
+import { ThemeSection } from './ThemeSection'
 import { ExportModal } from '../ExportModal'
 import { DangerZone } from './DangerZone'
 import { PageShell, PageHeader } from '../ui/PageShell'
@@ -103,6 +104,8 @@ export function SettingsPanel({
         <section className="bg-white px-6 py-5">
           <ReadingPreferences />
         </section>
+
+        <ThemeSection />
 
         <div className="bg-white px-6 py-5">
           <p className="label-ui text-grey-400 mb-4">Export my data</p>

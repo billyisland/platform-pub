@@ -34,6 +34,7 @@ import { mapFeedItemToPost } from "../../lib/post/map-feed-item";
 import { originWebUrl } from "../../lib/post/origin-url";
 import {
   paletteFor,
+  normalizeBrightness,
   TEXT_SIZE_PX,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
@@ -786,6 +787,19 @@ export function WorkspaceView() {
           }
         });
 
+        // Per-feed colour scheme (feature-debt §3): the server-side
+        // feeds.appearance.scheme is authoritative — feed character travels
+        // with the feed across devices. Reconcile it into the layout store,
+        // whose persisted `brightness` field doubles as the local cache (and,
+        // for feeds that have never picked a scheme, the legacy per-device
+        // light/dark fallback).
+        list.forEach((feed) => {
+          const scheme = feed.appearance?.scheme;
+          if (scheme && stored[feed.id]?.brightness !== scheme) {
+            setVesselBrightness(feed.id, normalizeBrightness(scheme));
+          }
+        });
+
         // First-login ceremony: only if we just minted the default feed AND
         // this user hasn't seen the ceremony before. Plays viewport-centred
         // (per spec: "expands from the centre of an empty screen"). The
@@ -1150,7 +1164,7 @@ export function WorkspaceView() {
         deleteBlocked={
           vessels.filter((v) => !positions[v.feed.id]?.hidden).length <= 1
         }
-        brightness={
+        scheme={
           feedComposerFor ? positions[feedComposerFor.id]?.brightness : undefined
         }
         density={
@@ -1164,9 +1178,21 @@ export function WorkspaceView() {
         textSize={
           feedComposerFor ? positions[feedComposerFor.id]?.textSize : undefined
         }
-        onBrightnessChange={(next) =>
-          feedComposerFor && setVesselBrightness(feedComposerFor.id, next)
-        }
+        onSchemeChange={(next) => {
+          if (!feedComposerFor) return;
+          // Local store repaints the vessel immediately; the server PATCH
+          // persists the scheme as feed character (cross-device). The
+          // refreshed feed object keeps the vessel state in sync.
+          setVesselBrightness(feedComposerFor.id, next);
+          workspaceFeedsApi
+            .setAppearance(feedComposerFor.id, { scheme: next })
+            .then(({ feed }) =>
+              setVessels((prev) =>
+                prev.map((v) => (v.feed.id === feed.id ? { ...v, feed } : v)),
+              ),
+            )
+            .catch(() => {});
+        }}
         onDensityChange={(next) =>
           feedComposerFor && setVesselDensity(feedComposerFor.id, next)
         }

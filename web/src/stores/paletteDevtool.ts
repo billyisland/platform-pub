@@ -21,6 +21,8 @@ interface PaletteDevtoolState {
   setColor: (slug: string, hex: string) => void;
   resetColor: (slug: string) => void;
   resetAll: () => void;
+  /** Replace the whole override set — preset themes (lib/palette/themes.ts). */
+  setOverrides: (overrides: Record<string, string>) => void;
   /** Load persisted overrides and apply them to :root (called once on mount). */
   hydrate: () => void;
 }
@@ -49,6 +51,11 @@ export const usePaletteDevtool = create<PaletteDevtoolState>((set, get) => ({
   resetColor: (slug) => {
     const overrides = { ...get().overrides };
     delete overrides[slug];
+    applyPaletteOverrides(overrides);
+    persist(overrides);
+    set({ overrides });
+  },
+  setOverrides: (overrides) => {
     applyPaletteOverrides(overrides);
     persist(overrides);
     set({ overrides });
