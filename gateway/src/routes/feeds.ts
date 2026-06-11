@@ -1679,7 +1679,12 @@ async function sourceFilteredItems(
       JOIN matched m ON m.fi_id = fi.id
       ${FEED_JOINS}
       WHERE fi.deleted_at IS NULL
-        AND (fi.author_id IS NULL OR fi.author_id != $1)
+        -- No self-exclusion here (unlike the explore queries): membership in a
+        -- composable feed is explicit — nothing enters without a feed_sources
+        -- match — so the reader's own items appear iff a source they added
+        -- admits them (themselves as a source, their publication, a tag they
+        -- post under). The old "not self" clause was inherited from explore
+        -- semantics and silently overrode an explicit self-source.
         AND NOT EXISTS (
           SELECT 1 FROM blocks WHERE blocker_id = $1 AND blocked_id = fi.author_id
         )
