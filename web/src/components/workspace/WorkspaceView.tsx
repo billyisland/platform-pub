@@ -63,7 +63,7 @@ import {
 import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
 
-const FLOOR = "#F0EFEB"; // grey-100 per Step 1 / Colour tokens committed
+const FLOOR = "var(--ah-bone)"; // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed";
 
 // Friendly origin label shown on the quoted-mini when quoting an external post
@@ -1320,7 +1320,7 @@ function CenteredHint({ children }: { children: React.ReactNode }) {
     <div
       className="label-ui text-center"
       style={{
-        color: "#9C9A94",
+        color: "var(--ah-stone-350)",
         position: "absolute",
         top: "50%",
         left: "50%",
@@ -1334,7 +1334,7 @@ function CenteredHint({ children }: { children: React.ReactNode }) {
 
 function Hint({ children }: { children: React.ReactNode }) {
   return (
-    <div className="label-ui py-6 text-center" style={{ color: "#9C9A94" }}>
+    <div className="label-ui py-6 text-center" style={{ color: "var(--ah-stone-350)" }}>
       {children}
     </div>
   );

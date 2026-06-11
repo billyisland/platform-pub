@@ -26,7 +26,7 @@ interface QuoteCardProps {
 
 function ArticlePennant({ data }: { data: ResolvedContent }) {
   const authorIsProfile = data.author.username.length < 40
-  const barColor = data.isPaywalled ? '#B5242A' : '#111111'
+  const barColor = data.isPaywalled ? 'var(--ah-crimson)' : 'var(--ah-ink)'
 
   return (
     <Link
@@ -110,7 +110,7 @@ export function QuoteCard({ eventId }: QuoteCardProps) {
       href={noteHref ?? '#'}
       onClick={e => { e.stopPropagation(); if (!noteHref) e.preventDefault() }}
       className="block mt-2.5 ml-[38px] hover:opacity-90 transition-opacity"
-      style={{ borderLeft: '4px solid #BBBBBB', padding: '8px 20px' }}
+      style={{ borderLeft: '4px solid var(--ah-grey-300)', padding: '8px 20px' }}
     >
       <div className="flex items-center gap-2 mb-1">
         {data.author.avatar ? (

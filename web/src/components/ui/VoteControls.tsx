@@ -117,8 +117,8 @@ export function VoteControls({
   // Muted/active colours: on a themed vessel they track the palette (so they read
   // on a dark card); on a fixed-light surface (no palette) they fall back to
   // grey-600 / crimson. Hover is the mode-agnostic opacity fade used sitewide.
-  const mutedColor = palette?.cardMeta ?? '#666666'
-  const accentColor = palette?.crimson ?? '#B5242A'
+  const mutedColor = palette?.cardMeta ?? 'var(--ah-grey-600)'
+  const accentColor = palette?.crimson ?? 'var(--ah-crimson)'
 
   const totalSpentPence = computeTotalSpent(myVotes)
 

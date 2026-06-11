@@ -71,7 +71,7 @@ export default function TraffologyPiecePage() {
       <div className="mt-6 h-[18px] flex justify-end items-baseline mb-2">
         <div
           className="text-[12px] font-semibold tracking-tight transition-opacity duration-75"
-          style={{ color: '#002FA7', opacity: hoverInfo ? 1 : 0 }}
+          style={{ color: 'var(--ah-klein-blue)', opacity: hoverInfo ? 1 : 0 }}
         >
           {hoverInfo || ''}
         </div>
@@ -190,7 +190,7 @@ function SourceRow({
           {source.is_new_for_writer && (
             <span
               className="text-[8px] font-bold uppercase tracking-[0.1em] px-1 py-px leading-tight flex-shrink-0 border-[1.5px]"
-              style={{ color: '#002FA7', borderColor: '#002FA7' }}
+              style={{ color: 'var(--ah-klein-blue)', borderColor: 'var(--ah-klein-blue)' }}
             >
               New
             </span>

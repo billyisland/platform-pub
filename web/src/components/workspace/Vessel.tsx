@@ -49,8 +49,8 @@ const GAP = 12; // px inter-card gap
 const WIDTH = 300; // px default at standard density
 
 const ROUNDEL_TOKENS = {
-  bg: "#1A1A18",
-  fg: "#F0EFEB",
+  bg: "var(--ah-ink-925)",
+  fg: "var(--ah-bone)",
 };
 
 // Slice 5b: minimums per spec ("below which content becomes illegible").
@@ -425,7 +425,7 @@ export function Vessel({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#FFFFFF",
+            color: "var(--ah-white)",
             fontSize: 22,
             fontWeight: 600,
             lineHeight: 1,

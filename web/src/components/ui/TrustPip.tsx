@@ -14,10 +14,10 @@ import type { PipStatus } from "../../lib/ndk";
 // =============================================================================
 
 const PIP_COLORS: Record<PipStatus, string> = {
-  known: "#1d9e75",
-  partial: "#ef9f27",
-  unknown: "#b0b0ab",
-  contested: "#B5242A",
+  known: "var(--ah-trust-green)",
+  partial: "var(--ah-trust-amber)",
+  unknown: "var(--ah-trust-grey)",
+  contested: "var(--ah-crimson)",
 };
 
 const PIP_TITLES: Record<PipStatus, string> = {

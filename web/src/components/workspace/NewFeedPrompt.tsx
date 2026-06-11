@@ -7,15 +7,15 @@ import { useEffect, useRef, useState } from "react";
 // hands it back to the caller, which posts to /api/v1/feeds.
 
 const TOKENS = {
-  scrim: "rgba(26, 26, 24, 0.4)",
-  panelBg: "#FFFFFF",
-  panelBorder: "#1A1A18",
-  hintFg: "#8A8880",
-  errorFg: "#B5242A",
-  inputBorder: "#E6E5E0",
-  primaryBg: "#1A1A18",
-  primaryFg: "#F0EFEB",
-  primaryDisabled: "#BBBBBB",
+  scrim: "rgb(var(--ah-ink-925-rgb) / 0.4)",
+  panelBg: "var(--ah-white)",
+  panelBorder: "var(--ah-ink-925)",
+  hintFg: "var(--ah-stone-400)",
+  errorFg: "var(--ah-crimson)",
+  inputBorder: "var(--ah-bone-bright)",
+  primaryBg: "var(--ah-ink-925)",
+  primaryFg: "var(--ah-bone)",
+  primaryDisabled: "var(--ah-grey-300)",
 };
 
 const NAME_LIMIT = 80;

@@ -84,7 +84,7 @@ export function InlineReplyBox({
   // Inset-panel fill replaces the old thin grey borders (lines are banned
   // sitewide). A dark wash reads on the light card, a light wash on the dark card.
   const panelWash = isDarkPalette(palette)
-    ? "rgba(255,255,255,0.05)"
+    ? "rgb(var(--ah-white-rgb) / 0.05)"
     : "rgba(0,0,0,0.04)";
 
   useEffect(() => {
@@ -159,7 +159,7 @@ export function InlineReplyBox({
           )}
         </p>
         {error && (
-          <p className="text-ui-xs mt-1" style={{ color: "#B5242A" }}>
+          <p className="text-ui-xs mt-1" style={{ color: "var(--ah-crimson)" }}>
             {error}
           </p>
         )}
@@ -210,14 +210,14 @@ export function InlineReplyBox({
       <div className="px-3 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {error && (
-            <span className="text-ui-xs" style={{ color: "#B5242A" }}>
+            <span className="text-ui-xs" style={{ color: "var(--ah-crimson)" }}>
               {error}
             </span>
           )}
           {remaining <= 100 && (
             <span
               className="label-ui"
-              style={{ color: remaining <= 0 ? "#B5242A" : "#999" }}
+              style={{ color: remaining <= 0 ? "var(--ah-crimson)" : "var(--ah-grey-400)" }}
             >
               {remaining}
             </span>
@@ -229,8 +229,8 @@ export function InlineReplyBox({
           disabled={!content.trim() || content.length > MAX_CHARS || publishing}
           className="label-ui px-3 py-1 rounded disabled:opacity-40"
           style={{
-            background: "#111",
-            color: "#fff",
+            background: "var(--ah-ink)",
+            color: "var(--ah-white)",
           }}
         >
           {publishing ? "SENDING…" : "REPLY"}

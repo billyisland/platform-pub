@@ -71,7 +71,7 @@ export function DangerZone() {
           <button
             onClick={() => setShowDeleteModal(true)}
             className="btn py-2 px-4 text-sm"
-            style={{ backgroundColor: '#DC2626', borderColor: '#DC2626' }}
+            style={{ backgroundColor: 'var(--ah-danger-red)', borderColor: 'var(--ah-danger-red)' }}
           >
             Delete account
           </button>
@@ -121,7 +121,7 @@ export function DangerZone() {
                 onClick={handleDelete}
                 disabled={!emailMatch || deleting}
                 className="btn py-2 px-4 text-sm disabled:opacity-50"
-                style={{ backgroundColor: '#DC2626', borderColor: '#DC2626' }}
+                style={{ backgroundColor: 'var(--ah-danger-red)', borderColor: 'var(--ah-danger-red)' }}
               >
                 {deleting ? 'Deleting…' : 'Delete my account'}
               </button>

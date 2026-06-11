@@ -292,7 +292,7 @@ function ReplyPreview({
   return (
     <div
       className="flex items-start gap-2"
-      style={{ borderLeft: "4px solid #B5242A", paddingLeft: "16px" }}
+      style={{ borderLeft: "4px solid var(--ah-crimson)", paddingLeft: "16px" }}
     >
       <div className="flex-1 min-w-0">
         {target.highlightedText ? (

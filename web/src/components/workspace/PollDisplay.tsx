@@ -36,9 +36,9 @@ export function PollDisplay({
   // as the result bar against it. Both are mode-aware: a dark wash on the light
   // card, a light wash on the dark card (a black wash vanishes there).
   const dark = isDarkPalette(palette);
-  const trackWash = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)";
-  const resultWash = dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.10)";
-  const selectedWash = "rgba(181,36,42,0.14)"; // crimson tint marks selection
+  const trackWash = dark ? "rgb(var(--ah-white-rgb) / 0.05)" : "rgba(0,0,0,0.04)";
+  const resultWash = dark ? "rgb(var(--ah-white-rgb) / 0.14)" : "rgba(0,0,0,0.10)";
+  const selectedWash = "rgb(var(--ah-crimson-rgb) / 0.14)"; // crimson tint marks selection
 
   function toggleOption(index: number) {
     if (!canVote || voting) return;
@@ -94,8 +94,8 @@ export function PollDisplay({
                     className="inline-block w-3.5 h-3.5 border-2 flex-shrink-0"
                     style={{
                       borderRadius: poll.multiple ? "2px" : "50%",
-                      backgroundColor: isSelected ? "#B5242A" : "transparent",
-                      borderColor: isSelected ? "#B5242A" : palette.cardMeta,
+                      backgroundColor: isSelected ? "var(--ah-crimson)" : "transparent",
+                      borderColor: isSelected ? "var(--ah-crimson)" : palette.cardMeta,
                     }}
                   />
                 )}
@@ -121,7 +121,7 @@ export function PollDisplay({
             className="label-ui"
             style={{
               color:
-                selected.size > 0 && !voting ? "#B5242A" : palette.cardMeta,
+                selected.size > 0 && !voting ? "var(--ah-crimson)" : palette.cardMeta,
               background: "none",
               border: "none",
               padding: 0,

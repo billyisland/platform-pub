@@ -57,7 +57,7 @@ export function TagBrowser({ tagName, inOverlay = false }: { tagName: string; in
             const publishedAt = a.published_at ? Math.floor(new Date(a.published_at).getTime() / 1000) : 0
             const excerpt = a.summary ? truncateText(stripMarkdown(a.summary), 200) : ''
             const isPaid = a.access_mode === 'paywalled'
-            const barColor = isPaid ? '#B5242A' : '#111111'
+            const barColor = isPaid ? 'var(--ah-crimson)' : 'var(--ah-ink)'
 
             return (
               <Link

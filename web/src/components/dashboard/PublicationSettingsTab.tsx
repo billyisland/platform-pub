@@ -338,7 +338,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
               <button
                 onClick={() => setShowDeleteModal(true)}
                 className="btn py-2 px-4 text-sm"
-                style={{ backgroundColor: '#DC2626', borderColor: '#DC2626' }}
+                style={{ backgroundColor: 'var(--ah-danger-red)', borderColor: 'var(--ah-danger-red)' }}
               >
                 Delete publication
               </button>
@@ -438,7 +438,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
                     onClick={handleDelete}
                     disabled={!deleteMatch || deleting}
                     className="btn py-2 px-4 text-sm disabled:opacity-50"
-                    style={{ backgroundColor: '#DC2626', borderColor: '#DC2626' }}
+                    style={{ backgroundColor: 'var(--ah-danger-red)', borderColor: 'var(--ah-danger-red)' }}
                   >
                     {deleting ? 'Deleting...' : 'Delete forever'}
                   </button>

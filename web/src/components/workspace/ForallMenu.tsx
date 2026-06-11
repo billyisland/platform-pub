@@ -8,17 +8,18 @@ import { useDashboardOverlay } from "../../stores/dashboardOverlay";
 import { useNotificationsOverlay } from "../../stores/notificationsOverlay";
 import { useLedgerOverlay } from "../../stores/ledgerOverlay";
 import { useSettingsOverlay } from "../../stores/settingsOverlay";
+import { usePaletteDevtool } from "../../stores/paletteDevtool";
 import { SearchPanel } from "./SearchPanel";
 
 const TOKENS = {
-  buttonBg: "#1A1A18",
-  buttonFg: "#F0EFEB",
-  glyphFg: "#F0EFEB", // workspace floor colour (FLOOR in WorkspaceView)
-  itemFg: "#1A1A18",
-  itemFocusBg: "rgba(17, 17, 17, 0.06)", // subtle dark wash on the warm pane
-  itemMuted: "#666666", // grey-600 — legible on the mid-light glasshouse pane
-  badgeBg: "#B5242A",
-  badgeFg: "#FFFFFF",
+  buttonBg: "var(--ah-ink-925)",
+  buttonFg: "var(--ah-bone)",
+  glyphFg: "var(--ah-bone)", // workspace floor colour (FLOOR in WorkspaceView)
+  itemFg: "var(--ah-ink-925)",
+  itemFocusBg: "rgb(var(--ah-ink-rgb) / 0.06)", // subtle dark wash on the warm pane
+  itemMuted: "var(--ah-grey-600)", // grey-600 — legible on the mid-light glasshouse pane
+  badgeBg: "var(--ah-crimson)",
+  badgeFg: "var(--ah-white)",
 };
 
 export type ForallAction = "new-feed" | "new-note" | "new-article";
@@ -107,6 +108,15 @@ export function ForallMenu({
       kind: "overlay",
       onOpen: () => useSettingsOverlay.getState().open(),
       label: "Settings",
+      count: 0,
+    },
+    // TEMPORARY — live colour-tuning kit (PalettePanel). Not a Glasshouse:
+    // opening it leaves every other overlay's state untouched. Remove this
+    // row with the devtool once the colour scheme is finalised.
+    {
+      kind: "overlay",
+      onOpen: () => usePaletteDevtool.getState().open(),
+      label: "Palette",
       count: 0,
     },
   ];
@@ -325,9 +335,11 @@ export function ForallMenu({
               <circle cx="28" cy="28" r="28" />
             </clipPath>
           </defs>
+          {/* stroke via style, not the presentation attribute — the token
+              is a var() reference, which attributes don't resolve */}
           <g
             clipPath="url(#forall-clip)"
-            stroke={TOKENS.glyphFg}
+            style={{ stroke: TOKENS.glyphFg }}
             strokeWidth={6}
             strokeLinecap="round"
             fill="none"

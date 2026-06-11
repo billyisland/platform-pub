@@ -283,7 +283,7 @@ export function VouchModal({
         </div>
 
         {error && (
-          <p className="text-[11px] font-sans text-[#c41230]">{error}</p>
+          <p className="text-[11px] font-sans" style={{ color: 'var(--ah-vouch-red)' }}>{error}</p>
         )}
 
         {/* Actions */}

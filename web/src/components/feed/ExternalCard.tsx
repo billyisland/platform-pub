@@ -170,7 +170,7 @@ export function ExternalCard({ item }: ExternalCardProps) {
       {/* Anchor card */}
       <div
         ref={anchorRef}
-        style={{ borderLeft: "4px solid #BBBBBB", paddingLeft: "24px" }}
+        style={{ borderLeft: "4px solid var(--ah-grey-300)", paddingLeft: "24px" }}
       >
         {/* Provenance — reply signalling (Slice 1D) */}
         {showProvenance && (

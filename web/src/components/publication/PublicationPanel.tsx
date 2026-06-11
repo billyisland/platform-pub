@@ -237,7 +237,7 @@ function ArticleList({
     <div className="space-y-0">
       {articles.map((a: any) => {
         const isPaid = a.access_mode === "paywalled";
-        const barColor = isPaid ? "#B5242A" : "#111111";
+        const barColor = isPaid ? "var(--ah-crimson)" : "var(--ah-ink)";
         return (
           <button
             key={a.nostr_event_id ?? a.nostr_d_tag}

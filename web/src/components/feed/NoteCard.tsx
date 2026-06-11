@@ -97,7 +97,7 @@ function ExcerptPennant({ note }: { note: NoteEvent }) {
     : authorUsername
       ? `/${authorUsername}`
       : "#";
-  const barColor = isPaid ? "#B5242A" : "#111111";
+  const barColor = isPaid ? "var(--ah-crimson)" : "var(--ah-ink)";
 
   return (
     <Link
@@ -262,7 +262,7 @@ export function NoteCard({
       <div
         ref={anchorRef}
         className="group"
-        style={{ borderLeft: "4px solid #111111", paddingLeft: "24px" }}
+        style={{ borderLeft: "4px solid var(--ah-ink)", paddingLeft: "24px" }}
       >
         {/* Provenance — reply signalling */}
         {note.isReply && (
@@ -314,8 +314,8 @@ export function NoteCard({
               className="ml-auto px-2.5 py-0.5 disabled:opacity-40 transition-colors font-mono text-[11px] uppercase"
               style={
                 confirmDelete
-                  ? { color: "#B5242A", fontWeight: 500 }
-                  : { color: "#666666" }
+                  ? { color: "var(--ah-crimson)", fontWeight: 500 }
+                  : { color: "var(--ah-grey-600)" }
               }
             >
               {deleting ? "..." : confirmDelete ? "Confirm?" : "Delete"}

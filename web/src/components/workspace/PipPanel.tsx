@@ -39,14 +39,14 @@ import type { PipStatus } from '../../lib/ndk'
 // the items query.
 
 const TOKENS = {
-  scrim: 'rgba(26, 26, 24, 0.18)',
-  panelBg: '#FFFFFF',
-  panelBorder: '#1A1A18',
-  fg: '#1A1A18',
-  meta: '#5F5E5A',
-  hint: '#8A8880',
-  rule: '#E6E5E0',
-  crimson: '#B5242A',
+  scrim: 'rgb(var(--ah-ink-925-rgb) / 0.18)',
+  panelBg: 'var(--ah-white)',
+  panelBorder: 'var(--ah-ink-925)',
+  fg: 'var(--ah-ink-925)',
+  meta: 'var(--ah-stone-600)',
+  hint: 'var(--ah-stone-400)',
+  rule: 'var(--ah-bone-bright)',
+  crimson: 'var(--ah-crimson)',
 }
 
 // Slice 19 — per-pip-status framing for the panel. Subtitle copy names what
@@ -63,19 +63,19 @@ const TOKENS = {
 // tokens module that doesn't exist yet — the four-line dup is honest.
 const STATUS_PRESENTATION: Record<PipStatus, { accent: string; subtitle: string }> = {
   known: {
-    accent: '#1d9e75',
+    accent: 'var(--ah-trust-green)',
     subtitle: 'Established profile — readers confirm the basics.',
   },
   partial: {
-    accent: '#ef9f27',
+    accent: 'var(--ah-trust-amber)',
     subtitle: 'Developing profile — some signal, more would help.',
   },
   unknown: {
-    accent: '#b0b0ab',
+    accent: 'var(--ah-trust-grey)',
     subtitle: 'New here — tap below to share what you know.',
   },
   contested: {
-    accent: '#B5242A',
+    accent: 'var(--ah-crimson)',
     subtitle: 'Contested — readers have raised concerns.',
   },
 }
@@ -566,12 +566,12 @@ function VolumeBar({
                   ? TOKENS.crimson
                   : active
                     ? TOKENS.fg
-                    : '#E6E5E0',
+                    : 'var(--ah-bone-bright)',
                 border: 'none',
                 cursor: busy ? 'default' : 'pointer',
                 padding: 0,
                 fontSize: 10,
-                color: muteActive ? '#FFFFFF' : TOKENS.meta,
+                color: muteActive ? 'var(--ah-white)' : TOKENS.meta,
                 fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
               }}
             >
@@ -611,7 +611,7 @@ function VolumeBar({
               className="label-ui"
               style={{
                 background: sampling === mode ? TOKENS.fg : 'transparent',
-                color: sampling === mode ? '#FFFFFF' : TOKENS.meta,
+                color: sampling === mode ? 'var(--ah-white)' : TOKENS.meta,
                 border: `1px solid ${sampling === mode ? TOKENS.fg : TOKENS.rule}`,
                 cursor: busy ? 'default' : 'pointer',
                 padding: '4px 10px',
@@ -743,7 +743,7 @@ function PollQuestions({
               className="label-ui"
               style={{
                 background: slot.viewerAnswer === 'yes' ? TOKENS.fg : 'transparent',
-                color: slot.viewerAnswer === 'yes' ? '#FFFFFF' : TOKENS.meta,
+                color: slot.viewerAnswer === 'yes' ? 'var(--ah-white)' : TOKENS.meta,
                 border: `1px solid ${slot.viewerAnswer === 'yes' ? TOKENS.fg : TOKENS.rule}`,
                 cursor: isBusy ? 'default' : 'pointer',
                 padding: '3px 8px',
@@ -758,7 +758,7 @@ function PollQuestions({
               className="label-ui"
               style={{
                 background: slot.viewerAnswer === 'no' ? TOKENS.crimson : 'transparent',
-                color: slot.viewerAnswer === 'no' ? '#FFFFFF' : TOKENS.meta,
+                color: slot.viewerAnswer === 'no' ? 'var(--ah-white)' : TOKENS.meta,
                 border: `1px solid ${slot.viewerAnswer === 'no' ? TOKENS.crimson : TOKENS.rule}`,
                 cursor: isBusy ? 'default' : 'pointer',
                 padding: '3px 8px',
@@ -883,7 +883,7 @@ function EncounterRow({
         className="label-ui"
         style={{
           background: youMet ? TOKENS.fg : 'transparent',
-          color: youMet ? '#FFFFFF' : TOKENS.fg,
+          color: youMet ? 'var(--ah-white)' : TOKENS.fg,
           border: `1px solid ${youMet ? TOKENS.fg : TOKENS.rule}`,
           cursor: busy ? 'default' : 'pointer',
           padding: '4px 10px',
@@ -923,13 +923,13 @@ function TrustSignals({ profile }: { profile: TrustProfileResponse }) {
         >
           <span
             className="font-sans text-ui-xs"
-            style={{ color: '#1A1A18', flex: 1 }}
+            style={{ color: 'var(--ah-ink-925)', flex: 1 }}
           >
             {r.label}
           </span>
           <span
             className="label-ui"
-            style={{ color: '#5F5E5A' }}
+            style={{ color: 'var(--ah-stone-600)' }}
           >
             {r.value}
           </span>

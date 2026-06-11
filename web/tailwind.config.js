@@ -11,18 +11,21 @@ module.exports = {
         mono: ['"IBM Plex Mono"', 'ui-monospace', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
       },
       colors: {
-        white: '#FFFFFF',
-        black: '#111111',
+        // All token values live as RGB-triple CSS vars in globals.css :root
+        // (canonical list: web/src/lib/palette/registry.ts) so the Palette
+        // devtool can retune them live; <alpha-value> keeps /40-style washes.
+        white: 'rgb(var(--ah-white-rgb) / <alpha-value>)',
+        black: 'rgb(var(--ah-ink-rgb) / <alpha-value>)',
         grey: {
-          100: '#F0F0F0',
-          200: '#E5E5E5',
-          300: '#BBBBBB',
-          400: '#999999',
-          600: '#666666',
+          100: 'rgb(var(--ah-grey-100-rgb) / <alpha-value>)',
+          200: 'rgb(var(--ah-grey-200-rgb) / <alpha-value>)',
+          300: 'rgb(var(--ah-grey-300-rgb) / <alpha-value>)',
+          400: 'rgb(var(--ah-grey-400-rgb) / <alpha-value>)',
+          600: 'rgb(var(--ah-grey-600-rgb) / <alpha-value>)',
         },
         crimson: {
-          DEFAULT: '#B5242A',
-          dark: '#921D22',
+          DEFAULT: 'rgb(var(--ah-crimson-rgb) / <alpha-value>)',
+          dark: 'rgb(var(--ah-crimson-dark-rgb) / <alpha-value>)',
         },
         // Glasshouse pane fill. A warm mid-light surface — deliberately darker
         // than the light workspace ground (#F0EFEB) so a frosted pane separates
@@ -30,7 +33,7 @@ module.exports = {
         // so it still separates in dark mode. Fields inside it are the bright
         // (white) raised wells. Fixed (does not track brightness); text stays
         // dark. See the Glasshouse design-system rule in CLAUDE.md.
-        glasshouse: '#DCDAD3',
+        glasshouse: 'rgb(var(--ah-glasshouse-rgb) / <alpha-value>)',
       },
       typography: {
         DEFAULT: {
@@ -38,13 +41,13 @@ module.exports = {
             maxWidth: '640px',
             fontSize: '1.0625rem',
             lineHeight: '1.8',
-            color: '#111111',
+            color: 'var(--ah-ink)',
             fontFamily: '"Literata", Georgia, serif',
             h1: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', letterSpacing: '-0.025em', fontSize: '2.25rem', lineHeight: '1.15' },
             h2: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', letterSpacing: '-0.02em', fontSize: '1.75rem', lineHeight: '1.2' },
             h3: { fontFamily: '"Literata", Georgia, serif', fontWeight: '500', fontSize: '1.35rem', lineHeight: '1.3' },
-            a: { color: '#111111', textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationThickness: '1px', '&:hover': { color: '#666666' } },
-            blockquote: { borderLeftColor: '#BBBBBB', borderLeftWidth: '4px', fontStyle: 'italic', color: '#666666' },
+            a: { color: 'var(--ah-ink)', textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationThickness: '1px', '&:hover': { color: 'var(--ah-grey-600)' } },
+            blockquote: { borderLeftColor: 'var(--ah-grey-300)', borderLeftWidth: '4px', fontStyle: 'italic', color: 'var(--ah-grey-600)' },
             code: { fontFamily: '"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace', fontSize: '0.875em' },
             p: { marginTop: '1.5em', marginBottom: '1.5em' },
           },

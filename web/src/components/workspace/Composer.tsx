@@ -17,16 +17,16 @@ const NOTE_CHAR_LIMIT = 1000
 const NUDGE_WORDS_THRESHOLD = 400
 
 const TOKENS = {
-  panelBorder: '#1A1A18',
-  bannerBg: '#F0EFEB',
-  bannerFg: '#1A1A18',
-  hintFg: '#666666',
-  errorFg: '#B5242A',
-  publishBg: '#1A1A18',
-  publishFg: '#F0EFEB',
-  publishDisabled: '#BBBBBB',
+  panelBorder: 'var(--ah-ink-925)',
+  bannerBg: 'var(--ah-bone)',
+  bannerFg: 'var(--ah-ink-925)',
+  hintFg: 'var(--ah-grey-600)',
+  errorFg: 'var(--ah-crimson)',
+  publishBg: 'var(--ah-ink-925)',
+  publishFg: 'var(--ah-bone)',
+  publishDisabled: 'var(--ah-grey-300)',
   // Bright raised well on the warm mid-light Glasshouse pane (bg-glasshouse).
-  fieldBg: '#FFFFFF',
+  fieldBg: 'var(--ah-white)',
 }
 
 type Protocol = 'allhaus' | 'nostr' | 'atproto' | 'activitypub'

@@ -28,7 +28,7 @@ function getPublishedAt(item: NeighbourhoodItem): number {
 export function NeighbourhoodCard({ item, variant }: NeighbourhoodCardProps) {
   const authorName = item.authorName || item.authorHandle || "Unknown";
   const ts = getPublishedAt(item);
-  const barColor = variant === "parent" ? "#CCCCCC" : "#CCCCCC";
+  const barColor = variant === "parent" ? "var(--ah-neighbour-grey)" : "var(--ah-neighbour-grey)";
 
   return (
     <div style={{ borderLeft: `4px solid ${barColor}`, paddingLeft: "20px" }}>
@@ -143,7 +143,7 @@ export function NativeParentCard({ item }: { item: ResolvedContent }) {
     item.author.displayName || item.author.username || "Unknown";
 
   return (
-    <div style={{ borderLeft: "4px solid #CCCCCC", paddingLeft: "20px" }}>
+    <div style={{ borderLeft: "4px solid var(--ah-neighbour-grey)", paddingLeft: "20px" }}>
       <div className="flex items-center gap-2 mb-1">
         {item.author.username ? (
           <ProfileLink

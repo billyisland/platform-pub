@@ -161,7 +161,7 @@ export function PostMedia({
                 bottom: 8,
                 padding: "2px 8px",
                 background: "rgba(0,0,0,0.72)",
-                color: "#FFFFFF",
+                color: "var(--ah-white)",
                 fontSize: 11,
                 letterSpacing: "0.04em",
               }}
@@ -253,7 +253,7 @@ function InlineVideo({ item, expanded }: { item: MediaItem; expanded: boolean })
         width: "100%",
         maxWidth: "100%",
         display: "block",
-        background: "#000",
+        background: "var(--ah-true-black)",
         ...(expanded
           ? { height: "auto", maxHeight: "75vh" }
           : { height: "100%", objectFit: "cover" }),
@@ -282,7 +282,7 @@ function PlayGlyph({ hasPoster }: { hasPoster: boolean }) {
           width: 44,
           height: 44,
           borderRadius: "50%",
-          background: "rgba(255,255,255,0.92)",
+          background: "rgb(var(--ah-white-rgb) / 0.92)",
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
@@ -290,7 +290,7 @@ function PlayGlyph({ hasPoster }: { hasPoster: boolean }) {
         }}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M5 3.5v9l7-4.5z" fill="#1A1A18" />
+          <path d="M5 3.5v9l7-4.5z" style={{ fill: "var(--ah-ink-925)" }} />
         </svg>
       </span>
     </div>

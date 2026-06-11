@@ -11,8 +11,6 @@ import type { HalfDayBucket } from '../../lib/traffology-api'
 // Hovering shows the date in a readout callback.
 // =============================================================================
 
-const IKB = '#002FA7'
-const BG = '#FAFAFA'
 
 interface ProvenanceBarProps {
   buckets: HalfDayBucket[]
@@ -70,7 +68,14 @@ export function ProvenanceBar({ buckets, height, onHoverInfo }: ProvenanceBarPro
     const ctx = canvas.getContext('2d')!
     ctx.scale(dpr, dpr)
 
-    ctx.fillStyle = BG
+    // Canvas can't resolve var() — read the live triples off :root at draw
+    // time so the bar tracks the canonical palette (registry: klein-blue /
+    // off-white).
+    const rootStyle = getComputedStyle(document.documentElement)
+    const bg = `rgb(${rootStyle.getPropertyValue('--ah-off-white-rgb')})`
+    const ikb = `rgb(${rootStyle.getPropertyValue('--ah-klein-blue-rgb')})`
+
+    ctx.fillStyle = bg
     ctx.fillRect(0, 0, width, height)
 
     let x = 0
@@ -79,7 +84,7 @@ export function ProvenanceBar({ buckets, height, onHoverInfo }: ProvenanceBarPro
       if (bucket.is_day && bw >= 0.4) {
         const x0 = Math.round(x)
         const x1 = Math.round(x + bw)
-        ctx.fillStyle = IKB
+        ctx.fillStyle = ikb
         ctx.fillRect(x0, 0, Math.max(x1 - x0, 1), height)
       }
       x += bw

@@ -108,7 +108,7 @@ export default function ProfilePage() {
             ) : (
               <span
                 className="flex h-16 w-16 items-center justify-center  text-xl font-medium text-black flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg, #F5D5D6, #E8A5A7)' }}
+                style={{ background: 'linear-gradient(135deg, var(--ah-blush), var(--ah-blush-deep))' }}
               >
                 {initial}
               </span>

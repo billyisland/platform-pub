@@ -64,7 +64,7 @@ export function PlayscriptReply({
     <div
       id={`reply-${reply.id}`}
       className="group relative transition-colors"
-      style={{ backgroundColor: showActions ? '#fafaf7' : undefined }}
+      style={{ backgroundColor: showActions ? 'var(--ah-cream-hover)' : undefined }}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
       onFocus={handleFocusShow}

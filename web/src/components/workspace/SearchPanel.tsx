@@ -12,12 +12,12 @@ import { useReader } from "../../stores/reader";
 import { useProfile } from "../../stores/profileOverlay";
 
 const TOKENS = {
-  rowHoverBg: "rgba(17, 17, 17, 0.06)", // subtle dark wash on the warm pane
-  inputBg: "#FFFFFF", // bright well — the glasshouse field convention
-  sectionBg: "rgba(17, 17, 17, 0.04)",
-  text: "#1A1A18",
-  meta: "#666666", // grey-600 — legible on the mid-light pane
-  hint: "#666666",
+  rowHoverBg: "rgb(var(--ah-ink-rgb) / 0.06)", // subtle dark wash on the warm pane
+  inputBg: "var(--ah-white)", // bright well — the glasshouse field convention
+  sectionBg: "rgb(var(--ah-ink-rgb) / 0.04)",
+  text: "var(--ah-ink-925)",
+  meta: "var(--ah-grey-600)", // grey-600 — legible on the mid-light pane
+  hint: "var(--ah-grey-600)",
 };
 
 const DEBOUNCE_MS = 200;

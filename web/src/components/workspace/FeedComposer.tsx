@@ -49,14 +49,14 @@ function weightToStep(weight: number): number {
 // as bright (white) raised wells on the pane; rows are a lighter tile; emphasis
 // is a dark fill.
 const TOKENS = {
-  panelBorder: "#1A1A18",
-  rowBg: "#F0EFEB",
-  fieldBg: "#FFFFFF",
-  hintFg: "#666666",
-  errorFg: "#B5242A",
-  matchHoverBg: "#F0EFEB",
-  removeFg: "#666666",
-  removeHoverFg: "#B5242A",
+  panelBorder: "var(--ah-ink-925)",
+  rowBg: "var(--ah-bone)",
+  fieldBg: "var(--ah-white)",
+  hintFg: "var(--ah-grey-600)",
+  errorFg: "var(--ah-crimson)",
+  matchHoverBg: "var(--ah-bone)",
+  removeFg: "var(--ah-grey-600)",
+  removeHoverFg: "var(--ah-crimson)",
   // The hover author-card portals above the Glasshouse pane (z-56); 70 also
   // clears the ForallMenu (z-60) so the transient card is never clipped.
   hoverZ: 70,
@@ -999,7 +999,7 @@ function SourceRow({
                   cursor: committing ? "default" : "pointer",
                   padding: 0,
                   fontSize: 9,
-                  color: muteActive ? "#FFFFFF" : TOKENS.hintFg,
+                  color: muteActive ? "var(--ah-white)" : TOKENS.hintFg,
                   fontFamily: "IBM Plex Mono, ui-monospace, monospace",
                 }}
               >
@@ -1083,7 +1083,7 @@ function Chip({
       className="font-mono text-[10px] uppercase tracking-[0.04em]"
       style={{
         background: active ? TOKENS.panelBorder : TOKENS.fieldBg,
-        color: active ? "#FFFFFF" : TOKENS.hintFg,
+        color: active ? "var(--ah-white)" : TOKENS.hintFg,
         border: "none",
         cursor: disabled ? "default" : "pointer",
         padding: "3px 7px",

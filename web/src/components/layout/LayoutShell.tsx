@@ -8,6 +8,7 @@ import { ComposeOverlay } from '../compose/ComposeOverlay'
 import { ProfileOverlay } from '../workspace/ProfileOverlay'
 import { SurfaceOverlay } from '../workspace/SurfaceOverlay'
 import { EditorOverlay } from '../workspace/EditorOverlay'
+import { PalettePanel } from '../devtools/PalettePanel'
 import { useReader } from '../../stores/reader'
 import { useProfile } from '../../stores/profileOverlay'
 import { useSurfaceOverlay } from '../../stores/surfaceOverlay'
@@ -61,6 +62,10 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         {/* Mounted unconditionally — "write an article" is reachable from the
             workspace, the dashboard overlay, and the note→article handoff. */}
         <EditorOverlay />
+        {/* TEMPORARY colour-tuning kit (not a Glasshouse — floats above all
+            surfaces, applies persisted palette overrides on mount). Remove
+            with the ForallMenu "Palette" row once the scheme is final. */}
+        <PalettePanel />
       </div>
     </LayoutModeContext.Provider>
   )

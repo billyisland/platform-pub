@@ -95,11 +95,11 @@ export function PaywallGate({
   return (
     <div className="my-16 -mx-[48px]" ref={gateRef}>
       {/* Gradient fade */}
-      <div className="relative h-[100px] -mt-[100px] pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent, #FFFFFF)' }} />
+      <div className="relative h-[100px] -mt-[100px] pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent, var(--ah-white))' }} />
 
       <div
         className="px-8 py-12 text-center"
-        style={{ borderTop: '4px solid #B5242A', borderBottom: '4px solid #B5242A' }}
+        style={{ borderTop: '4px solid var(--ah-crimson)', borderBottom: '4px solid var(--ah-crimson)' }}
       >
         {/* Ornament */}
         <div className="text-center mb-6">
@@ -125,7 +125,7 @@ export function PaywallGate({
 
         {/* Subscribe option */}
         {showSubscribeOption && (
-          <div className="mt-6 pt-6 max-w-sm mx-auto" style={{ borderTop: '4px solid #F0F0F0' }}>
+          <div className="mt-6 pt-6 max-w-sm mx-auto" style={{ borderTop: '4px solid var(--ah-grey-100)' }}>
             <p className="font-sans text-ui-sm text-grey-600 mb-4">
               Or subscribe to {writerName ?? writerUsername} for <strong>£{subPricePounds}/mo</strong> to read everything
             </p>

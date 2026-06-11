@@ -99,7 +99,7 @@ export function ArticleCard({
 
   const authorHref = writerInfo?.username ? `/${writerInfo.username}` : null;
   const isPaid = article.isPaywalled;
-  const barColor = isPaid ? "#B5242A" : "#111111";
+  const barColor = isPaid ? "var(--ah-crimson)" : "var(--ah-ink)";
 
   // Per-tier typography. Two-up briefs shrink byline/action to 10.5px per spec §4a.
   const headlineClass =

@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 
 const TOKENS = {
-  scrim: "rgba(26, 26, 24, 0.4)",
-  panelBg: "#FFFFFF",
-  panelBorder: "#1A1A18",
-  hintFg: "#8A8880",
-  errorFg: "#B5242A",
-  primaryBg: "#1A1A18",
-  primaryFg: "#F0EFEB",
-  primaryDisabled: "#BBBBBB",
+  scrim: "rgb(var(--ah-ink-925-rgb) / 0.4)",
+  panelBg: "var(--ah-white)",
+  panelBorder: "var(--ah-ink-925)",
+  hintFg: "var(--ah-stone-400)",
+  errorFg: "var(--ah-crimson)",
+  primaryBg: "var(--ah-ink-925)",
+  primaryFg: "var(--ah-bone)",
+  primaryDisabled: "var(--ah-grey-300)",
 };
 
 interface MergeFeedConfirmProps {

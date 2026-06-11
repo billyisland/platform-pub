@@ -81,7 +81,7 @@ export function ReplyGroupCard({
       style={{
         background: palette.cardBg,
         padding: "16px",
-        borderLeft: "4px solid #BBBBBB",
+        borderLeft: "4px solid var(--ah-grey-300)",
         paddingLeft: "24px",
       }}
     >

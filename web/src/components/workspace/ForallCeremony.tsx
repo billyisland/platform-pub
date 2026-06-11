@@ -41,9 +41,9 @@ const U_CROSS_W = BOX_W; // 300
 // Walls + cards take their colour from the medium-bright palette so the
 // ceremony resolves into the colour the eventual vessel renders at. The
 // crimson ∀ matches the spec's first-login crimson.
-const CRIMSON = "#B5242A";
-const WALL_COLOUR = "#4A4A47";
-const CARD_COLOUR = "#F5F4F0";
+const CRIMSON = "var(--ah-crimson)";
+const WALL_COLOUR = "var(--ah-wall-grey)";
+const CARD_COLOUR = "var(--ah-cream)";
 
 type Phase =
   | "forall"

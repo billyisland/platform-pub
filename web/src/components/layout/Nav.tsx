@@ -79,7 +79,7 @@ function AvatarDropdown({ user, onLogout, onClose }: {
     <>
       <div ref={ref} role="menu" className="absolute right-0 top-full mt-2 w-56 bg-white shadow-lg z-50">
         {/* Identity */}
-        <div className="px-4 py-3" style={{ borderBottom: '4px solid #111111' }}>
+        <div className="px-4 py-3" style={{ borderBottom: '4px solid var(--ah-ink)' }}>
           <div className="flex items-center gap-2">
             <NavAvatar user={user} size={32} />
             <div>
@@ -108,7 +108,7 @@ function AvatarDropdown({ user, onLogout, onClose }: {
           </Link>
         </div>
 
-        <div style={{ height: '4px', background: '#F0F0F0' }} />
+        <div style={{ height: '4px', background: 'var(--ah-grey-100)' }} />
 
         {/* Group 2 */}
         <div className="py-1">
@@ -124,7 +124,7 @@ function AvatarDropdown({ user, onLogout, onClose }: {
           <Link href="/library" onClick={onClose} className={linkClass}>Library</Link>
         </div>
 
-        <div style={{ height: '4px', background: '#F0F0F0' }} />
+        <div style={{ height: '4px', background: 'var(--ah-grey-100)' }} />
 
         {/* Group 3 */}
         <div className="py-1">
@@ -181,7 +181,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           <Link href="/feed" onClick={onClose} className={linkClass('/feed')}>Feed</Link>
           <Link href="/workspace?overlay=dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
 
-          <div style={{ height: '4px', background: '#333' }} className="my-3" />
+          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
           <form onSubmit={handleSearch} className="py-2">
             <input
@@ -193,7 +193,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
             />
           </form>
 
-          <div style={{ height: '4px', background: '#333' }} className="my-3" />
+          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
           <Link href="/workspace?overlay=messages" onClick={onClose} className={linkClass('/messages')}>
             <span className="flex items-center gap-2">Messages<Badge count={dmCount} /></span>
@@ -202,14 +202,14 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
             <span className="flex items-center gap-2">Notifications<Badge count={notificationCount} /></span>
           </Link>
 
-          <div style={{ height: '4px', background: '#333' }} className="my-3" />
+          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
           <Link href="/profile" onClick={onClose} className={linkClass('/profile')}>Profile</Link>
           <Link href="/workspace?overlay=ledger" onClick={onClose} className={linkClass('/ledger')}>Ledger</Link>
           <Link href="/workspace?overlay=settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
           <Link href="/library" onClick={onClose} className={linkClass('/library')}>Library</Link>
 
-          <div style={{ height: '4px', background: '#333' }} className="my-3" />
+          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
           <button
             onClick={() => { onLogout(); onClose() }}
@@ -223,7 +223,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
           <Link href="/feed" onClick={onClose} className={linkClass('/feed')}>Feed</Link>
           <Link href="/about" onClick={onClose} className={linkClass('/about')}>About</Link>
 
-          <div style={{ height: '4px', background: '#333' }} className="my-3" />
+          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
           <Link href="/auth?mode=login" onClick={onClose} className="block py-3 label-ui text-grey-400 hover:text-white transition-colors">Log in</Link>
           <Link href="/auth?mode=signup" onClick={onClose} className="inline-block mt-1 btn-accent text-center text-sm py-2 px-6">Sign up</Link>

@@ -46,17 +46,17 @@ const DIMENSION_ORDER: VouchDimension[] = [
 ];
 
 function barColor(count: number, score: number): string {
-  if (count === 0) return "#b0b0ab"; // grey — no attestations
+  if (count === 0) return "var(--ah-trust-grey)"; // grey — no attestations
   if (score > 0) {
     // Epoch scores available — use score thresholds
-    if (score > 0.7) return "#1d9e75"; // green — strong
-    if (score > 0.3) return "#ef9f27"; // amber — moderate
-    return "#b0b0ab"; // grey — thin
+    if (score > 0.7) return "var(--ah-trust-green)"; // green — strong
+    if (score > 0.3) return "var(--ah-trust-amber)"; // amber — moderate
+    return "var(--ah-trust-grey)"; // grey — thin
   }
   // Pre-epoch fallback: count-based proxy
-  if (count >= 5) return "#1d9e75";
-  if (count >= 2) return "#ef9f27";
-  return "#b0b0ab";
+  if (count >= 5) return "var(--ah-trust-green)";
+  if (count >= 2) return "var(--ah-trust-amber)";
+  return "var(--ah-trust-grey)";
 }
 
 function glossText(count: number): string {
