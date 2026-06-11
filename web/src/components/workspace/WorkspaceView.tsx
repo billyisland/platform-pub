@@ -286,6 +286,23 @@ export function WorkspaceView() {
   // Quote target — set when Quote is clicked on a card; the composer publishes a
   // NIP-18 quote note embedding it. Mutually exclusive with replyTarget.
   const [quoteTarget, setQuoteTarget] = useState<QuoteTarget | null>(null);
+  // ⌘K / Ctrl+K opens the note composer — parity with Nav's global hotkey,
+  // which can't fire here because Nav is unmounted in the chromeless
+  // workspace. No-ops while the article editor overlay is up (the Glasshouse
+  // supersede rule would otherwise close it under the writer mid-article).
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        if (useEditorOverlay.getState().isOpen) return;
+        e.preventDefault();
+        setReplyTarget(null);
+        setQuoteTarget(null);
+        setComposerOpen("note");
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
   // At most one conversation is expanded per feed: this maps a feed id to the
   // expand key (`feedItemId ?? id`) of its single open card. Opening another
   // card in the same feed replaces the entry, collapsing the previous one.

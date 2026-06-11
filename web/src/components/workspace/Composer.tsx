@@ -35,7 +35,7 @@ const PROTOCOL_LABELS: Record<Protocol, string> = {
   allhaus: 'ALL.HAUS',
   nostr: 'NOSTR',
   atproto: 'BLUESKY',
-  activitypub: 'ACTIVITYPUB',
+  activitypub: 'MASTODON',
 }
 
 // Maps a linked-account protocol to the cross-post protocol the publish path
@@ -99,12 +99,16 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
   const [body, setBody] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // All native + linked protocols broadcast by default now that the per-send
-  // protocol toggle is gone; a fresh note fans out to every connected network.
+  // Native protocols always broadcast; linked networks are admitted here but
+  // additionally gated by the per-send cross-post pills below.
   const [enabledProtocols] = useState<Set<Protocol>>(
     () => new Set<Protocol>(['allhaus', 'nostr', 'atproto', 'activitypub']),
   )
   const [linkedByProtocol, setLinkedByProtocol] = useState<Partial<Record<Protocol, LinkedAccount>>>({})
+  // Per-send cross-post toggles, seeded from each presence's cross_post_default
+  // (the "Default on" checkbox in Reach other networks) — so settings pick the
+  // default and the pill is the per-note override.
+  const [crossPostOn, setCrossPostOn] = useState<Partial<Record<Protocol, boolean>>>({})
   const [nudgeDismissed, setNudgeDismissed] = useState(false)
   const [showNudge, setShowNudge] = useState(false)
 
@@ -129,15 +133,23 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
       .then(({ accounts }) => {
         if (cancelled) return
         const map: Partial<Record<Protocol, LinkedAccount>> = {}
+        const on: Partial<Record<Protocol, boolean>> = {}
         for (const acc of accounts) {
           if (!acc.isValid) continue
           const p = PROTOCOL_FROM_LINKED[acc.protocol]
-          if (p && !map[p]) map[p] = acc
+          if (p && !map[p]) {
+            map[p] = acc
+            on[p] = acc.crossPostDefault
+          }
         }
         setLinkedByProtocol(map)
+        setCrossPostOn(on)
       })
       .catch(() => {
-        if (!cancelled) setLinkedByProtocol({})
+        if (!cancelled) {
+          setLinkedByProtocol({})
+          setCrossPostOn({})
+        }
       })
 
     return () => {
@@ -192,11 +204,14 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
   const broadcastProtocols: Set<Protocol> = hasBroadcastChip
     ? new Set(chips.filter((c) => c.kind === 'broadcast' && c.protocol).map((c) => c.protocol!))
     : enabledProtocols
+  const linkedProtocols = (['atproto', 'activitypub'] as const).filter(
+    (p) => linkedByProtocol[p],
+  )
   const crossPostTargets: { protocol: Protocol; account: LinkedAccount }[] = []
-  for (const p of (['atproto', 'activitypub'] as const)) {
+  for (const p of linkedProtocols) {
     if (!broadcastProtocols.has(p)) continue
-    const acc = linkedByProtocol[p]
-    if (acc) crossPostTargets.push({ protocol: p, account: acc })
+    if (!crossPostOn[p]) continue
+    crossPostTargets.push({ protocol: p, account: linkedByProtocol[p]! })
   }
 
   const isReply = !!replyTarget
@@ -480,7 +495,26 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Per-send cross-post pills — one per valid linked network, seeded
+                from cross_post_default. Only plain notes cross-post from this
+                composer (replies/quotes publish through their own paths). */}
+            {!isReply && !isQuote &&
+              linkedProtocols.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setCrossPostOn((prev) => ({ ...prev, [p]: !prev[p] }))}
+                  className={`label-ui toggle-chip ${crossPostOn[p] ? 'toggle-chip-active' : 'toggle-chip-inactive'}`}
+                  title={
+                    crossPostOn[p]
+                      ? `Will also post to ${PROTOCOL_LABELS[p]} (@${linkedByProtocol[p]?.externalHandle ?? ''})`
+                      : `Not posting to ${PROTOCOL_LABELS[p]} this time`
+                  }
+                >
+                  {PROTOCOL_LABELS[p]}
+                </button>
+              ))}
             <button
               type="button"
               onClick={handlePublish}
