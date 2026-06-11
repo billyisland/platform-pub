@@ -29,8 +29,11 @@ export const ASSISTED_BLUESKY_CONSENT =
 // Mastodon's round-trip has two extra steps Bluesky doesn't (email confirmation
 // + a first login on the instance), and it only resumes in the same browser —
 // the consent copy must set that expectation or the hand-off reads as broken.
+// It also lands on the instance's LOGIN page, where the signup affordance is a
+// small footer link users genuinely fail to find (first live run, 2026-06-11)
+// — so name the link and the direct /auth/sign_up path explicitly.
 export const assistedMastodonConsent = (instance: string) =>
-  `You’re about to create a real Mastodon account on ${instance}. ${instance} holds the keys; all.haus just connects it. You’ll confirm your email and log in on ${instance} along the way — finish in this browser and you’ll land back here. You can disconnect anytime.`
+  `You’re about to create a real Mastodon account on ${instance}. ${instance} holds the keys; all.haus just connects it. You’ll land on ${instance}’s login page — use its “Sign up” link (or go to ${instance}/auth/sign_up) to create the account, confirm your email, then log in. Finish in this browser and you’ll land back here. You can disconnect anytime.`
 
 export const linkedAccounts = {
   list: () =>
