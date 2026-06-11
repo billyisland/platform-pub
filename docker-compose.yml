@@ -97,6 +97,13 @@ services:
       # the S0 spike passes against the real bsky.social (NETWORK-CONCIERGE-ADR §6.1.1).
       ATPROTO_ASSISTED_ENABLED: ${ATPROTO_ASSISTED_ENABLED:-0}
       ATPROTO_DEFAULT_PDS: ${ATPROTO_DEFAULT_PDS:-https://bsky.social}
+      # ASSISTED activitypub ("set one up for me" → Mastodon). Ships dark, same
+      # contract: flag off ⇒ POST /linked-accounts/mastodon/assisted 503s and the
+      # UI keeps "Set one up · soon". Instances is a comma-separated curated
+      # allowlist of open-registration hosts; first entry is the default
+      # (NETWORK-CONCIERGE-ADR §9).
+      MASTODON_ASSISTED_ENABLED: ${MASTODON_ASSISTED_ENABLED:-0}
+      MASTODON_ASSISTED_INSTANCES: ${MASTODON_ASSISTED_INSTANCES:-mastodon.social}
       # Nostr outbound interop (discovery). Ships dark: DISCOVERY_PUBLISH_ENABLED
       # off ⇒ no kind 0/3/10002 produced. With it on, PUBLIC_FANOUT_RELAY_URLS
       # empty ⇒ in-house relay only; set it to fan discovery events to the public

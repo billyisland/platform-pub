@@ -5,6 +5,7 @@ import {
   linkedAccounts,
   getNetworkCapabilities,
   ASSISTED_BLUESKY_CONSENT,
+  assistedMastodonConsent,
   type LinkedAccount,
 } from "../../lib/api/linked-accounts";
 import { externalItems } from "../../lib/api/external-items";
@@ -40,15 +41,23 @@ export function InlineReplyBox({
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assistedAvailable, setAssistedAvailable] = useState(false);
+  const [assistedInstance, setAssistedInstance] = useState("mastodon.social");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // ASSISTED "set one up" is Bluesky-only on Phase 2 (§6.1); gate on the
-  // server flag so the prompt stays "coming soon" when dark.
+  // ASSISTED "set one up": Bluesky on Phase 2 (§6.1), Mastodon on Phase 3 (§9).
+  // Gate on the server flags so the prompt stays "coming soon" when dark.
   useEffect(() => {
-    if (protocol !== "atproto") return;
+    if (protocol !== "atproto" && protocol !== "activitypub") return;
     let live = true;
     void getNetworkCapabilities().then((c) => {
-      if (live) setAssistedAvailable(c.assistedBluesky);
+      if (!live) return;
+      if (protocol === "atproto") {
+        setAssistedAvailable(c.assistedBluesky);
+      } else {
+        setAssistedAvailable(c.assistedMastodon);
+        const def = c.assistedMastodonInstances?.[0];
+        if (def) setAssistedInstance(def);
+      }
     });
     return () => {
       live = false;
@@ -56,9 +65,16 @@ export function InlineReplyBox({
   }, [protocol]);
 
   async function handleAssisted() {
-    if (!window.confirm(ASSISTED_BLUESKY_CONSENT)) return;
+    const consent =
+      protocol === "atproto"
+        ? ASSISTED_BLUESKY_CONSENT
+        : assistedMastodonConsent(assistedInstance);
+    if (!window.confirm(consent)) return;
     try {
-      const { authorizeUrl } = await linkedAccounts.assistedBluesky();
+      const { authorizeUrl } =
+        protocol === "atproto"
+          ? await linkedAccounts.assistedBluesky()
+          : await linkedAccounts.assistedMastodon();
       window.location.href = authorizeUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start setup");

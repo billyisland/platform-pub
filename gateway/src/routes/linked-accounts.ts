@@ -17,7 +17,8 @@ import logger from "@platform-pub/shared/lib/logger.js";
 // DELETE /linked-accounts/:id          — disconnect one
 // PATCH  /linked-accounts/:id          — update cross_post_default
 // POST   /linked-accounts/mastodon     — begin Mastodon OAuth flow (returns authorize URL)
-// GET    /linked-accounts/callback     — Mastodon OAuth callback
+// POST   /linked-accounts/mastodon/assisted — "set one up for me" (ASSISTED, §9)
+// GET    /linked-accounts/callback     — Mastodon OAuth callback (linked + assisted)
 // POST   /linked-accounts/bluesky      — begin AT Protocol OAuth flow (returns authorize URL)
 // GET    /linked-accounts/bluesky/callback — AT Protocol OAuth callback
 //
@@ -56,6 +57,27 @@ const assistedEnabled = () => process.env.ATPROTO_ASSISTED_ENABLED === "1";
 // reads for the PKCE verifier + DPoP key.
 const OAUTH_COOKIE_TTL_SECONDS = 600; // 10 min — LINKED
 const ASSISTED_OAUTH_COOKIE_TTL_SECONDS = 30 * 60; // 30 min — ASSISTED signup
+
+// ASSISTED activitypub (NETWORK-CONCIERGE-ADR §9, Phase 3). Mastodon has no
+// bsky.social-equivalent default, so the hand-off targets a curated allowlist
+// of open-registration instances (first entry is the default). Unlike atproto
+// there is no signup *inside* the OAuth screen: /oauth/authorize stores its own
+// URL as the post-login destination (Doorkeeper store_location_for), the user
+// signs up → confirms email → logs in on the instance, and Mastodon's
+// after_sign_in_path_for resumes the stored authorize round-trip. Verified
+// against mastodon/mastodon main (2026-06-11). Ships dark behind
+// MASTODON_ASSISTED_ENABLED.
+const mastodonAssistedEnabled = () =>
+  process.env.MASTODON_ASSISTED_ENABLED === "1";
+const mastodonAssistedInstances = (): string[] =>
+  (process.env.MASTODON_ASSISTED_INSTANCES ?? "mastodon.social")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+// Signup + email confirmation + first login routinely outlasts even the 30-min
+// atproto window. The cookie is the only flow state here (plain code exchange,
+// no PKCE state store to expire under us), so it can be generous.
+const ASSISTED_MASTODON_COOKIE_TTL_SECONDS = 60 * 60; // 60 min
 
 // ---- Mastodon API shapes we care about --------------------------------------
 
@@ -128,9 +150,17 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         tokenExpiresAt: r.token_expires_at,
         createdAt: r.created_at,
       })),
-      // Single source of truth for the dark-ship flag so the UI shows the
-      // ASSISTED affordance only when the server can honour it (§6.1.1 S6).
-      capabilities: { assistedBluesky: assistedEnabled() },
+      // Single source of truth for the dark-ship flags so the UI shows the
+      // ASSISTED affordances only when the server can honour them (§6.1.1 S6).
+      capabilities: {
+        assistedBluesky: assistedEnabled(),
+        assistedMastodon: mastodonAssistedEnabled(),
+        // Curated open-registration instances for the ASSISTED hand-off (§9);
+        // first entry is the default. Empty while the flag is dark.
+        assistedMastodonInstances: mastodonAssistedEnabled()
+          ? mastodonAssistedInstances()
+          : [],
+      },
     };
   });
 
@@ -232,6 +262,7 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       }
 
       // Signed state cookie — ties the callback to this user + instance + protocol.
+      const userId = req.session!.sub;
       const nonce = crypto.randomBytes(16).toString("hex");
       reply.setCookie(
         "oauth_state_mastodon",
@@ -239,6 +270,8 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           protocol: "activitypub",
           instance: instanceOrigin,
           nonce,
+          userId,
+          provenance: "linked",
         }),
         {
           signed: true,
@@ -246,18 +279,134 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           httpOnly: true,
           sameSite: "lax",
           secure: APP_URL.startsWith("https://"),
-          maxAge: 600, // 10 min
+          maxAge: OAUTH_COOKIE_TTL_SECONDS,
         },
       );
 
-      const authorizeUrl = new URL(`${instanceOrigin}/oauth/authorize`);
-      authorizeUrl.searchParams.set("client_id", appCreds.clientId);
-      authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-      authorizeUrl.searchParams.set("response_type", "code");
-      authorizeUrl.searchParams.set("scope", MASTODON_SCOPES);
-      authorizeUrl.searchParams.set("state", nonce);
+      return {
+        authorizeUrl: buildMastodonAuthorizeUrl(
+          instanceOrigin,
+          appCreds.clientId,
+          redirectUri,
+          nonce,
+        ),
+      };
+    },
+  );
 
-      return { authorizeUrl: authorizeUrl.toString() };
+  // ---------------------------------------------------------------------------
+  // POST /linked-accounts/mastodon/assisted — "set one up for me" (ASSISTED)
+  //
+  // Body: { instance? } — hostname from the curated allowlist (defaults to its
+  // first entry). Reuses the LINKED OAuth flow (§9): we send the user straight
+  // to /oauth/authorize on an open-registration instance. Logged out, Mastodon
+  // stores that URL as the post-login destination and bounces to sign-in, where
+  // the user creates the account (signup → email confirm → log in); signing in
+  // resumes the stored authorize round-trip back to our shared callback. The
+  // instance custodies the account; we only hold the OAuth grant — identical to
+  // LINKED bar the provenance label in the state cookie.
+  // ---------------------------------------------------------------------------
+
+  app.post<{ Body: { instance?: string } }>(
+    "/linked-accounts/mastodon/assisted",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!mastodonAssistedEnabled()) {
+        return reply
+          .status(503)
+          .send({ error: "Assisted setup is not available yet" });
+      }
+      const userId = req.session!.sub;
+      const parsed = z
+        .object({ instance: z.string().min(1).max(256).optional() })
+        .safeParse(req.body ?? {});
+      if (!parsed.success)
+        return reply.status(400).send({ error: parsed.error.flatten() });
+
+      const allowed = mastodonAssistedInstances();
+      const requested = parsed.data.instance
+        ?.trim()
+        .toLowerCase()
+        .replace(/^https?:\/\//, "")
+        .replace(/\/+$/, "");
+      const host = requested || allowed[0];
+      if (!host || !allowed.includes(host)) {
+        return reply
+          .status(400)
+          .send({ error: "That instance is not available for assisted setup" });
+      }
+      const instanceOrigin = `https://${host}`;
+
+      // Live guard: never hand the user off to a signup that is closed or
+      // approval-gated — the round-trip would dead-end on their side.
+      try {
+        const res = await safeFetch(`${instanceOrigin}/api/v2/instance`, {
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) throw new Error(`instance API HTTP ${res.status}`);
+        const info = JSON.parse(res.text) as {
+          registrations?: { enabled?: boolean; approval_required?: boolean };
+        };
+        if (
+          !info.registrations?.enabled ||
+          info.registrations.approval_required
+        ) {
+          return reply.status(409).send({
+            error: `${host} is not accepting open signups right now — try linking an existing account instead`,
+          });
+        }
+      } catch (err) {
+        logger.warn(
+          { err, instance: instanceOrigin },
+          "Mastodon assisted: registration check failed",
+        );
+        return reply.status(502).send({
+          error: "Could not verify signup is open — try again shortly",
+        });
+      }
+
+      const redirectUri = `${APP_URL}${CALLBACK_PATH}`;
+      let appCreds: { clientId: string; clientSecret: string };
+      try {
+        appCreds = await getOrRegisterMastodonApp(instanceOrigin, redirectUri);
+      } catch (err) {
+        logger.warn(
+          { err, instance: instanceOrigin },
+          "Mastodon app registration failed",
+        );
+        return reply
+          .status(502)
+          .send({ error: "Could not register with that Mastodon instance" });
+      }
+
+      const nonce = crypto.randomBytes(16).toString("hex");
+      reply.setCookie(
+        "oauth_state_mastodon",
+        JSON.stringify({
+          protocol: "activitypub",
+          instance: instanceOrigin,
+          nonce,
+          userId,
+          provenance: "assisted",
+        }),
+        {
+          signed: true,
+          path: "/",
+          httpOnly: true,
+          sameSite: "lax",
+          secure: APP_URL.startsWith("https://"),
+          maxAge: ASSISTED_MASTODON_COOKIE_TTL_SECONDS,
+        },
+      );
+
+      return {
+        authorizeUrl: buildMastodonAuthorizeUrl(
+          instanceOrigin,
+          appCreds.clientId,
+          redirectUri,
+          nonce,
+        ),
+      };
     },
   );
 
@@ -292,7 +441,13 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       if (!unsigned.valid || !unsigned.value) return redirectOk("error");
       reply.clearCookie("oauth_state_mastodon", { path: "/" });
 
-      let statePayload: { protocol: string; instance: string; nonce: string };
+      let statePayload: {
+        protocol: string;
+        instance: string;
+        nonce: string;
+        userId?: string;
+        provenance?: string;
+      };
       try {
         statePayload = JSON.parse(unsigned.value);
       } catch {
@@ -303,6 +458,16 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
       if (statePayload.protocol !== "activitypub") {
         return redirectOk("error");
       }
+      // Tie the returning browser to the account that started the flow
+      // (optional for back-compat with cookies minted before the field existed).
+      if (statePayload.userId && statePayload.userId !== userId) {
+        return redirectOk("error");
+      }
+
+      // The state cookie is the only channel that survives the redirect to tell
+      // this shared callback which flow returned (§9, mirroring §6.1.1 S3).
+      const provenance =
+        statePayload.provenance === "assisted" ? "assisted" : "linked";
 
       try {
         const { clientId, clientSecret } = await getStoredMastodonApp(
@@ -333,14 +498,14 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
             account_id, protocol, provenance, external_id, handle,
             service_url, credentials_enc, is_valid,
             last_refreshed_at, updated_at
-          ) VALUES ($1, 'activitypub', 'linked', $2, $3, $4, $5, TRUE, now(), now())
+          ) VALUES ($1, 'activitypub', $6, $2, $3, $4, $5, TRUE, now(), now())
           ON CONFLICT (account_id, protocol)
           DO UPDATE SET
             external_id       = EXCLUDED.external_id,
             handle            = EXCLUDED.handle,
             service_url       = EXCLUDED.service_url,
             credentials_enc   = EXCLUDED.credentials_enc,
-            provenance        = 'linked',
+            provenance        = EXCLUDED.provenance,
             lifecycle_state   = 'active',
             is_valid          = TRUE,
             last_refreshed_at = now(),
@@ -354,11 +519,17 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
               : `${profile.username}@${new URL(statePayload.instance).hostname}`,
             statePayload.instance,
             credentialsEnc,
+            provenance,
           ],
         );
 
         logger.info(
-          { userId, instance: statePayload.instance, externalId: profile.id },
+          {
+            userId,
+            instance: statePayload.instance,
+            externalId: profile.id,
+            provenance,
+          },
           "Mastodon account linked",
         );
         return redirectOk("mastodon");
@@ -614,6 +785,21 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
 // =============================================================================
 // Mastodon OAuth helpers
 // =============================================================================
+
+function buildMastodonAuthorizeUrl(
+  instanceOrigin: string,
+  clientId: string,
+  redirectUri: string,
+  nonce: string,
+): string {
+  const authorizeUrl = new URL(`${instanceOrigin}/oauth/authorize`);
+  authorizeUrl.searchParams.set("client_id", clientId);
+  authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+  authorizeUrl.searchParams.set("response_type", "code");
+  authorizeUrl.searchParams.set("scope", MASTODON_SCOPES);
+  authorizeUrl.searchParams.set("state", nonce);
+  return authorizeUrl.toString();
+}
 
 async function getOrRegisterMastodonApp(
   instance: string,

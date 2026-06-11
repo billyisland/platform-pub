@@ -16,7 +16,11 @@
 
 import { useEffect, useState } from 'react'
 import { linkedAccounts, privacyPreferences, type LinkedAccount } from '../../lib/api'
-import { ASSISTED_BLUESKY_CONSENT, type NetworkCapabilities } from '../../lib/api/linked-accounts'
+import {
+  ASSISTED_BLUESKY_CONSENT,
+  assistedMastodonConsent,
+  type NetworkCapabilities,
+} from '../../lib/api/linked-accounts'
 
 type SatelliteKey = 'mastodon' | 'bluesky'
 
@@ -40,6 +44,8 @@ export function NetworkReachPanel() {
   const [showConnect, setShowConnect] = useState<null | SatelliteKey>(null)
   // The ASSISTED consent gate (§6.1.1 S5) — distinct from the link form above.
   const [showAssisted, setShowAssisted] = useState<null | SatelliteKey>(null)
+  // Mastodon ASSISTED instance choice (§9) — null ⇒ the allowlist default.
+  const [assistedInstance, setAssistedInstance] = useState<string | null>(null)
 
   // Nostr presence (the degenerate concierge) — relocated from PrivacyPreferences.
   const [discoveryEnabled, setDiscoveryEnabled] = useState<boolean | null>(null)
@@ -49,7 +55,9 @@ export function NetworkReachPanel() {
     try {
       const { accounts, capabilities } = await linkedAccounts.list()
       setAccounts(accounts)
-      setCapabilities(capabilities ?? { assistedBluesky: false })
+      setCapabilities(
+        capabilities ?? { assistedBluesky: false, assistedMastodon: false },
+      )
     } catch (err: any) {
       setError(err.message ?? 'Failed to load network presences')
     }
@@ -124,6 +132,20 @@ export function NetworkReachPanel() {
     setError(null)
     try {
       const { authorizeUrl } = await linkedAccounts.assistedBluesky()
+      window.location.href = authorizeUrl
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to start setup')
+      setConnecting(false)
+    }
+  }
+
+  async function handleAssistedMastodon() {
+    setConnecting(true)
+    setError(null)
+    try {
+      const { authorizeUrl } = await linkedAccounts.assistedMastodon(
+        assistedInstance ?? undefined,
+      )
       window.location.href = authorizeUrl
     } catch (err: any) {
       setError(err.message ?? 'Failed to start setup')
@@ -225,9 +247,14 @@ export function NetworkReachPanel() {
           ) : (
             SATELLITES.map(net => {
               const acct = linkedFor(net.protocol)
-              // ASSISTED clears for Bluesky on Phase 2 (§6.1); Mastodon stays
-              // "soon" pending Phase 3's instance question.
-              const assistedAvailable = net.key === 'bluesky' && !!capabilities?.assistedBluesky
+              // ASSISTED: Bluesky on Phase 2 (§6.1), Mastodon on Phase 3 (§9) —
+              // each behind its own server flag.
+              const assistedAvailable =
+                net.key === 'bluesky'
+                  ? !!capabilities?.assistedBluesky
+                  : !!capabilities?.assistedMastodon
+              const assistedInstances = capabilities?.assistedMastodonInstances ?? []
+              const chosenInstance = assistedInstance ?? assistedInstances[0] ?? 'mastodon.social'
               return (
                 <div key={net.key}>
                   <div className="flex items-center justify-between gap-4">
@@ -297,10 +324,31 @@ export function NetworkReachPanel() {
                   {showAssisted === net.key && (
                     <div className="pt-4">
                       <p className="text-ui-xs text-grey-600 leading-relaxed max-w-md">
-                        {ASSISTED_BLUESKY_CONSENT}
+                        {net.key === 'bluesky'
+                          ? ASSISTED_BLUESKY_CONSENT
+                          : assistedMastodonConsent(chosenInstance)}
                       </p>
+                      {/* Curated instance picker (§9) — only when the operator
+                          configured more than one open-registration instance. */}
+                      {net.key === 'mastodon' && assistedInstances.length > 1 && (
+                        <div className="flex flex-wrap mt-3">
+                          {assistedInstances.map(host => (
+                            <button
+                              key={host}
+                              onClick={() => setAssistedInstance(host)}
+                              className={`label-ui toggle-chip ${chosenInstance === host ? 'toggle-chip-active' : 'toggle-chip-inactive'}`}
+                            >
+                              {host}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex gap-3 mt-3">
-                        <button onClick={handleAssistedBluesky} disabled={connecting} className="btn-text">
+                        <button
+                          onClick={net.key === 'bluesky' ? handleAssistedBluesky : handleAssistedMastodon}
+                          disabled={connecting}
+                          className="btn-text"
+                        >
                           {connecting ? 'Redirecting…' : `Create ${net.label} account`}
                         </button>
                         <button onClick={() => setShowAssisted(null)} className="btn-text-muted">

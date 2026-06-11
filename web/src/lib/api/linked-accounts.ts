@@ -14,13 +14,23 @@ export interface LinkedAccount {
 
 export interface NetworkCapabilities {
   assistedBluesky: boolean
+  assistedMastodon: boolean
+  // Curated open-registration instances for the Mastodon ASSISTED hand-off
+  // (§9); first entry is the default. Empty while the flag is dark.
+  assistedMastodonInstances?: string[]
 }
 
 // Honest framing for the ASSISTED hand-off (NETWORK-CONCIERGE-ADR §6.1.1 S5,
-// §10): the user is creating a *real* Bluesky account mid-redirect, so this must
+// §10): the user is creating a *real* network account mid-redirect, so this must
 // be an explicit acknowledgement, never ambient copy.
 export const ASSISTED_BLUESKY_CONSENT =
   'You’re about to create a real Bluesky account on bsky.social. Bluesky holds the keys; all.haus just connects it. You can disconnect anytime.'
+
+// Mastodon's round-trip has two extra steps Bluesky doesn't (email confirmation
+// + a first login on the instance), and it only resumes in the same browser —
+// the consent copy must set that expectation or the hand-off reads as broken.
+export const assistedMastodonConsent = (instance: string) =>
+  `You’re about to create a real Mastodon account on ${instance}. ${instance} holds the keys; all.haus just connects it. You’ll confirm your email and log in on ${instance} along the way — finish in this browser and you’ll land back here. You can disconnect anytime.`
 
 export const linkedAccounts = {
   list: () =>
@@ -55,6 +65,14 @@ export const linkedAccounts = {
     request<{ authorizeUrl: string }>('/linked-accounts/bluesky/assisted', {
       method: 'POST',
     }),
+
+  // ASSISTED Mastodon — instance must come from the curated allowlist the
+  // gateway surfaces via capabilities; omitted ⇒ the gateway's default.
+  assistedMastodon: (instance?: string) =>
+    request<{ authorizeUrl: string }>('/linked-accounts/mastodon/assisted', {
+      method: 'POST',
+      body: JSON.stringify(instance ? { instance } : {}),
+    }),
 }
 
 // Session-cached so contextual surfaces (e.g. InlineReplyBox) can gate the
@@ -64,10 +82,13 @@ export function getNetworkCapabilities(): Promise<NetworkCapabilities> {
   if (!capabilitiesPromise) {
     capabilitiesPromise = linkedAccounts
       .list()
-      .then((r) => r.capabilities ?? { assistedBluesky: false })
+      .then(
+        (r) =>
+          r.capabilities ?? { assistedBluesky: false, assistedMastodon: false },
+      )
       .catch(() => {
         capabilitiesPromise = null
-        return { assistedBluesky: false }
+        return { assistedBluesky: false, assistedMastodon: false }
       })
   }
   return capabilitiesPromise
