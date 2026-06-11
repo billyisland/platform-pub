@@ -33,6 +33,13 @@ interface ForallMenuProps {
   onAction: (key: ForallAction) => void;
   hiddenFeeds?: HiddenFeed[];
   onRestore?: (feedId: string) => void;
+  /** Placement of the ∀ trigger. "floating" is the desktop disc at the
+   *  bottom-right of the canvas; "bar" docks a smaller disc into the mobile
+   *  bar's right end, with the menu dropping DOWN below the bar
+   *  (MOBILE-LAYOUT-ADR §III — the bar's burger is the ∀, the existing
+   *  command surface, not a second menu system). Same rows, same z-60
+   *  crisp-above-the-frost invariant. */
+  anchor?: "floating" | "bar";
 }
 
 type View = "closed" | "menu" | "search";
@@ -49,7 +56,10 @@ export function ForallMenu({
   onAction,
   hiddenFeeds = [],
   onRestore,
+  anchor = "floating",
 }: ForallMenuProps) {
+  const inBar = anchor === "bar";
+  const discSize = inBar ? 36 : 56;
   const router = useRouter();
   const dmCount = useUnreadCounts((s) => s.dmCount);
   const notificationCount = useUnreadCounts((s) => s.notificationCount);
@@ -216,7 +226,11 @@ export function ForallMenu({
   return (
     <div
       ref={containerRef}
-      style={{ position: "fixed", right: 24, bottom: 24, zIndex: 60 }}
+      style={
+        inBar
+          ? { position: "fixed", right: 8, top: 6, zIndex: 60 }
+          : { position: "fixed", right: 24, bottom: 24, zIndex: 60 }
+      }
     >
       {view === "menu" && (
         <div
@@ -227,7 +241,7 @@ export function ForallMenu({
           style={{
             position: "absolute",
             right: 0,
-            bottom: 64,
+            ...(inBar ? { top: discSize + 8 } : { bottom: 64 }),
             minWidth: 240,
             padding: 6,
           }}
@@ -257,7 +271,12 @@ export function ForallMenu({
         </div>
       )}
 
-      {view === "search" && <SearchPanel onClose={closeAll} />}
+      {view === "search" && (
+        <SearchPanel
+          onClose={closeAll}
+          placement={inBar ? "below" : "above"}
+        />
+      )}
 
       <button
         ref={buttonRef}
@@ -278,8 +297,8 @@ export function ForallMenu({
         }}
         style={{
           position: "relative",
-          width: 56,
-          height: 56,
+          width: discSize,
+          height: discSize,
           borderRadius: "50%",
           background: TOKENS.buttonBg,
           color: TOKENS.buttonFg,

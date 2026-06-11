@@ -63,6 +63,8 @@ import {
 } from "../../lib/workspace/overlays";
 import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
+import { MobileWorkspace } from "./MobileWorkspace";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 const FLOOR = "var(--ah-bone)"; // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed";
@@ -264,6 +266,11 @@ function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
 export function WorkspaceView() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  // MOBILE-LAYOUT-ADR: mobile is not a reflow of the canvas — it is a
+  // different interaction model over the same feeds. This switch swaps the
+  // body (vessels ↔ pager) while everything else (data, overlays, composer,
+  // pip panel) is shared.
+  const isMobile = useIsMobile();
   const [vessels, setVessels] = useState<VesselState[]>([]);
   const [bootstrap, setBootstrap] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -344,7 +351,6 @@ export function WorkspaceView() {
   const setVesselDensity = useWorkspace((s) => s.setVesselDensity);
   const setVesselOrientation = useWorkspace((s) => s.setVesselOrientation);
   const setVesselTextSize = useWorkspace((s) => s.setVesselTextSize);
-  const setVesselHidden = useWorkspace((s) => s.setVesselHidden);
   const removeVesselLayout = useWorkspace((s) => s.removeVessel);
   const batchUpdatePositions = useWorkspace((s) => s.batchUpdatePositions);
 
@@ -418,8 +424,10 @@ export function WorkspaceView() {
     floor.querySelectorAll<HTMLElement>("[data-vessel-id]").forEach((el) => {
       const id = el.dataset.vesselId!;
       if (id === feedId) return;
+      // Hidden feeds never render a vessel, so every [data-vessel-id] hit
+      // here is a live merge target.
       const layout = store.positions[id];
-      if (!layout || layout.hidden) return;
+      if (!layout) return;
       if (
         cx >= layout.x &&
         cx <= layout.x + el.offsetWidth &&
@@ -576,17 +584,86 @@ export function WorkspaceView() {
     }
   }
 
-  function handleRestoreHiddenFeed(feedId: string) {
-    setVesselHidden(feedId, false);
+  // Hide is feed character (MOBILE-LAYOUT-ADR §V): persisted on the feed row
+  // via the PATCH, not in per-device layout state. Optimistic flip so the
+  // vessel hides/returns instantly; reconcile with the server row (or revert)
+  // when the PATCH settles.
+  async function handleSetFeedHidden(feedId: string, hidden: boolean) {
+    setVessels((prev) =>
+      prev.map((v) =>
+        v.feed.id === feedId ? { ...v, feed: { ...v.feed, hidden } } : v,
+      ),
+    );
+    try {
+      const { feed } = await workspaceFeedsApi.setHidden(feedId, hidden);
+      setVessels((prev) =>
+        prev.map((v) => (v.feed.id === feed.id ? { ...v, feed } : v)),
+      );
+    } catch (err) {
+      console.error("Set feed hidden failed:", err);
+      setVessels((prev) =>
+        prev.map((v) =>
+          v.feed.id === feedId
+            ? { ...v, feed: { ...v.feed, hidden: !hidden } }
+            : v,
+        ),
+      );
+    }
   }
 
+  function handleRestoreHiddenFeed(feedId: string) {
+    void handleSetFeedHidden(feedId, false);
+  }
+
+  // Bulk re-rank (MOBILE-LAYOUT-ADR §VII.3). Optimistic: stamp the new ranks
+  // locally so the badges renumber instantly, then reconcile with the
+  // authoritative rows. On failure (409 = stale list) refetch the canonical
+  // order rather than guessing.
+  async function handleReorderFeeds(feedIds: string[]) {
+    const rankOf = new Map(feedIds.map((id, i) => [id, i + 1]));
+    setVessels((prev) =>
+      prev.map((v) => {
+        const rank = rankOf.get(v.feed.id);
+        return rank !== undefined
+          ? { ...v, feed: { ...v.feed, sortRank: rank } }
+          : v;
+      }),
+    );
+    const applyFeeds = (feeds: WorkspaceFeed[]) =>
+      setVessels((prev) =>
+        prev.map((v) => {
+          const f = feeds.find((x) => x.id === v.feed.id);
+          return f ? { ...v, feed: f } : v;
+        }),
+      );
+    try {
+      const { feeds } = await workspaceFeedsApi.reorder(feedIds);
+      applyFeeds(feeds);
+    } catch (err) {
+      console.error("Reorder feeds failed:", err);
+      try {
+        const { feeds } = await workspaceFeedsApi.list();
+        applyFeeds(feeds);
+      } catch {
+        // Network down — leave the optimistic order; next bootstrap reconciles.
+      }
+    }
+  }
+
+  // The numeral is persisted rank, not creation order (MOBILE-LAYOUT-ADR
+  // §VII), and numbering skips hidden feeds (§V) — visible feeds read 1..N
+  // with no gaps, the same sequence the mobile pager swipes through. Hidden
+  // feeds carry no numeral until restored.
+  const visibleSorted = vessels
+    .filter((v) => !v.feed.hidden)
+    .sort(
+      (a, b) =>
+        a.feed.sortRank - b.feed.sortRank ||
+        a.feed.createdAt.localeCompare(b.feed.createdAt) ||
+        a.feed.id.localeCompare(b.feed.id),
+    );
   const feedNumerals = new Map<string, number>();
-  const sorted = [...vessels].sort(
-    (a, b) =>
-      new Date(a.feed.createdAt).getTime() -
-      new Date(b.feed.createdAt).getTime(),
-  );
-  sorted.forEach((v, i) => feedNumerals.set(v.feed.id, i + 1));
+  visibleSorted.forEach((v, i) => feedNumerals.set(v.feed.id, i + 1));
 
   function feedDisplayName(feedId: string, feedName: string): string {
     const num = feedNumerals.get(feedId) ?? 1;
@@ -595,10 +672,10 @@ export function WorkspaceView() {
   }
 
   const hiddenFeeds = vessels
-    .filter((v) => positions[v.feed.id]?.hidden)
+    .filter((v) => v.feed.hidden)
     .map((v) => ({
       id: v.feed.id,
-      name: feedDisplayName(v.feed.id, v.feed.name),
+      name: v.feed.name.trim() || "Unnamed feed",
     }));
 
   function matchItemToSource(
@@ -751,6 +828,29 @@ export function WorkspaceView() {
           mintedFounderFeed = true;
         }
         if (cancelled) return;
+
+        // One-time hide reconciliation (MOBILE-LAYOUT-ADR §V): hide used to
+        // be per-device layout state. Push any pre-migration local hides up
+        // to the feed row so they don't pop back on deploy, then strip the
+        // local flag (only once the PATCH lands) so a stale flag can never
+        // re-hide a feed the user later unhid from another device.
+        const legacyLayouts = useWorkspace.getState().positions;
+        const legacyHiddenIds = list
+          .filter((feed) => legacyLayouts[feed.id]?.hidden)
+          .map((feed) => feed.id);
+        if (legacyHiddenIds.length > 0) {
+          list = list.map((feed) =>
+            legacyHiddenIds.includes(feed.id) && !feed.hidden
+              ? { ...feed, hidden: true }
+              : feed,
+          );
+          for (const feedId of legacyHiddenIds) {
+            workspaceFeedsApi
+              .setHidden(feedId, true)
+              .then(() => useWorkspace.getState().clearLegacyHidden(feedId))
+              .catch(() => {});
+          }
+        }
         const initial: VesselState[] = list.map((feed) => ({
           feed,
           items: [],
@@ -787,16 +887,25 @@ export function WorkspaceView() {
           }
         });
 
-        // Per-feed colour scheme (feature-debt §3): the server-side
-        // feeds.appearance.scheme is authoritative — feed character travels
-        // with the feed across devices. Reconcile it into the layout store,
-        // whose persisted `brightness` field doubles as the local cache (and,
-        // for feeds that have never picked a scheme, the legacy per-device
-        // light/dark fallback).
+        // Per-feed appearance (feature-debt §3 + MOBILE-LAYOUT-ADR §VI): the
+        // server-side feeds.appearance is authoritative — feed character
+        // travels with the feed across devices. Reconcile scheme and density
+        // into the layout store, whose persisted fields double as the local
+        // cache (and, for feeds that have never picked, the legacy per-device
+        // fallback). One sync model for both axes, not two.
         list.forEach((feed) => {
           const scheme = feed.appearance?.scheme;
           if (scheme && stored[feed.id]?.brightness !== scheme) {
             setVesselBrightness(feed.id, normalizeBrightness(scheme));
+          }
+          const density = feed.appearance?.density;
+          if (
+            (density === "compact" ||
+              density === "standard" ||
+              density === "full") &&
+            stored[feed.id]?.density !== density
+          ) {
+            setVesselDensity(feed.id, density);
           }
         });
 
@@ -837,6 +946,242 @@ export function WorkspaceView() {
     };
   }, [user, hydrated, loadVesselItems, setVesselPosition]);
 
+  // The feed's card list — shared verbatim by the desktop vessel and the
+  // mobile full-bleed page (MOBILE-LAYOUT-ADR §III), so the two surfaces
+  // cannot drift. Orientation never reaches the cards (it is a chassis
+  // property); scheme/density/text size ride the layout store as on desktop.
+  function renderFeedContents(v: VesselState) {
+    const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
+    return (
+      <>
+            {v.status === "loading" && <Hint>LOADING…</Hint>}
+            {v.status === "error" && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
+            {v.status === "ready" &&
+              v.items.length === 0 &&
+              (v.sources.length === 0 ? (
+                <EmptyFeedTile
+                  variant="no-sources"
+                  brightness={layout.brightness}
+                  onAddSources={() => setFeedComposerFor(v.feed)}
+                />
+              ) : (
+                <EmptyFeedTile
+                  variant="no-items"
+                  brightness={layout.brightness}
+                  onAddSources={() => setFeedComposerFor(v.feed)}
+                />
+              ))}
+            {v.status === "ready" && v.caughtUp && v.items.length > 0 && (
+              <EmptyFeedTile
+                variant="caught-up"
+                brightness={layout.brightness}
+                onAddSources={() => setFeedComposerFor(v.feed)}
+                onDismiss={() =>
+                  setVessels((prev) =>
+                    prev.map((vs) =>
+                      vs.feed.id === v.feed.id
+                        ? { ...vs, caughtUp: false }
+                        : vs,
+                    ),
+                  )
+                }
+              />
+            )}
+            {v.status === "ready" &&
+              v.items.map((item) =>
+                item.type === "new_user" ? (
+                  <NewUserVesselCard
+                    key={`new-user-${item.username}-${item.joinedAt}`}
+                    item={item}
+                    density={layout.density}
+                    brightness={layout.brightness}
+                  />
+                ) : item.type === "reply_group" ? (
+                  <ReplyGroupCard
+                    key={`rg-${item.sourceReplyUri}`}
+                    group={item}
+                    density={layout.density}
+                    brightness={layout.brightness}
+                    textSize={layout.textSize}
+                  />
+                ) : (
+                  (() => {
+                    // UNIVERSAL-POST-ADR Phase 5 — the unified card is the only
+                    // feed path. Collapsed cards are PostCardInteractive
+                    // level="feed"; expanding a note/external mounts the unified
+                    // PostThread (ancestors/focal/replies on the same PostCard).
+                    // Articles open the reader pane (Phase R), so they have no
+                    // inline thread and stay feed cards.
+                    const post = mapFeedItemToPost(item);
+                    const expandKey =
+                      "feedItemId" in item && item.feedItemId
+                        ? item.feedItemId
+                        : item.id;
+                    const isExpanded =
+                      expandedByFeed[v.feed.id] === expandKey;
+                    const ctx = {
+                      density: layout.density ?? DEFAULT_DENSITY,
+                      palette: paletteFor(layout.brightness),
+                      bodyPx:
+                        TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
+                      dragData: (() => {
+                        const fsId = matchItemToSource(item, v.sources);
+                        return fsId
+                          ? JSON.stringify({
+                              feedId: v.feed.id,
+                              feedSourceId: fsId,
+                            })
+                          : undefined;
+                      })(),
+                    } as CardContext;
+                    // One conversation open per feed: opening this card
+                    // replaces whatever was open in this feed; clicking the
+                    // open card again collapses it.
+                    const toggleExpand = () =>
+                      setExpandedByFeed((prev) => {
+                        if (prev[v.feed.id] === expandKey) {
+                          const next = { ...prev };
+                          delete next[v.feed.id];
+                          return next;
+                        }
+                        return { ...prev, [v.feed.id]: expandKey };
+                      });
+                    const onPipOpen = (
+                      pubkey: string,
+                      rect: DOMRect,
+                      status: typeof post.author.pipStatus | undefined,
+                    ) => setPipPanel({ pubkey, rect, status, feedId: v.feed.id });
+                    // Native reply only (external interact-back is a Phase 2/3
+                    // documented cut). version = the all.haus event id (vote +
+                    // reply target); type picks the kind.
+                    const replyFromPost = (p: Post) => {
+                      setQuoteTarget(null);
+                      setReplyTarget({
+                        eventId: p.version ?? p.id,
+                        eventKind: p.type === "article" ? 30023 : 1,
+                        authorPubkey: p.author.pubkey ?? "",
+                        authorName: "",
+                        excerpt: (p.body.text ?? "").slice(0, 120),
+                      });
+                      setComposerOpen("note");
+                    };
+                    // Native quote → a NIP-18 quote note that embeds this post.
+                    // version = the nostr event id of the thing being quoted.
+                    const quoteFromPost = (p: Post) => {
+                      // External post (no nostr pubkey): quote as a native note
+                      // that references the origin by post_id + public URL,
+                      // rendering the same rich quoted-mini (migration 102).
+                      if (!p.author.pubkey) {
+                        setReplyTarget(null);
+                        setQuoteTarget({
+                          eventId: "",
+                          eventKind: 1,
+                          authorPubkey: "",
+                          isExternal: true,
+                          quotedPostId: p.id,
+                          quotedUrl: originWebUrl(p) ?? undefined,
+                          quotedSource:
+                            p.origin.sourceName ??
+                            EXTERNAL_QUOTE_LABEL[p.origin.protocol] ??
+                            p.origin.protocol.toUpperCase(),
+                          previewTitle: p.body.title ?? undefined,
+                          previewContent:
+                            (p.body.summary ?? p.body.text ?? "").slice(0, 200) ||
+                            undefined,
+                          previewAuthorName:
+                            p.author.displayName ?? p.author.handle ?? undefined,
+                        });
+                        setComposerOpen("note");
+                        return;
+                      }
+                      const eventId = p.version ?? p.id;
+                      const pubkey = p.author.pubkey ?? "";
+                      // Native display names aren't on the workspace Post (the
+                      // byline resolves them via useWriterName), so read that
+                      // warm cache for the "Quoting …" banner; fall back to the
+                      // handle, then patch in an async resolve on a cold cache.
+                      const cachedName = pubkey
+                        ? getCachedWriterName(pubkey)
+                        : null;
+                      setReplyTarget(null);
+                      setQuoteTarget({
+                        eventId,
+                        eventKind: p.type === "article" ? 30023 : 1,
+                        authorPubkey: pubkey,
+                        previewTitle: p.body.title ?? undefined,
+                        previewContent:
+                          (p.body.summary ?? p.body.text ?? "").slice(0, 200) ||
+                          undefined,
+                        previewAuthorName:
+                          p.author.displayName ?? cachedName ?? p.author.handle ?? undefined,
+                      });
+                      setComposerOpen("note");
+                      if (pubkey && !p.author.displayName && !cachedName) {
+                        void resolveWriterName(pubkey).then((info) => {
+                          if (!info) return;
+                          setQuoteTarget((prev) =>
+                            prev && prev.eventId === eventId
+                              ? { ...prev, previewAuthorName: info.displayName }
+                              : prev,
+                          );
+                        });
+                      }
+                    };
+                    // Article click → reader pane (§3.1 / Phase R). Native by
+                    // d-tag (/article/<dTag>), external by URL (/reader/<postId>).
+                    // Actions are stable refs, so getState() avoids subscribing.
+                    const openReaderFromPost = (p: Post) => {
+                      const reader = useReader.getState();
+                      if (p.author.pubkey) {
+                        if (p.dTag) reader.openNative(p.dTag, { postId: p.id });
+                      } else {
+                        reader.openExternal(p.origin.uri, {
+                          postId: p.id,
+                          title: p.body.title,
+                          siteName: p.origin.sourceName,
+                        });
+                      }
+                    };
+                    if (isExpanded && post.type !== "article") {
+                      return (
+                        <PostThread
+                          key={item.id}
+                          rootPostId={post.id}
+                          ctx={ctx}
+                          onCollapse={toggleExpand}
+                          onReply={replyFromPost}
+                          onQuote={quoteFromPost}
+                          onOpenReader={openReaderFromPost}
+                          onPipOpen={onPipOpen}
+                          refreshKey={threadRefreshTick}
+                        />
+                      );
+                    }
+                    return (
+                      <PostCardInteractive
+                        key={item.id}
+                        post={post}
+                        level="feed"
+                        expanded={false}
+                        ctx={ctx}
+                        onPipOpen={onPipOpen}
+                        onExpand={toggleExpand}
+                        onOpenReader={openReaderFromPost}
+                        onReply={
+                          post.author.pubkey
+                            ? () => replyFromPost(post)
+                            : undefined
+                        }
+                        onQuote={() => quoteFromPost(post)}
+                      />
+                    );
+                  })()
+                ),
+              )}
+      </>
+    );
+  }
+
   if (loading || !user) {
     return <Floor />;
   }
@@ -849,9 +1194,32 @@ export function WorkspaceView() {
       {bootstrap === "error" && (
         <CenteredHint>COULDN&rsquo;T LOAD WORKSPACE</CenteredHint>
       )}
+      {bootstrap === "ready" && isMobile && (
+        <MobileWorkspace
+          feeds={visibleSorted.map((v) => v.feed)}
+          userId={user.id}
+          interiorFor={(feedId) =>
+            paletteFor(positions[feedId]?.brightness).interior
+          }
+          renderFeedContents={(feedId) => {
+            const v = vessels.find((x) => x.feed.id === feedId);
+            return v ? renderFeedContents(v) : null;
+          }}
+          onRefresh={async (feedId) => {
+            const v = vesselsRef.current.find((x) => x.feed.id === feedId);
+            if (v) await loadVesselItems(v.feed);
+          }}
+          onLoadMore={loadMoreVesselItems}
+          onOpenFeedSettings={(feedId) => {
+            const v = vessels.find((x) => x.feed.id === feedId);
+            if (v) setFeedComposerFor(v.feed);
+          }}
+        />
+      )}
       {bootstrap === "ready" &&
+        !isMobile &&
         vessels
-          .filter((v) => !positions[v.feed.id]?.hidden)
+          .filter((v) => !v.feed.hidden)
           .map((v) => {
             const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
             return (
@@ -879,7 +1247,7 @@ export function WorkspaceView() {
                 brightness={layout.brightness}
                 density={layout.density}
                 orientation={layout.orientation}
-                onHide={() => setVesselHidden(v.feed.id, true)}
+                onHide={() => void handleSetFeedHidden(v.feed.id, true)}
                 onPositionCommit={(next) =>
                   handleVesselDragEnd(v.feed.id, next)
                 }
@@ -902,230 +1270,7 @@ export function WorkspaceView() {
                   )
                 }
               >
-                {v.status === "loading" && <Hint>LOADING…</Hint>}
-                {v.status === "error" && <Hint>COULDN&rsquo;T LOAD FEED</Hint>}
-                {v.status === "ready" &&
-                  v.items.length === 0 &&
-                  (v.sources.length === 0 ? (
-                    <EmptyFeedTile
-                      variant="no-sources"
-                      brightness={layout.brightness}
-                      onAddSources={() => setFeedComposerFor(v.feed)}
-                    />
-                  ) : (
-                    <EmptyFeedTile
-                      variant="no-items"
-                      brightness={layout.brightness}
-                      onAddSources={() => setFeedComposerFor(v.feed)}
-                    />
-                  ))}
-                {v.status === "ready" && v.caughtUp && v.items.length > 0 && (
-                  <EmptyFeedTile
-                    variant="caught-up"
-                    brightness={layout.brightness}
-                    onAddSources={() => setFeedComposerFor(v.feed)}
-                    onDismiss={() =>
-                      setVessels((prev) =>
-                        prev.map((vs) =>
-                          vs.feed.id === v.feed.id
-                            ? { ...vs, caughtUp: false }
-                            : vs,
-                        ),
-                      )
-                    }
-                  />
-                )}
-                {v.status === "ready" &&
-                  v.items.map((item) =>
-                    item.type === "new_user" ? (
-                      <NewUserVesselCard
-                        key={`new-user-${item.username}-${item.joinedAt}`}
-                        item={item}
-                        density={layout.density}
-                        brightness={layout.brightness}
-                      />
-                    ) : item.type === "reply_group" ? (
-                      <ReplyGroupCard
-                        key={`rg-${item.sourceReplyUri}`}
-                        group={item}
-                        density={layout.density}
-                        brightness={layout.brightness}
-                        textSize={layout.textSize}
-                      />
-                    ) : (
-                      (() => {
-                        // UNIVERSAL-POST-ADR Phase 5 — the unified card is the only
-                        // feed path. Collapsed cards are PostCardInteractive
-                        // level="feed"; expanding a note/external mounts the unified
-                        // PostThread (ancestors/focal/replies on the same PostCard).
-                        // Articles open the reader pane (Phase R), so they have no
-                        // inline thread and stay feed cards.
-                        const post = mapFeedItemToPost(item);
-                        const expandKey =
-                          "feedItemId" in item && item.feedItemId
-                            ? item.feedItemId
-                            : item.id;
-                        const isExpanded =
-                          expandedByFeed[v.feed.id] === expandKey;
-                        const ctx = {
-                          density: layout.density ?? DEFAULT_DENSITY,
-                          palette: paletteFor(layout.brightness),
-                          bodyPx:
-                            TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
-                          dragData: (() => {
-                            const fsId = matchItemToSource(item, v.sources);
-                            return fsId
-                              ? JSON.stringify({
-                                  feedId: v.feed.id,
-                                  feedSourceId: fsId,
-                                })
-                              : undefined;
-                          })(),
-                        } as CardContext;
-                        // One conversation open per feed: opening this card
-                        // replaces whatever was open in this feed; clicking the
-                        // open card again collapses it.
-                        const toggleExpand = () =>
-                          setExpandedByFeed((prev) => {
-                            if (prev[v.feed.id] === expandKey) {
-                              const next = { ...prev };
-                              delete next[v.feed.id];
-                              return next;
-                            }
-                            return { ...prev, [v.feed.id]: expandKey };
-                          });
-                        const onPipOpen = (
-                          pubkey: string,
-                          rect: DOMRect,
-                          status: typeof post.author.pipStatus | undefined,
-                        ) => setPipPanel({ pubkey, rect, status, feedId: v.feed.id });
-                        // Native reply only (external interact-back is a Phase 2/3
-                        // documented cut). version = the all.haus event id (vote +
-                        // reply target); type picks the kind.
-                        const replyFromPost = (p: Post) => {
-                          setQuoteTarget(null);
-                          setReplyTarget({
-                            eventId: p.version ?? p.id,
-                            eventKind: p.type === "article" ? 30023 : 1,
-                            authorPubkey: p.author.pubkey ?? "",
-                            authorName: "",
-                            excerpt: (p.body.text ?? "").slice(0, 120),
-                          });
-                          setComposerOpen("note");
-                        };
-                        // Native quote → a NIP-18 quote note that embeds this post.
-                        // version = the nostr event id of the thing being quoted.
-                        const quoteFromPost = (p: Post) => {
-                          // External post (no nostr pubkey): quote as a native note
-                          // that references the origin by post_id + public URL,
-                          // rendering the same rich quoted-mini (migration 102).
-                          if (!p.author.pubkey) {
-                            setReplyTarget(null);
-                            setQuoteTarget({
-                              eventId: "",
-                              eventKind: 1,
-                              authorPubkey: "",
-                              isExternal: true,
-                              quotedPostId: p.id,
-                              quotedUrl: originWebUrl(p) ?? undefined,
-                              quotedSource:
-                                p.origin.sourceName ??
-                                EXTERNAL_QUOTE_LABEL[p.origin.protocol] ??
-                                p.origin.protocol.toUpperCase(),
-                              previewTitle: p.body.title ?? undefined,
-                              previewContent:
-                                (p.body.summary ?? p.body.text ?? "").slice(0, 200) ||
-                                undefined,
-                              previewAuthorName:
-                                p.author.displayName ?? p.author.handle ?? undefined,
-                            });
-                            setComposerOpen("note");
-                            return;
-                          }
-                          const eventId = p.version ?? p.id;
-                          const pubkey = p.author.pubkey ?? "";
-                          // Native display names aren't on the workspace Post (the
-                          // byline resolves them via useWriterName), so read that
-                          // warm cache for the "Quoting …" banner; fall back to the
-                          // handle, then patch in an async resolve on a cold cache.
-                          const cachedName = pubkey
-                            ? getCachedWriterName(pubkey)
-                            : null;
-                          setReplyTarget(null);
-                          setQuoteTarget({
-                            eventId,
-                            eventKind: p.type === "article" ? 30023 : 1,
-                            authorPubkey: pubkey,
-                            previewTitle: p.body.title ?? undefined,
-                            previewContent:
-                              (p.body.summary ?? p.body.text ?? "").slice(0, 200) ||
-                              undefined,
-                            previewAuthorName:
-                              p.author.displayName ?? cachedName ?? p.author.handle ?? undefined,
-                          });
-                          setComposerOpen("note");
-                          if (pubkey && !p.author.displayName && !cachedName) {
-                            void resolveWriterName(pubkey).then((info) => {
-                              if (!info) return;
-                              setQuoteTarget((prev) =>
-                                prev && prev.eventId === eventId
-                                  ? { ...prev, previewAuthorName: info.displayName }
-                                  : prev,
-                              );
-                            });
-                          }
-                        };
-                        // Article click → reader pane (§3.1 / Phase R). Native by
-                        // d-tag (/article/<dTag>), external by URL (/reader/<postId>).
-                        // Actions are stable refs, so getState() avoids subscribing.
-                        const openReaderFromPost = (p: Post) => {
-                          const reader = useReader.getState();
-                          if (p.author.pubkey) {
-                            if (p.dTag) reader.openNative(p.dTag, { postId: p.id });
-                          } else {
-                            reader.openExternal(p.origin.uri, {
-                              postId: p.id,
-                              title: p.body.title,
-                              siteName: p.origin.sourceName,
-                            });
-                          }
-                        };
-                        if (isExpanded && post.type !== "article") {
-                          return (
-                            <PostThread
-                              key={item.id}
-                              rootPostId={post.id}
-                              ctx={ctx}
-                              onCollapse={toggleExpand}
-                              onReply={replyFromPost}
-                              onQuote={quoteFromPost}
-                              onOpenReader={openReaderFromPost}
-                              onPipOpen={onPipOpen}
-                              refreshKey={threadRefreshTick}
-                            />
-                          );
-                        }
-                        return (
-                          <PostCardInteractive
-                            key={item.id}
-                            post={post}
-                            level="feed"
-                            expanded={false}
-                            ctx={ctx}
-                            onPipOpen={onPipOpen}
-                            onExpand={toggleExpand}
-                            onOpenReader={openReaderFromPost}
-                            onReply={
-                              post.author.pubkey
-                                ? () => replyFromPost(post)
-                                : undefined
-                            }
-                            onQuote={() => quoteFromPost(post)}
-                          />
-                        );
-                      })()
-                    ),
-                  )}
+                {renderFeedContents(v)}
               </Vessel>
             );
           })}
@@ -1133,6 +1278,7 @@ export function WorkspaceView() {
         onAction={handleForallAction}
         hiddenFeeds={hiddenFeeds}
         onRestore={handleRestoreHiddenFeed}
+        anchor={isMobile ? "bar" : "floating"}
       />
       <Composer
         open={!!composerOpen}
@@ -1161,9 +1307,7 @@ export function WorkspaceView() {
       <FeedComposer
         open={!!feedComposerFor}
         feed={feedComposerFor}
-        deleteBlocked={
-          vessels.filter((v) => !positions[v.feed.id]?.hidden).length <= 1
-        }
+        deleteBlocked={vessels.filter((v) => !v.feed.hidden).length <= 1}
         scheme={
           feedComposerFor ? positions[feedComposerFor.id]?.brightness : undefined
         }
@@ -1193,14 +1337,43 @@ export function WorkspaceView() {
             )
             .catch(() => {});
         }}
-        onDensityChange={(next) =>
-          feedComposerFor && setVesselDensity(feedComposerFor.id, next)
-        }
-        onOrientationChange={(next) =>
-          feedComposerFor && setVesselOrientation(feedComposerFor.id, next)
+        onDensityChange={(next) => {
+          if (!feedComposerFor) return;
+          // Same precedence pattern as the scheme (MOBILE-LAYOUT-ADR §VI):
+          // local store repaints immediately, the server PATCH persists
+          // density as feed character, the refreshed row reconciles state.
+          setVesselDensity(feedComposerFor.id, next);
+          workspaceFeedsApi
+            .setAppearance(feedComposerFor.id, { density: next })
+            .then(({ feed }) =>
+              setVessels((prev) =>
+                prev.map((v) => (v.feed.id === feed.id ? { ...v, feed } : v)),
+              ),
+            )
+            .catch(() => {});
+        }}
+        // Orientation is a canvas property with no spatial substrate on the
+        // phone (§VI) — the control doesn't render on mobile.
+        onOrientationChange={
+          isMobile
+            ? undefined
+            : (next) =>
+                feedComposerFor &&
+                setVesselOrientation(feedComposerFor.id, next)
         }
         onTextSizeChange={(next) =>
           feedComposerFor && setVesselTextSize(feedComposerFor.id, next)
+        }
+        allFeeds={vessels.map((v) => v.feed)}
+        onReorder={(feedIds) => void handleReorderFeeds(feedIds)}
+        hidden={
+          feedComposerFor
+            ? (vessels.find((v) => v.feed.id === feedComposerFor.id)?.feed
+                .hidden ?? false)
+            : false
+        }
+        onHiddenChange={(next) =>
+          feedComposerFor && void handleSetFeedHidden(feedComposerFor.id, next)
         }
         onClose={() => setFeedComposerFor(null)}
         onSourcesChanged={() => {

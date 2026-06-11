@@ -7,11 +7,19 @@ export interface WorkspaceFeed {
   id: string;
   name: string;
   // Per-feed appearance (migration 112). `scheme` is a curated colour-scheme
-  // id from components/workspace/tokens.ts; absent means "never picked"
-  // (client falls back to the legacy per-device brightness, then the light
-  // default). Server-side because a feed's colour is feed character — it
-  // travels with the feed, not the device.
-  appearance?: { scheme?: string };
+  // id and `density` a card-density id from components/workspace/tokens.ts;
+  // absent means "never picked" (client falls back to the legacy per-device
+  // value, then the default). Server-side because a feed's appearance is feed
+  // character — it travels with the feed, not the device
+  // (MOBILE-LAYOUT-ADR §VI).
+  appearance?: { scheme?: string; density?: string };
+  // Persisted order (migration 113, MOBILE-LAYOUT-ADR §VII). The numeral is
+  // derived 1..N client-side over *visible* feeds in this order; resume and
+  // deep-links key off `id`, never the numeral.
+  sortRank: number;
+  // Feed character, not layout state (§V): hidden feeds are excluded from
+  // the mobile rotation and skipped by the numbering on both surfaces.
+  hidden: boolean;
   createdAt: string;
   updatedAt: string;
   sourceCount: number;
@@ -208,11 +216,28 @@ export const workspaceFeeds = {
     }),
 
   // Server-side merge: other appearance keys on the row survive a
-  // scheme-only update.
-  setAppearance: (id: string, appearance: { scheme: string }) =>
+  // single-key update.
+  setAppearance: (id: string, appearance: { scheme?: string; density?: string }) =>
     request<{ feed: WorkspaceFeed }>(`/workspace/feeds/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ appearance }),
+    }),
+
+  // Hide is feed character (MOBILE-LAYOUT-ADR §V): persisted on the feed row,
+  // not in per-device layout state.
+  setHidden: (id: string, hidden: boolean) =>
+    request<{ feed: WorkspaceFeed }>(`/workspace/feeds/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ hidden }),
+    }),
+
+  // Bulk re-rank (MOBILE-LAYOUT-ADR §VII.3): the complete feed set in the
+  // desired order; ranks rewritten in full server-side. 409 means the list
+  // is stale (feed created/deleted elsewhere) — refetch and retry.
+  reorder: (feedIds: string[]) =>
+    request<{ feeds: WorkspaceFeed[] }>("/workspace/feeds/order", {
+      method: "PUT",
+      body: JSON.stringify({ feedIds }),
     }),
 
   remove: (id: string) =>

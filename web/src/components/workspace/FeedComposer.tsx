@@ -84,6 +84,16 @@ interface FeedComposerProps {
   onDensityChange?: (d: Density) => void;
   onOrientationChange?: (o: Orientation) => void;
   onTextSizeChange?: (t: TextSize) => void;
+  // Drag-to-rank (MOBILE-LAYOUT-ADR §VII.4): the caller's complete feed set
+  // and a commit callback. The rank order is the numeral and the mobile swipe
+  // order; the list shows every feed (hidden ones unnumbered, per §V).
+  allFeeds?: WorkspaceFeed[];
+  onReorder?: (feedIds: string[]) => void;
+  // Hide toggle (MOBILE-LAYOUT-ADR §V): hide is feed character on the feed
+  // row. On mobile this sheet is the only hide affordance (no vessel bar);
+  // on desktop it complements the vessel bar's hide button.
+  hidden?: boolean;
+  onHiddenChange?: (hidden: boolean) => void;
 }
 
 const NAME_LIMIT = 80;
@@ -104,6 +114,10 @@ export function FeedComposer({
   onDensityChange,
   onOrientationChange,
   onTextSizeChange,
+  allFeeds,
+  onReorder,
+  hidden,
+  onHiddenChange,
 }: FeedComposerProps) {
   const [sources, setSources] = useState<WorkspaceFeedSource[]>([]);
   const [loading, setLoading] = useState(false);
@@ -607,6 +621,26 @@ export function FeedComposer({
           </>
         )}
 
+        {onReorder && allFeeds && allFeeds.length > 1 && (
+          <>
+            <div
+              className="label-ui"
+              style={{
+                color: TOKENS.hintFg,
+                marginTop: 20,
+                marginBottom: 6,
+              }}
+            >
+              Feed order
+            </div>
+            <FeedRankList
+              feeds={allFeeds}
+              currentFeedId={feed.id}
+              onReorder={onReorder}
+            />
+          </>
+        )}
+
         <div
           style={{
             marginTop: 20,
@@ -617,6 +651,29 @@ export function FeedComposer({
             minHeight: 32,
           }}
         >
+          {onHiddenChange && (
+            <button
+              type="button"
+              onClick={() => onHiddenChange(!hidden)}
+              className="label-ui"
+              style={{
+                marginRight: "auto",
+                padding: "6px 10px 6px 0",
+                background: "transparent",
+                color: TOKENS.hintFg,
+                border: "none",
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.color = TOKENS.panelBorder)
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.color = TOKENS.hintFg)
+              }
+            >
+              {hidden ? "Unhide feed" : "Hide feed"}
+            </button>
+          )}
           {deleteBlocked ? (
             <div
               className="font-mono text-mono-xs"
@@ -784,6 +841,186 @@ function SchemePicker({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Drag-to-rank list (MOBILE-LAYOUT-ADR §VII.4). One component for both
+// surfaces, so the drag is pointer-event based (HTML5 DnD has no touch
+// translation). Rows live-reorder while dragging; the new order commits on
+// release. Numerals are derived live over visible feeds only (§V — hidden
+// feeds keep their place in the rank order but wear no number), so the list
+// previews exactly what the desktop badges and the mobile pager will show.
+const RANK_ROW_H = 34;
+const RANK_ROW_GAP = 6;
+
+function FeedRankList({
+  feeds,
+  currentFeedId,
+  onReorder,
+}: {
+  feeds: WorkspaceFeed[];
+  currentFeedId: string;
+  onReorder: (feedIds: string[]) => void;
+}) {
+  const ranked = [...feeds].sort(
+    (a, b) =>
+      a.sortRank - b.sortRank ||
+      a.createdAt.localeCompare(b.createdAt) ||
+      a.id.localeCompare(b.id),
+  );
+  const rankedIds = ranked.map((f) => f.id);
+  const [order, setOrder] = useState<string[]>(rankedIds);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const dragRef = useRef<{
+    id: string;
+    startY: number;
+    startIndex: number;
+  } | null>(null);
+
+  // Re-sync from the canonical order whenever it changes (rename, server
+  // reconcile) — but never mid-drag, or the row would jump under the pointer.
+  const rankedKey = rankedIds.join("|");
+  useEffect(() => {
+    if (!draggingId) setOrder(rankedKey.split("|"));
+  }, [rankedKey, draggingId]);
+
+  const byId = new Map(feeds.map((f) => [f.id, f]));
+  const stride = RANK_ROW_H + RANK_ROW_GAP;
+
+  function moveTo(id: string, target: number) {
+    setOrder((prev) => {
+      const clamped = Math.max(0, Math.min(prev.length - 1, target));
+      if (prev.indexOf(id) === clamped) return prev;
+      const next = prev.filter((x) => x !== id);
+      next.splice(clamped, 0, id);
+      return next;
+    });
+  }
+
+  function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>, id: string) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { id, startY: e.clientY, startIndex: order.indexOf(id) };
+    setDraggingId(id);
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const delta = Math.round((e.clientY - drag.startY) / stride);
+    moveTo(drag.id, drag.startIndex + delta);
+  }
+
+  function handlePointerEnd() {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setDraggingId(null);
+    if (order.some((id, i) => id !== rankedIds[i])) onReorder(order);
+  }
+
+  // Keyboard re-rank on the same handle: each arrow press commits (feeds are
+  // few; a PATCH per step is cheap and keeps the badges live).
+  function handleKeyDown(e: React.KeyboardEvent, id: string) {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const index = order.indexOf(id);
+    const target = e.key === "ArrowUp" ? index - 1 : index + 1;
+    if (target < 0 || target >= order.length) return;
+    const next = order.filter((x) => x !== id);
+    next.splice(target, 0, id);
+    setOrder(next);
+    onReorder(next);
+  }
+
+  let numeral = 0;
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: RANK_ROW_GAP,
+        marginBottom: 4,
+      }}
+    >
+      {order.map((id) => {
+        const f = byId.get(id);
+        if (!f) return null;
+        const num = f.hidden ? null : ++numeral;
+        const isCurrent = f.id === currentFeedId;
+        const isDragging = draggingId === f.id;
+        const name = f.name.trim();
+        return (
+          <div
+            key={f.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              height: RANK_ROW_H,
+              padding: "0 4px 0 10px",
+              background: isDragging ? TOKENS.fieldBg : TOKENS.rowBg,
+              boxShadow: isDragging ? "0 2px 6px rgba(0, 0, 0, 0.15)" : undefined,
+              position: "relative",
+              zIndex: isDragging ? 1 : undefined,
+            }}
+          >
+            <span
+              className="font-mono text-[11px]"
+              style={{
+                color: TOKENS.hintFg,
+                width: 18,
+                flexShrink: 0,
+                textAlign: "right",
+              }}
+            >
+              {num ?? "–"}
+            </span>
+            <span
+              className="font-sans text-ui-xs"
+              style={{
+                color: f.hidden
+                  ? TOKENS.hintFg
+                  : TOKENS.panelBorder,
+                fontWeight: isCurrent ? 600 : undefined,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flex: 1,
+              }}
+            >
+              {name || "Unnamed feed"}
+            </span>
+            {f.hidden && (
+              <span className="label-ui" style={{ color: TOKENS.hintFg }}>
+                hidden
+              </span>
+            )}
+            <button
+              type="button"
+              aria-label={`Reorder ${name || "unnamed feed"} (drag, or arrow keys)`}
+              onPointerDown={(e) => handlePointerDown(e, f.id)}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerEnd}
+              onPointerCancel={handlePointerEnd}
+              onKeyDown={(e) => handleKeyDown(e, f.id)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: TOKENS.hintFg,
+                cursor: isDragging ? "grabbing" : "grab",
+                touchAction: "none",
+                padding: "6px 10px",
+                fontSize: 14,
+                lineHeight: 1,
+                flexShrink: 0,
+              }}
+            >
+              ≡
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

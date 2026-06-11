@@ -52,20 +52,40 @@ const FEED_SCHEME_IDS = [
   "sand",
 ] as const;
 
-// PATCH accepts either/both of name + appearance. Appearance is merged into
+// Per-feed density (MOBILE-LAYOUT-ADR §VI): feed character like the scheme,
+// stored as a second key in the same appearance JSONB — no DDL. Must mirror
+// the Density type in web/src/components/workspace/tokens.ts.
+const FEED_DENSITIES = ["compact", "standard", "full"] as const;
+
+// PATCH accepts any of name + appearance + hidden. Appearance is merged into
 // the existing JSONB (not replaced) so future appearance keys written by
-// another surface survive a scheme-only update.
+// another surface survive a scheme-only update. `hidden` is feed character
+// (MOBILE-LAYOUT-ADR §V): it travels with the feed, excludes it from the
+// mobile rotation, and skips it in the 1..N numbering on both surfaces.
 const patchFeedSchema = z
   .object({
     name: z.string().trim().max(80).optional(),
     appearance: z
-      .object({ scheme: z.enum(FEED_SCHEME_IDS) })
+      .object({
+        scheme: z.enum(FEED_SCHEME_IDS).optional(),
+        density: z.enum(FEED_DENSITIES).optional(),
+      })
       .strict()
+      .refine((a) => a.scheme !== undefined || a.density !== undefined, {
+        message: "Empty appearance",
+      })
       .optional(),
+    hidden: z.boolean().optional(),
   })
-  .refine((b) => b.name !== undefined || b.appearance !== undefined, {
-    message: "Nothing to update",
-  });
+  .refine(
+    (b) =>
+      b.name !== undefined ||
+      b.appearance !== undefined ||
+      b.hidden !== undefined,
+    {
+      message: "Nothing to update",
+    },
+  );
 
 const patchSourceSchema = z.object({
   step: z.number().int().min(0).max(5).optional(),
@@ -139,6 +159,8 @@ interface FeedRow {
   id: string;
   name: string;
   appearance: Record<string, unknown>;
+  sort_rank: number;
+  hidden: boolean;
   created_at: Date;
   updated_at: Date;
   source_count: number;
@@ -149,6 +171,8 @@ function feedRowToResponse(row: FeedRow) {
     id: row.id,
     name: row.name,
     appearance: row.appearance ?? {},
+    sortRank: row.sort_rank,
+    hidden: row.hidden,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     sourceCount: Number(row.source_count),
@@ -160,7 +184,7 @@ async function loadFeed(
   ownerId: string,
 ): Promise<FeedRow | null> {
   const { rows } = await pool.query<FeedRow>(
-    `SELECT f.id, f.name, f.appearance, f.created_at, f.updated_at,
+    `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
        (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
      FROM feeds f
      WHERE f.id = $1 AND f.owner_id = $2`,
@@ -171,16 +195,18 @@ async function loadFeed(
 
 export async function feedsRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
-  // GET /feeds — list mine, newest first
+  // GET /feeds — list mine, in rank order (MOBILE-LAYOUT-ADR §VII: sort_rank
+  // is the persisted order behind the numeral and the mobile swipe sequence;
+  // created_at/id are deterministic tie-breaks for equal ranks)
   // ---------------------------------------------------------------------------
   app.get("/feeds", { preHandler: requireAuth }, async (req, reply) => {
     const ownerId = req.session!.sub;
     const { rows } = await pool.query<FeedRow>(
-      `SELECT f.id, f.name, f.appearance, f.created_at, f.updated_at,
+      `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
          (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
        FROM feeds f
        WHERE f.owner_id = $1
-       ORDER BY f.created_at ASC, f.id ASC`,
+       ORDER BY f.sort_rank ASC, f.created_at ASC, f.id ASC`,
       [ownerId],
     );
     return reply.send({ feeds: rows.map(feedRowToResponse) });
@@ -200,9 +226,13 @@ export async function feedsRoutes(app: FastifyInstance) {
           .status(400)
           .send({ error: "Invalid body", details: parsed.error.flatten() });
       }
+      // New feeds rank last: max+1 within the owner's set. A concurrent
+      // create can tie; ties are fine (read order falls back to created_at).
       const { rows } = await pool.query<FeedRow>(
-        `INSERT INTO feeds (owner_id, name) VALUES ($1, $2)
-       RETURNING id, name, appearance, created_at, updated_at, 0::int AS source_count`,
+        `INSERT INTO feeds (owner_id, name, sort_rank)
+       VALUES ($1, $2,
+         (SELECT COALESCE(MAX(sort_rank), 0) + 1 FROM feeds WHERE owner_id = $1))
+       RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at, 0::int AS source_count`,
         [ownerId, parsed.data.name],
       );
       return reply.status(201).send({ feed: feedRowToResponse(rows[0]) });
@@ -243,17 +273,79 @@ export async function feedsRoutes(app: FastifyInstance) {
         vals.push(JSON.stringify(parsed.data.appearance));
         paramIdx++;
       }
+      if (parsed.data.hidden !== undefined) {
+        sets.push(`hidden = $${paramIdx}`);
+        vals.push(parsed.data.hidden);
+        paramIdx++;
+      }
 
       const { rows } = await pool.query<FeedRow>(
         `UPDATE feeds SET ${sets.join(", ")}
          WHERE id = $1 AND owner_id = $2
-         RETURNING id, name, appearance, created_at, updated_at,
+         RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at,
            (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = feeds.id) AS source_count`,
         [id, ownerId, ...vals],
       );
       if (rows.length === 0)
         return reply.status(404).send({ error: "Feed not found" });
       return reply.send({ feed: feedRowToResponse(rows[0]) });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // PUT /feeds/order — bulk re-rank (MOBILE-LAYOUT-ADR §VII.3)
+  //
+  // Body: { feedIds } — the caller's complete feed set in the desired order.
+  // Ranks are plain integers rewritten in full on each reorder (feeds per
+  // user are few; fractional keys are unjustified complexity). Requiring the
+  // full set keeps a stale client from silently interleaving with a feed
+  // created in another tab — on mismatch the client refetches and retries.
+  // ---------------------------------------------------------------------------
+  app.put<{ Body: unknown }>(
+    "/feeds/order",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const ownerId = req.session!.sub;
+      const parsed = z
+        .object({ feedIds: z.array(z.string().uuid()).min(1).max(500) })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+      const ids = parsed.data.feedIds;
+      if (new Set(ids).size !== ids.length)
+        return reply.status(400).send({ error: "Duplicate feed ids" });
+
+      const { rows: ownedRows } = await pool.query<{ id: string }>(
+        `SELECT id FROM feeds WHERE owner_id = $1`,
+        [ownerId],
+      );
+      const owned = new Set(ownedRows.map((r) => r.id));
+      if (ids.length !== owned.size || ids.some((id) => !owned.has(id))) {
+        return reply.status(409).send({
+          error: "Feed list out of date — refresh and retry",
+        });
+      }
+
+      await pool.query(
+        `UPDATE feeds f
+         SET sort_rank = x.rank
+         FROM unnest($2::uuid[]) WITH ORDINALITY AS x(id, rank)
+         WHERE f.id = x.id AND f.owner_id = $1`,
+        [ownerId, ids],
+      );
+
+      const { rows } = await pool.query<FeedRow>(
+        `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
+           (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
+         FROM feeds f
+         WHERE f.owner_id = $1
+         ORDER BY f.sort_rank ASC, f.created_at ASC, f.id ASC`,
+        [ownerId],
+      );
+      return reply.send({ feeds: rows.map(feedRowToResponse) });
     },
   );
 

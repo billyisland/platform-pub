@@ -35,7 +35,16 @@ const EMPTY_RESULTS: Results = { writers: [], articles: [], publications: [] };
  * Live-search dialog body, opened in place from the ∀ dock menu. Self-contained
  * query/debounce/abort logic; the dock owns open/close.
  */
-export function SearchPanel({ onClose }: { onClose: () => void }) {
+export function SearchPanel({
+  onClose,
+  placement = "above",
+}: {
+  onClose: () => void;
+  /** "above" hangs the panel over the desktop ∀ disc (anchored to its
+   *  bottom-right container); "below" drops it under the mobile bar's docked
+   *  trigger (MOBILE-LAYOUT-ADR §III), clamped to the viewport width. */
+  placement?: "above" | "below";
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Results>(EMPTY_RESULTS);
@@ -150,8 +159,8 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
       style={{
         position: "absolute",
         right: 0,
-        bottom: 72,
-        width: 380,
+        ...(placement === "below" ? { top: 44 } : { bottom: 72 }),
+        width: "min(380px, calc(100vw - 16px))",
         maxHeight: "min(480px, calc(100vh - 120px))",
         display: "flex",
         flexDirection: "column",

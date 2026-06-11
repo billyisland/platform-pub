@@ -37,6 +37,9 @@ export function PipTrigger({ pubkey, pipStatus, opacity = 1, scale, onOpen }: Pi
       ref={ref}
       type="button"
       onClick={handleClick}
+      // Gesture-precedence marker (MOBILE-LAYOUT-ADR §VI): the mobile pager
+      // never claims a drag that began on the pip — the pip wins.
+      data-pip-trigger=""
       aria-label="Author trust details"
       style={{
         background: 'transparent',

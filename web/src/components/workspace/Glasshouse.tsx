@@ -43,6 +43,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { snap } from "../../lib/workspace/grid";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
 const MARGIN = 20;
@@ -135,6 +136,7 @@ function usePanePlacement(
   maxWidth: number,
   persistKey?: string,
   resizable?: boolean,
+  fullScreen?: boolean,
 ) {
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [vp, setVp] = useState(() =>
@@ -234,6 +236,21 @@ function usePanePlacement(
   const effH = resizable && size?.h != null ? Math.min(size.h, maxHeight) : null;
   const ghH = effH ?? maxHeight;
 
+  // Full-screen sheet (mobile): the pane is the viewport; placement, drag and
+  // stretch are desktop pointer affordances and don't apply.
+  if (fullScreen) {
+    return {
+      paneRef,
+      x: 0,
+      y: 0,
+      width: vp.vw,
+      height: vp.vh,
+      ghH: vp.vh,
+      startDrag: null,
+      startResize: null,
+    };
+  }
+
   return {
     paneRef,
     x: pos.x,
@@ -241,7 +258,7 @@ function usePanePlacement(
     width: effW,
     height: effH,
     ghH,
-    startDrag,
+    startDrag: startDrag as ((e: React.PointerEvent) => void) | null,
     startResize: resizable ? startResize : null,
   };
 }
@@ -281,7 +298,13 @@ export function Glasshouse({
   resizable,
   children,
 }: GlasshouseProps) {
-  const pane = usePanePlacement(maxWidth, persistKey, resizable);
+  // On the mobile workspace (MOBILE-LAYOUT-ADR §III) every Glasshouse is a
+  // full-screen sheet: same chrome, same one-at-a-time/Escape/scroll-lock
+  // semantics, but the pane fills the viewport and drag/resize (pointer-
+  // spatial affordances) don't render. Presentation only — callers are
+  // untouched.
+  const isMobile = useIsMobile();
+  const pane = usePanePlacement(maxWidth, persistKey, resizable, isMobile);
 
   // Keep the supersede handler fresh (callers pass inline closures) without
   // re-running the register-on-mount effect.
@@ -355,15 +378,18 @@ export function Glasshouse({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Drag handle — a grip pill, top-centre, pinned over the content.
-              4px tall — a grip glyph, not a thin rule. Pointer-drags the pane. */}
-          <div
-            onPointerDown={pane.startDrag}
-            role="button"
-            aria-label="Drag to move"
-            title="Drag to move"
-            className="absolute left-1/2 top-2 z-10 h-1 w-9 -translate-x-1/2 rounded-full bg-grey-300 hover:bg-grey-600"
-            style={{ cursor: "grab", touchAction: "none" }}
-          />
+              4px tall — a grip glyph, not a thin rule. Pointer-drags the pane.
+              Absent on the mobile full-screen sheet. */}
+          {pane.startDrag && (
+            <div
+              onPointerDown={pane.startDrag}
+              role="button"
+              aria-label="Drag to move"
+              title="Drag to move"
+              className="absolute left-1/2 top-2 z-10 h-1 w-9 -translate-x-1/2 rounded-full bg-grey-300 hover:bg-grey-600"
+              style={{ cursor: "grab", touchAction: "none" }}
+            />
+          )}
 
           {/* Close — floats top-right over the pane content. */}
           <button

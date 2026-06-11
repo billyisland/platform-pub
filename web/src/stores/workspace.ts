@@ -36,6 +36,10 @@ export interface VesselLayout {
   orientation?: Orientation;
   textSize?: TextSize;
   minimized?: boolean;
+  // LEGACY (MOBILE-LAYOUT-ADR §V): hide moved server-side onto the feed row
+  // (feeds.hidden, migration 113). This field is read once on bootstrap to
+  // push pre-migration local hides up, then cleared via clearLegacyHidden.
+  // Nothing writes it anymore.
   hidden?: boolean;
 }
 
@@ -52,7 +56,10 @@ interface WorkspaceState {
   setVesselOrientation: (feedId: string, orientation: Orientation) => void;
   setVesselTextSize: (feedId: string, textSize: TextSize) => void;
   setVesselMinimized: (feedId: string, minimized: boolean) => void;
-  setVesselHidden: (feedId: string, hidden: boolean) => void;
+  // One-time migration sweeper: strip the legacy `hidden` flag from a layout
+  // after its value has been pushed to the server (feeds.hidden). Without the
+  // clear, a stale local flag would re-hide a feed the user later unhid.
+  clearLegacyHidden: (feedId: string) => void;
   batchUpdatePositions: (
     updates: Record<string, { x: number; y: number }>,
   ) => void;
@@ -166,7 +173,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     setVesselMinimized: (feedId, minimized) =>
       patchVessel(feedId, { minimized }),
 
-    setVesselHidden: (feedId, hidden) => patchVessel(feedId, { hidden }),
+    clearLegacyHidden: (feedId) => {
+      const userId = get().userId;
+      const existing = get().positions[feedId];
+      if (!existing || existing.hidden === undefined) return;
+      const { hidden: _legacy, ...rest } = existing;
+      const next = { ...get().positions, [feedId]: rest };
+      set({ positions: next });
+      if (userId) scheduleWrite(userId, next);
+    },
 
     batchUpdatePositions: (updates) => {
       const userId = get().userId;

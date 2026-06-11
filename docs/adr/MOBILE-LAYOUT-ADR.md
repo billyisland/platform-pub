@@ -1,10 +1,21 @@
 # MOBILE-LAYOUT-ADR: The Mobile Workspace — Single-Feed Paging
 
 **all.haus Architectural Decision Record**
-**Status:** Proposed, 2026-06-08. Revised 2026-06-11 (hidden-state residency decided,
-numbering unified across surfaces, shell reconciled with the chromeless-workspace
-invariant, stale references fixed). Not yet sliced into the build plan. Supersedes the
+**Status:** Implemented, 2026-06-11 (all five §VIII slices in one pass; pending
+browser/device verification). Proposed 2026-06-08; revised 2026-06-11 (hidden-state
+residency decided, numbering unified across surfaces, shell reconciled with the
+chromeless-workspace invariant, stale references fixed). Supersedes the
 pre-workspace mobile view, which has not been touched since the canvas was built.
+Build notes: migration 113 (`feeds.sort_rank` + `feeds.hidden`, backfilled in
+`created_at` order); `PUT /workspace/feeds/order` bulk re-rank; drag-to-rank list +
+hide toggle in FeedComposer; density as a second `feeds.appearance` JSONB key (no
+DDL, scheme-precedence sync); mobile shell + pager in
+`web/src/components/workspace/MobileWorkspace.tsx` (axis-locked touch pager,
+indicator strip with tap-to-jump, active-numeral → settings sheet, resume by feed
+id in `ah:mobile-feed:<userId>`); Glasshouse renders as a full-screen sheet at the
+mobile breakpoint (`useIsMobile`, ≤767px); ForallMenu docks into the bar via
+`anchor="bar"`; the desktop/mobile card path is one function
+(`WorkspaceView.renderFeedContents`).
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** WORKSPACE-FULL-VIEW-SPEC, UI-DESIGN-SPEC, CARD-BEHAVIOUR-ADR (§VIII touch idiom), UNIVERSAL-FEED-ADR
 **Affects:** `web/src/components/workspace/*`, `web/src/stores/workspace.ts`, `gateway/src/routes/feeds.ts`, `schema.sql`, `migrations/`
