@@ -68,7 +68,13 @@ export async function exportRoutes(app: FastifyInstance) {
   // The client (or writer's tools) can use this to migrate to another host.
   // ---------------------------------------------------------------------------
 
-  app.get('/account/export', { preHandler: requireAuth }, async (req, reply) => {
+  // Tight per-route rate limit: the bundle carries the decrypted root Nostr
+  // secret key, so a stolen session cookie must not be able to hammer this
+  // path quietly. Legitimate use is a handful of exports, ever.
+  app.get('/account/export', {
+    preHandler: requireAuth,
+    config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
+  }, async (req, reply) => {
     const writerId = req.session!.sub
 
     // Fetch writer's account
@@ -77,8 +83,10 @@ export async function exportRoutes(app: FastifyInstance) {
       username: string | null
       display_name: string | null
       is_writer: boolean
+      has_keypair: boolean
     }>(
-      `SELECT nostr_pubkey, username, display_name, is_writer
+      `SELECT nostr_pubkey, username, display_name, is_writer,
+              nostr_privkey_enc IS NOT NULL AS has_keypair
        FROM accounts
        WHERE id = $1 AND status = 'active'`,
       [writerId]
@@ -141,7 +149,15 @@ export async function exportRoutes(app: FastifyInstance) {
 
     // Fetch the writer's own Nostr secret key (the migration anchor). Fail the
     // whole export rather than ship a keyless "full account export" — the key is
-    // the one thing the writer can't recover from anywhere else.
+    // the one thing the writer can't recover from anywhere else. An account with
+    // no custodial keypair at all (legacy/edge rows: nostr_privkey_enc IS NULL)
+    // is a distinct, permanent condition — report it as such rather than as a
+    // retryable upstream 502 (key-custody returns an undifferentiated 500 for
+    // both, so the precondition is checked here against the shared DB).
+    if (!account.has_keypair) {
+      logger.warn({ writerId }, 'Export refused: account has no custodial keypair')
+      return reply.status(409).send({ error: 'Account has no custodial keypair to export' })
+    }
     let secretKey: { privkeyHex: string; nsec: string }
     try {
       secretKey = await exportSecretKey(writerId, 'account')
