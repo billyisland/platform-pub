@@ -6,15 +6,16 @@ import {
   FEED_SELECT,
   FEED_JOINS,
   type CursorParts,
-} from "./timeline.js";
+} from "../lib/feed-sql.js";
 import { POST_SELECT, POST_JOINS, feedItemToPost } from "../lib/post-mapper.js";
 
 // =============================================================================
 // GET /feed/:feedId  — UNIVERSAL-POST-ADR Phase 1 (unified read endpoint)
 //
-// The Post-model feed. Coexists with the legacy GET /feed (timeline.ts), which
-// stays live until Phase 5. This endpoint:
-//   • gathers the SAME candidate THINGs as the legacy feed (content parity is a
+// The Post-model feed — the sole feed timeline since the legacy GET /feed
+// (timeline.ts) was retired (FEED-RETIREMENT-PLAN Slice 6); its shared
+// candidate SQL now lives in lib/feed-sql.ts. This endpoint:
+//   • gathers the SAME candidate THINGs the legacy feed did (content parity is a
 //     Phase 1 Accept criterion — no items added or dropped), then
 //   • scores them live with the §5 hotness number
 //     (recencySeed + saturate(Σ trustWeight·timeDecay(boost age))), and
@@ -197,7 +198,7 @@ async function fetchAttribution(
 // field; all subsequent pages decay against that same `scoreNow`, making the
 // keyset stable. The first page (no cursor) pins `scoreNow = now()`.
 //
-// NOTE: this is post-feed's own cursor format — NOT timeline.ts's shared
+// NOTE: this is post-feed's own cursor format — NOT feed-sql.ts's shared
 // parseCursor (which has no scoreNow component and stays the legacy contract).
 // =============================================================================
 const UUID_RE =

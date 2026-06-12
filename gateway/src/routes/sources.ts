@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
-import { FEED_SELECT, FEED_JOINS, parseCursor } from "./timeline.js";
+import { FEED_SELECT, FEED_JOINS, parseCursor } from "../lib/feed-sql.js";
 import { POST_SELECT, POST_JOINS, feedItemToPost } from "../lib/post-mapper.js";
 
 // =============================================================================

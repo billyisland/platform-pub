@@ -3,7 +3,7 @@ import { pool } from "@platform-pub/shared/db/client.js";
 import { optionalAuth } from "../middleware/auth.js";
 import { checkArticleAccess } from "../services/article-access/index.js";
 import logger from "@platform-pub/shared/lib/logger.js";
-import { FEED_SELECT, FEED_JOINS } from "./timeline.js";
+import { FEED_SELECT, FEED_JOINS } from "../lib/feed-sql.js";
 import { collectDescendants } from "../lib/thread-walk.js";
 import { hydrateExternalThreadContext } from "./external-items.js";
 import {

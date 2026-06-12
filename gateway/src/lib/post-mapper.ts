@@ -12,7 +12,7 @@
 // this same Post type.
 //
 // POST_SELECT / POST_JOINS are the Post-bearing columns + joins layered on top of
-// timeline.ts's FEED_SELECT / FEED_JOINS. They carry NO feed-only scoring machinery
+// feed-sql.ts's FEED_SELECT / FEED_JOINS. They carry NO feed-only scoring machinery
 // (the §5 score_live expression + the repost_edges boost join stay in post-feed.ts);
 // the mapper tolerates their absence (boost_count defaults to 0).
 // =============================================================================
@@ -81,7 +81,7 @@ export interface RepostEdgeDTO {
   originUri: string | null;
 }
 
-// ── Post-bearing columns layered on top of timeline.ts's FEED_SELECT ─────────
+// ── Post-bearing columns layered on top of feed-sql.ts's FEED_SELECT ─────────
 // post_id/version/biddability_tier/external_author_id are the Phase 0a/0b columns.
 // The derive_post_id() calls resolve a reply/quote parent to ITS deterministic
 // post_id (§2.3, the same SQL function migration 098 uses) so each Post carries

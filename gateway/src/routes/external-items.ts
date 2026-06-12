@@ -2184,7 +2184,7 @@ interface MastodonStatus {
 // external_items + feed_items (the identity trigger mints post_id / version /
 // biddability_tier / external_author_id), so /thread then resolves them exactly
 // like natively-ingested nodes. is_context_only keeps them out of the main feed
-// (post-feed.ts / timeline.ts filter on it); external-context-gc reclaims them.
+// (post-feed.ts filters on it); external-context-gc reclaims them.
 //
 // Best-effort and throttled: a per-item TTL guard prevents a re-write storm on
 // repeated expands, and any source/DB failure leaves the request to fall back to

@@ -1,6 +1,6 @@
 # FEED-RETIREMENT-PLAN — retire the legacy `/feed` model
 
-**Status:** In progress — Slices 1–5 shipped 2026-06-12; Slice 0 decided (option a). `/feed` is now a redirect shim; the front door lands on `/workspace`; reach (Following/Explore) is a composable source kind; new accounts seed a starter-feed clone; the four Bucket-B routes (`/network`, `/library`, `/subscriptions`, `/profile`) are now workspace overlays. **Operator prereq before seeding does anything: flag ≥1 of your own feeds as a template** — `UPDATE feeds SET is_starter_template = true WHERE id = '<feed-uuid>';`. Remaining: Slice 6 (backend untangle + extract shared SQL), Slice 7 (deletions).
+**Status:** In progress — Slices 1–6 shipped 2026-06-12; Slice 0 decided (option a). `/feed` is now a redirect shim; the front door lands on `/workspace`; reach (Following/Explore) is a composable source kind; new accounts seed a starter-feed clone; the four Bucket-B routes (`/network`, `/library`, `/subscriptions`, `/profile`) are now workspace overlays. Shared feed SQL is extracted to `gateway/src/lib/feed-sql.ts`; the legacy `GET /feed` reach handler (`timeline.ts`) and `GET /conversation/:eventId` are deleted. **Operator prereq before seeding does anything: flag ≥1 of your own feeds as a template** — `UPDATE feeds SET is_starter_template = true WHERE id = '<feed-uuid>';`. Remaining: Slice 6 item 4 (workspace items-path convergence — tracked follow-on, non-blocking), Slice 7 (frontend card-stack deletions).
 **Date:** 2026-06-12
 **Provenance:** feature-debt.md §4 readiness assessment (2026-06-12), re-verified against the codebase the same day. UNIVERSAL-POST-ADR §10 Phase 5 deliberately scoped the Post-model cutover to the workspace and named "a later `/feed`+`/source`-scoped pass"; this is that pass.
 **Goal:** `/workspace` becomes the entirety of logged-in all.haus. Every surface renders cards through the one Post-model path (`web/src/components/post/`); the legacy `components/feed/` card stack and its gateway endpoints are deleted.
@@ -41,6 +41,13 @@ gateway+web tsc clean, root lint 0 errors, gateway tests 117/117 (boot was a col
 **Slice 5 carry-forward into Slice 7:**
 - **`SubscribeInput` must be RELOCATED, not deleted.** The Slice 7 deletion manifest lists `components/feed/SubscribeInput.tsx`, but `SubscriptionsPanel` is now its sole importer once `FeedView` is gone. It is the omnivorous subscribe field, not a legacy card — move it out of `components/feed/` (e.g. `components/subscriptions/`) rather than deleting it. Update the Slice 7 manifest accordingly.
 - The standalone page-capable modes (`inOverlay=false`) in `LibraryPanel`/`NetworkPanel`/`SubscriptionsPanel` are now dead parity code (every route is a shim), exactly like `SettingsPanel`/`LedgerPanel`. Kept for pattern-consistency; a later sweep may strip them.
+
+**Slice 6 — SHIPPED (2026-06-12, items 1–3; item 4 deferred as a tracked non-blocker).**
+- **Item 1 (extract shared SQL):** new `gateway/src/lib/feed-sql.ts` holds `FEED_SELECT`, `FEED_JOINS`, `parseCursor`, `CursorParts` (+ the private `UUID_RE`). **Five** importers repointed from `./timeline.js` to `../lib/feed-sql.js`, not four — `tags.ts` was added in Slice 4 (`post-feed`, `post-thread`, `author`, `sources`, `tags`). **Correction to the plan:** `feedItemToResponse` + `computeBiddabilityTier` + `UNBOUNDED_SCORE` were **not** extracted — they were the legacy `GET /feed` handler's row→response mapper and died *with* that handler in item 2 (no other caller; the Post-model callers map rows via `lib/post-mapper.ts`). Extracting them would have preserved dead code.
+- **Item 2 (delete legacy handler):** the shim is live, so `timeline.ts` was deleted **whole** (legacy `GET /feed` route + `followingFeed`/`exploreFeed`/`timelineRoutes`) — it reduced to nothing once `feed-sql.ts` existed. Removed the `import` + `app.register(timelineRoutes)` in `index.ts`; fixed the `boot.test.ts` import/register of `timelineRoutes`. Refreshed every stale `timeline.ts` comment reference (`post-feed.ts`, `post-mapper.ts`, `feeds.ts` placeholder, `external-items.ts`, `index.ts`) to point at `feed-sql.ts` / note the retirement.
+- **Item 3 (delete `/conversation`):** confirmed no frontend caller; deleted the `GET /conversation/:eventId` handler + the `ConversationNode` interface from `replies.ts`, and updated the `index.ts` `postThreadRoutes` comment that named it. (External `/external-items/:id/thread` reads stay.)
+- **Item 4 (workspace items-path convergence):** deliberately **not** done — converging `GET /workspace/feeds/:id/items` (`feeds.ts`, its own duplicated `FEED_SELECT`/`rowToItem` + `placeholderExploreItems`, ranked by `effective_score`) onto the `post-feed.ts` projector has real ranking implications (`effective_score` vs §5 hotness). Tracked as its own follow-on per the plan; not a Slice 7 blocker. The `feeds.ts` placeholder still inlines its own copy of the SELECT/JOINs by design.
+- gateway tsc clean, root lint 0 errors, gateway tests **117/117**, hairlines clean on all touched files.
 
 **Corrections to the plan discovered while building (carry forward):**
 - **`Nav.tsx`'s topbar search box still pushes to `/search`** (now a shim → `/workspace`), so it drops the query and, for a logged-out visitor on a public page, lands them on the login-gated workspace. This is the black topbar that Slice 3 already touches (the four `/feed` links) — repoint/remove the search box there. Out of Slice 4's scope; left intact deliberately.
@@ -165,12 +172,12 @@ Standard retired-route pattern for each: shared panel body + `inOverlay` gate + 
 
 Stay standalone by design: `/`, `/about`, `/auth`, `/invite`, `/subscribe/:code` (logged-out world); `/traffology`, `/admin` (ops); public content URLs (`/{username}`, `/author/:id`, `/source/:id`, `/tag/:name`, `/pub/:slug…`) keep their full pages for direct visits/SEO — the ports above make them render the same Post-model components in both modes.
 
-### Slice 6 — Backend untangle
+### Slice 6 — Backend untangle — ✅ SHIPPED items 1–3 (§0); item 4 deferred (tracked follow-on)
 
-1. **Extract the shared SQL** from `timeline.ts` into `gateway/src/lib/feed-sql.ts` (`FEED_SELECT`, `FEED_JOINS`, `feedItemToResponse`, `parseCursor`); update the four importers (`post-feed`, `post-thread`, `sources`, `author`). Mechanical, do first.
-2. Delete the legacy `GET /feed` handler (`timeline.ts` route) once Slice 3's shim is live.
-3. Delete `GET /conversation/:eventId` (`replies.ts`) — no callers.
-4. **Decide, don't default:** converging `GET /workspace/feeds/:id/items` onto the `post-feed.ts` projector (killing the third query path + duplicated SQL in `feeds.ts`) is real work with ranking implications (`effective_score` vs §5 hotness). Track it as its own follow-on; do *not* let it block the deletions above.
+1. **Extract the shared SQL** from `timeline.ts` into `gateway/src/lib/feed-sql.ts` (`FEED_SELECT`, `FEED_JOINS`, `parseCursor`, `CursorParts`); update the importers. *Done — five importers, not four (`tags.ts` joined in Slice 4). `feedItemToResponse`/`computeBiddabilityTier` were NOT extracted — they died with the legacy handler (§0).*
+2. Delete the legacy `GET /feed` handler once Slice 3's shim is live. *Done — `timeline.ts` deleted whole; `index.ts` + `boot.test.ts` updated.*
+3. Delete `GET /conversation/:eventId` (`replies.ts`) — no callers. *Done — handler + `ConversationNode` interface removed.*
+4. **Decide, don't default:** converging `GET /workspace/feeds/:id/items` onto the `post-feed.ts` projector (killing the third query path + duplicated SQL in `feeds.ts`) is real work with ranking implications (`effective_score` vs §5 hotness). Track it as its own follow-on; do *not* let it block the deletions above. *Deferred per this instruction — not started.*
 
 ### Slice 7 — Deletion manifest
 
@@ -178,8 +185,8 @@ After 1–6, in one pass, with `knip` + grep verification before each delete:
 
 - `web/src/components/feed/{FeedView,ExternalCard,ArticleCard,NoteCard,QuoteCard,NeighbourhoodCard,SubscribeInput,ActionSheet}.tsx` — **keep `AuthorModal.tsx`** (shared).
 - `useNeighbourhood` and any hooks orphaned by the card deletions (audit `useNativeParent` and friends; **keep `useAuthorCard`** — feeds `AuthorModal`).
-- `app/feed/page.tsx` body (already a shim by then), legacy client code in `lib/api` that only served `GET /feed?reach=`.
-- Gateway: legacy `GET /feed` handler + now-unused private helpers in `timeline.ts` (the file may reduce to nothing once `feed-sql.ts` exists — delete it if so).
+- `app/feed/page.tsx` body (already a shim by then), legacy client code in `lib/api` that only served `GET /feed?reach=` — i.e. `web/src/lib/api/feed.ts`'s `feed` export + `FeedReach` type (verify `FeedDial`/`FeedView` no longer import `FeedReach` first — both go in this slice).
+- ~~Gateway: legacy `GET /feed` handler + `timeline.ts`~~ — **done in Slice 6** (`timeline.ts` deleted; shared SQL is in `lib/feed-sql.ts`).
 - Accept: `grep -r "components/feed/" web/src` returns only `AuthorModal`; root lint 0 errors; gateway + web `tsc` clean; gateway tests green; `scripts/check-hairlines.sh` clean on touched files.
 
 ---

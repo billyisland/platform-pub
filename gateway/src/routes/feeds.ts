@@ -1292,10 +1292,10 @@ function parseSaveCursor(
 }
 
 // -----------------------------------------------------------------------------
-// Placeholder items query — mirrors timeline.ts explore for an empty-sources
-// feed. Lifted inline rather than imported because timeline.ts's helpers are
-// module-private; this is a deliberate tiny duplication that retires when
-// source-set semantics arrive.
+// Placeholder items query — mirrors the legacy explore feed for an empty-sources
+// feed. Lifted inline rather than imported (the legacy GET /feed handler that
+// owned this scoring was retired in FEED-RETIREMENT-PLAN Slice 6); this is a
+// deliberate tiny duplication that retires when source-set semantics arrive.
 // -----------------------------------------------------------------------------
 
 const FEED_SELECT = `
