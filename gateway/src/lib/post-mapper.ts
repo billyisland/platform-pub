@@ -69,6 +69,13 @@ export interface Post {
   isMuted: boolean;
   feedItemId: string | null; // legacy id, transitional
   externalItemId: string | null; // external_items uuid — the origin interact-back key (like/repost/reply); null native
+  // Reader/workspace fields, sourced here (formerly client-transitional in the browser
+  // Post adapter): a native article's d-tag (reader-pane open key /article/<dTag>), the
+  // gated-article CTA price, and the all.haus external_sources id the workspace uses to
+  // match a card to its feed_source. Optional — only the article/external branches set them.
+  dTag?: string | null;
+  pricePence?: number;
+  externalSourceId?: string | null;
 }
 
 export interface RepostEdgeDTO {
@@ -263,6 +270,11 @@ export function feedItemToPost(row: any): Post {
     // external_items row (FEED_SELECT carries fi.external_item_id). Null for native —
     // native engagement is the all.haus scoresheet, not an origin interact-back.
     externalItemId: isExternal ? (row.external_item_id ?? null) : null,
+    // Native article reader-pane key + gated CTA price (FEED_SELECT carries a.nostr_d_tag,
+    // a.price_pence). external_sources id for the workspace source-match (fi.source_id).
+    dTag: row.item_type === "article" ? (row.nostr_d_tag ?? null) : null,
+    pricePence: row.price_pence != null ? Number(row.price_pence) : undefined,
+    externalSourceId: isExternal ? (row.source_id ?? null) : null,
   };
 }
 

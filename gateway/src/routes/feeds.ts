@@ -3,6 +3,13 @@ import { z } from "zod";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import { FEED_SELECT, FEED_JOINS } from "../lib/feed-sql.js";
+import {
+  POST_SELECT,
+  POST_JOINS,
+  feedItemToPost,
+  type Post,
+} from "../lib/post-mapper.js";
 
 // =============================================================================
 // Workspace feeds (slices 3 + 4)
@@ -1155,14 +1162,13 @@ export async function feedsRoutes(app: FastifyInstance) {
 
     const result = await pool.query<any>(
       `
-      SELECT ${FEED_SELECT},
-        a.title AS title,
+      SELECT ${FEED_SELECT}${POST_SELECT},
         EXTRACT(EPOCH FROM fs.created_at)::bigint AS saved_at_epoch,
         EXTRACT(EPOCH FROM fs.created_at)::bigint * 1000 AS saved_at_ms,
         fs.id AS save_id
       FROM feed_saves fs
       JOIN feed_items fi ON fi.id = fs.feed_item_id
-      ${FEED_JOINS}
+      ${FEED_JOINS}${POST_JOINS}
       WHERE fs.feed_id = $1
         AND fi.deleted_at IS NULL
         ${cursorClause}
@@ -1173,7 +1179,7 @@ export async function feedsRoutes(app: FastifyInstance) {
     );
 
     const items = result.rows.map((row) => ({
-      ...rowToItem(row),
+      ...feedItemToPost(row),
       savedAt: Number(row.saved_at_epoch),
     }));
     const lastRow = result.rows[result.rows.length - 1];
@@ -1291,58 +1297,13 @@ function parseSaveCursor(
   return { ts, id };
 }
 
-// -----------------------------------------------------------------------------
-// Placeholder items query — mirrors the legacy explore feed for an empty-sources
-// feed. Lifted inline rather than imported (the legacy GET /feed handler that
-// owned this scoring was retired in FEED-RETIREMENT-PLAN Slice 6); this is a
-// deliberate tiny duplication that retires when source-set semantics arrive.
-// -----------------------------------------------------------------------------
-
-const FEED_SELECT = `
-  fi.id AS fi_id, fi.post_id AS post_id, fi.item_type, fi.article_id, fi.note_id, fi.external_item_id,
-  fi.author_id, fi.external_author_id, fi.nostr_event_id, fi.source_protocol, fi.source_item_uri,
-  fi.source_id, COALESCE(ei.media, fi.media) AS media, fi.score, fi.tier,
-  EXTRACT(EPOCH FROM fi.published_at)::bigint AS published_at_epoch,
-  acc.nostr_pubkey AS nostr_pubkey,
-  a.nostr_d_tag, a.access_mode, a.price_pence, a.gate_position_pct,
-  a.content_free, a.summary AS a_summary, a.size_tier,
-  COALESCE(
-    (SELECT array_agg(t.name ORDER BY t.name)
-     FROM article_tags at2 JOIN tags t ON t.id = at2.tag_id
-     WHERE at2.article_id = a.id),
-    '{}'
-  ) AS tag_names,
-  n.content AS note_content, n.is_quote_comment,
-  n.quoted_event_id, n.quoted_event_kind,
-  n.quoted_excerpt, n.quoted_title, n.quoted_author,
-  n.quoted_post_id, n.quoted_url, n.quoted_source,
-  n.external_parent_id,
-  ei.author_name AS ei_author_name, ei.author_handle AS ei_author_handle,
-  ei.author_avatar_url AS ei_author_avatar_url, ei.author_uri AS ei_author_uri,
-  ei.content_text AS ei_content_text, ei.content_html AS ei_content_html,
-  ei.title AS ei_title, ei.summary AS ei_summary,
-  ei.source_reply_uri AS ei_source_reply_uri,
-  ei.source_quote_uri AS ei_source_quote_uri,
-  ei.like_count AS ei_like_count, ei.reply_count AS ei_reply_count,
-  ei.repost_count AS ei_repost_count,
-  ei.content_warning AS ei_content_warning,
-  ei.interaction_data AS ei_interaction_data,
-  xs.display_name AS source_display_name, xs.avatar_url AS source_avatar_url,
-  tl.pip_status,
-  -- Parent author for reply provenance — denormalised at ingest (migration 105,
-  -- audit C4 / #11). Replaces the per-candidate correlated subqueries.
-  fi.reply_to_author,
-  fi.is_reply
-`;
-
-const FEED_JOINS = `
-  LEFT JOIN articles a ON a.id = fi.article_id
-  LEFT JOIN notes n ON n.id = fi.note_id
-  LEFT JOIN accounts acc ON acc.id = fi.author_id
-  LEFT JOIN external_items ei ON ei.id = fi.external_item_id
-  LEFT JOIN external_sources xs ON xs.id = fi.source_id
-  LEFT JOIN trust_layer1 tl ON tl.user_id = fi.author_id
-`;
+// The candidate SELECT/JOINs (FEED_SELECT/FEED_JOINS) + the Post columns/joins
+// (POST_SELECT/POST_JOINS) are imported from lib/feed-sql.ts + lib/post-mapper.ts —
+// the same shared SQL every other feed_items read path projects, so the workspace
+// items endpoint emits the unified Post[] with no bespoke row mapper. The old inline
+// FEED_SELECT/FEED_JOINS copies + rowToItem/computeBiddabilityTier were retired here
+// (FEED-RETIREMENT-PLAN Slice 6 item 4); only the per-vessel effective_score ranking
+// and the format-tagged cursor below remain workspace-specific.
 
 // Unified, format-tagged cursor codec for GET /feeds/:id/items. Two pagination
 // shapes coexist on this one endpoint and used to share two bare, untyped
@@ -1394,120 +1355,6 @@ function decodeFeedCursor(raw: string | undefined): FeedCursor | undefined {
   return undefined; // foreign/stale shape → restart from page 1
 }
 
-function computeBiddabilityTier(row: any): "A" | "B" | "C" | "D" {
-  if (row.item_type === "article" || row.item_type === "note") return "A";
-  switch (row.source_protocol) {
-    case "nostr_external":
-    case "atproto":
-      return "A";
-    case "activitypub":
-      return "B";
-    case "rss":
-    case "email":
-      return row.ei_author_uri ? "C" : "D";
-    default:
-      return "D";
-  }
-}
-
-function rowToItem(row: any) {
-  // feedItemId is the unified `feed_items.id` — the save key in slice 20.
-  // All three item types carry it so the client can address a save target
-  // without reaching into per-type FKs.
-  if (row.item_type === "article") {
-    return {
-      type: "article" as const,
-      feedItemId: row.fi_id,
-      // UNIVERSAL-POST-ADR Phase 3 — the deterministic per-THING post_id (§2.3),
-      // the key the unified /thread endpoint resolves. Carried so the PostCard
-      // adapter (map-feed-item.ts) sets Post.id to a real post_id, not the origin
-      // handle, and the thread engine can fetch GET /thread/:postId.
-      postId: row.post_id ?? undefined,
-      authorId: row.author_id ?? undefined,
-      nostrEventId: row.nostr_event_id,
-      pubkey: row.nostr_pubkey,
-      dTag: row.nostr_d_tag,
-      title: row.title,
-      summary: row.a_summary ?? "",
-      contentFree: row.content_free ?? "",
-      accessMode: row.access_mode,
-      isPaywalled: row.access_mode === "paywalled",
-      pricePence: row.price_pence ?? undefined,
-      gatePositionPct: row.gate_position_pct ?? undefined,
-      publishedAt: Number(row.published_at_epoch),
-      score: row.score != null ? Number(row.score) : undefined,
-      tags: row.tag_names ?? [],
-      sizeTier: row.size_tier ?? "standard",
-      pipStatus: row.pip_status ?? "unknown",
-      media: row.media ?? null,
-      isReply: row.is_reply ?? false,
-      biddabilityTier: "A" as const,
-    };
-  }
-  if (row.item_type === "note") {
-    return {
-      type: "note" as const,
-      feedItemId: row.fi_id,
-      postId: row.post_id ?? undefined, // §2.3 post_id — see article branch
-      authorId: row.author_id ?? undefined,
-      nostrEventId: row.nostr_event_id,
-      pubkey: row.nostr_pubkey,
-      content: row.note_content,
-      isQuoteComment: row.is_quote_comment,
-      quotedEventId: row.quoted_event_id ?? undefined,
-      quotedEventKind: row.quoted_event_kind ?? undefined,
-      quotedExcerpt: row.quoted_excerpt ?? undefined,
-      quotedTitle: row.quoted_title ?? undefined,
-      quotedAuthor: row.quoted_author ?? undefined,
-      quotedPostId: row.quoted_post_id ?? undefined,
-      quotedUrl: row.quoted_url ?? undefined,
-      quotedSource: row.quoted_source ?? undefined,
-      publishedAt: Number(row.published_at_epoch),
-      score: row.score != null ? Number(row.score) : undefined,
-      pipStatus: row.pip_status ?? "unknown",
-      externalParentId: row.external_parent_id ?? undefined,
-      replyToAuthor: row.reply_to_author ?? undefined,
-      isReply: row.is_reply ?? false,
-      biddabilityTier: "A" as const,
-    };
-  }
-  return {
-    type: "external" as const,
-    feedItemId: row.fi_id,
-    postId: row.post_id ?? undefined, // §2.3 post_id — see article branch
-    // tier-A/B external_authors id — the byline link + hover key (§4.4). NULL for
-    // tier C/D (plain-text byline). Mirrors the postId id-bridge: without this the
-    // collapsed feed card's byline can't route to /author/:id or open the hover modal.
-    authorId: row.external_author_id ?? undefined,
-    externalSourceId: row.source_id ?? undefined,
-    id: row.external_item_id,
-    sourceProtocol: row.source_protocol,
-    sourceItemUri: row.source_item_uri,
-    authorName: row.ei_author_name,
-    authorHandle: row.ei_author_handle,
-    authorAvatarUrl: row.ei_author_avatar_url,
-    authorUri: row.ei_author_uri,
-    contentText: row.ei_content_text,
-    contentHtml: row.ei_content_html,
-    title: row.ei_title,
-    summary: row.ei_summary,
-    sourceReplyUri: row.ei_source_reply_uri,
-    sourceQuoteUri: row.ei_source_quote_uri,
-    likeCount: row.ei_like_count ?? 0,
-    replyCount: row.ei_reply_count ?? 0,
-    repostCount: row.ei_repost_count ?? 0,
-    contentWarning: row.ei_content_warning ?? null,
-    poll: row.ei_interaction_data?.poll ?? null,
-    media: row.media,
-    publishedAt: Number(row.published_at_epoch),
-    sourceName: row.source_display_name,
-    sourceAvatar: row.source_avatar_url,
-    pipStatus: "unknown" as const,
-    replyToAuthor: row.reply_to_author ?? undefined,
-    isReply: row.is_reply ?? false,
-    biddabilityTier: computeBiddabilityTier(row),
-  };
-}
 
 interface SourceRow {
   id: string;
@@ -1904,7 +1751,7 @@ async function sourceFilteredItems(
   feedId: string,
   rawCursor: string | undefined,
   limit: number,
-) {
+): Promise<{ items: Post[]; nextCursor: string | undefined }> {
   const decoded = decodeFeedCursor(rawCursor);
   const cursor = decoded?.kind === "scored" ? decoded : undefined;
   const cursorClause = cursor
@@ -1966,7 +1813,7 @@ async function sourceFilteredItems(
         GROUP BY fi.id
     ),
     scored AS (
-      SELECT ${FEED_SELECT}, a.title AS title,
+      SELECT ${FEED_SELECT}${POST_SELECT},
         (CASE
           WHEN (SELECT sampling_mode FROM feed_mode) = 'scored'
             THEN COALESCE(fi.score, 0)::float8 * m.weight
@@ -1976,7 +1823,7 @@ async function sourceFilteredItems(
         END)::float8 AS effective_score
       FROM feed_items fi
       JOIN matched m ON m.fi_id = fi.id
-      ${FEED_JOINS}
+      ${FEED_JOINS}${POST_JOINS}
       WHERE fi.deleted_at IS NULL
         -- No self-exclusion here (unlike the explore queries): membership in a
         -- composable feed is explicit — nothing enters without a feed_sources
@@ -2008,7 +1855,12 @@ async function sourceFilteredItems(
   // no longer collapse a burst of replies into a single reply_group card — each
   // reply flows through as its own item and the client renders it as its own
   // card. Context is reached by expanding into the thread, never by fusing.
-  const items = result.rows.map(rowToItem);
+  //
+  // Emits the unified Post[] (shared feedItemToPost) so the workspace consumes the
+  // same shape every other surface does — no client-side legacy-item→Post adapter.
+  // Ranking stays the composed-vessel effective_score (weight × sampling_mode); the
+  // §5 hotness number is NOT applied here (FEED-RETIREMENT-PLAN Slice 6 item 4).
+  const items = result.rows.map(feedItemToPost);
   const lastRow = result.rows[result.rows.length - 1];
   const nextCursor = lastRow
     ? encodeFeedCursor({
@@ -2025,7 +1877,7 @@ async function placeholderExploreItems(
   readerId: string,
   rawCursor: string | undefined,
   limit: number,
-) {
+): Promise<{ items: Post[]; nextCursor: string | undefined }> {
   const decoded = decodeFeedCursor(rawCursor);
   const cursor = decoded?.kind === "explore" ? decoded : undefined;
   const scoreCursor = cursor?.score ?? UNBOUNDED_SCORE;
@@ -2038,9 +1890,9 @@ async function placeholderExploreItems(
 
   const result = await pool.query<any>(
     `
-    SELECT ${FEED_SELECT}, a.title AS title
+    SELECT ${FEED_SELECT}${POST_SELECT}
     FROM feed_items fi
-    ${FEED_JOINS}
+    ${FEED_JOINS}${POST_JOINS}
     WHERE fi.deleted_at IS NULL
       AND fi.published_at > now() - INTERVAL '48 hours'
       AND fi.item_type IN ('article', 'note')
@@ -2059,7 +1911,7 @@ async function placeholderExploreItems(
     params,
   );
 
-  const items = result.rows.map(rowToItem);
+  const items = result.rows.map(feedItemToPost);
   const lastRow = result.rows[result.rows.length - 1];
   const nextCursor = lastRow
     ? encodeFeedCursor({

@@ -2,14 +2,14 @@
 // Client Post model — UNIVERSAL-POST-ADR §2.2
 //
 // The browser mirror of the gateway Post shape (gateway/src/lib/post-mapper.ts).
-// Kept structurally identical so that when Phase 1's /feed and /thread endpoints
-// are wired into the workspace (a later phase), the same PostCard renders their
-// payloads with no re-mapping. For now the only producer is the pure adapter in
-// ./map-feed-item.ts, which maps the legacy workspace FeedItem into this shape.
+// Kept structurally identical so the same PostCard renders every feed payload with
+// no re-mapping. All feed surfaces — sources, author, tags, thread, AND the
+// workspace items endpoint (GET /workspace/feeds/:id/items) — now serve gateway
+// Post[] directly; the client-side legacy-item adapter (map-feed-item.ts) was
+// retired in FEED-RETIREMENT-PLAN Slice 6 item 4.
 //
-// Render-only fields that the gateway shape does not carry are marked
-// "client transitional" — they exist so PostCard can render without the unified
-// endpoint, and disappear once the endpoint is the source.
+// A few fields are still marked "client transitional" (render-only ergonomics);
+// the gateway now sources dTag/pricePence/externalSourceId too.
 // =============================================================================
 
 // The six render levels (§3 / §4 matrix). The level governs size/indent/gap/
@@ -103,6 +103,9 @@ export interface Post {
   // (externalItems.like/repost/reply/pollVote, engagement). Distinct from `id`
   // (the deterministic post_id) and `feedItemId`. NULL for native posts.
   externalItemId: string | null;
+  // The all.haus external_sources id this card came from (external only; null
+  // native). The workspace matches a card to its feed_source row for drag-to-move.
+  externalSourceId?: string | null;
   pricePence?: number; // client transitional: gated-article CTA price
   // client transitional: native article d-tag — the reader-pane (§3.1 / Phase R)
   // opens native articles at /article/<dTag>. Null for notes + external.

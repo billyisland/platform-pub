@@ -26,134 +26,14 @@ export interface WorkspaceFeed {
   sourceCount: number;
 }
 
-type MediaItem = {
-  type: "image" | "video" | "audio" | "link";
-  url: string;
-  thumbnail?: string;
-  alt?: string;
-  width?: number;
-  height?: number;
-  title?: string;
-  description?: string;
-};
-
-type PipStatus = "known" | "partial" | "unknown" | "contested";
-type SizeTier = "lead" | "standard" | "brief";
-
-export interface WorkspaceFeedApiArticle {
-  type: "article";
-  feedItemId: string;
-  postId?: string; // §2.3 deterministic post_id — the key for GET /thread/:postId
-  authorId?: string;
-  nostrEventId: string;
-  pubkey: string;
-  dTag: string;
-  title: string;
-  summary: string;
-  contentFree: string;
-  accessMode: string;
-  isPaywalled: boolean;
-  pricePence?: number;
-  gatePositionPct?: number;
-  publishedAt: number;
-  score?: number;
-  tags: string[];
-  sizeTier: SizeTier;
-  pipStatus: PipStatus;
-  media?: MediaItem[];
-  savedAt?: number;
-}
-
-export interface WorkspaceFeedApiNote {
-  type: "note";
-  feedItemId: string;
-  postId?: string; // §2.3 deterministic post_id — the key for GET /thread/:postId
-  authorId?: string;
-  nostrEventId: string;
-  pubkey: string;
-  content: string;
-  isQuoteComment?: boolean;
-  quotedEventId?: string;
-  quotedEventKind?: number;
-  quotedExcerpt?: string;
-  quotedTitle?: string;
-  quotedAuthor?: string;
-  // External quote-note (migration 102): the quoted thing is a Bluesky/Mastodon/etc.
-  // post, referenced by its deterministic post_id + public URL + origin label.
-  quotedPostId?: string;
-  quotedUrl?: string;
-  quotedSource?: string;
-  publishedAt: number;
-  score?: number;
-  pipStatus: PipStatus;
-  savedAt?: number;
-  externalParentId?: string;
-}
-
-export interface WorkspaceFeedApiExternal {
-  type: "external";
-  feedItemId: string;
-  postId?: string; // §2.3 deterministic post_id — the key for GET /thread/:postId
-  authorId?: string; // tier-A/B external_authors id — byline link + hover key (§4.4)
-  externalSourceId?: string;
-  id: string;
-  sourceProtocol: string;
-  sourceItemUri: string;
-  authorName: string | null;
-  authorHandle: string | null;
-  authorAvatarUrl: string | null;
-  authorUri: string | null;
-  contentText: string | null;
-  contentHtml: string | null;
-  title: string | null;
-  summary: string | null;
-  sourceReplyUri?: string | null;
-  sourceQuoteUri?: string | null;
-  contentWarning?: string | null;
-  poll?: {
-    options: Array<{ title: string; votesCount: number }>;
-    multiple: boolean;
-    expiresAt: string | null;
-    expired: boolean;
-    votesCount: number;
-    votersCount: number;
-  } | null;
-  likeCount: number;
-  replyCount: number;
-  repostCount: number;
-  media: MediaItem[];
-  publishedAt: number;
-  sourceName: string | null;
-  sourceAvatar: string | null;
-  pipStatus: PipStatus;
-  savedAt?: number;
-}
-
-export interface WorkspaceFeedApiNewUser {
-  type: "new_user";
-  username: string;
-  displayName: string | null;
-  avatar: string | null;
-  joinedAt: number;
-}
-
-export interface WorkspaceFeedApiReplyGroup {
-  type: "reply_group";
-  sourceReplyUri: string;
-  publishedAt: number;
-  replies: WorkspaceFeedApiExternal[];
-}
-
-export type WorkspaceFeedApiItem =
-  | WorkspaceFeedApiArticle
-  | WorkspaceFeedApiNote
-  | WorkspaceFeedApiExternal
-  | WorkspaceFeedApiNewUser
-  | WorkspaceFeedApiReplyGroup;
-
+// The items + saves endpoints emit the unified Post[] (gateway feedItemToPost) —
+// the same shape every other feed surface returns — so the workspace renders them
+// through the one Post-model card path with no client-side legacy-item adapter
+// (FEED-RETIREMENT-PLAN Slice 6 item 4). Ranking stays the per-vessel
+// effective_score (weight × sampling_mode), carried only in `nextCursor`.
 export interface WorkspaceFeedItemsResponse {
   feed: WorkspaceFeed;
-  items: WorkspaceFeedApiItem[];
+  items: Post[];
   nextCursor?: string;
   placeholder: boolean;
 }
@@ -363,7 +243,7 @@ export const workspaceFeeds = {
 
 export interface WorkspaceFeedSavesResponse {
   feed: WorkspaceFeed;
-  items: WorkspaceFeedApiItem[];
+  items: Array<Post & { savedAt: number }>;
   nextCursor?: string;
 }
 

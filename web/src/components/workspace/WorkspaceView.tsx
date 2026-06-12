@@ -14,23 +14,13 @@ import {
   follows as followsApi,
   type WorkspaceFeed,
   type WorkspaceFeedSource,
-  type WorkspaceFeedApiItem,
 } from "../../lib/api";
-import type {
-  FeedItem,
-  ExternalFeedItem,
-  ReplyGroupItem,
-  ArticleEvent,
-  NoteEvent,
-  PipStatus,
-} from "../../lib/ndk";
+import type { PipStatus } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
-import { NewUserVesselCard, type NewUserItem } from "./NewUserVesselCard";
 import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
 import type { Post } from "../../lib/post/types";
-import { mapFeedItemToPost } from "../../lib/post/map-feed-item";
 import { originWebUrl } from "../../lib/post/origin-url";
 import {
   paletteFor,
@@ -39,7 +29,6 @@ import {
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
 } from "./tokens";
-import { ReplyGroupCard } from "./ReplyGroupCard";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { Composer, type ReplyTarget } from "./Composer";
 import type { QuoteTarget } from "../../lib/publishNote";
@@ -140,18 +129,16 @@ function defaultGridSlot(
   };
 }
 
-type WorkspaceItem = FeedItem | NewUserItem | ReplyGroupItem;
-
-function itemKey(item: WorkspaceItem): string {
-  if (item.type === "new_user")
-    return `new-user:${item.username}:${item.joinedAt}`;
-  if (item.type === "reply_group") return `rg:${item.sourceReplyUri}`;
+// The workspace items endpoint now emits the unified Post[] directly (gateway
+// feedItemToPost) — no client-side legacy-item adapter (FEED-RETIREMENT-PLAN
+// Slice 6 item 4). Dedup/resume key off the deterministic post_id.
+function itemKey(item: Post): string {
   return item.id;
 }
 
 interface VesselState {
   feed: WorkspaceFeed;
-  items: WorkspaceItem[];
+  items: Post[];
   sources: WorkspaceFeedSource[];
   status: "loading" | "ready" | "error";
   caughtUp?: boolean;
@@ -161,110 +148,6 @@ interface VesselState {
   loadingMore?: boolean;
 }
 
-function mapExternalApiItem(
-  item: WorkspaceFeedApiItem & { type: "external" },
-): ExternalFeedItem {
-  return {
-    type: "external",
-    id: item.id,
-    postId: item.postId, // §2.3 post_id — Phase 3 id bridge for GET /thread/:postId
-    authorId: item.authorId, // §4.4 external_authors id — byline link + hover key
-    feedItemId: item.feedItemId,
-    externalSourceId: item.externalSourceId,
-    sourceProtocol: item.sourceProtocol,
-    sourceItemUri: item.sourceItemUri,
-    authorName: item.authorName,
-    authorHandle: item.authorHandle,
-    authorAvatarUrl: item.authorAvatarUrl,
-    authorUri: item.authorUri,
-    contentText: item.contentText,
-    contentHtml: item.contentHtml,
-    title: item.title,
-    summary: item.summary,
-    sourceReplyUri: item.sourceReplyUri ?? null,
-    sourceQuoteUri: item.sourceQuoteUri ?? null,
-    likeCount: item.likeCount ?? 0,
-    replyCount: item.replyCount ?? 0,
-    repostCount: item.repostCount ?? 0,
-    media: item.media ?? [],
-    publishedAt: item.publishedAt,
-    sourceName: item.sourceName,
-    sourceAvatar: item.sourceAvatar,
-    pipStatus: item.pipStatus ?? "unknown",
-    savedAt: item.savedAt,
-  };
-}
-
-function mapApiItem(item: WorkspaceFeedApiItem): WorkspaceItem | null {
-  if (item.type === "article") {
-    return {
-      type: "article",
-      id: item.nostrEventId,
-      postId: item.postId, // §2.3 post_id — Phase 3 id bridge for GET /thread/:postId
-      feedItemId: item.feedItemId,
-      authorId: item.authorId,
-      pubkey: item.pubkey,
-      dTag: item.dTag,
-      title: item.title,
-      summary: item.summary,
-      content: item.contentFree ?? "",
-      isPaywalled: item.isPaywalled,
-      pricePence: item.pricePence,
-      gatePositionPct: item.gatePositionPct,
-      publishedAt: item.publishedAt,
-      tags: [],
-      topicTags: item.tags ?? [],
-      pipStatus: item.pipStatus,
-      sizeTier: item.sizeTier,
-      savedAt: item.savedAt,
-      media: item.media ?? undefined,
-    };
-  }
-  if (item.type === "note") {
-    return {
-      type: "note",
-      id: item.nostrEventId,
-      postId: item.postId, // §2.3 post_id — Phase 3 id bridge for GET /thread/:postId
-      feedItemId: item.feedItemId,
-      authorId: item.authorId,
-      pubkey: item.pubkey,
-      content: item.content,
-      publishedAt: item.publishedAt,
-      quotedEventId: item.quotedEventId,
-      quotedEventKind: item.quotedEventKind,
-      quotedExcerpt: item.quotedExcerpt,
-      quotedTitle: item.quotedTitle,
-      quotedAuthor: item.quotedAuthor,
-      quotedPostId: item.quotedPostId,
-      quotedUrl: item.quotedUrl,
-      quotedSource: item.quotedSource,
-      pipStatus: item.pipStatus,
-      savedAt: item.savedAt,
-      externalParentId: item.externalParentId,
-    };
-  }
-  if (item.type === "external") {
-    return mapExternalApiItem(item);
-  }
-  if (item.type === "reply_group") {
-    return {
-      type: "reply_group",
-      sourceReplyUri: item.sourceReplyUri,
-      publishedAt: item.publishedAt,
-      replies: item.replies.map(mapExternalApiItem),
-    } as ReplyGroupItem;
-  }
-  if (item.type === "new_user") {
-    return {
-      type: "new_user",
-      username: item.username,
-      displayName: item.displayName ?? null,
-      avatar: item.avatar ?? null,
-      joinedAt: item.joinedAt,
-    };
-  }
-  return null;
-}
 
 export function WorkspaceView() {
   const { user, loading } = useAuth();
@@ -489,9 +372,7 @@ export function WorkspaceView() {
     );
     try {
       const data = await workspaceFeedsApi.items(feed.id);
-      const mapped = (data.items ?? [])
-        .map(mapApiItem)
-        .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null);
+      const mapped = data.items ?? [];
       const caughtUp =
         prevIds !== null &&
         mapped.length > 0 &&
@@ -543,9 +424,7 @@ export function WorkspaceView() {
     );
     try {
       const data = await workspaceFeedsApi.items(feedId, { cursor });
-      const mapped = (data.items ?? [])
-        .map(mapApiItem)
-        .filter((x: WorkspaceItem | null): x is WorkspaceItem => x !== null);
+      const mapped = data.items ?? [];
       setVessels((prev) =>
         prev.map((v) => {
           if (v.feed.id !== feedId) return v;
@@ -695,28 +574,19 @@ export function WorkspaceView() {
     }));
 
   function matchItemToSource(
-    item: WorkspaceItem,
+    item: Post,
     sources: WorkspaceFeedSource[],
   ): string | undefined {
-    if (item.type === "new_user") return undefined;
-    if (item.type === "reply_group") {
-      const first = item.replies[0];
-      if (!first?.externalSourceId) return undefined;
+    // External card → its all.haus external_sources row; native → the author
+    // account. (tag/publication sources have no per-card drag handle, as before.)
+    if (item.externalSourceId) {
       return sources.find(
         (s) =>
           s.sourceType === "external_source" &&
-          s.externalSourceId === first.externalSourceId,
+          s.externalSourceId === item.externalSourceId,
       )?.id;
     }
-    if (item.type === "external") {
-      const esId = item.externalSourceId;
-      if (!esId) return undefined;
-      return sources.find(
-        (s) =>
-          s.sourceType === "external_source" && s.externalSourceId === esId,
-      )?.id;
-    }
-    const authorId = (item as ArticleEvent | NoteEvent).authorId;
+    const authorId = item.author.accountId;
     if (!authorId) return undefined;
     return sources.find(
       (s) => s.sourceType === "account" && s.accountId === authorId,
@@ -1010,34 +880,15 @@ export function WorkspaceView() {
             )}
             {v.status === "ready" &&
               v.items.map((item) =>
-                item.type === "new_user" ? (
-                  <NewUserVesselCard
-                    key={`new-user-${item.username}-${item.joinedAt}`}
-                    item={item}
-                    density={layout.density}
-                    brightness={layout.brightness}
-                  />
-                ) : item.type === "reply_group" ? (
-                  <ReplyGroupCard
-                    key={`rg-${item.sourceReplyUri}`}
-                    group={item}
-                    density={layout.density}
-                    brightness={layout.brightness}
-                    textSize={layout.textSize}
-                  />
-                ) : (
-                  (() => {
+                (() => {
                     // UNIVERSAL-POST-ADR Phase 5 — the unified card is the only
                     // feed path. Collapsed cards are PostCardInteractive
                     // level="feed"; expanding a note/external mounts the unified
                     // PostThread (ancestors/focal/replies on the same PostCard).
                     // Articles open the reader pane (Phase R), so they have no
                     // inline thread and stay feed cards.
-                    const post = mapFeedItemToPost(item);
-                    const expandKey =
-                      "feedItemId" in item && item.feedItemId
-                        ? item.feedItemId
-                        : item.id;
+                    const post = item;
+                    const expandKey = item.feedItemId ?? item.id;
                     const isExpanded =
                       expandedByFeed[v.feed.id] === expandKey;
                     const ctx = {
@@ -1196,8 +1047,7 @@ export function WorkspaceView() {
                         onQuote={() => quoteFromPost(post)}
                       />
                     );
-                  })()
-                ),
+                  })(),
               )}
       </>
     );

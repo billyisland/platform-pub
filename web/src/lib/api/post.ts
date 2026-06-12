@@ -1,9 +1,9 @@
 // =============================================================================
 // Unified Post endpoints — UNIVERSAL-POST-ADR §9
 //
-// The Phase-1 read endpoints over the Post model. Phase 3 consumes /thread; the
-// /feed endpoint is wired in a later phase (the workspace still flows through
-// /workspace/feeds/:id/items, mapped client-side by lib/post/map-feed-item.ts).
+// The Phase-1 read endpoints over the Post model. Phase 3 consumes /thread. The
+// workspace reads its own GET /workspace/feeds/:id/items, which now also emits
+// gateway Post[] directly (FEED-RETIREMENT-PLAN Slice 6 item 4) — no client adapter.
 // =============================================================================
 
 import { request } from "./client";
