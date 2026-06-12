@@ -1,18 +1,24 @@
 import type { FastifyInstance } from 'fastify'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
+import logger from '@platform-pub/shared/lib/logger.js'
+import { FEED_SELECT, FEED_JOINS, parseCursor } from './timeline.js'
+import { POST_SELECT, POST_JOINS, feedItemToPost } from '../lib/post-mapper.js'
 
 // =============================================================================
 // Tag Routes
 //
 // GET  /tags/search?q=<query>          — autocomplete search
-// GET  /tags/:name                     — articles by tag
+// GET  /tags/:name                     — articles by tag (legacy card shape)
+// GET  /tags/:name/posts               — articles by tag as unified Post[]
 // GET  /articles/:articleId/tags       — tags for an article
 // PUT  /articles/:articleId/tags       — set tags for an article (writer only)
 // =============================================================================
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const TAG_RE = /^[a-z0-9][a-z0-9-]{0,48}[a-z0-9]?$/
+const DEFAULT_LIMIT = 20
+const MAX_LIMIT = 50
 
 export async function tagRoutes(app: FastifyInstance) {
 
@@ -92,6 +98,98 @@ export async function tagRoutes(app: FastifyInstance) {
         articles: articleRes.rows,
         total: parseInt(countRes.rows[0].total, 10),
       })
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // GET /tags/:name/posts — articles with this tag, projected as the unified
+  // Post model (UNIVERSAL-POST-ADR §9) so the tag surface renders through the
+  // one PostCard path (FEED-RETIREMENT Slice 4), exactly like GET /sources/:id
+  // and GET /author/:id/posts. Tags are article-only, so this filters
+  // item_type = 'article'. Cursor-paged; `total` is kept for the header count.
+  // ---------------------------------------------------------------------------
+
+  app.get<{
+    Params: { name: string }
+    Querystring: { cursor?: string; limit?: string }
+  }>(
+    '/tags/:name/posts',
+    {
+      preHandler: optionalAuth,
+      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const tagName = req.params.name.toLowerCase()
+      const cursor = parseCursor(req.query.cursor)
+      const limit = Math.min(
+        parseInt(req.query.limit ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT,
+        MAX_LIMIT
+      )
+
+      try {
+        const { rows: tagRows } = await pool.query<{ id: string }>(
+          'SELECT id FROM tags WHERE name = $1',
+          [tagName]
+        )
+        if (tagRows.length === 0) {
+          return reply.send({ tag: tagName, items: [], total: 0 })
+        }
+        const tagId = tagRows[0].id
+
+        const cursorClause = cursor
+          ? `AND (fi.published_at, fi.id) < (to_timestamp($3), $4::uuid)`
+          : ''
+        const params: any[] = cursor
+          ? [tagId, limit, cursor.ts, cursor.id]
+          : [tagId, limit]
+
+        const [countRes, result] = await Promise.all([
+          pool.query<{ total: string }>(
+            `SELECT COUNT(*)::text AS total
+             FROM feed_items fi
+             WHERE fi.deleted_at IS NULL
+               AND fi.item_type = 'article'
+               AND fi.article_id IN (SELECT article_id FROM article_tags WHERE tag_id = $1)`,
+            [tagId]
+          ),
+          pool.query<any>(
+            `
+            SELECT ${FEED_SELECT}${POST_SELECT}
+            FROM feed_items fi
+            ${FEED_JOINS}
+            ${POST_JOINS}
+            WHERE fi.deleted_at IS NULL
+              AND fi.item_type = 'article'
+              AND fi.article_id IN (SELECT article_id FROM article_tags WHERE tag_id = $1)
+              ${cursorClause}
+            ORDER BY fi.published_at DESC, fi.id DESC
+            LIMIT $2
+            `,
+            params
+          ),
+        ])
+
+        const items = result.rows.map(feedItemToPost)
+        // Only hand out a cursor when the page was full — a short page is the
+        // last page (mirrors GET /sources/:id and GET /author/:id/posts).
+        const lastRow =
+          result.rows.length === limit
+            ? result.rows[result.rows.length - 1]
+            : undefined
+        const nextCursor = lastRow
+          ? `${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
+          : undefined
+
+        return reply.send({
+          tag: tagName,
+          items,
+          total: parseInt(countRes.rows[0].total, 10),
+          nextCursor,
+        })
+      } catch (err) {
+        logger.error({ err, tag: tagName }, 'Tag posts fetch failed')
+        return reply.status(500).send({ error: 'Tag posts fetch failed' })
+      }
     }
   )
 

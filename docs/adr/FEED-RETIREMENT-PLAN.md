@@ -1,6 +1,6 @@
 # FEED-RETIREMENT-PLAN — retire the legacy `/feed` model
 
-**Status:** In progress — Slices 1 & 2 shipped 2026-06-12; Slice 0 decided (option a); Slice 3 has one open product detail (reach-seeding, below).
+**Status:** In progress — Slices 1, 2 & 4 shipped 2026-06-12; Slice 0 decided (option a); Slice 3 has one open product detail (reach-seeding, below).
 **Date:** 2026-06-12
 **Provenance:** feature-debt.md §4 readiness assessment (2026-06-12), re-verified against the codebase the same day. UNIVERSAL-POST-ADR §10 Phase 5 deliberately scoped the Post-model cutover to the workspace and named "a later `/feed`+`/source`-scoped pass"; this is that pass.
 **Goal:** `/workspace` becomes the entirety of logged-in all.haus. Every surface renders cards through the one Post-model path (`web/src/components/post/`); the legacy `components/feed/` card stack and its gateway endpoints are deleted.
@@ -15,7 +15,11 @@
 
 **Slice 2 — SHIPPED (2026-06-12, commit `76c2f2d`).** `?kind=article|note` added to `/author/:id/posts`; new `GET /author/:id/replies` projects native kind-1111 comments as `Post[]` via `commentToPost` (moved to shared `post-mapper.ts`). `WorkTab`/`SocialTab` render Post cards (pin + drives preserved; replies expand to the unified thread). No `components/feed/*` import remains under `components/profile/`. *Runtime check pending a `web` rebuild.*
 
+**Slice 4 — SHIPPED (2026-06-12).** New `GET /tags/:name/posts` projects tag articles as `Post[]` (article-only, cursor-paged, keeps `total` for the header) — mirrors `GET /sources/:id`. `TagBrowser.tsx` renders `PostCardInteractive` (reader-in-place when `inOverlay`, navigate on the standalone page); no hand-rolled article rows remain. `/search` is now a redirect shim to `/workspace` (the dock `SearchPanel` is the search surface). gateway+web tsc clean, lint 0 errors, hairlines clean. *Runtime check pending a `web` rebuild.*
+
 **Corrections to the plan discovered while building (carry forward):**
+- **`Nav.tsx`'s topbar search box still pushes to `/search`** (now a shim → `/workspace`), so it drops the query and, for a logged-out visitor on a public page, lands them on the login-gated workspace. This is the black topbar that Slice 3 already touches (the four `/feed` links) — repoint/remove the search box there. Out of Slice 4's scope; left intact deliberately.
+- **Legacy `/tags/:name` + the `tags.getByName` web client are now orphaned** (only `tags.search`, the editor autocomplete, still uses the legacy tags API). Left in place for the Slice 7 deletion pass, not removed piecemeal.
 - **Profile replies are NOT in `/posts`.** §2 assumed WorkTab/SocialTab both ride `/author/:id/posts`. Native replies are kind-1111 rows in the `comments` table, *not* `feed_items`, so they have no `post_id` and never appear in `/posts`. They now have a dedicated projector (`GET /author/:id/replies`). Any future "author's replies" surface must use it, not `/posts`.
 - **The Post chassis has no inline delete affordance** (neither does `AuthorProfileView` nor the workspace cards — `PostActions` carries Vote/Reply/Quote/Report only). Slice 2 therefore dropped the legacy NoteCard per-note delete on one's own profile. This is a uniform Post-model gap, not a Slice-2 regression — but it IS a real capability loss across the consolidated world. Decide separately whether to grow a delete action into the chassis before Slice 7 deletes the legacy cards for good.
 - `commentToPost`/`CommentRow` now live in `gateway/src/lib/post-mapper.ts` (Slice 6's "extract shared SQL" instinct, done early for this one).
@@ -105,10 +109,10 @@ Slice 0 decided **option (a)**: build `reach:following`/`reach:explore` as compo
 - Drop the `feedReach` localStorage key handling.
 - Accept: no live `href`/`push` to `/feed` outside the shim; logging in lands on the workspace.
 
-### Slice 4 — Port `/tag`, retire `/search`
+### Slice 4 — Port `/tag`, retire `/search` — ✅ SHIPPED (§0)
 
-- `TagBrowser`: replace hand-rolled rows with Post-model article cards (tags are article-only). Needs a tag-scoped `Post[]` source — tag filter on the post-feed machinery or a small projector beside the tags routes. Overlay + standalone share `TagBrowser` already.
-- `/search`: redirect shim to `/workspace` — the dock `SearchPanel` is the search surface (already richer: writers + articles + publications, results open in overlays). Optionally a `?overlay=search` param that opens the dock panel, if shim-to-bare-workspace feels lossy.
+- `TagBrowser`: replace hand-rolled rows with Post-model article cards (tags are article-only). Needs a tag-scoped `Post[]` source — tag filter on the post-feed machinery or a small projector beside the tags routes. Overlay + standalone share `TagBrowser` already. *Done: new `GET /tags/:name/posts` projector (`tags.ts`) + `tagPosts` web client; `TagBrowser` renders `PostCardInteractive`.*
+- `/search`: redirect shim to `/workspace` — the dock `SearchPanel` is the search surface (already richer: writers + articles + publications, results open in overlays). Optionally a `?overlay=search` param that opens the dock panel, if shim-to-bare-workspace feels lossy. *Done: plain redirect to `/workspace` (no `?overlay=search` — no search overlay store exists; the dock panel is reachable from the ForallMenu). `Nav.tsx`'s topbar search box still targets `/search`; repoint in Slice 3 (see §0 carry-forward).*
 - Accept: `/tag/:name` renders PostCards in both modes; `/search` is a shim.
 
 ### Slice 5 — Build the four missing overlays (Bucket B)

@@ -89,6 +89,26 @@ export function authorPosts(
   );
 }
 
+// GET /tags/:name/posts → articles with this tag as full-view Post[] (tags are
+// article-only), the same shape GET /author/:id/posts returns. `total` is kept
+// for the surface's article-count header.
+export function tagPosts(
+  name: string,
+  cursor?: string,
+  limit?: number,
+): Promise<{ tag: string; items: Post[]; total: number; nextCursor?: string }> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (limit) params.set("limit", String(limit));
+  const qs = params.toString();
+  return request<{
+    tag: string;
+    items: Post[];
+    total: number;
+    nextCursor?: string;
+  }>(`/tags/${encodeURIComponent(name)}/posts${qs ? `?${qs}` : ""}`);
+}
+
 // GET /author/:authorId/replies → the native author's replies (kind-1111
 // comments) as full-view Post[]. Outside /posts because comments aren't
 // feed_items; each expands into the unified thread like any Post.
