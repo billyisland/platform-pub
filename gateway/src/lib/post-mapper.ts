@@ -265,3 +265,72 @@ export function feedItemToPost(row: any): Post {
     externalItemId: isExternal ? (row.external_item_id ?? null) : null,
   };
 }
+
+// =============================================================================
+// Native comment → Post (§2.2). Comments aren't in feed_items, so they're
+// projected here (not by feedItemToPost), emitting the same Post type. Shared by
+// the /thread projector (post-thread.ts) and the author replies log (author.ts).
+// =============================================================================
+export interface CommentRow {
+  id: string; // comment uuid
+  derived_post_id: string;
+  nostr_event_id: string;
+  parent_comment_id: string | null;
+  parent_post_id: string | null; // parent comment's derived post_id, NULL for top-level
+  content: string;
+  published_at_epoch: number;
+  deleted_at: Date | null;
+  author_id: string;
+  acc_display_name: string | null;
+  acc_username: string | null;
+  acc_avatar: string | null;
+  nostr_pubkey: string | null;
+  pip_status: Post["author"]["pipStatus"] | null;
+  vt_up: number | null;
+  vt_down: number | null;
+}
+
+export function commentToPost(
+  c: CommentRow,
+  rootPostId: string,
+  mutedIds: Set<string>,
+): Post {
+  return {
+    id: c.derived_post_id,
+    version: c.nostr_event_id, // native immutable event token (§2.4)
+    origin: { protocol: "nostr", uri: c.nostr_event_id, sourceName: null },
+    author: {
+      id: c.author_id,
+      accountId: c.author_id,
+      displayName: c.acc_display_name,
+      handle: c.acc_username,
+      handleUri: null,
+      avatar: c.acc_avatar,
+      pubkey: c.nostr_pubkey,
+      pipStatus: c.pip_status ?? "unknown",
+    },
+    type: "note",
+    accessMode: "free",
+    body: {
+      text: c.deleted_at ? "[deleted]" : c.content,
+      html: null,
+      title: null,
+      summary: null,
+      media: [],
+      contentWarning: null, // comments carry no content warning
+      poll: null,
+    },
+    // top-level comments hang off the root THING; nested off their parent comment.
+    inReplyTo: c.parent_post_id ?? rootPostId,
+    quotes: null,
+    originCounts: null, // native (§6): all.haus scoresheet is canonical
+    scoresheet: { up: c.vt_up ?? 0, down: c.vt_down ?? 0, reposts: 0 },
+    biddabilityTier: "A",
+    publishedAt: Number(c.published_at_epoch),
+    isContextOnly: false,
+    isDeleted: !!c.deleted_at,
+    isMuted: mutedIds.has(c.author_id),
+    feedItemId: null,
+    externalItemId: null, // native comment — engagement is the all.haus scoresheet
+  };
+}

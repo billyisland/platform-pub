@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "../../stores/auth";
@@ -10,14 +10,12 @@ import {
   type TrustProfileResponse,
   type WriterProfile,
 } from "../../lib/api";
-import { useCompose } from "../../stores/compose";
 import { WorkTab } from "./WorkTab";
 import { SocialTab } from "./SocialTab";
 import { FollowersTab } from "./FollowersTab";
 import { FollowingTab } from "./FollowingTab";
 import { TrustProfile } from "../trust/TrustProfile";
 import { VouchModal } from "../trust/VouchModal";
-import type { QuoteTarget } from "../../lib/publishNote";
 
 type ProfileTab = "work" | "social" | "followers" | "following";
 
@@ -60,7 +58,6 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
   const [followLoading, setFollowLoading] = useState(false);
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null);
   const [subLoading, setSubLoading] = useState(false);
-  const openCompose = useCompose((s) => s.open);
   const [showVouchModal, setShowVouchModal] = useState(false);
   const [trustData, setTrustData] = useState<TrustProfileResponse | null>(null);
   const [trustKey, setTrustKey] = useState(0);
@@ -183,13 +180,6 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
       setSubLoading(false);
     }
   }
-
-  const handleQuote = useCallback(
-    (target: QuoteTarget) => {
-      openCompose("reply", target);
-    },
-    [openCompose],
-  );
 
   const router = useRouter();
   const isOwnProfile = user?.username === username;
@@ -367,7 +357,6 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
             username={username}
             writer={writer}
             isOwnProfile={isOwnProfile}
-            onQuote={handleQuote}
           />
         </div>
       )}
@@ -381,7 +370,6 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
             username={username}
             writer={writer}
             isOwnProfile={isOwnProfile}
-            onQuote={handleQuote}
           />
         </div>
       )}

@@ -3,7 +3,12 @@ import { pool } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { FEED_SELECT, FEED_JOINS, parseCursor } from "./timeline.js";
-import { POST_SELECT, POST_JOINS, feedItemToPost } from "../lib/post-mapper.js";
+import {
+  POST_SELECT,
+  POST_JOINS,
+  feedItemToPost,
+  commentToPost,
+} from "../lib/post-mapper.js";
 import {
   type AuthorCardResponse,
   resolveNativeAuthor,
@@ -262,9 +267,13 @@ export async function authorRoutes(app: FastifyInstance) {
   );
 
   // GET /author/:authorId/posts — chronological log, full-view Post[] (§9).
+  //
+  // ?kind=article|note narrows the native log to one item_type (the native
+  // profile's Work / Social tabs consume it that way). Ignored for external
+  // authors (no article/note distinction on the firehose).
   app.get<{
     Params: { authorId: string };
-    Querystring: { cursor?: string; limit?: string };
+    Querystring: { cursor?: string; limit?: string; kind?: string };
   }>(
     "/author/:authorId/posts",
     {
@@ -282,6 +291,10 @@ export async function authorRoutes(app: FastifyInstance) {
         parseInt(req.query.limit ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT,
         MAX_LIMIT,
       );
+      const kind =
+        req.query.kind === "article" || req.query.kind === "note"
+          ? req.query.kind
+          : null;
 
       try {
         // id-space probe → the author filter. external_author_id aggregates the
@@ -291,8 +304,9 @@ export async function authorRoutes(app: FastifyInstance) {
         if (xa) {
           authorFilter = "fi.external_author_id = $1";
         } else if (await isNativeAccount(authorId)) {
-          authorFilter =
-            "fi.author_id = $1 AND fi.item_type IN ('article', 'note')";
+          authorFilter = kind
+            ? `fi.author_id = $1 AND fi.item_type = '${kind}'`
+            : "fi.author_id = $1 AND fi.item_type IN ('article', 'note')";
         } else {
           return reply.status(404).send({ error: "Author not found" });
         }
@@ -336,6 +350,99 @@ export async function authorRoutes(app: FastifyInstance) {
       } catch (err) {
         logger.error({ err, authorId }, "Author posts fetch failed");
         return reply.status(500).send({ error: "Author posts fetch failed" });
+      }
+    },
+  );
+
+  // GET /author/:authorId/replies — the native author's replies (kind-1111
+  // comments) as full-view Post[] (§2.2 via commentToPost). Comments live in the
+  // `comments` table, NOT feed_items, so they're outside /posts; this is their
+  // chronological log. Each reply carries the deterministic derived post_id, so a
+  // PostCard expands it into the unified thread (parent context above) exactly as
+  // the workspace does. Native-only — external authors have no all.haus comments.
+  app.get<{
+    Params: { authorId: string };
+    Querystring: { cursor?: string; limit?: string };
+  }>(
+    "/author/:authorId/replies",
+    {
+      preHandler: requireAuth,
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+    },
+    async (req, reply) => {
+      const { authorId } = req.params;
+      if (!UUID_RE.test(authorId)) {
+        return reply.status(400).send({ error: "Invalid author id" });
+      }
+      if (!(await isNativeAccount(authorId))) {
+        // External authors have no native comments; empty log (not a 404 — the
+        // identity is valid, it just has no replies on all.haus).
+        return reply.send({ items: [], nextCursor: undefined });
+      }
+
+      const cursor = parseCursor(req.query.cursor);
+      const limit = Math.min(
+        parseInt(req.query.limit ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT,
+        MAX_LIMIT,
+      );
+
+      try {
+        const cursorClause = cursor
+          ? `AND (c.published_at, c.id) < (to_timestamp($3), $4::uuid)`
+          : "";
+        const params: any[] = cursor
+          ? [authorId, limit, cursor.ts, cursor.id]
+          : [authorId, limit];
+
+        // root_post_id is the comment's root THING (derived from its
+        // target_event_id) — commentToPost's rootPostId fallback for inReplyTo.
+        const result = await pool.query<any>(
+          `
+          SELECT c.id,
+                 feed_items_derive_post_id('nostr', c.nostr_event_id) AS derived_post_id,
+                 c.nostr_event_id,
+                 c.parent_comment_id,
+                 feed_items_derive_post_id('nostr', p.nostr_event_id) AS parent_post_id,
+                 feed_items_derive_post_id('nostr', c.target_event_id) AS root_post_id,
+                 c.content,
+                 EXTRACT(EPOCH FROM c.published_at)::bigint AS published_at_epoch,
+                 c.deleted_at,
+                 c.author_id,
+                 acc.display_name AS acc_display_name,
+                 acc.username AS acc_username,
+                 acc.avatar_blossom_url AS acc_avatar,
+                 acc.nostr_pubkey AS nostr_pubkey,
+                 tl.pip_status AS pip_status,
+                 vt.upvote_count AS vt_up, vt.downvote_count AS vt_down
+            FROM comments c
+            JOIN accounts acc ON acc.id = c.author_id
+            LEFT JOIN trust_layer1 tl ON tl.user_id = c.author_id
+            LEFT JOIN comments p ON p.id = c.parent_comment_id
+            LEFT JOIN vote_tallies vt ON vt.target_nostr_event_id = c.nostr_event_id
+           WHERE c.author_id = $1
+             AND c.deleted_at IS NULL
+             ${cursorClause}
+           ORDER BY c.published_at DESC, c.id DESC
+           LIMIT $2
+          `,
+          params,
+        );
+
+        const items = result.rows.map((c) =>
+          commentToPost(c, c.root_post_id, new Set<string>()),
+        );
+        const lastRow =
+          result.rows.length === limit
+            ? result.rows[result.rows.length - 1]
+            : undefined;
+        const nextCursor = lastRow
+          ? `${Number(lastRow.published_at_epoch)}:${lastRow.id}`
+          : undefined;
+
+        return reply.send({ items, nextCursor });
+      } catch (err) {
+        logger.error({ err, authorId }, "Author replies fetch failed");
+        return reply.status(500).send({ error: "Author replies fetch failed" });
       }
     },
   );

@@ -1,120 +1,129 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { NoteCard } from "../feed/NoteCard";
-import type { WriterProfile, VoteTally, MyVoteCount } from "../../lib/api";
-import type { NoteEvent } from "../../lib/ndk";
-import type { QuoteTarget } from "../../lib/publishNote";
+import { useRouter } from "next/navigation";
+import { PostCardInteractive } from "../post/PostCardInteractive";
+import { PostThread } from "../post/PostThread";
+import type { CardContext } from "../post/chassis";
+import {
+  PALETTES,
+  DEFAULT_BRIGHTNESS,
+  DEFAULT_DENSITY,
+  DEFAULT_TEXT_SIZE,
+  TEXT_SIZE_PX,
+} from "../workspace/tokens";
+import { authorPosts, authorReplies } from "../../lib/api/post";
+import type { Post } from "../../lib/post/types";
+import type { WriterProfile } from "../../lib/api";
+import { useCompose } from "../../stores/compose";
 
-interface DbNote {
-  id: string;
-  nostrEventId: string;
-  content: string;
-  publishedAt: string;
-  quotedEventId?: string;
-  quotedEventKind?: number;
-  quotedExcerpt?: string;
-  quotedTitle?: string;
-  quotedAuthor?: string;
-}
+// =============================================================================
+// Profile Social tab — the writer's notes + replies, rendered through the one
+// Post-model path (PostCardInteractive / PostThread), the same as the workspace
+// and the constructed author profile. Notes come from GET /author/:id/posts?
+// kind=note; replies (kind-1111 comments, which aren't feed_items) from
+// GET /author/:id/replies. Each card expands inline to the unified thread
+// (parent context above) instead of the old "→ replied to X" provenance line.
+// =============================================================================
 
-interface DbReply {
-  id: string;
-  nostrEventId: string;
-  content: string;
-  publishedAt: string;
-  isDeleted: boolean;
-  targetKind: number;
-  targetEventId: string | null;
-  articleSlug: string | null;
-  articleTitle: string | null;
-  articleAuthorUsername: string | null;
-  articleAuthorDisplayName: string | null;
-  parentEventId: string | null;
-  parentAuthorUsername: string | null;
-  parentAuthorDisplayName: string | null;
-}
+const CTX: CardContext = {
+  density: DEFAULT_DENSITY,
+  palette: PALETTES[DEFAULT_BRIGHTNESS],
+  bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
+};
 
 interface SocialTabProps {
   username: string;
   writer: WriterProfile;
   isOwnProfile: boolean;
-  onQuote?: (target: QuoteTarget) => void;
 }
 
-export function SocialTab({ username, writer, onQuote }: SocialTabProps) {
-  const [notes, setNotes] = useState<DbNote[]>([]);
-  const [replies, setReplies] = useState<DbReply[]>([]);
+export function SocialTab({ writer, isOwnProfile }: SocialTabProps) {
+  const router = useRouter();
+  const [notes, setNotes] = useState<Post[]>([]);
+  const [replies, setReplies] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [voteTallies, setVoteTallies] = useState<Record<string, VoteTally>>({});
-  const [myVoteCounts, setMyVoteCounts] = useState<Record<string, MyVoteCount>>(
-    {},
-  );
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const [notesRes, repliesRes] = await Promise.all([
-          fetch(`/api/v1/writers/${username}/notes?limit=50`, {
-            credentials: "include",
-          }),
-          fetch(`/api/v1/writers/${username}/replies?limit=50`, {
-            credentials: "include",
-          }),
-        ]);
-
-        const loadedNotes: DbNote[] = [];
-        const loadedReplies: DbReply[] = [];
-
-        if (notesRes.ok) {
-          const data = await notesRes.json();
-          loadedNotes.push(...(data.notes ?? []));
-        }
-        if (repliesRes.ok) {
-          const data = await repliesRes.json();
-          loadedReplies.push(...(data.replies ?? []));
-        }
-
-        setNotes(loadedNotes);
-        setReplies(loadedReplies);
-
-        // Fetch vote tallies
-        const eventIds = [
-          ...loadedNotes.map((n) => n.nostrEventId),
-          ...loadedReplies.map((r) => r.nostrEventId),
-        ];
-        if (eventIds.length > 0) {
-          const idsParam = eventIds.join(",");
-          const [talliesRes, myVotesRes] = await Promise.all([
-            fetch(`/api/v1/votes/tally?eventIds=${idsParam}`)
-              .then((r) => (r.ok ? r.json() : { tallies: {} }))
-              .catch(() => ({ tallies: {} })),
-            fetch(`/api/v1/votes/mine?eventIds=${idsParam}`, {
-              credentials: "include",
-            })
-              .then((r) => (r.ok ? r.json() : { voteCounts: {} }))
-              .catch(() => ({ voteCounts: {} })),
-          ]);
-          setVoteTallies(talliesRes.tallies ?? {});
-          setMyVoteCounts(myVotesRes.voteCounts ?? {});
-        }
-      } catch {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      authorPosts(writer.id, undefined, "note", 50),
+      authorReplies(writer.id, undefined, 50),
+    ])
+      .then(([notesRes, repliesRes]) => {
+        if (cancelled) return;
+        setNotes(notesRes.items);
+        setReplies(repliesRes.items);
+      })
+      .catch(() => {
         /* silently fail */
-      } finally {
-        setLoading(false);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [writer.id]);
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const openReader = useCallback(
+    (p: Post) => {
+      if (p.author.pubkey) {
+        if (p.dTag) router.push(`/article/${p.dTag}`);
+      } else {
+        router.push(`/reader/${p.id}`);
       }
-    }
-    void load();
-  }, [username]);
+    },
+    [router],
+  );
 
-  const handleNoteDeleted = useCallback((id: string) => {
-    setNotes((prev) => prev.filter((n) => n.nostrEventId !== id));
+  const replyFromPost = useCallback((p: Post) => {
+    if (!p.author.pubkey) return;
+    useCompose.getState().open("reply", {
+      eventId: p.version ?? p.id,
+      eventKind: p.type === "article" ? 30023 : 1,
+      authorPubkey: p.author.pubkey,
+      previewContent: (p.body.text ?? "").slice(0, 120),
+    });
   }, []);
 
-  const handleReplyDeleted = useCallback((id: string) => {
-    setReplies((prev) => prev.filter((r) => r.nostrEventId !== id));
-  }, []);
+  const renderPost = useCallback(
+    (post: Post) =>
+      expanded.has(post.id) && post.type !== "article" ? (
+        <PostThread
+          key={post.id}
+          rootPostId={post.id}
+          ctx={CTX}
+          onCollapse={() => toggleExpand(post.id)}
+          onReply={replyFromPost}
+          onOpenReader={openReader}
+        />
+      ) : (
+        <PostCardInteractive
+          key={post.id}
+          post={post}
+          level="feed"
+          expanded={false}
+          ctx={CTX}
+          isOwnContent={isOwnProfile}
+          onExpand={() => toggleExpand(post.id)}
+          onOpenReader={openReader}
+          onReply={post.author.pubkey ? () => replyFromPost(post) : undefined}
+        />
+      ),
+    [expanded, isOwnProfile, openReader, replyFromPost, toggleExpand],
+  );
 
   if (loading) {
     return (
@@ -135,84 +144,18 @@ export function SocialTab({ username, writer, onQuote }: SocialTabProps) {
 
   return (
     <div>
-      {/* Notes section */}
       {hasNotes && (
         <>
           <h3 className="label-ui text-grey-600 mb-4">Notes</h3>
-          <div className="space-y-3">
-            {notes.map((n) => {
-              const noteEvent: NoteEvent = {
-                type: "note",
-                id: n.nostrEventId,
-                pubkey: writer.pubkey,
-                content: n.content,
-                publishedAt: Math.floor(
-                  new Date(n.publishedAt).getTime() / 1000,
-                ),
-                quotedEventId: n.quotedEventId,
-                quotedEventKind: n.quotedEventKind,
-                quotedExcerpt: n.quotedExcerpt,
-                quotedTitle: n.quotedTitle,
-                quotedAuthor: n.quotedAuthor,
-              };
-              return (
-                <NoteCard
-                  key={n.id}
-                  note={noteEvent}
-                  onDeleted={handleNoteDeleted}
-                  onQuote={onQuote}
-                  voteTally={voteTallies[n.nostrEventId]}
-                  myVoteCounts={myVoteCounts[n.nostrEventId]}
-                />
-              );
-            })}
-          </div>
+          <div className="space-y-[40px]">{notes.map(renderPost)}</div>
         </>
       )}
 
-      {/* Replies section */}
       {hasReplies && (
         <>
           {hasNotes && <div className="rule-inset my-8" />}
           <h3 className="label-ui text-grey-600 mb-4">Replies</h3>
-          <div className="space-y-3">
-            {replies.map((r) => {
-              // A profile reply is a kind-1111 comment. Render it through the
-              // unified NoteCard: provenance line + parent-above on expand
-              // (the article/note it replies to, resolved from targetEventId),
-              // with correct comment semantics (kind 1111, delete via dbId).
-              const replyEvent: NoteEvent = {
-                type: "note",
-                id: r.nostrEventId,
-                pubkey: writer.pubkey,
-                content: r.content,
-                publishedAt: Math.floor(
-                  new Date(r.publishedAt).getTime() / 1000,
-                ),
-                isReply: true,
-                replyToAuthor:
-                  r.parentAuthorDisplayName ??
-                  r.parentAuthorUsername ??
-                  r.articleAuthorDisplayName ??
-                  r.articleAuthorUsername ??
-                  undefined,
-                replyToEventId: r.targetEventId ?? undefined,
-                kind: 1111,
-                dbId: r.id,
-              };
-              return (
-                <NoteCard
-                  key={r.id}
-                  note={replyEvent}
-                  onDeleted={handleReplyDeleted}
-                  onQuote={onQuote}
-                  showReplyThread={false}
-                  voteTally={voteTallies[r.nostrEventId]}
-                  myVoteCounts={myVoteCounts[r.nostrEventId]}
-                />
-              );
-            })}
-          </div>
+          <div className="space-y-[40px]">{replies.map(renderPost)}</div>
         </>
       )}
     </div>
