@@ -10,9 +10,12 @@
 // copyable identifier list in exactly this order, so "colour 07" always means
 // the same set of components.
 //
-// TEMPORARY KIT NOTE: the registry itself (and the var() indirection it
-// documents) is permanent infrastructure; the PalettePanel devtool + ForallMenu
-// "Palette" row are the temporary parts to remove once the scheme is final.
+// The registry, the var() indirection, AND the PalettePanel devtool (+ its
+// ForallMenu "Palette" row) are all permanent: the devtool is the operator
+// tuning surface behind the shipped per-feed colour schemes and settings
+// preset themes (feature-debt.md §3), and its mount effect is what hydrates
+// persisted palette/theme overrides on boot — removing it would silently stop
+// user themes applying on reload. Do not delete (CLAUDE.md).
 // =============================================================================
 
 export interface PaletteEntry {

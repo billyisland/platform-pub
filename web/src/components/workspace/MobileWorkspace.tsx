@@ -118,14 +118,20 @@ export function MobileWorkspace({
   // hide / delete keep the same feed under the reader's thumb when possible.
   const activeIndex = activeId ? Math.max(0, ids.indexOf(activeId)) : 0;
 
+  // Keyed on the id string, not the `ids` array (fresh identity every render)
+  // — otherwise this writes localStorage on every render.
+  const activeFeedId = ids[activeIndex];
   useEffect(() => {
-    const current = ids[activeIndex];
-    if (current) writeResume(userId, current);
-  }, [ids, activeIndex, userId]);
+    if (activeFeedId) writeResume(userId, activeFeedId);
+  }, [activeFeedId, userId]);
 
   const pagerRef = useRef<HTMLDivElement>(null);
-  const [dragDx, setDragDx] = useState(0);
-  const [dragging, setDragging] = useState(false);
+  // The in-flight drag writes its transform straight to the track element —
+  // a setState per touchmove would re-render every mounted page (every card
+  // on every feed) per pixel of swipe. React only renders the settled
+  // per-page positions; `settleTrack` normalises the DOM back to that form
+  // whenever a gesture ends or is abandoned.
+  const trackRef = useRef<HTMLDivElement>(null);
 
   // Gesture state lives in refs so the native listeners attach once; the
   // commit path reads the live index/count through refs too.
@@ -153,8 +159,25 @@ export function MobileWorkspace({
     const el = pagerRef.current;
     if (!el) return;
 
+    // Animate the track to a settled page position (also normalises away any
+    // in-flight drag offset written directly to the element).
+    function settleTrack(index: number) {
+      const track = trackRef.current;
+      const n = countRef.current;
+      if (!track || n < 1) return;
+      track.style.transition = "transform 240ms ease-out";
+      track.style.transform = `translateX(${(-index * 100) / n}%)`;
+    }
+
     function onTouchStart(e: TouchEvent) {
       const s = gestureRef.current;
+      if (s.claimed) {
+        // A second finger landed mid page-turn: the gesture is abandoned, so
+        // settle the track back — touchend will early-return as unclaimed and
+        // must not strand the track translated part-way between pages.
+        dragDxRef.current = 0;
+        settleTrack(activeIndexRef.current);
+      }
       s.claimed = false;
       s.vx = 0;
       if (e.touches.length !== 1 || countRef.current < 2) {
@@ -188,7 +211,7 @@ export function MobileWorkspace({
         }
         if (Math.abs(dx) > CLAIM_PX && Math.abs(dx) > Math.abs(dy) * 1.4) {
           s.claimed = true;
-          setDragging(true);
+          if (trackRef.current) trackRef.current.style.transition = "none";
         } else {
           return;
         }
@@ -204,7 +227,8 @@ export function MobileWorkspace({
       const atEdge = (i === 0 && dx > 0) || (i === n - 1 && dx < 0);
       const eff = atEdge ? dx * 0.3 : dx;
       dragDxRef.current = eff;
-      setDragDx(eff);
+      if (trackRef.current)
+        trackRef.current.style.transform = `translateX(calc(${(-i * 100) / n}% + ${eff}px))`;
     }
 
     function onTouchEnd() {
@@ -225,9 +249,12 @@ export function MobileWorkspace({
       )
         dir = -1;
       dragDxRef.current = 0;
-      setDragDx(0);
-      setDragging(false);
-      if (dir !== 0) jumpRef.current(activeIndexRef.current + dir);
+      const target = Math.max(
+        0,
+        Math.min(countRef.current - 1, activeIndexRef.current + dir),
+      );
+      settleTrack(target);
+      if (target !== activeIndexRef.current) jumpRef.current(target);
     }
 
     el.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -357,12 +384,13 @@ export function MobileWorkspace({
           </div>
         ) : (
           <div
+            ref={trackRef}
             style={{
               display: "flex",
               height: "100%",
               width: `${count * 100}%`,
-              transform: `translateX(calc(${(-activeIndex * 100) / count}% + ${dragDx}px))`,
-              transition: dragging ? "none" : "transform 240ms ease-out",
+              transform: `translateX(${(-activeIndex * 100) / count}%)`,
+              transition: "transform 240ms ease-out",
               willChange: "transform",
             }}
           >

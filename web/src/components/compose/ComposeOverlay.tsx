@@ -138,12 +138,12 @@ export function ComposeOverlay() {
       ariaLabel={mode === "reply" ? "Compose reply" : "Compose note"}
     >
       {/* Bounded-height column so the body scrolls internally rather than the
-          whole pane growing past the viewport. Separation is whitespace — no
-          internal rules (sitewide no-thin-line rule). */}
-      <div
-        className="flex flex-col"
-        style={{ maxHeight: "calc(100vh - 64px)" }}
-      >
+          whole pane growing past the viewport — sized against the pane's
+          --gh-h (the on-screen height below the dragged position), not a
+          fixed viewport calc, so dragging the pane down can't clip the
+          controls zone. Separation is whitespace — no internal rules
+          (sitewide no-thin-line rule). */}
+      <div className="flex flex-col max-h-[var(--gh-h)]">
         {/* Top zone — pr-12 keeps content clear of the floating ✕. */}
         <div className="px-6 pt-5 pb-3 pr-12">
           {mode === "reply" && replyTarget ? (

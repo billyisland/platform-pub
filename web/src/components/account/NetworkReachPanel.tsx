@@ -281,7 +281,7 @@ export function NetworkReachPanel() {
                             onChange={() => handleToggleDefault(acct)}
                             className="cursor-pointer"
                           />
-                          <span className="label-ui text-grey-500">Default on</span>
+                          <span className="label-ui text-grey-600">Default on</span>
                         </label>
                         <button onClick={() => handleDisconnect(acct.id)} className="btn-text-danger">
                           Disconnect

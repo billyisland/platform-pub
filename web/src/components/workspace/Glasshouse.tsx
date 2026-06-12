@@ -174,21 +174,29 @@ function usePanePlacement(
     return () => window.removeEventListener("resize", onResize);
   }, [maxWidth]);
 
+  // Active drag/resize listener teardown. Lives in a ref so (a) the unmount
+  // effect below can detach listeners if the pane closes mid-gesture (Escape,
+  // supersede) — otherwise the orphaned pointerup would setState on an
+  // unmounted hook and persist a position for a closed pane — and (b) a new
+  // gesture can defensively clear a previous one.
+  const gestureCleanupRef = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      gestureCleanupRef.current?.();
+      gestureCleanupRef.current = null;
+    },
+    [],
+  );
+
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    gestureCleanupRef.current?.();
     const { innerWidth: vw, innerHeight: vh } = window;
     const offX = e.clientX - pos.x;
     const offY = e.clientY - pos.y;
-    const onMove = (ev: PointerEvent) => {
-      setPos({
-        x: clampN(ev.clientX - offX, 0, maxXFor(maxWidth, vw)),
-        y: clampN(ev.clientY - offY, 0, maxYFor(vh)),
-      });
-    };
     const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      gestureCleanupRef.current?.();
       const dropped = {
         x: clampN(snap(ev.clientX - offX), 0, maxXFor(maxWidth, vw)),
         y: clampN(snap(ev.clientY - offY), 0, maxYFor(vh)),
@@ -196,13 +204,32 @@ function usePanePlacement(
       setPos(dropped);
       if (persistKey) writePos(persistKey, dropped);
     };
+    const onMove = (ev: PointerEvent) => {
+      // Button released outside the window: no pointerup ever reaches us, so
+      // the first buttonless move is the drop (else the pane rides the cursor
+      // on re-entry until the next click).
+      if ((ev.buttons & 1) === 0) {
+        onUp(ev);
+        return;
+      }
+      setPos({
+        x: clampN(ev.clientX - offX, 0, maxXFor(maxWidth, vw)),
+        y: clampN(ev.clientY - offY, 0, maxYFor(vh)),
+      });
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    gestureCleanupRef.current = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      gestureCleanupRef.current = null;
+    };
   };
 
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    gestureCleanupRef.current?.();
     const { innerWidth: vw, innerHeight: vh } = window;
     const startW = paneRef.current?.offsetWidth ?? widthFor(maxWidth, vw);
     const startH = paneRef.current?.offsetHeight ?? MIN_H;
@@ -214,16 +241,26 @@ function usePanePlacement(
       w: snap(clampN(startW + (ev.clientX - startX), MIN_W, maxW)),
       h: snap(clampN(startH + (ev.clientY - startY), MIN_H, maxH)),
     });
-    const onMove = (ev: PointerEvent) => setSize(resolve(ev));
     const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      gestureCleanupRef.current?.();
       const next = resolve(ev);
       setSize(next);
       if (persistKey) writeSize(persistKey, next);
     };
+    const onMove = (ev: PointerEvent) => {
+      if ((ev.buttons & 1) === 0) {
+        onUp(ev);
+        return;
+      }
+      setSize(resolve(ev));
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    gestureCleanupRef.current = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      gestureCleanupRef.current = null;
+    };
   };
 
   // Available on-screen height below the drop position; `--gh-h` and the pane's

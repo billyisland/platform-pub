@@ -276,6 +276,11 @@ export function WorkspaceView() {
     "loading",
   );
   const [composerOpen, setComposerOpen] = useState<false | "note">(false);
+  // Live mirror for the attach-once ⌘K handler below.
+  const composerOpenRef = useRef<false | "note">(false);
+  composerOpenRef.current = composerOpen;
+  // Monotonic sequence for overlapping reorder PUTs (see handleReorderFeeds).
+  const reorderSeqRef = useRef(0);
   // Bridge the global compose store into the workspace's local Composer. The
   // global ComposeOverlay is not mounted in the chromeless workspace, so any
   // in-workspace surface that lives outside this component requests a note
@@ -297,12 +302,15 @@ export function WorkspaceView() {
   // ⌘K / Ctrl+K opens the note composer — parity with Nav's global hotkey,
   // which can't fire here because Nav is unmounted in the chromeless
   // workspace. No-ops while the article editor overlay is up (the Glasshouse
-  // supersede rule would otherwise close it under the writer mid-article).
+  // supersede rule would otherwise close it under the writer mid-article) and
+  // while the composer is already open — clearing reply/quote targets there
+  // would silently turn a typed reply into a top-level note.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         if (useEditorOverlay.getState().isOpen) return;
         e.preventDefault();
+        if (composerOpenRef.current) return;
         setReplyTarget(null);
         setQuoteTarget(null);
         setComposerOpen("note");
@@ -618,8 +626,11 @@ export function WorkspaceView() {
   // Bulk re-rank (MOBILE-LAYOUT-ADR §VII.3). Optimistic: stamp the new ranks
   // locally so the badges renumber instantly, then reconcile with the
   // authoritative rows. On failure (409 = stale list) refetch the canonical
-  // order rather than guessing.
+  // order rather than guessing. Rapid re-ranks (held arrow key) overlap, so
+  // each call takes a sequence number and only the latest is allowed to
+  // reconcile — a stale response arriving last must not revert a newer order.
   async function handleReorderFeeds(feedIds: string[]) {
+    const seq = ++reorderSeqRef.current;
     const rankOf = new Map(feedIds.map((id, i) => [id, i + 1]));
     setVessels((prev) =>
       prev.map((v) => {
@@ -629,13 +640,15 @@ export function WorkspaceView() {
           : v;
       }),
     );
-    const applyFeeds = (feeds: WorkspaceFeed[]) =>
+    const applyFeeds = (feeds: WorkspaceFeed[]) => {
+      if (seq !== reorderSeqRef.current) return;
       setVessels((prev) =>
         prev.map((v) => {
           const f = feeds.find((x) => x.id === v.feed.id);
           return f ? { ...v, feed: f } : v;
         }),
       );
+    };
     try {
       const { feeds } = await workspaceFeedsApi.reorder(feedIds);
       applyFeeds(feeds);
@@ -831,24 +844,29 @@ export function WorkspaceView() {
 
         // One-time hide reconciliation (MOBILE-LAYOUT-ADR §V): hide used to
         // be per-device layout state. Push any pre-migration local hides up
-        // to the feed row so they don't pop back on deploy, then strip the
-        // local flag (only once the PATCH lands) so a stale flag can never
-        // re-hide a feed the user later unhid from another device.
+        // to the feed row so they don't pop back on deploy. The local flag is
+        // stripped unconditionally, before the PATCH settles — a flag that
+        // survived a failed PATCH would re-run the migration on a later
+        // bootstrap and re-hide a feed the user has since unhidden from
+        // another device. (Worst case on a transient failure: the feed stays
+        // visible and the user hides it again — strictly better than the
+        // reverse.) Feeds the server already has hidden need no PATCH.
         const legacyLayouts = useWorkspace.getState().positions;
-        const legacyHiddenIds = list
-          .filter((feed) => legacyLayouts[feed.id]?.hidden)
-          .map((feed) => feed.id);
-        if (legacyHiddenIds.length > 0) {
+        const legacyHidden = list.filter(
+          (feed) => legacyLayouts[feed.id]?.hidden,
+        );
+        if (legacyHidden.length > 0) {
+          const legacyHiddenIds = new Set(legacyHidden.map((f) => f.id));
           list = list.map((feed) =>
-            legacyHiddenIds.includes(feed.id) && !feed.hidden
+            legacyHiddenIds.has(feed.id) && !feed.hidden
               ? { ...feed, hidden: true }
               : feed,
           );
-          for (const feedId of legacyHiddenIds) {
-            workspaceFeedsApi
-              .setHidden(feedId, true)
-              .then(() => useWorkspace.getState().clearLegacyHidden(feedId))
-              .catch(() => {});
+          for (const feed of legacyHidden) {
+            useWorkspace.getState().clearLegacyHidden(feed.id);
+            if (!feed.hidden) {
+              workspaceFeedsApi.setHidden(feed.id, true).catch(() => {});
+            }
           }
         }
         const initial: VesselState[] = list.map((feed) => ({
@@ -1326,31 +1344,45 @@ export function WorkspaceView() {
           if (!feedComposerFor) return;
           // Local store repaints the vessel immediately; the server PATCH
           // persists the scheme as feed character (cross-device). The
-          // refreshed feed object keeps the vessel state in sync.
-          setVesselBrightness(feedComposerFor.id, next);
+          // refreshed feed object keeps the vessel state in sync. On failure
+          // the optimistic repaint reverts (same contract as
+          // handleSetFeedHidden) — a swallowed failure would look applied
+          // here and silently reset on the next bootstrap.
+          const feedId = feedComposerFor.id;
+          const prevScheme = positions[feedId]?.brightness;
+          setVesselBrightness(feedId, next);
           workspaceFeedsApi
-            .setAppearance(feedComposerFor.id, { scheme: next })
+            .setAppearance(feedId, { scheme: next })
             .then(({ feed }) =>
               setVessels((prev) =>
                 prev.map((v) => (v.feed.id === feed.id ? { ...v, feed } : v)),
               ),
             )
-            .catch(() => {});
+            .catch((err) => {
+              console.error("Set feed scheme failed:", err);
+              setVesselBrightness(feedId, normalizeBrightness(prevScheme));
+            });
         }}
         onDensityChange={(next) => {
           if (!feedComposerFor) return;
           // Same precedence pattern as the scheme (MOBILE-LAYOUT-ADR §VI):
           // local store repaints immediately, the server PATCH persists
-          // density as feed character, the refreshed row reconciles state.
-          setVesselDensity(feedComposerFor.id, next);
+          // density as feed character, the refreshed row reconciles state,
+          // failure reverts the repaint.
+          const feedId = feedComposerFor.id;
+          const prevDensity = positions[feedId]?.density;
+          setVesselDensity(feedId, next);
           workspaceFeedsApi
-            .setAppearance(feedComposerFor.id, { density: next })
+            .setAppearance(feedId, { density: next })
             .then(({ feed }) =>
               setVessels((prev) =>
                 prev.map((v) => (v.feed.id === feed.id ? { ...v, feed } : v)),
               ),
             )
-            .catch(() => {});
+            .catch((err) => {
+              console.error("Set feed density failed:", err);
+              setVesselDensity(feedId, prevDensity ?? DEFAULT_DENSITY);
+            });
         }}
         // Orientation is a canvas property with no spatial substrate on the
         // phone (§VI) — the control doesn't render on mobile.
