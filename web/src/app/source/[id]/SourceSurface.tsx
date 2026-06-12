@@ -2,11 +2,32 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PageShell } from "../../../components/ui/PageShell";
-import { ExternalCard } from "../../../components/feed/ExternalCard";
+import { PostCardInteractive } from "../../../components/post/PostCardInteractive";
+import { PostThread } from "../../../components/post/PostThread";
+import type { CardContext } from "../../../components/post/chassis";
+import {
+  PALETTES,
+  DEFAULT_BRIGHTNESS,
+  DEFAULT_DENSITY,
+  DEFAULT_TEXT_SIZE,
+  TEXT_SIZE_PX,
+} from "../../../components/workspace/tokens";
 import { sources, type SourceMeta } from "../../../lib/api/feeds";
-import type { ExternalFeedItem } from "../../../lib/ndk";
+import type { Post } from "../../../lib/post/types";
+import { useCompose } from "../../../stores/compose";
 import { ApiError } from "../../../lib/api/client";
+
+// =============================================================================
+// /source/:id — the external source surface (CARD-BEHAVIOUR-ADR §VI.2).
+//
+// Source meta header + a chronological full-view PostCard log from
+// GET /sources/:id. Rendered through the one Post-model path (PostCardInteractive
+// / PostThread), exactly like AuthorProfileView — external posts expand inline to
+// the unified thread; nothing routes out to the origin platform from a card body.
+// Shared by the standalone /source/:id page and the workspace SurfaceOverlay.
+// =============================================================================
 
 const PROTOCOL_LABELS: Record<string, string> = {
   rss: "VIA RSS",
@@ -16,50 +37,22 @@ const PROTOCOL_LABELS: Record<string, string> = {
   email: "VIA EMAIL",
 };
 
-// Mirrors FeedView's external mapping — the /sources endpoint returns the same
-// shape the timeline does.
-function mapExternal(item: any): ExternalFeedItem {
-  return {
-    type: "external",
-    id: item.id,
-    externalSourceId: item.externalSourceId,
-    sourceProtocol: item.sourceProtocol,
-    sourceItemUri: item.sourceItemUri,
-    authorName: item.authorName,
-    authorHandle: item.authorHandle,
-    authorAvatarUrl: item.authorAvatarUrl,
-    authorUri: item.authorUri,
-    contentText: item.contentText,
-    contentHtml: item.contentHtml,
-    title: item.title,
-    summary: item.summary,
-    sourceReplyUri: item.sourceReplyUri ?? null,
-    sourceQuoteUri: item.sourceQuoteUri ?? null,
-    contentWarning: item.contentWarning ?? null,
-    poll: item.poll ?? null,
-    audience: item.audience ?? null,
-    likeCount: item.likeCount ?? 0,
-    replyCount: item.replyCount ?? 0,
-    repostCount: item.repostCount ?? 0,
-    media: item.media ?? [],
-    publishedAt: item.publishedAt,
-    sourceName: item.sourceName,
-    sourceAvatar: item.sourceAvatar,
-    pipStatus: item.pipStatus ?? "unknown",
-    isReply: item.isReply ?? false,
-    replyToAuthor: item.replyToAuthor,
-    biddabilityTier: item.biddabilityTier ?? "D",
-  } as ExternalFeedItem;
-}
+const CTX: CardContext = {
+  density: DEFAULT_DENSITY,
+  palette: PALETTES[DEFAULT_BRIGHTNESS],
+  bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
+};
 
 export function SourceSurface({ id }: { id: string }) {
+  const router = useRouter();
   const [source, setSource] = useState<SourceMeta | null>(null);
-  const [items, setItems] = useState<ExternalFeedItem[]>([]);
+  const [items, setItems] = useState<Post[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +64,7 @@ export function SourceSurface({ id }: { id: string }) {
       .then((res) => {
         if (cancelled) return;
         setSource(res.source);
-        setItems(res.items.map(mapExternal));
+        setItems(res.items);
         setCursor(res.nextCursor);
       })
       .catch((err) => {
@@ -93,12 +86,44 @@ export function SourceSurface({ id }: { id: string }) {
     sources
       .get(id, cursor)
       .then((res) => {
-        setItems((prev) => [...prev, ...res.items.map(mapExternal)]);
+        setItems((prev) => [...prev, ...res.items]);
         setCursor(res.nextCursor);
       })
       .catch(() => setError(true))
       .finally(() => setLoadingMore(false));
   }, [id, cursor, loadingMore]);
+
+  const toggleExpand = useCallback((postId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(postId)) next.delete(postId);
+      else next.add(postId);
+      return next;
+    });
+  }, []);
+
+  // Article → its addressable reader page (no overlay is mounted off-workspace).
+  const openReader = useCallback(
+    (p: Post) => {
+      if (p.author.pubkey) {
+        if (p.dTag) router.push(`/article/${p.dTag}`);
+      } else {
+        router.push(`/reader/${p.id}`);
+      }
+    },
+    [router],
+  );
+
+  // Native reply via the global compose overlay (mounted in app/layout).
+  const replyFromPost = useCallback((p: Post) => {
+    if (!p.author.pubkey) return;
+    useCompose.getState().open("reply", {
+      eventId: p.version ?? p.id,
+      eventKind: p.type === "article" ? 30023 : 1,
+      authorPubkey: p.author.pubkey,
+      previewContent: (p.body.text ?? "").slice(0, 120),
+    });
+  }, []);
 
   if (loading) {
     return (
@@ -156,9 +181,31 @@ export function SourceSurface({ id }: { id: string }) {
         </div>
       ) : (
         <div className="space-y-[40px]">
-          {items.map((item) => (
-            <ExternalCard key={item.id} item={item} />
-          ))}
+          {items.map((post) =>
+            expanded.has(post.id) && post.type !== "article" ? (
+              <PostThread
+                key={post.id}
+                rootPostId={post.id}
+                ctx={CTX}
+                onCollapse={() => toggleExpand(post.id)}
+                onReply={replyFromPost}
+                onOpenReader={openReader}
+              />
+            ) : (
+              <PostCardInteractive
+                key={post.id}
+                post={post}
+                level="feed"
+                expanded={false}
+                ctx={CTX}
+                onExpand={() => toggleExpand(post.id)}
+                onOpenReader={openReader}
+                onReply={
+                  post.author.pubkey ? () => replyFromPost(post) : undefined
+                }
+              />
+            ),
+          )}
         </div>
       )}
 

@@ -2,18 +2,16 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
-import {
-  FEED_SELECT,
-  FEED_JOINS,
-  feedItemToResponse,
-  parseCursor,
-} from "./timeline.js";
+import { FEED_SELECT, FEED_JOINS, parseCursor } from "./timeline.js";
+import { POST_SELECT, POST_JOINS, feedItemToPost } from "../lib/post-mapper.js";
 
 // =============================================================================
 // External source surface (CARD-BEHAVIOUR-ADR §VI.2)
 //
 // GET /sources/:id — canonical metadata for one external source plus a
-// chronological page of its items. This is the destination for an external
+// chronological page of its items, projected as the unified Post model
+// (UNIVERSAL-POST-ADR §9) so the surface renders through the one PostCard path,
+// exactly like GET /author/:id/posts. This is the destination for an external
 // card's byline click: the all.haus source surface, not the origin platform
 // and not a per-person constructed profile (§VI.3, deferred).
 // =============================================================================
@@ -77,9 +75,10 @@ export async function sourcesRoutes(app: FastifyInstance) {
 
         const result = await pool.query<any>(
           `
-          SELECT ${FEED_SELECT}
+          SELECT ${FEED_SELECT}${POST_SELECT}
           FROM feed_items fi
           ${FEED_JOINS}
+          ${POST_JOINS}
           WHERE fi.deleted_at IS NULL
             AND fi.item_type = 'external'
             AND fi.source_id = $1
@@ -91,8 +90,13 @@ export async function sourcesRoutes(app: FastifyInstance) {
           params,
         );
 
-        const items = result.rows.map(feedItemToResponse);
-        const lastRow = result.rows[result.rows.length - 1];
+        const items = result.rows.map(feedItemToPost);
+        // Only hand out a cursor when the page was full — a short page is the
+        // last page (mirrors GET /author/:id/posts).
+        const lastRow =
+          result.rows.length === limit
+            ? result.rows[result.rows.length - 1]
+            : undefined;
         const nextCursor = lastRow
           ? `${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
           : undefined;

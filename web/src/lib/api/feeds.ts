@@ -1,4 +1,5 @@
 import { request } from "./client";
+import type { Post } from "../post/types";
 
 // Workspace feeds — owner-private feed objects, one per ⊔ vessel. Slice 4
 // adds source CRUD; the items endpoint now honours source rows.
@@ -476,8 +477,9 @@ export interface SourceMeta {
 
 export interface SourceSurfaceResponse {
   source: SourceMeta;
-  // External feed items, same shape the timeline returns; mapped client-side.
-  items: unknown[];
+  // Unified Post model (UNIVERSAL-POST-ADR §9), rendered through PostCard —
+  // same shape GET /author/:id/posts returns.
+  items: Post[];
   nextCursor?: string;
 }
 
