@@ -18,7 +18,6 @@ import Link from "next/link";
 import { ProfileLink } from "../ui/ProfileLink";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../stores/auth";
-import { FeedDial } from "../social/FeedDial";
 import { DmFeeSettings } from "../social/DmFeeSettings";
 import { BlockList } from "../social/BlockList";
 import { MuteList } from "../social/MuteList";
@@ -133,9 +132,6 @@ export function NetworkPanel({
 
       {/* Always-visible settings */}
       <div className="space-y-8 mb-8">
-        <section className="bg-white px-6 py-5">
-          <FeedDial />
-        </section>
         <section className="bg-white px-6 py-5">
           <DmFeeSettings />
         </section>

@@ -12,7 +12,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
-import { SubscribeInput } from '../feed/SubscribeInput'
+import { SubscribeInput } from './SubscribeInput'
 import { feeds, type ExternalSubscription } from '../../lib/api'
 import { formatDateRelative } from '../../lib/format'
 import { PageHeader } from '../ui/PageShell'

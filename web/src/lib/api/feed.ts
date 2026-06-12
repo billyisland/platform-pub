@@ -1,13 +1,9 @@
 import { request } from './client'
 
-export type FeedReach = 'following' | 'explore'
-
-export const feed = {
-  get: (reach: FeedReach, cursor?: number, limit?: number) =>
-    request<{ items: any[]; reach: FeedReach }>(
-      `/feed?reach=${reach}${cursor ? `&cursor=${cursor}` : ''}${limit ? `&limit=${limit}` : ''}`
-    ),
-}
+// The legacy global `GET /feed?reach=` timeline + its `FeedReach` type were
+// retired with the FeedView card stack (FEED-RETIREMENT Slice 7). Global reach
+// now lives as composable `reach:following` / `reach:explore` feed sources.
+// This module survives only for the replies API below.
 
 // =============================================================================
 // Replies

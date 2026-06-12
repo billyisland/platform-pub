@@ -201,12 +201,12 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
 
       {/* Email ingest address */}
       {emailIngestAddress && (
-        <div className="mt-2 border border-grey-200 p-4">
+        <div className="mt-2 bg-grey-100 p-4">
           <p className="text-ui-sm font-semibold text-black mb-2">
             Subscribe to {emailSourceName} using this address:
           </p>
           <div className="flex items-center gap-2">
-            <code className="text-mono-xs bg-grey-100 px-2 py-1.5 flex-1 truncate">
+            <code className="text-mono-xs bg-white px-2 py-1.5 flex-1 truncate">
               {emailIngestAddress}
             </code>
             <button
@@ -226,7 +226,7 @@ export function SubscribeInput({ onSubscribed }: SubscribeInputProps) {
 
       {/* Match results */}
       {result && result.matches.length > 0 && !success && (
-        <div className="mt-2 border border-grey-200">
+        <div className="mt-2 space-y-1">
           {result.matches.map((match, i) => (
             <MatchRow
               key={i}
@@ -293,7 +293,7 @@ function MatchRow({
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 border-b border-grey-200 last:border-b-0">
+    <div className="flex items-center justify-between px-4 py-2.5 bg-grey-100">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-ui-sm font-semibold text-black truncate">
