@@ -24,7 +24,12 @@
 - **The Post chassis has no inline delete affordance** (neither does `AuthorProfileView` nor the workspace cards — `PostActions` carries Vote/Reply/Quote/Report only). Slice 2 therefore dropped the legacy NoteCard per-note delete on one's own profile. This is a uniform Post-model gap, not a Slice-2 regression — but it IS a real capability loss across the consolidated world. Decide separately whether to grow a delete action into the chassis before Slice 7 deletes the legacy cards for good.
 - `commentToPost`/`CommentRow` now live in `gateway/src/lib/post-mapper.ts` (Slice 6's "extract shared SQL" instinct, done early for this one).
 
-**Slice 3 — OPEN product detail (operator, unanswered):** once `reach:following`/`reach:explore` are composable source kinds, how do existing + new accounts *get* reach after `/feed` dies? Candidates: **auto-seed a Following feed** on first visit/signup (closest to today's `/feed` default) · **composer-only, no auto-seed** (purest composed-vessel model; empty vessels already fall back to `placeholderExploreItems`) · **auto-seed Following + Explore** (most hand-holding). Resolve before building Slice 3.
+**Slice 3 seeding — DECIDED (operator, 2026-06-12): starter-feed clone.** A new account does **not** auto-seed a bare `reach:following` vessel — a brand-new user follows nobody, so it would be empty. Instead it starts with a **clone of a designated operator feed**: a real `feeds` row owned by the new user, with the template's `feed_sources` + `appearance` copied, labelled as a clone, which they can rename, add to, drop sources from, or delete at will. A real owned feed, not a special-cased object — so no bespoke "default feed" machinery, just a copy operation. This sidesteps the cold-start emptiness all three reach-only candidates had. `reach:following`/`reach:explore` remain the composable source kinds from Slice 0(a) (a starter template *may* include `reach:following`), but they are no longer the cold-start answer.
+
+Open sub-decisions before building (recommended defaults in **bold**):
+- **Template designation** — which operator feed is the starter? **`feeds.is_starter_template` boolean** the operator toggles (feed-character-as-data, multiple allowed later, no redeploy to change), vs a config `STARTER_FEED_ID` UUID.
+- **Clone label** — "labelled as such": **set the name at clone time** (e.g. the template's name, or "<name> (starter)") and leave it fully editable; optionally a `cloned_from_feed_id` provenance column if the UI wants to render "cloned from Ed's feed" durably.
+- **Trigger** — **clone at signup**, plus a **zero-feeds guard on workspace bootstrap** (idempotent) so existing accounts and any signup that raced the seed aren't stranded on an empty workspace.
 
 ---
 
@@ -101,13 +106,14 @@ Decision needed from the operator before Slice 3 lands. Nothing else blocks on i
 
 ### Slice 3 — Close the front door, retire `/feed`
 
-Slice 0 decided **option (a)**: build `reach:following`/`reach:explore` as composable source kinds (plumb `feed_sources` + `feeds.ts` + FeedComposer; reuse the `GET /feed/:feedId` projector). **Still blocked on the reach-seeding detail in §0** — users arriving at the workspace must find their reach.
+Slice 0 decided **option (a)**: build `reach:following`/`reach:explore` as composable source kinds (plumb `feed_sources` + `feeds.ts` + FeedComposer; reuse the `GET /feed/:feedId` projector). Cold-start seeding is **DECIDED: starter-feed clone** (§0) — not a reach-only default.
 
+- **Starter-feed clone (seeding):** a feed-clone operation (new `feeds` row owned by the newcomer + copied `feed_sources` + `appearance`), a way to designate the template operator feed (recommend `feeds.is_starter_template` boolean), and the trigger (recommend: clone at signup + a zero-feeds guard on workspace bootstrap). Labelled as a clone, fully editable/renamable/deletable. See §0 sub-decisions.
 - Repoint post-auth: `auth/page.tsx` ×2 + `auth/verify/page.tsx` → `/workspace`.
 - `/feed` becomes a redirect shim to `/workspace` (standard retired-route pattern, CLAUDE.md).
-- Remove the four `Nav.tsx` `/feed` links; update fallback CTAs (`SourceSurface`, `AuthorProfileView`, `/library`, `/network`) to `/workspace`.
+- Remove the four `Nav.tsx` `/feed` links **and the topbar search box's `/search` push** (Slice 4 carry-forward); update fallback CTAs (`SourceSurface`, `AuthorProfileView`, `/library`, `/network`) to `/workspace`.
 - Drop the `feedReach` localStorage key handling.
-- Accept: no live `href`/`push` to `/feed` outside the shim; logging in lands on the workspace.
+- Accept: no live `href`/`push` to `/feed` outside the shim; logging in lands on the workspace; a fresh account opens onto a populated starter feed.
 
 ### Slice 4 — Port `/tag`, retire `/search` — ✅ SHIPPED (§0)
 
