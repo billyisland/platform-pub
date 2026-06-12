@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
 export default function HistoryRedirect() {
-  redirect('/library?tab=history')
+  redirect('/workspace?overlay=library&tab=history')
 }

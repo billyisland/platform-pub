@@ -8,6 +8,9 @@ import { useDashboardOverlay } from "../../stores/dashboardOverlay";
 import { useNotificationsOverlay } from "../../stores/notificationsOverlay";
 import { useLedgerOverlay } from "../../stores/ledgerOverlay";
 import { useSettingsOverlay } from "../../stores/settingsOverlay";
+import { useLibraryOverlay } from "../../stores/libraryOverlay";
+import { useNetworkOverlay } from "../../stores/networkOverlay";
+import { useSubscriptionsOverlay } from "../../stores/subscriptionsOverlay";
 import { usePaletteDevtool } from "../../stores/paletteDevtool";
 import { SearchPanel } from "./SearchPanel";
 
@@ -106,6 +109,24 @@ export function ForallMenu({
       kind: "overlay",
       onOpen: () => useDashboardOverlay.getState().open(),
       label: "Dashboard",
+      count: 0,
+    },
+    {
+      kind: "overlay",
+      onOpen: () => useLibraryOverlay.getState().open(),
+      label: "Library",
+      count: 0,
+    },
+    {
+      kind: "overlay",
+      onOpen: () => useNetworkOverlay.getState().open(),
+      label: "Network",
+      count: 0,
+    },
+    {
+      kind: "overlay",
+      onOpen: () => useSubscriptionsOverlay.getState().open(),
+      label: "Subscriptions",
       count: 0,
     },
     {

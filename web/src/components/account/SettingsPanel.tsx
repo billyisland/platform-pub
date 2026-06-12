@@ -18,6 +18,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
 import { invalidateLinkedAccounts } from '../../hooks/useLinkedAccounts'
+import { ProfileSection } from './ProfileSection'
 import { EmailChange } from './EmailChange'
 import { PaymentSection } from './PaymentSection'
 import { NetworkReachPanel } from './NetworkReachPanel'
@@ -90,6 +91,8 @@ export function SettingsPanel({
             {banner.msg}
           </div>
         )}
+
+        <ProfileSection />
 
         <EmailChange />
 

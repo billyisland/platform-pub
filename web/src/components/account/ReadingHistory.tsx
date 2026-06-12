@@ -4,11 +4,17 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ProfileLink } from '../ui/ProfileLink'
 import { readingHistory, type ReadingHistoryItem } from '../../lib/api'
+import { useReader } from '../../stores/reader'
+import { useLibraryOverlay } from '../../stores/libraryOverlay'
 import { Avatar } from '../ui/Avatar'
 
 const PAGE_SIZE = 20
 
-export function ReadingHistory() {
+// `inOverlay` is set when ReadingHistory renders inside the workspace Library
+// overlay: article titles open the reader in place (useReader.openNative)
+// instead of routing to the article page, which would mount the black topbar
+// and escape the workspace (CLAUDE.md: no workspace escapes).
+export function ReadingHistory({ inOverlay = false }: { inOverlay?: boolean }) {
   const [items, setItems] = useState<ReadingHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -38,10 +44,16 @@ export function ReadingHistory() {
     return null
   }
 
+  function openInReader(item: ReadingHistoryItem) {
+    if (!item.dTag) return
+    useLibraryOverlay.getState().close()
+    useReader.getState().openNative(item.dTag)
+  }
+
   return (
     <div className="mb-10">
       <p className="label-ui text-grey-400 mb-4">Reading history</p>
-      <div className="bg-white divide-y divide-grey-200/50">
+      <div className="bg-white">
         {items.map(item => {
           const href = articleHref(item)
           return (
@@ -54,7 +66,15 @@ export function ReadingHistory() {
                 <Avatar src={item.writer.avatar} name={item.writer.displayName || '?'} size={28} />
               )}
               <div className="min-w-0 flex-1">
-                {href ? (
+                {inOverlay && item.dTag ? (
+                  <button
+                    type="button"
+                    onClick={() => openInReader(item)}
+                    className="block text-left text-ui-sm text-black hover:opacity-70 line-clamp-1"
+                  >
+                    {item.title || 'Untitled'}
+                  </button>
+                ) : href ? (
                   <Link href={href} className="text-ui-sm text-black hover:opacity-70 line-clamp-1">
                     {item.title || 'Untitled'}
                   </Link>

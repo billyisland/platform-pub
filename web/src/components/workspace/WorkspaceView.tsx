@@ -54,6 +54,9 @@ import { DashboardOverlay } from "./DashboardOverlay";
 import { NotificationsOverlay } from "./NotificationsOverlay";
 import { LedgerOverlay } from "./LedgerOverlay";
 import { SettingsOverlay } from "./SettingsOverlay";
+import { LibraryOverlay } from "./LibraryOverlay";
+import { NetworkOverlay } from "./NetworkOverlay";
+import { SubscriptionsOverlay } from "./SubscriptionsOverlay";
 import { useReader } from "../../stores/reader";
 import { useCompose } from "../../stores/compose";
 import { useEditorOverlay } from "../../stores/editorOverlay";
@@ -1519,6 +1522,9 @@ export function WorkspaceView() {
       <NotificationsOverlay />
       <LedgerOverlay />
       <SettingsOverlay />
+      <LibraryOverlay />
+      <NetworkOverlay />
+      <SubscriptionsOverlay />
     </Floor>
   );
 }

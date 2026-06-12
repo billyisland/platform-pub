@@ -1,154 +1,18 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useAuth } from '../../stores/auth'
-import { bookmarks as bookmarksApi, type BookmarkedArticle } from '../../lib/api'
-import { BookmarkButton } from '../../components/ui/BookmarkButton'
-import { ReadingHistory } from '../../components/account/ReadingHistory'
-import { formatDateRelative, truncateText, stripMarkdown } from '../../lib/format'
-import { PageShell } from '../../components/ui/PageShell'
-
-type LibraryTab = 'bookmarks' | 'history'
-
-export default function LibraryPage() {
-  const { user, loading: authLoading } = useAuth()
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const initialTab = searchParams.get('tab') === 'history' ? 'history' : 'bookmarks'
-  const [tab, setTab] = useState<LibraryTab>(initialTab)
-
-  useEffect(() => { if (!authLoading && !user) router.push('/auth?mode=login') }, [user, authLoading, router])
-
-  function switchTab(t: LibraryTab) {
-    setTab(t)
-    const url = new URL(window.location.href)
-    url.searchParams.set('tab', t)
-    window.history.replaceState({}, '', url.toString())
-  }
-
-  if (authLoading || !user) {
-    return (
-      <PageShell width="feed">
-        <div className="h-8 w-40 animate-pulse bg-white mb-10" />
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse bg-white" />)}
-        </div>
-      </PageShell>
-    )
-  }
-
-  return (
-    <PageShell width="feed" title="Library">
-      <div className="flex gap-2 mb-8">
-        {(['bookmarks', 'history'] as LibraryTab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => switchTab(t)}
-            className={`tab-pill ${tab === t ? 'tab-pill-active' : 'tab-pill-inactive'}`}
-          >
-            {t === 'bookmarks' ? 'Bookmarks' : 'History'}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'bookmarks' && <BookmarksTab />}
-      {tab === 'history' && <ReadingHistory />}
-    </PageShell>
-  )
-}
-
-function BookmarksTab() {
-  const [articles, setArticles] = useState<BookmarkedArticle[]>([])
-  const [loading, setLoading] = useState(true)
-  const [hasMore, setHasMore] = useState(false)
-  const [offset, setOffset] = useState(0)
-
-  const loadBookmarks = useCallback(async (newOffset: number) => {
-    try {
-      const res = await bookmarksApi.list(20, newOffset)
-      if (newOffset === 0) {
-        setArticles(res.articles)
-      } else {
-        setArticles(prev => [...prev, ...res.articles])
-      }
-      setHasMore(res.hasMore)
-      setOffset(newOffset + res.articles.length)
-    } catch { /* silent */ }
-    finally { setLoading(false) }
-  }, [])
-
-  useEffect(() => { void loadBookmarks(0) }, [loadBookmarks])
-
-  if (loading) {
-    return (
-      <div className="space-y-3">
-        {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse bg-white" />)}
-      </div>
-    )
-  }
-
-  if (articles.length === 0) {
-    return (
-      <div className="py-20 text-center">
-        <p className="text-ui-sm text-grey-400 mb-4">No bookmarks yet.</p>
-        <Link href="/workspace" className="btn-text underline underline-offset-4">
-          Go to workspace
-        </Link>
-      </div>
-    )
-  }
-
-  return (
-    <div className="divide-y-2 divide-grey-200">
-      {articles.map(a => (
-        <BookmarkCard
-          key={a.nostr_event_id}
-          article={a}
-          onRemoved={(id) => setArticles(prev => prev.filter(x => x.nostr_event_id !== id))}
-        />
-      ))}
-      {hasMore && (
-        <div className="py-6 text-center">
-          <button
-            onClick={() => loadBookmarks(offset)}
-            className="btn-text underline underline-offset-4"
-          >
-            Load more
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function BookmarkCard({
-  article: a,
-  onRemoved,
+// The library (bookmarks + reading history) is now a workspace Glasshouse
+// overlay (opened from the ForallMenu or via /workspace?overlay=library). This
+// route is retained only as a compatibility shim: old links and bookmarks
+// pointing at /library — and the /bookmarks, /history, /reading-history shims
+// before it — redirect into the workspace with the overlay opened, forwarding
+// ?tab=history. See the deep-link dispatcher in WorkspaceView.
+export default function LibraryPage({
+  searchParams,
 }: {
-  article: BookmarkedArticle
-  onRemoved: (nostrEventId: string) => void
+  searchParams: { tab?: string | string[] }
 }) {
-  const publishedAt = a.published_at ? Math.floor(new Date(a.published_at).getTime() / 1000) : 0
-  const excerpt = a.summary ? truncateText(stripMarkdown(a.summary), 120) : ''
-
-  return (
-    <Link href={`/article/${a.nostr_d_tag}`} className="block bg-white px-6 py-4 hover:bg-grey-50 transition-colors">
-      <p className="label-ui text-grey-300 mb-1">
-        {a.author_display_name ?? a.author_username}
-        {publishedAt > 0 && (
-          <> · {formatDateRelative(publishedAt)}</>
-        )}
-      </p>
-      <h2 className="font-serif text-lg text-black leading-snug">
-        {a.title}
-      </h2>
-      {excerpt && (
-        <p className="text-ui-sm text-grey-600 mt-1 leading-relaxed">
-          {excerpt}
-        </p>
-      )}
-    </Link>
-  )
+  const params = new URLSearchParams({ overlay: 'library' })
+  const tab = Array.isArray(searchParams.tab) ? searchParams.tab[0] : searchParams.tab
+  if (tab === 'history') params.set('tab', 'history')
+  redirect(`/workspace?${params.toString()}`)
 }
