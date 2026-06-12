@@ -1,6 +1,6 @@
 # FEED-RETIREMENT-PLAN — retire the legacy `/feed` model
 
-**Status:** In progress — Slices 1, 2 & 4 shipped 2026-06-12; Slice 0 decided (option a); Slice 3 has one open product detail (reach-seeding, below).
+**Status:** In progress — Slices 1, 2 & 4 shipped 2026-06-12; Slice 0 decided (option a); Slice 3 fully specced & unblocked (seeding = starter-feed clone; all sub-decisions DECIDED in §0) — ready to build next session. Independent work remaining: Slice 5 (overlays), Slice 6.1 (extract shared SQL).
 **Date:** 2026-06-12
 **Provenance:** feature-debt.md §4 readiness assessment (2026-06-12), re-verified against the codebase the same day. UNIVERSAL-POST-ADR §10 Phase 5 deliberately scoped the Post-model cutover to the workspace and named "a later `/feed`+`/source`-scoped pass"; this is that pass.
 **Goal:** `/workspace` becomes the entirety of logged-in all.haus. Every surface renders cards through the one Post-model path (`web/src/components/post/`); the legacy `components/feed/` card stack and its gateway endpoints are deleted.
@@ -26,10 +26,10 @@
 
 **Slice 3 seeding — DECIDED (operator, 2026-06-12): starter-feed clone.** A new account does **not** auto-seed a bare `reach:following` vessel — a brand-new user follows nobody, so it would be empty. Instead it starts with a **clone of a designated operator feed**: a real `feeds` row owned by the new user, with the template's `feed_sources` + `appearance` copied, labelled as a clone, which they can rename, add to, drop sources from, or delete at will. A real owned feed, not a special-cased object — so no bespoke "default feed" machinery, just a copy operation. This sidesteps the cold-start emptiness all three reach-only candidates had. `reach:following`/`reach:explore` remain the composable source kinds from Slice 0(a) (a starter template *may* include `reach:following`), but they are no longer the cold-start answer.
 
-Open sub-decisions before building (recommended defaults in **bold**):
-- **Template designation** — which operator feed is the starter? **`feeds.is_starter_template` boolean** the operator toggles (feed-character-as-data, multiple allowed later, no redeploy to change), vs a config `STARTER_FEED_ID` UUID.
-- **Clone label** — "labelled as such": **set the name at clone time** (e.g. the template's name, or "<name> (starter)") and leave it fully editable; optionally a `cloned_from_feed_id` provenance column if the UI wants to render "cloned from Ed's feed" durably.
-- **Trigger** — **clone at signup**, plus a **zero-feeds guard on workspace bootstrap** (idempotent) so existing accounts and any signup that raced the seed aren't stranded on an empty workspace.
+Sub-decisions — DECIDED (operator, 2026-06-12):
+- **Template designation** → **`feeds.is_starter_template` boolean** the operator toggles (feed-character-as-data; multiple templates allowed later; no redeploy to change). Migration adds the column. **The operator must flag ≥1 of their own feeds as a template before this works** — wire a small operator toggle (or set the flag via SQL).
+- **Clone label** → **name set at clone time** (the template's name; the clone is fully editable/renamable afterwards) **plus a `cloned_from_feed_id` provenance column** (nullable FK → `feeds`) so the UI can durably render "cloned from <operator>'s feed". Same migration.
+- **Trigger** → **clone at signup, plus a zero-feeds guard on workspace bootstrap** (idempotent) so existing accounts — and any signup that raced the seed — aren't stranded on an empty workspace.
 
 ---
 
@@ -106,12 +106,20 @@ Decision needed from the operator before Slice 3 lands. Nothing else blocks on i
 
 ### Slice 3 — Close the front door, retire `/feed`
 
-Slice 0 decided **option (a)**: build `reach:following`/`reach:explore` as composable source kinds (plumb `feed_sources` + `feeds.ts` + FeedComposer; reuse the `GET /feed/:feedId` projector). Cold-start seeding is **DECIDED: starter-feed clone** (§0) — not a reach-only default.
+All sub-decisions are now DECIDED (Slice 0 = option (a); seeding = starter-feed clone; the three clone sub-decisions in §0). This slice is unblocked — build it directly. Two largely-independent workstreams (**A** reach source kinds, **B** starter-clone seeding) plus the front-door repoint (**C**); B+C are the part that actually retires `/feed`, A can land alongside or just after.
 
-- **Starter-feed clone (seeding):** a feed-clone operation (new `feeds` row owned by the newcomer + copied `feed_sources` + `appearance`), a way to designate the template operator feed (recommend `feeds.is_starter_template` boolean), and the trigger (recommend: clone at signup + a zero-feeds guard on workspace bootstrap). Labelled as a clone, fully editable/renamable/deletable. See §0 sub-decisions.
-- Repoint post-auth: `auth/page.tsx` ×2 + `auth/verify/page.tsx` → `/workspace`.
+**A — reach as a composable source kind.** `feed_sources.source_type` today is CHECK-constrained to `{account, publication, external_source, tag}` (see `feed_sources_source_type_check` + `feed_sources_target_matches_type` in `schema.sql`). Add a `reach` type carrying a discriminator (e.g. a `reach_kind text` column or reuse `tag_name`-style scalar) for `following`/`explore`; grow both CHECK constraints. Plumb through `gateway/src/routes/feeds.ts` (the `/workspace/feeds/:id/sources` CRUD + the items SELECT) and the FeedComposer source picker. The items query for a `reach` source reuses the existing `GET /feed/:feedId` projector (`post-feed.ts`, `feedId ∈ {following, explore}`) — wire it into the feed-items assembly rather than re-implementing scoring. Migration + regenerate `schema.sql` + drift guard (CLAUDE.md).
+
+**B — starter-feed clone (seeding).** 
+1. Migration: `feeds.is_starter_template boolean DEFAULT false`, `feeds.cloned_from_feed_id uuid REFERENCES feeds(id)` nullable. Regenerate `schema.sql` + drift guard.
+2. A clone operation in `feeds.ts`: given a template feed id + new owner, INSERT a `feeds` row (copy `name`, `appearance`; fresh `owner_id`; set `cloned_from_feed_id`; assign `sort_rank`) + copy every `feed_sources` row (all four/five source_types, incl. any reach rows once A lands) under the new feed id. One transaction.
+3. Trigger at signup (the account-creation path) → clone the template(s) flagged `is_starter_template`. Plus a zero-feeds guard on workspace bootstrap (the feed-list load) that clones if the account owns no feeds — idempotent, covers existing accounts + raced signups.
+4. Operator affordance to flag a template feed (small toggle, or document the SQL). **Prereq: ≥1 feed flagged before this does anything.**
+
+**C — close the front door.**
+- Repoint post-auth: `auth/page.tsx` ×2 (`:33,:71`) + `auth/verify/page.tsx` (`:42`) → `/workspace`.
 - `/feed` becomes a redirect shim to `/workspace` (standard retired-route pattern, CLAUDE.md).
-- Remove the four `Nav.tsx` `/feed` links **and the topbar search box's `/search` push** (Slice 4 carry-forward); update fallback CTAs (`SourceSurface`, `AuthorProfileView`, `/library`, `/network`) to `/workspace`.
+- Remove the four `Nav.tsx` `/feed` links **and the topbar search box's `/search` push** (`Nav.tsx:262,:268` — Slice 4 carry-forward); update fallback CTAs (`SourceSurface` `/feed` link at `:141`, `AuthorProfileView`, `/library`, `/network`) to `/workspace`.
 - Drop the `feedReach` localStorage key handling.
 - Accept: no live `href`/`push` to `/feed` outside the shim; logging in lands on the workspace; a fresh account opens onto a populated starter feed.
 
