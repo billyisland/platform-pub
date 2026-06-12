@@ -7,8 +7,10 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // outbound_token_refresh — daemon-style cron job
 //
 // Walks network_presences and refreshes any OAuth credentials that are inside
-// the configured refresh window. Only 'linked' presences carry OAuth tokens;
-// 'concierge' presences sign via key-custody and have no session to refresh.
+// the configured refresh window. Branching is on custody, not provenance
+// (NETWORK-CONCIERGE-ADR): 'linked' and 'assisted' presences both carry OAuth
+// sessions; only 'concierge' presences sign via key-custody and have no
+// session to refresh.
 // Mastodon tokens issued by the standard /oauth/token endpoint do not expire
 // (the Mastodon docs are explicit) and have no refresh_token, so they are
 // skipped here. The job is load-bearing for linked Bluesky, since AT Protocol
@@ -36,7 +38,7 @@ export const outboundTokenRefresh: Task = async () => {
     SELECT id, protocol, handle, token_expires_at
     FROM network_presences
     WHERE is_valid = TRUE
-      AND provenance = 'linked'
+      AND provenance <> 'concierge'
       AND lifecycle_state = 'active'
       AND credentials_enc IS NOT NULL
       AND token_expires_at IS NOT NULL
@@ -72,7 +74,7 @@ export const outboundTokenRefresh: Task = async () => {
            EXISTS (SELECT 1 FROM atproto_oauth_sessions s WHERE s.did = la.external_id) AS has_session
     FROM network_presences la
     WHERE la.protocol = 'atproto'
-      AND la.provenance = 'linked'
+      AND la.provenance <> 'concierge'
       AND la.lifecycle_state = 'active'
       AND la.is_valid = TRUE
       AND (la.last_refreshed_at IS NULL OR la.last_refreshed_at < now() - INTERVAL '7 days')
