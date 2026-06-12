@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict PFrdg2BXzqN20V0kgJEiXQ1dCCf9rXAeTxcIk2gEOh7OZ4St7Qbv9QZ79gCHG7O
+\restrict 80HOYNhPTSll5TmlSWOqsumRMysCNaaBvQUOSyJrOrCCxcrKn6mfnYVUDJBr60n
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1460,10 +1460,12 @@ CREATE TABLE public.feed_sources (
     muted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     exclude_replies boolean DEFAULT false NOT NULL,
+    reach_kind text,
+    CONSTRAINT feed_sources_reach_kind_check CHECK (((reach_kind IS NULL) OR (reach_kind = ANY (ARRAY['following'::text, 'explore'::text])))),
     CONSTRAINT feed_sources_sampling_mode_check CHECK ((sampling_mode = ANY (ARRAY['chronological'::text, 'scored'::text, 'random'::text]))),
-    CONSTRAINT feed_sources_source_type_check CHECK ((source_type = ANY (ARRAY['account'::text, 'publication'::text, 'external_source'::text, 'tag'::text]))),
+    CONSTRAINT feed_sources_source_type_check CHECK ((source_type = ANY (ARRAY['account'::text, 'publication'::text, 'external_source'::text, 'tag'::text, 'reach'::text]))),
     CONSTRAINT feed_sources_tag_name_length CHECK (((tag_name IS NULL) OR ((char_length(tag_name) >= 1) AND (char_length(tag_name) <= 64)))),
-    CONSTRAINT feed_sources_target_matches_type CHECK ((((source_type = 'account'::text) AND (account_id IS NOT NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL)) OR ((source_type = 'publication'::text) AND (publication_id IS NOT NULL) AND (account_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL)) OR ((source_type = 'external_source'::text) AND (external_source_id IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (tag_name IS NULL)) OR ((source_type = 'tag'::text) AND (tag_name IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL))))
+    CONSTRAINT feed_sources_target_matches_type CHECK ((((source_type = 'account'::text) AND (account_id IS NOT NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL) AND (reach_kind IS NULL)) OR ((source_type = 'publication'::text) AND (publication_id IS NOT NULL) AND (account_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL) AND (reach_kind IS NULL)) OR ((source_type = 'external_source'::text) AND (external_source_id IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (tag_name IS NULL) AND (reach_kind IS NULL)) OR ((source_type = 'tag'::text) AND (tag_name IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL) AND (reach_kind IS NULL)) OR ((source_type = 'reach'::text) AND (reach_kind IS NOT NULL) AND (account_id IS NULL) AND (publication_id IS NULL) AND (external_source_id IS NULL) AND (tag_name IS NULL))))
 );
 
 
@@ -1480,6 +1482,8 @@ CREATE TABLE public.feeds (
     appearance jsonb DEFAULT '{}'::jsonb NOT NULL,
     sort_rank integer NOT NULL,
     hidden boolean DEFAULT false NOT NULL,
+    is_starter_template boolean DEFAULT false NOT NULL,
+    cloned_from_feed_id uuid,
     CONSTRAINT feeds_name_length CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80)))
 );
 
@@ -3738,6 +3742,13 @@ CREATE UNIQUE INDEX feed_sources_publication_uniq ON public.feed_sources USING b
 
 
 --
+-- Name: feed_sources_reach_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX feed_sources_reach_uniq ON public.feed_sources USING btree (feed_id, reach_kind) WHERE (source_type = 'reach'::text);
+
+
+--
 -- Name: feed_sources_tag_uniq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5510,6 +5521,14 @@ ALTER TABLE ONLY public.feed_sources
 
 
 --
+-- Name: feeds feeds_cloned_from_feed_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feeds
+    ADD CONSTRAINT feeds_cloned_from_feed_id_fkey FOREIGN KEY (cloned_from_feed_id) REFERENCES public.feeds(id) ON DELETE SET NULL;
+
+
+--
 -- Name: feeds feeds_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6433,7 +6452,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict PFrdg2BXzqN20V0kgJEiXQ1dCCf9rXAeTxcIk2gEOh7OZ4St7Qbv9QZ79gCHG7O
+\unrestrict 80HOYNhPTSll5TmlSWOqsumRMysCNaaBvQUOSyJrOrCCxcrKn6mfnYVUDJBr60n
+
 
 
 
@@ -6565,4 +6585,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('110_accounts_discovery_enabled.sql'),
     ('111_network_presences_assisted_provenance.sql'),
     ('112_feeds_appearance.sql'),
-    ('113_feeds_rank_hidden.sql');
+    ('113_feeds_rank_hidden.sql'),
+    ('114_reach_source_and_starter_template.sql');

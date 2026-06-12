@@ -179,6 +179,24 @@ export function FeedComposer({
     }
   }
 
+  // Reach (Following/Explore) is the global feed dial as a composable source —
+  // no text to resolve, so it's a direct add rather than a resolver match.
+  async function handleAddReach(reachKind: "following" | "explore") {
+    if (!feed || busyKey) return;
+    const key = `reach:${reachKind}`;
+    setBusyKey(key);
+    setError(null);
+    try {
+      await workspaceFeedsApi.addSource(feed.id, { sourceType: "reach", reachKind });
+      await refreshSources(feed.id);
+      onSourcesChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add source.");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   function startRename() {
     if (!feed) return;
     setNameDraft(feed.name);
@@ -530,6 +548,47 @@ export function FeedComposer({
               ))}
             </div>
           )}
+        </div>
+
+        {/* Reach — the global Following/Explore dial as a composable source.
+            Added directly (no text to resolve); removed via the list above.
+            A chip for a reach already on the feed reads "added" and is inert. */}
+        <div
+          style={{ display: "flex", gap: 6, marginTop: 4, marginBottom: 4 }}
+        >
+          {(["following", "explore"] as const).map((kind) => {
+            const present = sources.some(
+              (s) => s.sourceType === "reach" && s.reachKind === kind,
+            );
+            const key = `reach:${kind}`;
+            const labelText = kind === "following" ? "Following" : "Explore";
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => void handleAddReach(kind)}
+                disabled={present || busyKey === key}
+                className="label-ui"
+                style={{
+                  padding: "6px 10px",
+                  background: present ? "transparent" : TOKENS.fieldBg,
+                  border: "none",
+                  color: present ? TOKENS.hintFg : TOKENS.panelBorder,
+                  cursor: present || busyKey === key ? "default" : "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  if (!present && busyKey !== key)
+                    e.currentTarget.style.background = TOKENS.matchHoverBg;
+                }}
+                onMouseLeave={(e) => {
+                  if (!present && busyKey !== key)
+                    e.currentTarget.style.background = TOKENS.fieldBg;
+                }}
+              >
+                {present ? `${labelText} · added` : `+ ${labelText}`}
+              </button>
+            );
+          })}
         </div>
 
         {error && (

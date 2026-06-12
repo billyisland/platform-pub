@@ -19,7 +19,7 @@ export default function AdminReportsPage() {
   useEffect(() => {
     if (loading) return
     if (!user || !user.isAdmin) {
-      router.replace('/feed')
+      router.replace('/workspace')
     }
   }, [user, loading, router])
 

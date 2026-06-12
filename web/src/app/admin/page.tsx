@@ -11,7 +11,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (loading) return
     if (!user || !user.isAdmin) {
-      router.replace('/feed')
+      router.replace('/workspace')
     } else {
       router.replace('/admin/reports')
     }

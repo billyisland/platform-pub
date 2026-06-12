@@ -1,6 +1,6 @@
 # FEED-RETIREMENT-PLAN — retire the legacy `/feed` model
 
-**Status:** In progress — Slices 1, 2 & 4 shipped 2026-06-12; Slice 0 decided (option a); Slice 3 fully specced & unblocked (seeding = starter-feed clone; all sub-decisions DECIDED in §0) — ready to build next session. Independent work remaining: Slice 5 (overlays), Slice 6.1 (extract shared SQL).
+**Status:** In progress — Slices 1, 2, 3 & 4 shipped 2026-06-12; Slice 0 decided (option a). `/feed` is now a redirect shim; the front door lands on `/workspace`; reach (Following/Explore) is a composable source kind; new accounts seed a starter-feed clone. **Operator prereq before seeding does anything: flag ≥1 of your own feeds as a template** — `UPDATE feeds SET is_starter_template = true WHERE id = '<feed-uuid>';`. Remaining: Slice 5 (overlays), Slice 6 (backend untangle + extract shared SQL), Slice 7 (deletions).
 **Date:** 2026-06-12
 **Provenance:** feature-debt.md §4 readiness assessment (2026-06-12), re-verified against the codebase the same day. UNIVERSAL-POST-ADR §10 Phase 5 deliberately scoped the Post-model cutover to the workspace and named "a later `/feed`+`/source`-scoped pass"; this is that pass.
 **Goal:** `/workspace` becomes the entirety of logged-in all.haus. Every surface renders cards through the one Post-model path (`web/src/components/post/`); the legacy `components/feed/` card stack and its gateway endpoints are deleted.
@@ -14,6 +14,19 @@
 **Slice 1 — SHIPPED (2026-06-12, commit `8aecbda`).** `GET /sources/:id` now projects `Post[]`; `SourceSurface.tsx` renders `PostCardInteractive`/`PostThread`. `ExternalCard` is no longer imported outside `FeedView`. gateway+web tsc clean, lint 0 errors, hairlines clean. *Runtime check pending a `web` rebuild.*
 
 **Slice 2 — SHIPPED (2026-06-12, commit `76c2f2d`).** `?kind=article|note` added to `/author/:id/posts`; new `GET /author/:id/replies` projects native kind-1111 comments as `Post[]` via `commentToPost` (moved to shared `post-mapper.ts`). `WorkTab`/`SocialTab` render Post cards (pin + drives preserved; replies expand to the unified thread). No `components/feed/*` import remains under `components/profile/`. *Runtime check pending a `web` rebuild.*
+
+**Slice 3 — SHIPPED (2026-06-12).** Migration `114_reach_source_and_starter_template.sql` (schema.sql regenerated, drift guard green, applied to dev DB). All three workstreams landed:
+- **A (reach source kind):** `feed_sources` grows a `reach` `source_type` + a `reach_kind` ('following'|'explore') discriminator (both CHECK constraints + a `(feed_id, reach_kind)` partial unique). Plumbed through `feeds.ts` (`addSourceSchema`/`addSource`/`insertSource`/`sourceRowToResponse` + the three source-list SELECTs) and the FeedComposer (two `+ Following` / `+ Explore` quick-add chips, since reach has no text to resolve). Reach membership is computed in **`sourceFilteredItems`' `matched` CTE** — *not* the `GET /feed/:feedId` projector the plan named: the workspace items path returns the legacy `rowToItem` shape (mapped client-side to Post via `map-feed-item.ts`), a different shape/mapper than post-feed.ts, so the clean seam was the `matched` CTE membership branches. Web types in `lib/api/feeds.ts` (`WorkspaceFeedSourceKind` += `reach`, `ReachKind`, `AddWorkspaceFeedSourceInput`). Validated against the dev DB: both branches' columns resolve and the full CTE returns rows.
+- **B (starter-feed clone):** `feeds.is_starter_template` + `feeds.cloned_from_feed_id` (FK → feeds, ON DELETE SET NULL). `cloneFeedForOwner` + `seedStarterFeeds` helpers in `feeds.ts`; seeding runs from a **zero-feeds guard in `GET /workspace/feeds`** (advisory-locked per owner, idempotent), which covers all signup paths (OAuth + email) *and* existing empty accounts uniformly — so it was **not** also hooked into the two signup paths (DRY, equally correct). No-op until a template is flagged, in which case the client's empty-default-feed mint still fires (unchanged legacy fallback). Clone SQL validated against the dev DB (copies feed + all sources, incl. reach rows).
+- **C (front door):** `auth/page.tsx` ×2, `auth/verify`, `auth/google/callback`, and the two admin redirects → `/workspace`; `/feed` is now a redirect shim; `Nav.tsx` logged-in "Feed"→"Workspace" (→`/workspace`), logged-out "Feed" link dropped, logo → `/workspace`; the topbar search box (desktop + mobile) **removed** rather than repointed — it already dropped the query through the Slice-4 `/search` shim, so removing the broken box is strictly not worse, and search lives in the workspace dock now. Back-to-feed CTAs (SourceSurface, AuthorProfileView, library, network) → `/workspace`.
+
+gateway+web tsc clean, root lint 0 errors, gateway tests 117/117 (boot was a cold-start 5s-timeout flake — passes at 30s), hairlines clean on touched files (the one Nav.tsx hit is pre-existing Compose-button debt, not in this diff). *Runtime check pending a `web` rebuild.*
+
+**Slice 3 follow-on items (deferred, not blockers):**
+- **Operator template-flag UI** — flagged via SQL for now (documented in `feeds.ts` + the Status line); a small admin toggle is optional polish.
+- **"Cloned from <operator>'s feed" provenance UI** — the `cloned_from_feed_id` column is durable but not yet surfaced in the feed response/UI (needs a join to the template owner's name).
+- **`feedReach` localStorage key** is now inert (its only live reader, `FeedView`, no longer renders behind the shim; `FeedDial` on `/network` is Slice-5 territory) — left for the Slice 5/7 cleanup rather than chased piecemeal.
+- **reach:following scope** is native-only (follows + own + followed publications); external subscriptions are composed as explicit `external_source` rows, not bundled into reach — a deliberate alignment with the vessel model, documented at the `matched` CTE.
 
 **Slice 4 — SHIPPED (2026-06-12).** New `GET /tags/:name/posts` projects tag articles as `Post[]` (article-only, cursor-paged, keeps `total` for the header) — mirrors `GET /sources/:id`. `TagBrowser.tsx` renders `PostCardInteractive` (reader-in-place when `inOverlay`, navigate on the standalone page); no hand-rolled article rows remain. `/search` is now a redirect shim to `/workspace` (the dock `SearchPanel` is the search surface). gateway+web tsc clean, lint 0 errors, hairlines clean. *Runtime check pending a `web` rebuild.*
 
@@ -104,7 +117,7 @@ Decision needed from the operator before Slice 3 lands. Nothing else blocks on i
 - Web: `WriterActivity` renders both tabs through `PostCardInteractive`; delete `WorkTab`/`SocialTab`'s legacy card usage. Native profile overlay and standalone `/{username}` page share `WriterActivity` — one change covers both.
 - Accept: no `components/feed/*` import remains under `components/profile/`.
 
-### Slice 3 — Close the front door, retire `/feed`
+### Slice 3 — Close the front door, retire `/feed` — ✅ SHIPPED (§0)
 
 All sub-decisions are now DECIDED (Slice 0 = option (a); seeding = starter-feed clone; the three clone sub-decisions in §0). This slice is unblocked — build it directly. Two largely-independent workstreams (**A** reach source kinds, **B** starter-clone seeding) plus the front-door repoint (**C**); B+C are the part that actually retires `/feed`, A can land alongside or just after.
 

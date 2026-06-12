@@ -162,11 +162,15 @@ export type WorkspaceFeedSourceKind =
   | "account"
   | "publication"
   | "external_source"
-  | "tag";
+  | "tag"
+  | "reach";
+
+export type ReachKind = "following" | "explore";
 
 export interface WorkspaceFeedSource {
   id: string;
   sourceType: WorkspaceFeedSourceKind;
+  reachKind?: ReachKind;
   accountId?: string;
   externalSourceId?: string;
   weight: number;
@@ -190,6 +194,7 @@ export type AddWorkspaceFeedSourceInput =
   | { sourceType: "account"; accountId: string }
   | { sourceType: "publication"; publicationId: string }
   | { sourceType: "tag"; tagName: string }
+  | { sourceType: "reach"; reachKind: ReachKind }
   | { sourceType: "external_source"; externalSourceId: string }
   | {
       sourceType: "external_source";

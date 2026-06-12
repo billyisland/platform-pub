@@ -93,8 +93,8 @@ function BookmarksTab() {
     return (
       <div className="py-20 text-center">
         <p className="text-ui-sm text-grey-400 mb-4">No bookmarks yet.</p>
-        <Link href="/feed" className="btn-text underline underline-offset-4">
-          Browse the feed
+        <Link href="/workspace" className="btn-text underline underline-offset-4">
+          Go to workspace
         </Link>
       </div>
     )

@@ -138,8 +138,8 @@ export function SourceSurface({ id }: { id: string }) {
       <PageShell width="feed" title="Source not found">
         <p className="font-sans text-ui-sm text-grey-600">
           This source isn&apos;t available.{" "}
-          <Link href="/feed" className="btn-text">
-            Back to feed
+          <Link href="/workspace" className="btn-text">
+            Back to workspace
           </Link>
         </p>
       </PageShell>

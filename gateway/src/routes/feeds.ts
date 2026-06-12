@@ -120,6 +120,14 @@ const addSourceSchema = z.union([
     sourceType: z.literal("tag"),
     tagName: z.string().trim().min(1).max(64),
   }),
+  // reach — the global following/explore dial as a composable source
+  // (FEED-RETIREMENT Slice 0 = option (a)). Binds no FK; membership is
+  // computed in sourceFilteredItems' matched CTE from the caller's follow
+  // graph (following) or the platform-wide recent-natives window (explore).
+  z.object({
+    sourceType: z.literal("reach"),
+    reachKind: z.enum(["following", "explore"]),
+  }),
   z.object({
     sourceType: z.literal("external_source"),
     externalSourceId: z.string().uuid(),
@@ -193,6 +201,100 @@ async function loadFeed(
   return rows[0] ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// Starter-feed seeding (FEED-RETIREMENT Slice 3, workstream B).
+//
+// A brand-new account follows nobody, so a bare reach:following vessel would be
+// empty. Instead new accounts get a CLONE of each operator-designated template
+// feed (feeds.is_starter_template = true): a real, fully-editable owned feed,
+// not a special-cased default object. The clone copies the template's name,
+// appearance and every feed_sources row, and records provenance in
+// cloned_from_feed_id.
+//
+// An operator flags a template by hand:
+//   UPDATE feeds SET is_starter_template = true WHERE id = '<feed-uuid>';
+// PREREQ: until ≥1 feed is flagged, seeding is a no-op and a new account falls
+// back to the client's empty-default-feed mint (unchanged legacy behaviour).
+// ---------------------------------------------------------------------------
+
+// Clone one template feed for a new owner inside an open transaction. Returns
+// the new feed id. sortRank is supplied by the caller so a batch of clones gets
+// a stable 1..N order.
+async function cloneFeedForOwner(
+  client: { query: typeof pool.query },
+  templateId: string,
+  ownerId: string,
+  sortRank: number,
+): Promise<string> {
+  const {
+    rows: [feed],
+  } = await client.query<{ id: string }>(
+    `INSERT INTO feeds (owner_id, name, appearance, sort_rank, cloned_from_feed_id)
+     SELECT $2, t.name, t.appearance, $3, t.id
+       FROM feeds t WHERE t.id = $1
+     RETURNING id`,
+    [templateId, ownerId, sortRank],
+  );
+  // Copy every source row verbatim (all five source_types, incl. reach), minus
+  // the identity/parent columns. A fresh id + the new feed_id; weight, sampling,
+  // exclude_replies and the polymorphic target all carry over.
+  await client.query(
+    `INSERT INTO feed_sources
+       (feed_id, source_type, account_id, publication_id, external_source_id,
+        tag_name, reach_kind, weight, sampling_mode, exclude_replies)
+     SELECT $1, source_type, account_id, publication_id, external_source_id,
+            tag_name, reach_kind, weight, sampling_mode, exclude_replies
+       FROM feed_sources WHERE feed_id = $2`,
+    [feed.id, templateId],
+  );
+  return feed.id;
+}
+
+// Idempotent: clone all flagged templates for an owner who has none of their
+// own feeds yet. Guarded by a per-owner advisory lock so two concurrent first
+// loads (e.g. signup racing the first workspace fetch) can't double-seed.
+// Returns the number of feeds seeded (0 if the owner already has feeds or no
+// template is flagged).
+async function seedStarterFeeds(ownerId: string): Promise<number> {
+  // Fast path: the overwhelming-common case is an owner who already has feeds.
+  // A cheap unlocked COUNT keeps the per-request cost off the hot path — we
+  // only open a transaction + take the advisory lock when there's nothing yet.
+  const {
+    rows: [{ count: pre }],
+  } = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM feeds WHERE owner_id = $1`,
+    [ownerId],
+  );
+  if (parseInt(pre, 10) > 0) return 0;
+
+  return withTransaction(async (client) => {
+    // Serialise per owner. hashtextextended → bigint for the advisory key.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+      `feed-seed:${ownerId}`,
+    ]);
+    const {
+      rows: [{ count }],
+    } = await client.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM feeds WHERE owner_id = $1`,
+      [ownerId],
+    );
+    if (parseInt(count, 10) > 0) return 0;
+
+    const { rows: templates } = await client.query<{ id: string }>(
+      `SELECT id FROM feeds WHERE is_starter_template = true
+       ORDER BY created_at ASC, id ASC`,
+    );
+    let rank = 1;
+    for (const t of templates) {
+      // A template owned by the new account would self-reference; skip (can't
+      // happen for a brand-new account, but cheap and defensive).
+      await cloneFeedForOwner(client, t.id, ownerId, rank);
+      rank++;
+    }
+    return templates.length;
+  });
+}
+
 export async function feedsRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // GET /feeds — list mine, in rank order (MOBILE-LAYOUT-ADR §VII: sort_rank
@@ -201,6 +303,18 @@ export async function feedsRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.get("/feeds", { preHandler: requireAuth }, async (req, reply) => {
     const ownerId = req.session!.sub;
+    // Zero-feeds guard (Slice 3, workstream B): seed starter-template clones on
+    // first load for any owner with no feeds — covers fresh signups (both
+    // OAuth and email paths) and pre-existing empty accounts uniformly, since
+    // every workspace session reads this list. Idempotent + advisory-locked.
+    // No-op when no template is flagged (the client then mints an empty feed).
+    try {
+      await seedStarterFeeds(ownerId);
+    } catch (err) {
+      // Never block the workspace on a seeding hiccup — log and serve whatever
+      // feeds exist (possibly none, in which case the client mints a default).
+      logger.error({ err, ownerId }, "Starter-feed seeding failed");
+    }
     const { rows } = await pool.query<FeedRow>(
       `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
          (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
@@ -580,6 +694,7 @@ export async function feedsRoutes(app: FastifyInstance) {
       const { rows } = await pool.query(
         `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
            fs.exclude_replies,
+           fs.reach_kind,
            fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
            acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
            pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
@@ -986,6 +1101,7 @@ export async function feedsRoutes(app: FastifyInstance) {
       const { rows } = await pool.query<SourceRow>(
         `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
            fs.exclude_replies,
+           fs.reach_kind,
            fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
            acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
            pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
@@ -1395,7 +1511,8 @@ function rowToItem(row: any) {
 
 interface SourceRow {
   id: string;
-  source_type: "account" | "publication" | "external_source" | "tag";
+  source_type: "account" | "publication" | "external_source" | "tag" | "reach";
+  reach_kind: "following" | "explore" | null;
   weight: string;
   sampling_mode: string;
   muted_at: Date | null;
@@ -1455,7 +1572,7 @@ function sourceRowToResponse(row: SourceRow) {
       avatar: row.external_avatar,
       href: row.external_source_id ? `/source/${row.external_source_id}` : null,
     };
-  } else {
+  } else if (row.source_type === "tag") {
     display = {
       kind: "tag",
       label: `#${row.tag_name}`,
@@ -1463,10 +1580,23 @@ function sourceRowToResponse(row: SourceRow) {
       avatar: null,
       href: row.tag_name ? `/tag/${encodeURIComponent(row.tag_name)}` : null,
     };
+  } else {
+    // reach — a computed global stream, not a single target, so no href.
+    display = {
+      kind: "reach",
+      label: row.reach_kind === "following" ? "Following" : "Explore",
+      sublabel:
+        row.reach_kind === "following"
+          ? "Everyone you follow"
+          : "Across all.haus",
+      avatar: null,
+      href: null,
+    };
   }
   return {
     id: row.id,
     sourceType: row.source_type,
+    reachKind: row.reach_kind ?? undefined,
     accountId: row.account_id ?? undefined,
     externalSourceId: row.external_source_id ?? undefined,
     weight: Number(row.weight),
@@ -1521,6 +1651,16 @@ async function addSource(
     );
     const inserted = await insertSource(feedId, "tag", {
       tag_name: input.tagName,
+    });
+    return { source: inserted, ensured: null };
+  }
+
+  if (input.sourceType === "reach") {
+    // No target to validate — reach membership is computed at read time.
+    // The (feed_id, reach_kind) partial unique blocks a duplicate following/
+    // explore row (surfaced as DUPLICATE by the unique-violation handler).
+    const inserted = await insertSource(feedId, "reach", {
+      reach_kind: input.reachKind,
     });
     return { source: inserted, ensured: null };
   }
@@ -1642,19 +1782,20 @@ async function addSource(
 
 async function insertSource(
   feedId: string,
-  sourceType: "account" | "publication" | "external_source" | "tag",
+  sourceType: "account" | "publication" | "external_source" | "tag" | "reach",
   target: {
     account_id?: string;
     publication_id?: string;
     external_source_id?: string;
     tag_name?: string;
+    reach_kind?: string;
   },
   db: { query: typeof pool.query } = pool,
 ) {
   try {
     const { rows } = await db.query<SourceRow>(
-      `INSERT INTO feed_sources (feed_id, source_type, account_id, publication_id, external_source_id, tag_name)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO feed_sources (feed_id, source_type, account_id, publication_id, external_source_id, tag_name, reach_kind)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, source_type, weight, sampling_mode, muted_at, created_at,
                  account_id, publication_id, external_source_id, tag_name,
                  NULL::text AS account_username, NULL::text AS account_display_name, NULL::text AS account_avatar,
@@ -1668,6 +1809,7 @@ async function insertSource(
         target.publication_id ?? null,
         target.external_source_id ?? null,
         target.tag_name ?? null,
+        target.reach_kind ?? null,
       ],
     );
     // The display fields above are NULLs from the bare INSERT — re-hydrate
@@ -1676,6 +1818,7 @@ async function insertSource(
     const { rows: hydrated } = await db.query<SourceRow>(
       `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
          fs.exclude_replies,
+         fs.reach_kind,
          fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
          acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
          pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
@@ -1796,6 +1939,27 @@ async function sourceFilteredItems(
              SELECT 1 FROM article_tags at_join
              JOIN tags t_join ON t_join.id = at_join.tag_id
              WHERE at_join.article_id = fi.article_id AND t_join.name = fs.tag_name
+           ))
+           -- reach:following — the caller's native follow graph (people +
+           -- their own posts + followed publications). Mirrors the GET
+           -- /feed/:feedId following projector's NATIVE membership; external
+           -- subscriptions are NOT bundled in (they're composed as explicit
+           -- external_source rows — the whole point of the vessel model), a
+           -- deliberate scope choice, not a silent cap.
+           OR (fs.source_type = 'reach' AND fs.reach_kind = 'following' AND (
+             fi.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
+             OR fi.author_id = $1
+             OR a.publication_id IN (
+               SELECT publication_id FROM publication_follows WHERE follower_id = $1
+             )
+           ))
+           -- reach:explore — platform-wide recent top-level natives (same
+           -- membership as the legacy/explore projector: 48h window, article|
+           -- note, not the reader's own). Scoring/limit bound the scan.
+           OR (fs.source_type = 'reach' AND fs.reach_kind = 'explore' AND (
+             fi.published_at > now() - INTERVAL '48 hours'
+             AND fi.item_type IN ('article', 'note')
+             AND fi.author_id <> $1
            ))
          )
         WHERE fi.deleted_at IS NULL

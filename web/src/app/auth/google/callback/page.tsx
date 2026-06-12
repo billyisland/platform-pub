@@ -45,7 +45,7 @@ export default function GoogleCallbackPage() {
       .then(async (res) => {
         if (!res.ok) throw new Error('Exchange failed')
         await fetchMe()
-        router.replace('/feed')
+        router.replace('/workspace')
       })
       .catch(() => {
         router.replace('/auth?mode=login&error=google_failed')

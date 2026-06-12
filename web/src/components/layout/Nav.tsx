@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../stores/auth'
 import type { MeResponse } from '../../lib/api'
@@ -142,20 +142,17 @@ function AvatarDropdown({ user, onLogout, onClose }: {
 
 // ─── Mobile sheet ───────────────────────────────────────────────────────────
 
-function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
+function MobileSheet({ user, loading, onLogout, onClose }: {
   user: MeResponse | null
   loading: boolean
   onLogout: () => void
   onClose: () => void
-  onSearch: (q: string) => void
 }) {
   const pathname = usePathname()
-  const [query, setQuery] = useState('')
   const dmCount = useUnreadCounts((s) => s.dmCount)
   const notificationCount = useUnreadCounts((s) => s.notificationCount)
 
   function isActive(path: string) {
-    if (path === '/feed') return pathname === '/feed' || pathname === '/'
     return pathname.startsWith(path)
   }
 
@@ -164,34 +161,14 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
     isActive(path) ? 'text-white font-medium' : 'text-grey-400 hover:text-white',
   ].join(' ')
 
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault()
-    if (query.trim().length >= 2) {
-      onSearch(query.trim())
-      setQuery('')
-    }
-  }
-
   return (
     <div className="fixed inset-x-0 top-[60px] bg-black z-40 px-6 py-4">
       {loading ? (
         <div className="h-4 w-24 animate-pulse bg-grey-600" />
       ) : user ? (
         <>
-          <Link href="/feed" onClick={onClose} className={linkClass('/feed')}>Feed</Link>
+          <Link href="/workspace" onClick={onClose} className={linkClass('/workspace')}>Workspace</Link>
           <Link href="/workspace?overlay=dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
-
-          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
-
-          <form onSubmit={handleSearch} className="py-2">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="SEARCH…"
-              className="w-full bg-grey-600/20 px-3 py-2 label-ui text-white placeholder-grey-400 border-none"
-            />
-          </form>
 
           <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
@@ -220,7 +197,6 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
         </>
       ) : (
         <>
-          <Link href="/feed" onClick={onClose} className={linkClass('/feed')}>Feed</Link>
           <Link href="/about" onClick={onClose} className={linkClass('/about')}>About</Link>
 
           <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
@@ -238,9 +214,7 @@ function MobileSheet({ user, loading, onLogout, onClose, onSearch }: {
 export function Nav() {
   const { user, loading, logout } = useAuth()
   const pathname = usePathname()
-  const router = useRouter()
   const mode = useLayoutModeContext()
-  const [searchQuery, setSearchQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dmCount = useUnreadCounts((s) => s.dmCount)
@@ -250,23 +224,10 @@ export function Nav() {
   useEffect(() => { setMenuOpen(false); setDropdownOpen(false) }, [pathname])
 
   function isActive(path: string) {
-    if (path === '/feed') return pathname === '/feed' || pathname === '/'
+    if (path === '/workspace') return pathname.startsWith('/workspace')
     if (path === '/dashboard') return pathname.startsWith('/dashboard')
     if (path === '/network') return pathname.startsWith('/network')
     return pathname === path
-  }
-
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault()
-    if (searchQuery.trim().length >= 2) {
-      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`)
-      setSearchQuery('')
-    }
-  }
-
-  function handleMobileSearch(q: string) {
-    router.push(`/search?q=${encodeURIComponent(q)}`)
-    setMenuOpen(false)
   }
 
   const openCompose = useCompose((s) => s.open)
@@ -285,7 +246,7 @@ export function Nav() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [pathname, openCompose])
 
-  const logoHref = user ? '/feed' : '/'
+  const logoHref = user ? '/workspace' : '/'
 
   // ── Canvas mode: minimal black bar, white ∀ ────────────────────────────────
 
@@ -322,7 +283,7 @@ export function Nav() {
           </div>
         </header>
         {menuOpen && (
-          <MobileSheet user={user} loading={loading} onLogout={logout} onClose={() => setMenuOpen(false)} onSearch={handleMobileSearch} />
+          <MobileSheet user={user} loading={loading} onLogout={logout} onClose={() => setMenuOpen(false)} />
         )}
       </>
     )
@@ -358,30 +319,19 @@ export function Nav() {
                 <div className="h-3 w-32 animate-pulse bg-grey-600" />
               ) : user ? (
                 <>
-                  <Link href="/feed" className={navLinkClass(isActive('/feed'))}>Feed</Link>
+                  <Link href="/workspace" className={navLinkClass(isActive('/workspace'))}>Workspace</Link>
                   <Link href="/workspace?overlay=dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
                 </>
               ) : (
                 <>
-                  <Link href="/feed" className={navLinkClass(isActive('/feed'))}>Feed</Link>
                   <Link href="/about" className={navLinkClass(isActive('/about'))}>About</Link>
                 </>
               )}
             </nav>
           </div>
 
-          {/* Right: search + auth/avatar */}
+          {/* Right: auth/avatar (search lives in the workspace dock now) */}
           <div className="flex items-center gap-4">
-            <form onSubmit={handleSearch} className="hidden md:block">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="SEARCH…"
-                className="w-36 bg-white/10 px-3 py-1.5 label-ui text-white placeholder-grey-400 focus:w-52 transition-all border-none"
-              />
-            </form>
-
             {/* Compose button — desktop: text, mobile: ∀ mark */}
             {!loading && user && (
               <>
@@ -456,7 +406,7 @@ export function Nav() {
       </header>
 
       {menuOpen && (
-        <MobileSheet user={user} loading={loading} onLogout={logout} onClose={() => setMenuOpen(false)} onSearch={handleMobileSearch} />
+        <MobileSheet user={user} loading={loading} onLogout={logout} onClose={() => setMenuOpen(false)} />
       )}
     </>
   )
