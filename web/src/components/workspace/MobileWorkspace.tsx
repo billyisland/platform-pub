@@ -120,10 +120,16 @@ export function MobileWorkspace({
 
   // Keyed on the id string, not the `ids` array (fresh identity every render)
   // — otherwise this writes localStorage on every render.
+  //
+  // Only persist when the displayed feed is the chosen one (or nothing was
+  // chosen yet). When the resume feed is hidden, display falls back to feed 1
+  // but the stored id must survive so un-hiding restores the reader's spot —
+  // an explicit swipe sets activeId to a visible feed and resumes writing.
   const activeFeedId = ids[activeIndex];
   useEffect(() => {
-    if (activeFeedId) writeResume(userId, activeFeedId);
-  }, [activeFeedId, userId]);
+    if (activeFeedId && (activeId === null || activeId === activeFeedId))
+      writeResume(userId, activeFeedId);
+  }, [activeFeedId, activeId, userId]);
 
   const pagerRef = useRef<HTMLDivElement>(null);
   // The in-flight drag writes its transform straight to the track element —

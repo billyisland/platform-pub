@@ -312,7 +312,7 @@ export function NetworkReachPanel() {
                       ASSISTED (Bluesky, Phase 2) the network custodies; the future
                       custodial branded-handle path (Phase 4) is the "soon" framing. */}
                   {!acct && showAssisted !== net.key && (
-                    <p className="text-ui-xs text-grey-400 mt-2 leading-relaxed">
+                    <p className="text-ui-xs text-grey-600 mt-2 leading-relaxed">
                       {assistedAvailable
                         ? `Don't have a ${net.label} account? all.haus can set one up for you — you'll create a normal ${net.label} account that ${net.label} holds the keys to; all.haus just connects it.`
                         : `Don't have a ${net.label} account? Soon all.haus will set one up for you — guiding you through ${net.label}'s own signup so the account is yours.`}
@@ -361,14 +361,14 @@ export function NetworkReachPanel() {
                   {/* Link-yours OAuth form (per network) */}
                   {showConnect === net.key && net.key === 'mastodon' && (
                     <div className="pt-4">
-                      <p className="label-ui text-grey-400 mb-2">Mastodon instance</p>
+                      <p className="label-ui text-grey-600 mb-2">Mastodon instance</p>
                       <input
                         type="text"
                         value={instanceUrl}
                         onChange={e => setInstanceUrl(e.target.value)}
                         placeholder="mastodon.social"
                         autoFocus
-                        className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
+                        className="w-full bg-white px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
                         onKeyDown={e => { if (e.key === 'Enter') void handleConnectMastodon() }}
                       />
                       <div className="flex gap-3 mt-3">
@@ -383,14 +383,14 @@ export function NetworkReachPanel() {
                   )}
                   {showConnect === net.key && net.key === 'bluesky' && (
                     <div className="pt-4">
-                      <p className="label-ui text-grey-400 mb-2">Bluesky handle</p>
+                      <p className="label-ui text-grey-600 mb-2">Bluesky handle</p>
                       <input
                         type="text"
                         value={blueskyHandle}
                         onChange={e => setBlueskyHandle(e.target.value)}
                         placeholder="alice.bsky.social"
                         autoFocus
-                        className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
+                        className="w-full bg-white px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
                         onKeyDown={e => { if (e.key === 'Enter') void handleConnectBluesky() }}
                       />
                       <div className="flex gap-3 mt-3">

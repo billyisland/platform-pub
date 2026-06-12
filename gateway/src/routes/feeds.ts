@@ -48,8 +48,8 @@ const FEED_SCHEME_IDS = [
   "dark",
   "blush",
   "sage",
-  "slate",
   "sand",
+  "slate",
 ] as const;
 
 // Per-feed density (MOBILE-LAYOUT-ADR §VI): feed character like the scheme,

@@ -160,7 +160,7 @@ export function PostMedia({
                 right: 8,
                 bottom: 8,
                 padding: "2px 8px",
-                background: "rgba(0,0,0,0.72)",
+                background: "rgb(var(--ah-true-black-rgb) / 0.72)",
                 color: "var(--ah-white)",
                 fontSize: 11,
                 letterSpacing: "0.04em",

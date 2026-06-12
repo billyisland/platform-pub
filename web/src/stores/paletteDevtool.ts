@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   applyPaletteOverrides,
+  PALETTE_REGISTRY,
   PALETTE_STORAGE_KEY,
 } from "../lib/palette/registry";
 
@@ -69,7 +70,17 @@ export const usePaletteDevtool = create<PaletteDevtoolState>((set, get) => ({
     try {
       const raw = localStorage.getItem(PALETTE_STORAGE_KEY);
       if (!raw) return;
-      const overrides = JSON.parse(raw) as Record<string, string>;
+      const persisted = JSON.parse(raw) as Record<string, string>;
+      // Drop slugs no longer in the registry (renames/removals) — a stale key
+      // is invisible in the panel but inflates the changed count and locks
+      // theme matching onto "Custom". Unlike preset themes, the devtool may
+      // legitimately hold THEME_LOCKED_SLUGS, so filter on the registry only.
+      const overrides: Record<string, string> = {};
+      for (const entry of PALETTE_REGISTRY) {
+        if (persisted[entry.slug]) overrides[entry.slug] = persisted[entry.slug];
+      }
+      if (Object.keys(overrides).length !== Object.keys(persisted).length)
+        persist(overrides);
       applyPaletteOverrides(overrides);
       set({ overrides });
     } catch {
