@@ -1,9 +1,26 @@
 # FEED-RETIREMENT-PLAN — retire the legacy `/feed` model
 
-**Status:** Proposed (plan accepted structure; Slice 0 carries the one open product decision)
+**Status:** In progress — Slices 1 & 2 shipped 2026-06-12; Slice 0 decided (option a); Slice 3 has one open product detail (reach-seeding, below).
 **Date:** 2026-06-12
 **Provenance:** feature-debt.md §4 readiness assessment (2026-06-12), re-verified against the codebase the same day. UNIVERSAL-POST-ADR §10 Phase 5 deliberately scoped the Post-model cutover to the workspace and named "a later `/feed`+`/source`-scoped pass"; this is that pass.
 **Goal:** `/workspace` becomes the entirety of logged-in all.haus. Every surface renders cards through the one Post-model path (`web/src/components/post/`); the legacy `components/feed/` card stack and its gateway endpoints are deleted.
+
+---
+
+## 0. Progress log (read this first when resuming)
+
+**Slice 0 — DECIDED (operator, 2026-06-12): option (a), composable reach source kind.** Global reach (Following/Explore) becomes first-class `reach:following` / `reach:explore` source kinds in `feed_sources`, composable into any vessel alongside subscriptions — not two special-cased seeded feeds (b), not dropped (c). Needs source-kind plumbing in `gateway/src/routes/feeds.ts` + FeedComposer. `GET /feed/:feedId` (post-feed.ts) already serves `feedId ∈ {following, explore}` as scored Post[] — reuse it as the reach projector. Gates Slice 3 only.
+
+**Slice 1 — SHIPPED (2026-06-12, commit `8aecbda`).** `GET /sources/:id` now projects `Post[]`; `SourceSurface.tsx` renders `PostCardInteractive`/`PostThread`. `ExternalCard` is no longer imported outside `FeedView`. gateway+web tsc clean, lint 0 errors, hairlines clean. *Runtime check pending a `web` rebuild.*
+
+**Slice 2 — SHIPPED (2026-06-12, commit `76c2f2d`).** `?kind=article|note` added to `/author/:id/posts`; new `GET /author/:id/replies` projects native kind-1111 comments as `Post[]` via `commentToPost` (moved to shared `post-mapper.ts`). `WorkTab`/`SocialTab` render Post cards (pin + drives preserved; replies expand to the unified thread). No `components/feed/*` import remains under `components/profile/`. *Runtime check pending a `web` rebuild.*
+
+**Corrections to the plan discovered while building (carry forward):**
+- **Profile replies are NOT in `/posts`.** §2 assumed WorkTab/SocialTab both ride `/author/:id/posts`. Native replies are kind-1111 rows in the `comments` table, *not* `feed_items`, so they have no `post_id` and never appear in `/posts`. They now have a dedicated projector (`GET /author/:id/replies`). Any future "author's replies" surface must use it, not `/posts`.
+- **The Post chassis has no inline delete affordance** (neither does `AuthorProfileView` nor the workspace cards — `PostActions` carries Vote/Reply/Quote/Report only). Slice 2 therefore dropped the legacy NoteCard per-note delete on one's own profile. This is a uniform Post-model gap, not a Slice-2 regression — but it IS a real capability loss across the consolidated world. Decide separately whether to grow a delete action into the chassis before Slice 7 deletes the legacy cards for good.
+- `commentToPost`/`CommentRow` now live in `gateway/src/lib/post-mapper.ts` (Slice 6's "extract shared SQL" instinct, done early for this one).
+
+**Slice 3 — OPEN product detail (operator, unanswered):** once `reach:following`/`reach:explore` are composable source kinds, how do existing + new accounts *get* reach after `/feed` dies? Candidates: **auto-seed a Following feed** on first visit/signup (closest to today's `/feed` default) · **composer-only, no auto-seed** (purest composed-vessel model; empty vessels already fall back to `placeholderExploreItems`) · **auto-seed Following + Explore** (most hand-holding). Resolve before building Slice 3.
 
 ---
 
@@ -66,13 +83,13 @@ Legacy `/feed` is a single global following/explore timeline; the workspace is p
 
 Decision needed from the operator before Slice 3 lands. Nothing else blocks on it.
 
-### Slice 1 — Port `SourceSurface` to the Post model *(live dependency #1 — first)*
+### Slice 1 — Port `SourceSurface` to the Post model *(live dependency #1 — first)* — ✅ SHIPPED (§0)
 
 - Gateway: add a source-scoped `Post[]` projector — either `GET /source/:id/posts` beside the profile/meta in `sources.ts`, or a `source` filter on the post-feed machinery. Reuse the §5 projector conventions (cursor, dedup, attribution) from `post-feed.ts`.
 - Web: `SourceSurface` swaps its `ExternalCard` list for `PostCardInteractive` (same `CardContext` pattern as `AuthorProfileView`); keep the source header + SHOW MORE. Overlay and standalone page share the component already — one change covers both.
 - Accept: a source opened from a workspace card renders Post-model cards with thread expand / quote / media parity; `components/feed/ExternalCard` no longer imported outside `FeedView`.
 
-### Slice 2 — Port native profile tabs *(live dependency #2)*
+### Slice 2 — Port native profile tabs *(live dependency #2)* — ✅ SHIPPED (§0; replies needed their own projector, not `/posts`)
 
 - `GET /author/:authorId/posts` already filters native authors by `author_id`. `WorkTab` (articles) and `SocialTab` (notes + replies) need a **kind filter** (`?kind=article|note`) on that endpoint — or accept the combined chronological log and split client-side.
 - Web: `WriterActivity` renders both tabs through `PostCardInteractive`; delete `WorkTab`/`SocialTab`'s legacy card usage. Native profile overlay and standalone `/{username}` page share `WriterActivity` — one change covers both.
@@ -80,7 +97,7 @@ Decision needed from the operator before Slice 3 lands. Nothing else blocks on i
 
 ### Slice 3 — Close the front door, retire `/feed`
 
-Blocked only on Slice 0's decision landing (users arriving at the workspace must find their reach).
+Slice 0 decided **option (a)**: build `reach:following`/`reach:explore` as composable source kinds (plumb `feed_sources` + `feeds.ts` + FeedComposer; reuse the `GET /feed/:feedId` projector). **Still blocked on the reach-seeding detail in §0** — users arriving at the workspace must find their reach.
 
 - Repoint post-auth: `auth/page.tsx` ×2 + `auth/verify/page.tsx` → `/workspace`.
 - `/feed` becomes a redirect shim to `/workspace` (standard retired-route pattern, CLAUDE.md).
