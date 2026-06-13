@@ -534,6 +534,16 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         );
         return redirectOk("mastodon");
       } catch (err) {
+        // 23505 = the (protocol, external_id) unique index (migration 115):
+        // another account already links this identity. Reject cleanly rather
+        // than clobbering the existing presence.
+        if ((err as { code?: string })?.code === "23505") {
+          logger.info(
+            { userId },
+            "Mastodon link rejected — identity already linked to another account",
+          );
+          return redirectOk("already-linked");
+        }
         logger.warn({ err, userId }, "Mastodon OAuth callback failed");
         return redirectOk("error");
       }
@@ -775,6 +785,16 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         );
         return redirectOk("bluesky");
       } catch (err) {
+        // 23505 = the (protocol, external_id) unique index (migration 115):
+        // another account already links this DID. Reject cleanly rather than
+        // clobbering the existing presence (and its shared OAuth session).
+        if ((err as { code?: string })?.code === "23505") {
+          logger.info(
+            { userId },
+            "Bluesky link rejected — DID already linked to another account",
+          );
+          return redirectOk("already-linked");
+        }
         logger.warn({ err }, "Bluesky OAuth callback failed");
         return redirectOk("error");
       }

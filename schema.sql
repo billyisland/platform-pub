@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 80HOYNhPTSll5TmlSWOqsumRMysCNaaBvQUOSyJrOrCCxcrKn6mfnYVUDJBr60n
+\restrict klB6cMLIjgFql63EBUu9NQyy7k7uWqCIZoJiFIryQWUKdVpXbCoseFUvSJPBSeV
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -4841,6 +4841,13 @@ CREATE INDEX idx_writer_payouts_writer_id ON public.writer_payouts USING btree (
 
 
 --
+-- Name: network_presences_protocol_external_id_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX network_presences_protocol_external_id_uniq ON public.network_presences USING btree (protocol, external_id) WHERE (external_id IS NOT NULL);
+
+
+--
 -- Name: relay_outbox_entity_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6452,7 +6459,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 80HOYNhPTSll5TmlSWOqsumRMysCNaaBvQUOSyJrOrCCxcrKn6mfnYVUDJBr60n
+\unrestrict klB6cMLIjgFql63EBUu9NQyy7k7uWqCIZoJiFIryQWUKdVpXbCoseFUvSJPBSeV
+
 
 
 
@@ -6586,4 +6594,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('111_network_presences_assisted_provenance.sql'),
     ('112_feeds_appearance.sql'),
     ('113_feeds_rank_hidden.sql'),
-    ('114_reach_source_and_starter_template.sql');
+    ('114_reach_source_and_starter_template.sql'),
+    ('115_network_presences_external_id_unique.sql');

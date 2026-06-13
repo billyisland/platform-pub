@@ -91,6 +91,8 @@ network_presences (
   -- CONCIERGE secrets live in key-custody, referenced by (account_id, protocol).
   created_at, updated_at,
   unique (account_id, protocol)                    -- one presence per network per account (deliberate, v1)
+  -- migration 115: also unique (protocol, external_id) where external_id is not null
+  --   — one external identity may belong to at most one account (anti-clobber)
 )
 ```
 
@@ -99,6 +101,8 @@ Migration folds existing `linked_accounts` rows in as `provenance='linked'`, `li
 **`lifecycle_state` vs `is_valid`.** `is_valid` is a health bit (credentials still work / handle still resolves); `lifecycle_state` is the presence's place in its provisioning arc. A boolean can't express "minted but not yet crawled," "user paused cross-posting," or "torn down but DID-doc tombstoned," which the custodial concierge path (with its multi-step §6.2 provisioning and the dormancy concern in §11) genuinely passes through. Outbound dispatch targets only `lifecycle_state='active' AND is_valid`, then branches **on custody, not provenance**: OAuth-session (`linked` ∪ `assisted`) → restore session, post to the network's PDS; key-custody (`concierge`) → sign locally, post to our PDS (§2).
 
 **One presence per protocol.** The `unique (account_id, protocol)` constraint is a deliberate v1 limit: no multiple personas (e.g. two Bluesky identities) on one network per account. Lifting it later means dropping the constraint and teaching the dispatcher to fan out per-presence; recorded here so it isn't relitigated as an accident.
+
+**One external identity per account (anti-clobber).** Migration 115 adds a second uniqueness: `unique (protocol, external_id) where external_id is not null`. Without it, two accounts could each link the *same* Bluesky DID — and because `atproto_oauth_sessions` is keyed solely by DID (`ON CONFLICT (did)`), the second link would silently overwrite the first account's shared OAuth session, after which the outbound worker posts under whichever account last wrote it (both presence rows survive and both pass the `is_valid AND lifecycle_state='active'` gate). The constraint makes the second link fail with `23505`; the LINKED/ASSISTED OAuth callbacks catch it and redirect `?linked=already-linked` rather than clobbering. (Deploy note: build will fail if two prod rows already share `(protocol, external_id)` — check before applying.)
 
 ### 5.3 key-custody — generalised secret store
 Today: `(signerId, signerType)` → `nostr_privkey_enc`, signer hardwired to `finalizeEvent`. Generalise to `(owner_id, protocol, purpose)` → encrypted secret, with:

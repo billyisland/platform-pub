@@ -32,6 +32,8 @@ import { PageShell, PageHeader } from '../ui/PageShell'
 function bannerFor(linked: string | null): { kind: 'ok' | 'error'; msg: string } | null {
   if (linked === 'mastodon') return { kind: 'ok', msg: 'Mastodon account connected.' }
   if (linked === 'bluesky') return { kind: 'ok', msg: 'Bluesky account connected.' }
+  if (linked === 'already-linked')
+    return { kind: 'error', msg: 'That account is already connected to another all.haus profile.' }
   if (linked === 'error') return { kind: 'error', msg: 'Connection failed. Please try again.' }
   return null
 }

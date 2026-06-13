@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   applyPaletteOverrides,
+  normalizeHex,
   PALETTE_REGISTRY,
   PALETTE_STORAGE_KEY,
 } from "../lib/palette/registry";
@@ -75,9 +76,15 @@ export const usePaletteDevtool = create<PaletteDevtoolState>((set, get) => ({
       // is invisible in the panel but inflates the changed count and locks
       // theme matching onto "Custom". Unlike preset themes, the devtool may
       // legitimately hold THEME_LOCKED_SLUGS, so filter on the registry only.
+      // Also validate the stored *value*: a corrupt/hand-edited blob that isn't
+      // a real hex would otherwise flow into hexToTriple, where parseInt(NaN)
+      // collapses to "0 0 0" and silently renders that colour pure black
+      // instead of falling back to the registry default. Skip anything that
+      // doesn't normalize (same gate the live-input path already applies).
       const overrides: Record<string, string> = {};
       for (const entry of PALETTE_REGISTRY) {
-        if (persisted[entry.slug]) overrides[entry.slug] = persisted[entry.slug];
+        const value = persisted[entry.slug];
+        if (value && normalizeHex(value)) overrides[entry.slug] = value;
       }
       if (Object.keys(overrides).length !== Object.keys(persisted).length)
         persist(overrides);

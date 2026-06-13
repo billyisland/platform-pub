@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
+import { verifySession } from '@platform-pub/shared/auth/session.js'
 import { exportSecretKey } from '../lib/key-custody-client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
@@ -71,9 +72,31 @@ export async function exportRoutes(app: FastifyInstance) {
   // Tight per-route rate limit: the bundle carries the decrypted root Nostr
   // secret key, so a stolen session cookie must not be able to hammer this
   // path quietly. Legitimate use is a handful of exports, ever.
+  //
+  // Key the bucket on the authenticated account, not @fastify/rate-limit's
+  // default req.ip: behind nginx every request shares the proxy IP, so an IP
+  // key would (a) make all users share one 5/hour bucket — one exporter could
+  // DoS everyone — and (b) let a stolen cookie from a fresh source IP get its
+  // own bucket. keyGenerator runs at onRequest (before the requireAuth
+  // preHandler), so we re-derive the session here; it falls back to IP for the
+  // unauthenticated case, which requireAuth then rejects with 401 anyway.
   app.get('/account/export', {
     preHandler: requireAuth,
-    config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 hour',
+        keyGenerator: async (req) => {
+          try {
+            const session = await verifySession(req)
+            if (session?.sub) return `export:acct:${session.sub}`
+          } catch {
+            // fall through to IP
+          }
+          return `export:ip:${req.ip}`
+        },
+      },
+    },
   }, async (req, reply) => {
     const writerId = req.session!.sub
 
