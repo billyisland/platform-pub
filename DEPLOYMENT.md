@@ -610,6 +610,36 @@ Format: `base64(nonce[24] || ciphertext_with_tag)`, XChaCha20-Poly1305 via `@nob
 
 ---
 
+## Starter-template feeds (new-user onboarding)
+
+A brand-new account follows nobody, so it is seeded with a **clone of each operator-designated template feed** rather than a bare timeline (FEED-RETIREMENT-PLAN Slice 3). There is no admin UI — a template is just one of your own ordinary feeds flagged `feeds.is_starter_template = true`. Seeding runs **lazily** on a user's first workspace load (`GET /workspace/feeds` → `seedStarterFeeds`, advisory-locked, idempotent) and only when that account has **zero** feeds. Until ≥1 feed is flagged it is a no-op (the client then mints an empty default feed).
+
+**Designate a template (on the server):**
+
+```bash
+cd /root/platform-pub
+# prereq — confirm migration 114 applied (the flag column exists):
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
+  "SELECT 1 FROM information_schema.columns WHERE table_name='feeds' AND column_name='is_starter_template';"
+# find the feed's UUID (curate it in your workspace first):
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
+  "SELECT f.id, f.name FROM feeds f JOIN accounts a ON a.id=f.owner_id WHERE a.username='<you>' ORDER BY f.sort_rank;"
+# flag it:
+docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c \
+  "UPDATE feeds SET is_starter_template = true WHERE id = '<feed-uuid>';"
+```
+
+Then sign up a fresh account to confirm it lands on a clone (`SELECT cloned_from_feed_id FROM feeds WHERE owner_id=<new user>` should equal the template's id). If the flag is set but a fresh account does **not** get the clone, the running gateway image predates the Slice 3 seeding code — `docker compose build gateway && docker compose up -d gateway`.
+
+**Semantics to know:**
+
+- **Live snapshot at seed time, not flag time.** The clone copies the template's `name`, `appearance`, and **current** `feed_sources` rows at the moment a user is seeded. Editing the template afterwards changes what *subsequent* signups receive; it never retro-updates an existing user's clone (the clone is an independent owned feed).
+- **Source types matter for cold start.** `reach`/`following` clones in *empty* (a newcomer follows nobody). Use `reach`/`explore` + specific `account`/`publication`/`tag` and `external_source` rows for immediate content — those clone as literal references and resolve for everyone.
+- **Multiple templates** allowed (each newcomer gets one clone of each, ordered by template `created_at`). Swap/disable with `UPDATE feeds SET is_starter_template = false WHERE id = '…';` — read live each first-load, no redeploy.
+- **Not retroactive** — only accounts with zero feeds are seeded; existing users are untouched.
+
+---
+
 ## Media uploads
 
 `POST /api/v1/media/upload` resizes to max 1200px, converts to WebP (q80), and writes to `media_data` at `/app/media/<sha256>.webp`. Nginx serves `/media/<sha256>.webp` with 1-year cache headers. Max upload 12 MB (enforced by Fastify `bodyLimit` and `@fastify/multipart`).
@@ -618,37 +648,40 @@ Format: `base64(nonce[24] || ciphertext_with_tag)`, XChaCha20-Poly1305 via `@nob
 
 ## Frontend pages
 
+The logged-in surface is **`/workspace`**. The content routes below keep full pages for direct visits / SEO but open as Glasshouse **overlays** when reached from inside the app, and several legacy routes are now redirect shims into those overlays (FEED-RETIREMENT-PLAN; routing in `web/src/lib/workspace/overlays.ts`).
+
 | Path | Purpose |
 | ---- | ------- |
-| / | Landing (redirects to /feed if logged in) |
-| /feed | Main feed — composer + Following / Explore (renders ArticleCard / NoteCard / ExternalCard) |
-| /workspace | Workspace view (VesselCard-based; workspace experiment) |
-| /[username] | User profile (SSR, ISR 60s) |
-| /article/[dTag] | Article reader with paywall unlock (SSR, ISR 60s) |
-| /write | Article editor with paywall gate marker + scheduling |
-| /dashboard | Articles, drafts, pledge drives, offers, pricing, publication creation |
-| /profile | Identity, payment card, Stripe Connect, data export |
-| /settings | Account settings (email/username change, preferences) |
+| / | Landing (redirects to /workspace if logged in) |
+| /workspace | Primary logged-in surface — composed feed vessels (the one Post-model card path) + Glasshouse overlays (reader, profile, dashboard, settings, library, network, subscriptions, messages, notifications) |
+| /feed → /workspace | Redirect shim (legacy global Following/Explore feed retired) |
+| /[username] | Writer profile (SSR, ISR 60s; opens as the profile overlay in-app) |
+| /author/[id] | External-author profile (Post-model; profile overlay in-app) |
+| /source/[id] | Source surface (Post-model; surface overlay in-app) |
+| /tag/[tag] | Tag/topic listing (Post-model; surface overlay in-app) |
+| /article/[dTag] | Article reader with paywall unlock (SSR, ISR 60s; reader overlay in-app) |
+| /write | Article editor with paywall gate marker + scheduling (also the EditorOverlay) |
+| /pub/[slug] (+ /about, /masthead, /subscribe, /archive) | Publication surfaces (surface overlay in-app; article rows open the reader) |
+| /profile → /workspace?overlay=settings | Redirect shim (identity folded into Settings) |
+| /settings → /workspace?overlay=settings | Redirect shim |
+| /library (+ /bookmarks, /history, /reading-history) → /workspace?overlay=library | Redirect shims — saved reading (Bookmarks / History) |
+| /network (+ /followers, /social, /following) → /workspace?overlay=network | Redirect shims — following/followers/blocked/muted/vouches + DM fees |
+| /subscriptions → /workspace?overlay=subscriptions | Redirect shim — external-subscription manager |
+| /search → /workspace | Redirect shim (search lives in the workspace dock) |
+| /dashboard | Articles, drafts, pledge drives, offers, pricing, publications (dashboard overlay in-app) |
+| /messages, /messages/[conversationId] | DM inbox + thread (messages overlay in-app) |
+| /notifications | Notifications, excludes DMs (notifications overlay in-app) |
+| /ledger | Account ledger + writer earnings (ledger overlay in-app) |
+
+Other routes (not re-audited in the feed-retirement pass — verify against the route before relying on them):
+
+| Path | Purpose |
+| ---- | ------- |
 | /account | Balance, transaction ledger, subscriptions, pledges |
-| /ledger | Account ledger + writer earnings view |
-| /library | Saved reading — Bookmarks / History tabs |
-| /bookmarks | Saved articles |
-| /history → /library?tab=history | Redirect |
-| /reading-history → /library?tab=history | Redirect |
-| /network | Following / followers + feed reach dial |
-| /following | Writers you follow |
-| /followers | Accounts who follow you |
-| /social | Feed reach dial, blocks, mutes, DM fees |
-| /subscriptions | Manage subscriptions + subscribe input |
 | /subscribe/[code] | Subscription offer redemption |
-| /messages, /messages/[conversationId] | DM inbox + thread |
-| /notifications | Notifications (excludes DMs) |
-| /search | Article / writer / publication search |
-| /tag/[tag] | Tag/topic listing |
 | /auth, /auth/verify, /auth/google/callback | Signup/login, magic-link verify, Google OAuth callback |
 | /admin, /admin/reports | Moderation/admin surfaces |
 | /traffology, /traffology/overview, /traffology/piece/[pieceId] | Writer analytics |
-| /pub/[slug] (+ /about, /masthead, /subscribe, /archive, /[articleSlug]) | Publication surfaces |
 | /invite/[token] | Publication invite acceptance |
 | /about | About page |
 

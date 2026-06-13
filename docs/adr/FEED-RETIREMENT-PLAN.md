@@ -73,6 +73,7 @@ Sub-decisions — DECIDED (operator, 2026-06-12):
 - **Template designation** → **`feeds.is_starter_template` boolean** the operator toggles (feed-character-as-data; multiple templates allowed later; no redeploy to change). Migration adds the column. **The operator must flag ≥1 of their own feeds as a template before this works** — wire a small operator toggle (or set the flag via SQL).
 - **Clone label** → **name set at clone time** (the template's name; the clone is fully editable/renamable afterwards) **plus a `cloned_from_feed_id` provenance column** (nullable FK → `feeds`) so the UI can durably render "cloned from <operator>'s feed". Same migration.
 - **Trigger** → **clone at signup, plus a zero-feeds guard on workspace bootstrap** (idempotent) so existing accounts — and any signup that raced the seed — aren't stranded on an empty workspace.
+- **Snapshot timing (clarified 2026-06-13)** → the clone is a **live snapshot at seed time** (the user's first workspace load), *not* a freeze at flag time: `cloneFeedForOwner` copies the template's current `name`/`appearance`/`feed_sources` by live SELECT. So editing the template propagates to *subsequent* signups but never retro-updates an already-seeded user's clone (each clone is an independent owned feed). Cold-start content must come from `reach:explore` + literal `account`/`publication`/`tag`/`external_source` rows — `reach:following` clones in empty (a newcomer follows nobody). Operator runbook: `DEPLOYMENT.md` → "Starter-template feeds".
 
 ---
 
