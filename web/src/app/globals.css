@@ -87,18 +87,12 @@
   --ah-blush-deep: rgb(var(--ah-blush-deep-rgb));
   /* Per-feed colour-scheme surfaces (feature-debt §3; Brazilian-modernist
      family — FEED-SCHEME-REFRESH-ADR) */
-  --ah-mata-walls-rgb: 74 110 18;
-  --ah-mata-walls: rgb(var(--ah-mata-walls-rgb));
-  --ah-mata-interior-rgb: 239 233 218;
-  --ah-mata-interior: rgb(var(--ah-mata-interior-rgb));
-  --ah-mata-card-rgb: 247 242 230;
-  --ah-mata-card: rgb(var(--ah-mata-card-rgb));
-  --ah-cobalto-walls-rgb: 27 43 194;
-  --ah-cobalto-walls: rgb(var(--ah-cobalto-walls-rgb));
-  --ah-cobalto-interior-rgb: 22 34 140;
-  --ah-cobalto-interior: rgb(var(--ah-cobalto-interior-rgb));
-  --ah-cobalto-card-rgb: 20 28 82;
-  --ah-cobalto-card: rgb(var(--ah-cobalto-card-rgb));
+  --ah-anil-walls-rgb: 14 28 68;
+  --ah-anil-walls: rgb(var(--ah-anil-walls-rgb));
+  --ah-anil-interior-rgb: 22 40 94;
+  --ah-anil-interior: rgb(var(--ah-anil-interior-rgb));
+  --ah-anil-card-rgb: 32 48 92;
+  --ah-anil-card: rgb(var(--ah-anil-card-rgb));
   --ah-vela-walls-rgb: 21 96 87;
   --ah-vela-walls: rgb(var(--ah-vela-walls-rgb));
   --ah-vela-interior-rgb: 237 225 194;

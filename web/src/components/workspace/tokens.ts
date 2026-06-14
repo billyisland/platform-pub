@@ -21,8 +21,7 @@ import { PALETTE_REGISTRY } from '../../lib/palette/registry'
 export type FeedScheme =
   | 'primary'
   | 'dark'
-  | 'mata'
-  | 'cobalto'
+  | 'anil'
   | 'vela'
   | 'caju'
 // Legacy name — the per-vessel "brightness" axis grew into the scheme picker;
@@ -45,6 +44,12 @@ export interface VesselPalette {
   cardTitle: string
   cardStandfirst: string
   cardMeta: string
+  // Quoted-post embed surface. The embed sits on the vessel WALLS colour (not
+  // the interior/ground), so its text is derived against the walls luminance —
+  // a strong-contrast primary + a legible muted, independent of the card ramp.
+  quoteBg: string
+  quoteText: string
+  quoteMeta: string
   crimson: string
   resizeHandle: string
   pipOpacity: number
@@ -80,8 +85,7 @@ const SCHEME_SURFACES: Record<
   Exclude<FeedScheme, 'primary' | 'dark'>,
   { walls: string; interior: string; cardBg: string }
 > = {
-  mata: { walls: 'mata-walls', interior: 'mata-interior', cardBg: 'mata-card' },
-  cobalto: { walls: 'cobalto-walls', interior: 'cobalto-interior', cardBg: 'cobalto-card' },
+  anil: { walls: 'anil-walls', interior: 'anil-interior', cardBg: 'anil-card' },
   vela: { walls: 'vela-walls', interior: 'vela-interior', cardBg: 'vela-card' },
   caju: { walls: 'caju-walls', interior: 'caju-interior', cardBg: 'caju-card' },
 }
@@ -113,6 +117,10 @@ function deriveVesselPalette(s: {
     cardTitle: darkCard ? 'var(--ah-bone)' : 'var(--ah-ink)',
     cardStandfirst: darkCard ? 'var(--ah-stone-300)' : 'var(--ah-stone-600)',
     cardMeta: 'var(--ah-stone-400)',
+    // Quote embed rides the walls surface → contrast against walls luminance.
+    quoteBg: v(s.walls),
+    quoteText: darkBar ? 'var(--ah-bone-bright)' : 'var(--ah-ink)',
+    quoteMeta: darkBar ? 'var(--ah-stone-350)' : 'var(--ah-stone-600)',
     crimson: darkCard ? 'var(--ah-crimson-soft)' : 'var(--ah-crimson)',
     resizeHandle: 'var(--ah-stone-600)',
     pipOpacity: 1,
@@ -139,6 +147,9 @@ export const PALETTES: Record<FeedScheme, VesselPalette> = {
     cardTitle: 'var(--ah-ink)',
     cardStandfirst: 'var(--ah-stone-600)',
     cardMeta: 'var(--ah-stone-400)',
+    quoteBg: 'var(--ah-ink)',
+    quoteText: 'var(--ah-bone-bright)',
+    quoteMeta: 'var(--ah-stone-350)',
     crimson: 'var(--ah-crimson)',
     resizeHandle: 'var(--ah-stone-600)',
     pipOpacity: 1,
@@ -160,6 +171,9 @@ export const PALETTES: Record<FeedScheme, VesselPalette> = {
     cardTitle: 'var(--ah-bone)',
     cardStandfirst: 'var(--ah-stone-300)',
     cardMeta: 'var(--ah-stone-400)',
+    quoteBg: 'var(--ah-true-black)',
+    quoteText: 'var(--ah-bone-bright)',
+    quoteMeta: 'var(--ah-stone-350)',
     crimson: 'var(--ah-crimson-soft)',
     resizeHandle: 'var(--ah-stone-600)',
     pipOpacity: 1,
@@ -172,8 +186,7 @@ export const PALETTES: Record<FeedScheme, VesselPalette> = {
     barDropdownBg: 'var(--ah-ink-925)',
     barDropdownHover: 'var(--ah-ink-850)',
   },
-  mata: deriveVesselPalette(SCHEME_SURFACES.mata),
-  cobalto: deriveVesselPalette(SCHEME_SURFACES.cobalto),
+  anil: deriveVesselPalette(SCHEME_SURFACES.anil),
   vela: deriveVesselPalette(SCHEME_SURFACES.vela),
   caju: deriveVesselPalette(SCHEME_SURFACES.caju),
 }
@@ -182,8 +195,7 @@ export const PALETTES: Record<FeedScheme, VesselPalette> = {
 export const SCHEME_OPTIONS: ReadonlyArray<{ id: FeedScheme; label: string }> = [
   { id: 'primary', label: 'Paper' },
   { id: 'dark', label: 'Dark' },
-  { id: 'mata', label: 'Mata' },
-  { id: 'cobalto', label: 'Cobalto' },
+  { id: 'anil', label: 'Anil' },
   { id: 'vela', label: 'Vela' },
   { id: 'caju', label: 'Caju' },
 ]
@@ -195,10 +207,12 @@ const SCHEME_IDS = new Set<string>(SCHEME_OPTIONS.map((o) => o.id))
 // its nearest new mood BEFORE the SCHEME_IDS test, so an existing feed lands on
 // the matched scheme instead of silently flattening to Paper.
 const SCHEME_ALIASES: Record<string, FeedScheme> = {
-  blush: 'caju', // pink/maroon → hot coral
-  sage: 'mata', // green → green
+  blush: 'caju', // hot pink → hot coral
+  sage: 'vela', // green → teal-green light (was 'mata', dropped)
   sand: 'vela', // warm tan → warm sand
-  slate: 'cobalto', // dark blue → dark blue
+  slate: 'anil', // dark blue → indigo (was 'cobalto')
+  mata: 'vela', // dropped green → nearest light scheme
+  cobalto: 'anil', // electric blue → indigo
 }
 
 // Coerce any value (stale persisted 'medium'/'dim', unknown scheme ids from a

@@ -75,12 +75,9 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   // components/workspace/tokens.ts — tune surfaces here/in the devtool and the
   // text family follows. Keep each scheme's card surface clearly light or
   // clearly dark: mid-luminance cards defeat both tuned text ramps.
-  { slug: 'mata-walls', hex: '#4A6E12', label: 'Feed scheme Mata — vessel walls & bar (bold green)' },
-  { slug: 'mata-interior', hex: '#EFE9DA', label: 'Feed scheme Mata — vessel interior' },
-  { slug: 'mata-card', hex: '#F7F2E6', label: 'Feed scheme Mata — card surface' },
-  { slug: 'cobalto-walls', hex: '#1B2BC2', label: 'Feed scheme Cobalto — vessel walls & bar (electric blue, dark)' },
-  { slug: 'cobalto-interior', hex: '#16228C', label: 'Feed scheme Cobalto — vessel interior (dark)' },
-  { slug: 'cobalto-card', hex: '#141C52', label: 'Feed scheme Cobalto — card surface (dark)' },
+  { slug: 'anil-walls', hex: '#0E1C44', label: 'Feed scheme Anil — vessel walls & bar (deep indigo, dark)' },
+  { slug: 'anil-interior', hex: '#16285E', label: 'Feed scheme Anil — vessel interior (dark)' },
+  { slug: 'anil-card', hex: '#20305C', label: 'Feed scheme Anil — card surface (dark)' },
   { slug: 'vela-walls', hex: '#156057', label: 'Feed scheme Vela — vessel walls & bar (coastal teal)' },
   { slug: 'vela-interior', hex: '#EDE1C2', label: 'Feed scheme Vela — vessel interior' },
   { slug: 'vela-card', hex: '#FAF3E2', label: 'Feed scheme Vela — card surface' },

@@ -137,3 +137,101 @@ interior shifts).
 - Verified: web + gateway `tsc --noEmit` clean; hairline tripwire clean for touched
   files. Live legibility in a full vessel (8px walls + elevation shadow) needs the
   prod web rebuild — flat swatches understate the interior shift.
+
+---
+
+# Addendum A — drop Mata, replace Cobalto with Anil (2026-06-14)
+
+**Status:** Post-implementation revision. The base ADR shipped; `mata` / `cobalto`
+/ `vela` / `caju` went live, then two faults showed up in use.
+
+## A.1 Why
+
+- **Mata and Vela read as the same scheme twice** — both a green-family frame over
+  warm light surfaces, side by side in the cycle. Mata is dropped; the set loses
+  its bold green (§A.4).
+- **Cobalto doesn't hold up** — a pure-ultramarine bar at vessel-frame scale is
+  fatiguing and garish over its own card. Replaced by **Anil**, a deep indigo that
+  splits Cobalto and the retired Slate: bluer and more alive than Slate, calm
+  rather than electric, following Slate's value logic (walls darkest, card the
+  lifted reading well) so it sits as a comfortable dark reading surface.
+
+The colourful set is now three: **Anil** (indigo, cool, dark), **Vela** (coastal,
+light), **Caju** (hot, light).
+
+## A.2 Surface changes
+
+| Scheme | walls     | interior  | card      | isDark |
+|--------|-----------|-----------|-----------|--------|
+| Anil   | `#0E1C44` | `#16285E` | `#20305C` | true   |
+
+`:root` triples: `anil-walls 14 28 68 · anil-interior 22 40 94 · anil-card 32 48 92`.
+
+Edits: `registry.ts` (delete the three `mata-*`, rename `cobalto-*` → `anil-*` in
+place); `globals.css` (drop `mata-*` vars, replace `cobalto-*` with the `anil-*`
+triples); `tokens.ts` `FeedScheme` union / `SCHEME_OPTIONS` / `PALETTES` /
+`SCHEME_SURFACES` (drop `mata`, `cobalto` → `anil`, `isDark: true`);
+`gateway/src/routes/feeds.ts` `FEED_SCHEME_IDS` mirrored. Order: Paper → Dark →
+Anil → Vela → Caju (five-stop cycle). `vela` / `caju` untouched.
+
+## A.3 Migration (updated)
+
+`mata` and `cobalto` are now also retired-but-persisted ids (both already live on
+feeds), on top of the original four. The alias map, consulted before the
+`SCHEME_IDS` test:
+
+```ts
+const SCHEME_ALIASES: Record<string, FeedScheme> = {
+  blush:   'caju',  // hot pink → hot coral
+  sage:    'vela',  // green → teal-green light  (was 'mata')
+  sand:    'vela',  // warm tan → warm sand
+  slate:   'anil',  // dark blue → indigo        (was 'cobalto')
+  mata:    'vela',  // dropped green → nearest light scheme
+  cobalto: 'anil',  // electric blue → indigo
+}
+```
+
+Everything else (`medium` / `dim` / unknown / junk) still falls through to
+`primary`. A feed on `mata` or `cobalto` reloads onto its mapped live scheme, not
+Paper.
+
+## A.4 Consequences
+
+- **Cycle is five stops** (down from six).
+- **No bold green remains** — Vela's teal is the only green, light and blue-leaning.
+  A future bold green needs its own slot in a cooler/darker register than Vela to
+  avoid repeating the Mata/Vela collision (its own addendum if so).
+- The §V per-scheme-accent follow-on is unaffected and still deferred.
+
+---
+
+# Addendum B — quoted-post embeds ride the walls surface (2026-06-14)
+
+**Status:** Implemented. Affects `tokens.ts` and the two quote renderers
+(`web/src/components/post/QuotedEmbed.tsx`,
+`web/src/components/workspace/QuotedPostTile.tsx`).
+
+## B.1 Why
+
+A quoted-post embed previously sat on `palette.interior` (the vessel *ground*),
+the same surface as the card's own content well — so the quote didn't separate
+from the host body. It now rides `palette.walls` (the vessel *frame* colour, the
+same surface as the bar), giving the embed a distinct, recessed-frame reading.
+
+## B.2 Mechanism
+
+Three derived fields join `VesselPalette`, so the treatment is one rule across all
+five schemes rather than per-component contrast math:
+
+- `quoteBg` = the `walls` colour.
+- `quoteText` = strong-contrast primary, derived against **walls** luminance
+  (`bone-bright` on dark walls, `ink` on light) — not the card ramp.
+- `quoteMeta` = legible muted secondary (`stone-350` dark / `stone-600` light).
+
+Derived in `deriveVesselPalette` from the existing `darkBar` (walls-luminance)
+switch for curated schemes; set literally for `primary` / `dark`. Because it keys
+off walls luminance it stays correct if a light-walls scheme is ever added; today
+all five schemes have dark walls, so quote text resolves light-on-dark throughout.
+Both renderers point their tile background + text at these fields; the nested
+link-preview chip inside `QuotedPostTile` keeps its own `cardBg` surface (an
+intentional light chip-within-the-quote). Verified: web `tsc --noEmit` clean.

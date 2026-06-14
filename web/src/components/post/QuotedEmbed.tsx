@@ -93,19 +93,19 @@ export function QuotedEmbed({
       {byline && (
         <div
           className="font-mono text-[11px] uppercase tracking-[0.06em]"
-          style={{ color: palette.cardMeta }}
+          style={{ color: palette.quoteMeta }}
         >
           {byline}
         </div>
       )}
       {preview.title && (
-        <div className="font-serif" style={{ color: palette.cardTitle, fontSize: 14, marginTop: 2 }}>
+        <div className="font-serif" style={{ color: palette.quoteText, fontSize: 14, marginTop: 2 }}>
           {preview.title}
         </div>
       )}
       {preview.excerpt && (
         <div
-          style={{ color: palette.cardStandfirst, fontSize: 13, lineHeight: 1.5, marginTop: 2 }}
+          style={{ color: palette.quoteText, fontSize: 13, lineHeight: 1.5, marginTop: 2 }}
         >
           {truncateText(preview.excerpt, 160)}
         </div>
@@ -126,7 +126,7 @@ export function QuotedEmbed({
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
         className="mt-2 block hover:opacity-90"
-        style={{ background: palette.interior, padding: "10px 12px" }}
+        style={{ background: palette.quoteBg, padding: "10px 12px" }}
       >
         {inner}
       </a>

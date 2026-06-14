@@ -66,15 +66,15 @@ export function QuotedPostTile({ itemId, palette, onOpen }: Props) {
     return (
       <div
         className="mt-2.5 mb-1.5 animate-pulse p-2.5"
-        style={{ opacity: 0.4, background: palette.interior }}
+        style={{ opacity: 0.4, background: palette.quoteBg }}
       >
         <div
           className="h-3 rounded mb-2"
-          style={{ width: "40%", background: palette.cardMeta }}
+          style={{ width: "40%", background: palette.quoteMeta }}
         />
         <div
           className="h-3 rounded"
-          style={{ width: "80%", background: palette.cardMeta }}
+          style={{ width: "80%", background: palette.quoteMeta }}
         />
       </div>
     );
@@ -92,7 +92,7 @@ export function QuotedPostTile({ itemId, palette, onOpen }: Props) {
   return (
     <div
       className={`mt-2.5 mb-1.5 p-2.5${onOpen ? " cursor-pointer hover:opacity-90" : ""}`}
-      style={{ background: palette.interior }}
+      style={{ background: palette.quoteBg }}
       {...(onOpen
         ? {
             role: "button" as const,
@@ -114,14 +114,14 @@ export function QuotedPostTile({ itemId, palette, onOpen }: Props) {
     >
       <div
         className="font-mono text-[10px] uppercase tracking-[0.06em] mb-1.5"
-        style={{ color: palette.cardMeta }}
+        style={{ color: palette.quoteMeta }}
       >
         ↱ Quoting {name} · {timestamp}
       </div>
       {body && (
         <div
           className="text-[13px] leading-[1.5] [&_p]:mb-2 [&_p:last-child]:mb-0"
-          style={{ color: palette.cardTitle }}
+          style={{ color: palette.quoteText }}
           dangerouslySetInnerHTML={
             quote.contentHtml ? { __html: quote.contentHtml } : undefined
           }
@@ -140,7 +140,7 @@ export function QuotedPostTile({ itemId, palette, onOpen }: Props) {
             maxHeight: 200,
             objectFit: "cover",
             display: "block",
-            background: palette.interior,
+            background: palette.quoteBg,
           }}
         />
       )}
