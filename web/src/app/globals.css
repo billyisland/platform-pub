@@ -521,6 +521,23 @@
     outline-offset: 2px;
   }
 
+  /* ----- ∀ trigger (ForallMenu) -----
+     The disc carries no .btn class, so without this it falls through to the
+     UA default focus ring — re-tripped for mouse users every time the menu
+     returns focus to the button (closeAll / selectRow). Suppress the bare
+     :focus outline, keep a genuine keyboard ring via :focus-visible, and kill
+     the grey tap-flash on mobile. */
+  .forall-trigger {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .forall-trigger:focus {
+    outline: none;
+  }
+  .forall-trigger:focus-visible {
+    outline: 2px solid var(--ah-crimson);
+    outline-offset: 2px;
+  }
+
   /* ----- Drop cap ----- */
   .prose-dropcap > p:first-of-type::first-letter {
     font-family: 'Literata', Georgia, serif;

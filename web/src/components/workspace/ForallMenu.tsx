@@ -302,6 +302,7 @@ export function ForallMenu({
       <button
         ref={buttonRef}
         type="button"
+        className="forall-trigger"
         aria-label={`Workspace actions${
           totalUnread > 0 ? ` (${totalUnread} unread)` : ""
         }`}

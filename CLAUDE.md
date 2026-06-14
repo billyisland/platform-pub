@@ -131,6 +131,8 @@ Always use `.label-ui text-grey-400` for form labels. Not `text-ui-xs uppercase 
 
 Use the defined button classes: `.btn` (primary), `.btn-accent` (crimson), `.btn-ghost` (background), `.btn-soft` (secondary/soft). Do not hand-roll button styles inline.
 
+**Focus state — `:focus-visible`, never bare `:focus`.** A focusable control must show its ring only for keyboard focus, via a `:focus-visible { outline: 2px solid var(--ah-crimson); outline-offset: 2px }` rule (the `.btn*`/`.focus-ring` classes already carry this; the 2px outlines are the a11y exemption to the no-hairline rule). A control that can't take a `.btn` class (e.g. the ∀ disc, `.forall-trigger`) needs its own class with that `:focus-visible` rule **plus** `:focus { outline: none }` to suppress the UA default — otherwise it re-trips the browser ring for mouse users on every programmatic refocus (`.focus()` after a menu closes). Never inline `outline: "none"` (it has higher specificity than the `:focus-visible` rule and kills the keyboard ring too); add `-webkit-tap-highlight-color: transparent` to kill the mobile tap-flash.
+
 ### Text-link actions
 
 `.btn-text` for inline text-link actions (13px sans, black, medium). `.btn-text-muted` for secondary (grey, hover:black). `.btn-text-danger` for destructive (crimson). Do not hand-roll with `text-ui-xs text-black font-medium` or similar.
