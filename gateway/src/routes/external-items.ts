@@ -1,6 +1,20 @@
 import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
+import { WebSocket } from "ws";
+import {
+  decodeNostrEventId,
+  nostrRootId,
+  parseNostrProfile,
+  normaliseNostrThreadNode,
+  type RawNostrEvent,
+  type NostrProfile,
+} from "../lib/nostr-thread.js";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
-import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
+import {
+  safeFetch,
+  pinnedWebSocketOptions,
+  type PinnedWebSocketOptions,
+} from "@platform-pub/shared/lib/http-client.js";
 import {
   enqueueRelayPublish,
   type SignedNostrEvent,
@@ -2218,12 +2232,14 @@ const HYDRATE_TTL_MS = 60_000;
 // already ingested for real is left as a counts refresh, never duplicated.
 async function persistHydratedThreadNodes(
   sourceId: string,
-  protocol: "atproto" | "activitypub",
+  protocol: "atproto" | "activitypub" | "nostr_external",
   nodes: HydratedNode[],
 ): Promise<void> {
   if (nodes.length === 0) return;
-  // atproto + activitypub both map to content_tier 'tier3' (migration 099 §7).
-  const tier = "tier3";
+  // atproto + activitypub both map to content_tier 'tier3' (migration 099 §7);
+  // nostr_external is 'tier2', matching the native nostr ingest path
+  // (feed-ingest-nostr.ts) so a hydrated node and a later real ingest agree.
+  const tier = protocol === "nostr_external" ? "tier2" : "tier3";
   await withTransaction(async (client) => {
     for (const n of nodes) {
       const ins = await client.query<{ id: string }>(
@@ -2472,6 +2488,168 @@ async function hydrateMastodonThread(item: ExternalItemRow): Promise<void> {
   ]);
 }
 
+// ── Nostr thread hydration ─────────────────────────────────────────────────
+// Nostr has no single "get thread" call (unlike Bluesky's getPostThread or
+// Mastodon's /context). We reconstruct the conversation from the relay graph:
+//   1. fetch the focal event to read its NIP-10 tags and locate the thread root
+//   2. fetch the root event + every event that `#e`-references the root — that
+//      one query returns the whole subtree (ancestors of the focal, the focal,
+//      siblings and descendants), because NIP-10 replies tag the root
+//   3. fetch kind-0 metadata for every distinct author for display names/avatars
+// Each event is normalised into the SAME relay-free identity encoding the
+// ingest path uses (nostrEventUri / nostrAddrUri — relay hints never enter the
+// id; see feed-ingest-nostr.ts), so a hydrated reply's source_reply_uri equals
+// its parent's source_item_uri and assembleExternalThread's DB walk connects
+// them. Best-effort and bounded (relay / timeout / node caps).
+
+const NOSTR_THREAD_RELAY_CAP = 5;
+const NOSTR_THREAD_NODE_CAP = 200;
+const NOSTR_THREAD_REQ_TIMEOUT_MS = 6_000;
+
+// Open one REQ against each relay (in parallel), collect EVENTs until EOSE or a
+// short timeout, dedupe by event id. Mirrors feed-ingest's fetchFromRelay but
+// takes arbitrary filters and runs read-only in the gateway request path.
+async function fetchNostrEvents(
+  relays: string[],
+  filters: Record<string, unknown>[],
+  timeoutMs: number,
+): Promise<RawNostrEvent[]> {
+  const byId = new Map<string, RawNostrEvent>();
+  await Promise.all(
+    relays.map(async (relayUrl) => {
+      let wsOpts: PinnedWebSocketOptions;
+      try {
+        wsOpts = await pinnedWebSocketOptions(relayUrl);
+      } catch {
+        return; // unresolvable / blocked host — skip this relay
+      }
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        const ws = new WebSocket(relayUrl, wsOpts);
+        const subId = `gw-${randomUUID()}`;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          try {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify(["CLOSE", subId]));
+            }
+          } catch {
+            /* draining */
+          }
+          try {
+            ws.close();
+          } catch {
+            /* already closed */
+          }
+          resolve();
+        };
+        const timer = setTimeout(done, timeoutMs);
+        ws.on("open", () => {
+          try {
+            ws.send(JSON.stringify(["REQ", subId, ...filters]));
+          } catch {
+            done();
+          }
+        });
+        ws.on("message", (raw) => {
+          try {
+            const msg = JSON.parse(raw.toString());
+            if (msg[0] === "EVENT" && msg[1] === subId) {
+              const ev = msg[2] as RawNostrEvent;
+              if (ev?.id && !byId.has(ev.id)) byId.set(ev.id, ev);
+            } else if (msg[0] === "EOSE" && msg[1] === subId) {
+              done();
+            }
+          } catch {
+            /* ignore parse errors */
+          }
+        });
+        ws.on("error", done);
+        ws.on("close", done);
+      });
+    }),
+  );
+  return [...byId.values()];
+}
+
+async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
+  const data = item.interaction_data as { id?: string; relays?: unknown } | null;
+  const focalId =
+    decodeNostrEventId(data?.id) ?? decodeNostrEventId(item.source_item_uri);
+  if (!focalId) return;
+
+  // Relay set: the focal's own relay hints first; if it carries none, fall back
+  // to the source's configured relays. Deduped, scheme-checked, capped.
+  const rawRelays = data?.relays;
+  const hinted = Array.isArray(rawRelays)
+    ? rawRelays.filter((r): r is string => typeof r === "string")
+    : [];
+  let relays = [...new Set(hinted)];
+  if (relays.length === 0) {
+    const { rows } = await pool.query<{ relay_urls: string[] | null }>(
+      `SELECT relay_urls FROM external_sources WHERE id = $1`,
+      [item.source_id],
+    );
+    relays = [...new Set(rows[0]?.relay_urls ?? [])];
+  }
+  relays = relays
+    .filter((r) => r.startsWith("ws://") || r.startsWith("wss://"))
+    .slice(0, NOSTR_THREAD_RELAY_CAP);
+  if (relays.length === 0) return;
+
+  // 1. Fetch the focal event to read its NIP-10 tags → locate the thread root.
+  const [focal] = await fetchNostrEvents(
+    relays,
+    [{ ids: [focalId] }],
+    NOSTR_THREAD_REQ_TIMEOUT_MS,
+  );
+  const rootId = focal ? nostrRootId(focal) : focalId;
+
+  // 2. Fetch the root event + everything that references it. NIP-10 replies tag
+  //    the root, so `#e: [rootId]` returns the whole subtree in one query.
+  const events = await fetchNostrEvents(
+    relays,
+    [
+      { ids: [rootId] },
+      { kinds: [1], "#e": [rootId], limit: NOSTR_THREAD_NODE_CAP },
+    ],
+    NOSTR_THREAD_REQ_TIMEOUT_MS,
+  );
+  const all = new Map<string, RawNostrEvent>();
+  if (focal) all.set(focal.id, focal);
+  for (const ev of events) all.set(ev.id, ev);
+  if (all.size === 0) return;
+
+  // 3. One REQ for every distinct author's kind-0 profile; keep the newest.
+  const pubkeys = [...new Set([...all.values()].map((e) => e.pubkey))];
+  const profileEvents = await fetchNostrEvents(
+    relays,
+    [{ kinds: [0], authors: pubkeys, limit: pubkeys.length }],
+    NOSTR_THREAD_REQ_TIMEOUT_MS,
+  );
+  const profiles = new Map<string, NostrProfile>();
+  for (const ev of [...profileEvents].sort(
+    (a, b) => b.created_at - a.created_at,
+  )) {
+    if (!profiles.has(ev.pubkey)) {
+      profiles.set(ev.pubkey, parseNostrProfile(ev.content));
+    }
+  }
+
+  const nodes = [...all.values()]
+    .slice(0, NOSTR_THREAD_NODE_CAP)
+    .map((ev) =>
+      normaliseNostrThreadNode(
+        ev,
+        relays,
+        profiles.get(ev.pubkey) ?? { name: null, picture: null, nip05: null },
+      ),
+    );
+  await persistHydratedThreadNodes(item.source_id, "nostr_external", nodes);
+}
+
 // Public entrypoint: best-effort, throttled hydration of an external item's live
 // source thread into external_items + feed_items, so the pure-DB /thread
 // projector can then resolve its ancestors + replies. Never throws.
@@ -2482,7 +2660,12 @@ export async function hydrateExternalThreadContext(item: {
   source_item_uri: string;
   interaction_data: Record<string, unknown> | null;
 }): Promise<void> {
-  if (item.protocol !== "atproto" && item.protocol !== "activitypub") return;
+  if (
+    item.protocol !== "atproto" &&
+    item.protocol !== "activitypub" &&
+    item.protocol !== "nostr_external"
+  )
+    return;
   const until = hydrateGuard.get(item.id);
   if (until && until > Date.now()) return;
   hydrateGuard.set(item.id, Date.now() + HYDRATE_TTL_MS);
@@ -2504,7 +2687,8 @@ export async function hydrateExternalThreadContext(item: {
   };
   try {
     if (item.protocol === "atproto") await hydrateBlueskyThread(row);
-    else await hydrateMastodonThread(row);
+    else if (item.protocol === "activitypub") await hydrateMastodonThread(row);
+    else await hydrateNostrThread(row);
   } catch (err) {
     logger.debug(
       { err: err instanceof Error ? err.message : String(err), id: item.id },
