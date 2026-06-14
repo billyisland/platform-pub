@@ -5,13 +5,15 @@
 //
 // One shape, reused everywhere a surface opens *over* the workspace (the reader
 // pane, direct messages, future panels):
-//   - a full-viewport frosted scrim (z-[55]) — a slight backdrop blur so the
-//     workspace reads as frosted glass behind, click-to-close;
-//   - a warm mid-light pane (z-[56], `bg-glasshouse`) lifted by an elevation
-//     shadow alone (no top edge), click-through guarded. The pane is darker than
-//     the light ground so it separates against bright feeds, lighter than the
-//     dark ground so it separates in dark mode; fields inside it are the bright
-//     wells. It opens snapped-centred on the 20px lattice and is DRAGGABLE by the
+//   - a full-viewport frosted scrim (z-[55], `.gh-scrim`) — backdrop blur PLUS a
+//     desaturate + neutral wash that converges any per-feed scheme behind toward
+//     the mode's ground, so the pane always meets the same field (separation is
+//     the scrim's job — GLASSHOUSE-AND-PALETTE-ADR §III.1); click-to-close;
+//   - a pale parchment pane (z-[56], `bg-glasshouse` = #F5F4F0) lifted by an
+//     elevation shadow alone (no top edge), click-through guarded. The pane is
+//     LIGHTER than both the bone floor and the washed scrim ground, so it reads
+//     as lifted paper (the identity is the pane's — §III.2); fields inside it are
+//     the brighter white wells. It opens snapped-centred on the 20px lattice and is DRAGGABLE by the
 //     top-centre grip — drag is free, snaps to the lattice on release, clamps to
 //     the viewport, and (with `persistKey`) remembers its spot per overlay. It
 //     stays modal throughout: the scrim, one-at-a-time, and scroll-lock are
@@ -379,14 +381,13 @@ export function Glasshouse({
 
   return (
     <>
-      {/* Frosted scrim — full viewport, blur only (no tint, so the ground colour
-          is preserved and the ForallMenu disc keeps its contrast), click to
-          close. z-[55] sits above the workspace (so it blurs) but below the
-          ForallMenu (z-60). */}
-      <div
-        className="fixed inset-0 z-[55] backdrop-blur-[3px]"
-        onClick={onClose}
-      />
+      {/* Frosted scrim — full viewport, click to close. `.gh-scrim` (globals.css)
+          blurs AND desaturates + washes the backdrop toward the mode's neutral
+          ground, so the fixed parchment pane always meets the same field whatever
+          per-feed scheme is behind (GLASSHOUSE-AND-PALETTE-ADR §III.1 — separation
+          is the scrim's job, identity is the pane's). z-[55] sits above the
+          workspace (so it blurs) but below the ForallMenu (z-60). */}
+      <div className="fixed inset-0 z-[55] gh-scrim" onClick={onClose} />
 
       {/* Pane wrapper — click outside the pane closes. */}
       <div className="fixed inset-0 z-[56]" onClick={onClose}>

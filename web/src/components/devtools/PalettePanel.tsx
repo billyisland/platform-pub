@@ -208,7 +208,7 @@ function SpectrumPicker({
 // ── the panel ────────────────────────────────────────────────────────────────
 
 export function PalettePanel() {
-  const { isOpen, overrides, close, setColor, resetColor, resetAll, hydrate } =
+  const { isOpen, overrides, open, close, setColor, resetColor, resetAll } =
     usePaletteDevtool();
   const [selected, setSelected] = useState<string | null>(null);
   const [hexDraft, setHexDraft] = useState("");
@@ -220,11 +220,28 @@ export function PalettePanel() {
   );
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Apply persisted overrides on first mount — even with the panel closed, so
-  // a reload keeps the tuned scheme.
+  // Operator-only entry (GLASSHOUSE-AND-PALETTE-ADR §III.5): there is no shipped
+  // menu/settings row anymore. The panel is reachable two ways — a `?palette`
+  // query param (deep-linkable) or the Ctrl+Alt+P chord (toggle). Boot-time
+  // hydration of persisted overrides lives in the headless PaletteHydrator, not
+  // here, so it runs even when this panel never opens.
   useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+    try {
+      if (new URLSearchParams(window.location.search).has("palette")) open();
+    } catch {
+      /* ignore malformed search */
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        const s = usePaletteDevtool.getState();
+        if (s.isOpen) s.close();
+        else s.open();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   const currentHex = useCallback(
     (entry: PaletteEntry) => overrides[entry.slug] ?? entry.hex,

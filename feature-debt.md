@@ -340,10 +340,17 @@ Phase 1 is done (auto-renewal, annual pricing, subscribe at paywall, spend-thres
 
 **SHIPPED 2026-06-11, both tiers v1** — see the sixth-pass work-log entry in §1 for the full build record. The design constraints all landed as specified: per-feed schemes are curated **surface-only** sets (`web/src/lib/palette/registry.ts` scheme slugs) expanded deterministically by `deriveVesselPalette` (`tokens.ts`) — luminance-based family selection between the two tuned text ramps, crimson→crimson-soft flip on dark cards, trust pips untouched; storage is server-side feed character (`feeds.appearance` JSONB, migration 112); global theming is curated preset var-sets only (`web/src/lib/palette/themes.ts` + Settings `ThemeSection`) through the devtool override mechanism, with the ∀ chrome / Glasshouse / trust pips locked out (`THEME_LOCKED_SLUGS`).
 
+**Update 2026-06-14 — user-facing palette/theme editing retired; schemes refreshed.** Two ADRs landed (`docs/adr/GLASSHOUSE-AND-PALETTE-ADR.md`, `docs/adr/FEED-SCHEME-REFRESH-ADR.md`):
+- **Palette controls retired** (GLASSHOUSE-AND-PALETTE §III.5) — the ForallMenu "Palette" row and the Settings `ThemeSection` preset picker are gone (`ThemeSection` parked, not deleted). The registry + var indirection + override mechanism stay; the `PalettePanel` devtool is now **operator-only** (reach via `?palette` / `Ctrl+Alt+P`); boot-time hydration moved to a headless `PaletteHydrator` (the load-bearing component). Existing user overrides are **purged once on upgrade** (sentinel `ah:palette-purged-v1`) to reclaim a single canonical identity. Per-feed schemes (separate key) survive.
+- **Per-feed scheme is now a click-through `AppearanceControl`** (§III.4), matching density/orientation/text-size — the swatch row is gone.
+- **Glasshouse pane → pale parchment** (`#F5F4F0`) lifted over a desaturating **`.gh-scrim`** that does the separating (§III.1–2).
+- **Four schemes refreshed** (FEED-SCHEME-REFRESH-ADR): `blush`/`sage`/`sand`/`slate` → `mata`/`cobalto`/`vela`/`caju` (Brazilian-modernist family); retired ids migrate on read via `SCHEME_ALIASES` (no DB backfill). Cycle is now six schemes — the ceiling for a click-through; a seventh should prompt a picker.
+
 Remaining (deliberate residue, not blockers):
 
 - **Free colour wheel per feed** — the picker swaps, the derivation stays. Needs arbitrary-surface storage (`appearance` carries hexes, not a scheme id) + the mid-luminance contrast floor the curated swatches currently avoid by construction.
-- **Preset themes are structurally curated, not finally designed** — Warm/Cool/High-contrast values are placeholders to be tuned via the Palette devtool; preset choice is per-device (`localStorage`), not account-level.
+- **Per-scheme accent token** — a fourth per-scheme slot distinct from system crimson (relieving crimson of double-duty, fixing the Caju red-on-red adjacency, and letting a hot splash drop into any scheme). Deferred to its own ADR (FEED-SCHEME-REFRESH §V).
+- **Preset themes** — retired from user-facing surfaces (above); the curated var-sets in `themes.ts` are parked alongside `ThemeSection` for possible operator/future use.
 - **Other appearance axes** — **density and `hidden` moved server-side 2026-06-11** with the MOBILE-LAYOUT-ADR build (density as a second `feeds.appearance` JSONB key, hide as a real `feeds.hidden` column + `sort_rank`, migration 113; both follow the scheme's server-plus-local-mirror precedence). Orientation and text size remain per-device localStorage by design: orientation is a canvas property with no mobile meaning (MOBILE-LAYOUT-ADR §VI), text size is unaddressed.
 
 _(Source: design conversation 2026-06-11, following the canonical colour registry ship; shipped same day.)_

@@ -41,7 +41,7 @@
   --ah-vouch-red: rgb(var(--ah-vouch-red-rgb));
   --ah-danger-red-rgb: 220 38 38;
   --ah-danger-red: rgb(var(--ah-danger-red-rgb));
-  --ah-glasshouse-rgb: 220 218 211;
+  --ah-glasshouse-rgb: 245 244 240;
   --ah-glasshouse: rgb(var(--ah-glasshouse-rgb));
   --ah-bone-rgb: 240 239 235;
   --ah-bone: rgb(var(--ah-bone-rgb));
@@ -83,31 +83,32 @@
   --ah-blush: rgb(var(--ah-blush-rgb));
   --ah-blush-deep-rgb: 232 165 167;
   --ah-blush-deep: rgb(var(--ah-blush-deep-rgb));
-  /* Per-feed colour-scheme surfaces (feature-debt §3) */
-  --ah-blush-walls-rgb: 92 46 48;
-  --ah-blush-walls: rgb(var(--ah-blush-walls-rgb));
-  --ah-blush-interior-rgb: 239 220 220;
-  --ah-blush-interior: rgb(var(--ah-blush-interior-rgb));
-  --ah-blush-card-rgb: 250 243 243;
-  --ah-blush-card: rgb(var(--ah-blush-card-rgb));
-  --ah-sage-walls-rgb: 46 68 56;
-  --ah-sage-walls: rgb(var(--ah-sage-walls-rgb));
-  --ah-sage-interior-rgb: 227 233 224;
-  --ah-sage-interior: rgb(var(--ah-sage-interior-rgb));
-  --ah-sage-card-rgb: 246 250 244;
-  --ah-sage-card: rgb(var(--ah-sage-card-rgb));
-  --ah-sand-walls-rgb: 84 69 43;
-  --ah-sand-walls: rgb(var(--ah-sand-walls-rgb));
-  --ah-sand-interior-rgb: 234 226 207;
-  --ah-sand-interior: rgb(var(--ah-sand-interior-rgb));
-  --ah-sand-card-rgb: 250 245 233;
-  --ah-sand-card: rgb(var(--ah-sand-card-rgb));
-  --ah-slate-walls-rgb: 13 19 31;
-  --ah-slate-walls: rgb(var(--ah-slate-walls-rgb));
-  --ah-slate-interior-rgb: 27 37 53;
-  --ah-slate-interior: rgb(var(--ah-slate-interior-rgb));
-  --ah-slate-card-rgb: 36 50 72;
-  --ah-slate-card: rgb(var(--ah-slate-card-rgb));
+  /* Per-feed colour-scheme surfaces (feature-debt §3; Brazilian-modernist
+     family — FEED-SCHEME-REFRESH-ADR) */
+  --ah-mata-walls-rgb: 74 110 18;
+  --ah-mata-walls: rgb(var(--ah-mata-walls-rgb));
+  --ah-mata-interior-rgb: 239 233 218;
+  --ah-mata-interior: rgb(var(--ah-mata-interior-rgb));
+  --ah-mata-card-rgb: 247 242 230;
+  --ah-mata-card: rgb(var(--ah-mata-card-rgb));
+  --ah-cobalto-walls-rgb: 27 43 194;
+  --ah-cobalto-walls: rgb(var(--ah-cobalto-walls-rgb));
+  --ah-cobalto-interior-rgb: 22 34 140;
+  --ah-cobalto-interior: rgb(var(--ah-cobalto-interior-rgb));
+  --ah-cobalto-card-rgb: 20 28 82;
+  --ah-cobalto-card: rgb(var(--ah-cobalto-card-rgb));
+  --ah-vela-walls-rgb: 21 96 87;
+  --ah-vela-walls: rgb(var(--ah-vela-walls-rgb));
+  --ah-vela-interior-rgb: 237 225 194;
+  --ah-vela-interior: rgb(var(--ah-vela-interior-rgb));
+  --ah-vela-card-rgb: 250 243 226;
+  --ah-vela-card: rgb(var(--ah-vela-card-rgb));
+  --ah-caju-walls-rgb: 194 70 28;
+  --ah-caju-walls: rgb(var(--ah-caju-walls-rgb));
+  --ah-caju-interior-rgb: 244 201 190;
+  --ah-caju-interior: rgb(var(--ah-caju-interior-rgb));
+  --ah-caju-card-rgb: 252 234 225;
+  --ah-caju-card: rgb(var(--ah-caju-card-rgb));
 }
 
 /* ── Self-hosted fonts ───────────────────────────────────────────────────────── */
@@ -519,6 +520,26 @@
   .focus-ring:focus-visible {
     outline: 2px solid var(--ah-crimson);
     outline-offset: 2px;
+  }
+
+  /* ----- Glasshouse scrim (GLASSHOUSE-AND-PALETTE-ADR §III.1) -----
+     The scrim, not the pane, does the separating: a feed scheme behind the
+     overlay (Paper / Dark / Blush / Sage / Sand / Slate) is converged toward
+     the mode's neutral ground so the fixed parchment pane always meets the
+     same field. saturate() drains the colour variance (the part that actually
+     breaks a fixed pane); the translucent wash drains the tonal variance and
+     fixes the ground. The blur stays. Values are tuned against the loudest
+     feed (Slate behind a light pane, a saturated Blush). The pane itself is
+     background-independent paper, and the ∀ disc is self-contained
+     (§III.3 — clipped to its own rim), so neither relies on the old
+     blur-only "preserve the ground" justification. */
+  .gh-scrim {
+    backdrop-filter: blur(3px) saturate(0.7);
+    -webkit-backdrop-filter: blur(3px) saturate(0.7);
+    background: rgb(var(--ah-bone-rgb) / 0.66);
+  }
+  :root.dark .gh-scrim {
+    background: rgb(var(--ah-ink-925-rgb) / 0.66);
   }
 
   /* ----- ∀ trigger (ForallMenu) -----

@@ -3,6 +3,12 @@
 // =============================================================================
 // ThemeSection — sitewide preset-theme picker (feature-debt §3, tier 2).
 //
+// PARKED (GLASSHOUSE-AND-PALETTE-ADR §III.5): retired from Settings — preset
+// theming is no longer user-facing (reclaiming a single canonical identity).
+// Not deleted, not mounted; the override mechanism it drove still exists for
+// operators (devtool) and any future use. Boot-time hydration now lives in the
+// headless PaletteHydrator, not PalettePanel (see the note below).
+//
 // Curated, complete var-sets only — never free per-var knobs (the global
 // registry has no derivable surface/text structure, so free tuning can make
 // the site illegible; designed presets can't). Applies through the Palette

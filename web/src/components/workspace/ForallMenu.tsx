@@ -11,7 +11,6 @@ import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay } from "../../stores/libraryOverlay";
 import { useNetworkOverlay } from "../../stores/networkOverlay";
 import { useSubscriptionsOverlay } from "../../stores/subscriptionsOverlay";
-import { usePaletteDevtool } from "../../stores/paletteDevtool";
 import { SearchPanel } from "./SearchPanel";
 
 const TOKENS = {
@@ -139,15 +138,6 @@ export function ForallMenu({
       kind: "overlay",
       onOpen: () => useSettingsOverlay.getState().open(),
       label: "Settings",
-      count: 0,
-    },
-    // TEMPORARY — live colour-tuning kit (PalettePanel). Not a Glasshouse:
-    // opening it leaves every other overlay's state untouched. Remove this
-    // row with the devtool once the colour scheme is finalised.
-    {
-      kind: "overlay",
-      onOpen: () => usePaletteDevtool.getState().open(),
-      label: "Palette",
       count: 0,
     },
   ];
@@ -328,7 +318,13 @@ export function ForallMenu({
           padding: 0,
           cursor: "pointer",
           transition: "transform 120ms ease-out",
-          transform: view !== "closed" ? "scale(1.04)" : "scale(1)",
+          // translateZ(0) pins the disc to its own integer-pixel compositor
+          // layer so the open-menu scale (and the SVG spin inside) introduce no
+          // fractional offset that could nudge the clipped rim (§III.3 item 4).
+          transform:
+            view !== "closed"
+              ? "scale(1.04) translateZ(0)"
+              : "scale(1) translateZ(0)",
         }}
       >
         {/* The ∀ is constructed, not typed: three bars forming the A skeleton,
@@ -337,15 +333,29 @@ export function ForallMenu({
             — each cutting off a *complete* circle segment — and the crossbar
             joins them across the central region.
 
-            The diagonals' endpoints overshoot the circumference (to r≈30) and
-            the apex's cap spills past the bottom, so each leg fully reaches the
-            rim with no anti-aliased gap — but the bar group is then *clipped to
-            the disc* (`#forall-clip`, r=28). The overshoot lands the leg exactly
-            on the rim while the clip guarantees nothing paints outside it, so no
-            pale leg-ends ever poke past the edge (the old floor-on-floor trick
-            leaked them once the open-menu scale + spin transforms stopped the
-            compositor cancelling them against the floor).
-            Inner SVG so the unread badge stays a sibling on the button. */}
+            The diagonals' endpoints overshoot the circumference and the apex's
+            cap spills past the bottom, so each leg fully reaches the rim with no
+            anti-aliased gap — but the bar group is then *doubly clipped to the
+            disc the user sees* (§III.3): the SVG `#forall-clip` (r=27, inset a
+            hair inside the literal rim so the anti-aliased seam never reaches it)
+            AND the `overflow:hidden`+`borderRadius:50%` wrapper span below, which
+            clips in the SAME scaled coordinate space as the rendered rim. The two
+            together make the disc background-independent — leg overshoot can never
+            paint past the edge under any transform or DPR, so the legs read
+            identically over the workspace floor and over the frosted scrim (the
+            old single floor-on-floor clip leaked once the open-menu scale + spin
+            stopped the compositor cancelling the tips against the floor).
+            Wrapper + inner SVG so the unread badge stays an UN-clipped sibling on
+            the button. */}
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            overflow: "hidden",
+          }}
+        >
         <svg
           aria-hidden="true"
           viewBox="0 0 56 56"
@@ -373,7 +383,7 @@ export function ForallMenu({
                 is invariant under the spin and stays aligned with the button's
                 border-radius disc. */}
             <clipPath id="forall-clip">
-              <circle cx="28" cy="28" r="28" />
+              <circle cx="28" cy="28" r="27" />
             </clipPath>
           </defs>
           {/* stroke via style, not the presentation attribute — the token
@@ -394,6 +404,7 @@ export function ForallMenu({
             <line x1="17.3" y1="28" x2="38.7" y2="28" />
           </g>
         </svg>
+        </span>
         {totalUnread > 0 && (
           <span
             aria-hidden="true"

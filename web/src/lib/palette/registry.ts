@@ -10,12 +10,16 @@
 // copyable identifier list in exactly this order, so "colour 07" always means
 // the same set of components.
 //
-// The registry, the var() indirection, AND the PalettePanel devtool (+ its
-// ForallMenu "Palette" row) are all permanent: the devtool is the operator
-// tuning surface behind the shipped per-feed colour schemes and settings
-// preset themes (feature-debt.md §3), and its mount effect is what hydrates
-// persisted palette/theme overrides on boot — removing it would silently stop
-// user themes applying on reload. Do not delete (CLAUDE.md).
+// The registry, the var() indirection, the paletteDevtool store, and the
+// headless PaletteHydrator (components/devtools/PaletteHydrator.tsx) are all
+// permanent. The PalettePanel devtool is now OPERATOR-ONLY (no user-facing menu
+// or settings entry — GLASSHOUSE-AND-PALETTE-ADR §III.5; reach it via ?palette
+// or Ctrl+Alt+P) but stays as the operator tuning surface behind the per-feed
+// colour schemes (feature-debt.md §3). Boot-time hydration of persisted
+// overrides was lifted OUT of the panel into PaletteHydrator (mounted at the
+// app root) so it runs even when the panel never mounts — that component is
+// load-bearing; removing it would silently stop overrides applying on reload.
+// Do not delete (CLAUDE.md).
 // =============================================================================
 
 export interface PaletteEntry {
@@ -43,7 +47,7 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   { slug: 'crimson-soft', hex: '#D9555A', label: 'Dark-mode crimson (vessel palette)' },
   { slug: 'vouch-red', hex: '#C41230', label: 'Vouch modal error text' },
   { slug: 'danger-red', hex: '#DC2626', label: 'Destructive action buttons (danger zone)' },
-  { slug: 'glasshouse', hex: '#DCDAD3', label: 'Frosted overlay pane (fixed mid-light surface)' },
+  { slug: 'glasshouse', hex: '#F5F4F0', label: 'Frosted overlay pane (pale parchment, lifted)' },
   { slug: 'bone', hex: '#F0EFEB', label: 'Workspace floor & light interior; dark-mode card titles' },
   { slug: 'bone-bright', hex: '#E6E5E0', label: 'Vessel-bar text; pip-panel rules' },
   { slug: 'stone-300', hex: '#B4B2A9', label: 'Dark-mode card standfirst' },
@@ -70,18 +74,18 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   // components/workspace/tokens.ts — tune surfaces here/in the devtool and the
   // text family follows. Keep each scheme's card surface clearly light or
   // clearly dark: mid-luminance cards defeat both tuned text ramps.
-  { slug: 'blush-walls', hex: '#5C2E30', label: 'Feed scheme Blush — vessel walls & bar' },
-  { slug: 'blush-interior', hex: '#EFDCDC', label: 'Feed scheme Blush — vessel interior' },
-  { slug: 'blush-card', hex: '#FAF3F3', label: 'Feed scheme Blush — card surface' },
-  { slug: 'sage-walls', hex: '#2E4438', label: 'Feed scheme Sage — vessel walls & bar' },
-  { slug: 'sage-interior', hex: '#E3E9E0', label: 'Feed scheme Sage — vessel interior' },
-  { slug: 'sage-card', hex: '#F6FAF4', label: 'Feed scheme Sage — card surface' },
-  { slug: 'sand-walls', hex: '#54452B', label: 'Feed scheme Sand — vessel walls & bar' },
-  { slug: 'sand-interior', hex: '#EAE2CF', label: 'Feed scheme Sand — vessel interior' },
-  { slug: 'sand-card', hex: '#FAF5E9', label: 'Feed scheme Sand — card surface' },
-  { slug: 'slate-walls', hex: '#0D131F', label: 'Feed scheme Slate — vessel walls & bar (dark)' },
-  { slug: 'slate-interior', hex: '#1B2535', label: 'Feed scheme Slate — vessel interior (dark)' },
-  { slug: 'slate-card', hex: '#243248', label: 'Feed scheme Slate — card surface (dark)' },
+  { slug: 'mata-walls', hex: '#4A6E12', label: 'Feed scheme Mata — vessel walls & bar (bold green)' },
+  { slug: 'mata-interior', hex: '#EFE9DA', label: 'Feed scheme Mata — vessel interior' },
+  { slug: 'mata-card', hex: '#F7F2E6', label: 'Feed scheme Mata — card surface' },
+  { slug: 'cobalto-walls', hex: '#1B2BC2', label: 'Feed scheme Cobalto — vessel walls & bar (electric blue, dark)' },
+  { slug: 'cobalto-interior', hex: '#16228C', label: 'Feed scheme Cobalto — vessel interior (dark)' },
+  { slug: 'cobalto-card', hex: '#141C52', label: 'Feed scheme Cobalto — card surface (dark)' },
+  { slug: 'vela-walls', hex: '#156057', label: 'Feed scheme Vela — vessel walls & bar (coastal teal)' },
+  { slug: 'vela-interior', hex: '#EDE1C2', label: 'Feed scheme Vela — vessel interior' },
+  { slug: 'vela-card', hex: '#FAF3E2', label: 'Feed scheme Vela — card surface' },
+  { slug: 'caju-walls', hex: '#C2461C', label: 'Feed scheme Caju — vessel walls & bar (ember coral)' },
+  { slug: 'caju-interior', hex: '#F4C9BE', label: 'Feed scheme Caju — vessel interior' },
+  { slug: 'caju-card', hex: '#FCEAE1', label: 'Feed scheme Caju — card surface' },
 ]
 
 export const PALETTE_STORAGE_KEY = 'ah:palette-overrides'

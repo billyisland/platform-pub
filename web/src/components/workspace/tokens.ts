@@ -21,10 +21,10 @@ import { PALETTE_REGISTRY } from '../../lib/palette/registry'
 export type FeedScheme =
   | 'primary'
   | 'dark'
-  | 'blush'
-  | 'sage'
-  | 'sand'
-  | 'slate'
+  | 'mata'
+  | 'cobalto'
+  | 'vela'
+  | 'caju'
 // Legacy name — the per-vessel "brightness" axis grew into the scheme picker;
 // the persisted localStorage field and existing prop names keep this alias.
 export type Brightness = FeedScheme
@@ -80,10 +80,10 @@ const SCHEME_SURFACES: Record<
   Exclude<FeedScheme, 'primary' | 'dark'>,
   { walls: string; interior: string; cardBg: string }
 > = {
-  blush: { walls: 'blush-walls', interior: 'blush-interior', cardBg: 'blush-card' },
-  sage: { walls: 'sage-walls', interior: 'sage-interior', cardBg: 'sage-card' },
-  sand: { walls: 'sand-walls', interior: 'sand-interior', cardBg: 'sand-card' },
-  slate: { walls: 'slate-walls', interior: 'slate-interior', cardBg: 'slate-card' },
+  mata: { walls: 'mata-walls', interior: 'mata-interior', cardBg: 'mata-card' },
+  cobalto: { walls: 'cobalto-walls', interior: 'cobalto-interior', cardBg: 'cobalto-card' },
+  vela: { walls: 'vela-walls', interior: 'vela-interior', cardBg: 'vela-card' },
+  caju: { walls: 'caju-walls', interior: 'caju-interior', cardBg: 'caju-card' },
 }
 
 // Expand a curated surface set into a full VesselPalette. Luminance is read
@@ -172,30 +172,45 @@ export const PALETTES: Record<FeedScheme, VesselPalette> = {
     barDropdownBg: 'var(--ah-ink-925)',
     barDropdownHover: 'var(--ah-ink-850)',
   },
-  blush: deriveVesselPalette(SCHEME_SURFACES.blush),
-  sage: deriveVesselPalette(SCHEME_SURFACES.sage),
-  sand: deriveVesselPalette(SCHEME_SURFACES.sand),
-  slate: deriveVesselPalette(SCHEME_SURFACES.slate),
+  mata: deriveVesselPalette(SCHEME_SURFACES.mata),
+  cobalto: deriveVesselPalette(SCHEME_SURFACES.cobalto),
+  vela: deriveVesselPalette(SCHEME_SURFACES.vela),
+  caju: deriveVesselPalette(SCHEME_SURFACES.caju),
 }
 
 // Picker metadata, in display order (FeedComposer swatch row).
 export const SCHEME_OPTIONS: ReadonlyArray<{ id: FeedScheme; label: string }> = [
   { id: 'primary', label: 'Paper' },
   { id: 'dark', label: 'Dark' },
-  { id: 'blush', label: 'Blush' },
-  { id: 'sage', label: 'Sage' },
-  { id: 'sand', label: 'Sand' },
-  { id: 'slate', label: 'Slate' },
+  { id: 'mata', label: 'Mata' },
+  { id: 'cobalto', label: 'Cobalto' },
+  { id: 'vela', label: 'Vela' },
+  { id: 'caju', label: 'Caju' },
 ]
 
 const SCHEME_IDS = new Set<string>(SCHEME_OPTIONS.map((o) => o.id))
 
+// Retired-scheme migration (FEED-SCHEME-REFRESH-ADR §III.3): feeds persist a
+// scheme id, and the four colourful schemes were renamed. Map each old id to
+// its nearest new mood BEFORE the SCHEME_IDS test, so an existing feed lands on
+// the matched scheme instead of silently flattening to Paper.
+const SCHEME_ALIASES: Record<string, FeedScheme> = {
+  blush: 'caju', // pink/maroon → hot coral
+  sage: 'mata', // green → green
+  sand: 'vela', // warm tan → warm sand
+  slate: 'cobalto', // dark blue → dark blue
+}
+
 // Coerce any value (stale persisted 'medium'/'dim', unknown scheme ids from a
-// newer build, junk) to a live scheme.
+// newer build, junk) to a live scheme. Retired ids resolve via SCHEME_ALIASES
+// first; everything else falls through to the Paper default.
 export function normalizeBrightness(
   b: Brightness | string | null | undefined,
 ): FeedScheme {
-  return typeof b === 'string' && SCHEME_IDS.has(b) ? (b as FeedScheme) : 'primary'
+  if (typeof b !== 'string') return 'primary'
+  if (SCHEME_IDS.has(b)) return b as FeedScheme
+  if (b in SCHEME_ALIASES) return SCHEME_ALIASES[b]
+  return 'primary'
 }
 
 // Palette lookup that tolerates stale/undefined scheme ids without crashing.
@@ -220,6 +235,15 @@ export function nextDensity(d: Density): Density {
 
 export function nextOrientation(o: Orientation): Orientation {
   return o === 'vertical' ? 'horizontal' : 'vertical'
+}
+
+// Per-feed colour scheme as a click-through cycle (GLASSHOUSE-AND-PALETTE-ADR
+// §III.4) — the colour axis joins density / orientation / text-size as a single
+// AppearanceControl rather than a swatch row. Order follows SCHEME_OPTIONS.
+export function nextScheme(s: FeedScheme): FeedScheme {
+  const order = SCHEME_OPTIONS.map((o) => o.id)
+  const i = order.indexOf(normalizeBrightness(s))
+  return order[(i + 1) % order.length]
 }
 
 // Per-feed reading-text size (task 8/9). Governs the prose body of every card

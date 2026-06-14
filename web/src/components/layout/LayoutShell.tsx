@@ -9,6 +9,7 @@ import { ProfileOverlay } from '../workspace/ProfileOverlay'
 import { SurfaceOverlay } from '../workspace/SurfaceOverlay'
 import { EditorOverlay } from '../workspace/EditorOverlay'
 import { PalettePanel } from '../devtools/PalettePanel'
+import { PaletteHydrator } from '../devtools/PaletteHydrator'
 import { useReader } from '../../stores/reader'
 import { useProfile } from '../../stores/profileOverlay'
 import { useSurfaceOverlay } from '../../stores/surfaceOverlay'
@@ -62,9 +63,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         {/* Mounted unconditionally — "write an article" is reachable from the
             workspace, the dashboard overlay, and the note→article handoff. */}
         <EditorOverlay />
-        {/* TEMPORARY colour-tuning kit (not a Glasshouse — floats above all
-            surfaces, applies persisted palette overrides on mount). Remove
-            with the ForallMenu "Palette" row once the scheme is final. */}
+        {/* Headless — applies persisted palette overrides on boot (the permanent
+            hydration mechanism, CLAUDE.md). Always mounted; no UI. */}
+        <PaletteHydrator />
+        {/* Operator-only colour-tuning kit (not a Glasshouse — floats above all
+            surfaces, page stays sharp). No shipped menu/settings entry; reach it
+            via ?palette or the Ctrl+Alt+P chord (GLASSHOUSE-AND-PALETTE-ADR
+            §III.5). Renders null until opened. */}
         <PalettePanel />
       </div>
     </LayoutModeContext.Provider>
