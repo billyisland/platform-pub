@@ -107,7 +107,7 @@ cp web/.env.example web/.env
 cp traffology-ingest/.env.example traffology-ingest/.env  # if present
 ```
 
-`feed-ingest`, `traffology-worker`, and `web` (build args) draw their variables from the compose `environment:`/`args:` blocks, which reference the **root `.env`**. Ensure the root `.env` carries `POSTGRES_PASSWORD`, `LINKED_ACCOUNT_KEY_HEX`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and (optionally) `ATPROTO_PRIVATE_JWK` / `ATPROTO_CLIENT_BASE_URL`.
+`feed-ingest`, `traffology-worker`, and `web` (build args) draw their variables from the compose `environment:`/`args:` blocks, which reference the **root `.env`**. Ensure the root `.env` carries `POSTGRES_PASSWORD`, `LINKED_ACCOUNT_KEY_HEX`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and (optionally) `ATPROTO_PRIVATE_JWK` / `ATPROTO_CLIENT_BASE_URL`. Set `NOSTR_ENGAGEMENT_COUNTS_ENABLED=1` (read by `feed-ingest`) to turn on the Nostr reaction/reply count refresh on external cards — it ships dark (default off) because the relay REQ sweep is the heaviest engagement source (UNIVERSAL-FEED-ADR §VI.2).
 
 Key variables:
 

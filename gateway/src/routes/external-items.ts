@@ -1,6 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { randomUUID } from "node:crypto";
-import { WebSocket } from "ws";
 import {
   decodeNostrEventId,
   nostrRootId,
@@ -10,12 +8,12 @@ import {
   type RawNostrEvent,
   type NostrProfile,
 } from "../lib/nostr-thread.js";
-import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import {
-  safeFetch,
-  pinnedWebSocketOptions,
-  type PinnedWebSocketOptions,
-} from "@platform-pub/shared/lib/http-client.js";
+  fetchNostrEvents,
+  NOSTR_FALLBACK_RELAYS,
+} from "../lib/nostr-relay.js";
+import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
+import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import {
   enqueueRelayPublish,
   type SignedNostrEvent,
@@ -2510,83 +2508,6 @@ const NOSTR_THREAD_REQ_TIMEOUT_MS = 6_000;
 // a deep/slow chain can't stall the request (it breaks early on the first miss).
 const NOSTR_WALK_TIMEOUT_MS = 4_000;
 const NOSTR_ANCESTOR_DEPTH_CAP = 12;
-// High-coverage public relays/aggregators, merged in *behind* a post's own relay
-// hints (which are often just 1–2 relays that no longer carry the whole thread).
-// relay.nostr.band is a broad indexer; the rest are large general relays.
-const NOSTR_FALLBACK_RELAYS = [
-  "wss://relay.nostr.band",
-  "wss://relay.damus.io",
-  "wss://nos.lol",
-  "wss://relay.primal.net",
-];
-
-// Open one REQ against each relay (in parallel), collect EVENTs until EOSE or a
-// short timeout, dedupe by event id. Mirrors feed-ingest's fetchFromRelay but
-// takes arbitrary filters and runs read-only in the gateway request path.
-async function fetchNostrEvents(
-  relays: string[],
-  filters: Record<string, unknown>[],
-  timeoutMs: number,
-): Promise<RawNostrEvent[]> {
-  const byId = new Map<string, RawNostrEvent>();
-  await Promise.all(
-    relays.map(async (relayUrl) => {
-      let wsOpts: PinnedWebSocketOptions;
-      try {
-        wsOpts = await pinnedWebSocketOptions(relayUrl);
-      } catch {
-        return; // unresolvable / blocked host — skip this relay
-      }
-      await new Promise<void>((resolve) => {
-        let settled = false;
-        const ws = new WebSocket(relayUrl, wsOpts);
-        const subId = `gw-${randomUUID()}`;
-        const done = () => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          try {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify(["CLOSE", subId]));
-            }
-          } catch {
-            /* draining */
-          }
-          try {
-            ws.close();
-          } catch {
-            /* already closed */
-          }
-          resolve();
-        };
-        const timer = setTimeout(done, timeoutMs);
-        ws.on("open", () => {
-          try {
-            ws.send(JSON.stringify(["REQ", subId, ...filters]));
-          } catch {
-            done();
-          }
-        });
-        ws.on("message", (raw) => {
-          try {
-            const msg = JSON.parse(raw.toString());
-            if (msg[0] === "EVENT" && msg[1] === subId) {
-              const ev = msg[2] as RawNostrEvent;
-              if (ev?.id && !byId.has(ev.id)) byId.set(ev.id, ev);
-            } else if (msg[0] === "EOSE" && msg[1] === subId) {
-              done();
-            }
-          } catch {
-            /* ignore parse errors */
-          }
-        });
-        ws.on("error", done);
-        ws.on("close", done);
-      });
-    }),
-  );
-  return [...byId.values()];
-}
 
 async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   const data = item.interaction_data as { id?: string; relays?: unknown } | null;
@@ -2685,7 +2606,14 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
       normaliseNostrThreadNode(
         ev,
         relays,
-        profiles.get(ev.pubkey) ?? { name: null, picture: null, nip05: null },
+        profiles.get(ev.pubkey) ?? {
+          name: null,
+          picture: null,
+          nip05: null,
+          about: null,
+          website: null,
+          lud16: null,
+        },
       ),
     );
   await persistHydratedThreadNodes(item.source_id, "nostr_external", nodes);

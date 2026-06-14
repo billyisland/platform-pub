@@ -16,6 +16,7 @@ import {
   fetchAPProfile,
   buildExternalProfileUrl,
 } from "../lib/author-resolve.js";
+import { fetchNostrAuthorProfile } from "../lib/nostr-relay.js";
 
 // =============================================================================
 // Constructed author profile — UNIVERSAL-POST-ADR Phase 4 (§4.4, §9, §VI.3)
@@ -230,8 +231,36 @@ async function resolveExternalAuthorById(
     return { ...base, partial: true };
   }
 
-  // nostr_external: no live profile API — stored identity fields, no stats
-  // (§4.4 "no stats available ⇒ show no stats").
+  if (xa.protocol === "nostr_external") {
+    // Nostr has no profile REST API, but kind-0 metadata is reachable on the
+    // relay graph. Read it through live (source relay hints first, then the
+    // broad fallbacks) so the hover bio shows the real bio / verified handle /
+    // homepage / lightning address rather than just name + avatar. Follower /
+    // post counts aren't cheaply countable on Nostr, so stats stay absent
+    // (§4.4 "no stats available ⇒ show no stats").
+    let hintRelays: string[] = [];
+    if (rep?.source_id) {
+      const { rows } = await pool.query<{ relay_urls: string[] | null }>(
+        `SELECT relay_urls FROM external_sources WHERE id = $1`,
+        [rep.source_id],
+      );
+      hintRelays = rows[0]?.relay_urls ?? [];
+    }
+    const profile = await fetchNostrAuthorProfile(xa.stable_handle, hintRelays);
+    if (!profile) return base;
+    return {
+      ...base,
+      // base.externalUrl (njump, derived from the pubkey) is already correct —
+      // the @handle still routes there; only its label gains the nip05.
+      displayName: profile.name ?? base.displayName,
+      handle: profile.nip05 ?? base.handle,
+      avatarUrl: profile.picture ?? base.avatarUrl,
+      bio: profile.about ?? undefined,
+      website: profile.website ?? undefined,
+      lightningAddress: profile.lud16 ?? undefined,
+    };
+  }
+
   return base;
 }
 

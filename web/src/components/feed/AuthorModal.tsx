@@ -293,6 +293,27 @@ function ModalContent({
         </div>
       )}
 
+      {(data.website || data.lightningAddress) && (
+        <div className="flex flex-col gap-1 mt-2">
+          {data.website && (
+            <a
+              href={data.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-mono-xs text-grey-600 truncate hover:text-black hover:underline"
+            >
+              {data.website.replace(/^https?:\/\//, "")}
+            </a>
+          )}
+          {data.lightningAddress && (
+            <span className="text-mono-xs text-grey-600 truncate">
+              ⚡ {data.lightningAddress}
+            </span>
+          )}
+        </div>
+      )}
+
       {data.partial && (
         <p className="label-ui text-grey-300 mt-2">SOME DATA UNAVAILABLE</p>
       )}

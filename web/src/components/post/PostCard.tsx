@@ -114,7 +114,7 @@ export function PostCard({
   return (
     <PostCardShell ctx={ctx} indentPx={spec.indentPx} gapBelowPx={spec.gapBelowPx} onClick={onClick}>
       {header}
-      <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} />
+      <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} feedId={ctx.feedId} />
       <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} pollVote={pollVote} />
       <PostMedia post={post} mode={spec.media} video={spec.video} palette={ctx.palette} density={ctx.density} />
       <QuotedEmbed post={post} mode={spec.quoteEmbed} palette={ctx.palette} onQuoteOpen={onQuoteOpen} />

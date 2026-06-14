@@ -29,6 +29,12 @@ export interface AuthorCardResponse {
   sourceDescription?: string;
   sourceUrl?: string;
   sourceProtocol?: string;
+  // The author's self-declared homepage (Nostr kind-0 `website`). Rendered as a
+  // link in the hover bio when present.
+  website?: string;
+  // Lightning address (Nostr kind-0 `lud16`) — the zap target. Surfaced in the
+  // bio as a "⚡ name@host" affordance.
+  lightningAddress?: string;
   // Internal all.haus profile route the display name links to (native → /:username,
   // external A/B → /author/:authorId). Absent ⇒ name renders as plain text.
   profilePath?: string;

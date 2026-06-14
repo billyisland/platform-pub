@@ -39,6 +39,12 @@ export interface NostrProfile {
   name: string | null;
   picture: string | null;
   nip05: string | null;
+  // Richer kind-0 fields surfaced in the hover bio modal (thread nodes ignore
+  // them). `about` is the free-text bio; `website` the self-declared homepage;
+  // `lud16` the lightning address (the zap target).
+  about: string | null;
+  website: string | null;
+  lud16: string | null;
 }
 
 // NIP-01 parameterized-replaceable range (kind 30023 long-form lives here): keyed
@@ -99,7 +105,7 @@ export function nostrReplyTargetId(event: RawNostrEvent): string | null {
   return replyTag ? replyTag[1] : null;
 }
 
-// Parse a kind-0 profile into the few display fields a byline renders.
+// Parse a kind-0 profile into the display fields a byline + hover bio render.
 export function parseNostrProfile(content: string): NostrProfile {
   try {
     const p = JSON.parse(content) as Record<string, unknown>;
@@ -107,13 +113,25 @@ export function parseNostrProfile(content: string): NostrProfile {
       (typeof p.display_name === "string" && p.display_name.trim()) ||
       (typeof p.name === "string" && p.name.trim()) ||
       null;
+    const str = (v: unknown): string | null =>
+      typeof v === "string" && v.trim() ? v.trim() : null;
     return {
       name: name || null,
       picture: typeof p.picture === "string" ? p.picture : null,
       nip05: typeof p.nip05 === "string" ? p.nip05 : null,
+      about: str(p.about),
+      website: str(p.website),
+      lud16: str(p.lud16),
     };
   } catch {
-    return { name: null, picture: null, nip05: null };
+    return {
+      name: null,
+      picture: null,
+      nip05: null,
+      about: null,
+      website: null,
+      lud16: null,
+    };
   }
 }
 

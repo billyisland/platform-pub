@@ -224,6 +224,22 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
       .sort((a, b) => b.created_at - a.created_at)
       .slice(0, maxItems);
 
+    // nip05 (NIP-05 verified handle) from the latest kind-0, if any. Persisted
+    // as the external_items author_handle so the feed_items identity trigger
+    // propagates it to external_authors.handle — that's what the card byline and
+    // hover bio render as the verified @handle (Nostr has no handle@host).
+    let sourceNip05: string | null = null;
+    if (latestProfile) {
+      try {
+        const p = JSON.parse(latestProfile.content);
+        if (typeof p?.nip05 === "string" && p.nip05.trim()) {
+          sourceNip05 = p.nip05.trim();
+        }
+      } catch {
+        // Malformed profile — ignore (handled again in the metadata block below).
+      }
+    }
+
     // Upsert events into external_items + feed_items
     let inserted = 0;
     let newestCreatedAt = since;
@@ -263,6 +279,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
             source_reply_uri = EXCLUDED.source_reply_uri,
             interaction_data = EXCLUDED.interaction_data,
             author_name = EXCLUDED.author_name,
+            author_handle = COALESCE(EXCLUDED.author_handle, external_items.author_handle),
             deleted_at = NULL
           WHERE external_items.published_at < EXCLUDED.published_at
           RETURNING id, (xmax = 0) AS was_insert
@@ -271,7 +288,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
             sourceId,
             normalised.sourceItemUri,
             normalised.authorName ?? source.display_name ?? "Unknown",
-            normalised.authorHandle,
+            normalised.authorHandle ?? sourceNip05,
             normalised.contentText,
             normalised.title,
             event.created_at,

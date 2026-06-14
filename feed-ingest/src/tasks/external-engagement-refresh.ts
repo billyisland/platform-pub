@@ -3,6 +3,7 @@ import { pool } from "@platform-pub/shared/db/client.js";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { getPlatformConfig } from "../lib/platform-config.js";
+import { fetchNostrEngagementCounts } from "../lib/nostr-relay.js";
 
 // =============================================================================
 // external_engagement_refresh — periodic snapshot of engagement counts
@@ -19,7 +20,11 @@ import { getPlatformConfig } from "../lib/platform-config.js";
 //
 // Bluesky:  batch getPosts (up to 25 URIs per call)
 // Mastodon: individual GET /statuses/:id, parallelised per instance
-// Nostr:    skipped (relay REQ latency makes periodic refresh impractical)
+// Nostr:    reactions (kind 7) + replies (kind 1) by `#e`-tag over the relay
+//           graph, gated behind NOSTR_ENGAGEMENT_COUNTS_ENABLED (relay REQ
+//           latency makes it the heaviest source, so it ships dark and runs
+//           under a tighter per-run cap). Written MONOTONICALLY so a partial
+//           relay read never flickers a stored count down.
 // RSS:      no counts; always 0
 //
 // Writes are batched into one UPDATE ... FROM (VALUES ...) per platform and
@@ -32,6 +37,15 @@ const MASTODON_CONCURRENCY = 5;
 const MAX_LOOKBACK_DAYS = 7;
 // UTC hour whose top-of-hour run performs the full <7d daily sweep.
 const DAILY_REFRESH_HOUR_UTC = 4;
+// Nostr's relay REQ latency dwarfs the HTTP APIs, so it carries its own tighter
+// per-run budget and a relay-hint cap, independent of the HTTP-platform budget.
+const NOSTR_MAX_ITEMS = 300;
+const NOSTR_RELAY_HINT_CAP = 8;
+
+function nostrEngagementEnabled(): boolean {
+  const v = process.env.NOSTR_ENGAGEMENT_COUNTS_ENABLED;
+  return v === "1" || v === "true";
+}
 
 interface ExternalItemRow {
   id: string;
@@ -169,6 +183,25 @@ export const externalEngagementRefresh: Task = async (_payload, _helpers) => {
     updated += await refreshMastodonBatch(mastodonItems);
   }
 
+  // Nostr is queried separately (own tighter budget) since its relay REQ latency
+  // would otherwise let a backlog of nostr rows crowd out the fast HTTP refresh.
+  if (nostrEngagementEnabled()) {
+    const { rows: nostrRows } = await pool.query<ExternalItemRow>(
+      `SELECT id, protocol, source_item_uri, interaction_data, media,
+              like_count, reply_count, repost_count
+       FROM external_items
+       WHERE published_at >= $1
+         AND deleted_at IS NULL
+         AND protocol = 'nostr_external'
+       ORDER BY published_at DESC
+       LIMIT $2`,
+      [cutoff, NOSTR_MAX_ITEMS],
+    );
+    if (nostrRows.length > 0) {
+      updated += await refreshNostrBatch(nostrRows);
+    }
+  }
+
   if (updated > 0) {
     logger.info(
       { updated, total: rows.length },
@@ -200,6 +233,47 @@ async function batchUpdateCounts(rows: CountUpdate[]): Promise<void> {
      WHERE ei.id = v.id`,
     params,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Nostr — reactions (kind 7) + replies (kind 1) by `#e`-tag over the relay graph
+// ---------------------------------------------------------------------------
+
+async function refreshNostrBatch(items: ExternalItemRow[]): Promise<number> {
+  // Key each note by its raw hex event id (the `#e` value reactions/replies
+  // reference) and gather the union of the items' relay hints.
+  const byNoteId = new Map<string, ExternalItemRow>();
+  const relayHints = new Set<string>();
+  for (const item of items) {
+    const rawId = item.interaction_data?.id;
+    const id = typeof rawId === "string" ? rawId : null;
+    if (!id || !/^[0-9a-f]{64}$/i.test(id)) continue;
+    byNoteId.set(id.toLowerCase(), item);
+    const relays = item.interaction_data?.relays;
+    if (Array.isArray(relays)) {
+      for (const r of relays) if (typeof r === "string") relayHints.add(r);
+    }
+  }
+  if (byNoteId.size === 0) return 0;
+
+  const counts = await fetchNostrEngagementCounts(
+    [...byNoteId.keys()],
+    [...relayHints].slice(0, NOSTR_RELAY_HINT_CAP),
+  );
+
+  const changed: CountUpdate[] = [];
+  for (const [id, item] of byNoteId) {
+    const observed = counts.get(id);
+    if (!observed) continue;
+    // Monotonic: a partial relay read can only raise a count, never lower it.
+    // repost is left untouched (nostr cards hide repost — kind 6/16 are edges).
+    const like = Math.max(item.like_count, observed.like);
+    const reply = Math.max(item.reply_count, observed.reply);
+    if (like === item.like_count && reply === item.reply_count) continue;
+    changed.push({ id: item.id, like, reply, repost: item.repost_count });
+  }
+  await batchUpdateCounts(changed);
+  return changed.length;
 }
 
 // ---------------------------------------------------------------------------

@@ -168,6 +168,9 @@ describe("parseNostrProfile (kind-0)", () => {
       name: null,
       picture: null,
       nip05: null,
+      about: null,
+      website: null,
+      lud16: null,
     });
   });
 });

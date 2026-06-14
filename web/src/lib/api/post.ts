@@ -49,6 +49,10 @@ export interface AuthorProfile {
   sourceDescription?: string;
   sourceUrl?: string;
   sourceProtocol?: string;
+  // Self-declared homepage (Nostr kind-0 `website`), linked in the hover bio.
+  website?: string;
+  // Lightning address (Nostr kind-0 `lud16`) — surfaced as "⚡ name@host".
+  lightningAddress?: string;
   // Internal all.haus profile route for the display-name link (native → /:username,
   // external A/B → /author/:authorId). Absent ⇒ name is plain text.
   profilePath?: string;
