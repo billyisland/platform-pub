@@ -4,6 +4,7 @@ import { WebSocket } from "ws";
 import {
   decodeNostrEventId,
   nostrRootId,
+  nostrReplyTargetId,
   parseNostrProfile,
   normaliseNostrThreadNode,
   type RawNostrEvent,
@@ -2502,9 +2503,22 @@ async function hydrateMastodonThread(item: ExternalItemRow): Promise<void> {
 // its parent's source_item_uri and assembleExternalThread's DB walk connects
 // them. Best-effort and bounded (relay / timeout / node caps).
 
-const NOSTR_THREAD_RELAY_CAP = 5;
+const NOSTR_THREAD_RELAY_CAP = 6;
 const NOSTR_THREAD_NODE_CAP = 200;
 const NOSTR_THREAD_REQ_TIMEOUT_MS = 6_000;
+// The ancestor walk fetches one parent per hop; keep its per-hop timeout short so
+// a deep/slow chain can't stall the request (it breaks early on the first miss).
+const NOSTR_WALK_TIMEOUT_MS = 4_000;
+const NOSTR_ANCESTOR_DEPTH_CAP = 12;
+// High-coverage public relays/aggregators, merged in *behind* a post's own relay
+// hints (which are often just 1–2 relays that no longer carry the whole thread).
+// relay.nostr.band is a broad indexer; the rest are large general relays.
+const NOSTR_FALLBACK_RELAYS = [
+  "wss://relay.nostr.band",
+  "wss://relay.damus.io",
+  "wss://nos.lol",
+  "wss://relay.primal.net",
+];
 
 // Open one REQ against each relay (in parallel), collect EVENTs until EOSE or a
 // short timeout, dedupe by event id. Mirrors feed-ingest's fetchFromRelay but
@@ -2592,15 +2606,17 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   const hinted = Array.isArray(rawRelays)
     ? rawRelays.filter((r): r is string => typeof r === "string")
     : [];
-  let relays = [...new Set(hinted)];
-  if (relays.length === 0) {
+  // Source-configured relays as a secondary hint set, then the high-coverage
+  // fallbacks. Post hints first (most likely to hold the thread), capped.
+  let sourceRelays: string[] = [];
+  {
     const { rows } = await pool.query<{ relay_urls: string[] | null }>(
       `SELECT relay_urls FROM external_sources WHERE id = $1`,
       [item.source_id],
     );
-    relays = [...new Set(rows[0]?.relay_urls ?? [])];
+    sourceRelays = rows[0]?.relay_urls ?? [];
   }
-  relays = relays
+  const relays = [...new Set([...hinted, ...sourceRelays, ...NOSTR_FALLBACK_RELAYS])]
     .filter((r) => r.startsWith("ws://") || r.startsWith("wss://"))
     .slice(0, NOSTR_THREAD_RELAY_CAP);
   if (relays.length === 0) {
@@ -2611,7 +2627,7 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
     return;
   }
 
-  // 1. Fetch the focal event to read its NIP-10 tags → locate the thread root.
+  // 1. Fetch the focal event to read its NIP-10 tags → root + immediate parent.
   const [focal] = await fetchNostrEvents(
     relays,
     [{ ids: [focalId] }],
@@ -2619,19 +2635,44 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   );
   const rootId = focal ? nostrRootId(focal) : focalId;
 
-  // 2. Fetch the root event + everything that references it. NIP-10 replies tag
-  //    the root, so `#e: [rootId]` returns the whole subtree in one query.
-  const events = await fetchNostrEvents(
+  const all = new Map<string, RawNostrEvent>();
+  if (focal) all.set(focal.id, focal);
+
+  // 2. Broad net: the root event, everything that `#e`-tags the root (catches
+  //    descendants — replies conventionally tag the root), and direct replies to
+  //    the focal. One multi-filter REQ.
+  const broad = await fetchNostrEvents(
     relays,
     [
       { ids: [rootId] },
       { kinds: [1], "#e": [rootId], limit: NOSTR_THREAD_NODE_CAP },
+      { kinds: [1], "#e": [focalId], limit: NOSTR_THREAD_NODE_CAP },
     ],
     NOSTR_THREAD_REQ_TIMEOUT_MS,
   );
-  const all = new Map<string, RawNostrEvent>();
-  if (focal) all.set(focal.id, focal);
-  for (const ev of events) all.set(ev.id, ev);
+  for (const ev of broad) all.set(ev.id, ev);
+
+  // 3. Ancestor walk. The broad net only finds ancestors that tag the *root* —
+  //    but many clients tag only the immediate parent, so an intermediate
+  //    ancestor (root ≠ parent) is missed and the chain breaks at the first hop.
+  //    Climb parent-by-parent by id instead, fetching only hops not already held.
+  let cursor = focal ? nostrReplyTargetId(focal) : null;
+  const walked = new Set<string>([focalId]);
+  for (let depth = 0; depth < NOSTR_ANCESTOR_DEPTH_CAP && cursor; depth++) {
+    if (walked.has(cursor)) break;
+    walked.add(cursor);
+    let parent = all.get(cursor);
+    if (!parent) {
+      [parent] = await fetchNostrEvents(
+        relays,
+        [{ ids: [cursor] }],
+        NOSTR_WALK_TIMEOUT_MS,
+      );
+      if (!parent) break; // parent not on any relay — chain ends here
+      all.set(parent.id, parent);
+    }
+    cursor = nostrReplyTargetId(parent);
+  }
   if (all.size === 0) return;
 
   // 3. One REQ for every distinct author's kind-0 profile; keep the newest.

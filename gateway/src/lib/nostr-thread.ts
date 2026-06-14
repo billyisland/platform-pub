@@ -86,6 +86,19 @@ export function nostrRootId(event: RawNostrEvent): string {
   return rootTag?.[1] ?? event.id;
 }
 
+// NIP-10: the event's immediate reply parent — the `e` tag marked "reply", else
+// the last `e` tag (positional convention), else null (a root). Returns the raw
+// hex id (not an nevent) so it can drive an `ids` filter for the ancestor walk.
+// This is the SAME selection `normaliseNostrThreadNode` encodes into
+// `sourceReplyUri`, so the walked chain and the stored linkage agree.
+export function nostrReplyTargetId(event: RawNostrEvent): string | null {
+  const eTags = event.tags.filter((t) => t[0] === "e" && t[1]);
+  const replyTag =
+    eTags.find((t) => t[3] === "reply") ??
+    (eTags.length > 0 ? eTags[eTags.length - 1] : null);
+  return replyTag ? replyTag[1] : null;
+}
+
 // Parse a kind-0 profile into the few display fields a byline renders.
 export function parseNostrProfile(content: string): NostrProfile {
   try {

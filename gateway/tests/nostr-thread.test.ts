@@ -5,6 +5,7 @@ import {
   nostrAddrUri,
   decodeNostrEventId,
   nostrRootId,
+  nostrReplyTargetId,
   parseNostrProfile,
   normaliseNostrThreadNode,
   isParameterizedReplaceable,
@@ -100,6 +101,37 @@ describe("nostrRootId (NIP-10)", () => {
   });
   it("treats an event with no e-tags as its own root", () => {
     expect(nostrRootId(ev({ id: ID_A, tags: [["p", PUBKEY]] }))).toBe(ID_A);
+  });
+});
+
+describe("nostrReplyTargetId (NIP-10 ancestor walk) ", () => {
+  it("prefers the e-tag marked 'reply' over root", () => {
+    const e = ev({
+      tags: [
+        ["e", ID_ROOT, "", "root"],
+        ["e", ID_B, "", "reply"],
+      ],
+    });
+    expect(nostrReplyTargetId(e)).toBe(ID_B);
+  });
+  it("falls back to the last e-tag when unmarked (positional)", () => {
+    const e = ev({ tags: [["e", ID_ROOT], ["e", ID_B]] });
+    expect(nostrReplyTargetId(e)).toBe(ID_B);
+  });
+  it("returns null for a root (no e-tags)", () => {
+    expect(nostrReplyTargetId(ev({ tags: [["p", PUBKEY]] }))).toBeNull();
+  });
+  it("agrees with the encoded sourceReplyUri the node carries", () => {
+    // the walk fetches by this id; the stored node encodes the same id as an
+    // nevent — they must point at the same parent or the chain won't link.
+    const e = ev({ tags: [["e", ID_B, "", "reply"]] });
+    const target = nostrReplyTargetId(e);
+    const node = normaliseNostrThreadNode(e, [], {
+      name: null,
+      picture: null,
+      nip05: null,
+    });
+    expect(node.sourceReplyUri).toBe(nostrEventUri(target!));
   });
 });
 
