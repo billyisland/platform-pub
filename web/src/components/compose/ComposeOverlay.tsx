@@ -166,7 +166,7 @@ export function ComposeOverlay() {
                 : "What's on your mind?"
             }
             rows={4}
-            className="w-full resize-none bg-white px-4 py-3 font-sans text-[16px] text-black placeholder:text-grey-400 focus:outline-none leading-[1.6] border-none"
+            className="w-full resize-none bg-glasshouse-well px-4 py-3 font-sans text-[16px] text-black placeholder:text-grey-400 focus:outline-none leading-[1.6] border-none"
           />
           <MediaPreview
             attachments={media.attachments}

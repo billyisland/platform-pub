@@ -44,12 +44,12 @@ export function ProposalsTab({ userId }: { userId: string }) {
   if (loading) {
     return (
       <div className="space-y-3">
-        {[1, 2, 3].map(i => <div key={i} className="h-24 animate-pulse bg-white" />)}
+        {[1, 2, 3].map(i => <div key={i} className="h-24 animate-pulse bg-glasshouse-well" />)}
       </div>
     )
   }
 
-  if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
+  if (error) return <div className="bg-glasshouse-well px-4 py-3 text-ui-xs text-black">{error}</div>
 
   const showCommissions = filter === 'all' || filter === 'commissions'
   const showDrives = filter === 'all' || filter === 'drives'
@@ -180,7 +180,7 @@ function OffersSection({ offers, onUpdate }: { offers: SubscriptionOffer[]; onUp
       <p className="label-ui text-grey-600 mb-4">Offers</p>
 
       {active.length > 0 && (
-        <div className="overflow-x-auto bg-white">
+        <div className="overflow-x-auto bg-glasshouse-well">
           <table className="w-full text-ui-xs">
             <thead>
               <tr className="border-b-2 border-grey-200">
@@ -285,7 +285,7 @@ function OfferCreateForm({ mode, onCreated, onCancel }: { mode: 'code' | 'grant'
   }
 
   return (
-    <div className="bg-white px-5 py-5 space-y-4">
+    <div className="bg-glasshouse-well px-5 py-5 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="label-ui text-black">
           {mode === 'code' ? 'New offer code' : 'Gift subscription'}

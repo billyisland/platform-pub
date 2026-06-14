@@ -29,11 +29,11 @@ export function MuteList() {
     <div>
       <p className="label-ui text-grey-400 mb-4">Muted accounts</p>
       {loading ? (
-        <div className="space-y-2">{[1, 2].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
+        <div className="space-y-2">{[1, 2].map(i => <div key={i} className="h-10 animate-pulse bg-glasshouse-well" />)}</div>
       ) : mutes.length === 0 ? (
         <p className="text-ui-xs text-grey-300">No muted accounts.</p>
       ) : (
-        <div className="bg-white divide-y divide-grey-200/50">
+        <div className="bg-glasshouse-well divide-y divide-grey-200/50">
           {mutes.map(m => (
             <div key={m.userId} className="flex items-center justify-between px-4 py-3">
               <ProfileLink href={`/${m.username}`} className="text-ui-sm text-black hover:opacity-70">

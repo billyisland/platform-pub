@@ -69,7 +69,7 @@ export function ProfileSection() {
   return (
     <div className="mb-10">
       <p className="label-ui text-grey-600 mb-4">Profile</p>
-      <div className="bg-white px-6 py-5">
+      <div className="bg-glasshouse-well px-6 py-5">
         <form onSubmit={handleSave} className="space-y-8">
           {/* Avatar */}
           <div>

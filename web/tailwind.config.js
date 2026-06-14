@@ -27,13 +27,15 @@ module.exports = {
           DEFAULT: 'rgb(var(--ah-crimson-rgb) / <alpha-value>)',
           dark: 'rgb(var(--ah-crimson-dark-rgb) / <alpha-value>)',
         },
-        // Glasshouse pane fill. A warm mid-light surface — deliberately darker
-        // than the light workspace ground (#F0EFEB) so a frosted pane separates
-        // against bright feeds, yet far lighter than the dark ground (#1A1A18)
-        // so it still separates in dark mode. Fields inside it are the bright
-        // (white) raised wells. Fixed (does not track brightness); text stays
-        // dark. See the Glasshouse design-system rule in CLAUDE.md.
+        // Glasshouse pane fill — the overlay interior, now the LIGHTEST surface
+        // (white) so it reads as the outermost layer and nested wells sit a touch
+        // darker inside it. `glasshouse-well` (#F5F4F0) is that inset field/well
+        // colour — the two were swapped (the pane used to be the parchment and
+        // fields the white well; flipped so the lightest is outermost). Fixed
+        // (does not track brightness); text stays dark. See the Glasshouse
+        // design-system rule in CLAUDE.md.
         glasshouse: 'rgb(var(--ah-glasshouse-rgb) / <alpha-value>)',
+        'glasshouse-well': 'rgb(var(--ah-glasshouse-well-rgb) / <alpha-value>)',
       },
       typography: {
         DEFAULT: {

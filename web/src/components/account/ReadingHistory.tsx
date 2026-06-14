@@ -36,7 +36,7 @@ export function ReadingHistory({ inOverlay = false }: { inOverlay?: boolean }) {
 
   useEffect(() => { void fetchItems(0, false) }, [])
 
-  if (loading) return <div className="h-12 animate-pulse bg-white" />
+  if (loading) return <div className="h-12 animate-pulse bg-glasshouse-well" />
   if (items.length === 0) return null
 
   function articleHref(item: ReadingHistoryItem) {
@@ -53,7 +53,7 @@ export function ReadingHistory({ inOverlay = false }: { inOverlay?: boolean }) {
   return (
     <div className="mb-10">
       <p className="label-ui text-grey-400 mb-4">Reading history</p>
-      <div className="bg-white">
+      <div className="bg-glasshouse-well">
         {items.map(item => {
           const href = articleHref(item)
           return (

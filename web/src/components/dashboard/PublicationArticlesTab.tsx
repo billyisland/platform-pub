@@ -43,8 +43,8 @@ export function PublicationArticlesTab({ publicationId, publicationSlug, canPubl
     } catch { setError('Failed to unpublish.') }
   }
 
-  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
-  if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-glasshouse-well" />)}</div>
+  if (error) return <div className="bg-glasshouse-well px-4 py-3 text-ui-xs text-black">{error}</div>
 
   return (
     <div>
@@ -74,7 +74,7 @@ export function PublicationArticlesTab({ publicationId, publicationSlug, canPubl
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto bg-white">
+        <div className="overflow-x-auto bg-glasshouse-well">
           <table className="w-full text-ui-xs">
             <thead>
               <tr className="border-b-2 border-grey-200">

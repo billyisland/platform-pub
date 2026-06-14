@@ -19,8 +19,8 @@ export function PublicationEarningsTab({ publicationId }: Props) {
       .finally(() => setLoading(false))
   }, [publicationId])
 
-  if (loading) return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-20 animate-pulse bg-white" />)}</div>
-  if (error || !data) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
+  if (loading) return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-20 animate-pulse bg-glasshouse-well" />)}</div>
+  if (error || !data) return <div className="bg-glasshouse-well px-4 py-3 text-ui-xs text-black">{error}</div>
 
   const { summary, articles, payouts } = data
   const fmt = (pence: number) => `\u00a3${(pence / 100).toFixed(2)}`
@@ -36,7 +36,7 @@ export function PublicationEarningsTab({ publicationId }: Props) {
       </div>
 
       {/* Per-article table */}
-      <div className="bg-white px-6 py-5">
+      <div className="bg-glasshouse-well px-6 py-5">
         <p className="label-ui text-grey-400 mb-4">Revenue by article</p>
         {articles.length === 0 ? (
           <p className="text-ui-xs text-grey-300">No revenue yet.</p>
@@ -66,7 +66,7 @@ export function PublicationEarningsTab({ publicationId }: Props) {
 
       {/* Payout history */}
       {payouts.length > 0 && (
-        <div className="bg-white px-6 py-5">
+        <div className="bg-glasshouse-well px-6 py-5">
           <p className="label-ui text-grey-400 mb-4">Payout history</p>
           <div className="space-y-4">
             {payouts.map(p => (
@@ -112,7 +112,7 @@ export function PublicationEarningsTab({ publicationId }: Props) {
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white p-4">
+    <div className="bg-glasshouse-well p-4">
       <p className="text-ui-xs text-grey-300 mb-1">{label}</p>
       <p className="text-[20px] font-sans text-black tabular-nums">{value}</p>
     </div>

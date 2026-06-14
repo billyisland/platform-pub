@@ -21,13 +21,13 @@ export function SubscribersTab() {
   if (loading) {
     return (
       <div className="space-y-3">
-        {[1, 2, 3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}
+        {[1, 2, 3].map(i => <div key={i} className="h-10 animate-pulse bg-glasshouse-well" />)}
       </div>
     )
   }
 
   if (error) {
-    return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
+    return <div className="bg-glasshouse-well px-4 py-3 text-ui-xs text-black">{error}</div>
   }
 
   if (subscribers.length === 0) {
@@ -56,7 +56,7 @@ export function SubscribersTab() {
   return (
     <div className="space-y-8">
       {/* Summary stats */}
-      <div className="flex bg-white px-6 py-5">
+      <div className="flex bg-glasshouse-well px-6 py-5">
         <div className="flex-1 text-center">
           <p className="font-serif text-2xl text-black">{active.length}</p>
           <p className="label-ui text-grey-400 mt-1">Active subscribers</p>
@@ -74,7 +74,7 @@ export function SubscribersTab() {
       </div>
 
       {/* Subscriber table */}
-      <div className="overflow-x-auto bg-white">
+      <div className="overflow-x-auto bg-glasshouse-well">
         <table className="w-full text-ui-xs">
           <thead>
             <tr className="border-b-2 border-grey-200">

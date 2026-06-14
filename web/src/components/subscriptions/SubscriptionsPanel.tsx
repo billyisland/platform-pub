@@ -144,7 +144,7 @@ function SubscriptionRow({
   const isInactive = !src.isActive
 
   return (
-    <div className={`bg-white px-4 py-4 ${sub.isMuted ? 'opacity-50' : ''}`}>
+    <div className={`bg-glasshouse-well px-4 py-4 ${sub.isMuted ? 'opacity-50' : ''}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           {/* Source name + badge */}

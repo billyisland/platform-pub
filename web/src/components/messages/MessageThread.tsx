@@ -479,7 +479,7 @@ export function MessageThread({
           }}
           placeholder={replyTo ? 'Write a reply\u2026' : 'Write a message\u2026'}
           rows={1}
-          className="flex-1 bg-white px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300 resize-none overflow-y-auto"
+          className="flex-1 bg-glasshouse-well px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300 resize-none overflow-y-auto"
           style={{ maxHeight: '160px' }}
         />
         <button

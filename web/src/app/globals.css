@@ -41,8 +41,10 @@
   --ah-vouch-red: rgb(var(--ah-vouch-red-rgb));
   --ah-danger-red-rgb: 220 38 38;
   --ah-danger-red: rgb(var(--ah-danger-red-rgb));
-  --ah-glasshouse-rgb: 245 244 240;
+  --ah-glasshouse-rgb: 255 255 255;
   --ah-glasshouse: rgb(var(--ah-glasshouse-rgb));
+  --ah-glasshouse-well-rgb: 245 244 240;
+  --ah-glasshouse-well: rgb(var(--ah-glasshouse-well-rgb));
   --ah-bone-rgb: 240 239 235;
   --ah-bone: rgb(var(--ah-bone-rgb));
   --ah-bone-bright-rgb: 230 229 224;
@@ -532,14 +534,17 @@
      feed (Slate behind a light pane, a saturated Blush). The pane itself is
      background-independent paper, and the ∀ disc is self-contained
      (§III.3 — clipped to its own rim), so neither relies on the old
-     blur-only "preserve the ground" justification. */
+     blur-only "preserve the ground" justification. The light wash converges
+     to bone-bright (a touch below the bone floor) rather than bone so the
+     ground sits darker than the lighter parchment pane and the modal lifts
+     clearly off it. */
   .gh-scrim {
     backdrop-filter: blur(3px) saturate(0.7);
     -webkit-backdrop-filter: blur(3px) saturate(0.7);
-    background: rgb(var(--ah-bone-rgb) / 0.66);
+    background: rgb(var(--ah-bone-bright-rgb) / 0.72);
   }
   :root.dark .gh-scrim {
-    background: rgb(var(--ah-ink-925-rgb) / 0.66);
+    background: rgb(var(--ah-ink-925-rgb) / 0.74);
   }
 
   /* ----- ∀ trigger (ForallMenu) -----

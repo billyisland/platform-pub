@@ -39,7 +39,7 @@ export function NotificationPreferences() {
       <div>
         <p className="label-ui text-grey-400 mb-4">Notification preferences</p>
         <div className="space-y-2">
-          {[1, 2, 3].map(i => <div key={i} className="h-12 animate-pulse bg-white" />)}
+          {[1, 2, 3].map(i => <div key={i} className="h-12 animate-pulse bg-glasshouse-well" />)}
         </div>
       </div>
     )
@@ -51,7 +51,7 @@ export function NotificationPreferences() {
       <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
         Choose which events generate notifications.
       </p>
-      <div className="bg-white divide-y divide-grey-200/50">
+      <div className="bg-glasshouse-well divide-y divide-grey-200/50">
         {CATEGORIES.map(cat => (
           <div key={cat.key} className="flex items-center justify-between px-4 py-3">
             <span className="text-ui-sm text-black">{cat.label}</span>

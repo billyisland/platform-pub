@@ -350,7 +350,7 @@ export function ArticleEditor({
           its own right inset (pr-12) so a long title still clears it. */}
       <div className={isOverlay ? 'sticky top-0 z-20 bg-glasshouse pb-4 mb-6' : 'sticky top-[53px] lg:top-0 z-20 bg-glasshouse pb-4 mb-6'}>
       {/* Title card */}
-      <div className={`bg-white py-4 mb-2 pl-5 ${isOverlay ? 'pr-12' : 'pr-5'}`}>
+      <div className={`bg-glasshouse-well py-4 mb-2 pl-5 ${isOverlay ? 'pr-12' : 'pr-5'}`}>
         <input
           type="text"
           value={title}
@@ -362,7 +362,7 @@ export function ArticleEditor({
       </div>
 
       {/* Standfirst card */}
-      <div className="bg-white px-5 py-4 mb-2">
+      <div className="bg-glasshouse-well px-5 py-4 mb-2">
         <input
           type="text"
           value={dek}
@@ -373,7 +373,7 @@ export function ArticleEditor({
       </div>
 
       {/* Cover card */}
-      <div className="bg-white/40 px-5 py-4 mb-2">
+      <div className="bg-glasshouse-well/40 px-5 py-4 mb-2">
         {coverImageUrl ? (
           <div className="flex items-start gap-4">
             <div
@@ -542,7 +542,7 @@ export function ArticleEditor({
       {/* Editor content — the clean white "page" the article is written on. In
           the overlay it grows to fill a stretched-taller pane (flex-1) so the whole
           white canvas stays writable; long articles still grow past it and scroll. */}
-      <div className={`bg-white p-8 sm:p-10 ${isOverlay ? 'flex-1 flex flex-col' : ''}`}>
+      <div className={`bg-glasshouse-well p-8 sm:p-10 ${isOverlay ? 'flex-1 flex flex-col' : ''}`}>
         <EditorContent
           editor={editor}
           className={isOverlay ? 'flex-1 flex flex-col' : undefined}
@@ -555,7 +555,7 @@ export function ArticleEditor({
       </div>
 
       {/* Article settings card — publishing, price, replies */}
-      <div className="mt-3 bg-white/40 px-5 py-4 space-y-3">
+      <div className="mt-3 bg-glasshouse-well/40 px-5 py-4 space-y-3">
         {/* Publishing as */}
         {publicationMemberships.length > 0 && (
           <div className="flex items-center gap-3 flex-wrap">
@@ -563,7 +563,7 @@ export function ArticleEditor({
             <select
               value={selectedPublicationId ?? ''}
               onChange={(e) => setSelectedPublicationId(e.target.value || null)}
-              className="bg-white px-3 py-1.5 text-sm text-black"
+              className="bg-glasshouse-well px-3 py-1.5 text-sm text-black"
             >
               <option value="">Yourself</option>
               {publicationMemberships.map(pub => (
@@ -598,7 +598,7 @@ export function ArticleEditor({
                   userSetPrice.current = true
                   setPricePence(Math.round(parseFloat(e.target.value) * 100))
                 }}
-                className="w-24 bg-white border-none px-3 py-1.5 text-sm focus:outline-none"
+                className="w-24 bg-glasshouse-well border-none px-3 py-1.5 text-sm focus:outline-none"
               />
               <span className="text-mono-xs text-grey-600">
                 Suggested: &pound;{priceDisplay} based on {wordCount} words
@@ -622,7 +622,7 @@ export function ArticleEditor({
 
       {/* Publish confirmation panel */}
       {showPublishConfirm && (
-        <div className="mt-6 bg-white/40 px-5 py-4 rounded">
+        <div className="mt-6 bg-glasshouse-well/40 px-5 py-4 rounded">
           <p className="text-sm text-grey-600 mb-3">Your article will be published.</p>
           <label className="flex items-center gap-2 mb-4 cursor-pointer">
             <input
@@ -716,7 +716,7 @@ export function ArticleEditor({
             value={scheduleDateTime}
             onChange={e => setScheduleDateTime(e.target.value)}
             min={new Date().toISOString().slice(0, 16)}
-            className="bg-white px-3 py-1.5 text-sm focus:outline-none"
+            className="bg-glasshouse-well px-3 py-1.5 text-sm focus:outline-none"
           />
           <button
             onClick={handleScheduleSubmit}

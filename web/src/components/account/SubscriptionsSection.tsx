@@ -31,13 +31,13 @@ export function SubscriptionsSection() {
     finally { setCancellingId(null) }
   }
 
-  if (loading) return <div className="h-12 animate-pulse bg-white" />
+  if (loading) return <div className="h-12 animate-pulse bg-glasshouse-well" />
   if (subs.length === 0) return null
 
   return (
     <div className="mb-10">
       <p className="label-ui text-grey-400 mb-4">Subscriptions</p>
-      <div className="bg-white divide-y divide-grey-200/50">
+      <div className="bg-glasshouse-well divide-y divide-grey-200/50">
         {subs.map(s => (
           <div key={s.id} className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-3 min-w-0">

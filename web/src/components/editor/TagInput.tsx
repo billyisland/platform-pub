@@ -76,7 +76,7 @@ export function TagInput({ value, onChange, max = 5 }: Props) {
 
   return (
     <div ref={containerRef} className="relative">
-      <div className="bg-white px-3 py-2 flex flex-wrap items-center gap-2">
+      <div className="bg-glasshouse-well px-3 py-2 flex flex-wrap items-center gap-2">
         {value.map(tag => (
           <span
             key={tag}

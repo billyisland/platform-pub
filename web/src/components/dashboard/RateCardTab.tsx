@@ -50,7 +50,7 @@ export function RateCardTab({ publicationId }: Props) {
     finally { setSaving(false) }
   }
 
-  if (loading) return <div className="h-40 animate-pulse bg-white" />
+  if (loading) return <div className="h-40 animate-pulse bg-glasshouse-well" />
 
   const monthlyPence = Math.round(parseFloat(subPrice || '0') * 100)
   const discountPct = parseInt(annualDiscount || '0', 10)
@@ -58,7 +58,7 @@ export function RateCardTab({ publicationId }: Props) {
 
   return (
     <div className="space-y-8">
-      <div className="bg-white px-6 py-5">
+      <div className="bg-glasshouse-well px-6 py-5">
         <p className="label-ui text-grey-400 mb-4">Subscription pricing</p>
         <form onSubmit={handleSave} className="space-y-4">
           <div className="flex items-center gap-3">

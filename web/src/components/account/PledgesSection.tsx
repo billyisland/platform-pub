@@ -17,13 +17,13 @@ export function PledgesSection() {
     })()
   }, [])
 
-  if (loading) return <div className="h-12 animate-pulse bg-white" />
+  if (loading) return <div className="h-12 animate-pulse bg-glasshouse-well" />
   if (pledges.length === 0) return null
 
   return (
     <div className="mb-10">
       <p className="label-ui text-grey-400 mb-4">Pledges</p>
-      <div className="bg-white divide-y divide-grey-200/50">
+      <div className="bg-glasshouse-well divide-y divide-grey-200/50">
         {pledges.map(p => (
           <div key={p.id} className="flex items-center justify-between px-6 py-4">
             <div className="min-w-0">

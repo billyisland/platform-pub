@@ -26,6 +26,7 @@ export interface PresetTheme {
 
 export const THEME_LOCKED_SLUGS: ReadonlySet<string> = new Set([
   'glasshouse', // frosted pane — fixed escape chrome
+  'glasshouse-well', // inset field/well on the pane — fixed escape chrome
   'ink-925', // ∀ button / panel frames — fixed escape chrome
   'trust-grey', // trust pips carry fixed meaning
   'trust-green',

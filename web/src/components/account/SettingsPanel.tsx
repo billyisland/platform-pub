@@ -76,9 +76,9 @@ export function SettingsPanel({
   if (loading || !user) {
     const skeleton = (
       <>
-        <div className="h-6 w-32 animate-pulse bg-white mb-8" />
+        <div className="h-6 w-32 animate-pulse bg-glasshouse-well mb-8" />
         <div className="space-y-6">
-          {[1, 2, 3].map(i => <div key={i} className="h-24 animate-pulse bg-white" />)}
+          {[1, 2, 3].map(i => <div key={i} className="h-24 animate-pulse bg-glasshouse-well" />)}
         </div>
       </>
     )
@@ -103,15 +103,15 @@ export function SettingsPanel({
 
         <NetworkReachPanel />
 
-        <section className="bg-white px-6 py-5">
+        <section className="bg-glasshouse-well px-6 py-5">
           <NotificationPreferences />
         </section>
 
-        <section className="bg-white px-6 py-5">
+        <section className="bg-glasshouse-well px-6 py-5">
           <ReadingPreferences />
         </section>
 
-        <div className="bg-white px-6 py-5">
+        <div className="bg-glasshouse-well px-6 py-5">
           <p className="label-ui text-grey-400 mb-4">Export my data</p>
           <p className="text-ui-xs text-grey-600 mb-4 leading-relaxed">Download your data, receipts, and content keys.</p>
           <button onClick={() => setShowExport(true)} className="btn">Export</button>

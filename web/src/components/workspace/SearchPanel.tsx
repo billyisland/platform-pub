@@ -13,7 +13,7 @@ import { useProfile } from "../../stores/profileOverlay";
 
 const TOKENS = {
   rowHoverBg: "rgb(var(--ah-ink-rgb) / 0.06)", // subtle dark wash on the warm pane
-  inputBg: "var(--ah-white)", // bright well — the glasshouse field convention
+  inputBg: "var(--ah-glasshouse-well)", // inset well — a touch below the white pane
   sectionBg: "rgb(var(--ah-ink-rgb) / 0.04)",
   text: "var(--ah-ink-925)",
   meta: "var(--ah-grey-600)", // grey-600 — legible on the mid-light pane

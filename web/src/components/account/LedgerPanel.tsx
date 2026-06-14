@@ -48,8 +48,8 @@ export function LedgerPanel({ inOverlay = false }: { inOverlay?: boolean }) {
   if (loading || !user) {
     const skeleton = (
       <>
-        <div className="h-32 animate-pulse bg-white mb-8" />
-        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
+        <div className="h-32 animate-pulse bg-glasshouse-well mb-8" />
+        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-glasshouse-well" />)}</div>
       </>
     )
     return inOverlay ? skeleton : <PageShell width="content">{skeleton}</PageShell>
@@ -63,7 +63,7 @@ export function LedgerPanel({ inOverlay = false }: { inOverlay?: boolean }) {
     <>
       {inOverlay && <PageHeader title="Ledger" />}
       {dataLoading ? (
-        <div className="h-32 animate-pulse bg-white mb-8" />
+        <div className="h-32 animate-pulse bg-glasshouse-well mb-8" />
       ) : (
         <BalanceHeader
           balancePence={netBalance}

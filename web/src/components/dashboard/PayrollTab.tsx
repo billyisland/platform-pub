@@ -81,7 +81,7 @@ export function PayrollTab({ publicationId }: Props) {
     finally { setSaving(false) }
   }
 
-  if (loading) return <div className="h-40 animate-pulse bg-white" />
+  if (loading) return <div className="h-40 animate-pulse bg-glasshouse-well" />
 
   const currentTotal = editTotal()
   const overBudget = currentTotal > 10000
@@ -89,7 +89,7 @@ export function PayrollTab({ publicationId }: Props) {
   return (
     <div className="space-y-8">
       {/* Standing shares */}
-      <div className="bg-white px-6 py-5">
+      <div className="bg-glasshouse-well px-6 py-5">
         <div className="flex items-center justify-between mb-4">
           <p className="label-ui text-grey-400">Standing revenue shares</p>
           <p className={`text-ui-xs font-sans tabular-nums ${overBudget ? 'text-crimson' : 'text-grey-400'}`}>
@@ -148,7 +148,7 @@ export function PayrollTab({ publicationId }: Props) {
 
       {/* Per-article overrides */}
       {articleShares.length > 0 && (
-        <div className="bg-white px-6 py-5">
+        <div className="bg-glasshouse-well px-6 py-5">
           <p className="label-ui text-grey-400 mb-4">Per-article overrides</p>
           <div className="overflow-x-auto">
             <table className="w-full text-ui-xs">

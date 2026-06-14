@@ -139,7 +139,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
     }
   }
 
-  if (loading) return <div className="h-40 animate-pulse bg-white" />
+  if (loading) return <div className="h-40 animate-pulse bg-glasshouse-well" />
 
   const eligibleOwners = members.filter(m => m.role === 'editor_in_chief' && !m.is_owner)
   const deleteMatch = deleteInput.toLowerCase() === name.toLowerCase()
@@ -153,7 +153,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
   return (
     <div className="space-y-6">
       {/* Settings form */}
-      <div className="bg-white px-6 py-5 space-y-6">
+      <div className="bg-glasshouse-well px-6 py-5 space-y-6">
         <form onSubmit={handleSave} className="space-y-4">
           {/* Logo upload */}
           <div>
@@ -235,7 +235,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
       </div>
 
       {/* Layout template picker */}
-      <div className="bg-white px-6 py-5">
+      <div className="bg-glasshouse-well px-6 py-5">
         <label className="label-ui text-grey-400 block mb-2">Homepage layout</label>
         <p className="text-ui-xs text-grey-600 mb-4">Choose how your publication homepage is arranged.</p>
         <div className="grid grid-cols-3 gap-4 max-w-md">
@@ -299,7 +299,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
             <p className="label-ui text-crimson mb-6">Danger zone</p>
 
             {/* Archive */}
-            <div className="bg-white px-6 py-5 mb-6">
+            <div className="bg-glasshouse-well px-6 py-5 mb-6">
               <p className="text-sm text-black font-medium">Archive this publication</p>
               <p className="text-ui-xs text-grey-600 mt-1 mb-4">
                 Archiving hides it from readers but preserves all content, members, and subscriber records. You can restore it later.
@@ -314,7 +314,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
             </div>
 
             {/* Transfer ownership */}
-            <div className="bg-white px-6 py-5 mb-6">
+            <div className="bg-glasshouse-well px-6 py-5 mb-6">
               <p className="text-sm text-black font-medium">Transfer ownership</p>
               <p className="text-ui-xs text-grey-600 mt-1 mb-4">
                 Hand this publication to another member. You will become an editor. Only members with the editor-in-chief role are eligible.
@@ -330,7 +330,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
             </div>
 
             {/* Delete */}
-            <div className="bg-white px-6 py-5">
+            <div className="bg-glasshouse-well px-6 py-5">
               <p className="text-sm text-black font-medium">Delete this publication permanently</p>
               <p className="text-ui-xs text-grey-600 mt-1 mb-4">
                 This cannot be undone. All articles will be detached and returned to their authors as personal drafts. Subscribers will be cancelled.

@@ -50,7 +50,7 @@ export function ThemeSection() {
   const isCustom = !active && Object.keys(overrides).length > 0
 
   return (
-    <div className="bg-white px-6 py-5">
+    <div className="bg-glasshouse-well px-6 py-5">
       <p className="label-ui text-grey-400 mb-4">Theme</p>
       <p className="text-ui-xs text-grey-600 mb-4 leading-relaxed">
         Sitewide colour preset. Each feed&rsquo;s own colour scheme is picked in

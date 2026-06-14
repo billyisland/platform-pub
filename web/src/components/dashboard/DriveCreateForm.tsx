@@ -29,7 +29,7 @@ export function DriveCreateForm({ onCreated, onCancel }: { onCreated: () => void
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white px-6 py-5 space-y-4">
+    <form onSubmit={handleSubmit} className="bg-glasshouse-well px-6 py-5 space-y-4">
       <p className="label-ui text-grey-400">New pledge drive</p>
 
       <div>

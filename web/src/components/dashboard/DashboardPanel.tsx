@@ -196,7 +196,7 @@ export function DashboardPanel({
       </div>
 
       {showNewPub && (
-        <form onSubmit={handleCreatePublication} className="mb-8 bg-white px-6 py-5 max-w-md space-y-4">
+        <form onSubmit={handleCreatePublication} className="mb-8 bg-glasshouse-well px-6 py-5 max-w-md space-y-4">
           <p className="label-ui text-grey-400">Create a publication</p>
           <div>
             <label htmlFor="pub-name" className="block label-ui text-grey-400 mb-1">Name</label>
@@ -461,12 +461,12 @@ function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pu
     finally { setSchedulingId(null) }
   }
 
-  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
-  if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-glasshouse-well" />)}</div>
+  if (error) return <div className="bg-glasshouse-well px-4 py-3 text-ui-xs text-black">{error}</div>
   if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-600 mb-4">No articles or drafts yet.</p>{inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open() }} className="btn-text underline underline-offset-4">Write your first article</button> : <Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link>}</div>
 
   return (
-    <div className="overflow-x-auto bg-white">
+    <div className="overflow-x-auto bg-glasshouse-well">
       <table className="w-full text-ui-xs">
         <thead><tr className="border-b-2 border-grey-200"><th className="px-4 py-3 text-left label-ui text-grey-400">Title</th><th className="px-4 py-3 text-left label-ui text-grey-400">Status</th><th className="px-4 py-3 text-right label-ui text-grey-400">Reads</th><th className="px-4 py-3 text-right label-ui text-grey-400">Earned</th><th className="px-4 py-3 text-center label-ui text-grey-400">Replies</th><th className="px-4 py-3 text-right label-ui text-grey-400">Actions</th></tr></thead>
         <tbody>{items.map(item => {
@@ -609,7 +609,7 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
     <div className="space-y-8">
       <form onSubmit={handleSavePrice} className="space-y-8">
         {/* Subscription price */}
-        <div className="bg-white px-6 py-5">
+        <div className="bg-glasshouse-well px-6 py-5">
           <p className="label-ui text-grey-400 mb-4">Subscription pricing</p>
           <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
             Set the monthly price readers pay to subscribe to your content. Readers can also choose an annual plan at a discount you configure.
@@ -650,7 +650,7 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
         </div>
 
         {/* Per-article pricing */}
-        <div className="bg-white px-6 py-5">
+        <div className="bg-glasshouse-well px-6 py-5">
           <p className="label-ui text-grey-400 mb-4">Per-article pricing</p>
           <p className="text-ui-xs text-grey-600 leading-relaxed mb-4">
             Default price for paywalled articles. You can override this per article in the editor. Free articles are always free.
@@ -711,7 +711,7 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
       </form>
 
       {/* Stripe Connect status */}
-      <div className="bg-white px-6 py-5">
+      <div className="bg-glasshouse-well px-6 py-5">
         <p className="label-ui text-grey-400 mb-4">Stripe Connect</p>
         {stripeReady ? (
           <div className="flex items-center justify-between">
@@ -767,8 +767,8 @@ function StripeConnectSetup() {
 export function DashboardSkeleton() {
   return (
     <>
-      <div className="flex gap-2 mb-10">{[1,2,3,4].map(i => <div key={i} className="h-9 w-24 animate-pulse bg-white"/>)}</div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{[1,2,3].map(i => <div key={i} className="bg-white p-6"><div className="h-3 w-20 animate-pulse bg-grey-100 mb-3"/><div className="h-7 w-28 animate-pulse bg-grey-100"/></div>)}</div>
+      <div className="flex gap-2 mb-10">{[1,2,3,4].map(i => <div key={i} className="h-9 w-24 animate-pulse bg-glasshouse-well"/>)}</div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">{[1,2,3].map(i => <div key={i} className="bg-glasshouse-well p-6"><div className="h-3 w-20 animate-pulse bg-grey-100 mb-3"/><div className="h-7 w-28 animate-pulse bg-grey-100"/></div>)}</div>
     </>
   )
 }

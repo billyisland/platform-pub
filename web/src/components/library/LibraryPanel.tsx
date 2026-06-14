@@ -50,9 +50,9 @@ export function LibraryPanel({
   if (authLoading || !user) {
     const skeleton = (
       <>
-        <div className="h-8 w-40 animate-pulse bg-white mb-10" />
+        <div className="h-8 w-40 animate-pulse bg-glasshouse-well mb-10" />
         <div className="space-y-3">
-          {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse bg-white" />)}
+          {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse bg-glasshouse-well" />)}
         </div>
       </>
     )
@@ -119,7 +119,7 @@ function BookmarksTab({ inOverlay }: { inOverlay: boolean }) {
   if (loading) {
     return (
       <div className="space-y-3">
-        {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse bg-white" />)}
+        {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse bg-glasshouse-well" />)}
       </div>
     )
   }
@@ -172,7 +172,7 @@ function BookmarkCard({
     <button
       type="button"
       onClick={onOpen}
-      className="block w-full text-left bg-white px-6 py-4 hover:bg-grey-50 transition-colors"
+      className="block w-full text-left bg-glasshouse-well px-6 py-4 hover:bg-grey-50 transition-colors"
     >
       <p className="label-ui text-grey-300 mb-1">
         {a.author_display_name ?? a.author_username}

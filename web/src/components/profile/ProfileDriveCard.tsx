@@ -38,7 +38,7 @@ export function ProfileDriveCard({ drive }: { drive: PledgeDrive }) {
   const isActive = drive.status === 'open' || drive.status === 'funded'
 
   return (
-    <div className="bg-white px-6 py-5">
+    <div className="bg-glasshouse-well px-6 py-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">

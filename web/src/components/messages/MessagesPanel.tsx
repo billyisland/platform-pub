@@ -123,7 +123,7 @@ export function MessagesPanel({
                   value={newRecipient}
                   onChange={(e) => setNewRecipient(e.target.value)}
                   placeholder="Username"
-                  className="flex-1 bg-white px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300"
+                  className="flex-1 bg-glasshouse-well px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300"
                   autoFocus
                 />
                 <button type="submit" disabled={creating} className="btn text-sm disabled:opacity-50">

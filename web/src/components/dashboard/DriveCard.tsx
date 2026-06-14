@@ -56,7 +56,7 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
 
   if (editing) {
     return (
-      <div className="bg-white px-6 py-5 space-y-4">
+      <div className="bg-glasshouse-well px-6 py-5 space-y-4">
         <p className="label-ui text-grey-400">Edit pledge drive</p>
 
         <div>
@@ -106,7 +106,7 @@ export function DriveCard({ drive, onUpdate }: { drive: PledgeDrive; onUpdate: (
   }
 
   return (
-    <div className="bg-white px-6 py-5">
+    <div className="bg-glasshouse-well px-6 py-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">

@@ -95,7 +95,7 @@ function NotificationRow({ n, onActivate }: { n: Notification; onActivate: (n: N
       tabIndex={0}
       onClick={() => onActivate(n)}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onActivate(n) }}
-      className={`flex items-start gap-3 px-1 py-4 hover:bg-grey-100/50 transition-colors cursor-pointer ${isUnread ? 'bg-white' : ''}`}
+      className={`flex items-start gap-3 px-1 py-4 hover:bg-grey-100/50 transition-colors cursor-pointer ${isUnread ? 'bg-glasshouse-well' : ''}`}
     >
       {n.actor?.avatar ? (
         <img src={n.actor.avatar} alt="" className="h-10 w-10 object-cover flex-shrink-0 mt-0.5" />

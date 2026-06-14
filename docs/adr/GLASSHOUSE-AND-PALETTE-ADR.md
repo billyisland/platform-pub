@@ -83,18 +83,21 @@ Add a `.gh-scrim` rule to `globals.css` rather than a long arbitrary className:
 ```css
 .gh-scrim {
   backdrop-filter: blur(3px) saturate(0.7);
-  background: rgb(var(--ah-bone-rgb) / 0.66);
+  background: rgb(var(--ah-bone-bright-rgb) / 0.72);
 }
-:root.dark .gh-scrim { background: rgb(var(--ah-ink-925-rgb) / 0.66); }
+:root.dark .gh-scrim { background: rgb(var(--ah-ink-925-rgb) / 0.74); }
 ```
 
 Scrim div becomes `className="fixed inset-0 z-[55] gh-scrim"`. `saturate(0.7)`
 removes most of the _colour_ variance (the part that actually breaks the pane);
-the 0.66 wash removes the tonal variance and fixes the ground. **0.66 / 0.7 are
-starting values** — tune against the loudest feed (Slate behind a light pane, a
-saturated Blush behind dark). The blur-only justification ("the disc keeps its
-contrast") is retired: §III.3 makes the disc background-independent, so the wash
-is safe.
+the wash removes the tonal variance and fixes the ground. These are **tuned
+values** (started at bone / 0.66 / 0.66) — the light wash converges to
+bone-bright rather than bone so the ground sits a touch *below* the lighter
+parchment pane, and both alphas were nudged up (0.72 / 0.74) so the modal lifts
+clearly off the scrim. Re-tune against the loudest feed (Slate behind a light
+pane, a saturated Blush behind dark). The blur-only justification ("the disc
+keeps its contrast") is retired: §III.3 makes the disc background-independent,
+so the wash is safe.
 
 ### 2 — Glasshouse pane becomes pale parchment (req 2)
 
@@ -110,6 +113,26 @@ every `bg-glasshouse` consumer keeps working untouched).
 Consequence: the pane is now _lighter_ than both the bone floor and the washed
 scrim ground, so it reads as lifted paper (correct polarity, §I.2). `grey-600`
 secondary text (`#666`) on `#F5F4F0` is high-contrast — no text-token change.
+
+**Polarity flipped — lightest is outermost (2026-06-14).** The pane/field
+relationship above was inverted: the pane was parchment `#F5F4F0` and text-input
+fields were the bright white well (`bg-white`) inset into it. Flipped so the
+**lightest colour is outermost** — the pane is now **white** (`glasshouse` slug
+repointed `#F5F4F0` → `#FFFFFF`) and the inset fields/wells take a new
+`glasshouse-well` slug (`#F5F4F0`, the old pane value), a touch darker than the
+pane. `globals.css` adds `--ah-glasshouse-well-rgb: 245 244 240`; `registry.ts`
+relabels `glasshouse` ("…interior — lightest, outermost") and adds
+`glasshouse-well` right after; `tailwind.config.js` adds the `glasshouse-well`
+colour token. Both slugs are in `THEME_LOCKED_SLUGS`. The migration swept every
+nested field/well `bg-white` → `bg-glasshouse-well` (and `bg-white/40` washes →
+`bg-glasshouse-well/40`) across the overlay surfaces (editor, composers,
+messages, dashboard/account/network/library/social panels, …); floating material
+that is itself the outermost layer (dropdowns, popovers, `AuthorModal`, the
+reader canvas, the black topbar) stays white. The scrim (now bone-bright at 0.72,
+§1) sits darker than the white pane, so separation actually improves. **Validated:**
+web `tsc --noEmit` clean; hairline tripwire clean on touched files (no new
+hairlines — the `divide-y` flags are pre-existing debt on lines that only had
+their `bg-` token swapped). Needs a web rebuild to take effect.
 
 ### 3 — Harden the ∀ disc so it is background-independent (req 3)
 

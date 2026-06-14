@@ -25,8 +25,8 @@ const TOKENS = {
   publishBg: 'var(--ah-ink-925)',
   publishFg: 'var(--ah-bone)',
   publishDisabled: 'var(--ah-grey-300)',
-  // Bright raised well on the warm mid-light Glasshouse pane (bg-glasshouse).
-  fieldBg: 'var(--ah-white)',
+  // Inset well a touch darker than the now-white Glasshouse pane (bg-glasshouse).
+  fieldBg: 'var(--ah-glasshouse-well)',
 }
 
 type Protocol = 'allhaus' | 'nostr' | 'atproto' | 'activitypub'

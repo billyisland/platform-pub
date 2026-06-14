@@ -13,7 +13,7 @@ export function BalanceHeader({ balancePence, freeAllowanceRemainingPence, freeA
     : 0
 
   return (
-    <div className="bg-white px-6 py-8 mb-8">
+    <div className="bg-glasshouse-well px-6 py-8 mb-8">
       <p className="label-ui text-grey-300 mb-2">Net balance</p>
       <p className={`font-serif text-[40px] font-light tracking-tight ${isPositive ? 'text-black' : 'text-crimson'}`}>
         {!isPositive && '−'}£{(Math.abs(balancePence) / 100).toFixed(2)}

@@ -137,13 +137,13 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
     }
   }
 
-  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
-  if (error) return <div className="bg-white px-4 py-3 text-ui-xs text-black">{error}</div>
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-glasshouse-well" />)}</div>
+  if (error) return <div className="bg-glasshouse-well px-4 py-3 text-ui-xs text-black">{error}</div>
 
   return (
     <div className="space-y-6">
       {/* Member list */}
-      <div className="overflow-x-auto bg-white">
+      <div className="overflow-x-auto bg-glasshouse-well">
         <table className="w-full text-ui-xs">
           <thead>
             <tr className="border-b-2 border-grey-200">
@@ -234,7 +234,7 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
 
       {/* Invite form */}
       {canManageMembers && (
-        <div className="bg-white px-6 py-5">
+        <div className="bg-glasshouse-well px-6 py-5">
           <p className="label-ui text-grey-400 mb-4">Invite a member</p>
           <form onSubmit={handleInvite} className="flex items-end gap-3 flex-wrap">
             <div>

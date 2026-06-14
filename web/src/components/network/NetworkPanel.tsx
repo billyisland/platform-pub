@@ -132,7 +132,7 @@ export function NetworkPanel({
 
       {/* Always-visible settings */}
       <div className="space-y-8 mb-8">
-        <section className="bg-white px-6 py-5">
+        <section className="bg-glasshouse-well px-6 py-5">
           <DmFeeSettings />
         </section>
       </div>
@@ -293,7 +293,7 @@ export function NetworkPanel({
           id="network-panel-blocked"
           aria-labelledby="network-tab-blocked"
         >
-          <section className="bg-white px-6 py-5">
+          <section className="bg-glasshouse-well px-6 py-5">
             <BlockList />
           </section>
         </div>
@@ -306,7 +306,7 @@ export function NetworkPanel({
           id="network-panel-muted"
           aria-labelledby="network-tab-muted"
         >
-          <section className="bg-white px-6 py-5">
+          <section className="bg-glasshouse-well px-6 py-5">
             <MuteList />
           </section>
         </div>
@@ -358,7 +358,7 @@ function PanelSkeleton({ withHeader = false }: { withHeader?: boolean }) {
       {withHeader && <div className="h-7 w-36 animate-pulse bg-grey-100 mb-8 rounded" />}
       <div className="flex gap-2 mb-8">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-9 w-24 animate-pulse bg-white" />
+          <div key={i} className="h-9 w-24 animate-pulse bg-glasshouse-well" />
         ))}
       </div>
       <ListSkeleton />

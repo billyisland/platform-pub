@@ -178,7 +178,7 @@ export function NetworkReachPanel() {
   return (
     <div>
       <p className="label-ui text-grey-600 mb-4">Reach other networks</p>
-      <div className="bg-white px-6 py-5">
+      <div className="bg-glasshouse-well px-6 py-5">
         <p className="text-ui-xs text-grey-600 mb-6 leading-relaxed">
           Your all.haus account is a Nostr identity. Reach outward to other networks —
           link an account you already have, or have all.haus set one up and run it for you.
@@ -368,7 +368,7 @@ export function NetworkReachPanel() {
                         onChange={e => setInstanceUrl(e.target.value)}
                         placeholder="mastodon.social"
                         autoFocus
-                        className="w-full bg-white px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
+                        className="w-full bg-glasshouse-well px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
                         onKeyDown={e => { if (e.key === 'Enter') void handleConnectMastodon() }}
                       />
                       <div className="flex gap-3 mt-3">
@@ -390,7 +390,7 @@ export function NetworkReachPanel() {
                         onChange={e => setBlueskyHandle(e.target.value)}
                         placeholder="alice.bsky.social"
                         autoFocus
-                        className="w-full bg-white px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
+                        className="w-full bg-glasshouse-well px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
                         onKeyDown={e => { if (e.key === 'Enter') void handleConnectBluesky() }}
                       />
                       <div className="flex gap-3 mt-3">

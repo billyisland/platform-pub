@@ -50,7 +50,7 @@ export function DangerZone() {
         <p className="label-ui text-crimson mb-6">Close your account</p>
 
         {/* Deactivate */}
-        <div className="bg-white px-6 py-5 mb-6">
+        <div className="bg-glasshouse-well px-6 py-5 mb-6">
           <p className="text-sm text-black font-medium">Deactivate</p>
           <p className="text-ui-xs text-grey-600 mt-1 mb-4">
             Your profile and content will be hidden. You can reactivate by logging back in.
@@ -63,7 +63,7 @@ export function DangerZone() {
         <div className="h-6" />
 
         {/* Delete */}
-        <div className="bg-white px-6 py-5">
+        <div className="bg-glasshouse-well px-6 py-5">
           <p className="text-sm text-black font-medium">Delete permanently</p>
           <p className="text-ui-xs text-grey-600 mt-1 mb-4">
             Your content will be removed and your account data erased. This cannot be undone.

@@ -21,7 +21,7 @@ export function CommissionsTab() {
   if (loading) {
     return (
       <div className="space-y-3">
-        {[1, 2].map(i => <div key={i} className="h-24 animate-pulse bg-white" />)}
+        {[1, 2].map(i => <div key={i} className="h-24 animate-pulse bg-glasshouse-well" />)}
       </div>
     )
   }
@@ -102,7 +102,7 @@ export function CommissionCard({ commission: c, onUpdate }: { commission: Commis
     : 0
 
   return (
-    <div className="bg-white px-6 py-5">
+    <div className="bg-glasshouse-well px-6 py-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">

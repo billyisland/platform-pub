@@ -86,14 +86,14 @@ export function AccountLedger({ initialIncludeFreeReads = false }: { initialIncl
       </div>
 
       {loading ? (
-        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-white" />)}</div>
+        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-10 animate-pulse bg-glasshouse-well" />)}</div>
       ) : entries.length === 0 ? (
         <div className="py-12 text-center">
           <p className="text-ui-sm text-grey-400">No transactions yet.</p>
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto bg-white">
+          <div className="overflow-x-auto bg-glasshouse-well">
             <table className="w-full text-ui-xs">
               <thead>
                 <tr className="border-b-2 border-grey-200/50">
