@@ -2592,13 +2592,7 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   const data = item.interaction_data as { id?: string; relays?: unknown } | null;
   const focalId =
     decodeNostrEventId(data?.id) ?? decodeNostrEventId(item.source_item_uri);
-  if (!focalId) {
-    logger.debug(
-      { id: item.id, sourceItemUri: item.source_item_uri },
-      "nostr thread hydrate: no decodable focal event id — skipping",
-    );
-    return;
-  }
+  if (!focalId) return;
 
   // Relay set: the focal's own relay hints first; if it carries none, fall back
   // to the source's configured relays. Deduped, scheme-checked, capped.
@@ -2619,13 +2613,7 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   const relays = [...new Set([...hinted, ...sourceRelays, ...NOSTR_FALLBACK_RELAYS])]
     .filter((r) => r.startsWith("ws://") || r.startsWith("wss://"))
     .slice(0, NOSTR_THREAD_RELAY_CAP);
-  if (relays.length === 0) {
-    logger.debug(
-      { id: item.id, focalId },
-      "nostr thread hydrate: no usable relay hints — skipping",
-    );
-    return;
-  }
+  if (relays.length === 0) return;
 
   // 1. Fetch the focal event to read its NIP-10 tags → root + immediate parent.
   const [focal] = await fetchNostrEvents(
