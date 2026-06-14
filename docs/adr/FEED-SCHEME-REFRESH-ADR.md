@@ -163,9 +163,15 @@ light), **Caju** (hot, light).
 
 | Scheme | walls     | interior  | card      | isDark |
 |--------|-----------|-----------|-----------|--------|
-| Anil   | `#0E1C44` | `#16285E` | `#20305C` | true   |
+| Anil   | `#0E1C44` | `#4A2B1C` | `#20305C` | true   |
 
-`:root` triples: `anil-walls 14 28 68 · anil-interior 22 40 94 · anil-card 32 48 92`.
+`:root` triples: `anil-walls 14 28 68 · anil-interior 74 43 28 · anil-card 32 48 92`.
+
+> **Interior revised 2026-06-14** — `anil-interior` moved from the original deep
+> indigo `#16285E` to a deep **burnt umber** `#4A2B1C` (triple `74 43 28`): a warm
+> brown feed ground under Anil's cool indigo walls/card. Still well under 0.5
+> luminance, so Anil stays a dark-card scheme and the derived text ramps are
+> unchanged. Both `registry.ts` and `globals.css` updated in step.
 
 Edits: `registry.ts` (delete the three `mata-*`, rename `cobalto-*` → `anil-*` in
 place); `globals.css` (drop `mata-*` vars, replace `cobalto-*` with the `anil-*`
