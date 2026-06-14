@@ -6,7 +6,7 @@
 // so "write an article" is reachable from the workspace, the dashboard overlay,
 // and the note→article handoff. Opened via useEditorOverlay (ForallMenu, the
 // dashboard "New article"/"Edit" rows, the compose "Write an article →" button)
-// or the /workspace?overlay=editor deep-link. The standalone /write page remains
+// or the /reader?overlay=editor deep-link. The standalone /write page remains
 // the addressable full-page editor for direct visits/bookmarks.
 // =============================================================================
 
@@ -45,7 +45,7 @@ export function EditorOverlay() {
       const params = new URLSearchParams({ overlay: dest.overlay });
       if (dest.tab) params.set("tab", dest.tab);
       if (dest.context) params.set("context", dest.context);
-      router.push(`/workspace?${params.toString()}`);
+      router.push(`/reader?${params.toString()}`);
     },
   });
 

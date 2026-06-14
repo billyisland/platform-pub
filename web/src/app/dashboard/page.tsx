@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 
 // The dashboard is now a workspace Glasshouse overlay (opened from the ForallMenu
-// or via /workspace?overlay=dashboard). This route is retained only as a
+// or via /reader?overlay=dashboard). This route is retained only as a
 // compatibility shim: notification/email deep links and old bookmarks pointing
 // at /dashboard?tab=…&context=… redirect into the workspace with the overlay
 // opened and seeded. See the deep-link effect in WorkspaceView.
@@ -15,5 +15,5 @@ export default function DashboardPage({
   const context = Array.isArray(searchParams.context) ? searchParams.context[0] : searchParams.context
   if (tab) params.set('tab', tab)
   if (context) params.set('context', context)
-  redirect(`/workspace?${params.toString()}`)
+  redirect(`/reader?${params.toString()}`)
 }

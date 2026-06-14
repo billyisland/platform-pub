@@ -35,7 +35,7 @@ export default function InviteAcceptPage() {
       await pubApi.acceptInvite(pub.id, token)
       setAccepted(true)
       setTimeout(() => {
-        router.push(`/workspace?overlay=dashboard&context=${invite.publication_slug}`)
+        router.push(`/reader?overlay=dashboard&context=${invite.publication_slug}`)
       }, 1500)
     } catch {
       setError('Failed to accept invite.')

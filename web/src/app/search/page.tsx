@@ -7,5 +7,5 @@ import { redirect } from 'next/navigation'
 // old links and bookmarks pointing at /search land on the workspace, where the
 // search affordance lives.
 export default function SearchPage() {
-  redirect('/workspace')
+  redirect('/reader')
 }

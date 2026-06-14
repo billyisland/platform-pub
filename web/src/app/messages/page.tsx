@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 // Direct messages is now a workspace Glasshouse overlay (opened from the
-// ForallMenu or via /workspace?overlay=messages). This route is retained only as
+// ForallMenu or via /reader?overlay=messages). This route is retained only as
 // a compatibility shim. It must be a client component to forward the
 // `#conversationId` hash (legacy deep-link form) — that fragment never reaches
 // the server — into the overlay's ?conversation= seed param.
@@ -15,8 +15,8 @@ export default function MessagesPage() {
     const conv = window.location.hash.slice(1)
     router.replace(
       conv
-        ? `/workspace?overlay=messages&conversation=${encodeURIComponent(conv)}`
-        : '/workspace?overlay=messages',
+        ? `/reader?overlay=messages&conversation=${encodeURIComponent(conv)}`
+        : '/reader?overlay=messages',
     )
   }, [router])
 

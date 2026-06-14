@@ -3,7 +3,7 @@
 // =============================================================================
 // LedgerOverlay — the reading-tab / earnings ledger in a workspace Glasshouse.
 // Mounted once in WorkspaceView; opened from the ForallMenu Ledger row, or via
-// /workspace?overlay=ledger (the retired /ledger route — and the /account shim —
+// /reader?overlay=ledger (the retired /ledger route — and the /account shim —
 // redirect here; see the deep-link dispatcher in WorkspaceView). Wraps
 // LedgerPanel in the canonical frosted overlay so the ForallMenu stays crisp
 // above it.

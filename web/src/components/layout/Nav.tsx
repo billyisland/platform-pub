@@ -93,14 +93,14 @@ function AvatarDropdown({ user, onLogout, onClose }: {
 
         {/* Group 1 */}
         <div className="py-1">
-          <Link href="/workspace?overlay=settings" onClick={onClose} className={linkClass}>Profile</Link>
-          <Link href="/workspace?overlay=messages" onClick={onClose} className={linkClass}>
+          <Link href="/reader?overlay=settings" onClick={onClose} className={linkClass}>Profile</Link>
+          <Link href="/reader?overlay=messages" onClick={onClose} className={linkClass}>
             <span className="flex items-center justify-between">
               <span>Messages</span>
               <Badge count={dmCount} />
             </span>
           </Link>
-          <Link href="/workspace?overlay=notifications" onClick={onClose} className={linkClass}>
+          <Link href="/reader?overlay=notifications" onClick={onClose} className={linkClass}>
             <span className="flex items-center justify-between">
               <span>Notifications</span>
               <Badge count={notificationCount} />
@@ -112,7 +112,7 @@ function AvatarDropdown({ user, onLogout, onClose }: {
 
         {/* Group 2 */}
         <div className="py-1">
-          <Link href="/workspace?overlay=ledger" onClick={onClose} className={linkClass}>
+          <Link href="/reader?overlay=ledger" onClick={onClose} className={linkClass}>
             <span className="flex items-center justify-between">
               <span>Ledger</span>
               <span className="text-[11px] text-grey-600 tabular-nums font-mono uppercase tracking-[0.02em]">
@@ -120,8 +120,8 @@ function AvatarDropdown({ user, onLogout, onClose }: {
               </span>
             </span>
           </Link>
-          <Link href="/workspace?overlay=settings" onClick={onClose} className={linkClass}>Settings</Link>
-          <Link href="/workspace?overlay=library" onClick={onClose} className={linkClass}>Library</Link>
+          <Link href="/reader?overlay=settings" onClick={onClose} className={linkClass}>Settings</Link>
+          <Link href="/reader?overlay=library" onClick={onClose} className={linkClass}>Library</Link>
         </div>
 
         <div style={{ height: '4px', background: 'var(--ah-grey-100)' }} />
@@ -167,24 +167,24 @@ function MobileSheet({ user, loading, onLogout, onClose }: {
         <div className="h-4 w-24 animate-pulse bg-grey-600" />
       ) : user ? (
         <>
-          <Link href="/workspace" onClick={onClose} className={linkClass('/workspace')}>Workspace</Link>
-          <Link href="/workspace?overlay=dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
+          <Link href="/reader" onClick={onClose} className={linkClass('/reader')}>Workspace</Link>
+          <Link href="/reader?overlay=dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
 
           <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
-          <Link href="/workspace?overlay=messages" onClick={onClose} className={linkClass('/messages')}>
+          <Link href="/reader?overlay=messages" onClick={onClose} className={linkClass('/messages')}>
             <span className="flex items-center gap-2">Messages<Badge count={dmCount} /></span>
           </Link>
-          <Link href="/workspace?overlay=notifications" onClick={onClose} className={linkClass('/notifications')}>
+          <Link href="/reader?overlay=notifications" onClick={onClose} className={linkClass('/notifications')}>
             <span className="flex items-center gap-2">Notifications<Badge count={notificationCount} /></span>
           </Link>
 
           <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
-          <Link href="/workspace?overlay=settings" onClick={onClose} className={linkClass('/profile')}>Profile</Link>
-          <Link href="/workspace?overlay=ledger" onClick={onClose} className={linkClass('/ledger')}>Ledger</Link>
-          <Link href="/workspace?overlay=settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
-          <Link href="/workspace?overlay=library" onClick={onClose} className={linkClass('/library')}>Library</Link>
+          <Link href="/reader?overlay=settings" onClick={onClose} className={linkClass('/profile')}>Profile</Link>
+          <Link href="/reader?overlay=ledger" onClick={onClose} className={linkClass('/ledger')}>Ledger</Link>
+          <Link href="/reader?overlay=settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
+          <Link href="/reader?overlay=library" onClick={onClose} className={linkClass('/library')}>Library</Link>
 
           <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
@@ -224,7 +224,7 @@ export function Nav() {
   useEffect(() => { setMenuOpen(false); setDropdownOpen(false) }, [pathname])
 
   function isActive(path: string) {
-    if (path === '/workspace') return pathname.startsWith('/workspace')
+    if (path === '/reader') return pathname.startsWith('/reader')
     if (path === '/dashboard') return pathname.startsWith('/dashboard')
     if (path === '/network') return pathname.startsWith('/network')
     return pathname === path
@@ -246,7 +246,7 @@ export function Nav() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [pathname, openCompose])
 
-  const logoHref = user ? '/workspace' : '/'
+  const logoHref = user ? '/reader' : '/'
 
   // ── Canvas mode: minimal black bar, white ∀ ────────────────────────────────
 
@@ -319,8 +319,8 @@ export function Nav() {
                 <div className="h-3 w-32 animate-pulse bg-grey-600" />
               ) : user ? (
                 <>
-                  <Link href="/workspace" className={navLinkClass(isActive('/workspace'))}>Workspace</Link>
-                  <Link href="/workspace?overlay=dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
+                  <Link href="/reader" className={navLinkClass(isActive('/reader'))}>Workspace</Link>
+                  <Link href="/reader?overlay=dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
                 </>
               ) : (
                 <>

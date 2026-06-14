@@ -3,7 +3,7 @@
 // =============================================================================
 // SettingsOverlay — account settings in a workspace Glasshouse. Mounted once in
 // WorkspaceView; opened from the ForallMenu Settings row, or via
-// /workspace?overlay=settings (the retired /settings route redirects here,
+// /reader?overlay=settings (the retired /settings route redirects here,
 // forwarding any OAuth ?linked flag; see the deep-link dispatcher in
 // WorkspaceView). Wraps SettingsPanel in the canonical frosted overlay so the
 // ForallMenu stays crisp above it.

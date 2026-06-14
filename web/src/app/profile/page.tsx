@@ -6,5 +6,5 @@ import { redirect } from 'next/navigation'
 // links and bookmarks pointing at /profile redirect into the workspace with the
 // settings overlay opened. See the deep-link dispatcher in WorkspaceView.
 export default function ProfilePage() {
-  redirect('/workspace?overlay=settings')
+  redirect('/reader?overlay=settings')
 }

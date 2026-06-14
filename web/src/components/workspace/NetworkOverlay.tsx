@@ -3,7 +3,7 @@
 // =============================================================================
 // NetworkOverlay — the social graph (following / followers / blocked / muted /
 // vouches) in a workspace Glasshouse. Mounted once in WorkspaceView; opened
-// from the ForallMenu Network row, or via /workspace?overlay=network[&tab=…]
+// from the ForallMenu Network row, or via /reader?overlay=network[&tab=…]
 // (the retired /network route — and the /followers shim before it — redirect
 // here; see the deep-link dispatcher in WorkspaceView). Wraps NetworkPanel in
 // the canonical frosted overlay so the ForallMenu stays crisp above it.

@@ -3,7 +3,7 @@
 // =============================================================================
 // DashboardOverlay — the writer/publication dashboard in a workspace Glasshouse.
 // Mounted once in WorkspaceView; opened from the ForallMenu Dashboard row, or
-// via /workspace?overlay=dashboard (the retired /dashboard route redirects here
+// via /reader?overlay=dashboard (the retired /dashboard route redirects here
 // — see the deep-link effect in WorkspaceView). Wraps DashboardPanel in the
 // canonical frosted overlay so the ForallMenu stays crisp above it.
 // =============================================================================

@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { ExternalArticleReader } from '../../../components/article/ExternalArticleReader'
 
 // =============================================================================
-// Reader Page — /reader/:postId  (Server Component) — UNIVERSAL-POST-ADR Phase R
+// Reader Page — /read/:postId  (Server Component) — UNIVERSAL-POST-ADR Phase R
 //
 // The addressable full-page surface for an EXTERNAL article. It is the direct-URL
 // / new-tab counterpart of the workspace reader overlay (ReaderOverlay): both

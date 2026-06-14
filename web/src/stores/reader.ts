@@ -5,7 +5,7 @@ import { create } from "zustand";
 //
 // One overlay, two article kinds, backed by a real URL:
 //   - native   → /article/<dTag>   (existing addressable page; ArticleReader)
-//   - external → /reader/<postId>  (addressable extract page; ExternalArticleReader)
+//   - external → /read/<postId>  (addressable extract page; ExternalArticleReader)
 //
 // Opening pushes the article's real URL into history so the overlay is
 // shareable and the browser Back button closes it; close() pops that entry.
@@ -84,7 +84,7 @@ export const useReader = create<ReaderState>((set, get) => ({
     const reuse = get().didPush;
     // No postId ⇒ no addressable URL; keep whatever entry we already own.
     const didPush = postId
-      ? pushReaderUrl(`/reader/${postId}`, reuse)
+      ? pushReaderUrl(`/read/${postId}`, reuse)
       : reuse;
     set({
       isOpen: true,

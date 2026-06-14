@@ -7,7 +7,7 @@
 // store; mounted once in WorkspaceView. Renders, by target kind:
 //   - native   → ArticleReader (gate-pass unlock + decrypt, client-fetched by dTag)
 //   - external → ExternalArticleReader (GET /extract reader-mode body)
-// backed by a real URL (the store pushes /article/<dTag> or /reader/<postId>), so
+// backed by a real URL (the store pushes /article/<dTag> or /read/<postId>), so
 // Back / Esc / scrim all close and restore the prior URL. Direct visits to those
 // URLs render the same inner readers full-page (article/[dTag], reader/[postId]).
 //

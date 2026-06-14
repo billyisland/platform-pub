@@ -108,7 +108,7 @@ export function SourceSurface({ id }: { id: string }) {
       if (p.author.pubkey) {
         if (p.dTag) router.push(`/article/${p.dTag}`);
       } else {
-        router.push(`/reader/${p.id}`);
+        router.push(`/read/${p.id}`);
       }
     },
     [router],
@@ -138,7 +138,7 @@ export function SourceSurface({ id }: { id: string }) {
       <PageShell width="feed" title="Source not found">
         <p className="font-sans text-ui-sm text-grey-600">
           This source isn&apos;t available.{" "}
-          <Link href="/workspace" className="btn-text">
+          <Link href="/reader" className="btn-text">
             Back to workspace
           </Link>
         </p>

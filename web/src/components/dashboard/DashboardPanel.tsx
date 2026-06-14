@@ -315,7 +315,7 @@ export function DashboardPanel({
                     useDashboardOverlay.getState().close()
                     useLedgerOverlay.getState().open()
                   } else {
-                    router.push('/workspace?overlay=ledger')
+                    router.push('/reader?overlay=ledger')
                   }
                 }}
                 className="btn-text-muted underline underline-offset-4"

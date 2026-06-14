@@ -3,14 +3,14 @@
 //
 // As routes retire into workspace Glasshouse overlays (dashboard, messages,
 // notifications, …), they all funnel through the same address shape:
-//   /workspace?overlay=<name>[&…seed params]
+//   /reader?overlay=<name>[&…seed params]
 // This module is the single place that maps that shape to the matching overlay
 // store's open(). Two entry points:
 //   - openOverlayFromParams: used by WorkspaceView on mount (params read from
 //     window.location) to open the requested overlay seeded from the query.
 //   - routeToOverlay: used by in-workspace navigations (e.g. notification rows)
-//     so a link to /workspace?overlay=… opens the overlay in place instead of a
-//     no-op router.push to the same /workspace pathname. Returns true when it
+//     so a link to /reader?overlay=… opens the overlay in place instead of a
+//     no-op router.push to the same /reader pathname. Returns true when it
 //     handled the href, so the caller can skip its own router.push.
 //
 // PARAM_KEYS is the full set of query keys the overlays consume — WorkspaceView
@@ -84,12 +84,12 @@ export function openOverlayFromParams(params: URLSearchParams): boolean {
   }
 }
 
-/** If `href` targets a workspace overlay (/workspace?overlay=…), open it in
+/** If `href` targets a workspace overlay (/reader?overlay=…), open it in
  *  place and return true; otherwise return false so the caller navigates. */
 export function routeToOverlay(href: string): boolean {
   const qIndex = href.indexOf("?");
   if (qIndex === -1) return false;
-  if (!href.startsWith("/workspace")) return false;
+  if (!href.startsWith("/reader")) return false;
   // Drop any #hash before parsing the query.
   const query = href.slice(qIndex + 1).split("#")[0];
   return openOverlayFromParams(new URLSearchParams(query));

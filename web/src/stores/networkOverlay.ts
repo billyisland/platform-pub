@@ -5,7 +5,7 @@ import { create } from "zustand";
 // muted / vouches, plus the feed-reach dial and DM-fee settings) in a workspace
 // Glasshouse (frosted overlay, ForallMenu stays crisp above). In-memory only:
 // like the ledger and settings overlays, it pushes no shareable URL. Deep links
-// arrive as /workspace?overlay=network[&tab=vouches] (the retired /network
+// arrive as /reader?overlay=network[&tab=vouches] (the retired /network
 // route — and the /followers shim before it — redirect into that), handled by
 // the deep-link dispatcher in WorkspaceView.
 //

@@ -50,16 +50,16 @@ function getDestUrl(n: Notification): string {
     case 'commission_request':
     case 'drive_funded':
     case 'pledge_fulfilled':
-      return '/workspace?overlay=dashboard&tab=proposals'
+      return '/reader?overlay=dashboard&tab=proposals'
     case 'new_message':
       return n.conversationId
-        ? `/workspace?overlay=messages&conversation=${n.conversationId}`
-        : '/workspace?overlay=messages'
+        ? `/reader?overlay=messages&conversation=${n.conversationId}`
+        : '/reader?overlay=messages'
     case 'pub_article_submitted':
     case 'pub_article_published':
       return n.article?.slug ? `/article/${n.article.slug}` : '#'
     case 'pub_invite_received':
-      return '/workspace?overlay=dashboard'
+      return '/reader?overlay=dashboard'
     case 'pub_new_subscriber':
     case 'pub_member_joined':
     case 'pub_member_left':
@@ -202,7 +202,7 @@ export function NotificationsPanel({
     }
 
     if (href === '#') return
-    // A workspace-overlay target opens in place (we're already on /workspace);
+    // A workspace-overlay target opens in place (we're already on /reader);
     // anything else is a real navigation.
     const openedOverlay = routeToOverlay(href)
     onClose?.()

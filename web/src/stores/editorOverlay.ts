@@ -7,7 +7,7 @@ import { create } from "zustand";
 // workspace, the dashboard overlay, and the note→article handoff alike.
 //
 // In-memory only (like the dashboard/messages overlays): pushes no shareable
-// URL. Deep links arrive as /workspace?overlay=editor[&draft|&edit|&pub] and are
+// URL. Deep links arrive as /reader?overlay=editor[&draft|&edit|&pub] and are
 // dispatched by lib/workspace/overlays.ts → open() with the seeded ids. The
 // standalone /write page remains the addressable full-page editor.
 // =============================================================================

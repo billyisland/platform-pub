@@ -13,7 +13,7 @@ export default function ConversationPage() {
 
   useEffect(() => {
     router.replace(
-      `/workspace?overlay=messages&conversation=${encodeURIComponent(conversationId)}`,
+      `/reader?overlay=messages&conversation=${encodeURIComponent(conversationId)}`,
     )
   }, [conversationId, router])
 

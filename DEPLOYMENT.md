@@ -648,13 +648,13 @@ Then sign up a fresh account to confirm it lands on a clone (`SELECT cloned_from
 
 ## Frontend pages
 
-The logged-in surface is **`/workspace`**. The content routes below keep full pages for direct visits / SEO but open as Glasshouse **overlays** when reached from inside the app, and several legacy routes are now redirect shims into those overlays (FEED-RETIREMENT-PLAN; routing in `web/src/lib/workspace/overlays.ts`).
+The logged-in surface is **`/reader`**. The content routes below keep full pages for direct visits / SEO but open as Glasshouse **overlays** when reached from inside the app, and several legacy routes are now redirect shims into those overlays (FEED-RETIREMENT-PLAN; routing in `web/src/lib/workspace/overlays.ts`).
 
 | Path | Purpose |
 | ---- | ------- |
-| / | Landing (redirects to /workspace if logged in) |
-| /workspace | Primary logged-in surface — composed feed vessels (the one Post-model card path) + Glasshouse overlays (reader, profile, dashboard, settings, library, network, subscriptions, messages, notifications) |
-| /feed → /workspace | Redirect shim (legacy global Following/Explore feed retired) |
+| / | Landing (redirects to /reader if logged in) |
+| /reader | Primary logged-in surface — composed feed vessels (the one Post-model card path) + Glasshouse overlays (reader, profile, dashboard, settings, library, network, subscriptions, messages, notifications) |
+| /feed → /reader | Redirect shim (legacy global Following/Explore feed retired) |
 | /[username] | Writer profile (SSR, ISR 60s; opens as the profile overlay in-app) |
 | /author/[id] | External-author profile (Post-model; profile overlay in-app) |
 | /source/[id] | Source surface (Post-model; surface overlay in-app) |
@@ -662,12 +662,12 @@ The logged-in surface is **`/workspace`**. The content routes below keep full pa
 | /article/[dTag] | Article reader with paywall unlock (SSR, ISR 60s; reader overlay in-app) |
 | /write | Article editor with paywall gate marker + scheduling (also the EditorOverlay) |
 | /pub/[slug] (+ /about, /masthead, /subscribe, /archive) | Publication surfaces (surface overlay in-app; article rows open the reader) |
-| /profile → /workspace?overlay=settings | Redirect shim (identity folded into Settings) |
-| /settings → /workspace?overlay=settings | Redirect shim |
-| /library (+ /bookmarks, /history, /reading-history) → /workspace?overlay=library | Redirect shims — saved reading (Bookmarks / History) |
-| /network (+ /followers, /social, /following) → /workspace?overlay=network | Redirect shims — following/followers/blocked/muted/vouches + DM fees |
-| /subscriptions → /workspace?overlay=subscriptions | Redirect shim — external-subscription manager |
-| /search → /workspace | Redirect shim (search lives in the workspace dock) |
+| /profile → /reader?overlay=settings | Redirect shim (identity folded into Settings) |
+| /settings → /reader?overlay=settings | Redirect shim |
+| /library (+ /bookmarks, /history, /reading-history) → /reader?overlay=library | Redirect shims — saved reading (Bookmarks / History) |
+| /network (+ /followers, /social, /following) → /reader?overlay=network | Redirect shims — following/followers/blocked/muted/vouches + DM fees |
+| /subscriptions → /reader?overlay=subscriptions | Redirect shim — external-subscription manager |
+| /search → /reader | Redirect shim (search lives in the workspace dock) |
 | /dashboard | Articles, drafts, pledge drives, offers, pricing, publications (dashboard overlay in-app) |
 | /messages, /messages/[conversationId] | DM inbox + thread (messages overlay in-app) |
 | /notifications | Notifications, excludes DMs (notifications overlay in-app) |
@@ -743,7 +743,7 @@ docker compose run --rm certbot renew && docker compose restart nginx
 
 - **Universal Feed** (migrations 052–064, 075, 090–096; `docs/adr/UNIVERSAL-FEED-ADR.md`; new `feed-ingest` service). External source ingestion — RSS, ActivityPub/Mastodon, AT Protocol/Bluesky, external Nostr, and email newsletters — into a unified `feed_items` timeline; outbound cross-posting + reply router; AT Protocol OAuth (`private_key_jwt`); DB-backed identity resolver; external item context/parent/thread endpoints; engagement counts; content warnings. New env: `LINKED_ACCOUNT_KEY_HEX` (gateway + feed-ingest, must match), `ATPROTO_CLIENT_BASE_URL`, `ATPROTO_PRIVATE_JWK`.
 - **Trust layer** (migrations 065–067, 078, 079; trust routes + `/network`). Layer 1 precomputed signals, vouches + trust profiles, epoch-based aggregation/decay, trust polls, contested PIP status.
-- **Workspace experiment** (migrations 077, 080, 081, 089; `docs/adr/WORKSPACE-EXPERIMENT-ADR.md`; `/workspace`, `WorkspaceView`/`VesselCard`; `/api/v1/workspace/feeds`). Merged to master 29 May 2026 (fast-forward).
+- **Workspace experiment** (migrations 077, 080, 081, 089; `docs/adr/WORKSPACE-EXPERIMENT-ADR.md`; `/reader`, `WorkspaceView`/`VesselCard`; `/api/v1/workspace/feeds`). Merged to master 29 May 2026 (fast-forward).
 - **Card behaviour** (migration 097; `docs/adr/CARD-BEHAVIOUR-ADR.md`, `CARD-BEHAVIOUR-BUILD-PLAN.md`). Phases 1–3 (25–26 May 2026): unified click region map, `is_reply` reply signalling, inline conversational-neighbourhood expansion, desktop author hover modal + touch action sheet. New: `feed_items.is_reply`, `timeline` response `isReply`/`biddabilityTier`, `GET /api/v1/author-card`, `AuthorModal`, `ActionSheet`, `NeighbourhoodCard`, `useNeighbourhood`, `useAuthorCard`.
 - **Relay outbox** (migration 076). Durable queue for Nostr relay publishes; article rows and outbound events commit together.
 - **Reading & product** (migrations 046–051, 068–070, 082–084, 088, 092). Notification preferences, bookmarks, tags, account deletion, publication homepage layouts, article scheduling, article size tiers, reading-position resumption, search trigram indexes, traffology source race fix, interaction foundation.

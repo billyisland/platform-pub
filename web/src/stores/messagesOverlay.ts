@@ -3,7 +3,7 @@ import { create } from "zustand";
 // =============================================================================
 // useMessagesOverlay — opens the direct-messages surface in a workspace
 // Glasshouse (frosted overlay, ForallMenu stays crisp above). In-memory only:
-// it pushes no shareable URL. Deep links arrive as /workspace?overlay=messages
+// it pushes no shareable URL. Deep links arrive as /reader?overlay=messages
 // [&conversation=<id>] (the retired /messages + /messages/[id] routes redirect
 // into that), handled by the deep-link dispatcher in WorkspaceView. Callers may
 // seed an initial conversation to pre-select.

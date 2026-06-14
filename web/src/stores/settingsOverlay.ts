@@ -4,7 +4,7 @@ import { create } from "zustand";
 // useSettingsOverlay — opens account settings in a workspace Glasshouse
 // (frosted overlay, ForallMenu stays crisp above). In-memory only: like the
 // ledger and notifications overlays, it pushes no shareable URL. Deep links
-// arrive as /workspace?overlay=settings (the retired /settings route redirects
+// arrive as /reader?overlay=settings (the retired /settings route redirects
 // into that), handled by the deep-link dispatcher in WorkspaceView.
 //
 // `linked` carries the OAuth-callback flag (mastodon/bluesky/error) the gateway

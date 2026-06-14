@@ -4,7 +4,7 @@
 // MessagesOverlay — the merged Messages surface in a workspace Glasshouse:
 // notifications log + direct messages in one three-column inbox (MessagesInbox).
 // Mounted once in WorkspaceView; opened from the single ForallMenu "Messages"
-// row via useMessagesOverlay, or via /workspace?overlay=messages[&conversation]
+// row via useMessagesOverlay, or via /reader?overlay=messages[&conversation]
 // and the retired /messages + /notifications routes (both redirect here). The
 // ForallMenu stays crisp above the frost.
 // =============================================================================

@@ -190,9 +190,9 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
     setMsgLoading(true);
     try {
       const result = await messagesApi.createConversation([writer.id]);
-      router.push(`/workspace?overlay=messages&conversation=${result.conversationId}`);
+      router.push(`/reader?overlay=messages&conversation=${result.conversationId}`);
     } catch {
-      router.push("/workspace?overlay=messages");
+      router.push("/reader?overlay=messages");
     } finally {
       setMsgLoading(false);
     }

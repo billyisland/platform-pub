@@ -4,7 +4,7 @@ import { create } from "zustand";
 // useDashboardOverlay — opens the writer/publication dashboard in a workspace
 // Glasshouse (frosted overlay, ForallMenu stays crisp above). In-memory only:
 // like the messages overlay, it pushes no shareable URL. Deep links arrive as
-// /workspace?overlay=dashboard[&tab&context] (the retired /dashboard route
+// /reader?overlay=dashboard[&tab&context] (the retired /dashboard route
 // redirects into that), handled by the deep-link effect in WorkspaceView, which
 // calls open() with the seeded tab/context — e.g. straight to a publication's
 // earnings.

@@ -669,7 +669,7 @@ export function WorkspaceView() {
     if (!openOverlayFromParams(params)) return;
     OVERLAY_PARAM_KEYS.forEach((k) => params.delete(k));
     const qs = params.toString();
-    window.history.replaceState({}, "", `/workspace${qs ? `?${qs}` : ""}`);
+    window.history.replaceState({}, "", `/reader${qs ? `?${qs}` : ""}`);
   }, []);
 
   // Slice 12: fetch the user's followed pubkeys once on mount so the pip
@@ -1018,7 +1018,7 @@ export function WorkspaceView() {
                       }
                     };
                     // Article click → reader pane (§3.1 / Phase R). Native by
-                    // d-tag (/article/<dTag>), external by URL (/reader/<postId>).
+                    // d-tag (/article/<dTag>), external by URL (/read/<postId>).
                     // Actions are stable refs, so getState() avoids subscribing.
                     const openReaderFromPost = (p: Post) => {
                       const reader = useReader.getState();

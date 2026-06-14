@@ -39,7 +39,7 @@ export default function VerifyPage() {
         // Hydrate auth store with the new session
         await fetchMe()
         // Short delay so the success message is visible
-        setTimeout(() => router.push('/workspace'), 800)
+        setTimeout(() => router.push('/reader'), 800)
       } catch (err: any) {
         setStatus('error')
         if (err.status === 401) {

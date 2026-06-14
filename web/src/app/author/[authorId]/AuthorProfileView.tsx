@@ -29,7 +29,7 @@ import { ApiError } from "../../../lib/api/client";
 // Header from GET /author/:id/profile, a chronological full-view PostCard log
 // from GET /author/:id/posts. Reached from a tier-A/B external byline (and works
 // for native ids too, though native bylines route to /{username}). Native
-// articles open at /article/<dTag>, external at /reader/<postId>; notes/external
+// articles open at /article/<dTag>, external at /read/<postId>; notes/external
 // expand inline to the unified PostThread, exactly as in the workspace.
 // =============================================================================
 
@@ -143,7 +143,7 @@ export function AuthorProfileView({
       if (p.author.pubkey) {
         if (p.dTag) router.push(`/article/${p.dTag}`);
       } else {
-        router.push(`/reader/${p.id}`);
+        router.push(`/read/${p.id}`);
       }
     },
     [router],
@@ -170,7 +170,7 @@ export function AuthorProfileView({
     return frame(
       <p className="font-sans text-ui-sm text-grey-600">
         This author isn&apos;t available.{" "}
-        <Link href="/workspace" className="btn-text">
+        <Link href="/reader" className="btn-text">
           Back to workspace
         </Link>
       </p>,

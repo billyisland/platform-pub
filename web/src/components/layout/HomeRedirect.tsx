@@ -22,7 +22,7 @@ export default function HomeRedirect() {
   const loading = useAuth((s) => s.loading)
 
   useEffect(() => {
-    if (!loading && user) router.replace('/workspace')
+    if (!loading && user) router.replace('/reader')
   }, [user, loading, router])
 
   return null

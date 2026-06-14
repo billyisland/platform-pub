@@ -8,7 +8,7 @@
 // "open in new tab" footer. NO scrim and NO close chrome — the caller supplies
 // the frame:
 //   - ReaderOverlay wraps this in the workspace overlay (scrim + pane + close).
-//   - /reader/[postId] wraps this in a full-page container (direct URL / new tab).
+//   - /read/[postId] wraps this in a full-page container (direct URL / new tab).
 //
 // Lifted out of the old workspace/ReaderPane.tsx (now deleted) so the overlay and
 // the addressable route share one reader. Separation is whitespace, per the

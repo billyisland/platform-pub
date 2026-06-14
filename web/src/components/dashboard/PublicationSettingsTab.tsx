@@ -107,7 +107,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
     setDangerMsg(null)
     try {
       await pubApi.archive(publicationId)
-      window.location.href = '/workspace?overlay=dashboard'
+      window.location.href = '/reader?overlay=dashboard'
     } catch {
       setDangerMsg('Failed to archive.')
       setArchiving(false)
@@ -120,7 +120,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
     setDangerMsg(null)
     try {
       await pubApi.transferOwnership(publicationId, selectedNewOwner)
-      window.location.href = '/workspace?overlay=dashboard'
+      window.location.href = '/reader?overlay=dashboard'
     } catch {
       setDangerMsg('Failed to transfer ownership.')
       setTransferring(false)
@@ -132,7 +132,7 @@ export function PublicationSettingsTab({ publicationId, publicationSlug, isOwner
     setDangerMsg(null)
     try {
       await pubApi.archive(publicationId)
-      window.location.href = '/workspace?overlay=dashboard'
+      window.location.href = '/reader?overlay=dashboard'
     } catch {
       setDangerMsg('Failed to delete.')
       setDeleting(false)

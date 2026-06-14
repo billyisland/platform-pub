@@ -20,7 +20,7 @@ export default function AdminReportsPage() {
   useEffect(() => {
     if (loading) return
     if (!user || !user.isAdmin) {
-      router.replace('/workspace')
+      router.replace('/reader')
     }
   }, [user, loading, router])
 
@@ -51,7 +51,7 @@ export default function AdminReportsPage() {
       action={
         // The admin surface is chromeless (no black topbar), so it carries its
         // own way back to the workspace.
-        <Link href="/workspace" className="btn-text-muted">
+        <Link href="/reader" className="btn-text-muted">
           ← Workspace
         </Link>
       }

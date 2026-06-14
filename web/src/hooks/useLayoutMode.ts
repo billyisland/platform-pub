@@ -33,8 +33,9 @@ const PLATFORM_PREFIXES = [
 export function useLayoutMode(): LayoutMode {
   const pathname = usePathname()
 
-  // Workspace runs without platform chrome (topbar / compose / footer)
-  if (pathname === '/workspace' || pathname.startsWith('/workspace/')) {
+  // Workspace runs without platform chrome (topbar / compose / footer).
+  // Canonical route is /reader (the article reader lives at /read/:postId).
+  if (pathname === '/reader' || pathname.startsWith('/reader/')) {
     return 'workspace'
   }
 

@@ -82,7 +82,7 @@ export function SocialTab({ writer, isOwnProfile }: SocialTabProps) {
       if (p.author.pubkey) {
         if (p.dTag) router.push(`/article/${p.dTag}`);
       } else {
-        router.push(`/reader/${p.id}`);
+        router.push(`/read/${p.id}`);
       }
     },
     [router],

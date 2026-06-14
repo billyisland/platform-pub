@@ -30,7 +30,7 @@ export default function AuthPage() {
       await auth.signup({ email, displayName, username })
       const me = await auth.me()
       setUser(me)
-      router.push('/workspace')
+      router.push('/reader')
     } catch (err: any) {
       if (err.body?.error === 'username_taken') {
         setError('That username is already taken.')
@@ -68,7 +68,7 @@ export default function AuthPage() {
       await auth.devLogin(email)
       const me = await auth.me()
       setUser(me)
-      router.push('/workspace')
+      router.push('/reader')
     } catch {
       setError('Dev login failed — is that email in the database?')
     } finally {

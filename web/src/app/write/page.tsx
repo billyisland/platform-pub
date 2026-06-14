@@ -67,7 +67,7 @@ export default function WritePage() {
       const params = new URLSearchParams({ overlay: dest.overlay });
       if (dest.tab) params.set("tab", dest.tab);
       if (dest.context) params.set("context", dest.context);
-      router.push(`/workspace?${params.toString()}`);
+      router.push(`/reader?${params.toString()}`);
     },
   });
 
@@ -84,7 +84,7 @@ export default function WritePage() {
       <div className="mx-auto max-w-article px-4 sm:px-6 pt-16 pb-16 lg:pt-8 text-center">
         <p className="text-red-600 mb-4">{loadError}</p>
         <a
-          href="/workspace?overlay=dashboard"
+          href="/reader?overlay=dashboard"
           className="text-sm text-crimson hover:text-crimson-dark"
         >
           Back to dashboard

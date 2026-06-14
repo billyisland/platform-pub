@@ -6,5 +6,5 @@ import { redirect } from 'next/navigation'
 // retired — this route survives only as a compatibility shim so old links and
 // bookmarks resolve into the workspace.
 export default function SubscriptionsPage() {
-  redirect('/workspace')
+  redirect('/reader')
 }

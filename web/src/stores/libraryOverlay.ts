@@ -4,7 +4,7 @@ import { create } from "zustand";
 // useLibraryOverlay — opens the reader's library (bookmarks + reading history)
 // in a workspace Glasshouse (frosted overlay, ForallMenu stays crisp above).
 // In-memory only: like the ledger and settings overlays, it pushes no shareable
-// URL. Deep links arrive as /workspace?overlay=library[&tab=history] (the
+// URL. Deep links arrive as /reader?overlay=library[&tab=history] (the
 // retired /library route — and the /bookmarks, /history, /reading-history shims
 // before it — redirect into that), handled by the deep-link dispatcher in
 // WorkspaceView.

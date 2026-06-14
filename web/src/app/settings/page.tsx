@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 
 // Settings is now a workspace Glasshouse overlay (opened from the ForallMenu or
-// via /workspace?overlay=settings). This route is retained only as a
+// via /reader?overlay=settings). This route is retained only as a
 // compatibility shim: old links and bookmarks pointing at /settings redirect
 // into the workspace with the overlay opened. The gateway's social-account
 // OAuth callback returns to /settings?linked=<flag>; that flag is forwarded so
@@ -15,5 +15,5 @@ export default function SettingsPage({
   const params = new URLSearchParams({ overlay: 'settings' })
   const linked = Array.isArray(searchParams.linked) ? searchParams.linked[0] : searchParams.linked
   if (linked) params.set('linked', linked)
-  redirect(`/workspace?${params.toString()}`)
+  redirect(`/reader?${params.toString()}`)
 }

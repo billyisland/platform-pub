@@ -7,5 +7,5 @@ import { redirect } from 'next/navigation'
 // post-auth redirects pointing at /feed land on the workspace. The legacy
 // FeedView card stack is deleted in Slice 7.
 export default function FeedPage() {
-  redirect('/workspace')
+  redirect('/reader')
 }

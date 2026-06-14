@@ -190,7 +190,7 @@ export function NetworkPanel({
               <p className="text-ui-sm text-grey-400 mb-4">
                 You're not following anyone yet.
               </p>
-              <Link href="/workspace" className="btn py-2 px-5 text-ui-sm">
+              <Link href="/reader" className="btn py-2 px-5 text-ui-sm">
                 Discover writers
               </Link>
             </div>
