@@ -9,7 +9,7 @@ import {
   type AuthorCardData,
   type AuthorCardType,
 } from "../../hooks/useAuthorCard";
-import { follows as followsApi, feeds as feedsApi } from "../../lib/api";
+import { follows as followsApi, workspaceFeeds } from "../../lib/api";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
 
 interface AuthorModalProps {
@@ -30,6 +30,10 @@ interface AuthorModalProps {
   // Stacking override for callers that open the modal above a frosted overlay
   // (the FeedComposer Glasshouse sits at z-56, above this modal's default 50).
   zIndex?: number;
+  // The workspace feed this byline was hovered in. External "Follow" = add the
+  // source to THIS feed; absent ⇒ no feed context, so the external Follow
+  // affordance is omitted (native follow is global, unaffected).
+  feedId?: string;
 }
 
 function formatCount(n: number): string {
@@ -47,6 +51,7 @@ export function AuthorModal({
   onMouseEnter,
   onMouseLeave,
   zIndex = 50,
+  feedId,
 }: AuthorModalProps) {
   const { data, loading } = useAuthorCard(type, id, true);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -124,7 +129,9 @@ export function AuthorModal({
       onClick={(e) => e.stopPropagation()}
     >
       {loading && <ModalSkeleton />}
-      {data && !loading && <ModalContent data={data} onClose={onClose} />}
+      {data && !loading && (
+        <ModalContent data={data} onClose={onClose} feedId={feedId} />
+      )}
       {!data && !loading && (
         <p className="text-ui-xs text-grey-400">Could not load profile</p>
       )}
@@ -152,9 +159,11 @@ function ModalSkeleton() {
 function ModalContent({
   data,
   onClose,
+  feedId,
 }: {
   data: AuthorCardData;
   onClose: () => void;
+  feedId?: string;
 }) {
   if (data.tier === "D") {
     return (
@@ -289,38 +298,93 @@ function ModalContent({
       )}
 
       {data.followTarget && (
-        <FollowButton target={data.followTarget} onClose={onClose} />
+        <FollowButton
+          target={data.followTarget}
+          onClose={onClose}
+          feedId={feedId}
+        />
       )}
     </div>
   );
 }
 
+// Protocols the workspace addSource path can service (email is ingest-only —
+// no Follow affordance until it's wired). Mirrors AddWorkspaceFeedSourceInput.
+const FOLLOWABLE_PROTOCOLS = new Set([
+  "rss",
+  "atproto",
+  "activitypub",
+  "nostr_external",
+]);
+
 function FollowButton({
   target,
   onClose,
+  feedId,
 }: {
   target: NonNullable<AuthorCardData["followTarget"]>;
   onClose: () => void;
+  feedId?: string;
 }) {
-  const [following, setFollowing] = useState(target.isFollowing);
-  const [busy, setBusy] = useState(false);
-  // For a source, unsubscribe deletes by subscription-row id. The gateway seeds
-  // target.id with that id when already subscribed; when we subscribe here we
-  // capture the freshly-minted id so an immediate unfollow in the same modal
-  // still targets the right row (target.id is then the source-id fallback).
-  const [subscriptionId, setSubscriptionId] = useState<string | null>(
-    target.type === "source" && target.isFollowing ? target.id : null,
-  );
+  const isSource = target.type === "source";
+  // External follow is feed-derived: "follow" means the source sits in THIS
+  // feed (a feed_sources row). Without a feed context, or for a protocol we
+  // can't add, there's no external Follow affordance.
+  const externalFollowable =
+    isSource &&
+    !!feedId &&
+    (!target.protocol || FOLLOWABLE_PROTOCOLS.has(target.protocol));
 
-  // Track the freshly-fetched state: useState only seeds on mount, so without
-  // this a cached/re-fetched profile (e.g. after toggling elsewhere) would keep
-  // showing the stale snapshot the button first mounted with.
+  const [following, setFollowing] = useState(
+    isSource ? false : target.isFollowing,
+  );
+  const [busy, setBusy] = useState(false);
+  // The feed_sources row id for the source in THIS feed, used to remove it.
+  const [feedSourceId, setFeedSourceId] = useState<string | null>(null);
+
+  // Native follow seeds from the server snapshot. External membership is
+  // per-feed, so resolve it from the feed's own source list (matched on the
+  // external_sources id) rather than the global isFollowing.
   useEffect(() => {
-    setFollowing(target.isFollowing);
-    setSubscriptionId(
-      target.type === "source" && target.isFollowing ? target.id : null,
-    );
-  }, [target.isFollowing, target.id, target.type]);
+    if (!isSource) {
+      setFollowing(target.isFollowing);
+      return;
+    }
+    if (!externalFollowable || !feedId) {
+      setFollowing(false);
+      setFeedSourceId(null);
+      return;
+    }
+    let cancelled = false;
+    void workspaceFeeds
+      .listSources(feedId)
+      .then(({ sources }) => {
+        if (cancelled) return;
+        const row = target.sourceId
+          ? sources.find(
+              (s) =>
+                s.sourceType === "external_source" &&
+                s.externalSourceId === target.sourceId,
+            )
+          : undefined;
+        setFollowing(!!row);
+        setFeedSourceId(row?.id ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFollowing(false);
+        setFeedSourceId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isSource,
+    externalFollowable,
+    feedId,
+    target.sourceId,
+    target.isFollowing,
+  ]);
 
   const handleClick = useCallback(
     async (e: React.MouseEvent) => {
@@ -331,32 +395,30 @@ function FollowButton({
       setFollowing(!prev);
 
       try {
-        if (target.type === "user") {
+        if (!isSource) {
+          if (prev) await followsApi.unfollow(target.id);
+          else await followsApi.follow(target.id);
+        } else if (feedId) {
           if (prev) {
-            await followsApi.unfollow(target.id);
-          } else {
-            await followsApi.follow(target.id);
-          }
-        } else {
-          if (prev) {
-            // Unsubscribe by subscription-row id; without one there is nothing
-            // to delete, so surface it as a failure and let the catch revert.
-            if (!subscriptionId) throw new Error("missing subscription id");
-            await feedsApi.remove(subscriptionId);
-            setSubscriptionId(null);
-          } else {
-            if (target.protocol && target.sourceUri) {
-              const res = await feedsApi.subscribe({
-                protocol: target.protocol,
-                sourceUri: target.sourceUri,
-              });
-              setSubscriptionId(res.subscriptionId);
-            }
+            // Remove the source from this feed; the gateway tears down the
+            // derived subscription when it leaves the owner's last feed.
+            if (!feedSourceId) throw new Error("missing feed source id");
+            await workspaceFeeds.removeSource(feedId, feedSourceId);
+            setFeedSourceId(null);
+          } else if (target.protocol && target.sourceUri) {
+            const { source } = await workspaceFeeds.addSource(feedId, {
+              sourceType: "external_source",
+              protocol: target.protocol as
+                | "rss"
+                | "atproto"
+                | "activitypub"
+                | "nostr_external",
+              sourceUri: target.sourceUri,
+            });
+            setFeedSourceId(source.id);
           }
         }
-        // The shared 5-min author-card cache now holds a stale isFollowing for
-        // this author; drop it so the next hover reflects the change instead of
-        // re-asserting the old "FOLLOWING"/"FOLLOW" state.
+        // Drop the shared author-card cache so the next hover re-derives state.
         invalidateAuthorCardCache();
       } catch {
         setFollowing(prev);
@@ -364,8 +426,12 @@ function FollowButton({
         setBusy(false);
       }
     },
-    [target, following, busy, subscriptionId],
+    [isSource, target, following, busy, feedId, feedSourceId],
   );
+
+  // External byline with no feed context (e.g. a profile overlay) has no
+  // follow gesture; native follow is unaffected.
+  if (isSource && !externalFollowable) return null;
 
   return (
     <button

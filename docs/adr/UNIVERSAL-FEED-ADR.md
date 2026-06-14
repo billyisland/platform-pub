@@ -7,6 +7,36 @@
 
 ---
 
+## Addendum (2026-06-14) — external subscriptions are feed-derived
+
+The standalone external-subscription model described below (a global, user-managed
+`external_subscriptions` row with its own subscribe/unsubscribe/mute/refresh CRUD
+and a dedicated Subscriptions page) was retired. **`external_subscriptions` is now
+a derived index**: a row exists iff the source sits in ≥1 of the owner's workspace
+feeds. Consequences:
+
+- **Authoring** is `addSource`/`removeSource` on a workspace feed
+  (`gateway/src/routes/feeds.ts`). `addSource` upserts the subscription inside the
+  same transaction as the `feed_sources` row; `removeSource` deletes it when the
+  source leaves the owner's *last* feed (owner-scoped advisory lock guards the
+  read-then-write) and orphans the source. The CRUD routes in `external-feeds.ts`
+  (subscribe/unsubscribe/mute/refresh/list) and the dead `post-feed.ts`
+  `GET /feed/:feedId` projector were deleted; `external-feeds.ts` keeps only the
+  admin instance-health diagnostic.
+- **The row is the external follow-graph.** `nostr_external` add/teardown calls
+  `markFollowListDirty` so the published kind-3 list tracks it; the author-card
+  "Following" state reads it.
+- **Display controls moved per-feed.** `is_muted`/`daily_cap` were dropped
+  (migration 116, which also deleted legacy floating subscriptions and re-marked
+  affected owners' kind-3 dirty); per-source mute is now `feed_sources.muted_at`.
+  There is no per-feed daily cap.
+- **UI.** The hover-card Follow on an external byline adds the source to the
+  *current* feed (omitted where there's no feed context); the FeedComposer
+  "Add a source" field is the other entry point. `email` external sources are
+  ingest-only (no Follow affordance yet).
+
+---
+
 ## I. Problem statement
 
 all.haus currently operates as a closed social–publishing platform. Users follow writers on all.haus, read articles and notes in a unified feed, and interact via comments and quote-comments — but only within the platform's own Nostr relay. The `content_tier` enum already anticipates four tiers of content (native, federated Nostr, bridged fediverse, external RSS), but tiers 2–4 are unpopulated placeholders.

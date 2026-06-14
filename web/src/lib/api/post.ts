@@ -62,6 +62,10 @@ export interface AuthorProfile {
     isFollowing: boolean;
     protocol?: string;
     sourceUri?: string;
+    // external_sources.id when the source already exists — lets the client match
+    // per-feed membership (feed_sources.external_source_id) for the feed-derived
+    // external Follow affordance. Null/absent when no source row exists yet.
+    sourceId?: string | null;
   };
 }
 

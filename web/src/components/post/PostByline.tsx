@@ -37,6 +37,7 @@ export function PostByline({
   trailing,
   replyingTo,
   onPipOpen,
+  feedId,
 }: {
   post: Post;
   palette: VesselPalette;
@@ -44,6 +45,7 @@ export function PostByline({
   trailing?: React.ReactNode;
   replyingTo?: { name: string } | null;
   onPipOpen?: PipOpen;
+  feedId?: string;
 }) {
   if (post.author.pubkey) {
     return (
@@ -64,6 +66,7 @@ export function PostByline({
       bylineProfile={bylineProfile}
       trailing={trailing}
       replyingTo={replyingTo}
+      feedId={feedId}
     />
   );
 }
@@ -145,12 +148,14 @@ function ExternalByline({
   bylineProfile,
   trailing,
   replyingTo,
+  feedId,
 }: {
   post: Post;
   palette: VesselPalette;
   bylineProfile: boolean;
   trailing?: React.ReactNode;
   replyingTo?: { name: string } | null;
+  feedId?: string;
 }) {
   const name =
     post.author.displayName ??
@@ -184,6 +189,7 @@ function ExternalByline({
           onClose={hover.onModalClose}
           onMouseEnter={hover.onModalMouseEnter}
           onMouseLeave={hover.onModalMouseLeave}
+          feedId={feedId}
         />
       )}
     </>

@@ -20,6 +20,10 @@ export interface CardContext {
   palette: VesselPalette;
   bodyPx: number; // base reading size; the matrix textScale multiplies this
   dragData?: string;
+  // The workspace feed this card is rendered in. Present only on feed surfaces
+  // (absent on feedless surfaces like profile overlays / the reader). Drives
+  // the feed-derived external Follow affordance (add-to-this-feed).
+  feedId?: string;
 }
 
 // Pip-panel handoff callback (matches the workspace PipOpen contract).

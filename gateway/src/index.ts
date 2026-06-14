@@ -35,7 +35,6 @@ import { historyRoutes } from "./routes/history.js";
 import { giftLinkRoutes } from "./routes/gift-links.js";
 import { subscriptionOfferRoutes } from "./routes/subscription-offers.js";
 import { messageRoutes } from "./routes/messages.js";
-import { postFeedRoutes } from "./routes/post-feed.js";
 import { postThreadRoutes } from "./routes/post-thread.js";
 import { socialRoutes } from "./routes/social.js";
 import { publicationRoutes } from "./routes/publications/index.js";
@@ -193,11 +192,6 @@ async function start() {
 
   // Direct messages (NIP-17 E2E encrypted conversations)
   await app.register(messageRoutes, { prefix: "/api/v1" });
-
-  // Post-model feed (UNIVERSAL-POST-ADR Phase 1 — GET /feed/:feedId, scored + deduped).
-  // The sole feed timeline since the legacy GET /feed reach dial was retired
-  // (FEED-RETIREMENT-PLAN Slice 6); shared SQL lives in lib/feed-sql.ts.
-  await app.register(postFeedRoutes, { prefix: "/api/v1" });
 
   // Post-model thread (UNIVERSAL-POST-ADR Phase 1 — GET /thread/:postId). The
   // legacy native /conversation reader was retired (FEED-RETIREMENT-PLAN Slice 6);

@@ -133,23 +133,28 @@ async function resolveExternalAuthor(
 
   let followTarget: AuthorCardResponse["followTarget"];
   if (authorUri) {
-    const { rows: subRows } = await pool.query<{ id: string }>(
-      `SELECT sub.id
-         FROM external_subscriptions sub
-         JOIN external_sources es ON es.id = sub.source_id
-        WHERE sub.subscriber_id = $1
-          AND es.protocol = $2::external_protocol
+    const { rows: subRows } = await pool.query<{
+      source_id: string;
+      sub_id: string | null;
+    }>(
+      `SELECT es.id AS source_id, sub.id AS sub_id
+         FROM external_sources es
+         LEFT JOIN external_subscriptions sub
+           ON sub.source_id = es.id AND sub.subscriber_id = $1
+        WHERE es.protocol = $2::external_protocol
           AND es.source_uri = $3
         LIMIT 1`,
       [viewerId, item.protocol, authorUri],
     );
-    const subId = subRows[0]?.id ?? null;
+    const sourceId = subRows[0]?.source_id ?? null;
+    const subId = subRows[0]?.sub_id ?? null;
     followTarget = {
       type: "source",
       id: subId ?? authorUri,
       isFollowing: subId !== null,
       protocol: item.protocol,
       sourceUri: authorUri,
+      sourceId,
     };
   } else if (source) {
     const { rows: subRows } = await pool.query<{ id: string }>(
@@ -165,6 +170,7 @@ async function resolveExternalAuthor(
       isFollowing: subId !== null,
       protocol: source.protocol,
       sourceUri: source.source_uri,
+      sourceId: item.source_id,
     };
   }
 

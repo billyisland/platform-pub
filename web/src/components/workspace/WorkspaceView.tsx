@@ -45,7 +45,6 @@ import { LedgerOverlay } from "./LedgerOverlay";
 import { SettingsOverlay } from "./SettingsOverlay";
 import { LibraryOverlay } from "./LibraryOverlay";
 import { NetworkOverlay } from "./NetworkOverlay";
-import { SubscriptionsOverlay } from "./SubscriptionsOverlay";
 import { useReader } from "../../stores/reader";
 import { useCompose } from "../../stores/compose";
 import { useEditorOverlay } from "../../stores/editorOverlay";
@@ -899,6 +898,7 @@ export function WorkspaceView() {
                       palette: paletteFor(layout.brightness),
                       bodyPx:
                         TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
+                      feedId: v.feed.id,
                       dragData: (() => {
                         const fsId = matchItemToSource(item, v.sources);
                         return fsId
@@ -1394,7 +1394,6 @@ export function WorkspaceView() {
       <SettingsOverlay />
       <LibraryOverlay />
       <NetworkOverlay />
-      <SubscriptionsOverlay />
     </Floor>
   );
 }

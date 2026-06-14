@@ -4,6 +4,7 @@ import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { FEED_SELECT, FEED_JOINS } from "../lib/feed-sql.js";
+import { markFollowListDirty } from "../lib/discovery-publish.js";
 import {
   POST_SELECT,
   POST_JOINS,
@@ -11,12 +12,31 @@ import {
   type Post,
 } from "../lib/post-mapper.js";
 
+// Maps an external protocol to its one-shot ingest job. nostr/rss/activitypub
+// poll; atproto backfills prior history (the Jetstream listener picks up live
+// posts via its DID refresh). null ⇒ no immediate job.
+function externalFetchTask(protocol: string): string | null {
+  switch (protocol) {
+    case "rss":
+      return "feed_ingest_rss";
+    case "nostr_external":
+      return "feed_ingest_nostr";
+    case "activitypub":
+      return "feed_ingest_activitypub";
+    case "atproto":
+      return "feed_ingest_atproto_backfill";
+    default:
+      return null;
+  }
+}
+
 // =============================================================================
 // Workspace feeds (slices 3 + 4)
 //
-// Mounted at /api/v1/workspace because /api/v1/feeds is already owned by
-// external-feeds.ts (RSS/Mastodon/Bluesky/Nostr subscriptions on
-// /subscriptions). Effective paths:
+// Mounted at /api/v1/workspace (external-feeds.ts historically owned the
+// /api/v1/feeds namespace; it now holds only admin diagnostics). External
+// subscriptions are feed-derived — adding/removing an external source here is
+// what creates/tears down the external_subscriptions row. Effective paths:
 //
 // GET    /workspace/feeds                       — list feeds owned by caller
 // POST   /workspace/feeds                       — create { name }
@@ -941,9 +961,13 @@ export async function feedsRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // DELETE /feeds/:id/sources/:sourceId — remove a source
   //
-  // The associated external_subscriptions row (if any) is deliberately not
-  // touched: a user may keep the subscription via /subscriptions or use it
-  // in another feed. Subscription teardown is its own gesture.
+  // External subscriptions are feed-derived: a row in external_subscriptions
+  // exists iff the source sits in ≥1 of the owner's feeds. So when an external
+  // source leaves its *last* feed we tear down the subscription and orphan the
+  // source (the GC then deactivates/culls it). The (owner-scoped) advisory lock
+  // serialises this read-then-write against a concurrent addSource of the same
+  // source into another feed — without it we could under-count and wrongly
+  // delete a still-referenced subscription.
   // ---------------------------------------------------------------------------
   app.delete<{ Params: { id: string; sourceId: string } }>(
     "/feeds/:id/sources/:sourceId",
@@ -959,12 +983,77 @@ export async function feedsRoutes(app: FastifyInstance) {
       const feed = await loadFeed(id, ownerId);
       if (!feed) return reply.status(404).send({ error: "Feed not found" });
 
-      const { rowCount } = await pool.query(
-        `DELETE FROM feed_sources WHERE id = $1 AND feed_id = $2`,
-        [sourceId, id],
-      );
-      if (rowCount === 0)
+      const result = await withTransaction(async (client) => {
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+          `feed_sub:${ownerId}`,
+        ]);
+
+        const { rows } = await client.query<{
+          source_type: string;
+          external_source_id: string | null;
+        }>(
+          `DELETE FROM feed_sources
+             WHERE id = $1 AND feed_id = $2
+           RETURNING source_type, external_source_id`,
+          [sourceId, id],
+        );
+        if (rows.length === 0) return { notFound: true as const };
+
+        const { source_type, external_source_id } = rows[0];
+        if (source_type !== "external_source" || !external_source_id) {
+          return { notFound: false as const, toreDownNostr: false };
+        }
+
+        // Any remaining feed memberships for this source across the owner's feeds?
+        const {
+          rows: [{ remaining }],
+        } = await client.query<{ remaining: string }>(
+          `SELECT COUNT(*)::int AS remaining
+             FROM feed_sources fs
+             JOIN feeds f ON f.id = fs.feed_id
+            WHERE fs.external_source_id = $1 AND f.owner_id = $2`,
+          [external_source_id, ownerId],
+        );
+        if (Number(remaining) > 0) {
+          return { notFound: false as const, toreDownNostr: false };
+        }
+
+        // Last feed — drop this owner's derived subscription…
+        await client.query(
+          `DELETE FROM external_subscriptions
+             WHERE subscriber_id = $1 AND source_id = $2`,
+          [ownerId, external_source_id],
+        );
+        // …and orphan the source iff no subscription anywhere still references it.
+        await client.query(
+          `UPDATE external_sources
+              SET orphaned_at = now()
+            WHERE id = $1 AND orphaned_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM external_subscriptions WHERE source_id = $1
+              )`,
+          [external_source_id],
+        );
+        const {
+          rows: [src],
+        } = await client.query<{ protocol: string }>(
+          `SELECT protocol FROM external_sources WHERE id = $1`,
+          [external_source_id],
+        );
+        return {
+          notFound: false as const,
+          toreDownNostr: src?.protocol === "nostr_external",
+        };
+      });
+
+      if (result.notFound)
         return reply.status(404).send({ error: "Source not found" });
+
+      // A retracted external Nostr follow must leave the published kind-3 list.
+      if (result.toreDownNostr) {
+        markFollowListDirty(ownerId).catch((err) =>
+          logger.warn({ err, ownerId }, "Failed to mark follow list dirty"));
+      }
       return reply.status(204).send();
     },
   );
@@ -1518,14 +1607,56 @@ async function addSource(
 
   // external_source — two shapes
   if ("externalSourceId" in input) {
-    const { rows } = await pool.query(
-      `SELECT id FROM external_sources WHERE id = $1`,
+    const { rows } = await pool.query<{ id: string; protocol: string }>(
+      `SELECT id, protocol FROM external_sources WHERE id = $1`,
       [input.externalSourceId],
     );
     if (rows.length === 0) throw tagged("TARGET_NOT_FOUND");
-    const inserted = await insertSource(feedId, "external_source", {
-      external_source_id: input.externalSourceId,
+    const protocol = rows[0].protocol;
+    // Adding an existing source by id must also ensure the derived
+    // subscription (a feed_sources row without one would let the GC orphan an
+    // in-use source) and revive a previously-orphaned source.
+    const inserted = await withTransaction(async (client) => {
+      // Serialise against a concurrent last-feed teardown (see DELETE handler).
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `feed_sub:${ownerId}`,
+      ]);
+      await client.query(
+        `INSERT INTO external_subscriptions (subscriber_id, source_id)
+         VALUES ($1, $2)
+         ON CONFLICT (subscriber_id, source_id)
+           DO UPDATE SET subscriber_id = EXCLUDED.subscriber_id`,
+        [ownerId, input.externalSourceId],
+      );
+      await client.query(
+        `UPDATE external_sources
+            SET is_active = TRUE, orphaned_at = NULL, updated_at = now()
+          WHERE id = $1`,
+        [input.externalSourceId],
+      );
+      const fetchTask = externalFetchTask(protocol);
+      if (fetchTask) {
+        await client.query(
+          `SELECT graphile_worker.add_job(
+             $2,
+             json_build_object('sourceId', $1::text),
+             job_key := 'feed_ingest_' || $1::text,
+             max_attempts := 1
+           )`,
+          [input.externalSourceId, fetchTask],
+        );
+      }
+      return insertSource(
+        feedId,
+        "external_source",
+        { external_source_id: input.externalSourceId },
+        client,
+      );
     });
+    if (protocol === "nostr_external") {
+      markFollowListDirty(ownerId).catch((err) =>
+        logger.warn({ err, ownerId }, "Failed to mark follow list dirty"));
+    }
     return { source: inserted, ensured: null };
   }
 
@@ -1562,6 +1693,10 @@ async function addSource(
   }
 
   const { inserted, ensured } = await withTransaction(async (client) => {
+    // Serialise against a concurrent last-feed teardown (see DELETE handler).
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `feed_sub:${ownerId}`,
+    ]);
     const {
       rows: [src],
     } = await client.query<{ id: string }>(
@@ -1592,19 +1727,13 @@ async function addSource(
     } = await client.query<{ id: string }>(
       `INSERT INTO external_subscriptions (subscriber_id, source_id)
        VALUES ($1, $2)
-       ON CONFLICT (subscriber_id, source_id) DO UPDATE SET is_muted = FALSE
+       ON CONFLICT (subscriber_id, source_id)
+         DO UPDATE SET subscriber_id = EXCLUDED.subscriber_id
        RETURNING id`,
       [ownerId, src.id],
     );
 
-    const fetchTask =
-      protocol === "rss"
-        ? "feed_ingest_rss"
-        : protocol === "nostr_external"
-          ? "feed_ingest_nostr"
-          : protocol === "activitypub"
-            ? "feed_ingest_activitypub"
-            : null;
+    const fetchTask = externalFetchTask(protocol);
     if (fetchTask) {
       await client.query(
         `SELECT graphile_worker.add_job(
@@ -1628,6 +1757,11 @@ async function addSource(
       ensured: { externalSourceId: src.id, subscriptionId: sub.id },
     };
   });
+  // External Nostr follows belong in the user's published kind-3 list.
+  if (protocol === "nostr_external") {
+    markFollowListDirty(ownerId).catch((err) =>
+      logger.warn({ err, ownerId }, "Failed to mark follow list dirty"));
+  }
   return { source: inserted, ensured };
 }
 

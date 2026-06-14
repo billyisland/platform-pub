@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict klB6cMLIjgFql63EBUu9NQyy7k7uWqCIZoJiFIryQWUKdVpXbCoseFUvSJPBSeV
+\restrict lix9Lbr0xtPGfqtjwnl20u6SFuju1ihLO1aknK7aXGeqk3i0spEtRedvl17WpNe
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1355,8 +1355,6 @@ CREATE TABLE public.external_subscriptions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     subscriber_id uuid NOT NULL,
     source_id uuid NOT NULL,
-    is_muted boolean DEFAULT false NOT NULL,
-    daily_cap integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -6459,13 +6457,12 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict klB6cMLIjgFql63EBUu9NQyy7k7uWqCIZoJiFIryQWUKdVpXbCoseFUvSJPBSeV
+\unrestrict lix9Lbr0xtPGfqtjwnl20u6SFuju1ihLO1aknK7aXGeqk3i0spEtRedvl17WpNe
 
 
 
 
 
---
 -- Seed _migrations: record every migration folded into this dump as applied.
 --
 -- A fresh database is bootstrapped from this file (docker-entrypoint-initdb.d),
@@ -6595,4 +6592,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('112_feeds_appearance.sql'),
     ('113_feeds_rank_hidden.sql'),
     ('114_reach_source_and_starter_template.sql'),
-    ('115_network_presences_external_id_unique.sql');
+    ('115_network_presences_external_id_unique.sql'),
+    ('116_drop_external_subscription_prefs.sql');

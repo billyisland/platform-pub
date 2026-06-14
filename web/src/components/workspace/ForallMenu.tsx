@@ -10,7 +10,6 @@ import { useLedgerOverlay } from "../../stores/ledgerOverlay";
 import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay } from "../../stores/libraryOverlay";
 import { useNetworkOverlay } from "../../stores/networkOverlay";
-import { useSubscriptionsOverlay } from "../../stores/subscriptionsOverlay";
 import { SearchPanel } from "./SearchPanel";
 
 const TOKENS = {
@@ -120,12 +119,6 @@ export function ForallMenu({
       kind: "overlay",
       onOpen: () => useNetworkOverlay.getState().open(),
       label: "Network",
-      count: 0,
-    },
-    {
-      kind: "overlay",
-      onOpen: () => useSubscriptionsOverlay.getState().open(),
-      label: "Subscriptions",
       count: 0,
     },
     {

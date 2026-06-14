@@ -104,7 +104,7 @@ export function PostCard({
   if (spec.insideHost) {
     return (
       <div style={{ cursor: onClick ? "pointer" : undefined }} onClick={onClick}>
-        <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} />
+        <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} feedId={ctx.feedId} />
         <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} />
         <PostMedia post={post} mode={spec.media} video={spec.video} palette={ctx.palette} density={ctx.density} />
       </div>

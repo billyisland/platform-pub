@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation'
 
-// External-feed subscription management is now a workspace Glasshouse overlay
-// (opened from the ForallMenu or via /workspace?overlay=subscriptions). This
-// route is retained only as a compatibility shim: old links and bookmarks
-// pointing at /subscriptions redirect into the workspace with the overlay
-// opened. See the deep-link dispatcher in WorkspaceView.
+// External subscriptions are now feed-derived: you "subscribe" to a source by
+// adding it to a feed (the FeedComposer "Add a source" field, or the Follow
+// affordance on an external byline). The standalone Subscriptions manager was
+// retired — this route survives only as a compatibility shim so old links and
+// bookmarks resolve into the workspace.
 export default function SubscriptionsPage() {
-  redirect('/workspace?overlay=subscriptions')
+  redirect('/workspace')
 }

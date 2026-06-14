@@ -1380,6 +1380,7 @@ function SourceRow({
           onMouseEnter={hover.onModalMouseEnter}
           onMouseLeave={hover.onModalMouseLeave}
           zIndex={TOKENS.hoverZ}
+          feedId={feedId}
         />
       )}
     </div>

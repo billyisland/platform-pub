@@ -24,7 +24,6 @@ import { useLedgerOverlay } from "../../stores/ledgerOverlay";
 import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay, type LibraryTab } from "../../stores/libraryOverlay";
 import { useNetworkOverlay, type NetworkTab } from "../../stores/networkOverlay";
-import { useSubscriptionsOverlay } from "../../stores/subscriptionsOverlay";
 import { useEditorOverlay } from "../../stores/editorOverlay";
 
 export const OVERLAY_PARAM_KEYS = [
@@ -71,9 +70,6 @@ export function openOverlayFromParams(params: URLSearchParams): boolean {
       useNetworkOverlay
         .getState()
         .open({ tab: params.get("tab") as NetworkTab | null });
-      return true;
-    case "subscriptions":
-      useSubscriptionsOverlay.getState().open();
       return true;
     case "editor":
       useEditorOverlay.getState().open({
