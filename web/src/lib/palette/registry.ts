@@ -75,9 +75,9 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   // components/workspace/tokens.ts — tune surfaces here/in the devtool and the
   // text family follows. Keep each scheme's card surface clearly light or
   // clearly dark: mid-luminance cards defeat both tuned text ramps.
-  { slug: 'anil-walls', hex: '#0E1C44', label: 'Feed scheme Anil — vessel walls & bar (deep indigo, dark)' },
-  { slug: 'anil-interior', hex: '#4A2B1C', label: 'Feed scheme Anil — vessel interior (burnt umber, dark)' },
-  { slug: 'anil-card', hex: '#20305C', label: 'Feed scheme Anil — card surface (dark)' },
+  { slug: 'anil-walls', hex: '#1B2742', label: 'Feed scheme Anil — vessel walls & bar (slate indigo, dark)' },
+  { slug: 'anil-interior', hex: '#472D20', label: 'Feed scheme Anil — vessel interior (burnt umber, dark)' },
+  { slug: 'anil-card', hex: '#2A3B5E', label: 'Feed scheme Anil — card surface (slate indigo, dark)' },
   { slug: 'vela-walls', hex: '#156057', label: 'Feed scheme Vela — vessel walls & bar (coastal teal)' },
   { slug: 'vela-interior', hex: '#EDE1C2', label: 'Feed scheme Vela — vessel interior' },
   { slug: 'vela-card', hex: '#FAF3E2', label: 'Feed scheme Vela — card surface' },

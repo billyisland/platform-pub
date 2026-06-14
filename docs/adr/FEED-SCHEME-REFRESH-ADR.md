@@ -163,15 +163,19 @@ light), **Caju** (hot, light).
 
 | Scheme | walls     | interior  | card      | isDark |
 |--------|-----------|-----------|-----------|--------|
-| Anil   | `#0E1C44` | `#4A2B1C` | `#20305C` | true   |
+| Anil   | `#1B2742` | `#472D20` | `#2A3B5E` | true   |
 
-`:root` triples: `anil-walls 14 28 68 · anil-interior 74 43 28 · anil-card 32 48 92`.
+`:root` triples: `anil-walls 27 39 66 · anil-interior 71 45 32 · anil-card 42 59 94`.
 
-> **Interior revised 2026-06-14** — `anil-interior` moved from the original deep
-> indigo `#16285E` to a deep **burnt umber** `#4A2B1C` (triple `74 43 28`): a warm
-> brown feed ground under Anil's cool indigo walls/card. Still well under 0.5
-> luminance, so Anil stays a dark-card scheme and the derived text ramps are
-> unchanged. Both `registry.ts` and `globals.css` updated in step.
+> **Recoloured 2026-06-14** — the original electric-indigo Anil (`#0E1C44` /
+> `#16285E` / `#20305C`) was reworked around a **burnt-umber feed ground**. The
+> interior moved to umber, then the whole set was harmonised: the walls/card
+> indigos were pulled toward **slate** (less pure-ultramarine) and the interior
+> toward **clay/sienna**, so the warm ground bridges the cool frame instead of
+> reading as a raw complementary clash. Values now step cleanly walls (`0.15`) <
+> interior (`0.20`) < card (`0.23`) luminance, so the card reads as the lifted
+> reading well and Anil stays a dark-card scheme (all < 0.5 → derived text ramps
+> unchanged). `registry.ts` + `globals.css` updated in step.
 
 Edits: `registry.ts` (delete the three `mata-*`, rename `cobalto-*` → `anil-*` in
 place); `globals.css` (drop `mata-*` vars, replace `cobalto-*` with the `anil-*`
