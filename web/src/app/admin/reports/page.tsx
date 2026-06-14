@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useAuth } from '../../../stores/auth'
 import { useRouter } from 'next/navigation'
 import { admin as adminApi, type Report } from '../../../lib/api'
@@ -44,7 +45,17 @@ export default function AdminReportsPage() {
   }
 
   return (
-    <PageShell width="feed" title="Reports">
+    <PageShell
+      width="feed"
+      title="Reports"
+      action={
+        // The admin surface is chromeless (no black topbar), so it carries its
+        // own way back to the workspace.
+        <Link href="/workspace" className="btn-text-muted">
+          ← Workspace
+        </Link>
+      }
+    >
       {/* Filter tabs */}
       <div className="flex gap-2 mb-8">
         {(['pending', 'resolved', 'all'] as ReportFilter[]).map(f => (

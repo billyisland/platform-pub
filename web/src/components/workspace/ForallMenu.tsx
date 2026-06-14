@@ -2,10 +2,10 @@
 
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "../../stores/auth";
 import { useUnreadCounts } from "../../stores/unread";
 import { useMessagesOverlay } from "../../stores/messagesOverlay";
 import { useDashboardOverlay } from "../../stores/dashboardOverlay";
-import { useNotificationsOverlay } from "../../stores/notificationsOverlay";
 import { useLedgerOverlay } from "../../stores/ledgerOverlay";
 import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay } from "../../stores/libraryOverlay";
@@ -62,6 +62,7 @@ export function ForallMenu({
   const inBar = anchor === "bar";
   const discSize = inBar ? 36 : 56;
   const router = useRouter();
+  const logout = useAuth((s) => s.logout);
   const dmCount = useUnreadCounts((s) => s.dmCount);
   const notificationCount = useUnreadCounts((s) => s.notificationCount);
   const totalUnread = dmCount + notificationCount;
@@ -92,16 +93,12 @@ export function ForallMenu({
   ];
   const goRows: FocusRow[] = [
     {
+      // Notifications folded into Messages — one merged inbox surface. The count
+      // is the combined unread (DMs + notifications).
       kind: "overlay",
       onOpen: () => useMessagesOverlay.getState().open(),
       label: "Messages",
-      count: dmCount,
-    },
-    {
-      kind: "overlay",
-      onOpen: () => useNotificationsOverlay.getState().open(),
-      label: "Notifications",
-      count: notificationCount,
+      count: dmCount + notificationCount,
     },
     {
       kind: "overlay",
@@ -139,11 +136,27 @@ export function ForallMenu({
     id: hf.id,
     label: hf.name,
   }));
+  // Sign-out is the terminal action, in its own group at the very bottom. The
+  // workspace is the only logged-in surface that renders no black topbar (the
+  // ∀ is its sole nav), so the topbar's avatar-dropdown "Log out" is
+  // unreachable here — the menu has to carry it. logout() clears the session;
+  // WorkspaceView's `!user` guard then bounces to /auth.
+  const accountRows: FocusRow[] = [
+    {
+      kind: "overlay",
+      onOpen: () => {
+        void logout();
+      },
+      label: "Log out",
+      count: 0,
+    },
+  ];
   const groups: FocusRow[][] = [
     findRows,
     createRows,
     goRows,
     restoreRows,
+    accountRows,
   ].filter((g) => g.length > 0);
   const rows: FocusRow[] = groups.flat();
 

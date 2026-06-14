@@ -24,6 +24,7 @@ import { PaymentSection } from './PaymentSection'
 import { NetworkReachPanel } from './NetworkReachPanel'
 import { NotificationPreferences } from '../social/NotificationPreferences'
 import { ReadingPreferences } from './ReadingPreferences'
+import { TypeSizeControl } from './TypeSizeControl'
 // ThemeSection retired from Settings (GLASSHOUSE-AND-PALETTE-ADR §III.5) — the
 // preset-theme picker is no longer user-facing; the file is parked, not deleted.
 import { ExportModal } from '../ExportModal'
@@ -109,6 +110,10 @@ export function SettingsPanel({
 
         <section className="bg-glasshouse-well px-6 py-5">
           <ReadingPreferences />
+        </section>
+
+        <section className="bg-glasshouse-well px-6 py-5">
+          <TypeSizeControl />
         </section>
 
         <div className="bg-glasshouse-well px-6 py-5">

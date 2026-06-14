@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext } from 'react'
+import { usePathname } from 'next/navigation'
 import { useLayoutMode, type LayoutMode } from '../../hooks/useLayoutMode'
 import { Nav } from './Nav'
 import { Footer } from './Footer'
@@ -10,6 +11,7 @@ import { SurfaceOverlay } from '../workspace/SurfaceOverlay'
 import { EditorOverlay } from '../workspace/EditorOverlay'
 import { PalettePanel } from '../devtools/PalettePanel'
 import { PaletteHydrator } from '../devtools/PaletteHydrator'
+import { TypeScaleHydrator } from '../TypeScaleHydrator'
 import { useReader } from '../../stores/reader'
 import { useProfile } from '../../stores/profileOverlay'
 import { useSurfaceOverlay } from '../../stores/surfaceOverlay'
@@ -43,8 +45,23 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // treat it as chromeless too (same reasoning as the reader/profile), so the
   // topbar + footer don't mount behind the frosted overlay.
   const surfaceOpen = useSurfaceOverlay((s) => s.isOpen)
+  // Standalone surfaces retired off the black topbar (it's reserved for the
+  // logged-out marketing/auth register — `/`, `/auth`). `/admin/*` is a
+  // logged-in tool that carries its own PageShell + self-navigates back to the
+  // workspace; `/about` is a leaf with its own signup CTA. Neither is reachable
+  // from the workspace, so dropping the topbar can't strand a navigation.
+  const pathname = usePathname()
+  const chromelessRoute =
+    pathname === '/about' ||
+    pathname === '/admin' ||
+    pathname.startsWith('/admin/')
   const chromeless =
-    mode === 'workspace' || readerOpen || profileOpen || editorOpen || surfaceOpen
+    mode === 'workspace' ||
+    chromelessRoute ||
+    readerOpen ||
+    profileOpen ||
+    editorOpen ||
+    surfaceOpen
 
   return (
     <LayoutModeContext.Provider value={mode}>
@@ -66,6 +83,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         {/* Headless — applies persisted palette overrides on boot (the permanent
             hydration mechanism, CLAUDE.md). Always mounted; no UI. */}
         <PaletteHydrator />
+        {/* Headless — applies the persisted per-device type-size preference on
+            boot. Always mounted; no UI. */}
+        <TypeScaleHydrator />
         {/* Operator-only colour-tuning kit (not a Glasshouse — floats above all
             surfaces, page stays sharp). No shipped menu/settings entry; reach it
             via ?palette or the Ctrl+Alt+P chord (GLASSHOUSE-AND-PALETTE-ADR

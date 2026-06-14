@@ -19,7 +19,6 @@
 
 import { useDashboardOverlay } from "../../stores/dashboardOverlay";
 import { useMessagesOverlay } from "../../stores/messagesOverlay";
-import { useNotificationsOverlay } from "../../stores/notificationsOverlay";
 import { useLedgerOverlay } from "../../stores/ledgerOverlay";
 import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay, type LibraryTab } from "../../stores/libraryOverlay";
@@ -53,7 +52,9 @@ export function openOverlayFromParams(params: URLSearchParams): boolean {
         .open({ conversationId: params.get("conversation") });
       return true;
     case "notifications":
-      useNotificationsOverlay.getState().open();
+      // Notifications folded into the merged Messages inbox. The retired
+      // /notifications route + notification deep links land on the same surface.
+      useMessagesOverlay.getState().open({ conversationId: null });
       return true;
     case "ledger":
       useLedgerOverlay.getState().open();

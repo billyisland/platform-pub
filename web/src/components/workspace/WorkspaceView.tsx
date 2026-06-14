@@ -40,7 +40,6 @@ import { ForallCeremony } from "./ForallCeremony";
 import { ReaderOverlay } from "./ReaderOverlay";
 import { MessagesOverlay } from "./MessagesOverlay";
 import { DashboardOverlay } from "./DashboardOverlay";
-import { NotificationsOverlay } from "./NotificationsOverlay";
 import { LedgerOverlay } from "./LedgerOverlay";
 import { SettingsOverlay } from "./SettingsOverlay";
 import { LibraryOverlay } from "./LibraryOverlay";
@@ -1389,7 +1388,6 @@ export function WorkspaceView() {
       <ReaderOverlay />
       <MessagesOverlay />
       <DashboardOverlay />
-      <NotificationsOverlay />
       <LedgerOverlay />
       <SettingsOverlay />
       <LibraryOverlay />

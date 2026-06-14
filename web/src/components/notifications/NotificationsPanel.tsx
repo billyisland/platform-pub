@@ -8,13 +8,14 @@ import { notifications as notificationsApi, type Notification } from '../../lib/
 import { routeToOverlay } from '../../lib/workspace/overlays'
 
 // =============================================================================
-// NotificationsPanel — the notifications activity log, extracted so the
-// workspace Glasshouse overlay (NotificationsOverlay) owns it. Unread items
-// render bold with a crimson dot; read items stay visible but muted. Older
-// items load in tranches via cursor pagination. The caller supplies the root
-// `className` (height); auth gating is the caller's concern (the overlay only
-// mounts when authenticated). The standalone /notifications route is a redirect
-// shim into the overlay.
+// NotificationsPanel — the notifications activity log. It is the left column of
+// the merged Messages inbox (MessagesInbox, hosted by MessagesOverlay); a
+// `new_message` row selects the conversation in place via onMessageActivate.
+// Unread items render bold with a crimson dot; read items stay visible but
+// muted. Older items load in tranches via cursor pagination. The caller supplies
+// the root `className` (height); auth gating is the caller's concern (the
+// overlay only mounts when authenticated). The standalone /notifications route
+// is a redirect shim into the merged Messages overlay.
 // =============================================================================
 
 function timeAgo(iso: string): string {
@@ -137,11 +138,16 @@ export function NotificationsPanel({
   className = '',
   inOverlay = false,
   onClose,
+  onMessageActivate,
 }: {
   className?: string
   inOverlay?: boolean
   // Called when a row navigates away — lets the overlay dismiss itself.
   onClose?: () => void
+  // When provided, a `new_message` notification is handled in place (the host
+  // selects that conversation) instead of routing away + closing. Used by the
+  // merged Messages inbox, where notifications and DMs share one surface.
+  onMessageActivate?: (conversationId: string | null) => void
 }) {
   const { user } = useAuth()
   const router = useRouter()
@@ -187,6 +193,13 @@ export function NotificationsPanel({
     notificationsApi.markRead(n.id)
       .then(() => refreshUnread())
       .catch(err => console.error('Failed to mark notification read', err))
+
+    // In the merged Messages inbox a message notification selects the
+    // conversation in the reading pane — stay put, don't route/close.
+    if (n.type === 'new_message' && onMessageActivate) {
+      onMessageActivate(n.conversationId ?? null)
+      return
+    }
 
     if (href === '#') return
     // A workspace-overlay target opens in place (we're already on /workspace);
