@@ -205,12 +205,15 @@ export function WorkspaceView() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
-  // At most one conversation is expanded per feed: this maps a feed id to the
-  // expand key (`feedItemId ?? id`) of its single open card. Opening another
+  // At most one conversation is expanded per feed. This maps a feed id to its
+  // single open card: `key` (`feedItemId ?? id`) is the card slot, `root` is the
+  // post the conversation is rooted on — normally the card's own post, but the
+  // quoted post when the card was opened by clicking its embedded quote (so the
+  // quote expands with full seniority, no trace of its host). Opening another
   // card in the same feed replaces the entry, collapsing the previous one.
-  const [expandedByFeed, setExpandedByFeed] = useState<Record<string, string>>(
-    {},
-  );
+  const [expandedByFeed, setExpandedByFeed] = useState<
+    Record<string, { key: string; root: string }>
+  >({});
   // A single global tick: bumped after a reply publishes so any open PostThread
   // busts its cache and refetches (replaces the legacy per-target refresh map).
   const [threadRefreshTick, setThreadRefreshTick] = useState(0);
@@ -889,8 +892,8 @@ export function WorkspaceView() {
                     // inline thread and stay feed cards.
                     const post = item;
                     const expandKey = item.feedItemId ?? item.id;
-                    const isExpanded =
-                      expandedByFeed[v.feed.id] === expandKey;
+                    const expandedHere = expandedByFeed[v.feed.id];
+                    const isExpanded = expandedHere?.key === expandKey;
                     const ctx = {
                       density: layout.density ?? DEFAULT_DENSITY,
                       palette: paletteFor(layout.brightness),
@@ -911,13 +914,29 @@ export function WorkspaceView() {
                     // open card again collapses it.
                     const toggleExpand = () =>
                       setExpandedByFeed((prev) => {
-                        if (prev[v.feed.id] === expandKey) {
+                        if (prev[v.feed.id]?.key === expandKey) {
                           const next = { ...prev };
                           delete next[v.feed.id];
                           return next;
                         }
-                        return { ...prev, [v.feed.id]: expandKey };
+                        // Body click expands the host post (the quoter).
+                        return {
+                          ...prev,
+                          [v.feed.id]: { key: expandKey, root: post.id },
+                        };
                       });
+                    // Clicking the embedded quote tile opens the QUOTED post as
+                    // the focal of an expanded conversation — full seniority, no
+                    // residue of the host that embedded it. Distinct from a body
+                    // click (which expands the host): the tile stops propagation,
+                    // so the two clicks never collide. The gateway minted a
+                    // feed_items twin when the tile hydrated, so /thread resolves
+                    // the quoted post's id (post.quotes).
+                    const expandQuote = (quotedPostId: string) =>
+                      setExpandedByFeed((prev) => ({
+                        ...prev,
+                        [v.feed.id]: { key: expandKey, root: quotedPostId },
+                      }));
                     const onPipOpen = (
                       pubkey: string,
                       rect: DOMRect,
@@ -1018,7 +1037,7 @@ export function WorkspaceView() {
                       return (
                         <PostThread
                           key={item.id}
-                          rootPostId={post.id}
+                          rootPostId={expandedHere?.root ?? post.id}
                           ctx={ctx}
                           onCollapse={toggleExpand}
                           onReply={replyFromPost}
@@ -1038,6 +1057,7 @@ export function WorkspaceView() {
                         ctx={ctx}
                         onPipOpen={onPipOpen}
                         onExpand={toggleExpand}
+                        onQuoteOpen={expandQuote}
                         onOpenReader={openReaderFromPost}
                         onReply={
                           post.author.pubkey
