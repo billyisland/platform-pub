@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import HomeRedirect from '../components/layout/HomeRedirect'
 
 export const metadata: Metadata = {
   title: 'all.haus — Free authors. Writing that\'s worth something.',
@@ -20,6 +21,7 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="mx-auto max-w-article-frame px-4 sm:px-6 py-24">
+      <HomeRedirect />
 
       {/* ── Section 1: Hero ── */}
       <section>
