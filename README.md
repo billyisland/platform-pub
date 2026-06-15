@@ -1,86 +1,125 @@
 # all.haus
 
-A publishing and social platform for writers and readers, built on Nostr. Writers own their identity, audience, and content. Readers pay across all the writers they read via a shared reading tab.
+A publishing and social platform for writers and readers, built on Nostr. Writers
+own their identity, audience, and content via custodial Nostr keypairs. Readers pay
+across all the writers they read via a shared reading tab. The site is a **universal
+social reader** — alongside native articles and notes it ingests RSS/Atom, external
+Nostr, Bluesky, and Mastodon/threadiverse into one workspace timeline — and a
+**multi-protocol identity layer**: every account is born a Nostr root and can grow
+satellite presences on other networks.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Web Client (Next.js + NDK)                         │
-│  ├── Reading experience + paywall gate UI           │
-│  ├── Article editor (TipTap + draggable gate)       │
-│  ├── Social feed (Following + For You)              │
-│  ├── Commenting (threaded, per-piece toggleable)    │
-│  ├── Media (Blossom images + oEmbed rich embeds)    │
-│  └── Editorial dashboard (articles, drafts, earnings)│
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│  API Gateway (Fastify)                     port 3000│
-│  ├── Session management (JWT + httpOnly cookies)    │
-│  ├── Auth routes (signup, magic link, Google OAuth) │
-│  ├── Comments (CRUD, threading, author toggles)     │
-│  ├── Media (Blossom upload proxy, oEmbed proxy)     │
-│  ├── Article management (list, edit, soft-delete)   │
-│  ├── Stripe Connect + card onboarding               │
-│  └── Proxy to internal services                     │
-└───────┬─────────────────────────┬───────────────────┘
-        │                         │
-┌───────▼──────────┐    ┌────────▼─────────┐
-│ Payment Service  │    │ Key Service      │
-│         port 3001│    │        port 3002 │
-│ ├── Accrual      │    │ ├── Vault encrypt│
-│ ├── Settlement   │    │ ├── Key issuance │
-│ ├── Payout       │    │ └── NIP-44 wrap  │
-│ └── Receipts     │    └──────────────────┘
-└──────────────────┘
-        │                         │
-┌───────▼─────────────────────────▼───────────────────┐
-│  PostgreSQL                                         │
-│  (shared database — app-layer index + billing)      │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Web Client — Next.js workspace (NDK + TipTap + Stripe)       │
+│  ├── Multi-feed workspace canvas + reader overlay            │
+│  ├── Article editor (TipTap + draggable paywall gate)       │
+│  ├── Universal feed (native + RSS / Bluesky / Mastodon …)   │
+│  ├── Short-form notes, reply threads, DMs, notifications    │
+│  └── Editorial dashboard (articles, drafts, earnings)       │
+└──────────────────────────────┬───────────────────────────────┘
+                               │  Nginx → /api/* gateway, / web
+┌──────────────────────────────▼───────────────────────────────┐
+│  API Gateway (Fastify)                              port 3000 │
+│  auth · sessions · articles · feeds · comments · votes ·      │
+│  media · search · moderation · Stripe Connect · NIP-05        │
+└──┬──────────────┬──────────────┬───────────────┬──────────────┘
+   │              │              │               │
+┌──▼────────┐ ┌───▼───────┐ ┌────▼────────┐ ┌────▼─────────────┐
+│ Payment   │ │ Key       │ │ Key Custody │ │ Feed Ingest      │
+│ port 3001 │ │ port 3002 │ │ port 3004   │ │ (worker, no HTTP)│
+│ accrual · │ │ NIP-44    │ │ holds priv. │ │ Graphile +       │
+│ settle ·  │ │ vault     │ │ keys; signs │ │ Jetstream;       │
+│ payout    │ │ wrap/issue│ │ + key export│ │ RSS/atproto/AP   │
+└───────────┘ └───────────┘ └─────────────┘ └──────────────────┘
+   │              │              │               │
+┌──▼──────────────▼──────────────▼───────────────▼──────────────┐
+│  PostgreSQL — shared (index · billing · feed timeline)  :5432  │
+└───────────────────────────────────────────────────────────────┘
         │
-┌───────▼─────────────────────────────────────────────┐
-│  strfry (Nostr Relay)                      port 4848│
-│  (canonical event store — articles, vaults, receipts)│
-└─────────────────────────────────────────────────────┘
-        │
-┌───────▼─────────────────────────────────────────────┐
-│  Blossom (Media Server)                    port 3003│
-│  (content-addressed image storage)                   │
-└─────────────────────────────────────────────────────┘
+┌───────▼────────────────┐   ┌──────────────────────────────────┐
+│ strfry relay     :4848  │   │ Blossom media            :3003   │
+│ canonical Nostr events  │   │ content-addressed image storage  │
+└─────────────────────────┘   └──────────────────────────────────┘
 ```
 
 ## What's built
 
+The system has grown well beyond the original article-publishing core. Grouped by
+subsystem; ✅ = built and in use, 🛑 = built but slated to park (see
+`docs/adr/ARCHITECTURE-AUDIT-ADR-2026-06-15.md`).
+
+**Platform & infrastructure**
+
 | Component | Status |
 |-----------|--------|
-| PostgreSQL schema (18 tables) | ✅ Complete |
-| Payment service (accrual, settlement, payout) | ✅ Complete |
-| Key service (vault encryption, key issuance, NIP-44) | ✅ Complete |
-| Community standards document | ✅ Complete |
-| Shared db client (pool, transactions, config) | ✅ Complete |
-| Auth (sessions, custodial keypairs, magic links, Google OAuth) | ✅ Complete |
-| Email service (Postmark, Resend, console) | ✅ Complete |
-| API gateway (auth, signing, articles, writers, follows) | ✅ Complete |
-| Comments (threaded, per-piece toggle, author moderation) | ✅ Complete |
-| Media uploads (Blossom image upload, oEmbed proxy) | ✅ Complete |
-| Article management (edit via republish, soft-delete) | ✅ Complete |
-| Moderation (reports, content removal, account suspension) | ✅ Complete |
-| RSS feeds (per-writer + platform-wide) | ✅ Complete |
-| Search (trigram-powered articles + writers) | ✅ Complete |
-| Web client (Next.js + NDK + TipTap + Stripe Elements) | ✅ Complete |
-| Article editor with draggable paywall gate | ✅ Complete |
-| Editor image upload (drag-and-drop, paste, file picker) | ✅ Complete |
-| Editor rich embeds (YouTube, Vimeo, Twitter/X, Spotify) | ✅ Complete |
-| Paywall gate UI (4 reader states) | ✅ Complete |
-| Full vault decryption pipeline (Web Crypto) | ✅ Complete |
-| Editorial dashboard (articles, drafts, earnings tabs) | ✅ Complete |
-| Feed (following-filtered + For You placeholder) | ✅ Complete |
-| Writer profile pages | ✅ Complete |
-| Docker compose (Postgres, strfry, Blossom, all services) | ✅ Complete |
-| Migration runner + 4 migrations | ✅ Complete |
-| NIP-23 markdown renderer (remark/rehype + Nostr URIs + embeds) | ✅ Complete |
+| PostgreSQL shared schema (~90 tables) + migration runner (117 migrations) | ✅ |
+| Shared db client (pool, transactions, config), schema-drift CI guard | ✅ |
+| Docker compose — Postgres, strfry relay, Blossom, gateway, payment, key, key-custody, feed-ingest | ✅ |
+| strfry Nostr relay (canonical event store) | ✅ |
+| SSRF-hardened outbound HTTP/WS client | ✅ |
+
+**Identity, auth & interop**
+
+| Component | Status |
+|-----------|--------|
+| Auth — magic links, Google OAuth, JWT httpOnly cookies, silent refresh | ✅ |
+| Custodial Nostr keypairs; key-custody isolates private keys (sign + export) | ✅ |
+| Key service — NIP-44 vault wrap/issuance for gated content | ✅ |
+| Network presences — Nostr root + linked/assisted satellites (Bluesky/atproto, Mastodon/ActivityPub) | ✅ |
+| Outbound discovery — NIP-05 + kind 0/3/10002, behind operator + per-user opt-in | ✅ |
+| Account export (nsec via key-custody) | ✅ |
+
+**Publishing & content**
+
+| Component | Status |
+|-----------|--------|
+| Article editor — TipTap, draggable paywall gate, image upload, rich embeds (YouTube/Vimeo/X/Spotify) | ✅ |
+| Article management — edit via Nostr replaceable events, soft-delete (kind 5 tombstone) | ✅ |
+| NIP-23 markdown renderer (remark/rehype + Nostr URIs + embeds) | ✅ |
+| Short-form notes + compose surfaces (note / reply / quote) | ✅ |
+| Publications — multi-writer, payout splits, masthead/archive | ✅ |
+| Relay outbox — durable publish queue + retry worker | ✅ |
+
+**Universal feed (external ingest)**
+
+| Component | Status |
+|-----------|--------|
+| Feed-ingest service — Graphile Worker + Jetstream listener | ✅ |
+| Adapters — RSS/Atom/JSON, external Nostr, Bluesky (atproto), Mastodon/Lemmy (ActivityPub), email | ✅ |
+| Unified `feed_items` timeline (transactional dual-write) | ✅ |
+| Universal resolver — `POST /resolve` (URL / handle / email / npub / DID) | ✅ |
+| Outbound posting to foreign protocols (`outbound_posts`) | ✅ |
+
+**Social & reading**
+
+| Component | Status |
+|-----------|--------|
+| Workspace — multi-feed canvas, cards, reply threads, reader overlay (web + mobile) | ✅ |
+| Comments / reply threads (flat playscript), per-piece toggle, author moderation | ✅ |
+| Votes, bookmarks, reposts, quotes | ✅ |
+| Direct messages (conversations, paid DMs) + merged notifications inbox | ✅ |
+| Search (trigram-powered articles + writers) | ✅ |
+| Moderation (reports, content removal, account suspension) | ✅ |
+| RSS output feeds (per-writer + platform-wide) | ✅ |
+| Full vault decryption pipeline (Web Crypto) | ✅ |
+| Editorial dashboard (articles, drafts, earnings) | ✅ |
+
+**Payments**
+
+| Component | Status |
+|-----------|--------|
+| Reading tab (accrual) → settlement (Stripe) → payout (Stripe Connect) | ✅ |
+| Writer + publication payouts and splits | ✅ |
+| Vote charges, pledges, DM pricing | ✅ |
+
+**Trust & analytics**
+
+| Component | Status |
+|-----------|--------|
+| Trust graph — Layer 1 signals, Layer 2 vouches, Layer 4 relational, TrustPip glyph | 🛑 slated to park |
+| Traffology — reader telemetry (ingest + roll-up worker + dashboards) | 🛑 slated to park |
 
 ## What's next (non-code)
 
@@ -140,5 +179,9 @@ node -e "const {generateSecretKey}=require('nostr-tools'); console.log(Buffer.fr
 - **Comments**: Nostr kind 1 events with e/p tags, indexed in platform DB for threaded display
 - **Article editing**: Nostr replaceable events (same d-tag, new event)
 - **Article deletion**: Soft-delete in DB + Nostr kind 5 deletion event
+- **Universal feed**: external content (RSS/Atom, Nostr, Bluesky, Mastodon, email) ingested into one `feed_items` timeline; one card grammar over native + external
+- **Identity**: every account is born a Nostr root; other networks are satellite presences (linked / assisted / concierge custody tiers)
+- **Relay outbox**: every signed event is durably queued in-transaction; a worker owns publish + retry, so relay blips never surface as 5xx
+- **Workspace**: the product is a multi-feed workspace (`/reader`) with frosted overlays, not a page-based site
 
-See `platform-pub-adr-v07.docx` for the full architectural decision record.
+See `CLAUDE.md` for sitewide standards and `docs/adr/` for the full set of architectural decision records (start with `docs/adr/UNIVERSAL-POST-ADR.md` and `docs/adr/UNIVERSAL-FEED-ADR.md`).
