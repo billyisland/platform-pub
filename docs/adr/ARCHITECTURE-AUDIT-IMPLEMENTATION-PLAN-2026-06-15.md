@@ -13,34 +13,129 @@ assign sequentially at implementation time so two items don't collide.
 
 ---
 
-## Item 2 — Finish UNIVERSAL-POST — **PARKED, re-scope required**
+## Item 2 — Finish UNIVERSAL-POST — **re-scoped to a denormalisation tidy (A)**
+
+### Why the audit's literal action was dropped
 
 The ADR's stated action ("drop `article_id`/`note_id`/`external_item_id` +
-`exactly_one_source`") does **not** survive a read of the code:
+`exactly_one_source`") does **not** survive a read of the code. `feed_items` is not
+one half-finished migration; it carries **two independent axes** in opposite states:
 
-- `post_id` is a **derived text hash** (`feed_items_derive_post_id(protocol,
-  stableOriginHandle)`, migration 098) — **not** a foreign key. It identifies a
-  post across versions/relays; it does not encode which body table holds the
-  content.
-- The three source-id columns are the **live FK join keys** (with `ON DELETE
-  CASCADE`) to `articles` / `notes` / `external_items`, used in `feed-sql.ts`
-  (`FEED_JOINS`), `feed-items-reconcile.ts` (`ON CONFLICT (note_id|article_id|
-  external_item_id)`), `author.ts`, `post-thread.ts`, `external-context-gc.ts`,
-  `scheduler.ts`, `publication-publisher.ts`. They cannot be dropped without a
-  substitute path to the bodies.
-- The "dual-maintenance cost" the item cites is ~nil in app code: `post_id` /
-  `version` / `biddability_tier` are maintained **only** by the DB trigger
-  `feed_items_post_identity` (098/099). App code reads, never writes them.
-- The UNIVERSAL-POST ADR is still **Proposed**, contains **no drop-step**, and
-  explicitly chose `post_id` as a derived column *on* `feed_items` so it would
-  not replace the source tables.
+- **Identity axis — already done, not mid-flight.** `post_id` / `version` /
+  `biddability_tier` are minted and maintained by a single DB trigger
+  (`feed_items_post_identity`, migrations 098/099). App code only *reads* them.
+  There is no dual-write to finish and ~nil app-side maintenance cost to remove —
+  the audit's "both models live, every read/write maintains both" premise is wrong
+  on this axis.
+- **Storage axis — intrinsic, not deprecated.** `article_id` / `note_id` /
+  `external_item_id` are the live FK pointers (with `ON DELETE CASCADE`) to three
+  genuinely different body tables (`articles`: title/dek/cover/tags/markdown/paywall;
+  `notes`: short content; `external_items`: source URI/interaction_data/protocol).
+  They are joined in `feed-sql.ts` (`FEED_JOINS`), `feed-items-reconcile.ts`
+  (`ON CONFLICT (note_id|article_id|external_item_id)`), `author.ts`,
+  `post-thread.ts`, `external-context-gc.ts`, `scheduler.ts`,
+  `publication-publisher.ts`, and the ingest adapters. `post_id` is a
+  `sha256(protocol, handle)` **text hash** — it identifies *which post*, not *which
+  table holds the body*, so it cannot substitute for these FKs.
+- **`exactly_one_source` is not redundant with `item_type`.** `item_type`
+  (article/note/external) and `exactly_one_source` (exactly one id non-null)
+  constrain different things, and nothing links them. Dropping the CHECK *weakens*
+  integrity; it removes no duplication.
 
-**Decision (2026-06-15):** Park and return to the audit author for a corrected
-end-state. Two coherent re-scopes exist — (a) minimal: drop only the now-redundant
-`exactly_one_source` CHECK (`item_type` already encodes the slot), keep the FKs;
-(b) the real project: build a unified content identity table so bodies hang off
-`post_id`, *then* retire the FKs (weeks, touches every read path). Neither is
-planned here until the intended scope is confirmed.
+The genuinely "real" end-state the audit reached for — one content spine so bodies
+hang off `post_id` — is option **C** below: weeks of work, and it only *relocates*
+the polymorphism (three body shapes are intrinsic to the domain). Its sole prize is
+federation/self-host, the same driver as the deferred genesis extraction (1b). So C
+is deferred to that effort, and item 2 is re-scoped to the cleanup that is actually
+finishable now.
+
+### Plan (A) — denormalisation tidy
+
+**Goal.** Remove the denormalised cruft that 098/099 left behind on `feed_items` —
+*not* the FKs — and optionally strengthen the slot invariant. Small, low risk.
+
+**The confirmed dead column.** `feed_items.tier` (`content_tier` enum, tier1–4),
+distinct from `biddability_tier` (A/B/C/D). Verified: it is **never written with a
+non-default value** and **never read into the Post DTO** — `feed-sql.ts:52` selects
+`fi.tier` but `post-mapper.ts` ignores it. Its `tier_consistency` CHECK only pins
+native rows to `tier1`. (Do **not** confuse it with `external_items.tier`, which
+*is* live — written `'tier3'` by the ingest paths and surfaced in `AuthorModal` /
+`author.ts`. The `content_tier` enum stays; `external_items` still uses it.)
+
+**Steps.**
+1. **Confirm dead-ness once more at implementation time** (guard against a late
+   reader): `grep -rn "fi\.tier\b\|\.tier\b" gateway/src/lib/post-mapper.ts
+   gateway/src/routes/` and confirm the selected `fi.tier` flows nowhere. Drop
+   `fi.tier` from the `FEED_SELECT` in `gateway/src/lib/feed-sql.ts:52`.
+2. **Migration (next free NNN):** `ALTER TABLE feed_items DROP CONSTRAINT
+   tier_consistency;` then `ALTER TABLE feed_items DROP COLUMN tier;`. Leave the
+   `content_tier` enum in place (`external_items` depends on it).
+3. **Sweep for any other now-derivable denormalised columns** before writing the
+   migration — candidates to *assess* (not assumed dead): `version` is literally a
+   copy of `nostr_event_id` for native rows (only diverges for external content
+   hashes), so it is cheap-but-not-free duplication — **keep** it (the external case
+   makes it load-bearing; document the native-copy in a comment). Treat author
+   denormalisation (`author_name`/`author_avatar`/`author_username`) as live (it's
+   the no-join byline cache), not cruft.
+4. **Optional integrity strengthening (separate, reversible):** add a CHECK binding
+   `item_type` to its matching id (`item_type='article' ⟺ article_id IS NOT NULL`,
+   etc.). This is the *opposite* of the audit's instinct — it tightens, not loosens —
+   and makes `exactly_one_source` subsumable if ever wanted. Land as its own migration
+   only after backfill verification (`SELECT count(*) … WHERE item_type='article' AND
+   article_id IS NULL` must be 0 across all three types first).
+5. Regenerate `schema.sql` via `pg_dump`, re-append the `_migrations` seed in the
+   same step, run `scripts/check-schema-drift.sh`.
+
+**Verify.** Feed renders unchanged (the dropped column fed nothing); drift guard
+green; `npm run build` in gateway. If step 4 is taken, the pre-flight NULL-count
+query returns 0 for all three types before the constraint is added.
+
+**Risk.** Low. The only trap is the `tier` / `biddability_tier` / `external_items.tier`
+naming overload — step 1's re-confirm is there precisely to avoid dropping the wrong one.
+
+### Plan (C) — Unified content spine — **DEFERRED (federation/self-host)**
+
+Recorded in full so the future effort starts from facts, not a re-derivation.
+
+**What it is.** Replace the three body-FK columns on `feed_items` with a single
+reference to one content identity keyed by `post_id`, so "one post = one content
+identity" is true in storage, not just in the derived hash.
+
+**Why it's deferred, not adopted.**
+- It does **not eliminate** polymorphism — `articles`, `notes`, `external_items` are
+  three genuinely different schemas. A unified spine either (i) becomes a wide sparse
+  table, or (ii) keeps a `content_kind` discriminator + per-kind body tables — i.e.
+  the *same* polymorphism relocated off `feed_items` onto the spine. The cleanliness
+  win is real (one join target, one identity) but it is not "remove a redundant model".
+- Its only load-bearing justification is **federation / self-host**: a portable
+  content spine addressable by a protocol-stable id, decoupled from the local
+  `feed_items` timeline row. That is the **same driver as 1b** (genesis extraction
+  for from-empty replay) — schedule them together as one "make the schema portable"
+  effort, not piecemeal.
+
+**Shape, when it happens.**
+- New `posts` (or `content`) table: `post_id` (PK, the existing derived hash),
+  `content_kind` (article|note|external), `body_ref` (FK into the per-kind body
+  table) **or** absorb bodies as nullable subtype columns. Keep the per-kind body
+  tables; they hold genuinely different fields.
+- `feed_items` becomes a **timeline projection** over `posts` — it keeps `post_id`
+  (already present), and the three FK columns retire *only after* every read path
+  joins via `posts` instead.
+- Migration is staged like item 3's ledger: add spine → dual-write (`posts` row
+  minted alongside each `feed_items` insert, extend the 098 trigger) → repoint every
+  reader (`FEED_JOINS`, reconcile, GC, publisher, scheduler, `author.ts`,
+  `post-thread.ts`, ingest adapters) → drop the three FKs + `exactly_one_source`.
+
+**Read paths that must move before the FKs can go** (the full blast radius, captured
+now): `gateway/src/lib/feed-sql.ts` (`FEED_JOINS`), `feed-ingest/src/tasks/
+feed-items-reconcile.ts`, `gateway/src/routes/author.ts`, `post-thread.ts`,
+`feed-ingest/src/tasks/external-context-gc.ts`, `gateway/src/workers/scheduler.ts`,
+`gateway/src/services/publication-publisher.ts`, `gateway/src/routes/notes.ts`,
+`gateway/src/routes/external-items.ts`, and the `activitypub/atproto/email/nostr/rss`
+ingest adapters. Each currently keys off one of the three source-id columns.
+
+**Trigger to revisit C:** the federation/self-host milestone (same gate as 1b), or a
+concrete need to address a post's content independently of its local timeline row.
 
 ---
 
