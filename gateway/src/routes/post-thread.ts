@@ -5,7 +5,10 @@ import { checkArticleAccess } from "../services/article-access/index.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { FEED_SELECT, FEED_JOINS } from "../lib/feed-sql.js";
 import { collectDescendants } from "../lib/thread-walk.js";
-import { hydrateExternalThreadContext } from "./external-items.js";
+import {
+  hydrateExternalThreadContext,
+  willHydrateThread,
+} from "./external-items.js";
 import {
   POST_SELECT,
   POST_JOINS,
@@ -432,14 +435,19 @@ export async function postThreadRoutes(app: FastifyInstance) {
       if (focalFeedItem && focalFeedItem.origin.protocol !== "nostr") {
         const node = await loadExternalNode(postId);
         if (!node) return reply.status(404).send({ error: "Thread not found" });
-        // Hydrate the live source thread (Bluesky/Mastodon) into the DB so the
-        // pure-DB walk below can resolve ancestors + replies the projector would
-        // otherwise miss (we only ingest a source's own posts, not the full reply
-        // graph). Best-effort + throttled; on failure we fall back to whatever was
-        // already ingested. Only on the first/cursorless page — pagination walks
+        // Hydrate the live source thread (Bluesky/Mastodon/Nostr) into the DB so
+        // the pure-DB walk below can resolve ancestors + replies the projector
+        // would otherwise miss (we only ingest a source's own posts, not the full
+        // reply graph). Each protocol's hydrate makes several relay/API round
+        // trips, so we DON'T block the response on it: kick it off in the
+        // background and flag `hydrating` so the client refetches once it lands.
+        // The throttle guard (set synchronously at entry) keeps that refetch from
+        // re-triggering it. Only on the first/cursorless page — pagination walks
         // the already-hydrated subtree. See §8 parity fix in external-items.ts.
-        if (!replyCursor) {
-          await hydrateExternalThreadContext({
+        let hydrating = false;
+        if (!replyCursor && willHydrateThread(node.itemId, node.protocol)) {
+          hydrating = true;
+          void hydrateExternalThreadContext({
             id: node.itemId,
             source_id: node.sourceId,
             protocol: node.protocol,
@@ -455,7 +463,7 @@ export async function postThreadRoutes(app: FastifyInstance) {
         const repostEdges = await fetchRepostEdges(
           result.posts.map((p) => p.id),
         );
-        return reply.send({ ...result, repostEdges });
+        return reply.send({ ...result, repostEdges, hydrating });
       }
 
       // ── native branch ─────────────────────────────────────────────────────

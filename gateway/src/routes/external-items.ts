@@ -2226,6 +2226,20 @@ interface HydratedNode {
 const hydrateGuard = new Map<string, number>();
 const HYDRATE_TTL_MS = 60_000;
 
+// Would a hydrate run right now (hydratable protocol AND not throttled)? Lets a
+// caller decide synchronously whether to kick off background hydration and flag
+// the response `hydrating`, without paying the cost or duplicating the throttle.
+export function willHydrateThread(itemId: string, protocol: string): boolean {
+  if (
+    protocol !== "atproto" &&
+    protocol !== "activitypub" &&
+    protocol !== "nostr_external"
+  )
+    return false;
+  const until = hydrateGuard.get(itemId);
+  return !(until && until > Date.now());
+}
+
 // Dual-write a batch of hydrated nodes (external_items + feed_items) in one
 // transaction. Context-only; deduped by (protocol, source_item_uri) so a node
 // already ingested for real is left as a counts refresh, never duplicated.

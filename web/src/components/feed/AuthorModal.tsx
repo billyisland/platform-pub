@@ -356,27 +356,36 @@ function FollowButton({
     !!feedId &&
     (!target.protocol || FOLLOWABLE_PROTOCOLS.has(target.protocol));
 
-  const [following, setFollowing] = useState(
-    isSource ? false : target.isFollowing,
-  );
+  // Seed the label from the server snapshot — `isFollowing` is the global
+  // subscription state, which is the right initial guess for the common case
+  // (a source is followed from the feed you're hovering in). For external
+  // sources the authoritative state is per-feed, so we confirm it below; until
+  // then the button is held disabled (`resolved`) so the label can't be acted
+  // on while it's still a guess (avoids both the FOLLOW→FOLLOWING flicker and a
+  // fast click firing the wrong path against an unresolved feedSourceId).
+  const [following, setFollowing] = useState(target.isFollowing);
+  const [resolved, setResolved] = useState(!isSource);
   const [busy, setBusy] = useState(false);
   // The feed_sources row id for the source in THIS feed, used to remove it.
   const [feedSourceId, setFeedSourceId] = useState<string | null>(null);
 
-  // Native follow seeds from the server snapshot. External membership is
-  // per-feed, so resolve it from the feed's own source list (matched on the
-  // external_sources id) rather than the global isFollowing.
+  // Native follow is resolved from the server snapshot directly. External
+  // membership is per-feed, so resolve it from the feed's own source list
+  // (matched on the external_sources id) rather than the global isFollowing.
   useEffect(() => {
     if (!isSource) {
       setFollowing(target.isFollowing);
+      setResolved(true);
       return;
     }
     if (!externalFollowable || !feedId) {
       setFollowing(false);
       setFeedSourceId(null);
+      setResolved(true);
       return;
     }
     let cancelled = false;
+    setResolved(false);
     void workspaceFeeds
       .listSources(feedId)
       .then(({ sources }) => {
@@ -390,11 +399,13 @@ function FollowButton({
           : undefined;
         setFollowing(!!row);
         setFeedSourceId(row?.id ?? null);
+        setResolved(true);
       })
       .catch(() => {
         if (cancelled) return;
         setFollowing(false);
         setFeedSourceId(null);
+        setResolved(true);
       });
     return () => {
       cancelled = true;
@@ -457,7 +468,7 @@ function FollowButton({
   return (
     <button
       onClick={handleClick}
-      disabled={busy}
+      disabled={busy || !resolved}
       className={`mt-3 w-full py-1.5 text-ui-xs font-medium transition-colors ${
         following
           ? "bg-grey-100 text-grey-600 hover:bg-grey-200"

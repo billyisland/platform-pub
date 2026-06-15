@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lix9Lbr0xtPGfqtjwnl20u6SFuju1ihLO1aknK7aXGeqk3i0spEtRedvl17WpNe
+\restrict E3wpJc2tF30mAV9ZhXmLf0Wrok0xbHIESmnYEAhquYn6vQR69sBXxfcJRF9gCRt
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1278,6 +1278,10 @@ CREATE TABLE public.external_authors (
     avatar text,
     first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    bio text,
+    website text,
+    lightning_address text,
+    profile_fetched_at timestamp with time zone,
     CONSTRAINT external_authors_tier_check CHECK ((tier = ANY (ARRAY['A'::text, 'B'::text])))
 );
 
@@ -6457,8 +6461,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lix9Lbr0xtPGfqtjwnl20u6SFuju1ihLO1aknK7aXGeqk3i0spEtRedvl17WpNe
-
+\unrestrict E3wpJc2tF30mAV9ZhXmLf0Wrok0xbHIESmnYEAhquYn6vQR69sBXxfcJRF9gCRt
 
 
 
@@ -6593,4 +6596,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('113_feeds_rank_hidden.sql'),
     ('114_reach_source_and_starter_template.sql'),
     ('115_network_presences_external_id_unique.sql'),
-    ('116_drop_external_subscription_prefs.sql');
+    ('116_drop_external_subscription_prefs.sql'),
+    ('117_external_authors_live_profile.sql');

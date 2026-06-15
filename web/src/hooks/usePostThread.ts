@@ -19,6 +19,10 @@ import type { Post, RepostEdge } from "../lib/post/types";
 
 const REPLY_PAGE = 5; // §8 initial descendant page
 
+// When the host thread fetch reports background hydration in flight, silently
+// refetch at these offsets and merge — early for fast relays, later for slow.
+const HYDRATION_MERGE_DELAYS_MS = [3_000, 8_000];
+
 // Per-focal pagination state: the cursor for the *next* page of that focal's
 // flattened descendants, and the full subtree count for the "more" affordance.
 interface FocalMeta {
@@ -71,7 +75,8 @@ type Action =
   | { kind: "reroot-start" }
   | { kind: "more-start" }
   | { kind: "error" }
-  | { kind: "ingest"; res: PostThreadResponse; root?: boolean };
+  | { kind: "ingest"; res: PostThreadResponse; root?: boolean }
+  | { kind: "merge"; res: PostThreadResponse };
 
 const INITIAL: State = {
   rootId: null,
@@ -124,6 +129,24 @@ function reducer(state: State, action: Action): State {
         // Lock state belongs to the gated root; only reflect it from the host fetch.
         paywallLocked: action.root ? !!res.paywallLocked : state.paywallLocked,
       };
+    }
+    case "merge": {
+      // Background hydration landed: fold new nodes into the pool and refresh the
+      // fetched focal's pagination meta WITHOUT touching root/focal/loading — the
+      // user may have re-rooted in the meantime, and deriveThreadView recomputes
+      // the visible tree from the enriched pool.
+      const { res } = action;
+      const pool = new Map(state.pool);
+      for (const p of res.posts) pool.set(p.id, p);
+      const edgeMap = new Map(state.edges.map((e) => [edgeKey(e), e]));
+      for (const e of res.repostEdges) edgeMap.set(edgeKey(e), e);
+      const meta = new Map(state.meta);
+      meta.set(res.focalId, {
+        cursor: res.replyCursor,
+        total: res.totalDescendants,
+        descLoaded: true,
+      });
+      return { ...state, pool, edges: [...edgeMap.values()], meta };
     }
     default:
       return state;
@@ -182,18 +205,47 @@ export function usePostThread(
       refreshKey !== servicedKey.current;
     servicedKey.current = refreshKey;
     if (isRefresh) cache.delete(rootPostId);
+    let cancelled = false;
+    // Background-hydration refetch timers (external threads): the host fetch may
+    // return `hydrating` before ancestors/replies are in the DB, so we silently
+    // refetch a couple of times and merge whatever landed. Two attempts cover
+    // both fast and slow relays without a tight poll.
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const scheduleHydrationMerge = () => {
+      for (const delay of HYDRATION_MERGE_DELAYS_MS) {
+        timers.push(
+          setTimeout(() => {
+            if (cancelled || !mounted.current) return;
+            postThread(rootPostId, { replyLimit: REPLY_PAGE })
+              .then((res) => {
+                writeCache(rootPostId, res);
+                if (cancelled || !mounted.current) return;
+                dispatch({ kind: "merge", res });
+              })
+              .catch(() => {});
+          }, delay),
+        );
+      }
+    };
     const cached = isRefresh ? undefined : readCache(rootPostId);
     if (cached) {
       dispatch({ kind: "ingest", res: cached, root: true });
-      return;
+      // A reopen while hydration is still in flight (cached response carries the
+      // flag; the completing merge overwrites the cache with a clean one) keeps
+      // chasing the result instead of stalling on the partial cache.
+      if (cached.hydrating) scheduleHydrationMerge();
+      return () => {
+        cancelled = true;
+        for (const t of timers) clearTimeout(t);
+      };
     }
-    let cancelled = false;
     dispatch({ kind: "init-start" });
     postThread(rootPostId, { replyLimit: REPLY_PAGE })
       .then((res) => {
         writeCache(rootPostId, res);
         if (cancelled || !mounted.current) return;
         dispatch({ kind: "ingest", res, root: true });
+        if (res.hydrating) scheduleHydrationMerge();
       })
       .catch(() => {
         if (cancelled || !mounted.current) return;
@@ -201,6 +253,7 @@ export function usePostThread(
       });
     return () => {
       cancelled = true;
+      for (const t of timers) clearTimeout(t);
     };
   }, [enabled, rootPostId, refreshKey]);
 

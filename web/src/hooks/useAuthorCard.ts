@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { AuthorProfile } from "../lib/api/post";
 
 // One author DTO across the codebase — the gateway AuthorCardResponse, defined
@@ -60,8 +60,6 @@ export function useAuthorCard(
     loading: false,
   });
 
-  const fetchedRef = useRef(false);
-
   useEffect(() => {
     if (!enabled || !id) return;
 
@@ -72,8 +70,12 @@ export function useAuthorCard(
       return;
     }
 
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    // A cancellation guard (not a "have we fetched?" ref) is what makes this
+    // correct when type/id change on a mounted hook: each run owns its own
+    // `cancelled` flag, so a stale request's settle can't clobber the current
+    // one, and a cache-missing id change always refetches. The inflight map
+    // still dedupes concurrent identical requests (incl. StrictMode remounts).
+    let cancelled = false;
     setState({ data: null, loading: true });
 
     let existing = inflight.get(cacheKey);
@@ -87,21 +89,19 @@ export function useAuthorCard(
       if (data) {
         cache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS });
       }
+      if (cancelled) return;
       setState({ data, loading: false });
     });
-  }, [type, id, enabled]);
 
-  useEffect(() => {
-    if (!enabled) {
-      fetchedRef.current = false;
-    }
-  }, [enabled]);
+    return () => {
+      cancelled = true;
+    };
+  }, [type, id, enabled]);
 
   const refresh = useCallback(() => {
     if (!id) return;
     const cacheKey = `${type}:${id}`;
     cache.delete(cacheKey);
-    fetchedRef.current = false;
     setState({ data: null, loading: true });
     void fetchAuthorCard(type, id).then((data) => {
       if (data) {

@@ -61,14 +61,23 @@ interface ExternalAuthorRow {
   handle: string | null;
   handle_uri: string | null;
   avatar: string | null;
+  bio: string | null;
+  website: string | null;
+  lightning_address: string | null;
+  profile_fetched_at: Date | null;
 }
+
+// How long a persisted live-profile snapshot is served straight from the DB
+// before the next view re-fetches it from the relay graph (migration 117).
+const LIVE_PROFILE_TTL_MS = 30 * 60_000;
 
 async function loadExternalAuthor(
   id: string,
 ): Promise<ExternalAuthorRow | null> {
   const { rows } = await pool.query<ExternalAuthorRow>(
     `SELECT id, protocol, stable_handle, tier, account_id,
-            display_name, handle, handle_uri, avatar
+            display_name, handle, handle_uri, avatar,
+            bio, website, lightning_address, profile_fetched_at
      FROM external_authors WHERE id = $1`,
     [id],
   );
@@ -150,23 +159,34 @@ async function resolveExternalAuthorById(
     // subscribed so "FOLLOWING" → unsubscribe deletes the right row; when not
     // subscribed there's no row, so fall back to followUri — only the subscribe
     // path runs then, and it keys off protocol + sourceUri.
-    const { rows: subRows } = await pool.query<{ id: string }>(
-      `SELECT sub.id
-         FROM external_subscriptions sub
-         JOIN external_sources es ON es.id = sub.source_id
-        WHERE sub.subscriber_id = $1
-          AND es.protocol = $2::external_protocol
+    //
+    // `sourceId` is the external_sources.id (whenever the source row exists,
+    // subscribed or not). The client matches it against per-feed membership
+    // (feed_sources.external_source_id via listSources) to resolve the
+    // feed-derived external Follow state — without it the hover card can never
+    // see itself as already-followed in THIS feed.
+    const { rows: subRows } = await pool.query<{
+      source_id: string;
+      sub_id: string | null;
+    }>(
+      `SELECT es.id AS source_id, sub.id AS sub_id
+         FROM external_sources es
+         LEFT JOIN external_subscriptions sub
+           ON sub.source_id = es.id AND sub.subscriber_id = $1
+        WHERE es.protocol = $2::external_protocol
           AND es.source_uri = $3
         LIMIT 1`,
       [viewerId, xa.protocol, followUri],
     );
-    const subId = subRows[0]?.id ?? null;
+    const subId = subRows[0]?.sub_id ?? null;
+    const sourceId = subRows[0]?.source_id ?? null;
     followTarget = {
       type: "source",
       id: subId ?? followUri,
       isFollowing: subId !== null,
       protocol: xa.protocol,
       sourceUri: followUri,
+      sourceId,
     };
   }
 
@@ -178,6 +198,12 @@ async function resolveExternalAuthorById(
     displayName: xa.display_name ?? undefined,
     handle: xa.handle ?? undefined,
     avatarUrl: xa.avatar ?? undefined,
+    // Persisted live-profile fields (migration 117) — shown even when a fresh
+    // live fetch isn't run/available, so the failure path keeps last-known data
+    // rather than dropping the bio. Overwritten below when we re-fetch.
+    bio: xa.bio ?? undefined,
+    website: xa.website ?? undefined,
+    lightningAddress: xa.lightning_address ?? undefined,
     sourceProtocol: xa.protocol,
     profilePath: `/author/${xa.id}`,
     externalUrl: buildExternalProfileUrl(xa.protocol, {
@@ -238,6 +264,16 @@ async function resolveExternalAuthorById(
     // homepage / lightning address rather than just name + avatar. Follower /
     // post counts aren't cheaply countable on Nostr, so stats stay absent
     // (§4.4 "no stats available ⇒ show no stats").
+    //
+    // A successful fetch is persisted to external_authors (migration 117) and
+    // served straight from the DB until it goes stale, so we don't pay a
+    // multi-second relay round-trip on every cache miss. `base` already carries
+    // the stored bio/website/lightning fields, so the fresh path needs no fetch.
+    const fresh =
+      xa.profile_fetched_at != null &&
+      Date.now() - xa.profile_fetched_at.getTime() < LIVE_PROFILE_TTL_MS;
+    if (fresh) return base;
+
     let hintRelays: string[] = [];
     if (rep?.source_id) {
       const { rows } = await pool.query<{ relay_urls: string[] | null }>(
@@ -247,7 +283,38 @@ async function resolveExternalAuthorById(
       hintRelays = rows[0]?.relay_urls ?? [];
     }
     const profile = await fetchNostrAuthorProfile(xa.stable_handle, hintRelays);
+    // Fetch failed/empty — keep whatever was last persisted (already in base).
     if (!profile) return base;
+
+    // Persist the snapshot. name/handle/avatar COALESCE so a missing live field
+    // doesn't blank an existing stored one; bio/website/lud reflect the current
+    // kind-0 verbatim (a cleared field clears here too).
+    await pool
+      .query(
+        `UPDATE external_authors
+            SET display_name      = COALESCE(NULLIF($2, ''), display_name),
+                handle            = COALESCE(NULLIF($3, ''), handle),
+                avatar            = COALESCE(NULLIF($4, ''), avatar),
+                bio               = $5,
+                website           = $6,
+                lightning_address = $7,
+                profile_fetched_at = now(),
+                last_seen_at      = now()
+          WHERE id = $1`,
+        [
+          xa.id,
+          profile.name ?? null,
+          profile.nip05 ?? null,
+          profile.picture ?? null,
+          profile.about ?? null,
+          profile.website ?? null,
+          profile.lud16 ?? null,
+        ],
+      )
+      .catch((err) =>
+        logger.warn({ err, authorId: xa.id }, "live-profile persist failed"),
+      );
+
     return {
       ...base,
       // base.externalUrl (njump, derived from the pubkey) is already correct —
@@ -255,9 +322,9 @@ async function resolveExternalAuthorById(
       displayName: profile.name ?? base.displayName,
       handle: profile.nip05 ?? base.handle,
       avatarUrl: profile.picture ?? base.avatarUrl,
-      bio: profile.about ?? undefined,
-      website: profile.website ?? undefined,
-      lightningAddress: profile.lud16 ?? undefined,
+      bio: profile.about ?? base.bio,
+      website: profile.website ?? base.website,
+      lightningAddress: profile.lud16 ?? base.lightningAddress,
     };
   }
 
