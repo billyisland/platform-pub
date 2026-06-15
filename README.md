@@ -47,8 +47,11 @@ satellite presences on other networks.
 ## What's built
 
 The system has grown well beyond the original article-publishing core. Grouped by
-subsystem; ✅ = built and in use, 🛑 = built but slated to park (see
-`docs/adr/ARCHITECTURE-AUDIT-ADR-2026-06-15.md`).
+subsystem; ✅ = built and in use, 🛑 = built but slated to park. The 2026-06-15
+architecture audit (`docs/adr/ARCHITECTURE-AUDIT-ADR-2026-06-15.md`) and its
+spade-ready execution plans (`docs/adr/ARCHITECTURE-AUDIT-IMPLEMENTATION-PLAN-2026-06-15.md`)
+record the outstanding structural work — unified money ledger, gateway god-file
+splits, outbound-retry helper, DM reactions, and parking trust + traffology.
 
 **Platform & infrastructure**
 
@@ -184,4 +187,4 @@ node -e "const {generateSecretKey}=require('nostr-tools'); console.log(Buffer.fr
 - **Relay outbox**: every signed event is durably queued in-transaction; a worker owns publish + retry, so relay blips never surface as 5xx
 - **Workspace**: the product is a multi-feed workspace (`/reader`) with frosted overlays, not a page-based site
 
-See `CLAUDE.md` for sitewide standards and `docs/adr/` for the full set of architectural decision records (start with `docs/adr/UNIVERSAL-POST-ADR.md` and `docs/adr/UNIVERSAL-FEED-ADR.md`).
+See `CLAUDE.md` for sitewide standards and `docs/adr/` for the full set of architectural decision records (start with `docs/adr/UNIVERSAL-POST-ADR.md` and `docs/adr/UNIVERSAL-FEED-ADR.md`). The current structural work-in-flight is tracked in `docs/adr/ARCHITECTURE-AUDIT-IMPLEMENTATION-PLAN-2026-06-15.md`.
