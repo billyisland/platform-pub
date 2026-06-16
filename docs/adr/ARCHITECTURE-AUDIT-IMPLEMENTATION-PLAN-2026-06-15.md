@@ -8,11 +8,13 @@ re-scope** (see below); the other seven are ready to dig.
 Execution order follows the ADR's own suggested order:
 `1a → 7, 8 → (2 parked) → 3 → 6 → 5 → 4`. Item 1b stays deferred.
 
-**Progress:** 1a, 7, 8, **2(A) shipped 2026-06-16** (see each item's header). Next
-up: item 3 (the ledger keystone), then 6 → 5 → 4.
+**Progress:** 1a, 7, 8, **2(A) shipped 2026-06-16**; **item 3 Phase 0 shipped
+2026-06-16** (table + append-only guard + `recordLedger` helper — see item 3
+header). Next up: item 3 Phase 1 (dual-write the money paths), then Phases 2–3,
+then 6 → 5 → 4.
 
-Migration numbers below say "next free NNN" — the chain is currently at `117`;
-assign sequentially at implementation time so two items don't collide.
+Migration numbers below say "next free NNN" — the chain is now at `119` (Phase 0
+took it); assign sequentially at implementation time so two items don't collide.
 
 ---
 
@@ -379,7 +381,37 @@ client flag) but no hard dependency breaks. The only hard coupling was nginx
 
 ---
 
-## Item 3 — Unified append-only ledger *(keystone)*
+## Item 3 — Unified append-only ledger *(keystone)* — **Phase 0 SHIPPED 2026-06-16**
+
+**Outcome (Phase 0 — table + guard).** Migration `119_ledger_entries.sql` adds the
+`ledger_entries` table exactly as specced below (signed `amount_pence`, FKs to
+`accounts(id)` on `account_id`/`counterparty_id`, the three indexes
+`(account_id,created_at)`/`(ref_table,ref_id)`/`(trigger_type)`), plus the
+append-only guard: `ledger_entries_append_only()` + a `BEFORE UPDATE OR DELETE …
+FOR EACH ROW` trigger that `RAISE`s — mirroring how 098 owns `feed_items`. The
+`recordLedger(client, entry)` helper lives in `shared/src/lib/ledger.ts`, taking
+the in-flight `PoolClient` (same shape as `enqueueRelayPublish`), a typed
+`LedgerTriggerType`, and a plain signed-amount INSERT. **Phase 0 is inert: no
+callers, no reads.** Phase 1 wires the money paths.
+
+**Verify (done):** `shared` `tsc` build clean; `scripts/check-schema-drift.sh` all
+four green (Check 3 now counts the table + function + trigger + 3 indexes; Check 1
+no-op + Check 2 canonical round-trip both pass); schema.sql diff = the new objects
++ the `119` seed line only. Append-only guard exercised against a live
+schema.sql-built DB: INSERT succeeds, `UPDATE`/`DELETE` each raise
+`ledger_entries is append-only`.
+
+**Deviation from the plan — no `recordLedger` rollback unit test yet.** The plan's
+overall Verify lists a rollback unit test, but `shared` has **zero** test files and
+no DB-backed test harness; standing one up for a caller-less Phase 0 is
+disproportionate. Deferred to Phase 1, where real money-path callers give the
+rollback assertion something to wrap (and the CI money-write/ledger-adjacency grep
+lands alongside it). The guard's raise-on-mutate was instead verified directly
+against a live DB (above).
+
+The original plan follows, retained for reference.
+
+---
 
 **Goal.** One append-only ledger so "how does writer X make a living here?" is a
 single query, not a hand-union of eight surfaces. Balances become `SUM()` views.

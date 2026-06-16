@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict g7ncdagB1RtSBZu8an7qQU7gUsyYQ1LgU15MaA0w4e87fmdhN9qHB8reMWSbHBO
+\restrict H9teGubbvAzon3bhjHVgtWUg4yrSzdnBkPfmBn7myjpFzGGfgd9zxzstgFNYKmR
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -799,6 +799,21 @@ $$;
 
 
 --
+-- Name: ledger_entries_append_only(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ledger_entries_append_only() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION
+    'ledger_entries is append-only: % is not permitted (post a reversing entry instead)',
+    TG_OP;
+END;
+$$;
+
+
+--
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1512,6 +1527,23 @@ CREATE TABLE public.gift_links (
     redemption_count integer DEFAULT 0 NOT NULL,
     revoked_at timestamp with time zone,
     expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ledger_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ledger_entries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    counterparty_id uuid,
+    amount_pence bigint NOT NULL,
+    currency text DEFAULT 'GBP'::text NOT NULL,
+    trigger_type text NOT NULL,
+    ref_table text NOT NULL,
+    ref_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -3001,6 +3033,14 @@ ALTER TABLE ONLY public.gift_links
 
 
 --
+-- Name: ledger_entries ledger_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_entries
+    ADD CONSTRAINT ledger_entries_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: magic_links magic_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4260,6 +4300,27 @@ CREATE INDEX idx_key_issuances_vault_key_id ON public.content_key_issuances USIN
 
 
 --
+-- Name: idx_ledger_entries_account_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ledger_entries_account_created ON public.ledger_entries USING btree (account_id, created_at);
+
+
+--
+-- Name: idx_ledger_entries_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ledger_entries_ref ON public.ledger_entries USING btree (ref_table, ref_id);
+
+
+--
+-- Name: idx_ledger_entries_trigger_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ledger_entries_trigger_type ON public.ledger_entries USING btree (trigger_type);
+
+
+--
 -- Name: idx_magic_links_expires; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5044,6 +5105,13 @@ CREATE TRIGGER feeds_touch_updated_at BEFORE UPDATE ON public.feeds FOR EACH ROW
 
 
 --
+-- Name: ledger_entries ledger_entries_append_only_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER ledger_entries_append_only_trg BEFORE DELETE OR UPDATE ON public.ledger_entries FOR EACH ROW EXECUTE FUNCTION public.ledger_entries_append_only();
+
+
+--
 -- Name: accounts trg_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5604,6 +5672,22 @@ ALTER TABLE ONLY public.gift_links
 
 ALTER TABLE ONLY public.gift_links
     ADD CONSTRAINT gift_links_creator_id_fkey FOREIGN KEY (creator_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ledger_entries ledger_entries_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_entries
+    ADD CONSTRAINT ledger_entries_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: ledger_entries ledger_entries_counterparty_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_entries
+    ADD CONSTRAINT ledger_entries_counterparty_id_fkey FOREIGN KEY (counterparty_id) REFERENCES public.accounts(id);
 
 
 --
@@ -6466,7 +6550,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict g7ncdagB1RtSBZu8an7qQU7gUsyYQ1LgU15MaA0w4e87fmdhN9qHB8reMWSbHBO
+\unrestrict H9teGubbvAzon3bhjHVgtWUg4yrSzdnBkPfmBn7myjpFzGGfgd9zxzstgFNYKmR
 
 
 
@@ -6602,4 +6686,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('115_network_presences_external_id_unique.sql'),
     ('116_drop_external_subscription_prefs.sql'),
     ('117_external_authors_live_profile.sql'),
-    ('118_drop_feed_items_tier.sql');
+    ('118_drop_feed_items_tier.sql'),
+    ('119_ledger_entries.sql');

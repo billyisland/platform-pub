@@ -23,6 +23,22 @@ starts.
 
 ## Progress
 
+- **2026-06-16** — architecture-audit item **3 (unified append-only ledger,
+  keystone) — Phase 0** shipped. Migration **119** adds `ledger_entries` (signed
+  `amount_pence`, FKs to `accounts(id)` on `account_id`/`counterparty_id`, indexes
+  `(account_id,created_at)`/`(ref_table,ref_id)`/`(trigger_type)`) plus the
+  append-only guard — `ledger_entries_append_only()` + a `BEFORE UPDATE OR DELETE …
+  FOR EACH ROW` trigger that `RAISE`s, mirroring how 098 owns `feed_items`. New
+  helper `recordLedger(client, entry)` in `shared/src/lib/ledger.ts` takes the
+  in-flight `PoolClient` (same shape as `enqueueRelayPublish`), a typed
+  `LedgerTriggerType`, and a plain signed-amount INSERT. **Phase 0 is inert — no
+  callers, no reads.** schema.sql regenerated via pg_dump; drift guard all four
+  green (Check 3 now counts the table/function/trigger/3 indexes); guard
+  raise-on-mutate verified against a live DB (INSERT ok, UPDATE/DELETE both raise).
+  Deviation: the planned `recordLedger` rollback unit test is deferred to Phase 1
+  — `shared` has no DB-backed test harness and Phase 0 has no callers; the guard was
+  verified directly instead. Plan header updated. Next: Phase 1 (dual-write the
+  money paths — accrual/settlement/payout/votes/drives through `recordLedger`).
 - **2026-06-16** — architecture-audit items **7**, **8**, **2(A)** shipped.
   **Item 7 (park trust)** — trust graph (Layer 1/2/4) gated behind
   `TRUST_SYSTEM_ENABLED` (server, in `shared/lib/env`) / `NEXT_PUBLIC_TRUST_ENABLED`
