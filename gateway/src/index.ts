@@ -46,7 +46,7 @@ import { bookmarkRoutes } from "./routes/bookmarks.js";
 import { tagRoutes } from "./routes/tags.js";
 import { resolveRoutes } from "./routes/resolve.js";
 import { externalFeedsRoutes } from "./routes/external-feeds.js";
-import { externalItemsRoutes } from "./routes/external-items.js";
+import { externalItemsRoutes } from "./routes/external-items/index.js";
 import { sourcesRoutes } from "./routes/sources.js";
 import { linkedAccountsRoutes } from "./routes/linked-accounts.js";
 import { trustRoutes } from "./routes/trust.js";

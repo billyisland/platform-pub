@@ -8,7 +8,7 @@ import { collectDescendants } from "../lib/thread-walk.js";
 import {
   hydrateExternalThreadContext,
   willHydrateThread,
-} from "./external-items.js";
+} from "../lib/external-hydration.js";
 import {
   POST_SELECT,
   POST_JOINS,
