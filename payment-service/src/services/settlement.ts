@@ -5,6 +5,7 @@ import {
   withTransaction,
   loadConfig,
 } from "@platform-pub/shared/db/client.js";
+import { recordLedger } from "@platform-pub/shared/lib/ledger.js";
 import logger from "../lib/logger.js";
 
 // =============================================================================
@@ -410,6 +411,19 @@ class SettlementService {
          WHERE id = $2`,
         [settlement.amount_pence, settlement.tab_id],
       );
+
+      // Ledger: reader credit — the Stripe charge pays the tab down by the
+      // settled amount. Counterparty is the platform (NULL). This is the (+)
+      // side that nets against the read_accrual / vote_charge / pledge_fulfil
+      // debits so the reader's SUM tracks reading_tabs.balance_pence.
+      await recordLedger(client, {
+        accountId: settlement.reader_id,
+        counterpartyId: null,
+        amountPence: settlement.amount_pence,
+        triggerType: "tab_settlement",
+        refTable: "tab_settlements",
+        refId: settlement.id,
+      });
 
       const { rowCount } = await client.query(
         `UPDATE read_events

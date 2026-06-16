@@ -4,6 +4,7 @@ import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
+import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -782,6 +783,19 @@ async function fulfillDrive(driveId: string): Promise<void> {
            WHERE reader_id = $2`,
           [pledge.amount_pence, pledge.pledger_id]
         )
+
+        // Ledger: pledger debit — the pledge charge becomes real here (the tab
+        // moved above). −amount, counterparty = the funded writer. The batch
+        // txn is the unit of work, and fulfilled pledges aren't re-selected, so
+        // this is one entry per pledge. ref = the read_events row just minted.
+        await recordLedger(client, {
+          accountId: pledge.pledger_id,
+          counterpartyId: drive.target_writer_id,
+          amountPence: -pledge.amount_pence,
+          triggerType: 'pledge_fulfil',
+          refTable: 'read_events',
+          refId: readEvent.rows[0].id,
+        })
 
         // 4. Mark pledge as fulfilled
         await client.query(

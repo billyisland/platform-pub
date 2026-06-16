@@ -9,6 +9,7 @@ import {
   loadConfig,
 } from "@platform-pub/shared/db/client.js";
 import { enqueueRelayPublish } from "@platform-pub/shared/lib/relay-outbox.js";
+import { recordLedger } from "@platform-pub/shared/lib/ledger.js";
 import { signReceiptEvent, createPortableReceipt } from "../lib/nostr.js";
 import logger from "../lib/logger.js";
 
@@ -146,6 +147,18 @@ class AccrualService {
            WHERE id = $2`,
           [event.amountPence, event.tabId],
         );
+
+        // Ledger: reader debit (owes amountPence for this read). Emitted only
+        // on the accrued path — exactly when the tab balance moves — so the
+        // reader's SUM mirrors reading_tabs.balance_pence (see ledger.ts).
+        await recordLedger(client, {
+          accountId: event.readerId,
+          counterpartyId: event.writerId,
+          amountPence: -event.amountPence,
+          triggerType: "read_accrual",
+          refTable: "read_events",
+          refId: readEvent.id,
+        });
       }
 
       logger.info(
@@ -187,8 +200,9 @@ class AccrualService {
       const { rows: provisionalReads } = await client.query<{
         id: string;
         amount_pence: number;
+        writer_id: string;
       }>(
-        `SELECT id, amount_pence
+        `SELECT id, amount_pence, writer_id
          FROM read_events
          WHERE reader_id = $1 AND state = 'provisional'
          FOR UPDATE`,
@@ -226,12 +240,14 @@ class AccrualService {
 
       // Also convert provisional vote_charges to accrued
       const { rows: provisionalVoteCharges } = await client.query<{
+        id: string;
         amount_pence: number;
+        recipient_id: string | null;
       }>(
         `UPDATE vote_charges
          SET state = 'accrued', tab_id = $1
          WHERE voter_id = $2 AND state = 'provisional'
-         RETURNING amount_pence`,
+         RETURNING id, amount_pence, recipient_id`,
         [tabId, readerId],
       );
       const voteChargeTotal = provisionalVoteCharges.reduce(
@@ -248,6 +264,31 @@ class AccrualService {
          WHERE id = $2`,
         [totalPence + voteChargeTotal, tabId],
       );
+
+      // Ledger: these provisional reads/votes never moved the tab when created
+      // (no card ⇒ no balance). Conversion is the first tab movement, so the
+      // debit entries are emitted here, one per converted row, summing to the
+      // tab increment above.
+      for (const r of provisionalReads) {
+        await recordLedger(client, {
+          accountId: readerId,
+          counterpartyId: r.writer_id,
+          amountPence: -r.amount_pence,
+          triggerType: "read_accrual",
+          refTable: "read_events",
+          refId: r.id,
+        });
+      }
+      for (const vc of provisionalVoteCharges) {
+        await recordLedger(client, {
+          accountId: readerId,
+          counterpartyId: vc.recipient_id,
+          amountPence: -vc.amount_pence,
+          triggerType: "vote_charge",
+          refTable: "vote_charges",
+          refId: vc.id,
+        });
+      }
 
       logger.info(
         { readerId, convertedCount: provisionalReads.length, totalPence },

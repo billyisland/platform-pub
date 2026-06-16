@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
+import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 import { requireAuth } from '../middleware/auth.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { voteCostPence } from '@platform-pub/shared/lib/voting.js'
@@ -178,14 +179,32 @@ export async function voteRoutes(app: FastifyInstance) {
           // Upvotes → recipient is the author; downvotes → platform revenue (NULL)
           const recipientId = direction === 'up' ? authorId : null
 
-          await client.query(
+          const chargeRow = await client.query<{ id: string }>(
             `INSERT INTO vote_charges
                (vote_id, voter_id, recipient_id, amount_pence, tab_id,
                 on_free_allowance, state)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id`,
             [voteId, voterId, recipientId, costPence, tabId,
              onFreeAllowance, chargeState]
           )
+
+          // Ledger: voter debit. Emitted only when the charge is 'accrued'
+          // (has-card path) — that is the branch above that moved the tab
+          // balance. The provisional (no-card) branch moves no balance, so its
+          // ledger entry is deferred to convertProvisionalReads (matching the
+          // reader-tab invariant in ledger.ts). counterparty = upvote recipient
+          // (author) or NULL (downvote = platform behaviour-tax).
+          if (chargeState === 'accrued') {
+            await recordLedger(client, {
+              accountId: voterId,
+              counterpartyId: recipientId,
+              amountPence: -costPence,
+              triggerType: 'vote_charge',
+              refTable: 'vote_charges',
+              refId: chargeRow.rows[0].id,
+            })
+          }
         }
 
         // ------------------------------------------------------------------

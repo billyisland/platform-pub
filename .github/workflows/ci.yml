@@ -21,6 +21,12 @@ jobs:
       # a full build exercises the real compilation consumers run).
       - run: npm run build --workspaces --if-present
 
+      # Ledger dual-write tripwire (audit item 3): every money-write site must
+      # carry a recordLedger() call in the same transaction, and no new
+      # money-write site may appear unregistered. Pure text, no DB.
+      - name: ledger adjacency (money writes ↔ ledger entries)
+        run: scripts/check-ledger-adjacency.sh
+
       # Backend ESLint (promise-safety rules)
       - run: npx eslint
 

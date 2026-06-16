@@ -1,6 +1,7 @@
 import Stripe from 'stripe'
 import type { WriterEarnings, ArticleEarnings } from '../types/index.js'
 import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
+import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -462,10 +463,15 @@ class PayoutService {
     })
 
     await withTransaction(async (client) => {
-      await client.query(
+      // Guard the status flip on status='pending' and use its rowCount to gate
+      // the ledger emit. completeWriterPayout is re-run on crash-resume with a
+      // stable Stripe key, so only the FIRST txn that actually flips
+      // pending→initiated must post the (one) ledger entry — otherwise a resume
+      // double-counts the payout.
+      const flipped = await client.query(
         `UPDATE writer_payouts
          SET status = 'initiated', stripe_transfer_id = $1
-         WHERE id = $2`,
+         WHERE id = $2 AND status = 'pending'`,
         [transfer.id, payoutId],
       )
 
@@ -485,6 +491,20 @@ class PayoutService {
            AND state = 'platform_settled'`,
         [payoutId],
       )
+
+      // Ledger: writer credit — money received. +amount, counterparty =
+      // platform (NULL). SUM of these == historic writer payout sums. Gated on
+      // the pending→initiated flip so resume can't post it twice.
+      if (flipped.rowCount! > 0) {
+        await recordLedger(client, {
+          accountId: writerId,
+          counterpartyId: null,
+          amountPence: amountPence,
+          triggerType: 'writer_payout',
+          refTable: 'writer_payouts',
+          refId: payoutId,
+        })
+      }
     })
 
     logger.info(
@@ -904,12 +924,30 @@ class PayoutService {
           idempotencyKey: `pub-split-${payoutId}-${split.account_id}`,
         })
 
-        await pool.query(
-          `UPDATE publication_payout_splits
-           SET status = 'initiated', stripe_transfer_id = $1
-           WHERE id = $2`,
-          [transfer.id, split.id],
-        )
+        // Flip the split and post its ledger entry in ONE txn so they commit
+        // together: if the flip committed but the entry didn't, the split would
+        // never be re-selected (the loop only picks 'pending') and the credit
+        // would be lost. Gated on the pending→initiated flip for idempotency.
+        await withTransaction(async (client) => {
+          const flipped = await client.query(
+            `UPDATE publication_payout_splits
+             SET status = 'initiated', stripe_transfer_id = $1
+             WHERE id = $2 AND status = 'pending'`,
+            [transfer.id, split.id],
+          )
+          if (flipped.rowCount! > 0) {
+            // Ledger: publication-member credit — money received. +amount,
+            // counterparty = platform (NULL). SUM == historic split sums.
+            await recordLedger(client, {
+              accountId: split.account_id,
+              counterpartyId: null,
+              amountPence: split.amount_pence,
+              triggerType: 'publication_split',
+              refTable: 'publication_payout_splits',
+              refId: split.id,
+            })
+          }
+        })
         totalTransferred += split.amount_pence
       } catch (err) {
         logger.error(

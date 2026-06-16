@@ -24,6 +24,38 @@ starts.
 ## Progress
 
 - **2026-06-16** — architecture-audit item **3 (unified append-only ledger,
+  keystone) — Phase 1 (dual-write)** shipped. Every money MOVEMENT now emits a
+  `ledger_entries` row via `recordLedger(client, …)` **in the same transaction**
+  as the table write it records, across all five paths: `accrual.ts`
+  (`recordGatePass` accrued read; `convertProvisionalReads` — one entry per
+  converted read + per converted vote_charge), `settlement.ts`
+  (`confirmSettlement`), `payout.ts` (writer payout + per publication split),
+  `votes.ts` (accrued vote charge), `drives.ts` (pledge fulfilment). **Sign
+  convention** (in `shared/src/lib/ledger.ts`): reader-tab entries mirror
+  `reading_tabs.balance_pence` movements (accrual/vote/pledge **−amount**;
+  settlement **+settled**) so `balance == −SUM`; writer/member payout entries are
+  **+amount** with `NULL` (platform) counterparty so `SUM == ` historic payout
+  sums; platform is never an `account_id` (the schema's `account_id NOT NULL`
+  forbids the audit's literal net-to-writers/platform-fee rows at settlement —
+  hence the writer side lands at payout). **Idempotency:** the four reader-tab
+  sites are single-txn (one entry per row); the two payout sites re-run on
+  crash-resume, so each gates its emit on the `pending→initiated` flip
+  (`processPublicationSplits`' standalone status `pool.query` was wrapped in a
+  `withTransaction` so flip+entry commit together). **CI tripwire**
+  `scripts/check-ledger-adjacency.sh` (the plan's "CI grep") guards both a
+  registered file losing its `recordLedger` call and a new unregistered
+  money-write site; wired into the CI `backend` job; both guards verified to
+  fire. Deviation (carried from Phase 0): still no live-DB rollback test — repo
+  has no DB-backed harness, and the rollback property is now structural (caller's
+  in-flight client); `payment-service/tests/ledger.test.ts` locks the helper
+  contract (param order / signed passthrough / defaults) instead, with call-site
+  sign correctness deferred to Phase 2 reconciliation. Verified: shared +
+  payment-service + gateway builds clean; eslint 0 errors; knip unchanged vs
+  baseline; drift guard all four green (no schema change); vitest 46
+  payment-service (incl. 5 new) + 141 gateway green. Plan + this log updated.
+  Next: Phase 2 (`SUM()` read-model views + penny reconciliation), then Phase 3
+  (cut over reads), then 6 → 5 → 4.
+- **2026-06-16** — architecture-audit item **3 (unified append-only ledger,
   keystone) — Phase 0** shipped. Migration **119** adds `ledger_entries` (signed
   `amount_pence`, FKs to `accounts(id)` on `account_id`/`counterparty_id`, indexes
   `(account_id,created_at)`/`(ref_table,ref_id)`/`(trigger_type)`) plus the

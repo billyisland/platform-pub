@@ -15,11 +15,33 @@ import type { PoolClient } from 'pg'
 // in migration 119): corrections are REVERSING entries, never edits. So this
 // helper only ever inserts.
 //
-// amount_pence is SIGNED: (+) credits account_id, (−) debits it. A balance is
+// amount_pence is SIGNED: (+) credits account_id, (−) debits it (money in the
+// account-holder's favour vs money they owe/are charged). A balance is
 // SUM(amount_pence) over an account (the Phase 2 read-model views).
 //
-// Phase 0 ships this helper with NO callers; Phase 1 wires the money paths
-// (accrual / settlement / payout / vote_charges / pledge fulfilment).
+// SIGN CONVENTION (Phase 1, the two reconciliation anchors the plan names):
+//
+//   • Reader tab entries mirror reading_tabs.balance_pence movements. The tab
+//     is a DEBT (grows as the reader reads), so accrual / vote / pledge are
+//     DEBITS (−amount, reader owes more) and a settlement is a CREDIT
+//     (+settled, debt paid down via Stripe). Hence
+//         reading_tabs.balance_pence == −SUM(reader tab-affecting entries).
+//     A reader entry is emitted exactly when (and by the amount that) the tab
+//     balance moves — so the reconciliation holds by construction. Provisional
+//     reads/votes (no card, no tab movement) get NO entry until they convert.
+//
+//   • Writer / publication-member entries record money RECEIVED at payout:
+//     +amount (a credit, in their favour), counterparty = NULL (platform).
+//     Hence SUM(payout entries) == historic writer/publication payout sums.
+//
+// The platform itself is never an account_id (no platform account row) — it is
+// always the NULL counterparty. Platform fee / behaviour-tax is therefore
+// implicit (the gap between what a reader is charged and what a writer
+// receives), derived in Phase 2 from counterparty-NULL entries, not stored as
+// its own account ledger.
+//
+// Phase 0 shipped this helper with NO callers; Phase 1 (this change) wires the
+// money paths (accrual / settlement / payout / vote_charges / pledge fulfilment).
 // =============================================================================
 
 export type LedgerTriggerType =

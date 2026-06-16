@@ -8,10 +8,11 @@ re-scope** (see below); the other seven are ready to dig.
 Execution order follows the ADR's own suggested order:
 `1a → 7, 8 → (2 parked) → 3 → 6 → 5 → 4`. Item 1b stays deferred.
 
-**Progress:** 1a, 7, 8, **2(A) shipped 2026-06-16**; **item 3 Phase 0 shipped
-2026-06-16** (table + append-only guard + `recordLedger` helper — see item 3
-header). Next up: item 3 Phase 1 (dual-write the money paths), then Phases 2–3,
-then 6 → 5 → 4.
+**Progress:** 1a, 7, 8, **2(A) shipped 2026-06-16**; **item 3 Phase 0 + Phase 1
+shipped 2026-06-16** (Phase 0 = table + append-only guard + `recordLedger`
+helper; Phase 1 = dual-write across all five money paths + CI adjacency
+tripwire — see item 3 header). Next up: item 3 Phase 2 (the `SUM()` read-model
+views + penny reconciliation), then Phase 3 (cut over reads), then 6 → 5 → 4.
 
 Migration numbers below say "next free NNN" — the chain is now at `119` (Phase 0
 took it); assign sequentially at implementation time so two items don't collide.
@@ -381,7 +382,75 @@ client flag) but no hard dependency breaks. The only hard coupling was nginx
 
 ---
 
-## Item 3 — Unified append-only ledger *(keystone)* — **Phase 0 SHIPPED 2026-06-16**
+## Item 3 — Unified append-only ledger *(keystone)* — **Phase 0 + 1 SHIPPED 2026-06-16**
+
+**Outcome (Phase 1 — dual-write the money paths).** Every money MOVEMENT now
+emits a `ledger_entries` row via `recordLedger(client, …)` **inside the same
+transaction** as the table write it records, across all five paths the plan
+named: `accrual.ts` (recordGatePass accrued read; convertProvisionalReads — one
+entry per converted read + per converted vote_charge), `settlement.ts`
+(confirmSettlement), `payout.ts` (writer payout + per publication split),
+`votes.ts` (accrued vote charge), `drives.ts` (pledge fulfilment).
+
+**Sign convention (documented in `shared/src/lib/ledger.ts`), pinned by the two
+Phase-2 reconciliation anchors and the schema:**
+- **Reader-tab entries mirror `reading_tabs.balance_pence` movements** — emitted
+  exactly when (and by the amount) the tab moves, so the reconciliation holds by
+  construction. Accrual / vote / pledge = **−amount** (debit, reader owes more);
+  settlement = **+settled** (credit, debt paid down). Hence
+  `reading_tabs.balance_pence == −SUM(reader tab-affecting entries)`. Provisional
+  reads/votes (no card ⇒ no tab movement) get **no** entry until they convert.
+- **Writer / publication-member entries = money received at payout** —
+  **+amount**, counterparty `NULL`. Hence `SUM(payout entries) ==` historic
+  writer/publication payout sums.
+- **Platform is never an `account_id`** (no platform account row — `account_id`
+  is `NOT NULL`); it is always the `NULL` counterparty. Platform fee /
+  behaviour-tax is therefore *implicit* (the gap between what a reader is charged
+  and what a writer receives), derived in Phase 2 from counterparty-`NULL`
+  entries — **not** the audit's literal "net-to-writers / platform-fee as their
+  own rows at settlement", which the `account_id NOT NULL` schema forbids. This
+  is why the writer side lands at payout, not settlement.
+
+**Idempotency at the payout sites (the dual-write danger zone).** The four
+reader-tab sites are each a single txn with no resume loop, so they are
+naturally one-entry-per-row. The two payout sites *do* re-run on crash-resume
+(Stripe sits between reserve and complete, retried with a stable key), so each
+gates its ledger emit on the actual `pending→initiated` status flip
+(`UPDATE … WHERE status='pending'` + `rowCount` check) — a resume can't
+double-post. `processPublicationSplits`' previously-standalone `pool.query`
+status flip was wrapped in a `withTransaction` so the flip and its ledger entry
+commit together (else a committed flip with a lost entry would never be
+re-selected).
+
+**CI tripwire.** `scripts/check-ledger-adjacency.sh` (the plan's "CI grep")
+guards both failure modes: (1) each registered money-path file must keep ≥ its
+expected `recordLedger()` count; (2) no backend file may perform a money
+movement (tab-balance write or charge/payout-table INSERT) without being in the
+registry. Wired into the CI `backend` job after the build. Both guards verified
+to fire on negative tests.
+
+**Deviation from the plan — no live-DB rollback test (still).** The plan's
+Verify lists a `recordLedger` rollback unit test; the repo *still* has no
+DB-backed test harness (every test, including the one DB-touching gateway test,
+pure-`vi.mock`s `withTransaction`/`pool`), so a true rollback assertion remains
+infeasible and disproportionate — and the rollback property is now *structural*
+(recordLedger issues on the caller's in-flight client, same guarantee as
+`enqueueRelayPublish`). In its place, `payment-service/tests/ledger.test.ts`
+locks the helper's contract (param/column order, signed-amount passthrough,
+counterparty/currency defaults) in the repo's pure-unit-test style. Call-site
+**sign** correctness is verified at Phase 2 reconciliation, by design.
+
+**Verify (done):** `shared` + `payment-service` + `gateway` `tsc` build clean;
+`npx eslint` 0 errors; `npx knip` unchanged vs. baseline (recordLedger now has
+callers; my change adds zero findings); `check-ledger-adjacency.sh` green (+
+both guards fire on negative tests); `scripts/check-schema-drift.sh` all four
+green (no schema change this phase); full vitest suites green (payment-service
+46 incl. 5 new, gateway 141). Runtime money-flow correctness is Phase 2's
+penny-reconciliation job, not observable from Phase 1 alone (no reads yet).
+
+The original plan follows, retained for reference.
+
+---
 
 **Outcome (Phase 0 — table + guard).** Migration `119_ledger_entries.sql` adds the
 `ledger_entries` table exactly as specced below (signed `amount_pence`, FKs to
