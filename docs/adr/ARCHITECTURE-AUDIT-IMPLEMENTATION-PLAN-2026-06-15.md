@@ -9,10 +9,11 @@ Execution order follows the ADR's own suggested order:
 `1a → 7, 8 → (2 parked) → 3 → 6 → 5 → 4`. Item 1b stays deferred.
 
 **Progress:** 1a, 7, 8, **2(A) shipped 2026-06-16**; **item 3 Phase 0 + Phase 1
-shipped 2026-06-16** (Phase 0 = table + append-only guard + `recordLedger`
-helper; Phase 1 = dual-write across all five money paths + CI adjacency
-tripwire — see item 3 header). Next up: item 3 Phase 2 (the `SUM()` read-model
-views + penny reconciliation), then Phase 3 (cut over reads), then 6 → 5 → 4.
++ Phase 2 shipped 2026-06-16** (Phase 0 = table + append-only guard +
+`recordLedger` helper; Phase 1 = dual-write across all five money paths + CI
+adjacency tripwire; Phase 2 = the four `SUM()` read-model views + the
+reconciliation script — see item 3 header). Next up: item 3 Phase 3 (cut over
+reads — **gated on the opening-balance backfill**, see below), then 6 → 5 → 4.
 
 Migration numbers below say "next free NNN" — the chain is now at `119` (Phase 0
 took it); assign sequentially at implementation time so two items don't collide.
@@ -382,7 +383,65 @@ client flag) but no hard dependency breaks. The only hard coupling was nginx
 
 ---
 
-## Item 3 — Unified append-only ledger *(keystone)* — **Phase 0 + 1 SHIPPED 2026-06-16**
+## Item 3 — Unified append-only ledger *(keystone)* — **Phase 0 + 1 + 2 SHIPPED 2026-06-16**
+
+**Outcome (Phase 2 — read-model views + reconciliation).** Migration
+`120_ledger_views.sql` adds the four `SUM()` read-models the plan names, as plain
+(non-materialised) views over the append-only `ledger_entries` — cheap and always
+current against the existing `(account_id,created_at)`/`(ref_table,ref_id)`/
+`(trigger_type)` indexes, and inert (nothing reads them until Phase 3):
+
+- `ledger_reader_balance(account_id, balance_pence)` — a reader's tab DEBT =
+  `−SUM(amount_pence)` over the four reader-tab triggers
+  (`read_accrual`/`vote_charge`/`pledge_fulfil`/`tab_settlement`). Reconciles
+  (forward-only, see below) against `reading_tabs.balance_pence`.
+- `ledger_writer_earnings(account_id, earned_pence)` — money received =
+  `SUM(amount_pence)` over `writer_payout` + `publication_split`.
+- `ledger_publication_distribution(publication_id, distributed_pence)` — splits
+  resolved to their publication by joining `ledger_entries.ref_id` →
+  `publication_payout_splits` → `publication_payouts`.
+- `ledger_platform_tax(account_id, tax_paid_pence)` — downvote behaviour tax =
+  `−SUM` of `vote_charge` entries with `counterparty_id IS NULL` (the NULL
+  counterparty is what distinguishes a downvote/platform charge from an upvote's
+  author credit).
+
+**Deviation from the plan — `ledger_` prefix on the view names.** The plan named
+them bare (`reader_balance`, `writer_earnings`, …); they ship prefixed
+(`ledger_reader_balance`, …) so the read-model namespace is unambiguous and
+greps cleanly back to its spine. Behaviour-identical; record the prefix when
+wiring Phase 3 reads.
+
+**The reconciliation is `scripts/reconcile-ledger.sql`** (run against a migrated
+DB), in two parts: **Part A — row-level ledger↔source consistency** (every entry
+vs its originating row in `|amount_pence|` + counterparty; must always be empty,
+catches a wrong-magnitude/wrong-row dual-write), and **Part B — aggregate
+balance** vs the live tables (`reading_tabs`, flipped payouts).
+
+**⚠ Phase 3 prerequisite — opening-balance backfill (the plan's gap, surfaced
+here).** The ledger began **empty** at Phase 1; historic `reading_tabs` balances
+and past payouts were never backfilled. So `ledger_reader_balance` equals
+`reading_tabs.balance_pence` **only for accounts with no pre-Phase-1 activity** —
+Part B's diff for everyone else is precisely their un-backfilled opening balance,
+not a bug (the script says so). Phase 3 therefore cannot just "point reads at the
+views": it must **first** post a one-time opening-balance entry per account
+(`trigger_type='opening_balance'`, ref = the tab/payout row) so `SUM` == the live
+running total, then cut reads over and stop mutating `reading_tabs.balance_pence`.
+Until that backfill, Part B reads as "the views agree to the penny for everything
+that has moved since the ledger went live."
+
+**Verify (done):** the four views compile + run against a throwaway DB built from
+`schema.sql` + migration 120 (0 rows — no ledger data yet, SQL valid);
+`scripts/check-schema-drift.sh` all four green (Check 0 lists 120 migrations;
+Check 3 counts the four new views; Check 1 no-op + Check 2 canonical round-trip
+both pass — the diff is the four views + the two tables pg_dump's dependency-sort
+relocated under them + the `120` seed line, each object present exactly once);
+`check-ledger-adjacency.sh` green (no money-write code changed this phase). No TS
+changed, so build/lint/tests are unaffected.
+
+The original Phase 0/1 outcomes + the plan follow, retained for reference.
+
+---
+
 
 **Outcome (Phase 1 — dual-write the money paths).** Every money MOVEMENT now
 emits a `ledger_entries` row via `recordLedger(client, …)` **inside the same

@@ -24,6 +24,41 @@ starts.
 ## Progress
 
 - **2026-06-16** — architecture-audit item **3 (unified append-only ledger,
+  keystone) — Phase 2 (read-model views + reconciliation)** shipped. Migration
+  **120** adds the four `SUM()` read-models as plain (non-materialised) views over
+  the append-only `ledger_entries`: `ledger_reader_balance` (tab debt =
+  `−SUM(amount_pence)` over the four reader-tab triggers
+  `read_accrual`/`vote_charge`/`pledge_fulfil`/`tab_settlement`),
+  `ledger_writer_earnings` (`SUM` over `writer_payout` + `publication_split`),
+  `ledger_publication_distribution` (splits resolved to their publication via
+  `ref_id → publication_payout_splits → publication_payouts`), and
+  `ledger_platform_tax` (downvote behaviour tax = `−SUM` of `vote_charge` entries
+  with `counterparty_id IS NULL` — the NULL counterparty is what separates a
+  downvote/platform charge from an upvote's author credit). Cheap + always-current
+  against the Phase-0 indexes; **inert until Phase 3** (nothing reads them yet).
+  Reconciliation is `scripts/reconcile-ledger.sql`: **Part A** row-level
+  ledger↔source consistency (every entry vs its originating row in `|amount|` +
+  counterparty — must always be empty; catches a wrong-magnitude/wrong-row
+  dual-write) and **Part B** aggregate balance vs the live tables. **Deviation:**
+  views ship `ledger_`-prefixed (plan named them bare) for namespace clarity; the
+  `platform_tax` view is scoped to downvote behaviour charges per the plan's
+  explicit wording. **⚠ Phase-3 prerequisite surfaced (plan gap):** the ledger
+  began **empty at Phase 1** — historic balances were never backfilled — so
+  `ledger_reader_balance` equals `reading_tabs.balance_pence` only for accounts
+  with no pre-Phase-1 activity, and Part B's diff for everyone else is their
+  un-backfilled opening balance, not a bug. Phase 3 must therefore post a one-time
+  opening-balance entry per account **before** cutting reads over to the views,
+  not just repoint reads. Verified: the four views compile + run against a
+  throwaway DB built from `schema.sql` + 120 (0 rows, SQL valid);
+  `check-schema-drift.sh` all four green (Check 0 lists 120; Check 3 counts the
+  four views; Check 1 no-op + Check 2 canonical round-trip pass — diff = the four
+  views + the two tables pg_dump's dependency-sort relocated under them + the
+  `120` seed line, each object present exactly once); `check-ledger-adjacency.sh`
+  green; no TS changed so build/lint/tests unaffected. Plan + CLAUDE.md invariant
+  + this log updated. Next: Phase 3 (cut over reads — gated on the opening-balance
+  backfill), then 6 → 5 → 4.
+
+- **2026-06-16** — architecture-audit item **3 (unified append-only ledger,
   keystone) — Phase 1 (dual-write)** shipped. Every money MOVEMENT now emits a
   `ledger_entries` row via `recordLedger(client, …)` **in the same transaction**
   as the table write it records, across all five paths: `accrual.ts`

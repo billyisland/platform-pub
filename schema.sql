@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict H9teGubbvAzon3bhjHVgtWUg4yrSzdnBkPfmBn7myjpFzGGfgd9zxzstgFNYKmR
+\restrict GqtN8ulQTvN8yr3dTWASV1RNplgK4O6eyvMA0y857kpIxWKq4lynqEeIXXpZ0dl
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1549,6 +1549,93 @@ CREATE TABLE public.ledger_entries (
 
 
 --
+-- Name: ledger_platform_tax; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.ledger_platform_tax AS
+ SELECT account_id,
+    ((- sum(amount_pence)))::bigint AS tax_paid_pence
+   FROM public.ledger_entries
+  WHERE ((trigger_type = 'vote_charge'::text) AND (counterparty_id IS NULL))
+  GROUP BY account_id;
+
+
+--
+-- Name: publication_payout_splits; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.publication_payout_splits (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    publication_payout_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    share_bps integer,
+    amount_pence integer NOT NULL,
+    share_type text NOT NULL,
+    article_id uuid,
+    stripe_transfer_id text,
+    status public.payout_status DEFAULT 'pending'::public.payout_status NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT publication_payout_splits_share_type_check CHECK ((share_type = ANY (ARRAY['standing'::text, 'article_revenue'::text, 'flat_fee'::text])))
+);
+
+
+--
+-- Name: publication_payouts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.publication_payouts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    publication_id uuid NOT NULL,
+    total_pool_pence integer NOT NULL,
+    platform_fee_pence integer NOT NULL,
+    flat_fees_paid_pence integer DEFAULT 0 NOT NULL,
+    remaining_pool_pence integer NOT NULL,
+    status public.payout_status DEFAULT 'pending'::public.payout_status NOT NULL,
+    triggered_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ledger_publication_distribution; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.ledger_publication_distribution AS
+ SELECT pp.publication_id,
+    (sum(le.amount_pence))::bigint AS distributed_pence
+   FROM ((public.ledger_entries le
+     JOIN public.publication_payout_splits ps ON ((ps.id = le.ref_id)))
+     JOIN public.publication_payouts pp ON ((pp.id = ps.publication_payout_id)))
+  WHERE ((le.trigger_type = 'publication_split'::text) AND (le.ref_table = 'publication_payout_splits'::text))
+  GROUP BY pp.publication_id;
+
+
+--
+-- Name: ledger_reader_balance; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.ledger_reader_balance AS
+ SELECT account_id,
+    ((- sum(amount_pence)))::bigint AS balance_pence
+   FROM public.ledger_entries
+  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text]))
+  GROUP BY account_id;
+
+
+--
+-- Name: ledger_writer_earnings; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.ledger_writer_earnings AS
+ SELECT account_id,
+    (sum(amount_pence))::bigint AS earned_pence
+   FROM public.ledger_entries
+  WHERE (trigger_type = ANY (ARRAY['writer_payout'::text, 'publication_split'::text]))
+  GROUP BY account_id;
+
+
+--
 -- Name: magic_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1867,43 +1954,6 @@ CREATE TABLE public.publication_members (
     removed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: publication_payout_splits; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.publication_payout_splits (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    publication_payout_id uuid NOT NULL,
-    account_id uuid NOT NULL,
-    share_bps integer,
-    amount_pence integer NOT NULL,
-    share_type text NOT NULL,
-    article_id uuid,
-    stripe_transfer_id text,
-    status public.payout_status DEFAULT 'pending'::public.payout_status NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT publication_payout_splits_share_type_check CHECK ((share_type = ANY (ARRAY['standing'::text, 'article_revenue'::text, 'flat_fee'::text])))
-);
-
-
---
--- Name: publication_payouts; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.publication_payouts (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    publication_id uuid NOT NULL,
-    total_pool_pence integer NOT NULL,
-    platform_fee_pence integer NOT NULL,
-    flat_fees_paid_pence integer DEFAULT 0 NOT NULL,
-    remaining_pool_pence integer NOT NULL,
-    status public.payout_status DEFAULT 'pending'::public.payout_status NOT NULL,
-    triggered_at timestamp with time zone DEFAULT now() NOT NULL,
-    completed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -6550,7 +6600,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict H9teGubbvAzon3bhjHVgtWUg4yrSzdnBkPfmBn7myjpFzGGfgd9zxzstgFNYKmR
+\unrestrict GqtN8ulQTvN8yr3dTWASV1RNplgK4O6eyvMA0y857kpIxWKq4lynqEeIXXpZ0dl
 
 
 
@@ -6687,4 +6737,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('116_drop_external_subscription_prefs.sql'),
     ('117_external_authors_live_profile.sql'),
     ('118_drop_feed_items_tier.sql'),
-    ('119_ledger_entries.sql');
+    ('119_ledger_entries.sql'),
+    ('120_ledger_views.sql');
