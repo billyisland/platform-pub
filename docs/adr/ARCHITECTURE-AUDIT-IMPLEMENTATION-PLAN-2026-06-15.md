@@ -19,9 +19,14 @@ tab-credit gap, migration 121 opening-balance backfill + view widen, and cut
 typed + txn-guarded toggle, web kept heart-only — see item 6 header); **item 5
 (outbound retry helper) shipped 2026-06-16** (`feed-ingest/src/lib/outbound-retry.ts`
 owns the claim→attempt→retry/abandon/reschedule skeleton; both workers refactored
-behaviour-preserving — see item 5 header). Next up: item 4 (gateway god-file
-split), then item 3 Phase 3 **writer-side** cutover (deferred — semantic mismatch,
-see header).
+behaviour-preserving — see item 5 header); **item 4 (gateway god-file split)
+shipped 2026-06-16** (4b `feeds.ts`→`routes/feeds/`, 4a
+`external-items.ts`→`routes/external-items/` + `lib/external-hydration.ts` +
+`lib/external-items-shared.ts`; pure move, route tables identical — see item 4
+header). **All eight audit items are now shipped or explicitly deferred** — the
+only remaining work is item 3 Phase 3 **writer-side** cutover (deferred —
+semantic mismatch, see header) and item 1b (`000_base.sql` genesis, deferred to
+the federation/self-host milestone).
 
 Migration numbers below say "next free NNN" — the chain is now at `122` (item 6
 took it); assign sequentially at implementation time so two items don't collide.
@@ -890,7 +895,59 @@ them in the worker-supplied closures.
 
 ---
 
-## Item 4 — Gateway module boundaries (god-file split)
+## Item 4 — Gateway module boundaries (god-file split) — **SHIPPED 2026-06-16**
+
+**Outcome.** Both god-files split into internal module folders, pure
+move-and-re-export — no behaviour change, no route-path change (same plugins +
+prefixes registered in `gateway/src/index.ts`). Shipped as two commits (the
+plan's "separate PRs"):
+
+- **4b — `feeds.ts` (2064 lines) → `routes/feeds/`.** `index.ts` re-assembles
+  the `feedsRoutes` plugin from five concern modules registered in source order:
+  `crud.ts` (list/create/patch/order/delete/merge + starter-feed seeding),
+  `items.ts` (GET /items + `sourceFilteredItems`/`placeholderExploreItems` +
+  cursor codec), `sources.ts` (add/remove/move/patch + GET/POST sources),
+  `author-volume.ts`, `saves.ts`; `shared.ts` holds the helpers used by ≥2
+  modules (`UUID_RE`, `FeedRow`/`feedRowToResponse`/`loadFeed`, `tagged`,
+  `stepToWeight`/`weightToStep`). **`sources.ts` keeps `addSource` + the
+  `removeSource` DELETE teardown + the `markFollowListDirty` calls co-located**
+  so the feed-derived `external_subscriptions` invariant + the kind-3 follow
+  graph stay intact (the plan's one real hazard).
+- **4a — `external-items.ts` (2768 lines) → `routes/external-items/` + two lib
+  files.** `index.ts` re-assembles `externalItemsRoutes` from five
+  `register*Routes(app)` modules (`engagement`/`parent`/`quote`/`thread`/
+  `interactions`). The two thread-hydration exports consumed **outside** the
+  route file (`willHydrateThread`/`hydrateExternalThreadContext`, imported by
+  `routes/post-thread.ts`) moved to **`lib/external-hydration.ts`** with their
+  whole hydrate cluster; the row/interface types + Bluesky/Mastodon extractors
+  shared across the route/lib boundary moved to **`lib/external-items-shared.ts`**.
+
+**Deviation from the plan — one shared lib module, not a `hydration/` route
+subfolder.** The plan sketched `hydration/{parent,quote,thread}.ts` route
+subdirs and left the shared helpers implicit. Ground truth: the `thread` route
+code and the worker-facing hydration cluster share ~12 symbols (APPVIEW,
+timeouts, `ExternalItemRow`, `BlueskyThreadViewPost`, `MastodonStatus`,
+`isThreadViewPost`, `extractBlueskyViewMedia`, `stripHtmlTags`,
+`extractMastodonStatusId`, …), so a single `lib/external-items-shared.ts` that
+both the route modules **and** `external-hydration.ts` import is the clean cut
+(direction stays routes→lib and lib→lib). Route concerns are flat files, not a
+`hydration/` subdir.
+
+**Verify (done):** gateway `tsc` build clean (validates every moved import, no
+duplicate symbols); root `npm run lint` 0 errors (only pre-existing
+`no-explicit-any` / one `no-unnecessary-type-assertion`, carried verbatim);
+route **path-set + HTTP-method counts identical** to both pre-split files
+(feeds: 12 paths / 6 GET·5 POST·4 DELETE·2 PATCH·2 PUT; external-items: 8 paths
+/ 4 GET·4 POST); full gateway vitest **141 green** (incl. the `boot` test that
+registers `feedsRoutes` and asserts no route collision, and `nostr-thread`
+backing the hydration Nostr branch); `boot.test.ts` + `post-thread.ts` +
+`index.ts` imports repointed; no stale references to either old module path;
+`check-ledger-adjacency.sh` green (no money path touched). Item 1b
+(`000_base.sql` genesis) stays the only deferred item.
+
+The original plan follows, retained for reference.
+
+---
 
 **Goal.** Split the two god-files into internal module folders and define domain
 seams **inside the single deployable**. No service extraction. Reversible.
