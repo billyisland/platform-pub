@@ -23,6 +23,16 @@ starts.
 
 ## Progress
 
+- **2026-06-16** — architecture-audit item **1a** (harden schema drift guard)
+  shipped. Added **Check 3 (object presence)** to `scripts/check-schema-drift.sh`:
+  a no-DB text check that folds every migration's `CREATE`/`DROP`/`ALTER…RENAME TO`
+  into the net-surviving object set and asserts each survivor's defining statement
+  is in `schema.sql` (exit 3 on a miss; CI surfaces it via the existing `schema`
+  job). Caught a real latent drift — migration 022's `idx_read_events_reader_article`
+  was seeded-applied but missing from `schema.sql` (fresh boots lacked the
+  payment-verification index); fixed in `schema.sql`. ADR/plan
+  `ARCHITECTURE-AUDIT-{ADR,IMPLEMENTATION-PLAN}-2026-06-15.md` + CLAUDE.md updated.
+  Item 1b (genesis extraction) stays deferred.
 - **2026-04-20** — round-3 batches A–G shipped (§64, §67, §70, §71, §72,
   §73, §74, §75, §76, §77, §78, §79, §80, §81, §82, §83, §84, §85, §86,
   §87). §64 — `IP_HASH_SALT` now

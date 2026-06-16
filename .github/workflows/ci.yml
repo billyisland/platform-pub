@@ -75,7 +75,8 @@ jobs:
             sleep 1
           done
       # Fails if schema.sql has drifted from migrations/ (missing seed row,
-      # pending migration on a schema.sql-built DB, or a non-canonical dump).
+      # a migration-created object absent from schema.sql, a pending migration
+      # on a schema.sql-built DB, or a non-canonical dump).
       - name: schema.sql ↔ migrations consistency
         env:
           PG_CONTAINER: schemacheck-pg

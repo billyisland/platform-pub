@@ -23,7 +23,10 @@ corrected alongside this work, but is out of scope for the decisions here.
 ## 1. Schema source of truth → schema.sql stays canonical, guard hardened
 
 **Status:** Accepted — original "migrations canonical" decision reversed after the
-premise was corrected on inspection.
+premise was corrected on inspection. **1a shipped 2026-06-16** (Check 3 object
+presence added to the drift guard; surfaced + fixed one real latent drift —
+migration 022's `idx_read_events_reader_article` was seeded-applied but absent
+from `schema.sql`). **1b (genesis extraction) remains deferred.**
 
 **Context.** Two representations of the schema exist: `schema.sql` (a `pg_dump`
 snapshot a fresh dev/prod DB boots from) and 117 ordered migrations replayed on

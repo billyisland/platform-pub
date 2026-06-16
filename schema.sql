@@ -4514,6 +4514,13 @@ CREATE INDEX idx_read_events_article_id ON public.read_events USING btree (artic
 
 
 --
+-- Name: idx_read_events_reader_article; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_read_events_reader_article ON public.read_events USING btree (reader_id, article_id);
+
+
+--
 -- Name: idx_read_events_reader_id; Type: INDEX; Schema: public; Owner: -
 --
 

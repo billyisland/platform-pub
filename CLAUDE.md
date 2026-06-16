@@ -53,10 +53,10 @@ Migrations are numbered SQL files in `migrations/`, applied in order by the shar
 After adding a migration or changing the schema, regenerate `schema.sql` with `pg_dump` from a fully-migrated DB (never hand-edit — that breaks canonical round-trip), re-append the `_migrations` seed in the same step, then run the drift guard:
 
 ```bash
-scripts/check-schema-drift.sh   # 0: seed lists all migrations · 1: migrate is a no-op on a schema.sql DB · 2: schema.sql round-trips clean
+scripts/check-schema-drift.sh   # 0: seed lists all migrations · 3: every migration-created object is in schema.sql · 1: migrate is a no-op on a schema.sql DB · 2: schema.sql round-trips clean
 ```
 
-It builds throwaway DBs in the dev Postgres container (read-only w.r.t. your real dev DB). **CI-enforced** (`.github/workflows/ci.yml` `schema` job). It catches a missing seed entry (Check 0) and non-canonical hand-edits (Check 2), but **not** a seeded filename whose object body was omitted from `schema.sql` (all three checks pass green) — the mechanical pg_dump-and-re-append-in-one-step discipline is what closes that gap. Never hand-edit the seed line.
+It builds throwaway DBs in the dev Postgres container (read-only w.r.t. your real dev DB) for Checks 1/2; Checks 0/3 are pure-text and need no DB. **CI-enforced** (`.github/workflows/ci.yml` `schema` job). It catches a missing seed entry (Check 0), non-canonical hand-edits (Check 2), and — Check 3 (object presence, exit 3) — a seeded filename whose **object body** (table/index/type/function/trigger/view) was omitted from `schema.sql`, which Checks 0/1/2 all pass green on (migrate skips the seeded migration, so the object is never created and nothing notices). Check 3 is name-grep against the migration's net-surviving CREATE set (drops + `RENAME TO` netted out in chronological order); its residual gap is **column-level** drift (`ADD COLUMN` missing from `schema.sql`) — there the mechanical pg_dump-and-re-append-in-one-step discipline is still what closes it. Never hand-edit the seed line.
 
 ## Architecture
 

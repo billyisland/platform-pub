@@ -139,7 +139,31 @@ concrete need to address a post's content independently of its local timeline ro
 
 ---
 
-## Item 1a — Harden the schema drift guard
+## Item 1a — Harden the schema drift guard — **SHIPPED 2026-06-16**
+
+**Outcome.** Check 3 (object presence) landed in `scripts/check-schema-drift.sh`
+exactly as planned below: a pure-text, no-DB check that folds every migration's
+`CREATE`/`DROP`/`ALTER…RENAME TO` into the net-surviving object set (in
+chronological order, so create→drop→recreate and renames resolve) and asserts each
+survivor's **defining statement** (`CREATE TABLE public.<n>`, `CREATE INDEX <n>`, …
+— not a bare-name grep, which a column/constraint/FK-ref of the same name would
+mask) appears in `schema.sql`. New exit code `3`; CI surfaces it with no new job.
+Documented limits (script header): object-level only — constraint-backed indexes
+and `ADD COLUMN` are the residual Phase-2 gap; function bodies checked for presence
+not content; `drift-ok` line marker is the escape hatch.
+
+**It immediately caught a real bug.** Migration 022's
+`idx_read_events_reader_article` (composite index on `read_events(reader_id,
+article_id)` covering the key-service payment-verification lookup) was seeded as
+applied but its body was **omitted from `schema.sql`** — so fresh-boot DBs silently
+lacked it while incrementally-migrated prod had it. Fixed by adding the canonical
+pg_dump line to `schema.sql` (verified byte-canonical by Check 2's round-trip).
+Verified: clean tree green; deleting a table body / a trigger each fails with exit 3
+(the trigger case is the worst — Checks 0/1/2 all stay green, only Check 3 catches).
+
+The original plan follows, retained for reference.
+
+---
 
 **Goal.** Close the one gap CLAUDE.md documents: a migration whose filename is
 seeded into `_migrations` but whose **object body was omitted from `schema.sql`**
