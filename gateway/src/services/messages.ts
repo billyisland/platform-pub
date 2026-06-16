@@ -231,8 +231,8 @@ export async function loadConversationMessages(
               rsa.username AS reply_to_sender_username,
               rdm.content_enc AS reply_to_content_enc,
               CASE WHEN rdm.sender_id = $2 THEN rra.nostr_pubkey ELSE rsa.nostr_pubkey END AS reply_to_counterparty_pubkey,
-              (SELECT COUNT(*) FROM dm_likes dl WHERE dl.message_id = dm.id) AS like_count,
-              EXISTS(SELECT 1 FROM dm_likes dl WHERE dl.message_id = dm.id AND dl.user_id = $2) AS liked_by_me
+              (SELECT COUNT(*) FROM dm_reactions dr WHERE dr.message_id = dm.id AND dr.reaction_type = 'like') AS like_count,
+              EXISTS(SELECT 1 FROM dm_reactions dr WHERE dr.message_id = dm.id AND dr.user_id = $2 AND dr.reaction_type = 'like') AS liked_by_me
        FROM direct_messages dm
        JOIN accounts sa ON sa.id = dm.sender_id
        JOIN accounts ra ON ra.id = dm.recipient_id
@@ -429,10 +429,21 @@ export async function markConversationReadAll(
   return { ok: true, data: { markedRead: result.rowCount ?? 0 } }
 }
 
-export async function toggleMessageLike(
+// App-controlled reaction vocabulary (no DB CHECK — see migration 122). The web
+// surface currently only emits 'like' (a heart); the rest are schema-ready for a
+// future reaction picker.
+export const DM_REACTION_TYPES = ['like', 'love', 'laugh', 'wow', 'sad', 'angry'] as const
+export type DmReactionType = (typeof DM_REACTION_TYPES)[number]
+
+export function isDmReactionType(v: string): v is DmReactionType {
+  return (DM_REACTION_TYPES as readonly string[]).includes(v)
+}
+
+export async function toggleMessageReaction(
   messageId: string,
-  userId: string
-): Promise<ServiceResult<{ liked: boolean }>> {
+  userId: string,
+  reactionType: DmReactionType = 'like'
+): Promise<ServiceResult<{ reacted: boolean }>> {
   const membership = await pool.query(
     `SELECT 1 FROM direct_messages dm
      JOIN conversation_members cm ON cm.conversation_id = dm.conversation_id AND cm.user_id = $2
@@ -443,19 +454,30 @@ export async function toggleMessageLike(
     return { ok: false, status: 403, error: 'Not a participant' }
   }
 
-  const existing = await pool.query(
-    'DELETE FROM dm_likes WHERE message_id = $1 AND user_id = $2 RETURNING id',
-    [messageId, userId]
-  )
-  if ((existing.rowCount ?? 0) > 0) {
-    return { ok: true, data: { liked: false } }
-  }
-
-  await pool.query(
-    'INSERT INTO dm_likes (message_id, user_id) VALUES ($1, $2)',
-    [messageId, userId]
-  )
-  return { ok: true, data: { liked: true } }
+  // DELETE-then-INSERT, wrapped in one txn, so a concurrent toggle can't leave a
+  // half-applied state; the unique-violation race (two inserts of the same
+  // (message,user,type)) resolves to "reacted".
+  return withTransaction(async (client) => {
+    const existing = await client.query(
+      'DELETE FROM dm_reactions WHERE message_id = $1 AND user_id = $2 AND reaction_type = $3 RETURNING id',
+      [messageId, userId, reactionType]
+    )
+    if ((existing.rowCount ?? 0) > 0) {
+      return { ok: true, data: { reacted: false } }
+    }
+    try {
+      await client.query(
+        'INSERT INTO dm_reactions (message_id, user_id, reaction_type) VALUES ($1, $2, $3)',
+        [messageId, userId, reactionType]
+      )
+    } catch (err) {
+      if ((err as { code?: string }).code === '23505') {
+        return { ok: true, data: { reacted: true } }
+      }
+      throw err
+    }
+    return { ok: true, data: { reacted: true } }
+  })
 }
 
 // -----------------------------------------------------------------------------

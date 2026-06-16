@@ -14,11 +14,13 @@ append-only guard + `recordLedger` helper; Phase 1 = dual-write across all five
 money paths + CI adjacency tripwire; Phase 2 = the four `SUM()` read-model views
 + the reconciliation script; Phase 3 = closed the `subscription-convert` latent
 tab-credit gap, migration 121 opening-balance backfill + view widen, and cut
-`GET /my/tab` over to `ledger_reader_balance` — see item 3 header). Next up:
+`GET /my/tab` over to `ledger_reader_balance` — see item 3 header); **item 6
+(DM reactions) shipped 2026-06-16** (migration 122 `dm_likes`→`dm_reactions`,
+typed + txn-guarded toggle, web kept heart-only — see item 6 header). Next up:
 item 3 Phase 3 **writer-side** cutover (deferred — semantic mismatch, see header),
-then 6 → 5 → 4.
+then 5 → 4.
 
-Migration numbers below say "next free NNN" — the chain is now at `121` (Phase 3
+Migration numbers below say "next free NNN" — the chain is now at `122` (item 6
 took it); assign sequentially at implementation time so two items don't collide.
 
 ---
@@ -689,7 +691,52 @@ asserting each money-table INSERT site has an adjacent ledger call.
 
 ---
 
-## Item 6 — DM reactions
+## Item 6 — DM reactions — **SHIPPED 2026-06-16**
+
+**Outcome.** Migration `122_dm_reactions.sql` takes the rename-in-place path (the
+table is empty, so the equivalent fresh-table+copy the plan flagged as overkill
+was skipped): `ALTER TABLE dm_likes RENAME TO dm_reactions`, `ADD COLUMN
+reaction_type text NOT NULL DEFAULT 'like'`, swap `UNIQUE(message_id, user_id)`
+→ `UNIQUE(message_id, user_id, reaction_type)`, and rename the carried-over
+pkey/FK constraints + `idx_dm_likes_message` to the new name for a clean dump
+(the drift guard nets `ALTER … RENAME TO` for table+index, so Check 3 resolves
+them).
+
+**Deviation from the plan — no DB CHECK on the reaction set.** The plan offered
+an optional `CHECK` on an allowed reaction set; instead the vocabulary
+(`DM_REACTION_TYPES = like/love/laugh/wow/sad/angry`, exported from
+`gateway/src/services/messages.ts`) is **app-controlled** and enforced by the
+route's zod `z.enum`, so adding a reaction needs no migration. The DDL stays
+vocabulary-agnostic.
+
+**Service + route.** `toggleMessageLike` → `toggleMessageReaction(messageId,
+userId, reactionType='like')`, now wrapped in `withTransaction` — this closes the
+previously-unguarded race the plan called out (old `messages.ts:455`): the
+DELETE-then-INSERT commits atomically and a `23505` unique-violation resolves to
+"reacted". The POST route keeps its path `/messages/:messageId/like` (back-compat),
+accepts an optional `reaction_type` (zod enum, default `'like'`), and still
+responds `{ liked }` (the web client consumes that field and ignores the body).
+
+**Conservative scope (per the plan's "web can stay single-`'like'` initially").**
+`loadConversationMessages`' per-message subqueries read `dm_reactions` filtered to
+`reaction_type='like'`, so the `likeCount`/`likedByMe` response shape is
+unchanged and **web is untouched** (the heart stays a single 'like'). The schema +
+API are now reaction-ready for a future picker. The optional N+1 retire
+(jsonb-grouped reaction counts) was **not** taken — it only earns its keep once a
+picker consumes grouped counts; deferred with the picker.
+
+**Verify (done):** gateway `tsc` build clean; `scripts/check-schema-drift.sh` all
+four green (Check 0 lists 122 migrations; Check 3 = 268 objects with the
+table/index rename netted; Check 1 no-op + Check 2 canonical round-trip — diff =
+the rename + new column + constraint swap + the `122` seed line, plus pg_dump's
+dependency re-sort of the relocated table); root `npm run lint` 0 errors;
+`check-ledger-adjacency.sh` green (no money path touched); full gateway vitest 141
+green. Runtime react/unreact is the operator's after a web rebuild (heart
+behaviour is identical by construction).
+
+The original plan follows, retained for reference.
+
+---
 
 **Goal.** Migrate `dm_likes` → a reactions table now, while it's effectively empty
 (created migration 032; near-zero rows). DM-scoped, not app-wide.

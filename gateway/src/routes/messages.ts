@@ -53,6 +53,11 @@ const DmOverrideSchema = z.object({
   pricePence: z.number().int().min(0).max(100_00),
 })
 
+const ReactionSchema = z.object({
+  // optional for back-compat — the heart toggle sends no body, defaulting to 'like'
+  reaction_type: z.enum(messages.DM_REACTION_TYPES).default('like'),
+})
+
 function sendServiceError(reply: FastifyReply, result: Extract<messages.ServiceResult<unknown>, { ok: false }>) {
   const body: Record<string, unknown> = { error: result.error }
   if (result.details) Object.assign(body, result.details)
@@ -145,9 +150,16 @@ export async function messageRoutes(app: FastifyInstance) {
     '/messages/:messageId/like',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const result = await messages.toggleMessageLike(req.params.messageId, req.session!.sub)
+      const parsed = ReactionSchema.safeParse(req.body ?? {})
+      if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+      const result = await messages.toggleMessageReaction(
+        req.params.messageId,
+        req.session!.sub,
+        parsed.data.reaction_type
+      )
       if (!result.ok) return sendServiceError(reply, result)
-      return reply.status(200).send(result.data)
+      // back-compat field name: web consumes `{ liked }`
+      return reply.status(200).send({ liked: result.data.reacted })
     }
   )
 

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Y5SjzqmI3UaUAn0wCItDegz5ExRUZlVJcmxDCBpl7hmNF3RvkCllCradLqnUK7X
+\restrict wZ20C0QU4zCJzuGOcY5bSItXaCtTY7qkGlFRJ7dm0MegGz4RkxZoEwfh1Acebe8
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1254,18 +1254,6 @@ CREATE TABLE public.direct_messages (
 
 
 --
--- Name: dm_likes; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.dm_likes (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    message_id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: dm_pricing; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1274,6 +1262,19 @@ CREATE TABLE public.dm_pricing (
     owner_id uuid NOT NULL,
     target_id uuid,
     price_pence integer NOT NULL
+);
+
+
+--
+-- Name: dm_reactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_reactions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    message_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    reaction_type text DEFAULT 'like'::text NOT NULL
 );
 
 
@@ -2931,22 +2932,6 @@ ALTER TABLE ONLY public.direct_messages
 
 
 --
--- Name: dm_likes dm_likes_message_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.dm_likes
-    ADD CONSTRAINT dm_likes_message_id_user_id_key UNIQUE (message_id, user_id);
-
-
---
--- Name: dm_likes dm_likes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.dm_likes
-    ADD CONSTRAINT dm_likes_pkey PRIMARY KEY (id);
-
-
---
 -- Name: dm_pricing dm_pricing_owner_id_target_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2960,6 +2945,22 @@ ALTER TABLE ONLY public.dm_pricing
 
 ALTER TABLE ONLY public.dm_pricing
     ADD CONSTRAINT dm_pricing_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_reactions dm_reactions_message_id_user_id_reaction_type_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_reactions
+    ADD CONSTRAINT dm_reactions_message_id_user_id_reaction_type_key UNIQUE (message_id, user_id, reaction_type);
+
+
+--
+-- Name: dm_reactions dm_reactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_reactions
+    ADD CONSTRAINT dm_reactions_pkey PRIMARY KEY (id);
 
 
 --
@@ -4014,17 +4015,17 @@ CREATE INDEX idx_dm_conversation ON public.direct_messages USING btree (conversa
 
 
 --
--- Name: idx_dm_likes_message; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_dm_likes_message ON public.dm_likes USING btree (message_id);
-
-
---
 -- Name: idx_dm_pricing_default; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_dm_pricing_default ON public.dm_pricing USING btree (owner_id) WHERE (target_id IS NULL);
+
+
+--
+-- Name: idx_dm_reactions_message; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_reactions_message ON public.dm_reactions USING btree (message_id);
 
 
 --
@@ -5461,22 +5462,6 @@ ALTER TABLE ONLY public.direct_messages
 
 
 --
--- Name: dm_likes dm_likes_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.dm_likes
-    ADD CONSTRAINT dm_likes_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.direct_messages(id) ON DELETE CASCADE;
-
-
---
--- Name: dm_likes dm_likes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.dm_likes
-    ADD CONSTRAINT dm_likes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
-
-
---
 -- Name: dm_pricing dm_pricing_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5490,6 +5475,22 @@ ALTER TABLE ONLY public.dm_pricing
 
 ALTER TABLE ONLY public.dm_pricing
     ADD CONSTRAINT dm_pricing_target_id_fkey FOREIGN KEY (target_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: dm_reactions dm_reactions_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_reactions
+    ADD CONSTRAINT dm_reactions_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.direct_messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_reactions dm_reactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_reactions
+    ADD CONSTRAINT dm_reactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
@@ -6600,8 +6601,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Y5SjzqmI3UaUAn0wCItDegz5ExRUZlVJcmxDCBpl7hmNF3RvkCllCradLqnUK7X
-
+\unrestrict wZ20C0QU4zCJzuGOcY5bSItXaCtTY7qkGlFRJ7dm0MegGz4RkxZoEwfh1Acebe8
 
 
 
@@ -6739,4 +6739,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('118_drop_feed_items_tier.sql'),
     ('119_ledger_entries.sql'),
     ('120_ledger_views.sql'),
-    ('121_ledger_opening_balance.sql');
+    ('121_ledger_opening_balance.sql'),
+    ('122_dm_reactions.sql');

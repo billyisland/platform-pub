@@ -23,6 +23,31 @@ starts.
 
 ## Progress
 
+- **2026-06-16** — architecture-audit item **6 (DM reactions)** shipped.
+  Migration **122** migrates `dm_likes` → `dm_reactions` while the table is empty
+  (rename-in-place, not fresh-table+copy): `ALTER TABLE … RENAME TO`, add
+  `reaction_type text NOT NULL DEFAULT 'like'`, swap `UNIQUE(message_id, user_id)`
+  → `UNIQUE(message_id, user_id, reaction_type)`, and rename the carried-over
+  pkey/FK constraints + `idx_dm_likes_message` to the new name for a clean dump.
+  **No DB CHECK on the reaction set** (deviation from the plan's optional CHECK):
+  the vocabulary (`DM_REACTION_TYPES = like/love/laugh/wow/sad/angry`, exported
+  from `gateway/src/services/messages.ts`) is app-controlled + validated by the
+  route's zod `z.enum`, so adding a reaction needs no migration. Service:
+  `toggleMessageLike` → `toggleMessageReaction(messageId, userId,
+  reactionType='like')`, now wrapped in `withTransaction` (closes the
+  previously-unguarded toggle race; `23505` unique-violation resolves to
+  "reacted"). Route keeps `/messages/:messageId/like` + the `{ liked }` response
+  (back-compat) and accepts an optional `reaction_type`. **Web untouched** — per
+  the plan's "web can stay single-`'like'` initially", `loadConversationMessages`
+  filters to `reaction_type='like'` so `likeCount`/`likedByMe` are unchanged; the
+  schema + API are reaction-ready for a future picker (the jsonb-grouped N+1 retire
+  deferred with it). **Verify:** gateway `tsc` + root lint (0 err) + gateway vitest
+  (141) + `check-ledger-adjacency.sh` (no money path touched) +
+  `check-schema-drift.sh` (all four — Check 0 = 122; Check 3 nets the table/index
+  rename = 268 objects; Checks 1/2 round-trip clean, diff = rename + new column +
+  constraint swap + `122` seed) all green. Next: item 3 writer-side cutover
+  (deferred), then 5 → 4.
+
 - **2026-06-16** — architecture-audit item **3 (unified append-only ledger,
   keystone) — Phase 3 (reader-balance cutover + opening-balance backfill)**
   shipped. The read-side scope was narrower than the plan's "point balance reads
