@@ -8,15 +8,47 @@ re-scope** (see below); the other seven are ready to dig.
 Execution order follows the ADR's own suggested order:
 `1a → 7, 8 → (2 parked) → 3 → 6 → 5 → 4`. Item 1b stays deferred.
 
-**Progress:** 1a, 7, 8 **shipped 2026-06-16** (see each item's header). Next up:
-item 3 (the ledger keystone), then 6 → 5 → 4. Item 2 is re-scoped to tidy (A).
+**Progress:** 1a, 7, 8, **2(A) shipped 2026-06-16** (see each item's header). Next
+up: item 3 (the ledger keystone), then 6 → 5 → 4.
 
 Migration numbers below say "next free NNN" — the chain is currently at `117`;
 assign sequentially at implementation time so two items don't collide.
 
 ---
 
-## Item 2 — Finish UNIVERSAL-POST — **re-scoped to a denormalisation tidy (A)**
+## Item 2 — Finish UNIVERSAL-POST — **re-scoped to a denormalisation tidy (A); (A) SHIPPED 2026-06-16**
+
+**Outcome (A).** Migration `118_drop_feed_items_tier.sql` drops the dead
+`feed_items.tier` column (`content_tier` enum) + its `tier_consistency` CHECK.
+`fi.tier` removed from `FEED_SELECT` (`feed-sql.ts`). The `content_tier` enum,
+`feed_items.biddability_tier`, and `external_items.tier` all stay.
+
+**Deviation from the plan — the write sites were undercounted.** The plan's
+step 1 (focused on the read path) asserted `tier` was "never written with a
+non-default value" and implied dropping it meant only editing `FEED_SELECT` +
+the migration. Ground truth: `feed_items.tier` was written by **15
+`INSERT INTO feed_items`** statements — `'tier1'` for native rows, `ei.tier` /
+`'tier2'`/`'tier3'`/`'tier4'` for external — so the column body **was** populated
+(just never read; `post-mapper.ts` ignored the selected `fi.tier`, nothing
+ordered/filtered by it). Dropping the column therefore required stripping `tier`
+from **every** insert or they'd fail at runtime (tsc does not validate SQL
+strings, so the build stayed green — a recursive `grep "INSERT INTO feed_items"`
+is what surfaced them). Sites cleaned: `publication-publisher.ts` (×2),
+`scheduler.ts`, `routes/notes.ts`, `routes/articles/publish.ts`,
+`routes/external-items.ts` (×3, one needing positional `$n` renumbering),
+`feed-items-reconcile.ts` (×3), and the ingest adapters
+`activitypub-ingest.ts` / `atproto-ingest.ts` / `email-ingest.ts` /
+`feed-ingest-rss.ts` / `feed-ingest-nostr.ts` / `external-parent-prefetch.ts`.
+The optional integrity-strengthening CHECK (plan step 4) was **not** taken — out
+of scope for the tidy; record it as a future option.
+
+**Verify (done):** gateway + feed-ingest `tsc` build clean; `scripts/check-schema-drift.sh`
+all four checks green (incl. Check 1 no-op + Check 2 canonical round-trip);
+schema.sql diff = column + constraint removed only; root `npm run lint` 0 errors.
+Runtime feed render is the operator's after a rebuild (the dropped column fed
+nothing, so no behaviour change is expected).
+
+The re-scope rationale and the deferred Plan (C) follow, retained for reference.
 
 ### Why the audit's literal action was dropped
 

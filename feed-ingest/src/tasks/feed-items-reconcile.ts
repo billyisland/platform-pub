@@ -25,7 +25,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       item_type, article_id, author_id,
       author_name, author_avatar, author_username,
       title, content_preview, nostr_event_id,
-      tier, published_at, is_reply
+      published_at, is_reply
     )
     SELECT
       'article', a.id, a.writer_id,
@@ -35,7 +35,6 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       a.title,
       LEFT(a.content_free, 200),
       a.nostr_event_id,
-      'tier1',
       a.published_at,
       FALSE
     FROM articles a
@@ -53,7 +52,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       item_type, note_id, author_id,
       author_name, author_avatar, author_username,
       content_preview, nostr_event_id,
-      tier, published_at, is_reply
+      published_at, is_reply
     )
     SELECT
       'note', n.id, n.author_id,
@@ -62,7 +61,6 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       acc.username,
       LEFT(n.content, 200),
       n.nostr_event_id,
-      'tier1',
       n.published_at,
       n.reply_to_event_id IS NOT NULL
     FROM notes n
@@ -78,7 +76,7 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       item_type, external_item_id,
       author_name, author_avatar,
       title, content_preview,
-      tier, published_at,
+      published_at,
       source_protocol, source_item_uri, source_id, media,
       is_reply
     )
@@ -88,7 +86,6 @@ export const feedItemsReconcile: Task = async (_payload, _helpers) => {
       COALESCE(ei.author_avatar_url, xs.avatar_url),
       ei.title,
       LEFT(COALESCE(ei.content_text, ei.summary), 200),
-      ei.tier,
       ei.published_at,
       ei.protocol::text,
       ei.source_item_uri,

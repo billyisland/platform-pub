@@ -74,14 +74,14 @@ export async function insertActivityPubItem(
       item_type, external_item_id,
       author_name, author_avatar,
       title, content_preview,
-      tier, published_at,
+      published_at,
       source_protocol, source_item_uri, source_id, media,
       is_reply
     ) VALUES (
       'external', $1,
       $2, $3,
       $4, $5,
-      'tier3', $6,
+      $6,
       'activitypub', $7, $8, $9,
       $10
     )

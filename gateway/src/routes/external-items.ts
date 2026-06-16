@@ -896,12 +896,12 @@ export async function externalItemsRoutes(app: FastifyInstance) {
                item_type, note_id, author_id,
                author_name, author_avatar, author_username,
                content_preview, nostr_event_id,
-               tier, published_at
+               published_at
              ) VALUES (
                'note', $1, $2,
                $3, $4, $5,
                $6, $7,
-               'tier1', now()
+               now()
              )
              ON CONFLICT (note_id) WHERE note_id IS NOT NULL DO UPDATE SET
                content_preview = EXCLUDED.content_preview,
@@ -1522,7 +1522,7 @@ async function ensureQuoteFeedItem(externalItemId: string): Promise<void> {
        item_type, external_item_id,
        author_name, author_avatar,
        title, content_preview,
-       tier, published_at,
+       published_at,
        source_protocol, source_item_uri, source_id, media,
        is_reply
      )
@@ -1532,7 +1532,7 @@ async function ensureQuoteFeedItem(externalItemId: string): Promise<void> {
        COALESCE(ei.author_avatar_url, xs.avatar_url),
        ei.title,
        LEFT(COALESCE(ei.content_text, ei.summary), 200),
-       ei.tier, ei.published_at,
+       ei.published_at,
        ei.protocol::text, ei.source_item_uri, ei.source_id, ei.media,
        ei.source_reply_uri IS NOT NULL
      FROM external_items ei
@@ -2324,16 +2324,16 @@ async function persistHydratedThreadNodes(
            item_type, external_item_id,
            author_name, author_avatar,
            title, content_preview,
-           tier, published_at,
+           published_at,
            source_protocol, source_item_uri, source_id, media,
            is_reply
          ) VALUES (
            'external', $1,
            $2, $3,
            NULL, $4,
-           $5, $6,
-           $7, $8, $9, $10,
-           $11
+           $5,
+           $6, $7, $8, $9,
+           $10
          )
          ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING`,
         [
@@ -2341,7 +2341,6 @@ async function persistHydratedThreadNodes(
           n.authorName,
           n.authorAvatarUrl,
           truncatePreview(n.contentText ?? ""),
-          tier,
           n.publishedAt,
           protocol,
           n.sourceItemUri,

@@ -204,7 +204,7 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
             JSON.stringify(item.media),
           );
           fiRows.push(
-            `('external', $${b + 1}, $${b + 2}, NULL, $${b + 3}, $${b + 4}, 'tier4', $${b + 5}, 'rss', $${b + 6}, $1, $${b + 7}, FALSE)`,
+            `('external', $${b + 1}, $${b + 2}, NULL, $${b + 3}, $${b + 4}, $${b + 5}, 'rss', $${b + 6}, $1, $${b + 7}, FALSE)`,
           );
         }
 
@@ -215,7 +215,7 @@ export const feedIngestRss: Task = async (payload, _helpers) => {
               item_type, external_item_id,
               author_name, author_avatar,
               title, content_preview,
-              tier, published_at,
+              published_at,
               source_protocol, source_item_uri, source_id, media,
               is_reply
             ) VALUES ${fiRows.join(", ")}

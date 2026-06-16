@@ -270,12 +270,12 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
         item_type, article_id, author_id,
         author_name, author_avatar, author_username,
         title, content_preview, nostr_event_id,
-        media, tier, published_at
+        media, published_at
       ) VALUES (
         'article', $1, $2,
         $3, $4, $5,
         $6, $7, $8,
-        $9, 'tier1', now()
+        $9, now()
       )
       ON CONFLICT (article_id) WHERE article_id IS NOT NULL DO UPDATE SET
         title = EXCLUDED.title,

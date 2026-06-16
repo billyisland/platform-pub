@@ -49,7 +49,7 @@ export function parseCursor(raw: string | undefined): CursorParts | undefined {
 export const FEED_SELECT = `
   fi.id AS fi_id, fi.item_type, fi.title, fi.article_id, fi.note_id, fi.external_item_id,
   fi.author_id, fi.nostr_event_id, fi.source_protocol, fi.source_item_uri,
-  fi.source_id, COALESCE(ei.media, fi.media) AS media, fi.score, fi.tier,
+  fi.source_id, COALESCE(ei.media, fi.media) AS media, fi.score,
   EXTRACT(EPOCH FROM fi.published_at)::bigint AS published_at_epoch,
   -- Author pubkey (native content only — single join covers both articles and notes)
   acc.nostr_pubkey AS nostr_pubkey,

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict E3wpJc2tF30mAV9ZhXmLf0Wrok0xbHIESmnYEAhquYn6vQR69sBXxfcJRF9gCRt
+\restrict g7ncdagB1RtSBZu8an7qQU7gUsyYQ1LgU15MaA0w4e87fmdhN9qHB8reMWSbHBO
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1394,7 +1394,6 @@ CREATE TABLE public.feed_items (
     title text,
     content_preview text,
     nostr_event_id text,
-    tier public.content_tier DEFAULT 'tier1'::public.content_tier NOT NULL,
     published_at timestamp with time zone NOT NULL,
     source_protocol text,
     source_item_uri text,
@@ -1411,8 +1410,7 @@ CREATE TABLE public.feed_items (
     reply_to_author text,
     CONSTRAINT exactly_one_source CHECK ((((((article_id IS NOT NULL))::integer + ((note_id IS NOT NULL))::integer) + ((external_item_id IS NOT NULL))::integer) = 1)),
     CONSTRAINT feed_items_biddability_tier_check CHECK ((biddability_tier = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text]))),
-    CONSTRAINT feed_items_item_type_check CHECK ((item_type = ANY (ARRAY['article'::text, 'note'::text, 'external'::text]))),
-    CONSTRAINT tier_consistency CHECK ((((item_type = ANY (ARRAY['article'::text, 'note'::text])) AND (tier = 'tier1'::public.content_tier)) OR (item_type = 'external'::text)))
+    CONSTRAINT feed_items_item_type_check CHECK ((item_type = ANY (ARRAY['article'::text, 'note'::text, 'external'::text])))
 );
 
 
@@ -6468,7 +6466,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict E3wpJc2tF30mAV9ZhXmLf0Wrok0xbHIESmnYEAhquYn6vQR69sBXxfcJRF9gCRt
+\unrestrict g7ncdagB1RtSBZu8an7qQU7gUsyYQ1LgU15MaA0w4e87fmdhN9qHB8reMWSbHBO
 
 
 
@@ -6486,7 +6484,6 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- add its filename below (regenerating this file from a fully-migrated DB
 -- with a seeded _migrations table does this automatically).
 --
-
 INSERT INTO public._migrations (filename) VALUES
     ('001_add_email_and_magic_links.sql'),
     ('002_draft_upsert_index.sql'),
@@ -6604,4 +6601,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('114_reach_source_and_starter_template.sql'),
     ('115_network_presences_external_id_unique.sql'),
     ('116_drop_external_subscription_prefs.sql'),
-    ('117_external_authors_live_profile.sql');
+    ('117_external_authors_live_profile.sql'),
+    ('118_drop_feed_items_tier.sql');

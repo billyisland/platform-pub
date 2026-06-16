@@ -62,7 +62,15 @@ test be added.
 
 ## 2. Finish UNIVERSAL-POST
 
-**Status:** Accepted.
+**Status:** Accepted, then **re-scoped on a full code read** — the "both models
+live, every read/write maintains both" premise below did not survive inspection
+(identity axis is trigger-maintained and done; the three body FKs are intrinsic
+polymorphism, not deprecated dual-write). Re-scoped to a denormalisation tidy
+**(A)** — drop the genuinely-dead `feed_items.tier` column; the unified content
+spine **(C)** is deferred to the federation/self-host milestone (same gate as 1b).
+**(A) shipped 2026-06-16** (migration 118); see the implementation plan's item-2
+header for the outcome and the (C) deferral. The original (corrected) framing
+follows.
 
 **Context.** `feed_items` is mid-migration. It still carries the old three-way
 polymorphism (`article_id` / `note_id` / `external_item_id` plus a

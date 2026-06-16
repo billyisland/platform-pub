@@ -50,11 +50,11 @@ async function dualWriteContextFeedItem(
        item_type, external_item_id,
        author_name, author_avatar,
        title, content_preview,
-       tier, published_at,
+       published_at,
        source_protocol, source_item_uri, source_id, media,
        is_reply
      ) VALUES (
-       'external', $1, $2, $3, NULL, $4, 'tier3', $5, $6, $7, $8, $9, $10
+       'external', $1, $2, $3, NULL, $4, $5, $6, $7, $8, $9, $10
      )
      ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING`,
     [
