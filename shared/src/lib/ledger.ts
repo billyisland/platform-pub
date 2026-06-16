@@ -24,11 +24,20 @@ import type { PoolClient } from 'pg'
 //   • Reader tab entries mirror reading_tabs.balance_pence movements. The tab
 //     is a DEBT (grows as the reader reads), so accrual / vote / pledge are
 //     DEBITS (−amount, reader owes more) and a settlement is a CREDIT
-//     (+settled, debt paid down via Stripe). Hence
+//     (+settled, debt paid down via Stripe). A spend→subscription conversion
+//     also credits the tab down (subscription_credit, +credit). Hence
 //         reading_tabs.balance_pence == −SUM(reader tab-affecting entries).
 //     A reader entry is emitted exactly when (and by the amount that) the tab
 //     balance moves — so the reconciliation holds by construction. Provisional
 //     reads/votes (no card, no tab movement) get NO entry until they convert.
+//     EVERY tab movement needs a mirror entry or the SUM diverges — the
+//     adjacency tripwire guards both + and − balance writes.
+//
+//   • opening_balance entries (Phase 3, migration 121) are the one-time
+//     per-account backfill that aligns −SUM(reader entries) with the live
+//     reading_tabs.balance_pence the ledger missed pre-Phase-1. Inert on a
+//     fresh/empty DB (no tabs ⇒ no opening rows). They are reader-tab entries
+//     too, so ledger_reader_balance counts them.
 //
 //   • Writer / publication-member entries record money RECEIVED at payout:
 //     +amount (a credit, in their favour), counterparty = NULL (platform).
@@ -51,6 +60,8 @@ export type LedgerTriggerType =
   | 'publication_split'   // publication_payouts + publication_payout_splits
   | 'vote_charge'         // vote_charges
   | 'pledge_fulfil'       // drive pledge fulfilment (pledges → read_events)
+  | 'subscription_credit' // spend→subscription conversion credits the reader's tab down
+  | 'opening_balance'     // Phase-3 one-time per-account opening tab balance (backfill)
 
 export interface LedgerEntryInput {
   /** Whose ledger this movement belongs to. */

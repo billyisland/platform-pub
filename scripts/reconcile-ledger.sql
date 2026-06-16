@@ -14,13 +14,18 @@
 --     posted the wrong magnitude or referenced the wrong row. ANY row returned
 --     by Part A is a bug in the Phase-1 dual-write.
 --
---   PART B — AGGREGATE BALANCE (gap is EXPECTED until the Phase-3 backfill).
---     reader_balance vs reading_tabs.balance_pence, and writer_earnings vs the
---     historic payout sums. The ledger began EMPTY at Phase 1, so accounts with
---     pre-Phase-1 activity show a nonzero diff = their un-backfilled opening
---     balance. The cutover (Phase 3) seeds those opening entries; after that,
---     Part B must also be empty. Until then, read Part B as "the views agree
---     to the penny for everything that moved since the ledger went live."
+--   PART B — AGGREGATE BALANCE.
+--     reader_balance vs reading_tabs.balance_pence (B1), and writer_earnings vs
+--     the historic payout sums (B2).
+--       • B1 (reader): post-migration-121 this MUST be empty. The Phase-3
+--         opening-balance backfill seeded one opening_balance entry per tab so
+--         −SUM(reader entries) == reading_tabs.balance_pence to the penny across
+--         all history (and the subscription_credit gap is now mirrored too). A
+--         nonzero B1 after 121 is a real bug — a tab movement missing its mirror.
+--       • B2 (writer): still EXPECTED-nonzero. The writer side was NOT cut over
+--         (ledger_writer_earnings sums money PAID OUT; the dashboard sums
+--         earned-incl-pending — different quantities), so writer opening balances
+--         were never backfilled. B2's diff = pre-Phase-1 un-backfilled payouts.
 
 \echo '==================================================================='
 \echo 'PART A — row-level ledger<->source consistency  (expect ZERO rows)'
@@ -91,10 +96,11 @@ WHERE (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
 \echo
 \echo '==================================================================='
 \echo 'PART B — aggregate balance vs live tables'
-\echo '  (nonzero diff = un-backfilled pre-Phase-1 history; see header)'
+\echo '  (B1 reader: MUST be empty post-migration-121; B2 writer: expected'
+\echo '   nonzero = un-backfilled pre-Phase-1 payouts — see header)'
 \echo '==================================================================='
 
-\echo '-- B1: reader_balance view vs reading_tabs.balance_pence --'
+\echo '-- B1: reader_balance view vs reading_tabs.balance_pence (expect ZERO post-121) --'
 -- Full-outer over both sides so a tab with no ledger history (pre-Phase-1) and
 -- a ledger account with no tab both surface. diff_pence = live − ledger.
 SELECT COALESCE(rt.reader_id, rb.account_id)            AS account_id,

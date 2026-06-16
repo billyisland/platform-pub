@@ -7,11 +7,19 @@ export async function myAccountRoutes(app: FastifyInstance) {
   app.get("/my/tab", { preHandler: requireAuth }, async (req, reply) => {
     const userId = req.session!.sub;
     try {
+      // Phase-3 ledger cutover: the reader-facing "what you owe" balance is now
+      // read from ledger_reader_balance (−SUM of the reader's tab-affecting
+      // ledger entries, opening-balance backfilled in migration 121), not the
+      // reading_tabs.balance_pence running total. The column still exists and is
+      // still mutated — it stays the locked operational total settlement reserves
+      // against (SELECT … FOR UPDATE) — but the ledger view is now the source of
+      // truth for display. They agree to the penny by construction (every tab
+      // movement posts a mirror entry; the backfill aligned pre-Phase-1 history).
       const account = await pool.query(
         `SELECT a.free_allowance_remaining_pence,
-                COALESCE(rt.balance_pence, 0) AS balance_pence
+                COALESCE(lrb.balance_pence, 0) AS balance_pence
          FROM accounts a
-         LEFT JOIN reading_tabs rt ON rt.reader_id = a.id
+         LEFT JOIN ledger_reader_balance lrb ON lrb.account_id = a.id
          WHERE a.id = $1`,
         [userId],
       );

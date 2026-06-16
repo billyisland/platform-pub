@@ -24,6 +24,40 @@ starts.
 ## Progress
 
 - **2026-06-16** — architecture-audit item **3 (unified append-only ledger,
+  keystone) — Phase 3 (reader-balance cutover + opening-balance backfill)**
+  shipped. The read-side scope was narrower than the plan's "point balance reads
+  at the views": only the **reader tab** is backed by a mutated running-total
+  column (`reading_tabs.balance_pence`) with a symmetric ledger mirror, so it is
+  the only read cleanly cut over. (1) **Closed a Phase-1 latent gap first** —
+  `gateway/src/routes/articles/subscription-convert.ts` decremented the tab on a
+  spend→subscription credit-back (`balance_pence = … − $1`) with **no**
+  `recordLedger()`, a real movement with no mirror that diverged
+  `ledger_reader_balance` from the column forward-only; the adjacency tripwire had
+  missed it because its marker only matched `… = balance_pence +` (plus). Fixed:
+  added the `recordLedger()` (new `subscription_credit` trigger, **+credit**,
+  counterparty = writer), widened the marker to `balance_pence = balance_pence
+  [-+]`, registered the file (six paths now). (2) **Migration `121`** backfills one
+  `opening_balance` entry per tab = `(L − B)` (`L = −SUM(real reader entries)`,
+  `B = reading_tabs.balance_pence`) so `−SUM(incl. opening) == B` to the penny, then
+  `CREATE OR REPLACE VIEW ledger_reader_balance` to also count
+  `subscription_credit`/`opening_balance`; inert on a fresh/empty DB (no tabs ⇒ no
+  rows). (3) **`GET /my/tab`** (`gateway/src/routes/my-account.ts`) now reads the
+  view, not the column. (4) **`reading_tabs.balance_pence` retained** as the locked
+  operational total settlement reserves against (`SELECT … FOR UPDATE`) — display
+  reads the ledger, settlement reads+locks the column; dropping it needs a
+  settlement-concurrency redesign (later). (5) **Writer-earnings /
+  publication-distribution reads NOT cut over** — `ledger_writer_earnings` sums money
+  *paid out* but `getWriterEarnings()` sums *earned-incl-pending*, different
+  quantities; those views stay reconciliation-only (reconcile Part B2 stays
+  expected-nonzero; Part B1 reader-side must now be empty). **Verify:** builds
+  (`shared`/`gateway`/`payment-service`) + root lint (0 err) + vitest (46+141) +
+  `check-ledger-adjacency.sh` (widened marker fires, no new escapees) +
+  `check-schema-drift.sh` (all four; only schema diff = view `WHERE … IN` gains the
+  two triggers + `121` seed) all green; synthetic backfill reconciliation proven to
+  `diff = 0` across partial-gap / pure-pre-Phase-1 / already-aligned accounts. Next:
+  item 3 writer-side cutover (deferred), then 6 → 5 → 4.
+
+- **2026-06-16** — architecture-audit item **3 (unified append-only ledger,
   keystone) — Phase 2 (read-model views + reconciliation)** shipped. Migration
   **120** adds the four `SUM()` read-models as plain (non-materialised) views over
   the append-only `ledger_entries`: `ledger_reader_balance` (tab debt =

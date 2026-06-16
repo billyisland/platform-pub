@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict GqtN8ulQTvN8yr3dTWASV1RNplgK4O6eyvMA0y857kpIxWKq4lynqEeIXXpZ0dl
+\restrict Y5SjzqmI3UaUAn0wCItDegz5ExRUZlVJcmxDCBpl7hmNF3RvkCllCradLqnUK7X
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1619,7 +1619,7 @@ CREATE VIEW public.ledger_reader_balance AS
  SELECT account_id,
     ((- sum(amount_pence)))::bigint AS balance_pence
    FROM public.ledger_entries
-  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text]))
+  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text, 'subscription_credit'::text, 'opening_balance'::text]))
   GROUP BY account_id;
 
 
@@ -6600,7 +6600,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict GqtN8ulQTvN8yr3dTWASV1RNplgK4O6eyvMA0y857kpIxWKq4lynqEeIXXpZ0dl
+\unrestrict Y5SjzqmI3UaUAn0wCItDegz5ExRUZlVJcmxDCBpl7hmNF3RvkCllCradLqnUK7X
 
 
 
@@ -6738,4 +6738,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('117_external_authors_live_profile.sql'),
     ('118_drop_feed_items_tier.sql'),
     ('119_ledger_entries.sql'),
-    ('120_ledger_views.sql');
+    ('120_ledger_views.sql'),
+    ('121_ledger_opening_balance.sql');

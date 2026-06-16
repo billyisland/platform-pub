@@ -9,13 +9,16 @@ Execution order follows the ADR's own suggested order:
 `1a → 7, 8 → (2 parked) → 3 → 6 → 5 → 4`. Item 1b stays deferred.
 
 **Progress:** 1a, 7, 8, **2(A) shipped 2026-06-16**; **item 3 Phase 0 + Phase 1
-+ Phase 2 shipped 2026-06-16** (Phase 0 = table + append-only guard +
-`recordLedger` helper; Phase 1 = dual-write across all five money paths + CI
-adjacency tripwire; Phase 2 = the four `SUM()` read-model views + the
-reconciliation script — see item 3 header). Next up: item 3 Phase 3 (cut over
-reads — **gated on the opening-balance backfill**, see below), then 6 → 5 → 4.
++ Phase 2 + Phase 3 (reader-balance) shipped 2026-06-16** (Phase 0 = table +
+append-only guard + `recordLedger` helper; Phase 1 = dual-write across all five
+money paths + CI adjacency tripwire; Phase 2 = the four `SUM()` read-model views
++ the reconciliation script; Phase 3 = closed the `subscription-convert` latent
+tab-credit gap, migration 121 opening-balance backfill + view widen, and cut
+`GET /my/tab` over to `ledger_reader_balance` — see item 3 header). Next up:
+item 3 Phase 3 **writer-side** cutover (deferred — semantic mismatch, see header),
+then 6 → 5 → 4.
 
-Migration numbers below say "next free NNN" — the chain is now at `119` (Phase 0
+Migration numbers below say "next free NNN" — the chain is now at `121` (Phase 3
 took it); assign sequentially at implementation time so two items don't collide.
 
 ---
@@ -383,7 +386,73 @@ client flag) but no hard dependency breaks. The only hard coupling was nginx
 
 ---
 
-## Item 3 — Unified append-only ledger *(keystone)* — **Phase 0 + 1 + 2 SHIPPED 2026-06-16**
+## Item 3 — Unified append-only ledger *(keystone)* — **Phase 0 + 1 + 2 + 3(reader-balance) SHIPPED 2026-06-16**
+
+**Outcome (Phase 3 — reader-balance cutover + opening-balance backfill).** The
+read-side ground truth was narrower than "point balance reads at the views": of
+the four read-models, only the **reader tab** is backed by a mutated running-total
+column (`reading_tabs.balance_pence`) with a symmetric ledger mirror, so it is the
+only one cleanly cut over. What shipped:
+
+1. **Closed a Phase-1 latent gap first (prerequisite).** `subscription-convert.ts`
+   decrements the tab on a spend→subscription credit-back (`balance_pence = …
+   − $1`) but had **no** `recordLedger()` — a real reader-tab movement with no
+   mirror, so `ledger_reader_balance` already diverged from the column forward-only
+   (not just by the un-backfilled opening balance). The CI tripwire had missed it
+   because its marker regex only matched `balance_pence = balance_pence +` (plus);
+   the `−` credit-back escaped. Fixed: added the `recordLedger()` (new
+   `subscription_credit` trigger, **+credit**, counterparty = the writer), widened
+   the marker to `balance_pence = balance_pence [-+]`, and registered the file
+   (`check-ledger-adjacency.sh` → six paths). Verified the widened scan surfaces no
+   *other* unregistered minus-movement.
+
+2. **Opening-balance backfill — migration `121`.** Per `reading_tabs` row, posts one
+   `opening_balance` entry = `(L − B)` where `L = −SUM(real reader entries)` and
+   `B = reading_tabs.balance_pence`, so `−SUM(entries incl. opening) == B` to the
+   penny. `L` is computed directly over the five real reader-tab triggers (incl.
+   `subscription_credit`), **not** via the view, so it is correct regardless of the
+   view's filter. Then `CREATE OR REPLACE VIEW ledger_reader_balance` to also count
+   `subscription_credit` + `opening_balance` (columns unchanged). Order matters:
+   backfill against the real-movement sum first, widen the view second. Only
+   non-zero deltas are posted, so the migration is **inert on a fresh/empty DB**
+   (no tabs ⇒ no opening rows). Proved on a synthetic DB: partial-ledger gap,
+   pure-pre-Phase-1 (no ledger), and already-aligned accounts all reconcile to
+   `diff = 0` after the backfill (the already-aligned one gets no row).
+
+3. **Cut `GET /my/tab` over to the view.** `my-account.ts` now reads the
+   reader-facing balance from `ledger_reader_balance`, not `rt.balance_pence`. API
+   contract unchanged; web needs no change.
+
+4. **`reading_tabs.balance_pence` retained as the locked operational running total.**
+   Deliberately did **not** "stop mutating the column": settlement reserves against
+   it with `SELECT … FOR UPDATE` (a `SUM()` view can't be row-locked), and the
+   threshold/fallback logic compares it. So display reads the ledger; settlement
+   reads+locks the column; they agree by construction. Dropping the column is a
+   later phase gated on a settlement-concurrency redesign.
+
+5. **Writer-earnings / publication-distribution reads NOT cut over (deviation,
+   ground-truth forced).** `ledger_writer_earnings` sums money **paid out** (entries
+   emitted at the payout flip), but the dashboard's `getWriterEarnings()` sums
+   **earned-incl-pending** (`read_events` in `platform_settled`+`writer_paid`) —
+   different quantities, *not* a drop-in repoint. Those views stay
+   reconciliation-only (their Part-B gap remains "expected") until the ledger models
+   writer-side accrual, which is its own piece of work (the deferred writer-side
+   cutover).
+
+**Verify (done):** `shared` + `gateway` + `payment-service` `tsc` build clean; root
+`npm run lint` 0 errors; `check-ledger-adjacency.sh` green (six paths; widened
+marker fires on the minus-movement, surfaces no new escapees); full vitest green
+(payment-service 46, gateway 141); `check-schema-drift.sh` all four green (Check 0
+lists 121 migrations; Check 3 counts the widened view; Check 1 no-op + Check 2
+canonical round-trip — the only schema diff is the view's `WHERE … IN (…)`
+gaining the two triggers + the `121` seed line); synthetic backfill reconciliation
+proven to `diff = 0`. The backfill INSERT itself runs only on prod (live tabs) at
+migrate time; on a fresh boot it is a no-op. Runtime `/my/tab` render is the
+operator's after a rebuild (balance is identical to the column by construction).
+
+The Phase 2 outcome + the plan follow, retained for reference.
+
+---
 
 **Outcome (Phase 2 — read-model views + reconciliation).** Migration
 `120_ledger_views.sql` adds the four `SUM()` read-models the plan names, as plain

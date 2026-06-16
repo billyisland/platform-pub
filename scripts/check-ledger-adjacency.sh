@@ -44,16 +44,22 @@ cd "$ROOT"
 #   payout.ts    2  (writer payout + publication split)
 #   votes.ts     1  (accrued vote charge)
 #   drives.ts    1  (pledge fulfilment)
+#   subscription-convert.ts 1 (spend→subscription tab credit-back)
 REGISTRY=(
   "payment-service/src/services/accrual.ts::3"
   "payment-service/src/services/settlement.ts::1"
   "payment-service/src/services/payout.ts::2"
   "gateway/src/routes/votes.ts::1"
   "gateway/src/routes/drives.ts::1"
+  "gateway/src/routes/articles/subscription-convert.ts::1"
 )
 
 # Money-movement markers for the new-site scan (PCRE).
-MARKERS='balance_pence = balance_pence \+|balance_pence = GREATEST\(0, balance_pence|INSERT INTO vote_charges|INSERT INTO writer_payouts|INSERT INTO publication_payout_splits'
+# Match a tab-balance write in EITHER direction — both an accrual (+) and a
+# credit-back (−) move the tab and so both need a mirror entry. The original
+# regex only caught '+', which let subscription-convert.ts's '− $1' credit
+# escape the scan (the Phase-3 latent gap); '[-+]' closes that.
+MARKERS='balance_pence = balance_pence [-+]|balance_pence = GREATEST\(0, balance_pence|INSERT INTO vote_charges|INSERT INTO writer_payouts|INSERT INTO publication_payout_splits'
 
 failed=0
 

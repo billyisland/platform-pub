@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../../middleware/auth.js";
+import { recordLedger } from "@platform-pub/shared/lib/ledger.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
@@ -136,6 +137,21 @@ export async function articleSubscriptionConvertRoutes(app: FastifyInstance) {
              WHERE reader_id = $2 AND status = 'open'`,
             [credit, readerId],
           );
+
+          // Ledger: this is a reader-tab CREDIT (the tab debt is paid down by the
+          // converted spend), so it mirrors the −$1 balance move with +credit —
+          // exactly like a settlement, but the counterparty is the subscribed
+          // writer, not the platform. Without this entry ledger_reader_balance
+          // would diverge from reading_tabs.balance_pence forward-only. Same
+          // transaction as the balance write (recordLedger rides `client`).
+          await recordLedger(client, {
+            accountId: readerId,
+            counterpartyId: writerId,
+            amountPence: credit,
+            triggerType: "subscription_credit",
+            refTable: "subscriptions",
+            refId: subscriptionId,
+          });
         }
 
         // Log the subscription charge event
