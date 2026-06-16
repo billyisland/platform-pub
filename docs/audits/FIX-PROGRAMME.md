@@ -23,6 +23,27 @@ starts.
 
 ## Progress
 
+- **2026-06-16** — architecture-audit items **7**, **8**, **2(A)** shipped.
+  **Item 7 (park trust)** — trust graph (Layer 1/2/4) gated behind
+  `TRUST_SYSTEM_ENABLED` (server, in `shared/lib/env`) / `NEXT_PUBLIC_TRUST_ENABLED`
+  (client), both default OFF: feed-ingest builds its crontab conditionally so the
+  three trust schedules aren't registered (the bulk of the parked compute); UI
+  degrades (`TrustPip` → neutral grey dot so `PipPanel`/`VolumeBar` stay reachable,
+  trust sections + vouch tab + `VouchModal`/`TrustProfile` hidden, trust fetches
+  skipped). Tables + `LEFT JOIN trust_layer1` untouched (degrade to NULL).
+  **Item 8 (park traffology)** — both containers commented out in
+  `docker-compose.yml`, nginx drops the `depends_on` and `/ingest/` → `404`, client
+  beacon gated on `NEXT_PUBLIC_TRAFFOLOGY_ENABLED` (default OFF; authoritative gate
+  is the article-page JSX, since `/traffology.js` is a hand-built artifact, not
+  bundled). Schema + workspaces + gateway `/concurrent/*` left in repo (fail soft).
+  **Item 2(A) (denormalisation tidy)** — migration **118** drops the dead
+  `feed_items.tier` column + `tier_consistency` CHECK (never read; `content_tier`
+  enum / `biddability_tier` / `external_items.tier` all stay). Plan undercounted the
+  write sites: `tier` was stripped from **15** `INSERT INTO feed_items` statements
+  (a recursive grep surfaced them — tsc doesn't validate SQL strings) plus
+  `FEED_SELECT`. schema.sql regenerated via pg_dump; drift guard all four checks
+  green. ADR/plan `ARCHITECTURE-AUDIT-{ADR,IMPLEMENTATION-PLAN}-2026-06-15.md`
+  headers updated. Next: item 3 (ledger keystone), then 6 → 5 → 4.
 - **2026-06-16** — architecture-audit item **1a** (harden schema drift guard)
   shipped. Added **Check 3 (object presence)** to `scripts/check-schema-drift.sh`:
   a no-DB text check that folds every migration's `CREATE`/`DROP`/`ALTER…RENAME TO`
