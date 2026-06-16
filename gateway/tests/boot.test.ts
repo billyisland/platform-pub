@@ -87,7 +87,7 @@ describe('gateway boot', () => {
     const { linkedAccountsRoutes } = await import('../src/routes/linked-accounts.js')
     const { trustRoutes } = await import('../src/routes/trust.js')
     const { readingPositionRoutes } = await import('../src/routes/reading-positions.js')
-    const { feedsRoutes } = await import('../src/routes/feeds.js')
+    const { feedsRoutes } = await import('../src/routes/feeds/index.js')
 
     const app = Fastify({ logger: false })
 

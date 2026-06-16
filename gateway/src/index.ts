@@ -52,7 +52,7 @@ import { linkedAccountsRoutes } from "./routes/linked-accounts.js";
 import { trustRoutes } from "./routes/trust.js";
 import { readingPositionRoutes } from "./routes/reading-positions.js";
 import { privacyPreferencesRoutes } from "./routes/privacy-preferences.js";
-import { feedsRoutes } from "./routes/feeds.js";
+import { feedsRoutes } from "./routes/feeds/index.js";
 import { extractRoutes } from "./routes/extract.js";
 import { authorCardRoutes } from "./routes/author-card.js";
 import { authorRoutes } from "./routes/author.js";
