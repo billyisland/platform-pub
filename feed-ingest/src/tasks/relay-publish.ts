@@ -1,8 +1,8 @@
 import type { Task } from 'graphile-worker'
-import type { PoolClient } from 'pg'
 import { pool } from '@platform-pub/shared/db/client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 import { publishNostrToRelaysDetailed, type NostrSignedEvent } from '../adapters/nostr-outbound.js'
+import { runOutboundJob } from '../lib/outbound-retry.js'
 
 // Discovery events (kind 0/3/10002) must reach the public mesh, not just the
 // in-house relay. For these entity types a row is only 'sent' if at least one
@@ -46,55 +46,72 @@ interface RelayOutboxRow {
 export const relayPublish: Task = async (payload, helpers) => {
   const { outboxId } = payload as { outboxId: string }
 
+  // The worker owns the client: a dedicated connection whose single
+  // transaction holds the row lock + per-entity advisory lock across the relay
+  // round-trip. `txnOpen` lets cleanup roll back an unexpected mid-flight
+  // throw without a spurious "no transaction" warning on the committed paths.
   const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
+  let txnOpen = false
 
-    const { rows } = await client.query<RelayOutboxRow>(
-      `SELECT id, entity_type, entity_id, signed_event, target_relay_urls,
-              status, attempts, max_attempts
-         FROM relay_outbox
-         WHERE id = $1
-         FOR UPDATE SKIP LOCKED`,
-      [outboxId],
-    )
-    if (rows.length === 0) {
-      await client.query('ROLLBACK')
-      return
-    }
-    const row = rows[0]
-    if (row.status !== 'pending' && row.status !== 'failed') {
-      await client.query('ROLLBACK')
-      return
-    }
+  await runOutboundJob<RelayOutboxRow>({
+    taskName: 'relay_publish',
+    payload: { outboxId },
+    rowId: outboxId,
+    helpers,
+    attemptsOf: (row) => row.attempts,
+    maxOf: (row) => row.max_attempts,
+    computeBackoff,
 
-    if (row.entity_id) {
-      const lockKey = `${row.entity_type}:${row.entity_id}`
-      const { rows: lockRows } = await client.query<{ got: boolean }>(
-        `SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS got`,
-        [lockKey],
+    claim: async () => {
+      await client.query('BEGIN')
+      txnOpen = true
+
+      const { rows } = await client.query<RelayOutboxRow>(
+        `SELECT id, entity_type, entity_id, signed_event, target_relay_urls,
+                status, attempts, max_attempts
+           FROM relay_outbox
+           WHERE id = $1
+           FOR UPDATE SKIP LOCKED`,
+        [outboxId],
       )
-      if (!lockRows[0]?.got) {
+      if (rows.length === 0) {
         await client.query('ROLLBACK')
-        logger.debug({ outboxId, lockKey }, 'relay_publish: entity locked by peer — redrive will retry')
-        return
+        txnOpen = false
+        return null
       }
-    }
+      const row = rows[0]
+      if (row.status !== 'pending' && row.status !== 'failed') {
+        await client.query('ROLLBACK')
+        txnOpen = false
+        return null
+      }
 
-    const relayUrls = row.target_relay_urls.length > 0
-      ? row.target_relay_urls
-      : defaultRelayUrls()
+      if (row.entity_id) {
+        const lockKey = `${row.entity_type}:${row.entity_id}`
+        const { rows: lockRows } = await client.query<{ got: boolean }>(
+          `SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS got`,
+          [lockKey],
+        )
+        if (!lockRows[0]?.got) {
+          await client.query('ROLLBACK')
+          txnOpen = false
+          logger.debug({ outboxId, lockKey }, 'relay_publish: entity locked by peer — redrive will retry')
+          return null
+        }
+      }
 
-    if (relayUrls.length === 0) {
-      await failAndMaybeRetry(
-        client, row,
-        'No target relay URLs and PLATFORM_RELAY_WS_URL not set',
-        helpers,
-      )
-      return
-    }
+      return row
+    },
 
-    try {
+    attempt: async (row) => {
+      const relayUrls = row.target_relay_urls.length > 0
+        ? row.target_relay_urls
+        : defaultRelayUrls()
+
+      if (relayUrls.length === 0) {
+        throw new Error('No target relay URLs and PLATFORM_RELAY_WS_URL not set')
+      }
+
       const result = await publishNostrToRelaysDetailed(row.signed_event, relayUrls)
 
       // Discovery rows: require public-mesh delivery before marking sent. If
@@ -108,12 +125,9 @@ export const relayPublish: Task = async (payload, helpers) => {
         const publicTargets = relayUrls.filter((u) => u !== platformUrl)
         const publicAccepted = publicTargets.some((u) => result.succeeded.includes(u))
         if (publicTargets.length > 0 && !publicAccepted) {
-          await failAndMaybeRetry(
-            client, row,
+          throw new Error(
             `Discovery event reached in-house relay only; all ${publicTargets.length} public fan-out relay(s) rejected`,
-            helpers,
           )
-          return
         }
       }
 
@@ -128,72 +142,55 @@ export const relayPublish: Task = async (payload, helpers) => {
         [row.id],
       )
       await client.query('COMMIT')
+      txnOpen = false
       logger.info(
         { outboxId: row.id, entityType: row.entity_type, eventId: row.signed_event.id },
         'relay_publish: sent',
       )
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      await failAndMaybeRetry(client, row, msg, helpers)
-    }
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {})
-    throw err
-  } finally {
-    client.release()
-  }
-}
+    },
 
-async function failAndMaybeRetry(
-  client: PoolClient,
-  row: RelayOutboxRow,
-  msg: string,
-  helpers: Parameters<Task>[1],
-): Promise<void> {
-  const newAttempts = row.attempts + 1
+    onRetry: async (row, nextAttempt, nextAt, msg) => {
+      await client.query(
+        `UPDATE relay_outbox
+           SET status = 'failed',
+               attempts = $2,
+               last_attempt_at = now(),
+               next_attempt_at = $3,
+               last_error = $4
+           WHERE id = $1`,
+        [row.id, nextAttempt, nextAt, msg],
+      )
+      await client.query('COMMIT')
+      txnOpen = false
+      logger.info(
+        { outboxId: row.id, attempts: nextAttempt, nextAt, err: msg },
+        'relay_publish: retrying',
+      )
+    },
 
-  if (newAttempts >= row.max_attempts) {
-    await client.query(
-      `UPDATE relay_outbox
-         SET status = 'abandoned',
-             attempts = $2,
-             last_attempt_at = now(),
-             last_error = $3
-         WHERE id = $1`,
-      [row.id, newAttempts, msg],
-    )
-    await client.query('COMMIT')
-    logger.warn(
-      { outboxId: row.id, entityType: row.entity_type, attempts: newAttempts, err: msg },
-      'relay_publish: abandoned after max_attempts',
-    )
-    return
-  }
+    onAbandon: async (row, nextAttempt, msg) => {
+      await client.query(
+        `UPDATE relay_outbox
+           SET status = 'abandoned',
+               attempts = $2,
+               last_attempt_at = now(),
+               last_error = $3
+           WHERE id = $1`,
+        [row.id, nextAttempt, msg],
+      )
+      await client.query('COMMIT')
+      txnOpen = false
+      logger.warn(
+        { outboxId: row.id, entityType: row.entity_type, attempts: nextAttempt, err: msg },
+        'relay_publish: abandoned after max_attempts',
+      )
+    },
 
-  const nextAt = computeBackoff(newAttempts)
-  await client.query(
-    `UPDATE relay_outbox
-       SET status = 'failed',
-           attempts = $2,
-           last_attempt_at = now(),
-           next_attempt_at = $3,
-           last_error = $4
-       WHERE id = $1`,
-    [row.id, newAttempts, nextAt, msg],
-  )
-  await client.query('COMMIT')
-
-  // Schedule the retry job outside the claim txn — the row lock has been
-  // released by COMMIT and helpers.addJob uses its own connection.
-  await helpers.addJob('relay_publish', { outboxId: row.id }, {
-    runAt: nextAt,
-    jobKey: `relay_publish_${row.id}_r${newAttempts}`,
-    maxAttempts: 1,
+    cleanup: async () => {
+      if (txnOpen) await client.query('ROLLBACK').catch(() => {})
+      client.release()
+    },
   })
-  logger.info(
-    { outboxId: row.id, attempts: newAttempts, nextAt, err: msg },
-    'relay_publish: retrying',
-  )
 }
 
 function defaultRelayUrls(): string[] {

@@ -16,9 +16,12 @@ money paths + CI adjacency tripwire; Phase 2 = the four `SUM()` read-model views
 tab-credit gap, migration 121 opening-balance backfill + view widen, and cut
 `GET /my/tab` over to `ledger_reader_balance` — see item 3 header); **item 6
 (DM reactions) shipped 2026-06-16** (migration 122 `dm_likes`→`dm_reactions`,
-typed + txn-guarded toggle, web kept heart-only — see item 6 header). Next up:
-item 3 Phase 3 **writer-side** cutover (deferred — semantic mismatch, see header),
-then 5 → 4.
+typed + txn-guarded toggle, web kept heart-only — see item 6 header); **item 5
+(outbound retry helper) shipped 2026-06-16** (`feed-ingest/src/lib/outbound-retry.ts`
+owns the claim→attempt→retry/abandon/reschedule skeleton; both workers refactored
+behaviour-preserving — see item 5 header). Next up: item 4 (gateway god-file
+split), then item 3 Phase 3 **writer-side** cutover (deferred — semantic mismatch,
+see header).
 
 Migration numbers below say "next free NNN" — the chain is now at `122` (item 6
 took it); assign sequentially at implementation time so two items don't collide.
@@ -776,7 +779,60 @@ for this item but tracked.
 
 ---
 
-## Item 5 — Outbound delivery shared retry helper
+## Item 5 — Outbound delivery shared retry helper — **SHIPPED 2026-06-16**
+
+**Outcome.** `feed-ingest/src/lib/outbound-retry.ts` exposes `runOutboundJob<Row>(spec)`,
+which owns the one genuinely-shared skeleton: **claim → attempt → on-throw:
+increment counter → compare-to-max → branch retry-vs-abandon → reschedule a
+versioned single-attempt job** (`jobKey = \`${taskName}_${rowId}_r${n}\``,
+`maxAttempts: 1`, `runAt: computeBackoff(n)`). Both workers were refactored onto it,
+behaviour-preserving:
+- `relay-publish.ts` — its `failAndMaybeRetry` (+ the inline empty-relayUrls and
+  discovery "in-house only" branches, both now `throw` into the helper's catch)
+  collapsed into `claim`/`attempt`/`onRetry`/`onAbandon`/`cleanup` closures.
+  `computeBackoff` + `defaultRelayUrls` stay module-level (the test imports
+  `computeBackoff`). `RelayOutboxRow` is now the `Row` generic; the `PoolClient`
+  import is gone with the helper.
+- `outbound-cross-post.ts` — its catch block collapsed likewise; `markFailed` +
+  `loadConfig` stay module functions; `cfg` is a task-scope `let` loaded inside
+  `claim` (after the guards, as before) and read by `attempt` + `computeBackoff`.
+
+**Three deviations from the plan's `e.g.` signature, all to keep the two workers'
+divergence intact (the plan's own "do not over-unify" warning):**
+- **The worker owns its client, not the helper.** The plan sketched `claim: (client)
+  => row` with the helper owning `pool.connect()`. Taken literally that would force
+  cross-post (today autocommit on `pool`, holding **no** connection across its
+  Mastodon/Bluesky round-trip) to hold a pooled connection for the whole job — a real
+  resource regression under load. So `claim` takes no client; each worker owns its
+  client/txn lifecycle via the closures (relay opens one txn-scoped connection +
+  advisory lock held across the relay round-trip; cross-post stays on `pool`). The
+  helper's `cleanup` hook runs in `finally` for release/rollback.
+- **Success persist lives in `attempt`, not a separate `onSuccess`.** `attempt` does
+  the delivery *and* the `status='sent'` UPDATE (+ COMMIT for relay), and `throw`s on
+  any failure — including relay's discovery "in-house relay only" *logical* failure,
+  which became a thrown Error routing through the identical retry machinery (was a
+  direct `failAndMaybeRetry` call).
+- **`bumpAndPersist`/`onAbandon` split into `onRetry`/`onAbandon`** (clearer than one
+  branching closure); counters abstracted behind `attemptsOf`/`maxOf` (relay
+  `attempts`/`max_attempts` vs cross-post `retry_count`/`max_retries`); status vocab
+  (sent/failed/abandoned vs sent/retrying/failed) and backoff curve
+  (`min(2^n min,1h)±jitter` vs `delay·2^(n-1)`) stay worker-supplied. The **enqueue**
+  side (`relay-outbox.ts`/`outbound-enqueue.ts`) was left untouched per the plan.
+
+**Verify (done):** `feed-ingest` `tsc` build clean; the pre-existing
+`relay-publish.test.ts` (12 tests — query order, param positions, jobKey,
+COMMIT/ROLLBACK-as-last-call, the deletion-path retry) passes **unchanged**, proving
+the relay path is behaviour-identical through the helper; added
+`outbound-cross-post.test.ts` (5 tests — success / retry+versioned-jobKey /
+abandon-at-max / already-sent no-op / invalid-linked-account → failed) since that
+path had **no** prior coverage and was heavily restructured; full feed-ingest suite
+161 green (156 + 5 new); `eslint` 0 on the four touched files. Runtime is the
+operator's after a feed-ingest rebuild (retry timing / abandon / job-key versioning
+are identical by construction).
+
+The original plan follows, retained for reference.
+
+---
 
 **Goal.** Extract one retry helper parameterised by max-attempts / backoff /
 success-rule, killing duplicated claim-backoff-reschedule plumbing across the two

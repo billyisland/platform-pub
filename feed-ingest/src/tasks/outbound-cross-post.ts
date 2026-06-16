@@ -19,6 +19,7 @@ import {
   repostBlueskyRecord,
 } from "../adapters/atproto-outbound.js";
 import { appendWithinBudget } from "../lib/text.js";
+import { runOutboundJob } from "../lib/outbound-retry.js";
 
 // =============================================================================
 // outbound_cross_post — per-event job, dispatches a queued outbound_posts row
@@ -86,50 +87,68 @@ interface AllHausMeta {
 export const outboundCrossPost: Task = async (payload, helpers) => {
   const { outboundPostId } = payload as { outboundPostId: string };
 
-  const { rows } = await pool.query<OutboundRow>(
-    `
-    SELECT
-      op.id, op.account_id, op.linked_account_id, op.protocol,
-      op.nostr_event_id, op.action_type, op.source_item_id, op.body_text,
-      op.signed_event, op.status, op.retry_count, op.max_retries,
-      acc.username         AS author_username,
-      la.external_id       AS la_external_id,
-      la.service_url       AS la_instance_url,
-      la.credentials_enc   AS la_credentials_enc,
-      la.is_valid          AS la_is_valid,
-      la.lifecycle_state   AS la_lifecycle_state,
-      ei.source_item_uri   AS ei_source_item_uri,
-      ei.interaction_data  AS ei_interaction_data,
-      xs.relay_urls        AS ei_source_relay_urls
-    FROM outbound_posts op
-    LEFT JOIN accounts acc           ON acc.id = op.account_id
-    LEFT JOIN network_presences la   ON la.id = op.linked_account_id
-    LEFT JOIN external_items ei  ON ei.id = op.source_item_id
-    LEFT JOIN external_sources xs ON xs.id = ei.source_id
-    WHERE op.id = $1
-  `,
-    [outboundPostId],
-  );
-  const row = rows[0];
-  if (!row) {
-    logger.warn({ outboundPostId }, "outbound_cross_post: row not found");
-    return;
-  }
-  if (row.status === "sent") return;
-  if (row.status === "failed") return;
-  // A network presence is required for OAuth-backed protocols only, and must be
-  // active (lifecycle_state) as well as valid (credentials/handle healthy).
-  if (
-    row.protocol !== "nostr_external" &&
-    (!row.la_is_valid || row.la_lifecycle_state !== "active")
-  ) {
-    await markFailed(row.id, "Linked account invalid — reconnect in settings");
-    return;
-  }
+  // Loaded once the row passes the claim guards; read by `attempt` and
+  // `computeBackoff` (which both run after the claim).
+  let cfg: AllHausMeta;
 
-  const cfg = await loadConfig();
+  await runOutboundJob<OutboundRow>({
+    taskName: "outbound_cross_post",
+    payload: { outboundPostId },
+    rowId: outboundPostId,
+    helpers,
+    attemptsOf: (row) => row.retry_count,
+    maxOf: (row) => row.max_retries,
+    // delay·2^(n-1) seconds, no jitter (config-driven base delay).
+    computeBackoff: (nextAttempt) =>
+      new Date(Date.now() + cfg.retry_delay * Math.pow(2, nextAttempt - 1) * 1000),
 
-  try {
+    claim: async () => {
+      const { rows } = await pool.query<OutboundRow>(
+        `
+        SELECT
+          op.id, op.account_id, op.linked_account_id, op.protocol,
+          op.nostr_event_id, op.action_type, op.source_item_id, op.body_text,
+          op.signed_event, op.status, op.retry_count, op.max_retries,
+          acc.username         AS author_username,
+          la.external_id       AS la_external_id,
+          la.service_url       AS la_instance_url,
+          la.credentials_enc   AS la_credentials_enc,
+          la.is_valid          AS la_is_valid,
+          la.lifecycle_state   AS la_lifecycle_state,
+          ei.source_item_uri   AS ei_source_item_uri,
+          ei.interaction_data  AS ei_interaction_data,
+          xs.relay_urls        AS ei_source_relay_urls
+        FROM outbound_posts op
+        LEFT JOIN accounts acc           ON acc.id = op.account_id
+        LEFT JOIN network_presences la   ON la.id = op.linked_account_id
+        LEFT JOIN external_items ei  ON ei.id = op.source_item_id
+        LEFT JOIN external_sources xs ON xs.id = ei.source_id
+        WHERE op.id = $1
+      `,
+        [outboundPostId],
+      );
+      const row = rows[0];
+      if (!row) {
+        logger.warn({ outboundPostId }, "outbound_cross_post: row not found");
+        return null;
+      }
+      if (row.status === "sent") return null;
+      if (row.status === "failed") return null;
+      // A network presence is required for OAuth-backed protocols only, and must
+      // be active (lifecycle_state) as well as valid (credentials/handle healthy).
+      if (
+        row.protocol !== "nostr_external" &&
+        (!row.la_is_valid || row.la_lifecycle_state !== "active")
+      ) {
+        await markFailed(row.id, "Linked account invalid — reconnect in settings");
+        return null;
+      }
+
+      cfg = await loadConfig();
+      return row;
+    },
+
+    attempt: async (row) => {
     let externalPostUri: string;
 
     if (row.protocol === "activitypub") {
@@ -298,62 +317,48 @@ export const outboundCrossPost: Task = async (payload, helpers) => {
       throw new Error(`Outbound protocol not yet supported: ${row.protocol}`);
     }
 
-    await pool.query(
-      `
-      UPDATE outbound_posts
-      SET status = 'sent',
-          external_post_uri = $2,
-          sent_at = now(),
-          error_message = NULL
-      WHERE id = $1
-    `,
-      [row.id, externalPostUri],
-    );
+      await pool.query(
+        `
+        UPDATE outbound_posts
+        SET status = 'sent',
+            external_post_uri = $2,
+            sent_at = now(),
+            error_message = NULL
+        WHERE id = $1
+      `,
+        [row.id, externalPostUri],
+      );
 
-    logger.info(
-      { outboundPostId: row.id, protocol: row.protocol, externalPostUri },
-      "outbound cross-post sent",
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const newRetry = row.retry_count + 1;
-    if (newRetry >= row.max_retries) {
+      logger.info(
+        { outboundPostId: row.id, protocol: row.protocol, externalPostUri },
+        "outbound cross-post sent",
+      );
+    },
+
+    onRetry: async (row, nextAttempt, _nextAt, msg) => {
+      await pool.query(
+        `
+        UPDATE outbound_posts
+        SET status = 'retrying', retry_count = $2, error_message = $3
+        WHERE id = $1
+      `,
+        [row.id, nextAttempt, msg],
+      );
+      const delay = cfg.retry_delay * Math.pow(2, nextAttempt - 1);
+      logger.info(
+        { outboundPostId: row.id, retry: nextAttempt, delay, err: msg },
+        "outbound cross-post retrying",
+      );
+    },
+
+    onAbandon: async (row, _nextAttempt, msg) => {
       await markFailed(row.id, msg);
       logger.warn(
         { outboundPostId: row.id, err: msg },
         "outbound cross-post failed permanently",
       );
-      return;
-    }
-
-    await pool.query(
-      `
-      UPDATE outbound_posts
-      SET status = 'retrying', retry_count = $2, error_message = $3
-      WHERE id = $1
-    `,
-      [row.id, newRetry, msg],
-    );
-
-    const delay = cfg.retry_delay * Math.pow(2, newRetry - 1);
-    await helpers.addJob(
-      "outbound_cross_post",
-      { outboundPostId: row.id },
-      {
-        runAt: new Date(Date.now() + delay * 1000),
-        // Versioned jobKey — the original enqueue used the unversioned key,
-        // so if we retried with the same one, Graphile Worker's dedup would
-        // collapse the retry into the still-running original and lose the
-        // backoff delay.
-        jobKey: `outbound_cross_post_${row.id}_r${newRetry}`,
-        maxAttempts: 1,
-      },
-    );
-    logger.info(
-      { outboundPostId: row.id, retry: newRetry, delay, err: msg },
-      "outbound cross-post retrying",
-    );
-  }
+    },
+  });
 };
 
 async function markFailed(id: string, msg: string): Promise<void> {
