@@ -2,6 +2,7 @@ import "dotenv/config";
 import { run, parseCrontab } from "graphile-worker";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import { trustSystemEnabled } from "@platform-pub/shared/lib/env.js";
 import { feedIngestPoll } from "./tasks/feed-ingest-poll.js";
 import { feedIngestRss } from "./tasks/feed-ingest-rss.js";
 import { feedIngestNostr } from "./tasks/feed-ingest-nostr.js";
@@ -52,53 +53,63 @@ async function start() {
     process.exit(1);
   }
 
+  // Trust is parked by default (architecture-audit item 7): when
+  // TRUST_SYSTEM_ENABLED is off we simply don't register the three trust
+  // schedules, which is the bulk of the parked compute. The task handlers stay
+  // registered in taskList below so any already-queued job still resolves; only
+  // the recurring schedules are withheld.
+  const trustOn = trustSystemEnabled();
+  const cronItems: string[] = [
+    // Poll for sources due for fetching — every 60 seconds
+    "* * * * * feed_ingest_poll",
+    // Prune old external items — daily at 02:15 UTC
+    "15 2 * * * external_items_prune",
+    // Refresh source metadata — daily at 03:00 UTC
+    "0 3 * * * source_metadata_refresh",
+    // Refresh denormalised author metadata in feed_items — daily at 04:00 UTC
+    "0 4 * * * feed_items_author_refresh",
+    // Reconcile feed_items with source tables — daily at 05:00 UTC
+    "0 5 * * * feed_items_reconcile",
+    // Refresh expiring OAuth tokens for linked accounts — every 30 min
+    "*/30 * * * * outbound_token_refresh",
+    // Prune expired atproto OAuth pending states — every 5 min
+    "*/5 * * * * atproto_oauth_states_prune",
+    // Prune expired resolver Phase B results — every 5 min
+    "*/5 * * * * resolver_results_prune",
+    // Garbage-collect orphaned external_sources — daily at 06:00 UTC
+    "0 6 * * * external_sources_gc",
+    // Prune dormant activitypub_instance_health rows — weekly Sun 07:00 UTC
+    "0 7 * * 0 activitypub_instance_health_prune",
+    // Refresh feed_items.score from engagement — every 5 minutes
+    "*/5 * * * * feed_scores_refresh",
+    ...(trustOn
+      ? [
+          // Recompute Layer 1 trust signals — daily at 01:00 UTC
+          "0 1 * * * trust_layer1_refresh",
+          // Trust epoch aggregation — quarterly full epoch (1 Jan/Apr/Jul/Oct)
+          "0 2 1 1,4,7,10 * trust_epoch_aggregate ?id=trust_epoch_full",
+          // Trust mop-up scoring — Mon/Thu at 02:00 UTC
+          "0 2 * * 1,4 trust_epoch_aggregate ?id=trust_epoch_mopup",
+        ]
+      : []),
+    // Relay outbox second heartbeat — every minute
+    "* * * * * relay_outbox_redrive",
+    // Relay outbox queue metrics — daily at 04:30 UTC
+    "30 4 * * * relay_outbox_reconcile",
+    // Prune sent relay_outbox entries older than 30 days — daily at 03:30 UTC
+    "30 3 * * * relay_outbox_prune",
+    // Refresh engagement counts on recent external items — every 30 min
+    "*/30 * * * * external_engagement_refresh",
+    // Garbage-collect unreferenced context-only external items — daily at 02:30 UTC
+    "30 2 * * * external_context_gc",
+  ];
+
   const runner = await run({
     connectionString,
     concurrency: 10,
     noHandleSignals: false,
     pollInterval: 2000,
-    parsedCronItems: parseCrontab(
-      [
-        // Poll for sources due for fetching — every 60 seconds
-        "* * * * * feed_ingest_poll",
-        // Prune old external items — daily at 02:15 UTC
-        "15 2 * * * external_items_prune",
-        // Refresh source metadata — daily at 03:00 UTC
-        "0 3 * * * source_metadata_refresh",
-        // Refresh denormalised author metadata in feed_items — daily at 04:00 UTC
-        "0 4 * * * feed_items_author_refresh",
-        // Reconcile feed_items with source tables — daily at 05:00 UTC
-        "0 5 * * * feed_items_reconcile",
-        // Refresh expiring OAuth tokens for linked accounts — every 30 min
-        "*/30 * * * * outbound_token_refresh",
-        // Prune expired atproto OAuth pending states — every 5 min
-        "*/5 * * * * atproto_oauth_states_prune",
-        // Prune expired resolver Phase B results — every 5 min
-        "*/5 * * * * resolver_results_prune",
-        // Garbage-collect orphaned external_sources — daily at 06:00 UTC
-        "0 6 * * * external_sources_gc",
-        // Prune dormant activitypub_instance_health rows — weekly Sun 07:00 UTC
-        "0 7 * * 0 activitypub_instance_health_prune",
-        // Refresh feed_items.score from engagement — every 5 minutes
-        "*/5 * * * * feed_scores_refresh",
-        // Recompute Layer 1 trust signals — daily at 01:00 UTC
-        "0 1 * * * trust_layer1_refresh",
-        // Trust epoch aggregation — quarterly full epoch (1 Jan/Apr/Jul/Oct)
-        "0 2 1 1,4,7,10 * trust_epoch_aggregate ?id=trust_epoch_full",
-        // Trust mop-up scoring — Mon/Thu at 02:00 UTC
-        "0 2 * * 1,4 trust_epoch_aggregate ?id=trust_epoch_mopup",
-        // Relay outbox second heartbeat — every minute
-        "* * * * * relay_outbox_redrive",
-        // Relay outbox queue metrics — daily at 04:30 UTC
-        "30 4 * * * relay_outbox_reconcile",
-        // Prune sent relay_outbox entries older than 30 days — daily at 03:30 UTC
-        "30 3 * * * relay_outbox_prune",
-        // Refresh engagement counts on recent external items — every 30 min
-        "*/30 * * * * external_engagement_refresh",
-        // Garbage-collect unreferenced context-only external items — daily at 02:30 UTC
-        "30 2 * * * external_context_gc",
-      ].join("\n"),
-    ),
+    parsedCronItems: parseCrontab(cronItems.join("\n")),
     taskList: {
       feed_ingest_poll: feedIngestPoll,
       feed_ingest_rss: feedIngestRss,
@@ -129,7 +140,12 @@ async function start() {
     },
   });
 
-  logger.info("Feed ingest worker started");
+  logger.info(
+    { trustSchedulesRegistered: trustOn },
+    trustOn
+      ? "Feed ingest worker started"
+      : "Feed ingest worker started (trust schedules parked — TRUST_SYSTEM_ENABLED off)",
+  );
 
   // Start the Bluesky Jetstream listener alongside the Graphile runner.
   // It maintains its own WebSocket; nothing to await on startup.

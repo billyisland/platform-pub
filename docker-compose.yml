@@ -8,8 +8,8 @@
 #   payment            — payment service — port 3001
 #   keyservice         — key service — port 3002
 #   key-custody        — key custody service (holds user Nostr private keys) — port 3004
-#   traffology-ingest  — reader-telemetry ingest — port 3005
-#   traffology-worker  — reader-telemetry roll-up worker (no HTTP port)
+#   traffology-ingest  — reader-telemetry ingest — port 3005 (PARKED, item 8)
+#   traffology-worker  — reader-telemetry roll-up worker (PARKED, item 8)
 #   feed-ingest        — external-feed poller + Jetstream listener (no HTTP port)
 #   web                — Next.js frontend — port 3010
 #   nginx              — reverse proxy with TLS
@@ -187,40 +187,47 @@ services:
       retries: 3
 
   # ---------------------------------------------------------------------------
-  # Traffology Ingest — beacon receiver, session writer, concurrent reader counters
+  # Traffology — PARKED (architecture-audit item 8, 2026-06-16)
+  #
+  # The reader-telemetry ingest + worker are stopped: a separately-deployed pair
+  # of containers serving a subsystem nobody is viewing. Schema (schema.traffology
+  # tables), the traffology-ingest/ + traffology-worker/ npm workspaces, and the
+  # gateway /concurrent/* read endpoints stay in the repo (the gateway fails soft
+  # against stale tables). The client beacon is gated off at source (the article
+  # page no longer loads /traffology.js — NEXT_PUBLIC_TRAFFOLOGY_ENABLED), and
+  # nginx /ingest/* returns 404. To un-park: uncomment these two blocks, restore
+  # traffology-ingest to the nginx depends_on + /ingest/ proxy, and flip the
+  # client flag on.
   # ---------------------------------------------------------------------------
-  traffology-ingest:
-    build:
-      context: .
-      dockerfile: traffology-ingest/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
-      IP_HASH_SALT: ${TRAFFOLOGY_IP_HASH_SALT:-traffology-dev-salt}
-      DB_POOL_MAX: 10
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+  # traffology-ingest:
+  #   build:
+  #     context: .
+  #     dockerfile: traffology-ingest/Dockerfile
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+  #     IP_HASH_SALT: ${TRAFFOLOGY_IP_HASH_SALT:-traffology-dev-salt}
+  #     DB_POOL_MAX: 10
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health || exit 1"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
 
-  # ---------------------------------------------------------------------------
-  # Traffology Worker — background jobs (aggregation, source resolution)
-  # ---------------------------------------------------------------------------
-  traffology-worker:
-    build:
-      context: .
-      dockerfile: traffology-worker/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
-      DB_POOL_MAX: 10
+  # traffology-worker:
+  #   build:
+  #     context: .
+  #     dockerfile: traffology-worker/Dockerfile
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub
+  #     DB_POOL_MAX: 10
 
   # ---------------------------------------------------------------------------
   # Feed Ingest — external content ingestion (RSS, Nostr, AT Protocol, ActivityPub)
@@ -288,7 +295,7 @@ services:
       - web
       - gateway
       - strfry
-      - traffology-ingest
+      # traffology-ingest — PARKED (item 8); /ingest/* now 404s in nginx.conf
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
       interval: 10s

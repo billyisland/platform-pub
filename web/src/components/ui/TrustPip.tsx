@@ -1,4 +1,5 @@
 import type { PipStatus } from "../../lib/ndk";
+import { trustEnabled } from "../../lib/featureFlags";
 
 // =============================================================================
 // TrustPip — 5px circle indicating author legibility level
@@ -32,6 +33,21 @@ interface TrustPipProps {
 }
 
 export function TrustPip({ status = "unknown" }: TrustPipProps) {
+  // Trust parked (NEXT_PUBLIC_TRUST_ENABLED off, architecture-audit item 7):
+  // degrade to a neutral, semantically-empty dot. The glyph and its tap target
+  // survive so the PipPanel — which also hosts the non-trust VolumeBar — stays
+  // reachable, but no trust state is communicated.
+  if (!trustEnabled()) {
+    return (
+      <span
+        role="img"
+        className="trust-pip"
+        style={{ backgroundColor: "var(--ah-trust-grey)" }}
+        title="Author"
+        aria-label="Author"
+      />
+    );
+  }
   return (
     <span
       role="img"

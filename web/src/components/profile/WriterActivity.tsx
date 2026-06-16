@@ -16,6 +16,7 @@ import { FollowersTab } from "./FollowersTab";
 import { FollowingTab } from "./FollowingTab";
 import { TrustProfile } from "../trust/TrustProfile";
 import { VouchModal } from "../trust/VouchModal";
+import { trustEnabled } from "../../lib/featureFlags";
 
 type ProfileTab = "work" | "social" | "followers" | "following";
 
@@ -107,9 +108,10 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
     void checkStatus();
   }, [user, writer]);
 
-  // Fetch trust data for vouch modal (viewer's existing vouches)
+  // Fetch trust data for vouch modal (viewer's existing vouches). Skipped when
+  // trust is parked (item 7) — the vouch UI that consumes it is hidden.
   useEffect(() => {
-    if (!writer) return;
+    if (!writer || !trustEnabled()) return;
     trustApi
       .getProfile(writer.id)
       .then((d) => setTrustData(d))
@@ -223,12 +225,15 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
             {msgLoading ? "..." : "Message"}
           </button>
 
-          <button
-            onClick={() => setShowVouchModal(true)}
-            className="btn-ghost py-1.5 px-4 text-ui-xs transition-colors"
-          >
-            Vouch
-          </button>
+          {/* Trust parked (item 7): vouch action hidden when off. */}
+          {trustEnabled() && (
+            <button
+              onClick={() => setShowVouchModal(true)}
+              className="btn-ghost py-1.5 px-4 text-ui-xs transition-colors"
+            >
+              Vouch
+            </button>
+          )}
 
           {hasPaywall &&
             subStatus &&
@@ -294,7 +299,7 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
       )}
 
       {/* Vouch modal */}
-      {showVouchModal && writer && (
+      {trustEnabled() && showVouchModal && writer && (
         <VouchModal
           subjectId={writer.id}
           subjectName={writer.displayName ?? username}
@@ -307,8 +312,8 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
         />
       )}
 
-      {/* Trust profile section */}
-      {writer && (
+      {/* Trust profile section — hidden when trust is parked (item 7). */}
+      {trustEnabled() && writer && (
         <div className="mb-8">
           <TrustProfile userId={writer.id} key={trustKey} compact />
         </div>

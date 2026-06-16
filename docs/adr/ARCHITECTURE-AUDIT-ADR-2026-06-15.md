@@ -194,7 +194,9 @@ blocker).
 
 ## 7. Park trust
 
-**Status:** Accepted — fully clean (read paths unaffected).
+**Status:** Accepted — fully clean (read paths unaffected). **Shipped 2026-06-16**
+behind `TRUST_SYSTEM_ENABLED` / `NEXT_PUBLIC_TRUST_ENABLED` (both default OFF); see
+the implementation plan's item-7 header for the outcome.
 
 **Context.** The trust subsystem is least-developed and not launch-critical.
 `trust_layer1` (objective computed signals) is wired across 8 files; `vouches` +
@@ -219,7 +221,10 @@ display-only). Saves the compute spent recomputing signals nobody is viewing.
 
 ## 8. Park traffology
 
-**Status:** Accepted — no hard dependency breaks.
+**Status:** Accepted — no hard dependency breaks. **Shipped 2026-06-16** (containers
+commented out, nginx `/ingest/` → 404, client beacon behind
+`NEXT_PUBLIC_TRAFFOLOGY_ENABLED`, default OFF); see the implementation plan's item-8
+header for the outcome.
 
 **Context.** Traffology has its own `traffology` schema (~12 tables), two
 *separately deployed* containers (`traffology-ingest` on :3005 receiving page

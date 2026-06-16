@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ProfileLink } from '../ui/ProfileLink'
 import { useAuth } from '../../stores/auth'
 import { TrustPip } from '../ui/TrustPip'
+import { trustEnabled } from '../../lib/featureFlags'
 import {
   trust as trustApi,
   follows as followsApi,
@@ -156,13 +157,17 @@ export function PipPanel({
           subscriptionPricePence: wd.subscriptionPricePence ?? 0,
         }
         setWriter(writerMeta)
-        try {
-          const profile = await trustApi.getProfile(writerMeta.id)
-          if (cancelled) return
-          setTrustProfile(profile)
-        } catch {
-          // Trust route 404s for non-writer accounts; not fatal — leave the
-          // section blank rather than blocking the rest of the panel.
+        // Trust parked (item 7): skip the trust-profile fetch entirely — the
+        // section that consumes it is hidden, so don't hit the parked route.
+        if (trustEnabled()) {
+          try {
+            const profile = await trustApi.getProfile(writerMeta.id)
+            if (cancelled) return
+            setTrustProfile(profile)
+          } catch {
+            // Trust route 404s for non-writer accounts; not fatal — leave the
+            // section blank rather than blocking the rest of the panel.
+          }
         }
       } catch (err) {
         if (cancelled) return
@@ -221,7 +226,11 @@ export function PipPanel({
   const subscriptionPence = writer?.subscriptionPricePence ?? 0
   const offersSubscription = subscriptionPence > 0
   const presentation = STATUS_PRESENTATION[pipStatus] ?? STATUS_PRESENTATION.unknown
-  const showFraming = !isOwn && !loading && !error && writer !== null
+  // Trust parked (item 7): the pip-status framing (accent stripe + subtitle) and
+  // the TRUST section are trust UI — hidden when off. VolumeBar (per-feed author
+  // volume, not trust) stays, so the panel still opens via the neutral pip.
+  const showTrust = trustEnabled()
+  const showFraming = showTrust && !isOwn && !loading && !error && writer !== null
 
   async function handleFollowToggle() {
     if (!writer || !user || isOwn || followBusy) return
@@ -361,7 +370,9 @@ export function PipPanel({
             </p>
           )}
 
-          {/* TRUST section — first cut */}
+          {/* TRUST section — first cut. Hidden when trust is parked (item 7);
+              VolumeBar below stays. */}
+          {showTrust && (
           <div style={{ marginTop: 20 }}>
             <div
               className="label-ui"
@@ -401,6 +412,7 @@ export function PipPanel({
               <PollQuestions subjectUserId={writer.id} subjectName={writer.displayName || writer.username} />
             )}
           </div>
+          )}
 
           {/* VOLUME section — slice 14 */}
           {!isOwn && feedId && writer && (

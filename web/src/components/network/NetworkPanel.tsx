@@ -22,6 +22,7 @@ import { DmFeeSettings } from "../social/DmFeeSettings";
 import { BlockList } from "../social/BlockList";
 import { MuteList } from "../social/MuteList";
 import { VouchList } from "../trust/VouchList";
+import { trustEnabled } from "../../lib/featureFlags";
 import { PageShell, PageHeader } from "../ui/PageShell";
 import type { NetworkTab } from "../../stores/networkOverlay";
 
@@ -53,14 +54,18 @@ export function NetworkPanel({
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  // Trust parked (item 7): the vouches tab is trust UI — dropped when off.
   const allTabs: NetworkTab[] = [
     "following",
     "followers",
     "blocked",
     "muted",
-    "vouches",
+    ...(trustEnabled() ? (["vouches"] as NetworkTab[]) : []),
   ];
-  const [tab, setTab] = useState<NetworkTab>(initialTab);
+  // Guard a stale ?tab=vouches deep-link from landing on a now-absent tab.
+  const [tab, setTab] = useState<NetworkTab>(
+    allTabs.includes(initialTab) ? initialTab : "following",
+  );
 
   const [writers, setWriters] = useState<Writer[]>([]);
   const [followers, setFollowers] = useState<Follower[]>([]);

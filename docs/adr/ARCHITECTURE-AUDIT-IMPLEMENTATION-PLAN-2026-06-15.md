@@ -8,6 +8,9 @@ re-scope** (see below); the other seven are ready to dig.
 Execution order follows the ADR's own suggested order:
 `1a → 7, 8 → (2 parked) → 3 → 6 → 5 → 4`. Item 1b stays deferred.
 
+**Progress:** 1a, 7, 8 **shipped 2026-06-16** (see each item's header). Next up:
+item 3 (the ledger keystone), then 6 → 5 → 4. Item 2 is re-scoped to tidy (A).
+
 Migration numbers below say "next free NNN" — the chain is currently at `117`;
 assign sequentially at implementation time so two items don't collide.
 
@@ -208,7 +211,42 @@ against `master` → still green (no false positives on the real tree).
 
 ---
 
-## Item 7 — Park trust
+## Item 7 — Park trust — **SHIPPED 2026-06-16**
+
+**Outcome.** Trust is parked behind `TRUST_SYSTEM_ENABLED` (server) /
+`NEXT_PUBLIC_TRUST_ENABLED` (client), both default OFF. feed-ingest builds its
+crontab conditionally (`feed-ingest/src/index.ts`): the three trust schedules
+(`trust_layer1_refresh` + the two `trust_epoch_aggregate` variants) aren't
+registered when off (the bulk of the parked compute); the task handlers stay in
+`taskList` so any already-queued job still resolves, and a startup log records
+the parked state. UI degrades: `TrustPip` renders a neutral grey dot (not null),
+`PipPanel` hides its trust sections + status framing and skips the trust fetch,
+the Network "vouches" tab is dropped, and `WriterActivity`'s Vouch button +
+`VouchModal` + `TrustProfile` are hidden (with the trust fetch skipped). Tables
+and every `LEFT JOIN trust_layer1` are untouched (degrade to NULL); `TRUST_DRY_RUN`
+left as-is.
+
+**Two deviations from the plan, both ground-truth forced:**
+- **Neutral dot, not null.** `VolumeBar` (per-feed author-volume — explicitly
+  *kept*) lives inside `PipPanel`, whose only opener is the pip. Nulling the pip
+  would strand author-volume. Resolved (with the maintainer) by degrading the pip
+  to a neutral, semantically-empty dot so the panel stays reachable while the
+  trust sections inside it hide.
+- **Server helper in `shared`, not `gateway`.** The only server consumer is
+  feed-ingest, which can't import from `gateway/`. `trustSystemEnabled()` lives in
+  `shared/src/lib/env.ts` so both gateway and feed-ingest can read it.
+- **`WriterActivity` added to the gate list.** The plan's file list missed it; it
+  renders `TrustProfile` + the Vouch action + `VouchModal` on the native writer
+  profile, so it's gated too.
+
+**Verify (done):** `shared` + `feed-ingest` build clean; web `tsc --noEmit` 0
+errors; hairline guard shows only pre-existing `PipPanel` debt (none on touched
+lines). Runtime checks (feed cards render with neutral pip, no vouch tab, crons
+unscheduled) are the operator's — web needs a rebuild to observe.
+
+The original plan follows, retained for reference.
+
+---
 
 **Goal.** Stop the compute for a display-only subsystem nobody is viewing; leave
 tables and `LEFT JOIN`s in place (confirmed: trust is display-only — ordering is
@@ -247,7 +285,34 @@ byline row — confirm the `·`-separated byline doesn't leave a dangling separa
 
 ---
 
-## Item 8 — Park traffology
+## Item 8 — Park traffology — **SHIPPED 2026-06-16**
+
+**Outcome.** The `traffology-ingest` (port 3005) + `traffology-worker` service
+blocks are commented out in `docker-compose.yml` (reversible; the npm workspaces,
+`schema.traffology.*`, and the gateway `/concurrent/*` routes stay in repo).
+nginx drops `traffology-ingest` from the nginx `depends_on` and `/ingest/` now
+`return 404;` (a straggler beacon gets a cheap 404, not a 502 against a missing
+upstream). The client beacon is gated on `NEXT_PUBLIC_TRAFFOLOGY_ENABLED` (default
+OFF). Gateway untouched — its `/concurrent/*` reads already fail soft, and its
+`TRAFFOLOGY_INGEST_URL` env is left in place (harmless; fails soft against the
+absent container).
+
+**Deviation from the plan, ground-truth forced:** the plan said gate the IIFE in
+`web/src/lib/traffology.ts`. But that `.ts` is **not bundled** — the served
+`web/public/traffology.js` is a hand-built minified artifact, and a `NEXT_PUBLIC`
+var wouldn't inline into it. So the authoritative gate is in the article page
+(`web/src/app/article/[dTag]/page.tsx`): when off, neither `<TraffologyMeta>` nor
+`<Script src="/traffology.js">` renders, so the browser never loads the beacon.
+That plus the nginx 404 is belt-and-suspenders; the `.ts` source is left as-is.
+
+**Verify (done):** `docker compose config -q` valid; `--services` no longer lists
+either traffology service; web `tsc --noEmit` 0 errors. Runtime check (no
+`/ingest/beacon` requests on an article load) is the operator's after a web
+rebuild.
+
+The original plan follows, retained for reference.
+
+---
 
 **Goal.** Stop two separately-deployed containers + their compute for an unused
 subsystem; leave schema + npm workspaces in repo. Gateway needs no change (stale

@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { renderMarkdown } from '../../../lib/markdown'
 import { ArticleReader } from '../../../components/article/ArticleReader'
 import { TraffologyMeta } from '../../../components/traffology/TraffologyMeta'
+import { traffologyEnabled } from '../../../lib/featureFlags'
 import type { ArticleMetadata } from '../../../lib/api'
 
 // =============================================================================
@@ -76,9 +77,16 @@ export default async function ArticlePage({ params }: { params: { dTag: string }
     ? await renderMarkdown(article.contentFree)
     : ''
 
+  // Traffology parked (architecture-audit item 8): when off, neither the hidden
+  // meta nor the beacon script load, so readers' browsers never POST to the
+  // (now 404ing) /ingest/* endpoint. This JSX gate is the authoritative source
+  // gate — the served /traffology.js is a hand-built artifact, not bundled from
+  // web/src/lib/traffology.ts, so not loading the <Script> is what stops it.
+  const traffologyOn = traffologyEnabled()
+
   return (
     <>
-    <TraffologyMeta articleId={article.id} />
+    {traffologyOn && <TraffologyMeta articleId={article.id} />}
     <ArticleReader
       article={{
         id: article.nostrEventId,
@@ -108,7 +116,7 @@ export default async function ArticlePage({ params }: { params: { dTag: string }
       publicationName={article.publication?.name ?? undefined}
       publicationSlug={article.publication?.slug ?? undefined}
     />
-    <Script src="/traffology.js" strategy="afterInteractive" />
+    {traffologyOn && <Script src="/traffology.js" strategy="afterInteractive" />}
     </>
   )
 }

@@ -21,3 +21,14 @@ export function requireEnvMinLength(name: string, minLength: number): string {
   }
   return value
 }
+
+// Trust subsystem master switch (Layer 1/2/4). Default OFF — the trust graph is
+// parked (architecture-audit item 7): a display-only subsystem nobody is
+// viewing. When off, feed-ingest stops scheduling the trust crons and the web
+// UI hides the trust surfaces (the pip degrades to a neutral dot). Tables and
+// the LEFT JOINs stay in place and degrade to NULL. Mirrors the
+// DISCOVERY_PUBLISH_ENABLED shape; lives in shared so both gateway and
+// feed-ingest can read it. Client counterpart: NEXT_PUBLIC_TRUST_ENABLED.
+export function trustSystemEnabled(): boolean {
+  return process.env.TRUST_SYSTEM_ENABLED === "1"
+}
