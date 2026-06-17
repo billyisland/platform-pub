@@ -243,7 +243,11 @@ Three post-ship corrections after the mobile shell landed, all in
    "carries the wordmark" (singular).
 2. **Numerals → pips.** The indicator strip is a row of pips, not numeral buttons —
    see §IV. Quieter, less intrusive; ordinal position carries the feed number.
-3. **∀ → X back-to-workspace.** While any ∀-menu destination overlay is open the disc
-   shows a white X and a tap closes it back to the workspace (resuming the feed you
-   left); in-panel "back to workspace" prompts retired. Full spec in
-   GLASSHOUSE-AND-PALETTE-ADR §III.3 (the disc sits above the frost on both surfaces).
+3. **∀ → X back-to-workspace / minimise.** On mobile every Glasshouse is a full-screen
+   sheet, so the disc is the minimise-X for **any** open sheet — the six ∀-menu
+   destinations **plus** the note/article/feed composers, reader, profile, surface
+   (via the `useGlasshousePresence` registry), not just the six. A tap closes the live
+   sheet back to the workspace (resuming the feed you left); in-panel "back to
+   workspace" prompts retired. The ∀↔X swap is an animated cross-fade + quarter-turn.
+   Full spec in GLASSHOUSE-AND-PALETTE-ADR §III.3 (the disc sits above the frost on
+   both surfaces).

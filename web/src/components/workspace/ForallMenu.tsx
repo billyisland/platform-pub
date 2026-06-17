@@ -10,6 +10,8 @@ import { useLedgerOverlay } from "../../stores/ledgerOverlay";
 import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay } from "../../stores/libraryOverlay";
 import { useNetworkOverlay } from "../../stores/networkOverlay";
+import { useGlasshousePresence } from "../../stores/glasshouse";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { SearchPanel } from "./SearchPanel";
 
 const TOKENS = {
@@ -81,6 +83,19 @@ export function ForallMenu({
   const settingsOpen = useSettingsOverlay((s) => s.isOpen);
   const menuOverlayOpen =
     msgOpen || dashOpen || libOpen || netOpen || ledgerOpen || settingsOpen;
+
+  // On the mobile workspace every Glasshouse is a full-screen sheet (note /
+  // article / feed composers, reader, profile, the six destinations …), so the
+  // disc is the minimise-X for *any* of them — not just the six menu
+  // destinations. The presence registry tracks whichever single sheet is live;
+  // we collapse it to the disc-X and close it on tap. On desktop those non-menu
+  // panes are draggable windows with their own ✕, so the disc stays the ∀ there
+  // and only the six destinations flip it (the existing behaviour).
+  const isMobile = useIsMobile();
+  const glasshouseOpen = useGlasshousePresence((s) => s.isOpen);
+  const mobileSheetOpen = isMobile && glasshouseOpen;
+  // The disc shows the close glyph whenever it would act as a minimise-X.
+  const showClose = menuOverlayOpen || mobileSheetOpen;
 
   const [view, setView] = useState<View>("closed");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -194,6 +209,12 @@ export function ForallMenu({
   // the back-to-workspace button (close the overlay); otherwise it toggles the
   // command menu.
   function onTriggerClick() {
+    // Mobile: any open full-screen sheet (incl. the six destinations, which are
+    // also Glasshouses) minimises through the presence registry.
+    if (mobileSheetOpen) {
+      useGlasshousePresence.getState().close();
+      return;
+    }
     if (menuOverlayOpen) {
       closeMenuOverlays();
       return;
@@ -390,7 +411,7 @@ export function ForallMenu({
         type="button"
         className="forall-trigger"
         aria-label={
-          menuOverlayOpen
+          showClose
             ? "Back to workspace"
             : `Workspace actions${
                 totalUnread > 0 ? ` (${totalUnread} unread)` : ""
@@ -459,10 +480,16 @@ export function ForallMenu({
         <svg
           aria-hidden="true"
           viewBox="0 0 56 56"
-          onTransitionEnd={() => {
+          onTransitionEnd={(e) => {
             // The completing turn has landed back at ∀ — snap 360°→0° with no
-            // transition so the next hover starts cleanly from upside-down.
-            if (glyphRot === 360) {
+            // transition so the next hover starts cleanly from upside-down. Only
+            // the svg's own transform counts (the glyph groups bubble their
+            // morph transitions up here too).
+            if (
+              e.target === e.currentTarget &&
+              e.propertyName === "transform" &&
+              glyphRot === 360
+            ) {
               setSpinTransition(false);
               setGlyphRot(0);
             }
@@ -473,47 +500,70 @@ export function ForallMenu({
             width: "100%",
             height: "100%",
             transformOrigin: "center",
-            // The X (overlay-open) state never spins — it's a fixed close glyph.
-            transform: `rotate(${menuOverlayOpen ? 0 : glyphRot}deg)`,
+            // The close glyph never spins — when it's showing, the hover spin is
+            // pinned to 0 and the ∀↔X swap is carried by the two groups below.
+            transform: `rotate(${showClose ? 0 : glyphRot}deg)`,
             transition: spinTransition ? "transform 480ms ease-in-out" : "none",
           }}
         >
           <defs>
             {/* The disc itself — clips the bars so their overshoot can never
-                paint past the rim. Centred on the rotation origin, so a circle
-                is invariant under the spin and stays aligned with the button's
-                border-radius disc. */}
+                paint past the rim. Centred on the rotation origin (28,28), so a
+                circle is invariant under both the hover spin and the group morph
+                rotations and stays aligned with the button's border-radius disc. */}
             <clipPath id="forall-clip">
               <circle cx="28" cy="28" r="27" />
             </clipPath>
           </defs>
-          {/* stroke via style, not the presentation attribute — the token
-              is a var() reference, which attributes don't resolve */}
+          {/* The ∀ and the close-X are stacked groups that cross-fade with a
+              discreet quarter-turn between them — a soft morph, not a hard swap.
+              The idle/∀ group fades+rotates out as the X fades+rotates in (and
+              vice-versa). Both rotate about the view-box centre so the clipped
+              disc never shifts. stroke via style, not the presentation
+              attribute — the token is a var() reference, which attributes don't
+              resolve. */}
           <g
             clipPath="url(#forall-clip)"
-            style={{ stroke: TOKENS.glyphFg }}
+            style={{
+              stroke: TOKENS.glyphFg,
+              opacity: showClose ? 0 : 1,
+              transform: `rotate(${showClose ? -90 : 0}deg)`,
+              transformBox: "view-box",
+              transformOrigin: "28px 28px",
+              transition:
+                "opacity 200ms ease, transform 260ms cubic-bezier(0.4, 0, 0.2, 1)",
+            }}
             strokeWidth={6}
             strokeLinecap="round"
             fill="none"
           >
-            {menuOverlayOpen ? (
-              <>
-                {/* Close glyph: a large X spanning the disc, the same white bars
-                    construction as the ∀, signalling "back to workspace". */}
-                <line x1="11" y1="11" x2="45" y2="45" />
-                <line x1="45" y1="11" x2="11" y2="45" />
-              </>
-            ) : (
-              <>
-                {/* left diagonal: bottom rim → upper-left rim (cuts off a segment) */}
-                <line x1="28" y1="56" x2="8.5" y2="5" />
-                {/* right diagonal: bottom rim → upper-right rim (cuts off a segment) */}
-                <line x1="28" y1="56" x2="47.5" y2="5" />
-                {/* crossbar: raised to pass through the disc centre (y=28); the x
-                    endpoints sit on the diagonals' centrelines at that height. */}
-                <line x1="17.3" y1="28" x2="38.7" y2="28" />
-              </>
-            )}
+            {/* left diagonal: bottom rim → upper-left rim (cuts off a segment) */}
+            <line x1="28" y1="56" x2="8.5" y2="5" />
+            {/* right diagonal: bottom rim → upper-right rim (cuts off a segment) */}
+            <line x1="28" y1="56" x2="47.5" y2="5" />
+            {/* crossbar: raised to pass through the disc centre (y=28); the x
+                endpoints sit on the diagonals' centrelines at that height. */}
+            <line x1="17.3" y1="28" x2="38.7" y2="28" />
+          </g>
+          <g
+            clipPath="url(#forall-clip)"
+            style={{
+              stroke: TOKENS.glyphFg,
+              opacity: showClose ? 1 : 0,
+              transform: `rotate(${showClose ? 0 : 90}deg)`,
+              transformBox: "view-box",
+              transformOrigin: "28px 28px",
+              transition:
+                "opacity 200ms ease, transform 260ms cubic-bezier(0.4, 0, 0.2, 1)",
+            }}
+            strokeWidth={6}
+            strokeLinecap="round"
+            fill="none"
+          >
+            {/* Close glyph: a large X spanning the disc, the same white bars
+                construction as the ∀, signalling "back to workspace". */}
+            <line x1="11" y1="11" x2="45" y2="45" />
+            <line x1="45" y1="11" x2="11" y2="45" />
           </g>
         </svg>
         </span>

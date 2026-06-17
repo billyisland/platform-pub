@@ -49,6 +49,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { snap } from "../../lib/workspace/grid";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useGlasshousePresence } from "../../stores/glasshouse";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
 const MARGIN = 20;
@@ -473,6 +474,10 @@ export function Glasshouse({
   const tokenRef = useRef<object>({});
   const supersedeRef = useRef<() => void>(() => {});
   supersedeRef.current = onSupersede ?? onClose;
+  // Kept fresh for the presence registry's `close()` (the disc-X minimise on
+  // mobile) — the same close the pane's own ✕ and Escape fire.
+  const closeRef = useRef<() => void>(() => {});
+  closeRef.current = onClose;
 
   // Register as the active Glasshouse on mount and supersede the prior one;
   // release the slot on unmount (only if we still hold it).
@@ -481,9 +486,14 @@ export function Glasshouse({
     const prev = activeGlasshouse;
     activeGlasshouse = { token, supersede: () => supersedeRef.current() };
     if (prev && prev.token !== token) prev.supersede();
+    // Mirror into the subscribable presence registry so the ∀ disc can act as the
+    // minimise-X for this sheet (mobile). Token-guarded like the module var so a
+    // superseded pane's unmount never clobbers its successor's slot.
+    useGlasshousePresence.getState()._set(() => closeRef.current());
     return () => {
       if (activeGlasshouse && activeGlasshouse.token === token) {
         activeGlasshouse = null;
+        useGlasshousePresence.getState()._set(null);
       }
     };
   }, []);
