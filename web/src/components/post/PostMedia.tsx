@@ -209,8 +209,12 @@ export function PostMedia({
 function InlineVideo({ item, expanded }: { item: MediaItem; expanded: boolean }) {
   const ref = React.useRef<HTMLVideoElement>(null);
   const isHls = /\.m3u8(\?|#|$)/i.test(item.url);
+  // A fatal load failure drops the player for the poster — never a forever
+  // spinner (the symptom when a manifest/segment fetch is refused or stalls).
+  const [failed, setFailed] = React.useState(false);
 
   React.useEffect(() => {
+    setFailed(false);
     const el = ref.current;
     if (!el || !isHls) return;
     // Safari (and iOS) play HLS natively.
@@ -219,6 +223,7 @@ function InlineVideo({ item, expanded }: { item: MediaItem; expanded: boolean })
       return;
     }
     let destroyed = false;
+    let recovered = false;
     let hls: { destroy: () => void } | null = null;
     void import("hls.js")
       .then(({ default: Hls }) => {
@@ -230,13 +235,49 @@ function InlineVideo({ item, expanded }: { item: MediaItem; expanded: boolean })
         instance.on(Hls.Events.MANIFEST_PARSED, () => {
           void ref.current?.play().catch(() => {});
         });
+        instance.on(Hls.Events.ERROR, (_evt, data) => {
+          if (!data.fatal) return;
+          // One recovery attempt for a transient network/media stall; if it
+          // fatals again, tear down so the poster stands in.
+          if (!recovered && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            recovered = true;
+            instance.startLoad();
+            return;
+          }
+          if (!recovered && data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            recovered = true;
+            instance.recoverMediaError();
+            return;
+          }
+          instance.destroy();
+          if (!destroyed) setFailed(true);
+        });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!destroyed) setFailed(true);
+      });
     return () => {
       destroyed = true;
       hls?.destroy();
     };
   }, [item.url, isHls]);
+
+  // Fatal failure: let the poster stand in rather than a stuck spinner.
+  if (failed) {
+    return item.thumbnail ? (
+      <img
+        src={item.thumbnail}
+        alt={item.alt ?? ""}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        style={
+          expanded
+            ? { width: "100%", height: "auto", maxWidth: "100%", display: "block" }
+            : { width: "100%", height: "100%", objectFit: "cover", display: "block" }
+        }
+      />
+    ) : null;
+  }
 
   return (
     <video
@@ -249,6 +290,11 @@ function InlineVideo({ item, expanded }: { item: MediaItem; expanded: boolean })
       controls
       preload="metadata"
       onClick={(e) => e.stopPropagation()}
+      // Direct files (MP4/WebM) surface load failures here; HLS errors come via
+      // hls.js's ERROR event, which manages the element's own error internally.
+      onError={() => {
+        if (!isHls) setFailed(true);
+      }}
       style={{
         width: "100%",
         maxWidth: "100%",

@@ -644,6 +644,8 @@ Then sign up a fresh account to confirm it lands on a clone (`SELECT cloned_from
 
 `POST /api/v1/media/upload` resizes to max 1200px, converts to WebP (q80), and writes to `media_data` at `/app/media/<sha256>.webp`. Nginx serves `/media/<sha256>.webp` with 1-year cache headers. Max upload 12 MB (enforced by Fastify `bodyLimit` and `@fastify/multipart`).
 
+**CSP and external video.** Feed video is fetched cross-origin from the source's own CDN (Bluesky `video.bsky.app`, Mastodon instance media, RSS enclosures), so the nginx `Content-Security-Policy` (`nginx.conf`) must keep `media-src 'self' blob: data: https:` and a `connect-src` that includes `https:`. The `blob:` is required for the `hls.js` MediaSource URL; `connect-src https:` is required for `hls.js` to fetch the `.m3u8` manifest + segments. Dropping either silently CSP-blocks all video and the player spins forever (the symptom is invisible in local dev, which runs Next.js directly with no nginx/CSP). A CSP edit needs an `nginx -s reload` to take effect.
+
 ---
 
 ## Frontend pages
