@@ -49,7 +49,7 @@ import {
   LazyLibraryOverlay as LibraryOverlay,
   LazyNetworkOverlay as NetworkOverlay,
 } from "./LazyOverlays";
-import { useReader } from "../../stores/reader";
+import { useReader, type ReaderNavEntry } from "../../stores/reader";
 import { useCompose } from "../../stores/compose";
 import { useEditorOverlay } from "../../stores/editorOverlay";
 import {
@@ -63,6 +63,30 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 
 const FLOOR = "var(--ah-bone)"; // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed";
+
+// Map a feed Post to a reader-skip entry — articles only (the reader-pane click
+// targets), mirroring openReaderFromPost's native/external split. Non-articles
+// (notes, external short posts) expand inline and return null, so they drop out
+// of the up/down skip sequence.
+function articleToReaderEntry(p: Post): ReaderNavEntry | null {
+  if (p.type !== "article") return null;
+  if (p.author.pubkey) {
+    if (!p.dTag) return null;
+    return {
+      kind: "native",
+      postId: p.id,
+      dTag: p.dTag,
+      preview: { title: p.body.title, summary: p.body.summary },
+    };
+  }
+  return {
+    kind: "external",
+    postId: p.id,
+    url: p.origin.uri,
+    title: p.body.title,
+    siteName: p.origin.sourceName,
+  };
+}
 
 // Friendly origin label shown on the quoted-mini when quoting an external post
 // (mirrors PostOriginTag / SourceAttribution). Falls back to the source name,
@@ -1049,29 +1073,38 @@ export function WorkspaceView() {
                     // Actions are stable refs, so getState() avoids subscribing.
                     const openReaderFromPost = (p: Post) => {
                       const reader = useReader.getState();
-                      // Frame the reader in the launching feed's wall colour
-                      // (its side-wall-thick outline says "opened from this feed").
-                      const frameColor = ctx.palette.walls;
-                      if (p.author.pubkey) {
-                        if (p.dTag)
-                          reader.openNative(p.dTag, {
-                            postId: p.id,
-                            frameColor,
-                            // Seed the instant preview from the card's Post so the
-                            // reader paints title+dek on the first frame (audit #6).
-                            preview: {
-                              title: p.body.title,
-                              summary: p.body.summary,
-                            },
-                          });
-                      } else {
-                        reader.openExternal(p.origin.uri, {
-                          postId: p.id,
-                          title: p.body.title,
-                          siteName: p.origin.sourceName,
-                          frameColor,
-                        });
+                      // Frame the reader in the launching feed's wall colour, and
+                      // hand it the feed's article list so the skip ears step
+                      // through them in place (the launching feed's bar-text tone
+                      // colours the ear arrows).
+                      const frame = {
+                        frameColor: ctx.palette.walls,
+                        frameTextColor: ctx.palette.barText,
+                      };
+                      const entries = v.items
+                        .map(articleToReaderEntry)
+                        .filter((e): e is ReaderNavEntry => e !== null);
+                      const index = entries.findIndex((e) => e.postId === p.id);
+                      if (index >= 0) {
+                        reader.openFeedItem(entries, index, frame);
+                        return;
                       }
+                      // Not in the feed list (e.g. an article quoted inside a
+                      // thread) — open it without the skip ears.
+                      const entry = articleToReaderEntry(p);
+                      if (entry?.kind === "native")
+                        reader.openNative(entry.dTag, {
+                          postId: entry.postId,
+                          frameColor: frame.frameColor,
+                          preview: entry.preview,
+                        });
+                      else if (entry?.kind === "external")
+                        reader.openExternal(entry.url, {
+                          postId: entry.postId,
+                          title: entry.title,
+                          siteName: entry.siteName,
+                          frameColor: frame.frameColor,
+                        });
                     };
                     if (isExpanded && post.type !== "article") {
                       return (

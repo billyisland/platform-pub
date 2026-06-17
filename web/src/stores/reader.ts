@@ -10,6 +10,12 @@ import { create } from "zustand";
 // Opening pushes the article's real URL into history so the overlay is
 // shareable and the browser Back button closes it; close() pops that entry.
 // Direct visits to those URLs render the same inner readers full-page.
+//
+// Feed navigation (the skip "ears"): when the reader is launched from a feed
+// card, the launcher hands over the feed's ordered article list (`nav`). The
+// reader then exposes prev/next skip — the up/down ears on the Glasshouse frame
+// jump article-to-article through that list without leaving the pane. Opens that
+// carry no feed context (search, dashboard, library) leave `nav` null → no ears.
 // =============================================================================
 
 export type ReaderTarget =
@@ -32,6 +38,29 @@ export type ReaderTarget =
       preview?: { title: string | null; summary: string | null } | null;
     };
 
+// One entry in the feed-skip list — enough to re-open any article in place.
+// Mirrors the open args; `kind` selects native vs external on skip.
+export type ReaderNavEntry =
+  | {
+      kind: "native";
+      postId: string | null;
+      dTag: string;
+      preview?: { title: string | null; summary: string | null } | null;
+    }
+  | {
+      kind: "external";
+      postId: string | null;
+      url: string;
+      title: string | null;
+      siteName: string | null;
+    };
+
+/** The ordered article list of the launching feed + the current position. */
+interface ReaderNav {
+  entries: ReaderNavEntry[];
+  index: number;
+}
+
 interface ReaderState {
   isOpen: boolean;
   target: ReaderTarget | null;
@@ -41,6 +70,12 @@ interface ReaderState {
    *  a `var(--ah-…)` string) — the reader pane frames itself with it. Null when
    *  opened from a feed-agnostic surface. */
   frameColor: string | null;
+  /** The launching feed's bar-text colour (palette.barText) — the contrast tone
+   *  for the skip-ear arrows drawn on the frame. Null when feed-agnostic. */
+  frameTextColor: string | null;
+  /** The launching feed's article list + current index, for the skip ears.
+   *  Null when opened without feed context (search/dashboard/library). */
+  nav: ReaderNav | null;
 
   /** Open an external article by URL (the extract reader). */
   openExternal: (
@@ -63,6 +98,16 @@ interface ReaderState {
       preview?: { title: string | null; summary: string | null } | null;
     },
   ) => void;
+  /** Open the article at `index` in a feed's article list, wiring up the skip
+   *  ears so the up/down arrows step through `entries` in place. */
+  openFeedItem: (
+    entries: ReaderNavEntry[],
+    index: number,
+    frame: { frameColor: string | null; frameTextColor: string | null },
+  ) => void;
+  /** Step to the previous / next article in the feed list (the ears). No-op
+   *  when there's no nav, or already at the end in that direction. */
+  skip: (delta: -1 | 1) => void;
   /**
    * Back-compat alias for the legacy VesselCard call `open(url, title, site)`.
    * No postId ⇒ no addressable URL pushed (the flag-off path is not yet on the
@@ -81,9 +126,9 @@ interface ReaderState {
 
 // Push our reader URL, OR replace it if we already own a pushed entry. Opening a
 // second article while the overlay is open (a link inside a reader, a stacked
-// open) must not push a *second* entry — close() pops only one, so the extra
-// would leak into history and the URL would desync from the overlay. Replacing
-// keeps exactly one entry that close() reliably pops.
+// open, a skip-ear step) must not push a *second* entry — close() pops only one,
+// so the extra would leak into history and the URL would desync from the
+// overlay. Replacing keeps exactly one entry that close() reliably pops.
 function pushReaderUrl(targetUrl: string, alreadyPushed: boolean): boolean {
   if (typeof window === "undefined") return false;
   try {
@@ -98,67 +143,151 @@ function pushReaderUrl(targetUrl: string, alreadyPushed: boolean): boolean {
   }
 }
 
-export const useReader = create<ReaderState>((set, get) => ({
-  isOpen: false,
-  target: null,
-  didPush: false,
-  frameColor: null,
-
-  openExternal: (url, opts) => {
-    const postId = opts?.postId ?? null;
-    const reuse = get().didPush;
-    // No postId ⇒ no addressable URL; keep whatever entry we already own.
-    const didPush = postId
-      ? pushReaderUrl(`/read/${postId}`, reuse)
-      : reuse;
-    set({
-      isOpen: true,
-      target: {
-        kind: "external",
-        url,
-        postId,
-        title: opts?.title ?? null,
-        siteName: opts?.siteName ?? null,
-      },
-      didPush,
-      frameColor: opts?.frameColor ?? null,
-    });
-  },
-
-  openNative: (dTag, opts) => {
-    const didPush = pushReaderUrl(`/article/${dTag}`, get().didPush);
-    set({
-      isOpen: true,
-      target: {
-        kind: "native",
-        dTag,
-        postId: opts?.postId ?? null,
-        preview: opts?.preview ?? null,
-      },
-      didPush,
-      frameColor: opts?.frameColor ?? null,
-    });
-  },
-
-  open: (url, title, siteName) => get().openExternal(url, { title, siteName }),
-
-  close: () => {
-    if (get().didPush && typeof window !== "undefined") {
-      // Pop our pushed entry; the popstate listener (_handlePop) finalises state
-      // and restores the prior URL — one path for both Back and the close button.
-      window.history.back();
+export const useReader = create<ReaderState>((set, get) => {
+  // Open a single nav entry, reusing the current history entry. Shared by the
+  // feed-launched open and the skip ears so both keep exactly one history entry.
+  const openEntry = (
+    entry: ReaderNavEntry,
+    frame: {
+      frameColor: string | null;
+      frameTextColor: string | null;
+      nav: ReaderNav | null;
+    },
+  ) => {
+    if (entry.kind === "native") {
+      const didPush = pushReaderUrl(`/article/${entry.dTag}`, get().didPush);
+      set({
+        isOpen: true,
+        target: {
+          kind: "native",
+          dTag: entry.dTag,
+          postId: entry.postId,
+          preview: entry.preview ?? null,
+        },
+        didPush,
+        frameColor: frame.frameColor,
+        frameTextColor: frame.frameTextColor,
+        nav: frame.nav,
+      });
     } else {
-      set({ isOpen: false, target: null, didPush: false, frameColor: null });
+      const reuse = get().didPush;
+      const didPush = entry.postId
+        ? pushReaderUrl(`/read/${entry.postId}`, reuse)
+        : reuse;
+      set({
+        isOpen: true,
+        target: {
+          kind: "external",
+          url: entry.url,
+          postId: entry.postId,
+          title: entry.title,
+          siteName: entry.siteName,
+        },
+        didPush,
+        frameColor: frame.frameColor,
+        frameTextColor: frame.frameTextColor,
+        nav: frame.nav,
+      });
     }
-  },
+  };
 
-  dismiss: () => {
-    if (get().isOpen)
-      set({ isOpen: false, target: null, didPush: false, frameColor: null });
-  },
+  return {
+    isOpen: false,
+    target: null,
+    didPush: false,
+    frameColor: null,
+    frameTextColor: null,
+    nav: null,
 
-  _handlePop: () => {
-    if (get().isOpen)
-      set({ isOpen: false, target: null, didPush: false, frameColor: null });
-  },
-}));
+    openExternal: (url, opts) => {
+      openEntry(
+        {
+          kind: "external",
+          url,
+          postId: opts?.postId ?? null,
+          title: opts?.title ?? null,
+          siteName: opts?.siteName ?? null,
+        },
+        { frameColor: opts?.frameColor ?? null, frameTextColor: null, nav: null },
+      );
+    },
+
+    openNative: (dTag, opts) => {
+      openEntry(
+        {
+          kind: "native",
+          dTag,
+          postId: opts?.postId ?? null,
+          preview: opts?.preview ?? null,
+        },
+        { frameColor: opts?.frameColor ?? null, frameTextColor: null, nav: null },
+      );
+    },
+
+    openFeedItem: (entries, index, frame) => {
+      const entry = entries[index];
+      if (!entry) return;
+      openEntry(entry, {
+        frameColor: frame.frameColor,
+        frameTextColor: frame.frameTextColor,
+        nav: { entries, index },
+      });
+    },
+
+    skip: (delta) => {
+      const { nav, frameColor, frameTextColor } = get();
+      if (!nav) return;
+      const next = nav.index + delta;
+      if (next < 0 || next >= nav.entries.length) return;
+      openEntry(nav.entries[next], {
+        frameColor,
+        frameTextColor,
+        nav: { entries: nav.entries, index: next },
+      });
+    },
+
+    open: (url, title, siteName) => get().openExternal(url, { title, siteName }),
+
+    close: () => {
+      if (get().didPush && typeof window !== "undefined") {
+        // Pop our pushed entry; the popstate listener (_handlePop) finalises
+        // state and restores the prior URL — one path for Back and the close
+        // button.
+        window.history.back();
+      } else {
+        set({
+          isOpen: false,
+          target: null,
+          didPush: false,
+          frameColor: null,
+          frameTextColor: null,
+          nav: null,
+        });
+      }
+    },
+
+    dismiss: () => {
+      if (get().isOpen)
+        set({
+          isOpen: false,
+          target: null,
+          didPush: false,
+          frameColor: null,
+          frameTextColor: null,
+          nav: null,
+        });
+    },
+
+    _handlePop: () => {
+      if (get().isOpen)
+        set({
+          isOpen: false,
+          target: null,
+          didPush: false,
+          frameColor: null,
+          frameTextColor: null,
+          nav: null,
+        });
+    },
+  };
+});

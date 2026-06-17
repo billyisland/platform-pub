@@ -49,13 +49,26 @@
 import React, { useEffect, useRef, useState } from "react";
 import { snap } from "../../lib/workspace/grid";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { WALL } from "./Vessel";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
 const MARGIN = 20;
 // Floors for a resizable pane (the writers). On the 20px lattice.
 const MIN_W = 320;
 const MIN_H = 240;
+
+// Feed-launched frame geometry — an INVERTED, thinner echo of the feed vessel.
+// The vessel is ⊔ (8px side walls + a 32px bottom bar). The reader frame is its
+// inversion ⊓: a top bar + narrow side rules, open at the bottom — all thinner
+// than the vessel's own walls. Drawn as a colour overlay (not borders) so it
+// never disturbs the pane's width / scroll geometry, sitting in the content's
+// top + side padding gutters. Both dimensions clear the banned single-pixel range.
+const FRAME_TOP = 6; // top-bar thickness
+const FRAME_SIDE = 4; // side-rule thickness
+// Skip "ears": half-circle tabs that protrude from the pane's left/right edges,
+// each carrying a triangular arrow — the up/down feed-skip buttons. Coloured the
+// frame colour; the arrow takes the frame's contrast tone.
+const EAR_R = 22; // ear radius (protrusion depth = EAR_R, height = 2·EAR_R)
+const EAR_ARROW = 7; // arrow half-width / height
 
 const clampN = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
@@ -382,11 +395,24 @@ interface GlasshouseProps {
   resizable?: boolean;
   /** When this Glasshouse was launched from a specific feed (reader / profile
    *  opened off a card), the feed's WALLS colour (`palette.walls`, a
-   *  `var(--ah-…)` string). The pane then frames itself with an outline of that
-   *  colour at the feed's side-wall thickness (`WALL`) — literally the vessel's
-   *  own wall colour at its own thickness — so the surface visibly belongs to
-   *  the feed it came from. Omit for feed-agnostic surfaces. */
+   *  `var(--ah-…)` string). The pane then frames itself with an INVERTED, thinner
+   *  echo of that feed's vessel: a top bar + narrow side rules in that colour,
+   *  open at the bottom — so the surface visibly belongs to the feed it came
+   *  from. Omit for feed-agnostic surfaces. */
   frameColor?: string | null;
+  /** Contrast tone for the skip-ear arrows on the frame (`palette.barText`).
+   *  Falls back to bone when omitted. Only meaningful alongside `sideNav`. */
+  frameTextColor?: string | null;
+  /** Feed-skip "ears": half-circle tabs on the pane's left/right edges that step
+   *  through the launching feed's articles in place (the reader's up/down skip).
+   *  Rendered only when `frameColor` is set (the ears take its colour) and not
+   *  on the mobile full-screen sheet. Omit for surfaces without feed navigation. */
+  sideNav?: {
+    onPrev: () => void;
+    onNext: () => void;
+    canPrev: boolean;
+    canNext: boolean;
+  } | null;
   children: React.ReactNode;
 }
 
@@ -398,6 +424,8 @@ export function Glasshouse({
   persistKey,
   resizable,
   frameColor,
+  frameTextColor,
+  sideNav,
   children,
 }: GlasshouseProps) {
   // On the mobile workspace (MOBILE-LAYOUT-ADR §III) every Glasshouse is a
@@ -407,6 +435,24 @@ export function Glasshouse({
   // untouched.
   const isMobile = useIsMobile();
   const pane = usePanePlacement(maxWidth, persistKey, resizable, isMobile);
+
+  // Measured on-screen pane height — used only to vertically centre the skip
+  // ears on the pane (its height is content-driven unless resized, so it can't
+  // be derived from props). Tracks live as content / drag / resize change it.
+  const [paneH, setPaneH] = useState(0);
+  useEffect(() => {
+    const el = pane.paneRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setPaneH(el.offsetHeight));
+    ro.observe(el);
+    setPaneH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [pane.paneRef]);
+
+  // The skip ears render only when the pane is framed (they take the frame
+  // colour) and not on the mobile full-screen sheet (they'd fall off-screen).
+  const showEars = !!frameColor && !!sideNav && !isMobile && paneH > 0;
+  const earArrowColor = frameTextColor ?? "var(--ah-bone)";
 
   // Whole-pane drag: grab the window by any empty/margin part of it. Bails on
   // interactive controls, selectable text, and scrollbar gutters (see
@@ -489,19 +535,35 @@ export function Glasshouse({
               height: pane.height ?? undefined,
               maxHeight: pane.ghH,
               "--gh-h": `${pane.ghH}px`,
-              // Feed-launched frame: an outline of the source feed's wall
-              // colour at the vessel side-wall thickness (WALL = 8px — solid
-              // enclosure, well above the banned single-pixel range). Outline
-              // (not border) so it sits outside the pane edge without disturbing
-              // the width/scroll geometry, and clears the overflow-hidden clip.
-              // Absent when frameColor is null.
-              ...(frameColor
-                ? { outline: `${WALL}px solid ${frameColor}`, outlineOffset: 0 }
-                : null),
             } as React.CSSProperties
           }
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Feed-launched frame — the inverted, thinner echo of the source
+              feed's vessel (⊓: top bar + side rules, open at the bottom), in the
+              feed's wall colour. A pointer-events-none colour overlay sitting in
+              the content's top + side padding gutters, so it never disturbs the
+              pane's width / scroll geometry. Below the chrome (z-10) so the grip
+              and ✕ stay above the bar. Absent when frameColor is null. */}
+          {frameColor && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-[5]"
+            >
+              <div
+                className="absolute left-0 right-0 top-0"
+                style={{ height: FRAME_TOP, background: frameColor }}
+              />
+              <div
+                className="absolute bottom-0 left-0 top-0"
+                style={{ width: FRAME_SIDE, background: frameColor }}
+              />
+              <div
+                className="absolute bottom-0 right-0 top-0"
+                style={{ width: FRAME_SIDE, background: frameColor }}
+              />
+            </div>
+          )}
           {/* Drag handle — a grip pill, top-centre, pinned over the content.
               4px tall — a grip glyph, not a thin rule. Discoverable affordance
               for the whole-pane drag (the pane body drags too via
@@ -561,6 +623,85 @@ export function Glasshouse({
             </div>
           )}
         </div>
+
+        {/* Skip ears — half-circle tabs appended to the pane's left/right edges,
+            each a triangular arrow that steps through the launching feed's
+            articles in place. Siblings of the pane (not children), so they
+            protrude past its overflow-hidden clip. Left = up the feed (previous
+            article, ▲); right = down the feed (next article, ▼). The colour is
+            the frame colour; a step that's unavailable dims its ear. */}
+        {showEars && sideNav && (
+          <>
+            <button
+              type="button"
+              aria-label="Previous article"
+              title="Previous article"
+              disabled={!sideNav.canPrev}
+              onClick={(e) => {
+                e.stopPropagation();
+                sideNav.onPrev();
+              }}
+              className="absolute z-10 flex items-center justify-center focus-ring"
+              style={{
+                left: pane.x - EAR_R,
+                top: pane.y + paneH / 2 - EAR_R,
+                width: EAR_R,
+                height: EAR_R * 2,
+                borderRadius: `${EAR_R}px 0 0 ${EAR_R}px`,
+                background: frameColor ?? undefined,
+                border: "none",
+                cursor: sideNav.canPrev ? "pointer" : "default",
+                opacity: sideNav.canPrev ? 1 : 0.3,
+                pointerEvents: sideNav.canPrev ? "auto" : "none",
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 0,
+                  height: 0,
+                  borderLeft: `${EAR_ARROW}px solid transparent`,
+                  borderRight: `${EAR_ARROW}px solid transparent`,
+                  borderBottom: `${EAR_ARROW}px solid ${earArrowColor}`,
+                }}
+              />
+            </button>
+            <button
+              type="button"
+              aria-label="Next article"
+              title="Next article"
+              disabled={!sideNav.canNext}
+              onClick={(e) => {
+                e.stopPropagation();
+                sideNav.onNext();
+              }}
+              className="absolute z-10 flex items-center justify-center focus-ring"
+              style={{
+                left: pane.x + pane.width,
+                top: pane.y + paneH / 2 - EAR_R,
+                width: EAR_R,
+                height: EAR_R * 2,
+                borderRadius: `0 ${EAR_R}px ${EAR_R}px 0`,
+                background: frameColor ?? undefined,
+                border: "none",
+                cursor: sideNav.canNext ? "pointer" : "default",
+                opacity: sideNav.canNext ? 1 : 0.3,
+                pointerEvents: sideNav.canNext ? "auto" : "none",
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 0,
+                  height: 0,
+                  borderLeft: `${EAR_ARROW}px solid transparent`,
+                  borderRight: `${EAR_ARROW}px solid transparent`,
+                  borderTop: `${EAR_ARROW}px solid ${earArrowColor}`,
+                }}
+              />
+            </button>
+          </>
+        )}
       </div>
     </>
   );

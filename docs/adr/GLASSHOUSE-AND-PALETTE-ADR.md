@@ -169,28 +169,48 @@ trialled at z-50, below the scrim, so a glasshouse hid it; reversed to z-60 +
 so it doesn't duplicate the disc's accessible control.
 
 **Feed-launched frame (2026-06-17).** A reader pane or profile overlay opened
-**from a feed card** frames itself in that feed's identity: an `outline` of the
-feed's WALL colour (`palette.walls`) at the feed's SIDE-WALL thickness
-(`WALL` = 8px, exported from `Vessel.tsx` — the single source) — literally the
-vessel's own wall colour at its own thickness, so the pane reads as a piece of
-that feed's frame lifted onto the scrim. `Glasshouse` takes an optional
-`frameColor` (a `var(--ah-…)` string) and applies
-`outline: <WALL>px solid <frameColor>` with `outlineOffset: 0` — outline not
-border, so it sits outside the pane edge without disturbing the pane's
-width/scroll geometry or its `overflow-hidden` clip; 8px is well clear of the
-banned single-pixel range (solid enclosure, not a hairline). The colour rides
-the overlay stores: `useReader`/`useProfile` carry a `frameColor` set on open and
-cleared on close/dismiss/pop. Only genuinely feed-launched call sites pass it —
-`WorkspaceView`'s `openReaderFromPost` (article card → reader), the card
-`Byline`'s `openProfileHref(href, palette.walls)` (byline → profile), and the
-byline hover `AuthorModal` (fed `palette.walls` by `PostByline`). Feed-agnostic
+**from a feed card** frames itself in that feed's identity, in the feed's WALL
+colour (`palette.walls`). The frame is an **inverted, thinner echo of the feed's
+vessel** (⊓ — the inversion of the vessel's ⊔): a top bar (`FRAME_TOP` = 6px) +
+narrow side rules (`FRAME_SIDE` = 4px), **open at the bottom**, so the pane reads
+as a piece of that feed's frame lifted onto the scrim. `Glasshouse` takes an
+optional `frameColor` (a `var(--ah-…)` string) and paints it as a
+pointer-events-none colour overlay (`absolute inset-0`, `z-[5]` — below the
+`z-10` grip/✕ chrome) sitting in the content's top + side padding gutters, so it
+never disturbs the pane's width/scroll geometry or its `overflow-hidden` clip;
+6/4px are well clear of the banned single-pixel range (solid bars, not hairlines).
+The colour rides the overlay stores: `useReader`/`useProfile` carry a `frameColor`
+set on open and cleared on close/dismiss/pop. Only genuinely feed-launched call
+sites pass it — `WorkspaceView`'s `openReaderFromPost` (article card → reader),
+the card `Byline`'s `openProfileHref(href, palette.walls)` (byline → profile), and
+the byline hover `AuthorModal` (fed `palette.walls` by `PostByline`). Feed-agnostic
 launch points (sitewide `ProfileLink`, `SearchPanel`, `FeedComposer` source-author
 links) pass nothing ⇒ `frameColor` null ⇒ no frame. On the mobile full-screen
-sheet the outline falls off-viewport (invisible), so no special-casing is needed.
+sheet the frame still renders (in-gutter); the skip ears (below) do not.
 
-(Originally the GROUND colour `palette.interior`; changed to `palette.walls`
-on 2026-06-17 so the frame is the vessel's literal wall — same colour, same 8px
-thickness — rather than a fill of its content ground.)
+**Skip ears (reader only, 2026-06-17).** When the reader is launched from a feed,
+`ReaderOverlay` also passes `Glasshouse` a `sideNav` ({`onPrev`/`onNext` +
+`canPrev`/`canNext`}) and `frameTextColor` (`palette.barText`). Glasshouse then
+renders two **half-circle "ears"** protruding from the pane's left/right edges —
+*siblings* of the pane (rendered in the wrapper, not the pane), so they clear its
+`overflow-hidden`; vertically centred on the pane's measured height via a
+`ResizeObserver`. Each ear is the `frameColor` with a CSS-triangle arrow in
+`frameTextColor`: **left = up the feed** (previous article, ▲), **right = down**
+(next article, ▼). They step through the launching feed's **article list** in
+place: `useReader` carries `nav` ({`entries`, `index`}) + a `skip(±1)` that
+re-opens the adjacent entry reusing the single pushed history entry
+(`replaceState`), and `openFeedItem(entries, index, …)` wires it on launch. The
+list is built by `WorkspaceView`'s module-level `articleToReaderEntry` over the
+feed's `v.items` — **articles only** (the reader-pane click targets); notes and
+external short posts return null and drop out of the skip sequence. An unavailable
+step (`!canPrev`/`!canNext`) dims its ear to 0.3 and disables it. Ears are
+suppressed on the mobile full-screen sheet (they'd fall off-viewport) and on any
+feed-agnostic open (no `nav` ⇒ no `sideNav`).
+
+(The frame was originally a full `outline` of `palette.walls` at the vessel's 8px
+SIDE-WALL thickness, all the way around; changed on 2026-06-17 to the inverted
+top-bar-plus-side-rules shape — open at the bottom, thinner — with the skip ears
+added to the open sides.)
 
 **Whole-pane drag + reader stretch (2026-06-17).** The Glasshouse pane is
 draggable by **any empty/margin part of itself**, not only the top-centre grip

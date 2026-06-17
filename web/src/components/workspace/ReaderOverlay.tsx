@@ -23,7 +23,17 @@ import { ArticleReader } from "../article/ArticleReader";
 import { articles, type ArticleMetadata } from "../../lib/api";
 
 export function ReaderOverlay() {
-  const { isOpen, target, close, dismiss, _handlePop, frameColor } = useReader();
+  const {
+    isOpen,
+    target,
+    close,
+    dismiss,
+    _handlePop,
+    frameColor,
+    frameTextColor,
+    nav,
+    skip,
+  } = useReader();
 
   // Glasshouse owns the chrome, Escape, and scroll-lock. The reader keeps only
   // the URL-sync concern: browser Back pops our pushed /article·/reader entry,
@@ -42,6 +52,17 @@ export function ReaderOverlay() {
   // (native ~90px → ~180px; external 48px → 96px each side).
   const maxWidth = isNative ? 1000 : 736;
 
+  // Feed-skip ears: present only when launched from a feed (nav set). Up the
+  // feed = previous article, down = next.
+  const sideNav = nav
+    ? {
+        onPrev: () => skip(-1),
+        onNext: () => skip(1),
+        canPrev: nav.index > 0,
+        canNext: nav.index < nav.entries.length - 1,
+      }
+    : null;
+
   return (
     <Glasshouse
       onClose={close}
@@ -51,6 +72,8 @@ export function ReaderOverlay() {
       persistKey="reader"
       resizable
       frameColor={frameColor}
+      frameTextColor={frameTextColor}
+      sideNav={sideNav}
     >
       <div className="overflow-y-auto max-h-[var(--gh-h)]">
         {target.kind === "external" ? (
