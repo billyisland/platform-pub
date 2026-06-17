@@ -272,9 +272,16 @@ function extractMedia(
   const appendVideo = (vid: BskyVideoEmbed) => {
     const cid = blobCid(vid.video);
     if (!cid) return;
+    // The raw record carries only a blob ref, so (unlike the AppView #view form
+    // the prefetch path consumes) we construct both CDN URLs ourselves. The
+    // poster lives at the same path as the playlist with thumbnail.jpg; without
+    // it a feed card is a bare play glyph and a focal load failure has no poster
+    // to fall back to.
+    const base = `https://video.bsky.app/watch/${did}/${cid}`;
     media.push({
       type: "video",
-      url: `https://video.bsky.app/watch/${did}/${cid}/playlist.m3u8`,
+      url: `${base}/playlist.m3u8`,
+      thumbnail: `${base}/thumbnail.jpg`,
       alt: vid.alt || undefined,
       width: vid.aspectRatio?.width,
       height: vid.aspectRatio?.height,
