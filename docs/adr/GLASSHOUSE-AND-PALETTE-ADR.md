@@ -206,7 +206,10 @@ feed's `v.items` — **articles only** (the reader-pane click targets); notes an
 external short posts return null and drop out of the skip sequence. An unavailable
 step (`!canPrev`/`!canNext`) dims its ear to 0.3 and disables it. Ears are
 suppressed on the mobile full-screen sheet (they'd fall off-viewport) and on any
-feed-agnostic open (no `nav` ⇒ no `sideNav`).
+feed-agnostic open (no `nav` ⇒ no `sideNav`). **Keyboard twin:** while a
+feed-launched reader is open, `ReaderOverlay` binds **←/→** to `skip(∓1)` (the
+keyboard equivalent of the ears) — ignored when a field has focus or a modifier
+is held, and `skip` no-ops at the list ends.
 
 (The frame was originally a full `outline` of `palette.walls` at the vessel's 8px
 SIDE-WALL thickness, all the way around; changed on 2026-06-17 to the inverted

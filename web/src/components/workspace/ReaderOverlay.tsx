@@ -44,6 +44,37 @@ export function ReaderOverlay() {
     return () => window.removeEventListener("popstate", _handlePop);
   }, [isOpen, _handlePop]);
 
+  // Left / right arrow keys flip back / forward through the parent feed's
+  // articles — the keyboard twin of the skip ears. Only while launched from a
+  // feed (hasNav); `skip` reads the live nav from the store and no-ops at the
+  // ends. Ignore the keys when a field has focus (caret movement) or a modifier
+  // is held (browser shortcuts like Alt+←/⌘←).
+  const hasNav = !!nav;
+  useEffect(() => {
+    if (!isOpen || !hasNav) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable)
+      )
+        return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        skip(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        skip(1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, hasNav, skip]);
+
   if (!isOpen || !target) return null;
 
   const isNative = target.kind === "native";
