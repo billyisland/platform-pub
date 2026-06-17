@@ -192,12 +192,19 @@ export function NetworkPanel({
             <ListSkeleton />
           ) : writers.length === 0 ? (
             <div className="py-20 text-center">
-              <p className="text-ui-sm text-grey-400 mb-4">
+              <p className="text-ui-sm text-grey-400">
                 You're not following anyone yet.
               </p>
-              <Link href="/reader" className="btn py-2 px-5 text-ui-sm">
-                Discover writers
-              </Link>
+              {/* In the overlay the ∀ disc (an X) is the way back to the feeds —
+                  no in-panel workspace escape. Only the standalone page links. */}
+              {!inOverlay && (
+                <Link
+                  href="/reader"
+                  className="btn py-2 px-5 text-ui-sm mt-4 inline-block"
+                >
+                  Discover writers
+                </Link>
+              )}
             </div>
           ) : (
             <div className="space-y-1">

@@ -11,8 +11,8 @@ Build notes: migration 113 (`feeds.sort_rank` + `feeds.hidden`, backfilled in
 hide toggle in FeedComposer; density as a second `feeds.appearance` JSONB key (no
 DDL, scheme-precedence sync); mobile shell + pager in
 `web/src/components/workspace/MobileWorkspace.tsx` (axis-locked touch pager,
-indicator strip with tap-to-jump, active-numeral → settings sheet, resume by feed
-id in `ah:mobile-feed:<userId>`); Glasshouse renders as a full-screen sheet at the
+indicator **pip** strip with tap-to-jump, active-pip → settings sheet, resume by
+feed id in `ah:mobile-feed:<userId>`); Glasshouse renders as a full-screen sheet at the
 mobile breakpoint (`useIsMobile`, ≤767px); ForallMenu docks into the bar via
 `anchor="bar"`; the desktop/mobile card path is one function
 (`WorkspaceView.renderFeedContents`).
@@ -99,6 +99,12 @@ walls, no chassis, no canvas — the ⊔ is a desktop chrome and does not render
 - A slim **indicator strip** in the mobile bar (§III) shows _feed N of M_ and supports
   tap-to-jump. This is non-negotiable: a pure swipe pager with no indicator is a known
   discoverability trap, and the strip doubles as the visible form of the rank order.
+  The strip is a row of **pips** (not numerals — 2026-06-17): inactive feeds are dots,
+  the active feed an elongated pill, and its **ordinal position in the row** is the
+  feed number — quieter than the old numeral buttons while still showing _N of M_. Tap
+  a pip to jump; tap the active pip to open that feed's settings sheet. The numeral
+  remains the underlying model (§I.3, desktop vessel badges); the pip is its mobile
+  display form.
 - **Resume and deep-links key off the feed `id`, never the numeral.** The numeral is a
   positional label and will shift under reorder, delete, and hide; a stored numeral
   would silently point at the wrong feed.
@@ -222,3 +228,22 @@ behaviour; the migration must land and be green before anything builds on it.
 
 Do not start Slice 4 before Slice 1 is green: the pager has no order to page through
 until the rank exists.
+
+---
+
+## IX. Mobile bar refinements (2026-06-17)
+
+Three post-ship corrections after the mobile shell landed, all in
+`MobileWorkspace.tsx` / `ForallMenu.tsx`:
+
+1. **One mark, not two.** The bar was rendering both a small `ForAllMark` inverted-A
+   icon _and_ the `all.haus` wordmark on the left, while the ForallMenu disc (also an
+   inverted A) docks on the right — two copies of the same glyph. The icon is removed:
+   the bar carries just the wordmark (left) and the ∀ disc (right), matching §III's
+   "carries the wordmark" (singular).
+2. **Numerals → pips.** The indicator strip is a row of pips, not numeral buttons —
+   see §IV. Quieter, less intrusive; ordinal position carries the feed number.
+3. **∀ → X back-to-workspace.** While any ∀-menu destination overlay is open the disc
+   shows a white X and a tap closes it back to the workspace (resuming the feed you
+   left); in-panel "back to workspace" prompts retired. Full spec in
+   GLASSHOUSE-AND-PALETTE-ADR §III.3 (the disc sits above the frost on both surfaces).

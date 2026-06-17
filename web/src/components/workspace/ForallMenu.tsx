@@ -67,6 +67,21 @@ export function ForallMenu({
   const notificationCount = useUnreadCounts((s) => s.notificationCount);
   const totalUnread = dmCount + notificationCount;
 
+  // True whenever a ∀-menu destination overlay is open (Messages / Dashboard /
+  // Library / Network / Ledger / Settings). While one is, the disc is the way
+  // back to the workspace: its glyph becomes an X and a click closes the overlay
+  // (the workspace underneath resumes the feed you left — on mobile via the
+  // resume key). This is the "always a way back" affordance — no in-panel
+  // "back to workspace" prompts needed.
+  const msgOpen = useMessagesOverlay((s) => s.isOpen);
+  const dashOpen = useDashboardOverlay((s) => s.isOpen);
+  const libOpen = useLibraryOverlay((s) => s.isOpen);
+  const netOpen = useNetworkOverlay((s) => s.isOpen);
+  const ledgerOpen = useLedgerOverlay((s) => s.isOpen);
+  const settingsOpen = useSettingsOverlay((s) => s.isOpen);
+  const menuOverlayOpen =
+    msgOpen || dashOpen || libOpen || netOpen || ledgerOpen || settingsOpen;
+
   const [view, setView] = useState<View>("closed");
   const [activeIndex, setActiveIndex] = useState(0);
   // ∀ glyph rotation. Hover rotates it to 180° (a right-side-up A) and holds;
@@ -166,6 +181,26 @@ export function ForallMenu({
     buttonRef.current?.focus();
   }
 
+  function closeMenuOverlays() {
+    useMessagesOverlay.getState().close();
+    useDashboardOverlay.getState().close();
+    useLibraryOverlay.getState().close();
+    useNetworkOverlay.getState().close();
+    useLedgerOverlay.getState().close();
+    useSettingsOverlay.getState().close();
+  }
+
+  // The disc / wordmark trigger. While a menu destination overlay is open it is
+  // the back-to-workspace button (close the overlay); otherwise it toggles the
+  // command menu.
+  function onTriggerClick() {
+    if (menuOverlayOpen) {
+      closeMenuOverlays();
+      return;
+    }
+    setView((v) => (v === "closed" ? "menu" : "closed"));
+  }
+
   function selectRow(row: FocusRow) {
     switch (row.kind) {
       case "action":
@@ -260,7 +295,7 @@ export function ForallMenu({
           type="button"
           aria-hidden="true"
           tabIndex={-1}
-          onClick={() => setView((v) => (v === "closed" ? "menu" : "closed"))}
+          onClick={onTriggerClick}
           onMouseEnter={() => {
             setSpinTransition(true);
             setGlyphRot(180);
@@ -354,12 +389,16 @@ export function ForallMenu({
         ref={buttonRef}
         type="button"
         className="forall-trigger"
-        aria-label={`Workspace actions${
-          totalUnread > 0 ? ` (${totalUnread} unread)` : ""
-        }`}
+        aria-label={
+          menuOverlayOpen
+            ? "Back to workspace"
+            : `Workspace actions${
+                totalUnread > 0 ? ` (${totalUnread} unread)` : ""
+              }`
+        }
         aria-haspopup="menu"
         aria-expanded={view !== "closed"}
-        onClick={() => setView((v) => (v === "closed" ? "menu" : "closed"))}
+        onClick={onTriggerClick}
         onMouseEnter={() => {
           setSpinTransition(true);
           setGlyphRot(180);
@@ -434,7 +473,8 @@ export function ForallMenu({
             width: "100%",
             height: "100%",
             transformOrigin: "center",
-            transform: `rotate(${glyphRot}deg)`,
+            // The X (overlay-open) state never spins — it's a fixed close glyph.
+            transform: `rotate(${menuOverlayOpen ? 0 : glyphRot}deg)`,
             transition: spinTransition ? "transform 480ms ease-in-out" : "none",
           }}
         >
@@ -456,13 +496,24 @@ export function ForallMenu({
             strokeLinecap="round"
             fill="none"
           >
-            {/* left diagonal: bottom rim → upper-left rim (cuts off a segment) */}
-            <line x1="28" y1="56" x2="8.5" y2="5" />
-            {/* right diagonal: bottom rim → upper-right rim (cuts off a segment) */}
-            <line x1="28" y1="56" x2="47.5" y2="5" />
-            {/* crossbar: raised to pass through the disc centre (y=28); the x
-                endpoints sit on the diagonals' centrelines at that height. */}
-            <line x1="17.3" y1="28" x2="38.7" y2="28" />
+            {menuOverlayOpen ? (
+              <>
+                {/* Close glyph: a large X spanning the disc, the same white bars
+                    construction as the ∀, signalling "back to workspace". */}
+                <line x1="11" y1="11" x2="45" y2="45" />
+                <line x1="45" y1="11" x2="11" y2="45" />
+              </>
+            ) : (
+              <>
+                {/* left diagonal: bottom rim → upper-left rim (cuts off a segment) */}
+                <line x1="28" y1="56" x2="8.5" y2="5" />
+                {/* right diagonal: bottom rim → upper-right rim (cuts off a segment) */}
+                <line x1="28" y1="56" x2="47.5" y2="5" />
+                {/* crossbar: raised to pass through the disc centre (y=28); the x
+                    endpoints sit on the diagonals' centrelines at that height. */}
+                <line x1="17.3" y1="28" x2="38.7" y2="28" />
+              </>
+            )}
           </g>
         </svg>
         </span>

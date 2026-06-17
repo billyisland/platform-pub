@@ -127,10 +127,17 @@ function BookmarksTab({ inOverlay }: { inOverlay: boolean }) {
   if (articles.length === 0) {
     return (
       <div className="py-20 text-center">
-        <p className="text-ui-sm text-grey-400 mb-4">No bookmarks yet.</p>
-        <Link href="/reader" className="btn-text underline underline-offset-4">
-          Go to workspace
-        </Link>
+        <p className="text-ui-sm text-grey-400">No bookmarks yet.</p>
+        {/* In the overlay the ∀ disc (an X) is the way back — no in-panel
+            "back to workspace" prompt. Only the standalone page links out. */}
+        {!inOverlay && (
+          <Link
+            href="/reader"
+            className="btn-text underline underline-offset-4 mt-4 inline-block"
+          >
+            Go to workspace
+          </Link>
+        )}
       </div>
     )
   }

@@ -6,7 +6,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ForAllMark } from "../icons/ForAllMark";
 import type { WorkspaceFeed } from "../../lib/api";
 import { PullToRefresh } from "./PullToRefresh";
 
@@ -14,8 +13,8 @@ import { PullToRefresh } from "./PullToRefresh";
 // MobileWorkspace — the mobile workspace shell (MOBILE-LAYOUT-ADR §III–§IV).
 //
 // Not a responsive reflow of the canvas: one feed per screen, paged
-// horizontally in rank order, identity carried by the numeral. The shell is
-// a thin bar (wordmark · indicator strip · the ∀, docked by ForallMenu's
+// horizontally in rank order, identity carried by the indicator pips. The shell
+// is a thin bar (wordmark · indicator strip · the ∀, docked by ForallMenu's
 // `anchor="bar"`) over a full-bleed active feed. No vessel chassis renders
 // here — position / size / orientation / merge are canvas properties and stay
 // on the desktop; colour scheme and density are feed character and travel.
@@ -27,12 +26,12 @@ import { PullToRefresh } from "./PullToRefresh";
 //     began inside a horizontally-scrollable element (wide embeds, code
 //     blocks) or on the pip ([data-pip-trigger] — the pip wins);
 //   - the indicator strip is the non-negotiable visible form of the rank
-//     order: tap-to-jump, and tapping the ACTIVE numeral opens that feed's
+//     order: tap-to-jump, and tapping the ACTIVE pip opens that feed's
 //     settings sheet (the FeedComposer — §VI).
 //
-// Resume keys off the feed `id`, never the numeral (§IV): the numeral shifts
-// under reorder / delete / hide, so a stored numeral would silently point at
-// the wrong feed.
+// Resume keys off the feed `id`, never the pip index (§IV): the active pip
+// shifts under reorder / delete / hide, so a stored index would silently point
+// at the wrong feed.
 // =============================================================================
 
 export const MOBILE_BAR_H = 48;
@@ -299,26 +298,24 @@ export function MobileWorkspace({
         }}
       >
         <span
-          className="flex items-center gap-[6px] flex-shrink-0 select-none"
+          className="font-sans text-[15px] font-medium leading-none flex-shrink-0 select-none"
+          style={{ color: "var(--ah-ink-925)", letterSpacing: "-0.01em" }}
           aria-label="all.haus"
         >
-          <ForAllMark size={15} className="text-crimson" />
-          <span
-            className="font-sans text-[15px] font-medium leading-none"
-            style={{ color: "var(--ah-ink-925)", letterSpacing: "-0.01em" }}
-          >
-            all.haus
-          </span>
+          all.haus
         </span>
 
-        {/* Indicator strip (§IV) — the visible form of the rank order. */}
+        {/* Indicator strip (§IV) — the visible form of the rank order, a row of
+            pips rather than numerals: the filled pip's ordinal position is the
+            active feed. Tap a pip to jump; tap the active pip to open that
+            feed's settings sheet (the FeedComposer — §VI). */}
         <div
           role="tablist"
           aria-label={`Feeds, ${activeIndex + 1} of ${count}`}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 4,
+            gap: 2,
             marginLeft: "auto",
             overflowX: "auto",
             scrollbarWidth: "none",
@@ -341,19 +338,36 @@ export function MobileWorkspace({
                 onClick={() =>
                   isActive ? onOpenFeedSettings(f.id) : jumpRef.current(i)
                 }
-                className="font-mono text-[12px]"
                 style={{
-                  minWidth: 28,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  // Generous touch target around a small visible pip.
+                  width: 16,
                   height: 28,
                   padding: 0,
                   border: "none",
+                  background: "transparent",
                   cursor: "pointer",
-                  background: isActive ? "var(--ah-ink-925)" : "transparent",
-                  color: isActive ? "var(--ah-bone)" : "var(--ah-grey-600)",
                   flexShrink: 0,
                 }}
               >
-                {i + 1}
+                {/* The active pip elongates into a pill; inactive pips are dots.
+                    Position in the row is the ordinal — no numeral needed. */}
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "block",
+                    height: 6,
+                    width: isActive ? 16 : 6,
+                    borderRadius: 3,
+                    background: isActive
+                      ? "var(--ah-ink-925)"
+                      : "var(--ah-stone-350)",
+                    transition:
+                      "width 160ms ease-out, background 160ms ease-out",
+                  }}
+                />
               </button>
             );
           })}

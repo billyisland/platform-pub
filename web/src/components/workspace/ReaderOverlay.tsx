@@ -15,7 +15,7 @@
 // the existing slab rules inside the readers, per the sitewide no-thin-line rule.
 // =============================================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useReader } from "../../stores/reader";
 import { Glasshouse } from "./Glasshouse";
 import { ExternalArticleReader } from "../article/ExternalArticleReader";
@@ -44,14 +44,21 @@ export function ReaderOverlay() {
     return () => window.removeEventListener("popstate", _handlePop);
   }, [isOpen, _handlePop]);
 
-  // Left / right arrow keys flip back / forward through the parent feed's
-  // articles — the keyboard twin of the skip ears. Only while launched from a
-  // feed (hasNav); `skip` reads the live nav from the store and no-ops at the
-  // ends. Ignore the keys when a field has focus (caret movement) or a modifier
-  // is held (browser shortcuts like Alt+←/⌘←).
+  // Arrow-key reading controls. Up / down scroll the reading pane (the natural
+  // gesture as you read down a piece); left / right flip back / forward through
+  // the parent feed's articles — the keyboard twin of the skip ears, so you tap
+  // → to start the next one. Scroll works whenever the reader is open; skip only
+  // while launched from a feed (hasNav). `skip` reads the live nav from the
+  // store and no-ops at the ends. Ignore the keys when a field has focus (caret
+  // movement) or a modifier is held (browser shortcuts like Alt+←/⌘←).
+  //
+  // Instant (not smooth) scrollBy so key auto-repeat — holding ↓ — reads as one
+  // continuous scroll rather than a stutter of queued animations.
+  const SCROLL_STEP = 80;
+  const scrollRef = useRef<HTMLDivElement>(null);
   const hasNav = !!nav;
   useEffect(() => {
-    if (!isOpen || !hasNav) return;
+    if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       const t = e.target as HTMLElement | null;
@@ -63,10 +70,16 @@ export function ReaderOverlay() {
           t.isContentEditable)
       )
         return;
-      if (e.key === "ArrowLeft") {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        scrollRef.current?.scrollBy(0, SCROLL_STEP);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        scrollRef.current?.scrollBy(0, -SCROLL_STEP);
+      } else if (hasNav && e.key === "ArrowLeft") {
         e.preventDefault();
         skip(-1);
-      } else if (e.key === "ArrowRight") {
+      } else if (hasNav && e.key === "ArrowRight") {
         e.preventDefault();
         skip(1);
       }
@@ -106,7 +119,7 @@ export function ReaderOverlay() {
       frameTextColor={frameTextColor}
       sideNav={sideNav}
     >
-      <div className="overflow-y-auto max-h-[var(--gh-h)]">
+      <div ref={scrollRef} className="overflow-y-auto max-h-[var(--gh-h)]">
         {target.kind === "external" ? (
           <ExternalArticleReader
             url={target.url}

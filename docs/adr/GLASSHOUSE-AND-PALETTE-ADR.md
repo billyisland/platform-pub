@@ -168,6 +168,20 @@ trialled at z-50, below the scrim, so a glasshouse hid it; reversed to z-60 +
 `MobileWorkspace`'s bar already carries its own wordmark. `aria-hidden`/`tabIndex={-1}`
 so it doesn't duplicate the disc's accessible control.
 
+**∀ → X back-to-workspace (2026-06-17).** The ∀ disc doubles as the universal
+"way back" from any ∀-menu destination overlay (Messages · Dashboard · Library ·
+Network · Ledger · Settings — `ForallMenu` subscribes to those six overlay
+stores' `isOpen`). While any is open the disc's glyph swaps the constructed ∀ for
+a **large white X** (the same clipped white-bars construction — two diagonals
+spanning the disc, no spin) and a click closes the overlay (`closeMenuOverlays()`)
+instead of toggling the menu; `aria-label` becomes "Back to workspace". Because
+the disc sits at z-60 above the frost on both desktop (floating) and mobile (bar),
+it is reachable above every such overlay — so panels no longer need an in-body
+"back to workspace" / escape prompt (the empty-state links in `LibraryPanel` /
+`NetworkPanel` are now gated to the standalone-page case only). On mobile the
+workspace underneath resumes the feed you left (the `ah:mobile-feed` resume key),
+so "back" lands you where you were. The wordmark trigger shares the same handler.
+
 **Feed-launched frame (2026-06-17).** A reader pane or profile overlay opened
 **from a feed card** frames itself in that feed's identity, in the feed's WALL
 colour (`palette.walls`). The frame is an **inverted, thinner echo of the feed's
