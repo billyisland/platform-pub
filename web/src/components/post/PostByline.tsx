@@ -2,7 +2,6 @@
 
 import React from "react";
 import { Byline } from "../workspace/Byline";
-import { PipTrigger } from "../workspace/PipTrigger";
 import { TrustPip } from "../ui/TrustPip";
 import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import { useWriterName } from "../../hooks/useWriterName";
@@ -36,7 +35,6 @@ export function PostByline({
   bylineProfile,
   trailing,
   replyingTo,
-  onPipOpen,
   feedId,
 }: {
   post: Post;
@@ -44,6 +42,8 @@ export function PostByline({
   bylineProfile: boolean;
   trailing?: React.ReactNode;
   replyingTo?: { name: string } | null;
+  // Dormant: the pip panel is parked, so onPipOpen is accepted (callers still
+  // thread it) but unused — the pip no longer opens a panel. See pipNode below.
   onPipOpen?: PipOpen;
   feedId?: string;
 }) {
@@ -55,7 +55,7 @@ export function PostByline({
         bylineProfile={bylineProfile}
         trailing={trailing}
         replyingTo={replyingTo}
-        onPipOpen={onPipOpen}
+        feedId={feedId}
       />
     );
   }
@@ -71,21 +71,11 @@ export function PostByline({
   );
 }
 
-function pipNode(
-  post: Post,
-  palette: VesselPalette,
-  onPipOpen?: PipOpen,
-): React.ReactNode {
-  if (post.author.pubkey && onPipOpen) {
-    return (
-      <PipTrigger
-        pubkey={post.author.pubkey}
-        pipStatus={post.author.pipStatus}
-        opacity={palette.pipOpacity}
-        onOpen={onPipOpen}
-      />
-    );
-  }
+// Pip panel parked: the pip is a non-interactive legibility dot. The author
+// actions it used to host (Follow, per-feed VOLUME) now live in the byline
+// hover panel (AuthorModal → SourceVolume). PipTrigger/PipPanel stay in the
+// tree but dormant; restore by reinstating the PipTrigger branch + onPipOpen.
+function pipNode(post: Post): React.ReactNode {
   return <TrustPip status={post.author.pipStatus} />;
 }
 
@@ -95,14 +85,14 @@ function NativeByline({
   bylineProfile,
   trailing,
   replyingTo,
-  onPipOpen,
+  feedId,
 }: {
   post: Post;
   palette: VesselPalette;
   bylineProfile: boolean;
   trailing?: React.ReactNode;
   replyingTo?: { name: string } | null;
-  onPipOpen?: PipOpen;
+  feedId?: string;
 }) {
   const writer = useWriterName(post.author.pubkey!);
   const name = writer?.displayName ?? post.author.pubkey!.slice(0, 12) + "…";
@@ -117,7 +107,7 @@ function NativeByline({
   return (
     <>
       <Byline
-        pipNode={pipNode(post, palette, onPipOpen)}
+        pipNode={pipNode(post)}
         name={name}
         nameHref={nameHref}
         publishedAt={post.publishedAt}
@@ -136,6 +126,8 @@ function NativeByline({
           onClose={hover.onModalClose}
           onMouseEnter={hover.onModalMouseEnter}
           onMouseLeave={hover.onModalMouseLeave}
+          feedId={feedId}
+          pubkey={post.author.pubkey ?? undefined}
         />
       )}
     </>

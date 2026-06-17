@@ -11,6 +11,7 @@ import {
 } from "../../hooks/useAuthorCard";
 import { follows as followsApi, workspaceFeeds } from "../../lib/api";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
+import { SourceVolume } from "./SourceVolume";
 
 interface AuthorModalProps {
   type: AuthorCardType;
@@ -34,6 +35,10 @@ interface AuthorModalProps {
   // source to THIS feed; absent ⇒ no feed context, so the external Follow
   // affordance is omitted (native follow is global, unaffected).
   feedId?: string;
+  // Native author's 64-hex pubkey (from the feed-card byline) — lets the panel
+  // host the per-feed VOLUME control for followed native authors. Absent for
+  // external bylines (those resolve volume off the feed_sources row instead).
+  pubkey?: string;
 }
 
 function formatCount(n: number): string {
@@ -52,6 +57,7 @@ export function AuthorModal({
   onMouseLeave,
   zIndex = 50,
   feedId,
+  pubkey,
 }: AuthorModalProps) {
   const { data, loading } = useAuthorCard(type, id, true);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -130,7 +136,12 @@ export function AuthorModal({
     >
       {loading && <ModalSkeleton />}
       {data && !loading && (
-        <ModalContent data={data} onClose={onClose} feedId={feedId} />
+        <ModalContent
+          data={data}
+          onClose={onClose}
+          feedId={feedId}
+          pubkey={pubkey}
+        />
       )}
       {!data && !loading && (
         <p className="text-ui-xs text-grey-400">Could not load profile</p>
@@ -160,10 +171,12 @@ function ModalContent({
   data,
   onClose,
   feedId,
+  pubkey,
 }: {
   data: AuthorCardData;
   onClose: () => void;
   feedId?: string;
+  pubkey?: string;
 }) {
   if (data.tier === "D") {
     return (
@@ -196,8 +209,13 @@ function ModalContent({
           </p>
         )}
         {data.followTarget && (
-          <FollowButton target={data.followTarget} onClose={onClose} />
+          <FollowButton
+            target={data.followTarget}
+            onClose={onClose}
+            feedId={feedId}
+          />
         )}
+        <SourceVolume data={data} feedId={feedId} pubkey={pubkey} />
       </div>
     );
   }
@@ -325,6 +343,10 @@ function ModalContent({
           feedId={feedId}
         />
       )}
+
+      {/* Per-feed VOLUME for followed sources — the parked pip panel's control,
+          relocated here. Self-gates on feed context + follow state. */}
+      <SourceVolume data={data} feedId={feedId} pubkey={pubkey} />
     </div>
   );
 }

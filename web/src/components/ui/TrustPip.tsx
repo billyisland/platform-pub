@@ -34,17 +34,15 @@ interface TrustPipProps {
 
 export function TrustPip({ status = "unknown" }: TrustPipProps) {
   // Trust parked (NEXT_PUBLIC_TRUST_ENABLED off, architecture-audit item 7):
-  // degrade to a neutral, semantically-empty dot. The glyph and its tap target
-  // survive so the PipPanel — which also hosts the non-trust VolumeBar — stays
-  // reachable, but no trust state is communicated.
+  // degrade to a purely decorative dot. The pip no longer opens a panel (that
+  // moved to the byline hover panel → SourceVolume), so it carries no meaning
+  // and no affordance — aria-hidden + no title/cursor, never a hover tooltip.
   if (!trustEnabled()) {
     return (
       <span
-        role="img"
+        aria-hidden="true"
         className="trust-pip"
         style={{ backgroundColor: "var(--ah-trust-grey)" }}
-        title="Author"
-        aria-label="Author"
       />
     );
   }
