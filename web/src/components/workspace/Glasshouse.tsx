@@ -62,7 +62,7 @@ const MIN_H = 240;
 // than the vessel's own walls. Drawn as a colour overlay (not borders) so it
 // never disturbs the pane's width / scroll geometry, sitting in the content's
 // top + side padding gutters. Both dimensions clear the banned single-pixel range.
-const FRAME_TOP = 6; // top-bar thickness
+const FRAME_TOP = 8; // top-bar thickness (the substantial bar; reads above the rules)
 const FRAME_SIDE = 4; // side-rule thickness
 // Skip "ears": half-circle tabs that protrude from the pane's left/right edges,
 // each carrying a triangular arrow — the up/down feed-skip buttons. Coloured the
@@ -574,7 +574,7 @@ export function Glasshouse({
               role="button"
               aria-label="Drag to move"
               title="Drag to move"
-              className="absolute left-1/2 top-2 z-10 h-1 w-9 -translate-x-1/2 rounded-full bg-grey-300 hover:bg-grey-600"
+              className="absolute left-1/2 top-3.5 z-10 h-1 w-9 -translate-x-1/2 rounded-full bg-grey-300 hover:bg-grey-600"
               style={{ cursor: "grab", touchAction: "none" }}
             />
           )}
@@ -600,8 +600,10 @@ export function Glasshouse({
               aria-label="Resize"
               title="Drag to resize"
               onPointerDown={pane.startResize}
-              className="absolute bottom-0 right-0 z-10 text-grey-600"
+              className="absolute z-10 text-grey-600"
               style={{
+                right: 6,
+                bottom: 4,
                 width: 16,
                 height: 16,
                 cursor: "nwse-resize",
@@ -627,8 +629,8 @@ export function Glasshouse({
         {/* Skip ears — half-circle tabs appended to the pane's left/right edges,
             each a triangular arrow that steps through the launching feed's
             articles in place. Siblings of the pane (not children), so they
-            protrude past its overflow-hidden clip. Left = up the feed (previous
-            article, ▲); right = down the feed (next article, ▼). The colour is
+            protrude past its overflow-hidden clip. Left = previous article (◀,
+            up the feed); right = next article (▶, down the feed). The colour is
             the frame colour; a step that's unavailable dims its ear. */}
         {showEars && sideNav && (
           <>
@@ -660,9 +662,9 @@ export function Glasshouse({
                 style={{
                   width: 0,
                   height: 0,
-                  borderLeft: `${EAR_ARROW}px solid transparent`,
-                  borderRight: `${EAR_ARROW}px solid transparent`,
-                  borderBottom: `${EAR_ARROW}px solid ${earArrowColor}`,
+                  borderTop: `${EAR_ARROW}px solid transparent`,
+                  borderBottom: `${EAR_ARROW}px solid transparent`,
+                  borderRight: `${EAR_ARROW}px solid ${earArrowColor}`,
                 }}
               />
             </button>
@@ -694,9 +696,9 @@ export function Glasshouse({
                 style={{
                   width: 0,
                   height: 0,
-                  borderLeft: `${EAR_ARROW}px solid transparent`,
-                  borderRight: `${EAR_ARROW}px solid transparent`,
-                  borderTop: `${EAR_ARROW}px solid ${earArrowColor}`,
+                  borderTop: `${EAR_ARROW}px solid transparent`,
+                  borderBottom: `${EAR_ARROW}px solid transparent`,
+                  borderLeft: `${EAR_ARROW}px solid ${earArrowColor}`,
                 }}
               />
             </button>
