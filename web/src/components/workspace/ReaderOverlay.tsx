@@ -49,6 +49,7 @@ export function ReaderOverlay() {
       maxWidth={maxWidth}
       ariaLabel="Reader"
       persistKey="reader"
+      resizable
       frameColor={frameColor}
     >
       <div className="overflow-y-auto max-h-[var(--gh-h)]">

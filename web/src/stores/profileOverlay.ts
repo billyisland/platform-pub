@@ -24,8 +24,8 @@ interface ProfileState {
   target: ProfileTarget | null;
   /** True when open() pushed a history entry we must pop on close. */
   didPush: boolean;
-  /** When opened from a feed card byline, that feed's ground colour
-   *  (palette.interior, a `var(--ah-…)` string) — the profile pane frames itself
+  /** When opened from a feed card byline, that feed's wall colour
+   *  (palette.walls, a `var(--ah-…)` string) — the profile pane frames itself
    *  with it. Null when opened from a feed-agnostic surface. */
   frameColor: string | null;
 

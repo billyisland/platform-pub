@@ -170,9 +170,11 @@ so it doesn't duplicate the disc's accessible control.
 
 **Feed-launched frame (2026-06-17).** A reader pane or profile overlay opened
 **from a feed card** frames itself in that feed's identity: an `outline` of the
-feed's GROUND colour (`palette.interior`) at the feed's SIDE-WALL thickness
-(`WALL` = 8px, exported from `Vessel.tsx` — the single source). `Glasshouse`
-takes an optional `frameColor` (a `var(--ah-…)` string) and applies
+feed's WALL colour (`palette.walls`) at the feed's SIDE-WALL thickness
+(`WALL` = 8px, exported from `Vessel.tsx` — the single source) — literally the
+vessel's own wall colour at its own thickness, so the pane reads as a piece of
+that feed's frame lifted onto the scrim. `Glasshouse` takes an optional
+`frameColor` (a `var(--ah-…)` string) and applies
 `outline: <WALL>px solid <frameColor>` with `outlineOffset: 0` — outline not
 border, so it sits outside the pane edge without disturbing the pane's
 width/scroll geometry or its `overflow-hidden` clip; 8px is well clear of the
@@ -180,11 +182,32 @@ banned single-pixel range (solid enclosure, not a hairline). The colour rides
 the overlay stores: `useReader`/`useProfile` carry a `frameColor` set on open and
 cleared on close/dismiss/pop. Only genuinely feed-launched call sites pass it —
 `WorkspaceView`'s `openReaderFromPost` (article card → reader), the card
-`Byline`'s `openProfileHref(href, palette.interior)` (byline → profile), and the
-byline hover `AuthorModal` (fed `palette.interior` by `PostByline`). Feed-agnostic
+`Byline`'s `openProfileHref(href, palette.walls)` (byline → profile), and the
+byline hover `AuthorModal` (fed `palette.walls` by `PostByline`). Feed-agnostic
 launch points (sitewide `ProfileLink`, `SearchPanel`, `FeedComposer` source-author
 links) pass nothing ⇒ `frameColor` null ⇒ no frame. On the mobile full-screen
 sheet the outline falls off-viewport (invisible), so no special-casing is needed.
+
+(Originally the GROUND colour `palette.interior`; changed to `palette.walls`
+on 2026-06-17 so the frame is the vessel's literal wall — same colour, same 8px
+thickness — rather than a fill of its content ground.)
+
+**Whole-pane drag + reader stretch (2026-06-17).** The Glasshouse pane is
+draggable by **any empty/margin part of itself**, not only the top-centre grip
+(which remains as the discoverable affordance). A pointerdown on the pane starts
+the drag *unless* `isPaneDragSurface` (`Glasshouse.tsx`) rules it out — it bails
+when the target is an interactive control (`a, button, input, textarea, select,
+label, [role="button"|"link"|"textbox"], [contenteditable], [data-no-drag]`,
+plus `audio`/`video`), holds its own selectable text (a direct text node — `<p>`,
+heading, span; a bare layout container with no direct text reads as draggable
+chrome), or is a native scrollbar gutter (pointer past `clientWidth`/`clientHeight`
+of a scrollable target). So prose stays highlightable, links/buttons stay live,
+scrollbars still scroll — only the margins move the window. The drag pins
+`body { user-select: none }` for the gesture so a sweep over prose mid-drag
+doesn't select. Separately, `ReaderOverlay` now opts into `resizable` (its
+existing `persistKey="reader"`), so the reader pane carries the bottom-right
+stretch handle and persists its size — same mechanism as the composer / editor /
+messages panes.
 
 ### 4 — Per-feed scheme as a click-through button (req 5)
 

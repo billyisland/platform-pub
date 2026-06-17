@@ -39,8 +39,8 @@ interface AuthorModalProps {
   // host the per-feed VOLUME control for followed native authors. Absent for
   // external bylines (those resolve volume off the feed_sources row instead).
   pubkey?: string;
-  // The hovered feed's ground colour (palette.interior). When the name link
-  // opens the profile overlay, this frames it in the launching feed's colour.
+  // The hovered feed's wall colour (palette.walls). When the name link opens
+  // the profile overlay, this frames it in the launching feed's wall colour.
   frameColor?: string | null;
 }
 

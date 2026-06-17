@@ -13,8 +13,11 @@
 //     elevation shadow alone (no top edge), click-through guarded. The pane is
 //     LIGHTER than both the bone floor and the washed scrim ground, so it reads
 //     as lifted paper (the identity is the pane's — §III.2); fields inside it are
-//     the brighter white wells. It opens snapped-centred on the 20px lattice and is DRAGGABLE by the
-//     top-centre grip — drag is free, snaps to the lattice on release, clamps to
+//     the brighter white wells. It opens snapped-centred on the 20px lattice and
+//     is DRAGGABLE by any empty part of itself (the top-centre grip is just the
+//     discoverable affordance; a pointerdown on margins/chrome drags too, while
+//     prose stays highlightable and controls stay live — see isPaneDragSurface) —
+//     drag is free, snaps to the lattice on release, clamps to
 //     the viewport, and (with `persistKey`) remembers its spot per overlay. It
 //     stays modal throughout: the scrim, one-at-a-time, and scroll-lock are
 //     unchanged; only the single pane's placement is now user-chosen;
@@ -56,6 +59,52 @@ const MIN_H = 240;
 
 const clampN = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
+
+// Whole-pane drag (the user can grab the window by any "empty" part of it, not
+// just the top grip). A pointerdown on the pane starts a drag UNLESS it landed
+// on something already doing its own thing: an interactive control, selectable
+// text, or a native scrollbar gutter. So the margins move the window while the
+// article prose stays highlightable and links/buttons stay clickable.
+const NO_DRAG_SELECTOR =
+  'a, button, input, textarea, select, label, audio, video, [role="button"], [role="link"], [role="textbox"], [contenteditable=""], [contenteditable="true"], [data-no-drag]';
+
+// Does this element hold its own selectable text (a <p>/<span>/heading), versus
+// being a bare layout container (the margins)? Only direct text nodes count, so
+// a wrapper whose text lives in child elements still reads as draggable chrome.
+function hasOwnText(el: Element): boolean {
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === 3 && (node.textContent ?? "").trim().length > 0)
+      return true;
+  }
+  return false;
+}
+
+function isPaneDragSurface(
+  target: Element,
+  pane: Element,
+  clientX: number,
+  clientY: number,
+): boolean {
+  let el: Element | null = target;
+  while (el && el !== pane) {
+    if (el.matches?.(NO_DRAG_SELECTOR)) return false;
+    el = el.parentElement;
+  }
+  if (hasOwnText(target)) return false;
+  // Native scrollbar gutter of a scrollable element → let it scroll, don't drag.
+  const rect = target.getBoundingClientRect();
+  if (
+    target.scrollHeight > target.clientHeight &&
+    clientX >= rect.left + target.clientWidth
+  )
+    return false;
+  if (
+    target.scrollWidth > target.clientWidth &&
+    clientY >= rect.top + target.clientHeight
+  )
+    return false;
+  return true;
+}
 
 // Persisted drag position, keyed per overlay so each surface remembers its own
 // spot between appearances. Best-effort — storage can throw (private mode, quota).
@@ -198,6 +247,10 @@ function usePanePlacement(
     const { innerWidth: vw, innerHeight: vh } = window;
     const offX = e.clientX - pos.x;
     const offY = e.clientY - pos.y;
+    // Suppress text selection while the window rides the cursor (whole-pane drag
+    // can start on a margin and sweep over prose). Restored on gesture teardown.
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
     const onUp = (ev: PointerEvent) => {
       gestureCleanupRef.current?.();
       const dropped = {
@@ -225,6 +278,7 @@ function usePanePlacement(
     gestureCleanupRef.current = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      document.body.style.userSelect = prevUserSelect;
       gestureCleanupRef.current = null;
     };
   };
@@ -327,10 +381,11 @@ interface GlasshouseProps {
    *  `maxWidth` then seeds the default width but no longer caps it. */
   resizable?: boolean;
   /** When this Glasshouse was launched from a specific feed (reader / profile
-   *  opened off a card), the feed's GROUND colour (`palette.interior`, a
+   *  opened off a card), the feed's WALLS colour (`palette.walls`, a
    *  `var(--ah-…)` string). The pane then frames itself with an outline of that
-   *  colour at the feed's side-wall thickness (`WALL`), so the surface visibly
-   *  belongs to the feed it came from. Omit for feed-agnostic surfaces. */
+   *  colour at the feed's side-wall thickness (`WALL`) — literally the vessel's
+   *  own wall colour at its own thickness — so the surface visibly belongs to
+   *  the feed it came from. Omit for feed-agnostic surfaces. */
   frameColor?: string | null;
   children: React.ReactNode;
 }
@@ -352,6 +407,20 @@ export function Glasshouse({
   // untouched.
   const isMobile = useIsMobile();
   const pane = usePanePlacement(maxWidth, persistKey, resizable, isMobile);
+
+  // Whole-pane drag: grab the window by any empty/margin part of it. Bails on
+  // interactive controls, selectable text, and scrollbar gutters (see
+  // isPaneDragSurface) so prose stays highlightable and controls stay live. The
+  // explicit grip stays as a discoverable affordance. Disabled on the mobile
+  // full-screen sheet (startDrag is null there).
+  const onPanePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 || !pane.startDrag) return;
+    const paneEl = pane.paneRef.current;
+    if (!paneEl) return;
+    if (!isPaneDragSurface(e.target as Element, paneEl, e.clientX, e.clientY))
+      return;
+    pane.startDrag(e);
+  };
 
   // Keep the supersede handler fresh (callers pass inline closures) without
   // re-running the register-on-mount effect.
@@ -404,6 +473,7 @@ export function Glasshouse({
           role="dialog"
           aria-modal="true"
           aria-label={ariaLabel}
+          onPointerDown={onPanePointerDown}
           className="absolute bg-glasshouse shadow-lg overflow-hidden"
           // `--gh-h` is the on-screen height available to the body — it tracks the
           // drag position (and an explicit resized height), so each body sizes its
@@ -419,7 +489,7 @@ export function Glasshouse({
               height: pane.height ?? undefined,
               maxHeight: pane.ghH,
               "--gh-h": `${pane.ghH}px`,
-              // Feed-launched frame: an outline of the source feed's ground
+              // Feed-launched frame: an outline of the source feed's wall
               // colour at the vessel side-wall thickness (WALL = 8px — solid
               // enclosure, well above the banned single-pixel range). Outline
               // (not border) so it sits outside the pane edge without disturbing
@@ -433,8 +503,9 @@ export function Glasshouse({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Drag handle — a grip pill, top-centre, pinned over the content.
-              4px tall — a grip glyph, not a thin rule. Pointer-drags the pane.
-              Absent on the mobile full-screen sheet. */}
+              4px tall — a grip glyph, not a thin rule. Discoverable affordance
+              for the whole-pane drag (the pane body drags too via
+              onPanePointerDown). Absent on the mobile full-screen sheet. */}
           {pane.startDrag && (
             <div
               onPointerDown={pane.startDrag}
