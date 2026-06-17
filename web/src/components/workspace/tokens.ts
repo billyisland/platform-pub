@@ -21,9 +21,10 @@ import { PALETTE_REGISTRY } from '../../lib/palette/registry'
 export type FeedScheme =
   | 'primary'
   | 'dark'
-  | 'anil'
-  | 'vela'
-  | 'caju'
+  | 'spring'
+  | 'summer'
+  | 'autumn'
+  | 'winter'
 // Legacy name — the per-vessel "brightness" axis grew into the scheme picker;
 // the persisted localStorage field and existing prop names keep this alias.
 export type Brightness = FeedScheme
@@ -85,9 +86,10 @@ const SCHEME_SURFACES: Record<
   Exclude<FeedScheme, 'primary' | 'dark'>,
   { walls: string; interior: string; cardBg: string }
 > = {
-  anil: { walls: 'anil-walls', interior: 'anil-interior', cardBg: 'anil-card' },
-  vela: { walls: 'vela-walls', interior: 'vela-interior', cardBg: 'vela-card' },
-  caju: { walls: 'caju-walls', interior: 'caju-interior', cardBg: 'caju-card' },
+  spring: { walls: 'spring-walls', interior: 'spring-interior', cardBg: 'spring-card' },
+  summer: { walls: 'summer-walls', interior: 'summer-interior', cardBg: 'summer-card' },
+  autumn: { walls: 'autumn-walls', interior: 'autumn-interior', cardBg: 'autumn-card' },
+  winter: { walls: 'winter-walls', interior: 'winter-interior', cardBg: 'winter-card' },
 }
 
 // Expand a curated surface set into a full VesselPalette. Luminance is read
@@ -186,33 +188,43 @@ export const PALETTES: Record<FeedScheme, VesselPalette> = {
     barDropdownBg: 'var(--ah-ink-925)',
     barDropdownHover: 'var(--ah-ink-850)',
   },
-  anil: deriveVesselPalette(SCHEME_SURFACES.anil),
-  vela: deriveVesselPalette(SCHEME_SURFACES.vela),
-  caju: deriveVesselPalette(SCHEME_SURFACES.caju),
+  spring: deriveVesselPalette(SCHEME_SURFACES.spring),
+  summer: deriveVesselPalette(SCHEME_SURFACES.summer),
+  autumn: deriveVesselPalette(SCHEME_SURFACES.autumn),
+  winter: deriveVesselPalette(SCHEME_SURFACES.winter),
 }
 
-// Picker metadata, in display order (FeedComposer swatch row).
-export const SCHEME_OPTIONS: ReadonlyArray<{ id: FeedScheme; label: string }> = [
-  { id: 'primary', label: 'Paper' },
-  { id: 'dark', label: 'Dark' },
-  { id: 'anil', label: 'Anil' },
-  { id: 'vela', label: 'Vela' },
-  { id: 'caju', label: 'Caju' },
+// Scheme order for the click-through cycle (FeedComposer Colour control). The
+// schemes carry no user-facing display name — the SchemeSwatch (the rendered
+// walls/interior/card colours) is the sole identifier — so this is id-only.
+export const SCHEME_OPTIONS: ReadonlyArray<{ id: FeedScheme }> = [
+  { id: 'primary' },
+  { id: 'dark' },
+  { id: 'spring' },
+  { id: 'summer' },
+  { id: 'autumn' },
+  { id: 'winter' },
 ]
 
 const SCHEME_IDS = new Set<string>(SCHEME_OPTIONS.map((o) => o.id))
 
-// Retired-scheme migration (FEED-SCHEME-REFRESH-ADR §III.3): feeds persist a
-// scheme id, and the four colourful schemes were renamed. Map each old id to
-// its nearest new mood BEFORE the SCHEME_IDS test, so an existing feed lands on
-// the matched scheme instead of silently flattening to Paper.
+// Retired-scheme migration (DESIGN-TUNING-FINDINGS §3, superseding the
+// FEED-SCHEME-REFRESH-ADR renames): feeds persist a scheme id, and the
+// colourful schemes have been replaced by the four-seasons family. Map each
+// retired id to its nearest surviving season by hue BEFORE the SCHEME_IDS test,
+// so an existing feed lands on a matched scheme instead of flattening to Paper.
 const SCHEME_ALIASES: Record<string, FeedScheme> = {
-  blush: 'caju', // hot pink → hot coral
-  sage: 'vela', // green → teal-green light (was 'mata', dropped)
-  sand: 'vela', // warm tan → warm sand
-  slate: 'anil', // dark blue → indigo (was 'cobalto')
-  mata: 'vela', // dropped green → nearest light scheme
-  cobalto: 'anil', // electric blue → indigo
+  // Four-seasons predecessors (Brazilian-modernist family), by hue:
+  anil: 'winter', // slate indigo → cool slate-indigo dark
+  vela: 'spring', // coastal teal → fresh green light
+  caju: 'autumn', // ember coral → bold ember light
+  // Earlier retired ids, re-pointed through the new family:
+  blush: 'autumn', // hot pink/coral → ember
+  sage: 'spring', // green → fresh green
+  sand: 'summer', // warm tan → warm-sand summer ground
+  slate: 'winter', // dark blue → slate-indigo dark
+  mata: 'spring', // dropped green → fresh green
+  cobalto: 'winter', // electric blue → slate-indigo dark
 }
 
 // Coerce any value (stale persisted 'medium'/'dim', unknown scheme ids from a

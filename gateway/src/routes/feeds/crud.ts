@@ -19,18 +19,19 @@ const createFeedSchema = z.object({
 // in web/src/components/workspace/tokens.ts — adding a scheme touches both.
 // The web client normalises unknown ids to the light default, so a stale
 // client against a newer server degrades gracefully; the enum here just stops
-// junk reaching the row. The colourful schemes were renamed in
-// FEED-SCHEME-REFRESH-ADR + Addendum A (blush/sage/sand/slate, then
-// mata/cobalto → the live anil/vela/caju);
-// rows still holding a retired id are migrated on read by the client's
-// normalizeBrightness alias map, so no DB backfill is needed — only new ids
-// are ever written back here.
+// junk reaching the row. The colourful schemes have been replaced by the
+// four-seasons family (DESIGN-TUNING-FINDINGS §3, superseding the
+// FEED-SCHEME-REFRESH-ADR renames blush/sage/sand/slate → mata/cobalto →
+// anil/vela/caju); rows still holding a retired id are migrated on read by the
+// client's normalizeBrightness alias map, so no DB backfill is needed — only
+// new ids are ever written back here.
 const FEED_SCHEME_IDS = [
   "primary",
   "dark",
-  "anil",
-  "vela",
-  "caju",
+  "spring",
+  "summer",
+  "autumn",
+  "winter",
 ] as const;
 
 // Per-feed density (MOBILE-LAYOUT-ADR §VI): feed character like the scheme,

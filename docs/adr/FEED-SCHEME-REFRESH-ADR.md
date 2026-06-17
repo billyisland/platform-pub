@@ -1,7 +1,7 @@
 # FEED-SCHEME-REFRESH-ADR: New Per-Feed Colour Schemes
 
 **all.haus Architectural Decision Record**
-**Status:** Accepted & implemented (2026-06-14). Small, self-contained colour change.
+**Status:** Implemented (2026-06-14), **surfaces superseded 2026-06-17.** The curated-scheme grammar, derivation logic, and migration mechanism described here are unchanged and current; only the specific surface set has moved on — the `anil`/`vela`/`caju` family was replaced by the `spring`/`summer`/`autumn`/`winter` four-seasons set (one shared frame→ground→surface grammar; `anil`'s broken indigo-walls/umber-interior is what prompted it). See **DESIGN-TUNING-FINDINGS §3** for the new surfaces and the extended `SCHEME_ALIASES` map. Gateway `FEED_SCHEME_IDS` now lives at `gateway/src/routes/feeds/crud.ts`.
 **Author:** Ed Lake / Claude (design partner)
 **Depends on:** GLASSHOUSE-AND-PALETTE-ADR §III.4 (the scheme cycle control), UNIVERSAL-FEED-ADR, UI-DESIGN-SPEC
 **Affects:** `web/src/components/workspace/tokens.ts`, `web/src/lib/palette/registry.ts`, `web/src/app/globals.css`, `gateway/src/routes/feeds.ts`

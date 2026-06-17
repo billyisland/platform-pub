@@ -24,7 +24,6 @@ import {
   nextScheme,
   normalizeBrightness,
   PALETTES,
-  SCHEME_OPTIONS,
   DEFAULT_BRIGHTNESS,
   DEFAULT_DENSITY,
   DEFAULT_ORIENTATION,
@@ -625,11 +624,6 @@ export function FeedComposer({
                 <AppearanceControl
                   label="Colour"
                   glyph={<SchemeSwatch scheme={normalizeBrightness(scheme)} />}
-                  indicator={
-                    SCHEME_OPTIONS.find(
-                      (o) => o.id === normalizeBrightness(scheme),
-                    )?.label ?? "Paper"
-                  }
                   onClick={() =>
                     onSchemeChange(nextScheme(scheme ?? DEFAULT_BRIGHTNESS))
                   }
@@ -851,8 +845,9 @@ function OrientationGlyph({ orientation }: { orientation: Orientation }) {
 // — a miniature of the scheme's user-picked surfaces (walls strip · interior
 // ground · card chip), echoing the vessel grammar, shown inside the Colour
 // AppearanceControl. Every text colour derives from these surfaces in
-// tokens.ts, so cycling can't produce an illegible feed. The control's
-// indicator carries the scheme name, so the swatch needn't. Structure uses a
+// tokens.ts, so cycling can't produce an illegible feed. The schemes carry no
+// display name (DESIGN-TUNING-FINDINGS §3), so this swatch is the sole
+// identifier — the Colour control shows no text indicator. Structure uses a
 // 3px walls bar (≥2px, per the sitewide no-thin-line rule); no outline.
 function SchemeSwatch({ scheme }: { scheme: FeedScheme }) {
   const pal = PALETTES[scheme];

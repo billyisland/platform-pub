@@ -15,14 +15,12 @@
   --ah-true-black: rgb(var(--ah-true-black-rgb));
   --ah-white-rgb: 255 255 255;
   --ah-white: rgb(var(--ah-white-rgb));
-  --ah-grey-100-rgb: 240 240 240;
+  --ah-grey-100-rgb: 242 241 237;
   --ah-grey-100: rgb(var(--ah-grey-100-rgb));
-  --ah-grey-200-rgb: 229 229 229;
+  --ah-grey-200-rgb: 231 229 223;
   --ah-grey-200: rgb(var(--ah-grey-200-rgb));
-  --ah-grey-300-rgb: 187 187 187;
+  --ah-grey-300-rgb: 185 183 175;
   --ah-grey-300: rgb(var(--ah-grey-300-rgb));
-  --ah-neighbour-grey-rgb: 204 204 204;
-  --ah-neighbour-grey: rgb(var(--ah-neighbour-grey-rgb));
   --ah-grey-400-rgb: 153 153 153;
   --ah-grey-400: rgb(var(--ah-grey-400-rgb));
   --ah-grey-600-rgb: 102 102 102;
@@ -85,26 +83,34 @@
   --ah-blush: rgb(var(--ah-blush-rgb));
   --ah-blush-deep-rgb: 232 165 167;
   --ah-blush-deep: rgb(var(--ah-blush-deep-rgb));
-  /* Per-feed colour-scheme surfaces (feature-debt §3; Brazilian-modernist
-     family — FEED-SCHEME-REFRESH-ADR) */
-  --ah-anil-walls-rgb: 27 39 66;
-  --ah-anil-walls: rgb(var(--ah-anil-walls-rgb));
-  --ah-anil-interior-rgb: 71 45 32;
-  --ah-anil-interior: rgb(var(--ah-anil-interior-rgb));
-  --ah-anil-card-rgb: 42 59 94;
-  --ah-anil-card: rgb(var(--ah-anil-card-rgb));
-  --ah-vela-walls-rgb: 21 96 87;
-  --ah-vela-walls: rgb(var(--ah-vela-walls-rgb));
-  --ah-vela-interior-rgb: 237 225 194;
-  --ah-vela-interior: rgb(var(--ah-vela-interior-rgb));
-  --ah-vela-card-rgb: 250 243 226;
-  --ah-vela-card: rgb(var(--ah-vela-card-rgb));
-  --ah-caju-walls-rgb: 194 70 28;
-  --ah-caju-walls: rgb(var(--ah-caju-walls-rgb));
-  --ah-caju-interior-rgb: 244 201 190;
-  --ah-caju-interior: rgb(var(--ah-caju-interior-rgb));
-  --ah-caju-card-rgb: 252 234 225;
-  --ah-caju-card: rgb(var(--ah-caju-card-rgb));
+  /* Per-feed colour-scheme surfaces (feature-debt §3; four-seasons family —
+     DESIGN-TUNING-FINDINGS §3). One shared grammar: saturated frame (walls) →
+     tinted ground (interior) → clean reading surface (card). Spring/Summer/
+     Autumn are light-card; Winter is a cool slate-indigo dark elevation ramp. */
+  --ah-spring-walls-rgb: 47 125 74;
+  --ah-spring-walls: rgb(var(--ah-spring-walls-rgb));
+  --ah-spring-interior-rgb: 220 235 207;
+  --ah-spring-interior: rgb(var(--ah-spring-interior-rgb));
+  --ah-spring-card-rgb: 244 248 236;
+  --ah-spring-card: rgb(var(--ah-spring-card-rgb));
+  --ah-summer-walls-rgb: 14 93 176;
+  --ah-summer-walls: rgb(var(--ah-summer-walls-rgb));
+  --ah-summer-interior-rgb: 242 216 158;
+  --ah-summer-interior: rgb(var(--ah-summer-interior-rgb));
+  --ah-summer-card-rgb: 252 243 221;
+  --ah-summer-card: rgb(var(--ah-summer-card-rgb));
+  --ah-autumn-walls-rgb: 181 70 30;
+  --ah-autumn-walls: rgb(var(--ah-autumn-walls-rgb));
+  --ah-autumn-interior-rgb: 233 201 180;
+  --ah-autumn-interior: rgb(var(--ah-autumn-interior-rgb));
+  --ah-autumn-card-rgb: 251 239 227;
+  --ah-autumn-card: rgb(var(--ah-autumn-card-rgb));
+  --ah-winter-walls-rgb: 35 46 69;
+  --ah-winter-walls: rgb(var(--ah-winter-walls-rgb));
+  --ah-winter-interior-rgb: 44 56 80;
+  --ah-winter-interior: rgb(var(--ah-winter-interior-rgb));
+  --ah-winter-card-rgb: 52 66 94;
+  --ah-winter-card: rgb(var(--ah-winter-card-rgb));
 }
 
 /* ── Self-hosted fonts ───────────────────────────────────────────────────────── */
@@ -580,9 +586,12 @@
     margin-top: 1em;
     margin-bottom: 1em;
   }
+  /* Headings ride the rendered-prose rem scale (DESIGN-TUNING-FINDINGS §5), not
+     a separate px scale — so what you type is sized like what you read, and
+     both track the per-device type-size control. */
   .article-compose-body h2 {
     font-family: 'Literata', Georgia, serif;
-    font-size: 22px;
+    font-size: 1.75rem;
     font-weight: 500;
     letter-spacing: -0.01em;
     margin-top: 1.2em;
@@ -590,13 +599,13 @@
   }
   .article-compose-body h3 {
     font-family: 'Literata', Georgia, serif;
-    font-size: 18px;
+    font-size: 1.35rem;
     font-weight: 500;
     margin-top: 1em;
     margin-bottom: 0.4em;
   }
   .article-compose-body blockquote {
-    border-left: 2px solid var(--ah-grey-300);
+    border-left: 4px solid var(--ah-grey-300);
     padding-left: 16px;
     color: var(--ah-grey-600);
     font-style: italic;
