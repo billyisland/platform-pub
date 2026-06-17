@@ -24,11 +24,15 @@ interface ProfileState {
   target: ProfileTarget | null;
   /** True when open() pushed a history entry we must pop on close. */
   didPush: boolean;
+  /** When opened from a feed card byline, that feed's ground colour
+   *  (palette.interior, a `var(--ah-…)` string) — the profile pane frames itself
+   *  with it. Null when opened from a feed-agnostic surface. */
+  frameColor: string | null;
 
   /** Open a native writer profile by username. */
-  openNative: (username: string) => void;
+  openNative: (username: string, frameColor?: string | null) => void;
   /** Open a tier-A/B external author profile by author id. */
-  openExternal: (authorId: string) => void;
+  openExternal: (authorId: string, frameColor?: string | null) => void;
 
   close: () => void;
   /** Clear overlay state without touching history — for when a link inside the
@@ -61,19 +65,30 @@ export const useProfile = create<ProfileState>((set, get) => ({
   isOpen: false,
   target: null,
   didPush: false,
+  frameColor: null,
 
-  openNative: (username) => {
+  openNative: (username, frameColor) => {
     const clean = username.replace(/^@/, "");
     const didPush = pushProfileUrl(`/${clean}`, get().didPush);
-    set({ isOpen: true, target: { kind: "native", username: clean }, didPush });
+    set({
+      isOpen: true,
+      target: { kind: "native", username: clean },
+      didPush,
+      frameColor: frameColor ?? null,
+    });
   },
 
-  openExternal: (authorId) => {
+  openExternal: (authorId, frameColor) => {
     const didPush = pushProfileUrl(
       `/author/${encodeURIComponent(authorId)}`,
       get().didPush,
     );
-    set({ isOpen: true, target: { kind: "external", authorId }, didPush });
+    set({
+      isOpen: true,
+      target: { kind: "external", authorId },
+      didPush,
+      frameColor: frameColor ?? null,
+    });
   },
 
   close: () => {
@@ -82,15 +97,17 @@ export const useProfile = create<ProfileState>((set, get) => ({
       // and restores the prior URL — one path for both Back and the close button.
       window.history.back();
     } else {
-      set({ isOpen: false, target: null, didPush: false });
+      set({ isOpen: false, target: null, didPush: false, frameColor: null });
     }
   },
 
   dismiss: () => {
-    if (get().isOpen) set({ isOpen: false, target: null, didPush: false });
+    if (get().isOpen)
+      set({ isOpen: false, target: null, didPush: false, frameColor: null });
   },
 
   _handlePop: () => {
-    if (get().isOpen) set({ isOpen: false, target: null, didPush: false });
+    if (get().isOpen)
+      set({ isOpen: false, target: null, didPush: false, frameColor: null });
   },
 }));

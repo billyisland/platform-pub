@@ -23,7 +23,7 @@ import { ArticleReader } from "../article/ArticleReader";
 import { articles, type ArticleMetadata } from "../../lib/api";
 
 export function ReaderOverlay() {
-  const { isOpen, target, close, dismiss, _handlePop } = useReader();
+  const { isOpen, target, close, dismiss, _handlePop, frameColor } = useReader();
 
   // Glasshouse owns the chrome, Escape, and scroll-lock. The reader keeps only
   // the URL-sync concern: browser Back pops our pushed /article·/reader entry,
@@ -49,6 +49,7 @@ export function ReaderOverlay() {
       maxWidth={maxWidth}
       ariaLabel="Reader"
       persistKey="reader"
+      frameColor={frameColor}
     >
       <div className="overflow-y-auto max-h-[var(--gh-h)]">
         {target.kind === "external" ? (

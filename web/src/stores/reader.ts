@@ -27,6 +27,10 @@ interface ReaderState {
   target: ReaderTarget | null;
   /** True when open() pushed a history entry we must pop on close. */
   didPush: boolean;
+  /** When opened from a feed card, that feed's ground colour (palette.interior,
+   *  a `var(--ah-…)` string) — the reader pane frames itself with it. Null when
+   *  opened from a feed-agnostic surface. */
+  frameColor: string | null;
 
   /** Open an external article by URL (the extract reader). */
   openExternal: (
@@ -35,10 +39,14 @@ interface ReaderState {
       postId?: string | null;
       title?: string | null;
       siteName?: string | null;
+      frameColor?: string | null;
     },
   ) => void;
   /** Open a native article by its d-tag (the ArticleReader). */
-  openNative: (dTag: string, opts?: { postId?: string | null }) => void;
+  openNative: (
+    dTag: string,
+    opts?: { postId?: string | null; frameColor?: string | null },
+  ) => void;
   /**
    * Back-compat alias for the legacy VesselCard call `open(url, title, site)`.
    * No postId ⇒ no addressable URL pushed (the flag-off path is not yet on the
@@ -78,6 +86,7 @@ export const useReader = create<ReaderState>((set, get) => ({
   isOpen: false,
   target: null,
   didPush: false,
+  frameColor: null,
 
   openExternal: (url, opts) => {
     const postId = opts?.postId ?? null;
@@ -96,6 +105,7 @@ export const useReader = create<ReaderState>((set, get) => ({
         siteName: opts?.siteName ?? null,
       },
       didPush,
+      frameColor: opts?.frameColor ?? null,
     });
   },
 
@@ -105,6 +115,7 @@ export const useReader = create<ReaderState>((set, get) => ({
       isOpen: true,
       target: { kind: "native", dTag, postId: opts?.postId ?? null },
       didPush,
+      frameColor: opts?.frameColor ?? null,
     });
   },
 
@@ -116,15 +127,17 @@ export const useReader = create<ReaderState>((set, get) => ({
       // and restores the prior URL — one path for both Back and the close button.
       window.history.back();
     } else {
-      set({ isOpen: false, target: null, didPush: false });
+      set({ isOpen: false, target: null, didPush: false, frameColor: null });
     }
   },
 
   dismiss: () => {
-    if (get().isOpen) set({ isOpen: false, target: null, didPush: false });
+    if (get().isOpen)
+      set({ isOpen: false, target: null, didPush: false, frameColor: null });
   },
 
   _handlePop: () => {
-    if (get().isOpen) set({ isOpen: false, target: null, didPush: false });
+    if (get().isOpen)
+      set({ isOpen: false, target: null, didPush: false, frameColor: null });
   },
 }));

@@ -154,18 +154,37 @@ authoritative mask and remove the UA outline:
 The ∀ legs stay floor-coloured (they sit on the dark disc, where that reads
 correctly); the fix is purely about containment, not colour.
 
-**Wordmark lockup (2026-06-17).** A 20px `all.haus` wordmark sits to the LEFT of
+**Wordmark lockup (2026-06-17).** A 24px `all.haus` wordmark sits to the LEFT of
 the floating ∀ disc (`text · glyph`, font-sans medium, `ink-925`, `-0.01em`
 tracking — matching the Nav/mobile wordmarks). It is part of the trigger's click
 target: clicking it runs the same `setView` toggle and hovering it drives the
-same ∀ glyph spin, and it's excluded from the outside-click dismiss. But it lives
-in its OWN fixed layer at **z-50** — a sibling of the disc container, not a child
-(a child of the `z-60` container couldn't escape that stacking context). z-50
-sits BELOW the Glasshouse scrim (`z-[55]`) while the disc container stays crisp
-at z-60, so opening any overlay washes the wordmark out behind the frost while
-the disc stays sharp. Floating (desktop) only — `MobileWorkspace`'s bar already
-carries its own wordmark. `aria-hidden`/`tabIndex={-1}` so it doesn't duplicate
-the disc's accessible control.
+same ∀ glyph spin, and it's excluded from the outside-click dismiss. It lives in
+its OWN fixed layer — a sibling of the disc container, not a child (a child of
+the `z-60` container couldn't be placed independently in the stacking order) —
+at **z-60**, so it stays CRISP above the Glasshouse scrim (`z-[55]`) exactly like
+the disc: opening an overlay never blurs or dims it. (Earlier the same day it was
+trialled at z-50, below the scrim, so a glasshouse hid it; reversed to z-60 +
+24px so it reads as the persistent brand lockup.) Floating (desktop) only —
+`MobileWorkspace`'s bar already carries its own wordmark. `aria-hidden`/`tabIndex={-1}`
+so it doesn't duplicate the disc's accessible control.
+
+**Feed-launched frame (2026-06-17).** A reader pane or profile overlay opened
+**from a feed card** frames itself in that feed's identity: an `outline` of the
+feed's GROUND colour (`palette.interior`) at the feed's SIDE-WALL thickness
+(`WALL` = 8px, exported from `Vessel.tsx` — the single source). `Glasshouse`
+takes an optional `frameColor` (a `var(--ah-…)` string) and applies
+`outline: <WALL>px solid <frameColor>` with `outlineOffset: 0` — outline not
+border, so it sits outside the pane edge without disturbing the pane's
+width/scroll geometry or its `overflow-hidden` clip; 8px is well clear of the
+banned single-pixel range (solid enclosure, not a hairline). The colour rides
+the overlay stores: `useReader`/`useProfile` carry a `frameColor` set on open and
+cleared on close/dismiss/pop. Only genuinely feed-launched call sites pass it —
+`WorkspaceView`'s `openReaderFromPost` (article card → reader), the card
+`Byline`'s `openProfileHref(href, palette.interior)` (byline → profile), and the
+byline hover `AuthorModal` (fed `palette.interior` by `PostByline`). Feed-agnostic
+launch points (sitewide `ProfileLink`, `SearchPanel`, `FeedComposer` source-author
+links) pass nothing ⇒ `frameColor` null ⇒ no frame. On the mobile full-screen
+sheet the outline falls off-viewport (invisible), so no special-casing is needed.
 
 ### 4 — Per-feed scheme as a click-through button (req 5)
 

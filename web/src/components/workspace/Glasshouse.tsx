@@ -46,6 +46,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { snap } from "../../lib/workspace/grid";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { WALL } from "./Vessel";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
 const MARGIN = 20;
@@ -325,6 +326,12 @@ interface GlasshouseProps {
   /** Add a bottom-right stretch handle so the pane can be resized (the writers).
    *  `maxWidth` then seeds the default width but no longer caps it. */
   resizable?: boolean;
+  /** When this Glasshouse was launched from a specific feed (reader / profile
+   *  opened off a card), the feed's GROUND colour (`palette.interior`, a
+   *  `var(--ah-…)` string). The pane then frames itself with an outline of that
+   *  colour at the feed's side-wall thickness (`WALL`), so the surface visibly
+   *  belongs to the feed it came from. Omit for feed-agnostic surfaces. */
+  frameColor?: string | null;
   children: React.ReactNode;
 }
 
@@ -335,6 +342,7 @@ export function Glasshouse({
   ariaLabel,
   persistKey,
   resizable,
+  frameColor,
   children,
 }: GlasshouseProps) {
   // On the mobile workspace (MOBILE-LAYOUT-ADR §III) every Glasshouse is a
@@ -411,6 +419,15 @@ export function Glasshouse({
               height: pane.height ?? undefined,
               maxHeight: pane.ghH,
               "--gh-h": `${pane.ghH}px`,
+              // Feed-launched frame: an outline of the source feed's ground
+              // colour at the vessel side-wall thickness (WALL = 8px — solid
+              // enclosure, well above the banned single-pixel range). Outline
+              // (not border) so it sits outside the pane edge without disturbing
+              // the width/scroll geometry, and clears the overflow-hidden clip.
+              // Absent when frameColor is null.
+              ...(frameColor
+                ? { outline: `${WALL}px solid ${frameColor}`, outlineOffset: 0 }
+                : null),
             } as React.CSSProperties
           }
           onClick={(e) => e.stopPropagation()}

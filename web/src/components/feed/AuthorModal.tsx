@@ -39,6 +39,9 @@ interface AuthorModalProps {
   // host the per-feed VOLUME control for followed native authors. Absent for
   // external bylines (those resolve volume off the feed_sources row instead).
   pubkey?: string;
+  // The hovered feed's ground colour (palette.interior). When the name link
+  // opens the profile overlay, this frames it in the launching feed's colour.
+  frameColor?: string | null;
 }
 
 function formatCount(n: number): string {
@@ -58,6 +61,7 @@ export function AuthorModal({
   zIndex = 50,
   feedId,
   pubkey,
+  frameColor,
 }: AuthorModalProps) {
   const { data, loading } = useAuthorCard(type, id, true);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -141,6 +145,7 @@ export function AuthorModal({
           onClose={onClose}
           feedId={feedId}
           pubkey={pubkey}
+          frameColor={frameColor}
         />
       )}
       {!data && !loading && (
@@ -172,11 +177,13 @@ function ModalContent({
   onClose,
   feedId,
   pubkey,
+  frameColor,
 }: {
   data: AuthorCardData;
   onClose: () => void;
   feedId?: string;
   pubkey?: string;
+  frameColor?: string | null;
 }) {
   if (data.tier === "D") {
     return (
@@ -241,7 +248,10 @@ function ModalContent({
                 onClick={(e) => {
                   // Plain click opens the profile overlay in place; modified
                   // clicks (new tab) fall through to the real link.
-                  if (!isModifiedClick(e) && openProfileHref(data.profilePath!)) {
+                  if (
+                    !isModifiedClick(e) &&
+                    openProfileHref(data.profilePath!, frameColor)
+                  ) {
                     e.preventDefault();
                   }
                   onClose();

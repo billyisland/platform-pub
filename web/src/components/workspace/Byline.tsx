@@ -65,8 +65,9 @@ export function Byline({
             // Don't let the card's own click handler fire.
             e.stopPropagation();
             // Plain left-click opens the profile overlay in place; modified
-            // clicks (new tab) fall through to the real link.
-            if (!isModifiedClick(e) && openProfileHref(nameHref)) {
+            // clicks (new tab) fall through to the real link. The feed's ground
+            // colour frames the overlay (launched-from-this-feed cue).
+            if (!isModifiedClick(e) && openProfileHref(nameHref, palette.interior)) {
               e.preventDefault();
             }
           }}

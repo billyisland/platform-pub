@@ -249,12 +249,11 @@ export function ForallMenu({
     <>
       {/* Wordmark lockup — "all.haus" set to the LEFT of the ∀ disc so the two
           read as one mark (text · glyph). It's part of the trigger's click
-          target (same toggle + glyph-spin as the disc) but lives in its own
-          fixed layer at z-50: the disc container stays crisp at z-60 (the
-          invariant — ForallMenu above the frost), while z-50 sits BELOW the
-          Glasshouse scrim (z-[55]), so opening any overlay washes the wordmark
-          out behind the frost while the disc stays sharp. Floating only — the
-          mobile bar already carries its own wordmark. */}
+          target (same toggle + glyph-spin as the disc) and, like the disc,
+          stays CRISP above the frost: it sits at z-60 (the ForallMenu layer),
+          above the Glasshouse scrim (z-[55]), so an open overlay never blurs or
+          dims it. Floating only — the mobile bar already carries its own
+          wordmark. */}
       {!inBar && (
         <button
           ref={wordmarkRef}
@@ -277,7 +276,7 @@ export function ForallMenu({
             height: discSize,
             display: "flex",
             alignItems: "center",
-            zIndex: 50,
+            zIndex: 60,
             background: "transparent",
             border: "none",
             padding: 0,
@@ -287,7 +286,7 @@ export function ForallMenu({
           <span
             className="font-sans font-medium leading-none"
             style={{
-              fontSize: 20,
+              fontSize: 24,
               color: "var(--ah-ink-925)",
               letterSpacing: "-0.01em",
             }}

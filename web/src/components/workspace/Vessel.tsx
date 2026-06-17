@@ -43,7 +43,10 @@ import { PullToRefresh } from "./PullToRefresh";
 // orientation, gestural density toggle) are deferred; the cycle buttons are
 // the desktop alternative for now.
 
-const WALL = 8; // px
+// Side-wall thickness. Exported so overlays launched from a feed (the reader /
+// profile Glasshouse) can frame themselves at the SAME thickness as the feed's
+// vessel wall — the frame echoes the container the surface came from.
+export const WALL = 8; // px
 const PAD = 16; // px interior padding (top zone left open per Step 1: "Opening: full width of the vessel interior")
 const GAP = 12; // px inter-card gap
 const WIDTH = 300; // px default at standard density

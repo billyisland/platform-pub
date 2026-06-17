@@ -128,6 +128,7 @@ function NativeByline({
           onMouseLeave={hover.onModalMouseLeave}
           feedId={feedId}
           pubkey={post.author.pubkey ?? undefined}
+          frameColor={palette.interior}
         />
       )}
     </>
@@ -182,6 +183,7 @@ function ExternalByline({
           onMouseEnter={hover.onModalMouseEnter}
           onMouseLeave={hover.onModalMouseLeave}
           feedId={feedId}
+          frameColor={palette.interior}
         />
       )}
     </>

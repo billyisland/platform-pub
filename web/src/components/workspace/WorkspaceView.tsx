@@ -1022,13 +1022,18 @@ export function WorkspaceView() {
                     // Actions are stable refs, so getState() avoids subscribing.
                     const openReaderFromPost = (p: Post) => {
                       const reader = useReader.getState();
+                      // Frame the reader in the launching feed's ground colour
+                      // (its side-wall-thick outline says "opened from this feed").
+                      const frameColor = ctx.palette.interior;
                       if (p.author.pubkey) {
-                        if (p.dTag) reader.openNative(p.dTag, { postId: p.id });
+                        if (p.dTag)
+                          reader.openNative(p.dTag, { postId: p.id, frameColor });
                       } else {
                         reader.openExternal(p.origin.uri, {
                           postId: p.id,
                           title: p.body.title,
                           siteName: p.origin.sourceName,
+                          frameColor,
                         });
                       }
                     };

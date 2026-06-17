@@ -20,7 +20,7 @@ import { NativeProfilePanel } from "../profile/NativeProfilePanel";
 import { AuthorProfileView } from "../../app/author/[authorId]/AuthorProfileView";
 
 export function ProfileOverlay() {
-  const { isOpen, target, close, dismiss, _handlePop } = useProfile();
+  const { isOpen, target, close, dismiss, _handlePop, frameColor } = useProfile();
 
   // Glasshouse owns the chrome, Escape, and scroll-lock. We keep two URL-sync
   // concerns: (1) browser Back pops our pushed entry → _handlePop finalises
@@ -64,6 +64,7 @@ export function ProfileOverlay() {
       maxWidth={860}
       ariaLabel="Profile"
       persistKey="profile"
+      frameColor={frameColor}
     >
       <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
         {target.kind === "native" ? (

@@ -33,12 +33,16 @@ export function profileTargetFromHref(
   return null;
 }
 
-/** Open the profile overlay for a profile href. Returns true if it handled it. */
-export function openProfileHref(href: string): boolean {
+/** Open the profile overlay for a profile href. Returns true if it handled it.
+ *  `frameColor` (a feed's ground colour) is passed through when the profile was
+ *  launched from a feed card, so the overlay frames itself in that feed's
+ *  colour; omit it elsewhere. */
+export function openProfileHref(href: string, frameColor?: string | null): boolean {
   const target = profileTargetFromHref(href);
   if (!target) return false;
-  if (target.kind === "external") useProfile.getState().openExternal(target.authorId);
-  else useProfile.getState().openNative(target.username);
+  if (target.kind === "external")
+    useProfile.getState().openExternal(target.authorId, frameColor);
+  else useProfile.getState().openNative(target.username, frameColor);
   return true;
 }
 
