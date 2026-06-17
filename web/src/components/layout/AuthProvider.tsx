@@ -15,11 +15,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void fetchMe()
   }, [fetchMe])
 
+  // Poll unread counts only while the tab is visible — a backgrounded tab
+  // pinging the box every 15s is pure idle load (and gateway/DB contention on
+  // the shared VPS). On becoming visible again we fetch once immediately so the
+  // badge is fresh, then resume the interval.
   useEffect(() => {
     if (!user) return
-    void fetchUnread()
-    const id = setInterval(fetchUnread, POLL_INTERVAL)
-    return () => clearInterval(id)
+    let id: ReturnType<typeof setInterval> | undefined
+
+    const start = () => {
+      if (id !== undefined) return
+      void fetchUnread()
+      id = setInterval(fetchUnread, POLL_INTERVAL)
+    }
+    const stop = () => {
+      if (id === undefined) return
+      clearInterval(id)
+      id = undefined
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') start()
+      else stop()
+    }
+
+    if (document.visibilityState === 'visible') start()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      stop()
+    }
   }, [user, fetchUnread])
 
   return <>{children}</>

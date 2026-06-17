@@ -61,7 +61,7 @@ export function ReaderOverlay() {
             paddingX="px-24"
           />
         ) : (
-          <NativeArticleBody dTag={target.dTag} />
+          <NativeArticleBody dTag={target.dTag} preview={target.preview} />
         )}
       </div>
     </Glasshouse>
@@ -74,7 +74,13 @@ export function ReaderOverlay() {
 // so no SSR / preRenderedFreeHtml is needed in the overlay). Mirrors the prop
 // mapping in app/article/[dTag]/page.tsx.
 // -----------------------------------------------------------------------------
-function NativeArticleBody({ dTag }: { dTag: string }) {
+function NativeArticleBody({
+  dTag,
+  preview,
+}: {
+  dTag: string;
+  preview?: { title: string | null; summary: string | null } | null;
+}) {
   const [article, setArticle] = useState<ArticleMetadata | null>(null);
   const [error, setError] = useState(false);
 
@@ -104,6 +110,37 @@ function NativeArticleBody({ dTag }: { dTag: string }) {
   }
 
   if (!article) {
+    // Instant preview (audit #6): when the card seeded a title/dek, paint the
+    // article's identity on the first frame — in the same typography the loaded
+    // ArticleReader header uses, so the body fading in below causes no shift.
+    // Falls back to a neutral skeleton when nothing was seeded (search/dashboard).
+    if (preview?.title) {
+      return (
+        <div className="px-24 py-16">
+          <h1
+            className="mb-4 font-serif text-black leading-[1.1]"
+            style={{
+              fontSize: "clamp(2.125rem, 4vw, 2.125rem)",
+              fontWeight: 500,
+              letterSpacing: "-0.025em",
+            }}
+          >
+            {preview.title}
+          </h1>
+          {preview.summary && (
+            <p className="font-serif text-xl text-grey-600 italic leading-relaxed mt-4 mb-2">
+              {preview.summary}
+            </p>
+          )}
+          <div className="slab-rule-4 mb-10 mt-6" />
+          <div className="space-y-3 animate-pulse">
+            <div className="h-4 bg-grey-100 rounded w-full" />
+            <div className="h-4 bg-grey-100 rounded w-5/6" />
+            <div className="h-4 bg-grey-100 rounded w-full" />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="px-8 py-16 space-y-3 animate-pulse">
         <div className="h-7 bg-grey-100 rounded w-3/4 mx-auto" />

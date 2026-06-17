@@ -5,10 +5,15 @@ import { usePathname } from 'next/navigation'
 import { useLayoutMode, type LayoutMode } from '../../hooks/useLayoutMode'
 import { Nav } from './Nav'
 import { Footer } from './Footer'
-import { ComposeOverlay } from '../compose/ComposeOverlay'
-import { ProfileOverlay } from '../workspace/ProfileOverlay'
-import { SurfaceOverlay } from '../workspace/SurfaceOverlay'
-import { EditorOverlay } from '../workspace/EditorOverlay'
+// Code-split + open-gated (performance audit #4): these four ride in *every*
+// page bundle, so deferring them shrinks initial JS sitewide. TipTap (editor)
+// is the biggest single win.
+import {
+  LazyComposeOverlay as ComposeOverlay,
+  LazyProfileOverlay as ProfileOverlay,
+  LazySurfaceOverlay as SurfaceOverlay,
+  LazyEditorOverlay as EditorOverlay,
+} from '../workspace/LazyOverlays'
 import { PalettePanel } from '../devtools/PalettePanel'
 import { PaletteHydrator } from '../devtools/PaletteHydrator'
 import { TypeScaleHydrator } from '../TypeScaleHydrator'

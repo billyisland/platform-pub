@@ -38,42 +38,54 @@ export function registerFeedItemsRoutes(app: FastifyInstance) {
 
     try {
       const limit = Math.min(parseInt(req.query.limit ?? "20", 10) || 20, 50);
-
-      if (feed.source_count === 0) {
-        // Placeholder: an empty source set surfaces the platform's explore
-        // stream so the vessel is useful out of the box. Once the composer
-        // adds the first source this branch is no longer reached for that
-        // feed.
-        const { items, nextCursor } = await placeholderExploreItems(
-          ownerId,
-          req.query.cursor,
-          limit,
-        );
-        return reply.send({
-          feed: feedRowToResponse(feed),
-          items,
-          nextCursor,
-          placeholder: true,
-        });
-      }
-
-      const { items, nextCursor } = await sourceFilteredItems(
+      const page = await loadFeedItemsPage(
         ownerId,
         id,
+        feed.source_count,
         req.query.cursor,
         limit,
       );
-      return reply.send({
-        feed: feedRowToResponse(feed),
-        items,
-        nextCursor,
-        placeholder: false,
-      });
+      return reply.send({ feed: feedRowToResponse(feed), ...page });
     } catch (err) {
       logger.error({ err, feedId: id }, "Feed items fetch failed");
       return reply.status(500).send({ error: "Feed items fetch failed" });
     }
   });
+}
+
+// First/next page of a feed's items, branching on source_count exactly as GET
+// /feeds/:id/items does: an empty source set surfaces the platform's explore
+// stream (placeholder) so the vessel is useful out of the box; once a source is
+// added the source-filtered ranking takes over. Ownership is the caller's
+// responsibility (both call sites assert it via loadFeed first). Shared by the
+// route above and the /bootstrap aggregate (performance audit #3), which calls
+// it per feed with the source_count it already has — no extra loadFeed.
+export async function loadFeedItemsPage(
+  ownerId: string,
+  feedId: string,
+  sourceCount: number,
+  cursor: string | undefined,
+  limit: number,
+): Promise<{
+  items: Post[];
+  nextCursor: string | undefined;
+  placeholder: boolean;
+}> {
+  if (sourceCount === 0) {
+    const { items, nextCursor } = await placeholderExploreItems(
+      ownerId,
+      cursor,
+      limit,
+    );
+    return { items, nextCursor, placeholder: true };
+  }
+  const { items, nextCursor } = await sourceFilteredItems(
+    ownerId,
+    feedId,
+    cursor,
+    limit,
+  );
+  return { items, nextCursor, placeholder: false };
 }
 
 // The candidate SELECT/JOINs (FEED_SELECT/FEED_JOINS) + the Post columns/joins

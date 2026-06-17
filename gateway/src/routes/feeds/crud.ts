@@ -163,34 +163,44 @@ async function seedStarterFeeds(ownerId: string): Promise<number> {
   });
 }
 
+// List the caller's feeds in rank order, seeding starter templates first for an
+// owner with none (MOBILE-LAYOUT-ADR §VII: sort_rank is the persisted order
+// behind the numeral and the mobile swipe sequence; created_at/id are
+// deterministic tie-breaks). Returns the raw FeedRow[] (carrying source_count)
+// so callers can both map to the wire shape AND branch the items query on
+// source_count without a second round trip. Shared by GET /feeds and the
+// /bootstrap aggregate (performance audit #3).
+export async function listFeedsForOwner(ownerId: string): Promise<FeedRow[]> {
+  // Zero-feeds guard (Slice 3, workstream B): seed starter-template clones on
+  // first load for any owner with no feeds — covers fresh signups (both OAuth
+  // and email paths) and pre-existing empty accounts uniformly, since every
+  // workspace session reads this list. Idempotent + advisory-locked. No-op when
+  // no template is flagged (the client then mints an empty feed).
+  try {
+    await seedStarterFeeds(ownerId);
+  } catch (err) {
+    // Never block the workspace on a seeding hiccup — log and serve whatever
+    // feeds exist (possibly none, in which case the client mints a default).
+    logger.error({ err, ownerId }, "Starter-feed seeding failed");
+  }
+  const { rows } = await pool.query<FeedRow>(
+    `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
+       (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
+     FROM feeds f
+     WHERE f.owner_id = $1
+     ORDER BY f.sort_rank ASC, f.created_at ASC, f.id ASC`,
+    [ownerId],
+  );
+  return rows;
+}
+
 export function registerFeedCrudRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
-  // GET /feeds — list mine, in rank order (MOBILE-LAYOUT-ADR §VII: sort_rank
-  // is the persisted order behind the numeral and the mobile swipe sequence;
-  // created_at/id are deterministic tie-breaks for equal ranks)
+  // GET /feeds — list mine, in rank order
   // ---------------------------------------------------------------------------
   app.get("/feeds", { preHandler: requireAuth }, async (req, reply) => {
     const ownerId = req.session!.sub;
-    // Zero-feeds guard (Slice 3, workstream B): seed starter-template clones on
-    // first load for any owner with no feeds — covers fresh signups (both
-    // OAuth and email paths) and pre-existing empty accounts uniformly, since
-    // every workspace session reads this list. Idempotent + advisory-locked.
-    // No-op when no template is flagged (the client then mints an empty feed).
-    try {
-      await seedStarterFeeds(ownerId);
-    } catch (err) {
-      // Never block the workspace on a seeding hiccup — log and serve whatever
-      // feeds exist (possibly none, in which case the client mints a default).
-      logger.error({ err, ownerId }, "Starter-feed seeding failed");
-    }
-    const { rows } = await pool.query<FeedRow>(
-      `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
-         (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
-       FROM feeds f
-       WHERE f.owner_id = $1
-       ORDER BY f.sort_rank ASC, f.created_at ASC, f.id ASC`,
-      [ownerId],
-    );
+    const rows = await listFeedsForOwner(ownerId);
     return reply.send({ feeds: rows.map(feedRowToResponse) });
   });
 

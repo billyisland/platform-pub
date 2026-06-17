@@ -37,13 +37,18 @@ import { PipPanel } from "./PipPanel";
 import { NewFeedPrompt } from "./NewFeedPrompt";
 import { FeedComposer } from "./FeedComposer";
 import { ForallCeremony } from "./ForallCeremony";
-import { ReaderOverlay } from "./ReaderOverlay";
-import { MessagesOverlay } from "./MessagesOverlay";
-import { DashboardOverlay } from "./DashboardOverlay";
-import { LedgerOverlay } from "./LedgerOverlay";
-import { SettingsOverlay } from "./SettingsOverlay";
-import { LibraryOverlay } from "./LibraryOverlay";
-import { NetworkOverlay } from "./NetworkOverlay";
+// Overlays are code-split + open-gated in LazyOverlays (performance audit #4):
+// their chunks (incl. TipTap/Stripe via the editor/ledger) leave the /reader
+// bundle and load on first open.
+import {
+  LazyReaderOverlay as ReaderOverlay,
+  LazyMessagesOverlay as MessagesOverlay,
+  LazyDashboardOverlay as DashboardOverlay,
+  LazyLedgerOverlay as LedgerOverlay,
+  LazySettingsOverlay as SettingsOverlay,
+  LazyLibraryOverlay as LibraryOverlay,
+  LazyNetworkOverlay as NetworkOverlay,
+} from "./LazyOverlays";
 import { useReader } from "../../stores/reader";
 import { useCompose } from "../../stores/compose";
 import { useEditorOverlay } from "../../stores/editorOverlay";
@@ -699,15 +704,21 @@ export function WorkspaceView() {
     if (user) hydrate(user.id);
   }, [user, hydrate]);
 
-  // Bootstrap: list feeds, seed the default if none exist, fetch items per
-  // vessel. Re-runs only when the authenticated user changes.
+  // Bootstrap: one aggregate call returns the feed list plus, per feed, its
+  // sources + first page of items (performance audit #3) — collapsing the old
+  // list()+per-feed listSources()+items() fan-out into a single round trip.
+  // Feeds absent from `vessels` (a freshly minted default, or a server-side
+  // hydration hiccup) fall back to the per-vessel lazy loaders below.
+  // Re-runs only when the authenticated user changes.
   useEffect(() => {
     if (!user || !hydrated) return;
     let cancelled = false;
     setBootstrap("loading");
     void (async () => {
       try {
-        let { feeds: list } = await workspaceFeedsApi.list();
+        const boot = await workspaceFeedsApi.bootstrap();
+        let list = boot.feeds;
+        const vesselData = boot.vessels;
         let mintedFounderFeed = false;
         if (list.length === 0) {
           const { feed } = await workspaceFeedsApi.create(DEFAULT_FEED_NAME);
@@ -743,16 +754,29 @@ export function WorkspaceView() {
             }
           }
         }
-        const initial: VesselState[] = list.map((feed) => ({
-          feed,
-          items: [],
-          sources: [],
-          status: "loading",
-        }));
+        // Seed each vessel from the aggregate payload where present (ready, with
+        // sources + first items + cursor); leave the rest "loading" for the
+        // lazy fallback below.
+        const initial: VesselState[] = list.map((feed) => {
+          const v = vesselData[feed.id];
+          if (v) {
+            return {
+              feed,
+              items: v.items,
+              sources: v.sources,
+              status: "ready",
+              nextCursor: v.nextCursor ?? null,
+            };
+          }
+          return { feed, items: [], sources: [], status: "loading" };
+        });
         setVessels(initial);
         setBootstrap("ready");
 
+        // Fallback only for feeds the aggregate didn't cover (minted default /
+        // hydration hiccup); covered feeds already carry their sources.
         for (const feed of list) {
+          if (vesselData[feed.id]) continue;
           workspaceFeedsApi
             .listSources(feed.id)
             .then(({ sources }) => {
@@ -824,7 +848,10 @@ export function WorkspaceView() {
 
         for (const feed of list) {
           if (cancelled) return;
-          // Fire-and-forget per vessel — no need to serialise.
+          // Covered feeds already have their first page from the aggregate;
+          // only fetch the ones the bootstrap didn't return (minted default /
+          // hydration hiccup). Fire-and-forget — no need to serialise.
+          if (vesselData[feed.id]) continue;
           void loadVesselItems(feed);
         }
       } catch (err) {
@@ -1027,7 +1054,16 @@ export function WorkspaceView() {
                       const frameColor = ctx.palette.walls;
                       if (p.author.pubkey) {
                         if (p.dTag)
-                          reader.openNative(p.dTag, { postId: p.id, frameColor });
+                          reader.openNative(p.dTag, {
+                            postId: p.id,
+                            frameColor,
+                            // Seed the instant preview from the card's Post so the
+                            // reader paints title+dek on the first frame (audit #6).
+                            preview: {
+                              title: p.body.title,
+                              summary: p.body.summary,
+                            },
+                          });
                       } else {
                         reader.openExternal(p.origin.uri, {
                           postId: p.id,

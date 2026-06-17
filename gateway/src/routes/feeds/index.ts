@@ -4,6 +4,7 @@ import { registerFeedItemsRoutes } from "./items.js";
 import { registerFeedSourcesRoutes } from "./sources.js";
 import { registerAuthorVolumeRoutes } from "./author-volume.js";
 import { registerFeedSavesRoutes } from "./saves.js";
+import { registerFeedBootstrapRoutes } from "./bootstrap.js";
 
 // =============================================================================
 // Workspace feeds (slices 3 + 4)
@@ -13,6 +14,7 @@ import { registerFeedSavesRoutes } from "./saves.js";
 // subscriptions are feed-derived — adding/removing an external source here is
 // what creates/tears down the external_subscriptions row. Effective paths:
 //
+// GET    /workspace/bootstrap                   — feeds + per-feed sources + first items (audit #3)
 // GET    /workspace/feeds                       — list feeds owned by caller
 // POST   /workspace/feeds                       — create { name }
 // PATCH  /workspace/feeds/:id                   — rename { name }
@@ -45,4 +47,5 @@ export async function feedsRoutes(app: FastifyInstance) {
   registerFeedSourcesRoutes(app);
   registerAuthorVolumeRoutes(app);
   registerFeedSavesRoutes(app);
+  registerFeedBootstrapRoutes(app);
 }

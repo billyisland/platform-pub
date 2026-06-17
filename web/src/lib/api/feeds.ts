@@ -86,8 +86,29 @@ export type AddWorkspaceFeedSourceInput =
       relayUrls?: string[];
     };
 
+// One-shot workspace hydration (performance audit #3): the feed list plus, per
+// feed, its sources and first page of items — collapsing the old
+// list()+listSources()+items() fan-out into a single round trip. `vessels` is
+// keyed by feed id; a feed may be absent (server-side hydration hiccup) and the
+// client then loads that vessel lazily via items()/listSources().
+export interface WorkspaceBootstrapResponse {
+  feeds: WorkspaceFeed[];
+  vessels: Record<
+    string,
+    {
+      sources: WorkspaceFeedSource[];
+      items: Post[];
+      nextCursor?: string;
+      placeholder: boolean;
+    }
+  >;
+}
+
 export const workspaceFeeds = {
   list: () => request<{ feeds: WorkspaceFeed[] }>("/workspace/feeds"),
+
+  bootstrap: () =>
+    request<WorkspaceBootstrapResponse>("/workspace/bootstrap"),
 
   create: (name: string) =>
     request<{ feed: WorkspaceFeed }>("/workspace/feeds", {

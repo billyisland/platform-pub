@@ -20,7 +20,17 @@ export type ReaderTarget =
       title: string | null;
       siteName: string | null;
     }
-  | { kind: "native"; dTag: string; postId: string | null };
+  | {
+      kind: "native";
+      dTag: string;
+      postId: string | null;
+      // Instant preview seeded from the feed card's Post (performance audit #6):
+      // the title + dek the card already holds, so the reader paints the
+      // article's identity on the first frame instead of a blank skeleton while
+      // the full article fetch (free body + gate metadata) is in flight. Absent
+      // when opened from a surface that has no Post in hand (search, dashboard).
+      preview?: { title: string | null; summary: string | null } | null;
+    };
 
 interface ReaderState {
   isOpen: boolean;
@@ -42,10 +52,16 @@ interface ReaderState {
       frameColor?: string | null;
     },
   ) => void;
-  /** Open a native article by its d-tag (the ArticleReader). */
+  /** Open a native article by its d-tag (the ArticleReader). `preview` seeds an
+   *  instant title+dek paint from the card's Post (audit #6); omit it when the
+   *  caller has no Post in hand. */
   openNative: (
     dTag: string,
-    opts?: { postId?: string | null; frameColor?: string | null },
+    opts?: {
+      postId?: string | null;
+      frameColor?: string | null;
+      preview?: { title: string | null; summary: string | null } | null;
+    },
   ) => void;
   /**
    * Back-compat alias for the legacy VesselCard call `open(url, title, site)`.
@@ -113,7 +129,12 @@ export const useReader = create<ReaderState>((set, get) => ({
     const didPush = pushReaderUrl(`/article/${dTag}`, get().didPush);
     set({
       isOpen: true,
-      target: { kind: "native", dTag, postId: opts?.postId ?? null },
+      target: {
+        kind: "native",
+        dTag,
+        postId: opts?.postId ?? null,
+        preview: opts?.preview ?? null,
+      },
       didPush,
       frameColor: opts?.frameColor ?? null,
     });

@@ -477,6 +477,34 @@ async function insertSource(
   }
 }
 
+// Load a feed's source rows with target display info, mapped to the wire shape.
+// Shared by GET /feeds/:id/sources and the /bootstrap aggregate (performance
+// audit #3). Ownership is the caller's responsibility (both call sites assert it
+// via loadFeed before reaching here).
+export async function loadFeedSources(feedId: string) {
+  // LEFT JOINs against each potential target type. Exactly one is non-null per
+  // row (CHECK in migration 077), so COALESCE picks the populated display
+  // fields without ambiguity.
+  const { rows } = await pool.query<SourceRow>(
+    `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
+       fs.exclude_replies,
+       fs.reach_kind,
+       fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
+       acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
+       pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
+       xs.protocol AS external_protocol, xs.source_uri AS external_source_uri,
+       xs.display_name AS external_display_name, xs.avatar_url AS external_avatar
+     FROM feed_sources fs
+     LEFT JOIN accounts acc ON acc.id = fs.account_id
+     LEFT JOIN publications pub ON pub.id = fs.publication_id
+     LEFT JOIN external_sources xs ON xs.id = fs.external_source_id
+     WHERE fs.feed_id = $1
+     ORDER BY fs.created_at ASC, fs.id ASC`,
+    [feedId],
+  );
+  return rows.map(sourceRowToResponse);
+}
+
 export function registerFeedSourcesRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // GET /feeds/:id/sources — list rows with target display info
@@ -493,27 +521,7 @@ export function registerFeedSourcesRoutes(app: FastifyInstance) {
       const feed = await loadFeed(id, ownerId);
       if (!feed) return reply.status(404).send({ error: "Feed not found" });
 
-      // LEFT JOINs against each potential target type. Exactly one is non-null
-      // per row (CHECK in migration 077), so COALESCE picks the populated
-      // display fields without ambiguity.
-      const { rows } = await pool.query(
-        `SELECT fs.id, fs.source_type, fs.weight, fs.sampling_mode, fs.muted_at, fs.created_at,
-           fs.exclude_replies,
-           fs.reach_kind,
-           fs.account_id, fs.publication_id, fs.external_source_id, fs.tag_name,
-           acc.username AS account_username, acc.display_name AS account_display_name, acc.avatar_blossom_url AS account_avatar,
-           pub.slug AS publication_slug, pub.name AS publication_name, pub.logo_blossom_url AS publication_avatar,
-           xs.protocol AS external_protocol, xs.source_uri AS external_source_uri,
-           xs.display_name AS external_display_name, xs.avatar_url AS external_avatar
-         FROM feed_sources fs
-         LEFT JOIN accounts acc ON acc.id = fs.account_id
-         LEFT JOIN publications pub ON pub.id = fs.publication_id
-         LEFT JOIN external_sources xs ON xs.id = fs.external_source_id
-         WHERE fs.feed_id = $1
-         ORDER BY fs.created_at ASC, fs.id ASC`,
-        [id],
-      );
-      return reply.send({ sources: rows.map(sourceRowToResponse) });
+      return reply.send({ sources: await loadFeedSources(id) });
     },
   );
 
