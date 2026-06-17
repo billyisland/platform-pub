@@ -77,6 +77,7 @@ export function ForallMenu({
   const [spinTransition, setSpinTransition] = useState(true);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const wordmarkRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Rows are grouped find → make → go: search first (the way in), then the
@@ -199,6 +200,10 @@ export function ForallMenu({
     if (view === "closed") return;
     const onDocClick = (e: MouseEvent) => {
       if (containerRef.current?.contains(e.target as Node)) return;
+      // The wordmark is a separate stacking-layer sibling (it sits BELOW the
+      // scrim so a glasshouse hides it), but it's part of the trigger — a click
+      // on it toggles the menu, so it must not count as an outside click.
+      if (wordmarkRef.current?.contains(e.target as Node)) return;
       setView("closed");
     };
     const onKey = (e: KeyboardEvent) => {
@@ -241,14 +246,65 @@ export function ForallMenu({
   }
 
   return (
-    <div
-      ref={containerRef}
-      style={
-        inBar
-          ? { position: "fixed", right: 8, top: 6, zIndex: 60 }
-          : { position: "fixed", right: 24, bottom: 24, zIndex: 60 }
-      }
-    >
+    <>
+      {/* Wordmark lockup — "all.haus" set to the LEFT of the ∀ disc so the two
+          read as one mark (text · glyph). It's part of the trigger's click
+          target (same toggle + glyph-spin as the disc) but lives in its own
+          fixed layer at z-50: the disc container stays crisp at z-60 (the
+          invariant — ForallMenu above the frost), while z-50 sits BELOW the
+          Glasshouse scrim (z-[55]), so opening any overlay washes the wordmark
+          out behind the frost while the disc stays sharp. Floating only — the
+          mobile bar already carries its own wordmark. */}
+      {!inBar && (
+        <button
+          ref={wordmarkRef}
+          type="button"
+          aria-hidden="true"
+          tabIndex={-1}
+          onClick={() => setView((v) => (v === "closed" ? "menu" : "closed"))}
+          onMouseEnter={() => {
+            setSpinTransition(true);
+            setGlyphRot(180);
+          }}
+          onMouseLeave={() => {
+            setSpinTransition(true);
+            setGlyphRot(360);
+          }}
+          style={{
+            position: "fixed",
+            right: 24 + discSize + 14,
+            bottom: 24,
+            height: discSize,
+            display: "flex",
+            alignItems: "center",
+            zIndex: 50,
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+          }}
+        >
+          <span
+            className="font-sans font-medium leading-none"
+            style={{
+              fontSize: 20,
+              color: "var(--ah-ink-925)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            all.haus
+          </span>
+        </button>
+      )}
+
+      <div
+        ref={containerRef}
+        style={
+          inBar
+            ? { position: "fixed", right: 8, top: 6, zIndex: 60 }
+            : { position: "fixed", right: 24, bottom: 24, zIndex: 60 }
+        }
+      >
       {view === "menu" && (
         <div
           role="menu"
@@ -436,7 +492,8 @@ export function ForallMenu({
           </span>
         )}
       </button>
-    </div>
+      </div>
+    </>
   );
 }
 

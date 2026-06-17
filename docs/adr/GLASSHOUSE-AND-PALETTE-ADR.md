@@ -154,6 +154,19 @@ authoritative mask and remove the UA outline:
 The ∀ legs stay floor-coloured (they sit on the dark disc, where that reads
 correctly); the fix is purely about containment, not colour.
 
+**Wordmark lockup (2026-06-17).** A 20px `all.haus` wordmark sits to the LEFT of
+the floating ∀ disc (`text · glyph`, font-sans medium, `ink-925`, `-0.01em`
+tracking — matching the Nav/mobile wordmarks). It is part of the trigger's click
+target: clicking it runs the same `setView` toggle and hovering it drives the
+same ∀ glyph spin, and it's excluded from the outside-click dismiss. But it lives
+in its OWN fixed layer at **z-50** — a sibling of the disc container, not a child
+(a child of the `z-60` container couldn't escape that stacking context). z-50
+sits BELOW the Glasshouse scrim (`z-[55]`) while the disc container stays crisp
+at z-60, so opening any overlay washes the wordmark out behind the frost while
+the disc stays sharp. Floating (desktop) only — `MobileWorkspace`'s bar already
+carries its own wordmark. `aria-hidden`/`tabIndex={-1}` so it doesn't duplicate
+the disc's accessible control.
+
 ### 4 — Per-feed scheme as a click-through button (req 5)
 
 `tokens.ts`: add `nextScheme`, mirroring `nextOrientation` / `nextTextSize`:
