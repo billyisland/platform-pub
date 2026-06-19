@@ -14,6 +14,7 @@ import {
   LazySurfaceOverlay as SurfaceOverlay,
   LazyEditorOverlay as EditorOverlay,
 } from '../workspace/LazyOverlays'
+import { LightboxOverlay } from '../ui/LightboxOverlay'
 import { PalettePanel } from '../devtools/PalettePanel'
 import { PaletteHydrator } from '../devtools/PaletteHydrator'
 import { TypeScaleHydrator } from '../TypeScaleHydrator'
@@ -85,6 +86,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         {/* Mounted unconditionally — "write an article" is reachable from the
             workspace, the dashboard overlay, and the note→article handoff. */}
         <EditorOverlay />
+        {/* Mounted unconditionally — any surface (profile avatars, …) enlarges
+            an image by calling useLightbox.open(); floats above everything. */}
+        <LightboxOverlay />
         {/* Headless — applies persisted palette overrides on boot (the permanent
             hydration mechanism, CLAUDE.md). Always mounted; no UI. */}
         <PaletteHydrator />

@@ -11,6 +11,7 @@ import {
 } from "../../hooks/useAuthorCard";
 import { follows as followsApi, workspaceFeeds } from "../../lib/api";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
+import { useLightbox } from "../../stores/lightbox";
 import { SourceVolume } from "./SourceVolume";
 
 interface AuthorModalProps {
@@ -231,12 +232,22 @@ function ModalContent({
     <div>
       <div className="flex items-start gap-3">
         {data.avatarUrl && (
-          <img
-            src={data.avatarUrl}
-            alt=""
-            className="w-10 h-10 rounded-full object-cover bg-grey-100 flex-shrink-0"
-            referrerPolicy="no-referrer"
-          />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              useLightbox.getState().open(data.avatarUrl!, data.displayName ?? "");
+            }}
+            aria-label="View picture"
+            className="focus-ring flex-shrink-0 cursor-zoom-in"
+          >
+            <img
+              src={data.avatarUrl}
+              alt=""
+              className="w-10 h-10 rounded-full object-cover bg-grey-100"
+              referrerPolicy="no-referrer"
+            />
+          </button>
         )}
         <div className="min-w-0 flex-1">
           {data.displayName &&

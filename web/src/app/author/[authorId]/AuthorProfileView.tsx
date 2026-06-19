@@ -21,6 +21,8 @@ import {
 } from "../../../lib/api/post";
 import type { Post } from "../../../lib/post/types";
 import { useCompose } from "../../../stores/compose";
+import { useLightbox } from "../../../stores/lightbox";
+import { ProfileFollowControl } from "../../../components/profile/ProfileFollowControl";
 import { ApiError } from "../../../lib/api/client";
 
 // =============================================================================
@@ -206,22 +208,47 @@ export function AuthorProfileView({
         )}
         <div className="flex items-start gap-3">
           {profile.avatarUrl && (
-             
-            <img
-              src={profile.avatarUrl}
-              alt=""
-              className="w-12 h-12 rounded-full object-cover bg-grey-100 flex-shrink-0"
-              referrerPolicy="no-referrer"
-            />
+            <button
+              type="button"
+              onClick={() =>
+                useLightbox.getState().open(profile.avatarUrl!, name)
+              }
+              aria-label="View picture"
+              className="focus-ring flex-shrink-0 cursor-zoom-in"
+            >
+              <img
+                src={profile.avatarUrl}
+                alt=""
+                className="w-12 h-12 rounded-full object-cover bg-grey-100"
+                referrerPolicy="no-referrer"
+              />
+            </button>
           )}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="font-sans text-2xl font-medium text-black tracking-tight">
               {name}
             </h1>
-            {profile.handle && (
-              <p className="text-mono-xs text-grey-600">@{profile.handle}</p>
-            )}
+            {profile.handle &&
+              (profile.externalUrl ? (
+                // The handle links out to the author's profile on the origin
+                // platform (Bluesky / Fediverse / Nostr).
+                <a
+                  href={profile.externalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-mono-xs text-grey-600 hover:text-black hover:underline"
+                >
+                  @{profile.handle}
+                </a>
+              ) : (
+                <p className="text-mono-xs text-grey-600">@{profile.handle}</p>
+              ))}
           </div>
+          {profile.followTarget && (
+            <div className="flex-shrink-0">
+              <ProfileFollowControl target={profile.followTarget} />
+            </div>
+          )}
         </div>
         {profile.bio && (
           <p className="font-sans text-ui-sm text-grey-600 mt-3 max-w-feed">

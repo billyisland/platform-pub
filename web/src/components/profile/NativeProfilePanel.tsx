@@ -84,6 +84,7 @@ export function NativeProfilePanel({ username }: { username: string }) {
             name={writer.displayName ?? username}
             size={56}
             lazy={false}
+            enlargeable
           />
           <div className="flex-1">
             <h1

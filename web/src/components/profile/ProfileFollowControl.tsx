@@ -1,0 +1,314 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  follows as followsApi,
+  workspaceFeeds,
+  type WorkspaceFeed,
+} from "../../lib/api";
+import { invalidateAuthorCardCache } from "../../hooks/useAuthorCard";
+import { useAuth } from "../../stores/auth";
+import type { AuthorProfile } from "../../lib/api/post";
+
+// =============================================================================
+// ProfileFollowControl — the follow/unfollow affordance for a full profile
+// surface (AuthorProfileView). Two shapes off the server's followTarget:
+//
+//   • type "user"  → a plain native Follow/Following toggle (global, /follows).
+//   • type "source"→ external follow is feed-derived (CLAUDE.md invariant:
+//                     "follow an external author" = add its source to a feed).
+//                     A standalone profile has NO feed context, so the control
+//                     is a "Follow ▾" feed-picker: a menu of the viewer's feeds,
+//                     each toggling membership; "following" = in ≥1 feed.
+//
+// Logged-out viewers get a full-page → /auth link (the workspace is login-gated;
+// every logged-out follow CTA goes to /auth full-page by design).
+// =============================================================================
+
+type FollowTarget = NonNullable<AuthorProfile["followTarget"]>;
+
+// Protocols workspace addSource can service (mirrors AuthorModal's set).
+const FOLLOWABLE_PROTOCOLS = new Set([
+  "rss",
+  "atproto",
+  "activitypub",
+  "nostr_external",
+]);
+
+export function ProfileFollowControl({ target }: { target: FollowTarget }) {
+  const { user, loading } = useAuth();
+
+  if (loading) return null;
+  if (!user) {
+    return (
+      <Link href="/auth" className="btn py-1.5 px-4 text-ui-xs">
+        Log in to follow
+      </Link>
+    );
+  }
+
+  return target.type === "source" ? (
+    <SourceFollowPicker target={target} />
+  ) : (
+    <NativeFollowToggle target={target} />
+  );
+}
+
+function NativeFollowToggle({ target }: { target: FollowTarget }) {
+  const [following, setFollowing] = useState(target.isFollowing);
+  const [busy, setBusy] = useState(false);
+
+  const toggle = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    const prev = following;
+    setFollowing(!prev);
+    try {
+      if (prev) await followsApi.unfollow(target.id);
+      else await followsApi.follow(target.id);
+      invalidateAuthorCardCache();
+    } catch {
+      setFollowing(prev);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, following, target.id]);
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={busy}
+      className={`transition-colors disabled:opacity-50 py-1.5 px-4 text-ui-xs ${
+        following ? "btn-soft" : "btn"
+      }`}
+    >
+      {busy ? "…" : following ? "Following" : "Follow"}
+    </button>
+  );
+}
+
+function SourceFollowPicker({ target }: { target: FollowTarget }) {
+  const followable =
+    !target.protocol || FOLLOWABLE_PROTOCOLS.has(target.protocol);
+
+  const [open, setOpen] = useState(false);
+  const [feeds, setFeeds] = useState<WorkspaceFeed[] | null>(null);
+  // feedId → feed_sources row id when the source sits in that feed, else null.
+  const [membership, setMembership] = useState<Record<string, string | null>>(
+    {},
+  );
+  const [busyFeeds, setBusyFeeds] = useState<Set<string>>(new Set());
+  const [newMode, setNewMode] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const following = Object.values(membership).some(Boolean);
+
+  // Resolve feeds + per-feed membership on first open. listSources per feed is a
+  // small fan-out (a handful of feeds) — fine for a deliberate menu open.
+  useEffect(() => {
+    if (!open || feeds !== null) return;
+    let cancelled = false;
+    void workspaceFeeds
+      .list()
+      .then(async ({ feeds }) => {
+        const visible = feeds
+          .filter((f) => !f.hidden)
+          .sort((a, b) => a.sortRank - b.sortRank);
+        const entries = await Promise.all(
+          visible.map(async (f) => {
+            try {
+              const { sources } = await workspaceFeeds.listSources(f.id);
+              const row = target.sourceId
+                ? sources.find(
+                    (s) =>
+                      s.sourceType === "external_source" &&
+                      s.externalSourceId === target.sourceId,
+                  )
+                : undefined;
+              return [f.id, row?.id ?? null] as const;
+            } catch {
+              return [f.id, null] as const;
+            }
+          }),
+        );
+        if (cancelled) return;
+        setFeeds(visible);
+        setMembership(Object.fromEntries(entries));
+      })
+      .catch(() => {
+        if (!cancelled) setFeeds([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, feeds, target.sourceId]);
+
+  // Outside-click / Escape dismissal for the menu.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const setBusy = (feedId: string, on: boolean) =>
+    setBusyFeeds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(feedId);
+      else next.delete(feedId);
+      return next;
+    });
+
+  const toggleFeed = useCallback(
+    async (feedId: string) => {
+      if (busyFeeds.has(feedId) || !target.protocol || !target.sourceUri)
+        return;
+      const existing = membership[feedId];
+      setBusy(feedId, true);
+      try {
+        if (existing) {
+          await workspaceFeeds.removeSource(feedId, existing);
+          setMembership((m) => ({ ...m, [feedId]: null }));
+        } else {
+          const { source } = await workspaceFeeds.addSource(feedId, {
+            sourceType: "external_source",
+            protocol: target.protocol as
+              | "rss"
+              | "atproto"
+              | "activitypub"
+              | "nostr_external",
+            sourceUri: target.sourceUri,
+          });
+          setMembership((m) => ({ ...m, [feedId]: source.id }));
+        }
+        invalidateAuthorCardCache();
+      } catch {
+        /* leave membership unchanged on failure */
+      } finally {
+        setBusy(feedId, false);
+      }
+    },
+    [busyFeeds, membership, target.protocol, target.sourceUri],
+  );
+
+  const createAndFollow = useCallback(async () => {
+    const name = newName.trim();
+    if (!name || creating || !target.protocol || !target.sourceUri) return;
+    setCreating(true);
+    try {
+      const { feed } = await workspaceFeeds.create(name);
+      const { source } = await workspaceFeeds.addSource(feed.id, {
+        sourceType: "external_source",
+        protocol: target.protocol as
+          | "rss"
+          | "atproto"
+          | "activitypub"
+          | "nostr_external",
+        sourceUri: target.sourceUri,
+      });
+      setFeeds((prev) => [...(prev ?? []), feed]);
+      setMembership((m) => ({ ...m, [feed.id]: source.id }));
+      invalidateAuthorCardCache();
+      setNewMode(false);
+      setNewName("");
+    } catch {
+      /* keep the input open so the user can retry */
+    } finally {
+      setCreating(false);
+    }
+  }, [newName, creating, target.protocol, target.sourceUri]);
+
+  // A protocol we can't add (e.g. email) has no follow gesture at all.
+  if (!followable) return null;
+
+  return (
+    <div ref={wrapRef} className="relative inline-block">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`transition-colors py-1.5 px-4 text-ui-xs ${
+          following ? "btn-soft" : "btn"
+        }`}
+      >
+        {following ? "Following" : "Follow"} <span aria-hidden>▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-60 bg-glasshouse shadow-lg p-1.5">
+          {feeds === null ? (
+            <p className="label-ui text-grey-600 px-2 py-2">LOADING…</p>
+          ) : (
+            <>
+              {feeds.length === 0 && !newMode && (
+                <p className="text-ui-xs text-grey-600 px-2 py-2">
+                  No feeds yet.
+                </p>
+              )}
+              {feeds.map((f) => {
+                const inFeed = !!membership[f.id];
+                const busy = busyFeeds.has(f.id);
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => toggleFeed(f.id)}
+                    disabled={busy}
+                    className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-ui-sm text-black hover:bg-glasshouse-well transition-colors disabled:opacity-50"
+                  >
+                    <span className="truncate">{f.name}</span>
+                    <span
+                      className={`text-ui-sm ${inFeed ? "text-crimson" : "text-grey-300"}`}
+                      aria-hidden
+                    >
+                      {busy ? "…" : inFeed ? "✓" : "+"}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {newMode ? (
+                <div className="flex items-center gap-1.5 px-1 pt-1.5">
+                  <input
+                    autoFocus
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void createAndFollow();
+                      if (e.key === "Escape") setNewMode(false);
+                    }}
+                    placeholder="New feed name"
+                    className="min-w-0 flex-1 bg-glasshouse-well px-2 py-1.5 text-ui-sm text-black placeholder:text-grey-300 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => void createAndFollow()}
+                    disabled={creating || !newName.trim()}
+                    className="btn py-1.5 px-3 text-ui-xs disabled:opacity-50"
+                  >
+                    {creating ? "…" : "Add"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setNewMode(true)}
+                  className="w-full px-2 py-1.5 text-left text-ui-sm text-grey-600 hover:bg-glasshouse-well transition-colors"
+                >
+                  + New feed…
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

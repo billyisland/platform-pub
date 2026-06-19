@@ -65,7 +65,7 @@ export default async function WriterProfilePage({ params }: { params: { username
       {/* Static profile header — arrives as HTML */}
       <div className="mb-12">
         <div className="flex items-center gap-4 mb-4">
-          <Avatar src={writer.avatar} name={writer.displayName ?? params.username} size={56} lazy={false} />
+          <Avatar src={writer.avatar} name={writer.displayName ?? params.username} size={56} lazy={false} enlargeable />
           <div className="flex-1">
             <h1
               className="font-serif text-3xl sm:text-4xl font-light text-black"
