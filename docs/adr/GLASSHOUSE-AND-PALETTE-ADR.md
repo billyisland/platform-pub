@@ -200,6 +200,14 @@ standalone-page case only). The wordmark trigger shares the same handler.
   `isOpen` to flip the glyph and calls `close()` (the same close the pane's own ✕
   and Escape fire) to dismiss the sheet. The workspace underneath resumes the feed
   you left (the `ah:mobile-feed` resume key), so "back" lands you where you were.
+  The X also shows whenever the ∀ **menu itself** is open — the open menu and its
+  in-place panels (Search) are not Glasshouse sheets, so they aren't in the
+  presence registry, but on mobile the disc is still their only dismiss
+  affordance (no outside-tap target, no ✕ on the panel). So `showClose` also
+  takes `isMobile && view !== "closed"`, and the disc's existing toggle
+  (`view !== "closed"` → `"closed"`) closes the menu/panel; `aria-label` reads
+  "Close menu" in that case. Desktop keeps the disc as ∀ while the dropdown is
+  open (a mouse can click outside; an X on a small anchored dropdown reads oddly).
 
 **Feed-launched frame (2026-06-17).** A reader pane or profile overlay opened
 **from a feed card** frames itself in that feed's identity, in the feed's WALL

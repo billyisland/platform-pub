@@ -94,10 +94,20 @@ export function ForallMenu({
   const isMobile = useIsMobile();
   const glasshouseOpen = useGlasshousePresence((s) => s.isOpen);
   const mobileSheetOpen = isMobile && glasshouseOpen;
-  // The disc shows the close glyph whenever it would act as a minimise-X.
-  const showClose = menuOverlayOpen || mobileSheetOpen;
 
   const [view, setView] = useState<View>("closed");
+
+  // On mobile the ∀ menu and its in-place panels (Search) are not Glasshouse
+  // sheets, so they aren't tracked by the presence registry above — yet the
+  // disc is still the only way to dismiss them (no outside-click target, no ✕
+  // on the panel). So treat any open ∀ surface as a close state on mobile too:
+  // the disc shows the X and `onTriggerClick`'s toggle (view !== "closed" →
+  // "closed") dismisses it. Desktop keeps the disc as ∀ while the dropdown is
+  // open — a mouse can click outside, and an X on a small anchored dropdown
+  // would read oddly.
+  const mobileMenuOpen = isMobile && view !== "closed";
+  // The disc shows the close glyph whenever it would act as a minimise-X.
+  const showClose = menuOverlayOpen || mobileSheetOpen || mobileMenuOpen;
   const [activeIndex, setActiveIndex] = useState(0);
   // ∀ glyph rotation. Hover rotates it to 180° (a right-side-up A) and holds;
   // leaving completes the turn to 360° (back to ∀), then snaps to 0 for next
@@ -411,11 +421,13 @@ export function ForallMenu({
         type="button"
         className="forall-trigger"
         aria-label={
-          showClose
-            ? "Back to workspace"
-            : `Workspace actions${
-                totalUnread > 0 ? ` (${totalUnread} unread)` : ""
-              }`
+          mobileMenuOpen && !menuOverlayOpen && !mobileSheetOpen
+            ? "Close menu"
+            : showClose
+              ? "Back to workspace"
+              : `Workspace actions${
+                  totalUnread > 0 ? ` (${totalUnread} unread)` : ""
+                }`
         }
         aria-haspopup="menu"
         aria-expanded={view !== "closed"}
