@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { postThread } from "../lib/api/post";
 
 // =============================================================================
 // useReader — the unified reader-pane store (UNIVERSAL-POST-ADR §3.1 / Phase R)
@@ -98,6 +99,12 @@ interface ReaderState {
       preview?: { title: string | null; summary: string | null } | null;
     },
   ) => void;
+  /** Reopen an external article from just its postId — the reload path for the
+   *  standalone /read/<postId> page: resolve the origin URL/title via GET /thread
+   *  (the same lookup the page does server-side), then open the overlay. Feed
+   *  context (skip ears / frame) is gone after a cold reload, so it opens plain.
+   *  Best-effort: a failed/unresolvable lookup leaves the workspace untouched. */
+  openExternalById: (postId: string) => Promise<void>;
   /** Open the article at `index` in a feed's article list, wiring up the skip
    *  ears so the up/down arrows step through `entries` in place. */
   openFeedItem: (
@@ -222,6 +229,29 @@ export const useReader = create<ReaderState>((set, get) => {
         },
         { frameColor: opts?.frameColor ?? null, frameTextColor: null, nav: null },
       );
+    },
+
+    openExternalById: async (postId) => {
+      try {
+        const { focalId, posts } = await postThread(postId);
+        const focal = posts.find((p) => p.id === focalId);
+        // External article only — a note expands inline, a native article lives
+        // at /article/<dTag>. Anything else: leave the workspace as it is.
+        if (
+          !focal ||
+          focal.type !== "article" ||
+          focal.origin.protocol === "nostr" ||
+          !focal.origin.uri
+        )
+          return;
+        get().openExternal(focal.origin.uri, {
+          postId,
+          title: focal.body.title,
+          siteName: focal.origin.sourceName,
+        });
+      } catch {
+        /* non-fatal — reopening is best-effort; the workspace stays open */
+      }
     },
 
     openFeedItem: (entries, index, frame) => {

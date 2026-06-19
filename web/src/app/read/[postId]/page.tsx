@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { ExternalArticleReader } from '../../../components/article/ExternalArticleReader'
+import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
 
 // =============================================================================
 // Reader Page — /read/:postId  (Server Component) — UNIVERSAL-POST-ADR Phase R
@@ -69,6 +70,7 @@ export default async function ReaderPage({ params }: { params: { postId: string 
 
   return (
     <div className="min-h-screen bg-grey-50 py-8">
+      <WorkspacePaneRedirect overlay="reader" params={{ read: params.postId }} />
       <div
         className="mx-auto w-full bg-white shadow-sm"
         style={{ maxWidth: 640 }}

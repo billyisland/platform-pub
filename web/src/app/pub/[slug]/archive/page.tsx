@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import WorkspacePaneRedirect from '../../../../components/layout/WorkspacePaneRedirect'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
 
@@ -17,6 +18,7 @@ export default async function ArchivePage({ params }: { params: { slug: string }
 
   return (
     <div className="max-w-article mx-auto">
+      <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}/archive` }} />
       <h1 className="font-serif text-3xl mb-8">Archive</h1>
       {data.articles.length === 0 ? (
         <p className="text-grey-400 text-sm">No articles published yet.</p>

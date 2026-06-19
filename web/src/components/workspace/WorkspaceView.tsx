@@ -689,16 +689,23 @@ export function WorkspaceView() {
   }, [user, loading, router]);
 
   // Deep-link → overlay. Retired routes (dashboard, messages, notifications)
-  // redirect here as /workspace?overlay=<name>[&…seed params]; the dispatcher
-  // opens the matching Glasshouse seeded from the query, then we strip the
-  // params so the workspace URL stays clean. Read once on mount via
-  // window.location (no useSearchParams → no Suspense boundary needed).
+  // redirect here as /reader?overlay=<name>[&…seed params]; so do the standalone
+  // pane pages on reload (WorkspacePaneRedirect → ?overlay=reader|profile|surface).
+  // We strip the seed params and clean the URL to /reader *first*, then open the
+  // overlay — the order matters for the pane overlays (reader/profile/surface),
+  // which push their own canonical URL on open: opening after the strip lands that
+  // URL on a clean /reader base entry, so Back/close returns to the workspace
+  // rather than the seed URL. The ?overlay= panels push no URL, so the order is
+  // harmless for them. Read once on mount via window.location (no useSearchParams
+  // → no Suspense boundary needed).
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!openOverlayFromParams(params)) return;
-    OVERLAY_PARAM_KEYS.forEach((k) => params.delete(k));
-    const qs = params.toString();
+    const seed = new URLSearchParams(window.location.search);
+    if (!seed.get("overlay")) return;
+    const cleaned = new URLSearchParams(window.location.search);
+    OVERLAY_PARAM_KEYS.forEach((k) => cleaned.delete(k));
+    const qs = cleaned.toString();
     window.history.replaceState({}, "", `/reader${qs ? `?${qs}` : ""}`);
+    openOverlayFromParams(seed);
   }, []);
 
   // Slice 12: fetch the user's followed pubkeys once on mount so the pip

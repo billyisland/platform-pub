@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { renderMarkdown } from '../../../../lib/markdown'
+import WorkspacePaneRedirect from '../../../../components/layout/WorkspacePaneRedirect'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
 const SITE_URL = process.env.APP_URL ?? 'https://all.haus'
@@ -47,6 +48,7 @@ export default async function AboutPage({ params }: { params: { slug: string } }
 
   return (
     <div className="max-w-article mx-auto">
+      <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}/about` }} />
       <h1 className="font-serif text-3xl mb-6">About {pub.name}</h1>
       {aboutHtml ? (
         <div

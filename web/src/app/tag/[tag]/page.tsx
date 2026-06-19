@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { TagBrowser } from './TagBrowser'
+import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
 
 export async function generateMetadata({ params }: { params: { tag: string } }): Promise<Metadata> {
   const tagName = params.tag.toLowerCase()
@@ -24,5 +25,11 @@ export async function generateMetadata({ params }: { params: { tag: string } }):
 }
 
 export default function TagPage({ params }: { params: { tag: string } }) {
-  return <TagBrowser tagName={params.tag.toLowerCase()} />
+  const tagName = params.tag.toLowerCase()
+  return (
+    <>
+      <WorkspacePaneRedirect overlay="surface" params={{ surface: `/tag/${tagName}` }} />
+      <TagBrowser tagName={tagName} />
+    </>
+  )
 }

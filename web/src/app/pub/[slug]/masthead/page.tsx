@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { ProfileLink } from '../../../../components/ui/ProfileLink'
+import WorkspacePaneRedirect from '../../../../components/layout/WorkspacePaneRedirect'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
 
@@ -50,6 +51,7 @@ export default async function MastheadPage({ params }: { params: { slug: string 
 
   return (
     <div className="max-w-article mx-auto">
+      <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}/masthead` }} />
       <h1 className="font-sans text-3xl mb-8">Masthead</h1>
       <div className="space-y-6">
         {data.members.map((m: any) => (

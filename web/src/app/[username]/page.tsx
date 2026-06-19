@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { WriterActivity } from '../../components/profile/WriterActivity'
+import WorkspacePaneRedirect from '../../components/layout/WorkspacePaneRedirect'
 import { Avatar } from '../../components/ui/Avatar'
 import type { WriterProfile } from '../../lib/api'
 
@@ -62,6 +63,7 @@ export default async function WriterProfilePage({ params }: { params: { username
 
   return (
     <div className="mx-auto max-w-article-frame px-4 sm:px-6 py-12">
+      <WorkspacePaneRedirect overlay="profile" params={{ user: params.username }} />
       {/* Static profile header — arrives as HTML */}
       <div className="mb-12">
         <div className="flex items-center gap-4 mb-4">

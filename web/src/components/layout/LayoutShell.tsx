@@ -22,6 +22,8 @@ import { useReader } from '../../stores/reader'
 import { useProfile } from '../../stores/profileOverlay'
 import { useSurfaceOverlay } from '../../stores/surfaceOverlay'
 import { useEditorOverlay } from '../../stores/editorOverlay'
+import { useAuth } from '../../stores/auth'
+import { usePaneRedirect } from '../../stores/paneRedirect'
 
 const LayoutModeContext = createContext<LayoutMode>('platform')
 
@@ -61,13 +63,25 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     pathname === '/about' ||
     pathname === '/admin' ||
     pathname.startsWith('/admin/')
+  // A standalone pane-backing page (article/profile/surface) bounces a logged-in
+  // visitor into the workspace (WorkspacePaneRedirect, which flips this flag).
+  // Suppress the topbar while that redirect is pending — auth still resolving, or
+  // resolved to a logged-in user — so a member reloading never flashes the
+  // retired chrome. A resolved logged-out visitor isn't redirected, so they keep
+  // the full page + topbar (the share / SEO view).
+  const paneRedirectActive = usePaneRedirect((s) => s.active)
+  const authLoading = useAuth((s) => s.loading)
+  const authedUser = useAuth((s) => s.user)
+  const paneRedirecting =
+    paneRedirectActive && (authLoading || Boolean(authedUser))
   const chromeless =
     mode === 'workspace' ||
     chromelessRoute ||
     readerOpen ||
     profileOpen ||
     editorOpen ||
-    surfaceOpen
+    surfaceOpen ||
+    paneRedirecting
 
   return (
     <LayoutModeContext.Provider value={mode}>

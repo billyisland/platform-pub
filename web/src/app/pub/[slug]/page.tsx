@@ -4,6 +4,7 @@ import { HomepageBlog } from '../../../components/publication/HomepageBlog'
 import { HomepageMagazine } from '../../../components/publication/HomepageMagazine'
 import { HomepageMinimal } from '../../../components/publication/HomepageMinimal'
 import { PubFollowButton } from '../../../components/publication/PubFollowButton'
+import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
 
 const GATEWAY = process.env.GATEWAY_INTERNAL_URL ?? process.env.GATEWAY_URL ?? 'http://localhost:3000'
 const SITE_URL = process.env.APP_URL ?? 'https://all.haus'
@@ -68,6 +69,7 @@ export default async function PublicationHomepage({ params }: { params: { slug: 
 
   return (
     <div>
+      <WorkspacePaneRedirect overlay="surface" params={{ surface: `/pub/${params.slug}` }} />
       {/* Masthead */}
       <div className="text-center mb-10">
         <h1 className="font-serif text-2xl font-light tracking-tight text-black">

@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { renderMarkdown } from '../../../lib/markdown'
 import { ArticleReader } from '../../../components/article/ArticleReader'
 import { TraffologyMeta } from '../../../components/traffology/TraffologyMeta'
+import WorkspacePaneRedirect from '../../../components/layout/WorkspacePaneRedirect'
 import { traffologyEnabled } from '../../../lib/featureFlags'
 import type { ArticleMetadata } from '../../../lib/api'
 
@@ -86,6 +87,7 @@ export default async function ArticlePage({ params }: { params: { dTag: string }
 
   return (
     <>
+    <WorkspacePaneRedirect overlay="reader" params={{ article: params.dTag }} />
     {traffologyOn && <TraffologyMeta articleId={article.id} />}
     <ArticleReader
       article={{

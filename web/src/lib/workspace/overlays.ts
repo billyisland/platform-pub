@@ -24,6 +24,9 @@ import { useSettingsOverlay } from "../../stores/settingsOverlay";
 import { useLibraryOverlay, type LibraryTab } from "../../stores/libraryOverlay";
 import { useNetworkOverlay, type NetworkTab } from "../../stores/networkOverlay";
 import { useEditorOverlay } from "../../stores/editorOverlay";
+import { useReader } from "../../stores/reader";
+import { useProfile } from "../../stores/profileOverlay";
+import { openSurfaceHref } from "../../stores/surfaceOverlay";
 
 export const OVERLAY_PARAM_KEYS = [
   "overlay",
@@ -34,6 +37,17 @@ export const OVERLAY_PARAM_KEYS = [
   "draft",
   "edit",
   "pub",
+  // The three URL-backed *pane* overlays (reader/profile/surface) carry their
+  // target here when a standalone page reloads into the workspace (see
+  // WorkspacePaneRedirect). Unlike the ?overlay= panels above, these overlays
+  // push their own canonical URL on open — so WorkspaceView strips the workspace
+  // URL to /reader *before* opening them, letting that canonical URL land on a
+  // clean /reader base entry (so Back/close returns to the workspace).
+  "article",
+  "read",
+  "user",
+  "author",
+  "surface",
 ] as const;
 
 /** Open the overlay named by `params.overlay`, seeded from the query. Returns
@@ -79,6 +93,41 @@ export function openOverlayFromParams(params: URLSearchParams): boolean {
         publicationSlug: params.get("pub"),
       });
       return true;
+    // The three URL-backed pane overlays, reopened when their standalone page
+    // reloads into the workspace (WorkspacePaneRedirect). Native targets open
+    // directly; the external reader resolves its origin URL from the postId.
+    case "reader": {
+      const article = params.get("article");
+      const read = params.get("read");
+      if (article) {
+        useReader.getState().openNative(article);
+        return true;
+      }
+      if (read) {
+        void useReader.getState().openExternalById(read);
+        return true;
+      }
+      return false;
+    }
+    case "profile": {
+      const user = params.get("user");
+      const author = params.get("author");
+      if (user) {
+        useProfile.getState().openNative(user);
+        return true;
+      }
+      if (author) {
+        useProfile.getState().openExternal(author);
+        return true;
+      }
+      return false;
+    }
+    case "surface": {
+      // `surface` carries the canonical path (/source/:id · /tag/:name · /pub/:slug
+      // [+ sub-view]); openSurfaceHref re-derives the target and opens it.
+      const href = params.get("surface");
+      return href ? openSurfaceHref(href) : false;
+    }
     default:
       return false;
   }
