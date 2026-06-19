@@ -228,7 +228,9 @@ the card `Byline`'s `openProfileHref(href, palette.walls)` (byline → profile),
 the byline hover `AuthorModal` (fed `palette.walls` by `PostByline`). Feed-agnostic
 launch points (sitewide `ProfileLink`, `SearchPanel`, `FeedComposer` source-author
 links) pass nothing ⇒ `frameColor` null ⇒ no frame. On the mobile full-screen
-sheet the frame still renders (in-gutter); the skip ears (below) do not.
+sheet **neither the coloured frame nor the skip ears render** (gated on
+`!isMobile`, 2026-06-19): the full-bleed sheet has no gutter to carry the
+in-padding frame cleanly, so reader/profile sheets are plain on mobile.
 
 **Skip ears (reader only, 2026-06-17).** When the reader is launched from a feed,
 `ReaderOverlay` also passes `Glasshouse` a `sideNav` ({`onPrev`/`onNext` +

@@ -555,7 +555,7 @@ export function Glasshouse({
               the content's top + side padding gutters, so it never disturbs the
               pane's width / scroll geometry. Below the chrome (z-10) so the grip
               and ✕ stay above the bar. Absent when frameColor is null. */}
-          {frameColor && (
+          {frameColor && !isMobile && (
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0 z-[5]"
