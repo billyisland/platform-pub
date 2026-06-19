@@ -250,7 +250,25 @@ suppressed on the mobile full-screen sheet (they'd fall off-viewport) and on any
 feed-agnostic open (no `nav` ⇒ no `sideNav`). **Keyboard twin:** while a
 feed-launched reader is open, `ReaderOverlay` binds **←/→** to `skip(∓1)` (the
 keyboard equivalent of the ears) — ignored when a field has focus or a modifier
-is held, and `skip` no-ops at the list ends.
+is held, and `skip` no-ops at the list ends. **Touch twin (mobile, 2026-06-19):**
+because the ears are suppressed on the full-screen sheet, `ReaderOverlay` also
+binds a horizontal swipe across the reading pane to the same `skip` — swipe left
+→ next, swipe right → previous (standard paged-content convention). A swipe
+counts only when it travels ≥56px horizontally and clears the vertical delta
+(vertical-dominant gestures fall through to normal scrolling), and a swipe begun
+inside a horizontally-scrollable child (wide code block / image) is left to that
+element — the same restraint the mobile feed pager shows. Gated on `hasNav` +
+`isMobile`.
+
+**Mobile reader text column (2026-06-19).** On the full-screen sheet the reader
+must fill the viewport, not inherit the desktop overlay's wide gutters. The
+external `ExternalArticleReader` `paddingX` (and the native preview skeleton)
+step responsively — `px-6 sm:px-12 md:px-24` — so the desktop overlay keeps its
+roomy ~96px side margins while a phone gets a ~24px gutter. The native
+`ArticleReader` was already responsive (`px-4 sm:px-6` + `px-5 sm:px-10
+md:px-[72px]`), so only the external path and the skeleton needed the fix; the
+prior flat `px-24` collapsed an external article to a ~183px column on a 375px
+phone.
 
 (The frame was originally a full `outline` of `palette.walls` at the vessel's 8px
 SIDE-WALL thickness, all the way around; changed on 2026-06-17 to the inverted

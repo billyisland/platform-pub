@@ -17,6 +17,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useReader } from "../../stores/reader";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { Glasshouse } from "./Glasshouse";
 import { ExternalArticleReader } from "../article/ExternalArticleReader";
 import { ArticleReader } from "../article/ArticleReader";
@@ -57,6 +58,57 @@ export function ReaderOverlay() {
   const SCROLL_STEP = 80;
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasNav = !!nav;
+  const isMobile = useIsMobile();
+
+  // Horizontal swipe — the touch twin of the ←/→ skip keys (and the desktop
+  // skip ears). On mobile, a decisive horizontal swipe across the reading pane
+  // flips to the previous / next article in the parent feed; only meaningful
+  // when launched from a feed (hasNav). Swipe left → next (the → key); swipe
+  // right → previous (the ← key) — the standard paged-content convention.
+  // Vertical-dominant gestures fall through to normal scrolling, and a swipe
+  // that begins inside a horizontally-scrollable element (wide code block or
+  // image) is left to that element — mirroring the mobile pager's restraint.
+  const SWIPE_MIN_X = 56;
+  const swipeRef = useRef<{ x: number; y: number } | null>(null);
+  const hasScrollableXAncestor = (
+    start: Element | null,
+    root: Element,
+  ): boolean => {
+    let el: Element | null = start;
+    while (el && el !== root) {
+      if (el.scrollWidth > el.clientWidth) {
+        const ox = getComputedStyle(el).overflowX;
+        if (ox === "auto" || ox === "scroll") return true;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  };
+  const onSwipeStart = (e: React.TouchEvent) => {
+    if (!hasNav || !isMobile || e.touches.length !== 1) {
+      swipeRef.current = null;
+      return;
+    }
+    if (hasScrollableXAncestor(e.target as Element, e.currentTarget)) {
+      swipeRef.current = null;
+      return;
+    }
+    const t = e.touches[0];
+    swipeRef.current = { x: t.clientX, y: t.clientY };
+  };
+  const onSwipeEnd = (e: React.TouchEvent) => {
+    const start = swipeRef.current;
+    swipeRef.current = null;
+    if (!start || !hasNav || !isMobile) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    // Decisive horizontal: enough travel, and clearly more across than down.
+    if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) <= Math.abs(dy)) return;
+    skip(dx < 0 ? 1 : -1);
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -119,13 +171,18 @@ export function ReaderOverlay() {
       frameTextColor={frameTextColor}
       sideNav={sideNav}
     >
-      <div ref={scrollRef} className="overflow-y-auto max-h-[var(--gh-h)]">
+      <div
+        ref={scrollRef}
+        onTouchStart={onSwipeStart}
+        onTouchEnd={onSwipeEnd}
+        className="overflow-y-auto max-h-[var(--gh-h)]"
+      >
         {target.kind === "external" ? (
           <ExternalArticleReader
             url={target.url}
             title={target.title}
             siteName={target.siteName}
-            paddingX="px-24"
+            paddingX="px-6 sm:px-12 md:px-24"
           />
         ) : (
           <NativeArticleBody dTag={target.dTag} preview={target.preview} />
@@ -183,7 +240,7 @@ function NativeArticleBody({
     // Falls back to a neutral skeleton when nothing was seeded (search/dashboard).
     if (preview?.title) {
       return (
-        <div className="px-24 py-16">
+        <div className="px-6 sm:px-16 md:px-24 py-16">
           <h1
             className="mb-4 font-serif text-black leading-[1.1]"
             style={{

@@ -31,14 +31,15 @@ export function ExternalArticleReader({
   url,
   title: initialTitle,
   siteName: initialSiteName,
-  paddingX = "px-12",
+  paddingX = "px-6 sm:px-12",
 }: {
   url: string;
   title?: string | null;
   siteName?: string | null;
-  /** Horizontal padding utility for the header + body columns. The reader-pane
-   *  overlay passes a wider value for roomier side margins; the full-page route
-   *  keeps the default. */
+  /** Horizontal padding utility for the header + body columns. Responsive: a
+   *  tight gutter on mobile (where the reader fills the viewport) widening on
+   *  larger viewports. The reader-pane overlay passes a wider top-end value for
+   *  roomier desktop side margins; the full-page route keeps the default. */
   paddingX?: string;
 }) {
   const [article, setArticle] = useState<ExtractResult | null>(null);
