@@ -273,7 +273,7 @@ Threads render flat and chronological as a transcript — never nested indentati
 
 **Trackers (live, outstanding work)**
 - `feature-debt.md` — consolidated feature debt, outstanding work, attack order.
-- `FEED-INGEST-ATTACK-PLAN.md` — omnivorous ingestion roadmap (slices 0–9; 0–3 + 9 shipped, 4–8 gated/deferred).
+- `FEED-INGEST-ATTACK-PLAN.md` — omnivorous ingestion roadmap (slices 0–9; 0–3 + 9 shipped, 8 P1+P2 shipped (P3 pending), 4–7 gated/deferred). Slice 8 re-based plan: `SLICE-8-IDENTITY-LINKING-PLAN.md`.
 - `docs/audits/` — `FIX-PROGRAMME.md` (master work log), `AUDIT-BACKLOG.md`, `ADR-CONFORMANCE-2026-05.md`, `SCHEMA-REFERENCE-2026-05.md`, `SUBSCRIPTIONS-GAP-ANALYSIS.md`, `FEED-INGEST-HYDRATION-PLAN.md`, `all-haus-frontend-audit.md`.
 
 **Operations & reference**

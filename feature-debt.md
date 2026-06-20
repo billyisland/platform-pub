@@ -751,7 +751,7 @@ Features any user would reasonably expect given the platform's existing capabili
 2. **Email-on-publish** — trivial build, high writer-retention value. See `docs/adr/EMAIL-ON-PUBLISH-SPEC.md`
 3. **Owner dashboard** — entirely unbuilt, need operator visibility before real money. See `docs/adr/OWNER-DASHBOARD-SPEC.md`
 4. ~~**Card behaviour unification**~~ — **Phases 1–4 complete (2026-05-30).** Region map, `is_reply`, biddability, provenance, source attribution, neighbourhood expansion (native + external), author affordances, and all five spec-conformance gaps. Only §VI.3 constructed external author profile remains (deferred to its own ADR). See `docs/adr/CARD-BEHAVIOUR-ADR.md`
-5. **Cross-source identity linking** — dedup multi-protocol follows. See `FEED-INGEST-ATTACK-PLAN.md` Slice 8
+5. **Cross-source identity linking** — dedup multi-protocol follows. **P1 (dedup core) + P2 (user-asserted "Link to…" / "Unlink") shipped 2026-06-20; P3 (automated bridge/cross-link/domain detection + negative-override unlink) pending.** See `SLICE-8-IDENTITY-LINKING-PLAN.md` (re-based plan) / `FEED-INGEST-ATTACK-PLAN.md` Slice 8
 6. **Subscription Phase 2** — free trials, gift subs, welcome email, import/export, analytics, custom landing page. See `docs/audits/SUBSCRIPTIONS-GAP-ANALYSIS.md`
 7. **Workspace experiment decision** — merge to master or retire? 34 slices on branch, never browser-tested
 8. **ActivityPub inbox** — real-time AP, edit/delete propagation. See `FEED-INGEST-ATTACK-PLAN.md` Slice 7. Posture-gated

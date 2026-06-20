@@ -717,11 +717,15 @@ posture), not code.**
 > claim slot deferred; UI moves to the author profile) and adds the owner model
 > + dedup CTE design. §8A/§8B/§8D/§8E stand.
 >
-> **Status: P1 (dedup core) shipped 2026-06-20** — migration 123
+> **Status: P1 + P2 shipped 2026-06-20.** P1 (dedup core) — migration 123
 > (`external_identity_links` + `external_items.dedup_fingerprint`) and the
-> `sourceFilteredItems` dedup CTEs + `ALSO ON` provenance, inert until P2 creates
-> the first link. P2 (user-asserted "Link to…") and P3 (automated detection) not
-> started. See the re-based plan's "P1 — what shipped" section.
+> `sourceFilteredItems` dedup CTEs + `ALSO ON` provenance. P2 (user-asserted
+> links) — `routes/identity-links.ts` create/unlink (owner-scoped
+> `user_asserted` only, server-derived `source_a`, link-aware GC) + the
+> resolver-backed `IdentityLinkControl` on the external author profile, which
+> creates the first links and turns P1 live. P3 (automated bridge/cross-link/
+> domain detection + the negative-override unlink) not started. See the re-based
+> plan's "P1 — what shipped" / "P2 — what shipped" sections.
 
 As the platform accumulates external sources across protocols, a pattern
 emerges: the same human posts on Mastodon _and_ Bluesky _and_ publishes
