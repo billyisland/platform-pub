@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PostCardInteractive } from "../../../components/post/PostCardInteractive";
 import type { CardContext } from "../../../components/post/chassis";
@@ -26,6 +26,11 @@ import { useCompose } from "../../../stores/compose";
 // (useSurfaceOverlay): article rows open the reader overlay in place rather than
 // navigating to /article/:dTag and escaping the workspace to the black topbar.
 // The standalone /tag/[tag] page leaves it false (full-page navigation).
+//
+// `initialItems`/`initialTotal`/`initialCursor` are seeded by the server
+// `page.tsx` (SSR, perf-audit #5) so the first paint already carries the list;
+// when present the initial client fetch is skipped. The overlay passes none, so
+// it keeps fetching client-side (with the viewer's cookie).
 // =============================================================================
 
 const CTX: CardContext = {
@@ -37,19 +42,33 @@ const CTX: CardContext = {
 export function TagBrowser({
   tagName,
   inOverlay = false,
+  initialItems,
+  initialTotal,
+  initialCursor,
 }: {
   tagName: string;
   inOverlay?: boolean;
+  initialItems?: Post[];
+  initialTotal?: number;
+  initialCursor?: string;
 }) {
   const router = useRouter();
   const openNative = useReader((s) => s.openNative);
-  const [items, setItems] = useState<Post[]>([]);
-  const [total, setTotal] = useState(0);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
+  const hasInitial = initialItems != null;
+  const [items, setItems] = useState<Post[]>(initialItems ?? []);
+  const [total, setTotal] = useState(initialTotal ?? 0);
+  const [cursor, setCursor] = useState<string | undefined>(initialCursor);
+  const [loading, setLoading] = useState(!hasInitial);
   const [loadingMore, setLoadingMore] = useState(false);
+  // True only on the first effect run when the server seeded this tag (SSR).
+  // We then skip that one fetch; any later tagName change still refetches.
+  const seededRef = useRef(hasInitial);
 
   useEffect(() => {
+    if (seededRef.current) {
+      seededRef.current = false;
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     tagPosts(tagName)
