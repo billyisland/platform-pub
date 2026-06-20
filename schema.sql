@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict wZ20C0QU4zCJzuGOcY5bSItXaCtTY7qkGlFRJ7dm0MegGz4RkxZoEwfh1Acebe8
+\restrict 7v0PHXc1e4EUz9K9U1zxzBvRYIFWcMoVou1hlkcyTOVH1cxGWmCbu89uPcKFMbM
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -576,6 +576,58 @@ BEGIN
       ELSE 'standard'
     END;
   END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: external_items_compute_fingerprint(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.external_items_compute_fingerprint(p_canonical_url text, p_content_text text) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+DECLARE
+  normed text;
+BEGIN
+  IF p_canonical_url IS NOT NULL AND btrim(p_canonical_url) <> '' THEN
+    RETURN btrim(p_canonical_url);
+  END IF;
+  normed := external_items_norm_text(p_content_text);
+  IF length(normed) < 32 THEN
+    RETURN NULL;
+  END IF;
+  RETURN 'h:' || encode(digest(normed, 'sha256'), 'hex');
+END;
+$$;
+
+
+--
+-- Name: external_items_norm_text(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.external_items_norm_text(t text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT btrim(left(
+    regexp_replace(                                  -- collapse whitespace
+      regexp_replace(lower(coalesce(t, '')),         -- strip URLs
+        '(https?://|www\.)\S+', ' ', 'g'),
+      '\s+', ' ', 'g'),
+    200))
+$$;
+
+
+--
+-- Name: external_items_set_fingerprint(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.external_items_set_fingerprint() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.dedup_fingerprint := external_items_compute_fingerprint(NEW.canonical_url, NEW.content_text);
   RETURN NEW;
 END;
 $$;
@@ -1303,6 +1355,24 @@ CREATE TABLE public.external_authors (
 
 
 --
+-- Name: external_identity_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.external_identity_links (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    source_a_id uuid NOT NULL,
+    source_b_id uuid NOT NULL,
+    link_type text NOT NULL,
+    confidence real DEFAULT 1.0 NOT NULL,
+    owner_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT external_identity_links_confidence_check CHECK (((confidence >= (0)::double precision) AND (confidence <= (1)::double precision))),
+    CONSTRAINT external_identity_links_link_type_check CHECK ((link_type = ANY (ARRAY['user_asserted'::text, 'bridge'::text, 'cross_link'::text, 'domain_match'::text, 'user_unlinked'::text]))),
+    CONSTRAINT external_identity_links_ordered CHECK ((source_a_id < source_b_id))
+);
+
+
+--
 -- Name: external_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1337,6 +1407,7 @@ CREATE TABLE public.external_items (
     is_context_only boolean DEFAULT false NOT NULL,
     content_warning text,
     canonical_url text,
+    dedup_fingerprint text,
     CONSTRAINT protocol_tier_consistency CHECK ((((protocol = 'nostr_external'::public.external_protocol) AND (tier = 'tier2'::public.content_tier)) OR ((protocol = ANY (ARRAY['atproto'::public.external_protocol, 'activitypub'::public.external_protocol, 'farcaster'::public.external_protocol])) AND (tier = 'tier3'::public.content_tier)) OR ((protocol = ANY (ARRAY['rss'::public.external_protocol, 'telegram'::public.external_protocol, 'matrix'::public.external_protocol, 'email'::public.external_protocol])) AND (tier = 'tier4'::public.content_tier))))
 );
 
@@ -2980,6 +3051,14 @@ ALTER TABLE ONLY public.external_authors
 
 
 --
+-- Name: external_identity_links external_identity_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_identity_links
+    ADD CONSTRAINT external_identity_links_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: external_items external_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4204,6 +4283,13 @@ CREATE INDEX idx_external_authors_account_id ON public.external_authors USING bt
 
 
 --
+-- Name: idx_external_items_dedup_fp; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_external_items_dedup_fp ON public.external_items USING btree (dedup_fingerprint) WHERE (dedup_fingerprint IS NOT NULL);
+
+
+--
 -- Name: idx_feed_engagement_author; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4334,6 +4420,20 @@ CREATE INDEX idx_gift_links_article ON public.gift_links USING btree (article_id
 --
 
 CREATE INDEX idx_gift_links_token ON public.gift_links USING btree (token);
+
+
+--
+-- Name: idx_identity_links_source_a; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_identity_links_source_a ON public.external_identity_links USING btree (source_a_id);
+
+
+--
+-- Name: idx_identity_links_source_b; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_identity_links_source_b ON public.external_identity_links USING btree (source_b_id);
 
 
 --
@@ -5016,6 +5116,20 @@ CREATE UNIQUE INDEX uniq_outbound_posts_dedup ON public.outbound_posts USING btr
 
 
 --
+-- Name: uq_idlink_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_idlink_global ON public.external_identity_links USING btree (source_a_id, source_b_id) WHERE (owner_id IS NULL);
+
+
+--
+-- Name: uq_idlink_owned; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_idlink_owned ON public.external_identity_links USING btree (source_a_id, source_b_id, owner_id) WHERE (owner_id IS NOT NULL);
+
+
+--
 -- Name: idx_traf_mentions_piece; Type: INDEX; Schema: traffology; Owner: -
 --
 
@@ -5132,6 +5246,13 @@ CREATE INDEX idx_traf_sources_writer ON traffology.sources USING btree (writer_i
 --
 
 CREATE TRIGGER articles_size_tier_default BEFORE INSERT ON public.articles FOR EACH ROW EXECUTE FUNCTION public.articles_derive_size_tier();
+
+
+--
+-- Name: external_items external_items_dedup_fp; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER external_items_dedup_fp BEFORE INSERT OR UPDATE OF canonical_url, content_text ON public.external_items FOR EACH ROW EXECUTE FUNCTION public.external_items_set_fingerprint();
 
 
 --
@@ -5499,6 +5620,30 @@ ALTER TABLE ONLY public.dm_reactions
 
 ALTER TABLE ONLY public.external_authors
     ADD CONSTRAINT external_authors_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: external_identity_links external_identity_links_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_identity_links
+    ADD CONSTRAINT external_identity_links_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: external_identity_links external_identity_links_source_a_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_identity_links
+    ADD CONSTRAINT external_identity_links_source_a_id_fkey FOREIGN KEY (source_a_id) REFERENCES public.external_sources(id) ON DELETE CASCADE;
+
+
+--
+-- Name: external_identity_links external_identity_links_source_b_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_identity_links
+    ADD CONSTRAINT external_identity_links_source_b_id_fkey FOREIGN KEY (source_b_id) REFERENCES public.external_sources(id) ON DELETE CASCADE;
 
 
 --
@@ -6601,7 +6746,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict wZ20C0QU4zCJzuGOcY5bSItXaCtTY7qkGlFRJ7dm0MegGz4RkxZoEwfh1Acebe8
+\unrestrict 7v0PHXc1e4EUz9K9U1zxzBvRYIFWcMoVou1hlkcyTOVH1cxGWmCbu89uPcKFMbM
 
 
 
@@ -6740,4 +6885,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('119_ledger_entries.sql'),
     ('120_ledger_views.sql'),
     ('121_ledger_opening_balance.sql'),
-    ('122_dm_reactions.sql');
+    ('122_dm_reactions.sql'),
+    ('123_identity_links_and_dedup_fingerprint.sql');

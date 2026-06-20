@@ -76,6 +76,10 @@ export interface Post {
   dTag?: string | null;
   pricePence?: number;
   externalSourceId?: string | null;
+  // Slice 8 P1: cross-source provenance — the other linked sources' protocols
+  // carrying the same content as this (winning) card. Only the source-filtered
+  // workspace feed emits it (the dedup query); other read paths leave it undefined.
+  alsoOn?: string[];
 }
 
 export interface RepostEdgeDTO {
@@ -275,6 +279,9 @@ export function feedItemToPost(row: any): Post {
     dTag: row.item_type === "article" ? (row.nostr_d_tag ?? null) : null,
     pricePence: row.price_pence != null ? Number(row.price_pence) : undefined,
     externalSourceId: isExternal ? (row.source_id ?? null) : null,
+    // Slice 8 P1: the dedup query's provenance lateral emits also_on (a protocol
+    // array) only on survivors of a linked duplicate pair; absent elsewhere.
+    alsoOn: row.also_on ?? undefined,
   };
 }
 

@@ -241,6 +241,53 @@ async function sourceFilteredItems(
         WHERE fi.deleted_at IS NULL
         GROUP BY fi.id
     ),
+    -- ── Slice 8 P1: cross-source dedup ──────────────────────────────────────
+    -- Two cross-posted copies (e.g. an article on RSS + its Bluesky share) carry
+    -- different effective_score, so they're not page-adjacent — in-page dedup
+    -- leaks the twin. Instead pick a page-independent winner per fingerprint and
+    -- suppress losers across the whole candidate set (matched, pre-LIMIT).
+    --
+    -- Perf guard: only sources in an applicable link can produce duplicates, so
+    -- prefilter to them. Most feeds have zero links → these CTEs are empty →
+    -- near-zero cost. Dedup is free until someone links something.
+    linked_sources AS (
+      SELECT source_a_id AS sid FROM external_identity_links
+        WHERE owner_id IS NULL OR owner_id = $1
+      UNION
+      SELECT source_b_id FROM external_identity_links
+        WHERE owner_id IS NULL OR owner_id = $1
+    ),
+    candidates AS (
+      SELECT m.fi_id, fi.source_id, fi.source_protocol, fi.published_at,
+             fi.biddability_tier AS tier, ei.dedup_fingerprint AS fp
+        FROM matched m
+        JOIN feed_items fi ON fi.id = m.fi_id
+        JOIN external_items ei ON ei.id = fi.external_item_id   -- external only
+        WHERE ei.dedup_fingerprint IS NOT NULL
+          AND fi.source_id IN (SELECT sid FROM linked_sources)  -- the guard
+    ),
+    -- A candidate is a loser when a linked twin (same fingerprint, linked
+    -- sources) ranks ahead of it: higher biddability tier, else earlier
+    -- published_at, else lower (source_id, fi.id). tprio: A→0 B→1 C→2 D→3.
+    suppressed AS (
+      SELECT c.fi_id
+      FROM candidates c
+      JOIN candidates d
+        ON d.fp = c.fp AND d.fi_id <> c.fi_id
+      JOIN external_identity_links l
+        ON ((l.source_a_id = c.source_id AND l.source_b_id = d.source_id)
+         OR (l.source_b_id = c.source_id AND l.source_a_id = d.source_id))
+       AND (l.owner_id IS NULL OR l.owner_id = $1)
+      WHERE (
+        (CASE d.tier WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END)
+        < (CASE c.tier WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END)
+      ) OR (
+        (CASE d.tier WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END)
+        = (CASE c.tier WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END)
+        AND (d.published_at, d.source_id, d.fi_id)
+          < (c.published_at, c.source_id, c.fi_id)
+      )
+    ),
     scored AS (
       SELECT ${FEED_SELECT}${POST_SELECT},
         (CASE
@@ -249,7 +296,8 @@ async function sourceFilteredItems(
           WHEN (SELECT sampling_mode FROM feed_mode) = 'random'
             THEN random() * m.weight
           ELSE EXTRACT(EPOCH FROM fi.published_at)::float8 * m.weight
-        END)::float8 AS effective_score
+        END)::float8 AS effective_score,
+        ei.dedup_fingerprint AS fp   -- carried for the provenance lateral below
       FROM feed_items fi
       JOIN matched m ON m.fi_id = fi.id
       ${FEED_JOINS}${POST_JOINS}
@@ -271,8 +319,27 @@ async function sourceFilteredItems(
         -- Per-source "no replies": drop reply items unless at least one
         -- matching source still admits replies (migration 107).
         AND (fi.is_reply IS NOT TRUE OR m.allow_replies)
+        -- Slice 8 P1: drop the loser of a cross-source duplicate pair.
+        AND fi.id NOT IN (SELECT fi_id FROM suppressed)
     )
-    SELECT * FROM scored
+    -- Provenance ("ALSO ON BLUESKY · MASTODON"): computed only for survivors (a
+    -- handful of post-filter rows) — the other linked sources carrying the same
+    -- fingerprint. Empty/NULL when the feed has no links, so unlinked feeds are
+    -- untouched. fp is projected by scored above (it's on external_items, not in
+    -- FEED_SELECT). effective_score/fi_id stay in scored.* for the JS cursor.
+    SELECT scored.*, prov.also_on
+    FROM scored
+    LEFT JOIN LATERAL (
+      -- ::text so node-pg returns a real string[] (a custom-enum array arrives
+      -- unparsed as a raw "{atproto,rss}" string and would break the UI .map).
+      SELECT array_agg(DISTINCT d.source_protocol::text) AS also_on
+      FROM candidates d
+      JOIN external_identity_links l
+        ON ((l.source_a_id = scored.source_id AND l.source_b_id = d.source_id)
+         OR (l.source_b_id = scored.source_id AND l.source_a_id = d.source_id))
+       AND (l.owner_id IS NULL OR l.owner_id = $1)
+      WHERE d.fp = scored.fp AND d.fi_id <> scored.fi_id
+    ) prov ON true
     WHERE TRUE ${cursorClause}
     ORDER BY effective_score DESC, fi_id DESC
     LIMIT $3

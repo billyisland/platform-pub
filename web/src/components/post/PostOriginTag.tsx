@@ -34,8 +34,23 @@ export function PostOriginTag({
   sourceOnly: boolean; // tier D
 }) {
   const isNative = post.origin.protocol === "nostr" && !!post.author.pubkey;
+
+  // Slice 8 P1: "ALSO ON …" — the other linked sources cross-posting this content.
+  const alsoOnLabels = (post.alsoOn ?? [])
+    .map((p) => PROTOCOL_DISPLAY[p] ?? p.toUpperCase())
+    .filter((v, i, a) => a.indexOf(v) === i);
+  const alsoOn =
+    alsoOnLabels.length > 0 ? (
+      <TagText palette={palette}>ALSO ON {alsoOnLabels.join(" · ")}</TagText>
+    ) : null;
+
   if (isNative) {
-    return <TagText palette={palette}>VIA ALL.HAUS</TagText>;
+    return (
+      <>
+        <TagText palette={palette}>VIA ALL.HAUS</TagText>
+        {alsoOn}
+      </>
+    );
   }
 
   const label = PROTOCOL_DISPLAY[post.origin.protocol] ?? post.origin.protocol.toUpperCase();
@@ -51,26 +66,35 @@ export function PostOriginTag({
   );
 
   const href = originWebUrl(post);
-  if (!href) return <TagText palette={palette}>{text}</TagText>;
+  if (!href)
+    return (
+      <>
+        <TagText palette={palette}>{text}</TagText>
+        {alsoOn}
+      </>
+    );
 
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        window.open(href, "_blank", "noopener,noreferrer");
-      }}
-      className="font-mono text-[10px] uppercase tracking-[0.06em] mt-2 text-left hover:opacity-80"
-      style={{
-        color: palette.cardMeta,
-        background: "none",
-        border: "none",
-        padding: 0,
-        cursor: "pointer",
-      }}
-    >
-      {text} →
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          window.open(href, "_blank", "noopener,noreferrer");
+        }}
+        className="font-mono text-[10px] uppercase tracking-[0.06em] mt-2 text-left hover:opacity-80"
+        style={{
+          color: palette.cardMeta,
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+        }}
+      >
+        {text} →
+      </button>
+      {alsoOn}
+    </>
   );
 }
 

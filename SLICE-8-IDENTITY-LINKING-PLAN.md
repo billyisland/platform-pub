@@ -17,6 +17,39 @@ architectural changes and must be reconciled before building:
 This plan supersedes §8C/§8F of the original slice for those two points; §8A,
 §8B, §8D, §8E stand.
 
+## Codebase reconciliation (audit 2026-06-20)
+
+Two assumptions in the draft don't match the current code; both are corrected in
+the sections below, recorded here so the build doesn't re-trip them.
+
+1. **The resolver does not persist a source.** `POST /api/resolve`
+   (`gateway/src/routes/resolve.ts`, `gateway/src/lib/resolver.ts`) is a pure
+   classifier — it returns `{ protocol, sourceUri, …metadata }` *matches* with
+   **no `external_sources.id`** and writes nothing to `external_sources`. The
+   link table FKs `external_sources(id)`, so "Link to…" is a **two-step**:
+   resolve → then upsert via the existing `addSource` path
+   (`gateway/src/routes/feeds/sources.ts:354`,
+   `INSERT … ON CONFLICT (protocol, source_uri) … RETURNING id`). The
+   `SourceFollowPicker` in `ProfileFollowControl.tsx` already does exactly this
+   resolve-shape → `addSource` dance; model the Link wiring on it. See UI (P2).
+2. **There is no stored author→source link.** The external author profile is
+   keyed on `external_authors`; its backing `external_sources.id` is computed at
+   query time from `(protocol, source_uri)` and surfaces as
+   `followTarget.sourceId` (`gateway/src/routes/author.ts:168-190`,
+   null when no source row exists yet). For a tier-A/B author shown in-feed that
+   row always exists (the author was ingested through it), so it is a valid
+   `source_a_id`. Tier-C/D RSS/email have no author profile, so they enter a
+   link only as the **target** the user pastes in, or via P3 detection —
+   consistent with the source-level grain.
+
+Confirmed as-specced (no change needed): `sourceFilteredItems`'s `$1 = readerId`
+(so the owner filter `owner_id IS NULL OR owner_id = $1` needs **no new query
+param**); `external_items` is already joined in the `scored` CTE via
+`fi.external_item_id` (`gateway/src/lib/feed-sql.ts:97`); `external_items` has
+both `canonical_url` and `content_text`; `biddability_tier` lives on `feed_items`
+(A/B/C/D); `pgcrypto`/`digest()` is enabled. The next free migration number is
+**123** (122 is the highest in `migrations/`).
+
 ## Decisions locked
 
 - **Link grain: source-level.** `external_identity_links` references
@@ -35,13 +68,42 @@ This plan supersedes §8C/§8F of the original slice for those two points; §8A,
 
 ## Phasing
 
-| Phase | Work | Effort |
-|---|---|---|
-| **P1 — Dedup core** | link table migration + precomputed fingerprint + query-time dedup CTE in `sourceFilteredItems` + `ALSO ON` provenance | ~1 wk |
-| **P2 — User-asserted links** | "Link to…" / "Unlink" on the external author profile, resolver-backed; owner-scoped links only | ~3–4 days |
-| **P3 — Automated detection** | daily `identity_link_detect` task (bridge / cross-link / domain-match); introduces global links + the negative-override unlink | ~3 days |
+| Phase | Work | Effort | Status |
+|---|---|---|---|
+| **P1 — Dedup core** | link table migration + precomputed fingerprint + query-time dedup CTE in `sourceFilteredItems` + `ALSO ON` provenance | ~1 wk | **shipped 2026-06-20** |
+| **P2 — User-asserted links** | "Link to…" / "Unlink" on the external author profile, resolver-backed; owner-scoped links only | ~3–4 days | not started |
+| **P3 — Automated detection** | daily `identity_link_detect` task (bridge / cross-link / domain-match); introduces global links + the negative-override unlink | ~3 days | not started |
 
 Total ≈ 2 weeks. No infrastructure gate — pure application logic.
+
+### P1 — what shipped (2026-06-20)
+
+- **Migration 123** (`123_identity_links_and_dedup_fingerprint.sql`):
+  `external_identity_links` (ordered-pair `CHECK (source_a_id < source_b_id)`,
+  partial unique indexes for the global vs owner-scoped cases, `link_type` CHECK
+  carrying the full P2/P3 vocabulary incl. `user_unlinked`), plus
+  `external_items.dedup_fingerprint` maintained by a `BEFORE INSERT/UPDATE`
+  trigger (`external_items_set_fingerprint` → `external_items_compute_fingerprint`
+  → `external_items_norm_text`) so every ingest adapter populates it for free; a
+  one-time backfill seeds existing rows. `norm()` lower-cases, strips URLs,
+  collapses whitespace, takes the first 200 chars; the fingerprint is the
+  canonical URL else a sha256 of the normalised text, **only above a 32-char
+  floor** (short/generic posts stay NULL → never deduped). `schema.sql`
+  regenerated; `scripts/check-schema-drift.sh` green.
+- **Dedup query** (`gateway/src/routes/feeds/items.ts::sourceFilteredItems`):
+  `linked_sources` / `candidates` / `suppressed` CTEs + the `fi.id NOT IN
+  suppressed` filter + the `also_on` provenance lateral (`source_protocol::text`
+  so node-pg returns a real `string[]`). The `source_id IN linked_sources` guard
+  keeps zero-link feeds at near-zero cost.
+- **`alsoOn`** added to both Post shapes (`gateway/.../post-mapper.ts` +
+  `web/src/lib/post/types.ts`) and rendered as a quiet `ALSO ON …` line in
+  `web/src/components/post/PostOriginTag.tsx`.
+- **Inert until P2.** No links exist yet, so the dedup CTEs return empty and the
+  feed is unchanged — exactly the build-order intent below.
+- **Not yet done in P1:** the `EXPLAIN ANALYZE` against a seeded large linked
+  feed (Risks §), and the test matrix (winner selection / cross-page suppression
+  / canonical-vs-hash grouping / zero-links fast path) — both deferred to land
+  with P2 once real links make them exercisable.
 
 > Build order note: P1 ships the dedup machinery but it stays inert until P2
 > creates the first links. P1+P2 only ever produce owner-scoped links, so the
@@ -162,7 +224,14 @@ this feed (which would show neither copy).
 
 ### Provenance note ("ALSO ON BLUESKY · MASTODON")
 Computed only for survivors (a handful of rows, post-filter) via a lateral in the
-outer SELECT:
+outer SELECT. Note: the outer select is `SELECT * FROM scored`, and `scored` does
+**not** project the fingerprint (`fp` is on `external_items`, outside
+`FEED_SELECT`/`POST_SELECT`). So the outer select becomes
+`SELECT scored.*, prov.also_on FROM scored LEFT JOIN LATERAL (…) prov ON true`,
+and the lateral joins `external_items` on `scored.external_item_id` to recover
+`scored.fp` for the match below (or surface `fp`/`source_id` from a wrapping CTE).
+Preserve `effective_score`/`fi_id` in the projection — the JS `nextCursor`
+(`items.ts:293-300`) reads them.
 ```sql
 LEFT JOIN LATERAL (
   SELECT array_agg(DISTINCT d.source_protocol) AS also_on
@@ -174,10 +243,13 @@ LEFT JOIN LATERAL (
   WHERE d.fp = scored.fp AND d.fi_id <> scored.fi_id
 ) prov ON true
 ```
-Surface as an optional `Post.alsoOn?: string[]` (`gateway/src/lib/post-mapper.ts`)
-→ a quiet `.label-ui` mono-caps line on the winning card (`ALSO ON …`, no
-hairline). Empty/undefined ⇒ nothing rendered, so unlinked feeds are visually
-untouched.
+Surface as an optional `Post.alsoOn?: string[]` — add the field to **both** the
+gateway shape (`gateway/src/lib/post-mapper.ts`, read `row.also_on` in
+`feedItemToPost`) and its web mirror (`web/src/lib/post/types.ts`, kept
+structurally identical). Render a quiet mono-caps line on the winning card in
+`web/src/components/post/PostOriginTag.tsx` (reuse its `PROTOCOL_DISPLAY` map +
+`TagText` helper: `ALSO ON …`, no hairline — run `scripts/check-hairlines.sh`).
+Empty/undefined ⇒ nothing rendered, so unlinked feeds are visually untouched.
 
 ## Link ownership (the owner model)
 
@@ -230,12 +302,28 @@ invariant already concentrates per-author actions there), not a Subscriptions
 page.
 
 - "Link to…" opens a resolver-backed input (`POST /api/resolve`,
-  `gateway/src/lib/resolver.ts`) — paste a URL/handle from another platform,
-  resolve to an `external_source`, create an owner-scoped `user_asserted` link.
-  Omnivorous input per the sitewide rule.
-- "Unlink" per the semantics above.
-- Linked sources render grouped with the `ALSO ON …` provenance the dedup query
-  already emits.
+  `gateway/src/lib/resolver.ts`) — paste a URL/handle from another platform.
+  Omnivorous input per the sitewide rule. **The resolver only classifies; it
+  returns no `external_sources.id`** (see Codebase reconciliation #1), so the
+  flow is two-step: take the chosen match's `{ protocol, sourceUri }`, **upsert
+  it via the `addSource` path** (`gateway/src/routes/feeds/sources.ts:354`,
+  `RETURNING id`) to get a persisted `source_b_id`, then insert the owner-scoped
+  `user_asserted` link. `source_a_id` is the current author's backing source —
+  the `followTarget.sourceId` already on the profile payload (always present for
+  a tier-A/B author shown in-feed; see reconciliation #2). Normalise
+  `source_a_id < source_b_id` before insert. Reuse the
+  `SourceFollowPicker` resolve→`addSource` wiring in `ProfileFollowControl.tsx`.
+- New gateway routes: `POST` create-link + `DELETE` unlink (in `author.ts` or a
+  sibling). At P2 every row is `owner_id NOT NULL`, so unlink = `DELETE` and the
+  read filter is just `l.owner_id = $1` — no NULL-owner branch, no tombstones.
+- **Surface placement:** the "Link to…" / "Unlink" affordance sits in
+  `AuthorProfileView.tsx`'s actions cell (the `flex-shrink-0` slot beside
+  `ProfileFollowControl`, lines ~247-251), the same per-author home the
+  profile-surfaces invariant concentrates actions in.
+- **Profile payload:** extend `AuthorCardResponse`
+  (`gateway/src/lib/author-resolve.ts`) + the `/author/:id/profile` route with
+  the viewer's existing linked sources for this author, so the surface can render
+  "Unlink" and the `ALSO ON …` grouping the dedup query already emits.
 
 ## Risks / validation
 

@@ -716,6 +716,12 @@ posture), not code.**
 > Subscriptions page — the plan reconciles them (link grain stays source-level;
 > claim slot deferred; UI moves to the author profile) and adds the owner model
 > + dedup CTE design. §8A/§8B/§8D/§8E stand.
+>
+> **Status: P1 (dedup core) shipped 2026-06-20** — migration 123
+> (`external_identity_links` + `external_items.dedup_fingerprint`) and the
+> `sourceFilteredItems` dedup CTEs + `ALSO ON` provenance, inert until P2 creates
+> the first link. P2 (user-asserted "Link to…") and P3 (automated detection) not
+> started. See the re-based plan's "P1 — what shipped" section.
 
 As the platform accumulates external sources across protocols, a pattern
 emerges: the same human posts on Mastodon _and_ Bluesky _and_ publishes

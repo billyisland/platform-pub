@@ -116,6 +116,10 @@ export interface Post {
   // `source` + `url` are set when the quoted post is external (migration 102):
   // the origin label (e.g. "BLUESKY") and the clickable public permalink.
   quotedPreview?: { title?: string; excerpt?: string; author?: string; source?: string; url?: string };
+  // Slice 8 P1: cross-source provenance. The other linked sources' protocols
+  // carrying the same content as this (winning) card — rendered as a quiet
+  // "ALSO ON BLUESKY · MASTODON" line. Empty/undefined ⇒ nothing rendered.
+  alsoOn?: string[];
 }
 
 // Bare reposts are edges, not Posts (§2.2). Mirror of gateway RepostEdgeDTO.
