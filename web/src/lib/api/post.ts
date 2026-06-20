@@ -87,6 +87,10 @@ export interface LinkedSource {
   sourceUri: string;
   displayName?: string;
   sourceId: string;
+  // P3 — true for a global automated link (detected by the link-detection task),
+  // false/absent for the viewer's own assertion. Drives the chip's label
+  // ("detected") and which unlink path runs (tombstone vs delete).
+  detected?: boolean;
 }
 
 // GET /author/:authorId/profile → hover modal + profile header.

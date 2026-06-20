@@ -217,10 +217,13 @@ async function resolveExternalAuthorById(
     };
   }
 
-  // The viewer's own cross-source identity links for this author (Slice 8 P2):
-  // owner-scoped `user_asserted` rows touching the author's backing source. The
-  // OTHER side of each pair is the linked identity, surfaced as an unlinkable
-  // chip. Only computable once source_a exists; empty otherwise.
+  // Cross-source identity links for this author (Slice 8 P2/P3): the viewer's
+  // own `user_asserted` rows PLUS global automated links (owner NULL — P3
+  // detection) touching the author's backing source, minus any pair the viewer
+  // has tombstoned (`user_unlinked`). The OTHER side of each pair is the linked
+  // identity, surfaced as an unlinkable chip; `detected` distinguishes a global
+  // link (unlink ⇒ tombstone) from the viewer's own (unlink ⇒ delete). Only
+  // computable once source_a exists; empty otherwise.
   let linkedSources: AuthorCardResponse["linkedSources"];
   if (linkSourceId) {
     const { rows: linkRows } = await pool.query<{
@@ -229,28 +232,45 @@ async function resolveExternalAuthorById(
       protocol: string;
       source_uri: string;
       display_name: string | null;
+      detected: boolean;
     }>(
       `SELECT l.id AS link_id,
               os.id AS source_id, os.protocol::text AS protocol,
-              os.source_uri, os.display_name
+              os.source_uri, os.display_name,
+              (l.owner_id IS NULL) AS detected
          FROM external_identity_links l
          JOIN external_sources os
            ON os.id = CASE WHEN l.source_a_id = $2 THEN l.source_b_id
                            ELSE l.source_a_id END
-        WHERE l.owner_id = $1
-          AND l.link_type = 'user_asserted'
-          AND (l.source_a_id = $2 OR l.source_b_id = $2)
-        ORDER BY l.created_at`,
+        WHERE (l.source_a_id = $2 OR l.source_b_id = $2)
+          AND l.link_type <> 'user_unlinked'
+          AND (l.owner_id = $1 OR l.owner_id IS NULL)
+          -- Subtract pairs the viewer has tombstoned (the negative override).
+          AND NOT EXISTS (
+            SELECT 1 FROM external_identity_links t
+             WHERE t.link_type = 'user_unlinked'
+               AND t.owner_id = $1
+               AND t.source_a_id = l.source_a_id
+               AND t.source_b_id = l.source_b_id
+          )
+        ORDER BY (l.owner_id IS NULL), l.created_at`,
       [viewerId, linkSourceId],
     );
     if (linkRows.length > 0) {
-      linkedSources = linkRows.map((r) => ({
-        linkId: r.link_id,
-        protocol: r.protocol,
-        sourceUri: r.source_uri,
-        displayName: r.display_name ?? undefined,
-        sourceId: r.source_id,
-      }));
+      // A pair can carry both the viewer's own assertion and a global detected
+      // link; ORDER puts own first, so keep the first chip per linked source.
+      const seen = new Set<string>();
+      const chips = linkRows
+        .filter((r) => !seen.has(r.source_id) && seen.add(r.source_id))
+        .map((r) => ({
+          linkId: r.link_id,
+          protocol: r.protocol,
+          sourceUri: r.source_uri,
+          displayName: r.display_name ?? undefined,
+          sourceId: r.source_id,
+          detected: r.detected,
+        }));
+      if (chips.length > 0) linkedSources = chips;
     }
   }
 

@@ -32,3 +32,12 @@ export function requireEnvMinLength(name: string, minLength: number): string {
 export function trustSystemEnabled(): boolean {
   return process.env.TRUST_SYSTEM_ENABLED === "1"
 }
+
+// Cross-source identity-link detection (Slice 8 P3). Default OFF — the daily
+// detection task writes GLOBAL links that suppress cross-posted duplicates in
+// everyone's feed, so it ships dark behind this switch. When off, feed-ingest
+// doesn't schedule the detect cron; user-asserted links (P2) are unaffected.
+// Same shape as TRUST_SYSTEM_ENABLED. Spec: SLICE-8-IDENTITY-LINKING-PLAN.md §P3.
+export function identityLinkDetectEnabled(): boolean {
+  return process.env.IDENTITY_LINK_DETECT_ENABLED === "1"
+}

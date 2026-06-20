@@ -164,7 +164,12 @@ export async function identityLinkRoutes(app: FastifyInstance) {
     },
   );
 
-  // DELETE /author/:authorId/links/:linkId — drop the viewer's own assertion.
+  // DELETE /author/:authorId/links/:linkId — unlink.
+  //   • the viewer's own user_asserted row → hard DELETE.
+  //   • a global automated link (owner NULL, P3 detection) → can't delete a fact
+  //     for everyone, so write an owner-scoped `user_unlinked` tombstone for the
+  //     same ordered pair; the read path (dedup-sql.ts applicable_links)
+  //     subtracts it for this viewer only.
   app.delete<{ Params: { authorId: string; linkId: string } }>(
     "/author/:authorId/links/:linkId",
     {
@@ -179,18 +184,49 @@ export async function identityLinkRoutes(app: FastifyInstance) {
       }
 
       try {
-        // Owner + link_type guard: a reader can only delete their OWN
-        // user_asserted row. A global automated link (P3) is undeletable here —
-        // it gets a negative override instead, not a DELETE.
-        const { rowCount } = await pool.query(
-          `DELETE FROM external_identity_links
-            WHERE id = $1 AND owner_id = $2 AND link_type = 'user_asserted'`,
-          [linkId, viewerId],
+        // Look up the target link. Only the viewer's own assertion or a global
+        // link is actionable (another reader's assertion is invisible/untouchable).
+        const {
+          rows: [link],
+        } = await pool.query<{
+          source_a_id: string;
+          source_b_id: string;
+          owner_id: string | null;
+          link_type: string;
+        }>(
+          `SELECT source_a_id, source_b_id, owner_id, link_type
+             FROM external_identity_links WHERE id = $1`,
+          [linkId],
         );
-        if (!rowCount) {
+        if (!link) {
           return reply.status(404).send({ error: "Link not found" });
         }
-        return reply.status(204).send();
+
+        if (link.owner_id === viewerId && link.link_type === "user_asserted") {
+          await pool.query(
+            `DELETE FROM external_identity_links WHERE id = $1`,
+            [linkId],
+          );
+          return reply.status(204).send();
+        }
+
+        if (link.owner_id === null && link.link_type !== "user_unlinked") {
+          // Tombstone the pair for this viewer. The pair is already ordered
+          // (source_a_id < source_b_id) on the global row, so reuse it directly.
+          await pool.query(
+            `INSERT INTO external_identity_links
+               (source_a_id, source_b_id, link_type, confidence, owner_id)
+             VALUES ($1, $2, 'user_unlinked', 1.0, $3)
+             ON CONFLICT (source_a_id, source_b_id, owner_id)
+               WHERE owner_id IS NOT NULL
+               DO UPDATE SET link_type = 'user_unlinked'`,
+            [link.source_a_id, link.source_b_id, viewerId],
+          );
+          return reply.status(204).send();
+        }
+
+        // Another reader's assertion, or already a tombstone → nothing to do.
+        return reply.status(404).send({ error: "Link not found" });
       } catch (err) {
         logger.error({ err, linkId }, "Identity link delete failed");
         return reply.status(500).send({ error: "Unlink failed" });

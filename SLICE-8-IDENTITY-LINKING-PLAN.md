@@ -72,7 +72,7 @@ both `canonical_url` and `content_text`; `biddability_tier` lives on `feed_items
 |---|---|---|---|
 | **P1 — Dedup core** | link table migration + precomputed fingerprint + query-time dedup CTE in `sourceFilteredItems` + `ALSO ON` provenance | ~1 wk | **shipped 2026-06-20** |
 | **P2 — User-asserted links** | "Link to…" / "Unlink" on the external author profile, resolver-backed; owner-scoped links only | ~3–4 days | **shipped 2026-06-20** |
-| **P3 — Automated detection** | daily `identity_link_detect` task (bridge / cross-link / domain-match); introduces global links + the negative-override unlink | ~3 days | not started |
+| **P3 — Automated detection** | daily `identity_link_detect` task (domain-match shipped; bridge / cross-link deferred); introduces global links + the negative-override unlink | ~3 days | **shipped 2026-06-20** |
 
 Total ≈ 2 weeks. No infrastructure gate — pure application logic.
 
@@ -154,9 +154,89 @@ first links, turning P1's machinery live.
   fingerprints group; winner selection drops only the lower-biddability twin
   (A beats C); `also_on` surfaces the linked protocol; the **zero-link control
   suppresses nothing** (the perf fast path); A/B and B/A re-asserts collapse to
-  one row. **Still deferred:** a Vitest integration suite and the `EXPLAIN
-  ANALYZE` over a large seeded linked feed (audit item #15) — the DB-fixture
-  harness is thin (audit D14), so these ride the next test pass.
+  one row.
+
+### P1/P2 deferrals — closed (2026-06-20)
+
+The two items the P1/P2 ship notes punted ("ride the next test pass") are now done:
+
+- **Dedup SQL factored out** (`gateway/src/lib/dedup-sql.ts`): the
+  `linked_sources`/`candidates`/`suppressed` CTEs + the suppress filter + the
+  provenance lateral are now exported constants spliced into `items.ts`, so the
+  test exercises the *exact* SQL the live feed runs — no second copy to drift.
+- **Integration suite** (`gateway/tests/dedup-integration.test.ts`, 7 tests):
+  fingerprint trigger (canonical-URL identity, text-hash, 32-char floor), winner
+  selection by tier (A beats C), same-tier tie-break by `published_at`, text-hash
+  grouping with no canonical URL, distinct-content non-grouping, the zero-link
+  fast path, and **owner-scoped visibility** (a reader's `user_asserted` link
+  doesn't leak into another reader's feed; a global link does). Seeds fixtures in
+  a transaction that is always rolled back. `describe.skipIf(!DB_URL)` so the
+  no-Postgres CI `test` job stays green; run locally with
+  `TEST_DATABASE_URL=… npx vitest run tests/dedup-integration.test.ts`.
+- **EXPLAIN ANALYZE** (`gateway/scripts/explain-dedup.ts`): seeds a 200-source /
+  4 000-item feed (real `feeds`/`feed_sources` membership) and EXPLAINs the
+  faithful dedup path at three link densities. The `linked_sources` guard
+  confirmed: **zero links ≈ 19 ms, a few links ≈ 22 ms, all-linked worst case ≈
+  95 ms** — cost scales with link density, near-free at the common end.
+- **Perf fix found by the EXPLAIN:** the provenance lateral was computed for
+  *every* survivor *before* the `ORDER BY`/`LIMIT` (O(survivors × candidates) —
+  the dominant cost at high link density, ~1.8 s on the all-linked worst case).
+  `also_on` is display-only on the returned page, so `items.ts` now computes it
+  **after** the cursor/order/limit, over the ≤`$3` returned rows. Worst case
+  dropped ~1.8 s → ~95 ms with identical results; ordering re-imposed at the
+  outer level (a lateral join doesn't preserve subquery order, and the JS reads
+  the last row for `nextCursor`).
+
+### P3 — what shipped (2026-06-20)
+
+No DDL — migration 123 already carries the `bridge`/`cross_link`/`domain_match`/
+`user_unlinked` link types. P3 turns global automated links on and wires the
+negative override end-to-end. **Evidence source: stored metadata only** (no remote
+fetch, no SSRF surface — the locked decision).
+
+- **Read-path tombstone** (`gateway/src/lib/dedup-sql.ts`): the dedup CTEs now
+  open with an `applicable_links` CTE — global (owner NULL) ∪ the reader's own
+  assertions, **minus** the `user_unlinked` type itself **and** any pair the
+  reader has tombstoned — reused by `linked_sources`, `suppressed`, and the
+  provenance lateral. So a reader who unlinks a *detected* link stops deduping it
+  while everyone else is unaffected.
+- **Unlink route** (`identity-links.ts` DELETE): own `user_asserted` → hard
+  DELETE (unchanged); a global link (owner NULL) → insert an owner-scoped
+  `user_unlinked` tombstone for the same (already-ordered) pair (can't delete a
+  global fact for everyone). Another reader's assertion / an existing tombstone →
+  404.
+- **Profile payload** (`author.ts` + `author-resolve.ts` + web `post.ts`): the
+  `linkedSources` query now merges the viewer's own links with global detected
+  links touching the author's source (minus tombstoned pairs), each carrying
+  `detected: boolean`; deduped per other-source, own-first.
+- **Detection task** (`feed-ingest/src/tasks/identity-link-detect.ts`, behind
+  `IDENTITY_LINK_DETECT_ENABLED`, cron 06:30 UTC registered only when on — the
+  trust-cron pattern): **domain_match** (confidence 0.6) from stored metadata —
+  a source's owned *custom* domains (RSS feed host · author `website` host ·
+  atproto custom-handle host), two sources sharing one ⇒ a global link.
+  **False-positive guards (content suppression — correctness is the game):** an
+  explicit shared-platform denylist (`bsky.social`, `mastodon.social`,
+  `substack.com`, `*.brid.gy`, …) **plus** a self-tuning count guard — a domain
+  claimed by more than `MAX_SOURCES_PER_DOMAIN` (4) sources is treated as a
+  platform and dropped. **Self-healing:** each run fully recomputes the global
+  `domain_match` set in one transaction (DELETE + re-INSERT); tombstones match on
+  the pair, not the link row, so they survive the recompute. Pure helpers
+  (`registrableDomain`/`ownedDomains`/`domainMatchPairs`) are unit-tested
+  (`identity-link-detect.test.ts`, 13 tests, no DB).
+- **UI** (`IdentityLinkControl.tsx`): detected chips carry a "· DETECTED" tag and
+  the unlink aria reads "Stop merging this source" (it's a tombstone, not a
+  delete). All glasshouse-light idioms; hairline tripwire green.
+- **Verified:** the read-path tombstone via an 8th dedup integration test (a
+  global link suppresses for all, a reader's `user_unlinked` subtracts it for that
+  reader only); the detection task end-to-end via a rolled-back dev-DB smoke (RSS
+  + custom atproto handle on the same domain ⇒ one owner-NULL `domain_match`
+  link). Full suites green (gateway 149, feed-ingest 174).
+- **Deferred (the link_type vocab already supports them):** `cross_link`
+  (bidirectional profile references) and `bridge` (Bridgy-style bridged actors) —
+  each is another detector writing its own link_type with its own recompute, slots
+  into the same task. Also deferred: the quorum-promotion network-effect recovery
+  (below) and a Vitest suite over the route layer (the routes are exercised only
+  via the read-path integration test + the live smoke).
 
 ## Schema
 

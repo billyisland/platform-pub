@@ -2,7 +2,10 @@ import "dotenv/config";
 import { run, parseCrontab } from "graphile-worker";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
-import { trustSystemEnabled } from "@platform-pub/shared/lib/env.js";
+import {
+  trustSystemEnabled,
+  identityLinkDetectEnabled,
+} from "@platform-pub/shared/lib/env.js";
 import { feedIngestPoll } from "./tasks/feed-ingest-poll.js";
 import { feedIngestRss } from "./tasks/feed-ingest-rss.js";
 import { feedIngestNostr } from "./tasks/feed-ingest-nostr.js";
@@ -29,6 +32,7 @@ import { externalEngagementRefresh } from "./tasks/external-engagement-refresh.j
 import { externalParentPrefetch } from "./tasks/external-parent-prefetch.js";
 import { externalContextGc } from "./tasks/external-context-gc.js";
 import { feedIngestEmail } from "./tasks/feed-ingest-email.js";
+import { identityLinkDetect } from "./tasks/identity-link-detect.js";
 import { JetstreamListener } from "./jetstream/listener.js";
 
 // =============================================================================
@@ -59,6 +63,11 @@ async function start() {
   // registered in taskList below so any already-queued job still resolves; only
   // the recurring schedules are withheld.
   const trustOn = trustSystemEnabled();
+  // Slice 8 P3: the cross-source identity-link detection cron ships dark — only
+  // schedule it when the operator switch is on (it writes global links that
+  // suppress duplicates in everyone's feed). Handler stays registered below so a
+  // manually-queued run still resolves.
+  const identityDetectOn = identityLinkDetectEnabled();
   const cronItems: string[] = [
     // Poll for sources due for fetching — every 60 seconds
     "* * * * * feed_ingest_poll",
@@ -102,6 +111,12 @@ async function start() {
     "*/30 * * * * external_engagement_refresh",
     // Garbage-collect unreferenced context-only external items — daily at 02:30 UTC
     "30 2 * * * external_context_gc",
+    ...(identityDetectOn
+      ? [
+          // Detect cross-source identity links from stored metadata — daily 06:30 UTC
+          "30 6 * * * identity_link_detect",
+        ]
+      : []),
   ];
 
   const runner = await run({
@@ -137,11 +152,12 @@ async function start() {
       external_parent_prefetch: externalParentPrefetch,
       external_context_gc: externalContextGc,
       feed_ingest_email: feedIngestEmail,
+      identity_link_detect: identityLinkDetect,
     },
   });
 
   logger.info(
-    { trustSchedulesRegistered: trustOn },
+    { trustSchedulesRegistered: trustOn, identityLinkDetectScheduled: identityDetectOn },
     trustOn
       ? "Feed ingest worker started"
       : "Feed ingest worker started (trust schedules parked — TRUST_SYSTEM_ENABLED off)",

@@ -11,10 +11,14 @@ import { useResolverInput } from "../../hooks/useResolverInput";
 
 // =============================================================================
 // IdentityLinkControl — the "Link to…" / "Unlink" affordance on the external
-// author profile (Slice 8 P2). Asserts that the viewed author is the same person
-// cross-posting under another source; the gateway records an owner-scoped
+// author profile (Slice 8 P2/P3). Asserts that the viewed author is the same
+// person cross-posting under another source; the gateway records an owner-scoped
 // `user_asserted` link the feed-dedup CTEs consume (drop the loser twin, surface
-// "ALSO ON …"). One reader's claim, scoped to that reader — never global.
+// "ALSO ON …"). One reader's claim, scoped to that reader.
+//
+// The chip list also renders GLOBAL links the P3 detection task found (tagged
+// "DETECTED"); unlinking one isn't a delete (it's not yours) — the gateway writes
+// an owner-scoped tombstone that hides the merge for you only.
 //
 // Omnivorous input via the universal resolver (paste a URL / handle / npub /
 // DID); only external_source matches are linkable (a native account or #tag
@@ -167,11 +171,19 @@ export function IdentityLinkControl({
                     <span className="label-ui text-grey-600">
                       {protoLabel(l.protocol)}
                     </span>
+                    {l.detected && (
+                      // A global automated link (P3 detection), not the viewer's
+                      // own assertion — so unlink hides it for them (a tombstone),
+                      // it isn't theirs to delete.
+                      <span className="label-ui text-grey-600" title="Automatically detected">
+                        {" · DETECTED"}
+                      </span>
+                    )}
                   </span>
                   <button
                     onClick={() => void removeLink(l.linkId)}
                     disabled={removing.has(l.linkId)}
-                    aria-label="Unlink"
+                    aria-label={l.detected ? "Stop merging this source" : "Unlink"}
                     className="flex-shrink-0 text-grey-400 hover:text-black transition-colors disabled:opacity-50"
                   >
                     {removing.has(l.linkId) ? "…" : "✕"}

@@ -53,17 +53,20 @@ export interface AuthorCardResponse {
     // feed-derived Follow affordance. Null when no source row exists yet.
     sourceId?: string | null;
   };
-  // Slice 8 P2 — the viewer's own cross-source identity links for THIS author
-  // (owner-scoped `user_asserted` rows touching the author's backing source).
-  // Each is "the same person, also over there"; the surface renders them as
-  // unlinkable chips. Present only for an external author whose source row
-  // exists; empty/absent otherwise.
+  // Slice 8 P2/P3 — cross-source identity links for THIS author, "the same
+  // person, also over there", rendered as unlinkable chips. Two origins, merged:
+  // the viewer's own `user_asserted` rows (P2) and global automated links the P3
+  // detection task wrote (`detected: true`, bridge/cross_link/domain_match),
+  // minus any pair the viewer has tombstoned. Unlinking your own assertion
+  // deletes it; unlinking a detected link writes an owner-scoped tombstone.
+  // Present only for an external author whose source row exists; absent otherwise.
   linkedSources?: {
     linkId: string;
     protocol: string;
     sourceUri: string;
     displayName?: string;
     sourceId: string;
+    detected?: boolean;
   }[];
 }
 
