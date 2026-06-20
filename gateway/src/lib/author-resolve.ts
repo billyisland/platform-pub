@@ -53,6 +53,18 @@ export interface AuthorCardResponse {
     // feed-derived Follow affordance. Null when no source row exists yet.
     sourceId?: string | null;
   };
+  // Slice 8 P2 — the viewer's own cross-source identity links for THIS author
+  // (owner-scoped `user_asserted` rows touching the author's backing source).
+  // Each is "the same person, also over there"; the surface renders them as
+  // unlinkable chips. Present only for an external author whose source row
+  // exists; empty/absent otherwise.
+  linkedSources?: {
+    linkId: string;
+    protocol: string;
+    sourceUri: string;
+    displayName?: string;
+    sourceId: string;
+  }[];
 }
 
 export function computeTier(

@@ -56,6 +56,7 @@ import { feedsRoutes } from "./routes/feeds/index.js";
 import { extractRoutes } from "./routes/extract.js";
 import { authorCardRoutes } from "./routes/author-card.js";
 import { authorRoutes } from "./routes/author.js";
+import { identityLinkRoutes } from "./routes/identity-links.js";
 import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
 import { publishScheduledDrafts } from "./workers/scheduler.js";
 import { runDiscoverySweep } from "./lib/discovery-publish.js";
@@ -248,6 +249,9 @@ async function start() {
 
   // Constructed author profile (UNIVERSAL-POST-ADR Phase 4): /author/:id/profile + /posts
   await app.register(authorRoutes, { prefix: "/api/v1" });
+
+  // Cross-source identity links (Slice 8 P2): /author/:id/links create + unlink
+  await app.register(identityLinkRoutes, { prefix: "/api/v1" });
 
   // Workspace feeds (slice 3 — owner-private feed objects rendered by vessels).
   // Mounted under /api/v1/workspace because external-feeds.ts already owns the

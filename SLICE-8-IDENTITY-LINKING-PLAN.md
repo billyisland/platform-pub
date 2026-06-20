@@ -71,7 +71,7 @@ both `canonical_url` and `content_text`; `biddability_tier` lives on `feed_items
 | Phase | Work | Effort | Status |
 |---|---|---|---|
 | **P1 — Dedup core** | link table migration + precomputed fingerprint + query-time dedup CTE in `sourceFilteredItems` + `ALSO ON` provenance | ~1 wk | **shipped 2026-06-20** |
-| **P2 — User-asserted links** | "Link to…" / "Unlink" on the external author profile, resolver-backed; owner-scoped links only | ~3–4 days | not started |
+| **P2 — User-asserted links** | "Link to…" / "Unlink" on the external author profile, resolver-backed; owner-scoped links only | ~3–4 days | **shipped 2026-06-20** |
 | **P3 — Automated detection** | daily `identity_link_detect` task (bridge / cross-link / domain-match); introduces global links + the negative-override unlink | ~3 days | not started |
 
 Total ≈ 2 weeks. No infrastructure gate — pure application logic.
@@ -109,6 +109,54 @@ Total ≈ 2 weeks. No infrastructure gate — pure application logic.
 > creates the first links. P1+P2 only ever produce owner-scoped links, so the
 > owner model's negative-override wrinkle does not exist until P3 (see
 > "Link ownership").
+
+### P2 — what shipped (2026-06-20)
+
+No DDL — migration 123's `external_identity_links` already carries the
+`user_asserted` link type. P2 is the create/unlink CRUD + UI that produces the
+first links, turning P1's machinery live.
+
+- **Gateway routes** (`gateway/src/routes/identity-links.ts`, registered under
+  `/api/v1`): `POST /author/:authorId/links { protocol, sourceUri }` and
+  `DELETE /author/:authorId/links/:linkId`. `source_a` (the viewed author's
+  backing source) is derived **server-side** from `authorId` via the exported
+  `loadAuthorLinkSource` (`author.ts`) — never trusted from the client. The pair
+  is stored `LEAST/GREATEST(::uuid)`-ordered to satisfy the table's
+  `source_a_id < source_b_id` CHECK, owner-scoped (`owner_id = viewer`,
+  `confidence 1.0`), `ON CONFLICT … DO UPDATE` so a re-assert is idempotent.
+- **Deviation from the draft's two-step (deliberate):** the plan sketched a
+  client-side resolve→`addSource` dance to mint `source_b`. `addSource` also
+  writes feed membership + a subscription — linking is **not** following, so
+  that would be a spurious follow side-effect. Instead the create route does its
+  own minimal `external_sources` upsert (`ON CONFLICT (protocol, source_uri) DO
+  UPDATE SET updated_at` — no `is_active`/`orphaned_at` revival) inside the same
+  transaction as the link insert. Linking and following stay orthogonal.
+- **GC made link-aware** (`feed-ingest/src/tasks/external-sources-gc.ts`): a
+  link-only `source_b` (pasted as a link target, never subscribed) has zero
+  `external_subscriptions`, so the cull Phase B would hard-delete it and
+  CASCADE-drop the link. Phase B now spares any source referenced by an
+  `external_identity_links` row (Phase A still deactivates it — a link-only
+  source shouldn't be polled — but it's never culled while a link survives).
+- **Profile payload:** `AuthorCardResponse.linkedSources` (gateway
+  `author-resolve.ts` + web `lib/api/post.ts` mirror); `/author/:id/profile`
+  populates the viewer's own `user_asserted` links touching `source_a`
+  (CASE-join to the other side), so the surface renders the chips + unlink
+  without a separate fetch.
+- **UI** (`web/src/components/profile/IdentityLinkControl.tsx`): a "Link to…" /
+  "Linked · N ▾" control in `AuthorProfileView`'s actions cell beside
+  `ProfileFollowControl`, **external authors only** (`followTarget.type ===
+  "source"`). Resolver-backed (`useResolverInput`, omnivorous input); only the
+  external-source `{ protocol, sourceUri }` resolver variant is linkable
+  (native account / #tag filtered out), already-linked targets filtered. Linked
+  chips carry an unlink ✕. All glasshouse-light idioms (white pane, `*-well`
+  field, `grey-600` labels); hairline tripwire green.
+- **Verified end-to-end** (rolled-back dev-DB transaction): identical
+  fingerprints group; winner selection drops only the lower-biddability twin
+  (A beats C); `also_on` surfaces the linked protocol; the **zero-link control
+  suppresses nothing** (the perf fast path); A/B and B/A re-asserts collapse to
+  one row. **Still deferred:** a Vitest integration suite and the `EXPLAIN
+  ANALYZE` over a large seeded linked feed (audit item #15) — the DB-fixture
+  harness is thin (audit D14), so these ride the next test pass.
 
 ## Schema
 

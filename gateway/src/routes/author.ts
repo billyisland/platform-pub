@@ -71,7 +71,7 @@ interface ExternalAuthorRow {
 // before the next view re-fetches it from the relay graph (migration 117).
 const LIVE_PROFILE_TTL_MS = 30 * 60_000;
 
-async function loadExternalAuthor(
+export async function loadExternalAuthor(
   id: string,
 ): Promise<ExternalAuthorRow | null> {
   const { rows } = await pool.query<ExternalAuthorRow>(
@@ -101,7 +101,7 @@ async function isNativeAccount(id: string): Promise<boolean> {
 // can carry a bsky.app profile URL — so for atproto we extract the embedded DID.
 // Returns null when no subscribable identity can be derived (⇒ "not followed",
 // and no subscribe affordance), which is the correct, safe default.
-function authorFollowUri(xa: ExternalAuthorRow): string | null {
+export function authorFollowUri(xa: ExternalAuthorRow): string | null {
   const h = xa.handle_uri ?? xa.stable_handle;
   switch (xa.protocol) {
     case "atproto":
@@ -115,6 +115,29 @@ function authorFollowUri(xa: ExternalAuthorRow): string | null {
     default:
       return null;
   }
+}
+
+// The external_sources.id backing an external author — its `source_a_id` in a
+// cross-source identity link (Slice 8 P2). Derived from the author's own
+// identity (authorFollowUri → the source whose source_uri is that handle), so a
+// thread-context participant filed under another author's source never resolves
+// here. Null for a native author, an author with no derivable follow handle, or
+// one whose source row doesn't exist yet (e.g. tier-C/D RSS reached only as a
+// link target). Mirrors the source lookup in resolveExternalAuthorById.
+export async function loadAuthorLinkSource(
+  authorId: string,
+): Promise<{ sourceId: string; protocol: string } | null> {
+  const xa = await loadExternalAuthor(authorId);
+  if (!xa) return null;
+  const followUri = authorFollowUri(xa);
+  if (!followUri) return null;
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM external_sources
+      WHERE protocol = $1::external_protocol AND source_uri = $2
+      LIMIT 1`,
+    [xa.protocol, followUri],
+  );
+  return rows[0] ? { sourceId: rows[0].id, protocol: xa.protocol } : null;
 }
 
 // Constructed external-author profile: stored identity fields + live-origin
@@ -153,6 +176,9 @@ async function resolveExternalAuthorById(
   // URI / pubkey — the exact value the subscribe API expects as sourceUri).
   const followUri = authorFollowUri(xa);
   let followTarget: AuthorCardResponse["followTarget"];
+  // The author's backing source — `source_a_id` for any cross-source identity
+  // link (set alongside followTarget below; both read the same source lookup).
+  let linkSourceId: string | null = null;
   if (followUri) {
     // `id` is the unfollow handle — the viewer's subscription-row id, since
     // DELETE /feeds/:id keys on external_subscriptions.id. Emit it when
@@ -180,6 +206,7 @@ async function resolveExternalAuthorById(
     );
     const subId = subRows[0]?.sub_id ?? null;
     const sourceId = subRows[0]?.source_id ?? null;
+    linkSourceId = sourceId;
     followTarget = {
       type: "source",
       id: subId ?? followUri,
@@ -188,6 +215,43 @@ async function resolveExternalAuthorById(
       sourceUri: followUri,
       sourceId,
     };
+  }
+
+  // The viewer's own cross-source identity links for this author (Slice 8 P2):
+  // owner-scoped `user_asserted` rows touching the author's backing source. The
+  // OTHER side of each pair is the linked identity, surfaced as an unlinkable
+  // chip. Only computable once source_a exists; empty otherwise.
+  let linkedSources: AuthorCardResponse["linkedSources"];
+  if (linkSourceId) {
+    const { rows: linkRows } = await pool.query<{
+      link_id: string;
+      source_id: string;
+      protocol: string;
+      source_uri: string;
+      display_name: string | null;
+    }>(
+      `SELECT l.id AS link_id,
+              os.id AS source_id, os.protocol::text AS protocol,
+              os.source_uri, os.display_name
+         FROM external_identity_links l
+         JOIN external_sources os
+           ON os.id = CASE WHEN l.source_a_id = $2 THEN l.source_b_id
+                           ELSE l.source_a_id END
+        WHERE l.owner_id = $1
+          AND l.link_type = 'user_asserted'
+          AND (l.source_a_id = $2 OR l.source_b_id = $2)
+        ORDER BY l.created_at`,
+      [viewerId, linkSourceId],
+    );
+    if (linkRows.length > 0) {
+      linkedSources = linkRows.map((r) => ({
+        linkId: r.link_id,
+        protocol: r.protocol,
+        sourceUri: r.source_uri,
+        displayName: r.display_name ?? undefined,
+        sourceId: r.source_id,
+      }));
+    }
   }
 
   // Stored fields are the always-present base; live origin data overlays them.
@@ -212,6 +276,7 @@ async function resolveExternalAuthorById(
       stableHandle: xa.stable_handle,
     }),
     followTarget,
+    linkedSources,
   };
 
   if (xa.protocol === "atproto") {

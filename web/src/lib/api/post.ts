@@ -75,11 +75,47 @@ export interface AuthorProfile {
     // external Follow affordance. Null/absent when no source row exists yet.
     sourceId?: string | null;
   };
+  // Slice 8 P2 — the viewer's own cross-source identity links for this author
+  // ("the same person, also over there"), rendered as unlinkable chips. Present
+  // only for an external author whose source row exists; absent otherwise.
+  linkedSources?: LinkedSource[];
+}
+
+export interface LinkedSource {
+  linkId: string;
+  protocol: string;
+  sourceUri: string;
+  displayName?: string;
+  sourceId: string;
 }
 
 // GET /author/:authorId/profile → hover modal + profile header.
 export function authorProfile(authorId: string): Promise<AuthorProfile> {
   return request<AuthorProfile>(`/author/${authorId}/profile`);
+}
+
+// POST /author/:authorId/links → assert this author is also `sourceUri` on
+// another platform (Slice 8 P2). Returns the new chip to append without a
+// refetch. `protocol`/`sourceUri` come from a /resolve match.
+export function createIdentityLink(
+  authorId: string,
+  protocol: string,
+  sourceUri: string,
+): Promise<{ linkedSource: LinkedSource }> {
+  return request<{ linkedSource: LinkedSource }>(`/author/${authorId}/links`, {
+    method: "POST",
+    body: JSON.stringify({ protocol, sourceUri }),
+  });
+}
+
+// DELETE /author/:authorId/links/:linkId → drop the viewer's own assertion.
+export function deleteIdentityLink(
+  authorId: string,
+  linkId: string,
+): Promise<void> {
+  return request<void>(`/author/${authorId}/links/${linkId}`, {
+    method: "DELETE",
+  });
 }
 
 // GET /author/:authorId/posts → chronological full-view Post log (paginated).

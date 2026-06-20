@@ -23,6 +23,7 @@ import type { Post } from "../../../lib/post/types";
 import { useCompose } from "../../../stores/compose";
 import { useLightbox } from "../../../stores/lightbox";
 import { ProfileFollowControl } from "../../../components/profile/ProfileFollowControl";
+import { IdentityLinkControl } from "../../../components/profile/IdentityLinkControl";
 import { ApiError } from "../../../lib/api/client";
 
 // =============================================================================
@@ -245,7 +246,15 @@ export function AuthorProfileView({
               ))}
           </div>
           {profile.followTarget && (
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 flex items-center gap-2">
+              {/* Cross-source identity links — external authors only (a source
+                  the viewer can assert another identity for; Slice 8 P2). */}
+              {profile.followTarget.type === "source" && (
+                <IdentityLinkControl
+                  authorId={authorId}
+                  initial={profile.linkedSources}
+                />
+              )}
               <ProfileFollowControl target={profile.followTarget} />
             </div>
           )}

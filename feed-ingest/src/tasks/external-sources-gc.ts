@@ -57,7 +57,11 @@ export const externalSourcesGc: Task = async (_payload, _helpers) => {
        )
   `, [graceDays])
 
-  // Phase B — hard-delete orphans past the cull window.
+  // Phase B — hard-delete orphans past the cull window. A source referenced by
+  // a cross-source identity link (Slice 8) is in use even with no subscription —
+  // it may be a link-only target the asserter pasted but doesn't follow — and a
+  // cull here would CASCADE-delete the link. So spare any linked source; it's
+  // still deactivated (Phase A), just never hard-deleted while a link survives.
   const deleted = await pool.query(`
     DELETE FROM external_sources
      WHERE is_active = FALSE
@@ -66,6 +70,11 @@ export const externalSourcesGc: Task = async (_payload, _helpers) => {
        AND NOT EXISTS (
          SELECT 1 FROM external_subscriptions es
           WHERE es.source_id = external_sources.id
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM external_identity_links l
+          WHERE l.source_a_id = external_sources.id
+             OR l.source_b_id = external_sources.id
        )
   `, [cullDays])
 
