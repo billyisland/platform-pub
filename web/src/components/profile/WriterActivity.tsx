@@ -17,6 +17,7 @@ import { FollowingTab } from "./FollowingTab";
 import { TrustProfile } from "../trust/TrustProfile";
 import { VouchModal } from "../trust/VouchModal";
 import { trustEnabled } from "../../lib/featureFlags";
+import { useFollows, useFollowState } from "../../stores/follows";
 
 type ProfileTab = "work" | "social" | "followers" | "following";
 
@@ -55,7 +56,8 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
       : defaultTab;
 
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
-  const [following, setFollowing] = useState(false);
+  // Native follow state from the shared store (live across every surface).
+  const following = useFollowState(writer.id);
   const [followLoading, setFollowLoading] = useState(false);
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null);
   const [subLoading, setSubLoading] = useState(false);
@@ -81,23 +83,15 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
     window.history.replaceState({}, "", url.toString());
   }
 
-  // Check follow/subscription status
+  // Check subscription status (follow state comes from the shared store).
   useEffect(() => {
     if (!user || !writer) return;
     async function checkStatus() {
       try {
-        const [followRes, subRes] = await Promise.all([
-          fetch("/api/v1/follows", { credentials: "include" }),
-          fetch(`/api/v1/subscriptions/check/${writer.id}`, {
-            credentials: "include",
-          }),
-        ]);
-        if (followRes.ok) {
-          const data = await followRes.json();
-          setFollowing(
-            (data.writers ?? []).some((w: any) => w.id === writer.id),
-          );
-        }
+        const subRes = await fetch(
+          `/api/v1/subscriptions/check/${writer.id}`,
+          { credentials: "include" },
+        );
         if (subRes.ok) {
           setSubStatus(await subRes.json());
         }
@@ -122,11 +116,8 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
     if (!user || !writer) return;
     setFollowLoading(true);
     try {
-      const res = await fetch(`/api/v1/follows/${writer.id}`, {
-        method: following ? "DELETE" : "POST",
-        credentials: "include",
-      });
-      if (res.ok) setFollowing(!following);
+      if (following) await useFollows.getState().unfollow(writer.id);
+      else await useFollows.getState().follow(writer.id);
     } catch (err) {
       console.error("Follow error:", err);
     } finally {

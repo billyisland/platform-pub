@@ -2,13 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  follows as followsApi,
-  workspaceFeeds,
-  type WorkspaceFeed,
-} from "../../lib/api";
+import { workspaceFeeds, type WorkspaceFeed } from "../../lib/api";
 import { invalidateAuthorCardCache } from "../../hooks/useAuthorCard";
 import { useAuth } from "../../stores/auth";
+import { useFollows, useFollowState } from "../../stores/follows";
 import type { AuthorProfile } from "../../lib/api/post";
 
 // =============================================================================
@@ -56,20 +53,20 @@ export function ProfileFollowControl({ target }: { target: FollowTarget }) {
 }
 
 function NativeFollowToggle({ target }: { target: FollowTarget }) {
-  const [following, setFollowing] = useState(target.isFollowing);
+  // Live follow state from the shared store, seeded with the server snapshot —
+  // a toggle here (or on any other surface) re-renders every mounted follow
+  // affordance for this writer.
+  const following = useFollowState(target.id, target.isFollowing);
   const [busy, setBusy] = useState(false);
 
   const toggle = useCallback(async () => {
     if (busy) return;
     setBusy(true);
-    const prev = following;
-    setFollowing(!prev);
     try {
-      if (prev) await followsApi.unfollow(target.id);
-      else await followsApi.follow(target.id);
-      invalidateAuthorCardCache();
+      if (following) await useFollows.getState().unfollow(target.id);
+      else await useFollows.getState().follow(target.id);
     } catch {
-      setFollowing(prev);
+      /* store reverts its optimistic update on failure */
     } finally {
       setBusy(false);
     }
@@ -95,16 +92,24 @@ function SourceFollowPicker({ target }: { target: FollowTarget }) {
   const [open, setOpen] = useState(false);
   const [feeds, setFeeds] = useState<WorkspaceFeed[] | null>(null);
   // feedId → feed_sources row id when the source sits in that feed, else null.
-  const [membership, setMembership] = useState<Record<string, string | null>>(
-    {},
-  );
+  // null (not {}) until the per-feed fan-out has resolved, so the button label
+  // can fall back to the server snapshot rather than reading "Follow" prematurely.
+  const [membership, setMembership] = useState<Record<
+    string,
+    string | null
+  > | null>(null);
   const [busyFeeds, setBusyFeeds] = useState<Set<string>>(new Set());
   const [newMode, setNewMode] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const following = Object.values(membership).some(Boolean);
+  // Until membership is resolved (the fan-out is lazy, on first menu open),
+  // trust the server's followTarget.isFollowing — the "in ≥1 feed" projection,
+  // exactly what `following` means — so the label is correct on first paint.
+  const following = membership
+    ? Object.values(membership).some(Boolean)
+    : target.isFollowing;
 
   // Resolve feeds + per-feed membership on first open. listSources per feed is a
   // small fan-out (a handful of feeds) — fine for a deliberate menu open.
@@ -175,7 +180,7 @@ function SourceFollowPicker({ target }: { target: FollowTarget }) {
     async (feedId: string) => {
       if (busyFeeds.has(feedId) || !target.protocol || !target.sourceUri)
         return;
-      const existing = membership[feedId];
+      const existing = membership?.[feedId];
       setBusy(feedId, true);
       try {
         if (existing) {
@@ -256,7 +261,7 @@ function SourceFollowPicker({ target }: { target: FollowTarget }) {
                 </p>
               )}
               {feeds.map((f) => {
-                const inFeed = !!membership[f.id];
+                const inFeed = !!membership?.[f.id];
                 const busy = busyFeeds.has(f.id);
                 return (
                   <button

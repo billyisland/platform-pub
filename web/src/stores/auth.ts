@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { auth, type MeResponse } from '../lib/api'
+import { useFollows } from './follows'
 
 // =============================================================================
 // Auth Store
@@ -30,8 +31,12 @@ export const useAuth = create<AuthState>((set) => ({
   fetchMe: async () => {
     try {
       const user = await auth.me()
+      // Re-open follow hydration if the session changed identity (or first
+      // load), so the followed-id set belongs to the current user.
+      if (user.id !== useAuth.getState().user?.id) useFollows.getState().reset()
       set({ user, loading: false })
     } catch {
+      useFollows.getState().reset()
       set({ user: null, loading: false })
     }
   },
@@ -43,6 +48,7 @@ export const useAuth = create<AuthState>((set) => ({
       for (const key of Object.keys(sessionStorage)) {
         if (key.startsWith('unlocked:')) sessionStorage.removeItem(key)
       }
+      useFollows.getState().reset()
       set({ user: null })
     }
   },

@@ -9,9 +9,10 @@ import {
   type AuthorCardData,
   type AuthorCardType,
 } from "../../hooks/useAuthorCard";
-import { follows as followsApi, workspaceFeeds } from "../../lib/api";
+import { workspaceFeeds } from "../../lib/api";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
 import { useLightbox } from "../../stores/lightbox";
+import { useFollows } from "../../stores/follows";
 import { SourceVolume } from "./SourceVolume";
 
 interface AuthorModalProps {
@@ -411,13 +412,18 @@ function FollowButton({
   const [busy, setBusy] = useState(false);
   // The feed_sources row id for the source in THIS feed, used to remove it.
   const [feedSourceId, setFeedSourceId] = useState<string | null>(null);
+  // Native follow state from the shared store (external stays per-feed local).
+  const nativeFollowing = useFollows((s) => s.ids.has(target.id));
 
   // Native follow is resolved from the server snapshot directly. External
   // membership is per-feed, so resolve it from the feed's own source list
   // (matched on the external_sources id) rather than the global isFollowing.
   useEffect(() => {
     if (!isSource) {
-      setFollowing(target.isFollowing);
+      // Native follow state is owned by the shared store; seed it with the
+      // server snapshot (pre-hydration only) and ensure it's hydrated.
+      useFollows.getState().prime(target.id, target.isFollowing);
+      void useFollows.getState().hydrate();
       setResolved(true);
       return;
     }
@@ -466,59 +472,67 @@ function FollowButton({
       e.stopPropagation();
       if (busy) return;
       setBusy(true);
-      const prev = following;
-      setFollowing(!prev);
 
       try {
         if (!isSource) {
-          if (prev) await followsApi.unfollow(target.id);
-          else await followsApi.follow(target.id);
+          // Native follow lives in the shared store — optimistic update,
+          // revert, and author-card cache bust all happen there — so a toggle
+          // here live-updates every other follow affordance for this writer.
+          if (nativeFollowing) await useFollows.getState().unfollow(target.id);
+          else await useFollows.getState().follow(target.id);
         } else if (feedId) {
-          if (prev) {
-            // Remove the source from this feed; the gateway tears down the
-            // derived subscription when it leaves the owner's last feed.
-            if (!feedSourceId) throw new Error("missing feed source id");
-            await workspaceFeeds.removeSource(feedId, feedSourceId);
-            setFeedSourceId(null);
-          } else if (target.protocol && target.sourceUri) {
-            const { source } = await workspaceFeeds.addSource(feedId, {
-              sourceType: "external_source",
-              protocol: target.protocol as
-                | "rss"
-                | "atproto"
-                | "activitypub"
-                | "nostr_external",
-              sourceUri: target.sourceUri,
-            });
-            setFeedSourceId(source.id);
+          const prev = following;
+          setFollowing(!prev);
+          try {
+            if (prev) {
+              // Remove the source from this feed; the gateway tears down the
+              // derived subscription when it leaves the owner's last feed.
+              if (!feedSourceId) throw new Error("missing feed source id");
+              await workspaceFeeds.removeSource(feedId, feedSourceId);
+              setFeedSourceId(null);
+            } else if (target.protocol && target.sourceUri) {
+              const { source } = await workspaceFeeds.addSource(feedId, {
+                sourceType: "external_source",
+                protocol: target.protocol as
+                  | "rss"
+                  | "atproto"
+                  | "activitypub"
+                  | "nostr_external",
+                sourceUri: target.sourceUri,
+              });
+              setFeedSourceId(source.id);
+            }
+            // Drop the shared author-card cache so the next hover re-derives.
+            invalidateAuthorCardCache();
+          } catch {
+            setFollowing(prev);
           }
         }
-        // Drop the shared author-card cache so the next hover re-derives state.
-        invalidateAuthorCardCache();
-      } catch {
-        setFollowing(prev);
       } finally {
         setBusy(false);
       }
     },
-    [isSource, target, following, busy, feedId, feedSourceId],
+    [isSource, target, following, busy, feedId, feedSourceId, nativeFollowing],
   );
 
   // External byline with no feed context (e.g. a profile overlay) has no
   // follow gesture; native follow is unaffected.
   if (isSource && !externalFollowable) return null;
 
+  // Native reads the live store; external uses the per-feed local state.
+  const displayFollowing = isSource ? following : nativeFollowing;
+
   return (
     <button
       onClick={handleClick}
       disabled={busy || !resolved}
       className={`mt-3 w-full py-1.5 text-ui-xs font-medium transition-colors ${
-        following
+        displayFollowing
           ? "bg-grey-100 text-grey-600 hover:bg-grey-200"
           : "bg-black text-white hover:bg-grey-800"
       }`}
     >
-      {following ? "FOLLOWING" : "FOLLOW"}
+      {displayFollowing ? "FOLLOWING" : "FOLLOW"}
     </button>
   );
 }

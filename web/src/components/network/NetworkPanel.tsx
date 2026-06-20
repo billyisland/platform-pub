@@ -18,6 +18,7 @@ import Link from "next/link";
 import { ProfileLink } from "../ui/ProfileLink";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../stores/auth";
+import { useFollows } from "../../stores/follows";
 import { DmFeeSettings } from "../social/DmFeeSettings";
 import { BlockList } from "../social/BlockList";
 import { MuteList } from "../social/MuteList";
@@ -81,7 +82,13 @@ export function NetworkPanel({
     if (!user) return;
     fetch("/api/v1/follows", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : { writers: [] }))
-      .then((d) => setWriters(d.writers ?? []))
+      .then((d) => {
+        const list = d.writers ?? [];
+        setWriters(list);
+        // Seed the shared store from this authoritative list so follow buttons
+        // elsewhere reflect it (pre-hydration; no-op once hydrated).
+        for (const w of list) useFollows.getState().prime(w.id, true);
+      })
       .catch((err) => console.error("Failed to load followed writers", err))
       .finally(() => setWritersLoading(false));
 
@@ -103,13 +110,10 @@ export function NetworkPanel({
   async function handleUnfollow(writerId: string) {
     setUnfollowing((prev) => new Set([...prev, writerId]));
     try {
-      const res = await fetch(`/api/v1/follows/${writerId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (res.ok) {
-        setWriters((prev) => prev.filter((w) => w.id !== writerId));
-      }
+      // Through the shared store so the unfollow propagates to every other
+      // mounted follow affordance for this writer.
+      await useFollows.getState().unfollow(writerId);
+      setWriters((prev) => prev.filter((w) => w.id !== writerId));
     } catch {
       /* ignore */
     } finally {
