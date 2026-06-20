@@ -1,6 +1,6 @@
 # Upstream Edges — Tribute, Citation & Dispute
 
-**Status:** Proposed (consolidated 2026-06-20; money model revised 2026-06-20 — tribute reframed from held reserve to payout-time deduction, see §Revision note)
+**Status:** Proposed (consolidated 2026-06-20; money model revised 2026-06-20 — tribute reframed from held reserve to payout-time deduction, see §Revision note; consent model revised 2026-06-20 — the named credit needs no consent, only money does, see §Revision note (consent model))
 **Date:** 2026-06-20
 **Depends on:** `articles`, `ledger_entries` (unified append-only ledger), `repost_edges`, `comments`, `external_items`, strfry canonical store.
 **Hard prerequisites (not yet built):** (a) **writer-side accrual in the ledger.** The deduction nets the tribute against *what the writer earned*, but the ledger does **not currently model writer-side accrual** — `writer_payout`/`publication_split` entries record money *already paid out* (`+amount`, NULL counterparty), and `getWriterEarnings()` sums `read_events` (earned-incl-pending), a different quantity the CLAUDE.md money-ledger invariant explicitly keeps "reconciliation-only until the ledger models writer-side accrual." So a `SUM(ledger_entries)` per account today yields reader-debt + past payouts, not current earnings; modelling writer-side accrual is itself unbuilt and is the deepest dependency here. (b) a **unified net-position read** over `ledger_entries` — `SUM(amount_pence)` per `account_id` across all triggers — so a payout can net what a writer earned against what they owe and what they tribute *in one figure*; today reader debt settles by Stripe card charge and writer earnings transfer out by Connect on separate rails with no offset (`settlement.ts` / `payout.ts`). And deeper still: the percentage is "of net earnings from *this piece*", so the read must attribute net **per piece per payout cycle** — piece-granular writer accrual, a notch beyond even an account-level net position (nothing in the `read_events`→payout path attributes net per piece per cycle today). (c) the ledger being **read-authoritative for balances** — migrations 119–121 are Phases 0/2/3-prereq; the Phase-3 cutover is not done, and the ledger began empty. The tribute's correctness depends on all three; none is a new subsystem, but none exists yet — and (a) is further off than the "Phase-3 cutover" framing alone implies.
@@ -10,7 +10,11 @@
 
 The original draft modelled the tribute as a **held reserve** — a lien moving the tribute share into a `tribute_pending` sub-account that "the withdrawal hold falls out of for free." That assumed an on-platform author spendable balance the architecture does not maintain: authors do not hold a withdrawable wallet; their net earnings are pushed out by Stripe Connect transfer on a weekly/monthly cadence (`payout.ts`). With nothing to lien and the payout clock far shorter than the tribute clock, a held reserve could only be realised by retaining third-party-destined funds across payout cycles — which *is* custody, whatever it is labelled.
 
-This revision drops the held reserve. **The tribute is a deduction in the net-payout computation, biting only on *future* payouts once the inspirer has consented.** Pre-consent, the figure is a **non-binding estimate** that motivates the cold-contact — it holds no money. The named credit (the moneyless axis) still stands immediately. The cost, accepted in v1: a piece that earns before the inspirer responds returns nothing to them for that period (§Edge cases, §Consequences). This is the price of never holding third-party funds — the posture this platform wants while the cross-border payout question is unresolved.
+This revision drops the held reserve. **The tribute is a deduction in the net-payout computation, biting only on *future* payouts once the inspirer has consented.** Pre-consent, the figure is a **non-binding estimate** that motivates the cold-contact — it holds no money. The named credit (the moneyless axis) still stands immediately and needs no consent at all — it is the author's claim of their own influence, not an assertion the inspirer can veto (§The core distinction). The cost, accepted in v1: a piece that earns before the inspirer responds returns nothing to them for that period (§Edge cases, §Consequences). This is the price of never holding third-party funds — the posture this platform wants while the cross-border payout question is unresolved.
+
+## Revision note (consent model)
+
+The original draft ran **two consent models** — citation was "characterise the record freely; recourse is dispute, not removal," while tribute was a "gift: declinable, credit strikable," letting the inspirer strike the public credit (`public_credit_visible = false`). This revision **collapses them to one**. Crediting a source as an *influence* is a claim the author makes about their *own* intellectual debt, not an assertion about the inspirer that the inspirer gets to veto — the same kind of speech act as characterising the record. So the **named credit needs no consent and stands on publish**; an inspirer who dislikes the work, rejects responsibility, or objects to being named answers with a **public disclaimer** (a counter-edge reusing the dispute primitive, §Design B), never a silent strike. Consent gates **money only**: funds cannot be forced on a payee, and the public fact "X is a paid beneficiary" only becomes true once X has taken the tribute up. The `public_credit_visible` strike flag is dropped; §A.5 reduces to a money decision (accept / decline / ignore); the "pre-consent display" open question dissolves (the credit was never consent-gated). One guardrail survives: the credit must read as *influence* ("this work draws on X"), never as the inspirer's *endorsement* ("X supports this"), since the latter would be a claim about X's stance rather than the author's debt.
 
 ---
 
@@ -27,12 +31,14 @@ binds them explicit — because the binding is the interesting part and was prev
 - **Composition** — how the two relate, co-occur, and stay decoupled (§Design C). This is the seam.
 
 What is **decided**: the tribute is contingent author-money realised as a deduction from the
-author's *future* net payouts, not escrow and not a held reserve; the author sets the percentage; it
-binds only after the inspirer consents, and the pre-consent figure is a non-binding estimate that
-holds no money; credit and payment are independently engageable; citation and tribute are separate
-edges that may reference one another. What is **open** is collected in §Open questions — chiefly the
-still-unresolved UI forks (authoring granularity, pre-consent public display, percentage on an
-unreachable target) and one rendering judgement call.
+author's *future* net payouts, not escrow and not a held reserve; the author sets the percentage; the
+**money** binds only after the inspirer consents, while the **named credit needs no consent** — it is
+the author's claim of their own debt, not an assertion the inspirer can veto, and recourse to an
+unwanted credit is a public disclaimer, not a strike; the pre-consent figure is a non-binding estimate
+that holds no money; credit and payment are independently engageable; citation and tribute are
+separate edges that may reference one another. What is **open** is collected in §Open questions —
+chiefly the still-unresolved UI forks (authoring granularity, percentage on an unreachable target) and
+one rendering judgement call.
 
 ---
 
@@ -91,17 +97,23 @@ They differ on three independent axes, and it is the independence that the desig
 | Granularity | The whole piece (earnings aren't per-passage) | A specific pinned span |
 | Needs a quotable claim? | No — a whole tradition, a dead author, an institution all qualify | Yes — span + excerpt + hash + characterisation |
 | Recipient must be reachable? | No — name-only credit if unaddressable | No — the source need not be on all.haus to be characterised |
-| Consent to publish? | Yes in effect — it implies the recipient's *association*; declinable, credit strikable | No — characterising the record needs no consent; recourse is dispute, not removal |
+| Consent to publish? | Name: **no** (the author's claim of their own influence; recourse is the inspirer's disclaimer, not a veto). Money: **yes** (funds can't be forced on a payee; "X is a paid beneficiary" is only true post-consent) | No — characterising the record needs no consent; recourse is dispute, not removal |
 | Carries money? | Yes (or zero, for name-only) | Never on its own |
 
 Two further axes sit *inside* tribute and are themselves independent (this realises the earlier
 decision that credit and payment are separately engageable):
 
-- **Name** — whether the source is publicly credited as a supported influence.
-- **Money** — whether a percentage is directed to the source (deducted at payout, never reserved).
+- **Name** — whether the author publicly credits the source as an **influence** on the work. This is
+  the author's claim about their own debt; it is framed as influence ("this work draws on X"), never as
+  the inspirer's endorsement ("X supports this"), and so needs no consent — the inspirer's recourse to
+  an unwanted credit is a public disclaimer (a counter-edge, §Design B), not a veto.
+- **Money** — whether a percentage is directed to the source (deducted at payout, never reserved). This
+  *does* need consent: funds cannot be forced on a payee, and the public fact "X is a paid beneficiary"
+  only becomes true once X has taken the tribute up.
 
-Name-only is a tribute with `percentage = 0` (or simply an endnote, see §Design A). Money-only is a
-tribute with the public credit struck. Either axis on, either off.
+Name-only is a tribute with `percentage = 0` (or simply an endnote, see §Design A) and stands on
+publish. Money-only is a tribute the author directs without publishing the influence claim. Either
+axis on, either off.
 
 ---
 
@@ -122,18 +134,19 @@ tribute with the public credit struck. Either axis on, either off.
 4. **Composition, not fusion.** Tribute and citation are separate edges. A tribute MAY reference a
    citation (`citation_edge_id`); a citation MAY be referenced by a tribute; neither requires the
    other. The funded-auditor loop is opt-in per citation, not forced onto all provenance.
-5. **Two consent models, reconciled.** You may always characterise what a source *said* (record:
-   disputable, not removable). You may not unilaterally enlist a source as your funded, credited
-   inspirer without an exit (gift: declinable, credit strikable). When the two meet on one source,
-   declining the gift does not erase the citation, and disputing the citation does not depend on the
-   gift.
+5. **One consent model: two free claims, one gated transfer.** You may always characterise what a
+   source *said* (record: disputable, not removable), and you may always credit a source as an
+   *influence* on your work (your claim of your own debt: disputable by a disclaimer, not removable).
+   Consent is required for one thing only: **routing money** to the source — funds cannot be forced on
+   a payee, and "X is a paid beneficiary" is only true once X consents. Declining the money erases
+   neither the citation nor the credit; disputing either does not depend on the money.
 6. **The canonical store is the ledger.** Citations, disputes, and payment receipts are signed
    events keyed by pubkey. A synthesist's standing record is a query, not a new store, and consequence
    is emergent — readers and tribute-paying authors discount for themselves — never platform-assigned.
 
 Design principles, in two lines: **proceduralise exposure, not verdict** — and — **characterise the
-record freely; enlist a beneficiary only with their exit, and hold no money on their behalf until they
-have taken it up.**
+record and credit your influences freely; route money to a beneficiary only with their consent, and
+hold no money on their behalf until they have taken it up.**
 
 ---
 
@@ -250,10 +263,13 @@ stands and the money cannot.
 
 ### A.5 Decline granularity
 
-On the claim page the inspirer may: (i) accept; (ii) decline the money but keep the name; (iii)
-decline and strike the public credit; (iv) ignore (→ lapse). Option (iii) matters: being named as a
-supported influence is a reputational association the inspirer never agreed to, so they can remove
-it. This option is load-bearing for the consent reconciliation in §Design C.
+The claim page governs the **money only** — the named credit is the author's claim and is not the
+inspirer's to grant or revoke (§The core distinction). So the inspirer may: (i) accept the money; (ii)
+decline the money (no money ever moves; the credit stands); (iii) ignore (→ lapse; the credit stands).
+There is no "strike the credit" action — an inspirer who objects to *being named* answers with a
+**public disclaimer** (a counter-edge reusing the dispute primitive, §Design B), which is on-record
+and visible, not a silent removal. This is the same posture as citation: the record — and a
+credit-of-influence is the author's record of their own debt — is contestable, not suppressible.
 
 ### A.6 Late claimants
 
@@ -286,19 +302,25 @@ CREATE TABLE public.tributes (
     -- optional coupling to a citation (null = span-less tribute)
     citation_edge_id uuid,                    -- FK -> citation_edges.id
 
-    -- the two independent axes
-    public_credit_visible boolean NOT NULL DEFAULT true,  -- struck to false on decline (iii)
+    -- the named-credit axis (always stands on publish; the author's claim, not
+    -- the inspirer's to revoke — §A.5). There is deliberately NO strike-credit
+    -- flag: an objecting inspirer answers with a disclaimer counter-edge
+    -- (§Design B), not a column. (A money-only tribute — pay without publishing
+    -- the credit — is the author's editorial choice in the authoring UI, not a
+    -- consent state; it needs no column either.)
 
-    -- lifecycle. States: proposed (notional estimate, below threshold, no contact)
+    -- lifecycle — governs the MONEY only (the credit needs no consent, so it has
+    -- no state). States:
+    --   credit_only (percentage = 0: nothing to consent to; credit stands, no money ever moves)
+    --   proposed    (notional estimate, below threshold, no contact)
     --   → resolving (threshold crossed, inspirer notified, window running)
-    --   → live (consented; deducts each payout cycle)
-    --   → declined (inspirer refused; see public_credit_visible to tell (ii) keep-name
-    --       from (iii) strike-credit — the enum alone does not distinguish them)
-    --   → lapsed (window expired with no response).
+    --   → live      (money consented; deducts each payout cycle)
+    --   → declined  (inspirer refused the money; the credit still stands)
+    --   → lapsed    (window expired with no response; the credit still stands).
     -- The late-claim path (§A.6) is a legal `lapsed → live` (or `declined → live`)
     -- transition: set resolved_account_id and route FUTURE earnings from the next
-    -- cycle. A name-only acceptance is `live` with percentage = 0 (no money moves).
-    state text NOT NULL,                      -- proposed|resolving|live|declined|lapsed
+    -- cycle.
+    state text NOT NULL,                      -- credit_only|proposed|resolving|live|declined|lapsed
     first_contact_at timestamp with time zone,        -- window starts here, not at publish
     window_expires_at timestamp with time zone,
 
@@ -468,20 +490,24 @@ fused design wanted, now opt-in:
   and is often already addressable over the protocol the source came in on, so the cold-contact
   problem of §A.3 is reduced or eliminated.
 
-### C.3 Consent models reconciled
+### C.3 The consent model is uniform across both edges
 
-The two consent rules (Decision 5) interact cleanly precisely because the edges are separate:
+The single consent rule (Decision 5) interacts cleanly precisely because the edges are separate, and
+because consent gates *only* money:
 
 - The **dispute right is independent of money.** A cited author may dispute whether or not a tribute
-  is attached, and the right does not expire when the tribute window lapses.
-- If a tribute references a citation and the cited author **declines the money or strikes the public
-  credit** (§A.5 (ii)/(iii)), the **citation survives** — only the tribute and the "supported by"
-  framing are removed (`public_credit_visible = false`; the tribute never goes live, or if already
-  live, stops deducting from future payouts — no held funds to return). The
-  record of what they said, and their right to contest it, are untouched.
+  is attached, and the right does not expire when the tribute money lapses.
+- The **credit right is the author's, independent of consent.** Naming a source as an influence stands
+  whether or not money is attached and whether or not the inspirer likes it; the inspirer's recourse is
+  a disclaimer counter-edge (§Design B), not a removal.
+- If a tribute references a citation and the cited author **declines the money** (§A.5 (ii)), the
+  **citation and the credit both survive** — only the money is withheld (the tribute never goes live,
+  or if already live, stops deducting from future payouts; no held funds to return). The record of what
+  they said, the author's record of their own debt, and the right to contest both, are untouched.
 
-In one line: **you cannot buy the right to characterise someone, and they cannot suppress an accurate
-characterisation by refusing the gift.**
+In one line: **you cannot buy the right to characterise someone, you do not need their leave to credit
+them, and they can suppress neither an accurate characterisation nor your account of your own
+influences by refusing the money.**
 
 ### C.4 The ledger keeps citation free
 
@@ -533,7 +559,7 @@ clocks (citation publish; tribute consent → per-cycle payout) never merge.
    hold/credit-back markers (`balance_pence = balance_pence [-+]`) already in that scan will flag the
    write site otherwise. The one fixed constraint: the stake is **never forfeited** (forfeiture-on-wrong
    would be the reward-on-correct verdict this design refuses, inverted), so the friction is the
-   temporary lock-up alone. **What triggers the refund is left open** (§Open questions 5).
+   temporary lock-up alone. **What triggers the refund is left open** (§Open questions 4).
 5. **Unaddressable inspirer.** Name stands; money disabled. There is no payee to consent, so the
    tribute can never go `live` and no deduction is ever written. See §Open questions for whether to
    permit setting a percentage at all on an unreachable target.
@@ -586,19 +612,16 @@ clocks (citation publish; tribute consent → per-cycle payout) never merge.
 1. **Authoring granularity.** Tribute is per-piece (settled — earnings aren't per-passage). The
    *named* credit could be passage-anchored ("this section draws on X") using the endnote system.
    Adopt passage-anchored endnotes, or keep credit piece-level for v1?
-2. **Pre-consent public display.** While a tribute is `proposed`/`resolving`, does the inspirer's name
-   show publicly before they have consented? Naming someone as a supported influence pre-consent is a
-   reputational claim about them; deferring display until consent is safer but weakens the signal that
-   motivates a reply. Decide the default.
-3. **Percentage on an unreachable target.** Permit attaching a percentage to an unaddressable inspirer
+   (The *display* of the credit is no longer open — it stands on publish, needing no consent; §A.5.)
+2. **Percentage on an unreachable target.** Permit attaching a percentage to an unaddressable inspirer
    (it can never go `live` — there is no payee to consent — so it would only ever show an estimate
    that pays nothing) — or hard-disable the percentage field when there is no address?
-4. **The standing-marker judgement call.** Privileging the cited author's dispute at glance-level is a
+3. **The standing-marker judgement call.** Privileging the cited author's dispute at glance-level is a
    *standing* distinction (who was characterised vs bystander), not a truth-verdict — same logic as
    the existing `p` tag. It is the one place a reader could squint and read platform weighting. If that
    is unacceptable, the fallback is no glance-level marker at all (all disputes on expansion), at the
    cost of making "you misread me" easy to miss.
-5. **Dispute-stake refund trigger.** The third-party dispute stake (§Edge cases 4) is *never forfeited*
+4. **Dispute-stake refund trigger.** The third-party dispute stake (§Edge cases 4) is *never forfeited*
    — that much is fixed. What is open is **when it is credited back**: on the disputant withdrawing the
    dispute, after a fixed dwell (the §A.3 60-day clock is the obvious candidate), on the citation being
    corrected, or some combination. Each shapes the friction differently (a withdraw-only refund locks
@@ -644,7 +667,9 @@ clocks (citation publish; tribute consent → per-cycle payout) never merge.
    at tribute creation. Citation publish writes no ledger entry.
 6. **Web editor & claim page:** span selection + characterisation in TipTap; standing-bounded
    contested-marker render in the NIP-23 renderer; expand-context viewer; the cold claim page for a
-   possibly account-less inspirer (accept / decline-keep-name / decline-strike / ignore).
+   possibly account-less inspirer — a **money decision only** (accept / decline / ignore); the credit
+   is not on the claim page since it needs no consent (§A.5), and an objection to being named is a
+   disclaimer counter-edge, not a claim-page action.
 7. **Record view:** author-profile query of citations/disputes by pubkey, rendered as the standing
    record (no score).
 
