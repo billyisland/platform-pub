@@ -72,7 +72,7 @@ both `canonical_url` and `content_text`; `biddability_tier` lives on `feed_items
 |---|---|---|---|
 | **P1 — Dedup core** | link table migration + precomputed fingerprint + query-time dedup CTE in `sourceFilteredItems` + `ALSO ON` provenance | ~1 wk | **shipped 2026-06-20** |
 | **P2 — User-asserted links** | "Link to…" / "Unlink" on the external author profile, resolver-backed; owner-scoped links only | ~3–4 days | **shipped 2026-06-20** |
-| **P3 — Automated detection** | daily `identity_link_detect` task (domain-match shipped; bridge / cross-link deferred); introduces global links + the negative-override unlink | ~3 days | **shipped 2026-06-20** |
+| **P3 — Automated detection** | daily `identity_link_detect` task (domain-match + bridge shipped; cross-link deferred); introduces global links + the negative-override unlink | ~3 days | **shipped 2026-06-20** |
 
 Total ≈ 2 weeks. No infrastructure gate — pure application logic.
 
@@ -231,12 +231,49 @@ fetch, no SSRF surface — the locked decision).
   reader only); the detection task end-to-end via a rolled-back dev-DB smoke (RSS
   + custom atproto handle on the same domain ⇒ one owner-NULL `domain_match`
   link). Full suites green (gateway 149, feed-ingest 174).
-- **Deferred (the link_type vocab already supports them):** `cross_link`
-  (bidirectional profile references) and `bridge` (Bridgy-style bridged actors) —
-  each is another detector writing its own link_type with its own recompute, slots
-  into the same task. Also deferred: the quorum-promotion network-effect recovery
-  (below) and a Vitest suite over the route layer (the routes are exercised only
-  via the read-path integration test + the live smoke).
+- **Deferred (the link_type vocab already supports it):** `cross_link`
+  (bidirectional profile references parsed from bios) — another detector writing
+  its own link_type with its own recompute, slots into the same task; needs cached
+  bio metadata to honour the stored-metadata-only rule. Also deferred: the
+  quorum-promotion network-effect recovery (below) and a Vitest suite over the
+  route layer (the routes are exercised only via the read-path integration test +
+  the live smoke).
+
+### P3 follow-on — bridge detector (shipped 2026-06-20)
+
+The `bridge` detector now ships alongside `domain_match` in the same
+`identity_link_detect` task (`feed-ingest/src/tasks/identity-link-detect.ts`,
+link_type `'bridge'`, confidence 0.95). **Evidence source: stored metadata only**
+— the original identity is embedded in the bridged mirror's own identity string,
+so no remote fetch (the SLICE-8 decision holds).
+
+- **Three signals, each keying on a globally-unique original identifier read off
+  the stored string:**
+  - Bridgy Fed **Bluesky→fediverse**: the AP mirror's actor URL
+    `https://bsky.brid.gy/ap/<DID>` ⇒ extract the DID ⇒ link to the native
+    `atproto` source whose `source_uri` *is* that DID.
+  - **mostr.pub Nostr→fediverse**: the AP mirror's actor URL embeds the original
+    `npub` ⇒ `nip19` decode to hex ⇒ link to the native `nostr_external` source.
+  - Bridgy Fed **fediverse→Bluesky**: the atproto mirror's handle
+    `<user>.<instance>.ap.brid.gy` ⇒ reconstruct `<user>@<instance>` ⇒ link to
+    the native `activitypub` source with that `external_authors.handle`.
+- **False-positive guard:** a pair links only when **≥1 endpoint is a bridge
+  mirror** (the decoded-key-vs-native-key grouping with an `isBridge` flag), so
+  two unrelated natives that happen to share a key never link; a mirror whose
+  identity fails to decode contributes nothing (never falls back to its
+  bridge-host native key). `mostr.pub` added to the `PLATFORM_DOMAINS` denylist.
+- **Conflict ordering:** `uq_idlink_global` is unique on the *pair alone* (one
+  global link per pair, any link_type), so the recompute DELETEs both global
+  automated types then inserts **bridge before domain_match** — the higher-
+  confidence, more specific signal wins a pair both detectors claim. Self-healing
+  full recompute in one transaction, same as domain_match; `user_unlinked`
+  tombstones key on the pair so they survive.
+- **Verified:** 16 new unit tests over the pure helpers
+  (`npubToHex`/`decodeApBridgeHandle`/`bridgeIdentityKeys`/`bridgeMatchPairs` —
+  all three signal directions, the ≥1-bridge guard, the no-match and
+  failed-decode cases, the deduped two-network case) — feed-ingest suite 190
+  green; a rolled-back dev-DB smoke confirming bridge wins the shared-pair
+  conflict over domain_match (survivor `bridge`/0.95).
 
 ## Schema
 

@@ -724,11 +724,15 @@ posture), not code.**
 > `user_asserted` only, server-derived `source_a`, link-aware GC) + the
 > resolver-backed `IdentityLinkControl` on the external author profile, which
 > creates the first links and turns P1 live. **P3 also shipped 2026-06-20** —
-> the `identity_link_detect` task (domain_match from stored metadata, behind
-> `IDENTITY_LINK_DETECT_ENABLED`) writes global links, and unlinking a global
-> link writes an owner-scoped `user_unlinked` tombstone the read path subtracts
-> (cross_link/bridge detection deferred). See the re-based plan's "P1/P2/P3 —
-> what shipped" sections.
+> the `identity_link_detect` task (domain_match + bridge from stored metadata,
+> behind `IDENTITY_LINK_DETECT_ENABLED`) writes global links, and unlinking a
+> global link writes an owner-scoped `user_unlinked` tombstone the read path
+> subtracts. The `bridge` detector (link_type `'bridge'`, confidence 0.95;
+> shipped 2026-06-20) links Bridgy Fed / mostr.pub mirrors to their native
+> originals by reading the original DID / npub / fedi-acct embedded in the
+> mirror's stored identity string — no remote fetch. (`cross_link` bio-parse
+> detection still deferred.) See the re-based plan's "P1/P2/P3 — what shipped"
+> sections.
 
 As the platform accumulates external sources across protocols, a pattern
 emerges: the same human posts on Mastodon _and_ Bluesky _and_ publishes

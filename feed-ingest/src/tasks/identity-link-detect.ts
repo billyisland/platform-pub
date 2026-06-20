@@ -1,4 +1,5 @@
 import type { Task } from "graphile-worker";
+import { nip19 } from "nostr-tools";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
@@ -25,9 +26,26 @@ import logger from "@platform-pub/shared/lib/logger.js";
 //   a platform (e.g. an instance host we didn't denylist) and dropped. So only a
 //   domain owned by a small number of sources can ever link them.
 //
-// Deferred signals (the link_type vocab already carries them): 'cross_link'
-// (bidirectional profile references) and 'bridge' (Bridgy-style bridged actors).
-// Each is just another detector writing its own link_type with its own recompute.
+// Shipped signal — BRIDGE (link_type 'bridge', confidence 0.95): a protocol
+// bridge mirrors one identity onto another network, and the bridged mirror
+// EMBEDS the original identity, so the mirror and the native original are the
+// same person. All three signals are read straight off the stored identity
+// string — no remote fetch:
+//   • Bridgy Fed, Bluesky→fediverse: the AP mirror's actor URL is
+//     https://bsky.brid.gy/ap/<original DID> → link to the native atproto source
+//     whose source_uri IS that DID.
+//   • mostr.pub, Nostr→fediverse: the AP mirror's actor URL embeds the original
+//     npub → decode to hex → link to the native nostr_external source.
+//   • Bridgy Fed, fediverse→Bluesky: the atproto mirror's handle is
+//     <user>.<instance>.ap.brid.gy → reconstruct <user>@<instance> → link to the
+//     native activitypub source with that handle.
+// Each match keys on a globally-unique original identifier (DID / hex / acct);
+// a pair links only when ≥1 endpoint is a bridge mirror, so two natives can't
+// link via this path. Self-healing full recompute, same as domain_match.
+//
+// Deferred signal (the link_type vocab already carries it): 'cross_link'
+// (bidirectional profile references parsed from bios — needs cached bio metadata).
+// It is just another detector writing its own link_type with its own recompute.
 //
 // Ships dark behind IDENTITY_LINK_DETECT_ENABLED (feed-ingest only schedules the
 // cron when on). Spec: SLICE-8-IDENTITY-LINKING-PLAN.md §P3.
@@ -66,6 +84,7 @@ const PLATFORM_DOMAINS = new Set([
   "web.brid.gy",
   "ap.brid.gy",
   "bsky.brid.gy",
+  "mostr.pub",
 ]);
 
 // Multi-part public suffixes where the registrable domain is the last THREE
@@ -188,6 +207,164 @@ export function domainMatchPairs(
   return pairs;
 }
 
+// =============================================================================
+// Bridge detection (link_type 'bridge', confidence 0.95)
+// =============================================================================
+
+// Bridge actor hosts (exact hostname, not registrable domain — the subdomain
+// carries the meaning: bsky.brid.gy ≠ ap.brid.gy).
+const BRIDGE_HOST_BSKY = "bsky.brid.gy"; // Bluesky→fediverse mirror (an AP source)
+const BRIDGE_HOST_MOSTR = "mostr.pub"; // Nostr→fediverse mirror (an AP source)
+const BRIDGE_SUFFIX_AP = ".ap.brid.gy"; // fediverse→Bluesky mirror (an atproto handle)
+
+const BRIDGE_CONFIDENCE = 0.95;
+
+/** npub → 64-char hex pubkey via NIP-19; null if not a valid npub. Pure. */
+export function npubToHex(npub: string): string | null {
+  try {
+    const decoded = nip19.decode(npub.trim());
+    return decoded.type === "npub" ? decoded.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** First `did:plc:`/`did:web:` substring of a string, lower-cased; null if none. */
+function extractDid(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const m = value.match(/did:(?:plc|web):[a-zA-Z0-9._:%-]+/);
+  return m ? m[0].toLowerCase() : null;
+}
+
+/** First bech32 `npub1…` substring of a string; null if none. */
+function extractNpub(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const m = value.match(/npub1[023456789acdefghjklmnpqrstuvwxyz]+/);
+  return m ? m[0] : null;
+}
+
+/**
+ * Decode a Bridgy Fed fediverse→Bluesky handle (`<user>.<instance>.ap.brid.gy`)
+ * back to the original fediverse acct (`user@instance`), lower-cased. Returns
+ * null when the handle isn't a Bridgy AP handle or can't be split into a
+ * user + a host (the instance part must itself look like a domain). Pure.
+ */
+export function decodeApBridgeHandle(handle: string | null | undefined): string | null {
+  if (!handle) return null;
+  const h = handle.trim().toLowerCase();
+  if (!h.endsWith(BRIDGE_SUFFIX_AP)) return null;
+  const inner = h.slice(0, -BRIDGE_SUFFIX_AP.length); // user.instance.tld
+  const dot = inner.indexOf(".");
+  if (dot <= 0) return null;
+  const user = inner.slice(0, dot);
+  const instance = inner.slice(dot + 1);
+  if (!user || !instance.includes(".")) return null; // instance must be a host
+  return `${user}@${instance}`;
+}
+
+/** A source is a bridge mirror when its identity string lives on a bridge host. */
+function isBridgeMirror(row: DetectSourceRow): boolean {
+  if (row.protocol === "activitypub") {
+    const host = hostOf(row.source_uri)?.toLowerCase() ?? null;
+    return host === BRIDGE_HOST_BSKY || host === BRIDGE_HOST_MOSTR;
+  }
+  if (row.protocol === "atproto") {
+    return (row.handle ?? "").trim().toLowerCase().endsWith(BRIDGE_SUFFIX_AP);
+  }
+  return false;
+}
+
+/**
+ * The decoded ORIGINAL identity key(s) a bridge mirror points at, in the
+ * native key-space of the bridged-from network (so they collide with that
+ * network's `nativeIdentityKey`). Empty for a non-mirror. Pure.
+ */
+export function bridgeIdentityKeys(row: DetectSourceRow): string[] {
+  const keys: string[] = [];
+  if (row.protocol === "activitypub") {
+    const host = hostOf(row.source_uri)?.toLowerCase() ?? null;
+    if (host === BRIDGE_HOST_BSKY) {
+      const did = extractDid(row.source_uri);
+      if (did) keys.push(`atproto:${did}`);
+    } else if (host === BRIDGE_HOST_MOSTR) {
+      const npub = extractNpub(row.source_uri);
+      const hex = npub ? npubToHex(npub) : null;
+      if (hex) keys.push(`nostr:${hex}`);
+    }
+  } else if (row.protocol === "atproto") {
+    const acct = decodeApBridgeHandle(row.handle);
+    if (acct) keys.push(`ap:${acct}`);
+  }
+  return keys;
+}
+
+/** The canonical identity key a NATIVE (non-mirror) source owns. Pure. */
+function nativeIdentityKey(row: DetectSourceRow): string | null {
+  switch (row.protocol) {
+    case "atproto":
+      return `atproto:${row.source_uri.trim().toLowerCase()}`; // a DID
+    case "nostr_external":
+      return `nostr:${row.source_uri.trim().toLowerCase()}`; // a hex pubkey
+    case "activitypub":
+      return row.handle ? `ap:${row.handle.trim().toLowerCase()}` : null; // user@instance
+    default:
+      return null; // rss/email — never a bridge endpoint
+  }
+}
+
+/**
+ * Group sources by identity key — a bridge mirror contributes its decoded
+ * original key(s), a native its own key — and emit the ordered source-id pairs
+ * to link. A pair links only when ≥1 endpoint is a bridge mirror, so two
+ * unrelated natives that happen to share a key never link. Pure — unit-tested.
+ */
+export function bridgeMatchPairs(rows: DetectSourceRow[]): Array<[string, string]> {
+  interface Emit {
+    sourceId: string;
+    key: string;
+    isBridge: boolean;
+  }
+  const emits: Emit[] = [];
+  for (const row of rows) {
+    const decoded = bridgeIdentityKeys(row);
+    if (decoded.length) {
+      for (const key of decoded) emits.push({ sourceId: row.source_id, key, isBridge: true });
+    } else if (!isBridgeMirror(row)) {
+      // A bridge mirror whose identity failed to decode contributes nothing —
+      // never fall back to its (bridge-host) native key.
+      const key = nativeIdentityKey(row);
+      if (key) emits.push({ sourceId: row.source_id, key, isBridge: false });
+    }
+  }
+
+  const byKey = new Map<string, Emit[]>();
+  for (const e of emits) {
+    let arr = byKey.get(e.key);
+    if (!arr) byKey.set(e.key, (arr = []));
+    arr.push(e);
+  }
+
+  const pairs: Array<[string, string]> = [];
+  const seen = new Set<string>();
+  for (const [, group] of byKey) {
+    if (group.length < 2) continue;
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        const a = group[i];
+        const b = group[j];
+        if (a.sourceId === b.sourceId) continue; // same source via two keys
+        if (!a.isBridge && !b.isBridge) continue; // need a bridge endpoint
+        const [x, y] = a.sourceId < b.sourceId ? [a.sourceId, b.sourceId] : [b.sourceId, a.sourceId];
+        const k = `${x}|${y}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        pairs.push([x, y]);
+      }
+    }
+  }
+  return pairs;
+}
+
 export const identityLinkDetect: Task = async (_payload, _helpers) => {
   // Pull every source plus (when tier A/B) its author's website + handle. The
   // author maps to the source on (protocol, source_uri = the author's stable
@@ -200,33 +377,53 @@ export const identityLinkDetect: Task = async (_payload, _helpers) => {
          ON xa.protocol = es.protocol AND xa.stable_handle = es.source_uri`,
   );
 
-  const pairs = domainMatchPairs(rows);
+  const domainPairs = domainMatchPairs(rows);
+  const bridgePairs = bridgeMatchPairs(rows);
 
-  // Self-healing full recompute in one transaction: replace the global
-  // domain_match set wholesale so stale links (metadata changed) heal. Tombstones
+  // Self-healing full recompute in one transaction: replace the global automated
+  // sets wholesale so stale links (metadata changed) heal. Tombstones
   // (user_unlinked) live in separate rows keyed on the pair, so they survive.
+  //
+  // uq_idlink_global is unique on the PAIR alone (one global link per pair, any
+  // link_type), so a pair claimed by both detectors keeps just one row. Insert
+  // bridge (0.95) BEFORE domain_match (0.6) so the higher-confidence, more
+  // specific signal wins the conflict.
   const inserted = await withTransaction(async (client) => {
     await client.query(
       `DELETE FROM external_identity_links
-        WHERE link_type = 'domain_match' AND owner_id IS NULL`,
+        WHERE link_type IN ('bridge', 'domain_match') AND owner_id IS NULL`,
     );
-    let n = 0;
-    for (const [a, b] of pairs) {
-      const { rowCount } = await client.query(
-        `INSERT INTO external_identity_links
-           (source_a_id, source_b_id, link_type, confidence, owner_id)
-         VALUES ($1, $2, 'domain_match', 0.6, NULL)
-         ON CONFLICT (source_a_id, source_b_id) WHERE owner_id IS NULL
-           DO NOTHING`,
-        [a, b],
-      );
-      n += rowCount ?? 0;
-    }
-    return n;
+    const insertGlobal = async (
+      candidatePairs: Array<[string, string]>,
+      linkType: string,
+      confidence: number,
+    ): Promise<number> => {
+      let n = 0;
+      for (const [a, b] of candidatePairs) {
+        const { rowCount } = await client.query(
+          `INSERT INTO external_identity_links
+             (source_a_id, source_b_id, link_type, confidence, owner_id)
+           VALUES ($1, $2, $3, $4, NULL)
+           ON CONFLICT (source_a_id, source_b_id) WHERE owner_id IS NULL
+             DO NOTHING`,
+          [a, b, linkType, confidence],
+        );
+        n += rowCount ?? 0;
+      }
+      return n;
+    };
+    const bridge = await insertGlobal(bridgePairs, "bridge", BRIDGE_CONFIDENCE);
+    const domainMatch = await insertGlobal(domainPairs, "domain_match", 0.6);
+    return { bridge, domainMatch };
   });
 
   logger.info(
-    { sources: rows.length, candidatePairs: pairs.length, inserted },
+    {
+      sources: rows.length,
+      bridgePairs: bridgePairs.length,
+      domainPairs: domainPairs.length,
+      inserted,
+    },
     "identity_link_detect",
   );
 };
