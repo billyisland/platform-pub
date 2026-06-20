@@ -711,6 +711,12 @@ posture), not code.**
 
 ## Slice 8 — Cross-source identity linking
 
+> **Re-based implementation plan: `SLICE-8-IDENTITY-LINKING-PLAN.md`.** §8C/§8F
+> below predate `external_authors` (migration 099) and the retirement of the
+> Subscriptions page — the plan reconciles them (link grain stays source-level;
+> claim slot deferred; UI moves to the author profile) and adds the owner model
+> + dedup CTE design. §8A/§8B/§8D/§8E stand.
+
 As the platform accumulates external sources across protocols, a pattern
 emerges: the same human posts on Mastodon _and_ Bluesky _and_ publishes
 an RSS newsletter. A reader who follows all three sees the same content

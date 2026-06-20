@@ -413,11 +413,11 @@ Unified card interaction model across all four card types (ArticleCard, NoteCard
 
 Everything else in §IV–§VIII (region map for Article/External, biddability tier, `is_reply` dual-write + backfill, provenance line + tier degradation, author modal A→D, source attribution, touch `⋯` sheet, keyboard parity, §VI.3 backlog item) verified present and faithful.
 
-**Constructed external author profile pages** — unified cross-platform post history for external authors. Deferred from CARD-BEHAVIOUR-ADR §VI.3. Needs its own ADR. Prerequisite: cross-source identity linking (feed-ingest Slice 8).
+**Constructed external author profile pages** — unified cross-platform post history for external authors. Deferred from CARD-BEHAVIOUR-ADR §VI.3. Needs its own ADR. Prerequisite: cross-source identity linking (feed-ingest Slice 8 — re-based implementation plan in `SLICE-8-IDENTITY-LINKING-PLAN.md`).
 
 **Feed-ingest slices 7–9 — `FEED-INGEST-ATTACK-PLAN.md`**
 
-Three new slices added to the feed-ingest build plan. Slice 7: ActivityPub inbox (push delivery — real-time AP, edit/delete propagation; posture-gated). Slice 8: cross-source identity linking (dedup when following same person on multiple protocols; no infrastructure gate). Slice 9: CARD-BEHAVIOUR-ADR feed support (`is_reply` column + biddability tier on API; 1–2 days, smallest slice, unblocks card behaviour frontend).
+Three new slices added to the feed-ingest build plan. Slice 7: ActivityPub inbox (push delivery — real-time AP, edit/delete propagation; posture-gated). Slice 8: cross-source identity linking (dedup when following same person on multiple protocols; no infrastructure gate) — **re-based implementation plan in `SLICE-8-IDENTITY-LINKING-PLAN.md`** (link grain stays source-level, claim slot deferred, owner-aware link model + query-time dedup CTE design). Slice 9: CARD-BEHAVIOUR-ADR feed support (`is_reply` column + biddability tier on API; 1–2 days, smallest slice, unblocks card behaviour frontend).
 
 **Codebase audit — `docs/audits/AUDIT-REPORT.md`**
 
