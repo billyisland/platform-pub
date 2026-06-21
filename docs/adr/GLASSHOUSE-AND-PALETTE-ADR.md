@@ -427,7 +427,15 @@ ramp simply inverts.
    feed subtree is immune to the global mode. The **ForallMenu disc + dropdown**
    (locked nav chrome) and the FeedComposer **scheme swatch** (true-colour
    preview) carry the same island. The **wordmark** is a sibling over the floor,
-   so it flips to light via `var(--ah-ink)`.
+   so it flips to light via `var(--ah-ink)`. **The disc itself, though islanded,
+   deliberately inverts its own fill/glyph in dark mode** (2026-06-21): rather
+   than letting the island freeze it, `ForallMenu.tsx` picks `discBg`/`discGlyph`
+   off `useColorScheme().dark` — light mode is the dark `ink-925` disc + light
+   `bone` glyph, dark mode is the photo-negative (light `bone` disc + dark
+   `ink-925` glyph). Both tokens still resolve to canonical light inside the
+   island, so the swap is the explicit JS choice, not the root inversion; the
+   close-X glyph and the unread-badge ring track the same pair. The **dropdown
+   menu is unaffected** (stays light).
 
 3. **Mobile feeds follow the toggle uniformly** (per-feed scheme ignored):
    `WorkspaceView.renderFeedContents` + `interiorFor` use `globalContentPalette(dark)`

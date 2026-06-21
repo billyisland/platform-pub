@@ -811,3 +811,14 @@ html.dark {
 .logo-spin:hover svg {
   transform: rotate(360deg);
 }
+
+/* ── Pushed-screen slide-in (mobile Messages thread drill-down) ─────────────── */
+
+@keyframes ah-push-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-push-in {
+  animation: ah-push-in-right 200ms ease-out;
+}

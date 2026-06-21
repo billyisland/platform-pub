@@ -3,25 +3,32 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { useUnreadCounts } from '../../stores/unread'
 import { messages as messagesApi, type Conversation } from '../../lib/api'
 import { ConversationList } from './ConversationList'
 import { MessageThread } from './MessageThread'
 import { NotificationsPanel } from '../notifications/NotificationsPanel'
 
 // =============================================================================
-// MessagesInbox — the merged notifications + direct-messages surface. Three
-// columns: the notifications activity log (left), the conversation list
-// (middle), and the message reading pane (right). Hosted in the workspace
-// Glasshouse (MessagesOverlay), which supplies the frame + overlay resize.
+// MessagesInbox — the merged notifications + direct-messages surface.
 //
-// A `new_message` notification in the left column selects that conversation in
-// the reading pane in place (via NotificationsPanel's onMessageActivate) rather
-// than routing away — notifications and DMs are one surface now.
+// Desktop (md+): three columns side-by-side — the notifications activity log
+// (left), the conversation list (middle), and the message reading pane (right).
 //
-// Layout is one flex row that doubles as a mobile surface: on <md it's a
-// horizontal snap-pager (each column full-width), on md+ the columns sit
-// side-by-side. The conversation-list column carries a grey ground so the three
-// columns separate by surface contrast alone — no divider rule.
+// Mobile (<md): two peer pages swiped horizontally — Notifications and Messages
+// — with a segmented header that mirrors the swipe position and lets you tap
+// between them. The Messages page is a self-contained drill-down: it shows the
+// conversation list, and selecting a conversation pushes the thread in as a
+// full-cover layer over it. The thread pops back to the list via its back arrow
+// OR a right-swipe (the iOS-style back gesture) — so the drill-down never leaves
+// the Messages page, and the pager's swipe axis only ever flips the two peers.
+//
+// A `new_message` notification (left/page-1) selects that conversation in the
+// reading pane in place (via NotificationsPanel's onMessageActivate) — on mobile
+// it also pages across to Messages — rather than routing away.
+//
+// Hosted in the workspace Glasshouse (MessagesOverlay), which supplies the frame
+// + overlay resize and (on mobile) the full-screen sheet.
 // =============================================================================
 
 export function MessagesInbox({
@@ -33,12 +40,18 @@ export function MessagesInbox({
 }) {
   const { user } = useAuth()
   const isMobile = useIsMobile()
+  const { notificationCount, dmCount } = useUnreadCounts()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConvId, setActiveConvId] = useState<string | null>(null)
   const [showNewMessage, setShowNewMessage] = useState(false)
   const [newRecipient, setNewRecipient] = useState('')
   const [creating, setCreating] = useState(false)
-  const readingColRef = useRef<HTMLDivElement>(null)
+
+  // Mobile pager — the horizontal swipe between the two peer pages. `pagerRef`
+  // is the snap-scroll container; `mobilePage` mirrors the resting page so the
+  // segmented header tracks swipes.
+  const pagerRef = useRef<HTMLDivElement>(null)
+  const [mobilePage, setMobilePage] = useState(0)
 
   async function fetchConversations() {
     try {
@@ -55,29 +68,94 @@ export function MessagesInbox({
   }, [activeConvId])
 
   useEffect(() => { if (user) void fetchConversations() }, [user])
+  useEffect(() => { if (user) void useUnreadCounts.getState().fetch() }, [user])
 
-  // Seed the active conversation (overlay passes the store value), else default
-  // to the most recent one.
+  // Seed the active conversation (overlay passes the store value). On desktop,
+  // default to the most recent one so the reading pane is filled; on mobile,
+  // leave it null so the Messages page rests on the conversation list (the
+  // thread is a drill-down, opened by tapping).
   useEffect(() => {
     if (initialConversationId) {
       setActiveConvId(initialConversationId)
-    } else if (conversations.length > 0 && !activeConvId) {
+    } else if (!isMobile && conversations.length > 0 && !activeConvId) {
       setActiveConvId(conversations[0].id)
     }
-  }, [conversations, initialConversationId])
+  }, [conversations, initialConversationId, isMobile])
 
-  // Select a conversation, leaving the new-message form, and (on the mobile
-  // pager) bring the reading column into view. No-op horizontally on desktop
-  // (the row doesn't scroll there).
+  // Slide the mobile pager to a page. `smooth=false` for the initial jump (no
+  // animation on open); a smooth slide for in-surface navigation.
+  const goToPage = useCallback((idx: number, smooth = true) => {
+    const el = pagerRef.current
+    if (!el) return
+    el.scrollTo({ left: idx * el.clientWidth, behavior: smooth ? 'smooth' : 'auto' })
+    setMobilePage(idx)
+  }, [])
+
+  // Keep the segmented header in step with a finger-swipe.
+  const onPagerScroll = useCallback(() => {
+    const el = pagerRef.current
+    if (!el) return
+    const idx = Math.round(el.scrollLeft / el.clientWidth)
+    setMobilePage(prev => (prev === idx ? prev : idx))
+  }, [])
+
+  // Open with a seeded conversation → land on the Messages page (showing the
+  // thread) without animation. Runs when mobile resolves true and the pager has
+  // mounted.
+  useEffect(() => {
+    if (isMobile && initialConversationId) {
+      requestAnimationFrame(() => goToPage(1, false))
+    }
+  }, [isMobile, initialConversationId, goToPage])
+
+  // Select a conversation (from the list, or a `new_message` notification). On
+  // mobile, ensure we're on the Messages page so the thread is in view.
   const selectConversation = useCallback((id: string | null) => {
     setShowNewMessage(false)
     setActiveConvId(id)
-    if (isMobile && id) {
-      requestAnimationFrame(() => {
-        readingColRef.current?.scrollIntoView({ inline: 'start', block: 'nearest', behavior: 'smooth' })
-      })
+    // Seat the list underneath the cover so popping the thread reveals it (and
+    // the segmented header reads "Messages"). Instant — the cover hides it.
+    if (isMobile && id) goToPage(1, false)
+  }, [isMobile, goToPage])
+
+  // Leave the thread / new-message form → back to the conversation list. On the
+  // mobile drill-down this is the thread's back arrow (and the right-swipe); on
+  // desktop it clears the reading pane to its empty state.
+  const clearActive = useCallback(() => {
+    setShowNewMessage(false)
+    setActiveConvId(null)
+  }, [])
+
+  // Right-swipe-to-dismiss on the mobile thread cover (the iOS-style back
+  // gesture). Pops the drill-down back to the conversation list. We only act on
+  // a decisively-horizontal rightward flick, and never from inside a text field
+  // (so typing/selection isn't hijacked) or a horizontally-scrollable child (so
+  // wide media keeps scrolling) — mirroring the mobile pager's restraint.
+  const swipe = useRef<{ x: number; y: number; ok: boolean } | null>(null)
+  const onCoverTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0]
+    let el = e.target as HTMLElement | null
+    let ok = true
+    while (el && el !== e.currentTarget) {
+      const tag = el.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable) { ok = false; break }
+      if (el.scrollWidth > el.clientWidth) {
+        const ox = getComputedStyle(el).overflowX
+        if (ox === 'auto' || ox === 'scroll') { ok = false; break }
+      }
+      el = el.parentElement
     }
-  }, [isMobile])
+    swipe.current = { x: t.clientX, y: t.clientY, ok }
+  }, [])
+  const onCoverTouchEnd = useCallback((e: React.TouchEvent) => {
+    const s = swipe.current
+    swipe.current = null
+    if (!s || !s.ok) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - s.x
+    const dy = t.clientY - s.y
+    if (dx > 64 && Math.abs(dx) > Math.abs(dy) * 1.5) clearActive()
+  }, [clearActive])
 
   async function handleNewConversation(e: React.FormEvent) {
     e.preventDefault()
@@ -104,12 +182,132 @@ export function MessagesInbox({
   const activeMemberName = otherMembers.map(m => m.displayName ?? m.username).join(', ') || 'Conversation'
   const activeMemberId = otherMembers.length === 1 ? otherMembers[0].id : undefined
 
+  // The new-message form — reused by the desktop reading pane and the mobile
+  // Messages page.
+  const newMessageForm = (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-4 py-3 mb-1">
+        <button
+          onClick={() => setShowNewMessage(false)}
+          className="label-ui text-grey-600 hover:text-black"
+        >
+          &#8592;
+        </button>
+        <p className="text-ui-sm font-sans font-semibold text-black">New message</p>
+      </div>
+      <form onSubmit={handleNewConversation} className="p-4">
+        <label className="label-ui text-grey-600 block mb-2">To</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={newRecipient}
+            onChange={(e) => setNewRecipient(e.target.value)}
+            placeholder="Username"
+            className="flex-1 bg-glasshouse-well px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300"
+            autoFocus
+          />
+          <button type="submit" disabled={creating} className="btn text-sm disabled:opacity-50">
+            {creating ? '…' : 'Start'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+
+  const thread = (
+    <MessageThread
+      conversationId={activeConvId!}
+      memberName={activeMemberName}
+      memberId={activeMemberId}
+      onBack={clearActive}
+      onMessagesRead={handleMessagesRead}
+      headerRightInset
+    />
+  )
+
+  // ---------------------------------------------------------------------------
+  // Mobile — two peer pages, segmented header + horizontal snap-pager.
+  // ---------------------------------------------------------------------------
+  if (isMobile) {
+    const segments = [
+      { label: 'Notifications', unread: notificationCount, page: 0 },
+      { label: 'Messages', unread: dmCount, page: 1 },
+    ]
+    const coverActive = !!activeConvId || showNewMessage
+    return (
+      <div className={`relative flex flex-col ${className}`}>
+        {/* Segmented header — tracks the swipe, taps to jump. Right padding
+            clears the Glasshouse ✕ in the top-right corner. */}
+        <div role="tablist" aria-label="Messages sections" className="flex items-stretch gap-6 px-5 pr-12 shrink-0">
+          {segments.map(seg => {
+            const active = mobilePage === seg.page
+            return (
+              <button
+                key={seg.page}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => goToPage(seg.page)}
+                className="relative flex items-center gap-2 py-3.5 focus-ring"
+              >
+                <span className={`label-ui ${active ? 'text-black' : 'text-grey-400'}`}>{seg.label}</span>
+                {seg.unread > 0 && <span className="w-2 h-2 bg-crimson" aria-hidden="true" />}
+                {active && <span className="slab-rule-4 absolute inset-x-0 bottom-0" aria-hidden="true" />}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Pager — two full-width snap pages: notifications, conversation list. */}
+        <div
+          ref={pagerRef}
+          onScroll={onPagerScroll}
+          className="flex-1 min-h-0 flex overflow-x-auto snap-x snap-mandatory"
+        >
+          {/* Page 1 — notifications */}
+          <div className="w-full shrink-0 snap-start flex flex-col min-h-0 px-5 sm:px-8 py-6">
+            <NotificationsPanel
+              className="flex-1 min-h-0"
+              onMessageActivate={selectConversation}
+            />
+          </div>
+
+          {/* Page 2 — conversation list */}
+          <div className="w-full shrink-0 snap-start flex flex-col min-h-0">
+            <ConversationList
+              conversations={conversations}
+              activeId={activeConvId}
+              onSelect={(id) => selectConversation(id)}
+              onNewMessage={() => setShowNewMessage(true)}
+            />
+          </div>
+        </div>
+
+        {/* Drill-down — the thread (or new-message form) pushed in over the
+            list. Pops back via its own back arrow or a right-swipe. Absolute +
+            no z-index so it covers the list/header (positioned > static) but
+            stays below the Glasshouse ✕ (z-10), keeping the close-overlay
+            affordance live. */}
+        {coverActive && (
+          <div
+            className="absolute inset-0 bg-glasshouse flex flex-col animate-push-in"
+            onTouchStart={onCoverTouchStart}
+            onTouchEnd={onCoverTouchEnd}
+          >
+            {showNewMessage ? newMessageForm : thread}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // Desktop — three columns side-by-side.
+  // ---------------------------------------------------------------------------
   return (
-    <div
-      className={`flex overflow-x-auto md:overflow-x-hidden snap-x snap-mandatory md:snap-none ${className}`}
-    >
+    <div className={`flex ${className}`}>
       {/* Notifications — left */}
-      <div className="w-full md:w-auto md:flex-1 md:min-w-[300px] shrink-0 snap-center flex flex-col min-h-0 px-5 sm:px-8 py-10">
+      <div className="md:flex-1 md:min-w-[300px] shrink-0 flex flex-col min-h-0 px-5 sm:px-8 py-10">
         <NotificationsPanel
           className="flex-1 min-h-0"
           onMessageActivate={selectConversation}
@@ -118,7 +316,7 @@ export function MessagesInbox({
 
       {/* Conversation list — middle. Grey ground separates it from the white
           panes either side by surface contrast (no divider rule). */}
-      <div className="w-full md:w-[240px] shrink-0 snap-center flex flex-col min-h-0 bg-grey-100">
+      <div className="w-[240px] shrink-0 flex flex-col min-h-0 bg-grey-100">
         <ConversationList
           conversations={conversations}
           activeId={activeConvId}
@@ -128,49 +326,14 @@ export function MessagesInbox({
       </div>
 
       {/* Reading pane — right (deliberately the narrower column). */}
-      <div ref={readingColRef} className="w-full md:w-[400px] shrink-0 snap-center flex flex-col min-h-0">
-        {showNewMessage ? (
-          <div className="flex flex-col h-full">
-            <div className="flex items-center gap-3 px-4 py-3 mb-1">
-              <button
-                onClick={() => setShowNewMessage(false)}
-                className="label-ui text-grey-600 hover:text-black"
-              >
-                &#8592;
-              </button>
-              <p className="text-ui-sm font-sans font-semibold text-black">New message</p>
+      <div className="w-[400px] shrink-0 flex flex-col min-h-0">
+        {showNewMessage ? newMessageForm
+          : activeConvId ? thread
+          : (
+            <div className="flex-1 flex items-center justify-center px-6">
+              <p className="text-ui-sm font-sans text-grey-600 text-center">Select a conversation or start a new one.</p>
             </div>
-            <form onSubmit={handleNewConversation} className="p-4">
-              <label className="label-ui text-grey-600 block mb-2">To</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newRecipient}
-                  onChange={(e) => setNewRecipient(e.target.value)}
-                  placeholder="Username"
-                  className="flex-1 bg-glasshouse-well px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300"
-                  autoFocus
-                />
-                <button type="submit" disabled={creating} className="btn text-sm disabled:opacity-50">
-                  {creating ? '…' : 'Start'}
-                </button>
-              </div>
-            </form>
-          </div>
-        ) : activeConvId ? (
-          <MessageThread
-            conversationId={activeConvId}
-            memberName={activeMemberName}
-            memberId={activeMemberId}
-            onBack={() => setActiveConvId(null)}
-            onMessagesRead={handleMessagesRead}
-            headerRightInset
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center px-6">
-            <p className="text-ui-sm font-sans text-grey-600 text-center">Select a conversation or start a new one.</p>
-          </div>
-        )}
+          )}
       </div>
     </div>
   )

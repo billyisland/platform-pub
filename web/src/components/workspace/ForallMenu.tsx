@@ -12,6 +12,7 @@ import { useLibraryOverlay } from "../../stores/libraryOverlay";
 import { useNetworkOverlay } from "../../stores/networkOverlay";
 import { useGlasshousePresence } from "../../stores/glasshouse";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useColorScheme } from "../../stores/colorScheme";
 import { SearchPanel } from "./SearchPanel";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 
@@ -64,6 +65,14 @@ export function ForallMenu({
 }: ForallMenuProps) {
   const inBar = anchor === "bar";
   const discSize = inBar ? 36 : 56;
+  // The disc inverts under global dark mode — a light bone disc with a dark ink
+  // glyph, the photo-negative of the light-mode dark disc. The disc stays
+  // islanded (its tokens resolve to canonical light in both modes), so we pick
+  // the swapped token explicitly rather than letting the root inversion do it.
+  // The dropdown menu is unaffected (still light). See globals.css dark block.
+  const dark = useColorScheme((s) => s.dark);
+  const discBg = dark ? "var(--ah-bone)" : TOKENS.buttonBg;
+  const discGlyph = dark ? "var(--ah-ink-925)" : TOKENS.glyphFg;
   const router = useRouter();
   const logout = useAuth((s) => s.logout);
   const dmCount = useUnreadCounts((s) => s.dmCount);
@@ -368,10 +377,13 @@ export function ForallMenu({
       <div
         ref={containerRef}
         style={
-          // Light island: the ∀ disc + dropdown are LOCKED chrome — they render
-          // identically in light and dark mode (the disc stays dark ink-925 with
-          // a light bone glyph; the menu stays light). The wordmark is a sibling
-          // outside this island, so it flips to light on the dark floor.
+          // Light island: the dropdown is LOCKED chrome — it stays light in both
+          // modes (its tokens resolve to canonical light here). The disc lives in
+          // the same island so its tokens also resolve light, but it explicitly
+          // INVERTS its fill/glyph under dark mode (discBg/discGlyph above): a
+          // light bone disc + dark ink glyph, the photo-negative of light mode.
+          // The wordmark is a sibling outside this island, so it flips to light
+          // on the dark floor.
           inBar
             ? { ...LIGHT_ISLAND_STYLE, position: "fixed", right: 8, top: 6, zIndex: 60 }
             : { ...LIGHT_ISLAND_STYLE, position: "fixed", right: 24, bottom: 24, zIndex: 60 }
@@ -452,8 +464,8 @@ export function ForallMenu({
           width: discSize,
           height: discSize,
           borderRadius: "50%",
-          background: TOKENS.buttonBg,
-          color: TOKENS.buttonFg,
+          background: discBg,
+          color: discGlyph,
           border: "none",
           padding: 0,
           cursor: "pointer",
@@ -544,7 +556,7 @@ export function ForallMenu({
           <g
             clipPath="url(#forall-clip)"
             style={{
-              stroke: TOKENS.glyphFg,
+              stroke: discGlyph,
               opacity: showClose ? 0 : 1,
               transform: `rotate(${showClose ? -90 : 0}deg)`,
               transformBox: "view-box",
@@ -567,7 +579,7 @@ export function ForallMenu({
           <g
             clipPath="url(#forall-clip)"
             style={{
-              stroke: TOKENS.glyphFg,
+              stroke: discGlyph,
               opacity: showClose ? 1 : 0,
               transform: `rotate(${showClose ? 0 : 90}deg)`,
               transformBox: "view-box",
@@ -604,7 +616,7 @@ export function ForallMenu({
               fontWeight: 600,
               lineHeight: "20px",
               textAlign: "center",
-              border: `2px solid ${TOKENS.buttonBg}`,
+              border: `2px solid ${discBg}`,
             }}
           >
             {totalUnread > 99 ? "99+" : totalUnread}
