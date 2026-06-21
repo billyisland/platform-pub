@@ -1,5 +1,10 @@
 -- 121_ledger_opening_balance.sql
 --
+-- NOT idempotent: re-running outside the _migrations guard double-counts the
+-- opening entry (it recomputes L − B excluding opening_balance, so a second run
+-- treats the already-posted opening entry as fresh gap). Do not replay. The
+-- _migrations run-once guard already prevents the only realistic replay path.
+--
 -- Architecture-audit 2026-06-15 item 3 (keystone) — Phase 3 prerequisite:
 -- the one-time opening-balance backfill that lets the reader-balance read be
 -- cut over to the ledger view.

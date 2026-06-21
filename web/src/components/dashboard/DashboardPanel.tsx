@@ -29,6 +29,7 @@ import { PayrollTab } from './PayrollTab'
 import { PublicationEarningsTab } from './PublicationEarningsTab'
 import { SubscribersTab } from './SubscribersTab'
 import { AnalyticsTab } from './AnalyticsTab'
+import { traffologyEnabled } from '../../lib/featureFlags'
 import { useDashboardOverlay } from '../../stores/dashboardOverlay'
 import { useLedgerOverlay } from '../../stores/ledgerOverlay'
 import { useReader } from '../../stores/reader'
@@ -82,15 +83,19 @@ export function DashboardPanel({
       .catch(() => { /* non-critical */ })
   }, [user])
 
-  // Sync tab from URL (for notification deep-linking)
+  // Sync tab from URL (for notification deep-linking). Analytics is excluded
+  // while traffology is parked so a stale ?tab=analytics deep link can't mount
+  // the parked read surface (the pill is already hidden).
   useEffect(() => {
     const tab = rawTab ? (tabAliases[rawTab] ?? rawTab) : null
+    const pubTabsAllowed = ['articles', 'members', 'settings', 'rate-card', 'payroll', 'earnings', ...(traffologyEnabled() ? ['analytics'] : [])]
+    const personalTabsAllowed = ['articles', 'subscribers', 'proposals', 'pricing', ...(traffologyEnabled() ? ['analytics'] : [])]
     if (selectedContext) {
-      if (tab && ['articles', 'members', 'settings', 'rate-card', 'payroll', 'earnings', 'analytics'].includes(tab)) {
+      if (tab && pubTabsAllowed.includes(tab)) {
         setPubTab(tab as PubDashboardTab)
       }
     } else {
-      if (tab && ['articles', 'subscribers', 'proposals', 'pricing', 'analytics'].includes(tab)) {
+      if (tab && personalTabsAllowed.includes(tab)) {
         setActiveTab(tab)
       }
     }
@@ -155,11 +160,15 @@ export function DashboardPanel({
   const selectedPub = pubMemberships.find(p => p.slug === selectedContext)
   const isPublicationContext = !!selectedPub
 
-  const personalTabs: DashboardTab[] = ['articles', ...(user.isWriter ? ['subscribers' as DashboardTab, 'proposals' as DashboardTab] : []), 'pricing', 'analytics']
+  // Analytics is the traffology read surface (parked, item 8) — gate the tab so
+  // it doesn't hit the dead ingest container / parked tables until an operator
+  // flips NEXT_PUBLIC_TRAFFOLOGY_ENABLED on.
+  const analyticsTabs: DashboardTab[] = traffologyEnabled() ? ['analytics'] : []
+  const personalTabs: DashboardTab[] = ['articles', ...(user.isWriter ? ['subscribers' as DashboardTab, 'proposals' as DashboardTab] : []), 'pricing', ...analyticsTabs]
   const pubTabs: PubDashboardTab[] = [
     'articles', 'members', 'settings',
     ...(selectedPub?.can_manage_finances ? ['rate-card', 'payroll', 'earnings'] as PubDashboardTab[] : []),
-    'analytics',
+    ...(traffologyEnabled() ? ['analytics' as PubDashboardTab] : []),
   ]
 
   return (
@@ -293,7 +302,7 @@ export function DashboardPanel({
           {pubTab === 'earnings' && selectedPub.can_manage_finances && (
             <PublicationEarningsTab publicationId={selectedPub.id} />
           )}
-          {pubTab === 'analytics' && <AnalyticsTab />}
+          {pubTab === 'analytics' && traffologyEnabled() && <AnalyticsTab />}
         </>
       ) : (
         /* Personal dashboard */
@@ -338,7 +347,7 @@ export function DashboardPanel({
           {activeTab === 'subscribers' && <SubscribersTab />}
           {activeTab === 'proposals' && <ProposalsTab userId={user.id} />}
           {activeTab === 'pricing' && <PricingTab stripeReady={user.stripeConnectKycComplete} />}
-          {activeTab === 'analytics' && <AnalyticsTab />}
+          {activeTab === 'analytics' && traffologyEnabled() && <AnalyticsTab />}
         </>
       )}
     </>

@@ -18,7 +18,20 @@
 #   2. NEW-SITE SCAN — any backend file that performs a money MOVEMENT (a tab
 #      balance write, or an INSERT into a charge/payout money table) but is NOT
 #      in the registry trips the scan: a new money path appeared without being
-#      wired to the ledger. Register it here AND add the recordLedger call.
+#      wired to the ledger. Register it here AND add the recordLedger call. The
+#      scan covers all four backend source roots that could host a money path:
+#      gateway/src, payment-service/src, feed-ingest/src, shared/src.
+#
+# RESIDUAL GAP (read before trusting this green): both guards are PRESENCE
+# checks, not DELTA checks. Guard 1 counts recordLedger() calls per FILE (not
+# per write-site) and Guard 2's marker is a single-line regex with exact
+# spacing — so a money write that DOES call recordLedger() but with the WRONG
+# signed delta (a clamp/floor on the column the ledger entry doesn't mirror, or
+# a cross-line / aliased / odd-spacing balance write) passes both guards. This
+# tripwire would NOT have caught the three HIGH 2026-06-20-audit divergences on
+# its own. The structural fix is the negative-balance policy itself (same signed
+# delta, no clamp — CLAUDE.md › Money ledger), which removes the conditions that
+# produce divergence; this script only catches a DROPPED or UNREGISTERED call.
 #
 # Money movements that DON'T move a tab balance or a payout/charge table (e.g.
 # the provisional read_events INSERT, or the tab_settlements 'pending' reserve)
@@ -82,7 +95,7 @@ for entry in "${REGISTRY[@]}"; do
 done
 
 # ── Guard 2: no money-write site outside the registry ────────────────────────
-mapfile -t hit_files < <(grep -rlPn --include='*.ts' "$MARKERS" gateway/src payment-service/src 2>/dev/null | sort -u)
+mapfile -t hit_files < <(grep -rlPn --include='*.ts' "$MARKERS" gateway/src payment-service/src feed-ingest/src shared/src 2>/dev/null | sort -u)
 for f in "${hit_files[@]}"; do
   registered=0
   for entry in "${REGISTRY[@]}"; do

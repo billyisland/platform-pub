@@ -213,13 +213,18 @@ export async function identityLinkRoutes(app: FastifyInstance) {
         if (link.owner_id === null && link.link_type !== "user_unlinked") {
           // Tombstone the pair for this viewer. The pair is already ordered
           // (source_a_id < source_b_id) on the global row, so reuse it directly.
+          // The DO UPDATE skips when the viewer's own owner-scoped row is already
+          // a personal `user_asserted` link: the viewer both asserts this pair
+          // and is tombstoning the global for it → the personal assertion wins,
+          // the global stays (effectively) un-tombstoned for them (they assert it).
           await pool.query(
             `INSERT INTO external_identity_links
                (source_a_id, source_b_id, link_type, confidence, owner_id)
              VALUES ($1, $2, 'user_unlinked', 1.0, $3)
              ON CONFLICT (source_a_id, source_b_id, owner_id)
                WHERE owner_id IS NOT NULL
-               DO UPDATE SET link_type = 'user_unlinked'`,
+               DO UPDATE SET link_type = 'user_unlinked'
+                 WHERE external_identity_links.link_type <> 'user_asserted'`,
             [link.source_a_id, link.source_b_id, viewerId],
           );
           return reply.status(204).send();
