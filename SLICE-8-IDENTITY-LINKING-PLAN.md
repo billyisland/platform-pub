@@ -336,6 +336,33 @@ viewer's own existing tombstone are both 404 no-ops) and delegates the mutation 
   behavior**), a purely-asserted unlink (hard-deletes, no tombstone), and re-link
   after unlink (assert overrides the tombstone); full gateway suite 154 green.
 
+### Domain-match registrable-domain fix — real PSL (2026-06-21)
+
+`registrableDomain` (the `domain_match` detector's grouping key) derived the
+registrable domain from a **hand-curated** multi-label-suffix set
+(`THREE_LABEL_SUFFIXES`) with the count guard as the only backstop. Any ccTLD
+absent from that set (`co.id`, `co.kr`, `com.mx`, `co.il`, `com.tr`, `co.th`, …)
+was mis-derived to the **public suffix itself** — `alice.co.id` → `co.id`, which
+every `*.co.id` source shares — so up to `MAX_SOURCES_PER_DOMAIN` (4) unrelated
+sources falsely linked into one global `domain_match` cluster. Since dedup
+suppresses content, that over-merge **hides real posts** ("correctness is the whole
+game").
+
+Replaced the curated set with the full Public Suffix List via **`tldts`**
+(`getDomain`, `allowPrivateDomains:false` — a direct feed-ingest dependency; the lib
+was already transitively present). The PSL gives each owner a distinct eTLD+1
+(`alice.co.id` ≠ `bob.co.id`), and ICANN-only resolution keeps private-section
+suffixes (`pages.dev`, `github.io`, `substack.com`, …) at the two-label platform
+domain the `PLATFORM_DOMAINS` denylist already matches — **no denylist regression**,
+and IP / single-label / `www.` handling is preserved. The count guard stays as the
+backstop for shared platforms not on the denylist.
+
+- **Verified:** new unit tests (`identity-link-detect.test.ts`, now 32) — the ccTLD
+  over-merge at both `registrableDomain` and `domainMatchPairs` level (each **fails
+  under the old curated-suffix impl**), and the private-suffix/denylist-intact case;
+  feed-ingest suite 193 green, build + root lint clean. **Deploy note:** the
+  feed-ingest image must `npm install` the new `tldts` dep on rebuild.
+
 ## Schema
 
 ```sql

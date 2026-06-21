@@ -1,5 +1,6 @@
 import type { Task } from "graphile-worker";
 import { nip19 } from "nostr-tools";
+import { getDomain } from "tldts";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
@@ -87,35 +88,27 @@ const PLATFORM_DOMAINS = new Set([
   "mostr.pub",
 ]);
 
-// Multi-part public suffixes where the registrable domain is the last THREE
-// labels (e.g. example.co.uk), not two. Small curated set — the count guard
-// backstops anything missed. Not a full Public Suffix List by design (heavy).
-const THREE_LABEL_SUFFIXES = new Set([
-  "co.uk", "org.uk", "me.uk", "ac.uk", "gov.uk",
-  "com.au", "net.au", "org.au",
-  "co.nz", "co.za", "co.jp", "com.br", "co.in",
-]);
-
 /**
- * The registrable domain of a host, lower-cased: the last two labels, or the
- * last three for a known multi-part suffix. Returns null for an IP / single
- * label / empty input.
+ * The registrable domain of a host (eTLD+1), lower-cased — the part below the
+ * public suffix. Returns null for an IP / single label / public-suffix-only /
+ * empty input.
+ *
+ * Backed by the full Public Suffix List via `tldts` rather than a hand-curated
+ * multi-label-suffix set: the curated set silently mis-derived any ccTLD it
+ * missed (e.g. `alice.co.id` → `co.id`, the *public suffix itself*, which every
+ * `*.co.id` source shares), so two unrelated sources could falsely link up to the
+ * `MAX_SOURCES_PER_DOMAIN` count guard. The PSL collapses that class entirely:
+ * `alice.co.id` → `alice.co.id`, distinct from `bob.co.id`. ICANN-only
+ * (`allowPrivateDomains:false`, the default made explicit) so private-section
+ * suffixes (`pages.dev`, `github.io`, …) still resolve to the two-label platform
+ * domain the `PLATFORM_DOMAINS` denylist expects — no denylist regression. tldts
+ * also strips `www.`/subdomains and rejects IPs and single labels (→ null).
  */
 export function registrableDomain(host: string | null | undefined): string | null {
   if (!host) return null;
-  let h = host.trim().toLowerCase();
+  const h = host.trim().toLowerCase();
   if (!h) return null;
-  // Strip a leading "www.".
-  h = h.replace(/^www\./, "");
-  // Bare IPv4 (and obvious non-domains) → not a registrable domain.
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return null;
-  const labels = h.split(".").filter(Boolean);
-  if (labels.length < 2) return null;
-  const lastTwo = labels.slice(-2).join(".");
-  if (THREE_LABEL_SUFFIXES.has(lastTwo) && labels.length >= 3) {
-    return labels.slice(-3).join(".");
-  }
-  return lastTwo;
+  return getDomain(h, { allowPrivateDomains: false }) || null;
 }
 
 /** Parse a host out of a URL or a bare host string; null if unparseable. */

@@ -35,9 +35,27 @@ describe("registrableDomain", () => {
     expect(registrableDomain("blog.example.com")).toBe("example.com");
     expect(registrableDomain("EXAMPLE.COM")).toBe("example.com");
   });
-  it("uses three labels for known multi-part suffixes", () => {
+  it("handles multi-label public suffixes via the PSL", () => {
     expect(registrableDomain("alice.example.co.uk")).toBe("example.co.uk");
     expect(registrableDomain("example.com.au")).toBe("example.com.au");
+  });
+  it("does NOT collapse distinct owners under an uncurated ccTLD (the over-merge bug)", () => {
+    // co.id / co.kr / com.mx etc. were absent from the old hand-curated set, so
+    // the last-two-labels rule mis-derived `alice.co.id` → `co.id` — the public
+    // suffix itself — and any two `*.co.id` sources falsely shared a domain. The
+    // PSL gives each owner a distinct eTLD+1.
+    expect(registrableDomain("alice.co.id")).toBe("alice.co.id");
+    expect(registrableDomain("bob.co.id")).toBe("bob.co.id");
+    expect(registrableDomain("alice.co.id")).not.toBe(registrableDomain("bob.co.id"));
+    expect(registrableDomain("shop.com.mx")).toBe("shop.com.mx");
+    expect(registrableDomain("news.co.kr")).toBe("news.co.kr");
+  });
+  it("keeps private-section suffixes at the two-label platform domain (denylist intact)", () => {
+    // ICANN-only: pages.dev / github.io resolve to the platform string the
+    // PLATFORM_DOMAINS denylist matches, so there is no denylist regression.
+    expect(registrableDomain("alice.pages.dev")).toBe("pages.dev");
+    expect(registrableDomain("alice.github.io")).toBe("github.io");
+    expect(registrableDomain("foo.substack.com")).toBe("substack.com");
   });
   it("rejects IPs, single labels, and empty", () => {
     expect(registrableDomain("127.0.0.1")).toBeNull();
@@ -104,6 +122,24 @@ describe("domainMatchPairs", () => {
         row({ source_id: "b", protocol: "rss", source_uri: "https://b.substack.com/feed" }),
       ]),
     ).toEqual([]);
+  });
+
+  it("does NOT link unrelated owners under an uncurated ccTLD (over-merge regression)", () => {
+    // The old curated-suffix derivation collapsed alice.co.id and bob.co.id to
+    // `co.id`, falsely linking them. The PSL keeps them distinct → no pair.
+    expect(
+      domainMatchPairs([
+        row({ source_id: "a", protocol: "rss", source_uri: "https://alice.co.id/feed" }),
+        row({ source_id: "b", protocol: "rss", source_uri: "https://bob.co.id/feed" }),
+      ]),
+    ).toEqual([]);
+    // …but two surfaces of the SAME ccTLD owner still link.
+    expect(
+      domainMatchPairs([
+        row({ source_id: "a", protocol: "rss", source_uri: "https://alice.co.id/feed" }),
+        row({ source_id: "b", protocol: "atproto", handle: "alice.co.id" }),
+      ]),
+    ).toHaveLength(1);
   });
 
   it("count guard: a domain shared by more than MAX sources is treated as a platform", () => {
