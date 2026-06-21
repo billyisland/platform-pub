@@ -12,10 +12,16 @@
 // (`owner_id IS NULL`, P3 automated detection) or asserted by this reader
 // (`owner_id = $1`, P2 "Link to…"), minus any pair this reader has tombstoned
 // (P3 `user_unlinked` negative override — see below).
+//
+// HOST REQUIREMENT: because `DEDUP_CTES` contains a recursive CTE (the link-graph
+// transitive closure, `link_closure`), the host's top-level `WITH` MUST be
+// `WITH RECURSIVE` (Postgres puts the keyword once on the outer WITH; the
+// non-recursive CTEs in the list are unaffected). Both call sites — feeds/items.ts
+// and the integration test — open with `WITH RECURSIVE`.
 // =============================================================================
 
 // The dedup CTEs. Slot between `matched` and `scored`:
-//   WITH feed_mode AS (…), matched AS (…), ${DEDUP_CTES}, scored AS (…)
+//   WITH RECURSIVE feed_mode AS (…), matched AS (…), ${DEDUP_CTES}, scored AS (…)
 //
 // Two cross-posted copies (e.g. an article on RSS + its Bluesky share) carry
 // different effective_score, so they are not page-adjacent — in-page dedup leaks
@@ -23,15 +29,25 @@
 // suppress losers across the whole candidate set (`matched`, pre-LIMIT).
 //
 // `applicable_links` materialises the links that apply to THIS reader once, and
-// linked_sources / suppressed / the provenance lateral all reference it: global
-// (owner NULL) ∪ this reader's own assertions, EXCLUDING the `user_unlinked`
-// negative override itself and any (ordered) pair the reader has tombstoned with
-// one (P3 — a reader can't delete a global fact for everyone, so unlinking a
-// detected link writes an owner-scoped tombstone the read path subtracts).
+// everything downstream references it: global (owner NULL) ∪ this reader's own
+// assertions, EXCLUDING the `user_unlinked` negative override itself and any
+// (ordered) pair the reader has tombstoned with one (P3 — a reader can't delete a
+// global fact for everyone, so unlinking a detected link writes an owner-scoped
+// tombstone the read path subtracts).
 //
-// Perf guard: only sources in an applicable link can produce duplicates, so
-// `candidates` prefilters to `linked_sources`. Most feeds have zero links → the
-// CTEs are empty → near-zero cost. Dedup is free until someone links something.
+// TRANSITIVE connectivity (not pairwise): the same content cross-posted to three+
+// sources may be linked as a CHAIN (s1–s2, s2–s3, no s1–s3) or a STAR (a native
+// bridged to two mirrors that aren't linked to each other). A pairwise winner rule
+// leaks here — if the connecting source is the loser it gets suppressed by both
+// ends, leaving two same-fingerprint copies that aren't *directly* linked both
+// surviving. So we compute the link graph's connected components once
+// (`link_closure` → `source_component`) and dedup within a (component, fingerprint)
+// group: one component → one survivor, however the edges are shaped.
+//
+// Perf guard: only sources in an applicable link get a component, so `candidates`
+// inner-joins `source_component` and never sees an unlinked source. Most feeds have
+// zero links → the closure and candidates are empty → near-zero cost. Components
+// are tiny (a handful of cross-posted sources), so the transitive closure is cheap.
 export const DEDUP_CTES = `
     applicable_links AS (
       SELECT l.source_a_id, l.source_b_id
@@ -51,52 +67,76 @@ export const DEDUP_CTES = `
       UNION
       SELECT source_b_id FROM applicable_links
     ),
+    -- Symmetric edges over the applicable links, plus a reflexive self-edge per
+    -- linked source so an isolated linked source is its own singleton component.
+    link_edges AS (
+      SELECT source_a_id AS u, source_b_id AS v FROM applicable_links
+      UNION
+      SELECT source_b_id AS u, source_a_id AS v FROM applicable_links
+      UNION
+      SELECT sid AS u, sid AS v FROM linked_sources
+    ),
+    -- Transitive closure of the link graph (UNION dedupes → terminates). Cheap:
+    -- the graph is just the reader's applicable links, components are tiny.
+    link_closure AS (
+      SELECT u AS node, v AS reach FROM link_edges
+      UNION
+      SELECT c.node, e.v
+        FROM link_closure c JOIN link_edges e ON e.u = c.reach
+    ),
+    -- Component id = MIN reachable source. Edges are symmetric, so every node in a
+    -- component reaches the same set → the same min → a stable component key. Cast
+    -- to text: there is no min(uuid) aggregate, and comp is only ever equality-
+    -- compared (never ordered), so the text representative is purely an identifier.
+    source_component AS (
+      SELECT node AS sid, MIN(reach::text) AS comp
+        FROM link_closure
+       GROUP BY node
+    ),
     candidates AS (
       SELECT m.fi_id, fi.source_id, fi.source_protocol, fi.published_at,
-             fi.biddability_tier AS tier, ei.dedup_fingerprint AS fp
+             ei.dedup_fingerprint AS fp, sc.comp,
+             (CASE fi.biddability_tier
+                WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END) AS tprio
         FROM matched m
         JOIN feed_items fi ON fi.id = m.fi_id
         JOIN external_items ei ON ei.id = fi.external_item_id   -- external only
+        JOIN source_component sc ON sc.sid = fi.source_id       -- linked sources only (the guard) + tag its component
         WHERE ei.dedup_fingerprint IS NOT NULL
-          AND fi.source_id IN (SELECT sid FROM linked_sources)  -- the guard
     ),
-    -- A candidate is a loser when a linked twin (same fingerprint, linked
-    -- sources) ranks ahead of it: higher biddability tier, else earlier
-    -- published_at, else lower (source_id, fi.id). tprio: A→0 B→1 C→2 D→3.
+    -- A candidate loses when another candidate in the SAME component with the same
+    -- fingerprint ranks ahead under the total order tprio (A→0…D→3) ASC,
+    -- published_at ASC, (source_id, fi.id) ASC — a lexicographic row comparison.
+    -- Exactly one row per (component, fingerprint) has nothing ahead of it.
     suppressed AS (
       SELECT c.fi_id
-      FROM candidates c
-      JOIN candidates d
-        ON d.fp = c.fp AND d.fi_id <> c.fi_id
-      JOIN applicable_links l
-        ON ((l.source_a_id = c.source_id AND l.source_b_id = d.source_id)
-         OR (l.source_b_id = c.source_id AND l.source_a_id = d.source_id))
-      WHERE (
-        (CASE d.tier WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END)
-        < (CASE c.tier WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END)
-      ) OR (
-        (CASE d.tier WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END)
-        = (CASE c.tier WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2 ELSE 3 END)
-        AND (d.published_at, d.source_id, d.fi_id)
-          < (c.published_at, c.source_id, c.fi_id)
-      )
+        FROM candidates c
+       WHERE EXISTS (
+         SELECT 1 FROM candidates d
+          WHERE d.fp = c.fp
+            AND d.comp = c.comp
+            AND d.fi_id <> c.fi_id
+            AND (d.tprio, d.published_at, d.source_id, d.fi_id)
+              < (c.tprio, c.published_at, c.source_id, c.fi_id)
+       )
     )`;
 
 // Drop the loser of a cross-source duplicate pair. Goes in the `scored` WHERE.
 export const DEDUP_SUPPRESS_FILTER = `AND fi.id NOT IN (SELECT fi_id FROM suppressed)`;
 
 // Provenance ("ALSO ON BLUESKY · MASTODON"): computed only for survivors (a
-// handful of post-filter rows) — the other linked sources carrying the same
-// fingerprint. Empty/NULL when the feed has no links, so unlinked feeds are
-// untouched. The host `scored` CTE must project `source_id`, `fp`, `fi_id` for
-// the join below; `::text` so node-pg returns a real string[] (a custom-enum
-// array arrives unparsed as a raw "{atproto,rss}" string and breaks the UI .map).
+// handful of post-filter rows) — the other component members carrying the same
+// fingerprint. Keyed on the survivor's own `candidates` row (`self`, matched by
+// fi_id), so the host `scored` CTE need only project `fi_id` — no `comp`/`fp` to
+// thread through. Empty/NULL when the survivor isn't a linked-source candidate, so
+// unlinked feeds are untouched. `::text` so node-pg returns a real string[] (a
+// custom-enum array arrives unparsed as a raw "{atproto,rss}" string and breaks
+// the UI .map).
 export const DEDUP_PROVENANCE_LATERAL = `
     LEFT JOIN LATERAL (
       SELECT array_agg(DISTINCT d.source_protocol::text) AS also_on
-      FROM candidates d
-      JOIN applicable_links l
-        ON ((l.source_a_id = scored.source_id AND l.source_b_id = d.source_id)
-         OR (l.source_b_id = scored.source_id AND l.source_a_id = d.source_id))
-      WHERE d.fp = scored.fp AND d.fi_id <> scored.fi_id
+      FROM candidates self
+      JOIN candidates d
+        ON d.comp = self.comp AND d.fp = self.fp AND d.fi_id <> self.fi_id
+      WHERE self.fi_id = scored.fi_id
     ) prov ON true`;

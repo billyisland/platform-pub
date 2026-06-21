@@ -275,6 +275,37 @@ so no remote fetch (the SLICE-8 decision holds).
   green; a rolled-back dev-DB smoke confirming bridge wins the shared-pair
   conflict over domain_match (survivor `bridge`/0.95).
 
+### Dedup correctness fix — transitive connectivity (2026-06-21)
+
+The P1 suppression was **pairwise**: a candidate lost only to a *directly*-linked
+twin (`suppressed` joined `applicable_links` on the exact pair). That leaks when
+the links of a same-fingerprint set form a **chain or star** rather than a clique:
+if the connecting source is the loser it is suppressed by both ends, leaving two
+copies that share a fingerprint but aren't *directly* linked **both surviving** —
+the duplicate the feature exists to hide. Reachable via a `user_asserted` chain
+(link A–B then B–C, never A–C) and a `bridge` star (a native linked to two mirrors
+that aren't linked to each other); `domain_match` was already safe because
+`domainMatchPairs` emits the full clique.
+
+Fixed in `gateway/src/lib/dedup-sql.ts`: dedup is now over **connected components**
+of the applicable-link graph, not direct pairs. New CTEs `link_edges` (symmetric +
+reflexive) → `link_closure` (recursive transitive closure; UNION ⇒ terminates) →
+`source_component` (component id = `MIN(reach::text)`, equality-only key — there is
+no `min(uuid)` aggregate). `candidates` inner-joins `source_component` (same
+zero-link perf guard, now also tagging each row's component), and `suppressed` /
+the provenance lateral group by `(comp, fp)` instead of a direct link. One
+component → one survivor under the unchanged total order (tier, `published_at`,
+`source_id`, `fi_id`). **Host requirement:** the recursive CTE forces the outer
+`WITH` → `WITH RECURSIVE` at all four splice sites (`feeds/items.ts`, the two test
+SQL constants, `scripts/explain-dedup.ts`).
+
+- **Verified:** two new integration tests (`dedup-integration.test.ts`, now 10) —
+  a 3-source chain and a star — each **fails under the old pairwise SQL** (proves
+  the leak) and passes under the fix; full gateway suite 151 green.
+- **Perf:** re-ran `scripts/explain-dedup.ts` — the closure adds ~1 ms; zero-link
+  ≈16 ms, a few links ≈20 ms, all-linked worst case ≈62 ms (no regression vs the
+  P1 baseline; worst case unchanged-to-better, suppressed count still exact).
+
 ## Schema
 
 ```sql

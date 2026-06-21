@@ -42,7 +42,7 @@ const ITEMS_PER_SOURCE = parseInt(process.argv[3] ?? "20", 10);
 // chronological effective_score and the real suppress filter; then the real
 // provenance lateral and the keyset ORDER/LIMIT.
 const DEDUP_QUERY = `
-  WITH matched AS (
+  WITH RECURSIVE matched AS (
     SELECT fi.id AS fi_id, MAX(fs.weight)::float8 AS weight
       FROM feed_items fi
       JOIN feed_sources fs
@@ -183,7 +183,7 @@ async function main() {
 
     // Correctness sanity: worst case suppresses one twin per linked url.
     const { rows: cnt } = await client.query<{ count: string }>(
-      `WITH matched AS (
+      `WITH RECURSIVE matched AS (
          SELECT fi.id AS fi_id FROM feed_items fi
          JOIN feed_sources fs ON fs.feed_id = $2 AND fs.external_source_id = fi.source_id
          WHERE fi.deleted_at IS NULL

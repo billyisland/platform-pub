@@ -28,7 +28,7 @@ const DB_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 // `matched` is the host query's pre-LIMIT candidate set; here we feed it the
 // seeded feed_items directly so the dedup CTEs run over exactly our fixtures.
 const SUPPRESSED_SQL = `
-  WITH matched AS (
+  WITH RECURSIVE matched AS (
     SELECT id AS fi_id FROM feed_items WHERE id = ANY($2::uuid[])
   ),
   ${DEDUP_CTES}
@@ -37,7 +37,7 @@ const SUPPRESSED_SQL = `
 
 // Survivors + their provenance, exercising the real suppress filter + lateral.
 const SURVIVORS_SQL = `
-  WITH matched AS (
+  WITH RECURSIVE matched AS (
     SELECT id AS fi_id FROM feed_items WHERE id = ANY($2::uuid[])
   ),
   ${DEDUP_CTES},
@@ -359,6 +359,91 @@ describe.skipIf(!DB_URL)("dedup integration (Slice 8 P1/P2)", () => {
     const survA = await survivors(readerA, [early, late]);
     expect(survA.get(early)).toBeNull();
     expect(survA.get(late)).toBeNull();
+  });
+
+  it("transitive chain (s1–s2, s2–s3, no s1–s3): collapses to one survivor", async () => {
+    // The same article cross-posted to three sources the reader has linked as a
+    // CHAIN, not a clique: s1–s2 and s2–s3, but never s1–s3. Pairwise suppression
+    // leaks here — if the connecting node s2 is the loser it gets suppressed by
+    // both ends, leaving s1 and s3 (same fingerprint, not directly linked) BOTH
+    // surviving. Connectivity must be transitive: one component → one survivor.
+    const s1 = await source("rss", "https://chain1.example/feed");
+    const s2 = await source("rss", "https://chain2.example/feed");
+    const s3 = await source("rss", "https://chain3.example/feed");
+    const url = "https://chain.example/article";
+    // s1 earliest (the rightful winner), s3 middle, s2 latest (the loser that
+    // would be suppressed by both — the articulation point of the chain).
+    const i1 = await item({
+      sourceId: s1, protocol: "rss", contentTier: "tier4", tier: "C",
+      canonicalUrl: url, uri: "ch1", publishedAt: "2026-09-01T00:00:00Z",
+    });
+    const i2 = await item({
+      sourceId: s2, protocol: "rss", contentTier: "tier4", tier: "C",
+      canonicalUrl: url, uri: "ch2", publishedAt: "2026-09-03T00:00:00Z",
+    });
+    const i3 = await item({
+      sourceId: s3, protocol: "rss", contentTier: "tier4", tier: "C",
+      canonicalUrl: url, uri: "ch3", publishedAt: "2026-09-02T00:00:00Z",
+    });
+    await link(s1, s2, "user_asserted", readerA);
+    await link(s2, s3, "user_asserted", readerA);
+    // no s1–s3 link
+
+    const sup = await suppressed(readerA, [i1, i2, i3]);
+    // Exactly one survivor — the earliest (s1) — and the other two suppressed.
+    expect(sup.has(i2)).toBe(true);
+    expect(sup.has(i3)).toBe(true);
+    expect(sup.has(i1)).toBe(false);
+
+    const surv = await survivors(readerA, [i1, i2, i3]);
+    expect(surv.size).toBe(1);
+    expect(surv.has(i1)).toBe(true);
+  });
+
+  it("star (centre linked to two leaves, leaves not linked): one survivor", async () => {
+    // The same content on three sources linked as a STAR: a central source linked
+    // to two leaves, but the leaves never linked to each other (the bridge shape —
+    // a native mirrored to two bridges, each bridge linked to the native, not to
+    // the other bridge). When the CENTRE is the loser it gets suppressed by both
+    // leaves, and the two leaves — same fingerprint, not directly linked — both
+    // leak under pairwise suppression. So the centre must rank worst: biddability
+    // tier is derived from protocol by a trigger (rss→C, atproto/nostr→A), so the
+    // rss centre (C) loses to its two tier-A leaves. Transitive connectivity
+    // collapses the star to one survivor.
+    const centre = await source("rss", "https://star-centre.example/feed");
+    const leafA = await source("atproto", "did:plc:starleafa");
+    const leafB = await source("nostr_external", "npub1starleafb");
+    const url = "https://star.example/post";
+    // leafA earliest → the rightful winner among the two tier-A leaves.
+    const iLeafA = await item({
+      sourceId: leafA, protocol: "atproto", contentTier: "tier3", tier: "A",
+      canonicalUrl: url, uri: "st-a", publishedAt: "2026-10-01T00:00:00Z",
+    });
+    const iLeafB = await item({
+      sourceId: leafB, protocol: "nostr_external", contentTier: "tier2", tier: "A",
+      canonicalUrl: url, uri: "st-b", publishedAt: "2026-10-02T00:00:00Z",
+    });
+    const iCentre = await item({
+      sourceId: centre, protocol: "rss", contentTier: "tier4", tier: "C",
+      canonicalUrl: url, uri: "st-c", publishedAt: "2026-10-03T00:00:00Z",
+    });
+    await link(centre, leafA, "bridge", null);
+    await link(centre, leafB, "bridge", null);
+    // no leafA–leafB link — under pairwise suppression both leaves leak.
+
+    const sup = await suppressed(readerA, [iLeafA, iLeafB, iCentre]);
+    expect(sup.size).toBe(2); // exactly one survives
+    expect(sup.has(iCentre)).toBe(true); // worst tier — suppressed
+    expect(sup.has(iLeafB)).toBe(true); // the non-winning leaf — would leak under pairwise
+    expect(sup.has(iLeafA)).toBe(false); // earliest tier-A leaf wins
+
+    const surv = await survivors(readerA, [iLeafA, iLeafB, iCentre]);
+    expect(surv.size).toBe(1);
+    expect(surv.has(iLeafA)).toBe(true);
+    // The lone survivor advertises both other networks via the component.
+    expect(surv.get(iLeafA)).toEqual(
+      expect.arrayContaining(["rss", "nostr_external"]),
+    );
   });
 });
 

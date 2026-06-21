@@ -197,7 +197,7 @@ async function sourceFilteredItems(
 
   const result = await pool.query<any>(
     `
-    WITH feed_mode AS (
+    WITH RECURSIVE feed_mode AS (
       SELECT sampling_mode
         FROM feed_sources
         WHERE feed_id = $2 AND muted_at IS NULL
