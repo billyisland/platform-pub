@@ -160,10 +160,17 @@ is a COLOURWAY (seasonal character), orthogonal to light/dark**:
 
   | Colourway | added variant | walls | interior | card |
   |---|---|---|---|---|
-  | Spring | dark (`-dk`)  | `#2C7A47` | `#15201A` | `#1E2D24` |
-  | Summer | dark (`-dk`)  | `#0F5BA8` | `#221C12` | `#2E2719` |
-  | Autumn | dark (`-dk`)  | `#B5461E` | `#251A14` | `#32271E` |
+  | Spring | dark (`-dk`)  | `#14331E` | `#1C3F28` | `#244A30` |
+  | Summer | dark (`-dk`)  | `#0D2A4A` | `#2E2A1C` | `#403524` |
+  | Autumn | dark (`-dk`)  | `#3A160B` | `#4A2418` | `#5A3122` |
   | Winter | light (`-lt`) | `#2B3756` | `#D8DDEA` | `#EFF2F8` |
+
+  The dark variants follow **Winter's elevation grammar** (which already worked):
+  a single seasonal hue family stepped walls (deepest) → interior → card (the
+  lifted reading well), every surface clearly *tinted* dark (card luminance
+  ~0.21–0.26, matching Winter), so the colour reads across the whole vessel.
+  The first-pass dark variants — a bright light-mode frame around near-black
+  neutral surfaces — were the "garish frame around a void" look they replaced.
 
 - The light-island still wraps desktop vessels **and now the mobile per-feed
   pages** (`MobileWorkspace.tsx`), but its role is narrowed: it keeps the derived
