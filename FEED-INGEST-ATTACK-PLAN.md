@@ -733,6 +733,15 @@ posture), not code.**
 > mirror's stored identity string — no remote fetch. (`cross_link` bio-parse
 > detection still deferred.) See the re-based plan's "P1/P2/P3 — what shipped"
 > sections.
+>
+> **Correctness hardening (2026-06-21), all in the re-based plan:** three review
+> findings fixed — (1) dedup now suppresses over **connected components** of the
+> link graph, not direct pairs, so a same-fingerprint chain/star (`A–B`, `B–C`,
+> no `A–C`) collapses to one survivor instead of leaking the un-adjacent copies;
+> (2) unlink **converges the pair to "not merged"** last-write-wins (was a silent
+> no-op when a pair carried both your assertion and a global detected link); (3)
+> `domain_match` now keys on the real Public Suffix List (`tldts`), closing the
+> ccTLD over-merge (`alice.co.id` no longer collapses to the shared `co.id`).
 
 As the platform accumulates external sources across protocols, a pattern
 emerges: the same human posts on Mastodon _and_ Bluesky _and_ publishes
