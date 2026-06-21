@@ -403,9 +403,19 @@ class SettlementService {
         return;
       }
 
+      // No GREATEST(0, …) clamp: the column and the ledger must move by the
+      // SAME signed delta (migration 124 dropped the >= 0 CHECK). The settle
+      // amount was clamped to the locked balance at reservation
+      // (reserveSettlement: actualAmount = min(lockedBalance, expected)), so an
+      // over-settlement only arises if the balance dropped between reserve and
+      // confirm (e.g. an interleaved subscription credit-back). A clamp here
+      // would floor the column at 0 while the unclamped ledger entry below
+      // credits the full amount → −SUM(ledger) ≠ balance_pence permanently
+      // (the Phase-3 "agree to the penny" guarantee). Letting it go negative is
+      // correct: negative = platform owes the reader / pre-paid credit.
       await client.query(
         `UPDATE reading_tabs
-         SET balance_pence = GREATEST(0, balance_pence - $1),
+         SET balance_pence = balance_pence - $1,
              last_settled_at = now(),
              updated_at = now()
          WHERE id = $2`,

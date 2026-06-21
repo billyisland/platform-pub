@@ -776,11 +776,18 @@ async function fulfillDrive(driveId: string): Promise<void> {
           [pledge.pledger_id, drive.article_id]
         )
 
-        // 3. Update reading_tabs balance (charge becomes real)
+        // 3. Update reading_tabs balance (charge becomes real). Upsert, not a
+        // bare UPDATE: pledging needs no card, so a pledger may have no tab row
+        // yet — a bare UPDATE would touch 0 rows while the unconditional ledger
+        // debit below still posts, overstating −SUM(ledger) vs the column. The
+        // constraint is one_tab_per_reader UNIQUE (reader_id), so ON CONFLICT
+        // (reader_id) targets it directly.
         await client.query(
-          `UPDATE reading_tabs
-           SET balance_pence = balance_pence + $1, last_read_at = now()
-           WHERE reader_id = $2`,
+          `INSERT INTO reading_tabs (reader_id, balance_pence, last_read_at)
+           VALUES ($2, $1, now())
+           ON CONFLICT (reader_id) DO UPDATE
+             SET balance_pence = reading_tabs.balance_pence + EXCLUDED.balance_pence,
+                 last_read_at = now()`,
           [pledge.amount_pence, pledge.pledger_id]
         )
 

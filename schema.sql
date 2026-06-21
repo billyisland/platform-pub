@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 7v0PHXc1e4EUz9K9U1zxzBvRYIFWcMoVou1hlkcyTOVH1cxGWmCbu89uPcKFMbM
+\restrict NyJB1xmi43UnGa0SacBu8ZVUCnmHBbatOszOiPia7d4mAbeFGKY7UUczNgLoFUX
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -2114,8 +2114,7 @@ CREATE TABLE public.reading_tabs (
     last_read_at timestamp with time zone,
     last_settled_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT reading_tabs_balance_non_negative CHECK ((balance_pence >= 0))
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -5284,6 +5283,13 @@ CREATE TRIGGER ledger_entries_append_only_trg BEFORE DELETE OR UPDATE ON public.
 
 
 --
+-- Name: ledger_entries ledger_entries_no_truncate_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER ledger_entries_no_truncate_trg BEFORE TRUNCATE ON public.ledger_entries FOR EACH STATEMENT EXECUTE FUNCTION public.ledger_entries_append_only();
+
+
+--
 -- Name: accounts trg_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6746,7 +6752,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 7v0PHXc1e4EUz9K9U1zxzBvRYIFWcMoVou1hlkcyTOVH1cxGWmCbu89uPcKFMbM
+\unrestrict NyJB1xmi43UnGa0SacBu8ZVUCnmHBbatOszOiPia7d4mAbeFGKY7UUczNgLoFUX
 
 
 
@@ -6886,4 +6892,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('120_ledger_views.sql'),
     ('121_ledger_opening_balance.sql'),
     ('122_dm_reactions.sql'),
-    ('123_identity_links_and_dedup_fingerprint.sql');
+    ('123_identity_links_and_dedup_fingerprint.sql'),
+    ('124_ledger_negative_balance_and_truncate_guard.sql');

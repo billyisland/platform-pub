@@ -132,18 +132,24 @@ export async function articleSubscriptionConvertRoutes(app: FastifyInstance) {
         // Credit back the reader's spend to their tab (capped at subscription price)
         const credit = Math.min(spendPence, subPrice);
         if (credit > 0) {
+          // No `AND status = 'open'`: reading_tabs has no `status` column (that
+          // predicate raised 42703 at runtime whenever credit > 0). reader_id is
+          // UNIQUE (one_tab_per_reader), so the WHERE needs nothing more.
+          // No GREATEST clamp: credit can exceed the current balance, and the
+          // column must mirror the ledger's +credit with the same signed delta
+          // (migration 124 dropped the >= 0 CHECK). A negative result is a
+          // legitimate reader credit, not a divergence.
           await client.query(
             `UPDATE reading_tabs SET balance_pence = balance_pence - $1, updated_at = now()
-             WHERE reader_id = $2 AND status = 'open'`,
+             WHERE reader_id = $2`,
             [credit, readerId],
           );
 
           // Ledger: this is a reader-tab CREDIT (the tab debt is paid down by the
           // converted spend), so it mirrors the −$1 balance move with +credit —
           // exactly like a settlement, but the counterparty is the subscribed
-          // writer, not the platform. Without this entry ledger_reader_balance
-          // would diverge from reading_tabs.balance_pence forward-only. Same
-          // transaction as the balance write (recordLedger rides `client`).
+          // writer, not the platform. Same transaction as the balance write
+          // (recordLedger rides `client`), so the two never diverge.
           await recordLedger(client, {
             accountId: readerId,
             counterpartyId: writerId,
