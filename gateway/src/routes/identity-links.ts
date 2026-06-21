@@ -3,6 +3,10 @@ import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { loadAuthorLinkSource } from "./author.js";
+import {
+  assertIdentityLink,
+  unlinkIdentityPair,
+} from "../lib/identity-link-ops.js";
 
 // =============================================================================
 // Cross-source identity links — Slice 8 P2 ("Link to…" / "Unlink")
@@ -22,8 +26,10 @@ import { loadAuthorLinkSource } from "./author.js";
 // authorId — never trusted from the client). source_b is the pasted target,
 // upserted into external_sources so the link's FK resolves. The pair is stored
 // LEAST/GREATEST-ordered to satisfy the table's `source_a_id < source_b_id`
-// CHECK (A/B and B/A collapse to one row). At P2 every row is owner_id NOT NULL,
-// so unlink is a plain owner-scoped DELETE — no NULL-owner branch, no tombstone.
+// CHECK (A/B and B/A collapse to one row). The mutations themselves live in
+// lib/identity-link-ops.ts (assertIdentityLink / unlinkIdentityPair) so the
+// integration test runs the exact SQL; both converge the viewer's owner-scoped
+// slot last-write-wins (Link → asserted, Unlink → not merged).
 // =============================================================================
 
 const UUID_RE =
@@ -113,29 +119,20 @@ export async function identityLinkRoutes(app: FastifyInstance) {
             return { selfLink: true as const };
           }
 
-          // Order the pair (the table CHECK requires source_a_id < source_b_id)
-          // and insert the owner-scoped assertion. ON CONFLICT no-op update so a
-          // re-assert returns the existing row's id rather than erroring.
-          const {
-            rows: [link],
-          } = await client.query<{ id: string }>(
-            // ::uuid so LEAST/GREATEST order by uuid (the CHECK's comparison),
-            // not as text. Both inputs are lowercase canonical UUIDs so the two
-            // orderings agree, but the cast makes that explicit and correct.
-            `INSERT INTO external_identity_links
-               (source_a_id, source_b_id, link_type, confidence, owner_id)
-             VALUES (LEAST($1::uuid, $2::uuid), GREATEST($1::uuid, $2::uuid),
-                     'user_asserted', 1.0, $3)
-             ON CONFLICT (source_a_id, source_b_id, owner_id)
-               WHERE owner_id IS NOT NULL
-               DO UPDATE SET confidence = EXCLUDED.confidence
-             RETURNING id`,
-            [srcA.sourceId, sourceBId, viewerId],
+          // Insert the owner-scoped assertion (pair ordered + ON CONFLICT
+          // authoritative inside the helper, so a re-assert — including one that
+          // reverses a prior unlink tombstone — is idempotent and lands on
+          // 'user_asserted').
+          const linkId = await assertIdentityLink(
+            client,
+            srcA.sourceId,
+            sourceBId,
+            viewerId,
           );
 
           return {
             selfLink: false as const,
-            linkId: link.id,
+            linkId,
             sourceBId,
             displayName: srcBRow.display_name,
           };
@@ -165,11 +162,16 @@ export async function identityLinkRoutes(app: FastifyInstance) {
   );
 
   // DELETE /author/:authorId/links/:linkId — unlink.
-  //   • the viewer's own user_asserted row → hard DELETE.
-  //   • a global automated link (owner NULL, P3 detection) → can't delete a fact
-  //     for everyone, so write an owner-scoped `user_unlinked` tombstone for the
-  //     same ordered pair; the read path (dedup-sql.ts applicable_links)
-  //     subtracts it for this viewer only.
+  //
+  // Converges the pair to "not merged" for this viewer, whichever link the clicked
+  // chip pointed at (its own assertion or the global detection) — and even when
+  // BOTH touch the pair. A pair carrying the viewer's own assertion AND a global
+  // detected link surfaces ONE "own-first" chip (author.ts dedupes the two), so a
+  // naive "delete what the chip points at" left the other alive: deleting the
+  // assertion left the global merging, tombstoning the global was skipped to spare
+  // the assertion — either way the merge survived and "Stop merging" did nothing.
+  // unlinkIdentityPair picks the right move (tombstone the global, else delete the
+  // assertion); see lib/identity-link-ops.ts.
   app.delete<{ Params: { authorId: string; linkId: string } }>(
     "/author/:authorId/links/:linkId",
     {
@@ -202,36 +204,30 @@ export async function identityLinkRoutes(app: FastifyInstance) {
           return reply.status(404).send({ error: "Link not found" });
         }
 
-        if (link.owner_id === viewerId && link.link_type === "user_asserted") {
-          await pool.query(
-            `DELETE FROM external_identity_links WHERE id = $1`,
-            [linkId],
-          );
-          return reply.status(204).send();
+        // Actionable iff the row is the viewer's own or a global fact; another
+        // reader's owned assertion is invisible/untouchable. Unlinking the
+        // viewer's OWN tombstone is a no-op (already not merged).
+        const isOwn = link.owner_id === viewerId;
+        const isGlobal = link.owner_id === null;
+        if (!isOwn && !isGlobal) {
+          return reply.status(404).send({ error: "Link not found" });
+        }
+        if (isOwn && link.link_type === "user_unlinked") {
+          return reply.status(404).send({ error: "Link not found" });
         }
 
-        if (link.owner_id === null && link.link_type !== "user_unlinked") {
-          // Tombstone the pair for this viewer. The pair is already ordered
-          // (source_a_id < source_b_id) on the global row, so reuse it directly.
-          // The DO UPDATE skips when the viewer's own owner-scoped row is already
-          // a personal `user_asserted` link: the viewer both asserts this pair
-          // and is tombstoning the global for it → the personal assertion wins,
-          // the global stays (effectively) un-tombstoned for them (they assert it).
-          await pool.query(
-            `INSERT INTO external_identity_links
-               (source_a_id, source_b_id, link_type, confidence, owner_id)
-             VALUES ($1, $2, 'user_unlinked', 1.0, $3)
-             ON CONFLICT (source_a_id, source_b_id, owner_id)
-               WHERE owner_id IS NOT NULL
-               DO UPDATE SET link_type = 'user_unlinked'
-                 WHERE external_identity_links.link_type <> 'user_asserted'`,
-            [link.source_a_id, link.source_b_id, viewerId],
-          );
-          return reply.status(204).send();
-        }
-
-        // Another reader's assertion, or already a tombstone → nothing to do.
-        return reply.status(404).send({ error: "Link not found" });
+        // The link row is stored ordered (source_a_id < source_b_id), so pass the
+        // pair straight through. In a transaction: the global-check + tombstone-or-
+        // delete is a read-modify-write on the viewer's single owner slot.
+        await withTransaction((client) =>
+          unlinkIdentityPair(
+            client,
+            link.source_a_id,
+            link.source_b_id,
+            viewerId,
+          ),
+        );
+        return reply.status(204).send();
       } catch (err) {
         logger.error({ err, linkId }, "Identity link delete failed");
         return reply.status(500).send({ error: "Unlink failed" });

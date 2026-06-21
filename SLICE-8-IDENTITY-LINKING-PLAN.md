@@ -306,6 +306,36 @@ SQL constants, `scripts/explain-dedup.ts`).
   ≈16 ms, a few links ≈20 ms, all-linked worst case ≈62 ms (no regression vs the
   P1 baseline; worst case unchanged-to-better, suppressed count still exact).
 
+### Unlink no-op fix — converge-to-intended-state (2026-06-21)
+
+The P3 DELETE route mutated only the link the clicked chip pointed at, which left a
+silent no-op when a pair carried **both** the viewer's own `user_asserted` link and
+a global detected link. `author.ts` dedupes that pair to one **own-first** chip, so
+clicking unlink hit the hard-DELETE branch → the global link survived → the feed
+**kept merging**; the global branch's `WHERE link_type <> 'user_asserted'` guard
+was the mirror image (it spared the assertion, which kept merging). Either way
+"Stop merging this source" did nothing.
+
+Fixed by making both directions **last-write-wins on the viewer's single
+owner-scoped slot** (`uq_idlink_owned`), extracted into `gateway/src/lib/
+identity-link-ops.ts` (the dedup-sql.ts testability pattern):
+- `unlinkIdentityPair` converges the pair to *not merged*: if a global link merges
+  it for everyone (undeletable by one reader) the slot becomes a `user_unlinked`
+  tombstone — **overwriting** any own assertion that would otherwise keep the merge
+  alive; otherwise the own `user_asserted` row is hard-deleted (no stray tombstone).
+- `assertIdentityLink` is now authoritative on conflict (`DO UPDATE SET link_type =
+  'user_asserted'`), so "Link to…" after an unlink actually re-links instead of
+  staying tombstoned.
+
+The DELETE route keeps its auth/404 semantics (another reader's owned row and the
+viewer's own existing tombstone are both 404 no-ops) and delegates the mutation to
+`unlinkIdentityPair` in a transaction.
+
+- **Verified:** three new integration tests (`dedup-integration.test.ts`, now 13) —
+  the both-links conflict (the no-op; **fails under the old delete-the-assertion
+  behavior**), a purely-asserted unlink (hard-deletes, no tombstone), and re-link
+  after unlink (assert overrides the tombstone); full gateway suite 154 green.
+
 ## Schema
 
 ```sql

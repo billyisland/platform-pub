@@ -5,6 +5,10 @@ import {
   DEDUP_SUPPRESS_FILTER,
   DEDUP_PROVENANCE_LATERAL,
 } from "../src/lib/dedup-sql.js";
+import {
+  assertIdentityLink,
+  unlinkIdentityPair,
+} from "../src/lib/identity-link-ops.js";
 
 // =============================================================================
 // Slice 8 P1/P2 — cross-source dedup integration test.
@@ -444,6 +448,86 @@ describe.skipIf(!DB_URL)("dedup integration (Slice 8 P1/P2)", () => {
     expect(surv.get(iLeafA)).toEqual(
       expect.arrayContaining(["rss", "nostr_external"]),
     );
+  });
+
+  // --- unlink / re-link convergence (identity-link-ops) ---------------------
+  // Order a pair the way the table stores it (source_a_id < source_b_id) so
+  // unlinkIdentityPair's equality lookups hit.
+  function orderedPair(x: string, y: string): [string, string] {
+    return x < y ? [x, y] : [y, x];
+  }
+
+  /** Seed two sources + one duplicate item each (same canonical URL). */
+  async function dupPair(prefix: string): Promise<{
+    s1: string; s2: string; winner: string; loser: string;
+  }> {
+    const s1 = await source("rss", `https://${prefix}1.example/feed`);
+    const s2 = await source("rss", `https://${prefix}2.example/feed`);
+    const url = `https://${prefix}.example/post`;
+    const winner = await item({
+      sourceId: s1, protocol: "rss", contentTier: "tier4", tier: "C",
+      canonicalUrl: url, uri: `${prefix}-w`, publishedAt: "2026-11-01T00:00:00Z",
+    });
+    const loser = await item({
+      sourceId: s2, protocol: "rss", contentTier: "tier4", tier: "C",
+      canonicalUrl: url, uri: `${prefix}-l`, publishedAt: "2026-11-02T00:00:00Z",
+    });
+    return { s1, s2, winner, loser };
+  }
+
+  it("unlink converges to not-merged even when the viewer ALSO asserted a globally-detected pair", async () => {
+    // The confusing no-op: a pair carries BOTH a global detected link and the
+    // viewer's own assertion. The surface shows one "own-first" chip, so the old
+    // route deleted the assertion (global kept merging) or skipped the tombstone
+    // to spare the assertion (assertion kept merging) — "Stop merging" did nothing.
+    const { s1, s2, winner, loser } = await dupPair("conflict");
+    await link(s1, s2, "domain_match", null); // global detected
+    await link(s1, s2, "user_asserted", readerA); // the viewer also asserted it
+    const [a, b] = orderedPair(s1, s2);
+
+    // Both ways into applicable_links → the loser is suppressed (merged).
+    expect((await suppressed(readerA, [winner, loser])).has(loser)).toBe(true);
+
+    // "Stop merging this source."
+    await unlinkIdentityPair(client, a, b, readerA);
+
+    // It actually stops merging now — and only for this viewer.
+    expect((await suppressed(readerA, [winner, loser])).size).toBe(0);
+    expect((await suppressed(readerB, [winner, loser])).has(loser)).toBe(true);
+  });
+
+  it("unlink of a purely user-asserted pair hard-deletes the assertion (no global)", async () => {
+    const { s1, s2, winner, loser } = await dupPair("ownonly");
+    const linkId = await assertIdentityLink(client, s1, s2, readerA);
+    expect(linkId).toBeTruthy();
+    const [a, b] = orderedPair(s1, s2);
+    expect((await suppressed(readerA, [winner, loser])).has(loser)).toBe(true);
+
+    await unlinkIdentityPair(client, a, b, readerA);
+
+    // Not merged, and the row is gone — no stray tombstone left behind.
+    expect((await suppressed(readerA, [winner, loser])).size).toBe(0);
+    const { rows } = await client.query(
+      `SELECT 1 FROM external_identity_links
+        WHERE source_a_id = $1 AND source_b_id = $2 AND owner_id = $3`,
+      [a, b, readerA],
+    );
+    expect(rows.length).toBe(0);
+  });
+
+  it("re-link after an unlink restores the merge (assert overrides a tombstone)", async () => {
+    const { s1, s2, winner, loser } = await dupPair("relink");
+    await link(s1, s2, "domain_match", null); // global keeps the pair detectable
+    const [a, b] = orderedPair(s1, s2);
+
+    // Unlink the detected pair → tombstone → not merged for the viewer.
+    await unlinkIdentityPair(client, a, b, readerA);
+    expect((await suppressed(readerA, [winner, loser])).size).toBe(0);
+
+    // "Link to…" again must actually re-link (flip the slot off user_unlinked),
+    // not silently stay tombstoned.
+    await assertIdentityLink(client, s1, s2, readerA);
+    expect((await suppressed(readerA, [winner, loser])).has(loser)).toBe(true);
   });
 });
 
