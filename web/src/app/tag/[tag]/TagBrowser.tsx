@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { PostCardInteractive } from "../../../components/post/PostCardInteractive";
 import type { CardContext } from "../../../components/post/chassis";
 import {
-  PALETTES,
-  DEFAULT_BRIGHTNESS,
+  globalContentPalette,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
   TEXT_SIZE_PX,
@@ -15,6 +14,7 @@ import { tagPosts } from "../../../lib/api/post";
 import type { Post } from "../../../lib/post/types";
 import { useReader } from "../../../stores/reader";
 import { useCompose } from "../../../stores/compose";
+import { useColorScheme } from "../../../stores/colorScheme";
 
 // =============================================================================
 // /tag/:name — articles for one tag, rendered through the one Post-model path
@@ -33,12 +33,6 @@ import { useCompose } from "../../../stores/compose";
 // it keeps fetching client-side (with the viewer's cookie).
 // =============================================================================
 
-const CTX: CardContext = {
-  density: DEFAULT_DENSITY,
-  palette: PALETTES[DEFAULT_BRIGHTNESS],
-  bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
-};
-
 export function TagBrowser({
   tagName,
   inOverlay = false,
@@ -53,6 +47,14 @@ export function TagBrowser({
   initialCursor?: string;
 }) {
   const router = useRouter();
+  // Cards follow the GLOBAL light/dark toggle (this is a surface overlay, not a
+  // feed vessel).
+  const dark = useColorScheme((s) => s.dark);
+  const CTX: CardContext = {
+    density: DEFAULT_DENSITY,
+    palette: globalContentPalette(dark),
+    bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
+  };
   const openNative = useReader((s) => s.openNative);
   const hasInitial = initialItems != null;
   const [items, setItems] = useState<Post[]>(initialItems ?? []);

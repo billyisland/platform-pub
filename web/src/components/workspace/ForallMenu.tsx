@@ -13,6 +13,7 @@ import { useNetworkOverlay } from "../../stores/networkOverlay";
 import { useGlasshousePresence } from "../../stores/glasshouse";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { SearchPanel } from "./SearchPanel";
+import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 
 const TOKENS = {
   buttonBg: "var(--ah-ink-925)",
@@ -353,7 +354,9 @@ export function ForallMenu({
             className="font-sans font-medium leading-none"
             style={{
               fontSize: 24,
-              color: "var(--ah-ink-925)",
+              // var(--ah-ink) (not the locked ink-925) so the wordmark flips to
+              // light on the dark workspace floor under the global dark mode.
+              color: "var(--ah-ink)",
               letterSpacing: "-0.01em",
             }}
           >
@@ -365,9 +368,13 @@ export function ForallMenu({
       <div
         ref={containerRef}
         style={
+          // Light island: the ∀ disc + dropdown are LOCKED chrome — they render
+          // identically in light and dark mode (the disc stays dark ink-925 with
+          // a light bone glyph; the menu stays light). The wordmark is a sibling
+          // outside this island, so it flips to light on the dark floor.
           inBar
-            ? { position: "fixed", right: 8, top: 6, zIndex: 60 }
-            : { position: "fixed", right: 24, bottom: 24, zIndex: 60 }
+            ? { ...LIGHT_ISLAND_STYLE, position: "fixed", right: 8, top: 6, zIndex: 60 }
+            : { ...LIGHT_ISLAND_STYLE, position: "fixed", right: 24, bottom: 24, zIndex: 60 }
         }
       >
       {view === "menu" && (

@@ -299,7 +299,7 @@ export function MobileWorkspace({
       >
         <span
           className="font-sans text-[15px] font-medium leading-none flex-shrink-0 select-none"
-          style={{ color: "var(--ah-ink-925)", letterSpacing: "-0.01em" }}
+          style={{ color: "var(--ah-ink)", letterSpacing: "-0.01em" }}
           aria-label="all.haus"
         >
           all.haus
@@ -362,7 +362,7 @@ export function MobileWorkspace({
                     width: isActive ? 16 : 6,
                     borderRadius: 3,
                     background: isActive
-                      ? "var(--ah-ink-925)"
+                      ? "var(--ah-ink)"
                       : "var(--ah-stone-350)",
                     transition:
                       "width 160ms ease-out, background 160ms ease-out",

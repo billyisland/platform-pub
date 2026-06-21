@@ -6,8 +6,7 @@ import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
 import {
-  PALETTES,
-  DEFAULT_BRIGHTNESS,
+  globalContentPalette,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
   TEXT_SIZE_PX,
@@ -16,6 +15,7 @@ import { authorPosts, authorReplies } from "../../lib/api/post";
 import type { Post } from "../../lib/post/types";
 import type { WriterProfile } from "../../lib/api";
 import { useCompose } from "../../stores/compose";
+import { useColorScheme } from "../../stores/colorScheme";
 
 // =============================================================================
 // Profile Social tab — the writer's notes + replies, rendered through the one
@@ -25,12 +25,6 @@ import { useCompose } from "../../stores/compose";
 // GET /author/:id/replies. Each card expands inline to the unified thread
 // (parent context above) instead of the old "→ replied to X" provenance line.
 // =============================================================================
-
-const CTX: CardContext = {
-  density: DEFAULT_DENSITY,
-  palette: PALETTES[DEFAULT_BRIGHTNESS],
-  bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
-};
 
 interface SocialTabProps {
   username: string;
@@ -44,6 +38,13 @@ export function SocialTab({ writer, isOwnProfile }: SocialTabProps) {
   const [replies, setReplies] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Content-log cards follow the GLOBAL light/dark toggle (not a feed scheme).
+  const dark = useColorScheme((s) => s.dark);
+  const CTX: CardContext = {
+    density: DEFAULT_DENSITY,
+    palette: globalContentPalette(dark),
+    bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
+  };
 
   useEffect(() => {
     let cancelled = false;

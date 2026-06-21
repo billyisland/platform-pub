@@ -390,3 +390,62 @@ Shipped as specified, with these deliberate, flagged adjustments:
 Verified: web `tsc --noEmit` clean; root ESLint 0 errors; hairline tripwire clean
 for touched files. Live verification (the full vessel with 8px walls + elevation
 shadow) needs the prod web rebuild.
+
+## VII. Global light/dark/system mode (2026-06-21)
+
+A sitewide appearance toggle was added: **Light / Dark / System**, per-device
+(localStorage `ah:color-mode`, default `light`), modelled on the type-size
+control. Store `web/src/stores/colorScheme.ts`, headless `ColorSchemeHydrator`
+(mounted in `LayoutShell`, with a `matchMedia` listener so `system` tracks the OS
+live), settings UI `account/ColorModeControl`, and a blocking inline script in
+`app/layout.tsx` that sets `html.dark` before paint (no white flash). The store
+toggles the `html.dark` class + `documentElement.style.colorScheme`.
+
+**This intentionally reverses the original §III.2 "the pane is always pale
+parchment / always-light" stance.** The Glasshouse pane is now *mode-neutral*,
+not literally light: it is white in light mode and a dark elevated surface in
+dark mode. The separation model (§III.1 scrim does the separating; §III.2 pane is
+the lightest/outermost layer *within its mode*) is preserved — the elevation
+ramp simply inverts.
+
+**Mechanism — invert-at-root + feed light-islands:**
+
+1. **`html.dark { … }`** in `globals.css` inverts only the canonical NEUTRAL
+   ramp (`DARK_SLUGS` in `web/src/lib/palette/island.ts`: `ink`, the greys,
+   `white`, `glasshouse`, `glasshouse-well`, `bone`/`bone-bright`, `off-white`,
+   `cream*`, `nav-grey`). Surfaces darken, text lightens; elevation order
+   (ground < well < cards < pane) is preserved inverted. Accent/semantic/
+   already-dark/per-feed-season slugs are untouched, so the trust pips, crimson
+   accents, the dark vessel scheme and all four-seasons schemes are unaffected.
+   Because every global-chrome consumer reads these vars, the whole shell flips
+   with near-zero per-component edits: workspace ground, reader/profile/source/
+   tag surfaces, every Glasshouse overlay, dropdowns/popovers.
+
+2. **Desktop feed vessels keep their per-scheme colours** via `LIGHT_ISLAND_STYLE`
+   on the `Vessel` root — an inline re-declaration of `DARK_SLUGS` back to their
+   canonical light triples (inline beats the `html.dark` stylesheet rule), so the
+   feed subtree is immune to the global mode. The **ForallMenu disc + dropdown**
+   (locked nav chrome) and the FeedComposer **scheme swatch** (true-colour
+   preview) carry the same island. The **wordmark** is a sibling over the floor,
+   so it flips to light via `var(--ah-ink)`.
+
+3. **Mobile feeds follow the toggle uniformly** (per-feed scheme ignored):
+   `WorkspaceView.renderFeedContents` + `interiorFor` use `globalContentPalette(dark)`
+   and the mobile pages are not islanded.
+
+4. **Theme-following content** (profile/source/tag content-log cards) uses
+   `globalContentPalette(dark)` (the `primary` palette with `isDark`/crimson
+   corrected) outside any island. Article `prose` gets a `html.dark .prose`
+   `--tw-prose-*` override (the plugin's vars are fixed grays that wouldn't
+   otherwise invert).
+
+**Also in this change:** the FeedComposer scheme swatch was redesigned from the
+murky concentric-rectangle chip (§III.4) to **three fat equal bars** (French-flag
+grammar: walls · interior · card), larger and clearer. And the external author
+profile header (`/author/:id`) was restructured so the follow control drops to
+its **own row below the identity block on mobile** (it previously shared the
+avatar/name row and broke long names).
+
+Verified: web `tsc --noEmit` clean; `next build` clean; root ESLint 0 errors;
+hairline tripwire clean for touched files. Live verification needs the prod web
+rebuild.

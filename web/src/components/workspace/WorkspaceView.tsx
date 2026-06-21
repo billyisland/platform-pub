@@ -24,11 +24,13 @@ import type { Post } from "../../lib/post/types";
 import { originWebUrl } from "../../lib/post/origin-url";
 import {
   paletteFor,
+  globalContentPalette,
   normalizeBrightness,
   TEXT_SIZE_PX,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
 } from "./tokens";
+import { useColorScheme } from "../../stores/colorScheme";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { Composer, type ReplyTarget } from "./Composer";
 import type { QuoteTarget } from "../../lib/publishNote";
@@ -184,6 +186,9 @@ export function WorkspaceView() {
   // body (vessels ↔ pager) while everything else (data, overlays, composer,
   // pip panel) is shared.
   const isMobile = useIsMobile();
+  // On mobile every feed follows the GLOBAL light/dark toggle (uniform), not
+  // its per-feed scheme; on desktop feeds keep their scheme (light-islanded).
+  const globalDark = useColorScheme((s) => s.dark);
   const [vessels, setVessels] = useState<VesselState[]>([]);
   const [bootstrap, setBootstrap] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -902,6 +907,9 @@ export function WorkspaceView() {
   // property); scheme/density/text size ride the layout store as on desktop.
   function renderFeedContents(v: VesselState) {
     const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
+    // Mobile follows the global light/dark toggle uniformly; 'primary' inverts
+    // with html.dark (not islanded) so the empty-state tiles match the cards.
+    const cardBrightness = isMobile ? "primary" : layout.brightness;
     return (
       <>
             {v.status === "loading" && <Hint>LOADING…</Hint>}
@@ -911,20 +919,20 @@ export function WorkspaceView() {
               (v.sources.length === 0 ? (
                 <EmptyFeedTile
                   variant="no-sources"
-                  brightness={layout.brightness}
+                  brightness={cardBrightness}
                   onAddSources={() => setFeedComposerFor(v.feed)}
                 />
               ) : (
                 <EmptyFeedTile
                   variant="no-items"
-                  brightness={layout.brightness}
+                  brightness={cardBrightness}
                   onAddSources={() => setFeedComposerFor(v.feed)}
                 />
               ))}
             {v.status === "ready" && v.caughtUp && v.items.length > 0 && (
               <EmptyFeedTile
                 variant="caught-up"
-                brightness={layout.brightness}
+                brightness={cardBrightness}
                 onAddSources={() => setFeedComposerFor(v.feed)}
                 onDismiss={() =>
                   setVessels((prev) =>
@@ -952,7 +960,10 @@ export function WorkspaceView() {
                     const isExpanded = expandedHere?.key === expandKey;
                     const ctx = {
                       density: layout.density ?? DEFAULT_DENSITY,
-                      palette: paletteFor(layout.brightness),
+                      // Mobile: uniform global light/dark; desktop: per-feed scheme.
+                      palette: isMobile
+                        ? globalContentPalette(globalDark)
+                        : paletteFor(layout.brightness),
                       bodyPx:
                         TEXT_SIZE_PX[layout.textSize ?? DEFAULT_TEXT_SIZE],
                       feedId: v.feed.id,
@@ -1169,9 +1180,7 @@ export function WorkspaceView() {
         <MobileWorkspace
           feeds={visibleSorted.map((v) => v.feed)}
           userId={user.id}
-          interiorFor={(feedId) =>
-            paletteFor(positions[feedId]?.brightness).interior
-          }
+          interiorFor={() => globalContentPalette(globalDark).interior}
           renderFeedContents={(feedId) => {
             const v = vessels.find((x) => x.feed.id === feedId);
             return v ? renderFeedContents(v) : null;

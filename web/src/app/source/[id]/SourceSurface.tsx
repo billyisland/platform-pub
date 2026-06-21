@@ -8,8 +8,7 @@ import { PostCardInteractive } from "../../../components/post/PostCardInteractiv
 import { PostThread } from "../../../components/post/PostThread";
 import type { CardContext } from "../../../components/post/chassis";
 import {
-  PALETTES,
-  DEFAULT_BRIGHTNESS,
+  globalContentPalette,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
   TEXT_SIZE_PX,
@@ -17,6 +16,7 @@ import {
 import { sources, type SourceMeta } from "../../../lib/api/feeds";
 import type { Post } from "../../../lib/post/types";
 import { useCompose } from "../../../stores/compose";
+import { useColorScheme } from "../../../stores/colorScheme";
 import { ApiError } from "../../../lib/api/client";
 
 // =============================================================================
@@ -37,14 +37,15 @@ const PROTOCOL_LABELS: Record<string, string> = {
   email: "VIA EMAIL",
 };
 
-const CTX: CardContext = {
-  density: DEFAULT_DENSITY,
-  palette: PALETTES[DEFAULT_BRIGHTNESS],
-  bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
-};
-
 export function SourceSurface({ id }: { id: string }) {
   const router = useRouter();
+  // Cards follow the GLOBAL light/dark toggle (surface overlay, not a vessel).
+  const dark = useColorScheme((s) => s.dark);
+  const CTX: CardContext = {
+    density: DEFAULT_DENSITY,
+    palette: globalContentPalette(dark),
+    bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
+  };
   const [source, setSource] = useState<SourceMeta | null>(null);
   const [items, setItems] = useState<Post[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);

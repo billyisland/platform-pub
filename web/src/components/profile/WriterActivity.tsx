@@ -199,7 +199,7 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
     <>
       {/* Action buttons — rendered client-side since they need auth state */}
       {user && !isOwnProfile && (
-        <div className="flex items-center gap-2 mb-6 -mt-6">
+        <div className="flex flex-wrap items-center gap-2 mb-6 -mt-6">
           <button
             onClick={handleToggleFollow}
             disabled={followLoading}

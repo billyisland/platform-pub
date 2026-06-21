@@ -6,8 +6,7 @@ import { PostCardInteractive } from "../post/PostCardInteractive";
 import { ProfileDriveCard } from "./ProfileDriveCard";
 import type { CardContext } from "../post/chassis";
 import {
-  PALETTES,
-  DEFAULT_BRIGHTNESS,
+  globalContentPalette,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
   TEXT_SIZE_PX,
@@ -16,6 +15,7 @@ import { authorPosts } from "../../lib/api/post";
 import type { Post } from "../../lib/post/types";
 import type { WriterProfile, PledgeDrive } from "../../lib/api";
 import { useCompose } from "../../stores/compose";
+import { useColorScheme } from "../../stores/colorScheme";
 
 // =============================================================================
 // Profile Work tab — the writer's articles + pledge drives, rendered through the
@@ -24,12 +24,6 @@ import { useCompose } from "../../stores/compose";
 // article; pin state + the article db-id (for the pin toggle) are correlated by
 // dTag from the legacy writers/articles endpoint, which still owns that metadata.
 // =============================================================================
-
-const CTX: CardContext = {
-  density: DEFAULT_DENSITY,
-  palette: PALETTES[DEFAULT_BRIGHTNESS],
-  bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
-};
 
 interface DbArticleMeta {
   id: string;
@@ -65,6 +59,13 @@ export function WorkTab({ username, writer, isOwnProfile }: WorkTabProps) {
   const router = useRouter();
   const [items, setItems] = useState<WorkItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // Content-log cards follow the GLOBAL light/dark toggle (not a feed scheme).
+  const dark = useColorScheme((s) => s.dark);
+  const CTX: CardContext = {
+    density: DEFAULT_DENSITY,
+    palette: globalContentPalette(dark),
+    bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
+  };
 
   useEffect(() => {
     let cancelled = false;

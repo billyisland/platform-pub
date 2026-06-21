@@ -15,6 +15,7 @@ import {
 } from "framer-motion";
 import { prefersReducedMotion } from "../../lib/workspace/motion";
 import { snap, GRID } from "../../lib/workspace/grid";
+import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 import {
   paletteFor,
   DEFAULT_DENSITY,
@@ -383,6 +384,9 @@ export function Vessel({
         onPositionCommit(clampPos(snap(mx.get()), snap(my.get())));
       }}
       style={{
+        // Light island: desktop vessels keep their per-scheme colours
+        // regardless of the global light/dark mode (web/src/lib/palette/island.ts).
+        ...LIGHT_ISLAND_STYLE,
         position: "absolute",
         x: mx,
         y: my,

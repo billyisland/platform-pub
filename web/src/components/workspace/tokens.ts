@@ -194,6 +194,20 @@ export const PALETTES: Record<FeedScheme, VesselPalette> = {
   winter: deriveVesselPalette(SCHEME_SURFACES.winter),
 }
 
+// globalContentPalette — the palette for content that follows the GLOBAL
+// light/dark toggle (useColorScheme) rather than a per-feed scheme: profile
+// content-logs and mobile feeds. It is the `primary` palette, whose slug
+// references (var(--ah-white)/var(--ah-ink)/…) invert automatically under
+// html.dark, so the cards render light or dark with the global mode. Only the
+// derived isDark flag and the crimson accent need correcting for dark (washes +
+// vote/accent colour), since the slug values alone can't signal "now dark" to
+// the consumer. Used outside feed light-islands, so the inversion takes effect.
+export function globalContentPalette(dark: boolean): VesselPalette {
+  return dark
+    ? { ...PALETTES.primary, isDark: true, crimson: 'var(--ah-crimson-soft)' }
+    : PALETTES.primary
+}
+
 // Scheme order for the click-through cycle (FeedComposer Colour control). The
 // schemes carry no user-facing display name — the SchemeSwatch (the rendered
 // walls/interior/card colours) is the sole identifier — so this is id-only.

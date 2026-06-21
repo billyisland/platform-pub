@@ -29,6 +29,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* No-FOUC: set html.dark before paint so dark-mode users never see a
+            white flash. Mirrors useColorScheme (web/src/stores/colorScheme.ts);
+            the ColorSchemeHydrator reconciles store state + the live listener. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var m=localStorage.getItem('ah:color-mode')||'light';var d=m==='dark'||(m==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var e=document.documentElement;e.classList.toggle('dark',d);e.style.colorScheme=d?'dark':'light';}catch(_){}})();",
+          }}
+        />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="icon" href="/icon-32.png" type="image/png" sizes="32x32" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

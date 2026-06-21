@@ -13,6 +13,7 @@ import { Glasshouse } from "./Glasshouse";
 import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
 import { openSurfaceHref } from "../../stores/surfaceOverlay";
+import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 import {
   type FeedScheme,
   type Density,
@@ -842,31 +843,33 @@ function OrientationGlyph({ orientation }: { orientation: Orientation }) {
 }
 
 // The colour-scheme glyph (feature-debt §3, GLASSHOUSE-AND-PALETTE-ADR §III.4)
-// — a miniature of the scheme's user-picked surfaces (walls strip · interior
-// ground · card chip), echoing the vessel grammar, shown inside the Colour
-// AppearanceControl. Every text colour derives from these surfaces in
-// tokens.ts, so cycling can't produce an illegible feed. The schemes carry no
-// display name (DESIGN-TUNING-FINDINGS §3), so this swatch is the sole
-// identifier — the Colour control shows no text indicator. Structure uses a
-// 3px walls bar (≥2px, per the sitewide no-thin-line rule); no outline.
+// — the scheme's three surfaces shown as three fat equal bars, French-flag
+// style (walls · interior · card), echoing the vessel grammar inside the Colour
+// AppearanceControl. Bigger and clearer than the old concentric-rectangle chip
+// (which read as murky at small size). Every text colour derives from these
+// surfaces in tokens.ts, so cycling can't produce an illegible feed. The
+// schemes carry no display name (DESIGN-TUNING-FINDINGS §3), so this swatch is
+// the sole identifier — the Colour control shows no text indicator. Each bar is
+// ~14px wide (≥2px, per the sitewide no-thin-line rule); no outline. Carries
+// the light island so it previews TRUE scheme colours regardless of the global
+// light/dark mode (web/src/lib/palette/island.ts).
 function SchemeSwatch({ scheme }: { scheme: FeedScheme }) {
   const pal = PALETTES[scheme];
   return (
     <span
       aria-hidden="true"
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 18,
-        height: 14,
-        background: pal.interior,
-        borderLeft: `3px solid ${pal.walls}`,
+        ...LIGHT_ISLAND_STYLE,
+        display: "flex",
+        width: 42,
+        height: 22,
+        overflow: "hidden",
+        borderRadius: 2,
       }}
     >
-      <span
-        style={{ display: "block", width: 9, height: 7, background: pal.cardBg }}
-      />
+      <span style={{ flex: 1, background: pal.walls }} />
+      <span style={{ flex: 1, background: pal.interior }} />
+      <span style={{ flex: 1, background: pal.cardBg }} />
     </span>
   );
 }

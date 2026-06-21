@@ -113,6 +113,40 @@
   --ah-winter-card: rgb(var(--ah-winter-card-rgb));
 }
 
+/* ── Global dark mode ────────────────────────────────────────────────────────
+   Toggled on <html> by useColorScheme (web/src/stores/colorScheme.ts). Dark
+   mode = invert the canonical NEUTRAL ramp at the root: surfaces darken, text
+   lightens. Only these global-chrome neutral slugs flip — accent (crimson*),
+   semantic (trust-*, danger/vouch, klein-blue), already-dark (true-black,
+   ink-925/900/850, stone-*, wall-grey), and per-feed season slugs are left
+   untouched. The plain `--ah-<slug>` vars read the `-rgb` triple, so flipping
+   the triple cascades. Desktop feed vessels (+ the ∀ disc and the scheme
+   swatch) re-pin these to canonical light via LIGHT_ISLAND_STYLE
+   (web/src/lib/palette/island.ts) so feeds keep their per-scheme colours; keep
+   DARK_SLUGS there in sync with this list.
+   Elevation (darkest→lightest): bone (ground) < well < white (cards/fields) <
+   glasshouse (floating pane). */
+html.dark {
+  /* text / lines (dark → light) */
+  --ah-ink-rgb: 236 234 230;
+  --ah-nav-grey-rgb: 198 196 190;
+  --ah-grey-600-rgb: 166 164 158;
+  --ah-grey-400-rgb: 138 136 130;
+  --ah-grey-300-rgb: 108 106 101;
+  /* fills / edges */
+  --ah-grey-200-rgb: 60 58 54;
+  --ah-grey-100-rgb: 42 41 37;
+  /* surfaces (light → dark) */
+  --ah-white-rgb: 30 29 26;
+  --ah-glasshouse-rgb: 35 34 31;
+  --ah-glasshouse-well-rgb: 26 25 22;
+  --ah-bone-rgb: 20 19 17;
+  --ah-bone-bright-rgb: 28 27 24;
+  --ah-off-white-rgb: 33 32 29;
+  --ah-cream-rgb: 28 27 24;
+  --ah-cream-hover-rgb: 40 39 36;
+}
+
 /* ── Self-hosted fonts ───────────────────────────────────────────────────────── */
 
 /* Literata — serif, literary voice */
@@ -620,6 +654,31 @@
       margin-top: 1.25em;
       margin-bottom: 1.25em;
     }
+  }
+
+  /* ----- Article reading surface in global dark mode -----
+     Tailwind typography's --tw-prose-* vars default to fixed grays that don't
+     invert with html.dark, so the article body's bold/lists/rules/quotes would
+     stay dark-on-dark. Map the load-bearing ones onto the (now-inverted)
+     palette vars so the whole reading surface is legible. Higher specificity
+     than the plugin's `.prose`, same layer, so it wins. */
+  html.dark .prose {
+    --tw-prose-body: var(--ah-ink);
+    --tw-prose-headings: var(--ah-ink);
+    --tw-prose-lead: var(--ah-grey-600);
+    --tw-prose-links: var(--ah-ink);
+    --tw-prose-bold: var(--ah-ink);
+    --tw-prose-counters: var(--ah-grey-600);
+    --tw-prose-bullets: var(--ah-grey-400);
+    --tw-prose-hr: var(--ah-grey-200);
+    --tw-prose-quotes: var(--ah-grey-600);
+    --tw-prose-quote-borders: var(--ah-grey-300);
+    --tw-prose-captions: var(--ah-grey-600);
+    --tw-prose-code: var(--ah-ink);
+    --tw-prose-pre-code: var(--ah-bone);
+    --tw-prose-pre-bg: var(--ah-glasshouse-well);
+    --tw-prose-th-borders: var(--ah-grey-300);
+    --tw-prose-td-borders: var(--ah-grey-200);
   }
 
   /* ----- Editor selection highlight ----- */

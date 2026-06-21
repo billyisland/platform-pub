@@ -18,6 +18,7 @@ import { LightboxOverlay } from '../ui/LightboxOverlay'
 import { PalettePanel } from '../devtools/PalettePanel'
 import { PaletteHydrator } from '../devtools/PaletteHydrator'
 import { TypeScaleHydrator } from '../TypeScaleHydrator'
+import { ColorSchemeHydrator } from '../ColorSchemeHydrator'
 import { useReader } from '../../stores/reader'
 import { useProfile } from '../../stores/profileOverlay'
 import { useSurfaceOverlay } from '../../stores/surfaceOverlay'
@@ -109,6 +110,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         {/* Headless — applies the persisted per-device type-size preference on
             boot. Always mounted; no UI. */}
         <TypeScaleHydrator />
+        {/* Headless — applies the persisted per-device light/dark/system
+            appearance on boot + tracks the OS preference live. No UI. */}
+        <ColorSchemeHydrator />
         {/* Operator-only colour-tuning kit (not a Glasshouse — floats above all
             surfaces, page stays sharp). No shipped menu/settings entry; reach it
             via ?palette or the Ctrl+Alt+P chord (GLASSHOUSE-AND-PALETTE-ADR

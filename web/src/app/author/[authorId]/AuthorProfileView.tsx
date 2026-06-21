@@ -8,12 +8,12 @@ import { PostCardInteractive } from "../../../components/post/PostCardInteractiv
 import { PostThread } from "../../../components/post/PostThread";
 import type { CardContext } from "../../../components/post/chassis";
 import {
-  PALETTES,
-  DEFAULT_BRIGHTNESS,
+  globalContentPalette,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
   TEXT_SIZE_PX,
 } from "../../../components/workspace/tokens";
+import { useColorScheme } from "../../../stores/colorScheme";
 import {
   authorProfile,
   authorPosts,
@@ -51,12 +51,6 @@ function formatCount(n: number): string {
   return String(n);
 }
 
-const CTX: CardContext = {
-  density: DEFAULT_DENSITY,
-  palette: PALETTES[DEFAULT_BRIGHTNESS],
-  bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
-};
-
 export function AuthorProfileView({
   authorId,
   inOverlay = false,
@@ -65,6 +59,13 @@ export function AuthorProfileView({
   inOverlay?: boolean;
 }) {
   const router = useRouter();
+  // Content-log cards follow the GLOBAL light/dark toggle (not a feed scheme).
+  const dark = useColorScheme((s) => s.dark);
+  const CTX: CardContext = {
+    density: DEFAULT_DENSITY,
+    palette: globalContentPalette(dark),
+    bodyPx: TEXT_SIZE_PX[DEFAULT_TEXT_SIZE],
+  };
 
   // Hosted full-page → PageShell (width + padding + title). Hosted in the profile
   // overlay → bare body; the Glasshouse pane owns the frame. Article clicks
@@ -207,43 +208,86 @@ export function AuthorProfileView({
         {protocolLabel && (
           <div className="label-ui text-grey-600 mb-1">{protocolLabel}</div>
         )}
-        <div className="flex items-start gap-3">
-          {profile.avatarUrl && (
-            <button
-              type="button"
-              onClick={() =>
-                useLightbox.getState().open(profile.avatarUrl!, name)
-              }
-              aria-label="View picture"
-              className="focus-ring flex-shrink-0 cursor-zoom-in"
-            >
-              <img
-                src={profile.avatarUrl}
-                alt=""
-                className="w-12 h-12 rounded-full object-cover bg-grey-100"
-                referrerPolicy="no-referrer"
-              />
-            </button>
-          )}
-          <div className="min-w-0 flex-1">
-            <h1 className="font-sans text-2xl font-medium text-black tracking-tight">
-              {name}
-            </h1>
-            {profile.handle &&
-              (profile.externalUrl ? (
-                // The handle links out to the author's profile on the origin
-                // platform (Bluesky / Fediverse / Nostr).
-                <a
-                  href={profile.externalUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-mono-xs text-grey-600 hover:text-black hover:underline"
+        {/* Identity column on the left; the follow block sits top-right on
+            desktop and drops to its OWN row below the identity info on mobile
+            (flex-col) — last before the content log — so a long display name no
+            longer competes with the follow control and breaks. */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-start gap-3">
+              {profile.avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    useLightbox.getState().open(profile.avatarUrl!, name)
+                  }
+                  aria-label="View picture"
+                  className="focus-ring flex-shrink-0 cursor-zoom-in"
                 >
-                  @{profile.handle}
-                </a>
-              ) : (
-                <p className="text-mono-xs text-grey-600">@{profile.handle}</p>
-              ))}
+                  <img
+                    src={profile.avatarUrl}
+                    alt=""
+                    className="w-12 h-12 rounded-full object-cover bg-grey-100"
+                    referrerPolicy="no-referrer"
+                  />
+                </button>
+              )}
+              <div className="min-w-0 flex-1">
+                <h1 className="font-sans text-2xl font-medium text-black tracking-tight">
+                  {name}
+                </h1>
+                {profile.handle &&
+                  (profile.externalUrl ? (
+                    // The handle links out to the author's profile on the origin
+                    // platform (Bluesky / Fediverse / Nostr).
+                    <a
+                      href={profile.externalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-mono-xs text-grey-600 hover:text-black hover:underline"
+                    >
+                      @{profile.handle}
+                    </a>
+                  ) : (
+                    <p className="text-mono-xs text-grey-600">
+                      @{profile.handle}
+                    </p>
+                  ))}
+              </div>
+            </div>
+            {profile.bio && (
+              <p className="font-sans text-ui-sm text-grey-600 mt-3 max-w-feed">
+                {profile.bio}
+              </p>
+            )}
+            {hasStats && (
+              <div className="flex items-center gap-4 mt-3">
+                {profile.followerCount != null && (
+                  <span className="text-mono-xs text-grey-600">
+                    <span className="font-medium text-black">
+                      {formatCount(profile.followerCount)}
+                    </span>{" "}
+                    followers
+                  </span>
+                )}
+                {profile.followingCount != null && (
+                  <span className="text-mono-xs text-grey-600">
+                    <span className="font-medium text-black">
+                      {formatCount(profile.followingCount)}
+                    </span>{" "}
+                    following
+                  </span>
+                )}
+                {profile.postCount != null && (
+                  <span className="text-mono-xs text-grey-600">
+                    <span className="font-medium text-black">
+                      {formatCount(profile.postCount)}
+                    </span>{" "}
+                    posts
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           {profile.followTarget && (
             <div className="flex-shrink-0 flex items-center gap-2">
@@ -259,39 +303,6 @@ export function AuthorProfileView({
             </div>
           )}
         </div>
-        {profile.bio && (
-          <p className="font-sans text-ui-sm text-grey-600 mt-3 max-w-feed">
-            {profile.bio}
-          </p>
-        )}
-        {hasStats && (
-          <div className="flex items-center gap-4 mt-3">
-            {profile.followerCount != null && (
-              <span className="text-mono-xs text-grey-600">
-                <span className="font-medium text-black">
-                  {formatCount(profile.followerCount)}
-                </span>{" "}
-                followers
-              </span>
-            )}
-            {profile.followingCount != null && (
-              <span className="text-mono-xs text-grey-600">
-                <span className="font-medium text-black">
-                  {formatCount(profile.followingCount)}
-                </span>{" "}
-                following
-              </span>
-            )}
-            {profile.postCount != null && (
-              <span className="text-mono-xs text-grey-600">
-                <span className="font-medium text-black">
-                  {formatCount(profile.postCount)}
-                </span>{" "}
-                posts
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {items.length === 0 ? (
