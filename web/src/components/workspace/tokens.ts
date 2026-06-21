@@ -203,8 +203,19 @@ export const PALETTES: Record<FeedScheme, VesselPalette> = {
 // vote/accent colour), since the slug values alone can't signal "now dark" to
 // the consumer. Used outside feed light-islands, so the inversion takes effect.
 export function globalContentPalette(dark: boolean): VesselPalette {
+  // The mode-specific stone tones (standfirst / name labels) are NOT in
+  // DARK_SLUGS, so they don't invert under html.dark — primary's light-mode
+  // stone-600 would render dark-on-dark. Borrow the dark palette's tones so
+  // secondary text stays legible (registry: stone-300 = dark-mode standfirst,
+  // stone-350 = dark-mode name labels).
   return dark
-    ? { ...PALETTES.primary, isDark: true, crimson: 'var(--ah-crimson-soft)' }
+    ? {
+        ...PALETTES.primary,
+        isDark: true,
+        crimson: 'var(--ah-crimson-soft)',
+        cardStandfirst: 'var(--ah-stone-300)',
+        nameLabel: 'var(--ah-stone-350)',
+      }
     : PALETTES.primary
 }
 

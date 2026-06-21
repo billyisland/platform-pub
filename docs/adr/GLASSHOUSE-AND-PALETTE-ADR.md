@@ -434,8 +434,11 @@ ramp simply inverts.
    and the mobile pages are not islanded.
 
 4. **Theme-following content** (profile/source/tag content-log cards) uses
-   `globalContentPalette(dark)` (the `primary` palette with `isDark`/crimson
-   corrected) outside any island. Article `prose` gets a `html.dark .prose`
+   `globalContentPalette(dark)` (the `primary` palette with `isDark`/crimson —
+   plus the mode-specific stone tones `cardStandfirst`→`stone-300` and
+   `nameLabel`→`stone-350`, since `stone-*` is not in `DARK_SLUGS` and so doesn't
+   invert; primary's light-mode `stone-600` would otherwise read dark-on-dark)
+   corrected, outside any island. Article `prose` gets a `html.dark .prose`
    `--tw-prose-*` override (the plugin's vars are fixed grays that wouldn't
    otherwise invert).
 
