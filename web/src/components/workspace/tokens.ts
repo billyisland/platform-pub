@@ -1,26 +1,39 @@
 // Workspace colour palettes — per-feed colour schemes (feature-debt §3,
 // productising WIREFRAME-DECISIONS-CONSOLIDATED.md "Colour tokens committed").
 //
-// 'primary' (light) and 'dark' are the two hand-tuned reference palettes; the
-// other schemes are CURATED SURFACE SETS (walls / interior / card, slugs in
-// lib/palette/registry.ts) whose text colours are DERIVED, never hand-set:
-// luminance picks between the two tuned text ramps (light-surface ramp from
-// `primary`, dark-surface ramp from `dark`), so the primary/secondary/muted
-// hierarchy survives any curated surface. Semantic colour flips ride the same
-// switch (crimson → crimson-soft on dark cards). Curate swatches to be clearly
-// light or clearly dark — a mid-luminance card defeats both ramps; that band
-// is avoided by curation, not patched per-pixel.
+// A feed scheme is now a COLOURWAY (seasonal character — hue / energy / warmth),
+// ORTHOGONAL to light/dark: the colourway is per-feed, but whether it renders
+// light or dark follows the GLOBAL light/dark toggle (useColorScheme). So
+// `paletteFor(scheme, dark)` takes the global dark flag and returns that
+// colourway's light- or dark-variant palette.
 //
-// `normalizeBrightness` maps any stale persisted value (retired 'medium'/'dim',
-// or a scheme id from a newer build) onto the light default so old
-// localStorage layouts and stale clients keep working. The scheme id list must
-// mirror FEED_SCHEME_IDS in gateway/src/routes/feeds.ts (PATCH validation).
+//   • 'basic'  — the plain reference palette: BASIC_LIGHT (light) / BASIC_DARK
+//                (dark), both hand-tuned (incl. the ink-850/ink-925 bar steps).
+//   • spring / summer / autumn / winter — CURATED SURFACE SETS, each with a
+//     light AND a dark triple (walls / interior / card, slugs in
+//     lib/palette/registry.ts). Text colours are DERIVED, never hand-set:
+//     luminance picks between the two tuned text ramps (light-surface ramp from
+//     BASIC_LIGHT, dark-surface ramp from BASIC_DARK), so the primary/secondary/
+//     muted hierarchy survives any curated surface, and the semantic flip rides
+//     the same switch (crimson → crimson-soft on dark cards). Curate each
+//     variant's card clearly light or clearly dark — a mid-luminance card
+//     defeats both ramps.
+//
+// Desktop vessels carry LIGHT_ISLAND_STYLE so the neutral text slugs (bone/ink/
+// white/…) the derivation references resolve canonical regardless of the global
+// mode; the palette then explicitly selects the light or dark variant. So the
+// island stays, but it no longer freezes the feed to light — the VARIANT does
+// the light/dark, the island only keeps the derivation deterministic.
+//
+// `normalizeBrightness` maps any stale persisted value (retired 'medium'/'dim'/
+// 'primary'/'dark', or a scheme id from a newer build) onto a live colourway so
+// old localStorage layouts and stale clients keep working. The colourway id
+// list must mirror FEED_SCHEME_IDS in gateway/src/routes/feeds/crud.ts.
 
 import { PALETTE_REGISTRY } from '../../lib/palette/registry'
 
 export type FeedScheme =
-  | 'primary'
-  | 'dark'
+  | 'basic'
   | 'spring'
   | 'summer'
   | 'autumn'
@@ -31,7 +44,7 @@ export type Brightness = FeedScheme
 export type Density = 'compact' | 'standard' | 'full'
 export type Orientation = 'vertical' | 'horizontal'
 
-export const DEFAULT_BRIGHTNESS: FeedScheme = 'primary'
+export const DEFAULT_BRIGHTNESS: FeedScheme = 'basic'
 export const DEFAULT_DENSITY: Density = 'standard'
 export const DEFAULT_ORIENTATION: Orientation = 'vertical'
 
@@ -80,16 +93,30 @@ function registryHex(slug: string): string {
   return hex
 }
 
-// Curated scheme → its three surfaces (registry slugs). The bar shares the
-// walls colour, mirroring primary (ink/ink) and dark (true-black/true-black).
+// Curated colourway → its three surfaces (registry slugs), for BOTH the light
+// and dark variant. The bar shares the walls colour, mirroring basic (ink/ink
+// light, true-black/true-black dark).
+type SurfaceSet = { walls: string; interior: string; cardBg: string }
 const SCHEME_SURFACES: Record<
-  Exclude<FeedScheme, 'primary' | 'dark'>,
-  { walls: string; interior: string; cardBg: string }
+  Exclude<FeedScheme, 'basic'>,
+  { light: SurfaceSet; dark: SurfaceSet }
 > = {
-  spring: { walls: 'spring-walls', interior: 'spring-interior', cardBg: 'spring-card' },
-  summer: { walls: 'summer-walls', interior: 'summer-interior', cardBg: 'summer-card' },
-  autumn: { walls: 'autumn-walls', interior: 'autumn-interior', cardBg: 'autumn-card' },
-  winter: { walls: 'winter-walls', interior: 'winter-interior', cardBg: 'winter-card' },
+  spring: {
+    light: { walls: 'spring-walls', interior: 'spring-interior', cardBg: 'spring-card' },
+    dark: { walls: 'spring-walls-dk', interior: 'spring-interior-dk', cardBg: 'spring-card-dk' },
+  },
+  summer: {
+    light: { walls: 'summer-walls', interior: 'summer-interior', cardBg: 'summer-card' },
+    dark: { walls: 'summer-walls-dk', interior: 'summer-interior-dk', cardBg: 'summer-card-dk' },
+  },
+  autumn: {
+    light: { walls: 'autumn-walls', interior: 'autumn-interior', cardBg: 'autumn-card' },
+    dark: { walls: 'autumn-walls-dk', interior: 'autumn-interior-dk', cardBg: 'autumn-card-dk' },
+  },
+  winter: {
+    light: { walls: 'winter-walls-lt', interior: 'winter-interior-lt', cardBg: 'winter-card-lt' },
+    dark: { walls: 'winter-walls', interior: 'winter-interior', cardBg: 'winter-card' },
+  },
 }
 
 // Expand a curated surface set into a full VesselPalette. Luminance is read
@@ -137,94 +164,113 @@ function deriveVesselPalette(s: {
   }
 }
 
-export const PALETTES: Record<FeedScheme, VesselPalette> = {
-  // The two reference palettes stay literal (hand-tuned wells incl. the
-  // ink-850/ink-925 bar steps) — derivation selects between their text ramps.
-  primary: {
-    isDark: false,
-    walls: 'var(--ah-ink)',
-    interior: 'var(--ah-bone)',
-    nameLabel: 'var(--ah-stone-600)',
-    cardBg: 'var(--ah-white)',
-    cardTitle: 'var(--ah-ink)',
-    cardStandfirst: 'var(--ah-stone-600)',
-    cardMeta: 'var(--ah-stone-400)',
-    quoteBg: 'var(--ah-ink)',
-    quoteText: 'var(--ah-bone-bright)',
-    quoteMeta: 'var(--ah-stone-350)',
-    crimson: 'var(--ah-crimson)',
-    resizeHandle: 'var(--ah-stone-600)',
-    pipOpacity: 1,
-    barBg: 'var(--ah-ink)',
-    barText: 'var(--ah-bone-bright)',
-    barTextMuted: 'var(--ah-stone-400)',
-    barInputBg: 'var(--ah-ink-850)',
-    barInputText: 'var(--ah-bone-bright)',
-    barInputPlaceholder: 'var(--ah-ink-grey)',
-    barDropdownBg: 'var(--ah-ink-925)',
-    barDropdownHover: 'var(--ah-ink-850)',
+// The two reference palettes stay literal (hand-tuned wells incl. the
+// ink-850/ink-925 bar steps) — they are the 'basic' colourway's light and dark
+// variants, and the source of the two derived text ramps.
+const BASIC_LIGHT: VesselPalette = {
+  isDark: false,
+  walls: 'var(--ah-ink)',
+  interior: 'var(--ah-bone)',
+  nameLabel: 'var(--ah-stone-600)',
+  cardBg: 'var(--ah-white)',
+  cardTitle: 'var(--ah-ink)',
+  cardStandfirst: 'var(--ah-stone-600)',
+  cardMeta: 'var(--ah-stone-400)',
+  quoteBg: 'var(--ah-ink)',
+  quoteText: 'var(--ah-bone-bright)',
+  quoteMeta: 'var(--ah-stone-350)',
+  crimson: 'var(--ah-crimson)',
+  resizeHandle: 'var(--ah-stone-600)',
+  pipOpacity: 1,
+  barBg: 'var(--ah-ink)',
+  barText: 'var(--ah-bone-bright)',
+  barTextMuted: 'var(--ah-stone-400)',
+  barInputBg: 'var(--ah-ink-850)',
+  barInputText: 'var(--ah-bone-bright)',
+  barInputPlaceholder: 'var(--ah-ink-grey)',
+  barDropdownBg: 'var(--ah-ink-925)',
+  barDropdownHover: 'var(--ah-ink-850)',
+}
+const BASIC_DARK: VesselPalette = {
+  isDark: true,
+  walls: 'var(--ah-true-black)',
+  interior: 'var(--ah-ink-925)',
+  nameLabel: 'var(--ah-stone-350)',
+  cardBg: 'var(--ah-ink-900)',
+  cardTitle: 'var(--ah-bone)',
+  cardStandfirst: 'var(--ah-stone-300)',
+  cardMeta: 'var(--ah-stone-400)',
+  quoteBg: 'var(--ah-true-black)',
+  quoteText: 'var(--ah-bone-bright)',
+  quoteMeta: 'var(--ah-stone-350)',
+  crimson: 'var(--ah-crimson-soft)',
+  resizeHandle: 'var(--ah-stone-600)',
+  pipOpacity: 1,
+  barBg: 'var(--ah-true-black)',
+  barText: 'var(--ah-bone-bright)',
+  barTextMuted: 'var(--ah-stone-400)',
+  barInputBg: 'var(--ah-ink-850)',
+  barInputText: 'var(--ah-bone-bright)',
+  barInputPlaceholder: 'var(--ah-ink-grey)',
+  barDropdownBg: 'var(--ah-ink-925)',
+  barDropdownHover: 'var(--ah-ink-850)',
+}
+
+// Precompute the four seasonal colourways × {light, dark} = 8 derived palettes,
+// so paletteFor is a table lookup, not a per-card derivation.
+const SEASONAL_PALETTES: Record<
+  Exclude<FeedScheme, 'basic'>,
+  { light: VesselPalette; dark: VesselPalette }
+> = {
+  spring: {
+    light: deriveVesselPalette(SCHEME_SURFACES.spring.light),
+    dark: deriveVesselPalette(SCHEME_SURFACES.spring.dark),
   },
-  dark: {
-    isDark: true,
-    walls: 'var(--ah-true-black)',
-    interior: 'var(--ah-ink-925)',
-    nameLabel: 'var(--ah-stone-350)',
-    cardBg: 'var(--ah-ink-900)',
-    cardTitle: 'var(--ah-bone)',
-    cardStandfirst: 'var(--ah-stone-300)',
-    cardMeta: 'var(--ah-stone-400)',
-    quoteBg: 'var(--ah-true-black)',
-    quoteText: 'var(--ah-bone-bright)',
-    quoteMeta: 'var(--ah-stone-350)',
-    crimson: 'var(--ah-crimson-soft)',
-    resizeHandle: 'var(--ah-stone-600)',
-    pipOpacity: 1,
-    barBg: 'var(--ah-true-black)',
-    barText: 'var(--ah-bone-bright)',
-    barTextMuted: 'var(--ah-stone-400)',
-    barInputBg: 'var(--ah-ink-850)',
-    barInputText: 'var(--ah-bone-bright)',
-    barInputPlaceholder: 'var(--ah-ink-grey)',
-    barDropdownBg: 'var(--ah-ink-925)',
-    barDropdownHover: 'var(--ah-ink-850)',
+  summer: {
+    light: deriveVesselPalette(SCHEME_SURFACES.summer.light),
+    dark: deriveVesselPalette(SCHEME_SURFACES.summer.dark),
   },
-  spring: deriveVesselPalette(SCHEME_SURFACES.spring),
-  summer: deriveVesselPalette(SCHEME_SURFACES.summer),
-  autumn: deriveVesselPalette(SCHEME_SURFACES.autumn),
-  winter: deriveVesselPalette(SCHEME_SURFACES.winter),
+  autumn: {
+    light: deriveVesselPalette(SCHEME_SURFACES.autumn.light),
+    dark: deriveVesselPalette(SCHEME_SURFACES.autumn.dark),
+  },
+  winter: {
+    light: deriveVesselPalette(SCHEME_SURFACES.winter.light),
+    dark: deriveVesselPalette(SCHEME_SURFACES.winter.dark),
+  },
 }
 
 // globalContentPalette — the palette for content that follows the GLOBAL
-// light/dark toggle (useColorScheme) rather than a per-feed scheme: profile
-// content-logs and mobile feeds. It is the `primary` palette, whose slug
+// light/dark toggle (useColorScheme) but carries NO per-feed colourway: profile
+// content-logs and mobile feeds. It is the BASIC_LIGHT palette, whose slug
 // references (var(--ah-white)/var(--ah-ink)/…) invert automatically under
-// html.dark, so the cards render light or dark with the global mode. Only the
-// derived isDark flag and the crimson accent need correcting for dark (washes +
-// vote/accent colour), since the slug values alone can't signal "now dark" to
-// the consumer. Used outside feed light-islands, so the inversion takes effect.
+// html.dark, so the cards render light or dark with the global mode. (It does
+// NOT use BASIC_DARK, which would need an island to read right — this surface is
+// rendered OUTSIDE any island, so it relies on the html.dark inversion.) Only
+// the derived isDark flag and the crimson accent need correcting for dark
+// (washes + vote/accent colour), since the slug values alone can't signal "now
+// dark" to the consumer.
 export function globalContentPalette(dark: boolean): VesselPalette {
   // The mode-specific stone tones (standfirst / name labels) are NOT in
-  // DARK_SLUGS, so they don't invert under html.dark — primary's light-mode
-  // stone-600 would render dark-on-dark. Borrow the dark palette's tones so
-  // secondary text stays legible (registry: stone-300 = dark-mode standfirst,
-  // stone-350 = dark-mode name labels).
+  // DARK_SLUGS, so they don't invert under html.dark — the light-mode stone-600
+  // would render dark-on-dark. Borrow the dark tones so secondary text stays
+  // legible (registry: stone-300 = dark-mode standfirst, stone-350 = name).
   return dark
     ? {
-        ...PALETTES.primary,
+        ...BASIC_LIGHT,
         isDark: true,
         crimson: 'var(--ah-crimson-soft)',
         cardStandfirst: 'var(--ah-stone-300)',
         nameLabel: 'var(--ah-stone-350)',
       }
-    : PALETTES.primary
+    : BASIC_LIGHT
 }
 
 // Scheme order for the click-through cycle (FeedComposer Colour control). The
 // schemes carry no user-facing display name — the SchemeSwatch (the rendered
 // walls/interior/card colours) is the sole identifier — so this is id-only.
 export const SCHEME_OPTIONS: ReadonlyArray<{ id: FeedScheme }> = [
-  { id: 'primary' },
-  { id: 'dark' },
+  { id: 'basic' },
   { id: 'spring' },
   { id: 'summer' },
   { id: 'autumn' },
@@ -239,17 +285,21 @@ const SCHEME_IDS = new Set<string>(SCHEME_OPTIONS.map((o) => o.id))
 // retired id to its nearest surviving season by hue BEFORE the SCHEME_IDS test,
 // so an existing feed lands on a matched scheme instead of flattening to Paper.
 const SCHEME_ALIASES: Record<string, FeedScheme> = {
+  // The two former mode-fixed reference schemes collapse into the one 'basic'
+  // colourway (light/dark is now the GLOBAL toggle, not the per-feed scheme):
+  primary: 'basic',
+  dark: 'basic',
   // Four-seasons predecessors (Brazilian-modernist family), by hue:
-  anil: 'winter', // slate indigo → cool slate-indigo dark
-  vela: 'spring', // coastal teal → fresh green light
-  caju: 'autumn', // ember coral → bold ember light
+  anil: 'winter', // slate indigo → cool slate-indigo
+  vela: 'spring', // coastal teal → fresh green
+  caju: 'autumn', // ember coral → bold ember
   // Earlier retired ids, re-pointed through the new family:
   blush: 'autumn', // hot pink/coral → ember
   sage: 'spring', // green → fresh green
-  sand: 'summer', // warm tan → warm-sand summer ground
-  slate: 'winter', // dark blue → slate-indigo dark
+  sand: 'summer', // warm tan → warm-sand summer
+  slate: 'winter', // dark blue → slate-indigo
   mata: 'spring', // dropped green → fresh green
-  cobalto: 'winter', // electric blue → slate-indigo dark
+  cobalto: 'winter', // electric blue → slate-indigo
 }
 
 // Coerce any value (stale persisted 'medium'/'dim', unknown scheme ids from a
@@ -258,17 +308,24 @@ const SCHEME_ALIASES: Record<string, FeedScheme> = {
 export function normalizeBrightness(
   b: Brightness | string | null | undefined,
 ): FeedScheme {
-  if (typeof b !== 'string') return 'primary'
+  if (typeof b !== 'string') return 'basic'
   if (SCHEME_IDS.has(b)) return b as FeedScheme
   if (b in SCHEME_ALIASES) return SCHEME_ALIASES[b]
-  return 'primary'
+  return 'basic'
 }
 
-// Palette lookup that tolerates stale/undefined scheme ids without crashing.
+// Palette lookup for a feed's colourway in the current GLOBAL light/dark mode.
+// `dark` is the resolved useColorScheme().dark flag — desktop vessels pass it so
+// a feed renders its colourway's light or dark variant matching the global mode.
+// Callers that render OUTSIDE a light island (mobile / profile content) use
+// globalContentPalette instead. Tolerates stale/undefined scheme ids.
 export function paletteFor(
   b: Brightness | string | null | undefined,
+  dark = false,
 ): VesselPalette {
-  return PALETTES[normalizeBrightness(b)]
+  const c = normalizeBrightness(b)
+  if (c === 'basic') return dark ? BASIC_DARK : BASIC_LIGHT
+  return SEASONAL_PALETTES[c][dark ? 'dark' : 'light']
 }
 
 // True when the palette is a dark-card family. Lets palette-only consumers pick

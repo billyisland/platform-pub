@@ -25,13 +25,19 @@ const createFeedSchema = z.object({
 // anil/vela/caju); rows still holding a retired id are migrated on read by the
 // client's normalizeBrightness alias map, so no DB backfill is needed — only
 // new ids are ever written back here.
+// A feed scheme is a COLOURWAY (seasonal character); light/dark is the global
+// per-device toggle, not the per-feed scheme. Must mirror SCHEME_OPTIONS in
+// web/src/components/workspace/tokens.ts. The retired mode-fixed ids
+// "primary"/"dark" stay accepted (they alias to "basic" on the client) so a
+// feed PATCH that round-trips an old persisted value is not rejected.
 const FEED_SCHEME_IDS = [
-  "primary",
-  "dark",
+  "basic",
   "spring",
   "summer",
   "autumn",
   "winter",
+  "primary",
+  "dark",
 ] as const;
 
 // Per-feed density (MOBILE-LAYOUT-ADR §VI): feed character like the scheme,

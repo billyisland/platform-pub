@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { WorkspaceFeed } from "../../lib/api";
 import { PullToRefresh } from "./PullToRefresh";
+import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 
 // =============================================================================
 // MobileWorkspace — the mobile workspace shell (MOBILE-LAYOUT-ADR §III–§IV).
@@ -418,6 +419,13 @@ export function MobileWorkspace({
               <div
                 key={f.id}
                 style={{
+                  // Island the page like a desktop vessel: the feed renders its
+                  // colourway's light/dark variant (chosen by paletteFor in the
+                  // parent), and the island keeps the derived text slugs the
+                  // palette references resolving canonical regardless of mode.
+                  // The mobile bar above is NOT islanded — it is global chrome
+                  // and inverts with the toggle.
+                  ...LIGHT_ISLAND_STYLE,
                   width: `${100 / count}%`,
                   height: "100%",
                   overflowY: "auto",

@@ -26,6 +26,7 @@ import {
 } from "./tokens";
 import { VesselBar, BAR_H } from "./VesselBar";
 import { PullToRefresh } from "./PullToRefresh";
+import { useColorScheme } from "../../stores/colorScheme";
 
 // Vessel — the ⊔ chassis, per WIREFRAME-DECISIONS-CONSOLIDATED.md Step 1.
 //
@@ -142,7 +143,11 @@ export function Vessel({
 
   const effDensity = density ?? DEFAULT_DENSITY;
   const effOrientation = orientation ?? DEFAULT_ORIENTATION;
-  const palette = paletteFor(brightness);
+  // The colourway renders in the global mode's light/dark variant; the vessel
+  // stays islanded (LIGHT_ISLAND_STYLE) so the derived text slugs the palette
+  // references resolve canonical regardless of mode.
+  const globalDark = useColorScheme((s) => s.dark);
+  const palette = paletteFor(brightness, globalDark);
   const isHorizontal = effOrientation === "horizontal";
 
   const isDraggingRef = useRef(false);

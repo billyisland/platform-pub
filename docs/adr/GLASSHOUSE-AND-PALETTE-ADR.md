@@ -421,12 +421,22 @@ ramp simply inverts.
    with near-zero per-component edits: workspace ground, reader/profile/source/
    tag surfaces, every Glasshouse overlay, dropdowns/popovers.
 
-2. **Desktop feed vessels keep their per-scheme colours** via `LIGHT_ISLAND_STYLE`
-   on the `Vessel` root — an inline re-declaration of `DARK_SLUGS` back to their
-   canonical light triples (inline beats the `html.dark` stylesheet rule), so the
-   feed subtree is immune to the global mode. The **ForallMenu disc + dropdown**
-   (locked nav chrome) and the FeedComposer **scheme swatch** (true-colour
-   preview) carry the same island. The **wordmark** is a sibling over the floor,
+2. **A feed scheme is a COLOURWAY (seasonal character), orthogonal to light/dark**
+   (2026-06-21): the colourway is per-feed, but its light-vs-dark follows the
+   **global** toggle. Five colourways (`basic` + `spring`/`summer`/`autumn`/
+   `winter`), each with a **light AND a dark surface set** (registry slugs, the
+   opposite-of-original variant suffixed `-dk`/`-lt`); `paletteFor(scheme, dark)`
+   returns the matching variant. **Desktop feed vessels still carry
+   `LIGHT_ISLAND_STYLE`** on the `Vessel` root — an inline re-declaration of
+   `DARK_SLUGS` back to their canonical light triples (inline beats the
+   `html.dark` stylesheet rule) — but the island's role is now narrower: it keeps
+   the *derived text slugs* (bone/ink/white/stone) the palette references
+   resolving canonical so the text ramps stay deterministic; the **variant**, not
+   the island, supplies the light/dark. (Season surface slugs are not in
+   `DARK_SLUGS`, so only the variant choice flips them.) The **ForallMenu disc +
+   dropdown** (locked nav chrome) and the FeedComposer **scheme swatch** (which
+   previews the colourway's variant for the current global mode) carry the same
+   island. The **wordmark** is a sibling over the floor,
    so it flips to light via `var(--ah-ink)`. **The disc itself, though islanded,
    deliberately inverts its own fill/glyph in dark mode** (2026-06-21): rather
    than letting the island freeze it, `ForallMenu.tsx` picks `discBg`/`discGlyph`
@@ -437,16 +447,19 @@ ramp simply inverts.
    close-X glyph and the unread-badge ring track the same pair. The **dropdown
    menu is unaffected** (stays light).
 
-3. **Mobile feeds follow the toggle uniformly** (per-feed scheme ignored):
-   `WorkspaceView.renderFeedContents` + `interiorFor` use `globalContentPalette(dark)`
-   and the mobile pages are not islanded.
+3. **Mobile feeds render the per-feed colourway in the global mode's variant**,
+   same as desktop (2026-06-21): `WorkspaceView.renderFeedContents` + `interiorFor`
+   use `paletteFor(brightness, dark)`, and the mobile per-feed pages carry
+   `LIGHT_ISLAND_STYLE` (`MobileWorkspace.tsx`) so the derived text resolves
+   canonical. The mobile **bar** above the pages is NOT islanded — it is global
+   chrome and inverts with the toggle.
 
-4. **Theme-following content** (profile/source/tag content-log cards) uses
-   `globalContentPalette(dark)` (the `primary` palette with `isDark`/crimson —
-   plus the mode-specific stone tones `cardStandfirst`→`stone-300` and
-   `nameLabel`→`stone-350`, since `stone-*` is not in `DARK_SLUGS` and so doesn't
-   invert; primary's light-mode `stone-600` would otherwise read dark-on-dark)
-   corrected, outside any island. Article `prose` gets a `html.dark .prose`
+4. **Theme-following content** (profile/source/tag content-log cards — which
+   carry no colourway) uses `globalContentPalette(dark)` (the `BASIC_LIGHT`
+   palette with `isDark`/crimson — plus the mode-specific stone tones
+   `cardStandfirst`→`stone-300` and `nameLabel`→`stone-350`, since `stone-*` is
+   not in `DARK_SLUGS` and so doesn't invert; the light-mode `stone-600` would
+   otherwise read dark-on-dark) corrected, outside any island. Article `prose` gets a `html.dark .prose`
    `--tw-prose-*` override (the plugin's vars are fixed grays that wouldn't
    otherwise invert).
 

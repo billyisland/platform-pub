@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { paletteFor, type Brightness, type VesselPalette } from "./tokens";
+import { type VesselPalette } from "./tokens";
 
 interface EmptyFeedTileProps {
   variant: "no-sources" | "no-items" | "caught-up";
-  brightness?: Brightness;
+  // The already-resolved palette for this feed (colourway × global mode on
+  // desktop, globalContentPalette on mobile) — computed by the caller so the
+  // empty-state tile matches the cards in the same vessel.
+  palette: VesselPalette;
   onAddSources?: () => void;
   onDismiss?: () => void;
 }
@@ -35,11 +38,10 @@ function MutedAction({
 
 export function EmptyFeedTile({
   variant,
-  brightness,
+  palette,
   onAddSources,
   onDismiss,
 }: EmptyFeedTileProps) {
-  const palette = paletteFor(brightness);
 
   if (variant === "no-sources") {
     return (

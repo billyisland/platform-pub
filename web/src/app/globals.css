@@ -85,32 +85,60 @@
   --ah-blush-deep: rgb(var(--ah-blush-deep-rgb));
   /* Per-feed colour-scheme surfaces (feature-debt §3; four-seasons family —
      DESIGN-TUNING-FINDINGS §3). One shared grammar: saturated frame (walls) →
-     tinted ground (interior) → clean reading surface (card). Spring/Summer/
-     Autumn are light-card; Winter is a cool slate-indigo dark elevation ramp. */
+     tinted ground (interior) → clean reading surface (card). Each colourway now
+     carries BOTH a light and a dark surface set (`-dk`/`-lt` suffix on the
+     opposite-of-original variant); the colourway is the seasonal character, the
+     global light/dark toggle picks the variant. These season slugs are NOT in
+     DARK_SLUGS — they never invert under html.dark; the variant is chosen in
+     tokens.ts (paletteFor) instead. */
   --ah-spring-walls-rgb: 47 125 74;
   --ah-spring-walls: rgb(var(--ah-spring-walls-rgb));
   --ah-spring-interior-rgb: 220 235 207;
   --ah-spring-interior: rgb(var(--ah-spring-interior-rgb));
   --ah-spring-card-rgb: 244 248 236;
   --ah-spring-card: rgb(var(--ah-spring-card-rgb));
+  --ah-spring-walls-dk-rgb: 44 122 71;
+  --ah-spring-walls-dk: rgb(var(--ah-spring-walls-dk-rgb));
+  --ah-spring-interior-dk-rgb: 21 32 26;
+  --ah-spring-interior-dk: rgb(var(--ah-spring-interior-dk-rgb));
+  --ah-spring-card-dk-rgb: 30 45 36;
+  --ah-spring-card-dk: rgb(var(--ah-spring-card-dk-rgb));
   --ah-summer-walls-rgb: 14 93 176;
   --ah-summer-walls: rgb(var(--ah-summer-walls-rgb));
   --ah-summer-interior-rgb: 242 216 158;
   --ah-summer-interior: rgb(var(--ah-summer-interior-rgb));
   --ah-summer-card-rgb: 252 243 221;
   --ah-summer-card: rgb(var(--ah-summer-card-rgb));
+  --ah-summer-walls-dk-rgb: 15 91 168;
+  --ah-summer-walls-dk: rgb(var(--ah-summer-walls-dk-rgb));
+  --ah-summer-interior-dk-rgb: 34 28 18;
+  --ah-summer-interior-dk: rgb(var(--ah-summer-interior-dk-rgb));
+  --ah-summer-card-dk-rgb: 46 39 25;
+  --ah-summer-card-dk: rgb(var(--ah-summer-card-dk-rgb));
   --ah-autumn-walls-rgb: 181 70 30;
   --ah-autumn-walls: rgb(var(--ah-autumn-walls-rgb));
   --ah-autumn-interior-rgb: 233 201 180;
   --ah-autumn-interior: rgb(var(--ah-autumn-interior-rgb));
   --ah-autumn-card-rgb: 251 239 227;
   --ah-autumn-card: rgb(var(--ah-autumn-card-rgb));
+  --ah-autumn-walls-dk-rgb: 181 70 30;
+  --ah-autumn-walls-dk: rgb(var(--ah-autumn-walls-dk-rgb));
+  --ah-autumn-interior-dk-rgb: 37 26 20;
+  --ah-autumn-interior-dk: rgb(var(--ah-autumn-interior-dk-rgb));
+  --ah-autumn-card-dk-rgb: 50 39 30;
+  --ah-autumn-card-dk: rgb(var(--ah-autumn-card-dk-rgb));
   --ah-winter-walls-rgb: 35 46 69;
   --ah-winter-walls: rgb(var(--ah-winter-walls-rgb));
   --ah-winter-interior-rgb: 44 56 80;
   --ah-winter-interior: rgb(var(--ah-winter-interior-rgb));
   --ah-winter-card-rgb: 52 66 94;
   --ah-winter-card: rgb(var(--ah-winter-card-rgb));
+  --ah-winter-walls-lt-rgb: 43 55 86;
+  --ah-winter-walls-lt: rgb(var(--ah-winter-walls-lt-rgb));
+  --ah-winter-interior-lt-rgb: 216 221 234;
+  --ah-winter-interior-lt: rgb(var(--ah-winter-interior-lt-rgb));
+  --ah-winter-card-lt-rgb: 239 242 248;
+  --ah-winter-card-lt: rgb(var(--ah-winter-card-lt-rgb));
 }
 
 /* ── Global dark mode ────────────────────────────────────────────────────────

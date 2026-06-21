@@ -2,7 +2,10 @@
 
 > **Status (2026-06-17): §1–§5 implemented; §6 deferred as a flagged decision.**
 > §3 shipped as `spring`/`summer`/`autumn`/`winter` (no user-facing display
-> names — the `SchemeSwatch` is the sole identifier). §2 was corrected on
+> names — the `SchemeSwatch` is the sole identifier), then **reworked 2026-06-21**
+> so a scheme is a *colourway* (seasonal character) that adapts to the global
+> light/dark toggle — each colourway has a light AND a dark variant; see the
+> **§3 addendum**. §2 was corrected on
 > implementation: `crimson-dark` and `off-white` are **live** (Tailwind `hover:`
 > uses / `ProvenanceBar` canvas) and were kept; only the genuinely-dead
 > `neighbour-grey` was removed, and the flagged hardcoded hexes are the exempt
@@ -136,6 +139,42 @@ Adding/renaming schemes touches all of:
   mirror the union).
 - `normalizeBrightness` — map retired ids (`anil`/`vela`/`caju`) onto a default
   so stale persisted layouts keep working.
+
+### Addendum (2026-06-21) — a scheme is a colourway, light/dark is global
+
+The four-seasons set above (and the former `primary`/`dark` pair) shipped as
+**mode-fixed** schemes: Spring/Summer/Autumn were always light, Winter always
+dark, and a vessel kept its scheme colours regardless of the global light/dark
+toggle (frozen by `LIGHT_ISLAND_STYLE`). That has been reworked so the **scheme
+is a COLOURWAY (seasonal character), orthogonal to light/dark**:
+
+- Five colourways — `basic` (the former `primary`/`dark` collapsed into one) plus
+  `spring`/`summer`/`autumn`/`winter`. `primary`/`dark` alias to `basic`.
+- **Each colourway carries BOTH a light and a dark surface set.** The variant is
+  chosen by the **global** toggle via `paletteFor(scheme, dark)`; the colourway
+  only sets the hue/energy. So a Spring feed is fresh-green-light in light mode
+  and fresh-green-dark in dark mode.
+- The original variant of each keeps its slug names; the added variant is
+  suffixed `-dk` (Spring/Summer/Autumn, which were light-first) or `-lt`
+  (Winter, dark-first). The new variant surfaces (walls / interior / card):
+
+  | Colourway | added variant | walls | interior | card |
+  |---|---|---|---|---|
+  | Spring | dark (`-dk`)  | `#2C7A47` | `#15201A` | `#1E2D24` |
+  | Summer | dark (`-dk`)  | `#0F5BA8` | `#221C12` | `#2E2719` |
+  | Autumn | dark (`-dk`)  | `#B5461E` | `#251A14` | `#32271E` |
+  | Winter | light (`-lt`) | `#2B3756` | `#D8DDEA` | `#EFF2F8` |
+
+- The light-island still wraps desktop vessels **and now the mobile per-feed
+  pages** (`MobileWorkspace.tsx`), but its role is narrowed: it keeps the derived
+  *text* slugs (bone/ink/white/stone) canonical so the ramps stay deterministic
+  — the variant supplies the light/dark, not the island. Mobile thus honours the
+  colourway too (it previously ignored it). The `SchemeSwatch` previews the
+  variant for the *current* global mode.
+- Wiring delta vs. the "Change surface" list above: `tokens.ts` now exposes
+  `paletteFor(scheme, dark)`, `BASIC_LIGHT`/`BASIC_DARK`, and `SEASONAL_PALETTES`
+  (the precomputed 4×2 variants) in place of the single static `PALETTES`;
+  `FEED_SCHEME_IDS` lives at `gateway/src/routes/feeds/crud.ts`.
 
 ---
 

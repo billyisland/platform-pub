@@ -14,6 +14,7 @@ import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
 import { openSurfaceHref } from "../../stores/surfaceOverlay";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
+import { useColorScheme } from "../../stores/colorScheme";
 import {
   type FeedScheme,
   type Density,
@@ -24,7 +25,7 @@ import {
   nextTextSize,
   nextScheme,
   normalizeBrightness,
-  PALETTES,
+  paletteFor,
   DEFAULT_BRIGHTNESS,
   DEFAULT_DENSITY,
   DEFAULT_ORIENTATION,
@@ -850,11 +851,13 @@ function OrientationGlyph({ orientation }: { orientation: Orientation }) {
 // surfaces in tokens.ts, so cycling can't produce an illegible feed. The
 // schemes carry no display name (DESIGN-TUNING-FINDINGS §3), so this swatch is
 // the sole identifier — the Colour control shows no text indicator. Each bar is
-// ~14px wide (≥2px, per the sitewide no-thin-line rule); no outline. Carries
-// the light island so it previews TRUE scheme colours regardless of the global
-// light/dark mode (web/src/lib/palette/island.ts).
+// ~14px wide (≥2px, per the sitewide no-thin-line rule); no outline. The
+// colourway now adapts to the global light/dark toggle, so the swatch previews
+// the variant for the CURRENT global mode (paletteFor(scheme, dark)); it carries
+// the light island only so basic's neutral slugs resolve cleanly in the preview.
 function SchemeSwatch({ scheme }: { scheme: FeedScheme }) {
-  const pal = PALETTES[scheme];
+  const dark = useColorScheme((s) => s.dark);
+  const pal = paletteFor(scheme, dark);
   return (
     <span
       aria-hidden="true"

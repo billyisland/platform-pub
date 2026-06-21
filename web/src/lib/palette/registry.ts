@@ -69,23 +69,41 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   { slug: 'blush', hex: '#F5D5D6', label: 'Profile avatar gradient start' },
   { slug: 'blush-deep', hex: '#E8A5A7', label: 'Profile avatar gradient end' },
   // --- Per-feed colour-scheme surfaces (feature-debt §3) -------------------
-  // Each curated scheme contributes three surfaces (walls double as the bar);
-  // every text colour is DERIVED from these by luminance in
-  // components/workspace/tokens.ts — tune surfaces here/in the devtool and the
-  // text family follows. Keep each scheme's card surface clearly light or
-  // clearly dark: mid-luminance cards defeat both tuned text ramps.
-  { slug: 'spring-walls', hex: '#2F7D4A', label: 'Feed scheme Spring — vessel walls & bar (fresh green)' },
-  { slug: 'spring-interior', hex: '#DCEBCF', label: 'Feed scheme Spring — vessel interior (tinted green ground)' },
-  { slug: 'spring-card', hex: '#F4F8EC', label: 'Feed scheme Spring — card surface (light)' },
-  { slug: 'summer-walls', hex: '#0E5DB0', label: 'Feed scheme Summer — vessel walls & bar (intense blue)' },
-  { slug: 'summer-interior', hex: '#F2D89E', label: 'Feed scheme Summer — vessel interior (warm sand ground)' },
-  { slug: 'summer-card', hex: '#FCF3DD', label: 'Feed scheme Summer — card surface (light)' },
-  { slug: 'autumn-walls', hex: '#B5461E', label: 'Feed scheme Autumn — vessel walls & bar (bold ember)' },
-  { slug: 'autumn-interior', hex: '#E9C9B4', label: 'Feed scheme Autumn — vessel interior (clay ground)' },
-  { slug: 'autumn-card', hex: '#FBEFE3', label: 'Feed scheme Autumn — card surface (light)' },
-  { slug: 'winter-walls', hex: '#232E45', label: 'Feed scheme Winter — vessel walls & bar (slate indigo, dark)' },
-  { slug: 'winter-interior', hex: '#2C3850', label: 'Feed scheme Winter — vessel interior (slate indigo step, dark)' },
-  { slug: 'winter-card', hex: '#34425E', label: 'Feed scheme Winter — card surface (slate indigo step, dark)' },
+  // Each curated colourway (Spring/Summer/Autumn/Winter) carries BOTH a light
+  // and a dark surface set: the colourway is the character (hue / seasonal
+  // energy), the global light/dark toggle picks which variant renders. Three
+  // surfaces each (walls double as the bar); every text colour is DERIVED from
+  // them by luminance in components/workspace/tokens.ts — tune surfaces here/in
+  // the devtool and the text family follows. Keep each card surface clearly
+  // light or clearly dark: mid-luminance cards defeat both tuned text ramps.
+  // (Naming: the *original* slug is the variant authored first — Spring/Summer/
+  // Autumn light, Winter dark — and the opposite variant carries a `-dk`/`-lt`
+  // suffix. Existing slugs keep their names so registry order / devtool stay
+  // stable; the asymmetry is cosmetic.)
+  { slug: 'spring-walls', hex: '#2F7D4A', label: 'Feed scheme Spring (light) — walls & bar (fresh green)' },
+  { slug: 'spring-interior', hex: '#DCEBCF', label: 'Feed scheme Spring (light) — interior (tinted green ground)' },
+  { slug: 'spring-card', hex: '#F4F8EC', label: 'Feed scheme Spring (light) — card surface' },
+  { slug: 'spring-walls-dk', hex: '#2C7A47', label: 'Feed scheme Spring (dark) — walls & bar (vivid green frame)' },
+  { slug: 'spring-interior-dk', hex: '#15201A', label: 'Feed scheme Spring (dark) — interior (deep green ground)' },
+  { slug: 'spring-card-dk', hex: '#1E2D24', label: 'Feed scheme Spring (dark) — card surface' },
+  { slug: 'summer-walls', hex: '#0E5DB0', label: 'Feed scheme Summer (light) — walls & bar (intense blue)' },
+  { slug: 'summer-interior', hex: '#F2D89E', label: 'Feed scheme Summer (light) — interior (warm sand ground)' },
+  { slug: 'summer-card', hex: '#FCF3DD', label: 'Feed scheme Summer (light) — card surface' },
+  { slug: 'summer-walls-dk', hex: '#0F5BA8', label: 'Feed scheme Summer (dark) — walls & bar (intense blue frame)' },
+  { slug: 'summer-interior-dk', hex: '#221C12', label: 'Feed scheme Summer (dark) — interior (warm dark ground)' },
+  { slug: 'summer-card-dk', hex: '#2E2719', label: 'Feed scheme Summer (dark) — card surface' },
+  { slug: 'autumn-walls', hex: '#B5461E', label: 'Feed scheme Autumn (light) — walls & bar (bold ember)' },
+  { slug: 'autumn-interior', hex: '#E9C9B4', label: 'Feed scheme Autumn (light) — interior (clay ground)' },
+  { slug: 'autumn-card', hex: '#FBEFE3', label: 'Feed scheme Autumn (light) — card surface' },
+  { slug: 'autumn-walls-dk', hex: '#B5461E', label: 'Feed scheme Autumn (dark) — walls & bar (bold ember frame)' },
+  { slug: 'autumn-interior-dk', hex: '#251A14', label: 'Feed scheme Autumn (dark) — interior (dark clay ground)' },
+  { slug: 'autumn-card-dk', hex: '#32271E', label: 'Feed scheme Autumn (dark) — card surface' },
+  { slug: 'winter-walls', hex: '#232E45', label: 'Feed scheme Winter (dark) — walls & bar (slate indigo)' },
+  { slug: 'winter-interior', hex: '#2C3850', label: 'Feed scheme Winter (dark) — interior (slate indigo step)' },
+  { slug: 'winter-card', hex: '#34425E', label: 'Feed scheme Winter (dark) — card surface' },
+  { slug: 'winter-walls-lt', hex: '#2B3756', label: 'Feed scheme Winter (light) — walls & bar (deep slate indigo frame)' },
+  { slug: 'winter-interior-lt', hex: '#D8DDEA', label: 'Feed scheme Winter (light) — interior (cool blue-grey ground)' },
+  { slug: 'winter-card-lt', hex: '#EFF2F8', label: 'Feed scheme Winter (light) — card surface (clean cool white)' },
 ]
 
 export const PALETTE_STORAGE_KEY = 'ah:palette-overrides'
