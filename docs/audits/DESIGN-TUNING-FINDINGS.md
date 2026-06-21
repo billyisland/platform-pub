@@ -160,17 +160,25 @@ is a COLOURWAY (seasonal character), orthogonal to light/dark**:
 
   | Colourway | added variant | walls | interior | card |
   |---|---|---|---|---|
-  | Spring | dark (`-dk`)  | `#14331E` | `#1C3F28` | `#244A30` |
-  | Summer | dark (`-dk`)  | `#0D2A4A` | `#2E2A1C` | `#403524` |
-  | Autumn | dark (`-dk`)  | `#3A160B` | `#4A2418` | `#5A3122` |
+  | Spring | dark (`-dk`)  | `#163A24` | `#3E261E` | `#275139` |
+  | Summer | dark (`-dk`)  | `#0E2E52` | `#3A2C16` | `#1E4972` |
+  | Autumn | dark (`-dk`)  | `#4A1E10` | `#143036` | `#743A22` |
+  | Winter | dark (the original `winter-*`) | `#232E45` | `#3A3220` | `#38486E` |
   | Winter | light (`-lt`) | `#2B3756` | `#D8DDEA` | `#EFF2F8` |
 
-  The dark variants follow **Winter's elevation grammar** (which already worked):
-  a single seasonal hue family stepped walls (deepest) → interior → card (the
-  lifted reading well), every surface clearly *tinted* dark (card luminance
-  ~0.21–0.26, matching Winter), so the colour reads across the whole vessel.
-  The first-pass dark variants — a bright light-mode frame around near-black
-  neutral surfaces — were the "garish frame around a void" look they replaced.
+  **Dark-variant grammar (two shades + a contrasting accent).** A first pass made
+  each dark variant a monochrome elevation ramp (three shades of one hue), which
+  read flat. The current design instead gives **the frame/bar (`walls`) and the
+  card (`card`) two shades of the season hue** (card the lifted reading well),
+  and turns **the ground (`interior`) into a skillfully chosen contrasting accent**
+  that separates the cards from the frame and from each other (it shows in the
+  card gutters + margin). Each accent is a complement of the hue:
+  Spring green ↔ terracotta, Summer ocean-blue ↔ amber (its native warm/cool
+  seam), Autumn rust ↔ teal, Winter slate-indigo ↔ warm bronze. All three
+  surfaces stay clearly dark (`<0.5`; card lifted to ~0.25–0.28). (The earlier
+  "bright light-mode frame around near-black surfaces" was the garish-frame look
+  this replaced; the monochrome ramp was the flat look between.) Light variants
+  are unchanged.
 
 - The light-island still wraps desktop vessels **and now the mobile per-feed
   pages** (`MobileWorkspace.tsx`), but its role is narrowed: it keeps the derived
