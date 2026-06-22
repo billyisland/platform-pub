@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { auth } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
+import { SettingsSection } from './SettingsSection'
 
 export function DangerZone() {
   const { user, logout } = useAuth()
@@ -44,41 +45,39 @@ export function DangerZone() {
 
   return (
     <>
-      <div className="slab-rule-4 my-10" />
+      <div className="slab-rule-4" />
 
-      <div className="mb-10">
-        <p className="label-ui text-crimson mb-6">Close your account</p>
+      <section>
+        <h2 className="font-sans text-base font-medium text-crimson tracking-tight mb-5">
+          Close your account
+        </h2>
 
-        {/* Deactivate */}
-        <div className="bg-glasshouse-well px-6 py-5 mb-6">
-          <p className="text-sm text-black font-medium">Deactivate</p>
-          <p className="text-ui-xs text-grey-600 mt-1 mb-4">
-            Your profile and content will be hidden. You can reactivate by logging back in.
-          </p>
-          <button onClick={handleDeactivate} className="btn-soft py-2 px-4 text-sm">
-            Deactivate account
-          </button>
-        </div>
+        <div className="space-y-6">
+          <SettingsSection label="Deactivate">
+            <p className="text-ui-xs text-grey-600 mb-4 leading-relaxed">
+              Your profile and content will be hidden. You can reactivate by logging back in.
+            </p>
+            <button onClick={handleDeactivate} className="btn-soft py-2 px-4 text-sm">
+              Deactivate account
+            </button>
+          </SettingsSection>
 
-        <div className="h-6" />
-
-        {/* Delete */}
-        <div className="bg-glasshouse-well px-6 py-5">
-          <p className="text-sm text-black font-medium">Delete permanently</p>
-          <p className="text-ui-xs text-grey-600 mt-1 mb-4">
-            Your content will be removed and your account data erased. This cannot be undone.
-          </p>
-          <button
-            onClick={() => setShowDeleteModal(true)}
-            className="btn py-2 px-4 text-sm"
-            style={{ backgroundColor: 'var(--ah-danger-red)', borderColor: 'var(--ah-danger-red)' }}
-          >
-            Delete account
-          </button>
+          <SettingsSection label="Delete permanently">
+            <p className="text-ui-xs text-grey-600 mb-4 leading-relaxed">
+              Your content will be removed and your account data erased. This cannot be undone.
+            </p>
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="btn py-2 px-4 text-sm"
+              style={{ backgroundColor: 'var(--ah-danger-red)', borderColor: 'var(--ah-danger-red)' }}
+            >
+              Delete account
+            </button>
+          </SettingsSection>
         </div>
 
         {error && <p className="text-sm text-red-600 mt-4">{error}</p>}
-      </div>
+      </section>
 
       {/* Delete confirmation modal */}
       {showDeleteModal && (
@@ -97,7 +96,7 @@ export function DangerZone() {
               Any outstanding earnings will be paid out to your connected Stripe account.
             </p>
 
-            <label className="label-ui text-grey-400 block mb-2">
+            <label className="label-ui text-grey-600 block mb-2">
               Enter your email to confirm:
             </label>
             <input
@@ -105,7 +104,7 @@ export function DangerZone() {
               value={emailInput}
               onChange={e => setEmailInput(e.target.value)}
               placeholder={user.email}
-              className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none mb-4"
+              className="w-full bg-glasshouse-well px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none mb-4"
             />
 
             {error && <p className="text-ui-xs text-red-600 mb-4">{error}</p>}

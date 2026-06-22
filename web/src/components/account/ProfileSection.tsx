@@ -67,13 +67,11 @@ export function ProfileSection() {
   const initial = (displayName || user.username || '?')[0].toUpperCase()
 
   return (
-    <div className="mb-10">
-      <p className="label-ui text-grey-600 mb-4">Profile</p>
-      <div className="bg-glasshouse-well px-6 py-5">
+    <>
         <form onSubmit={handleSave} className="space-y-8">
           {/* Avatar */}
           <div>
-            <label className="block label-ui text-grey-400 mb-3">Photo</label>
+            <label className="block label-ui text-grey-600 mb-3">Photo</label>
             <div className="flex items-center gap-4">
               {avatar ? (
                 <img src={avatar} alt="" className="h-16 w-16  object-cover flex-shrink-0" />
@@ -116,7 +114,7 @@ export function ProfileSection() {
 
           {/* Display name */}
           <div>
-            <label htmlFor="displayName" className="block label-ui text-grey-400 mb-2">
+            <label htmlFor="displayName" className="block label-ui text-grey-600 mb-2">
               Display name
             </label>
             <input
@@ -126,13 +124,13 @@ export function ProfileSection() {
               onChange={(e) => setDisplayName(e.target.value)}
               maxLength={100}
               placeholder={user.username ?? ''}
-              className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none"
+              className="w-full bg-glasshouse-well px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none"
             />
           </div>
 
           {/* Bio */}
           <div>
-            <label htmlFor="bio" className="block label-ui text-grey-400 mb-2">
+            <label htmlFor="bio" className="block label-ui text-grey-600 mb-2">
               Bio
             </label>
             <textarea
@@ -142,7 +140,7 @@ export function ProfileSection() {
               maxLength={500}
               rows={4}
               placeholder="A few words about yourself"
-              className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none resize-none"
+              className="w-full bg-glasshouse-well px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none resize-none"
             />
             <p className="text-[11px] text-grey-300 mt-1 text-right">{bio.length}/500</p>
           </div>
@@ -170,10 +168,9 @@ export function ProfileSection() {
 
         {/* Public key (read-only) */}
         <div className="mt-8">
-          <label className="block label-ui text-grey-400 mb-2">Public key</label>
+          <label className="block label-ui text-grey-600 mb-2">Public key</label>
           <p className="text-ui-xs text-grey-300 truncate">{user.pubkey}</p>
         </div>
-      </div>
-    </div>
+    </>
   )
 }

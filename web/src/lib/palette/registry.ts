@@ -80,27 +80,39 @@ export const PALETTE_REGISTRY: PaletteEntry[] = [
   // Autumn light, Winter dark — and the opposite variant carries a `-dk`/`-lt`
   // suffix. Existing slugs keep their names so registry order / devtool stay
   // stable; the asymmetry is cosmetic.)
+  //
+  // DARK-MODE DESIGN (coherence-first, Claude-Code-inspired): because a
+  // workspace shows several feeds at once, the dark variants must cohere as a
+  // SET, not just each on its own. So the dark interiors+cards are a SHARED dark
+  // neutral, only faintly hue-tinted (all ~0.11 / ~0.16 luminance), and each
+  // season's identity is carried entirely by the WALLS/BAR spine — four clean
+  // chromatic hues (green / azure / ember / indigo-violet) tuned to matched
+  // luminance (~0.38) and saturation so they read as one accent family on a
+  // unified dark ground (like syntax accents in a dark editor). The earlier
+  // "two shades of the hue + a contrasting accent interior" dark grammar is
+  // superseded — those contrasting grounds (rose/coral/teal/violet) fought each
+  // other across side-by-side feeds. Light variants are unchanged.
   { slug: 'spring-walls', hex: '#2F7D4A', label: 'Feed scheme Spring (light) — walls & bar (fresh green)' },
   { slug: 'spring-interior', hex: '#DCEBCF', label: 'Feed scheme Spring (light) — interior (tinted green ground)' },
   { slug: 'spring-card', hex: '#F4F8EC', label: 'Feed scheme Spring (light) — card surface' },
-  { slug: 'spring-walls-dk', hex: '#163A24', label: 'Feed scheme Spring (dark) — walls & bar (deep green, shade 1 — pairs with card)' },
-  { slug: 'spring-interior-dk', hex: '#4E2238', label: 'Feed scheme Spring (dark) — interior (rose ACCENT ground — blossom against foliage; separates frame from cards)' },
-  { slug: 'spring-card-dk', hex: '#275139', label: 'Feed scheme Spring (dark) — card surface (lifted green, shade 2)' },
+  { slug: 'spring-walls-dk', hex: '#2C8350', label: 'Feed scheme Spring (dark) — walls & bar (clean green spine; the seasonal identity)' },
+  { slug: 'spring-interior-dk', hex: '#18211B', label: 'Feed scheme Spring (dark) — interior (shared dark ground, faint green tint — coheres with the other seasons)' },
+  { slug: 'spring-card-dk', hex: '#222E26', label: 'Feed scheme Spring (dark) — card surface (lifted dark neutral, faint green tint)' },
   { slug: 'summer-walls', hex: '#0E5DB0', label: 'Feed scheme Summer (light) — walls & bar (intense blue)' },
   { slug: 'summer-interior', hex: '#F2D89E', label: 'Feed scheme Summer (light) — interior (warm sand ground)' },
   { slug: 'summer-card', hex: '#FCF3DD', label: 'Feed scheme Summer (light) — card surface' },
-  { slug: 'summer-walls-dk', hex: '#0E2E52', label: 'Feed scheme Summer (dark) — walls & bar (deep ocean blue, shade 1 — pairs with card)' },
-  { slug: 'summer-interior-dk', hex: '#642630', label: 'Feed scheme Summer (dark) — interior (coral ACCENT ground — warm/cool seam against ocean blue)' },
-  { slug: 'summer-card-dk', hex: '#1E4972', label: 'Feed scheme Summer (dark) — card surface (lifted ocean blue, shade 2)' },
+  { slug: 'summer-walls-dk', hex: '#2B6FA8', label: 'Feed scheme Summer (dark) — walls & bar (clean azure spine; the seasonal identity)' },
+  { slug: 'summer-interior-dk', hex: '#161E26', label: 'Feed scheme Summer (dark) — interior (shared dark ground, faint blue tint — coheres with the other seasons)' },
+  { slug: 'summer-card-dk', hex: '#1E2A38', label: 'Feed scheme Summer (dark) — card surface (lifted dark neutral, faint blue tint)' },
   { slug: 'autumn-walls', hex: '#B5461E', label: 'Feed scheme Autumn (light) — walls & bar (bold ember)' },
   { slug: 'autumn-interior', hex: '#E9C9B4', label: 'Feed scheme Autumn (light) — interior (clay ground)' },
   { slug: 'autumn-card', hex: '#FBEFE3', label: 'Feed scheme Autumn (light) — card surface' },
-  { slug: 'autumn-walls-dk', hex: '#4A1622', label: 'Feed scheme Autumn (dark) — walls & bar (deep crimson, shade 1 — pairs with card)' },
-  { slug: 'autumn-interior-dk', hex: '#143036', label: 'Feed scheme Autumn (dark) — interior (teal ACCENT ground — complement of crimson)' },
-  { slug: 'autumn-card-dk', hex: '#7E2632', label: 'Feed scheme Autumn (dark) — card surface (lifted crimson red, shade 2)' },
-  { slug: 'winter-walls', hex: '#232E45', label: 'Feed scheme Winter (dark) — walls & bar (deep slate indigo, shade 1 — pairs with card)' },
-  { slug: 'winter-interior', hex: '#3A2058', label: 'Feed scheme Winter (dark) — interior (violet ACCENT ground — aurora against cold slate)' },
-  { slug: 'winter-card', hex: '#38486E', label: 'Feed scheme Winter (dark) — card surface (lifted slate indigo, shade 2)' },
+  { slug: 'autumn-walls-dk', hex: '#B0492A', label: 'Feed scheme Autumn (dark) — walls & bar (clean ember/terracotta spine; the seasonal identity)' },
+  { slug: 'autumn-interior-dk', hex: '#211A16', label: 'Feed scheme Autumn (dark) — interior (shared dark ground, faint warm tint — coheres with the other seasons)' },
+  { slug: 'autumn-card-dk', hex: '#322620', label: 'Feed scheme Autumn (dark) — card surface (lifted dark neutral, faint warm tint)' },
+  { slug: 'winter-walls', hex: '#6A4FBC', label: 'Feed scheme Winter (dark) — walls & bar (clean indigo-violet spine; the seasonal identity)' },
+  { slug: 'winter-interior', hex: '#1C1A24', label: 'Feed scheme Winter (dark) — interior (shared dark ground, faint violet tint — coheres with the other seasons)' },
+  { slug: 'winter-card', hex: '#28253A', label: 'Feed scheme Winter (dark) — card surface (lifted dark neutral, faint violet tint)' },
   { slug: 'winter-walls-lt', hex: '#2B3756', label: 'Feed scheme Winter (light) — walls & bar (deep slate indigo frame)' },
   { slug: 'winter-interior-lt', hex: '#D8DDEA', label: 'Feed scheme Winter (light) — interior (cool blue-grey ground)' },
   { slug: 'winter-card-lt', hex: '#EFF2F8', label: 'Feed scheme Winter (light) — card surface (clean cool white)' },

@@ -17,11 +17,6 @@ export function TypeSizeControl() {
   const setStep = useTypeScale((s) => s.setStep)
 
   return (
-    <div>
-      <p className="label-ui text-grey-600 mb-4">Type size</p>
-      <p className="text-ui-xs text-grey-600 mb-4 leading-relaxed">
-        Scales text across the whole site. Applies to this device.
-      </p>
       <div className="flex flex-wrap">
         {TYPE_SCALE_STEPS.map((s) => (
           <button
@@ -35,6 +30,5 @@ export function TypeSizeControl() {
           </button>
         ))}
       </div>
-    </div>
   )
 }

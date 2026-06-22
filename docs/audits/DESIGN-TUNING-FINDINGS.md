@@ -5,7 +5,8 @@
 > names — the `SchemeSwatch` is the sole identifier), then **reworked 2026-06-21**
 > so a scheme is a *colourway* (seasonal character) that adapts to the global
 > light/dark toggle — each colourway has a light AND a dark variant; see the
-> **§3 addendum**. §2 was corrected on
+> **§3 addendum** (dark variants **re-tuned 2026-06-22** for cross-feed
+> coherence — shared dark ground + a chromatic frame spine). §2 was corrected on
 > implementation: `crimson-dark` and `off-white` are **live** (Tailwind `hover:`
 > uses / `ProvenanceBar` canvas) and were kept; only the genuinely-dead
 > `neighbour-grey` was removed, and the flagged hardcoded hexes are the exempt
@@ -160,24 +161,34 @@ is a COLOURWAY (seasonal character), orthogonal to light/dark**:
 
   | Colourway | added variant | walls | interior | card |
   |---|---|---|---|---|
-  | Spring | dark (`-dk`)  | `#163A24` | `#4E2238` | `#275139` |
-  | Summer | dark (`-dk`)  | `#0E2E52` | `#642630` | `#1E4972` |
-  | Autumn | dark (`-dk`)  | `#4A1622` | `#143036` | `#7E2632` |
-  | Winter | dark (the original `winter-*`) | `#232E45` | `#3A2058` | `#38486E` |
+  | Spring | dark (`-dk`)  | `#2C8350` | `#18211B` | `#222E26` |
+  | Summer | dark (`-dk`)  | `#2B6FA8` | `#161E26` | `#1E2A38` |
+  | Autumn | dark (`-dk`)  | `#B0492A` | `#211A16` | `#322620` |
+  | Winter | dark (the original `winter-*`) | `#6A4FBC` | `#1C1A24` | `#28253A` |
   | Winter | light (`-lt`) | `#2B3756` | `#D8DDEA` | `#EFF2F8` |
 
-  **Dark-variant grammar (two shades + a contrasting accent).** A first pass made
-  each dark variant a monochrome elevation ramp (three shades of one hue), which
-  read flat. The current design instead gives **the frame/bar (`walls`) and the
-  card (`card`) two shades of the season hue** (card the lifted reading well),
-  and turns **the ground (`interior`) into a skillfully chosen contrasting accent**
-  that separates the cards from the frame and from each other (it shows in the
-  card gutters + margin). **No brown** — every surface is a clear chromatic tone
-  (a first cut used terracotta/amber/bronze/rust grounds-and-surfaces that all
-  read muddy-brown). Hue pairs (surface → accent): Spring green → rose, Summer
-  ocean-blue → coral, Autumn crimson → teal, Winter slate-indigo → violet. All
-  three surfaces stay clearly dark (`<0.5`; card lifted to ~0.25–0.28), and no
-  surface lands in the muddy orange/brown band. Light variants are unchanged.
+  **Dark-variant grammar (shared dark ground + a chromatic frame spine) —
+  re-tuned 2026-06-22, supersedes "two shades + a contrasting accent".** A
+  workspace shows several feeds at once, so the dark variants must cohere as a
+  **set**, not just each on its own. The previous accent-ground grammar (Spring
+  green→rose, Summer blue→coral, Autumn crimson→teal, Winter slate→violet) made
+  each feed a self-contained saturated colour-world; four of those contrasting
+  grounds side by side fought each other — no shared substrate. The current
+  design takes the Claude-Code-style dark-editor lesson (many bright colours
+  cohere when they're **accents at one matched register on a single shared dark
+  ground**):
+  - **`interior` + `card` are a near-shared dark neutral**, only *faintly*
+    hue-tinted (interior ~0.11, card ~0.16 luminance; card lifted ~0.05 above
+    interior, matching the basic-dark `ink-925`→`ink-900` step). Side by side the
+    content grounds read as one dark workspace.
+  - **Identity moves entirely to the `walls`/bar spine** — one clean chromatic
+    hue per season, all four tuned to **matched luminance (~0.38–0.39) and
+    saturation** so they read as a coherent accent family: green / azure / ember
+    (terracotta, not brown) / indigo-violet.
+
+  Still no brown, still all surfaces clearly dark (`<0.5`). Light variants are
+  unchanged. (The canonical record of this grammar lives in the registry header,
+  `web/src/lib/palette/registry.ts`.)
 
 - The light-island still wraps desktop vessels **and now the mobile per-feed
   pages** (`MobileWorkspace.tsx`), but its role is narrowed: it keeps the derived

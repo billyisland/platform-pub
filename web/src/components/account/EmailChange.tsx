@@ -39,9 +39,7 @@ export function EmailChange() {
   }
 
   return (
-    <div className="mb-10">
-      <p className="label-ui text-grey-600 mb-4">Email</p>
-      <div className="bg-glasshouse-well px-6 py-5">
+    <>
         {editing ? (
           <div>
             <input
@@ -50,7 +48,7 @@ export function EmailChange() {
               onChange={e => setNewEmail(e.target.value)}
               placeholder="new@example.com"
               autoFocus
-              className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
+              className="w-full bg-glasshouse-well px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm"
               onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
             />
             {error && <p className="text-ui-xs text-red-600 mt-2">{error}</p>}
@@ -83,7 +81,6 @@ export function EmailChange() {
             Verification email sent to {newEmail || 'your new address'}. Check your inbox.
           </p>
         )}
-      </div>
-    </div>
+    </>
   )
 }

@@ -81,7 +81,7 @@ export function UsernameChange() {
 
   return (
     <div>
-      <label className="block text-ui-xs text-grey-300 mb-2 uppercase tracking-wider">
+      <label className="block label-ui text-grey-600 mb-2">
         Username
       </label>
 
@@ -94,7 +94,7 @@ export function UsernameChange() {
             placeholder="newusername"
             maxLength={30}
             autoFocus
-            className="w-full bg-grey-100 px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none"
+            className="w-full bg-glasshouse-well px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none"
             onKeyDown={e => { if (e.key === 'Enter' && availability === 'available') void handleSave() }}
           />
 

@@ -31,6 +31,7 @@ import { ColorModeControl } from './ColorModeControl'
 import { ExportModal } from '../ExportModal'
 import { DangerZone } from './DangerZone'
 import { PageShell, PageHeader } from '../ui/PageShell'
+import { SettingsGroup, SettingsSection, SettingsRow } from './SettingsSection'
 
 function bannerFor(linked: string | null): { kind: 'ok' | 'error'; msg: string } | null {
   if (linked === 'mastodon') return { kind: 'ok', msg: 'Mastodon account connected.' }
@@ -90,42 +91,67 @@ export function SettingsPanel({
   const body = (
     <>
       {inOverlay && <PageHeader title="Settings" />}
-      <div className="space-y-8 max-w-md">
+      <div className="space-y-12">
         {banner && (
           <div className={`px-4 py-3 text-ui-sm ${banner.kind === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
             {banner.msg}
           </div>
         )}
 
-        <ProfileSection />
+        <SettingsGroup title="Account">
+          <SettingsSection label="Profile">
+            <ProfileSection />
+          </SettingsSection>
+          <SettingsSection label="Email">
+            <EmailChange />
+          </SettingsSection>
+          <SettingsSection label="Payment & payouts">
+            <PaymentSection />
+          </SettingsSection>
+          <SettingsSection
+            label="Reach other networks"
+            description="Your all.haus account is a Nostr identity. Reach outward to other networks — link an account you already have, or have all.haus set one up and run it for you."
+          >
+            <NetworkReachPanel />
+          </SettingsSection>
+        </SettingsGroup>
 
-        <EmailChange />
+        <SettingsGroup title="Preferences">
+          <SettingsSection
+            label="Notifications"
+            description="Choose which events generate notifications."
+          >
+            <NotificationPreferences />
+          </SettingsSection>
+          <SettingsSection label="Reading">
+            <ReadingPreferences />
+          </SettingsSection>
+          <SettingsSection label="Display" description="Applies to this device.">
+            <div className="space-y-4">
+              <SettingsRow
+                label="Theme"
+                description="Light or dark across the site. System follows your device."
+              >
+                <ColorModeControl />
+              </SettingsRow>
+              <SettingsRow
+                label="Type size"
+                description="Scales text across the whole site."
+              >
+                <TypeSizeControl />
+              </SettingsRow>
+            </div>
+          </SettingsSection>
+        </SettingsGroup>
 
-        <PaymentSection />
-
-        <NetworkReachPanel />
-
-        <section className="bg-glasshouse-well px-6 py-5">
-          <NotificationPreferences />
-        </section>
-
-        <section className="bg-glasshouse-well px-6 py-5">
-          <ReadingPreferences />
-        </section>
-
-        <section className="bg-glasshouse-well px-6 py-5">
-          <ColorModeControl />
-        </section>
-
-        <section className="bg-glasshouse-well px-6 py-5">
-          <TypeSizeControl />
-        </section>
-
-        <div className="bg-glasshouse-well px-6 py-5">
-          <p className="label-ui text-grey-400 mb-4">Export my data</p>
-          <p className="text-ui-xs text-grey-600 mb-4 leading-relaxed">Download your data, receipts, and content keys.</p>
-          <button onClick={() => setShowExport(true)} className="btn">Export</button>
-        </div>
+        <SettingsGroup title="Your data">
+          <SettingsSection
+            label="Export my data"
+            description="Download your data, receipts, and content keys."
+          >
+            <button onClick={() => setShowExport(true)} className="btn">Export</button>
+          </SettingsSection>
+        </SettingsGroup>
 
         <DangerZone />
       </div>

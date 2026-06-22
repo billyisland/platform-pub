@@ -24,11 +24,9 @@ export function PaymentSection() {
   }
 
   return (
-    <div className="mb-10">
-      <p className="label-ui text-grey-600 mb-4">Payment &amp; payouts</p>
-      <div className="bg-glasshouse-well">
+    <div className="space-y-5">
         {/* Card on file */}
-        <div className="px-6 py-4">
+        <div>
           {user.hasPaymentMethod ? (
             <div className="flex items-center justify-between">
               <div>
@@ -47,7 +45,7 @@ export function PaymentSection() {
         </div>
 
         {/* Stripe Connect */}
-        <div className="px-6 py-4">
+        <div>
           {user.stripeConnectKycComplete ? (
             <div className="flex items-center justify-between">
               <div>
@@ -75,7 +73,6 @@ export function PaymentSection() {
             </div>
           )}
         </div>
-      </div>
     </div>
   )
 }

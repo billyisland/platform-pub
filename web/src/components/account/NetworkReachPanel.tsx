@@ -176,14 +176,7 @@ export function NetworkReachPanel() {
     accounts?.find(a => a.protocol === protocol) ?? null
 
   return (
-    <div>
-      <p className="label-ui text-grey-600 mb-4">Reach other networks</p>
-      <div className="bg-glasshouse-well px-6 py-5">
-        <p className="text-ui-xs text-grey-600 mb-6 leading-relaxed">
-          Your all.haus account is a Nostr identity. Reach outward to other networks —
-          link an account you already have, or have all.haus set one up and run it for you.
-        </p>
-
+    <>
         <div className="space-y-8">
           {/* Nostr — the root, always present. "Go public" is the discovery opt-in. */}
           <div>
@@ -410,7 +403,6 @@ export function NetworkReachPanel() {
         </div>
 
         {error && <p className="text-ui-xs text-red-600 mt-4">{error}</p>}
-      </div>
-    </div>
+    </>
   )
 }

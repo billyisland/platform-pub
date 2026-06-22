@@ -24,10 +24,7 @@ export function ReadingPreferences() {
   }
 
   return (
-    <div>
-      <p className="label-ui text-grey-400 mb-4">Reading preferences</p>
-      <div className="bg-glasshouse-well divide-y divide-grey-200/50">
-        <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center justify-between py-1">
           <div className="pr-6">
             <p className="text-ui-sm text-black">Always open articles at the top</p>
             <p className="text-ui-xs text-grey-600 mt-1 leading-relaxed">
@@ -55,7 +52,5 @@ export function ReadingPreferences() {
             </button>
           </div>
         </div>
-      </div>
-    </div>
   )
 }
