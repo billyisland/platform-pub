@@ -39,6 +39,26 @@ export async function createConversation(
     return { ok: false, status: 403, error: 'Cannot create conversation with blocked users' }
   }
 
+  // Conversation identity is the participant set, not a fresh UUID: reuse an
+  // existing conversation whose members are *exactly* allMembers (no more, no
+  // fewer) so a second message to the same friend continues the existing thread
+  // instead of spawning a duplicate. (Member set is unique per conversation —
+  // (conversation_id, user_id) is the PK — so array_agg yields the exact set.)
+  const sortedMembers = [...allMembers].sort()
+  const existing = await pool.query<{ conversation_id: string }>(
+    `SELECT conversation_id
+       FROM conversation_members
+      GROUP BY conversation_id
+     HAVING array_agg(user_id ORDER BY user_id) = $1::uuid[]
+      LIMIT 1`,
+    [sortedMembers]
+  )
+  if (existing.rows.length > 0) {
+    const conversationId = existing.rows[0].conversation_id
+    logger.info({ conversationId, creatorId, memberCount: allMembers.length }, 'Conversation reused')
+    return { ok: true, data: { conversationId } }
+  }
+
   const conv = await pool.query<{ id: string }>(
     'INSERT INTO conversations (created_by) VALUES ($1) RETURNING id',
     [creatorId]
