@@ -61,6 +61,7 @@ export function ProfileOverlay() {
     <Glasshouse
       onClose={close}
       onSupersede={dismiss}
+      selfHistory
       maxWidth={860}
       ariaLabel="Profile"
       persistKey="profile"

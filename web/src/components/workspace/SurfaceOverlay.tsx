@@ -71,6 +71,7 @@ export function SurfaceOverlay() {
     <Glasshouse
       onClose={close}
       onSupersede={dismiss}
+      selfHistory
       maxWidth={780}
       ariaLabel={ariaLabel}
       persistKey="surface"

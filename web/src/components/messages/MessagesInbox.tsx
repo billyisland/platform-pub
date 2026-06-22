@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { useBackGuard } from '../../lib/backGuard'
 import { useUnreadCounts } from '../../stores/unread'
 import { messages as messagesApi, type Conversation } from '../../lib/api'
 import { ConversationList } from './ConversationList'
@@ -125,6 +126,13 @@ export function MessagesInbox({
     setShowNewMessage(false)
     setActiveConvId(null)
   }, [])
+
+  // Mobile drill-down back-guard: while the thread cover is up, a browser Back /
+  // OS edge-swipe pops it back to the conversation list (like the back arrow and
+  // the in-element right-swipe) rather than closing the whole Messages sheet or
+  // leaving the site. This sits ABOVE the Messages Glasshouse's own guard, so the
+  // first Back returns to the list and a second Back closes the sheet.
+  useBackGuard(isMobile && (!!activeConvId || showNewMessage), clearActive)
 
   // Right-swipe-to-dismiss on the mobile thread cover (the iOS-style back
   // gesture). Pops the drill-down back to the conversation list. We only act on

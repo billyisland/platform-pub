@@ -209,6 +209,30 @@ standalone-page case only). The wordmark trigger shares the same handler.
   "Close menu" in that case. Desktop keeps the disc as ∀ while the dropdown is
   open (a mouse can click outside; an X on a small anchored dropdown reads oddly).
 
+**Mobile back-guard — Back / edge-swipe == ✕ (2026-06-22).** On mobile, a browser
+Back (Android back gesture/button) or iOS edge-swipe must close the open sheet, not
+navigate off the site. Most overlays push **no** history entry — the six ∀-menu
+destinations, the composers, the editor, and the mobile DM drill-down cover are all
+in-memory state — so Back had nothing to pop and left the site. The fix is a small
+LIFO **back-guard** (`web/src/lib/backGuard.ts`): each open dismissible owns one
+same-URL history sentinel (`history.pushState`), and a single global `popstate`
+listener closes the **topmost** guarded surface on Back instead of letting the
+navigation through; a self-close (✕/Esc/scrim/swipe) consumes its own sentinel via
+`history.back()` (closes must be idempotent). `Glasshouse` installs it for every
+sheet via `useBackGuard(isMobile && !selfHistory, onClose)` — so on mobile, Back
+closes any frosted sheet exactly like the disc-✕. **The three URL-synced overlays
+(reader/profile/surface) opt out with the new `selfHistory` prop**: they already
+push a canonical URL and listen for `popstate` themselves (see `stores/reader.ts`),
+and a second sentinel would double-push. The **mobile DM cover** registers its own
+guard *above* the Messages sheet's (`MessagesInbox`), so the first Back pops the
+thread back to the conversation list (matching the back-arrow and the in-element
+right-swipe), a second Back closes the Messages sheet, a third returns to the
+workspace — surfaces unmount top-first, so each guard always cleans the current top.
+The in-element finger-swipe recognizer is unchanged; it handles swipes that land
+*inside* the cover (which never trigger the browser's edge-back), and the two paths
+converge to the same state. **Desktop is untouched** (explicit ✕ affordances, no
+edge-swipe-back). Mobile-gated via `useIsMobile`.
+
 **Feed-launched frame (2026-06-17).** A reader pane or profile overlay opened
 **from a feed card** frames itself in that feed's identity, in the feed's WALL
 colour (`palette.walls`). The frame is an **inverted, thinner echo of the feed's

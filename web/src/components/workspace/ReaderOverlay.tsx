@@ -163,6 +163,7 @@ export function ReaderOverlay() {
     <Glasshouse
       onClose={close}
       onSupersede={dismiss}
+      selfHistory
       maxWidth={maxWidth}
       ariaLabel="Reader"
       persistKey="reader"

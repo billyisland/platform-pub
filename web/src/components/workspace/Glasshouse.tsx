@@ -50,6 +50,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { snap } from "../../lib/workspace/grid";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGlasshousePresence } from "../../stores/glasshouse";
+import { useBackGuard } from "../../lib/backGuard";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
 const MARGIN = 20;
@@ -414,6 +415,13 @@ interface GlasshouseProps {
     canPrev: boolean;
     canNext: boolean;
   } | null;
+  /** This overlay manages its OWN browser history (it pushes a canonical URL and
+   *  listens for popstate itself — the reader / profile / surface stores). Such
+   *  overlays opt out of the built-in mobile back-guard, which would otherwise
+   *  double-push a sentinel. Default false: the in-memory overlays (Messages,
+   *  Dashboard, composers, …) rely on the guard so a mobile Back/edge-swipe
+   *  closes the sheet instead of leaving the site. */
+  selfHistory?: boolean;
   children: React.ReactNode;
 }
 
@@ -427,6 +435,7 @@ export function Glasshouse({
   frameColor,
   frameTextColor,
   sideNav,
+  selfHistory,
   children,
 }: GlasshouseProps) {
   // On the mobile workspace (MOBILE-LAYOUT-ADR §III) every Glasshouse is a
@@ -436,6 +445,12 @@ export function Glasshouse({
   // untouched.
   const isMobile = useIsMobile();
   const pane = usePanePlacement(maxWidth, persistKey, resizable, isMobile);
+
+  // Mobile back-guard: on the full-screen sheet, a browser Back / OS edge-swipe
+  // should close this sheet (same as the disc-X), not leave the site. URL-synced
+  // overlays manage their own history (`selfHistory`) and opt out. Desktop is
+  // untouched — it has explicit ✕ affordances and no edge-swipe-back.
+  useBackGuard(isMobile && !selfHistory, onClose);
 
   // Measured on-screen pane height — used only to vertically centre the skip
   // ears on the pane (its height is content-driven unless resized, so it can't
