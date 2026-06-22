@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict NyJB1xmi43UnGa0SacBu8ZVUCnmHBbatOszOiPia7d4mAbeFGKY7UUczNgLoFUX
+\restrict FzAF4lkh6rvoj0eaYu6nhz4kg8gNzj2SfuVldr8sdT3sah5VqeeHkACJWYPdF4S
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1232,6 +1232,31 @@ CREATE TABLE public.bookmarks (
 
 
 --
+-- Name: citation_edges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.citation_edges (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    article_id uuid NOT NULL,
+    source_protocol public.external_protocol,
+    source_author_pubkey text,
+    nostr_event_id text,
+    nostr_d_tag text,
+    source_naddr text,
+    source_version_event_id text,
+    source_external_item_id uuid,
+    source_uri text,
+    excerpt text NOT NULL,
+    excerpt_sha256 bytea NOT NULL,
+    char_start integer,
+    char_end integer,
+    characterisation text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+--
 -- Name: comments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1288,6 +1313,24 @@ CREATE TABLE public.conversations (
 
 
 --
+-- Name: credit_edges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.credit_edges (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    article_id uuid NOT NULL,
+    target_protocol public.external_protocol,
+    target_external_id text,
+    target_display_name text,
+    resolved_account_id uuid,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT credit_edges_target_consistency CHECK ((((target_protocol IS NULL) AND ((resolved_account_id IS NOT NULL) OR (target_display_name IS NOT NULL))) OR ((target_protocol IS NOT NULL) AND (target_external_id IS NOT NULL))))
+);
+
+
+--
 -- Name: direct_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1302,6 +1345,30 @@ CREATE TABLE public.direct_messages (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     reply_to_id uuid,
     send_id uuid DEFAULT gen_random_uuid() NOT NULL
+);
+
+
+--
+-- Name: dispute_edges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dispute_edges (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    citation_edge_id uuid,
+    credit_edge_id uuid,
+    disputant_account_id uuid NOT NULL,
+    disputant_pubkey text NOT NULL,
+    is_by_cited_author boolean NOT NULL,
+    nostr_event_id text,
+    nostr_d_tag text,
+    wider_excerpt text,
+    wider_excerpt_sha256 bytea,
+    counter_characterisation text NOT NULL,
+    stake_ledger_entry_id uuid,
+    withdrawn_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT dispute_edges_single_target CHECK (((citation_edge_id IS NULL) <> (credit_edge_id IS NULL)))
 );
 
 
@@ -1691,7 +1758,7 @@ CREATE VIEW public.ledger_reader_balance AS
  SELECT account_id,
     ((- sum(amount_pence)))::bigint AS balance_pence
    FROM public.ledger_entries
-  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text, 'subscription_credit'::text, 'opening_balance'::text]))
+  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text, 'subscription_credit'::text, 'opening_balance'::text, 'dispute_stake'::text, 'dispute_stake_refund'::text]))
   GROUP BY account_id;
 
 
@@ -2946,6 +3013,14 @@ ALTER TABLE ONLY public.bookmarks
 
 
 --
+-- Name: citation_edges citation_edges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.citation_edges
+    ADD CONSTRAINT citation_edges_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: comments comments_nostr_event_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2986,6 +3061,14 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: credit_edges credit_edges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_edges
+    ADD CONSTRAINT credit_edges_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: direct_messages direct_messages_nostr_event_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2999,6 +3082,14 @@ ALTER TABLE ONLY public.direct_messages
 
 ALTER TABLE ONLY public.direct_messages
     ADD CONSTRAINT direct_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dispute_edges dispute_edges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dispute_edges
+    ADD CONSTRAINT dispute_edges_pkey PRIMARY KEY (id);
 
 
 --
@@ -4058,6 +4149,20 @@ CREATE INDEX idx_bookmarks_user ON public.bookmarks USING btree (user_id, create
 
 
 --
+-- Name: idx_citation_edges_article; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_citation_edges_article ON public.citation_edges USING btree (article_id);
+
+
+--
+-- Name: idx_citation_edges_author_pubkey; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_citation_edges_author_pubkey ON public.citation_edges USING btree (source_author_pubkey);
+
+
+--
 -- Name: idx_comments_author; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4083,6 +4188,34 @@ CREATE INDEX idx_comments_target ON public.comments USING btree (target_event_id
 --
 
 CREATE INDEX idx_conv_members_user ON public.conversation_members USING btree (user_id);
+
+
+--
+-- Name: idx_credit_edges_article; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_credit_edges_article ON public.credit_edges USING btree (article_id);
+
+
+--
+-- Name: idx_credit_edges_resolved_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_credit_edges_resolved_account ON public.credit_edges USING btree (resolved_account_id);
+
+
+--
+-- Name: idx_dispute_edges_citation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dispute_edges_citation ON public.dispute_edges USING btree (citation_edge_id);
+
+
+--
+-- Name: idx_dispute_edges_credit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dispute_edges_credit ON public.dispute_edges USING btree (credit_edge_id);
 
 
 --
@@ -5485,6 +5618,22 @@ ALTER TABLE ONLY public.bookmarks
 
 
 --
+-- Name: citation_edges citation_edges_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.citation_edges
+    ADD CONSTRAINT citation_edges_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.articles(id);
+
+
+--
+-- Name: citation_edges citation_edges_source_external_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.citation_edges
+    ADD CONSTRAINT citation_edges_source_external_item_id_fkey FOREIGN KEY (source_external_item_id) REFERENCES public.external_items(id);
+
+
+--
 -- Name: comments comments_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5557,6 +5706,22 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: credit_edges credit_edges_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_edges
+    ADD CONSTRAINT credit_edges_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.articles(id);
+
+
+--
+-- Name: credit_edges credit_edges_resolved_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_edges
+    ADD CONSTRAINT credit_edges_resolved_account_id_fkey FOREIGN KEY (resolved_account_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: direct_messages direct_messages_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5586,6 +5751,38 @@ ALTER TABLE ONLY public.direct_messages
 
 ALTER TABLE ONLY public.direct_messages
     ADD CONSTRAINT direct_messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dispute_edges dispute_edges_citation_edge_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dispute_edges
+    ADD CONSTRAINT dispute_edges_citation_edge_id_fkey FOREIGN KEY (citation_edge_id) REFERENCES public.citation_edges(id);
+
+
+--
+-- Name: dispute_edges dispute_edges_credit_edge_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dispute_edges
+    ADD CONSTRAINT dispute_edges_credit_edge_id_fkey FOREIGN KEY (credit_edge_id) REFERENCES public.credit_edges(id);
+
+
+--
+-- Name: dispute_edges dispute_edges_disputant_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dispute_edges
+    ADD CONSTRAINT dispute_edges_disputant_account_id_fkey FOREIGN KEY (disputant_account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: dispute_edges dispute_edges_stake_ledger_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dispute_edges
+    ADD CONSTRAINT dispute_edges_stake_ledger_entry_id_fkey FOREIGN KEY (stake_ledger_entry_id) REFERENCES public.ledger_entries(id);
 
 
 --
@@ -6752,8 +6949,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict NyJB1xmi43UnGa0SacBu8ZVUCnmHBbatOszOiPia7d4mAbeFGKY7UUczNgLoFUX
-
+\unrestrict FzAF4lkh6rvoj0eaYu6nhz4kg8gNzj2SfuVldr8sdT3sah5VqeeHkACJWYPdF4S
 
 
 -- Seed _migrations: record every migration folded into this dump as applied.
@@ -6893,4 +7089,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('121_ledger_opening_balance.sql'),
     ('122_dm_reactions.sql'),
     ('123_identity_links_and_dedup_fingerprint.sql'),
-    ('124_ledger_negative_balance_and_truncate_guard.sql');
+    ('124_ledger_negative_balance_and_truncate_guard.sql'),
+    ('125_upstream_edges.sql');

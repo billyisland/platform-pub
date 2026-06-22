@@ -13,6 +13,7 @@ import { ShareButton } from '../ui/ShareButton'
 import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
 import { ForAllMark } from '../icons/ForAllMark'
+import { UpstreamEdges } from './UpstreamEdges'
 import { articles as articlesApi, giftLinks } from '../../lib/api'
 import { useReadingPosition } from '../../hooks/useReadingPosition'
 import type { ArticleEvent } from '../../lib/ndk'
@@ -268,6 +269,9 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
               )}
 
               {paywallBody && <div className="prose prose-lg mt-10" dangerouslySetInnerHTML={{ __html: paywallHtml }} />}
+
+              {/* Upstream Edges — credit/citation apparatus at the piece foot */}
+              <UpstreamEdges articleDbId={articleDbId} />
 
               <div className="flex justify-center mt-16 mb-12">
                 <ForAllMark size={24} className="text-grey-300" />

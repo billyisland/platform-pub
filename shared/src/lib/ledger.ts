@@ -62,6 +62,8 @@ export type LedgerTriggerType =
   | 'pledge_fulfil'       // drive pledge fulfilment (pledges → read_events)
   | 'subscription_credit' // spend→subscription conversion credits the reader's tab down
   | 'opening_balance'     // Phase-3 one-time per-account opening tab balance (backfill)
+  | 'dispute_stake'       // Upstream Edges: third-party dispute stake (−amount, debits the disputant's tab)
+  | 'dispute_stake_refund'// Upstream Edges: dispute stake returned on withdrawal (+amount)
 
 export interface LedgerEntryInput {
   /** Whose ledger this movement belongs to. */

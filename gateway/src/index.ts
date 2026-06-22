@@ -39,6 +39,7 @@ import { postThreadRoutes } from "./routes/post-thread.js";
 import { socialRoutes } from "./routes/social.js";
 import { publicationRoutes } from "./routes/publications/index.js";
 import { driveRoutes } from "./routes/drives.js";
+import { upstreamEdgeRoutes } from "./routes/upstream-edges.js";
 import { expireOverdueDrives } from "./workers/drive-expiry.js";
 import { traffologyRoutes } from "./routes/traffology.js";
 import { unsubscribeRoutes } from "./routes/unsubscribe.js";
@@ -207,6 +208,9 @@ async function start() {
 
   // Pledge drives (crowdfunding, commissions)
   await app.register(driveRoutes, { prefix: "/api/v1" });
+
+  // Upstream Edges (credit / citation / dispute — UPSTREAM-EDGES-ADR Phase 1)
+  await app.register(upstreamEdgeRoutes, { prefix: "/api/v1" });
 
   // Traffology (writer analytics — concurrent reader counts)
   await app.register(traffologyRoutes, { prefix: "/api/v1" });

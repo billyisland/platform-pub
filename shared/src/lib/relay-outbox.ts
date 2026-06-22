@@ -30,6 +30,9 @@ export type RelayOutboxEntityType =
   | 'profile'       // kind 0  — profile metadata
   | 'follow_list'   // kind 3  — NIP-02 contact list
   | 'relay_list'    // kind 10002 — NIP-65 relay list
+  // Upstream Edges — addressable citation/dispute claims (UPSTREAM-EDGES-ADR)
+  | 'citation'      // kind 30100 — a faithfulness claim pinned to a source
+  | 'dispute'       // kind 30101 — a counter-claim against a citation (+ kind 5 retraction)
 
 export interface SignedNostrEvent {
   id: string

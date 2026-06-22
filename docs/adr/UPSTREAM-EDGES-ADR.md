@@ -2,7 +2,7 @@
 
 **Status:** Accepted (rewrite 2026-06-22). Supersedes the 2026-06-21 draft: tribute is reworked from a payout-time deduction (mirrored double-entry pair, per-cycle) to **settlement-time apportionment with a held accrual** — the inspirer becomes a co-earner, paid through the ordinary writer flow. Also supersedes the separate Span-Pinned Citations ADR.
 **Depends on:** `articles`, `accounts`, `ledger_entries` (append-only), `read_events`, `external_items`, strfry event store, the universal resolver (`POST /api/resolve`).
-**Companion:** `UPSTREAM-EDGES-BUILD-PLAN.md` (what to build, in order — not yet written).
+**Companion:** `UPSTREAM-EDGES-BUILD-PLAN.md` (what to build, in order).
 
 ## Summary
 
@@ -222,7 +222,7 @@ Ranking signals or reputation scores from any of these tables; escrow/custody of
 
 ## Build order
 
-1. `credit_edges`, `citation_edges`, `dispute_edges` + dispute mechanics (`dispute_stake` / `dispute_stake_refund`). Independent of tribute; the only money is the dispute stake, so this phase already touches the ledger triggers, views, reconcile, and adjacency markers.
+1. `credit_edges`, `citation_edges`, `dispute_edges` + dispute mechanics (`dispute_stake` / `dispute_stake_refund`). Independent of tribute; the only money is the dispute stake, so this phase already touches the ledger triggers, views, reconcile, and adjacency markers. — ✅ **Shipped 2026-06-22** (migration 125, `gateway/src/routes/upstream-edges.ts`, `UpstreamEdges` reader apparatus; see `UPSTREAM-EDGES-BUILD-PLAN.md` › *Phase 1 — as built*).
 2. `tributes` + `tribute_accruals` schema, the resolver-driven authoring UI, and the inspirer-contact pipeline (in-app + email branches). Accrual writes are dark until step 3.
 3. Settlement-time apportionment (`settlement.ts`) and the payout changes (`payout.ts`): author paid net of non-swept accruals, inspirer payout posts `tribute_payout`, reconcile assertions live. Resolve the compliance question first.
 4. Composition: wire the `tributes.citation_edge_id` UX last.

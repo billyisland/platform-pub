@@ -79,6 +79,43 @@ WHERE le.trigger_type = 'publication_split'
   AND (le.amount_pence <> ps.amount_pence
        OR le.account_id <> ps.account_id);
 
+-- A7: dispute_stake / dispute_stake_refund vs dispute_edges (Upstream Edges).
+-- The stake is a debit (−) on the disputant's tab; the cited/credited author
+-- never stakes; the holding dispute must reference the stake entry back.
+\echo '-- A7: dispute_stake vs dispute_edges --'
+SELECT le.id AS ledger_id, le.ref_id, le.amount_pence, le.account_id,
+       de.disputant_account_id, de.is_by_cited_author, de.stake_ledger_entry_id
+FROM ledger_entries le
+JOIN dispute_edges de ON de.id = le.ref_id
+WHERE le.trigger_type = 'dispute_stake'
+  AND (le.account_id <> de.disputant_account_id
+       OR le.amount_pence >= 0
+       OR de.is_by_cited_author
+       OR de.stake_ledger_entry_id IS DISTINCT FROM le.id);
+
+-- A8: stake↔refund pairing. Every WITHDRAWN dispute that held a stake must have
+-- exactly one paired dispute_stake_refund of equal magnitude, same account; a
+-- refund with no withdrawn staked dispute is an orphan. A non-withdrawn staked
+-- dispute legitimately has no refund (excluded by the stakes CTE filter).
+\echo '-- A8: dispute stake↔refund pairing (expect ZERO) --'
+WITH stakes AS (
+  SELECT de.id AS dispute_id, de.disputant_account_id, le.amount_pence AS stake_pence
+  FROM dispute_edges de
+  JOIN ledger_entries le ON le.id = de.stake_ledger_entry_id
+  WHERE de.withdrawn_at IS NOT NULL
+), refunds AS (
+  SELECT ref_id AS dispute_id, account_id, amount_pence AS refund_pence
+  FROM ledger_entries WHERE trigger_type = 'dispute_stake_refund'
+)
+SELECT COALESCE(s.dispute_id, r.dispute_id) AS dispute_id,
+       s.stake_pence, r.refund_pence
+FROM stakes s
+FULL OUTER JOIN refunds r ON r.dispute_id = s.dispute_id
+WHERE s.dispute_id IS NULL
+   OR r.dispute_id IS NULL
+   OR s.disputant_account_id <> r.account_id
+   OR abs(s.stake_pence) <> abs(r.refund_pence);
+
 \echo '-- A6: orphan entries — a ledger row whose source row is gone (expect ZERO) --'
 SELECT le.id AS ledger_id, le.trigger_type, le.ref_table, le.ref_id
 FROM ledger_entries le
@@ -91,7 +128,9 @@ WHERE (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
    OR (le.trigger_type = 'writer_payout'
          AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
    OR (le.trigger_type = 'publication_split'
-         AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id));
+         AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
+   OR (le.trigger_type IN ('dispute_stake', 'dispute_stake_refund')
+         AND NOT EXISTS (SELECT 1 FROM dispute_edges de WHERE de.id = le.ref_id));
 
 \echo
 \echo '==================================================================='
