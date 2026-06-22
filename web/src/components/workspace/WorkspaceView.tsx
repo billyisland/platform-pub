@@ -31,6 +31,7 @@ import {
 } from "./tokens";
 import { useColorScheme } from "../../stores/colorScheme";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
+import { useMobileActiveFeed } from "../../stores/mobileActiveFeed";
 import { Composer, type ReplyTarget } from "./Composer";
 import type { QuoteTarget } from "../../lib/publishNote";
 import { getCachedWriterName, resolveWriterName } from "../../hooks/useWriterName";
@@ -593,6 +594,17 @@ export function WorkspaceView() {
     );
   const feedNumerals = new Map<string, number>();
   visibleSorted.forEach((v, i) => feedNumerals.set(v.feed.id, i + 1));
+
+  // The feed the ∀ relativises to: the mobile pager's active feed, resolved to
+  // a live + still-visible row. A stale id (feed since hidden/deleted) yields
+  // null, so the feed-scoped row simply drops out. Desktop never sets the store
+  // (no single active feed), so this stays null there.
+  const mobileActiveFeedId = useMobileActiveFeed((s) => s.feedId);
+  const currentFeed =
+    isMobile && mobileActiveFeedId
+      ? (visibleSorted.find((v) => v.feed.id === mobileActiveFeedId)?.feed ??
+        null)
+      : null;
 
   function feedDisplayName(feedId: string, feedName: string): string {
     const num = feedNumerals.get(feedId) ?? 1;
@@ -1260,6 +1272,13 @@ export function WorkspaceView() {
         onAction={handleForallAction}
         hiddenFeeds={hiddenFeeds}
         onRestore={handleRestoreHiddenFeed}
+        currentFeed={
+          currentFeed ? { id: currentFeed.id, name: currentFeed.name } : null
+        }
+        onFeedSettings={(feedId) => {
+          const v = vessels.find((x) => x.feed.id === feedId);
+          if (v) setFeedComposerFor(v.feed);
+        }}
         anchor={isMobile ? "bar" : "floating"}
       />
       <Composer

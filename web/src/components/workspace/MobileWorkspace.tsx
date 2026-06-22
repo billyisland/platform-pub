@@ -9,6 +9,7 @@ import {
 import type { WorkspaceFeed } from "../../lib/api";
 import { PullToRefresh } from "./PullToRefresh";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
+import { useMobileActiveFeed } from "../../stores/mobileActiveFeed";
 
 // =============================================================================
 // MobileWorkspace — the mobile workspace shell (MOBILE-LAYOUT-ADR §III–§IV).
@@ -130,6 +131,16 @@ export function MobileWorkspace({
     if (activeFeedId && (activeId === null || activeId === activeFeedId))
       writeResume(userId, activeFeedId);
   }, [activeFeedId, activeId, userId]);
+
+  // Publish the feed under the reader's thumb so the ∀ menu can offer a
+  // feed-scoped "Feed settings" row relativised to it (the discoverable twin of
+  // tapping the active pip). Cleared on unmount so the desktop canvas — where
+  // there is no single active feed — never shows the row.
+  const setMobileActiveFeed = useMobileActiveFeed((s) => s.set);
+  useEffect(() => {
+    setMobileActiveFeed(activeFeedId ?? null);
+  }, [activeFeedId, setMobileActiveFeed]);
+  useEffect(() => () => setMobileActiveFeed(null), [setMobileActiveFeed]);
 
   const pagerRef = useRef<HTMLDivElement>(null);
   // The in-flight drag writes its transform straight to the track element —

@@ -38,6 +38,14 @@ interface ForallMenuProps {
   onAction: (key: ForallAction) => void;
   hiddenFeeds?: HiddenFeed[];
   onRestore?: (feedId: string) => void;
+  /** The feed the menu is relativised to — the one under the reader's thumb on
+   *  the mobile pager. When set, the menu carries a feed-scoped "Feed settings"
+   *  row (the discoverable twin of tapping the active pip — MOBILE-LAYOUT-ADR
+   *  §VI). Null on the desktop canvas, where there is no single active feed and
+   *  each vessel carries its own gear, so the row is suppressed there. */
+  currentFeed?: { id: string; name: string } | null;
+  /** Open the FeedComposer for the feed-scoped row's target. */
+  onFeedSettings?: (feedId: string) => void;
   /** Placement of the ∀ trigger. "floating" is the desktop disc at the
    *  bottom-right of the canvas; "bar" docks a smaller disc into the mobile
    *  bar's right end, with the menu dropping DOWN below the bar
@@ -53,7 +61,17 @@ type View = "closed" | "menu" | "search";
 type FocusRow =
   | { kind: "action"; key: ForallAction; label: string }
   | { kind: "open"; target: "search"; label: string; count: number }
-  | { kind: "overlay"; onOpen: () => void; label: string; count: number }
+  | {
+      kind: "overlay";
+      onOpen: () => void;
+      label: string;
+      count: number;
+      // Secondary-tier destinations (Library / Network / Ledger / Settings)
+      // render in the muted weight so the menu reads as a primary pair
+      // (Messages · Dashboard) over a quieter account cluster, without dropping
+      // any destination (they all stay reachable here).
+      muted?: boolean;
+    }
   | { kind: "link"; href: string; label: string; count: number }
   | { kind: "restore"; id: string; label: string };
 
@@ -61,6 +79,8 @@ export function ForallMenu({
   onAction,
   hiddenFeeds = [],
   onRestore,
+  currentFeed = null,
+  onFeedSettings,
   anchor = "floating",
 }: ForallMenuProps) {
   const inBar = anchor === "bar";
@@ -137,12 +157,31 @@ export function ForallMenu({
   const findRows: FocusRow[] = [
     { kind: "open", target: "search", label: "Search", count: 0 },
   ];
+  // Feed-scoped row — present only when the menu is relativised to a feed (the
+  // mobile pager's active feed). Its own group, directly under Search, so the
+  // action that's about "the thing you're looking at" sits at the top of the
+  // make/do region. Reuses the overlay row (an onOpen closure) rather than a
+  // new ForallAction, since it targets a specific feed, not a global create.
+  const feedRows: FocusRow[] =
+    currentFeed && onFeedSettings
+      ? [
+          {
+            kind: "overlay",
+            onOpen: () => onFeedSettings(currentFeed.id),
+            label: "Feed settings",
+            count: 0,
+          },
+        ]
+      : [];
   const createRows: FocusRow[] = [
     { kind: "action", key: "new-note", label: "New note" },
     { kind: "action", key: "new-article", label: "Write an article" },
     { kind: "action", key: "new-feed", label: "New feed" },
   ];
-  const goRows: FocusRow[] = [
+  // The go-group keeps all six destinations but reads in two tiers: a primary
+  // pair (the high-traffic inbox + dashboard) over a muted account cluster.
+  // Same group-gap separates them; the muted weight does the demoting.
+  const goPrimaryRows: FocusRow[] = [
     {
       // Notifications folded into Messages — one merged inbox surface. The count
       // is the combined unread (DMs + notifications).
@@ -157,29 +196,35 @@ export function ForallMenu({
       label: "Dashboard",
       count: 0,
     },
+  ];
+  const goSecondaryRows: FocusRow[] = [
     {
       kind: "overlay",
       onOpen: () => useLibraryOverlay.getState().open(),
       label: "Library",
       count: 0,
+      muted: true,
     },
     {
       kind: "overlay",
       onOpen: () => useNetworkOverlay.getState().open(),
       label: "Network",
       count: 0,
+      muted: true,
     },
     {
       kind: "overlay",
       onOpen: () => useLedgerOverlay.getState().open(),
       label: "Ledger",
       count: 0,
+      muted: true,
     },
     {
       kind: "overlay",
       onOpen: () => useSettingsOverlay.getState().open(),
       label: "Settings",
       count: 0,
+      muted: true,
     },
   ];
   const restoreRows: FocusRow[] = hiddenFeeds.map((hf) => ({
@@ -204,8 +249,10 @@ export function ForallMenu({
   ];
   const groups: FocusRow[][] = [
     findRows,
+    feedRows,
     createRows,
-    goRows,
+    goPrimaryRows,
+    goSecondaryRows,
     restoreRows,
     accountRows,
   ].filter((g) => g.length > 0);
@@ -640,6 +687,9 @@ const MenuRow = forwardRef<HTMLButtonElement, MenuRowProps>(function MenuRow(
   ref,
 ) {
   const isRestore = row.kind === "restore";
+  // Secondary-tier destinations dim to the muted weight too, but keep the
+  // normal row font (only restores get the small label-ui treatment).
+  const muted = isRestore || (row.kind === "overlay" && row.muted === true);
   const count =
     row.kind === "open" || row.kind === "link" || row.kind === "overlay"
       ? row.count
@@ -657,7 +707,7 @@ const MenuRow = forwardRef<HTMLButtonElement, MenuRowProps>(function MenuRow(
         alignItems: "center",
         justifyContent: "space-between",
         gap: 12,
-        color: isRestore ? TOKENS.itemMuted : TOKENS.itemFg,
+        color: muted ? TOKENS.itemMuted : TOKENS.itemFg,
         padding: isRestore ? "8px 14px 8px 24px" : "10px 14px",
         background: active ? TOKENS.itemFocusBg : "transparent",
         transition: "background 80ms linear",

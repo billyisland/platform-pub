@@ -2,22 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
-import type { MeResponse } from '../../lib/api'
 import { useLayoutModeContext } from './LayoutShell'
 import { ForAllMark } from '../icons/ForAllMark'
-import { useUnreadCounts } from '../../stores/unread'
-import { useCompose } from '../../stores/compose'
-
-function Badge({ count, className = '' }: { count: number; className?: string }) {
-  if (count <= 0) return null
-  return (
-    <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-crimson text-white text-[11px] font-sans font-semibold leading-none rounded-full ${className}`}>
-      {count > 99 ? '99+' : count}
-    </span>
-  )
-}
 
 // ─── Nav link styling (Plex Mono, uppercase, on black) ──────────────────────
 
@@ -30,132 +18,34 @@ function navLinkClass(active: boolean) {
   ].join(' ')
 }
 
-// ─── Avatar (square, no border-radius) ──────────────────────────────────────
+// ─── Wordmark lockup ────────────────────────────────────────────────────────
 
-function NavAvatar({ user, size = 28 }: { user: { avatar: string | null; displayName: string | null; username: string | null }; size?: number }) {
-  const px = `${size}px`
-  if (user.avatar) {
-    return <img src={user.avatar} alt="" className="object-cover" style={{ width: px, height: px }} />
-  }
+function Wordmark({ href }: { href: string }) {
   return (
-    <span
-      className="flex items-center justify-center bg-grey-200 text-grey-400 font-mono uppercase"
-      style={{ width: px, height: px, fontSize: `${Math.round(size * 0.38)}px` }}
-    >
-      {(user.displayName ?? user.username ?? '?')[0]}
-    </span>
+    <Link href={href} className="flex items-center gap-[8px] flex-shrink-0 group">
+      <ForAllMark
+        size={18}
+        className="text-crimson group-hover:text-crimson-dark transition-colors"
+      />
+      <span
+        className="font-sans text-[18px] font-medium text-white leading-none"
+        style={{ letterSpacing: '-0.01em' }}
+      >
+        all.haus
+      </span>
+    </Link>
   )
 }
 
-// ─── Avatar dropdown ────────────────────────────────────────────────────────
+// ─── Logged-out mobile sheet ────────────────────────────────────────────────
+//
+// The topbar is the logged-out marketing/auth register only (LayoutShell:
+// logged-in surfaces are chromeless — the workspace ∀ is the sole member nav).
+// So this sheet carries no member destinations; it's About / Log in / Sign up.
 
-function AvatarDropdown({ user, onLogout, onClose }: {
-  user: MeResponse
-  onLogout: () => void
-  onClose: () => void
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const dmCount = useUnreadCounts((s) => s.dmCount)
-  const notificationCount = useUnreadCounts((s) => s.notificationCount)
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', handleClick)
-    document.addEventListener('keydown', handleKey)
-    return () => {
-      document.removeEventListener('mousedown', handleClick)
-      document.removeEventListener('keydown', handleKey)
-    }
-  }, [onClose])
-
-  const linkClass = 'block px-4 py-2 text-ui-sm text-black hover:bg-grey-100 transition-colors font-sans'
-
-  return (
-    <>
-      <div ref={ref} role="menu" className="absolute right-0 top-full mt-2 w-56 bg-white shadow-lg z-50">
-        {/* Identity */}
-        <div className="px-4 py-3" style={{ borderBottom: '4px solid var(--ah-ink)' }}>
-          <div className="flex items-center gap-2">
-            <NavAvatar user={user} size={32} />
-            <div>
-              <p className="text-ui-sm font-semibold text-black font-sans">{user.displayName ?? user.username}</p>
-              {user.username && (
-                <p className="text-[11px] text-grey-600 font-mono uppercase tracking-[0.02em]">@{user.username}</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Group 1 */}
-        <div className="py-1">
-          <Link href="/reader?overlay=settings" onClick={onClose} className={linkClass}>Profile</Link>
-          <Link href="/reader?overlay=messages" onClick={onClose} className={linkClass}>
-            <span className="flex items-center justify-between">
-              <span>Messages</span>
-              <Badge count={dmCount} />
-            </span>
-          </Link>
-          <Link href="/reader?overlay=notifications" onClick={onClose} className={linkClass}>
-            <span className="flex items-center justify-between">
-              <span>Notifications</span>
-              <Badge count={notificationCount} />
-            </span>
-          </Link>
-        </div>
-
-        <div style={{ height: '4px', background: 'var(--ah-grey-100)' }} />
-
-        {/* Group 2 */}
-        <div className="py-1">
-          <Link href="/reader?overlay=ledger" onClick={onClose} className={linkClass}>
-            <span className="flex items-center justify-between">
-              <span>Ledger</span>
-              <span className="text-[11px] text-grey-600 tabular-nums font-mono uppercase tracking-[0.02em]">
-                £{(user.freeAllowanceRemainingPence / 100).toFixed(2)}
-              </span>
-            </span>
-          </Link>
-          <Link href="/reader?overlay=settings" onClick={onClose} className={linkClass}>Settings</Link>
-          <Link href="/reader?overlay=library" onClick={onClose} className={linkClass}>Library</Link>
-        </div>
-
-        <div style={{ height: '4px', background: 'var(--ah-grey-100)' }} />
-
-        {/* Group 3 */}
-        <div className="py-1">
-          {user.isAdmin && (
-            <Link href="/admin" onClick={onClose} className={linkClass}>Admin</Link>
-          )}
-          <button onClick={onLogout} className="block w-full text-left px-4 py-2 text-ui-sm text-grey-600 hover:bg-grey-100 transition-colors font-sans">
-            Log out
-          </button>
-        </div>
-      </div>
-    </>
-  )
-}
-
-// ─── Mobile sheet ───────────────────────────────────────────────────────────
-
-function MobileSheet({ user, loading, onLogout, onClose }: {
-  user: MeResponse | null
-  loading: boolean
-  onLogout: () => void
-  onClose: () => void
-}) {
+function MobileSheet({ onClose }: { onClose: () => void }) {
   const pathname = usePathname()
-  const dmCount = useUnreadCounts((s) => s.dmCount)
-  const notificationCount = useUnreadCounts((s) => s.notificationCount)
-
-  function isActive(path: string) {
-    return pathname.startsWith(path)
-  }
-
+  const isActive = (path: string) => pathname.startsWith(path)
   const linkClass = (path: string) => [
     'block py-3 label-ui transition-colors',
     isActive(path) ? 'text-white font-medium' : 'text-grey-400 hover:text-white',
@@ -163,228 +53,93 @@ function MobileSheet({ user, loading, onLogout, onClose }: {
 
   return (
     <div className="fixed inset-x-0 top-[60px] bg-black z-40 px-6 py-4">
-      {loading ? (
-        <div className="h-4 w-24 animate-pulse bg-grey-600" />
-      ) : user ? (
-        <>
-          <Link href="/reader" onClick={onClose} className={linkClass('/reader')}>Workspace</Link>
-          <Link href="/reader?overlay=dashboard" onClick={onClose} className={linkClass('/dashboard')}>Dashboard</Link>
+      <Link href="/about" onClick={onClose} className={linkClass('/about')}>About</Link>
 
-          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
+      <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
 
-          <Link href="/reader?overlay=messages" onClick={onClose} className={linkClass('/messages')}>
-            <span className="flex items-center gap-2">Messages<Badge count={dmCount} /></span>
-          </Link>
-          <Link href="/reader?overlay=notifications" onClick={onClose} className={linkClass('/notifications')}>
-            <span className="flex items-center gap-2">Notifications<Badge count={notificationCount} /></span>
-          </Link>
-
-          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
-
-          <Link href="/reader?overlay=settings" onClick={onClose} className={linkClass('/profile')}>Profile</Link>
-          <Link href="/reader?overlay=ledger" onClick={onClose} className={linkClass('/ledger')}>Ledger</Link>
-          <Link href="/reader?overlay=settings" onClick={onClose} className={linkClass('/settings')}>Settings</Link>
-          <Link href="/reader?overlay=library" onClick={onClose} className={linkClass('/library')}>Library</Link>
-
-          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
-
-          <button
-            onClick={() => { onLogout(); onClose() }}
-            className="block py-3 label-ui text-grey-400 hover:text-white transition-colors"
-          >
-            Log out
-          </button>
-        </>
-      ) : (
-        <>
-          <Link href="/about" onClick={onClose} className={linkClass('/about')}>About</Link>
-
-          <div style={{ height: '4px', background: 'var(--ah-nav-grey)' }} className="my-3" />
-
-          <Link href="/auth?mode=login" onClick={onClose} className="block py-3 label-ui text-grey-400 hover:text-white transition-colors">Log in</Link>
-          <Link href="/auth?mode=signup" onClick={onClose} className="inline-block mt-1 btn-accent text-center text-sm py-2 px-6">Sign up</Link>
-        </>
-      )}
+      <Link href="/auth?mode=login" onClick={onClose} className="block py-3 label-ui text-grey-400 hover:text-white transition-colors">Log in</Link>
+      <Link href="/auth?mode=signup" onClick={onClose} className="inline-block mt-1 btn-accent text-center text-sm py-2 px-6">Sign up</Link>
     </div>
   )
 }
 
 // ─── Main Nav ───────────────────────────────────────────────────────────────
+//
+// Logged-out chrome only. When a member is logged in we render a bare wordmark
+// beam (no menu, no auth CTAs): the only routes that still mount the topbar for
+// a logged-in user are transient pre-redirect frames (e.g. `/` before
+// HomeRedirect, a retained standalone route before it bounces into the
+// workspace overlay), so a full member menu here would be dead duplication of
+// the ∀ — and showing "Log in" to a member would be wrong. The bare beam keeps
+// that frame neutral and links home.
 
 export function Nav() {
-  const { user, loading, logout } = useAuth()
+  const { user, loading } = useAuth()
   const pathname = usePathname()
   const mode = useLayoutModeContext()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const dmCount = useUnreadCounts((s) => s.dmCount)
-  const notificationCount = useUnreadCounts((s) => s.notificationCount)
-  const totalUnread = dmCount + notificationCount
 
-  useEffect(() => { setMenuOpen(false); setDropdownOpen(false) }, [pathname])
+  useEffect(() => { setMenuOpen(false) }, [pathname])
 
   function isActive(path: string) {
-    if (path === '/reader') return pathname.startsWith('/reader')
-    if (path === '/dashboard') return pathname.startsWith('/dashboard')
-    if (path === '/network') return pathname.startsWith('/network')
     return pathname === path
   }
 
-  const openCompose = useCompose((s) => s.open)
+  const loggedIn = !loading && !!user
+  const logoHref = loggedIn ? '/reader' : '/'
 
-  // Global ⌘K / Ctrl+K hotkey to open compose overlay
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        // No-op inside the full editor
-        if (pathname.startsWith('/write/')) return
-        e.preventDefault()
-        openCompose()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [pathname, openCompose])
-
-  const logoHref = user ? '/reader' : '/'
-
-  // ── Canvas mode: minimal black bar, white ∀ ────────────────────────────────
+  // ── Canvas mode: minimal black bar, mark only ──────────────────────────────
 
   if (mode === 'canvas') {
     return (
-      <>
-        <header className="fixed top-0 inset-x-0 z-50 bg-black">
-          <div className="flex items-center justify-between px-6 h-[60px] max-w-content mx-auto">
-            <Link href={logoHref} className="flex-shrink-0 logo-spin">
-              <ForAllMark size={18} className="text-crimson hover:text-crimson-dark transition-colors" />
-            </Link>
-
-            <div className="flex items-center">
-              {!loading && user && (
-                <div className="relative">
-                  <button onClick={() => setDropdownOpen(!dropdownOpen)} aria-label="Account menu" aria-expanded={dropdownOpen} className="relative">
-                    <NavAvatar user={user} size={28} />
-                    {totalUnread > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[16px] h-[16px] px-0.5 bg-crimson text-white text-[10px] font-sans font-semibold leading-none rounded-full">
-                        {totalUnread > 99 ? '99+' : totalUnread}
-                      </span>
-                    )}
-                  </button>
-                  {dropdownOpen && (
-                    <AvatarDropdown
-                      user={user}
-                      onLogout={logout}
-                      onClose={() => setDropdownOpen(false)}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
-        {menuOpen && (
-          <MobileSheet user={user} loading={loading} onLogout={logout} onClose={() => setMenuOpen(false)} />
-        )}
-      </>
+      <header className="fixed top-0 inset-x-0 z-50 bg-black">
+        <div className="flex items-center justify-between px-6 h-[60px] max-w-content mx-auto">
+          <Link href={logoHref} className="flex-shrink-0 logo-spin">
+            <ForAllMark size={18} className="text-crimson hover:text-crimson-dark transition-colors" />
+          </Link>
+        </div>
+      </header>
     )
   }
 
-  // ── Platform mode: full black beam ─────────────────────────────────────────
+  // ── Platform mode ──────────────────────────────────────────────────────────
 
+  // Logged in (or auth still resolving on a topbar route): bare beam, no menu.
+  if (loggedIn || loading) {
+    return (
+      <header className="fixed top-0 inset-x-0 z-50 bg-black">
+        <div className="flex items-center px-6 h-[60px] max-w-content mx-auto">
+          <Wordmark href={logoHref} />
+        </div>
+      </header>
+    )
+  }
+
+  // Logged out: the marketing/auth register.
   return (
     <>
       <header className="fixed top-0 inset-x-0 z-50 bg-black">
         <div className="flex items-center justify-between px-6 h-[60px] max-w-content mx-auto">
 
-          {/* Left: logo + nav links */}
           <div className="flex items-center gap-6">
-            <Link
-              href={logoHref}
-              className="flex items-center gap-[8px] flex-shrink-0 group"
-            >
-              <ForAllMark
-                size={18}
-                className="text-crimson group-hover:text-crimson-dark transition-colors"
-              />
-              <span
-                className="font-sans text-[18px] font-medium text-white leading-none"
-                style={{ letterSpacing: '-0.01em' }}
-              >
-                all.haus
-              </span>
-            </Link>
-
+            <Wordmark href="/" />
             <nav className="hidden md:flex items-center gap-1">
-              {loading ? (
-                <div className="h-3 w-32 animate-pulse bg-grey-600" />
-              ) : user ? (
-                <>
-                  <Link href="/reader" className={navLinkClass(isActive('/reader'))}>Workspace</Link>
-                  <Link href="/reader?overlay=dashboard" className={navLinkClass(isActive('/dashboard'))}>Dashboard</Link>
-                </>
-              ) : (
-                <>
-                  <Link href="/about" className={navLinkClass(isActive('/about'))}>About</Link>
-                </>
-              )}
+              <Link href="/about" className={navLinkClass(isActive('/about'))}>About</Link>
             </nav>
           </div>
 
-          {/* Right: auth/avatar (search lives in the workspace dock now) */}
           <div className="flex items-center gap-4">
-            {/* Compose button — desktop: text, mobile: ∀ mark */}
-            {!loading && user && (
-              <>
-                <button
-                  onClick={() => openCompose()}
-                  className="hidden md:flex items-center gap-1 label-ui text-grey-400 hover:text-white transition-colors group"
-                >
-                  <span className="group-hover:border-b group-hover:border-crimson pb-px">Compose</span>
-                  <span className="text-grey-600">&nbsp;&#8984;K</span>
-                </button>
-                <button
-                  onClick={() => openCompose()}
-                  className="md:hidden"
-                  aria-label="Compose"
-                >
-                  <ForAllMark size={14} className="text-white hover:text-grey-300 transition-colors" />
-                </button>
-              </>
-            )}
-
-            {loading ? (
-              <div className="h-7 w-7 animate-pulse bg-grey-600" />
-            ) : user ? (
-              <div className="relative hidden md:block">
-                <button onClick={() => setDropdownOpen(!dropdownOpen)} aria-label="Account menu" aria-expanded={dropdownOpen} className="relative flex items-center">
-                  <NavAvatar user={user} size={28} />
-                  {totalUnread > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[16px] h-[16px] px-0.5 bg-crimson text-white text-[10px] font-sans font-semibold leading-none rounded-full">
-                      {totalUnread > 99 ? '99+' : totalUnread}
-                    </span>
-                  )}
-                </button>
-                {dropdownOpen && (
-                  <AvatarDropdown
-                    user={user}
-                    onLogout={logout}
-                    onClose={() => setDropdownOpen(false)}
-                  />
-                )}
-              </div>
-            ) : (
-              <div className="hidden md:flex items-center gap-3">
-                <Link
-                  href="/auth?mode=login"
-                  className="label-ui text-grey-400 hover:text-white transition-colors"
-                >
-                  Log in
-                </Link>
-                <Link href="/auth?mode=signup" className="btn-accent btn-sm">
-                  Sign up
-                </Link>
-              </div>
-            )}
+            <div className="hidden md:flex items-center gap-3">
+              <Link
+                href="/auth?mode=login"
+                className="label-ui text-grey-400 hover:text-white transition-colors"
+              >
+                Log in
+              </Link>
+              <Link href="/auth?mode=signup" className="btn-accent btn-sm">
+                Sign up
+              </Link>
+            </div>
 
             {/* Hamburger — mobile only */}
             <button
@@ -392,11 +147,6 @@ export function Nav() {
               className="relative flex flex-col justify-center gap-[5px] w-6 h-6 md:hidden"
               aria-label="Menu"
             >
-              {totalUnread > 0 && (
-                <span className="absolute -top-1.5 -right-2 flex items-center justify-center min-w-[16px] h-[16px] px-0.5 bg-crimson text-white text-[10px] font-sans font-semibold leading-none rounded-full">
-                  {totalUnread > 99 ? '99+' : totalUnread}
-                </span>
-              )}
               <span className={`block w-full h-[2px] bg-white transition-transform ${menuOpen ? 'rotate-45 translate-y-[7px]' : ''}`} />
               <span className={`block w-full h-[2px] bg-white transition-opacity ${menuOpen ? 'opacity-0' : ''}`} />
               <span className={`block w-full h-[2px] bg-white transition-transform ${menuOpen ? '-rotate-45 -translate-y-[7px]' : ''}`} />
@@ -405,9 +155,7 @@ export function Nav() {
         </div>
       </header>
 
-      {menuOpen && (
-        <MobileSheet user={user} loading={loading} onLogout={logout} onClose={() => setMenuOpen(false)} />
-      )}
+      {menuOpen && <MobileSheet onClose={() => setMenuOpen(false)} />}
     </>
   )
 }
