@@ -315,8 +315,11 @@ export function MessagesInbox({
       </div>
 
       {/* Conversation list — middle. Grey ground separates it from the white
-          panes either side by surface contrast (no divider rule). */}
-      <div className="w-[240px] shrink-0 flex flex-col min-h-0 bg-grey-100">
+          panes either side by surface contrast (no divider rule). The `pt-6`
+          reserves the band the Glasshouse drag-grip occupies (top-centre of the
+          pane, which lands over this column at every realistic pane width) so the
+          grip sits over the empty grey strip, never the "Messages" header. */}
+      <div className="w-[240px] shrink-0 flex flex-col min-h-0 bg-grey-100 pt-6">
         <ConversationList
           conversations={conversations}
           activeId={activeConvId}

@@ -29,8 +29,11 @@ export function MessageThread({
   memberId?: string
   onBack?: () => void
   onMessagesRead?: () => void
-  // When rendered inside a Glasshouse overlay, the floating close ✕ sits at the
-  // pane's top-right — reserve room so the Commission button clears it.
+  // Set when rendered inside a Glasshouse overlay (the Messages surface). The
+  // overlay has two pinned, floating handles this thread must clear: the close ✕
+  // at the pane's top-right (so the header reserves room for the Commission
+  // button) and the bottom-right resize grip (so the Send button is nudged left
+  // of it, rather than sharing its corner).
   headerRightInset?: boolean
 }) {
   const { user } = useAuth()
@@ -466,7 +469,7 @@ export function MessageThread({
       )}
 
       {/* Send box */}
-      <form onSubmit={handleSend} className="flex items-end gap-2 px-4 py-3 flex-shrink-0">
+      <form onSubmit={handleSend} className={`flex items-end gap-2 py-3 flex-shrink-0 pl-4 ${headerRightInset ? 'pr-7' : 'pr-4'}`}>
         <textarea
           ref={inputRef}
           value={content}

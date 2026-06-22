@@ -294,6 +294,22 @@ existing `persistKey="reader"`), so the reader pane carries the bottom-right
 stretch handle and persists its size — same mechanism as the composer / editor /
 messages panes.
 
+**Flush surfaces must clear the pinned handles (2026-06-22).** The grip
+(top-centre, ~y14–22px across the type scale) and the bottom-right resize grip
+(16×16, on `resizable` panes) are pinned `z-10` over the pane *content*. A body
+that reserves a top gutter (the `py-12` page-style overlays — Ledger, Dashboard,
+Library, Network, Settings) puts both handles in empty space and is safe by
+construction. A body that renders **flush** to the pane edges must clear them
+itself: keep no control under the top-centre grip band, and — when the pane is
+`resizable` — nudge any bottom-right control left of the resize grip. The merged
+Messages inbox (`MessagesInbox`) is the worked example: its centre conversation
+column carries `pt-6` so the grip lands on the empty grey strip, not the
+"Messages" header, and `MessageThread`'s send form reserves `pr-7` (under the
+same `headerRightInset` flag that already insets the header for the ✕) so the
+Send button clears the resize grip. The mobile full-screen sheet has no grips
+(only the ✕, which the segmented header clears with `pr-12`), so this is a
+desktop-pane concern only.
+
 ### 4 — Per-feed scheme as a click-through button (req 5)
 
 `tokens.ts`: add `nextScheme`, mirroring `nextOrientation` / `nextTextSize`:
