@@ -38,6 +38,19 @@ export default function RootLayout({
               "(function(){try{var m=localStorage.getItem('ah:color-mode')||'light';var d=m==='dark'||(m==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var e=document.documentElement;e.classList.toggle('dark',d);e.style.colorScheme=d?'dark':'light';}catch(_){}})();",
           }}
         />
+        {/* No-flash: a member reloading a workspace-backing page (/, /read/:id,
+            /<username>, …) would otherwise paint the retired logged-out black
+            topbar in the SSR HTML before auth resolves and the redirect fires.
+            The httpOnly JWT is invisible until fetchMe() round-trips, so we read a
+            session breadcrumb (set by the auth store) here, pre-paint, and add
+            `html.ah-session` — CSS then suppresses the topbar/footer before first
+            paint. Stale flag self-heals: a logged-out fetchMe removes the class. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{if(localStorage.getItem('ah:session')==='1')document.documentElement.classList.add('ah-session');}catch(_){}})();",
+          }}
+        />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="icon" href="/icon-32.png" type="image/png" sizes="32x32" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

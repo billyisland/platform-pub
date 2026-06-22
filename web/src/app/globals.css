@@ -175,6 +175,24 @@ html.dark {
   --ah-cream-hover-rgb: 40 39 36;
 }
 
+/* ── Member no-flash: suppress the retired logged-out chrome before first paint ──
+   The black topbar is logged-out chrome only (CLAUDE.md): a logged-in member only
+   ever sees it as a transient pre-redirect frame on a workspace-backing page (/,
+   /read/:id, /<username>, …). The SSR HTML paints that frame before auth resolves
+   and the redirect fires — and no React-state change can stop SSR HTML painting.
+   So the blocking <head> script in app/layout.tsx reads the session breadcrumb and
+   adds `html.ah-session` pre-paint; here we hide the topbar/footer and reclaim the
+   reserved 60px gap, so a returning member never paints the retired chrome. React
+   then unmounts it for real once auth resolves (chromeless / pane redirect). Safe
+   on a stale flag: a logged-out fetchMe removes the class, restoring the topbar. */
+html.ah-session .site-topbar,
+html.ah-session .site-footer {
+  display: none !important;
+}
+html.ah-session main {
+  padding-top: 0 !important;
+}
+
 /* ── Self-hosted fonts ───────────────────────────────────────────────────────── */
 
 /* Literata — serif, literary voice */

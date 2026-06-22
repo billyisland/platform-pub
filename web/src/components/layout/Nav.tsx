@@ -92,7 +92,7 @@ export function Nav() {
 
   if (mode === 'canvas') {
     return (
-      <header className="fixed top-0 inset-x-0 z-50 bg-black">
+      <header className="site-topbar fixed top-0 inset-x-0 z-50 bg-black">
         <div className="flex items-center justify-between px-6 h-[60px] max-w-content mx-auto">
           <Link href={logoHref} className="flex-shrink-0 logo-spin">
             <ForAllMark size={18} className="text-crimson hover:text-crimson-dark transition-colors" />
@@ -107,7 +107,7 @@ export function Nav() {
   // Logged in (or auth still resolving on a topbar route): bare beam, no menu.
   if (loggedIn || loading) {
     return (
-      <header className="fixed top-0 inset-x-0 z-50 bg-black">
+      <header className="site-topbar fixed top-0 inset-x-0 z-50 bg-black">
         <div className="flex items-center px-6 h-[60px] max-w-content mx-auto">
           <Wordmark href={logoHref} />
         </div>
@@ -118,7 +118,7 @@ export function Nav() {
   // Logged out: the marketing/auth register.
   return (
     <>
-      <header className="fixed top-0 inset-x-0 z-50 bg-black">
+      <header className="site-topbar fixed top-0 inset-x-0 z-50 bg-black">
         <div className="flex items-center justify-between px-6 h-[60px] max-w-content mx-auto">
 
           <div className="flex items-center gap-6">
