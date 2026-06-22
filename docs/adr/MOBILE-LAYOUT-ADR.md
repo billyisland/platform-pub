@@ -104,7 +104,10 @@ walls, no chassis, no canvas — the ⊔ is a desktop chrome and does not render
   feed number — quieter than the old numeral buttons while still showing _N of M_. Tap
   a pip to jump; tap the active pip to open that feed's settings sheet. The numeral
   remains the underlying model (§I.3, desktop vessel badges); the pip is its mobile
-  display form.
+  display form. The **∀ menu carries a discoverable twin** of the active-pip tap: a
+  feed-scoped **"Feed settings"** row, relativised to the pager's active feed
+  (published via `web/src/stores/mobileActiveFeed.ts`, resolved + visibility-guarded
+  in `WorkspaceView`, suppressed on desktop where each vessel has its own gear).
 - **Resume and deep-links key off the feed `id`, never the numeral.** The numeral is a
   positional label and will shift under reorder, delete, and hide; a stored numeral
   would silently point at the wrong feed.
