@@ -14,6 +14,7 @@ import { ReplySection } from '../replies/ReplySection'
 import { AllowanceExhaustedModal } from '../ui/AllowanceExhaustedModal'
 import { ForAllMark } from '../icons/ForAllMark'
 import { UpstreamEdges } from './UpstreamEdges'
+import { useCitationDraft } from '../../stores/citationDraft'
 import { articles as articlesApi, giftLinks } from '../../lib/api'
 import { useReadingPosition } from '../../hooks/useReadingPosition'
 import type { ArticleEvent } from '../../lib/ndk'
@@ -71,6 +72,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
 
   const isOwnContent = user?.id === writerId
   const articleBodyRef = useRef<HTMLDivElement>(null)
+  const setCitationDraft = useCitationDraft((s) => s.setDraft)
 
   useReadingPosition({ nostrEventId: article.id, enabled: !!user })
 
@@ -179,6 +181,8 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
         articlePubkey={article.pubkey}
         writerName={writerName}
         isLoggedIn={!!user}
+        isAuthor={isOwnContent}
+        onCite={(excerpt, charStart, charEnd) => setCitationDraft({ excerpt, charStart, charEnd })}
       />
 
       {showGiftLinkModal && articleDbId && (
@@ -270,8 +274,15 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
 
               {paywallBody && <div className="prose prose-lg mt-10" dangerouslySetInnerHTML={{ __html: paywallHtml }} />}
 
-              {/* Upstream Edges — credit/citation apparatus at the piece foot */}
-              <UpstreamEdges articleDbId={articleDbId} isAuthor={isOwnContent} />
+              {/* Upstream Edges — credit/citation apparatus at the piece foot.
+                  Pass the body ref + HTML so anchored citations inject their
+                  in-prose markers (re-injected when the rendered body changes). */}
+              <UpstreamEdges
+                articleDbId={articleDbId}
+                isAuthor={isOwnContent}
+                articleBodyRef={articleBodyRef}
+                bodyHtml={freeHtml}
+              />
 
               <div className="flex justify-center mt-16 mb-12">
                 <ForAllMark size={24} className="text-grey-300" />

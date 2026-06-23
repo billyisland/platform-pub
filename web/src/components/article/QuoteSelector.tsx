@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, type RefObject } from 'react'
 import { useCompose } from '../../stores/compose'
+import { rangeToOffsets } from '../../lib/citation-anchor'
 
 interface QuoteSelectorProps {
   articleBodyRef: RefObject<HTMLDivElement | null>
@@ -10,10 +11,15 @@ interface QuoteSelectorProps {
   articlePubkey: string
   writerName: string
   isLoggedIn: boolean
+  // The author of the piece gets an extra "Cite" action: capture the selected
+  // span (text + char offsets within the body) as a pending citation that the
+  // piece-foot composer picks up. UPSTREAM-EDGES — inline citation anchoring.
+  isAuthor?: boolean
+  onCite?: (excerpt: string, charStart: number, charEnd: number) => void
 }
 
-export function QuoteSelector({ articleBodyRef, articleId, articleTitle, articlePubkey, writerName, isLoggedIn }: QuoteSelectorProps) {
-  const [selectionPopup, setSelectionPopup] = useState<{ x: number; y: number; text: string } | null>(null)
+export function QuoteSelector({ articleBodyRef, articleId, articleTitle, articlePubkey, writerName, isLoggedIn, isAuthor = false, onCite }: QuoteSelectorProps) {
+  const [selectionPopup, setSelectionPopup] = useState<{ x: number; y: number; text: string; raw: string; start: number; end: number } | null>(null)
   const openCompose = useCompose((s) => s.open)
 
   const handleMouseUp = useCallback(() => {
@@ -25,11 +31,19 @@ export function QuoteSelector({ articleBodyRef, articleId, articleTitle, article
     const range = sel.getRangeAt(0)
     if (!body.contains(range.commonAncestorContainer)) { setSelectionPopup(null); return }
     const rect = range.getBoundingClientRect()
-    const words = sel.toString().trim().split(/\s+/).slice(0, 80).join(' ')
+    const raw = sel.toString().trim()
+    const words = raw.split(/\s+/).slice(0, 80).join(' ')
+    // Char offsets within the body's plain text — only needed for the author's
+    // Cite action, but cheap and captured here while the live range exists. The
+    // pair spans the full selection (`raw`), the citation's exact integrity anchor.
+    const offsets = rangeToOffsets(body, range)
     setSelectionPopup({
       x: rect.left + rect.width / 2,
       y: rect.top - 8,
       text: words,
+      raw,
+      start: offsets?.start ?? 0,
+      end: offsets?.end ?? 0,
     })
   }, [isLoggedIn, articleBodyRef])
 
@@ -42,10 +56,11 @@ export function QuoteSelector({ articleBodyRef, articleId, articleTitle, article
     <>
       {selectionPopup && (
         <div
-          className="fixed z-50 bg-black text-white px-3 py-1.5 text-[12px] font-sans shadow-lg"
+          className="fixed z-50 flex items-stretch bg-black text-white text-[12px] font-sans shadow-lg"
           style={{ left: selectionPopup.x, top: selectionPopup.y, transform: 'translate(-50%, -100%)' }}
         >
           <button
+            className="px-3 py-1.5 hover:opacity-80 transition-opacity"
             onMouseDown={e => {
               e.preventDefault()
               openCompose('reply', {
@@ -62,6 +77,19 @@ export function QuoteSelector({ articleBodyRef, articleId, articleTitle, article
           >
             Quote
           </button>
+          {isAuthor && onCite && (
+            <button
+              className="px-3 py-1.5 hover:opacity-80 transition-opacity"
+              onMouseDown={e => {
+                e.preventDefault()
+                onCite(selectionPopup.raw, selectionPopup.start, selectionPopup.end)
+                window.getSelection()?.removeAllRanges()
+                setSelectionPopup(null)
+              }}
+            >
+              Cite
+            </button>
+          )}
         </div>
       )}
     </>

@@ -2,7 +2,7 @@
 
 **Companion to:** `UPSTREAM-EDGES-ADR.md` (Accepted, rewrite 2026-06-22). The ADR is the *what/why*; this is the *what-to-build, in order*. Where the ADR left a schema note open ("the build plan fixes…"), this resolves it.
 
-**Status:** Phase 1 shipped 2026-06-22 (backend + read-side rendering). Phases 2–4 outstanding.
+**Status:** Phase 1 **complete** — backend + read-side rendering (2026-06-22), authoring UI + inline-prose citation marker (2026-06-23). Phases 2–4 outstanding.
 
 ## Phase 1 — as built (2026-06-22)
 
@@ -14,7 +14,7 @@ Shipped in migration `125_upstream_edges.sql` + `gateway/src/routes/upstream-edg
 - **Guards wired:** `upstream-edges.ts::2` registered in `check-ledger-adjacency.sh`; `ledger_reader_balance` widened (migration); reconcile A7 (stake↔dispute_edges) + A8 (stake↔refund pairing) + A6 orphan branch added.
 - **Frontend — shipped:** the credit/citation piece-foot **apparatus** (`web/src/components/article/UpstreamEdges.tsx`, mounted in `ArticleReader`): credits with disclaimers adjacent; citations with pinned excerpt, cited-author dispute inline, third-party disputes as a count-on-expansion (never a glance-level badge). Reads `articleDbId` (the internal `articles.id` UUID, not the nostr event id).
 - **Frontend — authoring UI (shipped 2026-06-23):** the `UpstreamEdges` apparatus now owns creation + dispute, so Phase 1 is exercisable end-to-end. The piece author gets inline `+ Add credit` / `+ Add citation` composers (omnivorous target/source field with a debounced universal-resolver preview — "→ member / external / feed / plain label"); any signed-in reader gets `Dispute`/`Reject this attribution` per edge, with the £5-stake notice shown to non-cited parties and suppressed for the cited/credited party. The apparatus renders for the author even with zero edges (so they can attach the first). Withdraw is durable across reloads: both GET endpoints now return the viewer's own non-withdrawn dispute as `disputes.mine` / `credit.mine` (`{id, counterCharacterisation, byCitedAuthor, staked}`), gated on `optionalAuth`; the apparatus dedupes that against the public disclaimer/cited-author render so it shows once. Backend GETs gained the `mine` projection only — no schema/ledger change.
-- **Frontend — still deferred (focused follow-up):** the inline-in-prose citation marker anchored at `char_start` inside the `dangerouslySetInnerHTML` body — needs prose-DOM injection + runtime iteration; the apparatus renders the cited-author dispute at the foot meanwhile. (The authoring composers don't yet collect `char_start`/`char_end`, so citations land unanchored until that marker lands.)
+- **Frontend — inline-prose citation marker (shipped 2026-06-23):** anchored citations now draw a numbered superscript marker in the body at `char_start`, jumping to the matching foot entry (crimson when the cited author has disputed). Injection is imperative into the `dangerouslySetInnerHTML` body via the shared offset util `web/src/lib/citation-anchor.ts` (plain-text-offset basis shared by capture + placement; markers removed/re-injected when the rendered body or citation set changes). Authoring captures the offset from the author's text selection: `QuoteSelector` gains an author-only **Cite** action that records `{excerpt, charStart, charEnd}` into the `citationDraft` store (`web/src/stores/citationDraft.ts`); the foot `CitationComposer` opens prefilled and carries the offsets through to `POST /citations` (dropped if the author edits the excerpt away from the selection). Backend already accepted/returned `char_start`/`char_end` (migration 125 + the GET projection), so this was frontend-only — no schema/route change. Scope: the free body only (paid-span anchoring remains the ADR's known hole). Unanchored citations (manual `+ Add citation`, no selection) still list at the foot without a marker.
 
 **Status:** Draft 2026-06-22.
 
@@ -135,7 +135,7 @@ No money moves yet; this builds identification, consent, and the contact pipelin
 
 ## Build order summary
 
-1. **Phase 1** — edges + dispute stake. ✅ **Shipped 2026-06-22** (backend + read-side rendering); **authoring UI shipped 2026-06-23** (create credit/citation, file/withdraw dispute, resolver preview). Inline-prose citation marker still deferred — see *Phase 1 — as built* above. Established the ledger-guard wiring.
+1. **Phase 1** — edges + dispute stake. ✅ **Shipped 2026-06-22** (backend + read-side rendering); **authoring UI shipped 2026-06-23** (create credit/citation, file/withdraw dispute, resolver preview); **inline-prose citation marker shipped 2026-06-23** (selection→Cite captures `char_start`/`char_end`; numbered superscript marker injected into the body, jumps to the foot entry) — see *Phase 1 — as built* above. **Phase 1 is now complete.** Established the ledger-guard wiring.
 2. **Phase 2** — tribute authoring + contact, accrual dark. Resolve compliance in parallel.
 3. **Phase 3** — settlement apportionment + author/inspirer payout. Gated on compliance sign-off.
 4. **Phase 4** — citation-tribute composition.

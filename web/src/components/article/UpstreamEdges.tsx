@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
   upstreamEdges,
   resolver,
@@ -9,6 +9,8 @@ import {
   type ViewerDispute,
 } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
+import { useCitationDraft, type CitationDraft } from '../../stores/citationDraft'
+import { clearMarkers, insertMarkerAt, MARKER_CLASS } from '../../lib/citation-anchor'
 import { ProfileLink } from '../ui/ProfileLink'
 
 // =============================================================================
@@ -28,18 +30,28 @@ import { ProfileLink } from '../ui/ProfileLink'
 // fields. No single-pixel lines: separation is whitespace, emphasis the 4px slab;
 // text fields are the inset bg-glasshouse-well.
 //
-// DEFERRED (focused follow-up): the inline-in-prose citation marker anchored at
-// char_start inside the dangerouslySetInnerHTML body. That needs careful prose-
-// DOM injection + runtime iteration; the cited-author dispute renders here in
-// the apparatus (one per citation) in the meantime.
+// Inline-in-prose citation marker (shipped 2026-06-23): a citation anchored to a
+// span (char_start) draws a numbered superscript marker in the body, jumping to
+// its entry in this apparatus. Injection is imperative (the body is
+// dangerouslySetInnerHTML) via web/src/lib/citation-anchor.ts; authoring captures
+// the offset from the author's text selection (QuoteSelector "Cite" → the
+// citationDraft store → the composer below). Unanchored citations (manual add,
+// no selection) still list at the foot without a marker.
 // =============================================================================
 
 export function UpstreamEdges({
   articleDbId,
   isAuthor = false,
+  articleBodyRef,
+  bodyHtml,
 }: {
   articleDbId?: string
   isAuthor?: boolean
+  // The rendered free-body element + its HTML, so anchored citations can inject
+  // their in-prose markers. The HTML string is a dependency: React replaces the
+  // body's innerHTML when it changes, wiping markers, so we re-inject on change.
+  articleBodyRef?: RefObject<HTMLDivElement | null>
+  bodyHtml?: string
 }) {
   const { user } = useAuth()
   const [credits, setCredits] = useState<CreditEdge[]>([])
@@ -47,6 +59,10 @@ export function UpstreamEdges({
   const [loaded, setLoaded] = useState(false)
   const [addingCredit, setAddingCredit] = useState(false)
   const [addingCitation, setAddingCitation] = useState(false)
+
+  const draft = useCitationDraft((s) => s.draft)
+  const clearDraft = useCitationDraft((s) => s.clear)
+  const citationComposerRef = useRef<HTMLDivElement>(null)
 
   const aliveRef = useRef(true)
   useEffect(() => () => { aliveRef.current = false }, [])
@@ -66,6 +82,35 @@ export function UpstreamEdges({
   useEffect(() => {
     void load()
   }, [load])
+
+  // A selection-captured draft (from the body's "Cite" affordance) opens the
+  // composer prefilled and brings it into view.
+  useEffect(() => {
+    if (!draft || !isAuthor) return
+    setAddingCitation(true)
+    const id = requestAnimationFrame(() =>
+      citationComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+    )
+    return () => cancelAnimationFrame(id)
+  }, [draft, isAuthor])
+
+  // Inject the in-prose markers for anchored citations. Numbering follows the
+  // foot order (citations are returned ordered by char_start, so anchored ones
+  // lead and their numbers line up). Insert descending so an earlier marker
+  // never shifts a later offset's basis.
+  useEffect(() => {
+    const root = articleBodyRef?.current
+    if (!root || !loaded) return
+    clearMarkers(root)
+    const anchored = citations
+      .map((c, i) => ({ c, num: i + 1 }))
+      .filter(({ c }) => c.charStart != null)
+      .sort((a, b) => b.c.charStart! - a.c.charStart!)
+    for (const { c, num } of anchored) {
+      insertMarkerAt(root, c.charStart!, buildMarker(num, c.id, !!c.disputes.citedAuthor))
+    }
+    return () => clearMarkers(root)
+  }, [articleBodyRef, loaded, citations, bodyHtml])
 
   if (!loaded) return null
   const hasContent = credits.length > 0 || citations.length > 0
@@ -116,10 +161,11 @@ export function UpstreamEdges({
           <h2 className="label-ui text-grey-400 mb-4">Citations</h2>
           {citations.length > 0 && (
             <ul className="space-y-6">
-              {citations.map((c) => (
+              {citations.map((c, i) => (
                 <CitationRow
                   key={c.id}
                   citation={c}
+                  num={i + 1}
                   canDispute={canDispute}
                   viewerIsParty={!!user?.pubkey && !!c.source.authorPubkey && user.pubkey === c.source.authorPubkey}
                   onChanged={load}
@@ -128,12 +174,15 @@ export function UpstreamEdges({
             </ul>
           )}
           {isAuthor && articleDbId && (
-            <div className="mt-4">
+            <div className="mt-4" ref={citationComposerRef}>
               {addingCitation ? (
                 <CitationComposer
+                  // Remount on a fresh selection so the seeded excerpt updates.
+                  key={draft ? `${draft.charStart}-${draft.charEnd}` : 'manual'}
                   articleId={articleDbId}
-                  onDone={() => { setAddingCitation(false); void load() }}
-                  onCancel={() => setAddingCitation(false)}
+                  seed={draft}
+                  onDone={() => { setAddingCitation(false); clearDraft(); void load() }}
+                  onCancel={() => { setAddingCitation(false); clearDraft() }}
                 />
               ) : (
                 <button className="btn-text" onClick={() => setAddingCitation(true)}>
@@ -207,13 +256,38 @@ function CreditRow({
 
 // ── Citation ──────────────────────────────────────────────────────────────
 
+// Build an in-prose marker element (injected imperatively into the body). An
+// anchor jumping to citation-<id> at the foot; crimson when the cited author
+// has disputed. Structure/colour live in the .citation-marker CSS (tokens).
+function buildMarker(num: number, citationId: string, disputed: boolean): HTMLElement {
+  const el = document.createElement('a')
+  el.className = disputed ? `${MARKER_CLASS} ${MARKER_CLASS}--disputed` : MARKER_CLASS
+  el.textContent = String(num)
+  el.href = `#citation-${citationId}`
+  el.setAttribute('role', 'doc-noteref')
+  el.setAttribute('aria-label', `Citation ${num}${disputed ? ', disputed by the cited author' : ''}`)
+  el.onclick = (e) => {
+    e.preventDefault()
+    const target = document.getElementById(`citation-${citationId}`)
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // Brief wash so the eye lands on the right entry, then fades.
+    target.style.transition = 'background-color 0.6s'
+    target.style.backgroundColor = 'rgb(var(--ah-crimson-rgb) / 0.08)'
+    window.setTimeout(() => { target.style.backgroundColor = '' }, 1400)
+  }
+  return el
+}
+
 function CitationRow({
   citation,
+  num,
   canDispute,
   viewerIsParty,
   onChanged,
 }: {
   citation: CitationEdge
+  num: number
   canDispute: boolean
   viewerIsParty: boolean
   onChanged: () => void
@@ -227,8 +301,11 @@ function CitationRow({
   const cited = disputes.citedAuthor
 
   return (
-    <li className="space-y-2">
-      <p className="text-ui-sm text-black leading-relaxed">{citation.characterisation}</p>
+    <li id={`citation-${citation.id}`} className="space-y-2 scroll-mt-8 rounded">
+      <p className="text-ui-sm text-black leading-relaxed">
+        <span className="label-ui text-grey-400 mr-2 align-baseline">{num}</span>
+        {citation.characterisation}
+      </p>
 
       <blockquote className="font-serif italic text-grey-600 leading-relaxed pl-4">
         “{citation.excerpt}”
@@ -517,20 +594,25 @@ function CreditComposer({
 
 function CitationComposer({
   articleId,
+  seed,
   onDone,
   onCancel,
 }: {
   articleId: string
+  // A span selected in the article body — prefills the passage and carries the
+  // char offsets through, so the citation lands anchored (a marker appears).
+  seed?: CitationDraft | null
   onDone: () => void
   onCancel: () => void
 }) {
   const [source, setSource] = useState('')
-  const [excerpt, setExcerpt] = useState('')
+  const [excerpt, setExcerpt] = useState(seed?.excerpt ?? '')
   const [characterisation, setCharacterisation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const preview = useResolvePreview(source)
 
+  const anchored = seed != null
   const ready = source.trim() && excerpt.trim() && characterisation.trim()
 
   const submit = async () => {
@@ -543,6 +625,11 @@ function CitationComposer({
         source: source.trim(),
         excerpt: excerpt.trim(),
         characterisation: characterisation.trim(),
+        // Only send offsets when the excerpt is still the selected span; if the
+        // author rewrote it the anchor no longer matches, so drop it.
+        ...(anchored && excerpt.trim() === seed!.excerpt.trim()
+          ? { charStart: seed!.charStart, charEnd: seed!.charEnd }
+          : {}),
       })
       onDone()
     } catch {
@@ -573,6 +660,13 @@ function CitationComposer({
           value={excerpt}
           onChange={(e) => setExcerpt(e.target.value)}
         />
+        {anchored && (
+          <p className="mt-1 text-ui-xs text-grey-600">
+            {excerpt.trim() === seed!.excerpt.trim()
+              ? '↳ Anchored to your selection — a marker will appear in the text.'
+              : '↳ Edited away from the selection — this citation will not be anchored.'}
+          </p>
+        )}
       </div>
       <div>
         <FieldLabel>What you claim about it</FieldLabel>

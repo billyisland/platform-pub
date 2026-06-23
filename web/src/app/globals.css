@@ -655,6 +655,33 @@ html.ah-session main {
     font-weight: 500;
   }
 
+  /* ----- In-prose citation marker (Upstream Edges) -----
+     Injected imperatively into the rendered body at a citation's char_start
+     (web/src/lib/citation-anchor.ts). A scholarly superscript reference that
+     jumps to the matching citation in the piece-foot apparatus; crimson when
+     the cited author has disputed it. Colour alone carries it, no line. */
+  .citation-marker {
+    font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.7em;
+    font-weight: 600;
+    vertical-align: super;
+    line-height: 0;
+    padding: 0 0.15em;
+    color: var(--ah-grey-600);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .citation-marker:hover {
+    color: var(--ah-crimson);
+  }
+  .citation-marker--disputed {
+    color: var(--ah-crimson);
+  }
+  .citation-marker:focus-visible {
+    outline: 2px solid var(--ah-crimson);
+    outline-offset: 2px;
+  }
+
   /* ----- Article compose body — Literata 17px/1.8 per spec §3 ----- */
   .article-compose-body {
     font-family: 'Literata', Georgia, serif;
