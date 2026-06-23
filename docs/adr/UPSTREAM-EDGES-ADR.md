@@ -222,7 +222,7 @@ Ranking signals or reputation scores from any of these tables; escrow/custody of
 
 ## Build order
 
-1. `credit_edges`, `citation_edges`, `dispute_edges` + dispute mechanics (`dispute_stake` / `dispute_stake_refund`). Independent of tribute; the only money is the dispute stake, so this phase already touches the ledger triggers, views, reconcile, and adjacency markers. — ✅ **Shipped 2026-06-22** (migration 125, `gateway/src/routes/upstream-edges.ts`, `UpstreamEdges` reader apparatus; see `UPSTREAM-EDGES-BUILD-PLAN.md` › *Phase 1 — as built*).
+1. `credit_edges`, `citation_edges`, `dispute_edges` + dispute mechanics (`dispute_stake` / `dispute_stake_refund`). Independent of tribute; the only money is the dispute stake, so this phase already touches the ledger triggers, views, reconcile, and adjacency markers. — ✅ **Complete** (migration 125, `gateway/src/routes/upstream-edges.ts`, `UpstreamEdges` reader apparatus, shipped 2026-06-22; authoring UI + the inline-prose citation marker shipped 2026-06-23 — see `UPSTREAM-EDGES-BUILD-PLAN.md` › *Phase 1 — as built*). The marker realises the "one inline marker at the citation point" of Render rules above: it anchors at `char_start` (free body only — the paid-span hole stays deferred) and turns crimson on a cited-author dispute.
 2. `tributes` + `tribute_accruals` schema, the resolver-driven authoring UI, and the inspirer-contact pipeline (in-app + email branches). Accrual writes are dark until step 3.
 3. Settlement-time apportionment (`settlement.ts`) and the payout changes (`payout.ts`): author paid net of non-swept accruals, inspirer payout posts `tribute_payout`, reconcile assertions live. Resolve the compliance question first.
 4. Composition: wire the `tributes.citation_edge_id` UX last.
