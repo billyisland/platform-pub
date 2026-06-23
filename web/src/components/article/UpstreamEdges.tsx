@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import {
   upstreamEdges,
   resolver,
+  tributes as tributesApi,
+  tributesEnabled,
   type CreditEdge,
   type CitationEdge,
   type ViewerDispute,
+  type TributeView,
 } from '../../lib/api'
 import { useAuth } from '../../stores/auth'
 import { useCitationDraft, type CitationDraft } from '../../stores/citationDraft'
@@ -56,9 +59,14 @@ export function UpstreamEdges({
   const { user } = useAuth()
   const [credits, setCredits] = useState<CreditEdge[]>([])
   const [citations, setCitations] = useState<CitationEdge[]>([])
+  const [tributeList, setTributeList] = useState<TributeView[]>([])
   const [loaded, setLoaded] = useState(false)
   const [addingCredit, setAddingCredit] = useState(false)
   const [addingCitation, setAddingCitation] = useState(false)
+  const [addingTribute, setAddingTribute] = useState(false)
+
+  // The money edge ships dark; hide its UI entirely when the flag is off.
+  const tributesOn = tributesEnabled()
 
   const draft = useCitationDraft((s) => s.draft)
   const clearDraft = useCitationDraft((s) => s.clear)
@@ -69,15 +77,19 @@ export function UpstreamEdges({
 
   const load = useCallback(async () => {
     if (!articleDbId) return
-    const [c, q] = await Promise.all([
+    const [c, q, t] = await Promise.all([
       upstreamEdges.getCredits(articleDbId).catch(() => ({ credits: [] })),
       upstreamEdges.getCitations(articleDbId).catch(() => ({ citations: [] })),
+      tributesOn
+        ? tributesApi.getForArticle(articleDbId).catch(() => ({ tributes: [] as TributeView[] }))
+        : Promise.resolve({ tributes: [] as TributeView[] }),
     ])
     if (!aliveRef.current) return
     setCredits(c.credits)
     setCitations(q.citations)
+    setTributeList(t.tributes)
     setLoaded(true)
-  }, [articleDbId])
+  }, [articleDbId, tributesOn])
 
   useEffect(() => {
     void load()
@@ -113,7 +125,8 @@ export function UpstreamEdges({
   }, [articleBodyRef, loaded, citations, bodyHtml])
 
   if (!loaded) return null
-  const hasContent = credits.length > 0 || citations.length > 0
+  const showTributes = tributesOn
+  const hasContent = credits.length > 0 || citations.length > 0 || tributeList.length > 0
   // Hide the whole apparatus for a reader of a piece with no edges; the author
   // always sees it (so they can attach credits/citations).
   if (!hasContent && !isAuthor) return null
@@ -193,7 +206,263 @@ export function UpstreamEdges({
           )}
         </div>
       )}
+
+      {showTributes && (tributeList.length > 0 || isAuthor) && (
+        <div>
+          <h2 className="label-ui text-grey-400 mb-4">Tributes</h2>
+          {tributeList.length > 0 && (
+            <ul className="space-y-5">
+              {tributeList.map((t) => (
+                <TributeRow
+                  key={t.id}
+                  tribute={t}
+                  viewerIsInspirer={!!user && !!t.target.accountId && user.id === t.target.accountId}
+                  onChanged={load}
+                />
+              ))}
+            </ul>
+          )}
+          {isAuthor && articleDbId && (
+            <div className="mt-4">
+              {addingTribute ? (
+                <TributeComposer
+                  articleId={articleDbId}
+                  onDone={() => { setAddingTribute(false); void load() }}
+                  onCancel={() => setAddingTribute(false)}
+                />
+              ) : (
+                <button className="btn-text" onClick={() => setAddingTribute(true)}>
+                  + Add tribute
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </section>
+  )
+}
+
+// ── Tribute ──────────────────────────────────────────────────────────────
+
+function bpsToPercent(bps: number): string {
+  return (bps / 100).toFixed(bps % 100 === 0 ? 0 : 2)
+}
+
+// The honest status phrase shown after the render line.
+function tributeStatusPhrase(t: TributeView): string {
+  switch (t.status) {
+    case 'live':
+      return 'active'
+    case 'declined':
+      return 'declined — share returns to the author'
+    case 'lapsed':
+      return 'lapsed — share returned to the author'
+    case 'proposed':
+    default:
+      return t.reachable
+        ? 'proposed — accruing, awaiting their reply'
+        : 'accruing, held — no payee reached yet'
+  }
+}
+
+function TributeRow({
+  tribute,
+  viewerIsInspirer,
+  onChanged,
+}: {
+  tribute: TributeView
+  viewerIsInspirer: boolean
+  onChanged: () => void
+}) {
+  const { target } = tribute
+  const name = target.displayName ?? target.username ?? 'an unnamed source'
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState(false)
+
+  const act = async (fn: () => Promise<unknown>, fail: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      onChanged()
+    } catch {
+      setError(fail)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <li className="text-ui-sm text-grey-600 leading-relaxed">
+      <span className="text-black">
+        <span className="font-medium">{bpsToPercent(tribute.percentageBps)}%</span> of this piece&rsquo;s
+        earnings goes to{' '}
+        {target.accountId && target.username ? (
+          <ProfileLink href={`/${target.username}`} className="font-medium text-black hover:underline">
+            {name}
+          </ProfileLink>
+        ) : (
+          <span className="font-medium text-black">{name}</span>
+        )}
+      </span>
+      <span className="label-ui text-grey-400 ml-2">· {tributeStatusPhrase(tribute)}</span>
+
+      {/* The inspirer's own consent affordance (they reach this via the offer
+          notification / claim, which comps them the read). */}
+      {viewerIsInspirer && tribute.status === 'proposed' && (
+        <div className="pl-4 mt-1 flex items-center gap-4">
+          <span className="text-ui-xs text-grey-600">This writer is offering you a share.</span>
+          <button
+            className="btn-soft disabled:opacity-50"
+            disabled={busy}
+            onClick={() => act(() => tributesApi.consent(tribute.id), 'Could not accept — try again.')}
+          >
+            Accept
+          </button>
+          <button
+            className="btn-text-muted disabled:opacity-50"
+            disabled={busy}
+            onClick={() => act(() => tributesApi.decline(tribute.id), 'Could not decline — try again.')}
+          >
+            Decline
+          </button>
+          {error && <span className="text-ui-xs text-crimson">{error}</span>}
+        </div>
+      )}
+
+      {/* The author can withdraw a still-proposed tribute. */}
+      {tribute.mine && tribute.status === 'proposed' && !viewerIsInspirer && (
+        <div className="pl-4 mt-1">
+          {withdrawing ? (
+            <p className="text-ui-xs text-grey-600">
+              Withdraw this tribute?{' '}
+              <button
+                className="btn-text-danger disabled:opacity-50"
+                disabled={busy}
+                onClick={() => act(() => tributesApi.withdraw(tribute.id), 'Could not withdraw — try again.')}
+              >
+                {busy ? 'Withdrawing…' : 'Withdraw'}
+              </button>{' '}
+              <button className="btn-text-muted" disabled={busy} onClick={() => setWithdrawing(false)}>
+                Keep
+              </button>
+              {error && <span className="text-crimson ml-2">{error}</span>}
+            </p>
+          ) : (
+            <button className="btn-text-muted" onClick={() => setWithdrawing(true)}>
+              Withdraw
+            </button>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
+function TributeComposer({
+  articleId,
+  onDone,
+  onCancel,
+}: {
+  articleId: string
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const [target, setTarget] = useState('')
+  const [percent, setPercent] = useState('')
+  const [email, setEmail] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const preview = useResolvePreview(target)
+
+  const pctNum = Number(percent)
+  const pctValid = Number.isFinite(pctNum) && pctNum > 0 && pctNum <= 90
+  const ready = target.trim() && pctValid
+
+  const submit = async () => {
+    if (!ready) return
+    setBusy(true)
+    setError(null)
+    try {
+      await tributesApi.create({
+        articleId,
+        percentageBps: Math.round(pctNum * 100),
+        target: target.trim(),
+        inviteEmail: email.trim() || undefined,
+        note: note.trim() || undefined,
+      })
+      onDone()
+    } catch {
+      setError('Could not add tribute — the share may leave the author too little, or the piece is in a publication.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="bg-glasshouse-well/40 rounded p-4 space-y-3">
+      <div>
+        <FieldLabel>Who inspired this piece</FieldLabel>
+        <input
+          className={FIELD}
+          placeholder="username, npub, handle, URL, or a name"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          autoFocus
+        />
+        {preview && <p className="mt-1 text-ui-xs text-grey-600">{preview}</p>}
+      </div>
+      <div>
+        <FieldLabel>Share of this piece&rsquo;s earnings (%)</FieldLabel>
+        <input
+          className={FIELD}
+          type="number"
+          inputMode="decimal"
+          min="0.01"
+          max="90"
+          step="0.5"
+          placeholder="e.g. 10"
+          value={percent}
+          onChange={(e) => setPercent(e.target.value)}
+        />
+        <p className="mt-1 text-ui-xs text-grey-600">
+          You keep the rest. A piece&rsquo;s tributes together can take at most 90%.
+        </p>
+      </div>
+      <div>
+        <FieldLabel>Their email (so we can reach them)</FieldLabel>
+        <input
+          className={FIELD}
+          type="email"
+          placeholder="we contact them privately — never via social DMs"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <p className="mt-1 text-ui-xs text-grey-600">
+          If they&rsquo;re already on all.haus we&rsquo;ll reach them in-app instead. Their share is
+          held until they accept; if they never do, it returns to you.
+        </p>
+      </div>
+      <div>
+        <FieldLabel>Note (optional)</FieldLabel>
+        <input
+          className={FIELD}
+          placeholder="a personal word on why"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
+      {error && <p className="text-ui-xs text-crimson">{error}</p>}
+      <div className="flex items-center gap-4">
+        <button className="btn-soft disabled:opacity-50" disabled={busy || !ready} onClick={submit}>
+          {busy ? 'Offering…' : 'Offer tribute'}
+        </button>
+        <button className="btn-text-muted" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
   )
 }
 

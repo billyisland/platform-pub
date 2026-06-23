@@ -33,6 +33,16 @@ export function trustSystemEnabled(): boolean {
   return process.env.TRUST_SYSTEM_ENABLED === "1"
 }
 
+// Tribute authoring (Upstream Edges Phase 2). Default OFF — the money edge
+// ships dark while the third-party-funds compliance question (ADR Edge cases ›
+// Holding third-party funds) is resolved before Phase 3 enables settlement
+// apportionment. When off, the tribute routes 404 and the lifecycle sweep is not
+// scheduled; the credit/citation/dispute edges (Phase 1) are unaffected. Same
+// shape as TRUST_SYSTEM_ENABLED. Client counterpart: NEXT_PUBLIC_TRIBUTES_ENABLED.
+export function tributesEnabled(): boolean {
+  return process.env.TRIBUTES_ENABLED === "1"
+}
+
 // Cross-source identity-link detection (Slice 8 P3). Default OFF — the daily
 // detection task writes GLOBAL links that suppress cross-posted duplicates in
 // everyone's feed, so it ships dark behind this switch. When off, feed-ingest

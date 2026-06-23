@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict FzAF4lkh6rvoj0eaYu6nhz4kg8gNzj2SfuVldr8sdT3sah5VqeeHkACJWYPdF4S
+\restrict QzP6MjiXKNEgNXM0yJ3sAjS7I7jjjQai8BJMVehkQtw3Qf5Ym4t3qfn5xgzh8dM
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -561,6 +561,31 @@ $$;
 
 
 --
+-- Name: articles_block_publication_when_tributed(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.articles_block_publication_when_tributed() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.publication_id IS NOT NULL
+     AND NEW.publication_id IS DISTINCT FROM OLD.publication_id
+     AND EXISTS (
+       SELECT 1 FROM public.tributes t
+        WHERE t.article_id = NEW.id
+          AND t.deleted_at IS NULL
+          AND t.status IN ('proposed', 'live')
+     ) THEN
+    RAISE EXCEPTION
+      'Article % has a live or proposed tribute and cannot be added to a publication (D1)',
+      NEW.id USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: articles_derive_size_tier(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -874,6 +899,47 @@ CREATE FUNCTION public.set_updated_at() RETURNS trigger
     AS $$
 BEGIN
   NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: tributes_validate_write(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tributes_validate_write() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  total int;
+  ceiling int := 9000;  -- author keeps >= 10%
+BEGIN
+  -- A row that no longer reserves a share imposes neither constraint.
+  IF NEW.deleted_at IS NOT NULL OR NEW.status IN ('declined', 'lapsed') THEN
+    RETURN NEW;
+  END IF;
+  -- (1) D1 forward: reject a tribute on an article that is in a publication.
+  IF EXISTS (
+    SELECT 1 FROM public.articles a
+     WHERE a.id = NEW.article_id AND a.publication_id IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'Article % is in a publication; it cannot carry a tribute (D1)',
+      NEW.article_id USING ERRCODE = 'check_violation';
+  END IF;
+  -- (2) Share ceiling.
+  SELECT COALESCE(SUM(percentage_bps), 0) INTO total
+    FROM public.tributes
+   WHERE article_id = NEW.article_id
+     AND id <> NEW.id
+     AND deleted_at IS NULL
+     AND status IN ('proposed', 'live');
+  IF total + NEW.percentage_bps > ceiling THEN
+    RAISE EXCEPTION
+      'Tribute shares on article % would exceed the ceiling (have % bps, adding % bps, ceiling % bps)',
+      NEW.article_id, total, NEW.percentage_bps, ceiling
+      USING ERRCODE = 'check_violation';
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -2373,6 +2439,50 @@ CREATE TABLE public.tags (
 
 
 --
+-- Name: tribute_accruals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tribute_accruals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tribute_id uuid NOT NULL,
+    read_event_id uuid NOT NULL,
+    amount_pence bigint NOT NULL,
+    state text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['held'::text, 'released'::text, 'paid'::text, 'swept'::text])))
+);
+
+
+--
+-- Name: tributes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tributes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    article_id uuid NOT NULL,
+    author_account_id uuid NOT NULL,
+    percentage_bps integer NOT NULL,
+    target_protocol public.external_protocol,
+    target_external_id text,
+    target_display_name text,
+    resolved_account_id uuid,
+    status text DEFAULT 'proposed'::text NOT NULL,
+    invite_email text,
+    invite_token_hash text,
+    first_contact_at timestamp with time zone,
+    window_expires_at timestamp with time zone,
+    reminder_sent_at timestamp with time zone,
+    consent_at timestamp with time zone,
+    citation_edge_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT tributes_percentage_bps_check CHECK (((percentage_bps >= 1) AND (percentage_bps <= 10000))),
+    CONSTRAINT tributes_status_check CHECK ((status = ANY (ARRAY['proposed'::text, 'live'::text, 'declined'::text, 'lapsed'::text]))),
+    CONSTRAINT tributes_target_consistency CHECK ((((target_protocol IS NULL) AND ((resolved_account_id IS NOT NULL) OR (target_display_name IS NOT NULL))) OR ((target_protocol IS NOT NULL) AND (target_external_id IS NOT NULL))))
+);
+
+
+--
 -- Name: trust_epochs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3658,6 +3768,22 @@ ALTER TABLE ONLY public.tags
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tribute_accruals tribute_accruals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_accruals
+    ADD CONSTRAINT tribute_accruals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tributes tributes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tributes
+    ADD CONSTRAINT tributes_pkey PRIMARY KEY (id);
 
 
 --
@@ -5087,6 +5213,41 @@ CREATE INDEX idx_tags_name ON public.tags USING btree (name);
 
 
 --
+-- Name: idx_tribute_accruals_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tribute_accruals_state ON public.tribute_accruals USING btree (state);
+
+
+--
+-- Name: idx_tribute_accruals_tribute; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tribute_accruals_tribute ON public.tribute_accruals USING btree (tribute_id);
+
+
+--
+-- Name: idx_tributes_article; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tributes_article ON public.tributes USING btree (article_id);
+
+
+--
+-- Name: idx_tributes_proposed_window; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tributes_proposed_window ON public.tributes USING btree (window_expires_at) WHERE ((status = 'proposed'::text) AND (deleted_at IS NULL));
+
+
+--
+-- Name: idx_tributes_resolved_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tributes_resolved_account ON public.tributes USING btree (resolved_account_id);
+
+
+--
 -- Name: idx_vault_keys_article_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5259,6 +5420,20 @@ CREATE UNIQUE INDEX uq_idlink_global ON public.external_identity_links USING btr
 --
 
 CREATE UNIQUE INDEX uq_idlink_owned ON public.external_identity_links USING btree (source_a_id, source_b_id, owner_id) WHERE (owner_id IS NOT NULL);
+
+
+--
+-- Name: uq_tribute_accruals_tribute_read; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_tribute_accruals_tribute_read ON public.tribute_accruals USING btree (tribute_id, read_event_id);
+
+
+--
+-- Name: uq_tributes_invite_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_tributes_invite_token ON public.tributes USING btree (invite_token_hash) WHERE (invite_token_hash IS NOT NULL);
 
 
 --
@@ -5437,6 +5612,13 @@ CREATE TRIGGER trg_activitypub_instance_health_updated_at BEFORE UPDATE ON publi
 
 
 --
+-- Name: articles trg_articles_block_publication_when_tributed; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_articles_block_publication_when_tributed BEFORE UPDATE OF publication_id ON public.articles FOR EACH ROW EXECUTE FUNCTION public.articles_block_publication_when_tributed();
+
+
+--
 -- Name: articles trg_articles_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5497,6 +5679,13 @@ CREATE TRIGGER trg_reading_tabs_updated_at BEFORE UPDATE ON public.reading_tabs 
 --
 
 CREATE TRIGGER trg_subscriptions_updated_at BEFORE UPDATE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: tributes trg_tributes_validate_write; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_tributes_validate_write BEFORE INSERT OR UPDATE ON public.tributes FOR EACH ROW EXECUTE FUNCTION public.tributes_validate_write();
 
 
 --
@@ -6642,6 +6831,54 @@ ALTER TABLE ONLY public.tab_settlements
 
 
 --
+-- Name: tribute_accruals tribute_accruals_read_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_accruals
+    ADD CONSTRAINT tribute_accruals_read_event_id_fkey FOREIGN KEY (read_event_id) REFERENCES public.read_events(id);
+
+
+--
+-- Name: tribute_accruals tribute_accruals_tribute_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_accruals
+    ADD CONSTRAINT tribute_accruals_tribute_id_fkey FOREIGN KEY (tribute_id) REFERENCES public.tributes(id);
+
+
+--
+-- Name: tributes tributes_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tributes
+    ADD CONSTRAINT tributes_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.articles(id);
+
+
+--
+-- Name: tributes tributes_author_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tributes
+    ADD CONSTRAINT tributes_author_account_id_fkey FOREIGN KEY (author_account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: tributes tributes_citation_edge_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tributes
+    ADD CONSTRAINT tributes_citation_edge_id_fkey FOREIGN KEY (citation_edge_id) REFERENCES public.citation_edges(id);
+
+
+--
+-- Name: tributes tributes_resolved_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tributes
+    ADD CONSTRAINT tributes_resolved_account_id_fkey FOREIGN KEY (resolved_account_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: trust_layer1 trust_layer1_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6949,22 +7186,9 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict FzAF4lkh6rvoj0eaYu6nhz4kg8gNzj2SfuVldr8sdT3sah5VqeeHkACJWYPdF4S
+\unrestrict QzP6MjiXKNEgNXM0yJ3sAjS7I7jjjQai8BJMVehkQtw3Qf5Ym4t3qfn5xgzh8dM
 
 
--- Seed _migrations: record every migration folded into this dump as applied.
---
--- A fresh database is bootstrapped from this file (docker-entrypoint-initdb.d),
--- which builds the schema THROUGH the latest migration but leaves _migrations
--- empty. Without this seed the runner (shared/src/db/migrate.ts) would treat
--- all migrations/ files as pending on a fresh DB and re-run 001+ against the
--- already-built schema, which fails. With it, migrate is a clean no-op on a
--- fresh DB and applies only genuinely-new files on an existing one.
---
--- KEEP IN SYNC: when you add a migration and fold it into this schema.sql,
--- add its filename below (regenerating this file from a fully-migrated DB
--- with a seeded _migrations table does this automatically).
---
 INSERT INTO public._migrations (filename) VALUES
     ('001_add_email_and_magic_links.sql'),
     ('002_draft_upsert_index.sql'),
@@ -7090,4 +7314,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('122_dm_reactions.sql'),
     ('123_identity_links_and_dedup_fingerprint.sql'),
     ('124_ledger_negative_balance_and_truncate_guard.sql'),
-    ('125_upstream_edges.sql');
+    ('125_upstream_edges.sql'),
+    ('126_tributes.sql');

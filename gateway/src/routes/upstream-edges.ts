@@ -50,7 +50,7 @@ function sha256(text: string): Buffer {
 }
 
 // Normalise an npub/nprofile/hex identifier to a 64-char hex pubkey, else null.
-function toHexPubkey(value: string | null | undefined): string | null {
+export function toHexPubkey(value: string | null | undefined): string | null {
   if (!value) return null
   const v = value.trim()
   if (HEX_64.test(v)) return v.toLowerCase()
@@ -69,7 +69,7 @@ function toHexPubkey(value: string | null | undefined): string | null {
 // A resolved target, normalised into the edge-table target grammar:
 // NULL protocol = native (resolved account or unaddressable display name);
 // non-NULL protocol = that external network.
-interface ResolvedTarget {
+export interface ResolvedTarget {
   protocol: string | null              // external_protocol enum value, or null = native
   externalId: string | null            // hex pubkey / DID / actor URI / feed URL
   displayName: string | null
@@ -82,7 +82,7 @@ interface ResolvedTarget {
 // initiatorId ⇒ no async network chains). An identifier that resolves to
 // nothing concrete becomes an UNADDRESSABLE native target whose display name is
 // the raw string — a legitimate credit ("Aristotle", a book, a whole tradition).
-async function resolveTarget(raw: string): Promise<ResolvedTarget> {
+export async function resolveTarget(raw: string): Promise<ResolvedTarget> {
   const result = await resolveIdentity(raw, 'general')
   const matches = result.matches ?? []
 

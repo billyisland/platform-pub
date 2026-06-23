@@ -58,6 +58,9 @@ function getDestUrl(n: Notification): string {
     case 'pub_article_submitted':
     case 'pub_article_published':
       return n.article?.slug ? `/article/${n.article.slug}` : '#'
+    case 'tribute_offer_received':
+      // Open the piece — the Tributes apparatus there carries Accept / Decline.
+      return n.article?.slug ? `/article/${n.article.slug}` : '#'
     case 'pub_invite_received':
       return '/reader?overlay=dashboard'
     case 'pub_new_subscriber':
@@ -88,6 +91,7 @@ function NotificationRow({ n, onActivate }: { n: Notification; onActivate: (n: N
     pub_invite_received: 'invited you to a publication',
     pub_member_joined: 'joined your publication',
     pub_member_left: 'left your publication',
+    tribute_offer_received: 'wants to share earnings with you',
   }
 
   return (

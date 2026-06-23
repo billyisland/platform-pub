@@ -2,6 +2,7 @@ import "dotenv/config";
 import {
   requireEnv,
   requireEnvMinLength,
+  tributesEnabled,
 } from "@platform-pub/shared/lib/env.js";
 import { ADVISORY_LOCKS } from "@platform-pub/shared/lib/advisory-locks.js";
 import Fastify from "fastify";
@@ -40,6 +41,8 @@ import { socialRoutes } from "./routes/social.js";
 import { publicationRoutes } from "./routes/publications/index.js";
 import { driveRoutes } from "./routes/drives.js";
 import { upstreamEdgeRoutes } from "./routes/upstream-edges.js";
+import { tributeRoutes } from "./routes/tributes.js";
+import { runTributeSweep } from "./lib/tribute-sweep.js";
 import { expireOverdueDrives } from "./workers/drive-expiry.js";
 import { traffologyRoutes } from "./routes/traffology.js";
 import { unsubscribeRoutes } from "./routes/unsubscribe.js";
@@ -212,6 +215,9 @@ async function start() {
   // Upstream Edges (credit / citation / dispute — UPSTREAM-EDGES-ADR Phase 1)
   await app.register(upstreamEdgeRoutes, { prefix: "/api/v1" });
 
+  // Upstream Edges (tribute authoring + contact — Phase 2, dark behind TRIBUTES_ENABLED)
+  await app.register(tributeRoutes, { prefix: "/api/v1" });
+
   // Traffology (writer analytics — concurrent reader counts)
   await app.register(traffologyRoutes, { prefix: "/api/v1" });
 
@@ -376,6 +382,7 @@ async function start() {
   const LOCK_DRIVES = ADVISORY_LOCKS.DRIVES;
   const LOCK_SCHEDULER = ADVISORY_LOCKS.SCHEDULER;
   const LOCK_DISCOVERY = ADVISORY_LOCKS.DISCOVERY;
+  const LOCK_TRIBUTES = ADVISORY_LOCKS.TRIBUTES;
   const SCHEDULER_INTERVAL_MS = 60 * 1000; // 1 minute
 
   async function withAdvisoryLock(
@@ -414,6 +421,12 @@ async function start() {
     withAdvisoryLock(LOCK_DRIVES, "Drive expiry", expireOverdueDrives).catch(
       (err) => logger.error({ err }, "Drive expiry worker failed"),
     );
+    // Tribute lifecycle (30d reminder + 60d lapse) — dark behind TRIBUTES_ENABLED.
+    if (tributesEnabled()) {
+      withAdvisoryLock(LOCK_TRIBUTES, "Tribute lifecycle", runTributeSweep).catch(
+        (err) => logger.error({ err }, "Tribute lifecycle worker failed"),
+      );
+    }
   }, WORKER_INTERVAL_MS);
 
   setInterval(() => {
@@ -440,6 +453,11 @@ async function start() {
   withAdvisoryLock(LOCK_DRIVES, "Drive expiry", expireOverdueDrives).catch(
     (err) => logger.error({ err }, "Drive expiry worker failed (startup)"),
   );
+  if (tributesEnabled()) {
+    withAdvisoryLock(LOCK_TRIBUTES, "Tribute lifecycle", runTributeSweep).catch(
+      (err) => logger.error({ err }, "Tribute lifecycle worker failed (startup)"),
+    );
+  }
   withAdvisoryLock(
     LOCK_SCHEDULER,
     "Scheduled publishing",

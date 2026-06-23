@@ -19,6 +19,7 @@ import { PalettePanel } from '../devtools/PalettePanel'
 import { PaletteHydrator } from '../devtools/PaletteHydrator'
 import { TypeScaleHydrator } from '../TypeScaleHydrator'
 import { ColorSchemeHydrator } from '../ColorSchemeHydrator'
+import { TributeClaimResumer } from '../tribute/TributeClaimResumer'
 import { useReader } from '../../stores/reader'
 import { useProfile } from '../../stores/profileOverlay'
 import { useSurfaceOverlay } from '../../stores/surfaceOverlay'
@@ -113,6 +114,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         {/* Headless — applies the persisted per-device light/dark/system
             appearance on boot + tracks the OS preference live. No UI. */}
         <ColorSchemeHydrator />
+        {/* Headless — redeems a stashed external tribute-claim token once auth
+            resolves (the claim survives signup). Dark behind TRIBUTES_ENABLED. */}
+        <TributeClaimResumer />
         {/* Operator-only colour-tuning kit (not a Glasshouse — floats above all
             surfaces, page stays sharp). No shipped menu/settings entry; reach it
             via ?palette or the Ctrl+Alt+P chord (GLASSHOUSE-AND-PALETTE-ADR

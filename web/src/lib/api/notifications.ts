@@ -23,6 +23,7 @@ export type NotificationType =
   | 'pub_invite_received'
   | 'pub_member_joined'
   | 'pub_member_left'
+  | 'tribute_offer_received'
 
 export interface Notification {
   id: string
