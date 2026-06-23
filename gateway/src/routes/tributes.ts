@@ -582,7 +582,7 @@ async function sendExternalInvite(args: {
         'A personal note from you helps — both to convey the spirit of the tribute and to get the',
         'message past spam filters. The claim link is private to them, so it is not included here.',
         '',
-        "Until they accept, their share is set aside; if they never do, it returns to you.",
+        'Until they accept, the share stays part of your earnings, reserved pending their reply; if they never accept, it stays yours.',
       ].join('\n'),
       htmlBody: `
         <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 0;">
@@ -595,7 +595,7 @@ async function sendExternalInvite(args: {
             message past spam filters. Their claim link is private, so it isn't included here.
           </p>
           <p style="font-size: 13px; color: #a8a29e; margin-top: 24px; line-height: 1.5;">
-            Until they accept, their share is set aside; if they never do, it returns to you.
+            Until they accept, the share stays part of your earnings, reserved pending their reply; if they never accept, it stays yours.
           </p>
         </div>
       `.trim(),

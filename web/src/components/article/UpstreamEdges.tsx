@@ -260,9 +260,11 @@ function tributeStatusPhrase(t: TributeView): string {
       return 'lapsed — share returned to the author'
     case 'proposed':
     default:
+      // Never "accruing/held" — until they accept the share is the author's
+      // own earnings under a revocable offer, not money held in the payee's name.
       return t.reachable
-        ? 'proposed — accruing, awaiting their reply'
-        : 'accruing, held — no payee reached yet'
+        ? 'proposed — awaiting their reply'
+        : 'proposed — no payee reached yet'
   }
 }
 
@@ -277,6 +279,10 @@ function TributeRow({
 }) {
   const { target } = tribute
   const name = target.displayName ?? target.username ?? 'an unnamed source'
+  // The share is a conditional offer until accepted — the verb must say so
+  // (compliance: the public line never asserts the money is already theirs).
+  const earningsVerb =
+    tribute.status === 'live' ? 'goes to' : tribute.status === 'proposed' ? 'will go to' : 'was offered to'
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [withdrawing, setWithdrawing] = useState(false)
@@ -297,7 +303,7 @@ function TributeRow({
     <li className="text-ui-sm text-grey-600 leading-relaxed">
       <span className="text-black">
         <span className="font-medium">{bpsToPercent(tribute.percentageBps)}%</span> of this piece&rsquo;s
-        earnings goes to{' '}
+        earnings {earningsVerb}{' '}
         {target.accountId && target.username ? (
           <ProfileLink href={`/${target.username}`} className="font-medium text-black hover:underline">
             {name}
@@ -305,6 +311,7 @@ function TributeRow({
         ) : (
           <span className="font-medium text-black">{name}</span>
         )}
+        {tribute.status === 'proposed' && ' if they accept'}
       </span>
       <span className="label-ui text-grey-400 ml-2">· {tributeStatusPhrase(tribute)}</span>
 
@@ -440,8 +447,8 @@ function TributeComposer({
           onChange={(e) => setEmail(e.target.value)}
         />
         <p className="mt-1 text-ui-xs text-grey-600">
-          If they&rsquo;re already on all.haus we&rsquo;ll reach them in-app instead. Their share is
-          held until they accept; if they never do, it returns to you.
+          If they&rsquo;re already on all.haus we&rsquo;ll reach them in-app instead. Until they accept,
+          the share stays part of your earnings, reserved pending their reply; if they never accept, it stays yours.
         </p>
       </div>
       <div>
