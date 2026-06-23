@@ -561,6 +561,7 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
       if (!UUID_RE.test(req.params.id)) {
         return reply.status(400).send({ error: 'Invalid id' })
       }
+      const viewerId = req.session?.sub ?? null
 
       const { rows } = await pool.query<{
         id: string
@@ -585,15 +586,22 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
 
       const ids = rows.map((r) => r.id)
       const disclaimersByCredit = new Map<string, Array<Record<string, unknown>>>()
+      // The viewer's own (non-withdrawn) dispute against each credit, so the
+      // apparatus can offer Withdraw across a reload (the disclaimers list above
+      // is public and carries no "whose" marker).
+      const mineByCredit = new Map<string, Record<string, unknown>>()
       if (ids.length > 0) {
         const { rows: disc } = await pool.query<{
           id: string
           credit_edge_id: string
           is_by_cited_author: boolean
           counter_characterisation: string
+          disputant_account_id: string
+          stake_ledger_entry_id: string | null
           created_at: Date
         }>(
-          `SELECT id, credit_edge_id, is_by_cited_author, counter_characterisation, created_at
+          `SELECT id, credit_edge_id, is_by_cited_author, counter_characterisation,
+                  disputant_account_id, stake_ledger_entry_id, created_at
              FROM dispute_edges
             WHERE credit_edge_id = ANY($1) AND withdrawn_at IS NULL AND deleted_at IS NULL
             ORDER BY is_by_cited_author DESC, created_at`,
@@ -608,6 +616,14 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
             createdAt: d.created_at.toISOString(),
           })
           disclaimersByCredit.set(d.credit_edge_id, list)
+          if (viewerId && d.disputant_account_id === viewerId && !mineByCredit.has(d.credit_edge_id)) {
+            mineByCredit.set(d.credit_edge_id, {
+              id: d.id,
+              counterCharacterisation: d.counter_characterisation,
+              byCitedAuthor: d.is_by_cited_author,
+              staked: d.stake_ledger_entry_id != null,
+            })
+          }
         }
       }
 
@@ -624,6 +640,7 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
           note: r.note,
           createdAt: r.created_at.toISOString(),
           disclaimers: disclaimersByCredit.get(r.id) ?? [],
+          mine: mineByCredit.get(r.id) ?? null,
         })),
       })
     },
@@ -640,6 +657,7 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
       if (!UUID_RE.test(req.params.id)) {
         return reply.status(400).send({ error: 'Invalid id' })
       }
+      const viewerId = req.session?.sub ?? null
 
       const { rows } = await pool.query<{
         id: string
@@ -669,6 +687,10 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
       const ids = rows.map((r) => r.id)
       const thirdPartyCount = new Map<string, number>()
       const citedAuthorDispute = new Map<string, Record<string, unknown>>()
+      // The viewer's own (non-withdrawn) dispute against each citation, so the
+      // apparatus can offer Withdraw across a reload (third-party disputes are
+      // otherwise a bare count, carrying no id the disputant could act on).
+      const mineByCitation = new Map<string, Record<string, unknown>>()
       if (ids.length > 0) {
         const { rows: disc } = await pool.query<{
           id: string
@@ -676,10 +698,12 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
           is_by_cited_author: boolean
           counter_characterisation: string
           wider_excerpt: string | null
+          disputant_account_id: string
+          stake_ledger_entry_id: string | null
           created_at: Date
         }>(
           `SELECT id, citation_edge_id, is_by_cited_author, counter_characterisation,
-                  wider_excerpt, created_at
+                  wider_excerpt, disputant_account_id, stake_ledger_entry_id, created_at
              FROM dispute_edges
             WHERE citation_edge_id = ANY($1) AND withdrawn_at IS NULL AND deleted_at IS NULL
             ORDER BY is_by_cited_author DESC, created_at`,
@@ -695,6 +719,14 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
             })
           } else if (!d.is_by_cited_author) {
             thirdPartyCount.set(d.citation_edge_id, (thirdPartyCount.get(d.citation_edge_id) ?? 0) + 1)
+          }
+          if (viewerId && d.disputant_account_id === viewerId && !mineByCitation.has(d.citation_edge_id)) {
+            mineByCitation.set(d.citation_edge_id, {
+              id: d.id,
+              counterCharacterisation: d.counter_characterisation,
+              byCitedAuthor: d.is_by_cited_author,
+              staked: d.stake_ledger_entry_id != null,
+            })
           }
         }
       }
@@ -718,6 +750,7 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
           disputes: {
             citedAuthor: citedAuthorDispute.get(r.id) ?? null,
             thirdPartyCount: thirdPartyCount.get(r.id) ?? 0,
+            mine: mineByCitation.get(r.id) ?? null,
           },
         })),
       })

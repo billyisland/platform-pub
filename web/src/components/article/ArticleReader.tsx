@@ -271,7 +271,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
               {paywallBody && <div className="prose prose-lg mt-10" dangerouslySetInnerHTML={{ __html: paywallHtml }} />}
 
               {/* Upstream Edges — credit/citation apparatus at the piece foot */}
-              <UpstreamEdges articleDbId={articleDbId} />
+              <UpstreamEdges articleDbId={articleDbId} isAuthor={isOwnContent} />
 
               <div className="flex justify-center mt-16 mb-12">
                 <ForAllMark size={24} className="text-grey-300" />
