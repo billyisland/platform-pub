@@ -541,8 +541,8 @@ async function sendExternalInvite(args: {
     '',
     claimUrl,
     '',
-    'If you accept, any earnings already set aside for you, and any future ones, are paid to you.',
-    'If you do nothing, the share simply returns to the writer. You can ignore this email safely.',
+    "If you accept, you'll be paid that share of what the piece earns — both what it has earned so far and what it earns from then on.",
+    'If you do nothing, nothing is held in your name; the offer simply lapses and the share stays with the writer. You can ignore this email safely.',
   ].filter((l, i, a) => !(l === '' && a[i - 1] === '')) // collapse blank runs
 
   await sendEmail({
