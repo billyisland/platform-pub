@@ -28,7 +28,10 @@ function ClaimInner() {
     if (!t) return
     setToken(t)
     try { sessionStorage.setItem(TRIBUTE_CLAIM_KEY, t) } catch { /* ignore */ }
-  }, [params])
+    // Strip the token from the URL once stashed — it binds money to an account,
+    // so it must not linger in browser history, server access logs, or Referer.
+    router.replace('/tribute/claim')
+  }, [params, router])
 
   if (!tributesEnabled()) {
     return <Card title="Not available">This feature isn’t available right now.</Card>

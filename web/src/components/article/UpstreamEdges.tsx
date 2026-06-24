@@ -14,7 +14,7 @@ import {
 import { ApiError } from '../../lib/api/client'
 import { useAuth } from '../../stores/auth'
 import { useCitationDraft, type CitationDraft } from '../../stores/citationDraft'
-import { clearMarkers, insertMarkerAt, MARKER_CLASS } from '../../lib/citation-anchor'
+import { clearMarkers, excerptMatchesAt, insertMarkerAt, MARKER_CLASS } from '../../lib/citation-anchor'
 import { ProfileLink } from '../ui/ProfileLink'
 
 // =============================================================================
@@ -158,7 +158,16 @@ export function UpstreamEdges({
     clearMarkers(root)
     const anchored = citations
       .map((c, i) => ({ c, num: i + 1 }))
-      .filter(({ c }) => c.charStart != null)
+      // Anchored AND the live body text at the span still matches the stored
+      // excerpt — drop the marker if an edit/republish shifted the offsets, so
+      // it never lands on unrelated prose (verify on the clean, marker-free root
+      // before any insertion splits the basis).
+      .filter(
+        ({ c }) =>
+          c.charStart != null &&
+          c.charEnd != null &&
+          excerptMatchesAt(root, c.charStart, c.charEnd, c.excerpt),
+      )
       .sort((a, b) => b.c.charStart! - a.c.charStart!)
     for (const { c, num } of anchored) {
       insertMarkerAt(root, c.charStart!, buildMarker(num, c.id, !!c.disputes.citedAuthor))

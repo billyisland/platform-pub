@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 6O2QuABmpVACFl4eWZMdrdKESOkGqLWmC6TdZXhYjxtzIPWDLeBbhbPZHthmJaR
+\restrict k75zdTZH7SdeH9HiTL7m0i1u5I0DeP1UUcwZ7cHg0pUEa3PBgrfj7JSHb3lVi7r
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -899,6 +899,32 @@ CREATE FUNCTION public.set_updated_at() RETURNS trigger
     AS $$
 BEGIN
   NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: tribute_accruals_protect(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tribute_accruals_protect() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' OR TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION
+      'tribute_accruals is append-only: % is not permitted (advance state / claim columns instead)',
+      TG_OP;
+  END IF;
+  -- UPDATE: the frozen amount and the row's identity may never change.
+  IF NEW.amount_pence IS DISTINCT FROM OLD.amount_pence THEN
+    RAISE EXCEPTION 'tribute_accruals.amount_pence is frozen at settlement and cannot be changed';
+  END IF;
+  IF NEW.tribute_id IS DISTINCT FROM OLD.tribute_id
+     OR NEW.read_event_id IS DISTINCT FROM OLD.read_event_id THEN
+    RAISE EXCEPTION 'tribute_accruals identity (tribute_id, read_event_id) is immutable';
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -5790,6 +5816,20 @@ CREATE TRIGGER trg_vote_tallies_updated_at BEFORE UPDATE ON public.vote_tallies 
 
 
 --
+-- Name: tribute_accruals tribute_accruals_protect_row_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tribute_accruals_protect_row_trg BEFORE DELETE OR UPDATE ON public.tribute_accruals FOR EACH ROW EXECUTE FUNCTION public.tribute_accruals_protect();
+
+
+--
+-- Name: tribute_accruals tribute_accruals_protect_stmt_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tribute_accruals_protect_stmt_trg BEFORE TRUNCATE ON public.tribute_accruals FOR EACH STATEMENT EXECUTE FUNCTION public.tribute_accruals_protect();
+
+
+--
 -- Name: trust_polls trust_polls_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7320,7 +7360,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 6O2QuABmpVACFl4eWZMdrdKESOkGqLWmC6TdZXhYjxtzIPWDLeBbhbPZHthmJaR
+\unrestrict k75zdTZH7SdeH9HiTL7m0i1u5I0DeP1UUcwZ7cHg0pUEa3PBgrfj7JSHb3lVi7r
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7452,4 +7492,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('126_tributes.sql'),
     ('127_tribute_money.sql'),
     ('128_tribute_chains.sql'),
-    ('129_dispute_uniqueness.sql');
+    ('129_dispute_uniqueness.sql'),
+    ('130_tribute_accruals_append_only.sql');

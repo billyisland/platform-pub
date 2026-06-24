@@ -67,19 +67,27 @@ async function sendReminders(): Promise<void> {
   for (const r of rows) {
     try {
       if (r.invite_email && r.resolved_account_id == null) {
-        // Rotate the token (make the new link live) BEFORE emailing; only mark
-        // reminder_sent_at after a successful send so a failure retries next tick.
+        // Rotate the token and re-send, then persist the new hash + stamp
+        // reminder_sent_at in ONE write — but only AFTER a confirmed send. The
+        // old link stays live until the new one is delivered: if the send
+        // throws, nothing is persisted, so the prior token is still valid and
+        // the row retries next tick (with a fresh token) rather than being
+        // stranded with a dead old link and an undelivered new one.
         const rawToken = randomBytes(32).toString('base64url')
-        await pool.query(`UPDATE tributes SET invite_token_hash = $1 WHERE id = $2`, [
-          hashToken(rawToken),
-          r.id,
-        ])
         await sendReminderEmail(r, rawToken)
+        await pool.query(
+          `UPDATE tributes SET invite_token_hash = $1, reminder_sent_at = now()
+            WHERE id = $2 AND reminder_sent_at IS NULL`,
+          [hashToken(rawToken), r.id],
+        )
+      } else {
+        // In-app member (or already-claimed invite): the standing notification
+        // is the reminder, so just stamp reminder_sent_at.
+        await pool.query(
+          `UPDATE tributes SET reminder_sent_at = now() WHERE id = $1 AND reminder_sent_at IS NULL`,
+          [r.id],
+        )
       }
-      await pool.query(
-        `UPDATE tributes SET reminder_sent_at = now() WHERE id = $1 AND reminder_sent_at IS NULL`,
-        [r.id],
-      )
     } catch (err) {
       logger.error({ err, tributeId: r.id }, 'Tribute reminder failed')
     }
