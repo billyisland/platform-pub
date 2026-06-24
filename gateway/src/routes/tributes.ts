@@ -52,6 +52,10 @@ const CreateSchema = z.object({
   // non-member would leak membership). Ignored when the target is a member.
   inviteEmail: z.string().email().max(320).optional(),
   note: z.string().max(2000).optional(),
+  // Phase-4 composition seam: a tribute may be offered FROM a specific citation
+  // ("I cited X here, and X earns a share"). Records the provenance link; the
+  // payee is still the resolved `target` (author-confirmed via the live preview).
+  citationEdgeId: z.string().regex(UUID_RE).optional(),
 })
 
 const ClaimSchema = z.object({
@@ -103,7 +107,7 @@ export async function tributeRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
-    const { articleId, percentageBps, target, inviteEmail, note } = parsed.data
+    const { articleId, percentageBps, target, inviteEmail, note, citationEdgeId } = parsed.data
 
     const article = await loadOwnedArticle(articleId, writerId)
     if (!article) {
@@ -119,6 +123,18 @@ export async function tributeRoutes(app: FastifyInstance) {
       return reply.status(400).send({
         error: 'This piece is in a publication; a tribute and a publication cannot split the same earnings.',
       })
+    }
+    // Composition link must be a citation on THIS piece (the article owns its
+    // citations, so an in-article match implies the author's own edge).
+    if (citationEdgeId) {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM citation_edges
+          WHERE id = $1 AND article_id = $2 AND deleted_at IS NULL`,
+        [citationEdgeId, articleId],
+      )
+      if (rows.length === 0) {
+        return reply.status(400).send({ error: 'That citation is not on this piece.' })
+      }
     }
 
     const t = await resolveTarget(target)
@@ -144,10 +160,10 @@ export async function tributeRoutes(app: FastifyInstance) {
              (article_id, author_account_id, percentage_bps,
               target_protocol, target_external_id, target_display_name, resolved_account_id,
               status, invite_email, invite_token_hash,
-              first_contact_at, window_expires_at)
+              first_contact_at, window_expires_at, citation_edge_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7,
                    'proposed', $8, $9,
-                   ${firstContactAt}, now() + ($10 || ' days')::interval)
+                   ${firstContactAt}, now() + ($10 || ' days')::interval, $11)
            RETURNING id`,
           [
             articleId,
@@ -160,6 +176,7 @@ export async function tributeRoutes(app: FastifyInstance) {
             inviteEmail ?? null,
             tokenHash,
             String(WINDOW_DAYS),
+            citationEdgeId ?? null,
           ],
         )
         const id = rows[0].id
@@ -390,11 +407,13 @@ export async function tributeRoutes(app: FastifyInstance) {
         first_contact_at: Date | null
         account_username: string | null
         account_display_name: string | null
+        citation_edge_id: string | null
         created_at: Date
       }>(
         `SELECT t.id, t.percentage_bps, t.target_protocol, t.target_external_id,
                 t.target_display_name, t.resolved_account_id, t.status,
                 t.author_account_id, t.first_contact_at, t.created_at,
+                t.citation_edge_id,
                 acc.username AS account_username, acc.display_name AS account_display_name
            FROM tributes t
            LEFT JOIN accounts acc ON acc.id = t.resolved_account_id
@@ -418,6 +437,8 @@ export async function tributeRoutes(app: FastifyInstance) {
             accountId: r.resolved_account_id,
             username: r.account_username,
           },
+          // Phase-4 composition: the citation this tribute was offered from, if any.
+          citationEdgeId: r.citation_edge_id,
           mine: viewerId != null && r.author_account_id === viewerId,
           createdAt: r.created_at.toISOString(),
         })),

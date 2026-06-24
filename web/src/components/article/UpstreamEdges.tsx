@@ -71,6 +71,14 @@ export function UpstreamEdges({
   const draft = useCitationDraft((s) => s.draft)
   const clearDraft = useCitationDraft((s) => s.clear)
   const citationComposerRef = useRef<HTMLDivElement>(null)
+  const tributeComposerRef = useRef<HTMLDivElement>(null)
+  // When a tribute is composed FROM a citation (Phase-4 composition), the
+  // composer opens seeded with the cited source as the payee + the link recorded.
+  const [tributeSeed, setTributeSeed] = useState<{
+    target: string
+    citationEdgeId: string
+    citationNum: number
+  } | null>(null)
 
   const aliveRef = useRef(true)
   useEffect(() => () => { aliveRef.current = false }, [])
@@ -106,6 +114,18 @@ export function UpstreamEdges({
     return () => cancelAnimationFrame(id)
   }, [draft, isAuthor])
 
+  // Open the tribute composer seeded from a citation: the cited source becomes
+  // the payee (author-confirmed via the live resolver preview) and the link is
+  // carried through to POST /tributes as citationEdgeId.
+  const openTributeFromCitation = useCallback((c: CitationEdge, num: number) => {
+    const seed = c.source.username ?? c.source.uri ?? c.source.authorPubkey ?? ''
+    setTributeSeed({ target: seed, citationEdgeId: c.id, citationNum: num })
+    setAddingTribute(true)
+    requestAnimationFrame(() =>
+      tributeComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+    )
+  }, [])
+
   // Inject the in-prose markers for anchored citations. Numbering follows the
   // foot order (citations are returned ordered by char_start, so anchored ones
   // lead and their numbers line up). Insert descending so an earlier marker
@@ -132,6 +152,9 @@ export function UpstreamEdges({
   if (!hasContent && !isAuthor) return null
 
   const canDispute = !!user && !isAuthor
+  // Foot order = citation number (the GET returns them ordered by char_start);
+  // lets a citation-linked tribute name the citation it sprang from.
+  const citationNumById = new Map(citations.map((c, i) => [c.id, i + 1]))
 
   return (
     <section className="mt-16 space-y-10">
@@ -181,6 +204,8 @@ export function UpstreamEdges({
                   num={i + 1}
                   canDispute={canDispute}
                   viewerIsParty={!!user?.pubkey && !!c.source.authorPubkey && user.pubkey === c.source.authorPubkey}
+                  canTribute={isAuthor && tributesOn}
+                  onAddTribute={() => openTributeFromCitation(c, i + 1)}
                   onChanged={load}
                 />
               ))}
@@ -217,21 +242,31 @@ export function UpstreamEdges({
                   key={t.id}
                   tribute={t}
                   viewerIsInspirer={!!user && !!t.target.accountId && user.id === t.target.accountId}
+                  citationNum={t.citationEdgeId ? citationNumById.get(t.citationEdgeId) ?? null : null}
                   onChanged={load}
                 />
               ))}
             </ul>
           )}
           {isAuthor && articleDbId && (
-            <div className="mt-4">
+            <div className="mt-4" ref={tributeComposerRef}>
               {addingTribute ? (
                 <TributeComposer
+                  // Remount when the citation seed changes so the prefilled
+                  // target + recorded link update.
+                  key={tributeSeed ? `cite-${tributeSeed.citationEdgeId}` : 'manual'}
                   articleId={articleDbId}
-                  onDone={() => { setAddingTribute(false); void load() }}
-                  onCancel={() => setAddingTribute(false)}
+                  seedTarget={tributeSeed?.target}
+                  citationEdgeId={tributeSeed?.citationEdgeId}
+                  citationNum={tributeSeed?.citationNum}
+                  onDone={() => { setAddingTribute(false); setTributeSeed(null); void load() }}
+                  onCancel={() => { setAddingTribute(false); setTributeSeed(null) }}
                 />
               ) : (
-                <button className="btn-text" onClick={() => setAddingTribute(true)}>
+                <button
+                  className="btn-text"
+                  onClick={() => { setTributeSeed(null); setAddingTribute(true) }}
+                >
                   + Add tribute
                 </button>
               )}
@@ -271,10 +306,13 @@ function tributeStatusPhrase(t: TributeView): string {
 function TributeRow({
   tribute,
   viewerIsInspirer,
+  citationNum,
   onChanged,
 }: {
   tribute: TributeView
   viewerIsInspirer: boolean
+  /** When this tribute was composed from a citation, its foot number. */
+  citationNum: number | null
   onChanged: () => void
 }) {
   const { target } = tribute
@@ -314,6 +352,14 @@ function TributeRow({
         {tribute.status === 'proposed' && ' if they accept'}
       </span>
       <span className="label-ui text-grey-400 ml-2">· {tributeStatusPhrase(tribute)}</span>
+      {tribute.citationEdgeId && citationNum != null && (
+        <a
+          href={`#citation-${tribute.citationEdgeId}`}
+          className="label-ui text-grey-400 ml-2 hover:text-black hover:underline transition-colors"
+        >
+          · for the source cited at [{citationNum}]
+        </a>
+      )}
 
       {/* The inspirer's own consent affordance (they reach this via the offer
           notification / claim, which comps them the read). */}
@@ -369,14 +415,24 @@ function TributeRow({
 
 function TributeComposer({
   articleId,
+  seedTarget,
+  citationEdgeId,
+  citationNum,
   onDone,
   onCancel,
 }: {
   articleId: string
+  /** Pre-fill the payee (composed from a citation); author can still edit it. */
+  seedTarget?: string
+  /** Phase-4 composition: record this tribute against a citation on the piece. */
+  citationEdgeId?: string
+  citationNum?: number
   onDone: () => void
   onCancel: () => void
 }) {
-  const [target, setTarget] = useState('')
+  // The composer is remounted (keyed on the seed) when composed from a citation,
+  // so initialising from seedTarget is correct.
+  const [target, setTarget] = useState(seedTarget ?? '')
   const [percent, setPercent] = useState('')
   const [email, setEmail] = useState('')
   const [note, setNote] = useState('')
@@ -399,6 +455,7 @@ function TributeComposer({
         target: target.trim(),
         inviteEmail: email.trim() || undefined,
         note: note.trim() || undefined,
+        citationEdgeId,
       })
       onDone()
     } catch {
@@ -409,6 +466,11 @@ function TributeComposer({
 
   return (
     <div className="bg-glasshouse-well/40 rounded p-4 space-y-3">
+      {citationNum != null && (
+        <p className="text-ui-xs text-grey-600">
+          Offering a share to the source you cited at [{citationNum}]. Confirm the payee below.
+        </p>
+      )}
       <div>
         <FieldLabel>Who inspired this piece</FieldLabel>
         <input
@@ -560,12 +622,17 @@ function CitationRow({
   num,
   canDispute,
   viewerIsParty,
+  canTribute,
+  onAddTribute,
   onChanged,
 }: {
   citation: CitationEdge
   num: number
   canDispute: boolean
   viewerIsParty: boolean
+  /** Author + tributes-on: offer this cited source a share (Phase-4 composition). */
+  canTribute: boolean
+  onAddTribute: () => void
   onChanged: () => void
 }) {
   const [showContext, setShowContext] = useState(false)
@@ -575,6 +642,9 @@ function CitationRow({
 
   const sourceLabel = source.displayName ?? source.username ?? source.uri ?? null
   const cited = disputes.citedAuthor
+  // Only offer a tribute for an addressable source — a plain-label citation has
+  // no payee to reach (the generic "+ Add tribute" still covers that case).
+  const tributable = !!(source.username || source.uri || source.authorPubkey)
 
   return (
     <li id={`citation-${citation.id}`} className="space-y-2 scroll-mt-8 rounded">
@@ -658,6 +728,12 @@ function CitationRow({
         // the inline cited-author block above — don't echo it.
         suppressMineText={!!disputes.mine && disputes.mine.id === disputes.citedAuthor?.id}
       />
+
+      {canTribute && tributable && (
+        <button className="btn-text-muted" onClick={onAddTribute}>
+          + Offer a tribute to this source
+        </button>
+      )}
     </li>
   )
 }

@@ -23,6 +23,8 @@ export interface TributeView {
     accountId: string | null;
     username: string | null;
   };
+  /** Phase-4 composition: the citation this tribute was offered from, if any. */
+  citationEdgeId: string | null;
   /** True ⇒ the viewer authored this tribute (can withdraw a proposed one). */
   mine: boolean;
   createdAt: string;
@@ -49,6 +51,8 @@ export interface CreateTributeInput {
   /** Always collected up front (the oracle-close); ignored for a known member. */
   inviteEmail?: string;
   note?: string;
+  /** Phase-4 composition: offer this tribute FROM a citation on the same piece. */
+  citationEdgeId?: string;
 }
 
 export const tributes = {
