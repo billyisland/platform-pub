@@ -141,6 +141,7 @@ class PayoutService {
       earnings_total_pence: string
       pending_transfer_pence: string
       paid_out_pence: string
+      reserved_pence: string
       read_count: string
     }>(
       // Tribute carve (Upstream Edges Phase 3): a tributed read's writer-side net
@@ -170,10 +171,15 @@ class PayoutService {
              ELSE 0
            END
          ), 0) AS paid_out_pence,
+         -- Reserved-but-not-yet-redirected (held|released); 'paid' is gone to the
+         -- inspirer, 'swept'/'returned' stay the author's, so neither counts here.
+         COALESCE(SUM(COALESCE(acc.reserved_pence, 0)), 0) AS reserved_pence,
          COUNT(*) AS read_count
        FROM read_events r
        LEFT JOIN (
-         SELECT read_event_id, SUM(amount_pence) AS live_pence
+         SELECT read_event_id,
+                SUM(amount_pence) AS live_pence,
+                SUM(amount_pence) FILTER (WHERE state IN ('held', 'released')) AS reserved_pence
          FROM tribute_accruals
          WHERE state IN ('held', 'released', 'paid')
          GROUP BY read_event_id
@@ -190,6 +196,7 @@ class PayoutService {
       earningsTotalPence: parseInt(row.earnings_total_pence, 10),
       pendingTransferPence: parseInt(row.pending_transfer_pence, 10),
       paidOutPence: parseInt(row.paid_out_pence, 10),
+      reservedPence: parseInt(row.reserved_pence, 10),
       readCount: parseInt(row.read_count, 10),
     }
   }

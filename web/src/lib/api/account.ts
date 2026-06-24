@@ -9,6 +9,9 @@ export interface WriterEarnings {
   earningsTotalPence: number
   pendingTransferPence: number
   paidOutPence: number
+  // Earnings reserved for in-flight tributes (held|released), shown as
+  // "reserved, pending redirect". 0 when the tribute money flow is dark.
+  reservedPence: number
   readCount: number
 }
 

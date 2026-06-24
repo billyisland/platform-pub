@@ -81,9 +81,15 @@ export interface ReadingTab {
 
 export interface WriterEarnings {
   writerId: string
-  earningsTotalPence: number       // platform_settled + writer_paid (net of 8% fee)
-  pendingTransferPence: number     // platform_settled not yet paid out (net of 8% fee)
-  paidOutPence: number             // writer_paid (net of 8% fee)
+  earningsTotalPence: number       // platform_settled + writer_paid (net of 8% fee AND of tribute carve)
+  pendingTransferPence: number     // platform_settled not yet paid out (net of 8% fee AND tribute carve)
+  paidOutPence: number             // writer_paid (net of 8% fee AND tribute carve)
+  // Upstream Edges Phase 3: the author's earnings carved off and reserved for
+  // tributes still in flight (held = pending consent, released = consented,
+  // awaiting the inspirer payout) — NOT yet redirected. Shown on the dashboard
+  // as "reserved, pending redirect" (compliance condition #4). Excludes 'paid'
+  // (already transferred) and 'swept'/'returned' (still the author's). 0 dark.
+  reservedPence: number
   readCount: number
 }
 

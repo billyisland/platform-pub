@@ -15,6 +15,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
 import { account as accountApi, payment, type TabOverview, type WriterEarnings } from '../../lib/api'
+import { tributesEnabled } from '../../lib/api/tributes'
 import { BalanceHeader } from './BalanceHeader'
 import { AccountLedger } from './AccountLedger'
 import { SubscriptionsSection } from './SubscriptionsSection'
@@ -69,6 +70,7 @@ export function LedgerPanel({ inOverlay = false }: { inOverlay?: boolean }) {
           balancePence={netBalance}
           freeAllowanceRemainingPence={tab?.freeAllowanceRemainingPence ?? user.freeAllowanceRemainingPence}
           freeAllowanceTotalPence={tab?.freeAllowanceTotalPence ?? 500}
+          reservedForTributesPence={tributesEnabled() ? (earnings?.reservedPence ?? 0) : 0}
         />
       )}
 
