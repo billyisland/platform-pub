@@ -223,7 +223,31 @@ WHERE (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
    OR (le.trigger_type IN ('dispute_stake', 'dispute_stake_refund')
          AND NOT EXISTS (SELECT 1 FROM dispute_edges de WHERE de.id = le.ref_id))
    OR (le.trigger_type = 'tribute_payout'
-         AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id));
+         AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
+   OR (le.trigger_type IN ('tab_settlement_reversal', 'writer_payout_reversal', 'tribute_payout_reversal')
+         AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id));
+
+-- A12: F3 reversal pairing. Every reversed settlement (reversed_at set) holds
+-- exactly one reader-side reversal of −amount_pence (the restored debt), and no
+-- un-reversed settlement carries any reversal entry. The writer/tribute reversal
+-- entries (writer_payout_reversal / tribute_payout_reversal) also ref the
+-- settlement but are checked only for orphans (A6) — their magnitudes are the
+-- per-node telescoped nets, not the settlement total, so they are not summed here.
+\echo '-- A12: reversed settlement ↔ tab_settlement_reversal pairing (expect ZERO) --'
+WITH reversed AS (
+  SELECT id, amount_pence FROM tab_settlements WHERE reversed_at IS NOT NULL
+), reader_rev AS (
+  SELECT ref_id AS settlement_id, SUM(amount_pence) AS rev_pence
+  FROM ledger_entries WHERE trigger_type = 'tab_settlement_reversal'
+  GROUP BY ref_id
+)
+SELECT COALESCE(rv.id, rr.settlement_id) AS settlement_id,
+       rv.amount_pence AS settled_pence, rr.rev_pence
+FROM reversed rv
+FULL OUTER JOIN reader_rev rr ON rr.settlement_id = rv.id
+WHERE rv.id IS NULL                                   -- reversal entry, no reversed settlement
+   OR rr.settlement_id IS NULL                        -- reversed settlement, no reversal entry
+   OR rr.rev_pence <> -rv.amount_pence;               -- magnitude mismatch
 
 \echo
 \echo '==================================================================='

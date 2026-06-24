@@ -8,6 +8,12 @@ import {
 import { recordLedger } from "@platform-pub/shared/lib/ledger.js";
 import { tributesEnabled } from "@platform-pub/shared/lib/env.js";
 import { readNetSql } from "@platform-pub/shared/lib/per-read-net.js";
+import {
+  computeChargebackReversal,
+  type ReversalRead,
+  type ReversalVote,
+  type ReversalAccrual,
+} from "./chargeback.js";
 import logger from "../lib/logger.js";
 
 // =============================================================================
@@ -450,7 +456,8 @@ class SettlementService {
 
       await client.query(
         `UPDATE vote_charges
-         SET state = 'platform_settled'
+         SET state = 'platform_settled',
+             tab_settlement_id = $2
          WHERE tab_id = $1
            AND state = 'accrued'
            AND created_at <= (SELECT settled_at FROM tab_settlements WHERE id = $2)`,
@@ -571,6 +578,238 @@ class SettlementService {
       logger.warn(
         { settlementId: settlement.id, paymentIntentId, failureMessage },
         "Payment failed — settlement marked failed, tab balance unchanged",
+      );
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // reverseSettlement — F3 reader chargeback / refund unwind.
+  //
+  // Called from the Stripe webhook on charge.dispute.closed (status=lost) and
+  // charge.refunded, keyed by the disputed/refunded Stripe charge id (==
+  // tab_settlements.stripe_charge_id). One transaction:
+  //   1. Find the settlement; idempotently claim reversed_at (no-op if already
+  //      reversed — guards duplicate webhooks and a refund-then-dispute-lost on
+  //      the same charge).
+  //   2. Restore the reader's debt (balance_pence += amount) + a reversing
+  //      tab_settlement_reversal ledger entry.
+  //   3. Load the reads / vote_charges / tribute accruals tied to this charge and
+  //      hand them to the pure planner (chargeback.ts). Apply its plan: post the
+  //      writer/tribute reversal entries, flip rolled-back reads + votes to
+  //      'charged_back', void the unpaid accruals.
+  //
+  // No tributesEnabled() gate: the plan is data-driven (zero accruals ⇒ the
+  // platform-wide case), so it stays correct across a flag toggled on then off.
+  // ---------------------------------------------------------------------------
+
+  async reverseSettlement(
+    stripeChargeId: string,
+    reason: string,
+  ): Promise<void> {
+    await withTransaction(async (client) => {
+      const settlementRow = await client.query<{
+        id: string;
+        reader_id: string;
+        tab_id: string;
+        amount_pence: number;
+        reversed_at: Date | null;
+      }>(
+        `SELECT id, reader_id, tab_id, amount_pence, reversed_at
+         FROM tab_settlements
+         WHERE stripe_charge_id = $1`,
+        [stripeChargeId],
+      );
+
+      if (settlementRow.rowCount === 0) {
+        logger.warn(
+          { stripeChargeId, reason },
+          "reverseSettlement: no settlement for charge — ignoring (not a tab-settlement charge?)",
+        );
+        return;
+      }
+
+      const settlement = settlementRow.rows[0];
+
+      if (settlement.reversed_at !== null) {
+        logger.info(
+          { settlementId: settlement.id, stripeChargeId },
+          "Settlement already reversed — skipping duplicate",
+        );
+        return;
+      }
+
+      // Lock the tab so the restore races neither a settlement nor an accrual.
+      await client.query(
+        "SELECT balance_pence FROM reading_tabs WHERE id = $1 FOR UPDATE",
+        [settlement.tab_id],
+      );
+
+      // Claim the reversal idempotently — only the first txn to flip
+      // reversed_at proceeds (a concurrent duplicate gets rowCount 0).
+      const claimed = await client.query(
+        `UPDATE tab_settlements
+         SET reversed_at = now(), reversal_reason = $2
+         WHERE id = $1 AND reversed_at IS NULL`,
+        [settlement.id, reason],
+      );
+      if (claimed.rowCount === 0) {
+        logger.info(
+          { settlementId: settlement.id },
+          "Settlement reversal claimed by concurrent webhook — skipping",
+        );
+        return;
+      }
+
+      const config = await loadConfig();
+
+      const { rows: reads } = await client.query<{
+        id: string;
+        amount_pence: number;
+        state: string;
+        writer_id: string;
+      }>(
+        `SELECT id, amount_pence, state, writer_id
+         FROM read_events
+         WHERE tab_settlement_id = $1
+           AND state IN ('platform_settled', 'writer_paid')`,
+        [settlement.id],
+      );
+
+      const { rows: votes } = await client.query<{
+        id: string;
+        amount_pence: number;
+        state: string;
+        recipient_id: string | null;
+      }>(
+        `SELECT id, amount_pence, state, recipient_id
+         FROM vote_charges
+         WHERE tab_settlement_id = $1
+           AND state IN ('platform_settled', 'writer_paid')`,
+        [settlement.id],
+      );
+
+      // Every non-voided accrual on the reads this charge settled, with the
+      // tribute (and its parent) so the planner can attribute net per node.
+      const { rows: accrualRows } = await client.query<{
+        id: string;
+        read_event_id: string;
+        tribute_id: string;
+        parent_tribute_id: string | null;
+        amount_pence: number;
+        state: string;
+        resolved_account_id: string;
+        author_account_id: string;
+        parent_resolved_account_id: string | null;
+        parent_author_account_id: string | null;
+        swept_return_kind: string | null;
+        claimed: boolean;
+      }>(
+        `SELECT a.id, a.read_event_id, a.tribute_id, a.amount_pence, a.state,
+                a.swept_return_kind,
+                (a.tribute_payout_id IS NOT NULL OR a.swept_return_payout_id IS NOT NULL) AS claimed,
+                t.parent_tribute_id, t.resolved_account_id, t.author_account_id,
+                pt.resolved_account_id AS parent_resolved_account_id,
+                pt.author_account_id  AS parent_author_account_id
+         FROM tribute_accruals a
+         JOIN tributes t ON t.id = a.tribute_id
+         LEFT JOIN tributes pt ON pt.id = t.parent_tribute_id
+         JOIN read_events re ON re.id = a.read_event_id
+         WHERE re.tab_settlement_id = $1
+           AND a.state <> 'voided'`,
+        [settlement.id],
+      );
+
+      const planReads: ReversalRead[] = reads.map((r) => ({
+        id: r.id,
+        amountPence: r.amount_pence,
+        state: r.state,
+        writerId: r.writer_id,
+      }));
+      const planVotes: ReversalVote[] = votes.map((v) => ({
+        id: v.id,
+        amountPence: v.amount_pence,
+        state: v.state,
+        recipientId: v.recipient_id,
+      }));
+      const planAccruals: ReversalAccrual[] = accrualRows.map((a) => ({
+        id: a.id,
+        readEventId: a.read_event_id,
+        tributeId: a.tribute_id,
+        parentTributeId: a.parent_tribute_id,
+        amountPence: a.amount_pence,
+        state: a.state,
+        resolvedAccountId: a.resolved_account_id,
+        authorAccountId: a.author_account_id,
+        parentResolvedAccountId: a.parent_resolved_account_id,
+        parentAuthorAccountId: a.parent_author_account_id,
+        sweptReturnKind: a.swept_return_kind,
+        claimed: a.claimed,
+      }));
+
+      const plan = computeChargebackReversal({
+        readerId: settlement.reader_id,
+        settlementAmountPence: settlement.amount_pence,
+        reads: planReads,
+        votes: planVotes,
+        accruals: planAccruals,
+        platformFeeBps: config.platformFeeBps,
+      });
+
+      // Restore the reader's tab — the settlement credit is clawed back, so the
+      // debt returns. No clamp (negative permitted): the column and its ledger
+      // entry move by the same signed delta.
+      await client.query(
+        `UPDATE reading_tabs
+         SET balance_pence = balance_pence + $1, updated_at = now()
+         WHERE id = $2`,
+        [plan.tabRestorePence, settlement.tab_id],
+      );
+
+      // All reversal ledger entries (reader first, then writer/tribute), each
+      // referencing the settlement that was reversed.
+      for (const entry of plan.ledgerEntries) {
+        await recordLedger(client, {
+          accountId: entry.accountId,
+          counterpartyId: entry.counterpartyId,
+          amountPence: entry.amountPence,
+          triggerType: entry.trigger,
+          refTable: "tab_settlements",
+          refId: settlement.id,
+        });
+      }
+
+      if (plan.chargeBackReadIds.length > 0) {
+        await client.query(
+          `UPDATE read_events
+           SET state = 'charged_back', state_updated_at = now()
+           WHERE id = ANY($1::uuid[])`,
+          [plan.chargeBackReadIds],
+        );
+      }
+      if (plan.chargeBackVoteIds.length > 0) {
+        await client.query(
+          `UPDATE vote_charges SET state = 'charged_back' WHERE id = ANY($1::uuid[])`,
+          [plan.chargeBackVoteIds],
+        );
+      }
+      if (plan.voidAccrualIds.length > 0) {
+        await client.query(
+          `UPDATE tribute_accruals SET state = 'voided' WHERE id = ANY($1::uuid[])`,
+          [plan.voidAccrualIds],
+        );
+      }
+
+      logger.warn(
+        {
+          settlementId: settlement.id,
+          stripeChargeId,
+          reason,
+          reads: plan.chargeBackReadIds.length,
+          votes: plan.chargeBackVoteIds.length,
+          voidedAccruals: plan.voidAccrualIds.length,
+          ledgerEntries: plan.ledgerEntries.length,
+        },
+        "Settlement reversed — reader debt restored, reads charged back",
       );
     });
   }

@@ -49,7 +49,7 @@ export function BalanceHeader({ balancePence, freeAllowanceRemainingPence, freeA
             </p>
           </div>
           <p className="text-ui-xs text-grey-600">
-            Reserved from your earnings, pending redirect to the sources you credited. It returns to you if an offer isn’t taken up.
+            Reserved from your earnings while tributes you’ve offered are in flight. Unclaimed offers return to you; once a source accepts, their share is redirected to them.
           </p>
         </div>
       )}

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2mejstekXe7DpwDaQZFavOQBn27y8aVORYv7YWKeID4MtDXqUlyvqRoDEDoM5vJ
+\restrict aM7uF1ZB7DLoD9fV5pY7Dcm8B3gcQdi3mbd2CRc1Wol9bWPWsp4hH3IJ1xV1agR
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -202,7 +202,8 @@ CREATE TYPE public.read_state AS ENUM (
     'provisional',
     'accrued',
     'platform_settled',
-    'writer_paid'
+    'writer_paid',
+    'charged_back'
 );
 
 
@@ -1897,7 +1898,7 @@ CREATE VIEW public.ledger_reader_balance AS
  SELECT account_id,
     ((- sum(amount_pence)))::bigint AS balance_pence
    FROM public.ledger_entries
-  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text, 'subscription_credit'::text, 'opening_balance'::text, 'dispute_stake'::text, 'dispute_stake_refund'::text]))
+  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text, 'subscription_credit'::text, 'opening_balance'::text, 'dispute_stake'::text, 'dispute_stake_refund'::text, 'tab_settlement_reversal'::text]))
   GROUP BY account_id;
 
 
@@ -1909,7 +1910,7 @@ CREATE VIEW public.ledger_writer_earnings AS
  SELECT account_id,
     (sum(amount_pence))::bigint AS earned_pence
    FROM public.ledger_entries
-  WHERE (trigger_type = ANY (ARRAY['writer_payout'::text, 'publication_split'::text, 'tribute_payout'::text]))
+  WHERE (trigger_type = ANY (ARRAY['writer_payout'::text, 'publication_split'::text, 'tribute_payout'::text, 'writer_payout_reversal'::text, 'tribute_payout_reversal'::text]))
   GROUP BY account_id;
 
 
@@ -2495,6 +2496,8 @@ CREATE TABLE public.tab_settlements (
     settled_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     status text DEFAULT 'pending'::text NOT NULL,
+    reversed_at timestamp with time zone,
+    reversal_reason text,
     CONSTRAINT tab_settlements_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text]))),
     CONSTRAINT tab_settlements_trigger_type_check CHECK ((trigger_type = ANY (ARRAY['threshold'::text, 'monthly_fallback'::text])))
 );
@@ -2525,7 +2528,7 @@ CREATE TABLE public.tribute_accruals (
     tribute_payout_id uuid,
     swept_return_payout_id uuid,
     swept_return_kind text,
-    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['held'::text, 'released'::text, 'paid'::text, 'swept'::text, 'returned'::text]))),
+    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['held'::text, 'released'::text, 'paid'::text, 'swept'::text, 'returned'::text, 'voided'::text]))),
     CONSTRAINT tribute_accruals_swept_return_consistency CHECK (((swept_return_payout_id IS NULL) = (swept_return_kind IS NULL))),
     CONSTRAINT tribute_accruals_swept_return_kind_check CHECK ((swept_return_kind = ANY (ARRAY['writer'::text, 'tribute'::text])))
 );
@@ -2673,7 +2676,8 @@ CREATE TABLE public.vote_charges (
     on_free_allowance boolean DEFAULT false NOT NULL,
     state public.read_state DEFAULT 'provisional'::public.read_state NOT NULL,
     writer_payout_id uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    tab_settlement_id uuid
 );
 
 
@@ -5418,6 +5422,13 @@ CREATE INDEX idx_vote_charges_tab_id ON public.vote_charges USING btree (tab_id)
 
 
 --
+-- Name: idx_vote_charges_tab_settlement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vote_charges_tab_settlement ON public.vote_charges USING btree (tab_settlement_id);
+
+
+--
 -- Name: idx_vote_charges_vote_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7152,6 +7163,14 @@ ALTER TABLE ONLY public.vote_charges
 
 
 --
+-- Name: vote_charges vote_charges_tab_settlement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vote_charges
+    ADD CONSTRAINT vote_charges_tab_settlement_id_fkey FOREIGN KEY (tab_settlement_id) REFERENCES public.tab_settlements(id);
+
+
+--
 -- Name: vote_charges vote_charges_vote_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7403,7 +7422,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 2mejstekXe7DpwDaQZFavOQBn27y8aVORYv7YWKeID4MtDXqUlyvqRoDEDoM5vJ
+\unrestrict aM7uF1ZB7DLoD9fV5pY7Dcm8B3gcQdi3mbd2CRc1Wol9bWPWsp4hH3IJ1xV1agR
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7537,4 +7556,6 @@ INSERT INTO public._migrations (filename) VALUES
     ('128_tribute_chains.sql'),
     ('129_dispute_uniqueness.sql'),
     ('130_tribute_accruals_append_only.sql'),
-    ('131_tribute_edge_backstops.sql');
+    ('131_tribute_edge_backstops.sql'),
+    ('132_read_state_charged_back.sql'),
+    ('133_chargeback_reversal.sql');

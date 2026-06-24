@@ -65,6 +65,9 @@ export type LedgerTriggerType =
   | 'dispute_stake'       // Upstream Edges: third-party dispute stake (−amount, debits the disputant's tab)
   | 'dispute_stake_refund'// Upstream Edges: dispute stake returned on withdrawal (+amount)
   | 'tribute_payout'      // Upstream Edges Phase 3/5: inspirer's redirected share paid out (+amount, counterparty = the party whose share was redirected — the article author for a root, the parent inspirer for a chained node)
+  | 'tab_settlement_reversal' // F3 reader chargeback/refund: a settled charge clawed back — mirrors the original tab_settlement (−amount, reader debt restored, counterparty = platform/NULL). Reader-tab entry: keeps −SUM == reading_tabs.balance_pence.
+  | 'writer_payout_reversal'  // F3: reverses a charged-back read's already-paid author net (−amount, counterparty = NULL). Writer's earned total goes negative — the existing clawed-back-payout posture, no synchronous Stripe recovery.
+  | 'tribute_payout_reversal' // F3: reverses a charged-back read's already-paid tribute share (−amount, account = inspirer, counterparty = the party whose share was redirected). Inspirer's earned total goes negative, same posture.
 
 export interface LedgerEntryInput {
   /** Whose ledger this movement belongs to. */

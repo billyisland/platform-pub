@@ -143,6 +143,48 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     }
 
     // -------------------------------------------------------------------------
+    // F3: reader chargeback / refund unwind.
+    //
+    // A reversed reader charge must roll back the settled reads it paid for, and
+    // (when tributes are live) void/reverse their tribute accruals. The charge id
+    // is the key into tab_settlements.stripe_charge_id.
+    //
+    // We reverse only when funds are DEFINITIVELY gone:
+    //   • charge.dispute.closed with status='lost' — a dispute we lost. We do NOT
+    //     act on dispute.created (it may yet be won; no re-apply path to maintain).
+    //   • charge.refunded — but FULL refunds only. A partial refund needs
+    //     proportional unwinding the per-read model doesn't support; we log and
+    //     skip rather than reverse the whole settlement incorrectly.
+    // -------------------------------------------------------------------------
+    case 'charge.dispute.closed': {
+      const dispute = event.data.object as Stripe.Dispute
+      if (dispute.status !== 'lost') {
+        logger.info({ disputeId: dispute.id, status: dispute.status }, 'Dispute closed but not lost — no reversal')
+        break
+      }
+      const chargeId = typeof dispute.charge === 'string' ? dispute.charge : dispute.charge?.id ?? ''
+      if (!chargeId) {
+        logger.error({ disputeId: dispute.id }, 'dispute.closed missing charge — cannot reverse')
+        break
+      }
+      await settlementService.reverseSettlement(chargeId, 'chargeback_lost')
+      break
+    }
+
+    case 'charge.refunded': {
+      const charge = event.data.object as Stripe.Charge
+      if (charge.amount_refunded < charge.amount) {
+        logger.warn(
+          { chargeId: charge.id, amountRefunded: charge.amount_refunded, amount: charge.amount },
+          'Partial refund — not reversing (per-read unwind supports full reversal only)',
+        )
+        break
+      }
+      await settlementService.reverseSettlement(charge.id, 'refund')
+      break
+    }
+
+    // -------------------------------------------------------------------------
     // Writer Stripe Connect KYC completed
     // -------------------------------------------------------------------------
     case 'account.updated': {
