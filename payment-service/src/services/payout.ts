@@ -4,6 +4,7 @@ import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/clien
 import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 import { tributesEnabled } from '@platform-pub/shared/lib/env.js'
 import { readNetSql } from '@platform-pub/shared/lib/per-read-net.js'
+import { isConnectPayable } from '../lib/connect-payable.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -1514,6 +1515,115 @@ class PayoutService {
         )
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // reconcileConnectKyc — backstop for MISSED account.updated webhooks.
+  //
+  // The webhook (routes/webhook.ts) is the only path that flips
+  // stripe_connect_kyc_complete = TRUE, and Stripe delivers webhooks
+  // at-least-once — not always-once. A dropped/never-seen account.updated
+  // leaves a writer permanently un-flipped; the payout cycles then skip them
+  // every run and earnings accrue forever with no error. This sweep re-reads
+  // candidates straight from Stripe and applies the SAME isConnectPayable()
+  // gate as the webhook.
+  //
+  // Candidate = an account with a Connect id, not yet KYC-complete, that is a
+  // recipient of at least one unpaid item across EVERY KYC-gated payout source
+  // (so we never spend an accounts.retrieve on an abandoned-onboarding £0
+  // account). The six EXISTS clauses mirror the eligibility used by, in order:
+  // the writer cycle's base/carve/ret CTEs (runPayoutCycle), publication splits
+  // (processPublicationSplits), and the tribute inspirer cycle
+  // (runTributePayoutCycle's released/returns CTEs). Idempotent: the UPDATE
+  // guards on `= FALSE`, so it's a no-op if a concurrent webhook already won.
+  // ---------------------------------------------------------------------------
+  async reconcileConnectKyc(): Promise<{ checked: number; flipped: number }> {
+    const { rows: candidates } = await pool.query<{
+      id: string
+      stripe_connect_id: string
+    }>(
+      `SELECT a.id, a.stripe_connect_id
+         FROM accounts a
+        WHERE a.stripe_connect_id IS NOT NULL
+          AND a.stripe_connect_kyc_complete = FALSE
+          AND (
+            -- (1) writer read earnings
+            EXISTS (SELECT 1 FROM read_events re
+                     WHERE re.writer_id = a.id
+                       AND re.state = 'platform_settled'
+                       AND re.writer_payout_id IS NULL)
+            -- (2) writer upvote earnings
+            OR EXISTS (SELECT 1 FROM vote_charges vc
+                        WHERE vc.recipient_id = a.id
+                          AND vc.state = 'platform_settled'
+                          AND vc.writer_payout_id IS NULL)
+            -- (3) writer swept-return: ROOT tribute swept shares return to the author
+            OR EXISTS (SELECT 1 FROM tribute_accruals ta
+                         JOIN tributes t ON t.id = ta.tribute_id
+                        WHERE t.author_account_id = a.id
+                          AND ta.state = 'swept'
+                          AND ta.swept_return_payout_id IS NULL
+                          AND t.parent_tribute_id IS NULL)
+            -- (4) publication standing-member / contributor splits
+            OR EXISTS (SELECT 1 FROM publication_payout_splits ps
+                        WHERE ps.account_id = a.id
+                          AND ps.status = 'pending'
+                          AND ps.amount_pence > 0)
+            -- (5) tribute inspirer: released shares on a live tribute they resolve to
+            OR EXISTS (SELECT 1 FROM tributes t
+                         JOIN tribute_accruals ta ON ta.tribute_id = t.id
+                        WHERE t.resolved_account_id = a.id
+                          AND t.status = 'live'
+                          AND ta.state = 'released'
+                          AND ta.tribute_payout_id IS NULL)
+            -- (6) tribute inspirer: a deeper child's swept share returns up to the PARENT node they resolve to
+            OR EXISTS (SELECT 1 FROM tributes parent
+                         JOIN tributes child ON child.parent_tribute_id = parent.id
+                         JOIN tribute_accruals ta ON ta.tribute_id = child.id
+                        WHERE parent.resolved_account_id = a.id
+                          AND parent.status = 'live'
+                          AND ta.state = 'swept'
+                          AND ta.swept_return_payout_id IS NULL)
+          )`,
+    )
+
+    let flipped = 0
+    for (const c of candidates) {
+      let account: Stripe.Account
+      try {
+        account = await this.stripe.accounts.retrieve(c.stripe_connect_id)
+      } catch (err) {
+        // 429 / transient / deleted account — log and move on; next sweep retries.
+        logger.warn(
+          { err, writerId: c.id, stripeConnectId: c.stripe_connect_id },
+          'KYC reconcile: accounts.retrieve failed — will retry next sweep',
+        )
+        continue
+      }
+
+      if (!isConnectPayable(account)) continue
+
+      const { rows } = await pool.query<{ id: string }>(
+        `UPDATE accounts
+            SET stripe_connect_kyc_complete = TRUE, updated_at = now()
+          WHERE id = $1
+            AND stripe_connect_kyc_complete = FALSE
+          RETURNING id`,
+        [c.id],
+      )
+      if (rows.length > 0) {
+        flipped++
+        logger.info(
+          { writerId: c.id, stripeConnectId: c.stripe_connect_id },
+          'KYC reconcile: flipped via sweep — account.updated webhook was missed',
+        )
+      }
+    }
+
+    if (candidates.length > 0) {
+      logger.info({ checked: candidates.length, flipped }, 'KYC reconcile sweep complete')
+    }
+    return { checked: candidates.length, flipped }
   }
 }
 

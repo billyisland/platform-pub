@@ -23,6 +23,62 @@ starts.
 
 ## Progress
 
+- **2026-06-24** — **Connect KYC gate: payability keyed on `transfers`, not
+  `charges_enabled`** (HIGH — silent non-payment). The `account.updated` webhook
+  (`payment-service/src/routes/webhook.ts`) was the **sole** path that flips
+  `accounts.stripe_connect_kyc_complete = TRUE`, gated on `charges_enabled &&
+  payouts_enabled`. But writers only ever RECEIVE via `transfers.create`
+  (separate charges & transfers — readers are charged on the *platform* account,
+  `settlement.ts:250`; writers never take card payments). `card_payments`/
+  `charges_enabled` is therefore an **unused** capability on writer accounts —
+  yet it gated getting paid. `card_payments` and `transfers` are independent
+  capabilities with independent requirements hashes and **can diverge** (Stripe
+  docs confirmed): a GB writer whose `card_payments` requirement lags `transfers`
+  reaches `payouts_enabled=true` / transfers-active but never `charges_enabled`,
+  so the `&&` never fires, KYC never flips, and the payout cycles
+  (`payout.ts:385/1065/1495`) skip them **forever with no error** while earnings
+  accrue. Also a hard blocker for ever adopting a transfers-only onboarding shape
+  (`charges_enabled` would never flip true). **Fix:** extracted the single gate
+  `isConnectPayable(account)` (`payment-service/src/lib/connect-payable.ts`) =
+  `capabilities.transfers === 'active' && payouts_enabled`, imported by **both**
+  the webhook and the new sweep so they cannot drift (drift is the bug class).
+  **Backstop for missed webhooks** (`account.updated` is at-least-once, not
+  always-once — one dropped event = permanently un-flipped writer): new
+  `PayoutService.reconcileConnectKyc()` + self-scheduling worker
+  (`workers/kyc-reconcile.ts`, 3×/day at 01:30/09:30/17:30 UTC, offset *before*
+  the 02:30 payout cycle; wired in `index.ts`). Candidate = a Connect account,
+  not yet KYC-complete, owed money in **any** of the six KYC-gated payout
+  sources (six `EXISTS` clauses mirroring `runPayoutCycle`'s base/carve/ret CTEs,
+  `processPublicationSplits`, and the tribute inspirer cycle's released/returns
+  CTEs — so no `accounts.retrieve` is spent on an abandoned-onboarding £0
+  account); re-reads via Stripe, applies the same `isConnectPayable`, flips with
+  an idempotent `UPDATE … WHERE … = FALSE` (no-op if a webhook already won).
+  Column names verified against `schema.sql`. **Regression-locked** by
+  `payment-service/tests/connect-payable.test.ts` (6 cases pinning both
+  divergence directions — transfers-active/charges-disabled *is* payable;
+  charges-enabled/transfers-inactive is *not*). **Verify:** payment-service `tsc`
+  exit 0 + vitest **62** (was 56; +6) + root promise-safety lint on all touched
+  files exit 0; no money path's `recordLedger` adjacency touched (KYC flag only,
+  no ledger write). **Deferred follow-ups (sketch, not built):**
+  (1) **DB integration test for `reconcileConnectKyc`'s candidate SQL** — the six
+  `EXISTS` clauses are the drift-prone surface (they track a *set of tables*, not
+  amounts, so they can't drift from payout *math*, but they can drift from
+  payout *eligibility* if a source table/column changes). The repo's test idiom
+  is pure-function only (no test mocks `pool`/`stripe`), so this needs new
+  DB-or-pool-mock fixtures — a deliberate infra decision, kept out of this change.
+  Build it as: seed one account per source (read / vote / root-swept-return /
+  pub-split / inspirer-released / inspirer-deeper-swept) + one abandoned £0
+  account, assert candidate set = the six and excludes the £0 one.
+  (2) **Multi-instance advisory lock** — wrap the sweep in `pg_advisory_lock`
+  (gateway scheduler pattern) if payment-service ever runs >1 replica; single
+  instance today, not required yet. (3) **Reverse flip** — neither path sets
+  `kyc_complete` back to FALSE when Stripe later *disables* an account; lower
+  risk (`transfers.create` fails loudly at payout time, not silently), left for
+  its own ticket. Tracked in `feature-debt.md` §1.
+  *(Originated from scrutinising a dropped-in Stripe Connect onboarding slice
+  whose transfers-only capability shape was architecturally correct for this
+  platform but would have 100%-broken the existing `charges_enabled` gate.)*
+
 - **2026-06-16** — architecture-audit item **6 (DM reactions)** shipped.
   Migration **122** migrates `dm_likes` → `dm_reactions` while the table is empty
   (rename-in-place, not fresh-table+copy): `ALTER TABLE … RENAME TO`, add

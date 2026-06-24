@@ -4,6 +4,7 @@ import sensible from "@fastify/sensible";
 import { paymentRoutes } from "./routes/payment.js";
 import { webhookRoutes } from "./routes/webhook.js";
 import { startPayoutWorker } from "./workers/payout.js";
+import { startKycReconcileWorker } from "./workers/kyc-reconcile.js";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger, { pinoConfig } from "./lib/logger.js";
 import { requireEnv } from "@platform-pub/shared/lib/env.js";
@@ -56,6 +57,7 @@ async function start() {
 
   // Start background workers after HTTP server is ready
   startPayoutWorker();
+  startKycReconcileWorker();
 
   logger.info({ port }, "Payment service started");
 }

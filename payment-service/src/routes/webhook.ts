@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
+import { isConnectPayable } from '../lib/connect-payable.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -189,7 +190,11 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     // -------------------------------------------------------------------------
     case 'account.updated': {
       const account = event.data.object as Stripe.Account
-      if (account.charges_enabled && account.payouts_enabled) {
+      // Gate via the shared isConnectPayable() — see its comment for why we key
+      // on transfers/payouts and not charges_enabled. The reconciliation sweep
+      // (payout.ts::reconcileConnectKyc) applies the SAME helper as a backstop
+      // for missed account.updated events.
+      if (isConnectPayable(account)) {
         await handleConnectKycComplete(account.id)
       }
       break
