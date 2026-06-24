@@ -169,6 +169,10 @@ No money moves yet; this builds identification, consent, and the contact pipelin
 - ✅ **Wire `tributes.citation_edge_id` UX (a tribute that points at a specific citation).** Shipped 2026-06-24 — see *Phase 4 — as built* above. The author offers a tribute directly from a citation; the link is recorded + rendered both ways; payee is seeded-and-confirmed.
 - (Optional, deferred) revisit D1 — publication × tribute composition (tribute off net first, publication splits remainder), if demand warrants the `reservePublicationPayout` change.
 
+## Phase 5 — Tribute chains (recursive re-division). NOT YET SEQUENCED.
+
+Specified 2026-06-24 in `UPSTREAM-EDGES-ADR.md` › *Tribute chains (recursive re-division)* (and Decision 13). An offered inspirer's third reply — beside accept/decline — is **accept and pass a share of their own share further upstream**, repeating to a bounded depth. **Build order is deliberately deferred to a later session; this is a placeholder, not a plan.** The ADR's *Where the work concentrates (feasibility)* names the three work clusters when it is picked up: (1) authoring/authorisation (`parentTributeId`, parent-scoped ceiling + lock, depth cap, the combined accept-and-offer route); (2) money (recursive gross-accrual settlement walk; level-aware carve — author carves roots, each node carves its direct children — through the shared `per-read-net`/carve helper + the ~12 net sites; the swept-return-to-an-inspirer-parent payout vehicle — **decided: one generic "return to the parent's payout" path, author = depth-0 case, not a parallel column; carry a `payout_kind` discriminator on the single claim, ADR C5**); (3) rendering (the tree line + third consent button). No new compliance question (the held-funds position recurses, ADR C6); the contact pipeline, consent lifecycle, window worker, comp reads, notification, withdrawal, and the `tribute_payout` ledger trigger all recurse unchanged.
+
 ## Deferred (from the ADR, unchanged)
 
 - Standing-record author-profile view (corrected/defended/ignored, no score).

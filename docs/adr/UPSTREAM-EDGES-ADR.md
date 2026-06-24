@@ -1,6 +1,6 @@
 # Upstream Edges — Credit, Tribute, Citation
 
-**Status:** Accepted (rewrite 2026-06-22). Supersedes the 2026-06-21 draft: tribute is reworked from a payout-time deduction (mirrored double-entry pair, per-cycle) to **settlement-time apportionment with a held accrual** — the inspirer becomes a co-earner, paid through the ordinary writer flow. Also supersedes the separate Span-Pinned Citations ADR.
+**Status:** Accepted (rewrite 2026-06-22). Supersedes the 2026-06-21 draft: tribute is reworked from a payout-time deduction (mirrored double-entry pair, per-cycle) to **settlement-time apportionment with a held accrual** — the inspirer becomes a co-earner, paid through the ordinary writer flow. Also supersedes the separate Span-Pinned Citations ADR. **Extended 2026-06-24 with tribute chains** (recursive re-division — an offered inspirer's third reply, beside accept/decline, is to accept and pass a share of *their own* share further upstream, repeating to bounded depth); spec only, **not yet sequenced** — see *Tribute chains (recursive re-division)* below.
 **Depends on:** `articles`, `accounts`, `ledger_entries` (append-only), `read_events`, `external_items`, strfry event store, the universal resolver (`POST /api/resolve`).
 **Companion:** `UPSTREAM-EDGES-BUILD-PLAN.md` (what to build, in order).
 
@@ -46,6 +46,7 @@ Disclaimer and dispute are the same primitive (`dispute_edges`); they differ onl
 10. **A dispute may re-pin a wider span.** The disputant can quote a wider excerpt + hash to expose context-stripping.
 11. **The dispute stake refunds on withdrawal only, and is never forfeited.** No dwell-refund, no correction-refund, no forfeiture-on-"losing" — each would smuggle a verdict in.
 12. **Not moderation, not ranking, not reputation.** No takedowns, no `feed_scores` input, no computed credibility score. Do not route through `trust_*`.
+13. **Tributes may chain (recursive re-division).** *(Added 2026-06-24; spec only, not yet built.)* An offered inspirer's third reply, beside accept/decline, is to **accept and pass a share of their own share** to someone further upstream — repeating indefinitely to a bounded depth. A tribute gains an optional `parent_tribute_id`; the money model is the shipped settlement-apportionment model applied recursively at every level (gross-freeze, carve-at-payout). It only subdivides an already-consented share, opens no new compliance question, and most of the system recurses unchanged. See *Tribute chains (recursive re-division)* below.
 
 ## Schema
 
@@ -209,6 +210,64 @@ Window: 60 days from `first_contact_at`, one reminder at 30. No response → `la
 - **Publication interaction.** A tributed piece may also be inside a publication, which *already* splits that article's revenue. Two splitters on the same money would double-count — the build plan must define precedence (e.g. tribute comes off the writer-side net first, the publication splits the remainder).
 - **Refund / chargeback.** A reversal must unwind both the author's credit and any tribute accruals on the reversed read.
 - **Self-crediting is not uplift.** A sybil tribute routes the author's own money to their own alt — a circle, not extraction. The onboarding magic-link is no defence (the author controls the email they entered), but it does not need to be: it is the author's money. Noted as a limit, not plugged.
+
+## Tribute chains (recursive re-division)
+
+**Status within this ADR:** specified 2026-06-24, **not yet sequenced** (Phases 1–4 shipped dark; this is net-new scope — build order deferred to a later session). The recommended model is below; the one rejected alternative (flattening) and its reason are recorded so it isn't re-proposed.
+
+### The shape
+
+Today an offered inspirer has two replies: **accept** (the share is theirs) or **decline** (it returns to the author). This adds a third: **accept, then pass a share of your own share to someone further upstream.** The piece inspired you; someone (or something) inspired *you*; you route part of what you receive to them. They are offered in turn, with the same three replies — so the pattern repeats indefinitely, a **chain** of upstream pass-throughs.
+
+Direction: money flows *upstream*, from the piece's earnings toward its sources. The article author is the root payer (the piece's writer-side net); each inspirer is a node that takes a share of its inflow and may redirect part of it one step further up.
+
+### Model — recursion, not flattening
+
+A tribute gains an optional **parent**: `tributes.parent_tribute_id` (NULL = a *root* tribute, today's behaviour, carving the piece's writer-side net; non-NULL = the source-of-funds is the **parent tribute's share**, not the piece net). `percentage_bps` keeps one meaning at every level: *the share of the parent's inflow* (the piece net being the implicit parent inflow for roots). The structure is a **tree** rooted at the piece; each root-to-leaf path is one chain. A child's `author_account_id` is its **parent's beneficiary** (the offerer) — the party whose share is redirected and the `tribute_payout` ledger counterparty — generalising the column from "the article author" to "whoever is paying this share out of their slice."
+
+Money is the shipped Phase-3 model applied at every level:
+
+- **Gross-freeze at settlement.** Settlement freezes one `tribute_accruals` row per (node, read) holding the node's **gross** inflow for that read = `read_net × (∏ bps along the node's path) ÷ 10000^depth`. A recursive walk (the tribute tree ⋈ the settled reads) computes the path-product in one statement, bounded by the depth cap.
+- **Carve-at-payout, uniformly.** Each node is paid its gross **minus its direct children's gross accruals** — the *exact* rule the author already follows (`author = read_net − Σ root accruals`). The author carves the **root** accruals; each inspirer carves **its own direct children**. The carve subtracts children *regardless of state*, with each child's disposition (`released → paid` to the child / `swept → returned` to this node) as the second leg — the same ordering-safe realisation Phase 3 adopted, now applied per carving party rather than only at the author. Conservation telescopes: `author + Σ(every node's retained net) == read_net`, with `node_gross = node_retained + Σ children_gross` at each node.
+
+Freezing **gross** (not net-retained) is what lets a child added *after* a read settled carve correctly without rewriting frozen rows — identical to why the author's net is computed live at payout rather than frozen. (Accrual is never retroactive: a child only carves reads settled after it was created, exactly as a root tribute doesn't claw back already-settled reads. So a node keeps the full share on reads that settled before its child existed, and shares only from then on.)
+
+**Why not flatten** (rejected). One could rewrite "C passes q of C's share to D" as two *sibling* root tributes carving the piece directly (C-direct and D-direct), since the pence coincide at the moment of the split. Rejected: the numbers flatten but the **lifecycle does not.** When D declines, the swept share must return to **C** (whose redirect created it), not the author — which requires recording that D's share came from C, i.e. the parent pointer. Flattening also destroys provenance ("who passed to whom"), forces sibling-percentage recomputation on every chain edit, and can't express "retain ≥10% *of C's share*." Since the parent pointer is mandatory for the lifecycle regardless, the honest recursive money model is the lesser cost.
+
+### Decisions (chain-specific)
+
+C1. **Only a `live` tribute may spawn children.** You accept your share *before* you may pass part of it on, so the third consent option is **"Accept & pass a share upstream"** — it consents (`proposed → live`) and opens a child-offer composer. This preserves the invariant the compliance posture leans on (C6): every held share traces up an unbroken chain of *consented* earners to the article author.
+
+C2. **A chain only subdivides an already-consented share — never more author outflow, never author re-consent.** The author consented to the root share leaving them; downstream links only partition that share among further sources. The author is economically indifferent to the chain's shape below a root, so no re-consent is sought when a chain extends. The per-parent ceiling keeps every node ≥10% of its own inflow, so a share is never fully drained past the node that accepted it.
+
+C3. **Per-parent ceiling and per-parent serialisation.** Σ children `percentage_bps` under one parent ≤ 9000 (each node retains ≥10% of its inflow). The shipped article-scoped ceiling trigger + `pg_advisory_xact_lock` generalise to *parent*-scoped (roots grouped by article, children by parent).
+
+C4. **Tree, bounded depth, no cycles.** A single `parent_tribute_id` makes the structure acyclic by construction (a child points only at a pre-existing parent stream; it cannot close a loop). Cap depth (proposed **8**) to bound the recursive settlement walk and stop sub-penny dust chains; the existing 0-pence floor-drop already terminates most depth naturally.
+
+C5. **Swept shares return up exactly one level — to the parent's beneficiary.** Decline/lapse of a child returns its held share to its **parent** (the article author for a root, via the writer payout; the parent *inspirer* for a deeper child, via the tribute payout), never straight to the article author. This is the one genuinely new money-plumbing: the swept-return vehicle, today hard-wired to `writer_payouts` (`tribute_accruals.author_return_payout_id`), must also be able to fold a returned share into an **inspirer** parent's `tribute_payouts` run.
+
+  **Decided (2026-06-24): one generic return path, not a parallel author-vs-inspirer split.** The return is modelled uniformly as *"fold the swept share into the **parent's** payout"* — the article author is simply the depth-0 case (their payout happens to be a `writer_payouts` run), not a special-cased branch. This keeps the whole mechanism feeling straightforwardly recursive end to end, matching the user-facing model (every node is the same primitive), rather than carrying an author path beside an inspirer path. *Schema reality for the build session:* a single strict FK can't reference both `writer_payouts` and `tribute_payouts`, so the one generic claim carries a small `payout_kind` discriminator (or both vehicles are reached through one lookup) — but the stance is settled: **one return path, author = root case, no second column.**
+
+C6. **The held-funds compliance position recurses unchanged — no new question.** Every held share is *some consented earner's* deferred earnings under a revocable redirect (the parent's), returned to that earner on decline/lapse — the identical structure `UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md` defends, now one level up the tree rather than always at the author. Because a child can be created only by a `live` (hence consented, hence earner) parent (C1), there is no held share whose nominal owner is not yet a confirmed earner. The memo should be re-read once with "the author" generalised to "the parent beneficiary," but it opens no new regulatory surface.
+
+### What already recurses for free
+
+Most of the system is already "an account offers a tribute" and needs no chain-specific logic: the contact pipeline (in-app + email + `/tribute/claim`), the consent/decline lifecycle and the 60/30-day window worker, comp-read grants, the `tribute_offer_received` notification (actor = the offerer, now possibly a non-author), offerer withdrawal of a still-`proposed` offer, the `tribute_payout` ledger trigger, and D1 (the whole chain rides one non-publication piece). The offerer simply generalises from "the article author" to "the article author **or** a live parent inspirer."
+
+### Where the work concentrates (feasibility)
+
+**Verdict: feasible, moderate — a clean recursive generalisation of the shipped model, not a new mechanism.** No new external surface beyond the third consent affordance and nested rendering; no new compliance question. New work clusters in three places:
+
+1. **Authoring / authorisation.** `POST /tributes` accepts an optional `parentTributeId`; the ownership check generalises from "owns the article" (root) to "owns the article **or** is the live inspirer of the parent" (child); the ceiling trigger + advisory lock go parent-scoped; the depth cap is enforced (trigger or route). The consent route gains the combined **accept-and-offer** path (consent, then open a child composer).
+2. **Money.** The recursive gross-accrual settlement walk (one `WITH RECURSIVE` over the tribute tree ⋈ settled reads); the carve becoming level-aware — the author carves **root** accruals only, each node carves its **direct children** — across the shared `per-read-net`/carve helper and the ~12 net-reading sites; and C5's swept-return-to-an-inspirer-parent vehicle. Reconcile generalises: per node `paid == node gross released − Σ children carved`, and conservation `author + Σ retained == read_net`.
+3. **Rendering.** The apparatus renders the tree (nested, "Y — who passes Z% of that to W"), honest per-node status; the third consent button.
+
+### Edge cases (chain-specific)
+
+- **Refund / chargeback unwinds the whole subtree** of accruals on the reversed read (`held|released` voided in place; an already-`paid` node goes negative, inheriting the existing writer-payout chargeback posture — now possibly for an inspirer node, which is the same case, not a new one).
+- **Same person at two nodes** is two independent streams; a node pointing its share back at itself or a confederate is a circle, not extraction — the self-crediting limit (above) recursed. Noted, not plugged.
+- **Chain visibility / privacy.** v1 keeps the chain public, like every tribute render line (provenance is the point). Whether an intermediate party may pass a share on *without* public attribution is a possible refinement — **deferred**.
+- **Depth dust.** Deep chains multiply toward sub-penny shares that floor-drop to nothing; the depth cap (C4) is the hard stop, the 0-pence floor-drop the soft one.
 
 ## Non-goals
 
