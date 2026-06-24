@@ -11,6 +11,7 @@ import {
   type ViewerDispute,
   type TributeView,
 } from '../../lib/api'
+import { ApiError } from '../../lib/api/client'
 import { useAuth } from '../../stores/auth'
 import { useCitationDraft, type CitationDraft } from '../../stores/citationDraft'
 import { clearMarkers, insertMarkerAt, MARKER_CLASS } from '../../lib/citation-anchor'
@@ -1204,7 +1205,14 @@ function DisputeComposer({
         widerExcerpt: allowWiderExcerpt && wider.trim() ? wider.trim() : undefined,
       })
       onDone()
-    } catch {
+    } catch (err) {
+      // F1: one active dispute per edge. A 409 means the viewer already has a
+      // live dispute here — idempotent, so reload to surface it (and its
+      // Withdraw affordance) rather than prompting a pointless retry.
+      if (err instanceof ApiError && err.status === 409) {
+        onDone()
+        return
+      }
       setError('Could not file dispute — try again.')
       setBusy(false)
     }

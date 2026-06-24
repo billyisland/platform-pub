@@ -15,13 +15,15 @@ Priority is **correctness risk × blast radius × effort**, FIX-PROGRAMME conven
 
 ## P0 — Live in production now (Phase 1, real money on the tab)
 
-- [ ] **F1 · Dispute uniqueness — repeated stakes + public count manipulation.**
+- [x] **F1 · Dispute uniqueness — repeated stakes + public count manipulation.** ✅ 2026-06-24
   `gateway/src/routes/upstream-edges.ts:329` (`POST /disputes`) does no "already disputed?" check and `dispute_edges` (migration 125) has no unique constraint. A third party can dispute the same edge N times (£5 self-charged each — self-harm, but each bumps the public `thirdPartyCount`); a **cited author disputes for free, unlimited** (`is_by_cited_author` ⇒ no stake), inflating the disclaimer/dispute counts the GET endpoints render.
   **Fix:** partial unique index on `(disputant_account_id, citation_edge_id)` and `(disputant_account_id, credit_edge_id)` (each `WHERE … IS NOT NULL AND withdrawn_at IS NULL AND deleted_at IS NULL`), + an idempotent insert (`ON CONFLICT DO NOTHING` → 409/return-existing). New migration (129).
+  **As built:** migration `129_dispute_uniqueness.sql` adds the two partial unique indexes (`uq_dispute_active_citation` / `uq_dispute_active_credit`). The insert is now `ON CONFLICT DO NOTHING`; `rowCount===0` skips the stake + relay enqueue inside the txn and returns **409** with the disputant's existing live dispute id (`{ error, id, staked }`). Re-disputing after a withdrawal stays allowed (partial index excludes `withdrawn_at`/`deleted_at`). Frontend `UpstreamEdges.tsx` treats the 409 idempotently (reloads to surface the existing dispute + its Withdraw, no retry prompt). `schema.sql` regenerated; all four drift checks green.
 
-- [ ] **F2 · Credit privilege ignores ATProto/ActivityPub/RSS cited parties.**
+- [x] **F2 · Credit privilege ignores ATProto/ActivityPub/RSS cited parties.** ✅ 2026-06-24
   `gateway/src/routes/upstream-edges.ts:375-380` grants the no-stake privilege only to native members and Nostr-keyed identities. Someone credited via a Bluesky DID / AP actor must pay £5 to disclaim a credit **about themselves** — contradicts the ADR ("the cited author … stakes nothing; anyone else holds a stake"). 
   **Fix:** extend the `is_by_cited_author` match to compare the disputant's linked external identities (`network_presences` / `external_identity_links`) against `credit_edges.target_protocol`/`target_external_id`. If that's too broad for now, document the limitation in the ADR rather than leave it silent.
+  **As built:** the credit-dispute branch now adds a third privilege arm — if the credit target is an external protocol, it grants `is_by_cited_author` when the disputant holds an **active, valid** `network_presences` row matching `(protocol, external_id)` exactly. Exact-match only (no fuzzy handle/DID normalisation), so it can never over-grant the free dispute; a format mismatch simply falls back to the £5 stake (the pre-existing behaviour), never an exploit. `external_identity_links` was not needed — it links external↔external author records, not account↔external identity, which is what `network_presences` already provides.
 
 ---
 

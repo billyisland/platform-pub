@@ -370,14 +370,34 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
       )
       if (rows.length === 0) return reply.status(404).send({ error: 'Credit not found' })
       const c = rows[0]
-      // Privilege (either qualifies): the disputant is the credited member, OR
-      // their pubkey matches the credited external Nostr identity.
+      // Privilege (any qualifies): the disputant is the credited member, OR
+      // their root pubkey matches the credited external Nostr identity, OR they
+      // hold an active linked presence (Bluesky DID / AP actor / RSS / email)
+      // that IS the credited external identity. The third arm is F2: without it,
+      // someone credited via a non-Nostr network had to pay £5 to disclaim a
+      // credit about themselves, contradicting the ADR ("the cited author …
+      // stakes nothing").
       const externalHex = toHexPubkey(c.target_external_id)
       isByCitedAuthor =
         (c.resolved_account_id != null && c.resolved_account_id === disputantId) ||
         ((c.target_protocol === null || c.target_protocol === 'nostr_external') &&
           externalHex != null &&
           externalHex === disputantPubkey)
+
+      if (!isByCitedAuthor && c.target_protocol != null && c.target_external_id != null) {
+        const { rows: presence } = await pool.query<{ one: number }>(
+          `SELECT 1 AS one
+             FROM network_presences
+            WHERE account_id = $1
+              AND protocol = $2
+              AND external_id = $3
+              AND lifecycle_state = 'active'
+              AND is_valid = true
+            LIMIT 1`,
+          [disputantId, c.target_protocol, c.target_external_id],
+        )
+        if (presence.length > 0) isByCitedAuthor = true
+      }
     }
 
     const disputeId = randomUUID()
@@ -405,14 +425,20 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
       }
     }
 
+    let duplicate = false
     await withTransaction(async (client) => {
       // Insert the dispute first so the stake ledger entry can reference it.
-      await client.query(
+      // F1: one active dispute per (disputant, target edge) — the partial unique
+      // indexes (migration 129) make a repeat a no-op here; rowCount===0 means
+      // this disputant already has a live dispute on the edge, so we skip the
+      // stake + enqueue entirely and surface the existing one as a 409.
+      const ins = await client.query(
         `INSERT INTO dispute_edges
            (id, citation_edge_id, credit_edge_id, disputant_account_id, disputant_pubkey,
             is_by_cited_author, nostr_event_id, counter_characterisation,
             wider_excerpt, wider_excerpt_sha256)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT DO NOTHING`,
         [
           disputeId,
           data.citationEdgeId ?? null,
@@ -426,6 +452,10 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
           widerHash,
         ],
       )
+      if (ins.rowCount === 0) {
+        duplicate = true
+        return
+      }
 
       // Third-party dispute → hold a refundable stake. The disputant may have
       // no tab yet (drive-by account), so UPSERT the tab; balance grows (debt).
@@ -461,6 +491,25 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
         })
       }
     })
+
+    if (duplicate) {
+      // Return the disputant's existing live dispute on this edge so the client
+      // can offer Withdraw rather than re-file.
+      const targetCol = data.citationEdgeId ? 'citation_edge_id' : 'credit_edge_id'
+      const targetId = data.citationEdgeId ?? data.creditEdgeId
+      const { rows: existing } = await pool.query<{ id: string; is_by_cited_author: boolean }>(
+        `SELECT id, is_by_cited_author
+           FROM dispute_edges
+          WHERE disputant_account_id = $1 AND ${targetCol} = $2
+            AND withdrawn_at IS NULL AND deleted_at IS NULL
+          LIMIT 1`,
+        [disputantId, targetId],
+      )
+      const row = existing[0]
+      return reply
+        .status(409)
+        .send({ error: 'Already disputed', id: row?.id ?? null, staked: row ? !row.is_by_cited_author : false })
+    }
 
     logger.info(
       { disputeId, disputantId, isByCitedAuthor, staked: !isByCitedAuthor },

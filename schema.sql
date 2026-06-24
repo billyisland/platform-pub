@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 3wrVhGbnzoqsf5DXxifSU6cMPoFSEvQPviihiewHHSiAdL3s6QqFmYLaShfAcS1
+\restrict 6O2QuABmpVACFl4eWZMdrdKESOkGqLWmC6TdZXhYjxtzIPWDLeBbhbPZHthmJaR
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -5489,6 +5489,20 @@ CREATE UNIQUE INDEX uniq_outbound_posts_dedup ON public.outbound_posts USING btr
 
 
 --
+-- Name: uq_dispute_active_citation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_dispute_active_citation ON public.dispute_edges USING btree (disputant_account_id, citation_edge_id) WHERE ((citation_edge_id IS NOT NULL) AND (withdrawn_at IS NULL) AND (deleted_at IS NULL));
+
+
+--
+-- Name: uq_dispute_active_credit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_dispute_active_credit ON public.dispute_edges USING btree (disputant_account_id, credit_edge_id) WHERE ((credit_edge_id IS NOT NULL) AND (withdrawn_at IS NULL) AND (deleted_at IS NULL));
+
+
+--
 -- Name: uq_idlink_global; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7306,7 +7320,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 3wrVhGbnzoqsf5DXxifSU6cMPoFSEvQPviihiewHHSiAdL3s6QqFmYLaShfAcS1
+\unrestrict 6O2QuABmpVACFl4eWZMdrdKESOkGqLWmC6TdZXhYjxtzIPWDLeBbhbPZHthmJaR
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7437,4 +7451,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('125_upstream_edges.sql'),
     ('126_tributes.sql'),
     ('127_tribute_money.sql'),
-    ('128_tribute_chains.sql');
+    ('128_tribute_chains.sql'),
+    ('129_dispute_uniqueness.sql');
