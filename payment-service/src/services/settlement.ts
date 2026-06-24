@@ -6,6 +6,8 @@ import {
   loadConfig,
 } from "@platform-pub/shared/db/client.js";
 import { recordLedger } from "@platform-pub/shared/lib/ledger.js";
+import { tributesEnabled } from "@platform-pub/shared/lib/env.js";
+import { readNetSql } from "@platform-pub/shared/lib/per-read-net.js";
 import logger from "../lib/logger.js";
 
 // =============================================================================
@@ -454,6 +456,41 @@ class SettlementService {
            AND created_at <= (SELECT settled_at FROM tab_settlements WHERE id = $2)`,
         [settlement.tab_id, settlement.id],
       );
+
+      // Tribute apportionment (Upstream Edges Phase 3, dark behind
+      // TRIBUTES_ENABLED). For each read just advanced to platform_settled on a
+      // tributed (proposed|live) article, freeze one tribute_accruals row per
+      // tribute: the inspirer's share of THIS read's writer-side net, computed
+      // with the fee bps of the moment and never recomputed. The author's carve
+      // at payout subtracts these; conservation is author-share = read_net −
+      // Σ accruals (no clamp; the author keeps the floor dust). A live tribute
+      // (already consented) accrues straight to 'released' — there's no held→
+      // released flip coming for reads that settle AFTER consent.
+      //
+      // ON CONFLICT DO NOTHING makes this idempotent against a duplicate webhook
+      // (the (tribute_id, read_event_id) unique); confirmSettlement is already
+      // guarded by the stripe_charge_id claim above, so this is belt-and-braces.
+      // Accruals live OUTSIDE ledger_entries until they reach a real account
+      // (build-plan guard #7), so this writes no ledger row.
+      if (tributesEnabled()) {
+        const config = await loadConfig();
+        await client.query(
+          `INSERT INTO tribute_accruals (tribute_id, read_event_id, amount_pence, state)
+           SELECT t.id, re.id,
+                  FLOOR(${readNetSql("re.amount_pence", "$2")} * t.percentage_bps / 10000),
+                  CASE WHEN t.status = 'live' THEN 'released' ELSE 'held' END
+           FROM read_events re
+           JOIN tributes t
+             ON t.article_id = re.article_id
+            AND t.status IN ('proposed', 'live')
+            AND t.deleted_at IS NULL
+           WHERE re.tab_settlement_id = $1
+             AND re.state = 'platform_settled'
+             AND FLOOR(${readNetSql("re.amount_pence", "$2")} * t.percentage_bps / 10000) > 0
+           ON CONFLICT (tribute_id, read_event_id) DO NOTHING`,
+          [settlement.id, config.platformFeeBps],
+        );
+      }
 
       logger.info(
         {

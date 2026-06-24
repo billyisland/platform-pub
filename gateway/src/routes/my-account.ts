@@ -164,7 +164,14 @@ export async function myAccountRoutes(app: FastifyInstance) {
               'credit' AS type,
               'article_earning' AS category,
               COALESCE(reader.display_name, reader.username, 'Reader') || ' read ' || art.title AS description,
-              (re.amount_pence - FLOOR(re.amount_pence * $2 / 10000))::int AS amount_pence,
+              -- Tribute carve (Upstream Edges Phase 3): a tributed read's earning
+              -- credit is net of the inspirer-bound (live: held|released|paid)
+              -- shares; swept/returned shares stay the author's. No-op when no
+              -- accruals exist (feature dark).
+              ((re.amount_pence - FLOOR(re.amount_pence * $2 / 10000))
+                - COALESCE((SELECT SUM(ta.amount_pence) FROM tribute_accruals ta
+                            WHERE ta.read_event_id = re.id
+                              AND ta.state IN ('held', 'released', 'paid')), 0))::int AS amount_pence,
               '/article/' || art.nostr_d_tag AS link
             FROM read_events re
             JOIN articles art ON art.id = re.article_id
@@ -288,7 +295,12 @@ export async function myAccountRoutes(app: FastifyInstance) {
 
             UNION ALL
 
-            SELECT 'credit', (re.amount_pence - FLOOR(re.amount_pence * $3 / 10000))::int, re.read_at
+            SELECT 'credit',
+              ((re.amount_pence - FLOOR(re.amount_pence * $3 / 10000))
+                - COALESCE((SELECT SUM(ta.amount_pence) FROM tribute_accruals ta
+                            WHERE ta.read_event_id = re.id
+                              AND ta.state IN ('held', 'released', 'paid')), 0))::int,
+              re.read_at
             FROM read_events re
             WHERE re.writer_id = $1 AND re.reader_id != $1 AND re.amount_pence > 0
               AND re.state IN ('platform_settled', 'writer_paid')

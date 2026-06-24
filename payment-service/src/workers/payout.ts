@@ -43,6 +43,12 @@ export function startPayoutWorker(): void {
 
         const pubResult = await payoutService.runPublicationPayoutCycle();
         logger.info(pubResult, "Publication payout cycle complete");
+
+        // Inspirer payouts (Upstream Edges Phase 3) run after the author/pub
+        // cycles, since runPayoutCycle already handled the author's carve and
+        // swept-return. No-op unless TRIBUTES_ENABLED.
+        const tributeResult = await payoutService.runTributePayoutCycle();
+        logger.info(tributeResult, "Tribute payout cycle complete");
       } catch (err) {
         logger.error({ err }, "Payout cycle failed");
       } finally {

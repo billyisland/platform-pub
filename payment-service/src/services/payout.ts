@@ -2,6 +2,8 @@ import Stripe from 'stripe'
 import type { WriterEarnings, ArticleEarnings } from '../types/index.js'
 import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
 import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
+import { tributesEnabled } from '@platform-pub/shared/lib/env.js'
+import { readNetSql } from '@platform-pub/shared/lib/per-read-net.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -141,28 +143,41 @@ class PayoutService {
       paid_out_pence: string
       read_count: string
     }>(
+      // Tribute carve (Upstream Edges Phase 3): a tributed read's writer-side net
+      // is reduced by the inspirer-bound share. Display subtracts the LIVE
+      // accruals (held|released|paid) — those are redirected to the inspirer (or
+      // reserved pending consent); swept/returned shares stay the author's, so
+      // they are NOT subtracted. This keeps the dashboard from over-reporting a
+      // tributed author's earnings (the read still has writer_id = author). The
+      // LEFT JOIN is a no-op when no accruals exist (feature dark).
       `SELECT
          COALESCE(SUM(
            CASE
-             WHEN r.state = 'writer_paid' THEN r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)
-             WHEN r.state = 'platform_settled' THEN r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)
+             WHEN r.state IN ('platform_settled', 'writer_paid')
+               THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)
              ELSE 0
            END
          ), 0) AS earnings_total_pence,
          COALESCE(SUM(
            CASE WHEN r.state = 'platform_settled'
-             THEN r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)
+             THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)
              ELSE 0
            END
          ), 0) AS pending_transfer_pence,
          COALESCE(SUM(
            CASE WHEN r.state = 'writer_paid'
-             THEN r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)
+             THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)
              ELSE 0
            END
          ), 0) AS paid_out_pence,
          COUNT(*) AS read_count
        FROM read_events r
+       LEFT JOIN (
+         SELECT read_event_id, SUM(amount_pence) AS live_pence
+         FROM tribute_accruals
+         WHERE state IN ('held', 'released', 'paid')
+         GROUP BY read_event_id
+       ) acc ON acc.read_event_id = r.id
        WHERE r.writer_id = $1
          AND r.state IN ('platform_settled', 'writer_paid')`,
       [writerId, config.platformFeeBps]
@@ -208,13 +223,19 @@ class PayoutService {
          a.nostr_d_tag,
          a.published_at,
          COUNT(r.id) AS read_count,
-         COALESCE(SUM(r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)), 0) AS net_earnings_pence,
+         COALESCE(SUM(${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)), 0) AS net_earnings_pence,
          COALESCE(SUM(CASE WHEN r.state = 'platform_settled'
-           THEN r.amount_pence - FLOOR(r.amount_pence * $2 / 10000) ELSE 0 END), 0) AS pending_pence,
+           THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0) ELSE 0 END), 0) AS pending_pence,
          COALESCE(SUM(CASE WHEN r.state = 'writer_paid'
-           THEN r.amount_pence - FLOOR(r.amount_pence * $2 / 10000) ELSE 0 END), 0) AS paid_pence
+           THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0) ELSE 0 END), 0) AS paid_pence
        FROM read_events r
        JOIN articles a ON a.id = r.article_id
+       LEFT JOIN (
+         SELECT read_event_id, SUM(amount_pence) AS live_pence
+         FROM tribute_accruals
+         WHERE state IN ('held', 'released', 'paid')
+         GROUP BY read_event_id
+       ) acc ON acc.read_event_id = r.id
        WHERE r.writer_id = $1
          AND r.state IN ('platform_settled', 'writer_paid')
        GROUP BY a.id, a.title, a.nostr_d_tag, a.published_at
@@ -265,33 +286,71 @@ class PayoutService {
     // penny; summing-then-flooring would instead collapse N of those pennies
     // into a single non-zero fee. The per-row form is very slightly
     // writer-favourable (up to N-1 pence across N rows) and intentional.
+    // Tribute carve/return (Upstream Edges Phase 3) fold into the writer's net:
+    //   net = Σ per-read net (reads + upvotes)
+    //         − Σ ALL accruals on the reads being paid this cycle  (carve)
+    //         + Σ swept accruals owed back to this author          (return)
+    // The carve subtracts EVERY accrual on a settled-unpaid read (state-agnostic
+    // — see migration 127); the swept shares the author gets back are added
+    // separately and claimed exactly once at reserve. The carve/return CTEs are
+    // no-ops when no accruals exist (feature dark). `candidates` is base ∪ ret so
+    // a writer whose only balance is a swept return (no fresh reads) is eligible.
     const { rows: eligibleWriters } = await pool.query<{
       writer_id: string
       gross_pence: string
       net_pence: string
       stripe_connect_id: string
     }>(
-      `SELECT
-         earnings.writer_id,
-         SUM(earnings.amount_pence) AS gross_pence,
-         SUM(earnings.amount_pence - FLOOR(earnings.amount_pence * $2 / 10000)) AS net_pence,
-         a.stripe_connect_id
-       FROM (
-         SELECT writer_id, amount_pence
-         FROM read_events
-         WHERE state = 'platform_settled' AND writer_payout_id IS NULL
-         UNION ALL
-         SELECT recipient_id AS writer_id, amount_pence
-         FROM vote_charges
-         WHERE state = 'platform_settled'
-           AND recipient_id IS NOT NULL
-           AND writer_payout_id IS NULL
-       ) AS earnings
-       JOIN accounts a ON a.id = earnings.writer_id
+      `WITH base AS (
+         SELECT earnings.writer_id,
+                SUM(earnings.amount_pence) AS gross_pence,
+                SUM(${readNetSql('earnings.amount_pence', '$2')}) AS net_pence
+         FROM (
+           SELECT writer_id, amount_pence
+           FROM read_events
+           WHERE state = 'platform_settled' AND writer_payout_id IS NULL
+           UNION ALL
+           SELECT recipient_id AS writer_id, amount_pence
+           FROM vote_charges
+           WHERE state = 'platform_settled'
+             AND recipient_id IS NOT NULL
+             AND writer_payout_id IS NULL
+         ) AS earnings
+         GROUP BY earnings.writer_id
+       ),
+       carve AS (
+         SELECT re.writer_id, SUM(ta.amount_pence) AS carve_pence
+         FROM tribute_accruals ta
+         JOIN read_events re ON re.id = ta.read_event_id
+         WHERE re.state = 'platform_settled' AND re.writer_payout_id IS NULL
+         GROUP BY re.writer_id
+       ),
+       ret AS (
+         SELECT t.author_account_id AS writer_id, SUM(ta.amount_pence) AS return_pence
+         FROM tribute_accruals ta
+         JOIN tributes t ON t.id = ta.tribute_id
+         WHERE ta.state = 'swept' AND ta.author_return_payout_id IS NULL
+         GROUP BY t.author_account_id
+       ),
+       candidates AS (
+         SELECT writer_id FROM base
+         UNION
+         SELECT writer_id FROM ret
+       )
+       SELECT c.writer_id,
+              COALESCE(base.gross_pence, 0) AS gross_pence,
+              (COALESCE(base.net_pence, 0) - COALESCE(carve.carve_pence, 0)
+                 + COALESCE(ret.return_pence, 0)) AS net_pence,
+              a.stripe_connect_id
+       FROM candidates c
+       JOIN accounts a ON a.id = c.writer_id
+       LEFT JOIN base  ON base.writer_id  = c.writer_id
+       LEFT JOIN carve ON carve.writer_id = c.writer_id
+       LEFT JOIN ret   ON ret.writer_id   = c.writer_id
        WHERE a.stripe_connect_kyc_complete = TRUE
          AND a.stripe_connect_id IS NOT NULL
-       GROUP BY earnings.writer_id, a.stripe_connect_id
-       HAVING SUM(earnings.amount_pence - FLOOR(earnings.amount_pence * $2 / 10000)) >= $1`,
+         AND (COALESCE(base.net_pence, 0) - COALESCE(carve.carve_pence, 0)
+                + COALESCE(ret.return_pence, 0)) >= $1`,
       [config.writerPayoutThresholdPence, config.platformFeeBps]
     )
 
@@ -374,15 +433,31 @@ class PayoutService {
       )
 
       const config = await loadConfig()
+      // Authoritative (locked) recompute of the same net the eligibility query
+      // used: base per-read/upvote net − tribute carve (ALL accruals on the
+      // settled-unpaid reads) + swept-return owed to this author. The swept
+      // accruals are CLAIMED below under author_return_payout_id; the carved
+      // accruals stay tied to their reads (their disposition is the inspirer
+      // payout or a later sweep). Tribute subqueries are no-ops when dark.
       const balanceRow = await client.query<{ net_pence: string }>(
-        `SELECT COALESCE(SUM(amount_pence - FLOOR(amount_pence * $2 / 10000)), 0) AS net_pence
-         FROM (
-           SELECT amount_pence FROM read_events
-           WHERE writer_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
-           UNION ALL
-           SELECT amount_pence FROM vote_charges
-           WHERE recipient_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
-         ) AS earnings`,
+        `SELECT (
+           (SELECT COALESCE(SUM(${readNetSql('amount_pence', '$2')}), 0)
+              FROM (
+                SELECT amount_pence FROM read_events
+                WHERE writer_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
+                UNION ALL
+                SELECT amount_pence FROM vote_charges
+                WHERE recipient_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
+              ) AS earnings)
+           - (SELECT COALESCE(SUM(ta.amount_pence), 0)
+                FROM tribute_accruals ta
+                JOIN read_events re ON re.id = ta.read_event_id
+                WHERE re.writer_id = $1 AND re.state = 'platform_settled' AND re.writer_payout_id IS NULL)
+           + (SELECT COALESCE(SUM(ta.amount_pence), 0)
+                FROM tribute_accruals ta
+                JOIN tributes t ON t.id = ta.tribute_id
+                WHERE t.author_account_id = $1 AND ta.state = 'swept' AND ta.author_return_payout_id IS NULL)
+         ) AS net_pence`,
         [writerId, config.platformFeeBps],
       )
 
@@ -427,6 +502,22 @@ class PayoutService {
          WHERE recipient_id = $2
            AND state = 'platform_settled'
            AND writer_payout_id IS NULL`,
+        [payoutId, writerId],
+      )
+
+      // Claim the swept (declined/lapsed) tribute shares owed back to this
+      // author under the payout, mirroring the read_events claim. State stays
+      // 'swept' until completeWriterPayout advances it to 'returned'; a failed
+      // transfer rolls the claim back. The lockedAmountPence above already
+      // includes their sum.
+      await client.query(
+        `UPDATE tribute_accruals ta
+            SET author_return_payout_id = $1
+           FROM tributes t
+          WHERE t.id = ta.tribute_id
+            AND t.author_account_id = $2
+            AND ta.state = 'swept'
+            AND ta.author_return_payout_id IS NULL`,
         [payoutId, writerId],
       )
 
@@ -489,6 +580,17 @@ class PayoutService {
          SET state = 'writer_paid'
          WHERE writer_payout_id = $1
            AND state = 'platform_settled'`,
+        [payoutId],
+      )
+
+      // Advance the swept tribute shares claimed by this payout to 'returned'
+      // (their value is part of the transfer + the writer_payout ledger entry
+      // below). Idempotent on resume: no rows remain in 'swept' once flipped.
+      await client.query(
+        `UPDATE tribute_accruals
+         SET state = 'returned'
+         WHERE author_return_payout_id = $1
+           AND state = 'swept'`,
         [payoutId],
       )
 
@@ -624,6 +726,17 @@ class PayoutService {
          SET state = 'platform_settled',
              writer_payout_id = NULL
          WHERE writer_payout_id = $1`,
+        [payoutId]
+      )
+
+      // Unclaim the swept tribute shares this payout carried back to the author
+      // (whether or not completeWriterPayout already advanced them to 'returned')
+      // so the next cycle returns them again. Mirrors the read rollback above.
+      await client.query(
+        `UPDATE tribute_accruals
+         SET state = 'swept',
+             author_return_payout_id = NULL
+         WHERE author_return_payout_id = $1`,
         [payoutId]
       )
 
@@ -1012,6 +1125,265 @@ class PayoutService {
         logger.error(
           { err, payoutId: row.id, publicationId: row.publication_id },
           'Failed to resume pending publication payout — will retry next cycle',
+        )
+      }
+    }
+  }
+
+  // ===========================================================================
+  // Tribute Payout Cycle (Upstream Edges Phase 3)
+  //
+  // Pays each consented inspirer the share redirected to them. Runs after the
+  // writer + publication cycles (the author's carve and swept-return are handled
+  // inside runPayoutCycle). Dark behind TRIBUTES_ENABLED.
+  //
+  // Per-tribute, mirroring the writer-payout three-phase durability:
+  //   1. reserveTributePayout (Txn 1) — insert 'pending' tribute_payouts row and
+  //      claim the tribute's released accruals under it (tribute_payout_id), so
+  //      no concurrent cycle re-counts them.
+  //   2. stripe.transfers.create, idempotencyKey=`tribute-payout-${payoutId}`
+  //      (stable — a retry after a crash lands on the same transfer).
+  //   3. completeTributePayout (Txn 2) — flip 'initiated' + store transfer id,
+  //      advance the claimed accruals released→paid, post ONE tribute_payout
+  //      ledger entry (account = inspirer, counterparty = author). No mirrored
+  //      debit — the author's reduced writer_payout already reflects the carve.
+  //
+  // A crash between 1 and 3 leaves the row 'pending'; resumePendingTributePayouts
+  // (called at cycle start) re-runs 2–3 with the same stable key.
+  // ===========================================================================
+
+  async runTributePayoutCycle(): Promise<{ processed: number; totalPaidPence: number }> {
+    if (!tributesEnabled()) return { processed: 0, totalPaidPence: 0 }
+
+    await this.resumePendingTributePayouts()
+
+    // Eligible: a live tribute whose resolved inspirer is Connect-onboarded and
+    // has released, unclaimed accruals. No payout threshold — the share is the
+    // inspirer's the moment it releases (the author's read already cleared the
+    // £20 floor to settle), so we pay whatever has released.
+    const { rows: eligible } = await pool.query<{
+      tribute_id: string
+      inspirer_account_id: string
+      author_account_id: string
+      stripe_connect_id: string
+      amount_pence: string
+    }>(
+      `SELECT t.id AS tribute_id,
+              t.resolved_account_id AS inspirer_account_id,
+              t.author_account_id,
+              insp.stripe_connect_id,
+              SUM(ta.amount_pence) AS amount_pence
+       FROM tribute_accruals ta
+       JOIN tributes t ON t.id = ta.tribute_id
+       JOIN accounts insp ON insp.id = t.resolved_account_id
+       WHERE ta.state = 'released'
+         AND ta.tribute_payout_id IS NULL
+         AND t.status = 'live'
+         AND insp.stripe_connect_kyc_complete = TRUE
+         AND insp.stripe_connect_id IS NOT NULL
+       GROUP BY t.id, t.resolved_account_id, t.author_account_id, insp.stripe_connect_id
+       HAVING SUM(ta.amount_pence) > 0`,
+    )
+
+    let processed = 0
+    let totalPaidPence = 0
+
+    for (const row of eligible) {
+      try {
+        const paid = await this.initiateTributePayout(
+          row.tribute_id,
+          row.inspirer_account_id,
+          row.author_account_id,
+          row.stripe_connect_id,
+        )
+        if (paid !== null) {
+          processed++
+          totalPaidPence += paid
+        }
+      } catch (err) {
+        logger.error({ err, tributeId: row.tribute_id }, 'Tribute payout failed — continuing cycle')
+      }
+    }
+
+    logger.info({ processed, totalPaidPence }, 'Tribute payout cycle complete')
+    return { processed, totalPaidPence }
+  }
+
+  private async initiateTributePayout(
+    tributeId: string,
+    inspirerId: string,
+    authorId: string,
+    stripeConnectId: string,
+  ): Promise<number | null> {
+    const reserved = await this.reserveTributePayout(tributeId, inspirerId, authorId)
+    if (!reserved) return null
+
+    await this.completeTributePayout(
+      reserved.payoutId,
+      tributeId,
+      inspirerId,
+      authorId,
+      stripeConnectId,
+      reserved.amountPence,
+    )
+    return reserved.amountPence
+  }
+
+  // Txn 1: lock the tribute, sum its released unclaimed accruals, insert a
+  // 'pending' tribute_payouts row, and claim those accruals under it. Commits
+  // before any Stripe call.
+  private async reserveTributePayout(
+    tributeId: string,
+    inspirerId: string,
+    authorId: string,
+  ): Promise<{ payoutId: string; amountPence: number } | null> {
+    return withTransaction(async (client) => {
+      await client.query('SELECT id FROM tributes WHERE id = $1 FOR UPDATE', [tributeId])
+
+      const { rows: [bal] } = await client.query<{ amount_pence: string }>(
+        `SELECT COALESCE(SUM(amount_pence), 0) AS amount_pence
+         FROM tribute_accruals
+         WHERE tribute_id = $1 AND state = 'released' AND tribute_payout_id IS NULL`,
+        [tributeId],
+      )
+      const amountPence = parseInt(bal.amount_pence, 10)
+      if (amountPence <= 0) {
+        logger.warn({ tributeId }, 'Tribute has no unclaimed released accruals — skipping (likely claimed by a pending payout)')
+        return null
+      }
+
+      const { rows: [payoutRow] } = await client.query<{ id: string }>(
+        `INSERT INTO tribute_payouts
+           (tribute_id, inspirer_account_id, author_account_id, amount_pence, status)
+         VALUES ($1, $2, $3, $4, 'pending')
+         RETURNING id`,
+        [tributeId, inspirerId, authorId, amountPence],
+      )
+      const payoutId = payoutRow.id
+
+      await client.query(
+        `UPDATE tribute_accruals
+         SET tribute_payout_id = $1
+         WHERE tribute_id = $2 AND state = 'released' AND tribute_payout_id IS NULL`,
+        [payoutId, tributeId],
+      )
+
+      logger.info({ payoutId, tributeId, amountPence }, 'Tribute payout reserved (pending Stripe transfer)')
+      return { payoutId, amountPence }
+    })
+  }
+
+  // Stripe transfer (stable key) + Txn 2: flip 'pending'→'initiated', advance the
+  // claimed accruals released→paid, post one tribute_payout ledger entry. A
+  // throw before/within leaves the row 'pending' for resume (same key dedupes).
+  private async completeTributePayout(
+    payoutId: string,
+    tributeId: string,
+    inspirerId: string,
+    authorId: string,
+    stripeConnectId: string,
+    amountPence: number,
+  ): Promise<void> {
+    const transfer = await this.stripe.transfers.create({
+      amount: amountPence,
+      currency: 'gbp',
+      destination: stripeConnectId,
+      metadata: {
+        platform: 'all.haus',
+        tribute_payout_id: payoutId,
+        tribute_id: tributeId,
+        inspirer_account_id: inspirerId,
+      },
+    }, {
+      idempotencyKey: `tribute-payout-${payoutId}`,
+    })
+
+    await withTransaction(async (client) => {
+      const flipped = await client.query(
+        `UPDATE tribute_payouts
+         SET status = 'initiated', stripe_transfer_id = $1
+         WHERE id = $2 AND status = 'pending'`,
+        [transfer.id, payoutId],
+      )
+
+      await client.query(
+        `UPDATE tribute_accruals
+         SET state = 'paid'
+         WHERE tribute_payout_id = $1 AND state = 'released'`,
+        [payoutId],
+      )
+
+      // Ledger: inspirer credit — the redirected share received. +amount,
+      // counterparty = the author whose earnings were redirected. Counted by
+      // ledger_writer_earnings (migration 127). Gated on the pending→initiated
+      // flip so resume can't post it twice.
+      if (flipped.rowCount! > 0) {
+        await recordLedger(client, {
+          accountId: inspirerId,
+          counterpartyId: authorId,
+          amountPence,
+          triggerType: 'tribute_payout',
+          refTable: 'tribute_payouts',
+          refId: payoutId,
+        })
+      }
+    })
+
+    logger.info(
+      { payoutId, tributeId, inspirerId, amountPence, stripeTransferId: transfer.id },
+      'Tribute payout initiated',
+    )
+  }
+
+  // Resume tribute_payouts stuck in 'pending' from prior runs. Safe to call
+  // repeatedly — the stable idempotency key dedupes the Stripe transfer.
+  async resumePendingTributePayouts(): Promise<void> {
+    const { rows } = await pool.query<{
+      id: string
+      tribute_id: string
+      inspirer_account_id: string
+      author_account_id: string
+      amount_pence: number
+    }>(
+      `SELECT id, tribute_id, inspirer_account_id, author_account_id, amount_pence
+       FROM tribute_payouts
+       WHERE status = 'pending'
+       ORDER BY created_at ASC`,
+    )
+
+    if (rows.length === 0) return
+
+    logger.info({ count: rows.length }, 'Resuming pending tribute payouts')
+
+    for (const row of rows) {
+      try {
+        const { rows: accRows } = await pool.query<{
+          stripe_connect_id: string | null
+          stripe_connect_kyc_complete: boolean
+        }>(
+          `SELECT stripe_connect_id, stripe_connect_kyc_complete FROM accounts WHERE id = $1`,
+          [row.inspirer_account_id],
+        )
+        const acc = accRows[0]
+        if (!acc?.stripe_connect_id || !acc.stripe_connect_kyc_complete) {
+          logger.warn(
+            { tributePayoutId: row.id },
+            'Cannot resume tribute payout — inspirer no longer onboarded; leaving pending',
+          )
+          continue
+        }
+        await this.completeTributePayout(
+          row.id,
+          row.tribute_id,
+          row.inspirer_account_id,
+          row.author_account_id,
+          acc.stripe_connect_id,
+          row.amount_pence,
+        )
+      } catch (err) {
+        logger.error(
+          { err, tributePayoutId: row.id },
+          'Failed to resume tribute payout — will retry next cycle',
         )
       }
     }

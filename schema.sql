@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict QzP6MjiXKNEgNXM0yJ3sAjS7I7jjjQai8BJMVehkQtw3Qf5Ym4t3qfn5xgzh8dM
+\restrict dfki1v5KdlbvXilS8xw5ikwjumYmDDN7FHguYAFNOgSvcZvievdShu8ChMn0iNZ
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1836,7 +1836,7 @@ CREATE VIEW public.ledger_writer_earnings AS
  SELECT account_id,
     (sum(amount_pence))::bigint AS earned_pence
    FROM public.ledger_entries
-  WHERE (trigger_type = ANY (ARRAY['writer_payout'::text, 'publication_split'::text]))
+  WHERE (trigger_type = ANY (ARRAY['writer_payout'::text, 'publication_split'::text, 'tribute_payout'::text]))
   GROUP BY account_id;
 
 
@@ -2449,7 +2449,27 @@ CREATE TABLE public.tribute_accruals (
     amount_pence bigint NOT NULL,
     state text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['held'::text, 'released'::text, 'paid'::text, 'swept'::text])))
+    tribute_payout_id uuid,
+    author_return_payout_id uuid,
+    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['held'::text, 'released'::text, 'paid'::text, 'swept'::text, 'returned'::text])))
+);
+
+
+--
+-- Name: tribute_payouts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tribute_payouts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tribute_id uuid NOT NULL,
+    inspirer_account_id uuid NOT NULL,
+    author_account_id uuid NOT NULL,
+    amount_pence bigint NOT NULL,
+    stripe_transfer_id text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    failed_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tribute_payouts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'initiated'::text, 'failed'::text])))
 );
 
 
@@ -3776,6 +3796,14 @@ ALTER TABLE ONLY public.tags
 
 ALTER TABLE ONLY public.tribute_accruals
     ADD CONSTRAINT tribute_accruals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tribute_payouts tribute_payouts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_payouts
+    ADD CONSTRAINT tribute_payouts_pkey PRIMARY KEY (id);
 
 
 --
@@ -5213,6 +5241,13 @@ CREATE INDEX idx_tags_name ON public.tags USING btree (name);
 
 
 --
+-- Name: idx_tribute_accruals_released_unclaimed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tribute_accruals_released_unclaimed ON public.tribute_accruals USING btree (tribute_id) WHERE ((state = 'released'::text) AND (tribute_payout_id IS NULL));
+
+
+--
 -- Name: idx_tribute_accruals_state; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5220,10 +5255,31 @@ CREATE INDEX idx_tribute_accruals_state ON public.tribute_accruals USING btree (
 
 
 --
+-- Name: idx_tribute_accruals_swept_unclaimed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tribute_accruals_swept_unclaimed ON public.tribute_accruals USING btree (tribute_id) WHERE ((state = 'swept'::text) AND (author_return_payout_id IS NULL));
+
+
+--
 -- Name: idx_tribute_accruals_tribute; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_tribute_accruals_tribute ON public.tribute_accruals USING btree (tribute_id);
+
+
+--
+-- Name: idx_tribute_payouts_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tribute_payouts_status ON public.tribute_payouts USING btree (status) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: idx_tribute_payouts_tribute; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tribute_payouts_tribute ON public.tribute_payouts USING btree (tribute_id);
 
 
 --
@@ -6831,6 +6887,14 @@ ALTER TABLE ONLY public.tab_settlements
 
 
 --
+-- Name: tribute_accruals tribute_accruals_author_return_payout_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_accruals
+    ADD CONSTRAINT tribute_accruals_author_return_payout_id_fkey FOREIGN KEY (author_return_payout_id) REFERENCES public.writer_payouts(id);
+
+
+--
 -- Name: tribute_accruals tribute_accruals_read_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6844,6 +6908,38 @@ ALTER TABLE ONLY public.tribute_accruals
 
 ALTER TABLE ONLY public.tribute_accruals
     ADD CONSTRAINT tribute_accruals_tribute_id_fkey FOREIGN KEY (tribute_id) REFERENCES public.tributes(id);
+
+
+--
+-- Name: tribute_accruals tribute_accruals_tribute_payout_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_accruals
+    ADD CONSTRAINT tribute_accruals_tribute_payout_id_fkey FOREIGN KEY (tribute_payout_id) REFERENCES public.tribute_payouts(id);
+
+
+--
+-- Name: tribute_payouts tribute_payouts_author_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_payouts
+    ADD CONSTRAINT tribute_payouts_author_account_id_fkey FOREIGN KEY (author_account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: tribute_payouts tribute_payouts_inspirer_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_payouts
+    ADD CONSTRAINT tribute_payouts_inspirer_account_id_fkey FOREIGN KEY (inspirer_account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: tribute_payouts tribute_payouts_tribute_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tribute_payouts
+    ADD CONSTRAINT tribute_payouts_tribute_id_fkey FOREIGN KEY (tribute_id) REFERENCES public.tributes(id);
 
 
 --
@@ -7186,7 +7282,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict QzP6MjiXKNEgNXM0yJ3sAjS7I7jjjQai8BJMVehkQtw3Qf5Ym4t3qfn5xgzh8dM
+\unrestrict dfki1v5KdlbvXilS8xw5ikwjumYmDDN7FHguYAFNOgSvcZvievdShu8ChMn0iNZ
+
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7315,4 +7412,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('123_identity_links_and_dedup_fingerprint.sql'),
     ('124_ledger_negative_balance_and_truncate_guard.sql'),
     ('125_upstream_edges.sql'),
-    ('126_tributes.sql');
+    ('126_tributes.sql'),
+    ('127_tribute_money.sql');

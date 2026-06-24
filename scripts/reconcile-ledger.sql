@@ -116,6 +116,37 @@ WHERE s.dispute_id IS NULL
    OR s.disputant_account_id <> r.account_id
    OR abs(s.stake_pence) <> abs(r.refund_pence);
 
+-- A9: tribute_payout vs tribute_payouts (Upstream Edges Phase 3). The entry
+-- credits the inspirer (account_id), counterparty = the author whose earnings
+-- were redirected, magnitude = the payout row.
+\echo '-- A9: tribute_payout vs tribute_payouts --'
+SELECT le.id AS ledger_id, le.ref_id,
+       le.amount_pence, tp.amount_pence AS source_pence,
+       le.account_id, tp.inspirer_account_id,
+       le.counterparty_id, tp.author_account_id
+FROM ledger_entries le
+JOIN tribute_payouts tp ON tp.id = le.ref_id
+WHERE le.trigger_type = 'tribute_payout'
+  AND (le.amount_pence <> tp.amount_pence
+       OR le.account_id <> tp.inspirer_account_id
+       OR le.counterparty_id IS DISTINCT FROM tp.author_account_id);
+
+-- A10: every 'paid' accrual (released share transferred to the inspirer) is
+-- backed by exactly that much tribute_payout ledger — Σ(paid accruals) ==
+-- Σ(tribute_payout). They flip 'paid' in the same txn that posts the entry.
+\echo '-- A10: Σ(paid accruals) == Σ(tribute_payout ledger) (expect ZERO rows) --'
+SELECT (SELECT COALESCE(SUM(amount_pence), 0) FROM tribute_accruals WHERE state = 'paid') AS paid_accruals_pence,
+       (SELECT COALESCE(SUM(amount_pence), 0) FROM ledger_entries WHERE trigger_type = 'tribute_payout') AS tribute_payout_pence
+WHERE (SELECT COALESCE(SUM(amount_pence), 0) FROM tribute_accruals WHERE state = 'paid')
+   <> (SELECT COALESCE(SUM(amount_pence), 0) FROM ledger_entries WHERE trigger_type = 'tribute_payout');
+
+-- A11: a held/released/swept/returned share is the author's deferred earning
+-- held OUTSIDE the ledger (build-plan guard #7) — no ledger entry ever
+-- references a tribute_accruals row; the only tribute ledger entry references
+-- tribute_payouts. Any row here is an off-ledger-invariant breach.
+\echo '-- A11: no ledger entry references tribute_accruals directly (expect ZERO) --'
+SELECT id, trigger_type, ref_table, ref_id FROM ledger_entries WHERE ref_table = 'tribute_accruals';
+
 \echo '-- A6: orphan entries — a ledger row whose source row is gone (expect ZERO) --'
 SELECT le.id AS ledger_id, le.trigger_type, le.ref_table, le.ref_id
 FROM ledger_entries le
@@ -130,7 +161,9 @@ WHERE (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
    OR (le.trigger_type = 'publication_split'
          AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
    OR (le.trigger_type IN ('dispute_stake', 'dispute_stake_refund')
-         AND NOT EXISTS (SELECT 1 FROM dispute_edges de WHERE de.id = le.ref_id));
+         AND NOT EXISTS (SELECT 1 FROM dispute_edges de WHERE de.id = le.ref_id))
+   OR (le.trigger_type = 'tribute_payout'
+         AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id));
 
 \echo
 \echo '==================================================================='
@@ -167,6 +200,12 @@ WITH live AS (
   UNION ALL
   SELECT account_id, SUM(amount_pence)
   FROM publication_payout_splits WHERE status <> 'pending' GROUP BY account_id
+  UNION ALL
+  -- Inspirer tribute payouts (Upstream Edges Phase 3): the ledger posts the
+  -- tribute_payout entry on the pending→initiated flip, so the live anchor is
+  -- the non-pending rows, keyed by the credited inspirer.
+  SELECT inspirer_account_id, SUM(amount_pence)
+  FROM tribute_payouts WHERE status <> 'pending' GROUP BY inspirer_account_id
 ), live_by_account AS (
   SELECT account_id, SUM(pence)::bigint AS earned_pence FROM live GROUP BY account_id
 )

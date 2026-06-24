@@ -53,8 +53,9 @@ cd "$ROOT"
 # The min is a floor, not an exact count — adding sites is fine, dropping one
 # below the floor fails. Counts as of Phase 1:
 #   accrual.ts   3  (recordGatePass + convert loop: reads + vote_charges)
-#   settlement.ts 1 (confirmSettlement reader credit)
-#   payout.ts    2  (writer payout + publication split)
+#   settlement.ts 1 (confirmSettlement reader credit; the tribute_accruals INSERT
+#                    writes no ledger row — accruals live outside the ledger)
+#   payout.ts    3  (writer payout + publication split + tribute payout — Phase 3)
 #   votes.ts     1  (accrued vote charge)
 #   drives.ts    1  (pledge fulfilment)
 #   subscription-convert.ts 1 (spend→subscription tab credit-back)
@@ -62,7 +63,7 @@ cd "$ROOT"
 REGISTRY=(
   "payment-service/src/services/accrual.ts::3"
   "payment-service/src/services/settlement.ts::1"
-  "payment-service/src/services/payout.ts::2"
+  "payment-service/src/services/payout.ts::3"
   "gateway/src/routes/votes.ts::1"
   "gateway/src/routes/drives.ts::1"
   "gateway/src/routes/articles/subscription-convert.ts::1"
@@ -74,7 +75,7 @@ REGISTRY=(
 # credit-back (−) move the tab and so both need a mirror entry. The original
 # regex only caught '+', which let subscription-convert.ts's '− $1' credit
 # escape the scan (the Phase-3 latent gap); '[-+]' closes that.
-MARKERS='balance_pence = balance_pence [-+]|balance_pence = GREATEST\(0, balance_pence|INSERT INTO vote_charges|INSERT INTO writer_payouts|INSERT INTO publication_payout_splits'
+MARKERS='balance_pence = balance_pence [-+]|balance_pence = GREATEST\(0, balance_pence|INSERT INTO vote_charges|INSERT INTO writer_payouts|INSERT INTO publication_payout_splits|INSERT INTO tribute_accruals|INSERT INTO tribute_payouts'
 
 failed=0
 
