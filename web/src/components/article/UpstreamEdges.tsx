@@ -137,10 +137,19 @@ export function UpstreamEdges({
   // a child composer to pass a share of this now-live share further upstream.
   const acceptAndPass = useCallback(
     async (tribute: TributeView) => {
+      // consent() is the commit point. Once it resolves the offer is ACCEPTED;
+      // a subsequent reload failure must not propagate as an accept failure —
+      // that would surface "try again" and invite a re-click that re-consents an
+      // already-live tribute. So only a genuine consent() rejection escapes to
+      // the caller's catch; a stale row is tolerable, a double-accept is not.
       await tributesApi.consent(tribute.id)
       if (!aliveRef.current) return
       setChainSeed({ parentTributeId: tribute.id, parentPercentageBps: tribute.percentageBps })
-      await load()
+      try {
+        await load()
+      } catch {
+        // Accept already landed; leave the row stale rather than rethrow.
+      }
       requestAnimationFrame(() =>
         tributeComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
       )
@@ -366,26 +375,44 @@ function renderTributeForest(
     onAcceptAndPass: (t: TributeView) => Promise<void>
   },
 ): ReactNode[] {
+  const ids = new Set(tributes.map((t) => t.id))
   const childrenOf = new Map<string | null, TributeView[]>()
   for (const t of tributes) {
-    const key = t.parentTributeId
+    // Re-root an orphan (parent absent from the payload) under null so its share
+    // still renders — money must never silently vanish from the apparatus.
+    const key = t.parentTributeId && ids.has(t.parentTributeId) ? t.parentTributeId : null
     const list = childrenOf.get(key)
     if (list) list.push(t)
     else childrenOf.set(key, [t])
   }
+  const renderRow = (t: TributeView): ReactNode => (
+    <TributeRow
+      key={t.id}
+      tribute={t}
+      viewerIsInspirer={!!ctx.userId && !!t.target.accountId && ctx.userId === t.target.accountId}
+      citationNum={t.citationEdgeId ? ctx.citationNumById.get(t.citationEdgeId) ?? null : null}
+      onChanged={ctx.onChanged}
+      onAcceptAndPass={ctx.onAcceptAndPass}
+    />
+  )
+  // Visited-set guard: the schema prevents cycles, but a money surface never
+  // recurses forever on a malformed payload (each id is rendered at most once).
+  const seen = new Set<string>()
   const walk = (parentId: string | null): ReactNode[] =>
-    (childrenOf.get(parentId) ?? []).flatMap((t) => [
-      <TributeRow
-        key={t.id}
-        tribute={t}
-        viewerIsInspirer={!!ctx.userId && !!t.target.accountId && ctx.userId === t.target.accountId}
-        citationNum={t.citationEdgeId ? ctx.citationNumById.get(t.citationEdgeId) ?? null : null}
-        onChanged={ctx.onChanged}
-        onAcceptAndPass={ctx.onAcceptAndPass}
-      />,
-      ...walk(t.id),
-    ])
-  return walk(null)
+    (childrenOf.get(parentId) ?? []).flatMap((t) => {
+      if (seen.has(t.id)) return []
+      seen.add(t.id)
+      return [renderRow(t), ...walk(t.id)]
+    })
+  const out = walk(null)
+  // Force-render any node a cycle kept off every root path (a loop with no
+  // entry point), flat, so no consented share is hidden.
+  for (const t of tributes) {
+    if (seen.has(t.id)) continue
+    seen.add(t.id)
+    out.push(renderRow(t), ...walk(t.id))
+  }
+  return out
 }
 
 function TributeRow({

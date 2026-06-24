@@ -34,7 +34,7 @@ export function BalanceHeader({ balancePence, freeAllowanceRemainingPence, freeA
               £{(freeAllowanceRemainingPence / 100).toFixed(2)} of £{(freeAllowanceTotalPence / 100).toFixed(2)}
             </p>
           </div>
-          <div className="h-1.5 bg-grey-100 w-full">
+          <div className="h-1.5 bg-grey-200 w-full">
             <div className="h-full bg-crimson transition-all" style={{ width: `${allowancePct}%` }} />
           </div>
         </div>
