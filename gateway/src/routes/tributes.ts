@@ -347,24 +347,34 @@ export async function tributeRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Invalid id' })
       }
       let result: { articleId: string; percentageBps: number } | null = null
-      await withTransaction(async (client) => {
-        const { rows } = await client.query<{ article_id: string; percentage_bps: number }>(
-          `UPDATE tributes
-              SET status = 'live', consent_at = now()
-            WHERE id = $1 AND resolved_account_id = $2
-              AND status = 'proposed' AND deleted_at IS NULL
-          RETURNING article_id, percentage_bps`,
-          [req.params.id, inspirerId],
-        )
-        if (rows.length === 0) return
-        result = { articleId: rows[0].article_id, percentageBps: rows[0].percentage_bps }
-        // Release any held suspense to the inspirer (no-op until Phase 3).
-        await client.query(
-          `UPDATE tribute_accruals SET state = 'released'
-            WHERE tribute_id = $1 AND state = 'held'`,
-          [req.params.id],
-        )
-      })
+      try {
+        await withTransaction(async (client) => {
+          const { rows } = await client.query<{ article_id: string; percentage_bps: number }>(
+            `UPDATE tributes
+                SET status = 'live', consent_at = now()
+              WHERE id = $1 AND resolved_account_id = $2
+                AND status = 'proposed' AND deleted_at IS NULL
+            RETURNING article_id, percentage_bps`,
+            [req.params.id, inspirerId],
+          )
+          if (rows.length === 0) return
+          result = { articleId: rows[0].article_id, percentageBps: rows[0].percentage_bps }
+          // Release any held suspense to the inspirer (no-op until Phase 3).
+          await client.query(
+            `UPDATE tribute_accruals SET state = 'released'
+              WHERE tribute_id = $1 AND state = 'held'`,
+            [req.params.id],
+          )
+        })
+      } catch (err) {
+        // status='live' fires the validate-write trigger (ceiling/D1/parent-live);
+        // a 23514 is a 400, not a 500 (F8). Not reachable today — insert-time
+        // enforcement keeps the txn consistent — but mapped for robustness.
+        if ((err as { code?: string }).code === '23514') {
+          return reply.status(400).send({ error: 'This offer can no longer be accepted.' })
+        }
+        throw err
+      }
       if (!result) {
         return reply.status(404).send({ error: 'Offer not found or not yours to accept' })
       }
@@ -393,26 +403,35 @@ export async function tributeRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Invalid id' })
       }
       let notFound = false
-      await withTransaction(async (client) => {
-        const { rows } = await client.query(
-          `UPDATE tributes
-              SET status = 'declined'
-            WHERE id = $1 AND resolved_account_id = $2
-              AND status = 'proposed' AND deleted_at IS NULL
-          RETURNING id`,
-          [req.params.id, inspirerId],
-        )
-        if (rows.length === 0) {
-          notFound = true
-          return
+      try {
+        await withTransaction(async (client) => {
+          const { rows } = await client.query(
+            `UPDATE tributes
+                SET status = 'declined'
+              WHERE id = $1 AND resolved_account_id = $2
+                AND status = 'proposed' AND deleted_at IS NULL
+            RETURNING id`,
+            [req.params.id, inspirerId],
+          )
+          if (rows.length === 0) {
+            notFound = true
+            return
+          }
+          // Sweep any held suspense back to the author (no-op until Phase 3).
+          await client.query(
+            `UPDATE tribute_accruals SET state = 'swept'
+              WHERE tribute_id = $1 AND state = 'held'`,
+            [req.params.id],
+          )
+        })
+      } catch (err) {
+        // status='declined' early-returns in the validate-write trigger, so a
+        // 23514 is not reachable here; mapped to a 400 for symmetry with consent (F8).
+        if ((err as { code?: string }).code === '23514') {
+          return reply.status(400).send({ error: 'This offer can no longer be declined.' })
         }
-        // Sweep any held suspense back to the author (no-op until Phase 3).
-        await client.query(
-          `UPDATE tribute_accruals SET state = 'swept'
-            WHERE tribute_id = $1 AND state = 'held'`,
-          [req.params.id],
-        )
-      })
+        throw err
+      }
       if (notFound) {
         return reply.status(404).send({ error: 'Offer not found or not yours to decline' })
       }
@@ -435,28 +454,37 @@ export async function tributeRoutes(app: FastifyInstance) {
     const tokenHash = hashToken(parsed.data.token)
 
     let result: { id: string; articleId: string; dTag: string } | null = null
-    await withTransaction(async (client) => {
-      // Claim atomically: consume the token (set NULL) and bind the account. A
-      // lapsed/declined tribute has status != 'proposed' so it won't match. The
-      // join yields the article's d-tag so the claim page can send them to read it.
-      const { rows } = await client.query<{ id: string; article_id: string; nostr_d_tag: string }>(
-        `UPDATE tributes t
-            SET resolved_account_id = $1,
-                invite_token_hash = NULL,
-                first_contact_at = COALESCE(t.first_contact_at, now())
-           FROM articles a
-          WHERE t.article_id = a.id
-            AND t.invite_token_hash = $2
-            AND t.status = 'proposed'
-            AND t.resolved_account_id IS NULL
-            AND t.deleted_at IS NULL
-        RETURNING t.id, t.article_id, a.nostr_d_tag`,
-        [accountId, tokenHash],
-      )
-      if (rows.length === 0) return
-      result = { id: rows[0].id, articleId: rows[0].article_id, dTag: rows[0].nostr_d_tag }
-      await grantCompRead(client, accountId, rows[0].article_id)
-    })
+    try {
+      await withTransaction(async (client) => {
+        // Claim atomically: consume the token (set NULL) and bind the account. A
+        // lapsed/declined tribute has status != 'proposed' so it won't match. The
+        // join yields the article's d-tag so the claim page can send them to read it.
+        const { rows } = await client.query<{ id: string; article_id: string; nostr_d_tag: string }>(
+          `UPDATE tributes t
+              SET resolved_account_id = $1,
+                  invite_token_hash = NULL,
+                  first_contact_at = COALESCE(t.first_contact_at, now())
+             FROM articles a
+            WHERE t.article_id = a.id
+              AND t.invite_token_hash = $2
+              AND t.status = 'proposed'
+              AND t.resolved_account_id IS NULL
+              AND t.deleted_at IS NULL
+          RETURNING t.id, t.article_id, a.nostr_d_tag`,
+          [accountId, tokenHash],
+        )
+        if (rows.length === 0) return
+        result = { id: rows[0].id, articleId: rows[0].article_id, dTag: rows[0].nostr_d_tag }
+        await grantCompRead(client, accountId, rows[0].article_id)
+      })
+    } catch (err) {
+      // The claim UPDATE keeps status='proposed', so it fires the validate-write
+      // trigger (ceiling/D1/parent-live). Not reachable today; mapped to 400 (F8).
+      if ((err as { code?: string }).code === '23514') {
+        return reply.status(400).send({ error: 'This invitation can no longer be claimed.' })
+      }
+      throw err
+    }
 
     if (!result) {
       return reply.status(404).send({ error: 'This invitation is invalid, already claimed, or expired.' })

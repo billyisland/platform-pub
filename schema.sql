@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict k75zdTZH7SdeH9HiTL7m0i1u5I0DeP1UUcwZ7cHg0pUEa3PBgrfj7JSHb3lVi7r
+\restrict 2mejstekXe7DpwDaQZFavOQBn27y8aVORYv7YWKeID4MtDXqUlyvqRoDEDoM5vJ
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -607,6 +607,24 @@ $$;
 
 
 --
+-- Name: dispute_edges_check_stake(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.dispute_edges_check_stake() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT NEW.is_by_cited_author AND NEW.stake_ledger_entry_id IS NULL THEN
+    RAISE EXCEPTION
+      'Third-party dispute % must hold a stake ledger entry', NEW.id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: external_items_compute_fingerprint(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -976,6 +994,22 @@ BEGIN
       'Tribute shares would exceed the ceiling under this parent (have % bps, adding % bps, ceiling % bps)',
       total, NEW.percentage_bps, ceiling
       USING ERRCODE = 'check_violation';
+  END IF;
+  -- (3) F5 / C6: a child's source-of-funds is its parent's share, so a reserving
+  -- child requires a LIVE, non-deleted parent. Route-enforced at insert; this is
+  -- the path-independent guarantee that a held child can never trace up to a
+  -- parent that never consented (or that was withdrawn).
+  IF NEW.parent_tribute_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.tributes p
+       WHERE p.id = NEW.parent_tribute_id
+         AND p.status = 'live'
+         AND p.deleted_at IS NULL
+    ) THEN
+      RAISE EXCEPTION
+        'Child tribute % requires a live parent (C6)', NEW.id
+        USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -1355,7 +1389,8 @@ CREATE TABLE public.citation_edges (
     char_end integer,
     characterisation text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    deleted_at timestamp with time zone
+    deleted_at timestamp with time zone,
+    CONSTRAINT citation_edges_source_consistency CHECK ((((source_protocol <> 'nostr_external'::public.external_protocol) OR (source_author_pubkey IS NOT NULL)) AND ((source_protocol IS NULL) OR (source_protocol = 'nostr_external'::public.external_protocol) OR ((source_author_pubkey IS NULL) AND (source_naddr IS NULL) AND (nostr_event_id IS NULL) AND (nostr_d_tag IS NULL)))))
 );
 
 
@@ -1471,7 +1506,8 @@ CREATE TABLE public.dispute_edges (
     withdrawn_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     deleted_at timestamp with time zone,
-    CONSTRAINT dispute_edges_single_target CHECK (((citation_edge_id IS NULL) <> (credit_edge_id IS NULL)))
+    CONSTRAINT dispute_edges_single_target CHECK (((citation_edge_id IS NULL) <> (credit_edge_id IS NULL))),
+    CONSTRAINT dispute_edges_wider_excerpt_consistency CHECK (((wider_excerpt IS NULL) = (wider_excerpt_sha256 IS NULL)))
 );
 
 
@@ -5753,6 +5789,13 @@ CREATE TRIGGER trg_atproto_oauth_sessions_updated_at BEFORE UPDATE ON public.atp
 
 
 --
+-- Name: dispute_edges trg_dispute_edges_check_stake; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER trg_dispute_edges_check_stake AFTER INSERT OR UPDATE ON public.dispute_edges DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.dispute_edges_check_stake();
+
+
+--
 -- Name: external_sources trg_external_sources_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7360,7 +7403,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict k75zdTZH7SdeH9HiTL7m0i1u5I0DeP1UUcwZ7cHg0pUEa3PBgrfj7JSHb3lVi7r
+\unrestrict 2mejstekXe7DpwDaQZFavOQBn27y8aVORYv7YWKeID4MtDXqUlyvqRoDEDoM5vJ
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7493,4 +7536,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('127_tribute_money.sql'),
     ('128_tribute_chains.sql'),
     ('129_dispute_uniqueness.sql'),
-    ('130_tribute_accruals_append_only.sql');
+    ('130_tribute_accruals_append_only.sql'),
+    ('131_tribute_edge_backstops.sql');
