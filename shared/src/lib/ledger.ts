@@ -64,7 +64,7 @@ export type LedgerTriggerType =
   | 'opening_balance'     // Phase-3 one-time per-account opening tab balance (backfill)
   | 'dispute_stake'       // Upstream Edges: third-party dispute stake (−amount, debits the disputant's tab)
   | 'dispute_stake_refund'// Upstream Edges: dispute stake returned on withdrawal (+amount)
-  | 'tribute_payout'      // Upstream Edges Phase 3: inspirer's redirected share paid out (+amount, counterparty = author)
+  | 'tribute_payout'      // Upstream Edges Phase 3/5: inspirer's redirected share paid out (+amount, counterparty = the party whose share was redirected — the article author for a root, the parent inspirer for a chained node)
 
 export interface LedgerEntryInput {
   /** Whose ledger this movement belongs to. */

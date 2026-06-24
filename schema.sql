@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict dfki1v5KdlbvXilS8xw5ikwjumYmDDN7FHguYAFNOgSvcZvievdShu8ChMn0iNZ
+\restrict 3wrVhGbnzoqsf5DXxifSU6cMPoFSEvQPviihiewHHSiAdL3s6QqFmYLaShfAcS1
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -913,7 +913,7 @@ CREATE FUNCTION public.tributes_validate_write() RETURNS trigger
     AS $$
 DECLARE
   total int;
-  ceiling int := 9000;  -- author keeps >= 10%
+  ceiling int := 9000;  -- each node keeps >= 10% of its inflow
 BEGIN
   -- A row that no longer reserves a share imposes neither constraint.
   IF NEW.deleted_at IS NOT NULL OR NEW.status IN ('declined', 'lapsed') THEN
@@ -927,17 +927,28 @@ BEGIN
     RAISE EXCEPTION 'Article % is in a publication; it cannot carry a tribute (D1)',
       NEW.article_id USING ERRCODE = 'check_violation';
   END IF;
-  -- (2) Share ceiling.
-  SELECT COALESCE(SUM(percentage_bps), 0) INTO total
-    FROM public.tributes
-   WHERE article_id = NEW.article_id
-     AND id <> NEW.id
-     AND deleted_at IS NULL
-     AND status IN ('proposed', 'live');
+  -- (2) Parent-scoped share ceiling. Roots compete among the article's roots;
+  -- children compete among their siblings under the same parent.
+  IF NEW.parent_tribute_id IS NULL THEN
+    SELECT COALESCE(SUM(percentage_bps), 0) INTO total
+      FROM public.tributes
+     WHERE article_id = NEW.article_id
+       AND parent_tribute_id IS NULL
+       AND id <> NEW.id
+       AND deleted_at IS NULL
+       AND status IN ('proposed', 'live');
+  ELSE
+    SELECT COALESCE(SUM(percentage_bps), 0) INTO total
+      FROM public.tributes
+     WHERE parent_tribute_id = NEW.parent_tribute_id
+       AND id <> NEW.id
+       AND deleted_at IS NULL
+       AND status IN ('proposed', 'live');
+  END IF;
   IF total + NEW.percentage_bps > ceiling THEN
     RAISE EXCEPTION
-      'Tribute shares on article % would exceed the ceiling (have % bps, adding % bps, ceiling % bps)',
-      NEW.article_id, total, NEW.percentage_bps, ceiling
+      'Tribute shares would exceed the ceiling under this parent (have % bps, adding % bps, ceiling % bps)',
+      total, NEW.percentage_bps, ceiling
       USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
@@ -2450,8 +2461,11 @@ CREATE TABLE public.tribute_accruals (
     state text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     tribute_payout_id uuid,
-    author_return_payout_id uuid,
-    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['held'::text, 'released'::text, 'paid'::text, 'swept'::text, 'returned'::text])))
+    swept_return_payout_id uuid,
+    swept_return_kind text,
+    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['held'::text, 'released'::text, 'paid'::text, 'swept'::text, 'returned'::text]))),
+    CONSTRAINT tribute_accruals_swept_return_consistency CHECK (((swept_return_payout_id IS NULL) = (swept_return_kind IS NULL))),
+    CONSTRAINT tribute_accruals_swept_return_kind_check CHECK ((swept_return_kind = ANY (ARRAY['writer'::text, 'tribute'::text])))
 );
 
 
@@ -2496,6 +2510,9 @@ CREATE TABLE public.tributes (
     citation_edge_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     deleted_at timestamp with time zone,
+    parent_tribute_id uuid,
+    depth integer DEFAULT 0 NOT NULL,
+    CONSTRAINT tributes_depth_check CHECK (((depth >= 0) AND (depth <= 8))),
     CONSTRAINT tributes_percentage_bps_check CHECK (((percentage_bps >= 1) AND (percentage_bps <= 10000))),
     CONSTRAINT tributes_status_check CHECK ((status = ANY (ARRAY['proposed'::text, 'live'::text, 'declined'::text, 'lapsed'::text]))),
     CONSTRAINT tributes_target_consistency CHECK ((((target_protocol IS NULL) AND ((resolved_account_id IS NOT NULL) OR (target_display_name IS NOT NULL))) OR ((target_protocol IS NOT NULL) AND (target_external_id IS NOT NULL))))
@@ -5258,7 +5275,7 @@ CREATE INDEX idx_tribute_accruals_state ON public.tribute_accruals USING btree (
 -- Name: idx_tribute_accruals_swept_unclaimed; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_tribute_accruals_swept_unclaimed ON public.tribute_accruals USING btree (tribute_id) WHERE ((state = 'swept'::text) AND (author_return_payout_id IS NULL));
+CREATE INDEX idx_tribute_accruals_swept_unclaimed ON public.tribute_accruals USING btree (tribute_id) WHERE ((state = 'swept'::text) AND (swept_return_payout_id IS NULL));
 
 
 --
@@ -5287,6 +5304,13 @@ CREATE INDEX idx_tribute_payouts_tribute ON public.tribute_payouts USING btree (
 --
 
 CREATE INDEX idx_tributes_article ON public.tributes USING btree (article_id);
+
+
+--
+-- Name: idx_tributes_parent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tributes_parent ON public.tributes USING btree (parent_tribute_id);
 
 
 --
@@ -6887,14 +6911,6 @@ ALTER TABLE ONLY public.tab_settlements
 
 
 --
--- Name: tribute_accruals tribute_accruals_author_return_payout_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tribute_accruals
-    ADD CONSTRAINT tribute_accruals_author_return_payout_id_fkey FOREIGN KEY (author_return_payout_id) REFERENCES public.writer_payouts(id);
-
-
---
 -- Name: tribute_accruals tribute_accruals_read_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6964,6 +6980,14 @@ ALTER TABLE ONLY public.tributes
 
 ALTER TABLE ONLY public.tributes
     ADD CONSTRAINT tributes_citation_edge_id_fkey FOREIGN KEY (citation_edge_id) REFERENCES public.citation_edges(id);
+
+
+--
+-- Name: tributes tributes_parent_tribute_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tributes
+    ADD CONSTRAINT tributes_parent_tribute_id_fkey FOREIGN KEY (parent_tribute_id) REFERENCES public.tributes(id);
 
 
 --
@@ -7282,8 +7306,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict dfki1v5KdlbvXilS8xw5ikwjumYmDDN7FHguYAFNOgSvcZvievdShu8ChMn0iNZ
-
+\unrestrict 3wrVhGbnzoqsf5DXxifSU6cMPoFSEvQPviihiewHHSiAdL3s6QqFmYLaShfAcS1
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7413,4 +7436,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('124_ledger_negative_balance_and_truncate_guard.sql'),
     ('125_upstream_edges.sql'),
     ('126_tributes.sql'),
-    ('127_tribute_money.sql');
+    ('127_tribute_money.sql'),
+    ('128_tribute_chains.sql');

@@ -213,7 +213,7 @@ Window: 60 days from `first_contact_at`, one reminder at 30. No response → `la
 
 ## Tribute chains (recursive re-division)
 
-**Status within this ADR:** specified 2026-06-24, **not yet sequenced** (Phases 1–4 shipped dark; this is net-new scope — build order deferred to a later session). The recommended model is below; the one rejected alternative (flattening) and its reason are recorded so it isn't re-proposed.
+**Status within this ADR:** specified 2026-06-24, **code shipped dark 2026-06-24** as Phase 5 (migration 128 + the recursive money model + nested rendering; behind `TRIBUTES_ENABLED`, production money flag still OFF) — see `UPSTREAM-EDGES-BUILD-PLAN.md` › *Phase 5 — as built*. The recommended model is below; the one rejected alternative (flattening) and its reason are recorded so it isn't re-proposed.
 
 ### The shape
 

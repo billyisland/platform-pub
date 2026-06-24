@@ -144,13 +144,15 @@ class PayoutService {
       reserved_pence: string
       read_count: string
     }>(
-      // Tribute carve (Upstream Edges Phase 3): a tributed read's writer-side net
-      // is reduced by the inspirer-bound share. Display subtracts the LIVE
-      // accruals (held|released|paid) — those are redirected to the inspirer (or
-      // reserved pending consent); swept/returned shares stay the author's, so
-      // they are NOT subtracted. This keeps the dashboard from over-reporting a
-      // tributed author's earnings (the read still has writer_id = author). The
-      // LEFT JOIN is a no-op when no accruals exist (feature dark).
+      // Tribute carve (Upstream Edges Phase 3 + Phase-5 chains): a tributed read's
+      // writer-side net is reduced by the share carved off by this author's DIRECT
+      // children — the ROOT tributes (parent_tribute_id IS NULL). Subtracting only
+      // roots leaves the author with read_net − Σ root_gross = the author's
+      // retained net; the deeper chain shares are *within* a root's gross, carved
+      // by the inspirer nodes, not the author (telescoping). Display subtracts the
+      // LIVE root accruals (held|released|paid) — redirected to the root inspirer
+      // (or reserved pending consent); swept/returned roots stay the author's, so
+      // they are NOT subtracted. The LEFT JOIN is a no-op when no accruals exist.
       `SELECT
          COALESCE(SUM(
            CASE
@@ -171,18 +173,16 @@ class PayoutService {
              ELSE 0
            END
          ), 0) AS paid_out_pence,
-         -- Reserved-but-not-yet-redirected (held|released); 'paid' is gone to the
-         -- inspirer, 'swept'/'returned' stay the author's, so neither counts here.
-         COALESCE(SUM(COALESCE(acc.reserved_pence, 0)), 0) AS reserved_pence,
          COUNT(*) AS read_count
        FROM read_events r
        LEFT JOIN (
-         SELECT read_event_id,
-                SUM(amount_pence) AS live_pence,
-                SUM(amount_pence) FILTER (WHERE state IN ('held', 'released')) AS reserved_pence
-         FROM tribute_accruals
-         WHERE state IN ('held', 'released', 'paid')
-         GROUP BY read_event_id
+         -- ROOT accruals only (the author's direct children).
+         SELECT ta.read_event_id, SUM(ta.amount_pence) AS live_pence
+         FROM tribute_accruals ta
+         JOIN tributes t ON t.id = ta.tribute_id
+         WHERE ta.state IN ('held', 'released', 'paid')
+           AND t.parent_tribute_id IS NULL
+         GROUP BY ta.read_event_id
        ) acc ON acc.read_event_id = r.id
        WHERE r.writer_id = $1
          AND r.state IN ('platform_settled', 'writer_paid')`,
@@ -191,12 +191,29 @@ class PayoutService {
 
     const row = rows[0]
 
+    // Reserved, pending redirect (compliance condition #4) — uniform across the
+    // tree: Σ(held|released) accruals of every tribute this account is the
+    // PARTY-OF-FUNDS for (tribute.author_account_id = X). That is the article
+    // author for ROOT tributes and an inspirer node for its CHILDREN — so this
+    // single query captures both "reserved from my article earnings" (roots) and
+    // "reserved from a tribute share I received, pending onward redirect"
+    // (children). 'paid' is gone to the payee; 'swept'/'returned' come back, so
+    // neither counts. No-op (0) when dark.
+    const { rows: resRows } = await pool.query<{ reserved_pence: string }>(
+      `SELECT COALESCE(SUM(ta.amount_pence), 0) AS reserved_pence
+         FROM tribute_accruals ta
+         JOIN tributes t ON t.id = ta.tribute_id
+        WHERE t.author_account_id = $1
+          AND ta.state IN ('held', 'released')`,
+      [writerId]
+    )
+
     return {
       writerId,
       earningsTotalPence: parseInt(row.earnings_total_pence, 10),
       pendingTransferPence: parseInt(row.pending_transfer_pence, 10),
       paidOutPence: parseInt(row.paid_out_pence, 10),
-      reservedPence: parseInt(row.reserved_pence, 10),
+      reservedPence: parseInt(resRows[0].reserved_pence, 10),
       readCount: parseInt(row.read_count, 10),
     }
   }
@@ -238,10 +255,14 @@ class PayoutService {
        FROM read_events r
        JOIN articles a ON a.id = r.article_id
        LEFT JOIN (
-         SELECT read_event_id, SUM(amount_pence) AS live_pence
-         FROM tribute_accruals
-         WHERE state IN ('held', 'released', 'paid')
-         GROUP BY read_event_id
+         -- ROOT accruals only (the author carves its direct children; deeper
+         -- chain shares live within a root's gross — Phase-5 telescoping).
+         SELECT ta.read_event_id, SUM(ta.amount_pence) AS live_pence
+         FROM tribute_accruals ta
+         JOIN tributes t ON t.id = ta.tribute_id
+         WHERE ta.state IN ('held', 'released', 'paid')
+           AND t.parent_tribute_id IS NULL
+         GROUP BY ta.read_event_id
        ) acc ON acc.read_event_id = r.id
        WHERE r.writer_id = $1
          AND r.state IN ('platform_settled', 'writer_paid')
@@ -293,15 +314,19 @@ class PayoutService {
     // penny; summing-then-flooring would instead collapse N of those pennies
     // into a single non-zero fee. The per-row form is very slightly
     // writer-favourable (up to N-1 pence across N rows) and intentional.
-    // Tribute carve/return (Upstream Edges Phase 3) fold into the writer's net:
+    // Tribute carve/return (Upstream Edges Phase 3 + Phase-5 chains) fold into the
+    // writer's net:
     //   net = Σ per-read net (reads + upvotes)
-    //         − Σ ALL accruals on the reads being paid this cycle  (carve)
-    //         + Σ swept accruals owed back to this author          (return)
-    // The carve subtracts EVERY accrual on a settled-unpaid read (state-agnostic
-    // — see migration 127); the swept shares the author gets back are added
-    // separately and claimed exactly once at reserve. The carve/return CTEs are
-    // no-ops when no accruals exist (feature dark). `candidates` is base ∪ ret so
-    // a writer whose only balance is a swept return (no fresh reads) is eligible.
+    //         − Σ ROOT accruals on the reads being paid this cycle  (carve)
+    //         + Σ swept ROOT accruals owed back to this author       (return)
+    // The author is the depth-0 carving party: it carves its DIRECT children —
+    // the ROOT tributes (parent_tribute_id IS NULL), state-agnostic (each root's
+    // disposition is the second leg: released→paid to the root inspirer /
+    // swept→returned here). Deeper chain shares are carved by the inspirer nodes
+    // (runTributePayoutCycle), not the author. The swept ROOT shares returned to
+    // this author are claimed exactly once via swept_return_payout_id (kind
+    // 'writer'). CTEs are no-ops when dark. `candidates` is base ∪ ret so a writer
+    // whose only balance is a swept return (no fresh reads) is eligible.
     const { rows: eligibleWriters } = await pool.query<{
       writer_id: string
       gross_pence: string
@@ -329,14 +354,17 @@ class PayoutService {
          SELECT re.writer_id, SUM(ta.amount_pence) AS carve_pence
          FROM tribute_accruals ta
          JOIN read_events re ON re.id = ta.read_event_id
+         JOIN tributes t ON t.id = ta.tribute_id
          WHERE re.state = 'platform_settled' AND re.writer_payout_id IS NULL
+           AND t.parent_tribute_id IS NULL
          GROUP BY re.writer_id
        ),
        ret AS (
          SELECT t.author_account_id AS writer_id, SUM(ta.amount_pence) AS return_pence
          FROM tribute_accruals ta
          JOIN tributes t ON t.id = ta.tribute_id
-         WHERE ta.state = 'swept' AND ta.author_return_payout_id IS NULL
+         WHERE ta.state = 'swept' AND ta.swept_return_payout_id IS NULL
+           AND t.parent_tribute_id IS NULL
          GROUP BY t.author_account_id
        ),
        candidates AS (
@@ -441,11 +469,12 @@ class PayoutService {
 
       const config = await loadConfig()
       // Authoritative (locked) recompute of the same net the eligibility query
-      // used: base per-read/upvote net − tribute carve (ALL accruals on the
-      // settled-unpaid reads) + swept-return owed to this author. The swept
-      // accruals are CLAIMED below under author_return_payout_id; the carved
-      // accruals stay tied to their reads (their disposition is the inspirer
-      // payout or a later sweep). Tribute subqueries are no-ops when dark.
+      // used: base per-read/upvote net − ROOT tribute carve (the author's direct
+      // children, state-agnostic, on the settled-unpaid reads) + swept ROOT
+      // returns owed to this author. The swept accruals are CLAIMED below under
+      // swept_return_payout_id (kind 'writer'); the carved accruals stay tied to
+      // their reads (their disposition is the root inspirer's payout or a later
+      // sweep). Tribute subqueries are no-ops when dark.
       const balanceRow = await client.query<{ net_pence: string }>(
         `SELECT (
            (SELECT COALESCE(SUM(${readNetSql('amount_pence', '$2')}), 0)
@@ -459,11 +488,14 @@ class PayoutService {
            - (SELECT COALESCE(SUM(ta.amount_pence), 0)
                 FROM tribute_accruals ta
                 JOIN read_events re ON re.id = ta.read_event_id
-                WHERE re.writer_id = $1 AND re.state = 'platform_settled' AND re.writer_payout_id IS NULL)
+                JOIN tributes t ON t.id = ta.tribute_id
+                WHERE re.writer_id = $1 AND re.state = 'platform_settled' AND re.writer_payout_id IS NULL
+                  AND t.parent_tribute_id IS NULL)
            + (SELECT COALESCE(SUM(ta.amount_pence), 0)
                 FROM tribute_accruals ta
                 JOIN tributes t ON t.id = ta.tribute_id
-                WHERE t.author_account_id = $1 AND ta.state = 'swept' AND ta.author_return_payout_id IS NULL)
+                WHERE t.author_account_id = $1 AND ta.state = 'swept' AND ta.swept_return_payout_id IS NULL
+                  AND t.parent_tribute_id IS NULL)
          ) AS net_pence`,
         [writerId, config.platformFeeBps],
       )
@@ -512,19 +544,21 @@ class PayoutService {
         [payoutId, writerId],
       )
 
-      // Claim the swept (declined/lapsed) tribute shares owed back to this
-      // author under the payout, mirroring the read_events claim. State stays
-      // 'swept' until completeWriterPayout advances it to 'returned'; a failed
-      // transfer rolls the claim back. The lockedAmountPence above already
-      // includes their sum.
+      // Claim the swept (declined/lapsed) ROOT tribute shares owed back to this
+      // author under the payout via the generic swept-return vehicle (kind
+      // 'writer' — the author is the depth-0 parent; deeper nodes use kind
+      // 'tribute'). State stays 'swept' until completeWriterPayout advances it to
+      // 'returned'; a failed transfer rolls the claim back. The lockedAmountPence
+      // above already includes their sum.
       await client.query(
         `UPDATE tribute_accruals ta
-            SET author_return_payout_id = $1
+            SET swept_return_payout_id = $1, swept_return_kind = 'writer'
            FROM tributes t
           WHERE t.id = ta.tribute_id
             AND t.author_account_id = $2
+            AND t.parent_tribute_id IS NULL
             AND ta.state = 'swept'
-            AND ta.author_return_payout_id IS NULL`,
+            AND ta.swept_return_payout_id IS NULL`,
         [payoutId, writerId],
       )
 
@@ -590,13 +624,14 @@ class PayoutService {
         [payoutId],
       )
 
-      // Advance the swept tribute shares claimed by this payout to 'returned'
+      // Advance the swept ROOT tribute shares claimed by this payout to 'returned'
       // (their value is part of the transfer + the writer_payout ledger entry
       // below). Idempotent on resume: no rows remain in 'swept' once flipped.
       await client.query(
         `UPDATE tribute_accruals
          SET state = 'returned'
-         WHERE author_return_payout_id = $1
+         WHERE swept_return_payout_id = $1
+           AND swept_return_kind = 'writer'
            AND state = 'swept'`,
         [payoutId],
       )
@@ -739,11 +774,14 @@ class PayoutService {
       // Unclaim the swept tribute shares this payout carried back to the author
       // (whether or not completeWriterPayout already advanced them to 'returned')
       // so the next cycle returns them again. Mirrors the read rollback above.
+      // Kind 'writer' — a writer_payout only ever claims root swept returns.
       await client.query(
         `UPDATE tribute_accruals
          SET state = 'swept',
-             author_return_payout_id = NULL
-         WHERE author_return_payout_id = $1`,
+             swept_return_payout_id = NULL,
+             swept_return_kind = NULL
+         WHERE swept_return_payout_id = $1
+           AND swept_return_kind = 'writer'`,
         [payoutId]
       )
 
@@ -1165,31 +1203,50 @@ class PayoutService {
     await this.resumePendingTributePayouts()
 
     // Eligible: a live tribute whose resolved inspirer is Connect-onboarded and
-    // has released, unclaimed accruals. No payout threshold — the share is the
-    // inspirer's the moment it releases (the author's read already cleared the
-    // £20 floor to settle), so we pay whatever has released.
+    // has EITHER released-unclaimed accruals (fresh inflow to pay out) OR direct
+    // children whose swept share is owed back to it (C5 return to fold in) — the
+    // inspirer mirror of the author's `base ∪ ret` candidate set. No payout
+    // threshold — the share is the inspirer's the moment it releases (the
+    // author's read already cleared the £20 floor to settle). The exact amount
+    // (gross − direct-children carve + child swept-returns) is recomputed under
+    // lock in reserveTributePayout, so this only finds candidates.
     const { rows: eligible } = await pool.query<{
       tribute_id: string
       inspirer_account_id: string
       author_account_id: string
       stripe_connect_id: string
-      amount_pence: string
     }>(
-      `SELECT t.id AS tribute_id,
+      `WITH released AS (
+         SELECT tribute_id FROM tribute_accruals
+         WHERE state = 'released' AND tribute_payout_id IS NULL
+         GROUP BY tribute_id
+       ),
+       returns AS (
+         -- A deeper child's swept share returns up one level to its PARENT
+         -- inspirer node (C5). Root swept shares (parent NULL) go to the author's
+         -- writer cycle, not here.
+         SELECT t.parent_tribute_id AS tribute_id
+         FROM tribute_accruals ta
+         JOIN tributes t ON t.id = ta.tribute_id
+         WHERE ta.state = 'swept' AND ta.swept_return_payout_id IS NULL
+           AND t.parent_tribute_id IS NOT NULL
+         GROUP BY t.parent_tribute_id
+       ),
+       candidates AS (
+         SELECT tribute_id FROM released
+         UNION
+         SELECT tribute_id FROM returns
+       )
+       SELECT t.id AS tribute_id,
               t.resolved_account_id AS inspirer_account_id,
               t.author_account_id,
-              insp.stripe_connect_id,
-              SUM(ta.amount_pence) AS amount_pence
-       FROM tribute_accruals ta
-       JOIN tributes t ON t.id = ta.tribute_id
+              insp.stripe_connect_id
+       FROM candidates c
+       JOIN tributes t ON t.id = c.tribute_id
        JOIN accounts insp ON insp.id = t.resolved_account_id
-       WHERE ta.state = 'released'
-         AND ta.tribute_payout_id IS NULL
-         AND t.status = 'live'
+       WHERE t.status = 'live'
          AND insp.stripe_connect_kyc_complete = TRUE
-         AND insp.stripe_connect_id IS NOT NULL
-       GROUP BY t.id, t.resolved_account_id, t.author_account_id, insp.stripe_connect_id
-       HAVING SUM(ta.amount_pence) > 0`,
+         AND insp.stripe_connect_id IS NOT NULL`,
     )
 
     let processed = 0
@@ -1236,9 +1293,22 @@ class PayoutService {
     return reserved.amountPence
   }
 
-  // Txn 1: lock the tribute, sum its released unclaimed accruals, insert a
-  // 'pending' tribute_payouts row, and claim those accruals under it. Commits
-  // before any Stripe call.
+  // Txn 1: lock the tribute, compute its LEVEL-AWARE net, insert a 'pending'
+  // tribute_payouts row, and claim the rows that net feeds on. Commits before any
+  // Stripe call.
+  //
+  // This node N is now a co-earner exactly like the author at depth 0 — its net
+  // is its gross inflow minus its DIRECT children's gross plus any child swept
+  // shares owed back (C5):
+  //   net = Σ(N's released-unclaimed accruals)              (N's gross inflow)
+  //       − Σ(N's direct children's accruals on those reads) (the onward carve)
+  //       + Σ(N's direct children's swept-unclaimed accruals) (C5 returns to N)
+  // The carve is scoped to the reads N is claiming this cycle (a child accrual is
+  // carved exactly once — when N's accrual on that read is claimed), state-agnostic
+  // (each child's disposition is its own leg). The ceiling guarantees children
+  // take ≤90% of N's inflow, so net stays positive. N's released accruals are
+  // claimed under tribute_payout_id (like the author claims reads); the child
+  // swept returns are claimed under swept_return_payout_id (kind 'tribute').
   private async reserveTributePayout(
     tributeId: string,
     inspirerId: string,
@@ -1247,15 +1317,36 @@ class PayoutService {
     return withTransaction(async (client) => {
       await client.query('SELECT id FROM tributes WHERE id = $1 FOR UPDATE', [tributeId])
 
-      const { rows: [bal] } = await client.query<{ amount_pence: string }>(
-        `SELECT COALESCE(SUM(amount_pence), 0) AS amount_pence
-         FROM tribute_accruals
-         WHERE tribute_id = $1 AND state = 'released' AND tribute_payout_id IS NULL`,
+      const { rows: [bal] } = await client.query<{
+        gross_released: string
+        child_carve: string
+        swept_return: string
+      }>(
+        `SELECT
+           (SELECT COALESCE(SUM(amount_pence), 0)
+              FROM tribute_accruals
+             WHERE tribute_id = $1 AND state = 'released' AND tribute_payout_id IS NULL)
+             AS gross_released,
+           (SELECT COALESCE(SUM(ca.amount_pence), 0)
+              FROM tribute_accruals ca
+              JOIN tributes ct ON ct.id = ca.tribute_id
+             WHERE ct.parent_tribute_id = $1
+               AND ca.read_event_id IN (
+                 SELECT read_event_id FROM tribute_accruals
+                  WHERE tribute_id = $1 AND state = 'released' AND tribute_payout_id IS NULL))
+             AS child_carve,
+           (SELECT COALESCE(SUM(ca.amount_pence), 0)
+              FROM tribute_accruals ca
+              JOIN tributes ct ON ct.id = ca.tribute_id
+             WHERE ct.parent_tribute_id = $1
+               AND ca.state = 'swept' AND ca.swept_return_payout_id IS NULL)
+             AS swept_return`,
         [tributeId],
       )
-      const amountPence = parseInt(bal.amount_pence, 10)
+      const amountPence =
+        parseInt(bal.gross_released, 10) - parseInt(bal.child_carve, 10) + parseInt(bal.swept_return, 10)
       if (amountPence <= 0) {
-        logger.warn({ tributeId }, 'Tribute has no unclaimed released accruals — skipping (likely claimed by a pending payout)')
+        logger.warn({ tributeId }, 'Tribute has no payable net this cycle — skipping (likely claimed by a pending payout)')
         return null
       }
 
@@ -1268,10 +1359,25 @@ class PayoutService {
       )
       const payoutId = payoutRow.id
 
+      // Claim N's own released accruals (its gross inflow being paid).
       await client.query(
         `UPDATE tribute_accruals
          SET tribute_payout_id = $1
          WHERE tribute_id = $2 AND state = 'released' AND tribute_payout_id IS NULL`,
+        [payoutId, tributeId],
+      )
+
+      // Claim N's direct children's swept shares owed back to N (C5), via the
+      // generic swept-return vehicle, kind 'tribute'. State stays 'swept' until
+      // completeTributePayout advances it to 'returned'.
+      await client.query(
+        `UPDATE tribute_accruals ca
+            SET swept_return_payout_id = $1, swept_return_kind = 'tribute'
+           FROM tributes ct
+          WHERE ct.id = ca.tribute_id
+            AND ct.parent_tribute_id = $2
+            AND ca.state = 'swept'
+            AND ca.swept_return_payout_id IS NULL`,
         [payoutId, tributeId],
       )
 
@@ -1320,8 +1426,22 @@ class PayoutService {
         [payoutId],
       )
 
-      // Ledger: inspirer credit — the redirected share received. +amount,
-      // counterparty = the author whose earnings were redirected. Counted by
+      // Advance the direct children's swept shares this payout carried back to
+      // this node (C5, kind 'tribute') to 'returned' — their value is part of the
+      // transfer + the ledger entry below. Idempotent on resume.
+      await client.query(
+        `UPDATE tribute_accruals
+         SET state = 'returned'
+         WHERE swept_return_payout_id = $1
+           AND swept_return_kind = 'tribute'
+           AND state = 'swept'`,
+        [payoutId],
+      )
+
+      // Ledger: inspirer credit — the redirected share received (net of its own
+      // onward carve). +amount, counterparty = the party whose share was
+      // redirected (this node's author_account_id — the article author for a
+      // root, the parent inspirer for a deeper node). Counted by
       // ledger_writer_earnings (migration 127). Gated on the pending→initiated
       // flip so resume can't post it twice.
       if (flipped.rowCount! > 0) {

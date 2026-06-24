@@ -42,6 +42,10 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
+// Depth cap (C4) — bounds the recursive settlement walk and stops sub-penny
+// dust chains. Mirrored by the depth CHECK backstop in migration 128.
+const MAX_CHAIN_DEPTH = 8
+
 const CreateSchema = z.object({
   articleId: z.string().regex(UUID_RE),
   // Share of the piece's writer-side net, in basis points (1–10000). The
@@ -56,6 +60,11 @@ const CreateSchema = z.object({
   // ("I cited X here, and X earns a share"). Records the provenance link; the
   // payee is still the resolved `target` (author-confirmed via the live preview).
   citationEdgeId: z.string().regex(UUID_RE).optional(),
+  // Phase-5 tribute chains: a CHILD tribute redirects a share of the PARENT
+  // tribute's slice further upstream. NULL/absent = a root tribute (carves the
+  // piece's writer-side net). When set, the offerer must be the parent's live
+  // beneficiary (C1) and the child rides the parent's article (D1, one piece).
+  parentTributeId: z.string().regex(UUID_RE).optional(),
 })
 
 const ClaimSchema = z.object({
@@ -90,6 +99,54 @@ async function loadOwnedArticle(
   }
 }
 
+// The same article fields WITHOUT the owner filter — for a CHILD tribute, the
+// offerer (the parent's beneficiary) doesn't own the article; the chain rides
+// the parent's piece, and parent ownership is the authorisation (loadLiveParent).
+async function loadArticleById(
+  articleId: string,
+): Promise<{ id: string; title: string; publicationId: string | null; published: boolean } | null> {
+  const { rows } = await pool.query<{
+    id: string
+    title: string
+    publication_id: string | null
+    published_at: Date | null
+  }>(
+    `SELECT id, title, publication_id, published_at
+       FROM articles
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [articleId],
+  )
+  if (rows.length === 0) return null
+  return {
+    id: rows[0].id,
+    title: rows[0].title,
+    publicationId: rows[0].publication_id,
+    published: rows[0].published_at != null,
+  }
+}
+
+// Load the parent tribute for a CHILD offer (Phase-5 chains). C1: a child may be
+// spawned only by a LIVE tribute, and only by its beneficiary (the
+// resolved_account_id) — you accept your share before you may pass part of it
+// on. Returns NULL when the parent doesn't exist, isn't live, or the offerer is
+// not its beneficiary, so the route 404s without leaking which.
+async function loadLiveParent(
+  parentTributeId: string,
+  offererId: string,
+): Promise<{ id: string; depth: number; articleId: string } | null> {
+  const { rows } = await pool.query<{ id: string; depth: number; article_id: string }>(
+    `SELECT id, depth, article_id
+       FROM tributes
+      WHERE id = $1
+        AND resolved_account_id = $2
+        AND status = 'live'
+        AND deleted_at IS NULL`,
+    [parentTributeId, offererId],
+  )
+  if (rows.length === 0) return null
+  return { id: rows[0].id, depth: rows[0].depth, articleId: rows[0].article_id }
+}
+
 export async function tributeRoutes(app: FastifyInstance) {
   // Every route 404s while the feature is dark, so the surface is invisible.
   app.addHook('preHandler', async (_req, reply) => {
@@ -107,12 +164,49 @@ export async function tributeRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() })
     }
-    const { articleId, percentageBps, target, inviteEmail, note, citationEdgeId } = parsed.data
+    const { articleId, percentageBps, target, inviteEmail, note, citationEdgeId, parentTributeId } = parsed.data
 
-    const article = await loadOwnedArticle(articleId, writerId)
-    if (!article) {
-      return reply.status(404).send({ error: 'Article not found or not yours' })
+    // Root vs child (Phase-5 chains). For a ROOT the offerer must own the
+    // article; for a CHILD they must be the live beneficiary of the parent (C1),
+    // and the child rides the parent's article (D1 — one piece carries the whole
+    // chain). author_account_id is the offerer (req.session.sub) either way: the
+    // article author for a root, the parent's beneficiary for a child — both are
+    // "whoever is paying this share out of their slice."
+    let article: { id: string; title: string; publicationId: string | null; published: boolean } | null
+    let resolvedArticleId: string
+    let lockKey: string   // article id for roots; parent id for children
+    let depth = 0
+    let parentTributeIdValue: string | null = null
+
+    if (parentTributeId) {
+      const parent = await loadLiveParent(parentTributeId, writerId)
+      if (!parent) {
+        return reply.status(404).send({
+          error: 'That tribute is not one you can pass a share of — it must be live and yours.',
+        })
+      }
+      if (parent.depth + 1 > MAX_CHAIN_DEPTH) {
+        return reply.status(400).send({
+          error: `This chain is at its maximum depth (${MAX_CHAIN_DEPTH}); it cannot extend further.`,
+        })
+      }
+      depth = parent.depth + 1
+      parentTributeIdValue = parent.id
+      resolvedArticleId = parent.articleId
+      lockKey = parent.id   // parent-scoped serialisation (C3)
+      article = await loadArticleById(parent.articleId)
+      if (!article) {
+        return reply.status(404).send({ error: 'The piece this chain rides is no longer available.' })
+      }
+    } else {
+      article = await loadOwnedArticle(articleId, writerId)
+      if (!article) {
+        return reply.status(404).send({ error: 'Article not found or not yours' })
+      }
+      resolvedArticleId = articleId
+      lockKey = articleId
     }
+
     if (!article.published) {
       return reply.status(400).send({
         error: 'Publish the piece before adding a tribute — the inspirer is invited to read it.',
@@ -125,12 +219,16 @@ export async function tributeRoutes(app: FastifyInstance) {
       })
     }
     // Composition link must be a citation on THIS piece (the article owns its
-    // citations, so an in-article match implies the author's own edge).
+    // citations, so an in-article match implies the author's own edge). Roots
+    // only — a child's source-of-funds is its parent's share, not a citation.
     if (citationEdgeId) {
+      if (parentTributeIdValue) {
+        return reply.status(400).send({ error: 'A chained tribute cannot also be tied to a citation.' })
+      }
       const { rows } = await pool.query(
         `SELECT 1 FROM citation_edges
           WHERE id = $1 AND article_id = $2 AND deleted_at IS NULL`,
-        [citationEdgeId, articleId],
+        [citationEdgeId, resolvedArticleId],
       )
       if (rows.length === 0) {
         return reply.status(400).send({ error: 'That citation is not on this piece.' })
@@ -151,22 +249,25 @@ export async function tributeRoutes(app: FastifyInstance) {
     let tributeId: string
     try {
       tributeId = await withTransaction(async (client) => {
-        // Serialise concurrent adds on this article so the ceiling trigger can't
-        // be raced (two inserts each reading under-ceiling).
-        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [articleId])
+        // Serialise concurrent adds under one parent stream so the ceiling
+        // trigger can't be raced (two inserts each reading under-ceiling). Roots
+        // lock on the article id, children on the parent id (C3).
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey])
 
         const { rows } = await client.query<{ id: string }>(
           `INSERT INTO tributes
              (article_id, author_account_id, percentage_bps,
               target_protocol, target_external_id, target_display_name, resolved_account_id,
               status, invite_email, invite_token_hash,
-              first_contact_at, window_expires_at, citation_edge_id)
+              first_contact_at, window_expires_at, citation_edge_id,
+              parent_tribute_id, depth)
            VALUES ($1, $2, $3, $4, $5, $6, $7,
                    'proposed', $8, $9,
-                   ${firstContactAt}, now() + ($10 || ' days')::interval, $11)
+                   ${firstContactAt}, now() + ($10 || ' days')::interval, $11,
+                   $12, $13)
            RETURNING id`,
           [
-            articleId,
+            resolvedArticleId,
             writerId,
             percentageBps,
             t.protocol,
@@ -177,6 +278,8 @@ export async function tributeRoutes(app: FastifyInstance) {
             tokenHash,
             String(WINDOW_DAYS),
             citationEdgeId ?? null,
+            parentTributeIdValue,
+            depth,
           ],
         )
         const id = rows[0].id
@@ -186,7 +289,7 @@ export async function tributeRoutes(app: FastifyInstance) {
           await deliverInAppOffer(client, {
             inspirerId: t.accountId!,
             authorId: writerId,
-            articleId,
+            articleId: resolvedArticleId,
           })
         }
         return id
@@ -215,7 +318,7 @@ export async function tributeRoutes(app: FastifyInstance) {
     }
 
     logger.info(
-      { tributeId, articleId, writerId, isMember, emailed: !isMember && !!inviteEmail },
+      { tributeId, articleId: resolvedArticleId, writerId, isMember, depth, emailed: !isMember && !!inviteEmail },
       'Tribute created',
     )
     // Uniform response regardless of branch — no account-existence oracle.
@@ -228,6 +331,12 @@ export async function tributeRoutes(app: FastifyInstance) {
   // Connect onboarding is NOT gated here (Phase 2 is money-free): consent flips
   // the held accruals to released; the Phase-3 inspirer-payout sweep is the one
   // that requires a completed Stripe Connect account before paying.
+  //
+  // Phase-5 (C1): consenting is also the gate to passing a share UPSTREAM — only
+  // a live tribute may spawn children. The response returns enough context
+  // (articleId + this tribute's percentage) for the client to open a child-offer
+  // composer ("Accept & pass a share upstream"); the child offer is a separate
+  // POST /tributes with parentTributeId = this id.
   // ---------------------------------------------------------------------------
   app.post<{ Params: { id: string } }>(
     '/tributes/:id/consent',
@@ -237,20 +346,18 @@ export async function tributeRoutes(app: FastifyInstance) {
       if (!UUID_RE.test(req.params.id)) {
         return reply.status(400).send({ error: 'Invalid id' })
       }
-      let notFound = false
+      let result: { articleId: string; percentageBps: number } | null = null
       await withTransaction(async (client) => {
-        const { rows } = await client.query(
+        const { rows } = await client.query<{ article_id: string; percentage_bps: number }>(
           `UPDATE tributes
               SET status = 'live', consent_at = now()
             WHERE id = $1 AND resolved_account_id = $2
               AND status = 'proposed' AND deleted_at IS NULL
-          RETURNING id`,
+          RETURNING article_id, percentage_bps`,
           [req.params.id, inspirerId],
         )
-        if (rows.length === 0) {
-          notFound = true
-          return
-        }
+        if (rows.length === 0) return
+        result = { articleId: rows[0].article_id, percentageBps: rows[0].percentage_bps }
         // Release any held suspense to the inspirer (no-op until Phase 3).
         await client.query(
           `UPDATE tribute_accruals SET state = 'released'
@@ -258,11 +365,18 @@ export async function tributeRoutes(app: FastifyInstance) {
           [req.params.id],
         )
       })
-      if (notFound) {
+      if (!result) {
         return reply.status(404).send({ error: 'Offer not found or not yours to accept' })
       }
+      const r = result as { articleId: string; percentageBps: number }
       logger.info({ tributeId: req.params.id, inspirerId }, 'Tribute consented')
-      return reply.status(200).send({ ok: true, status: 'live' })
+      // articleId/percentageBps let the client open the upstream child composer.
+      return reply.status(200).send({
+        ok: true,
+        status: 'live',
+        articleId: r.articleId,
+        percentageBps: r.percentageBps,
+      })
     },
   )
 
@@ -408,12 +522,14 @@ export async function tributeRoutes(app: FastifyInstance) {
         account_username: string | null
         account_display_name: string | null
         citation_edge_id: string | null
+        parent_tribute_id: string | null
+        depth: number
         created_at: Date
       }>(
         `SELECT t.id, t.percentage_bps, t.target_protocol, t.target_external_id,
                 t.target_display_name, t.resolved_account_id, t.status,
                 t.author_account_id, t.first_contact_at, t.created_at,
-                t.citation_edge_id,
+                t.citation_edge_id, t.parent_tribute_id, t.depth,
                 acc.username AS account_username, acc.display_name AS account_display_name
            FROM tributes t
            LEFT JOIN accounts acc ON acc.id = t.resolved_account_id
@@ -439,6 +555,11 @@ export async function tributeRoutes(app: FastifyInstance) {
           },
           // Phase-4 composition: the citation this tribute was offered from, if any.
           citationEdgeId: r.citation_edge_id,
+          // Phase-5 chains: NULL = root; non-NULL = a child of that tribute. depth
+          // is 0 for roots, parent.depth+1 for children — the frontend builds the
+          // tree from these two fields.
+          parentTributeId: r.parent_tribute_id,
+          depth: r.depth,
           mine: viewerId != null && r.author_account_id === viewerId,
           createdAt: r.created_at.toISOString(),
         })),

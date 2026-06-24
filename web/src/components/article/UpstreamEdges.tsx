@@ -79,6 +79,12 @@ export function UpstreamEdges({
     citationEdgeId: string
     citationNum: number
   } | null>(null)
+  // Phase-5 chains: when an inspirer chooses "Accept & pass a share upstream",
+  // we consent then open a child composer seeded with the parent context.
+  const [chainSeed, setChainSeed] = useState<{
+    parentTributeId: string
+    parentPercentageBps: number
+  } | null>(null)
 
   const aliveRef = useRef(true)
   useEffect(() => () => { aliveRef.current = false }, [])
@@ -125,6 +131,21 @@ export function UpstreamEdges({
       tributeComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
     )
   }, [])
+
+  // The third consent option (C1): accept the offer (proposed → live), then open
+  // a child composer to pass a share of this now-live share further upstream.
+  const acceptAndPass = useCallback(
+    async (tribute: TributeView) => {
+      await tributesApi.consent(tribute.id)
+      if (!aliveRef.current) return
+      setChainSeed({ parentTributeId: tribute.id, parentPercentageBps: tribute.percentageBps })
+      await load()
+      requestAnimationFrame(() =>
+        tributeComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+      )
+    },
+    [load],
+  )
 
   // Inject the in-prose markers for anchored citations. Numbering follows the
   // foot order (citations are returned ordered by char_start, so anchored ones
@@ -237,18 +258,30 @@ export function UpstreamEdges({
           <h2 className="label-ui text-grey-400 mb-4">Tributes</h2>
           {tributeList.length > 0 && (
             <ul className="space-y-5">
-              {tributeList.map((t) => (
-                <TributeRow
-                  key={t.id}
-                  tribute={t}
-                  viewerIsInspirer={!!user && !!t.target.accountId && user.id === t.target.accountId}
-                  citationNum={t.citationEdgeId ? citationNumById.get(t.citationEdgeId) ?? null : null}
-                  onChanged={load}
-                />
-              ))}
+              {renderTributeForest(tributeList, {
+                userId: user?.id ?? null,
+                citationNumById,
+                onChanged: load,
+                onAcceptAndPass: acceptAndPass,
+              })}
             </ul>
           )}
-          {isAuthor && articleDbId && (
+          {/* The chain child composer (opened by an inspirer who chose "Accept &
+              pass a share upstream") — appears for ANY accepting inspirer, not
+              just the article author. */}
+          {chainSeed && articleDbId && (
+            <div className="mt-4" ref={tributeComposerRef}>
+              <TributeComposer
+                key={`chain-${chainSeed.parentTributeId}`}
+                articleId={articleDbId}
+                parentTributeId={chainSeed.parentTributeId}
+                parentPercentageBps={chainSeed.parentPercentageBps}
+                onDone={() => { setChainSeed(null); void load() }}
+                onCancel={() => setChainSeed(null)}
+              />
+            </div>
+          )}
+          {isAuthor && articleDbId && !chainSeed && (
             <div className="mt-4" ref={tributeComposerRef}>
               {addingTribute ? (
                 <TributeComposer
@@ -284,18 +317,21 @@ function bpsToPercent(bps: number): string {
   return (bps / 100).toFixed(bps % 100 === 0 ? 0 : 2)
 }
 
-// The honest status phrase shown after the render line.
+// The honest status phrase shown after the render line. A declined/lapsed share
+// returns to whoever offered it — the article author for a root tribute, the
+// parent inspirer for a chained child (C5).
 function tributeStatusPhrase(t: TributeView): string {
+  const returnsTo = t.depth > 0 ? 'the offerer' : 'the author'
   switch (t.status) {
     case 'live':
       return 'active'
     case 'declined':
-      return 'declined — share returns to the author'
+      return `declined — share returns to ${returnsTo}`
     case 'lapsed':
-      return 'lapsed — share returned to the author'
+      return `lapsed — share returned to ${returnsTo}`
     case 'proposed':
     default:
-      // Never "accruing/held" — until they accept the share is the author's
+      // Never "accruing/held" — until they accept the share is the offerer's
       // own earnings under a revocable offer, not money held in the payee's name.
       return t.reachable
         ? 'proposed — awaiting their reply'
@@ -303,24 +339,71 @@ function tributeStatusPhrase(t: TributeView): string {
   }
 }
 
+// Depth cap mirror (server: MAX_CHAIN_DEPTH in tributes.ts / migration 128). A
+// node already at the cap can't spawn a child, so the third consent option is
+// suppressed there.
+const MAX_CHAIN_DEPTH = 8
+
+// Render the tributes as a nested tree (root → children → …) rather than a flat
+// list. The flat list is created-ordered, so we re-order by walking the tree:
+// each node is followed immediately by its subtree, and indents by depth.
+function renderTributeForest(
+  tributes: TributeView[],
+  ctx: {
+    userId: string | null
+    citationNumById: Map<string, number>
+    onChanged: () => void
+    onAcceptAndPass: (t: TributeView) => Promise<void>
+  },
+): ReactNode[] {
+  const childrenOf = new Map<string | null, TributeView[]>()
+  for (const t of tributes) {
+    const key = t.parentTributeId
+    const list = childrenOf.get(key)
+    if (list) list.push(t)
+    else childrenOf.set(key, [t])
+  }
+  const walk = (parentId: string | null): ReactNode[] =>
+    (childrenOf.get(parentId) ?? []).flatMap((t) => [
+      <TributeRow
+        key={t.id}
+        tribute={t}
+        viewerIsInspirer={!!ctx.userId && !!t.target.accountId && ctx.userId === t.target.accountId}
+        citationNum={t.citationEdgeId ? ctx.citationNumById.get(t.citationEdgeId) ?? null : null}
+        onChanged={ctx.onChanged}
+        onAcceptAndPass={ctx.onAcceptAndPass}
+      />,
+      ...walk(t.id),
+    ])
+  return walk(null)
+}
+
 function TributeRow({
   tribute,
   viewerIsInspirer,
   citationNum,
   onChanged,
+  onAcceptAndPass,
 }: {
   tribute: TributeView
   viewerIsInspirer: boolean
   /** When this tribute was composed from a citation, its foot number. */
   citationNum: number | null
   onChanged: () => void
+  /** Accept this offer, then open a composer to pass a share further upstream. */
+  onAcceptAndPass: (t: TributeView) => Promise<void>
 }) {
   const { target } = tribute
   const name = target.displayName ?? target.username ?? 'an unnamed source'
+  const isChild = tribute.depth > 0
   // The share is a conditional offer until accepted — the verb must say so
   // (compliance: the public line never asserts the money is already theirs).
   const earningsVerb =
     tribute.status === 'live' ? 'goes to' : tribute.status === 'proposed' ? 'will go to' : 'was offered to'
+  // A child redirects a share of its PARENT'S slice (rendered directly above in
+  // the tree), not the piece's earnings — "X% of that share goes to W".
+  const ofWhat = isChild ? 'that share' : 'this piece’s earnings'
+  const canChain = tribute.depth < MAX_CHAIN_DEPTH
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [withdrawing, setWithdrawing] = useState(false)
@@ -338,10 +421,15 @@ function TributeRow({
   }
 
   return (
-    <li className="text-ui-sm text-grey-600 leading-relaxed">
+    <li
+      className="text-ui-sm text-grey-600 leading-relaxed"
+      // Tree indent by depth (structural spacing, not a token-able size).
+      style={isChild ? { marginLeft: Math.min(tribute.depth, MAX_CHAIN_DEPTH) * 20 } : undefined}
+    >
       <span className="text-black">
-        <span className="font-medium">{bpsToPercent(tribute.percentageBps)}%</span> of this piece&rsquo;s
-        earnings {earningsVerb}{' '}
+        {isChild && <span className="text-grey-400" aria-hidden>↳ </span>}
+        <span className="font-medium">{bpsToPercent(tribute.percentageBps)}%</span> of {ofWhat}{' '}
+        {earningsVerb}{' '}
         {target.accountId && target.username ? (
           <ProfileLink href={`/${target.username}`} className="font-medium text-black hover:underline">
             {name}
@@ -362,10 +450,13 @@ function TributeRow({
       )}
 
       {/* The inspirer's own consent affordance (they reach this via the offer
-          notification / claim, which comps them the read). */}
+          notification / claim, which comps them the read). Three options (C1):
+          accept, accept-and-pass-upstream, or decline. */}
       {viewerIsInspirer && tribute.status === 'proposed' && (
-        <div className="pl-4 mt-1 flex items-center gap-4">
-          <span className="text-ui-xs text-grey-600">This writer is offering you a share.</span>
+        <div className="pl-4 mt-1 flex flex-wrap items-center gap-4">
+          <span className="text-ui-xs text-grey-600">
+            {isChild ? 'You’ve been offered a share.' : 'This writer is offering you a share.'}
+          </span>
           <button
             className="btn-soft disabled:opacity-50"
             disabled={busy}
@@ -373,6 +464,22 @@ function TributeRow({
           >
             Accept
           </button>
+          {canChain && (
+            <button
+              className="btn-text disabled:opacity-50"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true)
+                setError(null)
+                onAcceptAndPass(tribute).catch(() => {
+                  setError('Could not accept — try again.')
+                  setBusy(false)
+                })
+              }}
+            >
+              Accept &amp; pass a share upstream
+            </button>
+          )}
           <button
             className="btn-text-muted disabled:opacity-50"
             disabled={busy}
@@ -418,6 +525,8 @@ function TributeComposer({
   seedTarget,
   citationEdgeId,
   citationNum,
+  parentTributeId,
+  parentPercentageBps,
   onDone,
   onCancel,
 }: {
@@ -427,9 +536,14 @@ function TributeComposer({
   /** Phase-4 composition: record this tribute against a citation on the piece. */
   citationEdgeId?: string
   citationNum?: number
+  /** Phase-5 chains: when set, this composes a CHILD that redirects a share of
+   *  the parent tribute's slice upstream (the offerer is the parent's payee). */
+  parentTributeId?: string
+  parentPercentageBps?: number
   onDone: () => void
   onCancel: () => void
 }) {
+  const isChild = parentTributeId != null
   // The composer is remounted (keyed on the seed) when composed from a citation,
   // so initialising from seedTarget is correct.
   const [target, setTarget] = useState(seedTarget ?? '')
@@ -456,23 +570,37 @@ function TributeComposer({
         inviteEmail: email.trim() || undefined,
         note: note.trim() || undefined,
         citationEdgeId,
+        parentTributeId,
       })
       onDone()
     } catch {
-      setError('Could not add tribute — the share may leave the author too little, or the piece is in a publication.')
+      setError(
+        isChild
+          ? 'Could not pass the share on — it may leave you too little of your own share, or the chain is at its maximum depth.'
+          : 'Could not add tribute — the share may leave the author too little, or the piece is in a publication.',
+      )
       setBusy(false)
     }
   }
 
   return (
     <div className="bg-glasshouse-well/40 rounded p-4 space-y-3">
+      {isChild && (
+        <p className="text-ui-xs text-grey-600">
+          Passing a share of your{' '}
+          {parentPercentageBps != null && (
+            <span className="font-medium">{bpsToPercent(parentPercentageBps)}%</span>
+          )}{' '}
+          share further upstream — to whoever inspired you. You keep the rest of your share.
+        </p>
+      )}
       {citationNum != null && (
         <p className="text-ui-xs text-grey-600">
           Offering a share to the source you cited at [{citationNum}]. Confirm the payee below.
         </p>
       )}
       <div>
-        <FieldLabel>Who inspired this piece</FieldLabel>
+        <FieldLabel>{isChild ? 'Who inspired you' : 'Who inspired this piece'}</FieldLabel>
         <input
           className={FIELD}
           placeholder="username, npub, handle, URL, or a name"
@@ -483,7 +611,9 @@ function TributeComposer({
         {preview && <p className="mt-1 text-ui-xs text-grey-600">{preview}</p>}
       </div>
       <div>
-        <FieldLabel>Share of this piece&rsquo;s earnings (%)</FieldLabel>
+        <FieldLabel>
+          {isChild ? 'Share of your share (%)' : 'Share of this piece’s earnings (%)'}
+        </FieldLabel>
         <input
           className={FIELD}
           type="number"
@@ -496,7 +626,9 @@ function TributeComposer({
           onChange={(e) => setPercent(e.target.value)}
         />
         <p className="mt-1 text-ui-xs text-grey-600">
-          You keep the rest. A piece&rsquo;s tributes together can take at most 90%.
+          {isChild
+            ? 'You keep the rest of your share. The shares you pass on together can take at most 90% of it.'
+            : 'You keep the rest. A piece’s tributes together can take at most 90%.'}
         </p>
       </div>
       <div>
@@ -525,7 +657,7 @@ function TributeComposer({
       {error && <p className="text-ui-xs text-crimson">{error}</p>}
       <div className="flex items-center gap-4">
         <button className="btn-soft disabled:opacity-50" disabled={busy || !ready} onClick={submit}>
-          {busy ? 'Offering…' : 'Offer tribute'}
+          {busy ? 'Offering…' : isChild ? 'Pass the share on' : 'Offer tribute'}
         </button>
         <button className="btn-text-muted" disabled={busy} onClick={onCancel}>
           Cancel

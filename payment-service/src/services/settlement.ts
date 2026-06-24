@@ -457,15 +457,24 @@ class SettlementService {
         [settlement.tab_id, settlement.id],
       );
 
-      // Tribute apportionment (Upstream Edges Phase 3, dark behind
-      // TRIBUTES_ENABLED). For each read just advanced to platform_settled on a
-      // tributed (proposed|live) article, freeze one tribute_accruals row per
-      // tribute: the inspirer's share of THIS read's writer-side net, computed
-      // with the fee bps of the moment and never recomputed. The author's carve
-      // at payout subtracts these; conservation is author-share = read_net −
-      // Σ accruals (no clamp; the author keeps the floor dust). A live tribute
-      // (already consented) accrues straight to 'released' — there's no held→
-      // released flip coming for reads that settle AFTER consent.
+      // Tribute apportionment (Upstream Edges Phase 3 + Phase-5 chains, dark
+      // behind TRIBUTES_ENABLED). For each read just advanced to platform_settled
+      // on a tributed (proposed|live) article, freeze one tribute_accruals row
+      // per NODE of the tribute tree: that node's GROSS inflow for THIS read =
+      // read_net × (∏ bps along the node's path) ÷ 10000^pathlen, computed with
+      // the fee bps of the moment and never recomputed. Each carving party
+      // (author at depth 0, every inspirer below) subtracts its DIRECT children's
+      // gross at payout — conservation telescopes to author + Σ(every node's
+      // retained) == read_net (no clamp; each node keeps its children's floor
+      // dust). A node accrues straight to 'released' when its OWN tribute is
+      // already 'live' (no held→released flip is coming for reads that settle
+      // after that node consented), else 'held'.
+      //
+      // The path product is carried as NUMERIC down a WITH RECURSIVE walk so it
+      // can't overflow bigint at depth (10000^8), and FLOORed once per (node,
+      // read) — the shipped per-row-then-floor rule applied per node. Bounded by
+      // the depth cap (migration 128). A node whose gross floors to 0 is dropped
+      // (its descendants are ≤ it, so they drop too).
       //
       // ON CONFLICT DO NOTHING makes this idempotent against a duplicate webhook
       // (the (tribute_id, read_event_id) unique); confirmSettlement is already
@@ -475,18 +484,41 @@ class SettlementService {
       if (tributesEnabled()) {
         const config = await loadConfig();
         await client.query(
-          `INSERT INTO tribute_accruals (tribute_id, read_event_id, amount_pence, state)
-           SELECT t.id, re.id,
-                  FLOOR(${readNetSql("re.amount_pence", "$2")} * t.percentage_bps / 10000),
-                  CASE WHEN t.status = 'live' THEN 'released' ELSE 'held' END
-           FROM read_events re
-           JOIN tributes t
-             ON t.article_id = re.article_id
-            AND t.status IN ('proposed', 'live')
-            AND t.deleted_at IS NULL
-           WHERE re.tab_settlement_id = $1
-             AND re.state = 'platform_settled'
-             AND FLOOR(${readNetSql("re.amount_pence", "$2")} * t.percentage_bps / 10000) > 0
+          `WITH RECURSIVE settled_reads AS (
+             SELECT re.id AS read_event_id,
+                    re.article_id,
+                    ${readNetSql("re.amount_pence", "$2")}::numeric AS read_net
+             FROM read_events re
+             WHERE re.tab_settlement_id = $1
+               AND re.state = 'platform_settled'
+           ),
+           tree AS (
+             -- Roots (depth 0): source-of-funds is the piece net; path factor = bps/10000.
+             SELECT t.id AS tribute_id, t.status, sr.read_event_id,
+                    sr.read_net,
+                    (t.percentage_bps::numeric / 10000) AS path_factor
+             FROM tributes t
+             JOIN settled_reads sr ON sr.article_id = t.article_id
+             WHERE t.parent_tribute_id IS NULL
+               AND t.status IN ('proposed', 'live')
+               AND t.deleted_at IS NULL
+             UNION ALL
+             -- Children: source-of-funds is the parent's share; multiply the factor.
+             SELECT c.id, c.status, parent.read_event_id,
+                    parent.read_net,
+                    parent.path_factor * (c.percentage_bps::numeric / 10000)
+             FROM tree parent
+             JOIN tributes c
+               ON c.parent_tribute_id = parent.tribute_id
+              AND c.status IN ('proposed', 'live')
+              AND c.deleted_at IS NULL
+           )
+           INSERT INTO tribute_accruals (tribute_id, read_event_id, amount_pence, state)
+           SELECT tribute_id, read_event_id,
+                  FLOOR(read_net * path_factor)::bigint,
+                  CASE WHEN status = 'live' THEN 'released' ELSE 'held' END
+           FROM tree
+           WHERE FLOOR(read_net * path_factor) > 0
            ON CONFLICT (tribute_id, read_event_id) DO NOTHING`,
           [settlement.id, config.platformFeeBps],
         );

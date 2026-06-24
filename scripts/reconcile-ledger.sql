@@ -131,17 +131,77 @@ WHERE le.trigger_type = 'tribute_payout'
        OR le.account_id <> tp.inspirer_account_id
        OR le.counterparty_id IS DISTINCT FROM tp.author_account_id);
 
--- A10: every 'paid' accrual (released share transferred to the inspirer) is
--- backed by exactly that much tribute_payout ledger — Σ(paid accruals) ==
--- Σ(tribute_payout). They flip 'paid' in the same txn that posts the entry.
-\echo '-- A10: Σ(paid accruals) == Σ(tribute_payout ledger) (expect ZERO rows) --'
-SELECT (SELECT COALESCE(SUM(amount_pence), 0) FROM tribute_accruals WHERE state = 'paid') AS paid_accruals_pence,
-       (SELECT COALESCE(SUM(amount_pence), 0) FROM ledger_entries WHERE trigger_type = 'tribute_payout') AS tribute_payout_pence
-WHERE (SELECT COALESCE(SUM(amount_pence), 0) FROM tribute_accruals WHERE state = 'paid')
-   <> (SELECT COALESCE(SUM(amount_pence), 0) FROM ledger_entries WHERE trigger_type = 'tribute_payout');
+-- A10 (Phase-5 chains): the gross-freeze + carve-at-payout model means a node's
+-- accrual holds its GROSS inflow, but the node is paid its NET (gross − direct
+-- children's gross). So the Phase-3 global "Σ paid accruals == Σ tribute_payout"
+-- no longer holds (paid accruals sum to ALL gross; the ledger sums root gross).
+-- It generalises to a PER-NODE conservation + a tree-wide telescoping, both AT
+-- REST (a pending tribute_payout has claimed but not yet 'paid' its accruals, so
+-- a transient nonzero during a cycle is expected — like B2's note).
+--
+-- A10a: for each node N, money paid out to N == N's paid gross − its DIRECT
+-- children's paid gross (the onward carve). The author's depth-0 case is checked
+-- separately by the writer_payout side; here we cover every tribute node.
+\echo '-- A10a: per-node paid_out == node paid gross − direct children paid gross (expect ZERO at rest) --'
+WITH paid_out AS (
+  SELECT tribute_id, SUM(amount_pence) AS out_pence
+  FROM tribute_payouts WHERE status <> 'pending' GROUP BY tribute_id
+),
+node_gross AS (
+  SELECT tribute_id, SUM(amount_pence) AS gross
+  FROM tribute_accruals WHERE state = 'paid' GROUP BY tribute_id
+),
+child_gross AS (
+  SELECT t.parent_tribute_id AS tribute_id, SUM(ta.amount_pence) AS gross
+  FROM tribute_accruals ta JOIN tributes t ON t.id = ta.tribute_id
+  WHERE ta.state = 'paid' AND t.parent_tribute_id IS NOT NULL
+  GROUP BY t.parent_tribute_id
+)
+SELECT COALESCE(po.tribute_id, ng.tribute_id) AS tribute_id,
+       COALESCE(po.out_pence, 0) AS paid_out_pence,
+       COALESCE(ng.gross, 0)     AS node_gross_paid,
+       COALESCE(cg.gross, 0)     AS children_gross_paid
+FROM paid_out po
+FULL OUTER JOIN node_gross ng ON ng.tribute_id = po.tribute_id
+LEFT JOIN child_gross cg ON cg.tribute_id = COALESCE(po.tribute_id, ng.tribute_id)
+WHERE COALESCE(po.out_pence, 0) <> COALESCE(ng.gross, 0) - COALESCE(cg.gross, 0);
 
--- A11: a held/released/swept/returned share is the author's deferred earning
--- held OUTSIDE the ledger (build-plan guard #7) — no ledger entry ever
+-- A10b: tree-wide telescoping. Σ(all tribute_payout ledger) == Σ(paid accruals of
+-- ROOT tributes): the chain only REDISTRIBUTES a root's gross among the chain's
+-- nodes (Σ_N paid_out(N) = Σ paid(roots), the per-node A10a summed). For a single
+-- (non-chained) tribute this reduces to the old Phase-3 identity.
+\echo '-- A10b: Σ(tribute_payout ledger) == Σ(root paid accruals) (expect ZERO at rest) --'
+SELECT (SELECT COALESCE(SUM(amount_pence), 0) FROM ledger_entries WHERE trigger_type = 'tribute_payout') AS tribute_payout_pence,
+       (SELECT COALESCE(SUM(ta.amount_pence), 0)
+          FROM tribute_accruals ta JOIN tributes t ON t.id = ta.tribute_id
+         WHERE ta.state = 'paid' AND t.parent_tribute_id IS NULL) AS root_paid_gross_pence
+WHERE (SELECT COALESCE(SUM(amount_pence), 0) FROM ledger_entries WHERE trigger_type = 'tribute_payout')
+   <> (SELECT COALESCE(SUM(ta.amount_pence), 0)
+          FROM tribute_accruals ta JOIN tributes t ON t.id = ta.tribute_id
+         WHERE ta.state = 'paid' AND t.parent_tribute_id IS NULL);
+
+-- A10c: swept-return-kind consistency (Phase-5 C5). A claimed/returned swept
+-- accrual folds into the PARENT's payout via the polymorphic
+-- swept_return_payout_id + swept_return_kind discriminator: kind 'writer' ⇒ a
+-- ROOT tribute's share folded into the author's writer_payouts run; kind
+-- 'tribute' ⇒ a deeper child's share folded into the parent inspirer's
+-- tribute_payouts run. Any row whose kind contradicts its depth, or whose payout
+-- id is absent from the matching table (orphan), is a breach.
+\echo '-- A10c: swept_return_kind matches depth + payout table (expect ZERO) --'
+SELECT ta.id, ta.swept_return_kind, ta.swept_return_payout_id, t.parent_tribute_id
+FROM tribute_accruals ta JOIN tributes t ON t.id = ta.tribute_id
+WHERE ta.swept_return_payout_id IS NOT NULL
+  AND (
+    (ta.swept_return_kind = 'writer'
+       AND (t.parent_tribute_id IS NOT NULL
+            OR NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = ta.swept_return_payout_id)))
+    OR (ta.swept_return_kind = 'tribute'
+       AND (t.parent_tribute_id IS NULL
+            OR NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = ta.swept_return_payout_id)))
+  );
+
+-- A11: a held/released/swept/returned share is the parent beneficiary's deferred
+-- earning held OUTSIDE the ledger (build-plan guard #7) — no ledger entry ever
 -- references a tribute_accruals row; the only tribute ledger entry references
 -- tribute_payouts. Any row here is an off-ledger-invariant breach.
 \echo '-- A11: no ledger entry references tribute_accruals directly (expect ZERO) --'

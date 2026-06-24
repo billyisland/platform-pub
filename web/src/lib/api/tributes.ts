@@ -25,6 +25,11 @@ export interface TributeView {
   };
   /** Phase-4 composition: the citation this tribute was offered from, if any. */
   citationEdgeId: string | null;
+  /** Phase-5 chains: NULL ⇒ a root tribute (carves the piece net); non-NULL ⇒ a
+   *  child of that tribute (redirects a share of the parent's slice upstream). */
+  parentTributeId: string | null;
+  /** 0 for roots, parent.depth + 1 for children — the tree level. */
+  depth: number;
   /** True ⇒ the viewer authored this tribute (can withdraw a proposed one). */
   mine: boolean;
   createdAt: string;
@@ -53,6 +58,9 @@ export interface CreateTributeInput {
   note?: string;
   /** Phase-4 composition: offer this tribute FROM a citation on the same piece. */
   citationEdgeId?: string;
+  /** Phase-5 chains: redirect a share of this PARENT tribute's slice upstream.
+   *  The offerer must be the parent's live beneficiary (C1). */
+  parentTributeId?: string;
 }
 
 export const tributes = {
@@ -66,7 +74,12 @@ export const tributes = {
       body: JSON.stringify(input),
     }),
   consent: (id: string) =>
-    request<{ ok: true; status: string }>(`/tributes/${id}/consent`, { method: "POST" }),
+    // articleId/percentageBps returned so the client can open the upstream child
+    // composer ("Accept & pass a share upstream", Phase-5 C1).
+    request<{ ok: true; status: string; articleId: string; percentageBps: number }>(
+      `/tributes/${id}/consent`,
+      { method: "POST" },
+    ),
   decline: (id: string) =>
     request<{ ok: true; status: string }>(`/tributes/${id}/decline`, { method: "POST" }),
   withdraw: (id: string) =>
