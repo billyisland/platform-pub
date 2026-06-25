@@ -99,6 +99,15 @@ Priority is **correctness risk × blast radius × effort**, FIX-PROGRAMME conven
 - Dispute stake mirrors the tab delta with no clamp (negative-balance invariant); refund idempotent via the `withdrawn_at` claim.
 - Dark-flag gating consistent; GET endpoints don't leak `invite_email` / `invite_token_hash` / stake ids; relay-outbox enqueues inside the caller's txn; SQL parameterised throughout; hairline tripwire clean on the four frontend files.
 
-## Not independently re-run
+## Re-run and verified green (2026-06-24)
 
-The CI suites (schema-drift, ledger-adjacency, reconcile, payment-service/shared vitest, `next build`) — the build plan documents them green and the wiring was verified, but they were not re-executed during this audit.
+The CI/guard suites were re-executed after the fix programme and all pass:
+- `check-schema-drift.sh` — all 4 checks (133 migrations seeded, 314 migration-created objects present, `migrate.ts` no-op on a schema.sql DB, canonical pg_dump round-trip).
+- `check-ledger-adjacency.sh` — every money-write site carries a `recordLedger()`.
+- `check-hairlines.sh` over the four tribute frontend files — clean.
+- payment-service vitest — 62/62, incl. `chargeback-reversal.test.ts` (8 conservation cases, F3).
+- shared vitest — 83/83, incl. `per-read-net`.
+- gateway `tsc --noEmit` — clean.
+- web `next build` — clean (`/tribute/claim`, `/reader` compile).
+
+**Not re-run:** `reconcile-ledger.sql` — it reconciles *actual ledger rows* against balances, so it needs a populated fully-migrated DB; the live dev DB has tribute drift (missing migrations 127/128), where it would mislead. Its structural side (the A6/A12 view definitions) is covered by schema-drift Check 1/2, which build a throwaway fully-migrated DB.
