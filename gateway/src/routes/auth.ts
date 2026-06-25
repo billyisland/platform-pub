@@ -43,7 +43,8 @@ import crypto from "crypto";
 // POST /auth/logout              — clear session
 // GET  /auth/me                  — current account info (session hydration)
 // POST /auth/upgrade-writer      — start Stripe Connect onboarding
-// POST /auth/connect-card        — save reader payment method
+// POST /auth/setup-intent        — begin reader card setup (SetupIntent)
+// POST /auth/connect-card        — finalise card setup from succeeded SetupIntent
 // POST /auth/deactivate          — deactivate account (reversible)
 // POST /auth/delete-account      — permanently delete account
 // POST /auth/change-email        — request email change (sends verification)
@@ -395,8 +396,78 @@ export async function authRoutes(app: FastifyInstance) {
   // (via the payment service's /card-connected endpoint).
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // POST /auth/setup-intent — begin card setup.
+  //
+  // Creates (or reuses) the reader's Stripe Customer and returns a SetupIntent
+  // client_secret. The client confirms it with Stripe.js, handling any 3DS/SCA
+  // step inline while the reader is present — which validates the card AND
+  // authorises future OFF-SESSION charges, the exact usage tab settlement
+  // relies on. The card is only recorded once the SetupIntent SUCCEEDS, in
+  // /auth/connect-card. STRIPE audit S2 (was: blind paymentMethods.attach with
+  // no server-side validation, so a bad/expired/3DS-mandatory card attached
+  // cleanly and only failed weeks later at the first settlement — S1).
+  //
+  // We do NOT persist a freshly-created customer here: stripe_customer_id is
+  // the "reader has a usable card" signal (auth/me hasPaymentMethod, votes
+  // hasCard, settlement's attempt gate), so it must flip true only on a
+  // confirmed card. A customer for an abandoned setup is a harmless orphan; on
+  // confirm we read the customer straight off the succeeded SetupIntent.
+  // ---------------------------------------------------------------------------
+
+  app.post(
+    "/auth/setup-intent",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const accountId = req.session!.sub;
+      const account = await getAccount(accountId);
+
+      if (!account) {
+        return reply.status(404).send({ error: "Account not found" });
+      }
+
+      try {
+        let customerId = account.stripeCustomerId;
+
+        if (!customerId) {
+          const customer = await stripe.customers.create({
+            metadata: { platform: "all.haus", account_id: accountId },
+          });
+          customerId = customer.id;
+        }
+
+        const setupIntent = await stripe.setupIntents.create({
+          customer: customerId,
+          payment_method_types: ["card"],
+          usage: "off_session",
+          metadata: { platform: "all.haus", account_id: accountId },
+        });
+
+        return reply
+          .status(200)
+          .send({ clientSecret: setupIntent.client_secret });
+      } catch (err) {
+        logger.error({ err, accountId }, "Failed to create setup intent");
+        return reply.status(500).send({ error: "Failed to start card setup" });
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // POST /auth/connect-card — finalise card setup from a succeeded SetupIntent.
+  //
+  // The client has confirmed the SetupIntent (minted by /auth/setup-intent)
+  // with Stripe.js. We retrieve it, assert it SUCCEEDED and belongs to this
+  // account, set its now-validated payment method as the customer default, and
+  // record the customer — flipping the reader to "has a card". Replaces the old
+  // blind attach of a client-supplied paymentMethodId. STRIPE audit S2.
+  //
+  // Also triggers conversion of provisional reads to accrued via the payment
+  // service's /card-connected endpoint.
+  // ---------------------------------------------------------------------------
+
   const ConnectCardSchema = z.object({
-    paymentMethodId: z.string().min(1),
+    setupIntentId: z.string().min(1),
   });
 
   app.post(
@@ -416,31 +487,56 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       try {
-        let customerId = account.stripeCustomerId;
+        const setupIntent = await stripe.setupIntents.retrieve(
+          parsed.data.setupIntentId,
+        );
 
-        if (!customerId) {
-          // Create Stripe Customer
-          const customer = await stripe.customers.create({
-            metadata: {
-              platform: "all.haus",
-              account_id: accountId,
-            },
-          });
-          customerId = customer.id;
+        // Never trust a client-supplied id blindly: the SetupIntent must carry
+        // this account's id in the metadata we stamped at creation.
+        if (setupIntent.metadata?.account_id !== accountId) {
+          logger.warn(
+            { accountId, setupIntentId: parsed.data.setupIntentId },
+            "connect-card: SetupIntent does not belong to this account",
+          );
+          return reply.status(403).send({ error: "Invalid setup intent" });
         }
 
-        // Attach payment method and set as default
-        await stripe.paymentMethods.attach(parsed.data.paymentMethodId, {
-          customer: customerId,
-        });
+        if (setupIntent.status !== "succeeded") {
+          logger.warn(
+            { accountId, status: setupIntent.status },
+            "connect-card: SetupIntent not succeeded — card not usable",
+          );
+          return reply
+            .status(400)
+            .send({ error: "Card setup did not complete. Please try again." });
+        }
 
+        const customerId =
+          typeof setupIntent.customer === "string"
+            ? setupIntent.customer
+            : (setupIntent.customer?.id ?? null);
+        const paymentMethodId =
+          typeof setupIntent.payment_method === "string"
+            ? setupIntent.payment_method
+            : (setupIntent.payment_method?.id ?? null);
+
+        if (!customerId || !paymentMethodId) {
+          logger.error(
+            { accountId, setupIntentId: setupIntent.id },
+            "connect-card: succeeded SetupIntent missing customer or payment_method",
+          );
+          return reply
+            .status(500)
+            .send({ error: "Failed to connect payment method" });
+        }
+
+        // Confirming the SetupIntent already attached the PM to the customer;
+        // just make it the default for future off-session settlement charges.
         await stripe.customers.update(customerId, {
-          invoice_settings: {
-            default_payment_method: parsed.data.paymentMethodId,
-          },
+          invoice_settings: { default_payment_method: paymentMethodId },
         });
 
-        // Record on account
+        // Record on account (also clears any settlement back-off flag — S1).
         await connectPaymentMethod(accountId, customerId);
 
         // Notify payment service to convert provisional reads

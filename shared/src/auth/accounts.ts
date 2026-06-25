@@ -244,9 +244,12 @@ export async function connectPaymentMethod(
   accountId: string,
   stripeCustomerId: string
 ): Promise<void> {
+  // Clear any prior settlement back-off flag: re-attaching a card is the reader's
+  // action that resolves a terminal decline, so settlement may re-attempt (see
+  // settlement.ts checkAndSettle / completeSettlement, STRIPE audit S1).
   await pool.query(
     `UPDATE accounts
-     SET stripe_customer_id = $1, updated_at = now()
+     SET stripe_customer_id = $1, card_action_required_at = NULL, updated_at = now()
      WHERE id = $2`,
     [stripeCustomerId, accountId]
   )

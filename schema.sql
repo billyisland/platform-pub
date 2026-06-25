@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict aM7uF1ZB7DLoD9fV5pY7Dcm8B3gcQdi3mbd2CRc1Wol9bWPWsp4hH3IJ1xV1agR
+\restrict R7nBbNvRqj3FtcTF3vDIQtXNc3X4ywkG8kfT93X6pQbFpbnXjGFuV5svukSjUlr
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1216,6 +1216,7 @@ CREATE TABLE public.accounts (
     follow_list_dirty boolean DEFAULT false NOT NULL,
     discovery_synced_at timestamp with time zone,
     discovery_enabled boolean DEFAULT false NOT NULL,
+    card_action_required_at timestamp with time zone,
     CONSTRAINT accounts_annual_discount_pct_check CHECK (((annual_discount_pct >= 0) AND (annual_discount_pct <= 30))),
     CONSTRAINT accounts_hosting_type_check CHECK ((hosting_type = ANY (ARRAY['hosted'::text, 'self_hosted'::text])))
 );
@@ -2498,6 +2499,7 @@ CREATE TABLE public.tab_settlements (
     status text DEFAULT 'pending'::text NOT NULL,
     reversed_at timestamp with time zone,
     reversal_reason text,
+    failure_reason text,
     CONSTRAINT tab_settlements_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text]))),
     CONSTRAINT tab_settlements_trigger_type_check CHECK ((trigger_type = ANY (ARRAY['threshold'::text, 'monthly_fallback'::text])))
 );
@@ -7423,7 +7425,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict aM7uF1ZB7DLoD9fV5pY7Dcm8B3gcQdi3mbd2CRc1Wol9bWPWsp4hH3IJ1xV1agR
+\unrestrict R7nBbNvRqj3FtcTF3vDIQtXNc3X4ywkG8kfT93X6pQbFpbnXjGFuV5svukSjUlr
+
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7560,4 +7563,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('131_tribute_edge_backstops.sql'),
     ('132_read_state_charged_back.sql'),
     ('133_chargeback_reversal.sql'),
-    ('134_payout_confirm_lifecycle.sql');
+    ('134_payout_confirm_lifecycle.sql'),
+    ('135_settlement_decline_handling.sql');

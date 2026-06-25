@@ -17,6 +17,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
       // movement posts a mirror entry; the backfill aligned pre-Phase-1 history).
       const account = await pool.query(
         `SELECT a.free_allowance_remaining_pence,
+                a.card_action_required_at,
                 COALESCE(lrb.balance_pence, 0) AS balance_pence
          FROM accounts a
          LEFT JOIN ledger_reader_balance lrb ON lrb.account_id = a.id
@@ -46,6 +47,10 @@ export async function myAccountRoutes(app: FastifyInstance) {
         freeAllowanceRemainingPence:
           account.rows[0]?.free_allowance_remaining_pence ?? 0,
         lastSettledAt: settled?.settledAt || null,
+        // Set when an off-session settlement charge terminally declined; the tab
+        // is frozen (settlement backs off) until the reader re-attaches a card.
+        // Frontend prompts a card re-auth when non-null. STRIPE audit S1.
+        cardActionRequiredAt: account.rows[0]?.card_action_required_at ?? null,
         reads: reads.rows,
       });
     } catch (err) {

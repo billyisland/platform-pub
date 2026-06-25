@@ -36,17 +36,49 @@ export async function webhookRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Missing Stripe signature' })
     }
 
-    let event: Stripe.Event
+    // Try each configured signing secret. The main account endpoint uses
+    // STRIPE_WEBHOOK_SECRET; if Connect events (account.updated / transfer.* /
+    // deauthorized) are delivered via a SEPARATE Stripe endpoint, that endpoint
+    // has its own secret — set STRIPE_CONNECT_WEBHOOK_SECRET and we verify
+    // against both. (If Connect events ride the same endpoint — "listen to
+    // events on connected accounts" — one secret suffices.) STRIPE audit S4.
+    const secrets = [
+      process.env.STRIPE_WEBHOOK_SECRET,
+      process.env.STRIPE_CONNECT_WEBHOOK_SECRET,
+    ].filter((s): s is string => Boolean(s))
 
-    try {
-      event = stripe.webhooks.constructEvent(
-        req.body as Buffer,
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET!
-      )
-    } catch (err) {
-      logger.warn({ err }, 'Stripe webhook signature verification failed')
+    let event: Stripe.Event | null = null
+    let lastErr: unknown
+    for (const secret of secrets) {
+      try {
+        event = stripe.webhooks.constructEvent(req.body as Buffer, sig, secret)
+        break
+      } catch (err) {
+        lastErr = err
+      }
+    }
+    if (!event) {
+      logger.warn({ err: lastErr }, 'Stripe webhook signature verification failed')
       return reply.status(400).send({ error: 'Invalid signature' })
+    }
+
+    // livemode guard: derive the expected mode from the secret key
+    // (sk_live_/rk_live_ → live). A test-mode event hitting the live endpoint
+    // (or vice versa) is misrouted — ack it (200, so Stripe stops retrying) but
+    // do NOT process it against real-money state. STRIPE audit S4.
+    const expectLive =
+      (process.env.STRIPE_SECRET_KEY ?? '').split('_')[1] === 'live'
+    if (event.livemode !== expectLive) {
+      logger.warn(
+        {
+          eventId: event.id,
+          eventType: event.type,
+          eventLivemode: event.livemode,
+          expectLive,
+        },
+        'Stripe webhook livemode mismatch — ignoring (misrouted test/live event)'
+      )
+      return reply.status(200).send({ received: true, ignored: 'livemode_mismatch' })
     }
 
     try {
@@ -194,13 +226,48 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     case 'charge.refunded': {
       const charge = event.data.object as Stripe.Charge
       if (charge.amount_refunded < charge.amount) {
+        // The per-read model can't proportionally unwind, so a partial refund
+        // leaves the reader charged + writers paid. Emit the alertable
+        // manual_review_required marker (the event is also durably persisted in
+        // stripe_webhook_events) so ops actions it rather than losing it in
+        // logs. STRIPE audit S4.
         logger.warn(
-          { chargeId: charge.id, amountRefunded: charge.amount_refunded, amount: charge.amount },
-          'Partial refund — not reversing (per-read unwind supports full reversal only)',
+          {
+            event: 'manual_review_required',
+            kind: 'partial_refund',
+            chargeId: charge.id,
+            amountRefunded: charge.amount_refunded,
+            amount: charge.amount,
+          },
+          'Partial refund — not auto-reversing (per-read unwind supports full reversal only); MANUAL REVIEW required',
         )
         break
       }
       await settlementService.reverseSettlement(charge.id, 'refund')
+      break
+    }
+
+    case 'charge.dispute.created': {
+      // A dispute was OPENED. We do not reverse here (it may yet be won; the
+      // reversal fires on charge.dispute.closed with status=lost). Surface it
+      // with the alertable marker so ops tracks the open dispute and its
+      // response deadline rather than discovering it only at close. STRIPE
+      // audit S4.
+      const dispute = event.data.object as Stripe.Dispute
+      const chargeId =
+        typeof dispute.charge === 'string' ? dispute.charge : dispute.charge?.id ?? ''
+      logger.warn(
+        {
+          event: 'manual_review_required',
+          kind: 'dispute_opened',
+          disputeId: dispute.id,
+          chargeId,
+          amount: dispute.amount,
+          reason: dispute.reason,
+          dueBy: dispute.evidence_details?.due_by ?? null,
+        },
+        'Dispute OPENED on a charge — MANUAL REVIEW required (no auto-reversal until dispute.closed=lost)',
+      )
       break
     }
 
@@ -213,9 +280,29 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       // on transfers/payouts and not charges_enabled. The reconciliation sweep
       // (payout.ts::reconcileConnectKyc) applies the SAME helper as a backstop
       // for missed account.updated events.
+      //
+      // Bidirectional (STRIPE audit S3): payability is NOT one-way. If Stripe
+      // later disables a writer's transfers capability / payouts (compliance
+      // review, fraud, negative balance), this same event fires with the
+      // capability inactive — flip them back to incomplete so the payout cycle
+      // stops selecting them (each transfer would otherwise be rejected, cycle
+      // after cycle). Previously only the TRUE direction was handled.
       if (isConnectPayable(account)) {
         await handleConnectKycComplete(account.id)
+      } else {
+        await handleConnectPayableLost(account.id)
       }
+      break
+    }
+
+    case 'account.application.deauthorized': {
+      // The writer disconnected their Connect account from the platform. Stripe
+      // can no longer transfer to it, so clear payability — leaving a stale
+      // stripe_connect_kyc_complete = TRUE would keep the payout cycle targeting
+      // a severed account (STRIPE audit S3). On this Connect event the connected
+      // account id is the top-level event.account, not event.data.object (which
+      // is the Application).
+      await handleConnectDeauthorized(event.account ?? null)
       break
     }
 
@@ -243,4 +330,62 @@ async function handleConnectKycComplete(stripeConnectId: string): Promise<void> 
   }
 
   logger.info({ writerId: rows[0].id, stripeConnectId }, 'Writer KYC complete — payout cycle will pick up earnings')
+}
+
+// ---------------------------------------------------------------------------
+// handleConnectPayableLost — a previously-payable writer is no longer payable
+// (transfers capability disabled / payouts off). Flip them back to incomplete
+// so the payout cycle skips them. Guarded on `= TRUE` so it's a no-op for an
+// account that was never marked complete (the common case for an in-progress
+// onboarding's account.updated stream). STRIPE audit S3.
+// ---------------------------------------------------------------------------
+
+async function handleConnectPayableLost(stripeConnectId: string): Promise<void> {
+  const { rows } = await pool.query<{ id: string }>(
+    `UPDATE accounts
+     SET stripe_connect_kyc_complete = FALSE, updated_at = now()
+     WHERE stripe_connect_id = $1 AND stripe_connect_kyc_complete = TRUE
+     RETURNING id`,
+    [stripeConnectId]
+  )
+
+  if (rows.length === 0) return // not previously complete — nothing to demote
+
+  logger.warn(
+    { writerId: rows[0].id, stripeConnectId },
+    'Writer Connect payability lost (transfers/payouts disabled) — removed from payout cycle'
+  )
+}
+
+// ---------------------------------------------------------------------------
+// handleConnectDeauthorized — the writer revoked the platform's access to their
+// Connect account. Clear payability so the payout cycle stops targeting it. We
+// keep stripe_connect_id (the payout audit trail + a re-authorize re-flips it
+// via account.updated); kyc_complete = FALSE alone drops them from the cycle,
+// which requires kyc_complete = TRUE. STRIPE audit S3.
+// ---------------------------------------------------------------------------
+
+async function handleConnectDeauthorized(stripeConnectId: string | null): Promise<void> {
+  if (!stripeConnectId) {
+    logger.warn({}, 'account.application.deauthorized with no connected account id — ignoring')
+    return
+  }
+
+  const { rows } = await pool.query<{ id: string }>(
+    `UPDATE accounts
+     SET stripe_connect_kyc_complete = FALSE, updated_at = now()
+     WHERE stripe_connect_id = $1 AND stripe_connect_kyc_complete = TRUE
+     RETURNING id`,
+    [stripeConnectId]
+  )
+
+  if (rows.length === 0) {
+    logger.info({ stripeConnectId }, 'Deauthorize event for an account that was not payable — no change')
+    return
+  }
+
+  logger.warn(
+    { writerId: rows[0].id, stripeConnectId },
+    'Writer deauthorized Connect — cleared payable state, dropped from payout cycle'
+  )
 }

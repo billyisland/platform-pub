@@ -63,10 +63,16 @@ export const auth = {
   connectStripe: () =>
     request<{ stripeConnectUrl: string }>('/auth/upgrade-writer', { method: 'POST' }),
 
-  connectCard: (paymentMethodId: string) =>
+  // Begin card setup — returns a SetupIntent client_secret the client confirms
+  // with Stripe.js (validating the card + authorising off-session use). S2.
+  createSetupIntent: () =>
+    request<{ clientSecret: string }>('/auth/setup-intent', { method: 'POST' }),
+
+  // Finalise card setup from a succeeded SetupIntent (server verifies status). S2.
+  connectCard: (setupIntentId: string) =>
     request<{ ok: boolean; hasPaymentMethod: boolean }>('/auth/connect-card', {
       method: 'POST',
-      body: JSON.stringify({ paymentMethodId }),
+      body: JSON.stringify({ setupIntentId }),
     }),
 
   updateProfile: (data: { displayName?: string; bio?: string; avatar?: string | null }) =>

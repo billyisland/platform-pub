@@ -1,10 +1,12 @@
 import Stripe from 'stripe'
+import type { PoolClient } from 'pg'
 import type { WriterEarnings, ArticleEarnings } from '../types/index.js'
 import { pool, withTransaction, loadConfig } from '@platform-pub/shared/db/client.js'
 import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 import { tributesEnabled } from '@platform-pub/shared/lib/env.js'
 import { readNetSql } from '@platform-pub/shared/lib/per-read-net.js'
 import { isConnectPayable } from '../lib/connect-payable.js'
+import { isTerminalTransferError } from '../lib/charge-errors.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -582,18 +584,40 @@ class PayoutService {
     stripeConnectId: string,
     amountPence: number,
   ): Promise<void> {
-    const transfer = await this.stripe.transfers.create({
-      amount: amountPence,
-      currency: 'gbp',
-      destination: stripeConnectId,
-      metadata: {
-        platform: 'all.haus',
-        writer_id: writerId,
-        payout_id: payoutId,
-      },
-    }, {
-      idempotencyKey: `payout-${payoutId}`,
-    })
+    let transfer: Stripe.Transfer
+    try {
+      transfer = await this.stripe.transfers.create({
+        amount: amountPence,
+        currency: 'gbp',
+        destination: stripeConnectId,
+        metadata: {
+          platform: 'all.haus',
+          writer_id: writerId,
+          payout_id: payoutId,
+        },
+      }, {
+        idempotencyKey: `payout-${payoutId}`,
+      })
+    } catch (err) {
+      // Terminal rejection (e.g. the destination's transfers capability was
+      // revoked): Stripe created NO transfer and never emits transfer.failed, so
+      // handleFailedPayout — keyed on stripe_transfer_id — would never fire and
+      // the row would sit 'pending' forever, its claimed reads frozen, resume
+      // retrying every cycle (the payout-side twin of the settlement orphan).
+      // Mark the payout failed and release its earnings so the next cycle re-pays
+      // under a fresh id. Transient/ambiguous errors re-throw — the transfer may
+      // have gone through, so resume retries with the stable key (never roll back
+      // → never double-pay). STRIPE audit S1 follow-on.
+      if (isTerminalTransferError(err)) {
+        const reason =
+          (err as { code?: string }).code ??
+          (err as { type?: string }).type ??
+          'transfer_rejected'
+        await this.failWriterPayoutTerminal(payoutId, writerId, reason)
+        return
+      }
+      throw err
+    }
 
     await withTransaction(async (client) => {
       // Guard the status flip on status='pending' and use its rowCount to gate
@@ -753,41 +777,86 @@ class PayoutService {
 
       const { id: payoutId, writer_id: writerId } = payoutRow.rows[0]
 
-      // Roll reads back to platform_settled — they'll be picked up by next cycle
-      await client.query(
-        `UPDATE read_events
-         SET state = 'platform_settled',
-             writer_payout_id = NULL,
-             state_updated_at = now()
-         WHERE writer_payout_id = $1`,
-        [payoutId]
-      )
-
-      // Roll vote_charges back to platform_settled
-      await client.query(
-        `UPDATE vote_charges
-         SET state = 'platform_settled',
-             writer_payout_id = NULL
-         WHERE writer_payout_id = $1`,
-        [payoutId]
-      )
-
-      // Unclaim the swept tribute shares this payout carried back to the author
-      // (whether or not completeWriterPayout already advanced them to 'returned')
-      // so the next cycle returns them again. Mirrors the read rollback above.
-      // Kind 'writer' — a writer_payout only ever claims root swept returns.
-      await client.query(
-        `UPDATE tribute_accruals
-         SET state = 'swept',
-             swept_return_payout_id = NULL,
-             swept_return_kind = NULL
-         WHERE swept_return_payout_id = $1
-           AND swept_return_kind = 'writer'`,
-        [payoutId]
-      )
+      await this.rollbackWriterPayoutRows(client, payoutId)
 
       logger.warn({ payoutId, writerId, stripeTransferId, reason }, 'Writer payout failed — reads rolled back')
     })
+  }
+
+  // ---------------------------------------------------------------------------
+  // rollbackWriterPayoutRows — release everything a writer_payout claimed:
+  // reads + upvote charges back to platform_settled (unclaimed), and the swept
+  // ROOT tribute shares it carried back to the author (kind 'writer') back to
+  // 'swept'. Shared by handleFailedPayout (transfer.failed webhook) and
+  // failWriterPayoutTerminal (terminal create rejection) so the rollback can't
+  // diverge. Caller owns the transaction and the writer_payouts status flip.
+  // ---------------------------------------------------------------------------
+  private async rollbackWriterPayoutRows(
+    client: PoolClient,
+    payoutId: string,
+  ): Promise<void> {
+    // Reads → platform_settled, unclaimed (picked up by the next cycle).
+    await client.query(
+      `UPDATE read_events
+       SET state = 'platform_settled',
+           writer_payout_id = NULL,
+           state_updated_at = now()
+       WHERE writer_payout_id = $1`,
+      [payoutId],
+    )
+
+    // Upvote charges → platform_settled, unclaimed.
+    await client.query(
+      `UPDATE vote_charges
+       SET state = 'platform_settled',
+           writer_payout_id = NULL
+       WHERE writer_payout_id = $1`,
+      [payoutId],
+    )
+
+    // Unclaim the swept tribute shares this payout carried back to the author
+    // (whether or not completeWriterPayout already advanced them to 'returned')
+    // so the next cycle returns them again. Kind 'writer' — a writer_payout only
+    // ever claims root swept returns.
+    await client.query(
+      `UPDATE tribute_accruals
+       SET state = 'swept',
+           swept_return_payout_id = NULL,
+           swept_return_kind = NULL
+       WHERE swept_return_payout_id = $1
+         AND swept_return_kind = 'writer'`,
+      [payoutId],
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // failWriterPayoutTerminal — a writer transfer was rejected at create time
+  // (no transfer object, no transfer.failed webhook). Flip the pending row to
+  // 'failed' and release its claimed earnings for re-pay. Guarded on 'pending'
+  // so a concurrent resume/webhook that already resolved it is a no-op.
+  // ---------------------------------------------------------------------------
+  private async failWriterPayoutTerminal(
+    payoutId: string,
+    writerId: string,
+    reason: string,
+  ): Promise<void> {
+    await withTransaction(async (client) => {
+      const flipped = await client.query(
+        `UPDATE writer_payouts
+         SET status = 'failed',
+             failed_reason = COALESCE(failed_reason, $1),
+             completed_at = NULL
+         WHERE id = $2 AND status = 'pending'`,
+        [reason, payoutId],
+      )
+      if (flipped.rowCount === 0) return
+      await this.rollbackWriterPayoutRows(client, payoutId)
+    })
+
+    logger.warn(
+      { payoutId, writerId, reason },
+      'Writer payout transfer rejected by Stripe (no transfer created) — marked failed, earnings released for re-pay',
+    )
   }
 
   // ===========================================================================
@@ -1398,19 +1467,38 @@ class PayoutService {
     stripeConnectId: string,
     amountPence: number,
   ): Promise<void> {
-    const transfer = await this.stripe.transfers.create({
-      amount: amountPence,
-      currency: 'gbp',
-      destination: stripeConnectId,
-      metadata: {
-        platform: 'all.haus',
-        tribute_payout_id: payoutId,
-        tribute_id: tributeId,
-        inspirer_account_id: inspirerId,
-      },
-    }, {
-      idempotencyKey: `tribute-payout-${payoutId}`,
-    })
+    let transfer: Stripe.Transfer
+    try {
+      transfer = await this.stripe.transfers.create({
+        amount: amountPence,
+        currency: 'gbp',
+        destination: stripeConnectId,
+        metadata: {
+          platform: 'all.haus',
+          tribute_payout_id: payoutId,
+          tribute_id: tributeId,
+          inspirer_account_id: inspirerId,
+        },
+      }, {
+        idempotencyKey: `tribute-payout-${payoutId}`,
+      })
+    } catch (err) {
+      // Same terminal-rejection gap as completeWriterPayout: a revoked-capability
+      // create throws, no transfer object exists, no transfer.failed webhook ever
+      // fires, so handleFailedTributePayout never runs and the row sits 'pending'
+      // forever with its accruals frozen. Mark failed + release for re-pay on a
+      // deterministic rejection; re-throw anything ambiguous (resume retries with
+      // the stable key → never double-pay). STRIPE audit S1 follow-on.
+      if (isTerminalTransferError(err)) {
+        const reason =
+          (err as { code?: string }).code ??
+          (err as { type?: string }).type ??
+          'transfer_rejected'
+        await this.failTributePayoutTerminal(payoutId, reason)
+        return
+      }
+      throw err
+    }
 
     await withTransaction(async (client) => {
       const flipped = await client.query(
@@ -1567,31 +1655,74 @@ class PayoutService {
       if (payoutRow.rowCount === 0) return
       const payoutId = payoutRow.rows[0].id
 
-      // The node's own accruals this payout advanced (released → paid): roll back
-      // to 'released' and unclaim so the next cycle re-pays them.
-      await client.query(
-        `UPDATE tribute_accruals
-            SET state = 'released', tribute_payout_id = NULL
-          WHERE tribute_payout_id = $1`,
-        [payoutId],
-      )
-
-      // The direct-children swept shares this payout carried back to the node
-      // (kind 'tribute', advanced swept → returned): roll back to 'swept' and
-      // unclaim. Mirrors the writer handler's swept-return rollback.
-      await client.query(
-        `UPDATE tribute_accruals
-            SET state = 'swept', swept_return_payout_id = NULL, swept_return_kind = NULL
-          WHERE swept_return_payout_id = $1
-            AND swept_return_kind = 'tribute'`,
-        [payoutId],
-      )
+      await this.rollbackTributePayoutRows(client, payoutId)
 
       logger.warn(
         { tributePayoutId: payoutId, stripeTransferId, reason },
         'Tribute payout failed — accruals rolled back for re-pay',
       )
     })
+  }
+
+  // ---------------------------------------------------------------------------
+  // rollbackTributePayoutRows — release everything a tribute_payout claimed: the
+  // node's own released accruals back to 'released' (unclaimed), and the direct-
+  // children swept shares it carried back to this node (kind 'tribute') back to
+  // 'swept'. Shared by handleFailedTributePayout (transfer.failed webhook) and
+  // failTributePayoutTerminal (terminal create rejection). Caller owns the
+  // transaction and the tribute_payouts status flip.
+  // ---------------------------------------------------------------------------
+  private async rollbackTributePayoutRows(
+    client: PoolClient,
+    payoutId: string,
+  ): Promise<void> {
+    // The node's own accruals this payout advanced (released → paid): roll back
+    // to 'released' and unclaim so the next cycle re-pays them.
+    await client.query(
+      `UPDATE tribute_accruals
+          SET state = 'released', tribute_payout_id = NULL
+        WHERE tribute_payout_id = $1`,
+      [payoutId],
+    )
+
+    // The direct-children swept shares this payout carried back to the node
+    // (kind 'tribute', advanced swept → returned): roll back to 'swept' and
+    // unclaim. Mirrors the writer handler's swept-return rollback.
+    await client.query(
+      `UPDATE tribute_accruals
+          SET state = 'swept', swept_return_payout_id = NULL, swept_return_kind = NULL
+        WHERE swept_return_payout_id = $1
+          AND swept_return_kind = 'tribute'`,
+      [payoutId],
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // failTributePayoutTerminal — a tribute transfer was rejected at create time
+  // (no transfer object, no transfer.failed webhook). Flip the pending row to
+  // 'failed' and release its claimed accruals for re-pay. Guarded on 'pending'.
+  // ---------------------------------------------------------------------------
+  private async failTributePayoutTerminal(
+    payoutId: string,
+    reason: string,
+  ): Promise<void> {
+    await withTransaction(async (client) => {
+      const flipped = await client.query(
+        `UPDATE tribute_payouts
+         SET status = 'failed',
+             failed_reason = COALESCE(failed_reason, $1),
+             completed_at = NULL
+         WHERE id = $2 AND status = 'pending'`,
+        [reason, payoutId],
+      )
+      if (flipped.rowCount === 0) return
+      await this.rollbackTributePayoutRows(client, payoutId)
+    })
+
+    logger.warn(
+      { tributePayoutId: payoutId, reason },
+      'Tribute payout transfer rejected by Stripe (no transfer created) — marked failed, accruals released for re-pay',
+    )
   }
 
   // ---------------------------------------------------------------------------
@@ -1686,15 +1817,27 @@ class PayoutService {
   // (runTributePayoutCycle's released/returns CTEs). Idempotent: the UPDATE
   // guards on `= FALSE`, so it's a no-op if a concurrent webhook already won.
   // ---------------------------------------------------------------------------
-  async reconcileConnectKyc(): Promise<{ checked: number; flipped: number }> {
+  async reconcileConnectKyc(): Promise<{
+    checked: number
+    flipped: number
+    demoted: number
+  }> {
+    // Candidates = any account with a Connect id and pending earnings across the
+    // KYC-gated payout sources — REGARDLESS of its current kyc flag. We re-read
+    // each from Stripe and apply isConnectPayable() in BOTH directions
+    // (promote a missed FALSE→TRUE, demote a missed TRUE→FALSE), so a dropped
+    // account.updated in either direction self-heals. Bounded to accounts with
+    // money waiting (the only place a wrong flag matters) so the demotion arm
+    // costs an accounts.retrieve only for writers the cycle would otherwise pay.
+    // STRIPE audit S3 (previously this swept FALSE→TRUE only).
     const { rows: candidates } = await pool.query<{
       id: string
       stripe_connect_id: string
+      stripe_connect_kyc_complete: boolean
     }>(
-      `SELECT a.id, a.stripe_connect_id
+      `SELECT a.id, a.stripe_connect_id, a.stripe_connect_kyc_complete
          FROM accounts a
         WHERE a.stripe_connect_id IS NOT NULL
-          AND a.stripe_connect_kyc_complete = FALSE
           AND (
             -- (1) writer read earnings
             EXISTS (SELECT 1 FROM read_events re
@@ -1737,6 +1880,7 @@ class PayoutService {
     )
 
     let flipped = 0
+    let demoted = 0
     for (const c of candidates) {
       let account: Stripe.Account
       try {
@@ -1750,29 +1894,50 @@ class PayoutService {
         continue
       }
 
-      if (!isConnectPayable(account)) continue
+      const payable = isConnectPayable(account)
 
-      const { rows } = await pool.query<{ id: string }>(
-        `UPDATE accounts
-            SET stripe_connect_kyc_complete = TRUE, updated_at = now()
-          WHERE id = $1
-            AND stripe_connect_kyc_complete = FALSE
-          RETURNING id`,
-        [c.id],
-      )
-      if (rows.length > 0) {
-        flipped++
-        logger.info(
-          { writerId: c.id, stripeConnectId: c.stripe_connect_id },
-          'KYC reconcile: flipped via sweep — account.updated webhook was missed',
+      if (payable && !c.stripe_connect_kyc_complete) {
+        const { rows } = await pool.query<{ id: string }>(
+          `UPDATE accounts
+              SET stripe_connect_kyc_complete = TRUE, updated_at = now()
+            WHERE id = $1
+              AND stripe_connect_kyc_complete = FALSE
+            RETURNING id`,
+          [c.id],
         )
+        if (rows.length > 0) {
+          flipped++
+          logger.info(
+            { writerId: c.id, stripeConnectId: c.stripe_connect_id },
+            'KYC reconcile: promoted via sweep — account.updated webhook was missed',
+          )
+        }
+      } else if (!payable && c.stripe_connect_kyc_complete) {
+        const { rows } = await pool.query<{ id: string }>(
+          `UPDATE accounts
+              SET stripe_connect_kyc_complete = FALSE, updated_at = now()
+            WHERE id = $1
+              AND stripe_connect_kyc_complete = TRUE
+            RETURNING id`,
+          [c.id],
+        )
+        if (rows.length > 0) {
+          demoted++
+          logger.warn(
+            { writerId: c.id, stripeConnectId: c.stripe_connect_id },
+            'KYC reconcile: demoted via sweep — payability lost, account.updated webhook was missed',
+          )
+        }
       }
     }
 
     if (candidates.length > 0) {
-      logger.info({ checked: candidates.length, flipped }, 'KYC reconcile sweep complete')
+      logger.info(
+        { checked: candidates.length, flipped, demoted },
+        'KYC reconcile sweep complete',
+      )
     }
-    return { checked: candidates.length, flipped }
+    return { checked: candidates.length, flipped, demoted }
   }
 }
 

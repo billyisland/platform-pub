@@ -14,13 +14,20 @@ import { auth } from "../../lib/api";
 // Card Setup
 //
 // Stripe Elements integration for readers to connect a payment method.
-// Uses SetupIntent flow (no immediate charge — card is saved for future use).
+// Uses a real SetupIntent flow (no immediate charge — the card is validated and
+// saved, authorising future off-session charges). STRIPE audit S2: this replaces
+// the prior createPaymentMethod call, which attached an unvalidated card that
+// only failed weeks later at the first settlement.
 //
-// After successful card setup:
-//   1. PaymentMethod ID sent to gateway /auth/connect-card
-//   2. Gateway creates/updates Stripe Customer, attaches PM
-//   3. Gateway notifies payment service → provisional reads convert to accrued
-//   4. Reader can now read paywalled content charged to their tab
+// After the reader submits:
+//   1. POST /auth/setup-intent → gateway creates/reuses the Stripe Customer and
+//      returns a SetupIntent client_secret.
+//   2. stripe.confirmCardSetup(clientSecret) validates the card and runs any
+//      3DS/SCA step inline, while the reader is present.
+//   3. POST /auth/connect-card { setupIntentId } → gateway verifies the
+//      SetupIntent succeeded, sets the card as the customer default, records the
+//      customer, and notifies the payment service → provisional reads accrue.
+//   4. Reader can now read paywalled content charged to their tab.
 // =============================================================================
 
 const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -77,26 +84,29 @@ function CardForm({ onSuccess }: { onSuccess: () => void }) {
       const cardElement = elements.getElement(CardElement);
       if (!cardElement) throw new Error("Card element not found");
 
-      // Create a PaymentMethod directly (no SetupIntent needed for off-session)
-      const { error: stripeError, paymentMethod } =
-        await stripe.createPaymentMethod({
-          type: "card",
-          card: cardElement,
-        });
+      // 1. Ask the gateway for a SetupIntent (creates/reuses the Stripe Customer).
+      const { clientSecret } = await auth.createSetupIntent();
+
+      // 2. Confirm it client-side — validates the card and runs any 3DS/SCA step
+      //    inline, authorising future off-session settlement charges.
+      const { error: stripeError, setupIntent } = await stripe.confirmCardSetup(
+        clientSecret,
+        { payment_method: { card: cardElement } },
+      );
 
       if (stripeError) {
         setError(stripeError.message ?? "Card setup failed.");
         return;
       }
 
-      if (!paymentMethod) {
-        setError("Card setup failed. Please try again.");
+      if (setupIntent?.status !== "succeeded") {
+        setError("Card setup did not complete. Please try again.");
         return;
       }
 
-      // Send to gateway — this attaches the PM, creates a Stripe Customer,
-      // and triggers provisional → accrued conversion
-      await auth.connectCard(paymentMethod.id);
+      // 3. Finalise on the gateway — verifies the SetupIntent succeeded, sets the
+      //    card as default, and triggers provisional → accrued conversion.
+      await auth.connectCard(setupIntent.id);
 
       onSuccess();
     } catch (err: any) {
@@ -108,7 +118,7 @@ function CardForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="border border-grey-200 px-3 py-3 mb-3">
+      <div className="bg-glasshouse-well px-3 py-3 mb-3">
         <CardElement
           options={{
             style: {

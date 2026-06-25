@@ -23,6 +23,65 @@ starts.
 
 ## Progress
 
+- **2026-06-25** — **Stripe integration audit — SHIPPED** (1 P0, 2 P1, 1 P2,
+  + 1 follow-on). Full plan + implementation log:
+  `docs/audits/STRIPE-INTEGRATION-AUDIT-2026-06-25.md`. All four findings were
+  independently re-verified against source before any change (no overstated
+  findings), then fixed in order. Migration 135 (`tab_settlements.failure_reason`,
+  `accounts.card_action_required_at`); `schema.sql` regenerated + drift-clean.
+  Swept the whole Stripe surface (reader/Connect onboarding in `gateway/routes/auth.ts`,
+  the three-stage flow in `payment-service/services/`, `webhook.ts`, the reconcile
+  workers, `chargeback.ts`); idempotency keys, three-phase durability, the F16
+  reconcile sweep, and the ledger mirror all held up. Four open items:
+  - **S1 (P0) — a declined / SCA-required off-session settlement orphans a
+    permanently-`pending` settlement and freezes the tab.** `completeSettlement`
+    (`settlement.ts:242`) has **no try/catch** around
+    `paymentIntents.create({confirm:true, off_session:true})`; a `StripeCardError`
+    throws before the PI id is stored, so the row stays `pending`, the eventual
+    `payment_intent.payment_failed` webhook can't match it (looks up by the unstored
+    `stripe_payment_intent_id`, `settlement.ts:561`), `reserveSettlement`'s pending
+    guard (`:191`) blocks every future settlement, and `resumePendingSettlements`
+    replays the same decline forever. Reader's tab grows unbounded, writer unpaid,
+    no error. **Distinct from F16** (that backstopped a *dropped success webhook*;
+    this is a *terminal failure at create time* that F16's reconcile — which only
+    scans `completed` rows — never sees). **Fix:** catch terminal vs transient,
+    store `err.payment_intent?.id`, flip to `failed` (unfreezes the tab) on terminal;
+    re-throw on transient. + re-attempt backoff + a reader card-re-auth signal.
+    Possible new `tab_settlements.failure_reason` column (migration + schema regen).
+  - **S2 (P1) — reader cards attach with no server-side validation** (`auth.ts:402`):
+    no SetupIntent confirm, so an unusable/3DS card attaches cleanly and only fails
+    weeks later at settlement — i.e. it manufactures S1's failures. **Fix:** confirm
+    a `usage:'off_session'` SetupIntent at attach time.
+  - **S3 (P1) — Connect payability is one-way.** `isConnectPayable` only ever flips
+    `stripe_connect_kyc_complete` TRUE (`webhook.ts:210`); nothing sets it FALSE when
+    Stripe later disables `transfers`, and `account.application.deauthorized` is
+    unhandled → payout-cycle churn against a no-longer-payable / stale account.
+    **This subsumes the 2026-06-24 deferred follow-up (3) "Reverse flip"
+    (feature-debt.md §1)** and adds the deauthorized case. **Fix:** make the flag
+    track `isConnectPayable` both directions in webhook + sweep; handle deauthorized.
+  - **S4 (P2) — webhook hardening:** verify the single `STRIPE_WEBHOOK_SECRET`
+    actually receives Connect events (dashboard config, document in `DEPLOYMENT.md`);
+    assert `event.livemode`; give partial refunds / `charge.dispute.created` (today
+    log-and-skip, `webhook.ts:194`) an ops-visible review surface.
+  - **S1 follow-on (P0-class) — payout-side transfer orphan.** Found while fixing
+    S3: `completeWriterPayout` (`payout.ts:585`) and `completeTributePayout`
+    (`:1401`) wrapped `transfers.create` in **no try/catch** either. A terminal
+    rejection (revoked `transfers` capability) throws → no transfer object → no
+    `transfer.failed` webhook → `handleFailedPayout`/`handleFailedTributePayout`
+    (keyed on `stripe_transfer_id`) never fire → row stuck `pending`, earnings
+    frozen, resume retries forever. (`completePublicationSplit` already caught it.)
+    **Fix:** wrap both; on a deterministic `StripeInvalidRequestError`
+    (`isTerminalTransferError` — narrow, because the failure mode is double-PAY)
+    mark failed + release earnings via the now-shared `rollback*PayoutRows`
+    helpers; re-throw anything ambiguous so resume retries with the stable key
+    (never roll back → never double-pay).
+  - **Shipped (order S1 → S3 → S2 → S4 + follow-on).** Verified:
+    `payment-service` suite **84 passed** (new `charge-errors`, 19 cases);
+    `tsc` clean (payment/gateway/shared); `next build` clean; schema-drift 4/4,
+    ledger-adjacency, hairlines all green. S2 changes the card-attach flow
+    (server SetupIntent + client `confirmCardSetup`) and still needs a live
+    browser test with Stripe test cards (incl. a 3DS card) — can't run headless.
+
 - **2026-06-25** — **Tribute/payment failure & confirmation edges** (2 HIGH,
   2 MEDIUM — second four-agent audit of the three-day tribute body of work; full
   write-up in `docs/adr/UPSTREAM-EDGES-AUDIT-FIXES.md` › *Second audit pass*,
