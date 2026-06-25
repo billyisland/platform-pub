@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict R7nBbNvRqj3FtcTF3vDIQtXNc3X4ywkG8kfT93X6pQbFpbnXjGFuV5svukSjUlr
+\restrict bgETQK5RZcDinkjGyayumtInqF8Zq3TgaRq251Qyt9jOhmIhgx89efOf7dBLrHc
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1900,6 +1900,18 @@ CREATE VIEW public.ledger_reader_balance AS
     ((- sum(amount_pence)))::bigint AS balance_pence
    FROM public.ledger_entries
   WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text, 'subscription_credit'::text, 'opening_balance'::text, 'dispute_stake'::text, 'dispute_stake_refund'::text, 'tab_settlement_reversal'::text]))
+  GROUP BY account_id;
+
+
+--
+-- Name: ledger_writer_earned; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.ledger_writer_earned AS
+ SELECT account_id,
+    (sum(amount_pence))::bigint AS earned_pence
+   FROM public.ledger_entries
+  WHERE (trigger_type = ANY (ARRAY['writer_accrual'::text, 'writer_accrual_reversal'::text, 'tribute_carve'::text, 'tribute_carve_reversal'::text]))
   GROUP BY account_id;
 
 
@@ -7425,7 +7437,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict R7nBbNvRqj3FtcTF3vDIQtXNc3X4ywkG8kfT93X6pQbFpbnXjGFuV5svukSjUlr
+\unrestrict bgETQK5RZcDinkjGyayumtInqF8Zq3TgaRq251Qyt9jOhmIhgx89efOf7dBLrHc
 
 
 
@@ -7564,4 +7576,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('132_read_state_charged_back.sql'),
     ('133_chargeback_reversal.sql'),
     ('134_payout_confirm_lifecycle.sql'),
-    ('135_settlement_decline_handling.sql');
+    ('135_settlement_decline_handling.sql'),
+    ('136_ledger_writer_earned.sql');

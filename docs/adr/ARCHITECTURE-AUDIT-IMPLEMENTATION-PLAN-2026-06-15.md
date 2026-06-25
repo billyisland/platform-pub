@@ -440,14 +440,19 @@ only one cleanly cut over. What shipped:
    reads+locks the column; they agree by construction. Dropping the column is a
    later phase gated on a settlement-concurrency redesign.
 
-5. **Writer-earnings / publication-distribution reads NOT cut over (deviation,
-   ground-truth forced).** `ledger_writer_earnings` sums money **paid out** (entries
-   emitted at the payout flip), but the dashboard's `getWriterEarnings()` sums
-   **earned-incl-pending** (`read_events` in `platform_settled`+`writer_paid`) —
-   different quantities, *not* a drop-in repoint. Those views stay
-   reconciliation-only (their Part-B gap remains "expected") until the ledger models
-   writer-side accrual, which is its own piece of work (the deferred writer-side
-   cutover).
+5. **Writer-earnings read CUT OVER (2026-06-25, migration 136); publication-
+   distribution still reconciliation-only.** The deviation above is resolved for the
+   writer side: the ledger now models writer-side accrual. New trigger set
+   `writer_accrual` (+read_net at settlement) / `tribute_carve` (−root gross when a
+   root carve is paid) / their two reversals feeds the new `SUM()` view
+   `ledger_writer_earned` = `read_net − paid_root_carve` (disjoint from the paid-out
+   `ledger_writer_earnings`), and `getWriterEarnings().earningsTotalPence` reads it
+   (`= ledger_writer_earned − held|released_root_carve`). Penny-exact in prod now
+   (tributes dark ⇒ carve terms 0); the carve is fully modeled so `TRIBUTES_ENABLED`
+   needs no further ledger work, with the writer-earnings parity as the standing
+   gate. The pending/paid sub-split stays `read_events`-derived. **Publication-
+   distribution** reads were NOT touched — they remain reconciliation-only.
+   Spec: `docs/audits/WRITER-SIDE-LEDGER-CUTOVER.md`.
 
 **Verify (done):** `shared` + `gateway` + `payment-service` `tsc` build clean; root
 `npm run lint` 0 errors; `check-ledger-adjacency.sh` green (six paths; widened

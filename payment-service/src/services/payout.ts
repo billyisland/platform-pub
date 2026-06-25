@@ -140,30 +140,17 @@ class PayoutService {
   async getWriterEarnings(writerId: string): Promise<WriterEarnings> {
     const config = await loadConfig()
 
+    // The pending/paid SUB-SPLIT stays read_events-derived (the ledger does not
+    // model the platform_settled→writer_paid distinction — see the cutover spec).
+    // Each bucket is the carve-reduced net: read_net − LIVE root carve
+    // (held|released|paid) — the deeper chain shares telescope within a root's
+    // gross, carved by inspirers, not the author. The LEFT JOIN is a no-op dark.
     const { rows } = await pool.query<{
-      earnings_total_pence: string
       pending_transfer_pence: string
       paid_out_pence: string
-      reserved_pence: string
       read_count: string
     }>(
-      // Tribute carve (Upstream Edges Phase 3 + Phase-5 chains): a tributed read's
-      // writer-side net is reduced by the share carved off by this author's DIRECT
-      // children — the ROOT tributes (parent_tribute_id IS NULL). Subtracting only
-      // roots leaves the author with read_net − Σ root_gross = the author's
-      // retained net; the deeper chain shares are *within* a root's gross, carved
-      // by the inspirer nodes, not the author (telescoping). Display subtracts the
-      // LIVE root accruals (held|released|paid) — redirected to the root inspirer
-      // (or reserved pending consent); swept/returned roots stay the author's, so
-      // they are NOT subtracted. The LEFT JOIN is a no-op when no accruals exist.
       `SELECT
-         COALESCE(SUM(
-           CASE
-             WHEN r.state IN ('platform_settled', 'writer_paid')
-               THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)
-             ELSE 0
-           END
-         ), 0) AS earnings_total_pence,
          COALESCE(SUM(
            CASE WHEN r.state = 'platform_settled'
              THEN ${readNetSql('r.amount_pence', '$2')} - COALESCE(acc.live_pence, 0)
@@ -194,16 +181,20 @@ class PayoutService {
 
     const row = rows[0]
 
-    // Reserved, pending redirect (compliance condition #4) — uniform across the
-    // tree: Σ(held|released) accruals of every tribute this account is the
-    // PARTY-OF-FUNDS for (tribute.author_account_id = X). That is the article
-    // author for ROOT tributes and an inspirer node for its CHILDREN — so this
-    // single query captures both "reserved from my article earnings" (roots) and
-    // "reserved from a tribute share I received, pending onward redirect"
-    // (children). 'paid' is gone to the payee; 'swept'/'returned' come back, so
-    // neither counts. No-op (0) when dark.
-    const { rows: resRows } = await pool.query<{ reserved_pence: string }>(
-      `SELECT COALESCE(SUM(ta.amount_pence), 0) AS reserved_pence
+    // Reserved, pending redirect (compliance condition #4) — Σ(held|released)
+    // accruals of every tribute this account is the PARTY-OF-FUNDS for
+    // (author_account_id = X): the article author for ROOT tributes, an inspirer
+    // node for its CHILDREN. `reserved_root_pence` is the ROOT-only subset — the
+    // held|released carve on X's OWN articles — which is what reduces X's earned
+    // headline below the ledger figure (the child reserve is X's onward-redirect
+    // share of OTHERS' reads, not a reduction of X's read earnings). Both 0 dark.
+    const { rows: resRows } = await pool.query<{
+      reserved_pence: string
+      reserved_root_pence: string
+    }>(
+      `SELECT
+         COALESCE(SUM(ta.amount_pence), 0) AS reserved_pence,
+         COALESCE(SUM(ta.amount_pence) FILTER (WHERE t.parent_tribute_id IS NULL), 0) AS reserved_root_pence
          FROM tribute_accruals ta
          JOIN tributes t ON t.id = ta.tribute_id
         WHERE t.author_account_id = $1
@@ -211,9 +202,26 @@ class PayoutService {
       [writerId]
     )
 
+    // CUTOVER (item 3 final phase): the earned-total headline now reads the
+    // append-only ledger, not read_events. ledger_writer_earned = read_net −
+    // paid_root_carve (the held carve stays out of the ledger, guard #7); the
+    // remaining held|released ROOT carve on X's own reads is reserved (still X's
+    // money, conditionally directed), so the free-and-clear headline subtracts it:
+    //   earningsTotal = (read_net − paid_root_carve) − held|released_root_carve
+    //                 = read_net − live_root_carve            (≡ the old formula).
+    // Dark: paid_root_carve = reserved_root = 0 ⇒ earningsTotal = read_net = the
+    // ledger figure. The settlement-ledger-parity test pins this to the penny.
+    const { rows: ledRows } = await pool.query<{ earned_pence: string }>(
+      `SELECT COALESCE(earned_pence, 0) AS earned_pence
+         FROM ledger_writer_earned WHERE account_id = $1`,
+      [writerId]
+    )
+    const ledgerEarned = parseInt(ledRows[0]?.earned_pence ?? '0', 10)
+    const reservedRoot = parseInt(resRows[0].reserved_root_pence, 10)
+
     return {
       writerId,
-      earningsTotalPence: parseInt(row.earnings_total_pence, 10),
+      earningsTotalPence: ledgerEarned - reservedRoot,
       pendingTransferPence: parseInt(row.pending_transfer_pence, 10),
       paidOutPence: parseInt(row.paid_out_pence, 10),
       reservedPence: parseInt(resRows[0].reserved_pence, 10),
@@ -1508,10 +1516,11 @@ class PayoutService {
         [transfer.id, payoutId],
       )
 
-      await client.query(
+      const paidAccruals = await client.query<{ amount_pence: string }>(
         `UPDATE tribute_accruals
          SET state = 'paid'
-         WHERE tribute_payout_id = $1 AND state = 'released'`,
+         WHERE tribute_payout_id = $1 AND state = 'released'
+         RETURNING amount_pence`,
         [payoutId],
       )
 
@@ -1542,6 +1551,36 @@ class PayoutService {
           refTable: 'tribute_payouts',
           refId: payoutId,
         })
+
+        // Ledger: the author's redirect executing (item 3 final phase). When a
+        // ROOT tribute's accruals reach the inspirer's real account, the carve
+        // leaves the author's earned — debit the author the FULL root gross (the
+        // children's onward carve flows from the inspirer, not the author, so the
+        // whole root accrual left the author here). −amount, account = article
+        // author, cp = root inspirer. Counted by ledger_writer_earned, so
+        // ledger_writer_earned == read_net − paid_root_carve. ROOT only:
+        // parent_tribute_id IS NULL — a child carve reduces the parent inspirer's
+        // onward share, never the article author's read earnings, so it is out of
+        // the writer-side model (it would wrongly debit the inspirer's earned).
+        // This is the single point the held share enters the ledger (guard #7).
+        const { rows: parentRows } = await client.query<{ is_root: boolean }>(
+          `SELECT parent_tribute_id IS NULL AS is_root FROM tributes WHERE id = $1`,
+          [tributeId],
+        )
+        const carvePence = paidAccruals.rows.reduce(
+          (s, a) => s + parseInt(a.amount_pence, 10),
+          0,
+        )
+        if (parentRows[0]?.is_root && carvePence > 0) {
+          await recordLedger(client, {
+            accountId: authorId,
+            counterpartyId: inspirerId,
+            amountPence: -carvePence,
+            triggerType: 'tribute_carve',
+            refTable: 'tribute_payouts',
+            refId: payoutId,
+          })
+        }
       }
     })
 

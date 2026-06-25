@@ -23,6 +23,30 @@ starts.
 
 ## Progress
 
+- **2026-06-25** — architecture-audit item **3 (unified append-only ledger,
+  keystone) — writer-side accrual cutover (FINAL phase)** shipped (migration 136).
+  The ledger now models writer EARNING, not just payout — closing the item-3
+  deviation (§5 in the plan) for the writer side. Four new triggers in `ledger.ts`:
+  `writer_accrual` (+read_net, acct=writer/cp=reader) posts per read at settlement
+  (`settlement.ts confirmSettlement`); `tribute_carve` (−root gross, acct=author/
+  cp=root inspirer) debits the author when a ROOT tribute's carve is *paid*
+  (`payout.ts completeTributePayout`, root-only) — the single point the held share
+  enters the ledger (build-plan guard #7 keeps held/released carve out until then);
+  `writer_accrual_reversal` / `tribute_carve_reversal` on chargeback (`chargeback.ts`
+  planner). New `SUM()` view `ledger_writer_earned` (trigger set disjoint from the
+  paid-out `ledger_writer_earnings`) = `read_net − paid_root_carve`;
+  `getWriterEarnings().earningsTotalPence` reads it (`= ledger_writer_earned −
+  held|released_root_carve`, the projection supplying the reserved slice). Penny-
+  exact in prod now (tributes dark ⇒ carve terms 0); carve fully modeled so
+  `TRIBUTES_ENABLED` needs no further ledger work — writer-earnings parity is the
+  standing gate. Pending/paid sub-split stays `read_events`-derived; publication-
+  distribution still reconciliation-only. Adjacency floors bumped (settlement 2→3,
+  payout 3→4). **Verify:** payment-service vitest 88 (3 new earned-side conservation
+  cases + 1 forward-accrual test); `shared`+`gateway`+`payment-service` `tsc` clean;
+  root lint 0 errors; `check-ledger-adjacency.sh` green; `check-schema-drift.sh` all
+  four green (Check 0 = 136; new view present; round-trips clean). Spec:
+  `docs/audits/WRITER-SIDE-LEDGER-CUTOVER.md`.
+
 - **2026-06-25** — **Stripe integration audit — SHIPPED** (1 P0, 2 P1, 1 P2,
   + 1 follow-on). Full plan + implementation log:
   `docs/audits/STRIPE-INTEGRATION-AUDIT-2026-06-25.md`. All four findings were

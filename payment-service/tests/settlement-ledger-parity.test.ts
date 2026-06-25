@@ -44,7 +44,10 @@ function fakeClientQuery(sql: string, params: any[] = []) {
 
 vi.mock('@platform-pub/shared/db/client.js', () => ({
   pool: { query: vi.fn() },
-  loadConfig: vi.fn(),
+  // confirmSettlement now loads config unconditionally (for the writer_accrual
+  // per-read net). The settled-reads SELECT returns the empty default below, so
+  // no writer_accrual is posted and recordLedger is still called once.
+  loadConfig: vi.fn(async () => ({ platformFeeBps: 800 })),
   withTransaction: (cb: (client: any) => Promise<any>) =>
     cb({ query: (sql: string, params: any[] = []) => fakeClientQuery(sql, params) }),
 }))

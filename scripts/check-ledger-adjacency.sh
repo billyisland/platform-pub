@@ -53,18 +53,20 @@ cd "$ROOT"
 # The min is a floor, not an exact count — adding sites is fine, dropping one
 # below the floor fails. Counts as of Phase 1:
 #   accrual.ts   3  (recordGatePass + convert loop: reads + vote_charges)
-#   settlement.ts 2 (confirmSettlement reader credit; reverseSettlement's F3
-#                    reversal-entry loop — the tribute_accruals INSERT writes no
-#                    ledger row, accruals live outside the ledger)
-#   payout.ts    3  (writer payout + publication split + tribute payout — Phase 3)
+#   settlement.ts 3 (confirmSettlement reader credit + writer_accrual earned-side
+#                    posting; reverseSettlement's F3 reversal-entry loop — the
+#                    tribute_accruals INSERT writes no ledger row, accruals live
+#                    outside the ledger)
+#   payout.ts    4  (writer payout + publication split + tribute payout + the
+#                    tribute_carve author debit — item 3 final phase)
 #   votes.ts     1  (accrued vote charge)
 #   drives.ts    1  (pledge fulfilment)
 #   subscription-convert.ts 1 (spend→subscription tab credit-back)
 #   upstream-edges.ts 2 (dispute stake debit + withdrawal refund)
 REGISTRY=(
   "payment-service/src/services/accrual.ts::3"
-  "payment-service/src/services/settlement.ts::2"
-  "payment-service/src/services/payout.ts::3"
+  "payment-service/src/services/settlement.ts::3"
+  "payment-service/src/services/payout.ts::4"
   "gateway/src/routes/votes.ts::1"
   "gateway/src/routes/drives.ts::1"
   "gateway/src/routes/articles/subscription-convert.ts::1"

@@ -153,14 +153,36 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
     tributeReversal.set(key, e)
   }
 
+  // EARNED-side reversals (item 3 final phase) — a DISJOINT trigger set from the
+  // paid-side reversals above; they back out ledger_writer_earned, never the
+  // paid-out ledger_writer_earnings. Every charged-back settled read got a
+  // writer_accrual at settlement (full read_net), so reverse the FULL net per
+  // writer (cp = the reader). A paid ROOT carve got a tribute_carve author debit
+  // at payout, so reverse the FULL root gross per (author, inspirer).
+  const accrualReversal = new Map<string, number>()
+  const addAccrual = (writerId: string, amount: number) =>
+    accrualReversal.set(writerId, (accrualReversal.get(writerId) ?? 0) + amount)
+  const carveReversal = new Map<string, { accountId: string; counterpartyId: string | null; amount: number }>()
+  const addCarve = (accountId: string, counterpartyId: string | null, amount: number) => {
+    const key = `${accountId}|${counterpartyId ?? ''}`
+    const e = carveReversal.get(key) ?? { accountId, counterpartyId, amount: 0 }
+    e.amount += amount
+    carveReversal.set(key, e)
+  }
+
   const chargeBackReadIds: string[] = []
   for (const r of reads) {
     chargeBackReadIds.push(r.id)
+    // EARNED side: every settled read (platform_settled OR writer_paid) got a
+    // writer_accrual of the full net at settlement — reverse it regardless of
+    // payout state. cp = reader, mirroring the forward entry.
+    const readNet = perReadNetPence(r.amountPence, platformFeeBps)
+    if (readNet !== 0) addAccrual(r.writerId, readNet)
     if (r.state === 'writer_paid') {
-      // Author's actual receipt for R = read net minus the carve of its DIRECT
-      // children — the roots (the author's depth-0 children), matching the
-      // state-agnostic carve at payout. Zero accruals ⇒ full read net.
-      const authorNet = perReadNetPence(r.amountPence, platformFeeBps) - rootGross(r.id)
+      // PAID side: author's actual receipt for R = read net minus the carve of
+      // its DIRECT children — the roots (the author's depth-0 children), matching
+      // the state-agnostic carve at payout. Zero accruals ⇒ full read net.
+      const authorNet = readNet - rootGross(r.id)
       if (authorNet !== 0) addWriter(r.writerId, authorNet)
     }
   }
@@ -189,6 +211,11 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
     if (terminal === 'paid') {
       // Node received its gross minus the carve of its own direct children.
       addTribute(a.resolvedAccountId, a.authorAccountId, a.amountPence - childrenGross(a.readEventId, a.tributeId))
+      // EARNED side: a paid ROOT carve debited the author the full root gross at
+      // payout (tribute_carve) — reverse it, restoring the author's earned. ROOT
+      // only (child carves never debited the article author). account = author,
+      // cp = inspirer, mirroring the forward tribute_carve.
+      if (a.parentTributeId === null) addCarve(a.authorAccountId, a.resolvedAccountId, a.amountPence)
     } else if (terminal === 'returned') {
       // The swept share was (or will be) paid back to its recipient — reverse against them.
       if (a.sweptReturnKind === 'writer') {
@@ -212,6 +239,13 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
   }
   for (const e of tributeReversal.values()) {
     if (e.amount !== 0) ledgerEntries.push({ accountId: e.accountId, counterpartyId: e.counterpartyId, amountPence: -e.amount, trigger: 'tribute_payout_reversal' })
+  }
+  // EARNED-side reversals (disjoint trigger set from the paid-side ones above).
+  for (const [accountId, amount] of accrualReversal) {
+    if (amount !== 0) ledgerEntries.push({ accountId, counterpartyId: readerId, amountPence: -amount, trigger: 'writer_accrual_reversal' })
+  }
+  for (const e of carveReversal.values()) {
+    if (e.amount !== 0) ledgerEntries.push({ accountId: e.accountId, counterpartyId: e.counterpartyId, amountPence: e.amount, trigger: 'tribute_carve_reversal' })
   }
 
   return {

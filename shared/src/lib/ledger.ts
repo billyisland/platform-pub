@@ -43,6 +43,14 @@ import type { PoolClient } from 'pg'
 //     +amount (a credit, in their favour), counterparty = NULL (platform).
 //     Hence SUM(payout entries) == historic writer/publication payout sums.
 //
+//   • Writer-side ACCRUAL entries (item 3 final phase) record money EARNED, not
+//     paid: writer_accrual (+read_net) at settlement, tribute_carve (−root carve)
+//     when the carve is paid to the inspirer, and the two reversals. They are a
+//     DISJOINT trigger set summed by ledger_writer_earned (the earned-incl-pending
+//     view) — never mixed with the paid-out ledger_writer_earnings. The held carve
+//     deliberately never appears (guard #7); only paid_root_carve debits the
+//     author, so ledger_writer_earned == read_net − paid_root_carve.
+//
 // The platform itself is never an account_id (no platform account row) — it is
 // always the NULL counterparty. Platform fee / behaviour-tax is therefore
 // implicit (the gap between what a reader is charged and what a writer
@@ -68,6 +76,10 @@ export type LedgerTriggerType =
   | 'tab_settlement_reversal' // F3 reader chargeback/refund: a settled charge clawed back — mirrors the original tab_settlement (−amount, reader debt restored, counterparty = platform/NULL). Reader-tab entry: keeps −SUM == reading_tabs.balance_pence.
   | 'writer_payout_reversal'  // F3: reverses a charged-back read's already-paid author net (−amount, counterparty = NULL). Writer's earned total goes negative — the existing clawed-back-payout posture, no synchronous Stripe recovery.
   | 'tribute_payout_reversal' // F3: reverses a charged-back read's already-paid tribute share (−amount, account = inspirer, counterparty = the party whose share was redirected). Inspirer's earned total goes negative, same posture.
+  | 'writer_accrual'        // Writer-side accrual (item 3 final phase): a read's writer-side net EARNED at settlement (accrued→platform_settled). +read_net, account = writer, cp = reader. The earned-side mirror of the reader's read_accrual debit; the gross−net gap is the implicit platform fee. Posted per settled read in confirmSettlement. Counted by ledger_writer_earned (NOT the paid-out ledger_writer_earnings).
+  | 'writer_accrual_reversal' // Reverses a charged-back read's writer_accrual (−read_net, account = writer, cp = reader). Fires for EVERY charged-back settled read (platform_settled and writer_paid), unlike writer_payout_reversal (paid reads only) — the accrual was posted at settlement regardless.
+  | 'tribute_carve'         // The author's redirect executing: a ROOT tribute accrual reaching the inspirer's real account (released→paid) debits the author's earned by the carve. −accrual.amount, account = root author, cp = root inspirer. Posted in completeTributePayout for root accruals only (parent_tribute_id IS NULL) — the held share stays OUT of the ledger until this moment (build-plan guard #7). Counted by ledger_writer_earned.
+  | 'tribute_carve_reversal' // Reverses a charged-back read's already-paid root carve, restoring the author's earned (+accrual.amount, account = root author, cp = root inspirer). Pairs with tribute_payout_reversal (which backs out the inspirer's receipt) on the earned side.
 
 export interface LedgerEntryInput {
   /** Whose ledger this movement belongs to. */

@@ -14,10 +14,20 @@ import { perReadNetPence } from '@platform-pub/shared/lib/per-read-net.js'
 
 const FEE = 800 // 8%
 
-/** Sum the writer/tribute reversal entries (everything except the reader entry). */
+/** Sum the PAID-side reversal entries (what actually left the platform). */
 function writerSideSum(entries: { trigger: string; amountPence: number }[]): number {
   return entries
-    .filter((e) => e.trigger !== 'tab_settlement_reversal')
+    .filter((e) => e.trigger === 'writer_payout_reversal' || e.trigger === 'tribute_payout_reversal')
+    .reduce((s, e) => s + e.amountPence, 0)
+}
+
+/** Sum the EARNED-side reversal entries (item 3 final phase — backs out
+ *  ledger_writer_earned). For the author this nets to −(read_net − paid_root
+ *  carve) = −(author's retained earned); inspirer tribute income is not on the
+ *  earned side, so it is correctly absent. */
+function earnedSideSum(entries: { trigger: string; amountPence: number }[]): number {
+  return entries
+    .filter((e) => e.trigger === 'writer_accrual_reversal' || e.trigger === 'tribute_carve_reversal')
     .reduce((s, e) => s + e.amountPence, 0)
 }
 
@@ -201,5 +211,65 @@ describe('computeChargebackReversal', () => {
     expect(plan.ledgerEntries.find((e) => e.accountId === 'I1')!.amountPence).toBe(-300)
     // conservation: author 620 + I1 300 = 920
     expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Earned-side reversals (item 3 final phase). DISJOINT from the paid side: the
+// writer_accrual posted at settlement is reversed regardless of payout state,
+// and a paid ROOT carve's tribute_carve author debit is reversed too. The
+// author's earned backs out to −(read_net − paid_root_carve).
+// ---------------------------------------------------------------------------
+describe('computeChargebackReversal — earned side', () => {
+  it('platform_settled (UNPAID) read still reverses its writer_accrual', () => {
+    // The paid side does nothing (never transferred), but the accrual was posted
+    // at settlement — so the earned side MUST back it out. This is the behaviour
+    // the paid-side planner does not have (it skips unpaid reads).
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 500,
+      reads: [{ id: 'R', amountPence: 500, state: 'platform_settled', writerId: 'W' }],
+      votes: [], accruals: [], platformFeeBps: FEE,
+    })
+    expect(writerSideSum(plan.ledgerEntries)).toBe(0)
+    expect(earnedSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(500, FEE))
+    const e = plan.ledgerEntries.find((x) => x.trigger === 'writer_accrual_reversal')!
+    expect(e.accountId).toBe('W')
+    expect(e.counterpartyId).toBe('reader')
+  })
+
+  it('fully-resolved chain: earned side nets to the author retained (−620), not −read_net', () => {
+    const accruals: ReversalAccrual[] = [
+      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'paid', resolvedAccountId: 'I1', authorAccountId: 'W' }),
+      baseAccrual({ id: 'a2', tributeId: 'T2', parentTributeId: 'T1', amountPence: 100, state: 'paid', resolvedAccountId: 'I2', authorAccountId: 'I1', parentResolvedAccountId: 'I1', parentAuthorAccountId: 'W' }),
+    ]
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
+      votes: [], accruals, platformFeeBps: FEE,
+    })
+    // writer_accrual_reversal −920 + tribute_carve_reversal +300 (root only) = −620.
+    expect(earnedSideSum(plan.ledgerEntries)).toBe(-620)
+    expect(plan.ledgerEntries.find((e) => e.trigger === 'writer_accrual_reversal')!.amountPence).toBe(-920)
+    const carve = plan.ledgerEntries.find((e) => e.trigger === 'tribute_carve_reversal')!
+    expect(carve.amountPence).toBe(300) // positive: restores the author's debit
+    expect(carve.accountId).toBe('W')
+    expect(carve.counterpartyId).toBe('I1')
+    // child carve (T2) is NOT reversed on the earned side — only one carve entry.
+    expect(plan.ledgerEntries.filter((e) => e.trigger === 'tribute_carve_reversal')).toHaveLength(1)
+  })
+
+  it('held root carve: accrual reversed in full, NO carve reversal (carve never paid)', () => {
+    const accruals: ReversalAccrual[] = [
+      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'held', resolvedAccountId: 'I1', authorAccountId: 'W' }),
+    ]
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
+      votes: [], accruals, platformFeeBps: FEE,
+    })
+    // The held carve never entered the ledger (guard #7), so no carve reversal;
+    // the full read_net accrual still backs out.
+    expect(earnedSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(1000, FEE))
+    expect(plan.ledgerEntries.filter((e) => e.trigger === 'tribute_carve_reversal')).toHaveLength(0)
   })
 })

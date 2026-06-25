@@ -536,6 +536,39 @@ class SettlementService {
         [settlement.id, settlement.tab_id],
       );
 
+      // Ledger: writer-side accrual — each read just advanced to platform_settled
+      // EARNS its writer the post-fee net (item 3 final phase). The earned-side
+      // mirror of the reader's read_accrual debit (account=writer, cp=reader); the
+      // gross−net gap is the implicit platform fee. We post the FULL read_net here,
+      // tribute-blind: the held carve stays out of the ledger (guard #7) and only
+      // a PAID root carve later debits the author (tribute_carve, in
+      // completeTributePayout). So ledger_writer_earned == read_net − paid_root_carve
+      // == getWriterEarnings.earningsTotal + reservedPence. One entry per read,
+      // ref = the read, so the cutover reconciles read-for-read.
+      const config = await loadConfig();
+      const { rows: settledReads } = await client.query<{
+        id: string;
+        writer_id: string;
+        net_pence: string;
+      }>(
+        `SELECT id, writer_id, ${readNetSql("amount_pence", "$2")} AS net_pence
+         FROM read_events
+         WHERE tab_settlement_id = $1 AND state = 'platform_settled'`,
+        [settlement.id, config.platformFeeBps],
+      );
+      for (const r of settledReads) {
+        const net = parseInt(r.net_pence, 10);
+        if (net === 0) continue;
+        await recordLedger(client, {
+          accountId: r.writer_id,
+          counterpartyId: settlement.reader_id,
+          amountPence: net,
+          triggerType: "writer_accrual",
+          refTable: "read_events",
+          refId: r.id,
+        });
+      }
+
       await client.query(
         `UPDATE vote_charges
          SET state = 'platform_settled',
@@ -571,7 +604,6 @@ class SettlementService {
       // Accruals live OUTSIDE ledger_entries until they reach a real account
       // (build-plan guard #7), so this writes no ledger row.
       if (tributesEnabled()) {
-        const config = await loadConfig();
         await client.query(
           `WITH RECURSIVE settled_reads AS (
              SELECT re.id AS read_event_id,
