@@ -23,6 +23,51 @@ starts.
 
 ## Progress
 
+- **2026-06-25** — **Tribute/payment failure & confirmation edges** (2 HIGH,
+  2 MEDIUM — second four-agent audit of the three-day tribute body of work; full
+  write-up in `docs/adr/UPSTREAM-EDGES-AUDIT-FIXES.md` › *Second audit pass*,
+  findings F15–F18). The ledger core, gateway routes, and frontend came back
+  clean; every material risk was on the failure/confirmation paths the
+  happy-path tests don't exercise — added only for the writer case as the new
+  tribute/publication money flows landed.
+  - **F15 (HIGH) — tribute & publication transfers had no `transfer.paid`/
+    `.failed` handling.** `webhook.ts` routed both to `confirmPayout`/
+    `handleFailedPayout`, which **only `UPDATE writer_payouts`**; tribute
+    (`payout.ts:1417`) and pub-split (`:1092`) transfers matched no row → a
+    failed transfer was never rolled back (accruals stayed `paid`, the
+    `+tribute_payout` ledger entry stood for money that never landed; no re-pay)
+    and a landed tribute transfer never reached `completed` (no such state
+    existed). **Fix:** migration `134` adds `completed`/`completed_at` to
+    `tribute_payouts`; `webhook.ts` routes by `transfer.metadata`; new
+    `confirmTributePayout`/`handleFailedTributePayout` (rolls accruals back so
+    the next cycle re-pays under a fresh row — new idempotency key) and
+    `confirmPublicationSplit`/`handleFailedPublicationSplit`. `reconcile-ledger.sql`
+    A10a/A10b exclude `failed` tribute_payouts (the failed `+` entry stays
+    append-only, same posture as the writer path). Pub-split *auto re-pay*
+    deferred (feature-debt.md — a correct retry needs a fresh split row; the
+    stable idempotency key would dedupe a retry to the failed transfer).
+  - **F16 (HIGH) — no backstop for a dropped `payment_intent.succeeded`.** A
+    settlement flips to `completed` when the card is charged, but the tab debit /
+    ledger credit / read advancement run in `confirmSettlement` on that webhook
+    alone — a dropped event leaves the reader charged with no movement, reads
+    stuck `accrued`, no error. **Fix:** `settlement.reconcileSettlements()` +
+    `workers/settlement-reconcile.ts` (3×/day, wired in `index.ts`), the twin of
+    `reconcileConnectKyc`: re-reads `completed`-but-unconfirmed settlements from
+    Stripe past a 1h grace and confirms them (idempotent via the charge claim).
+  - **F17 (MEDIUM, supersedes the F3 residual) — chargeback racing an in-flight
+    payout created money.** `chargeback.ts` skipped a `claimed` in-flight accrual,
+    so the reserved payout paid out clawed-back money with no reversing entry.
+    **Fix:** reverse a claimed accrual *as if* it reached its terminal state
+    (`paid`/`returned`, via the `sweptReturnKind` discriminator); conservation
+    still nets `−read_net`; unclaimed accruals still voided. +4 conservation tests.
+  - **F18 (MEDIUM) — `confirmSettlement` threw on an unknown PaymentIntent**,
+    poisoning the webhook retry/dedup queue. **Fix:** log-and-return on no match,
+    matching `reverseSettlement`/`handleFailedPayment`.
+  - **Verify:** payment-service `tsc` 0 + vitest **65** (was 62; +3) · shared 83 ·
+    `check-ledger-adjacency` 0 · `check-schema-drift` all 4 (134 migrations) ·
+    root promise-safety lint 0. Docs: `UPSTREAM-EDGES-AUDIT-FIXES.md`
+    (F15–F18 + F3-residual update), `feature-debt.md` (pub-split re-pay follow-up).
+
 - **2026-06-24** — **Connect KYC gate: payability keyed on `transfers`, not
   `charges_enabled`** (HIGH — silent non-payment). The `account.updated` webhook
   (`payment-service/src/routes/webhook.ts`) was the **sole** path that flips

@@ -143,9 +143,14 @@ WHERE le.trigger_type = 'tribute_payout'
 -- children's paid gross (the onward carve). The author's depth-0 case is checked
 -- separately by the writer_payout side; here we cover every tribute node.
 \echo '-- A10a: per-node paid_out == node paid gross − direct children paid gross (expect ZERO at rest) --'
+-- 'failed' is excluded alongside 'pending': handleFailedTributePayout rolls a
+-- failed transfer's accruals back out of 'paid' (for re-pay) but leaves the
+-- original +tribute_payout ledger entry in place (append-only), so a failed
+-- payout's amount must not count as paid-out here (mirrors the writer path,
+-- where a failed writer_payout's reads roll back the same way).
 WITH paid_out AS (
   SELECT tribute_id, SUM(amount_pence) AS out_pence
-  FROM tribute_payouts WHERE status <> 'pending' GROUP BY tribute_id
+  FROM tribute_payouts WHERE status NOT IN ('pending', 'failed') GROUP BY tribute_id
 ),
 node_gross AS (
   SELECT tribute_id, SUM(amount_pence) AS gross
@@ -166,16 +171,23 @@ FULL OUTER JOIN node_gross ng ON ng.tribute_id = po.tribute_id
 LEFT JOIN child_gross cg ON cg.tribute_id = COALESCE(po.tribute_id, ng.tribute_id)
 WHERE COALESCE(po.out_pence, 0) <> COALESCE(ng.gross, 0) - COALESCE(cg.gross, 0);
 
--- A10b: tree-wide telescoping. Σ(all tribute_payout ledger) == Σ(paid accruals of
--- ROOT tributes): the chain only REDISTRIBUTES a root's gross among the chain's
--- nodes (Σ_N paid_out(N) = Σ paid(roots), the per-node A10a summed). For a single
--- (non-chained) tribute this reduces to the old Phase-3 identity.
-\echo '-- A10b: Σ(tribute_payout ledger) == Σ(root paid accruals) (expect ZERO at rest) --'
-SELECT (SELECT COALESCE(SUM(amount_pence), 0) FROM ledger_entries WHERE trigger_type = 'tribute_payout') AS tribute_payout_pence,
+-- A10b: tree-wide telescoping. Σ(tribute_payout ledger for non-failed payouts)
+-- == Σ(paid accruals of ROOT tributes): the chain only REDISTRIBUTES a root's
+-- gross among the chain's nodes (Σ_N paid_out(N) = Σ paid(roots), the per-node
+-- A10a summed). For a single (non-chained) tribute this reduces to the old
+-- Phase-3 identity. The ledger sum excludes entries whose tribute_payout is
+-- 'failed' — its accruals were rolled back out of 'paid' but its +entry stays
+-- (see A10a's note).
+\echo '-- A10b: Σ(tribute_payout ledger, non-failed) == Σ(root paid accruals) (expect ZERO at rest) --'
+SELECT (SELECT COALESCE(SUM(le.amount_pence), 0)
+          FROM ledger_entries le JOIN tribute_payouts tp ON tp.id = le.ref_id
+         WHERE le.trigger_type = 'tribute_payout' AND tp.status <> 'failed') AS tribute_payout_pence,
        (SELECT COALESCE(SUM(ta.amount_pence), 0)
           FROM tribute_accruals ta JOIN tributes t ON t.id = ta.tribute_id
          WHERE ta.state = 'paid' AND t.parent_tribute_id IS NULL) AS root_paid_gross_pence
-WHERE (SELECT COALESCE(SUM(amount_pence), 0) FROM ledger_entries WHERE trigger_type = 'tribute_payout')
+WHERE (SELECT COALESCE(SUM(le.amount_pence), 0)
+          FROM ledger_entries le JOIN tribute_payouts tp ON tp.id = le.ref_id
+         WHERE le.trigger_type = 'tribute_payout' AND tp.status <> 'failed')
    <> (SELECT COALESCE(SUM(ta.amount_pence), 0)
           FROM tribute_accruals ta JOIN tributes t ON t.id = ta.tribute_id
          WHERE ta.state = 'paid' AND t.parent_tribute_id IS NULL);

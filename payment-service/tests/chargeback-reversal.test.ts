@@ -103,7 +103,11 @@ describe('computeChargebackReversal', () => {
     expect(plan.voidAccrualIds).toEqual(['a1'])
   })
 
-  it('claimed (mid-payout) accrual is skipped, not voided', () => {
+  it('claimed (mid-payout) released accrual is reversed as paid, not skipped — conservation holds', () => {
+    // The accrual is in-flight to 'paid' via a reserved tribute payout (claimed,
+    // sweptReturnKind null). Reversing it as paid is what closes the money hole:
+    // the in-flight transfer pays the inspirer clawed-back money, so a reversal
+    // must exist. Not voided (it WILL be paid).
     const accruals: ReversalAccrual[] = [
       baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'released', resolvedAccountId: 'I1', authorAccountId: 'W', claimed: true }),
     ]
@@ -112,7 +116,58 @@ describe('computeChargebackReversal', () => {
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
       votes: [], accruals, platformFeeBps: FEE,
     })
+    const net = perReadNetPence(1000, FEE)
     expect(plan.voidAccrualIds).toEqual([])
+    // I1 reversed for the claimed accrual it is being paid (300 − no children).
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'I1')!.amountPence).toBe(-300)
+    // conservation still nets to −read_net (author 620 + I1 300).
+    expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
+  })
+
+  it('UNclaimed released accrual is still voided (not reversed)', () => {
+    const accruals: ReversalAccrual[] = [
+      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'released', resolvedAccountId: 'I1', authorAccountId: 'W', claimed: false }),
+    ]
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
+      votes: [], accruals, platformFeeBps: FEE,
+    })
+    expect(plan.voidAccrualIds).toEqual(['a1'])
+    // Only the author's carve-reduced net is reversed (the held float is kept).
+    expect(writerSideSum(plan.ledgerEntries)).toBe(-620)
+  })
+
+  it('claimed swept-return (kind writer) is reversed against the author as a returned share', () => {
+    const accruals: ReversalAccrual[] = [
+      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'swept', sweptReturnKind: 'writer', resolvedAccountId: 'I1', authorAccountId: 'W', claimed: true }),
+    ]
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
+      votes: [], accruals, platformFeeBps: FEE,
+    })
+    const net = perReadNetPence(1000, FEE)
+    expect(plan.voidAccrualIds).toEqual([])
+    // Same outcome as a fully-returned root (kind writer): author reversed base + return.
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'W' && e.trigger === 'writer_payout_reversal')!.amountPence).toBe(-net)
+  })
+
+  it('claimed swept-return (kind tribute) is reversed against the parent inspirer', () => {
+    const accruals: ReversalAccrual[] = [
+      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'paid', resolvedAccountId: 'I1', authorAccountId: 'W' }),
+      baseAccrual({ id: 'a2', tributeId: 'T2', parentTributeId: 'T1', amountPence: 100, state: 'swept', sweptReturnKind: 'tribute', resolvedAccountId: 'I2', authorAccountId: 'I1', parentResolvedAccountId: 'I1', parentAuthorAccountId: 'W', claimed: true }),
+    ]
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
+      votes: [], accruals, platformFeeBps: FEE,
+    })
+    const net = perReadNetPence(1000, FEE)
+    expect(plan.voidAccrualIds).toEqual([])
+    // I1 received own paid net (300−100=200) + the in-flight returned child (100) = 300.
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'I1')!.amountPence).toBe(-300)
+    expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
   })
 
   it('swept-then-returned root (kind writer): author reversed for base + return = −read_net', () => {

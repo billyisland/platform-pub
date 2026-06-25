@@ -30,8 +30,21 @@ import type { LedgerTriggerType } from '@platform-pub/shared/lib/ledger.js'
 //   • accrual held/released/swept, UNCLAIMED → 'voided' (never paid; just
 //                            prevent it). No ledger.
 //   • accrual held/released/swept, CLAIMED (a payout reserved it concurrently)
-//                            → skip (left as-is). Rare chargeback-during-payout
-//                            window; documented residual, not silently mis-handled.
+//                            → reverse AS IF it had reached its terminal state.
+//                            A claimed accrual is in-flight: the reserved payout
+//                            row exists and the cycle WILL pay/return it (synchronously
+//                            or on resume), so the in-flight transfer is money the
+//                            reader is clawing back. Treat it as 'paid' (released
+//                            claimed via tribute_payout_id) or 'returned' (swept
+//                            claimed via swept_return_payout_id; sweptReturnKind
+//                            tells us which) and post the matching reversal —
+//                            otherwise the payout pays out clawed-back money with
+//                            no reversing entry (money created). Residual (far
+//                            rarer than the old skip): if that in-flight payout's
+//                            transfer ultimately FAILS or stays permanently
+//                            pending (inspirer lost KYC), the reversal slightly
+//                            over-reports the platform's loss — a reconciliation-
+//                            only artefact, never user-facing phantom money.
 //
 // Conservation (telescoping): the author carves roots; each node carves its own
 // direct children; a returned share is reversed against its recipient. For a
@@ -162,20 +175,30 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
 
   const voidAccrualIds: string[] = []
   for (const a of accruals) {
-    if (a.state === 'paid') {
+    // A claimed-but-not-yet-terminal accrual (held/released/swept) is in-flight to
+    // its terminal state via a reserved payout that WILL pay/return it — so treat
+    // it as already there and reverse it, rather than skip (which lets that payout
+    // pay clawed-back money with no reversal). sweptReturnKind distinguishes the
+    // claim vehicle: set ⇒ a swept-return claim (→ 'returned'); null ⇒ a
+    // tribute_payout_id claim of a released accrual (→ 'paid').
+    const terminal =
+      a.claimed && (a.state === 'held' || a.state === 'released' || a.state === 'swept')
+        ? (a.sweptReturnKind ? 'returned' : 'paid')
+        : a.state
+
+    if (terminal === 'paid') {
       // Node received its gross minus the carve of its own direct children.
       addTribute(a.resolvedAccountId, a.authorAccountId, a.amountPence - childrenGross(a.readEventId, a.tributeId))
-    } else if (a.state === 'returned') {
-      // The swept share was paid back to its recipient — reverse against them.
+    } else if (terminal === 'returned') {
+      // The swept share was (or will be) paid back to its recipient — reverse against them.
       if (a.sweptReturnKind === 'writer') {
         addWriter(a.authorAccountId, a.amountPence) // root → article author, via writer payout
       } else if (a.sweptReturnKind === 'tribute' && a.parentResolvedAccountId) {
         addTribute(a.parentResolvedAccountId, a.parentAuthorAccountId, a.amountPence)
       }
-    } else if (a.state === 'held' || a.state === 'released' || a.state === 'swept') {
-      // Never paid out — prevent it, don't reverse. Skip if a payout already
-      // reserved it (concurrent-payout window — leave for that payout to resolve).
-      if (!a.claimed) voidAccrualIds.push(a.id)
+    } else {
+      // held/released/swept AND unclaimed — never paid out; prevent it, don't reverse.
+      voidAccrualIds.push(a.id)
     }
   }
 

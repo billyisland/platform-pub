@@ -133,13 +133,32 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     // -------------------------------------------------------------------------
     case 'transfer.paid': {
       const transfer = event.data.object as Stripe.Transfer
-      await payoutService.confirmPayout(transfer.id)
+      // Route by the metadata stamped at transfer creation. Writer, tribute, and
+      // publication-split transfers all emit transfer.paid/failed but land in
+      // different tables — confirmPayout only knows writer_payouts, so an
+      // un-routed tribute/pub transfer would hit its no-match no-op and never
+      // confirm (or, on failure, never roll back).
+      const m = transfer.metadata ?? {}
+      if (m.tribute_payout_id) {
+        await payoutService.confirmTributePayout(transfer.id)
+      } else if (m.publication_payout_id) {
+        await payoutService.confirmPublicationSplit(transfer.id)
+      } else {
+        await payoutService.confirmPayout(transfer.id)
+      }
       break
     }
 
     case 'transfer.failed': {
       const transfer = event.data.object as Stripe.Transfer
-      await payoutService.handleFailedPayout(transfer.id, 'Transfer failed')
+      const m = transfer.metadata ?? {}
+      if (m.tribute_payout_id) {
+        await payoutService.handleFailedTributePayout(transfer.id, 'Transfer failed')
+      } else if (m.publication_payout_id) {
+        await payoutService.handleFailedPublicationSplit(transfer.id, 'Transfer failed')
+      } else {
+        await payoutService.handleFailedPayout(transfer.id, 'Transfer failed')
+      }
       break
     }
 

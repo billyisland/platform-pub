@@ -2548,7 +2548,8 @@ CREATE TABLE public.tribute_payouts (
     status text DEFAULT 'pending'::text NOT NULL,
     failed_reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT tribute_payouts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'initiated'::text, 'failed'::text])))
+    completed_at timestamp with time zone,
+    CONSTRAINT tribute_payouts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'initiated'::text, 'completed'::text, 'failed'::text])))
 );
 
 
@@ -7558,4 +7559,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('130_tribute_accruals_append_only.sql'),
     ('131_tribute_edge_backstops.sql'),
     ('132_read_state_charged_back.sql'),
-    ('133_chargeback_reversal.sql');
+    ('133_chargeback_reversal.sql'),
+    ('134_payout_confirm_lifecycle.sql');

@@ -380,9 +380,18 @@ class SettlementService {
       );
 
       if (settlementRow.rowCount === 0) {
-        throw new Error(
-          `No settlement found for PaymentIntent: ${paymentIntentId}`,
+        // An unknown PaymentIntent is not one of our settlements (a manual
+        // dashboard charge, a test-mode event, a future non-settlement PI).
+        // Do NOT throw: a throw bubbles to the webhook's 500 path, which leaves
+        // stripe_webhook_events.processed_at NULL, so Stripe redelivers the same
+        // event for days, each retry re-throwing — a poison event. Log and
+        // return, matching the no-match handling in reverseSettlement and
+        // handleFailedPayment.
+        logger.warn(
+          { paymentIntentId, stripeChargeId },
+          "confirmSettlement: no settlement for PaymentIntent — ignoring (not a tab-settlement charge?)",
         );
+        return;
       }
 
       const settlement = settlementRow.rows[0];
@@ -812,6 +821,98 @@ class SettlementService {
         "Settlement reversed — reader debt restored, reads charged back",
       );
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // reconcileSettlements — backstop for MISSED payment_intent.succeeded webhooks.
+  //
+  // completeSettlement flips a settlement to 'completed' the instant the Stripe
+  // PaymentIntent is created (the reader's card is charged), but the tab debit,
+  // the reader ledger credit, and the read/vote/tribute advancement all happen
+  // in confirmSettlement — which runs ONLY on the payment_intent.succeeded
+  // webhook. Stripe delivers webhooks at-least-once, not always-once: a single
+  // dropped event leaves the reader CHARGED with no corresponding tab/ledger
+  // movement and reads stuck 'accrued' forever, with no error. This is the
+  // settlement-side twin of reconcileConnectKyc — it re-reads the PaymentIntent
+  // straight from Stripe and confirms it.
+  //
+  // Candidate = a 'completed' settlement whose stripe_charge_id is still NULL
+  // (confirmSettlement is what sets it) and which is older than the grace window
+  // (so we never race the normal webhook for a settlement Stripe is still
+  // processing). confirmSettlement is idempotent (guards on the charge claim),
+  // so a flip the webhook ALSO lands is a safe no-op.
+  // ---------------------------------------------------------------------------
+  async reconcileSettlements(): Promise<{ checked: number; confirmed: number }> {
+    const { rows: candidates } = await pool.query<{
+      id: string;
+      stripe_payment_intent_id: string;
+    }>(
+      `SELECT id, stripe_payment_intent_id
+         FROM tab_settlements
+        WHERE status = 'completed'
+          AND stripe_charge_id IS NULL
+          AND stripe_payment_intent_id IS NOT NULL
+          AND created_at < now() - interval '1 hour'
+        ORDER BY created_at ASC
+        LIMIT 200`,
+    );
+
+    let confirmed = 0;
+    for (const c of candidates) {
+      let pi: Stripe.PaymentIntent;
+      try {
+        pi = await this.stripe.paymentIntents.retrieve(
+          c.stripe_payment_intent_id,
+        );
+      } catch (err) {
+        // 429 / transient / not-found — log and move on; next sweep retries.
+        logger.warn(
+          { err, settlementId: c.id, paymentIntentId: c.stripe_payment_intent_id },
+          "Settlement reconcile: paymentIntents.retrieve failed — will retry next sweep",
+        );
+        continue;
+      }
+
+      if (pi.status !== "succeeded") {
+        // Not yet paid (or failed). A still-processing PI is re-checked next
+        // sweep; a genuinely failed one will arrive via payment_intent.payment_failed.
+        continue;
+      }
+
+      const chargeId =
+        typeof pi.latest_charge === "string"
+          ? pi.latest_charge
+          : (pi.latest_charge?.id ?? "");
+      if (!chargeId) {
+        logger.warn(
+          { settlementId: c.id, paymentIntentId: pi.id },
+          "Settlement reconcile: succeeded PaymentIntent has no latest_charge — skipping",
+        );
+        continue;
+      }
+
+      try {
+        await this.confirmSettlement(pi.id, chargeId);
+        confirmed++;
+        logger.info(
+          { settlementId: c.id, paymentIntentId: pi.id, chargeId },
+          "Settlement reconcile: confirmed via sweep — payment_intent.succeeded webhook was missed",
+        );
+      } catch (err) {
+        logger.error(
+          { err, settlementId: c.id, paymentIntentId: pi.id },
+          "Settlement reconcile: confirmSettlement failed — will retry next sweep",
+        );
+      }
+    }
+
+    if (candidates.length > 0) {
+      logger.info(
+        { checked: candidates.length, confirmed },
+        "Settlement reconcile sweep complete",
+      );
+    }
+    return { checked: candidates.length, confirmed };
   }
 }
 
