@@ -51,6 +51,7 @@ import { snap } from "../../lib/workspace/grid";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGlasshousePresence } from "../../stores/glasshouse";
 import { useBackGuard } from "../../lib/backGuard";
+import { MOBILE_BAR_H } from "./MobileWorkspace";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
 const MARGIN = 20;
@@ -345,16 +346,20 @@ function usePanePlacement(
   const effH = resizable && size?.h != null ? Math.min(size.h, maxHeight) : null;
   const ghH = effH ?? maxHeight;
 
-  // Full-screen sheet (mobile): the pane is the viewport; placement, drag and
-  // stretch are desktop pointer affordances and don't apply.
+  // Full-screen sheet (mobile): the pane fills the viewport BELOW the persistent
+  // mobile top bar (MOBILE_BAR_H) — the bar is fixed chrome at z-58 that stays in
+  // place across every view, so the sheet insets under it rather than hiding
+  // behind it. Placement, drag and stretch are desktop pointer affordances and
+  // don't apply here.
   if (fullScreen) {
+    const h = Math.max(0, vp.vh - MOBILE_BAR_H);
     return {
       paneRef,
       x: 0,
-      y: 0,
+      y: MOBILE_BAR_H,
       width: vp.vw,
-      height: vp.vh,
-      ghH: vp.vh,
+      height: h,
+      ghH: h,
       startDrag: null,
       startResize: null,
     };

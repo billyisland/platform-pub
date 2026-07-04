@@ -1190,7 +1190,12 @@ export function WorkspaceView() {
       )}
       {bootstrap === "ready" && isMobile && (
         <MobileWorkspace
-          feeds={visibleSorted.map((v) => v.feed)}
+          // Mobile pager runs the feed sequence REVERSED relative to the sorted
+          // order: the first pip (leftmost) is the last sorted feed, and swiping
+          // toward higher-numbered pips moves up the reversed run. `[...]` before
+          // `.reverse()` — reverse() mutates in place, and visibleSorted backs
+          // feedNumerals / currentFeed below, so we must not disturb it.
+          feeds={[...visibleSorted].reverse().map((v) => v.feed)}
           userId={user.id}
           interiorFor={(feedId) =>
             paletteFor(positions[feedId]?.brightness, globalDark).interior

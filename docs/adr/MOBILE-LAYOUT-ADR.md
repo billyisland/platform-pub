@@ -254,3 +254,30 @@ Three post-ship corrections after the mobile shell landed, all in
    workspace" prompts retired. The ∀↔X swap is an animated cross-fade + quarter-turn.
    Full spec in GLASSHOUSE-AND-PALETTE-ADR §III.3 (the disc sits above the frost on
    both surfaces).
+
+## X. Persistent bar + reversed pip order (2026-07-04)
+
+Two further refinements, in `MobileWorkspace.tsx` / `Glasshouse.tsx` / `WorkspaceView.tsx`:
+
+1. **The mobile bar is persistent chrome, above every pane.** The bar was
+   `position: absolute` at z-40 — behind any open Glasshouse sheet (scrim z-55 /
+   pane z-56), so opening the reader/messages/etc. left only the floating ∀ disc
+   visible. It is now `position: fixed` at **z-58**: above the scrim and pane,
+   below the ∀ disc (z-60). So the bar (wordmark · pips · ∀) stays in place in
+   **all** mobile views — over any open sheet, at any scroll position. To keep it
+   from hiding sheet content, the mobile full-screen Glasshouse insets below it:
+   `usePanePlacement`'s `fullScreen` branch now returns `y = MOBILE_BAR_H`,
+   `height = vh − MOBILE_BAR_H` (constant imported from `MobileWorkspace`). Floor
+   sets no z-index and no transform, so the fixed bar's z-58 competes at the root
+   against the panes and is never clipped.
+
+2. **Pip order runs Feed 1 leftmost, reversed from the sorted run.** The pager now
+   receives the feed sequence reversed (`[...visibleSorted].reverse()` at the
+   `MobileWorkspace` call site — the `[...]` guards against `reverse()` mutating
+   `visibleSorted`, which still backs `feedNumerals` / `currentFeed`). Leftmost pip
+   = Feed 1, counting up left-to-right; pips, pages, active state and the swipe all
+   read the same reversed array, so they stay mutually consistent. The swipe `dir`
+   mapping (§VI) is untouched: swiping toward higher-numbered pips runs up the
+   sequence, back toward Feed 1 runs down. This reverses the desktop-numeral↔mobile
+   correspondence (a mobile-only ordering); the numeral remains the desktop model
+   (§I.3).

@@ -293,10 +293,18 @@ export function MobileWorkspace({
       {/* The thin mobile bar — NOT the black <Nav> (§III): every affordance
           here opens an overlay or sheet; none navigates to a platform route.
           The ∀ trigger itself is docked into the bar's right end by
-          ForallMenu anchor="bar" (rendered by WorkspaceView at z-60). */}
+          ForallMenu anchor="bar" (rendered by WorkspaceView at z-60).
+
+          PERSISTENT CHROME: `position: fixed` at z-58 — above every Glasshouse
+          pane (scrim z-[55] / pane z-[56], inset below the bar on mobile) but
+          below the ∀ disc (z-60). So the bar (and the ∀ on it) stays in place in
+          ALL mobile views — over any open sheet, at any scroll position — never
+          hidden by an overlay. Floor's `overflow:hidden` can't clip a fixed
+          child (no transformed ancestor), and Floor sets no z-index, so this
+          z-58 competes at the root against the panes. */}
       <div
         style={{
-          position: "absolute",
+          position: "fixed",
           top: 0,
           left: 0,
           right: 0,
@@ -306,7 +314,7 @@ export function MobileWorkspace({
           gap: 12,
           padding: "0 56px 0 12px", // right clears the docked ∀ disc
           background: "var(--ah-bone)",
-          zIndex: 40,
+          zIndex: 58,
         }}
       >
         <span
