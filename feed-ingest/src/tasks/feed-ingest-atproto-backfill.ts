@@ -25,6 +25,37 @@ import { insertAtprotoItem } from "../lib/atproto-ingest.js";
 const APPVIEW = "https://public.api.bsky.app";
 const PAGE_LIMIT = 100;
 
+// Fetch the actor's profile (handle + display name) from the public AppView.
+// Used to enrich the source row so the Jetstream listener — whose live commits
+// carry only the DID — always has a handle to attribute posts to. Returns null
+// on any failure; enrichment then falls back to the first post's author.
+async function fetchAtprotoProfile(
+  actor: string,
+): Promise<{ handle: string; displayName: string | null } | null> {
+  try {
+    const url = new URL(`${APPVIEW}/xrpc/app.bsky.actor.getProfile`);
+    url.searchParams.set("actor", actor);
+    const res = await safeFetch(url.toString(), {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = JSON.parse(res.text) as {
+      handle?: unknown;
+      displayName?: unknown;
+    };
+    if (typeof data.handle !== "string") return null;
+    return {
+      handle: data.handle,
+      displayName:
+        typeof data.displayName === "string" && data.displayName.trim() !== ""
+          ? data.displayName
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface FeedViewPost {
   post: {
     uri: string;
@@ -57,10 +88,11 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
   } = await pool.query<{
     id: string;
     source_uri: string;
+    handle: string | null;
     display_name: string | null;
     avatar_url: string | null;
   }>(
-    `SELECT id, source_uri, display_name, avatar_url
+    `SELECT id, source_uri, handle, display_name, avatar_url
       FROM external_sources
       WHERE id = $1 AND protocol = 'atproto' AND is_active = TRUE`,
     [sourceId],
@@ -72,6 +104,31 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
       "atproto source not found for backfill — skipping",
     );
     return;
+  }
+
+  // Resolve and persist the account's handle + display name onto the source
+  // row. The listener attributes live posts from this handle (its commits have
+  // no profile inline), and it also repairs any historical items that were
+  // ingested before the handle was known (the "EXTERNAL" byline bug). Best
+  // effort — a fetch failure just leaves enrichment to a later run.
+  const profile = await fetchAtprotoProfile(source.source_uri);
+  if (profile) {
+    source.handle = profile.handle;
+    source.display_name = source.display_name ?? profile.displayName;
+    await pool.query(
+      `UPDATE external_sources
+          SET handle = $2,
+              display_name = COALESCE(NULLIF(display_name, ''), $3),
+              updated_at = now()
+        WHERE id = $1`,
+      [sourceId, profile.handle, profile.displayName],
+    );
+    await repairAtprotoAuthors(
+      sourceId,
+      source.source_uri,
+      profile.handle,
+      profile.displayName,
+    );
   }
 
   const {
@@ -135,6 +192,10 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
           cid: post.cid,
           record: post.record,
           fallbackDate: new Date(publishedAt),
+          author: {
+            handle: post.author.handle,
+            displayName: post.author.displayName,
+          },
         });
 
         try {
@@ -202,3 +263,60 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
     );
   }
 };
+
+// Heal historical rows that were ingested before the source's handle was known
+// and so carry a null/empty author name+handle (the byline that renders as
+// "EXTERNAL"). Every item under an atproto source is authored by that source's
+// single account, so the resolved (handle, displayName) applies to all of them.
+// Only fills gaps — never overwrites an already-populated name/handle.
+async function repairAtprotoAuthors(
+  sourceId: string,
+  did: string,
+  handle: string,
+  displayName: string | null,
+): Promise<void> {
+  const name = displayName ?? `@${handle}`;
+  try {
+    await pool.query(
+      `UPDATE external_items
+          SET author_name   = COALESCE(NULLIF(author_name, ''), $2),
+              author_handle = COALESCE(NULLIF(author_handle, ''), $3)
+        WHERE source_id = $1
+          AND protocol = 'atproto'
+          AND (author_name IS NULL OR author_name = ''
+               OR author_handle IS NULL OR author_handle = '')`,
+      [sourceId, name, handle],
+    );
+    // external_authors (migration 099) is minted from the external_items author
+    // fields and keyed by stable_handle = the DID; its null display_name/handle
+    // is what the byline reads via the xa join, so heal it directly by DID.
+    await pool.query(
+      `UPDATE external_authors
+          SET display_name = COALESCE(NULLIF(display_name, ''), $1),
+              handle       = COALESCE(NULLIF(handle, ''), $2)
+        WHERE protocol = 'atproto'
+          AND stable_handle = $3
+          AND (display_name IS NULL OR display_name = ''
+               OR handle IS NULL OR handle = '')`,
+      [name, handle, did],
+    );
+    // feed_items carries its own denormalised author_name (legacy display path);
+    // repair the "Bluesky user" / null placeholders for consistency.
+    await pool.query(
+      `UPDATE feed_items fi
+          SET author_name = $2
+         FROM external_items ei
+        WHERE fi.external_item_id = ei.id
+          AND ei.source_id = $1
+          AND ei.protocol = 'atproto'
+          AND (fi.author_name IS NULL OR fi.author_name = ''
+               OR fi.author_name = 'Bluesky user')`,
+      [sourceId, name],
+    );
+  } catch (err) {
+    logger.warn(
+      { sourceId, err: err instanceof Error ? err.message : String(err) },
+      "atproto author repair failed",
+    );
+  }
+}

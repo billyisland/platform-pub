@@ -29,6 +29,28 @@ import type { PipOpen } from "./chassis";
 // the quoted level (bylineProfile=false) have no linked byline, so no hover.
 // =============================================================================
 
+// Last-resort byline label when a post carries no author name, handle, or
+// source name (a data gap in ingest — e.g. the historical atproto "EXTERNAL"
+// bug). Derive a friendly label from the origin protocol rather than showing a
+// bare "External", which reads as if the account were literally named EXTERNAL.
+function protocolFallbackName(protocol: string): string {
+  switch (protocol) {
+    case "atproto":
+      return "Bluesky user";
+    case "activitypub":
+      return "Fediverse user";
+    case "nostr":
+    case "nostr_external":
+      return "Nostr user";
+    case "rss":
+      return "Web feed";
+    case "email":
+      return "Email";
+    default:
+      return "Unknown author";
+  }
+}
+
 export function PostByline({
   post,
   palette,
@@ -154,7 +176,7 @@ function ExternalByline({
     post.author.displayName ??
     post.author.handle ??
     post.origin.sourceName ??
-    "External";
+    protocolFallbackName(post.origin.protocol);
   // Tier A/B carry an author.id (external_authors record) → link + hover to the
   // constructed profile. Tier C/D have author.id = null → plain text, no hover.
   const linkable = bylineProfile && !!post.author.id;

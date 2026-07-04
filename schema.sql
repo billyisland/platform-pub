@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict bgETQK5RZcDinkjGyayumtInqF8Zq3TgaRq251Qyt9jOhmIhgx89efOf7dBLrHc
+\restrict uolFOwYW4R16IZdGABBeZEikzMctiKrIkcXbBTEgADNoSdex8t7RoODOz86ikzd
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1642,7 +1642,8 @@ CREATE TABLE public.external_sources (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     orphaned_at timestamp with time zone,
     metadata_updated_at timestamp with time zone,
-    ingest_address text
+    ingest_address text,
+    handle text
 );
 
 
@@ -7437,8 +7438,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict bgETQK5RZcDinkjGyayumtInqF8Zq3TgaRq251Qyt9jOhmIhgx89efOf7dBLrHc
-
+\unrestrict uolFOwYW4R16IZdGABBeZEikzMctiKrIkcXbBTEgADNoSdex8t7RoODOz86ikzd
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7577,4 +7577,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('133_chargeback_reversal.sql'),
     ('134_payout_confirm_lifecycle.sql'),
     ('135_settlement_decline_handling.sql'),
-    ('136_ledger_writer_earned.sql');
+    ('136_ledger_writer_earned.sql'),
+    ('137_external_source_handle.sql');

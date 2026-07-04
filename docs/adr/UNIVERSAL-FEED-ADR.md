@@ -115,6 +115,11 @@ CREATE TABLE external_sources (
 
   -- Display metadata (cached from source, refreshed periodically)
   display_name    TEXT,
+  handle          TEXT,              -- account handle (migration 137)
+                                     --   atproto: e.g. alice.bsky.social
+                                     -- One atproto source = one author; the Jetstream
+                                     -- commit carries only the DID, so the handle is
+                                     -- resolved + stored here for live attribution.
   avatar_url      TEXT,
   description     TEXT,
 
@@ -509,6 +514,8 @@ A new Docker Compose service (`feed-ingest`) containing two processes:
 2. **Jetstream listener** — a standalone long-lived process maintaining a persistent WebSocket connection to Bluesky's Jetstream. This is _not_ a Graphile job; it runs as a separate entrypoint within the same container.
 
 Both share the Postgres database. The Jetstream listener writes directly to `external_items` (and `feed_items` in Phase 2+). Graphile Worker processes its job queue as normal.
+
+**Atproto author identity (migration 137).** A Jetstream commit carries only the author's DID — no handle or display name inline — so the ingest cannot read per-post identity off the firehose. Since one atproto source = exactly one author (the listener matches commits to a source by DID), the account's handle is resolved once and stored on `external_sources.handle`, and the `feed_ingest_atproto_backfill` task enriches it (via `getProfile`) on subscribe. `insertAtprotoItem` then resolves the item's `author_name`/`author_handle` with a fallback chain: per-post profile (available on the backfill/poll `getAuthorFeed` path) → the source's stored handle/display_name → `@handle`. The failure this closes: the pre-137 ingest hard-coded `author_handle = NULL` and derived the name solely from `source.display_name`, so a Bluesky account with no display name (displayName is optional) produced a byline that fell through to the literal "External" (rendered uppercase as **EXTERNAL**). The backfill also **repairs** historical null-author rows (`external_items`/`external_authors`/`feed_items`) for the source, and the frontend byline now falls back to a protocol label ("Bluesky user", …) rather than a bare "External" as a floor. General rule for every ingest adapter: **persist per-post author identity (name + handle); never let a byline collapse to a placeholder as an identity.**
 
 ```yaml
 # docker-compose.yml addition

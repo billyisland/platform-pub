@@ -127,6 +127,15 @@ export interface MediaAttachment {
 
 export interface NormalisedAtprotoItem {
   sourceItemUri: string;
+  // Per-post author identity. authorDid is always the DID that authored the
+  // post (from the commit / feed-view). authorHandle / authorName are only
+  // populated when the ingest path carries a resolved profile (backfill /
+  // poll via getAuthorFeed); the Jetstream firehose commit has neither inline,
+  // so live items leave them undefined and the ingest falls back to the
+  // source's stored handle/display_name (one atproto source = one author).
+  authorDid: string;
+  authorHandle?: string;
+  authorName?: string;
   contentText: string;
   contentHtml: string;
   media: MediaAttachment[];
@@ -424,13 +433,20 @@ export function normaliseAtprotoPost(args: {
   cid: string | null;
   record: BskyPostRecord;
   fallbackDate: Date;
+  // The post author's resolved profile, when the caller has it (backfill /
+  // poll load full post views via getAuthorFeed). Omitted by the Jetstream
+  // listener, whose commits carry only the DID.
+  author?: { handle?: string; displayName?: string };
 }): NormalisedAtprotoItem {
-  const { did, uri, cid, record, fallbackDate } = args;
+  const { did, uri, cid, record, fallbackDate, author } = args;
   const { media, sourceQuoteUri } = extractMedia(did, record.embed);
   const publishedAt = parseCreatedAt(record.createdAt) ?? fallbackDate;
 
   return {
     sourceItemUri: uri,
+    authorDid: did,
+    authorHandle: author?.handle,
+    authorName: author?.displayName,
     contentText: record.text,
     contentHtml: renderHtml(record),
     media,

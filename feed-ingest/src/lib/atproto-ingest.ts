@@ -15,6 +15,7 @@ import { truncatePreview } from "@platform-pub/shared/lib/text.js";
 interface AtprotoIngestSource {
   id: string;
   source_uri: string;
+  handle: string | null;
   display_name: string | null;
   avatar_url: string | null;
 }
@@ -31,6 +32,20 @@ export async function insertAtprotoItem(
   item: NormalisedAtprotoItem,
   counts?: EngagementCounts,
 ): Promise<boolean> {
+  // Resolve the post author's identity. A live Jetstream commit carries only
+  // the DID, so item.authorHandle/authorName are undefined there — fall back to
+  // the source's stored handle/display_name (one atproto source = one author;
+  // the source is enriched with its handle by the backfill task). Never leave
+  // both name and handle null: that is the byline that renders as "EXTERNAL".
+  const authorHandle = item.authorHandle ?? source.handle ?? null;
+  const authorName =
+    item.authorName ??
+    source.display_name ??
+    (authorHandle ? `@${authorHandle}` : null);
+  // The author's profile URI (their DID). Was previously the source's DID; now
+  // the post author's DID, which for a single-author source is identical.
+  const authorUri = item.authorDid ?? source.source_uri;
+
   const { rows, rowCount } = await client.query<{ id: string }>(
     `
     INSERT INTO external_items (
@@ -60,10 +75,10 @@ export async function insertAtprotoItem(
     [
       source.id,
       item.sourceItemUri,
-      source.display_name ?? null,
-      null,
+      authorName,
+      authorHandle,
       source.avatar_url ?? null,
-      source.source_uri,
+      authorUri,
       item.contentText,
       item.contentHtml,
       item.language,
@@ -101,7 +116,7 @@ export async function insertAtprotoItem(
   `,
     [
       rows[0].id,
-      source.display_name ?? "Bluesky user",
+      authorName ?? "Bluesky user",
       source.avatar_url,
       truncatePreview(item.contentText),
       item.publishedAt,

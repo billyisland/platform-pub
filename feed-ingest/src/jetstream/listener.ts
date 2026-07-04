@@ -74,6 +74,7 @@ type SourceRow = {
   id: string;
   source_uri: string;
   cursor: string | null;
+  handle: string | null;
   display_name: string | null;
   avatar_url: string | null;
 };
@@ -242,7 +243,7 @@ export class JetstreamListener {
     await this.flushCursors();
 
     const { rows } = await pool.query<SourceRow>(`
-      SELECT id, source_uri, cursor, display_name, avatar_url
+      SELECT id, source_uri, cursor, handle, display_name, avatar_url
       FROM external_sources
       WHERE protocol = 'atproto' AND is_active = TRUE
     `);

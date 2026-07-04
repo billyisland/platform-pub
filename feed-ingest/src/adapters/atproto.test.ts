@@ -113,6 +113,33 @@ describe("normaliseAtprotoPost", () => {
     expect(result.language).toBeNull();
   });
 
+  it("always carries the author DID; handle/name only when a profile is given", () => {
+    const bare = normaliseAtprotoPost({
+      did: DID,
+      uri: `at://${DID}/${COLLECTION}/${RKEY}`,
+      cid: null,
+      record: makeRecord(),
+      fallbackDate: FALLBACK_DATE,
+    });
+    // Jetstream-style call (no profile inline): DID present, handle/name absent
+    // so the ingest falls back to the source's stored identity.
+    expect(bare.authorDid).toBe(DID);
+    expect(bare.authorHandle).toBeUndefined();
+    expect(bare.authorName).toBeUndefined();
+
+    const withProfile = normaliseAtprotoPost({
+      did: DID,
+      uri: `at://${DID}/${COLLECTION}/${RKEY}`,
+      cid: null,
+      record: makeRecord(),
+      fallbackDate: FALLBACK_DATE,
+      author: { handle: "alice.bsky.social", displayName: "Alice" },
+    });
+    expect(withProfile.authorDid).toBe(DID);
+    expect(withProfile.authorHandle).toBe("alice.bsky.social");
+    expect(withProfile.authorName).toBe("Alice");
+  });
+
   it("extracts reply parent URI into sourceReplyUri", () => {
     const result = normaliseAtprotoPost({
       did: DID,
