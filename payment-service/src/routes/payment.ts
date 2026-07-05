@@ -1,10 +1,32 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { accrualService } from '../services/accrual.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
 import logger from '../lib/logger.js'
+
+// requireInternalToken — the single guard for the mutating internal routes
+// (gate-pass, card-connected, payout-cycle, settlement-check/monthly). The two
+// read-only /earnings GETs are intentionally unguarded and don't register it.
+// Compare in constant time: a plain `!==` on the secret leaks a timing oracle.
+function constantTimeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a)
+  const bb = Buffer.from(b)
+  // timingSafeEqual throws on unequal lengths; a length mismatch is already a
+  // non-match, and the token is high-entropy so leaking its length is harmless.
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
+
+async function requireInternalToken(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const expectedToken = process.env.INTERNAL_SERVICE_TOKEN
+  const provided = req.headers['x-internal-token']
+  if (!expectedToken || typeof provided !== 'string' || !constantTimeEqual(provided, expectedToken)) {
+    return reply.status(403).send({ error: 'Forbidden' })
+  }
+}
 
 // =============================================================================
 // Payment API Routes
@@ -39,11 +61,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   // Records the read and triggers settlement check.
   // ---------------------------------------------------------------------------
 
-  app.post('/gate-pass', async (req, reply) => {
-    const expectedToken = process.env.INTERNAL_SERVICE_TOKEN
-    if (!expectedToken || req.headers['x-internal-token'] !== expectedToken) {
-      return reply.status(403).send({ error: 'Forbidden' })
-    }
+  app.post('/gate-pass', { preHandler: requireInternalToken }, async (req, reply) => {
 
     const parsed = GatePassSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -74,11 +92,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   // Converts provisional reads to accrued and checks settlement threshold.
   // ---------------------------------------------------------------------------
 
-  app.post('/card-connected', async (req, reply) => {
-    const expectedToken = process.env.INTERNAL_SERVICE_TOKEN
-    if (!expectedToken || req.headers['x-internal-token'] !== expectedToken) {
-      return reply.status(403).send({ error: 'Forbidden' })
-    }
+  app.post('/card-connected', { preHandler: requireInternalToken }, async (req, reply) => {
 
     const parsed = CardConnectedSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -143,12 +157,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   // POST /payout-cycle (internal — called by cron worker)
   // ---------------------------------------------------------------------------
 
-  app.post('/payout-cycle', async (req, reply) => {
-    // Validate internal caller token
-    const expectedToken = process.env.INTERNAL_SERVICE_TOKEN
-    if (!expectedToken || req.headers['x-internal-token'] !== expectedToken) {
-      return reply.status(403).send({ error: 'Forbidden' })
-    }
+  app.post('/payout-cycle', { preHandler: requireInternalToken }, async (req, reply) => {
 
     const result = await payoutService.runPayoutCycle()
     return reply.status(200).send(result)
@@ -162,11 +171,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   // excluded to avoid early settlement.
   // ---------------------------------------------------------------------------
 
-  app.post('/settlement-check/monthly', async (req, reply) => {
-    const expectedToken = process.env.INTERNAL_SERVICE_TOKEN
-    if (!expectedToken || req.headers['x-internal-token'] !== expectedToken) {
-      return reply.status(403).send({ error: 'Forbidden' })
-    }
+  app.post('/settlement-check/monthly', { preHandler: requireInternalToken }, async (req, reply) => {
 
     const { rows } = await pool.query<{ reader_id: string }>(
       `SELECT DISTINCT reader_id FROM reading_tabs

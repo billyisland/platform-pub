@@ -4,7 +4,7 @@ import logger from '@platform-pub/shared/lib/logger.js'
 export const KEY_SERVICE_URL = requireEnv('KEY_SERVICE_URL')
 export const PAYMENT_SERVICE_URL = requireEnv('PAYMENT_SERVICE_URL')
 
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+export { UUID_RE } from '../../lib/uuid.js'
 
 // =============================================================================
 // Generic service proxy helper

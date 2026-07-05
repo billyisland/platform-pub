@@ -22,7 +22,7 @@ import {
   sendMagicLinkEmail,
   sendEmail,
 } from "@platform-pub/shared/lib/email.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, invalidateAuthCache } from "../middleware/auth.js";
 import { generateKeypair, signEvent } from "../lib/key-custody-client.js";
 import { republishProfile } from "../lib/discovery-publish.js";
 import {
@@ -245,6 +245,7 @@ export async function authRoutes(app: FastifyInstance) {
         "UPDATE accounts SET sessions_invalidated_at = now() WHERE id = $1",
         [session.sub],
       );
+      invalidateAuthCache(session.sub);
     }
     destroySession(reply);
     return reply.status(200).send({ ok: true });
@@ -590,6 +591,7 @@ export async function authRoutes(app: FastifyInstance) {
         `UPDATE accounts SET status = 'deactivated', updated_at = now() WHERE id = $1`,
         [accountId],
       );
+      invalidateAuthCache(accountId);
 
       logger.info({ accountId }, "Account deactivated");
       destroySession(reply);

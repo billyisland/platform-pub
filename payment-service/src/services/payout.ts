@@ -65,6 +65,10 @@ export function computePublicationSplits(
   articleEarnings: Map<string, number>,
   standingMembers: StandingMember[],
 ): SplitResult {
+  // Sum-then-floor on the GROSS pool — deliberately a DIFFERENT formula from the
+  // per-row-then-floor rule in readNetSql/perReadNetPence (shared/lib/per-read-net.ts).
+  // A publication distributes one pooled fee across the whole pool, not a fee per
+  // read, so do NOT "consolidate" this into readNetSql — it would change the rounding.
   const platformFeePence = Math.floor(grossPence * feeBps / 10000)
   let remainingPool = grossPence - platformFeePence
   let flatFeesPaidPence = 0
@@ -898,7 +902,7 @@ class PayoutService {
          AND r.state = 'platform_settled'
          AND r.writer_payout_id IS NULL
        GROUP BY a.publication_id
-       HAVING SUM(r.amount_pence - FLOOR(r.amount_pence * $1 / 10000)) >= $2`,
+       HAVING SUM(${readNetSql('r.amount_pence', '$1')}) >= $2`,
       [config.platformFeeBps, config.writerPayoutThresholdPence]
     )
 
@@ -1021,7 +1025,7 @@ class PayoutService {
       if (articleIds.length > 0) {
         const { rows: artRows } = await client.query<{ article_id: string; net_pence: string }>(
           `SELECT r.article_id,
-                  COALESCE(SUM(r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)), 0) AS net_pence
+                  COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence
            FROM read_events r
            WHERE r.article_id = ANY($1)
              AND r.state = 'platform_settled'

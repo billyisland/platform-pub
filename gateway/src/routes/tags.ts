@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from 'fastify'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
@@ -15,7 +16,6 @@ import { POST_SELECT, POST_JOINS, feedItemToPost } from '../lib/post-mapper.js'
 // PUT  /articles/:articleId/tags       — set tags for an article (writer only)
 // =============================================================================
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const TAG_RE = /^[a-z0-9][a-z0-9-]{0,48}[a-z0-9]?$/
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50

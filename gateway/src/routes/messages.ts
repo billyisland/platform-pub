@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
@@ -21,7 +22,6 @@ import * as messages from '../services/messages.js'
 // DELETE /settings/dm-pricing/override/:userId      — remove override
 // =============================================================================
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const HEX64_RE_NIP = /^[0-9a-f]{64}$/
 
 const CreateConversationSchema = z.object({

@@ -47,6 +47,27 @@ export function formatDateFromISO(iso: string): string {
 }
 
 /**
+ * Coarse relative time from an ISO string, for notification / message / report
+ * timestamps: "just now", "5m ago", "3h ago", "2d ago".
+ *
+ * Pass `{ compact: true }` for the space-tight variant used in the conversation
+ * list ("now", "5m", "3h", "2d" — no "ago" suffix). Both forms were previously
+ * hand-copied as private `timeAgo`s in NotificationsPanel / ReportCard (long) and
+ * ConversationList (compact); this is their single definition.
+ */
+export function timeAgo(iso: string, opts?: { compact?: boolean }): string {
+  const compact = opts?.compact ?? false
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return compact ? 'now' : 'just now'
+  if (mins < 60) return compact ? `${mins}m` : `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return compact ? `${hrs}h` : `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return compact ? `${days}d` : `${days}d ago`
+}
+
+/**
  * Truncate text at a word boundary.
  */
 export function truncateText(text: string, maxLength: number): string {

@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from "fastify";
 import { pool } from "@platform-pub/shared/db/client.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
@@ -20,8 +21,6 @@ type Dimension = (typeof DIMENSIONS)[number];
 type VouchValue = (typeof VALUES)[number];
 type Visibility = (typeof VISIBILITIES)[number];
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export async function trustRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------

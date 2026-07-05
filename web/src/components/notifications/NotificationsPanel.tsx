@@ -6,6 +6,7 @@ import { useAuth } from '../../stores/auth'
 import { useUnreadCounts } from '../../stores/unread'
 import { notifications as notificationsApi, type Notification } from '../../lib/api'
 import { routeToOverlay } from '../../lib/workspace/overlays'
+import { timeAgo } from '../../lib/format'
 
 // =============================================================================
 // NotificationsPanel — the notifications activity log. It is the left column of
@@ -17,17 +18,6 @@ import { routeToOverlay } from '../../lib/workspace/overlays'
 // overlay only mounts when authenticated). The standalone /notifications route
 // is a redirect shim into the merged Messages overlay.
 // =============================================================================
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
-}
 
 function getDestUrl(n: Notification): string {
   switch (n.type) {

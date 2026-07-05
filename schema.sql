@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict uolFOwYW4R16IZdGABBeZEikzMctiKrIkcXbBTEgADNoSdex8t7RoODOz86ikzd
+\restrict an0ZvshWbjJ6onBsI5cV2D4hoo1wtxceahrIGtNyPSGcSW2nS4vCTQMnZZl4Kwf
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -5123,6 +5123,13 @@ CREATE INDEX idx_read_events_reader_id ON public.read_events USING btree (reader
 
 
 --
+-- Name: idx_read_events_settled_unpaid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_read_events_settled_unpaid ON public.read_events USING btree (writer_id) WHERE ((state = 'platform_settled'::public.read_state) AND (writer_payout_id IS NULL));
+
+
+--
 -- Name: idx_read_events_state; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5421,6 +5428,13 @@ CREATE INDEX idx_vault_keys_article_id ON public.vault_keys USING btree (article
 --
 
 CREATE INDEX idx_vote_charges_recipient_id ON public.vote_charges USING btree (recipient_id) WHERE (recipient_id IS NOT NULL);
+
+
+--
+-- Name: idx_vote_charges_settled_unpaid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vote_charges_settled_unpaid ON public.vote_charges USING btree (recipient_id) WHERE ((state = 'platform_settled'::public.read_state) AND (writer_payout_id IS NULL));
 
 
 --
@@ -7438,8 +7452,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict uolFOwYW4R16IZdGABBeZEikzMctiKrIkcXbBTEgADNoSdex8t7RoODOz86ikzd
-
+\unrestrict an0ZvshWbjJ6onBsI5cV2D4hoo1wtxceahrIGtNyPSGcSW2nS4vCTQMnZZl4Kwf
 
 INSERT INTO public._migrations (filename) VALUES
     ('001_add_email_and_magic_links.sql'),
@@ -7578,4 +7591,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('134_payout_confirm_lifecycle.sql'),
     ('135_settlement_decline_handling.sql'),
     ('136_ledger_writer_earned.sql'),
-    ('137_external_source_handle.sql');
+    ('137_external_source_handle.sql'),
+    ('138_payout_predicate_indexes.sql');

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { pool } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../../middleware/auth.js'
 import { requirePublicationPermission } from '../../middleware/publication-auth.js'
+import { readNetSql } from '@platform-pub/shared/lib/per-read-net.js'
 
 // =============================================================================
 // Publication revenue — rate card, payroll (standing shares + per-article
@@ -278,11 +279,11 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
       }>(
         `SELECT
            COALESCE(SUM(r.amount_pence), 0) AS gross_pence,
-           COALESCE(SUM(r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)), 0) AS net_pence,
+           COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence,
            COALESCE(SUM(CASE WHEN r.state = 'platform_settled'
-             THEN r.amount_pence - FLOOR(r.amount_pence * $2 / 10000) ELSE 0 END), 0) AS pending_pence,
+             THEN ${readNetSql('r.amount_pence', '$2')} ELSE 0 END), 0) AS pending_pence,
            COALESCE(SUM(CASE WHEN r.state = 'writer_paid'
-             THEN r.amount_pence - FLOOR(r.amount_pence * $2 / 10000) ELSE 0 END), 0) AS paid_pence,
+             THEN ${readNetSql('r.amount_pence', '$2')} ELSE 0 END), 0) AS paid_pence,
            COUNT(r.id) AS read_count
          FROM read_events r
          JOIN articles a ON a.id = r.article_id
@@ -296,7 +297,7 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
         `SELECT
            a.id AS article_id, a.title, a.slug, a.published_at,
            COUNT(r.id) AS read_count,
-           COALESCE(SUM(r.amount_pence - FLOOR(r.amount_pence * $2 / 10000)), 0) AS net_pence
+           COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence
          FROM articles a
          LEFT JOIN read_events r ON r.article_id = a.id AND r.state IN ('platform_settled', 'writer_paid')
          WHERE a.publication_id = $1 AND a.published_at IS NOT NULL AND a.deleted_at IS NULL

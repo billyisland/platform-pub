@@ -1,3 +1,4 @@
+import { UUID_RE } from "./uuid.js";
 // =============================================================================
 // Shared feed SQL — the candidate-gathering SELECT/JOINs over feed_items plus
 // the keyset cursor parser, reused by every read path that projects feed_items:
@@ -19,8 +20,6 @@ export interface CursorParts {
   id: string;
 }
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function parseCursor(raw: string | undefined): CursorParts | undefined {
   if (!raw) return undefined;

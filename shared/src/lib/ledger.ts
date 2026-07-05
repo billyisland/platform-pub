@@ -59,6 +59,14 @@ import type { PoolClient } from 'pg'
 //
 // Phase 0 shipped this helper with NO callers; Phase 1 (this change) wires the
 // money paths (accrual / settlement / payout / vote_charges / pledge fulfilment).
+//
+// SCALE HORIZON: the Phase-2 balance views (ledger_reader_balance /
+// ledger_writer_earned / …) are plain SUM()-over-history aggregates on the
+// append-only ledger, served by idx_ledger_entries_account_created. Correct and
+// cheap now, but per-dashboard-hit cost grows linearly with an account's entry
+// count forever. When it bites, the fix is a materialised running balance (or a
+// periodic per-account summary row the views sum forward from) — anticipated
+// here so the eventual migration is planned, not diagnosed under load.
 // =============================================================================
 
 export type LedgerTriggerType =

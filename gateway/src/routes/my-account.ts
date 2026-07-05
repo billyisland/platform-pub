@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { requireAuth } from "../middleware/auth.js";
 import { pool } from "@platform-pub/shared/db/client.js";
+import { readNetSql } from "@platform-pub/shared/lib/per-read-net.js";
 
 export async function myAccountRoutes(app: FastifyInstance) {
   // GET /my/tab
@@ -173,7 +174,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
               -- credit is net of the inspirer-bound (live: held|released|paid)
               -- shares; swept/returned shares stay the author's. No-op when no
               -- accruals exist (feature dark).
-              ((re.amount_pence - FLOOR(re.amount_pence * $2 / 10000))
+              (${readNetSql("re.amount_pence", "$2")}
                 - COALESCE((SELECT SUM(ta.amount_pence) FROM tribute_accruals ta
                             WHERE ta.read_event_id = re.id
                               AND ta.state IN ('held', 'released', 'paid')), 0))::int AS amount_pence,
@@ -301,7 +302,7 @@ export async function myAccountRoutes(app: FastifyInstance) {
             UNION ALL
 
             SELECT 'credit',
-              ((re.amount_pence - FLOOR(re.amount_pence * $3 / 10000))
+              (${readNetSql("re.amount_pence", "$3")}
                 - COALESCE((SELECT SUM(ta.amount_pence) FROM tribute_accruals ta
                             WHERE ta.read_event_id = re.id
                               AND ta.state IN ('held', 'released', 'paid')), 0))::int,

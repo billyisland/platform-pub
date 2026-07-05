@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from 'fastify'
 import { randomBytes, createHash } from 'node:crypto'
 import { z } from 'zod'
@@ -33,7 +34,6 @@ import { resolveTarget } from './upstream-edges.js'
 // author. NEVER a social DM. The whole surface ships dark behind TRIBUTES_ENABLED.
 // =============================================================================
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // 60-day contact window; one reminder at 30 (the lifecycle worker owns both).
 const WINDOW_DAYS = 60

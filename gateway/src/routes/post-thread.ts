@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from "fastify";
 import { pool } from "@platform-pub/shared/db/client.js";
 import { optionalAuth } from "../middleware/auth.js";
@@ -59,8 +60,6 @@ const DEFAULT_REPLY_LIMIT = 5; // §8: initial descendant page
 const MAX_REPLY_LIMIT = 50;
 
 const POST_ID_RE = /^[0-9a-f]{64}$/i; // sha256 hex (feed_items_derive_post_id output)
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ── reply cursor: "<published_at_epoch>:<node_uuid>" ─────────────────────────
 // Keyset over the flattened descendant list (published_at, id). node_uuid is the

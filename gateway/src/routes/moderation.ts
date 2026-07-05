@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { requireAuth } from '../middleware/auth.js'
+import { requireAuth, invalidateAuthCache } from '../middleware/auth.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -286,6 +286,7 @@ export async function moderationRoutes(app: FastifyInstance) {
                  WHERE id = $1`,
                 [report.target_account_id]
               )
+              invalidateAuthCache(report.target_account_id)
 
               // Un-publish all their articles (remove from surfaces)
               await client.query(
@@ -341,6 +342,7 @@ export async function moderationRoutes(app: FastifyInstance) {
           `UPDATE accounts SET status = 'suspended', updated_at = now() WHERE id = $1`,
           [accountId]
         )
+        invalidateAuthCache(accountId)
         await client.query(
           `UPDATE articles SET published_at = NULL, updated_at = now() WHERE writer_id = $1`,
           [accountId]

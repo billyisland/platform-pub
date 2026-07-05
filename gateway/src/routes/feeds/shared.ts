@@ -5,8 +5,7 @@ import { pool } from "@platform-pub/shared/db/client.js";
 // the split stays a pure move — no behaviour change. Module-private helpers stay
 // with their module.
 
-export const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export { UUID_RE } from "../../lib/uuid.js";
 
 export interface FeedRow {
   id: string;

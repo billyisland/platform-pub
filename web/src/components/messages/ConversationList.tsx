@@ -1,17 +1,7 @@
 "use client";
 
 import { type Conversation } from "../../lib/api";
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d`;
-}
+import { timeAgo } from "../../lib/format";
 
 export function ConversationList({
   conversations,
@@ -87,7 +77,7 @@ export function ConversationList({
                   </div>
                   {conv.lastMessage && (
                     <span className="font-mono text-[12px] text-grey-600 uppercase flex-shrink-0">
-                      {timeAgo(conv.lastMessage.createdAt)}
+                      {timeAgo(conv.lastMessage.createdAt, { compact: true })}
                     </span>
                   )}
                 </div>

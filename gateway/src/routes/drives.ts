@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
@@ -23,7 +24,6 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // GET    /my/pledges                      — list my active pledges
 // =============================================================================
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const PLEDGE_DRIVE_EVENT_KIND = 30078
 

@@ -23,6 +23,28 @@ starts.
 
 ## Progress
 
+- **2026-07-05** — **code-economy audit remediation** (`docs/audits/allhaus-code-economy-audit.md`
+  §0 for the full disposition table). Implemented the safe/verifiable findings:
+  the `readNetSql` sweep (8 inline fee-formula sites → the shared helper);
+  auth account-check cache (8s in-process TTL in `middleware/auth.ts` +
+  `invalidateAuthCache()` at all four write sites — the per-authed-request
+  `accounts` SELECT was unconditional); deleted the dead `AccrualService` config
+  cache (zero callers); unified `timeAgo` into `web/src/lib/format.ts`; collapsed
+  the four `x-internal-token` checks in `payment.ts` to one constant-time
+  preHandler; canonical `gateway/src/lib/uuid.ts` (~13 local `UUID_RE` defs →
+  imports); migration **138** adds the two settled-unpaid partial indexes
+  (`read_events(writer_id)` / `vote_charges(recipient_id)` — keyed on the real
+  seek column, not the audit's all-NULL `writer_payout_id`). Corrections logged
+  in-audit: `timeAgo` was not 3 identical copies (ConversationList is a compact
+  variant, PlayscriptReply has none); `x-internal-token` was 4-in-one-file not
+  5-scattered. **Deferred:** set-based ledger INSERTs (conflicts with the
+  `check-ledger-adjacency.sh` per-file `recordLedger()` count; needs a clean-DB
+  reconciliation), dropping the bare `idx_*_state` indexes (state-only scans
+  exist, no EXPLAIN evidence), extending `knip` to gateway/web (CI job — needs a
+  triage pass first), and splitting `payout.ts`. Gates green: payment-service
+  88/88, gateway 141/141, root lint 0 errors, web `next build`,
+  `check-schema-drift.sh` / `check-ledger-adjacency.sh` / `check-hairlines.sh`.
+
 - **2026-06-25** — architecture-audit item **3 (unified append-only ledger,
   keystone) — writer-side accrual cutover (FINAL phase)** shipped (migration 136).
   The ledger now models writer EARNING, not just payout — closing the item-3

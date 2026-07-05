@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from 'fastify'
 import { randomUUID, createHash } from 'node:crypto'
 import { nip19 } from 'nostr-tools'
@@ -33,7 +34,6 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // sources are Postgres-only.
 // =============================================================================
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const HEX_64 = /^[0-9a-f]{64}$/i
 
 // Addressable (NIP-33) app-specific kinds for the in-house relay. Distinct from

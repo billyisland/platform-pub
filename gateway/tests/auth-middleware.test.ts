@@ -8,6 +8,7 @@ const mockQuery = vi.fn()
 vi.mock('@platform-pub/shared/auth/session.js', () => ({
   verifySession: (...args: any[]) => mockVerifySession(...args),
   refreshIfNeeded: (...args: any[]) => mockRefreshIfNeeded(...args),
+  destroySession: vi.fn(),
 }))
 
 vi.mock('@platform-pub/shared/db/client.js', () => ({
@@ -18,7 +19,12 @@ vi.mock('@platform-pub/shared/lib/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
-import { requireAuth, optionalAuth } from '../src/middleware/auth.js'
+import { requireAuth, optionalAuth, invalidateAuthCache } from '../src/middleware/auth.js'
+
+// The middleware caches account auth-state in a module-level map (keyed by id,
+// short TTL). These tests all reuse 'user-1' with different mocked DB responses,
+// so the cache must be cleared between cases or a prior case's state leaks in.
+const CACHED_TEST_ID = 'user-1'
 
 function createMockReq(): any {
   return { headers: {} }
@@ -36,6 +42,7 @@ describe('requireAuth', () => {
     mockVerifySession.mockReset()
     mockRefreshIfNeeded.mockReset()
     mockQuery.mockReset()
+    invalidateAuthCache(CACHED_TEST_ID)
   })
 
   it('returns 401 when no session', async () => {
@@ -115,11 +122,14 @@ describe('optionalAuth', () => {
   beforeEach(() => {
     mockVerifySession.mockReset()
     mockRefreshIfNeeded.mockReset()
+    mockQuery.mockReset()
+    invalidateAuthCache(CACHED_TEST_ID)
   })
 
   it('attaches session when present', async () => {
     const session = { sub: 'user-1', pubkey: 'pk1' }
     mockVerifySession.mockResolvedValue(session)
+    mockQuery.mockResolvedValue({ rowCount: 1, rows: [{ status: 'active' }] })
     mockRefreshIfNeeded.mockResolvedValue(undefined)
     const req = createMockReq()
     const reply = createMockReply()

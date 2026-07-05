@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from "fastify";
 import { pool } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -19,8 +20,6 @@ import { POST_SELECT, POST_JOINS, feedItemToPost } from "../lib/post-mapper.js";
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function sourcesRoutes(app: FastifyInstance) {
   app.get<{

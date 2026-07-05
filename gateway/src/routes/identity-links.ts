@@ -1,3 +1,4 @@
+import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from "fastify";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -32,8 +33,6 @@ import {
 // slot last-write-wins (Link → asserted, Unlink → not merged).
 // =============================================================================
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Protocols a link target can carry — mirrors addSource's per-protocol shape
 // (sources.ts) and the client's FOLLOWABLE_PROTOCOLS. email is intentionally
