@@ -255,6 +255,17 @@ export class JetstreamListener {
       nextMap.set(row.source_uri, row);
     }
 
+    // Self-heal sources still missing a handle. A live Jetstream commit carries
+    // only the DID, so insertAtprotoItem attributes posts from source.handle;
+    // an active source whose handle never resolved (subscribed before the
+    // enrichment code shipped, or a transient getProfile failure at subscribe
+    // time that the one-shot backfill never retried) keeps minting null-author
+    // rows that render as the "Bluesky user" placeholder byline. Re-enqueue the
+    // backfill (its first act is fetchAtprotoProfile → persist handle + repair
+    // historical rows). Deduped by job_key and self-limiting: once the handle
+    // lands the source drops out of this filter, so it stops re-enqueuing.
+    await this.enrichMissingHandles(rows);
+
     const changed = !setsEqual(this.currentDids, nextDids);
     const wasWildcard = this.currentDids.size >= WILDCARD_DID_THRESHOLD;
     const willBeWildcard = nextDids.size >= WILDCARD_DID_THRESHOLD;
@@ -302,6 +313,37 @@ export class JetstreamListener {
     }
     this.backoffMs = INITIAL_BACKOFF_MS;
     void this.connect();
+  }
+
+  // Enqueue handle enrichment for any active atproto source whose handle is
+  // still null/empty. Uses a distinct job_key from the subscribe-time backfill
+  // so a routine self-heal can't clobber a genuinely-fresh subscription's job;
+  // add_job dedupes on the key, so at most one enrichment per source is pending.
+  private async enrichMissingHandles(rows: SourceRow[]): Promise<void> {
+    const stale = rows.filter((r) => !r.handle || r.handle.trim() === "");
+    if (stale.length === 0) return;
+    try {
+      for (const row of stale) {
+        await pool.query(
+          `SELECT graphile_worker.add_job(
+             'feed_ingest_atproto_backfill',
+             json_build_object('sourceId', $1::text),
+             job_key := 'feed_ingest_enrich_' || $1::text,
+             max_attempts := 1
+           )`,
+          [row.id],
+        );
+      }
+      logger.info(
+        { count: stale.length },
+        "Enqueued atproto handle enrichment for sources missing a handle",
+      );
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to enqueue atproto handle enrichment",
+      );
+    }
   }
 
   // --- Cursor handling --------------------------------------------------------
