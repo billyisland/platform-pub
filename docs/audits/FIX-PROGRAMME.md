@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-07-06** — **logic & economy audit — Wave 2 (the deferred items)**
+  (`docs/audits/allhaus-logic-economy-audit.md` for the full status). Shipped the
+  six items left deferred after Wave 1 (migrations **142–144**):
+  **F9** removed paid voting — the `vote_charges` money path is stripped from
+  accrual/settlement/payout/chargeback + the frontend paid path; votes cast free,
+  the tables + historical `vote_charge` ledger entries stay inert (registered
+  money paths 7→6). **F5** full publication-aware chargeback — a charged-back
+  publication read reverses each PAID `publication_payout_splits` recipient
+  prorated by read-gross÷pool (never the author), via `writer_payout_reversal` (no
+  migration; it nets in `ledger_writer_earnings`). **F4** keys payout completion
+  off the `transfers.create` response (no more "stuck at initiated"), adds a
+  `transfer.reversed` handler (`payout_status += reversed`), guards `handleFailed*`
+  on `status != completed`; the `transfer.paid/failed` branches are **kept as
+  guarded no-ops** pending a live-Stripe check before deletion (owner decision).
+  **F10** publication splits are a fixed share of the 10000 base (platform keeps
+  the unallocated remainder — the sole-1-bps-gets-100% renormalisation is gone),
+  with `SUM(bps) ≤ 10000` enforced at both write paths. **F14** persists
+  `read_events.allowance_consumed_pence = max(0, min(remaining, amount))`;
+  decrement kept at full amount to preserve the F3 meter (documented divergence
+  from the audit's literal "cap the decrement"). **Wave 5**: periodic
+  `resumePendingSettlements`, UTC calendar renewal arithmetic, `read_at<=settled_at`
+  pairing note. **Verify:** payment/gateway/shared builds + `next build`; tests
+  payment 98 · gateway 141 · shared 71; `check-ledger-adjacency` /
+  `check-schema-drift` (schema.sql regenerated canonically) / `check-hairlines` /
+  root lint (0 err) all green. **Still open (intentional):** the F4 paid/failed
+  branch deletion (needs live-Stripe verification) and publication-*subscription*
+  pool distribution (the open F1 follow-on).
+
 - **2026-07-05** — **code-economy audit remediation** (`docs/audits/allhaus-code-economy-audit.md`
   §0 for the full disposition table). Implemented the safe/verifiable findings:
   the `readNetSql` sweep (8 inline fee-formula sites → the shared helper);
