@@ -61,6 +61,7 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
   const [followLoading, setFollowLoading] = useState(false);
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null);
   const [subLoading, setSubLoading] = useState(false);
+  const [subError, setSubError] = useState<string | null>(null);
   const [showVouchModal, setShowVouchModal] = useState(false);
   const [trustData, setTrustData] = useState<TrustProfileResponse | null>(null);
   const [trustKey, setTrustKey] = useState(0);
@@ -128,6 +129,7 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
   async function handleSubscribe(period: "monthly" | "annual" = "monthly") {
     if (!user || !writer) return;
     setSubLoading(true);
+    setSubError(null);
     try {
       const res = await fetch(`/api/v1/subscriptions/${writer.id}`, {
         method: "POST",
@@ -143,9 +145,16 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
           pricePence: data.pricePence,
           currentPeriodEnd: data.currentPeriodEnd,
         });
+      } else if (res.status === 402) {
+        // card_required: subscriptions charge the reading tab, which needs a
+        // card on file to be collectable.
+        setSubError("Add a payment card in Settings to subscribe.");
+      } else {
+        setSubError("Subscription failed — try again.");
       }
     } catch (err) {
       console.error("Subscribe error:", err);
+      setSubError("Subscription failed — try again.");
     } finally {
       setSubLoading(false);
     }
@@ -270,6 +279,11 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
                           ? "..."
                           : `£${(annualPence / 100).toFixed(2)}/yr`}
                       </button>
+                    )}
+                    {subError && (
+                      <span className="text-ui-xs text-crimson">
+                        {subError}
+                      </span>
                     )}
                   </div>
                 );

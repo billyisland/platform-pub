@@ -50,6 +50,20 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
       }
 
       return withTransaction(async (client) => {
+        // Collection gate (2026-07-06 audit P0): a subscription charge is pure
+        // tab debt with no free-allowance leg — it is only ever collected by
+        // settlement, which skips accounts without a card (checkAndSettle
+        // returns early on a missing stripe_customer_id). So a card on file is
+        // a precondition of subscribing at all, the subscription twin of the F3
+        // gate-pass floor. 402 mirrors the gate-pass payment_required shape.
+        const cardRow = await client.query<{ stripe_customer_id: string | null }>(
+          `SELECT stripe_customer_id FROM accounts WHERE id = $1`,
+          [readerId]
+        )
+        if (!cardRow.rows[0]?.stripe_customer_id) {
+          return reply.status(402).send({ error: 'card_required' })
+        }
+
         // Check writer exists and get their subscription price
         const writerResult = await client.query<{
           id: string

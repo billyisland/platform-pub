@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool } from '@platform-pub/shared/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../../middleware/auth.js'
 import { requirePublicationPermission } from '../../middleware/publication-auth.js'
 import { readNetSql } from '@platform-pub/shared/lib/per-read-net.js'
@@ -182,37 +182,51 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
       if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
       const { shares } = parsed.data
 
-      // Validate total does not exceed 10,000 bps
-      const totalBps = shares.reduce((sum, s) => sum + s.revenueShareBps, 0)
-      if (totalBps > 10000) {
-        return reply.status(400).send({ error: 'Total standing shares cannot exceed 10,000 bps (100%)' })
-      }
-
       const { id } = req.params
 
-      // Verify all member IDs belong to this publication
-      const { rows: validMembers } = await pool.query<{ id: string }>(
-        `SELECT id FROM publication_members
-         WHERE publication_id = $1 AND removed_at IS NULL`,
-        [id]
-      )
-      const validIds = new Set(validMembers.map(m => m.id))
-      for (const s of shares) {
-        if (!validIds.has(s.memberId)) {
-          return reply.status(400).send({ error: `Member ${s.memberId} not found in this publication` })
-        }
-      }
-
-      // Update each member's share
-      for (const s of shares) {
-        await pool.query(
-          `UPDATE publication_members SET revenue_share_bps = $1, updated_at = now()
-           WHERE id = $2 AND publication_id = $3`,
-          [s.revenueShareBps, s.memberId, id]
+      // F10 hardening (2026-07-06 audit P1): the cap must hold over the FINAL
+      // state of ALL members, not the submitted subset — a partial payload
+      // (member A at 10000) previously left unlisted member B's 5000 in place,
+      // Σ 15000. The advisory lock serialises concurrent share edits (this
+      // route and the member PATCH share the key), closing the
+      // read-then-write race both guards otherwise have.
+      return withTransaction(async (client) => {
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtext('pub_shares:' || $1::text))`,
+          [id]
         )
-      }
 
-      return reply.send({ ok: true, totalBps })
+        const { rows: members } = await client.query<{ id: string; revenue_share_bps: number }>(
+          `SELECT id, revenue_share_bps FROM publication_members
+           WHERE publication_id = $1 AND removed_at IS NULL`,
+          [id]
+        )
+        const currentBps = new Map(members.map(m => [m.id, m.revenue_share_bps]))
+        for (const s of shares) {
+          if (!currentBps.has(s.memberId)) {
+            return reply.status(400).send({ error: `Member ${s.memberId} not found in this publication` })
+          }
+        }
+
+        const submitted = new Map(shares.map(s => [s.memberId, s.revenueShareBps]))
+        let totalBps = 0
+        for (const [memberId, bps] of currentBps) {
+          totalBps += submitted.get(memberId) ?? bps
+        }
+        if (totalBps > 10000) {
+          return reply.status(400).send({ error: 'Total standing shares cannot exceed 10,000 bps (100%)' })
+        }
+
+        for (const s of shares) {
+          await client.query(
+            `UPDATE publication_members SET revenue_share_bps = $1, updated_at = now()
+             WHERE id = $2 AND publication_id = $3`,
+            [s.revenueShareBps, s.memberId, id]
+          )
+        }
+
+        return reply.send({ ok: true, totalBps })
+      })
     }
   )
 

@@ -146,6 +146,12 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
       await withTransaction(async (client) => {
         const perms = ROLE_DEFAULTS[invite.role as keyof typeof ROLE_DEFAULTS]
 
+        // F10 (2026-07-06 audit P1): resurrecting a REMOVED member must zero
+        // their old revenue_share_bps — a re-accept previously restored the
+        // stale share past every Σ ≤ 10000 guard (removed members are excluded
+        // from the sums while removed). A manager re-grants the share
+        // deliberately via the payroll routes. An already-active member
+        // re-accepting keeps their live share untouched.
         await client.query(
           `INSERT INTO publication_members
              (publication_id, account_id, role, contributor_type, accepted_at,
@@ -153,6 +159,10 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
            VALUES ($1, $2, $3, $4, now(), $5, $6, $7, $8, $9)
            ON CONFLICT (publication_id, account_id) DO UPDATE SET
              role = EXCLUDED.role, contributor_type = EXCLUDED.contributor_type,
+             revenue_share_bps = CASE
+               WHEN publication_members.removed_at IS NOT NULL THEN 0
+               ELSE publication_members.revenue_share_bps
+             END,
              removed_at = NULL, accepted_at = now()`,
           [invite.publication_id, userId, invite.role, invite.contributor_type,
            perms.can_publish, perms.can_edit_others, perms.can_manage_members,
@@ -209,25 +219,6 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'Cannot modify the Owner' })
       }
 
-      // F10: standing revenue_share_bps is a FIXED share of publication revenue —
-      // the sum across all members cannot exceed 10,000 bps (100%). This route
-      // previously bypassed the cap the PATCH /payroll route enforces; guard it
-      // here too so no member-edit path can create an over-100% standing set (the
-      // split fn would otherwise renormalise/overdraw the pool).
-      if (data.revenueShareBps !== undefined && data.revenueShareBps !== null) {
-        const { rows: [otherBps] } = await pool.query<{ sum: string }>(
-          `SELECT COALESCE(SUM(revenue_share_bps), 0) AS sum
-             FROM publication_members
-            WHERE publication_id = $1 AND removed_at IS NULL AND id <> $2`,
-          [id, memberId]
-        )
-        if (parseInt(otherBps.sum, 10) + data.revenueShareBps > 10000) {
-          return reply.status(400).send({
-            error: 'Total standing shares cannot exceed 10,000 bps (100%)',
-          })
-        }
-      }
-
       const setClauses: string[] = []
       const values: any[] = []
       let idx = 1
@@ -252,14 +243,39 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'No fields to update' })
       }
 
-      values.push(memberId, id)
-      await pool.query(
-        `UPDATE publication_members SET ${setClauses.join(', ')}
-         WHERE id = $${idx} AND publication_id = $${idx + 1}`,
-        values
-      )
+      // F10: standing revenue_share_bps is a FIXED share of publication revenue —
+      // the sum across all members cannot exceed 10,000 bps (100%). Guard + write
+      // run in one transaction under the shared pub_shares advisory lock (same
+      // key as PATCH /payroll) so two concurrent edits can't both pass the
+      // read-then-write check (2026-07-06 audit P1).
+      return withTransaction(async (client) => {
+        if (data.revenueShareBps !== undefined && data.revenueShareBps !== null) {
+          await client.query(
+            `SELECT pg_advisory_xact_lock(hashtext('pub_shares:' || $1::text))`,
+            [id]
+          )
+          const { rows: [otherBps] } = await client.query<{ sum: string }>(
+            `SELECT COALESCE(SUM(revenue_share_bps), 0) AS sum
+               FROM publication_members
+              WHERE publication_id = $1 AND removed_at IS NULL AND id <> $2`,
+            [id, memberId]
+          )
+          if (parseInt(otherBps.sum, 10) + data.revenueShareBps > 10000) {
+            return reply.status(400).send({
+              error: 'Total standing shares cannot exceed 10,000 bps (100%)',
+            })
+          }
+        }
 
-      return reply.send({ ok: true })
+        values.push(memberId, id)
+        await client.query(
+          `UPDATE publication_members SET ${setClauses.join(', ')}
+           WHERE id = $${idx} AND publication_id = $${idx + 1}`,
+          values
+        )
+
+        return reply.send({ ok: true })
+      })
     }
   )
 

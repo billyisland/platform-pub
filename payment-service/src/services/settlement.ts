@@ -348,6 +348,57 @@ class SettlementService {
   }
 
   // ---------------------------------------------------------------------------
+  // sweepDueSettlements — periodic threshold sweep (2026-07-06 audit P0/P1).
+  //
+  // checkAndSettle otherwise fires ONLY on a paid gate pass and on card-connect,
+  // so tab debt that grows without gate passes was never collected: subscription
+  // charges (renewals land on the tab from the gateway worker, which never
+  // touches payment-service) and any reader who simply stops reading below the
+  // monthly-fallback window. Runs from the settlement-reconcile worker cycle;
+  // mirrors checkAndSettle's own preconditions (card on file, no back-off flag)
+  // in the scan so we don't loop no-op candidates.
+  // ---------------------------------------------------------------------------
+
+  async sweepDueSettlements(): Promise<number> {
+    const config = await loadConfig();
+    const BATCH = 500;
+    const { rows } = await pool.query<{ reader_id: string }>(
+      `SELECT t.reader_id
+       FROM reading_tabs t
+       JOIN accounts a ON a.id = t.reader_id
+       WHERE t.balance_pence >= $1
+         AND a.stripe_customer_id IS NOT NULL
+         AND a.card_action_required_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM tab_settlements ts
+           WHERE ts.tab_id = t.id AND ts.status = 'pending'
+         )
+       LIMIT $2`,
+      [config.tabSettlementThresholdPence, BATCH],
+    );
+    if (rows.length === BATCH) {
+      // Not silent truncation: the remainder is picked up next cycle, but a
+      // full batch is worth an operator's eye (3 sweeps/day × 500).
+      logger.warn(
+        { batch: BATCH },
+        "Settlement sweep hit its batch cap — more tabs remain due",
+      );
+    }
+    let initiated = 0;
+    for (const row of rows) {
+      try {
+        if (await this.checkAndSettle(row.reader_id, "threshold")) initiated++;
+      } catch (err) {
+        logger.error(
+          { err, readerId: row.reader_id },
+          "Threshold sweep settlement failed",
+        );
+      }
+    }
+    return initiated;
+  }
+
+  // ---------------------------------------------------------------------------
   // resumePendingSettlements — called at startup to retry any settlements that
   // were reserved but crashed before the Stripe call completed. Stable
   // idempotency keys make this safe to call repeatedly.
@@ -543,6 +594,25 @@ class SettlementService {
            AND state = 'accrued'
            AND read_at <= (SELECT settled_at FROM tab_settlements WHERE id = $1)`,
         [settlement.id, settlement.tab_id],
+      );
+
+      // Subscription twin of the read advance above (migration 146): this
+      // settlement collected the FULL tab balance as of its reservation
+      // snapshot, which includes every subscription_charge debited before it —
+      // so the paired earnings become payable now. Same approximate attribution
+      // as reads (created_at <= snapshot; a charge landing between reserve and
+      // confirm rides the NEXT settlement). Charges fully funded by pre-paid
+      // credit were stamped at charge time (logSubscriptionCharge). No ledger
+      // row: the subscription_earning entry posted at charge time — this is
+      // claim-state, not a money movement.
+      await client.query(
+        `UPDATE subscription_events
+         SET settled_at = now()
+         WHERE reader_id = $1
+           AND event_type = 'subscription_earning'
+           AND settled_at IS NULL
+           AND created_at <= (SELECT settled_at FROM tab_settlements WHERE id = $2)`,
+        [settlement.reader_id, settlement.id],
       );
 
       // Ledger: writer-side accrual — each read just advanced to platform_settled

@@ -14,7 +14,11 @@ vi.mock('stripe', () => ({ default: class { paymentIntents = {} } }))
 const FEE = 800 // 8% → net = amount − floor(amount·800/10000)
 const net = (a: number) => a - Math.floor((a * FEE) / 10000)
 
+// Every query the confirm transaction issues, for shape assertions.
+let clientCalls: Array<{ sql: string; params: any[] }> = []
+
 function fakeClientQuery(sql: string, params: any[] = []) {
+  clientCalls.push({ sql, params })
   if (sql.includes('FROM tab_settlements') && sql.includes('SELECT')) {
     return Promise.resolve({
       rows: [{ id: 'settle-1', reader_id: 'reader-1', tab_id: 'tab-1', amount_pence: 800, stripe_charge_id: null }],
@@ -53,7 +57,10 @@ vi.mock('../src/lib/logger.js', () => ({
 import { settlementService } from '../src/services/settlement.js'
 
 describe('confirmSettlement — writer_accrual earned-side posting', () => {
-  beforeEach(() => recordLedger.mockClear())
+  beforeEach(() => {
+    recordLedger.mockClear()
+    clientCalls = []
+  })
 
   it('posts one writer_accrual per settled read (net, account=writer, cp=reader)', async () => {
     await settlementService.confirmSettlement('pi_1', 'ch_1')
@@ -71,5 +78,23 @@ describe('confirmSettlement — writer_accrual earned-side posting', () => {
     )
     // Plus the reader tab_settlement credit — earned side is additive, not a swap.
     expect(recordLedger.mock.calls.map((c) => c[1].triggerType)).toContain('tab_settlement')
+  })
+
+  it('stamps unsettled subscription_earnings collected (migration 146 gate)', async () => {
+    await settlementService.confirmSettlement('pi_1', 'ch_1')
+
+    // The subscription twin of the read advance: earnings for this reader
+    // created at/before the settlement snapshot flip settled_at — the payout
+    // cycle only claims stamped earnings. No ledger entry (posted at charge).
+    const stamp = clientCalls.find(
+      (c) =>
+        /UPDATE subscription_events/.test(c.sql) &&
+        /SET settled_at = now\(\)/.test(c.sql) &&
+        /settled_at IS NULL/.test(c.sql) &&
+        /subscription_earning/.test(c.sql) &&
+        /created_at <= \(SELECT settled_at FROM tab_settlements/.test(c.sql),
+    )
+    expect(stamp).toBeDefined()
+    expect(stamp!.params).toEqual(['reader-1', 'settle-1'])
   })
 })

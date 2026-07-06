@@ -119,15 +119,23 @@ export function computePublicationSplits(
   // Each member receives bps/10000 of the remaining pool; the platform RETAINS
   // any unallocated remainder (Σ bps < 10000) rather than renormalising it out to
   // the members (the old `× bps / totalStandingBps` paid a sole 1-bps member 100%
-  // of the pool). The write path enforces Σ standing bps ≤ 10000, so this can
-  // never overdraw; this fixed-10000 base is the defensive floor for it.
+  // of the pool). The write paths enforce Σ standing bps ≤ 10000, but they are
+  // not airtight (concurrent edits race the read-then-write guard; historical
+  // rows predate the cap), so clamp cumulatively here too — the standing twin
+  // of articleBpsUsed above. A member whose share is clipped by the clamp is
+  // partially paid; the platform keeps the rest (2026-07-06 audit P1: without
+  // this, Σ bps > 10000 paid out more than remainingPool at transfer time).
   if (remainingPool > 0) {
+    let standingBpsUsed = 0
     for (const member of standingMembers) {
-      const payout = Math.floor(remainingPool * member.revenueShareBps / 10000)
+      const bps = Math.min(member.revenueShareBps, 10000 - standingBpsUsed)
+      if (bps <= 0) continue
+      standingBpsUsed += bps
+      const payout = Math.floor(remainingPool * bps / 10000)
       if (payout <= 0) continue
       splits.push({
         accountId: member.accountId, amountPence: payout,
-        shareType: 'standing', shareBps: member.revenueShareBps,
+        shareType: 'standing', shareBps: bps,
         articleId: null,
       })
     }
@@ -393,6 +401,7 @@ class PayoutService {
            AND writer_id IS NOT NULL
            AND publication_id IS NULL
            AND writer_payout_id IS NULL
+           AND settled_at IS NOT NULL
          GROUP BY writer_id
        ),
        carve AS (
@@ -538,7 +547,8 @@ class PayoutService {
            + (SELECT COALESCE(SUM(amount_pence), 0)
                 FROM subscription_events
                 WHERE writer_id = $1 AND event_type = 'subscription_earning'
-                  AND publication_id IS NULL AND writer_payout_id IS NULL)
+                  AND publication_id IS NULL AND writer_payout_id IS NULL
+                  AND settled_at IS NOT NULL)
            - (SELECT COALESCE(SUM(ta.amount_pence), 0)
                 FROM tribute_accruals ta
                 JOIN read_events re ON re.id = ta.read_event_id
@@ -597,10 +607,13 @@ class PayoutService {
       const readNet = claimedReads.reduce((s, r) => s + parseInt(r.net_pence, 10), 0)
 
       // F1: claim WRITER subscription earnings (already NET) under this payout.
-      // No state gate — a subscription_earning is payable once it exists (its
-      // reader-tab debit is collected by settlement independently); writer_payout_id
-      // makes each earning claimed exactly once. Rolled back with the reads on a
-      // failed transfer (rollbackWriterPayoutRows).
+      // Collection gate (migration 146): only earnings whose reader-tab debit
+      // was actually collected — settled_at stamped by confirmSettlement when
+      // the tab settlement lands, or at charge time when pre-paid credit funded
+      // it. Without the gate a card-less reader's uncollectible charge paid the
+      // writer real money (2026-07-06 audit P0). writer_payout_id makes each
+      // earning claimed exactly once; rolled back with the reads on a failed
+      // transfer (rollbackWriterPayoutRows, which never touches settled_at).
       const { rows: claimedSubs } = await client.query<{ amount_pence: number }>(
         `UPDATE subscription_events
          SET writer_payout_id = $1
@@ -608,6 +621,7 @@ class PayoutService {
            AND event_type = 'subscription_earning'
            AND publication_id IS NULL
            AND writer_payout_id IS NULL
+           AND settled_at IS NOT NULL
          RETURNING amount_pence`,
         [payoutId, writerId],
       )
@@ -1024,13 +1038,19 @@ class PayoutService {
       publication_id: string
       gross_pence: string
     }>(
-      `SELECT a.publication_id, SUM(r.amount_pence) AS gross_pence
+      // Keyed on the denormalised r.publication_id — the SAME column the writer
+      // cycle excludes on — never on the article's CURRENT publication
+      // (2026-07-06 audit P1: keying the pool off articles.publication_id while
+      // the writer cycle excludes on read_events.publication_id made the two
+      // cycles non-complementary — an article joining a publication left its
+      // old reads claimable by BOTH, an article leaving stranded its reads with
+      // NEITHER). A read belongs to the cycle its snapshot says, forever.
+      `SELECT r.publication_id, SUM(r.amount_pence) AS gross_pence
        FROM read_events r
-       JOIN articles a ON a.id = r.article_id
-       WHERE a.publication_id IS NOT NULL
+       WHERE r.publication_id IS NOT NULL
          AND r.state = 'platform_settled'
          AND r.writer_payout_id IS NULL
-       GROUP BY a.publication_id
+       GROUP BY r.publication_id
        HAVING SUM(${readNetSql('r.amount_pence', '$1')}) >= $2`,
       [config.platformFeeBps, config.writerPayoutThresholdPence]
     )
@@ -1118,10 +1138,11 @@ class PayoutService {
       )
 
       const { rows: [balRow] } = await client.query<{ gross_pence: string }>(
+        // r.publication_id, not the article's current publication — must match
+        // the claim UPDATE below exactly (see the eligibility query's note).
         `SELECT COALESCE(SUM(r.amount_pence), 0) AS gross_pence
          FROM read_events r
-         JOIN articles a ON a.id = r.article_id
-         WHERE a.publication_id = $1
+         WHERE r.publication_id = $1
            AND r.state = 'platform_settled'
            AND r.writer_payout_id IS NULL`,
         [publicationId],
@@ -1153,14 +1174,19 @@ class PayoutService {
 
       if (articleIds.length > 0) {
         const { rows: artRows } = await client.query<{ article_id: string; net_pence: string }>(
+          // r.publication_id = $3: overrides distribute only reads THIS pool is
+          // claiming — an article that joined the publication after accruing
+          // personal (publication_id NULL) reads must not have those reads'
+          // net counted into its override here while the writer cycle pays them.
           `SELECT r.article_id,
                   COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence
            FROM read_events r
            WHERE r.article_id = ANY($1)
+             AND r.publication_id = $3
              AND r.state = 'platform_settled'
              AND r.writer_payout_id IS NULL
            GROUP BY r.article_id`,
-          [articleIds, feeBps],
+          [articleIds, feeBps, publicationId],
         )
         for (const r of artRows) {
           articleEarnings.set(r.article_id, parseInt(r.net_pence, 10))
@@ -1171,9 +1197,13 @@ class PayoutService {
       const { rows: standingRows } = await client.query<{
         account_id: string; revenue_share_bps: number;
       }>(
+        // ORDER BY: the compute clamp (Σ standing bps capped at 10000) clips
+        // whoever comes LAST, so the order must be deterministic — seniority,
+        // then id as the tiebreak.
         `SELECT account_id, revenue_share_bps
          FROM publication_members
-         WHERE publication_id = $1 AND removed_at IS NULL AND revenue_share_bps > 0`,
+         WHERE publication_id = $1 AND removed_at IS NULL AND revenue_share_bps > 0
+         ORDER BY created_at ASC, id ASC`,
         [publicationId],
       )
 
@@ -1228,9 +1258,7 @@ class PayoutService {
       await client.query(
         `UPDATE read_events
          SET writer_payout_id = $1
-         FROM articles a
-         WHERE read_events.article_id = a.id
-           AND a.publication_id = $2
+         WHERE read_events.publication_id = $2
            AND read_events.state = 'platform_settled'
            AND read_events.writer_payout_id IS NULL`,
         [payoutId, publicationId],
@@ -1323,14 +1351,31 @@ class PayoutService {
         })
         totalTransferred += split.amount_pence
       } catch (err) {
+        // Terminal vs ambiguous (Stripe invariant; 2026-07-06 audit P1 — this
+        // catch predated F4 and blanket-failed every error). Terminal rejection
+        // (isTerminalTransferError): Stripe created NO transfer — mark the split
+        // 'failed' so the parent payout surfaces it. Ambiguous (network/timeout/
+        // 5xx): the transfer MAY exist — the split must stay 'pending' so the
+        // resume sweep retries with the SAME idempotency key (which dedupes a
+        // transfer that did go through); marking it 'failed' here stranded real
+        // money with no ledger entry and froze the parent at 'pending' forever.
+        // Re-throw so the caller's cycle logs the sweep-level failure.
+        if (isTerminalTransferError(err)) {
+          logger.error(
+            { err, splitId: split.id, accountId: split.account_id, payoutId },
+            'Stripe transfer terminally rejected for publication split',
+          )
+          await pool.query(
+            `UPDATE publication_payout_splits SET status = 'failed' WHERE id = $1`,
+            [split.id],
+          )
+          continue
+        }
         logger.error(
           { err, splitId: split.id, accountId: split.account_id, payoutId },
-          'Stripe transfer failed for publication split',
+          'Publication split transfer ambiguous — left pending for the resume sweep',
         )
-        await pool.query(
-          `UPDATE publication_payout_splits SET status = 'failed' WHERE id = $1`,
-          [split.id],
-        )
+        throw err
       }
     }
 
@@ -1348,9 +1393,7 @@ class PayoutService {
       await client.query(
         `UPDATE read_events
          SET state = 'writer_paid', state_updated_at = now()
-         FROM articles a
-         WHERE read_events.article_id = a.id
-           AND a.publication_id = $1
+         WHERE read_events.publication_id = $1
            AND read_events.writer_payout_id = $2
            AND read_events.state = 'platform_settled'`,
         [publicationId, payoutId],

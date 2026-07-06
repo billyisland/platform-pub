@@ -69,6 +69,7 @@ function writerSub(overrides: Record<string, any> = {}) {
     offer_periods_remaining: null,
     writer_standard_price: 500,
     writer_annual_discount_pct: 15,
+    reader_stripe_customer_id: 'cus_test',
     ...overrides,
   }
 }
@@ -207,6 +208,27 @@ describe('expireAndRenewSubscriptions — renewal', () => {
     expect(withTransactionImpl).toHaveBeenCalledTimes(2)
     const expired = mockPoolQuery.mock.calls.find(
       (c) => /SET status = 'expired'/.test(c[0]) && /WHERE id = \$1/.test(c[0]),
+    )
+    expect(expired).toBeDefined()
+    expect(expired![1]).toEqual(['sub-w'])
+  })
+
+  it('expires a card-less renewal without charging (P0 collection gate)', async () => {
+    routePool([writerSub({ reader_stripe_customer_id: null })])
+    await expireAndRenewSubscriptions()
+
+    // No renewal transaction at all: the charge would be uncollectible tab
+    // debt (settlement skips card-less accounts) while the writer earned.
+    expect(withTransactionImpl).not.toHaveBeenCalled()
+    expect(logSubscriptionCharge).not.toHaveBeenCalled()
+    expect(enqueueRelayPublish).not.toHaveBeenCalled()
+    expect(sendSubscriptionRenewedEmail).not.toHaveBeenCalled()
+    // Expired instead, guarded on still being due + active.
+    const expired = mockPoolQuery.mock.calls.find(
+      (c) =>
+        /SET status = 'expired'/.test(c[0]) &&
+        /current_period_end < now\(\)/.test(c[0]) &&
+        /status = 'active'/.test(c[0]),
     )
     expect(expired).toBeDefined()
     expect(expired![1]).toEqual(['sub-w'])

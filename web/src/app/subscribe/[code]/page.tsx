@@ -48,7 +48,12 @@ export default function RedeemOfferPage() {
       setSuccess(true)
       setTimeout(() => router.push(`/${offer.writerUsername}`), 2000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to subscribe. Please try again.')
+      // 402 card_required: subscriptions charge the reading tab, which needs a
+      // card on file to be collectable.
+      const status = (err as { status?: number })?.status
+      setError(status === 402
+        ? 'Add a payment card in Settings before subscribing.'
+        : err instanceof Error ? err.message : 'Failed to subscribe. Please try again.')
     } finally {
       setSubscribing(false)
     }

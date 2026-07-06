@@ -149,6 +149,26 @@ describe('computePublicationSplits', () => {
       expect(standingSplits[1].amountPence).toBe(2760) // floor(9200 * 3000 / 10000)
     })
 
+    it('F10: clamps cumulative standing bps at 10000 (over-100% set cannot overdraw)', () => {
+      // Σ = 14000 — reachable historically or via racing/partial write paths.
+      // The clamp clips whoever comes last: 6000 stands, the second member is
+      // clipped to 4000, the third gets nothing. Σ payouts ≤ pool always.
+      const members: StandingMember[] = [
+        { accountId: 'acc-a', revenueShareBps: 6000 },
+        { accountId: 'acc-b', revenueShareBps: 6000 },
+        { accountId: 'acc-c', revenueShareBps: 2000 },
+      ]
+
+      const result = computePublicationSplits(10000, feeBps, [], new Map(), members)
+      // Pool = 9200
+      const standingSplits = result.splits.filter(s => s.shareType === 'standing')
+      expect(standingSplits).toHaveLength(2)
+      expect(standingSplits[0]).toMatchObject({ accountId: 'acc-a', amountPence: 5520, shareBps: 6000 })
+      expect(standingSplits[1]).toMatchObject({ accountId: 'acc-b', amountPence: 3680, shareBps: 4000 })
+      const total = standingSplits.reduce((s, x) => s + x.amountPence, 0)
+      expect(total).toBeLessThanOrEqual(9200)
+    })
+
     it('distributes nothing when remaining pool is 0', () => {
       const shares: ArticleShare[] = [{
         id: 'share-1', articleId: 'art-1', accountId: 'acc-1',

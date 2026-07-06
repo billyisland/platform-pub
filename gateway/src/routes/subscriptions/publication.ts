@@ -24,6 +24,17 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
       const period = body?.period === "annual" ? "annual" : "monthly";
 
       return withTransaction(async (client) => {
+        // Collection gate (2026-07-06 audit P0): same card-on-file precondition
+        // as the writer subscribe route — a subscription charge is settleable
+        // tab debt only, and settlement skips card-less accounts, so the charge
+        // would be uncollectible. 402 mirrors the gate-pass shape.
+        const cardRow = await client.query<{
+          stripe_customer_id: string | null;
+        }>(`SELECT stripe_customer_id FROM accounts WHERE id = $1`, [readerId]);
+        if (!cardRow.rows[0]?.stripe_customer_id) {
+          return reply.status(402).send({ error: "card_required" });
+        }
+
         const { rows: pubs } = await client.query<{
           subscription_price_pence: number;
           annual_discount_pct: number;

@@ -61,12 +61,20 @@ export async function logSubscriptionCharge(
   )
   const tabId = tabRow.rows[0].id
   await client.query(`SELECT id FROM reading_tabs WHERE id = $1 FOR UPDATE`, [tabId])
-  await client.query(
+  const balRow = await client.query(
     `UPDATE reading_tabs
      SET balance_pence = balance_pence + $1, last_read_at = now(), updated_at = now()
-     WHERE id = $2`,
+     WHERE id = $2
+     RETURNING balance_pence`,
     [pricePence, tabId],
   )
+  // Collection gate (migration 146): a post-charge balance <= 0 means the
+  // charge was fully funded by pre-paid credit (negative balance = platform
+  // owes reader), so it is already collected — no settlement will ever fire
+  // for it (nothing to charge), and the earning is payable immediately.
+  // Otherwise the earning stays settled_at NULL until confirmSettlement stamps
+  // it when the reader's tab settlement lands.
+  const chargeCollected = balRow.rows[0].balance_pence <= 0
 
   // Debit event for reader
   const { rows: [chargeEvent] } = await client.query(
@@ -89,11 +97,12 @@ export async function logSubscriptionCharge(
   // Credit event for writer/publication (after platform fee)
   const { rows: [earningEvent] } = await client.query(
     `INSERT INTO subscription_events
-       (subscription_id, event_type, reader_id, writer_id, publication_id, amount_pence, period_start, period_end, description)
-     VALUES ($1, 'subscription_earning', $2, $3, $4, $5, $6, $7, $8)
+       (subscription_id, event_type, reader_id, writer_id, publication_id, amount_pence, period_start, period_end, description, settled_at)
+     VALUES ($1, 'subscription_earning', $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id`,
     [subscriptionId, readerId, writerId, publicationId, writerEarningPence, periodStart, periodEnd,
-     `Subscriber income (after ${feePct}% fee)`]
+     `Subscriber income (after ${feePct}% fee)`,
+     chargeCollected ? new Date() : null]
   )
 
   // Writer leg: only WRITER subscriptions post an earned ledger entry + fold into

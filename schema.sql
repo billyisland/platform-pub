@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict aCVLoQHockqQ69P1fpMEb6TtKe5nkYPM5gaH3kgjz672pEFEO5D0K3UTRFHrsvo
+\restrict 5N1hIWFGVMfwLATX1LUPmoWVKgyFZb1o5MUHT5PpJ6xgZY2TXJ50hvOCj3onddv
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -2425,6 +2425,7 @@ CREATE TABLE public.subscription_events (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     publication_id uuid,
     writer_payout_id uuid,
+    settled_at timestamp with time zone,
     CONSTRAINT subscription_events_event_type_check CHECK ((event_type = ANY (ARRAY['subscription_charge'::text, 'subscription_earning'::text, 'subscription_read'::text, 'expiry_warning_sent'::text]))),
     CONSTRAINT subscription_events_target_check CHECK (((writer_id IS NOT NULL) OR (publication_id IS NOT NULL)))
 );
@@ -7464,7 +7465,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict aCVLoQHockqQ69P1fpMEb6TtKe5nkYPM5gaH3kgjz672pEFEO5D0K3UTRFHrsvo
+\unrestrict 5N1hIWFGVMfwLATX1LUPmoWVKgyFZb1o5MUHT5PpJ6xgZY2TXJ50hvOCj3onddv
 
 
 
@@ -7613,4 +7614,6 @@ INSERT INTO public._migrations (filename) VALUES
     ('142_payout_status_reversed.sql'),
     ('143_tribute_payout_reversed_status.sql'),
     ('144_read_events_allowance_consumed.sql'),
-    ('145_drop_is_writer_is_reader.sql');
+    ('145_drop_is_writer_is_reader.sql'),
+    ('146_subscription_earning_settled.sql'),
+    ('147_backfill_initiated_payouts.sql');

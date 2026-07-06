@@ -119,7 +119,16 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
     if (!user || !writerId) return
     setSubscribing(true)
     try {
-      await fetch(`/api/v1/subscriptions/${writerId}`, { method: 'POST', credentials: 'include' })
+      const res = await fetch(`/api/v1/subscriptions/${writerId}`, { method: 'POST', credentials: 'include' })
+      if (!res.ok) {
+        // 402 card_required: subscriptions charge the reading tab, which needs
+        // a card on file to be collectable. (Also: never flip isSubscribed on a
+        // failed response — the old unconditional flip faked a subscription.)
+        setUnlockError(res.status === 402
+          ? 'Add a payment card in Settings to subscribe.'
+          : 'Failed to subscribe. Try again.')
+        return
+      }
       setIsSubscribed(true)
       await handleUnlock()
     } catch { setUnlockError('Failed to subscribe. Try again.') }

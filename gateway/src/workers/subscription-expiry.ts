@@ -39,9 +39,11 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
     offer_periods_remaining: number | null;
     writer_standard_price: number | null;
     writer_annual_discount_pct: number | null;
+    reader_stripe_customer_id: string | null;
   }>(
     `SELECT s.id, s.reader_id, s.writer_id, s.publication_id, s.price_pence,
             s.current_period_end,
+            r.stripe_customer_id AS reader_stripe_customer_id,
             r.nostr_pubkey AS reader_pubkey,
             COALESCE(w.nostr_pubkey, p.nostr_pubkey) AS writer_pubkey,
             COALESCE(s.subscription_period, 'monthly') AS subscription_period,
@@ -58,6 +60,35 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
   );
 
   for (const sub of renewable.rows) {
+    // Collection gate (2026-07-06 audit P0): never renew-charge a reader with
+    // no card on file — the charge would be uncollectible tab debt (settlement
+    // skips card-less accounts) while the writer's earning became payable.
+    // Subscribing now requires a card, so this only catches a card detached
+    // since; expire the subscription instead of charging (same terminal state
+    // as a renewal that failed both attempts below). The period-end guard keeps
+    // it idempotent against a concurrent cycle.
+    if (!sub.reader_stripe_customer_id) {
+      await pool
+        .query(
+          `UPDATE subscriptions
+           SET status = 'expired', auto_renew = FALSE, updated_at = now()
+           WHERE id = $1 AND status = 'active' AND current_period_end < now()`,
+          [sub.id],
+        )
+        .catch((err) =>
+          logger.error(
+            { err, subscriptionId: sub.id },
+            "Failed to expire card-less subscription",
+          ),
+        );
+      logger.warn(
+        { subscriptionId: sub.id, readerId: sub.reader_id },
+        "Subscription expired at renewal — reader has no card on file (charge would be uncollectible)",
+      );
+      processed++;
+      continue;
+    }
+
     // Wave-5 P3: calendar arithmetic, not a fixed 30/365-day millisecond add.
     // Advance the period end by one calendar month (or year) in UTC so renewal
     // periods don't drift across month lengths, DST, or leap years — setUTCMonth/

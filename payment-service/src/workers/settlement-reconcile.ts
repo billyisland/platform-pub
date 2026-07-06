@@ -64,6 +64,17 @@ export function startSettlementReconcileWorker(): void {
         logger.info(result, "Settlement reconcile sweep complete");
       } catch (err) {
         logger.error({ err }, "Settlement reconcile sweep failed");
+      }
+      // Threshold sweep (2026-07-06 audit): collect tab debt that accrues with
+      // no gate pass to trigger checkAndSettle — subscription charges/renewals
+      // and readers who stopped reading. Same isolation as the other sweeps.
+      try {
+        const initiated = await settlementService.sweepDueSettlements();
+        if (initiated > 0) {
+          logger.info({ initiated }, "Threshold settlement sweep complete");
+        }
+      } catch (err) {
+        logger.error({ err }, "Threshold settlement sweep failed");
       } finally {
         scheduleNext();
       }
