@@ -524,6 +524,16 @@ class SettlementService {
         refId: settlement.id,
       });
 
+      // Wave-5 P3 note: the `read_at <= settled_at` predicate advances every
+      // accrued read on this tab whose read_at is at/before the settlement's
+      // snapshot time — NOT only the reads whose amounts summed to the charged
+      // amount. A read that accrued between the settlement's reservation and this
+      // confirmation (so read_at <= settled_at but its amount was NOT in the
+      // charged total) is therefore advanced under this settlement and earns its
+      // writer a writer_accrual, while its penny is collected by the NEXT
+      // settlement. Money conserves across settlements, but read↔settlement
+      // attribution is APPROXIMATE — reconciliation queries must not assume an
+      // exact per-settlement charge/read pairing.
       const { rowCount } = await client.query(
         `UPDATE read_events
          SET state = 'platform_settled',

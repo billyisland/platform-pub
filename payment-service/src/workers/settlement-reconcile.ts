@@ -12,6 +12,14 @@ import logger from "../lib/logger.js";
 // ledger movement and reads stuck 'accrued' indefinitely, with no error. This is
 // the settlement-side twin of the KYC reconcile worker.
 //
+// Two sweeps per cycle (Wave-5 P3): reconcileSettlements covers 'completed'-but-
+// unconfirmed rows (the missed-webhook case above); resumePendingSettlements
+// covers 'pending'-stuck rows (a settlement that crashed after reserving but
+// before/during the Stripe call). Previously the latter ran ONLY at process
+// startup, so a transient-error-stuck pending settlement waited for a restart —
+// unlike payouts, which resume every cycle. Running it here gives settlements the
+// same periodic self-heal.
+//
 // Runs 3×/day, on the same offset cadence as the KYC sweep (00:15, 08:15,
 // 16:15 UTC — staggered from the 02:30 payout cycle and the :30 KYC sweep).
 // =============================================================================
@@ -43,6 +51,14 @@ export function startSettlementReconcileWorker(): void {
     );
 
     setTimeout(async () => {
+      // Resume pending-stuck settlements first (retry the Stripe call for a
+      // crashed reserve), then reconcile completed-but-unconfirmed rows. Isolated
+      // try/catch so one failing sweep never skips the other or the reschedule.
+      try {
+        await settlementService.resumePendingSettlements();
+      } catch (err) {
+        logger.error({ err }, "Settlement resume sweep failed");
+      }
       try {
         const result = await settlementService.reconcileSettlements();
         logger.info(result, "Settlement reconcile sweep complete");

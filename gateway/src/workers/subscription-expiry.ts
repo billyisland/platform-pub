@@ -58,11 +58,18 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
   );
 
   for (const sub of renewable.rows) {
-    const periodDays = sub.subscription_period === "annual" ? 365 : 30;
+    // Wave-5 P3: calendar arithmetic, not a fixed 30/365-day millisecond add.
+    // Advance the period end by one calendar month (or year) in UTC so renewal
+    // periods don't drift across month lengths, DST, or leap years — setUTCMonth/
+    // setUTCFullYear carry calendar semantics with natural overflow normalisation
+    // (e.g. Jan 31 + 1mo → Mar 3) and no timezone shift.
     const newPeriodStart = sub.current_period_end;
-    const newPeriodEnd = new Date(
-      newPeriodStart.getTime() + periodDays * 24 * 60 * 60 * 1000,
-    );
+    const newPeriodEnd = new Date(newPeriodStart);
+    if (sub.subscription_period === "annual") {
+      newPeriodEnd.setUTCFullYear(newPeriodEnd.getUTCFullYear() + 1);
+    } else {
+      newPeriodEnd.setUTCMonth(newPeriodEnd.getUTCMonth() + 1);
+    }
 
     // subscription_events.writer_id holds the publication_id for publication
     // subscriptions (mirrors the subscribe path in routes/subscriptions/*).
