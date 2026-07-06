@@ -23,6 +23,49 @@ starts.
 
 ## Progress
 
+- **2026-07-06** — **four-day commit audit — Wave 3 (P0 + five P1s)**. A
+  multi-agent review of the 2026-07-04→06 commits found the remediation waves
+  themselves had opened seams; all six confirmed money findings fixed same-day
+  (migrations **146–147**). **P0 — subscription collection gate**: subscriptions
+  charged the tab (F1) but nothing made the charge COLLECTIBLE — no card gate on
+  subscribe, settlement skips card-less accounts, and the payout claim had "no
+  state gate", so a card-less burner could fund a colluding writer's real Stripe
+  payouts. Now: subscribe/reactivate require a card on file (402
+  `card_required`, both writer + publication routes; web surfaces it), card-less
+  renewals expire instead of charging, `subscription_events.settled_at`
+  (migration 146) is the subscription twin of `platform_settled` — stamped by
+  `confirmSettlement` (created_at ≤ snapshot) or at charge time when pre-paid
+  credit covers it (post-charge balance ≤ 0) — and every payout
+  eligibility/peek/claim gates on it; a periodic threshold settlement sweep
+  (`sweepDueSettlements`, settlement-reconcile cycle) collects tab debt that
+  accrues with no gate pass (subscription renewals, lapsed readers). **P1s**:
+  free voting capped at one vote per (voter, target, direction) — repeat =
+  idempotent no-op (`counted: false`), closing F9's unbounded-tally hole;
+  `processPublicationSplits` now splits terminal/ambiguous per the Stripe
+  invariant (ambiguous re-throws for the resume sweep — no more failed-but-paid
+  orphan splits); migration 147 backfills pre-F4 `initiated` payouts carrying a
+  `stripe_transfer_id` to `completed` (so `transfer.reversed` reaches them and a
+  stray `transfer.failed` can't unwind a paid payout); the F10 cap holds over
+  the FINAL member set (partial payroll payloads), invite re-accept zeroes a
+  resurrected member's stale share, both write paths serialise under a
+  `pub_shares` advisory lock, and `computePublicationSplits` clamps standing bps
+  cumulatively at 10000 (deterministic seniority order — the defensive floor is
+  real now); the publication pool selects/claims/finalises on
+  `read_events.publication_id` (the exact complement of the writer cycle) —
+  never `articles.publication_id`, which double-claimed reads when an article
+  joined a publication and stranded them when it left. **Verify:** payment 100 ·
+  gateway 142 (incl. new card-less-renewal, settled-stamp, standing-clamp
+  tests); `check-ledger-adjacency` / `check-schema-drift` (schema.sql
+  regenerated canonically, seed 147) / `check-hairlines` / root lint / `next
+  build` all green; migrations applied to dev. **Still open from the audit
+  (documented, not fixed):** partial `transfer.reversed` amounts, the
+  chargeback×manual-reversal double-debit posture, subscription-earning
+  chargeback reversal (platform absorbs), auth-cache invalidation gaps
+  (delete-account; in-txn suspend), atproto enrichment backoff, the mobile
+  pip-order/docs contradiction, `scripts/seed.ts` still inserting the dropped
+  `is_writer` columns, and the migration-145 deploy-order outage note
+  (build → up → migrate for that deploy).
+
 - **2026-07-06** — **is_writer/is_reader dropped (migration 145)** — the
   migrate-hardening §3 decision, resolved same-day as **drop** (the
   "moderation lever" alternative was illusory: nothing gated publishing on
