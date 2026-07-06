@@ -23,6 +23,32 @@ starts.
 
 ## Progress
 
+- **2026-07-06** — **migrate.ts hardening** (`docs/audits/migrate-hardening.md`;
+  no migration file — deliberately, see §2a). **§1** pending migrations now sort
+  by numeric prefix with a lexicographic tiebreak (lexicographic order runs
+  `1000_` before `999_`), with a fatal guard on any filename lacking a numeric
+  prefix (NaN comparator = unspecified order); the three matching 3-digit /
+  lexicographic assumptions in `check-schema-drift.sh` fixed in the same pass
+  (Check 0 + Check 2 seed regexes → `[0-9]+_`, Check 3's chronological fold →
+  `sort -n`). **§2** sha256 checksums: `_migrations.checksum` added as
+  runner-owned **bootstrap DDL** (`ADD COLUMN IF NOT EXISTS`, never a migration
+  — the verify code touches the column on every run incl. pre-column DBs);
+  recorded on apply at both INSERT sites; verified on every run — NULL backfills
+  from the file on disk (correct by construction on fresh boots, which never
+  executed the files), mismatch is fatal with no override flag. `schema.sql`
+  regenerated canonically (throwaway-from-committed + migrate + pg_dump; diff vs
+  old = exactly the new column). **Side-fix**: deleted `payment-service`'s
+  `migrate` script (pointed at a nonexistent `src/db/migrate.ts`); CLAUDE.md's
+  stale "each service has its own runner" line rewritten. **§3 (partial)**:
+  `accounts.ts` header rewritten to the live model (full capability at signup;
+  the operative axes are Stripe-shaped can-pay × can-be-paid), and signup's
+  `createSession(…, isWriter: false)` fixed to `true` (matches the row just
+  inserted + the OAuth path). §3's `is_writer`/`is_reader` column fate (drop vs
+  moderation lever, with the export-route carve-out) stays an open decision.
+  **Verify:** end-to-end runner test (999→1000 order, no-op re-run, edited-file
+  fatal, bad-prefix fatal) against a throwaway DB; `check-schema-drift` all four
+  checks green; shared build + 71 tests green.
+
 - **2026-07-06** — **logic & economy audit — Wave 2 (the deferred items)**
   (`docs/audits/allhaus-logic-economy-audit.md` for the full status). Shipped the
   six items left deferred after Wave 1 (migrations **142–144**):

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
@@ -8,7 +9,8 @@ import pg from "pg";
 //
 // Simple, sequential migration runner. Tracks applied migrations in a
 // _migrations table. Runs all .sql files in the migrations/ directory
-// in lexicographic order.
+// in numeric-prefix order (lexicographic tiebreak), so 1000_ sorts after
+// 999_ — a filename without a numeric prefix is an error.
 //
 // Usage:
 //   npx tsx shared/src/db/migrate.ts
@@ -21,6 +23,16 @@ import pg from "pg";
 // The initial schema (schema.sql) is applied by docker-compose on first
 // boot via the initdb.d volume mount. This runner handles incremental
 // migrations after that.
+//
+// Checksums: each applied migration's sha256 is recorded, and every run
+// verifies applied rows against the files on disk — editing an
+// already-applied migration is fatal (corrections go in a NEW migration).
+// The `checksum` column is runner-owned bootstrap DDL, deliberately NOT a
+// migration file: the verify/record code touches the column on every run,
+// including runs against DBs that predate it, so it must self-heal before
+// any migration is considered. NULL checksums (schema.sql's seed inserts
+// filenames only; pre-checksum prod rows) are backfilled from the current
+// file contents on first sight.
 // =============================================================================
 
 const { Pool } = pg;
@@ -33,7 +45,8 @@ async function migrate() {
   const client = await pool.connect();
 
   try {
-    // Ensure migrations tracking table exists
+    // Ensure migrations tracking table exists (checksum column is bootstrap
+    // DDL too — see header; it must exist before any code below touches it)
     await client.query(`
       CREATE TABLE IF NOT EXISTS _migrations (
         id SERIAL PRIMARY KEY,
@@ -41,11 +54,15 @@ async function migrate() {
         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);
+    await client.query(
+      "ALTER TABLE _migrations ADD COLUMN IF NOT EXISTS checksum TEXT",
+    );
 
     // Get already-applied migrations
-    const { rows: applied } = await client.query<{ filename: string }>(
-      "SELECT filename FROM _migrations ORDER BY filename",
-    );
+    const { rows: applied } = await client.query<{
+      filename: string;
+      checksum: string | null;
+    }>("SELECT filename, checksum FROM _migrations ORDER BY filename");
     const appliedSet = new Set(applied.map((r) => r.filename));
 
     // Find migration files
@@ -56,10 +73,50 @@ async function migrate() {
       return;
     }
 
+    // Verify applied migrations against the files on disk. NULL checksum →
+    // backfill from current contents (the steady state on every fresh boot:
+    // schema.sql's seed inserts filenames only, and a fresh DB never executed
+    // the files — its schema came from schema.sql — so trusting them is
+    // correct by construction). Mismatch → fatal, no override flag.
+    for (const row of applied) {
+      const filepath = path.join(migrationsDir, row.filename);
+      if (!fs.existsSync(filepath)) continue; // deleted historical file: tolerate
+      const hash = crypto
+        .createHash("sha256")
+        .update(fs.readFileSync(filepath, "utf8"))
+        .digest("hex");
+
+      if (row.checksum === null) {
+        await client.query(
+          "UPDATE _migrations SET checksum = $1 WHERE filename = $2",
+          [hash, row.filename],
+        );
+      } else if (row.checksum !== hash) {
+        throw new Error(
+          `Checksum mismatch: ${row.filename} was edited after being applied. ` +
+            `Corrections go in a NEW migration. ` +
+            `(If the rewrite was deliberate, update the checksum row by hand.)`,
+        );
+      }
+    }
+
     const files = fs
       .readdirSync(migrationsDir)
-      .filter((f) => f.endsWith(".sql"))
-      .sort();
+      .filter((f) => f.endsWith(".sql"));
+
+    // A non-numeric prefix would make the comparator return NaN, and a
+    // NaN-returning comparator gives an UNSPECIFIED sort order — silent
+    // misordering, the exact bug class the numeric sort exists to fix.
+    for (const f of files) {
+      if (Number.isNaN(parseInt(f, 10))) {
+        throw new Error(`Migration filename lacks numeric prefix: ${f}`);
+      }
+    }
+
+    // Numeric-prefix sort (lexicographic would run 1000_ before 999_), with a
+    // lexicographic tiebreak so two files sharing a number (merge collision)
+    // stay deterministic.
+    files.sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b));
 
     const pending = files.filter((f) => !appliedSet.has(f));
 
@@ -73,6 +130,7 @@ async function migrate() {
     for (const filename of pending) {
       const filepath = path.join(migrationsDir, filename);
       const sql = fs.readFileSync(filepath, "utf8");
+      const checksum = crypto.createHash("sha256").update(sql).digest("hex");
 
       console.log(`  Applying: ${filename}`);
 
@@ -90,9 +148,10 @@ async function migrate() {
       if (needsNoTxn) {
         try {
           await client.query(sql);
-          await client.query("INSERT INTO _migrations (filename) VALUES ($1)", [
-            filename,
-          ]);
+          await client.query(
+            "INSERT INTO _migrations (filename, checksum) VALUES ($1, $2)",
+            [filename, checksum],
+          );
           console.log(`  ✓ ${filename} (no-transaction: ${noTxnReason})`);
         } catch (err) {
           console.error(
@@ -104,9 +163,10 @@ async function migrate() {
         await client.query("BEGIN");
         try {
           await client.query(sql);
-          await client.query("INSERT INTO _migrations (filename) VALUES ($1)", [
-            filename,
-          ]);
+          await client.query(
+            "INSERT INTO _migrations (filename, checksum) VALUES ($1, $2)",
+            [filename, checksum],
+          );
           await client.query("COMMIT");
           console.log(`  ✓ ${filename}`);
         } catch (err) {

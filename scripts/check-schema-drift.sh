@@ -95,7 +95,7 @@ fi
 # Check 0 — seed list == migrations/ (fast, no DB)
 # =============================================================================
 on_disk="$(find migrations -maxdepth 1 -name '*.sql' -printf '%f\n' | sort)"
-in_seed="$(grep -oE "'[0-9]{3}_[a-z0-9_]+\.sql'" schema.sql | tr -d "'" | sort -u)"
+in_seed="$(grep -oE "'[0-9]+_[a-z0-9_]+\.sql'" schema.sql | tr -d "'" | sort -u)"
 if ! diff <(printf '%s\n' "$on_disk") <(printf '%s\n' "$in_seed") >/tmp/schema-seed.diff; then
   red "Check 0 FAILED: schema.sql _migrations seed does not match migrations/"
   echo "  '<' = file on disk but not seeded; '>' = seeded but no such file:" >&2
@@ -114,7 +114,10 @@ grn "✓ Check 0: _migrations seed lists all $(printf '%s\n' "$on_disk" | wc -l 
 # line comments) so a multi-line `ALTER … RENAME TO` is one record; CREATE names
 # always sit on the statement's first tokens. A `drift-ok` line is excused.
 survivors="$(
-  for f in $(find migrations -maxdepth 1 -name '*.sql' | sort); do
+  # sort -n = numeric-prefix chronology (lexicographic order diverges at 1000_,
+  # which would silently corrupt the net-surviving fold); ties fall back to
+  # sort's byte-wise last-resort comparison, mirroring migrate.ts's tiebreak.
+  for f in $(find migrations -maxdepth 1 -name '*.sql' -printf '%f\n' | sort -n | sed 's|^|migrations/|'); do
     sed -E '/drift-ok/d; s/--.*$//' "$f" | awk 'BEGIN{RS=";"}
     {
       s=$0; gsub(/[\n\t]/," ",s); gsub(/  +/," ",s); sub(/^ +/,"",s)
@@ -213,7 +216,7 @@ grn "✓ Check 1: migrate.ts is a no-op on a schema.sql-built DB"
 # drop comments, psql \restrict tokens (random per run), blank lines, and the
 # _migrations data seed (--schema-only omits it, so it lives only in the file).
 norm() {
-  grep -vE "^--|^\\\\(un)?restrict |^INSERT INTO public\._migrations|^[[:space:]]*\('[0-9]{3}_" \
+  grep -vE "^--|^\\\\(un)?restrict |^INSERT INTO public\._migrations|^[[:space:]]*\('[0-9]+_" \
     | sed '/^[[:space:]]*$/d'
 }
 docker exec "$CONTAINER" pg_dump -U "$PGUSER" --schema-only --no-owner --no-privileges "$DB_SCHEMA" \

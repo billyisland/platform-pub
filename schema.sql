@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict FxnTtC7ksQWWp4So6egrKpi0KMK0bSoh8jXLwh35l0GVpMBQpiOYjxA7ouPjc7z
+\restrict mOSgPvV7vVWzyrQAL4ezVa6qwIiatd8Q4fJy33ciwkoreBX5oU2W17zjnlHYhag
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1153,7 +1153,8 @@ ALTER TABLE graphile_worker._private_tasks ALTER COLUMN id ADD GENERATED ALWAYS 
 CREATE TABLE public._migrations (
     id integer NOT NULL,
     filename text NOT NULL,
-    applied_at timestamp with time zone DEFAULT now() NOT NULL
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    checksum text
 );
 
 
@@ -7472,7 +7473,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict FxnTtC7ksQWWp4So6egrKpi0KMK0bSoh8jXLwh35l0GVpMBQpiOYjxA7ouPjc7z
+\unrestrict mOSgPvV7vVWzyrQAL4ezVa6qwIiatd8Q4fJy33ciwkoreBX5oU2W17zjnlHYhag
+
 
 
 INSERT INTO public._migrations (filename) VALUES

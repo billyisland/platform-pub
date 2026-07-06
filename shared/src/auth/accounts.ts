@@ -7,22 +7,29 @@ import type { FastifyReply } from 'fastify'
 // =============================================================================
 // Account Service
 //
-// Handles account creation (signup), authentication, and Stripe Connect
-// onboarding for writers.
+// Handles account creation (signup), authentication, and Stripe wiring.
 //
-// Signup flow (per ADR):
-//   1. User provides email + display name (or just arrives and clicks "read")
+// Signup flow (both paths — magic-link here, Google OAuth in
+// gateway/src/routes/google-auth.ts):
+//   1. User provides email + display name
 //   2. Platform generates a custodial Nostr keypair
-//   3. Account created with is_reader=true, free_allowance=500 (£5)
-//   4. Reading tab created (one per reader)
+//   3. Account created with full capability — is_writer/is_reader both TRUE,
+//      free_allowance=500 (£5)
+//   4. Reading tab created (one per account)
 //   5. Session cookie set
 //
-// Writer upgrade:
-//   A reader becomes a writer by toggling is_writer=true and completing
-//   Stripe Connect onboarding. The keypair is already generated.
+// There is no reader→writer upgrade: every account can write from signup.
+// The distinctions that actually gate behaviour are Stripe-shaped:
+//   - stripe_customer_id — card on file, can settle a tab (*can pay*)
+//   - stripe_connect_id + stripe_connect_kyc_complete — Connect onboarded,
+//     can receive payouts (*can be paid* — the precondition for paywalling)
+//   - default_article_price_pence — has set a price
+// is_writer/is_reader are vestigial (always TRUE, nothing sets them FALSE);
+// their fate — drop vs repurpose as a moderation lever — is an open decision
+// (docs/audits/migrate-hardening.md §3).
 //
 // Authentication:
-//   At launch, email + magic link (passwordless). The Nostr keypair is
+//   Email + magic link or Google OAuth (passwordless). The Nostr keypair is
 //   custodial — we don't ask users to manage keys.
 //
 // Future: NIP-07 browser extension login for users who self-custody keys.
@@ -80,11 +87,12 @@ export async function signup(
       [account.id]
     )
 
-    // Set session cookie
+    // Set session cookie (isWriter mirrors the row just inserted; the OAuth
+    // path passes the DB value the same way — google-auth.ts)
     await createSession(reply, {
       id: account.id,
       nostrPubkey: account.nostr_pubkey,
-      isWriter: false,
+      isWriter: true,
     })
 
     logger.info(

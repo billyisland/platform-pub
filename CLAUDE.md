@@ -46,7 +46,7 @@ Backend services (`gateway/`, `payment-service/`, `key-service/`, `key-custody/`
 
 ### Database migrations
 
-Migrations are numbered SQL files in `migrations/`, applied in order by the shared runner; each backend service also has its own `db/migrate.ts` (`npm run migrate` in `payment-service`).
+Migrations are numbered SQL files in `migrations/`, applied in numeric-prefix order by the sole runner `shared/src/db/migrate.ts` (`npx tsx shared/src/db/migrate.ts` from the repo root — it resolves `migrations/` from cwd; there are no per-service runners). The runner records a sha256 per applied migration and verifies them on every run — editing an already-applied file is fatal (corrections go in a NEW migration); the `_migrations.checksum` column is runner-owned bootstrap DDL, never a migration file.
 
 **`schema.sql` is the genesis base, not a derivative.** A fresh DB (dev `initdb.d` and prod) boots from `schema.sql`, *then* `migrate.ts` applies anything newer. So `schema.sql` must already contain every migration's effect **and** seed `_migrations` with every migration filename (so `migrate.ts` is a clean no-op on fresh boot). There is no genesis migration — migration `001` ALTERs tables only `schema.sql` creates — so the chain can't be replayed from empty; `schema.sql` is load-bearing.
 
