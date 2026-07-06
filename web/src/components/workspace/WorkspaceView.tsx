@@ -1190,12 +1190,13 @@ export function WorkspaceView() {
       )}
       {bootstrap === "ready" && isMobile && (
         <MobileWorkspace
-          // Mobile pager runs the feed sequence REVERSED relative to the sorted
-          // order: the first pip (leftmost) is the last sorted feed, and swiping
-          // toward higher-numbered pips moves up the reversed run. `[...]` before
-          // `.reverse()` — reverse() mutates in place, and visibleSorted backs
-          // feedNumerals / currentFeed below, so we must not disturb it.
-          feeds={[...visibleSorted].reverse().map((v) => v.feed)}
+          // Rank order, same as the desktop numerals: leftmost pip = Feed 1,
+          // counting up left-to-right, so the pip's positional aria-label and
+          // the FeedComposer title it opens always agree. (A 2026-07-04
+          // `.reverse()` here did the OPPOSITE of its stated "Feed 1 leftmost"
+          // intent — visibleSorted already runs Feed 1 first; removed
+          // 2026-07-06, MOBILE-LAYOUT-ADR §X.)
+          feeds={visibleSorted.map((v) => v.feed)}
           userId={user.id}
           interiorFor={(feedId) =>
             paletteFor(positions[feedId]?.brightness, globalDark).interior

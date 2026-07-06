@@ -271,13 +271,18 @@ Two further refinements, in `MobileWorkspace.tsx` / `Glasshouse.tsx` / `Workspac
    sets no z-index and no transform, so the fixed bar's z-58 competes at the root
    against the panes and is never clipped.
 
-2. **Pip order runs Feed 1 leftmost, reversed from the sorted run.** The pager now
-   receives the feed sequence reversed (`[...visibleSorted].reverse()` at the
-   `MobileWorkspace` call site — the `[...]` guards against `reverse()` mutating
-   `visibleSorted`, which still backs `feedNumerals` / `currentFeed`). Leftmost pip
-   = Feed 1, counting up left-to-right; pips, pages, active state and the swipe all
-   read the same reversed array, so they stay mutually consistent. The swipe `dir`
-   mapping (§VI) is untouched: swiping toward higher-numbered pips runs up the
-   sequence, back toward Feed 1 runs down. This reverses the desktop-numeral↔mobile
-   correspondence (a mobile-only ordering); the numeral remains the desktop model
-   (§I.3).
+2. **Pip order runs Feed 1 leftmost, in rank order — the same sequence as the
+   desktop numerals.** The pager receives `visibleSorted` directly (ascending
+   `sortRank`, the array that backs `feedNumerals`), so the leftmost pip is
+   Feed 1, counting up left-to-right; pips, pages, active state and the swipe
+   all read that one array. The swipe `dir` mapping (§VI): swiping toward
+   higher-numbered pips runs up the sequence, back toward Feed 1 runs down.
+   The positional pip `aria-label` ("Feed N: name") therefore always matches
+   the `feedNumerals`-titled FeedComposer that tapping the active pip opens.
+
+   *Correction (2026-07-06):* the original 2026-07-04 change shipped a
+   `[...visibleSorted].reverse()` at the call site under the mistaken belief
+   the sorted run had Feed 1 rightmost — it doesn't, so the reversal put Feed
+   **N** leftmost (the opposite of this section's stated behaviour) and made
+   the pip aria-label disagree with the composer title. The reversal was
+   removed; the behaviour above is now what ships.
