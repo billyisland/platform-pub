@@ -97,6 +97,40 @@ export async function voteRoutes(app: FastifyInstance) {
         const sequenceNumber = existingCount + 1
 
         // ------------------------------------------------------------------
+        // 3b. Cap: ONE free vote per (voter, target, direction).
+        //
+        // Under paid voting the escalating cost was the only brake on repeat
+        // votes; F9 removed the cost but shipped no replacement cap, so any
+        // account could loop POST /votes and inflate a tally without bound
+        // (2026-07-06 audit P1). A repeat in the same direction is an
+        // idempotent no-op: return the current tally, counted: false, so the
+        // client can tell nothing was recorded. Historical multi-vote rows
+        // (sequence_number > 1) stay untouched in the tallies.
+        // ------------------------------------------------------------------
+        if (existingCount >= 1) {
+          const tallyRow = await client.query<{
+            upvote_count: number
+            downvote_count: number
+            net_score: number
+          }>(
+            `SELECT upvote_count, downvote_count, net_score
+             FROM vote_tallies WHERE target_nostr_event_id = $1`,
+            [targetEventId]
+          )
+          const tally = tallyRow.rows[0]
+          return reply.status(200).send({
+            ok: true,
+            counted: false,
+            sequenceNumber: existingCount,
+            tally: {
+              upvoteCount: tally?.upvote_count ?? 0,
+              downvoteCount: tally?.downvote_count ?? 0,
+              netScore: tally?.net_score ?? 0,
+            },
+          })
+        }
+
+        // ------------------------------------------------------------------
         // 4. Insert vote row (F9: free — no cost, no tab, no charge row)
         // ------------------------------------------------------------------
         await client.query<{ id: string }>(
@@ -148,6 +182,7 @@ export async function voteRoutes(app: FastifyInstance) {
 
         return reply.status(201).send({
           ok: true,
+          counted: true,
           sequenceNumber,
           tally: {
             upvoteCount: tally.upvote_count,

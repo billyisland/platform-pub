@@ -91,10 +91,14 @@ export function VoteControls({
     try {
       const data = await votesApi.cast(targetEventId, targetKind, direction)
       setTally(data.tally)
-      setMyVotes(prev => ({
-        upCount: direction === 'up' ? prev.upCount + 1 : prev.upCount,
-        downCount: direction === 'down' ? prev.downCount + 1 : prev.downCount,
-      }))
+      // counted:false = the server capped a repeat vote (one free vote per
+      // direction) and recorded nothing — don't run the local count ahead.
+      if (data.counted) {
+        setMyVotes(prev => ({
+          upCount: direction === 'up' ? prev.upCount + 1 : prev.upCount,
+          downCount: direction === 'down' ? prev.downCount + 1 : prev.downCount,
+        }))
+      }
     } catch { /* silent */ }
     finally {
       setSubmitting(false)

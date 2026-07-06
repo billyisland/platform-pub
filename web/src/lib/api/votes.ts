@@ -12,10 +12,13 @@ export interface MyVoteCount {
 }
 
 export const votes = {
-  // F9 (2026-07-06): voting is free — the response no longer carries cost fields.
+  // F9 (2026-07-06): voting is free — the response no longer carries cost
+  // fields. `counted` is false when the server capped a repeat vote (one free
+  // vote per direction per target) and recorded nothing.
   cast: (targetEventId: string, targetKind: number, direction: 'up' | 'down') =>
     request<{
       ok: boolean
+      counted: boolean
       sequenceNumber: number
       tally: VoteTally
     }>('/votes', {
