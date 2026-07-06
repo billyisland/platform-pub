@@ -138,7 +138,7 @@ Partial indexes (with WHERE clauses) encode the query patterns the application a
 | -------------------------------- | --------------------- | --------------------------------- | ------------------------------------ | ------------------------------------------- |
 | `idx_accounts_email`             | `accounts`            | `(email)`                         | `email IS NOT NULL`                  | Login lookup (some accounts have no email)  |
 | `idx_accounts_display_name_trgm` | `accounts`            | GIN `(display_name gin_trgm_ops)` | `display_name IS NOT NULL`           | Fuzzy name search                           |
-| `idx_accounts_is_writer`         | `accounts`            | `(is_writer)`                     | `is_writer = true`                   | Writer-only queries                         |
+| `idx_accounts_is_writer`         | `accounts`            | `(is_writer)`                     | `is_writer = true`                   | **Dropped in migration 145** (with the vestigial `is_writer`/`is_reader` columns) |
 | `idx_articles_publication`       | `articles`            | `(publication_id)`                | `publication_id IS NOT NULL`         | Publication article listing                 |
 | `idx_articles_published_at`      | `articles`            | `(published_at DESC)`             | `published_at IS NOT NULL`           | Published articles only (excludes drafts)   |
 | `idx_drafts_scheduled`           | `article_drafts`      | `(scheduled_at)`                  | `scheduled_at IS NOT NULL`           | Scheduler worker picks due drafts           |

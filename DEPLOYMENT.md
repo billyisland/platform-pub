@@ -206,21 +206,21 @@ docker compose ps   # wait for postgres healthy
 
 ### 4. Schema and migrations
 
-The base schema (`schema.sql`) is auto-applied on **first** postgres boot via the `initdb.d` volume mount. `schema.sql` is a `pg_dump` of a fully-migrated database and is **synced through migration 101** (73 public tables + the `traffology` and `graphile_worker` schemas). It ends with an `INSERT` that **seeds the `_migrations` table** with every migration baked into the dump, so a fresh DB records all 101 as already-applied — the runner is then a clean no-op on a fresh DB and applies only genuinely-new files on an existing one. Regenerate `schema.sql` from a fully-migrated, `_migrations`-seeded DB whenever you add a migration so the two paths can't drift.
+The base schema (`schema.sql`) is auto-applied on **first** postgres boot via the `initdb.d` volume mount. `schema.sql` is a `pg_dump` of a fully-migrated database, kept in lockstep with `migrations/` by the CI drift guard (`scripts/check-schema-drift.sh` — regenerate `schema.sql` whenever you add a migration; the guard fails the build if the two halves disagree). It ends with an `INSERT` that **seeds the `_migrations` table** with every migration baked into the dump, so a fresh DB records them all as already-applied — the runner is then a clean no-op on a fresh DB and applies only genuinely-new files on an existing one.
 
 - **Fresh DB:** no migration action needed — `schema.sql` is current.
-- **Existing DB initialised from an older `schema.sql`:** run the migration runner (below). It reads `migrations/` in order, checks `_migrations`, and applies only pending files. Each file runs inside a `BEGIN/COMMIT` and rolls back on failure, except statements Postgres forbids inside a transaction block — `ALTER TYPE … ADD VALUE` and `CREATE/DROP INDEX CONCURRENTLY` — which the runner detects and applies outside a transaction (and therefore cannot roll back).
+- **Existing DB initialised from an older `schema.sql`:** run the migration runner (below). It reads `migrations/` in numeric-prefix order, checks `_migrations`, and applies only pending files. Each file runs inside a `BEGIN/COMMIT` and rolls back on failure, except statements Postgres forbids inside a transaction block — `ALTER TYPE … ADD VALUE` and `CREATE/DROP INDEX CONCURRENTLY` — which the runner detects and applies outside a transaction (and therefore cannot roll back).
+- **Checksums:** the runner records a sha256 per applied migration and verifies all applied rows against the files on disk on every run — editing an already-applied migration file makes the next run fail loudly (corrections go in a NEW migration). Rows without a checksum (the schema.sql seed, or history from before checksums shipped) are stamped from the files on first sight, so the first run after upgrading past migrate-hardening backfills the whole table; that run's burst of UPDATEs is expected.
 
 ```bash
 # From the host (Node required):
 DATABASE_URL=postgres://platformpub:$POSTGRES_PASSWORD@localhost:5432/platformpub \
   npx tsx shared/src/db/migrate.ts
-
-# Or apply a single file via Docker (no host Node):
-docker exec -i platform-pub-postgres-1 psql -U platformpub platformpub < migrations/NNN_name.sql
 ```
 
-Verify (73 public tables; a fresh DB shows 101 seeded migrations):
+Always apply migrations through the runner — piping a file into `psql` directly leaves no `_migrations` row (and no checksum), so the runner later tries to re-apply it and dies on the already-existing objects. That bypass is exactly how the dev DB drifted (repaired 2026-07-06).
+
+Verify (the seeded count must equal `ls migrations/*.sql | wc -l`):
 
 ```bash
 docker exec platform-pub-postgres-1 psql -U platformpub platformpub -c "\dt"
@@ -327,7 +327,7 @@ Symptom: code is on `master`, you pulled and rebuilt, but new front-end behaviou
 
 ### Schema
 
-`schema.sql` is the from-scratch path, auto-applied on first postgres boot. Synced through migration 101 and ends with a `_migrations` seed so the runner is a no-op on a fresh DB. Keep it in sync when adding migrations so fresh databases match migrated ones.
+`schema.sql` is the from-scratch path, auto-applied on first postgres boot. It is kept in lockstep with `migrations/` (CI-enforced by `scripts/check-schema-drift.sh`) and ends with a `_migrations` seed so the runner is a no-op on a fresh DB. Regenerate it whenever you add a migration so fresh databases match migrated ones.
 
 ### Migrations
 

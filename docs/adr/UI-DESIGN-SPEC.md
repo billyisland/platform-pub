@@ -94,7 +94,7 @@ Cards are `bg-white px-6 py-4`, separated by 2px `border-grey-200` (not spaced �
 ARTICLES   DRAFTS   SUBSCRIBERS   DRIVES   OFFERS   PRICING
 ```
 
-This tab only appears if `user.isWriter` is true.
+This tab appears for every account. (It was originally gated on `user.isWriter`, but that flag was vestigial — always true — and was dropped with migration 145; every account can write from signup.)
 
 **Layout:** Same pattern as MembersTab — a `bg-white` table with `label-ui` column headers.
 

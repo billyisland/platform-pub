@@ -1860,7 +1860,7 @@ sessions, etc.).
 | Traffology entity | Relationship to existing schema |
 |---|---|
 | Piece | Foreign key to `public.articles(id)`. A thin `traffology.pieces` view or table adds Traffology-specific fields (tags, word_count if not present on articles). The `nostr_event_id` is already on `public.articles`. |
-| Writer | Foreign key to `public.accounts(id)` where `is_writer = TRUE`. WriterBaseline references `accounts.id` directly. |
+| Writer | Foreign key to `public.accounts(id)` — every account can write (the old `is_writer` flag was dropped in migration 145). WriterBaseline references `accounts.id` directly. |
 | Publication | Foreign key to any future `public.publications` table (per the Publications feature design). Nullable until Publications ship. |
 | Session | New table: `traffology.sessions`. No foreign key to `public.sessions` (different concept — platform sessions vs. reader visit sessions). |
 | Source, NostrEvent, PublicMention, Observation | New tables in `traffology` schema with no dependencies on existing tables beyond `accounts.id` and `articles.id`. |
