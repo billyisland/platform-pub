@@ -867,20 +867,32 @@ class PayoutService {
 
   // ---------------------------------------------------------------------------
   // reverseWriterPayout — Stripe webhook on transfer.reversed for a WRITER
-  // payout (F4). A COMPLETED payout's funds were clawed back to the platform.
-  // Mark it 'reversed' and post the reversing writer_payout_reversal entry; the
-  // reads stay writer_paid (they WERE paid, then reversed — the ledger captures
-  // the net, the same clawed-back posture as a chargeback), so there is no
-  // re-pay loop and the writer's earned total simply goes negative. Idempotent:
-  // guarded on status='completed', so an at-least-once redelivery is a no-op.
+  // payout (F4). Funds were clawed back to the platform — possibly PARTIALLY:
+  // Stripe emits transfer.reversed for partial reversals too, carrying the
+  // CUMULATIVE transfer.amount_reversed (2026-07-06 audit residual: the old
+  // handler posted −amount_pence and terminally flipped 'reversed' on any
+  // event, debiting a £200 payout £200 for a £50 partial reversal).
+  //
+  // Idempotency is ledger-derived, not status-claimed: under the row lock, the
+  // posted-so-far reversal total (Σ writer_payout_reversal entries against this
+  // payout row — the chargeback path posts against tab_settlements, so the refs
+  // never conflate) is compared to the cumulative target and only the DELTA is
+  // posted. Redelivery ⇒ delta 0 ⇒ no-op; a second partial ⇒ the increment; the
+  // row flips to 'reversed' only when fully reversed. The reads stay
+  // writer_paid (they WERE paid, then clawed back — the ledger captures the
+  // net, the same posture as a chargeback), so there is no re-pay loop and the
+  // writer's earned total simply goes negative.
   // ---------------------------------------------------------------------------
-  async reverseWriterPayout(stripeTransferId: string): Promise<void> {
+  async reverseWriterPayout(
+    stripeTransferId: string,
+    amountReversedPence: number | null,
+  ): Promise<void> {
     await withTransaction(async (client) => {
       const { rows } = await client.query<{ id: string; writer_id: string; amount_pence: number }>(
-        `UPDATE writer_payouts
-            SET status = 'reversed'
-          WHERE stripe_transfer_id = $1 AND status = 'completed'
-          RETURNING id, writer_id, amount_pence`,
+        `SELECT id, writer_id, amount_pence
+           FROM writer_payouts
+          WHERE stripe_transfer_id = $1 AND status IN ('completed', 'reversed')
+          FOR UPDATE`,
         [stripeTransferId],
       )
       if (rows.length === 0) {
@@ -888,15 +900,35 @@ class PayoutService {
         return
       }
       const { id: payoutId, writer_id: writerId, amount_pence: amountPence } = rows[0]
+      // A missing amount_reversed (defensive) means full; never exceed the payout.
+      const target = Math.min(amountReversedPence ?? amountPence, amountPence)
+      const { rows: [posted] } = await client.query<{ posted: string }>(
+        `SELECT COALESCE(-SUM(amount_pence), 0) AS posted
+           FROM ledger_entries
+          WHERE trigger_type = 'writer_payout_reversal'
+            AND ref_table = 'writer_payouts' AND ref_id = $1`,
+        [payoutId],
+      )
+      const delta = target - parseInt(posted.posted, 10)
+      if (delta <= 0) {
+        logger.info({ payoutId, stripeTransferId, target }, 'reverseWriterPayout: already posted — no-op (redelivery)')
+        return
+      }
       await recordLedger(client, {
         accountId: writerId,
         counterpartyId: null,
-        amountPence: -amountPence,
+        amountPence: -delta,
         triggerType: 'writer_payout_reversal',
         refTable: 'writer_payouts',
         refId: payoutId,
       })
-      logger.warn({ payoutId, writerId, amountPence, stripeTransferId }, 'Writer payout reversed by Stripe')
+      if (target >= amountPence) {
+        await client.query(`UPDATE writer_payouts SET status = 'reversed' WHERE id = $1`, [payoutId])
+      }
+      logger.warn(
+        { payoutId, writerId, reversedPence: delta, cumulativePence: target, fullyReversed: target >= amountPence, stripeTransferId },
+        'Writer payout reversed by Stripe',
+      )
     })
   }
 
@@ -1867,25 +1899,32 @@ class PayoutService {
 
   // ---------------------------------------------------------------------------
   // reverseTributePayout — Stripe webhook on transfer.reversed for a TRIBUTE
-  // payout (F4). Mirrors reverseWriterPayout on the tribute leg: reverse the
-  // inspirer's receipt (tribute_payout_reversal), and — for a ROOT tribute —
-  // restore the author's carve (tribute_carve_reversal, mirroring the
-  // tribute_carve posted at completion). Accruals stay 'paid' (the reversal is a
-  // separate ledger fact, exactly as the chargeback planner treats a paid
-  // accrual). Idempotent on status='completed'. A paid accrual already
+  // payout (F4). Mirrors reverseWriterPayout on the tribute leg, including the
+  // PARTIAL-reversal handling (cumulative transfer.amount_reversed → post only
+  // the delta under the row lock; flip 'reversed' only when fully reversed):
+  // reverse the inspirer's receipt (tribute_payout_reversal), and — for a ROOT
+  // tribute — restore the author's carve (tribute_carve_reversal, mirroring the
+  // tribute_carve posted at completion) prorated to the SAME cumulative
+  // fraction (floor(carve × reversed ÷ amount)), so a half-reversed payout
+  // re-credits half the carve and a full reversal re-credits it all. Accruals
+  // stay 'paid' (the reversal is a separate ledger fact, exactly as the
+  // chargeback planner treats a paid accrual). A paid accrual already
   // charged_back is excluded from the carve sum, so the carve is never
   // double-reversed.
   // ---------------------------------------------------------------------------
-  async reverseTributePayout(stripeTransferId: string): Promise<void> {
+  async reverseTributePayout(
+    stripeTransferId: string,
+    amountReversedPence: number | null,
+  ): Promise<void> {
     await withTransaction(async (client) => {
       const { rows } = await client.query<{
         id: string; tribute_id: string; inspirer_account_id: string;
         author_account_id: string; amount_pence: number;
       }>(
-        `UPDATE tribute_payouts
-            SET status = 'reversed'
-          WHERE stripe_transfer_id = $1 AND status = 'completed'
-          RETURNING id, tribute_id, inspirer_account_id, author_account_id, amount_pence`,
+        `SELECT id, tribute_id, inspirer_account_id, author_account_id, amount_pence
+           FROM tribute_payouts
+          WHERE stripe_transfer_id = $1 AND status IN ('completed', 'reversed')
+          FOR UPDATE`,
         [stripeTransferId],
       )
       if (rows.length === 0) {
@@ -1893,10 +1932,23 @@ class PayoutService {
         return
       }
       const p = rows[0]
+      const target = Math.min(amountReversedPence ?? p.amount_pence, p.amount_pence)
+      const { rows: [posted] } = await client.query<{ posted: string }>(
+        `SELECT COALESCE(-SUM(amount_pence), 0) AS posted
+           FROM ledger_entries
+          WHERE trigger_type = 'tribute_payout_reversal'
+            AND ref_table = 'tribute_payouts' AND ref_id = $1`,
+        [p.id],
+      )
+      const delta = target - parseInt(posted.posted, 10)
+      if (delta <= 0) {
+        logger.info({ tributePayoutId: p.id, stripeTransferId, target }, 'reverseTributePayout: already posted — no-op (redelivery)')
+        return
+      }
       await recordLedger(client, {
         accountId: p.inspirer_account_id,
         counterpartyId: p.author_account_id,
-        amountPence: -p.amount_pence,
+        amountPence: -delta,
         triggerType: 'tribute_payout_reversal',
         refTable: 'tribute_payouts',
         refId: p.id,
@@ -1914,18 +1966,37 @@ class PayoutService {
           [p.id],
         )
         const carvePence = parseInt(carveRow.carve_pence, 10)
-        if (carvePence > 0) {
+        // Cumulative carve target at this reversal fraction; the delta over the
+        // already-posted carve re-credit keeps redeliveries and staged partials
+        // penny-consistent (floors; a charged_back accrual shrinking the sum
+        // between partials clamps at 0, never claws the re-credit back).
+        const carveTarget = Math.floor((carvePence * target) / p.amount_pence)
+        const { rows: [carvePosted] } = await client.query<{ posted: string }>(
+          `SELECT COALESCE(SUM(amount_pence), 0) AS posted
+             FROM ledger_entries
+            WHERE trigger_type = 'tribute_carve_reversal'
+              AND ref_table = 'tribute_payouts' AND ref_id = $1`,
+          [p.id],
+        )
+        const carveDelta = carveTarget - parseInt(carvePosted.posted, 10)
+        if (carveDelta > 0) {
           await recordLedger(client, {
             accountId: p.author_account_id,
             counterpartyId: p.inspirer_account_id,
-            amountPence: carvePence,
+            amountPence: carveDelta,
             triggerType: 'tribute_carve_reversal',
             refTable: 'tribute_payouts',
             refId: p.id,
           })
         }
       }
-      logger.warn({ tributePayoutId: p.id, stripeTransferId }, 'Tribute payout reversed by Stripe')
+      if (target >= p.amount_pence) {
+        await client.query(`UPDATE tribute_payouts SET status = 'reversed' WHERE id = $1`, [p.id])
+      }
+      logger.warn(
+        { tributePayoutId: p.id, reversedPence: delta, cumulativePence: target, fullyReversed: target >= p.amount_pence, stripeTransferId },
+        'Tribute payout reversed by Stripe',
+      )
     })
   }
 
@@ -2082,13 +2153,21 @@ class PayoutService {
   // is left 'completed' (one split reversing does not undo the whole payout).
   // Idempotent on status='completed'.
   // ---------------------------------------------------------------------------
-  async reversePublicationSplit(stripeTransferId: string): Promise<void> {
+  async reversePublicationSplit(
+    stripeTransferId: string,
+    amountReversedPence: number | null,
+  ): Promise<void> {
     await withTransaction(async (client) => {
+      // Partial-reversal handling mirrors reverseWriterPayout: cumulative
+      // transfer.amount_reversed → post only the delta over the ledger's
+      // posted-so-far (this row's ref — the F5 chargeback path posts against
+      // tab_settlements, so the refs never conflate); flip 'reversed' only
+      // when fully reversed.
       const { rows } = await client.query<{ id: string; account_id: string; amount_pence: number }>(
-        `UPDATE publication_payout_splits
-            SET status = 'reversed'
-          WHERE stripe_transfer_id = $1 AND status = 'completed'
-          RETURNING id, account_id, amount_pence`,
+        `SELECT id, account_id, amount_pence
+           FROM publication_payout_splits
+          WHERE stripe_transfer_id = $1 AND status IN ('completed', 'reversed')
+          FOR UPDATE`,
         [stripeTransferId],
       )
       if (rows.length === 0) {
@@ -2096,15 +2175,34 @@ class PayoutService {
         return
       }
       const s = rows[0]
+      const target = Math.min(amountReversedPence ?? s.amount_pence, s.amount_pence)
+      const { rows: [posted] } = await client.query<{ posted: string }>(
+        `SELECT COALESCE(-SUM(amount_pence), 0) AS posted
+           FROM ledger_entries
+          WHERE trigger_type = 'writer_payout_reversal'
+            AND ref_table = 'publication_payout_splits' AND ref_id = $1`,
+        [s.id],
+      )
+      const delta = target - parseInt(posted.posted, 10)
+      if (delta <= 0) {
+        logger.info({ splitId: s.id, stripeTransferId, target }, 'reversePublicationSplit: already posted — no-op (redelivery)')
+        return
+      }
       await recordLedger(client, {
         accountId: s.account_id,
         counterpartyId: null,
-        amountPence: -s.amount_pence,
+        amountPence: -delta,
         triggerType: 'writer_payout_reversal',
         refTable: 'publication_payout_splits',
         refId: s.id,
       })
-      logger.warn({ splitId: s.id, accountId: s.account_id, stripeTransferId }, 'Publication split reversed by Stripe')
+      if (target >= s.amount_pence) {
+        await client.query(`UPDATE publication_payout_splits SET status = 'reversed' WHERE id = $1`, [s.id])
+      }
+      logger.warn(
+        { splitId: s.id, accountId: s.account_id, reversedPence: delta, cumulativePence: target, fullyReversed: target >= s.amount_pence, stripeTransferId },
+        'Publication split reversed by Stripe',
+      )
     })
   }
 

@@ -215,12 +215,17 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     case 'transfer.reversed': {
       const transfer = event.data.object as Stripe.Transfer
       const m = transfer.metadata ?? {}
+      // amount_reversed is CUMULATIVE and the event fires for PARTIAL reversals
+      // too — the handlers post only the delta over what the ledger already
+      // carries and flip to 'reversed' only when fully reversed (2026-07-06
+      // audit residual: the old handlers debited the FULL payout on any event).
+      const reversed = typeof transfer.amount_reversed === 'number' ? transfer.amount_reversed : null
       if (m.tribute_payout_id) {
-        await payoutService.reverseTributePayout(transfer.id)
+        await payoutService.reverseTributePayout(transfer.id, reversed)
       } else if (m.publication_payout_id) {
-        await payoutService.reversePublicationSplit(transfer.id)
+        await payoutService.reversePublicationSplit(transfer.id, reversed)
       } else {
-        await payoutService.reverseWriterPayout(transfer.id)
+        await payoutService.reverseWriterPayout(transfer.id, reversed)
       }
       break
     }

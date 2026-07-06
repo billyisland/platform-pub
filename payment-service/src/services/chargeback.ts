@@ -61,6 +61,22 @@ import type { LedgerTriggerType } from '@platform-pub/shared/lib/ledger.js'
 // disbursed. Degrades to the platform-wide case with zero accruals: author net =
 // read_net, so the writer reversal is the full read net — no tribute branch
 // needed, no flag gate (data-driven).
+//
+// Two DELIBERATE one-sided postures (2026-07-06 audit, recorded not "fixed"):
+//   • Subscription debt: a chargeback of a settlement that collected
+//     subscription charges restores the reader's FULL settled amount to the
+//     tab, but the writer's subscription_earning — possibly already paid out —
+//     is NOT reversed (this planner iterates read_events only; subscription
+//     earnings carry no read row). The platform absorbs the writer leg, the
+//     same absorb-direction as the publication pooled-fee residual above.
+//   • Chargeback × manual transfer reversal can STACK: if a dispute is handled
+//     by this planner (recipient debited their prorated slice) and an operator
+//     ALSO reverses the same recipient's transfer in the Stripe dashboard, the
+//     transfer.reversed handler posts its own reversing entry — the recipient
+//     is debited twice for one dispute. Both entries record real Stripe events
+//     (money DID move twice), so neither is suppressed; the guard is
+//     operational: do not manually reverse a transfer whose dispute the
+//     chargeback path already settled. Check the recipient's ledger first.
 // =============================================================================
 
 export interface ReversalRead {

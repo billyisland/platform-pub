@@ -152,6 +152,15 @@ All six deferred items landed (migrations 142–144, code + tests + schema.sql r
 
 Everything now shipped except the intentional F4 posture above (paid/failed branch deletion pending live-Stripe verification) and the publication-**subscription** distribution through the pool (the still-open F1 follow-on, distinct from these items).
 
+## Wave 3 (2026-07-06) — commit-audit remediation
+
+A same-day audit of the Wave 1–2 commits found the remediation had opened seams; all fixed (migrations 146–147, FIX-PROGRAMME Wave-3 entry for the full list): the subscription **collection gate** (card required to subscribe/renew; `subscription_events.settled_at` gates every payout claim; a periodic threshold settlement sweep), free-vote cap, `processPublicationSplits` terminal/ambiguous split, `initiated`-payout backfill, F10 final-state cap + compute clamp + re-accept share zeroing, and the pool re-keyed on `read_events.publication_id`. The `transfer.reversed` handlers now handle **partial** reversals (cumulative `amount_reversed` → ledger-derived delta; flip `reversed` only when full; tribute carve re-credit prorated).
+
+Two deliberate one-sided postures recorded (not bugs to fix; also documented in `chargeback.ts`'s header):
+
+- **Subscription-debt chargeback**: reversing a settlement that collected subscription charges restores the reader's full amount, but the writer's `subscription_earning` (possibly already paid) is not reversed — the planner iterates `read_events` only. Platform absorbs, same direction as the publication pooled-fee residual.
+- **Chargeback × manual transfer reversal stack**: both paths post real ledger facts for real Stripe movements, so a dispute handled by the chargeback planner PLUS a manual dashboard reversal of the same recipient's transfer debits them twice. The guard is operational — check the recipient's ledger before manually reversing a transfer whose dispute was already settled.
+
 ---
 
 # Fix implementation plan (2026-07-05)
