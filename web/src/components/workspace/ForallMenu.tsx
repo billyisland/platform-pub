@@ -529,10 +529,10 @@ export function ForallMenu({
         {/* The ∀ is constructed, not typed: stroked bars forming the A
             skeleton, in the workspace floor colour, dividing the black disc.
             The legs are one mitred path — a sharp interior apex (miter tip
-            ≈(28,49.2), clear of the rim) with both legs running up through the
-            top rim — and the straight crossbar sits in the upper third,
-            slightly lighter than the legs (canonical geometry:
-            docs/adr/LOGO-REFINEMENT-SPEC.md).
+            ≈(28,52.2), ~2.9 clear of the r=27 clip) with both legs running up
+            through the top rim — and the straight crossbar sits in the upper
+            third of the glyph, slightly lighter than the legs (canonical
+            geometry + disc placement: docs/adr/LOGO-REFINEMENT-SPEC.md).
 
             The legs' endpoints overshoot the top circumference, so each leg
             fully reaches the rim with no anti-aliased gap — but the bar group
@@ -620,12 +620,12 @@ export function ForallMenu({
             {/* legs: one path so the interior apex miter-joins — two separate
                 lines with butt caps would notch at the apex */}
             <path
-              d="M11.7 -1.7 L28 42 L44.3 -1.7"
+              d="M10.6 -1.7 L28 45 L45.4 -1.7"
               strokeLinejoin="miter"
               strokeMiterlimit={6}
             />
             {/* crossbar: upper third, slightly lighter than the legs */}
-            <line x1="18" y1="19" x2="38" y2="19" strokeWidth={4.2} />
+            <line x1="18" y1="22" x2="38" y2="22" strokeWidth={4.2} />
           </g>
           <g
             clipPath="url(#forall-clip)"

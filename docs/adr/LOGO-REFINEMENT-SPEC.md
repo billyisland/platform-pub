@@ -21,11 +21,13 @@ Reference frame: 200×200, disc centre (100,100), disc r=94.
 
 | Element | Value |
 |---|---|
-| Legs | single path `M41.8 -6 L100 150 L158.2 -6`, stroke 18, `stroke-linejoin="miter"`, `stroke-miterlimit="6"`, clipped to disc |
-| Crossbar | rect x=64 y=60.5 w=72 h=15 (centre y=68) |
+| Legs | single path `M37.8 -6 L100 160.7 L162.2 -6`, stroke 18, `stroke-linejoin="miter"`, `stroke-miterlimit="6"`, clipped to disc |
+| Crossbar | rect x=64 y=71.1 w=72 h=15 (centre y=78.6) |
 | Leg splay | ~20.5° from vertical (tan = 50/134, the File-1 ratio) |
-| Apex | vertex (100,150); miter tip lands ≈(100,175.7), well inside the rim |
-| Legs exit rim | ≈(51.3,19.6) and (148.7,19.6) — two clean arc-following cuts |
+| Apex | vertex (100,160.7); miter tip lands ≈(100,186.4), ~7.6 clear of the rim |
+| Legs exit rim | ≈(48.1,21.6) and (151.9,21.6) — two clean arc-following cuts |
+
+**Placement follow-up (2026-07-06, post-ship):** as first shipped the glyph sat too high in the disc (apex vertex y=150, tip ~18 clear of the rim — a fat empty band at the bottom while the top bled). Fixed by translating the glyph down 10.7 units (3 in the 56-frame) — the values above and per-file below are the corrected placement; legs re-extended to the same top-endpoint y so the bleed is unchanged. Shape (splay, stroke weights, crossbar position on the legs) untouched; File 1 has no disc, unaffected.
 
 The legs' vertex overshoot above the rim is arbitrary (it's clipped) — only splay, stroke weights and crossbar carry identity. Divide by 3.571 for the 56-frame used by the trigger and favicon (values given per-file below; everything lands on clean numbers). Reference SVGs from the design pass exist outside the repo (`allhaus-mark.svg`, bleed variant; a contained variant exists but is not being adopted) — **superseded on splay** by the decision above.
 
@@ -81,15 +83,15 @@ New:
 ```tsx
 {/* legs: one path so the interior apex miter-joins — two separate
     lines with butt caps would notch at the apex */}
-<path d="M11.7 -1.7 L28 42 L44.3 -1.7"
+<path d="M10.6 -1.7 L28 45 L45.4 -1.7"
       strokeLinejoin="miter" strokeMiterlimit={6} />
 {/* crossbar: upper third, slightly lighter than the legs */}
-<line x1="18" y1="19" x2="38" y2="19" strokeWidth={4.2} />
+<line x1="18" y1="22" x2="38" y2="22" strokeWidth={4.2} />
 ```
 
 Group attribute changes: `strokeWidth={6}` → `strokeWidth={5}`; `strokeLinecap="round"` → `strokeLinecap="butt"`. Stroke colour stays on the group `style` (var() references don't resolve in presentation attributes — existing comment covers this).
 
-The apex miter tip lands ≈(28,49.2), inside the r=27 clip (the wider apex angle shortens the miter, so clearance improves); legs overshoot the top rim and are clipped as before, so the background-independence guarantee is unchanged.
+The apex miter tip lands ≈(28,52.2), ~2.9 clear of the r=27 clip; legs overshoot the top rim and are clipped as before, so the background-independence guarantee is unchanged.
 
 Leave the close-X group exactly as-is (round caps on the X are fine and it never coexists with the ∀).
 
@@ -99,9 +101,9 @@ Same swap, keeping the existing inverted palette (ink disc `#1A1A18`, bone glyph
 
 ```svg
 <g clip-path="url(#disc)" fill="none" stroke="#F0EFEB">
-  <path d="M11.7 -1.7 L28 42 L44.3 -1.7" stroke-width="5"
+  <path d="M10.6 -1.7 L28 45 L45.4 -1.7" stroke-width="5"
         stroke-linejoin="miter" stroke-miterlimit="6"/>
-  <line x1="18" y1="19" x2="38" y2="19" stroke-width="4.2"/>
+  <line x1="18" y1="22" x2="38" y2="22" stroke-width="4.2"/>
 </g>
 ```
 

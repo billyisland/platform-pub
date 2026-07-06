@@ -10,8 +10,8 @@
   </defs>
   <circle cx="28" cy="28" r="28" fill="#1A1A18"/>
   <g clip-path="url(#disc)" fill="none" stroke="#F0EFEB">
-    <path d="M11.7 -1.7 L28 42 L44.3 -1.7" stroke-width="5"
+    <path d="M10.6 -1.7 L28 45 L45.4 -1.7" stroke-width="5"
           stroke-linejoin="miter" stroke-miterlimit="6"/>
-    <line x1="18" y1="19" x2="38" y2="19" stroke-width="4.2"/>
+    <line x1="18" y1="22" x2="38" y2="22" stroke-width="4.2"/>
   </g>
 </svg>
