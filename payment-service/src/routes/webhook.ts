@@ -126,8 +126,18 @@ export async function webhookRoutes(app: FastifyInstance) {
 async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   logger.info({ eventType: event.type, eventId: event.id }, 'Stripe webhook received')
 
-  // Cast to string: Stripe SDK v14 types don't include all webhook event types
-  // (e.g. 'transfer.paid', 'transfer.failed') but they are valid at runtime.
+  // Cast to string: the Stripe SDK's Event.type union doesn't include every event
+  // we handle at runtime (the transfer.* events below), so we widen it.
+  //
+  // Audit F4 (2026-07-06): transfer.paid / transfer.failed do NOT fire for
+  // platform→connected-account transfers — Stripe emits only transfer.created /
+  // updated / reversed for those (the legacy paid/failed events are for a
+  // connected account's transfers to ITS OWN bank, not transfers TO the connected
+  // account). Payout completion is therefore keyed off the transfers.create
+  // response (payout.ts), not these webhooks. The paid/failed cases below are
+  // retained as GUARDED NO-OPS (completion at create-time + status guards make a
+  // stray delivery harmless) pending a live-Stripe confirmation before deletion.
+  // transfer.reversed IS delivered for these transfers and is handled below.
   switch (event.type as string) {
     // -------------------------------------------------------------------------
     // Stage 2: Reader tab settlement confirmed
@@ -190,6 +200,27 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         await payoutService.handleFailedPublicationSplit(transfer.id, 'Transfer failed')
       } else {
         await payoutService.handleFailedPayout(transfer.id, 'Transfer failed')
+      }
+      break
+    }
+
+    // -------------------------------------------------------------------------
+    // Audit F4: transfer.reversed — Stripe clawed a COMPLETED payout's funds
+    // back to the platform (platform-initiated reversal). This event IS emitted
+    // for platform→connected transfers. Reverse the payout: mark it 'reversed'
+    // and post the reversing ledger entry (mirrors the chargeback posture — the
+    // recipient's earned total goes negative, reads/accruals stay in place, no
+    // synchronous re-pay). Routed by the same metadata as paid/failed.
+    // -------------------------------------------------------------------------
+    case 'transfer.reversed': {
+      const transfer = event.data.object as Stripe.Transfer
+      const m = transfer.metadata ?? {}
+      if (m.tribute_payout_id) {
+        await payoutService.reverseTributePayout(transfer.id)
+      } else if (m.publication_payout_id) {
+        await payoutService.reversePublicationSplit(transfer.id)
+      } else {
+        await payoutService.reverseWriterPayout(transfer.id)
       }
       break
     }

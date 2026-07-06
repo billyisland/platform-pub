@@ -707,14 +707,19 @@ class PayoutService {
     }
 
     await withTransaction(async (client) => {
-      // Guard the status flip on status='pending' and use its rowCount to gate
-      // the ledger emit. completeWriterPayout is re-run on crash-resume with a
-      // stable Stripe key, so only the FIRST txn that actually flips
-      // pending→initiated must post the (one) ledger entry — otherwise a resume
-      // double-counts the payout.
+      // Audit F4 (2026-07-06): key completion off the successful transfers.create
+      // response, not a transfer.paid webhook. Stripe does NOT emit transfer.paid/
+      // failed for platform→connected transfers (only transfer.created/updated/
+      // reversed), so the old 'initiated'→'completed' webhook step was unreachable
+      // and every payout stalled at 'initiated' forever. The money moves at create
+      // time and the ledger posts here regardless, so a created transfer IS the
+      // completion signal. A later Stripe reversal is caught by transfer.reversed
+      // (reverseWriterPayout). Guard the flip on status='pending' and gate the
+      // ledger emit on its rowCount so a crash-resume (same stable key) can't post
+      // the entry twice.
       const flipped = await client.query(
         `UPDATE writer_payouts
-         SET status = 'initiated', stripe_transfer_id = $1
+         SET status = 'completed', completed_at = now(), stripe_transfer_id = $1
          WHERE id = $2 AND status = 'pending'`,
         [transfer.id, payoutId],
       )
@@ -742,7 +747,7 @@ class PayoutService {
 
       // Ledger: writer credit — money received. +amount, counterparty =
       // platform (NULL). SUM of these == historic writer payout sums. Gated on
-      // the pending→initiated flip so resume can't post it twice.
+      // the pending→completed flip so resume can't post it twice.
       if (flipped.rowCount! > 0) {
         await recordLedger(client, {
           accountId: writerId,
@@ -757,7 +762,7 @@ class PayoutService {
 
     logger.info(
       { payoutId, writerId, amountPence, stripeTransferId: transfer.id },
-      'Writer payout initiated',
+      'Writer payout completed',
     )
   }
 
@@ -830,6 +835,41 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
+  // reverseWriterPayout — Stripe webhook on transfer.reversed for a WRITER
+  // payout (F4). A COMPLETED payout's funds were clawed back to the platform.
+  // Mark it 'reversed' and post the reversing writer_payout_reversal entry; the
+  // reads stay writer_paid (they WERE paid, then reversed — the ledger captures
+  // the net, the same clawed-back posture as a chargeback), so there is no
+  // re-pay loop and the writer's earned total simply goes negative. Idempotent:
+  // guarded on status='completed', so an at-least-once redelivery is a no-op.
+  // ---------------------------------------------------------------------------
+  async reverseWriterPayout(stripeTransferId: string): Promise<void> {
+    await withTransaction(async (client) => {
+      const { rows } = await client.query<{ id: string; writer_id: string; amount_pence: number }>(
+        `UPDATE writer_payouts
+            SET status = 'reversed'
+          WHERE stripe_transfer_id = $1 AND status = 'completed'
+          RETURNING id, writer_id, amount_pence`,
+        [stripeTransferId],
+      )
+      if (rows.length === 0) {
+        logger.warn({ stripeTransferId }, 'reverseWriterPayout: no completed payout to reverse')
+        return
+      }
+      const { id: payoutId, writer_id: writerId, amount_pence: amountPence } = rows[0]
+      await recordLedger(client, {
+        accountId: writerId,
+        counterpartyId: null,
+        amountPence: -amountPence,
+        triggerType: 'writer_payout_reversal',
+        refTable: 'writer_payouts',
+        refId: payoutId,
+      })
+      logger.warn({ payoutId, writerId, amountPence, stripeTransferId }, 'Writer payout reversed by Stripe')
+    })
+  }
+
+  // ---------------------------------------------------------------------------
   // handleFailedPayout — called from Stripe webhook on transfer.failed
   // Rolls reads back to platform_settled so they are retried on next cycle
   // ---------------------------------------------------------------------------
@@ -842,12 +882,18 @@ class PayoutService {
       // and completed at some historical timestamp. failed_reason is only
       // overwritten when empty so a subsequent retry doesn't lose the first
       // failure's context.
+      // Audit F4 (2026-07-06): guard on status != 'completed'. Completion is now
+      // keyed off the create response (a payout reaches 'completed' the moment its
+      // transfer is created), so a stray/duplicate transfer.failed webhook — which
+      // shouldn't fire for platform→connected transfers at all — must never unwind
+      // a completed payout and re-release its already-paid reads.
       const payoutRow = await client.query<{ id: string; writer_id: string }>(
         `UPDATE writer_payouts
          SET status = 'failed',
              failed_reason = COALESCE(failed_reason, $1),
              completed_at = NULL
          WHERE stripe_transfer_id = $2
+           AND status != 'completed'
          RETURNING id, writer_id`,
         [reason, stripeTransferId]
       )
@@ -1233,11 +1279,15 @@ class PayoutService {
         // Flip the split and post its ledger entry in ONE txn so they commit
         // together: if the flip committed but the entry didn't, the split would
         // never be re-selected (the loop only picks 'pending') and the credit
-        // would be lost. Gated on the pending→initiated flip for idempotency.
+        // would be lost. Gated on the pending→completed flip for idempotency.
+        // Audit F4 (2026-07-06): completion keyed off the create response — a
+        // platform→connected transfer gets no transfer.paid webhook, so the split
+        // reaches 'completed' the moment its transfer is created (a later reversal
+        // is caught by transfer.reversed → reversePublicationSplit).
         await withTransaction(async (client) => {
           const flipped = await client.query(
             `UPDATE publication_payout_splits
-             SET status = 'initiated', stripe_transfer_id = $1
+             SET status = 'completed', stripe_transfer_id = $1
              WHERE id = $2 AND status = 'pending'`,
             [transfer.id, split.id],
           )
@@ -1289,8 +1339,22 @@ class PayoutService {
         [publicationId, payoutId],
       )
 
+      // Audit F4 (2026-07-06): complete the parent payout off the create response
+      // when EVERY split has completed (no in-flight/pending/failed sibling) —
+      // mirrors the old confirmPublicationSplit parent-completion but at create
+      // time. If a split is still 'pending' (recipient KYC-incomplete), the payout
+      // is left 'pending' so resumePendingPublicationPayouts retries it next cycle
+      // (an improvement over the old unconditional 'initiated', which the resume
+      // sweep — keyed on status='pending' — would never revisit).
       await client.query(
-        `UPDATE publication_payouts SET status = 'initiated' WHERE id = $1 AND status = 'pending'`,
+        `UPDATE publication_payouts pp
+            SET status = 'completed', completed_at = now()
+          WHERE pp.id = $1
+            AND pp.status = 'pending'
+            AND NOT EXISTS (
+              SELECT 1 FROM publication_payout_splits s
+               WHERE s.publication_payout_id = pp.id
+                 AND s.status <> 'completed')`,
         [payoutId],
       )
     })
@@ -1579,9 +1643,13 @@ class PayoutService {
     }
 
     await withTransaction(async (client) => {
+      // Audit F4 (2026-07-06): completion keyed off the create response (see
+      // completeWriterPayout) — platform→connected transfers get no transfer.paid
+      // webhook, so 'initiated' was terminal-but-mislabelled. A later reversal is
+      // caught by transfer.reversed (reverseTributePayout).
       const flipped = await client.query(
         `UPDATE tribute_payouts
-         SET status = 'initiated', stripe_transfer_id = $1
+         SET status = 'completed', completed_at = now(), stripe_transfer_id = $1
          WHERE id = $2 AND status = 'pending'`,
         [transfer.id, payoutId],
       )
@@ -1656,7 +1724,7 @@ class PayoutService {
 
     logger.info(
       { payoutId, tributeId, inspirerId, amountPence, stripeTransferId: transfer.id },
-      'Tribute payout initiated',
+      'Tribute payout completed',
     )
   }
 
@@ -1738,6 +1806,70 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
+  // reverseTributePayout — Stripe webhook on transfer.reversed for a TRIBUTE
+  // payout (F4). Mirrors reverseWriterPayout on the tribute leg: reverse the
+  // inspirer's receipt (tribute_payout_reversal), and — for a ROOT tribute —
+  // restore the author's carve (tribute_carve_reversal, mirroring the
+  // tribute_carve posted at completion). Accruals stay 'paid' (the reversal is a
+  // separate ledger fact, exactly as the chargeback planner treats a paid
+  // accrual). Idempotent on status='completed'. A paid accrual already
+  // charged_back is excluded from the carve sum, so the carve is never
+  // double-reversed.
+  // ---------------------------------------------------------------------------
+  async reverseTributePayout(stripeTransferId: string): Promise<void> {
+    await withTransaction(async (client) => {
+      const { rows } = await client.query<{
+        id: string; tribute_id: string; inspirer_account_id: string;
+        author_account_id: string; amount_pence: number;
+      }>(
+        `UPDATE tribute_payouts
+            SET status = 'reversed'
+          WHERE stripe_transfer_id = $1 AND status = 'completed'
+          RETURNING id, tribute_id, inspirer_account_id, author_account_id, amount_pence`,
+        [stripeTransferId],
+      )
+      if (rows.length === 0) {
+        logger.warn({ stripeTransferId }, 'reverseTributePayout: no completed payout to reverse')
+        return
+      }
+      const p = rows[0]
+      await recordLedger(client, {
+        accountId: p.inspirer_account_id,
+        counterpartyId: p.author_account_id,
+        amountPence: -p.amount_pence,
+        triggerType: 'tribute_payout_reversal',
+        refTable: 'tribute_payouts',
+        refId: p.id,
+      })
+
+      const { rows: rootRows } = await client.query<{ is_root: boolean }>(
+        `SELECT parent_tribute_id IS NULL AS is_root FROM tributes WHERE id = $1`,
+        [p.tribute_id],
+      )
+      if (rootRows[0]?.is_root) {
+        const { rows: [carveRow] } = await client.query<{ carve_pence: string }>(
+          `SELECT COALESCE(SUM(amount_pence), 0) AS carve_pence
+             FROM tribute_accruals
+            WHERE tribute_payout_id = $1 AND state = 'paid'`,
+          [p.id],
+        )
+        const carvePence = parseInt(carveRow.carve_pence, 10)
+        if (carvePence > 0) {
+          await recordLedger(client, {
+            accountId: p.author_account_id,
+            counterpartyId: p.inspirer_account_id,
+            amountPence: carvePence,
+            triggerType: 'tribute_carve_reversal',
+            refTable: 'tribute_payouts',
+            refId: p.id,
+          })
+        }
+      }
+      logger.warn({ tributePayoutId: p.id, stripeTransferId }, 'Tribute payout reversed by Stripe')
+    })
+  }
+
+  // ---------------------------------------------------------------------------
   // handleFailedTributePayout — Stripe webhook on transfer.failed for a TRIBUTE
   // transfer. Mirrors handleFailedPayout (writer): flip the row to 'failed' and
   // roll its accruals back so the NEXT cycle re-pays them under a fresh
@@ -1752,12 +1884,16 @@ class PayoutService {
   // ---------------------------------------------------------------------------
   async handleFailedTributePayout(stripeTransferId: string, reason: string): Promise<void> {
     await withTransaction(async (client) => {
+      // Audit F4: guard on status <> 'completed' — completion is keyed off the
+      // create response, so a stray transfer.failed must not unwind a completed
+      // tribute payout and re-release its paid accruals.
       const payoutRow = await client.query<{ id: string }>(
         `UPDATE tribute_payouts
             SET status = 'failed',
                 failed_reason = COALESCE(failed_reason, $1),
                 completed_at = NULL
           WHERE stripe_transfer_id = $2
+            AND status <> 'completed'
           RETURNING id`,
         [reason, stripeTransferId],
       )
@@ -1877,6 +2013,42 @@ class PayoutService {
   }
 
   // ---------------------------------------------------------------------------
+  // reversePublicationSplit — Stripe webhook on transfer.reversed for a
+  // PUBLICATION split (F4). A single completed split's funds were clawed back.
+  // Mark that split 'reversed' and reverse the recipient's receipt via
+  // writer_payout_reversal (the same trigger F5 uses for split-recipient
+  // chargebacks — ledger_writer_earnings sums both publication_split (+) and
+  // writer_payout_reversal (−) per account, so they net). The parent payout row
+  // is left 'completed' (one split reversing does not undo the whole payout).
+  // Idempotent on status='completed'.
+  // ---------------------------------------------------------------------------
+  async reversePublicationSplit(stripeTransferId: string): Promise<void> {
+    await withTransaction(async (client) => {
+      const { rows } = await client.query<{ id: string; account_id: string; amount_pence: number }>(
+        `UPDATE publication_payout_splits
+            SET status = 'reversed'
+          WHERE stripe_transfer_id = $1 AND status = 'completed'
+          RETURNING id, account_id, amount_pence`,
+        [stripeTransferId],
+      )
+      if (rows.length === 0) {
+        logger.warn({ stripeTransferId }, 'reversePublicationSplit: no completed split to reverse')
+        return
+      }
+      const s = rows[0]
+      await recordLedger(client, {
+        accountId: s.account_id,
+        counterpartyId: null,
+        amountPence: -s.amount_pence,
+        triggerType: 'writer_payout_reversal',
+        refTable: 'publication_payout_splits',
+        refId: s.id,
+      })
+      logger.warn({ splitId: s.id, accountId: s.account_id, stripeTransferId }, 'Publication split reversed by Stripe')
+    })
+  }
+
+  // ---------------------------------------------------------------------------
   // handleFailedPublicationSplit — Stripe webhook on transfer.failed for a
   // PUBLICATION split. Marks the split 'failed' so the failure is visible
   // (previously it was silently mis-routed to handleFailedPayout, which never
@@ -1892,7 +2064,7 @@ class PayoutService {
       `UPDATE publication_payout_splits
           SET status = 'failed'
         WHERE stripe_transfer_id = $1
-          AND status <> 'failed'
+          AND status NOT IN ('failed', 'completed')
         RETURNING id`,
       [stripeTransferId],
     )

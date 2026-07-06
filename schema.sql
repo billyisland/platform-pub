@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict slwbhwl4uaQCakPjRRYo2doFyBwKmtcCseOVwROojY1lsIo5F0clOn3yChKTsJZ
+\restrict rcxDSN9uFmcMlydz7bI1U3WYRWik6ODh0Sw56P6cfBtJQcOvIrSfcd9pufcdGqV
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -168,7 +168,8 @@ CREATE TYPE public.payout_status AS ENUM (
     'pending',
     'initiated',
     'completed',
-    'failed'
+    'failed',
+    'reversed'
 );
 
 
@@ -2567,7 +2568,7 @@ CREATE TABLE public.tribute_payouts (
     failed_reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
-    CONSTRAINT tribute_payouts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'initiated'::text, 'completed'::text, 'failed'::text])))
+    CONSTRAINT tribute_payouts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'initiated'::text, 'completed'::text, 'failed'::text, 'reversed'::text])))
 );
 
 
@@ -7470,7 +7471,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict slwbhwl4uaQCakPjRRYo2doFyBwKmtcCseOVwROojY1lsIo5F0clOn3yChKTsJZ
+\unrestrict rcxDSN9uFmcMlydz7bI1U3WYRWik6ODh0Sw56P6cfBtJQcOvIrSfcd9pufcdGqV
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7614,4 +7615,6 @@ INSERT INTO public._migrations (filename) VALUES
     ('138_payout_predicate_indexes.sql'),
     ('139_read_events_publication_id.sql'),
     ('140_subscription_to_ledger.sql'),
-    ('141_article_unlocks_provisional.sql');
+    ('141_article_unlocks_provisional.sql'),
+    ('142_payout_status_reversed.sql'),
+    ('143_tribute_payout_reversed_status.sql');
