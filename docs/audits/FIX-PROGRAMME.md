@@ -57,14 +57,28 @@ starts.
   gateway 142 (incl. new card-less-renewal, settled-stamp, standing-clamp
   tests); `check-ledger-adjacency` / `check-schema-drift` (schema.sql
   regenerated canonically, seed 147) / `check-hairlines` / root lint / `next
-  build` all green; migrations applied to dev. **Still open from the audit
-  (documented, not fixed):** partial `transfer.reversed` amounts, the
-  chargeback×manual-reversal double-debit posture, subscription-earning
-  chargeback reversal (platform absorbs), auth-cache invalidation gaps
-  (delete-account; in-txn suspend), atproto enrichment backoff, the mobile
-  pip-order/docs contradiction, `scripts/seed.ts` still inserting the dropped
-  `is_writer` columns, and the migration-145 deploy-order outage note
-  (build → up → migrate for that deploy).
+  build` all green; migrations applied to dev. **Residuals — ALL resolved in
+  the same-day follow-up (no new migrations):** the `transfer.reversed`
+  handlers now handle **partial** reversals (cumulative `amount_reversed` →
+  ledger-derived delta under the row lock, flip `reversed` only at full; the
+  tribute carve re-credit prorated to the same fraction; covered by
+  `transfer-reversal.test.ts`); the chargeback×manual-reversal stack and the
+  unreversed subscription-earning leg are recorded as **deliberate one-sided
+  postures** (`chargeback.ts` header + the economy-audit doc — both entries are
+  real Stripe facts / platform absorbs, the guard is operational); auth-cache
+  invalidation added to delete-account and moved AFTER the moderation-suspend
+  transactions, with the cache itself now tested (hit / TTL-expiry /
+  invalidation); atproto handle enrichment records failures honestly
+  (`error_count`/`last_error` no longer wiped by a failed run) and the 60s
+  self-heal backs off to daily after 6 failed attempts; the mobile pip
+  `.reverse()` was **removed** — the 2026-07-04 change did the opposite of its
+  own stated "Feed 1 leftmost" intent (visibleSorted already runs Feed 1
+  first), so code now matches CLAUDE.md/ADR §X (correction note added there)
+  and the pip aria-label agrees with the FeedComposer title; `scripts/seed.ts`
+  swept of `is_writer`/`is_reader` (dev seeding works against a 145+ DB) and
+  `shared/tests/session.test.ts`'s dead isWriter-claim tests replaced with a
+  real `createSession` round-trip; DEPLOYMENT.md carries the one-off
+  build-before-migrate note for the 145–147 deploy.
 
 - **2026-07-06** — **is_writer/is_reader dropped (migration 145)** — the
   migrate-hardening §3 decision, resolved same-day as **drop** (the

@@ -269,6 +269,8 @@ DATABASE_URL=postgres://platformpub:$POSTGRES_PASSWORD@localhost:5432/platformpu
 
 > **Always: pull → migrate → build → up → reload nginx.** Skipping migrate leaves the schema stale; skipping `--build` (or running `up`/`restart` alone) leaves the image stale. Use `--no-cache` on a service if a rebuild appears to produce no change.
 
+> **⚠ One-off, next deploy only (the first that includes migration 145):** invert the order to **pull → build → up → migrate → reload nginx**. Migration 145 DROPs `accounts.is_writer`/`is_reader`, which the currently-running pre-145 gateway still SELECTs in `getAccount` (behind `/me` and both login flows) — migrating before the new image is up 500s every logged-in request for the whole rebuild window. The new code never reads the columns, so build-then-migrate is safe in both directions for this batch (145–147). Delete this note after that deploy.
+
 ```bash
 cd /root/platform-pub
 git pull origin master

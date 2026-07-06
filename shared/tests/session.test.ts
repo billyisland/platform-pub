@@ -17,41 +17,26 @@ beforeAll(() => {
 })
 
 describe('JWT session tokens', () => {
-  it('creates a valid token with correct claims', async () => {
-    const token = await new SignJWT({
-      pubkey: 'abc123hexkey',
-      isWriter: false,
+  // Exercise the REAL createSession (migration 145 removed the isWriter claim;
+  // the prior tests here hand-built tokens with jose and kept asserting the
+  // removed claim — passing while testing nothing the module does).
+  it('createSession mints a token with sub + pubkey and sets the cookie', async () => {
+    const { createSession } = await import('../src/auth/session.js')
+    const setCookie = vi.fn()
+    const reply: any = { setCookie }
+
+    const token = await createSession(reply, {
+      id: 'account-uuid-1234',
+      nostrPubkey: 'abc123hexkey',
     })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setSubject('account-uuid-1234')
-      .setIssuedAt()
-      .setExpirationTime('7d')
-      .sign(SECRET_KEY)
 
-    expect(token).toBeTruthy()
-    expect(typeof token).toBe('string')
-
-    // Verify it round-trips
     const { payload } = await jwtVerify(token, SECRET_KEY, { algorithms: ['HS256'] })
     expect(payload.sub).toBe('account-uuid-1234')
     expect(payload.pubkey).toBe('abc123hexkey')
-    expect(payload.isWriter).toBe(false)
+    expect(payload.isWriter).toBeUndefined() // claim removed with migration 145
     expect(payload.exp).toBeGreaterThan(Math.floor(Date.now() / 1000))
-  })
-
-  it('sets isWriter=true for writer accounts', async () => {
-    const token = await new SignJWT({
-      pubkey: 'writer-hex-key',
-      isWriter: true,
-    })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setSubject('writer-uuid')
-      .setIssuedAt()
-      .setExpirationTime('7d')
-      .sign(SECRET_KEY)
-
-    const { payload } = await jwtVerify(token, SECRET_KEY, { algorithms: ['HS256'] })
-    expect(payload.isWriter).toBe(true)
+    expect(setCookie).toHaveBeenCalledOnce()
+    expect(setCookie.mock.calls[0][1]).toBe(token)
   })
 
   it('rejects a token signed with a different secret', async () => {

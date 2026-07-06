@@ -154,7 +154,6 @@ async function batchInsert(
 interface Account {
   id: string;
   username: string;
-  is_writer: boolean;
   nostr_pubkey: string;
 }
 
@@ -209,7 +208,7 @@ async function clean(client: pg.PoolClient) {
 
 async function getMyAccount(client: pg.PoolClient): Promise<Account | null> {
   const { rows } = await client.query(
-    `SELECT id, username, is_writer, nostr_pubkey FROM accounts WHERE username = $1`,
+    `SELECT id, username, nostr_pubkey FROM accounts WHERE username = $1`,
     [MY_USERNAME]
   );
   return rows.length ? rows[0] : null;
@@ -240,8 +239,6 @@ async function seedWriters(client: pg.PoolClient): Promise<Account[]> {
       faker.person.bio(),
       kp.pubkey,
       kp.privkeyEnc,
-      true,
-      true,
       "active",
       faker.number.int({ min: 300, max: 1500 }),
       faker.number.int({ min: 0, max: 30 }),
@@ -254,13 +251,13 @@ async function seedWriters(client: pg.PoolClient): Promise<Account[]> {
     "accounts",
     [
       "username", "display_name", "bio", "nostr_pubkey", "nostr_privkey_enc",
-      "is_writer", "is_reader", "status",
+      "status",
       "subscription_price_pence", "annual_discount_pct",
       "created_at",
     ],
     rows,
     200,
-    "id, username, is_writer, nostr_pubkey"
+    "id, username, nostr_pubkey"
   );
 
   console.log(`  Created ${results.length} writers.`);
@@ -291,8 +288,6 @@ async function seedReaders(client: pg.PoolClient): Promise<Account[]> {
       faker.person.bio(),
       kp.pubkey,
       kp.privkeyEnc,
-      false,
-      true,
       "active",
       `cus_fake_${crypto.randomBytes(8).toString("hex")}`,
       faker.number.int({ min: 0, max: 500 }),
@@ -305,13 +300,13 @@ async function seedReaders(client: pg.PoolClient): Promise<Account[]> {
     "accounts",
     [
       "username", "display_name", "bio", "nostr_pubkey", "nostr_privkey_enc",
-      "is_writer", "is_reader", "status",
+      "status",
       "stripe_customer_id", "free_allowance_remaining_pence",
       "created_at",
     ],
     rows,
     200,
-    "id, username, is_writer, nostr_pubkey"
+    "id, username, nostr_pubkey"
   );
 
   console.log(`  Created ${results.length} readers.`);
@@ -491,8 +486,9 @@ async function seedSubscriptions(
     }
   }
 
-  // Some people subscribe to me
-  if (myAccount?.is_writer) {
+  // Some people subscribe to me (post-145 every account has full writer
+  // capability — the is_writer column is gone)
+  if (myAccount) {
     const subscribers = sample([...writers, ...readers], 50);
     for (const sub of subscribers) {
       const key = `${sub.id}-${myAccount.id}`;
