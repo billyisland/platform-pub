@@ -809,13 +809,60 @@ class SettlementService {
         state: string;
         writer_id: string;
         publication_id: string | null;
+        writer_payout_id: string | null;
       }>(
-        `SELECT id, amount_pence, state, writer_id, publication_id
+        `SELECT id, amount_pence, state, writer_id, publication_id, writer_payout_id
          FROM read_events
          WHERE tab_settlement_id = $1
            AND state IN ('platform_settled', 'writer_paid')`,
         [settlement.id],
       );
+
+      // F5: for the publication reads being charged back, load the paying
+      // publication payout's gross pool + its PAID splits (initiated|completed —
+      // money that actually left the platform) so the planner can reverse each
+      // split recipient proportionally. A publication read's writer_payout_id is
+      // a publication_payouts.id (the column is overloaded across payout kinds;
+      // F2 keeps publication reads out of the individual writer cycle, so it is
+      // never a writer_payouts.id here). NULL ⇒ pool not yet paid out → no split
+      // reversal (charged back on the reader side only).
+      const pubPayoutIds = [
+        ...new Set(
+          reads
+            .filter((r) => r.publication_id !== null && r.writer_payout_id !== null)
+            .map((r) => r.writer_payout_id as string),
+        ),
+      ];
+      const poolByPayout = new Map<string, number>();
+      const splitsByPayout = new Map<string, { accountId: string; amountPence: number }[]>();
+      if (pubPayoutIds.length > 0) {
+        const { rows: poolRows } = await client.query<{
+          id: string;
+          total_pool_pence: number;
+        }>(
+          `SELECT id, total_pool_pence FROM publication_payouts WHERE id = ANY($1::uuid[])`,
+          [pubPayoutIds],
+        );
+        for (const p of poolRows) poolByPayout.set(p.id, p.total_pool_pence);
+
+        const { rows: splitRows } = await client.query<{
+          publication_payout_id: string;
+          account_id: string;
+          amount_pence: number;
+        }>(
+          `SELECT publication_payout_id, account_id, amount_pence
+           FROM publication_payout_splits
+           WHERE publication_payout_id = ANY($1::uuid[])
+             AND status IN ('initiated', 'completed')`,
+          [pubPayoutIds],
+        );
+        for (const s of splitRows) {
+          const list = splitsByPayout.get(s.publication_payout_id);
+          const entry = { accountId: s.account_id, amountPence: s.amount_pence };
+          if (list) list.push(entry);
+          else splitsByPayout.set(s.publication_payout_id, [entry]);
+        }
+      }
 
       // Every non-voided accrual on the reads this charge settled, with the
       // tribute (and its parent) so the planner can attribute net per node.
@@ -854,6 +901,14 @@ class SettlementService {
         state: r.state,
         writerId: r.writer_id,
         isPublication: r.publication_id !== null,
+        publicationPoolPence:
+          r.writer_payout_id !== null
+            ? poolByPayout.get(r.writer_payout_id)
+            : undefined,
+        publicationSplits:
+          r.writer_payout_id !== null
+            ? splitsByPayout.get(r.writer_payout_id)
+            : undefined,
       }));
       const planAccruals: ReversalAccrual[] = accrualRows.map((a) => ({
         id: a.id,

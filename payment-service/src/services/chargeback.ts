@@ -17,6 +17,12 @@ import type { LedgerTriggerType } from '@platform-pub/shared/lib/ledger.js'
 //   • read writer_paid     → writer_payout_reversal −(read_net − Σ root accruals)
 //                            (the author's carve-reduced net actually paid)
 //   • read platform_settled→ no ledger (never paid); just → charged_back
+//   • read isPublication   → F5: writer_payout_reversal per PAID split recipient,
+//                            each −(their receipt × R.gross ÷ payout pool). The
+//                            author is NEVER reversed (pub reads pay the pool, not
+//                            the author) and post no writer_accrual, so the earned
+//                            side is untouched. Platform absorbs its pooled fee +
+//                            rounding remainder + any unpaid (KYC-pending) split.
 //   • accrual paid         → tribute_payout_reversal −(node_gross − Σ its direct
 //                            children gross on R), acct=inspirer, cp=author.
 //                            State LEFT 'paid' (the transfer really happened; the
@@ -68,12 +74,25 @@ export interface ReversalRead {
    * personal writer_accrual (settlement.ts skips them) and are paid to the
    * publication split recipients, not the author — so the author-keyed writer
    * reversals below MUST NOT fire for them (that would mis-attribute the
-   * chargeback to the author). Until full F5 lands (reversing each split
-   * recipient's receipt), a publication read is charged back on the reader side
-   * only; the platform absorbs the un-reversed split — the safe direction (a
-   * real platform loss, never a mis-posted account balance).
+   * chargeback to the author). Instead the split recipients are reversed (F5,
+   * below), never the author.
    */
   isPublication?: boolean
+  /**
+   * F5: the gross pool of the publication payout that paid this read
+   * (publication_payouts.total_pool_pence = Σ gross read amounts in that payout).
+   * The prorating base for splitting this one read's chargeback across recipients.
+   */
+  publicationPoolPence?: number
+  /**
+   * F5: the PAID splits (status initiated|completed — money that actually left
+   * the platform) of the publication payout that paid this read. Each recipient
+   * is reversed by their receipt × (this read's gross ÷ the payout's gross pool).
+   * Splits still pending (KYC-incomplete recipient) or failed are NOT passed in,
+   * so money that never moved is never reversed. Empty/absent ⇒ the read's pool
+   * was never paid out; the read is charged back on the reader side only.
+   */
+  publicationSplits?: { accountId: string; amountPence: number }[]
 }
 
 export interface ReversalAccrual {
@@ -175,11 +194,27 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
   const chargeBackReadIds: string[] = []
   for (const r of reads) {
     chargeBackReadIds.push(r.id)
-    // F2/F5: a publication read earns no personal writer_accrual and is paid to
-    // split recipients, not the author — so skip BOTH author-keyed reversals
-    // below. It still flips to charged_back (pushed above); the split-recipient
-    // reversal is the deferred F5 work.
-    if (r.isPublication) continue
+    // F2/F5: a publication read earns no personal writer_accrual (skip the
+    // earned side entirely) and was paid to the publication SPLIT RECIPIENTS,
+    // not the author. Reverse each recipient by their receipt × (this read's
+    // gross ÷ the payout's gross pool) — proportional attribution against the
+    // stored splits. Only PAID splits are passed in (see ReversalRead), so
+    // money that never left the platform is never reversed; the platform keeps
+    // its pooled fee + rounding remainder + any unpaid split, exactly as the
+    // individual-writer case keeps its per-read fee. Same clawed-back-payout
+    // posture as writer_payout_reversal (a recipient's earned total may go
+    // negative; no synchronous Stripe recovery). NEVER reverse against the
+    // author — that was the F5 mis-attribution the safety gate guarded against.
+    if (r.isPublication) {
+      const pool = r.publicationPoolPence ?? 0
+      if (pool > 0 && r.publicationSplits) {
+        for (const s of r.publicationSplits) {
+          const share = Math.floor((s.amountPence * r.amountPence) / pool)
+          if (share !== 0) addWriter(s.accountId, share)
+        }
+      }
+      continue
+    }
     // EARNED side: every settled read (platform_settled OR writer_paid) got a
     // writer_accrual of the full net at settlement — reverse it regardless of
     // payout state. cp = reader, mirroring the forward entry.

@@ -260,27 +260,54 @@ describe('computeChargebackReversal — earned side', () => {
     expect(plan.ledgerEntries.filter((e) => e.trigger === 'tribute_carve_reversal')).toHaveLength(0)
   })
 
-  // F2/F5 safety gate: a publication read earns no personal writer_accrual and
-  // is paid to split recipients, not the author — so it must be charged back on
-  // the reader side only, with NO author-keyed writer reversal (else the
-  // chargeback mis-attributes to the author). Full split-recipient reversal is
-  // deferred F5; the platform absorbs the un-reversed split for now.
-  it('publication read: charged back but no author-side reversal (F2/F5 gate)', () => {
+  // F5: a publication read whose pool was NOT paid out (no PAID splits passed
+  // in — e.g. KYC-incomplete recipients, or not yet finalised) is charged back
+  // on the reader side only, with NO author-keyed reversal (pub reads pay the
+  // pool, not the author) and no earned-side entry (they post no writer_accrual).
+  it('publication read, pool unpaid: charged back, no writer/earned reversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W', isPublication: true }],
       accruals: [], platformFeeBps: FEE,
     })
-    // The read flips to charged_back...
     expect(plan.chargeBackReadIds).toEqual(['R'])
-    // ...the reader's debt is restored...
     expect(plan.tabRestorePence).toBe(1000)
     expect(plan.ledgerEntries.filter((e) => e.trigger === 'tab_settlement_reversal')).toHaveLength(1)
-    // ...but NO author-keyed writer/earned reversal fires.
+    // NO author-keyed writer/earned reversal fires.
     expect(writerSideSum(plan.ledgerEntries)).toBe(0)
     expect(earnedSideSum(plan.ledgerEntries)).toBe(0)
     expect(plan.ledgerEntries.filter((e) => e.trigger === 'writer_payout_reversal')).toHaveLength(0)
     expect(plan.ledgerEntries.filter((e) => e.trigger === 'writer_accrual_reversal')).toHaveLength(0)
+  })
+
+  // F5: a publication read whose pool WAS paid out reverses each PAID split
+  // recipient by their receipt × (read gross ÷ payout pool) — to the recipients,
+  // never the author, and never on the earned side.
+  it('publication read, pool paid: reverses split recipients proportionally, not the author', () => {
+    // This read (gross 1000) is one of a 4000-gross payout pool. Two members were
+    // paid 1800 (M1) and 900 (M2). This read funded 1000/4000 = 1/4 of each.
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{
+        id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W', isPublication: true,
+        publicationPoolPence: 4000,
+        publicationSplits: [
+          { accountId: 'M1', amountPence: 1800 },
+          { accountId: 'M2', amountPence: 900 },
+        ],
+      }],
+      accruals: [], platformFeeBps: FEE,
+    })
+    expect(plan.chargeBackReadIds).toEqual(['R'])
+    // Recipients reversed by their prorated receipt: floor(1800·1000/4000)=450,
+    // floor(900·1000/4000)=225.
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'M1')!.amountPence).toBe(-450)
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'M1')!.trigger).toBe('writer_payout_reversal')
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'M2')!.amountPence).toBe(-225)
+    // The author W is NEVER reversed, and no earned-side entry fires for pub reads.
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'W')).toBeUndefined()
+    expect(earnedSideSum(plan.ledgerEntries)).toBe(0)
+    expect(writerSideSum(plan.ledgerEntries)).toBe(-675)
   })
 
   // Control: the SAME read as an individual-writer read DOES reverse to the author.
