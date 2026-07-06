@@ -37,7 +37,7 @@ export function LedgerPanel({ inOverlay = false }: { inOverlay?: boolean }) {
       try {
         const [tabData, earningsData] = await Promise.all([
           accountApi.getTab(),
-          user.isWriter ? payment.getEarnings(user.id).catch(() => null) : Promise.resolve(null),
+          payment.getEarnings(user.id).catch(() => null),
         ])
         setTab(tabData)
         setEarnings(earningsData)

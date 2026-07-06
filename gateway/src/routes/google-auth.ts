@@ -187,7 +187,6 @@ export async function googleAuthRoutes(app: FastifyInstance) {
       await createSession(reply, {
         id: account.id,
         nostrPubkey: account.nostrPubkey,
-        isWriter: account.isWriter,
       });
 
       return reply.status(200).send({ ok: true });
@@ -309,8 +308,8 @@ async function createGoogleAccount(
     const result = await client.query<{ id: string }>(
       `INSERT INTO accounts (
          nostr_pubkey, nostr_privkey_enc, username, display_name, email,
-         is_writer, is_reader, status, free_allowance_remaining_pence
-       ) VALUES ($1, $2, $3, $4, $5, TRUE, TRUE, 'active', 500)
+         status, free_allowance_remaining_pence
+       ) VALUES ($1, $2, $3, $4, $5, 'active', 500)
        RETURNING id`,
       [
         keypair.pubkeyHex,

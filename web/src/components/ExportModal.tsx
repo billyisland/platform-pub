@@ -1,12 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { useAuth } from '../stores/auth'
 
 type ExportType = 'receipts' | 'account'
 
 export function ExportModal({ onClose }: { onClose: () => void }) {
-  const { user } = useAuth()
   const [exporting, setExporting] = useState<ExportType | null>(null)
   const [downloaded, setDownloaded] = useState<Set<ExportType>>(new Set())
   const [errors, setErrors] = useState<Map<ExportType, string>>(new Map())
@@ -74,24 +72,22 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          {user?.isWriter && (
-            <div>
-              <button
-                onClick={() => handleExport('account')}
-                disabled={exporting !== null}
-                className="w-full text-left px-4 py-3 bg-grey-100 hover:bg-grey-200 transition-colors disabled:opacity-50"
-              >
-                <p className="text-ui-sm font-sans font-medium text-black">Full account export</p>
-                <p className="text-ui-xs font-sans text-grey-400 mt-0.5">Keys, receipts, articles — everything you need to migrate.</p>
-              </button>
-              {downloaded.has('account') && (
-                <p className="text-ui-xs font-sans text-green-600 mt-1 px-4">&#10003; Downloaded</p>
-              )}
-              {errors.has('account') && (
-                <p className="text-ui-xs font-sans text-red-600 mt-1 px-4">{errors.get('account')}</p>
-              )}
-            </div>
-          )}
+          <div>
+            <button
+              onClick={() => handleExport('account')}
+              disabled={exporting !== null}
+              className="w-full text-left px-4 py-3 bg-grey-100 hover:bg-grey-200 transition-colors disabled:opacity-50"
+            >
+              <p className="text-ui-sm font-sans font-medium text-black">Full account export</p>
+              <p className="text-ui-xs font-sans text-grey-400 mt-0.5">Keys, receipts, articles — everything you need to migrate.</p>
+            </button>
+            {downloaded.has('account') && (
+              <p className="text-ui-xs font-sans text-green-600 mt-1 px-4">&#10003; Downloaded</p>
+            )}
+            {errors.has('account') && (
+              <p className="text-ui-xs font-sans text-red-600 mt-1 px-4">{errors.get('account')}</p>
+            )}
+          </div>
         </div>
 
         {exporting && (

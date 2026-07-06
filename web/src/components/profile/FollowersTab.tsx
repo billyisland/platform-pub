@@ -10,7 +10,6 @@ interface Follower {
   username: string
   displayName: string | null
   avatar: string | null
-  isWriter: boolean
   followedAt: string
   subscriptionStatus?: string
 }

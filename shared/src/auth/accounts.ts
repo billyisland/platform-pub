@@ -13,20 +13,18 @@ import type { FastifyReply } from 'fastify'
 // gateway/src/routes/google-auth.ts):
 //   1. User provides email + display name
 //   2. Platform generates a custodial Nostr keypair
-//   3. Account created with full capability — is_writer/is_reader both TRUE,
-//      free_allowance=500 (£5)
+//   3. Account created with full capability — free_allowance=500 (£5)
 //   4. Reading tab created (one per account)
 //   5. Session cookie set
 //
 // There is no reader→writer upgrade: every account can write from signup.
-// The distinctions that actually gate behaviour are Stripe-shaped:
+// (The vestigial is_writer/is_reader columns were dropped in migration 145;
+// moderation rides accounts.status.) The distinctions that actually gate
+// behaviour are Stripe-shaped:
 //   - stripe_customer_id — card on file, can settle a tab (*can pay*)
 //   - stripe_connect_id + stripe_connect_kyc_complete — Connect onboarded,
 //     can receive payouts (*can be paid* — the precondition for paywalling)
 //   - default_article_price_pence — has set a price
-// is_writer/is_reader are vestigial (always TRUE, nothing sets them FALSE);
-// their fate — drop vs repurpose as a moderation lever — is an open decision
-// (docs/audits/migrate-hardening.md §3).
 //
 // Authentication:
 //   Email + magic link or Google OAuth (passwordless). The Nostr keypair is
@@ -73,8 +71,8 @@ export async function signup(
     }>(
       `INSERT INTO accounts (
          nostr_pubkey, nostr_privkey_enc, username, display_name, email,
-         is_writer, is_reader, status, free_allowance_remaining_pence
-       ) VALUES ($1, $2, $3, $4, $5, TRUE, TRUE, 'active', 500)
+         status, free_allowance_remaining_pence
+       ) VALUES ($1, $2, $3, $4, $5, 'active', 500)
        RETURNING id, nostr_pubkey, username`,
       [keypair.pubkeyHex, keypair.privkeyEncrypted, input.username, input.displayName, input.email.toLowerCase().trim()]
     )
@@ -87,12 +85,10 @@ export async function signup(
       [account.id]
     )
 
-    // Set session cookie (isWriter mirrors the row just inserted; the OAuth
-    // path passes the DB value the same way — google-auth.ts)
+    // Set session cookie
     await createSession(reply, {
       id: account.id,
       nostrPubkey: account.nostr_pubkey,
-      isWriter: true,
     })
 
     logger.info(
@@ -146,8 +142,6 @@ export interface AccountInfo {
   bio: string | null
   avatarBlossomUrl: string | null
   email: string
-  isWriter: boolean
-  isReader: boolean
   status: string
   stripeCustomerId: string | null
   stripeConnectId: string | null
@@ -166,8 +160,6 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     bio: string | null
     avatar_blossom_url: string | null
     email: string
-    is_writer: boolean
-    is_reader: boolean
     status: string
     stripe_customer_id: string | null
     stripe_connect_id: string | null
@@ -177,7 +169,7 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     username_changed_at: Date | null
   }>(
     `SELECT id, nostr_pubkey, username, display_name, bio, avatar_blossom_url,
-            email, is_writer, is_reader, status, stripe_customer_id, stripe_connect_id,
+            email, status, stripe_customer_id, stripe_connect_id,
             stripe_connect_kyc_complete, free_allowance_remaining_pence,
             default_article_price_pence, username_changed_at
      FROM accounts WHERE id = $1`,
@@ -195,8 +187,6 @@ export async function getAccount(accountId: string): Promise<AccountInfo | null>
     bio: r.bio,
     avatarBlossomUrl: r.avatar_blossom_url,
     email: r.email,
-    isWriter: r.is_writer,
-    isReader: r.is_reader,
     status: r.status,
     stripeCustomerId: r.stripe_customer_id,
     stripeConnectId: r.stripe_connect_id,

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict mOSgPvV7vVWzyrQAL4ezVa6qwIiatd8Q4fJy33ciwkoreBX5oU2W17zjnlHYhag
+\restrict aCVLoQHockqQ69P1fpMEb6TtKe5nkYPM5gaH3kgjz672pEFEO5D0K3UTRFHrsvo
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1190,8 +1190,6 @@ CREATE TABLE public.accounts (
     display_name text,
     bio text,
     avatar_blossom_url text,
-    is_writer boolean DEFAULT false NOT NULL,
-    is_reader boolean DEFAULT true NOT NULL,
     status public.account_status DEFAULT 'active'::public.account_status NOT NULL,
     stripe_customer_id text,
     stripe_connect_id text,
@@ -4293,13 +4291,6 @@ CREATE INDEX idx_accounts_display_name_trgm ON public.accounts USING gin (displa
 --
 
 CREATE INDEX idx_accounts_email ON public.accounts USING btree (email) WHERE (email IS NOT NULL);
-
-
---
--- Name: idx_accounts_is_writer; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_accounts_is_writer ON public.accounts USING btree (is_writer) WHERE (is_writer = true);
 
 
 --
@@ -7473,7 +7464,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict mOSgPvV7vVWzyrQAL4ezVa6qwIiatd8Q4fJy33ciwkoreBX5oU2W17zjnlHYhag
+\unrestrict aCVLoQHockqQ69P1fpMEb6TtKe5nkYPM5gaH3kgjz672pEFEO5D0K3UTRFHrsvo
 
 
 
@@ -7621,4 +7612,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('141_article_unlocks_provisional.sql'),
     ('142_payout_status_reversed.sql'),
     ('143_tribute_payout_reversed_status.sql'),
-    ('144_read_events_allowance_consumed.sql');
+    ('144_read_events_allowance_consumed.sql'),
+    ('145_drop_is_writer_is_reader.sql');

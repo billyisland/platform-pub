@@ -175,7 +175,6 @@ export async function authRoutes(app: FastifyInstance) {
       await createSession(reply, {
         id: account.id,
         nostrPubkey: account.nostrPubkey,
-        isWriter: account.isWriter,
       });
 
       return reply.status(200).send({
@@ -217,7 +216,6 @@ export async function authRoutes(app: FastifyInstance) {
       await createSession(reply, {
         id: account.id,
         nostrPubkey: account.nostrPubkey,
-        isWriter: account.isWriter,
       });
 
       logger.info(
@@ -276,7 +274,6 @@ export async function authRoutes(app: FastifyInstance) {
       bio: account.bio,
       avatar: account.avatarBlossomUrl,
       email: account.email,
-      isWriter: account.isWriter,
       hasPaymentMethod: account.stripeCustomerId !== null,
       stripeConnectKycComplete: account.stripeConnectKycComplete,
       freeAllowanceRemainingPence: account.freeAllowanceRemainingPence,

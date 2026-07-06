@@ -400,12 +400,11 @@ export async function writerRoutes(app: FastifyInstance) {
           display_name: string | null
           avatar_blossom_url: string | null
           nostr_pubkey: string
-          is_writer: boolean
           followed_at: Date
           subscription_status: string | null
         }>(
           `SELECT a.id, a.username, a.display_name, a.avatar_blossom_url,
-                  a.nostr_pubkey, a.is_writer, f.followed_at,
+                  a.nostr_pubkey, f.followed_at,
                   s.status AS subscription_status
            FROM follows f
            JOIN accounts a ON a.id = f.follower_id
@@ -432,7 +431,6 @@ export async function writerRoutes(app: FastifyInstance) {
           displayName: r.display_name,
           avatar: r.avatar_blossom_url,
           pubkey: r.nostr_pubkey,
-          isWriter: r.is_writer,
           followedAt: r.followed_at.toISOString(),
           ...(isOwner && r.subscription_status ? { subscriptionStatus: r.subscription_status } : {}),
         })),

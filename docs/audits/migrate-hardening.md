@@ -1,10 +1,15 @@
 # migrate.ts hardening — two small changes
 
-> **Status (2026-07-06): §1 + §2 + side-fix SHIPPED** (incl. the
-> check-schema-drift.sh scope caveat, in the same pass). §3 items 1–2 shipped
-> (header comment + `isWriter: false`); §3 item 3 — the `is_writer`/`is_reader`
-> column fate (drop vs moderation lever, export carve-out) — remains an open
-> decision, to bundle with the next auth touch. See FIX-PROGRAMME.md 2026-07-06.
+> **Status (2026-07-06): fully SHIPPED.** §1 + §2 + side-fix (incl. the
+> check-schema-drift.sh scope caveat, in the same pass). §3: decided **drop**
+> (owner decision, same day) — migration 145 removes `is_writer`/`is_reader`
+> (+ the genesis-only `idx_accounts_is_writer`), the session `isWriter` claim,
+> the API response fields, and the six tautological web gates; the export guard
+> is gone (export-mandatory), drives keeps a plain existence check; moderation
+> rides `accounts.status` (auth middleware already 403s non-active). The
+> "moderation lever" option was rejected as illusory: nothing gated publishing
+> on `is_writer`, so making it real would have meant building new enforcement
+> against the every-account-writes model. See FIX-PROGRAMME.md 2026-07-06.
 
 Both changes touch `shared/src/db/migrate.ts` only — it is the sole runner
 (DEPLOYMENT.md invokes it directly; `payment-service`'s `npm run migrate`

@@ -23,6 +23,26 @@ starts.
 
 ## Progress
 
+- **2026-07-06** — **is_writer/is_reader dropped (migration 145)** — the
+  migrate-hardening §3 decision, resolved same-day as **drop** (the
+  "moderation lever" alternative was illusory: nothing gated publishing on
+  `is_writer`, and `accounts.status` is the real lever — auth middleware
+  already 403s non-active accounts). Migration 145 drops both columns + the
+  genesis-only partial index; the session JWT loses its `isWriter` claim (old
+  cookies carry it as an ignored extra — no invalidation), `createSession`
+  narrows, `/me` + followers responses drop the field, the export-route
+  writer guard is deleted (export-mandatory invariant), drives keeps a plain
+  existence check, and the six web gates go (LedgerPanel always fetches
+  earnings, DashboardPanel always shows subscribers/proposals, ExportModal
+  always offers full export, NetworkPanel's always-true "· writer" chip
+  removed). **Dev-DB repair in passing:** dev was in a partially-applied
+  tribute state (126 objects present but unrecorded, 127/128 half-in, 129
+  recorded, 130–144 never applied); dropped the empty partial tribute objects
+  and replayed the chain — dev now matches prod's migration history through
+  145, all rows checksummed. **Verify:** shared 71 + gateway 141 tests, tsc
+  all touched services, `next build`, root lint 0 errors, drift guard 4/4,
+  dev-DB no-op re-run.
+
 - **2026-07-06** — **migrate.ts hardening** (`docs/audits/migrate-hardening.md`;
   no migration file — deliberately, see §2a). **§1** pending migrations now sort
   by numeric prefix with a lexicographic tiebreak (lexicographic order runs

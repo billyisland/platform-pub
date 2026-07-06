@@ -164,7 +164,7 @@ export function DashboardPanel({
   // it doesn't hit the dead ingest container / parked tables until an operator
   // flips NEXT_PUBLIC_TRAFFOLOGY_ENABLED on.
   const analyticsTabs: DashboardTab[] = traffologyEnabled() ? ['analytics'] : []
-  const personalTabs: DashboardTab[] = ['articles', ...(user.isWriter ? ['subscribers' as DashboardTab, 'proposals' as DashboardTab] : []), 'pricing', ...analyticsTabs]
+  const personalTabs: DashboardTab[] = ['articles', 'subscribers', 'proposals', 'pricing', ...analyticsTabs]
   const pubTabs: PubDashboardTab[] = [
     'articles', 'members', 'settings',
     ...(selectedPub?.can_manage_finances ? ['rate-card', 'payroll', 'earnings'] as PubDashboardTab[] : []),

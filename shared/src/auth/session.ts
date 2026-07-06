@@ -16,8 +16,9 @@ import "@fastify/cookie";
 // The JWT contains:
 //   - sub: account UUID
 //   - pubkey: Nostr hex pubkey
-//   - isWriter: boolean
 //   - iat/exp: standard claims
+// (Cookies minted before migration 145 also carry an isWriter claim from the
+// retired reader/writer taxonomy — ignored; nothing reads it.)
 //
 // Token lifetime: 30 days. Refresh-on-use extends the session silently
 // when the token is past its refresh threshold (7 days). Active users
@@ -31,7 +32,6 @@ const COOKIE_NAME = "pp_session";
 export interface SessionPayload extends JWTPayload {
   sub: string; // account UUID
   pubkey: string; // Nostr hex pubkey
-  isWriter: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,13 +56,12 @@ function getSigningKey(): Uint8Array {
 
 export async function createSession(
   reply: FastifyReply,
-  account: { id: string; nostrPubkey: string; isWriter: boolean },
+  account: { id: string; nostrPubkey: string },
 ): Promise<string> {
   const key = getSigningKey();
 
   const token = await new SignJWT({
     pubkey: account.nostrPubkey,
-    isWriter: account.isWriter,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(account.id)
@@ -116,7 +115,6 @@ export async function refreshIfNeeded(
   await createSession(reply, {
     id: session.sub,
     nostrPubkey: session.pubkey,
-    isWriter: session.isWriter,
   });
 }
 

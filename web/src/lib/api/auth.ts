@@ -20,7 +20,6 @@ export interface MeResponse {
   bio: string | null
   avatar: string | null
   email: string
-  isWriter: boolean
   hasPaymentMethod: boolean
   stripeConnectKycComplete: boolean
   freeAllowanceRemainingPence: number

@@ -42,7 +42,6 @@ interface Follower {
   displayName: string | null;
   avatar: string | null;
   pubkey: string;
-  isWriter: boolean;
   followedAt: string;
 }
 
@@ -289,9 +288,6 @@ export function NetworkPanel({
                       </p>
                       <p className="text-ui-xs text-grey-400">
                         @{f.username}
-                        {f.isWriter && (
-                          <span className="ml-2 text-grey-300">· writer</span>
-                        )}
                       </p>
                     </ProfileLink>
                   </div>

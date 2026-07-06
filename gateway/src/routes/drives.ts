@@ -75,9 +75,9 @@ export async function driveRoutes(app: FastifyInstance) {
       }
       targetWriterId = data.targetWriterId
 
-      // Verify target writer exists and is a writer
+      // Verify target writer exists
       const writer = await pool.query(
-        'SELECT id FROM accounts WHERE id = $1 AND is_writer = TRUE',
+        'SELECT id FROM accounts WHERE id = $1',
         [targetWriterId]
       )
       if (writer.rowCount === 0) {

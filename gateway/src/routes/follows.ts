@@ -156,11 +156,10 @@ export async function followRoutes(app: FastifyInstance) {
         display_name: string | null
         avatar_blossom_url: string | null
         nostr_pubkey: string
-        is_writer: boolean
         followed_at: Date
       }>(
         `SELECT a.id, a.username, a.display_name, a.avatar_blossom_url,
-                a.nostr_pubkey, a.is_writer, f.followed_at
+                a.nostr_pubkey, f.followed_at
          FROM follows f
          JOIN accounts a ON a.id = f.follower_id
          WHERE f.followee_id = $1 AND a.status = 'active'
@@ -174,7 +173,6 @@ export async function followRoutes(app: FastifyInstance) {
         displayName: r.display_name,
         avatar: r.avatar_blossom_url,
         pubkey: r.nostr_pubkey,
-        isWriter: r.is_writer,
         followedAt: r.followed_at.toISOString(),
       }))
 
