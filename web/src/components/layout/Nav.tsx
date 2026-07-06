@@ -24,7 +24,7 @@ function Wordmark({ href }: { href: string }) {
   return (
     <Link href={href} className="flex items-center gap-[8px] flex-shrink-0 group">
       <ForAllMark
-        size={18}
+        size={21}
         className="text-crimson group-hover:text-crimson-dark transition-colors"
       />
       <span
@@ -95,7 +95,7 @@ export function Nav() {
       <header className="site-topbar fixed top-0 inset-x-0 z-50 bg-black">
         <div className="flex items-center justify-between px-6 h-[60px] max-w-content mx-auto">
           <Link href={logoHref} className="flex-shrink-0 logo-spin">
-            <ForAllMark size={18} className="text-crimson hover:text-crimson-dark transition-colors" />
+            <ForAllMark size={21} className="text-crimson hover:text-crimson-dark transition-colors" />
           </Link>
         </div>
       </header>

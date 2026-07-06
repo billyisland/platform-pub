@@ -526,15 +526,17 @@ export function ForallMenu({
               : "scale(1) translateZ(0)",
         }}
       >
-        {/* The ∀ is constructed, not typed: three bars forming the A skeleton,
-            in the workspace floor colour, dividing the black disc. The two
-            diagonals run from the bottom of the rim up to the rim on each side
-            — each cutting off a *complete* circle segment — and the crossbar
-            joins them across the central region.
+        {/* The ∀ is constructed, not typed: stroked bars forming the A
+            skeleton, in the workspace floor colour, dividing the black disc.
+            The legs are one mitred path — a sharp interior apex (miter tip
+            ≈(28,49.2), clear of the rim) with both legs running up through the
+            top rim — and the straight crossbar sits in the upper third,
+            slightly lighter than the legs (canonical geometry:
+            docs/adr/LOGO-REFINEMENT-SPEC.md).
 
-            The diagonals' endpoints overshoot the circumference and the apex's
-            cap spills past the bottom, so each leg fully reaches the rim with no
-            anti-aliased gap — but the bar group is then *doubly clipped to the
+            The legs' endpoints overshoot the top circumference, so each leg
+            fully reaches the rim with no anti-aliased gap — but the bar group
+            is then *doubly clipped to the
             disc the user sees* (§III.3): the SVG `#forall-clip` (r=27, inset a
             hair inside the literal rim so the anti-aliased seam never reaches it)
             AND the `overflow:hidden`+`borderRadius:50%` wrapper span below, which
@@ -611,17 +613,19 @@ export function ForallMenu({
               transition:
                 "opacity 200ms ease, transform 260ms cubic-bezier(0.4, 0, 0.2, 1)",
             }}
-            strokeWidth={6}
-            strokeLinecap="round"
+            strokeWidth={5}
+            strokeLinecap="butt"
             fill="none"
           >
-            {/* left diagonal: bottom rim → upper-left rim (cuts off a segment) */}
-            <line x1="28" y1="56" x2="8.5" y2="5" />
-            {/* right diagonal: bottom rim → upper-right rim (cuts off a segment) */}
-            <line x1="28" y1="56" x2="47.5" y2="5" />
-            {/* crossbar: raised to pass through the disc centre (y=28); the x
-                endpoints sit on the diagonals' centrelines at that height. */}
-            <line x1="17.3" y1="28" x2="38.7" y2="28" />
+            {/* legs: one path so the interior apex miter-joins — two separate
+                lines with butt caps would notch at the apex */}
+            <path
+              d="M11.7 -1.7 L28 42 L44.3 -1.7"
+              strokeLinejoin="miter"
+              strokeMiterlimit={6}
+            />
+            {/* crossbar: upper third, slightly lighter than the legs */}
+            <line x1="18" y1="19" x2="38" y2="19" strokeWidth={4.2} />
           </g>
           <g
             clipPath="url(#forall-clip)"

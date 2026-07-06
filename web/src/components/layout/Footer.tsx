@@ -9,7 +9,7 @@ export function Footer() {
       <div className="max-w-content mx-auto px-6 py-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         {/* Left: mark + wordmark */}
         <div className="flex items-center gap-2">
-          <ForAllMark size={14} className="text-grey-600" />
+          <ForAllMark size={16} className="text-grey-600" />
           <span className="label-ui text-grey-600">all.haus</span>
         </div>
 

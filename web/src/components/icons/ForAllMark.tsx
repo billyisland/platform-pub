@@ -5,25 +5,39 @@ interface ForAllMarkProps {
 
 /**
  * ∀ — the universal quantifier, rendered as an inverted capital A.
- * Heavy stroke weight, low crossbar. SVG path, not a Unicode character.
+ * Canonical construction (docs/adr/LOGO-REFINEMENT-SPEC.md): stroked legs
+ * meeting in a mitred interior apex, straight crossbar in the upper third,
+ * slightly lighter than the legs. This mark defines the canonical stance
+ * (~20.5° leg splay); the disc marks (ForallMenu trigger, favicon) derive
+ * from it. `size` is the rendered HEIGHT; width follows the 0.7 aspect.
  */
 export function ForAllMark({ size = 22, className = '' }: ForAllMarkProps) {
-  // Aspect ratio roughly 0.8:1 (width:height)
-  const w = size
-  const h = Math.round(size * 1.15)
+  const h = size
+  const w = Math.round(size * 0.7)
 
   return (
     <svg
       width={w}
       height={h}
-      viewBox="0 0 40 46"
-      fill="currentColor"
+      viewBox="0 0 112 160"
+      fill="none"
       className={className}
       aria-hidden="true"
     >
-      {/* Inverted A — two heavy legs meeting at bottom, crossbar near the bottom */}
-      <path d="M0 0L16.5 46H23.5L40 0H32.5L20 35.5L7.5 0H0Z" />
-      <rect x="9" y="6" width="22" height="5" />
+      {/* Legs: one path so the interior apex miter-joins — two separate lines
+          with butt caps would notch at the apex. The butt-cap corners overhang
+          the viewBox on three sides and the default overflow clipping crops
+          them to a flat top edge — intended; don't shrink the path or make
+          overflow visible. */}
+      <path
+        d="M6 0 L56 134 L106 0"
+        stroke="currentColor"
+        strokeWidth={15}
+        strokeLinejoin="miter"
+        strokeMiterlimit={6}
+      />
+      {/* Crossbar: upper third, ~84% of the leg weight */}
+      <rect x="20" y="44.75" width="72" height="12.5" fill="currentColor" />
     </svg>
   )
 }

@@ -80,7 +80,7 @@ export default function AuthPage() {
     return (
       <div className="mx-auto max-w-sm px-4 sm:px-6 py-28 text-center">
         <div className="flex justify-center mb-8">
-          <ForAllMark size={24} className="text-grey-300" />
+          <ForAllMark size={28} className="text-grey-300" />
         </div>
         <h1 className="font-serif text-2xl font-medium text-black mb-4 tracking-tight">
           Check your email

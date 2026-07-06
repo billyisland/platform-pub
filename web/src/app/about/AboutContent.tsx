@@ -47,7 +47,7 @@ export function AboutContent() {
       </div>
 
       <div className="flex justify-center mb-12">
-        <ForAllMark size={24} className="text-grey-300" />
+        <ForAllMark size={28} className="text-grey-300" />
       </div>
 
       {!loading && !user && (

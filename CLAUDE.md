@@ -117,6 +117,10 @@ These rules apply to all frontend code. Follow them when writing or modifying co
 
 Never use serif for platform UI (page titles, settings, admin headings, display names in lists). Never use sans for infrastructure labels. When in doubt, prefer sans over serif for non-literary content.
 
+### The ∀ mark — one canonical construction
+
+Every rendered ∀ derives from one geometry (~20.5° leg splay, mitred interior apex, straight crossbar in the upper third at ~84% leg weight), across its three instances: the standalone `ForAllMark` (`web/src/components/icons/ForAllMark.tsx` — defines the canonical stance; `size` = rendered **height**, width follows the 0.7 aspect), the `ForallMenu` trigger's idle-∀ group, and `favicon.svg` (whose rasters `icon-32.png`/`apple-touch-icon.png` are regenerated from the SVG, never edited directly). Don't introduce a new ∀ construction or tweak one instance alone — geometry changes re-derive all three from the spec. Typed ∀ characters (ForallCeremony's Literata glyph, "∀ Traffology") are a different register, exempt. Spec: `docs/adr/LOGO-REFINEMENT-SPEC.md`.
+
 ### Use design tokens, not inline sizes
 
 | Token          | Size                                  | Use for                                          |

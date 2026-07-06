@@ -103,7 +103,7 @@ export function PaywallGate({
       >
         {/* Ornament */}
         <div className="text-center mb-6">
-          <ForAllMark size={24} className="text-crimson inline-block" />
+          <ForAllMark size={28} className="text-crimson inline-block" />
         </div>
 
         <h2 className="font-serif text-[26px] font-normal text-black mb-3">{heading}</h2>

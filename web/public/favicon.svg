@@ -1,14 +1,17 @@
 <svg viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
-  <!-- Scaled-down ForallMenu mark: a black disc divided by three floor-coloured
-       bars into the ∀ (two diagonals carving complete segments + a crossbar).
-       Bars are clipped to the disc here so the tab corners stay transparent. -->
+  <!-- Scaled-down ForallMenu mark: an ink disc carrying the constructed ∀ —
+       the legs are one mitred stroked path (sharp interior apex clear of the
+       rim, tips bleeding through the top rim) plus a straight crossbar in the
+       upper third, slightly lighter than the legs (canonical geometry:
+       docs/adr/LOGO-REFINEMENT-SPEC.md). Bars are clipped to the disc here so
+       the tab corners stay transparent. -->
   <defs>
     <clipPath id="disc"><circle cx="28" cy="28" r="28"/></clipPath>
   </defs>
   <circle cx="28" cy="28" r="28" fill="#1A1A18"/>
-  <g clip-path="url(#disc)" fill="none" stroke="#F0EFEB" stroke-width="6" stroke-linecap="round">
-    <line x1="28" y1="56" x2="8.5" y2="5"/>
-    <line x1="28" y1="56" x2="47.5" y2="5"/>
-    <line x1="17.3" y1="28" x2="38.7" y2="28"/>
+  <g clip-path="url(#disc)" fill="none" stroke="#F0EFEB">
+    <path d="M11.7 -1.7 L28 42 L44.3 -1.7" stroke-width="5"
+          stroke-linejoin="miter" stroke-miterlimit="6"/>
+    <line x1="18" y1="19" x2="38" y2="19" stroke-width="4.2"/>
   </g>
 </svg>
