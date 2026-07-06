@@ -752,6 +752,11 @@ export async function authRoutes(app: FastifyInstance) {
         );
       });
 
+      // Every accounts.status / sessions_invalidated_at writer invalidates the
+      // auth cache post-commit — this one was missed (2026-07-06 audit), so a
+      // second device kept authenticating for a TTL after deletion.
+      invalidateAuthCache(accountId);
+
       destroySession(reply);
       return reply.status(200).send({ ok: true });
     },

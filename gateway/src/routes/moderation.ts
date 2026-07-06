@@ -223,7 +223,11 @@ export async function moderationRoutes(app: FastifyInstance) {
       const { reportId } = req.params
       const { action } = parsed.data
 
-      return withTransaction(async (client) => {
+      // Set inside the transaction, invalidated after COMMIT — an in-txn
+      // invalidate races a concurrent request re-caching the pre-commit row.
+      let suspendedAccountId: string | null = null
+
+      const result = await withTransaction(async (client) => {
         // Fetch the report
         const reportResult = await client.query<{
           id: string
@@ -280,13 +284,16 @@ export async function moderationRoutes(app: FastifyInstance) {
             resolvedStatus = 'resolved_removed'
 
             if (report.target_account_id) {
-              // Suspend the account
+              // Suspend the account. Cache invalidation happens AFTER the
+              // transaction commits (see below) — invalidating here left a
+              // window where a request from the target re-read the still-
+              // 'active' row and re-cached it for a full TTL (2026-07-06 audit).
               await client.query(
                 `UPDATE accounts SET status = 'suspended', updated_at = now()
                  WHERE id = $1`,
                 [report.target_account_id]
               )
-              invalidateAuthCache(report.target_account_id)
+              suspendedAccountId = report.target_account_id
 
               // Un-publish all their articles (remove from surfaces)
               await client.query(
@@ -323,6 +330,8 @@ export async function moderationRoutes(app: FastifyInstance) {
           action,
         })
       })
+      if (suspendedAccountId) invalidateAuthCache(suspendedAccountId)
+      return result
     }
   )
 
@@ -337,12 +346,11 @@ export async function moderationRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { accountId } = req.params
 
-      return withTransaction(async (client) => {
+      const result = await withTransaction(async (client) => {
         await client.query(
           `UPDATE accounts SET status = 'suspended', updated_at = now() WHERE id = $1`,
           [accountId]
         )
-        invalidateAuthCache(accountId)
         await client.query(
           `UPDATE articles SET published_at = NULL, updated_at = now() WHERE writer_id = $1`,
           [accountId]
@@ -356,6 +364,10 @@ export async function moderationRoutes(app: FastifyInstance) {
 
         return reply.status(200).send({ ok: true, accountId, status: 'suspended' })
       })
+      // After COMMIT — an in-txn invalidate races a concurrent request
+      // re-caching the pre-commit 'active' row for a full TTL.
+      invalidateAuthCache(accountId)
+      return result
     }
   )
 }

@@ -163,3 +163,67 @@ describe('optionalAuth', () => {
     expect(req.headers['x-reader-id']).toBeUndefined()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Auth-state cache behaviour (2026-07-06 audit: the cache itself had no
+// coverage — a regression that silently disabled caching, never expired
+// entries, or broke invalidateAuthCache would have passed this suite).
+// ---------------------------------------------------------------------------
+describe('auth-state cache', () => {
+  const activeRow = { rowCount: 1, rows: [{ status: 'active', sessions_invalidated_at: null }] }
+  const suspendedRow = { rowCount: 1, rows: [{ status: 'suspended', sessions_invalidated_at: null }] }
+
+  beforeEach(() => {
+    mockVerifySession.mockReset()
+    mockRefreshIfNeeded.mockReset()
+    mockQuery.mockReset()
+    invalidateAuthCache(CACHED_TEST_ID)
+    mockVerifySession.mockResolvedValue({ sub: CACHED_TEST_ID, pubkey: 'pk1' })
+  })
+
+  it('serves the second request within TTL from cache (no second DB query)', async () => {
+    mockQuery.mockResolvedValue(activeRow)
+
+    await requireAuth(createMockReq(), createMockReply())
+    await requireAuth(createMockReq(), createMockReply())
+
+    expect(mockQuery).toHaveBeenCalledTimes(1)
+  })
+
+  it('invalidateAuthCache forces a refetch — a suspension takes effect immediately', async () => {
+    mockQuery.mockResolvedValue(activeRow)
+    await requireAuth(createMockReq(), createMockReply())
+
+    // The DB row flips to suspended; the cache still serves 'active'…
+    mockQuery.mockResolvedValue(suspendedRow)
+    const stale = createMockReply()
+    await requireAuth(createMockReq(), stale)
+    expect(stale.status).not.toHaveBeenCalledWith(403)
+
+    // …until the suspend path invalidates (moderation.ts, post-commit).
+    invalidateAuthCache(CACHED_TEST_ID)
+    const fresh = createMockReply()
+    await requireAuth(createMockReq(), fresh)
+    expect(fresh.status).toHaveBeenCalledWith(403)
+    expect(mockQuery).toHaveBeenCalledTimes(2)
+  })
+
+  it('expires entries after the TTL (refetches from the DB)', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-07-06T12:00:00Z'))
+      mockQuery.mockResolvedValue(activeRow)
+      await requireAuth(createMockReq(), createMockReply())
+
+      vi.setSystemTime(new Date('2026-07-06T12:00:09Z')) // past the 8s TTL
+      mockQuery.mockResolvedValue(suspendedRow)
+      const reply = createMockReply()
+      await requireAuth(createMockReq(), reply)
+
+      expect(mockQuery).toHaveBeenCalledTimes(2)
+      expect(reply.status).toHaveBeenCalledWith(403)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
