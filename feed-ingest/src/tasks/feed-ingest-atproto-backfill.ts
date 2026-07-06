@@ -110,8 +110,15 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
   // row. The listener attributes live posts from this handle (its commits have
   // no profile inline), and it also repairs any historical items that were
   // ingested before the handle was known (the "EXTERNAL" byline bug). Best
-  // effort — a fetch failure just leaves enrichment to a later run.
+  // effort — a fetch failure just leaves enrichment to a later run — but a
+  // failure on a source that STILL has no handle is recorded on the source
+  // (error_count/last_error) instead of being wiped by the completion UPDATE
+  // below: that wipe made a permanently-unresolvable DID (deleted account)
+  // look "healthy, fetched a minute ago" forever while the listener's 60s
+  // self-heal re-enqueued this task unbounded (2026-07-06 audit residual).
+  // The listener's enrichment filter backs off on error_count.
   const profile = await fetchAtprotoProfile(source.source_uri);
+  const enrichmentFailed = !profile && (!source.handle || source.handle.trim() === "");
   if (profile) {
     source.handle = profile.handle;
     source.display_name = source.display_name ?? profile.displayName;
@@ -237,18 +244,31 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
     // Bump last_fetched_at so the poll-fallback scheduler respects the
     // fetch_interval_seconds cadence when Jetstream is unhealthy. The
     // listener also updates this column on every real-time event, so a
-    // healthy source stays "recent" without hitting this path.
-    await pool.query(
-      `
-      UPDATE external_sources
-      SET last_fetched_at = now(),
-          error_count = 0,
-          last_error = NULL,
-          updated_at = now()
-      WHERE id = $1
-    `,
-      [sourceId],
-    );
+    // healthy source stays "recent" without hitting this path. Error
+    // accounting resets ONLY when enrichment isn't still failing — see above.
+    if (enrichmentFailed) {
+      await pool.query(
+        `UPDATE external_sources
+            SET last_fetched_at = now(),
+                error_count = error_count + 1,
+                last_error = 'atproto handle enrichment failed (getProfile)',
+                updated_at = now()
+          WHERE id = $1`,
+        [sourceId],
+      );
+    } else {
+      await pool.query(
+        `
+        UPDATE external_sources
+        SET last_fetched_at = now(),
+            error_count = 0,
+            last_error = NULL,
+            updated_at = now()
+        WHERE id = $1
+      `,
+        [sourceId],
+      );
+    }
 
     if (inserted > 0 || seen > 0) {
       logger.info(

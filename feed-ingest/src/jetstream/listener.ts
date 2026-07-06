@@ -319,11 +319,29 @@ export class JetstreamListener {
   // still null/empty. Uses a distinct job_key from the subscribe-time backfill
   // so a routine self-heal can't clobber a genuinely-fresh subscription's job;
   // add_job dedupes on the key, so at most one enrichment per source is pending.
+  //
+  // Backoff (2026-07-06 audit residual): a permanently-unresolvable DID
+  // (deleted/tombstoned account) used to re-enqueue the full backfill every
+  // 60s forever. The backfill now records enrichment failures on the source
+  // (error_count/last_error), and this filter retries fast only while under
+  // the attempt cap, then once a day — self-limiting without ever giving up
+  // outright (an account that comes back heals within a day; one that heals
+  // sooner drops out of the filter the moment its handle lands).
   private async enrichMissingHandles(rows: SourceRow[]): Promise<void> {
-    const stale = rows.filter((r) => !r.handle || r.handle.trim() === "");
-    if (stale.length === 0) return;
+    const ENRICH_FAST_ATTEMPTS = 6;
+    const candidates = rows.filter((r) => !r.handle || r.handle.trim() === "");
+    if (candidates.length === 0) return;
     try {
-      for (const row of stale) {
+      const { rows: due } = await pool.query<{ id: string }>(
+        `SELECT id FROM external_sources
+          WHERE id = ANY($1)
+            AND (error_count < $2
+                 OR last_fetched_at IS NULL
+                 OR last_fetched_at < now() - interval '24 hours')`,
+        [candidates.map((r) => r.id), ENRICH_FAST_ATTEMPTS],
+      );
+      if (due.length === 0) return;
+      for (const row of due) {
         await pool.query(
           `SELECT graphile_worker.add_job(
              'feed_ingest_atproto_backfill',
@@ -335,7 +353,7 @@ export class JetstreamListener {
         );
       }
       logger.info(
-        { count: stale.length },
+        { count: due.length, skippedBackedOff: candidates.length - due.length },
         "Enqueued atproto handle enrichment for sources missing a handle",
       );
     } catch (err) {
