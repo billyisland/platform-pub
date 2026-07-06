@@ -77,8 +77,11 @@ starts.
   and the pip aria-label agrees with the FeedComposer title; `scripts/seed.ts`
   swept of `is_writer`/`is_reader` (dev seeding works against a 145+ DB) and
   `shared/tests/session.test.ts`'s dead isWriter-claim tests replaced with a
-  real `createSession` round-trip; DEPLOYMENT.md carries the one-off
-  build-before-migrate note for the 145–147 deploy.
+  real `createSession` round-trip; DEPLOYMENT.md carried the one-off
+  build-before-migrate note for the 145–147 deploy. **Deployed to prod
+  2026-07-06** (build → up → migrate, per the note; the one-off note is now
+  replaced by a general destructive-migration caution in DEPLOYMENT.md
+  › Upgrading).
 
 - **2026-07-06** — **is_writer/is_reader dropped (migration 145)** — the
   migrate-hardening §3 decision, resolved same-day as **drop** (the
