@@ -1,10 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 import { requireAuth } from '../middleware/auth.js'
 import logger from '@platform-pub/shared/lib/logger.js'
-import { voteCostPence } from '@platform-pub/shared/lib/voting.js'
 
 // =============================================================================
 // Vote Routes
@@ -12,7 +10,12 @@ import { voteCostPence } from '@platform-pub/shared/lib/voting.js'
 // POST   /votes                               — cast a vote (auth required)
 // GET    /votes/tally?eventIds=id1,id2,...    — batch fetch tallies (public)
 // GET    /votes/mine?eventIds=id1,id2,...     — batch fetch my vote counts (auth)
-// GET    /votes/price?eventId=xxx&direction=up — get next vote price (auth)
+//
+// Audit F9 (2026-07-06): paid voting was removed. Votes are free — no tab
+// debit, no vote_charges row, no ledger entry. The `votes`/`vote_charges`
+// tables and their historical ledger entries are left inert (append-only); this
+// route now only records the vote row (cost 0) and the tally. The former
+// GET /votes/price endpoint and the paid-confirm flow were stripped.
 // =============================================================================
 
 const VoteSchema = z.object({
@@ -94,121 +97,19 @@ export async function voteRoutes(app: FastifyInstance) {
         const sequenceNumber = existingCount + 1
 
         // ------------------------------------------------------------------
-        // 4. Compute price
+        // 4. Insert vote row (F9: free — no cost, no tab, no charge row)
         // ------------------------------------------------------------------
-        const costPence = voteCostPence(direction, sequenceNumber)
-
-        // ------------------------------------------------------------------
-        // 5. Debit the reader's tab (if cost > 0)
-        // ------------------------------------------------------------------
-        let tabId: string | null = null
-        let onFreeAllowance = false
-        let chargeState: 'provisional' | 'accrued' = 'provisional'
-
-        if (costPence > 0) {
-          // Get voter's account info
-          const voterRow = await client.query<{
-            stripe_customer_id: string | null
-            free_allowance_remaining_pence: number
-          }>(
-            `SELECT stripe_customer_id, free_allowance_remaining_pence
-             FROM accounts WHERE id = $1 FOR UPDATE`,
-            [voterId]
-          )
-
-          if (voterRow.rowCount === 0) {
-            return reply.status(404).send({ error: 'Voter account not found' })
-          }
-
-          const voter = voterRow.rows[0]
-          const hasCard = voter.stripe_customer_id !== null
-
-          if (!hasCard) {
-            // No card — deduct from free allowance (can go negative)
-            onFreeAllowance = voter.free_allowance_remaining_pence > 0
-            chargeState = 'provisional'
-            await client.query(
-              `UPDATE accounts
-               SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1,
-                   updated_at = now()
-               WHERE id = $2`,
-              [costPence, voterId]
-            )
-          } else {
-            // Has card — get or create tab, add to balance
-            chargeState = 'accrued'
-            const tabRow = await client.query<{ id: string }>(
-              `INSERT INTO reading_tabs (reader_id)
-               VALUES ($1)
-               ON CONFLICT ON CONSTRAINT one_tab_per_reader
-               DO UPDATE SET updated_at = now()
-               RETURNING id`,
-              [voterId]
-            )
-            tabId = tabRow.rows[0].id
-
-            await client.query(
-              `UPDATE reading_tabs
-               SET balance_pence = balance_pence + $1,
-                   last_read_at = now(),
-                   updated_at = now()
-               WHERE id = $2`,
-              [costPence, tabId]
-            )
-          }
-        }
-
-        // ------------------------------------------------------------------
-        // 6. Insert vote row
-        // ------------------------------------------------------------------
-        const voteRow = await client.query<{ id: string }>(
+        await client.query<{ id: string }>(
           `INSERT INTO votes
              (voter_id, target_nostr_event_id, target_author_id,
               direction, sequence_number, cost_pence, tab_id, on_free_allowance)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           VALUES ($1, $2, $3, $4, $5, 0, NULL, FALSE)
            RETURNING id`,
-          [voterId, targetEventId, authorId, direction,
-           sequenceNumber, costPence, tabId, onFreeAllowance]
+          [voterId, targetEventId, authorId, direction, sequenceNumber]
         )
-        const voteId = voteRow.rows[0].id
 
         // ------------------------------------------------------------------
-        // 7. Insert vote_charge (if cost > 0)
-        // ------------------------------------------------------------------
-        if (costPence > 0) {
-          // Upvotes → recipient is the author; downvotes → platform revenue (NULL)
-          const recipientId = direction === 'up' ? authorId : null
-
-          const chargeRow = await client.query<{ id: string }>(
-            `INSERT INTO vote_charges
-               (vote_id, voter_id, recipient_id, amount_pence, tab_id,
-                on_free_allowance, state)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             RETURNING id`,
-            [voteId, voterId, recipientId, costPence, tabId,
-             onFreeAllowance, chargeState]
-          )
-
-          // Ledger: voter debit. Emitted only when the charge is 'accrued'
-          // (has-card path) — that is the branch above that moved the tab
-          // balance. The provisional (no-card) branch moves no balance, so its
-          // ledger entry is deferred to convertProvisionalReads (matching the
-          // reader-tab invariant in ledger.ts). counterparty = upvote recipient
-          // (author) or NULL (downvote = platform behaviour-tax).
-          if (chargeState === 'accrued') {
-            await recordLedger(client, {
-              accountId: voterId,
-              counterpartyId: recipientId,
-              amountPence: -costPence,
-              triggerType: 'vote_charge',
-              refTable: 'vote_charges',
-              refId: chargeRow.rows[0].id,
-            })
-          }
-        }
-
-        // ------------------------------------------------------------------
-        // 8. Upsert the tally
+        // 5. Upsert the tally
         // ------------------------------------------------------------------
         const upDelta = direction === 'up' ? 1 : 0
         const downDelta = direction === 'down' ? 1 : 0
@@ -240,19 +141,14 @@ export async function voteRoutes(app: FastifyInstance) {
         )
         const tally = tallyRow.rows[0]
 
-        // Next cost in same direction
-        const nextCostPence = voteCostPence(direction, sequenceNumber + 1)
-
         logger.info(
-          { voterId, targetEventId, direction, sequenceNumber, costPence },
+          { voterId, targetEventId, direction, sequenceNumber },
           'Vote recorded'
         )
 
         return reply.status(201).send({
           ok: true,
           sequenceNumber,
-          costPence,
-          nextCostPence,
           tally: {
             upvoteCount: tally.upvote_count,
             downvoteCount: tally.downvote_count,
@@ -359,40 +255,6 @@ export async function voteRoutes(app: FastifyInstance) {
       }
 
       return reply.status(200).send({ voteCounts })
-    }
-  )
-
-  // ---------------------------------------------------------------------------
-  // GET /votes/price?eventId=xxx&direction=up — get server-authoritative price
-  // ---------------------------------------------------------------------------
-
-  app.get<{ Querystring: { eventId?: string; direction?: string } }>(
-    '/votes/price',
-    { preHandler: requireAuth },
-    async (req, reply) => {
-      const { eventId, direction } = req.query
-
-      if (!eventId || !direction) {
-        return reply.status(400).send({ error: 'eventId and direction are required' })
-      }
-
-      if (direction !== 'up' && direction !== 'down') {
-        return reply.status(400).send({ error: 'direction must be "up" or "down"' })
-      }
-
-      const voterId = req.session!.sub
-
-      const { rows } = await pool.query<{ count: string }>(
-        `SELECT COUNT(*) AS count FROM votes
-         WHERE voter_id = $1 AND target_nostr_event_id = $2 AND direction = $3`,
-        [voterId, eventId, direction]
-      )
-
-      const existingCount = parseInt(rows[0].count, 10)
-      const sequenceNumber = existingCount + 1
-      const costPence = voteCostPence(direction, sequenceNumber)
-
-      return reply.status(200).send({ sequenceNumber, costPence, direction })
     }
   )
 }

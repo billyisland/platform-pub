@@ -12,12 +12,11 @@ export interface MyVoteCount {
 }
 
 export const votes = {
+  // F9 (2026-07-06): voting is free — the response no longer carries cost fields.
   cast: (targetEventId: string, targetKind: number, direction: 'up' | 'down') =>
     request<{
       ok: boolean
       sequenceNumber: number
-      costPence: number
-      nextCostPence: number
       tally: VoteTally
     }>('/votes', {
       method: 'POST',
@@ -32,10 +31,5 @@ export const votes = {
   getMyVotes: (eventIds: string[]) =>
     request<{ voteCounts: Record<string, MyVoteCount> }>(
       `/votes/mine?eventIds=${eventIds.join(',')}`
-    ),
-
-  getPrice: (eventId: string, direction: 'up' | 'down') =>
-    request<{ sequenceNumber: number; costPence: number; direction: string }>(
-      `/votes/price?eventId=${encodeURIComponent(eventId)}&direction=${direction}`
     ),
 }

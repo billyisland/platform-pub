@@ -12,7 +12,6 @@ import { isTerminalChargeError } from "../lib/charge-errors.js";
 import {
   computeChargebackReversal,
   type ReversalRead,
-  type ReversalVote,
   type ReversalAccrual,
 } from "./chargeback.js";
 import logger from "../lib/logger.js";
@@ -576,16 +575,6 @@ class SettlementService {
         });
       }
 
-      await client.query(
-        `UPDATE vote_charges
-         SET state = 'platform_settled',
-             tab_settlement_id = $2
-         WHERE tab_id = $1
-           AND state = 'accrued'
-           AND created_at <= (SELECT settled_at FROM tab_settlements WHERE id = $2)`,
-        [settlement.tab_id, settlement.id],
-      );
-
       // Tribute apportionment (Upstream Edges Phase 3 + Phase-5 chains, dark
       // behind TRIBUTES_ENABLED). For each read just advanced to platform_settled
       // on a tributed (proposed|live) article, freeze one tribute_accruals row
@@ -745,10 +734,10 @@ class SettlementService {
   //      the same charge).
   //   2. Restore the reader's debt (balance_pence += amount) + a reversing
   //      tab_settlement_reversal ledger entry.
-  //   3. Load the reads / vote_charges / tribute accruals tied to this charge and
-  //      hand them to the pure planner (chargeback.ts). Apply its plan: post the
-  //      writer/tribute reversal entries, flip rolled-back reads + votes to
-  //      'charged_back', void the unpaid accruals.
+  //   3. Load the reads / tribute accruals tied to this charge and hand them to
+  //      the pure planner (chargeback.ts). Apply its plan: post the writer/
+  //      tribute reversal entries, flip rolled-back reads to 'charged_back',
+  //      void the unpaid accruals. (F9 removed the vote-charge reversal arm.)
   //
   // No tributesEnabled() gate: the plan is data-driven (zero accruals ⇒ the
   // platform-wide case), so it stays correct across a flag toggled on then off.
@@ -828,19 +817,6 @@ class SettlementService {
         [settlement.id],
       );
 
-      const { rows: votes } = await client.query<{
-        id: string;
-        amount_pence: number;
-        state: string;
-        recipient_id: string | null;
-      }>(
-        `SELECT id, amount_pence, state, recipient_id
-         FROM vote_charges
-         WHERE tab_settlement_id = $1
-           AND state IN ('platform_settled', 'writer_paid')`,
-        [settlement.id],
-      );
-
       // Every non-voided accrual on the reads this charge settled, with the
       // tribute (and its parent) so the planner can attribute net per node.
       const { rows: accrualRows } = await client.query<{
@@ -879,12 +855,6 @@ class SettlementService {
         writerId: r.writer_id,
         isPublication: r.publication_id !== null,
       }));
-      const planVotes: ReversalVote[] = votes.map((v) => ({
-        id: v.id,
-        amountPence: v.amount_pence,
-        state: v.state,
-        recipientId: v.recipient_id,
-      }));
       const planAccruals: ReversalAccrual[] = accrualRows.map((a) => ({
         id: a.id,
         readEventId: a.read_event_id,
@@ -904,7 +874,6 @@ class SettlementService {
         readerId: settlement.reader_id,
         settlementAmountPence: settlement.amount_pence,
         reads: planReads,
-        votes: planVotes,
         accruals: planAccruals,
         platformFeeBps: config.platformFeeBps,
       });
@@ -956,12 +925,6 @@ class SettlementService {
           [plan.chargeBackReadIds],
         );
       }
-      if (plan.chargeBackVoteIds.length > 0) {
-        await client.query(
-          `UPDATE vote_charges SET state = 'charged_back' WHERE id = ANY($1::uuid[])`,
-          [plan.chargeBackVoteIds],
-        );
-      }
       if (plan.voidAccrualIds.length > 0) {
         await client.query(
           `UPDATE tribute_accruals SET state = 'voided' WHERE id = ANY($1::uuid[])`,
@@ -975,7 +938,6 @@ class SettlementService {
           stripeChargeId,
           reason,
           reads: plan.chargeBackReadIds.length,
-          votes: plan.chargeBackVoteIds.length,
           voidedAccruals: plan.voidAccrualIds.length,
           ledgerEntries: plan.ledgerEntries.length,
         },

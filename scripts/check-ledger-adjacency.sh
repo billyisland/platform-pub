@@ -52,24 +52,23 @@ cd "$ROOT"
 # ── Registry: "relpath::min recordLedger() calls" ────────────────────────────
 # The min is a floor, not an exact count — adding sites is fine, dropping one
 # below the floor fails. Counts as of Phase 1:
-#   accrual.ts   3  (recordGatePass + convert loop: reads + vote_charges)
+#   accrual.ts   2  (recordGatePass + convert loop: reads. F9 removed the
+#                    vote_charges convert branch — voting is now free.)
 #   settlement.ts 3 (confirmSettlement reader credit + writer_accrual earned-side
 #                    posting; reverseSettlement's F3 reversal-entry loop — the
 #                    tribute_accruals INSERT writes no ledger row, accruals live
 #                    outside the ledger)
 #   payout.ts    4  (writer payout + publication split + tribute payout + the
 #                    tribute_carve author debit — item 3 final phase)
-#   votes.ts     1  (accrued vote charge)
 #   drives.ts    1  (pledge fulfilment)
 #   subscription-convert.ts 1 (spend→subscription tab credit-back)
 #   upstream-edges.ts 2 (dispute stake debit + withdrawal refund)
 #   subscriptions/shared.ts 2 (F1: subscription_charge reader-tab debit +
 #                    subscription_earning writer credit — logSubscriptionCharge)
 REGISTRY=(
-  "payment-service/src/services/accrual.ts::3"
+  "payment-service/src/services/accrual.ts::2"
   "payment-service/src/services/settlement.ts::3"
   "payment-service/src/services/payout.ts::4"
-  "gateway/src/routes/votes.ts::1"
   "gateway/src/routes/drives.ts::1"
   "gateway/src/routes/articles/subscription-convert.ts::1"
   "gateway/src/routes/upstream-edges.ts::2"
@@ -81,7 +80,7 @@ REGISTRY=(
 # credit-back (−) move the tab and so both need a mirror entry. The original
 # regex only caught '+', which let subscription-convert.ts's '− $1' credit
 # escape the scan (the Phase-3 latent gap); '[-+]' closes that.
-MARKERS='balance_pence = balance_pence [-+]|balance_pence = GREATEST\(0, balance_pence|INSERT INTO vote_charges|INSERT INTO writer_payouts|INSERT INTO publication_payout_splits|INSERT INTO tribute_accruals|INSERT INTO tribute_payouts'
+MARKERS='balance_pence = balance_pence [-+]|balance_pence = GREATEST\(0, balance_pence|INSERT INTO writer_payouts|INSERT INTO publication_payout_splits|INSERT INTO tribute_accruals|INSERT INTO tribute_payouts'
 
 failed=0
 

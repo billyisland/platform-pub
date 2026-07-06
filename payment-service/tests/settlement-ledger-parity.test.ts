@@ -38,7 +38,7 @@ function fakeClientQuery(sql: string, params: any[] = []) {
       rowCount: 1,
     })
   }
-  // every UPDATE (claim, reading_tabs, read_events, vote_charges) → 1 row
+  // every UPDATE (claim, reading_tabs, read_events) → 1 row
   return Promise.resolve({ rows: [], rowCount: 1 })
 }
 

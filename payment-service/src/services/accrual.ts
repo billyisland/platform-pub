@@ -272,43 +272,29 @@ class AccrualService {
         0,
       );
 
-      // Also convert provisional vote_charges to accrued
-      const { rows: provisionalVoteCharges } = await client.query<{
-        id: string;
-        amount_pence: number;
-        recipient_id: string | null;
-      }>(
-        `UPDATE vote_charges
-         SET state = 'accrued', tab_id = $1
-         WHERE voter_id = $2 AND state = 'provisional'
-         RETURNING id, amount_pence, recipient_id`,
-        [tabId, readerId],
-      );
-      const voteChargeTotal = provisionalVoteCharges.reduce(
-        (sum, r) => sum + r.amount_pence,
-        0,
-      );
-
-      if (provisionalReads.length === 0 && provisionalVoteCharges.length === 0) {
+      // Audit F9 (2026-07-06): paid voting was removed, so there are no new
+      // provisional vote_charges to convert. Historical vote_charges are left
+      // inert (never converted here); only reads convert.
+      if (provisionalReads.length === 0) {
         return 0;
       }
 
-      // Add total to tab balance (reads + vote charges)
-      if (totalPence + voteChargeTotal > 0) {
+      // Add total to tab balance
+      if (totalPence > 0) {
         await client.query(
           `UPDATE reading_tabs
            SET balance_pence = balance_pence + $1,
                last_read_at  = now(),
                updated_at    = now()
            WHERE id = $2`,
-          [totalPence + voteChargeTotal, tabId],
+          [totalPence, tabId],
         );
       }
 
-      // Ledger: these provisional reads/votes never moved the tab when created
-      // (no card ⇒ no balance). Conversion is the first tab movement, so the
-      // debit entries are emitted here, one per converted row, summing to the
-      // tab increment above.
+      // Ledger: these provisional reads never moved the tab when created (no
+      // card ⇒ no balance). Conversion is the first tab movement, so the debit
+      // entries are emitted here, one per converted row, summing to the tab
+      // increment above.
       for (const r of provisionalReads) {
         await recordLedger(client, {
           accountId: readerId,
@@ -317,16 +303,6 @@ class AccrualService {
           triggerType: "read_accrual",
           refTable: "read_events",
           refId: r.id,
-        });
-      }
-      for (const vc of provisionalVoteCharges) {
-        await recordLedger(client, {
-          accountId: readerId,
-          counterpartyId: vc.recipient_id,
-          amountPence: -vc.amount_pence,
-          triggerType: "vote_charge",
-          refTable: "vote_charges",
-          refId: vc.id,
         });
       }
 

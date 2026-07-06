@@ -43,7 +43,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals: [], platformFeeBps: FEE,
+      accruals: [], platformFeeBps: FEE,
     })
     const net = perReadNetPence(1000, FEE) // 920
     expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
@@ -58,23 +58,10 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 500,
       reads: [{ id: 'R', amountPence: 500, state: 'platform_settled', writerId: 'W' }],
-      votes: [], accruals: [], platformFeeBps: FEE,
+      accruals: [], platformFeeBps: FEE,
     })
     expect(writerSideSum(plan.ledgerEntries)).toBe(0)
     expect(plan.chargeBackReadIds).toEqual(['R'])
-  })
-
-  it('upvote charge (writer_paid) reverses against its recipient', () => {
-    const plan = computeChargebackReversal({
-      readerId: 'reader', settlementAmountPence: 1000,
-      reads: [],
-      votes: [{ id: 'V', amountPence: 100, state: 'writer_paid', recipientId: 'REC' }],
-      accruals: [], platformFeeBps: FEE,
-    })
-    expect(plan.chargeBackVoteIds).toEqual(['V'])
-    const recEntry = plan.ledgerEntries.find((e) => e.accountId === 'REC')!
-    expect(recEntry.trigger).toBe('writer_payout_reversal')
-    expect(recEntry.amountPence).toBe(-perReadNetPence(100, FEE))
   })
 
   it('fully-resolved tribute chain: writer + tribute reversals sum to −read_net', () => {
@@ -86,7 +73,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     const net = perReadNetPence(1000, FEE)
     expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
@@ -106,7 +93,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     // author reversed only for what it received: net − carved root = 920 − 300 = 620
     expect(writerSideSum(plan.ledgerEntries)).toBe(-620)
@@ -124,7 +111,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     const net = perReadNetPence(1000, FEE)
     expect(plan.voidAccrualIds).toEqual([])
@@ -141,7 +128,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     expect(plan.voidAccrualIds).toEqual(['a1'])
     // Only the author's carve-reduced net is reversed (the held float is kept).
@@ -155,7 +142,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     const net = perReadNetPence(1000, FEE)
     expect(plan.voidAccrualIds).toEqual([])
@@ -171,7 +158,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     const net = perReadNetPence(1000, FEE)
     expect(plan.voidAccrualIds).toEqual([])
@@ -187,7 +174,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     const net = perReadNetPence(1000, FEE)
     expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
@@ -204,7 +191,7 @@ describe('computeChargebackReversal', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     const net = perReadNetPence(1000, FEE)
     // I1 received: own paid net (300−100=200) + returned child (100) = 300 → reversed −300
@@ -228,7 +215,7 @@ describe('computeChargebackReversal — earned side', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 500,
       reads: [{ id: 'R', amountPence: 500, state: 'platform_settled', writerId: 'W' }],
-      votes: [], accruals: [], platformFeeBps: FEE,
+      accruals: [], platformFeeBps: FEE,
     })
     expect(writerSideSum(plan.ledgerEntries)).toBe(0)
     expect(earnedSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(500, FEE))
@@ -245,7 +232,7 @@ describe('computeChargebackReversal — earned side', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     // writer_accrual_reversal −920 + tribute_carve_reversal +300 (root only) = −620.
     expect(earnedSideSum(plan.ledgerEntries)).toBe(-620)
@@ -265,7 +252,7 @@ describe('computeChargebackReversal — earned side', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals, platformFeeBps: FEE,
+      accruals, platformFeeBps: FEE,
     })
     // The held carve never entered the ledger (guard #7), so no carve reversal;
     // the full read_net accrual still backs out.
@@ -282,7 +269,7 @@ describe('computeChargebackReversal — earned side', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W', isPublication: true }],
-      votes: [], accruals: [], platformFeeBps: FEE,
+      accruals: [], platformFeeBps: FEE,
     })
     // The read flips to charged_back...
     expect(plan.chargeBackReadIds).toEqual(['R'])
@@ -301,7 +288,7 @@ describe('computeChargebackReversal — earned side', () => {
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      votes: [], accruals: [], platformFeeBps: FEE,
+      accruals: [], platformFeeBps: FEE,
     })
     expect(writerSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(1000, FEE))
     expect(earnedSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(1000, FEE))

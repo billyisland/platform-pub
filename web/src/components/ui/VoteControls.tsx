@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../stores/auth'
-import { voteCostPence } from '../../lib/voting'
 import { votes as votesApi } from '../../lib/api'
-import { VoteConfirmModal } from './VoteConfirmModal'
 import type { VesselPalette } from '../workspace/tokens'
+
+// F9 (2026-07-06): voting is free. The former paid-vote confirm modal + cost
+// computation were removed; a click casts immediately.
 
 export interface VoteTally {
   upvoteCount: number
@@ -47,7 +48,6 @@ export function VoteControls({
     initialMyVotes ?? { upCount: 0, downCount: 0 }
   )
   const [showTooltip, setShowTooltip] = useState(false)
-  const [pendingDirection, setPendingDirection] = useState<'up' | 'down' | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -83,16 +83,7 @@ export function VoteControls({
       return
     }
     if (isOwnContent || submitting) return
-
-    const existingCount = direction === 'up' ? myVotes.upCount : myVotes.downCount
-    const seq = existingCount + 1
-    const cost = voteCostPence(direction, seq)
-
-    if (cost === 0) {
-      castVote(direction).catch((e) => console.error('Failed to cast vote', e))
-    } else {
-      setPendingDirection(direction)
-    }
+    castVote(direction).catch((e) => console.error('Failed to cast vote', e))
   }
 
   async function castVote(direction: 'up' | 'down') {
@@ -104,11 +95,9 @@ export function VoteControls({
         upCount: direction === 'up' ? prev.upCount + 1 : prev.upCount,
         downCount: direction === 'down' ? prev.downCount + 1 : prev.downCount,
       }))
-      void useAuth.getState().fetchMe()
     } catch { /* silent */ }
     finally {
       setSubmitting(false)
-      setPendingDirection(null)
     }
   }
 
@@ -120,78 +109,47 @@ export function VoteControls({
   const mutedColor = palette?.cardMeta ?? 'var(--ah-grey-600)'
   const accentColor = palette?.crimson ?? 'var(--ah-crimson)'
 
-  const totalSpentPence = computeTotalSpent(myVotes)
-
-  const pendingSeq = pendingDirection
-    ? (pendingDirection === 'up' ? myVotes.upCount : myVotes.downCount) + 1
-    : 1
-  const pendingCost = pendingDirection ? voteCostPence(pendingDirection, pendingSeq) : 0
-
   return (
-    <>
-      <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-0.5">
+      <button
+        onClick={() => handleVoteClick('up')}
+        disabled={disabled}
+        title={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Upvote'}
+        aria-label={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Upvote'}
+        className="px-1.5 py-0.5 text-ui-xs transition-opacity hover:opacity-70 disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ color: myVotes.upCount > 0 ? accentColor : mutedColor, fontWeight: myVotes.upCount > 0 ? 500 : undefined }}
+      >
+        ▲
+      </button>
+
+      <div className="relative">
         <button
-          onClick={() => handleVoteClick('up')}
-          disabled={disabled}
-          title={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Upvote'}
-          aria-label={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Upvote'}
-          className="px-1.5 py-0.5 text-ui-xs transition-opacity hover:opacity-70 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ color: myVotes.upCount > 0 ? accentColor : mutedColor, fontWeight: myVotes.upCount > 0 ? 500 : undefined }}
+          className="text-ui-xs min-w-[1.5rem] text-center transition-opacity hover:opacity-70"
+          style={{ color: mutedColor }}
+          onMouseEnter={() => setShowTooltip(true)}
+          onMouseLeave={() => setShowTooltip(false)}
         >
-          ▲
+          {tally.netScore}
         </button>
 
-        <div className="relative">
-          <button
-            className="text-ui-xs min-w-[1.5rem] text-center transition-opacity hover:opacity-70"
-            style={{ color: mutedColor }}
-            onMouseEnter={() => setShowTooltip(true)}
-            onMouseLeave={() => setShowTooltip(false)}
-          >
-            {tally.netScore}
-          </button>
-
-          {showTooltip && (tally.upvoteCount > 0 || tally.downvoteCount > 0) && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-10 whitespace-nowrap bg-black px-2 py-1.5 text-[10px] text-white shadow-lg" style={{ borderRadius: '2px' }}>
-              <div>↑ {tally.upvoteCount} {tally.upvoteCount !== 1 ? 'upvotes' : 'upvote'}</div>
-              <div>↓ {tally.downvoteCount} {tally.downvoteCount !== 1 ? 'downvotes' : 'downvote'}</div>
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={() => handleVoteClick('down')}
-          disabled={disabled}
-          title={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Downvote'}
-          aria-label={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Downvote'}
-          className="px-1.5 py-0.5 text-ui-xs transition-opacity hover:opacity-70 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ color: myVotes.downCount > 0 ? accentColor : mutedColor, fontWeight: myVotes.downCount > 0 ? 500 : undefined }}
-        >
-          ▼
-        </button>
+        {showTooltip && (tally.upvoteCount > 0 || tally.downvoteCount > 0) && (
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-10 whitespace-nowrap bg-black px-2 py-1.5 text-[10px] text-white shadow-lg" style={{ borderRadius: '2px' }}>
+            <div>↑ {tally.upvoteCount} {tally.upvoteCount !== 1 ? 'upvotes' : 'upvote'}</div>
+            <div>↓ {tally.downvoteCount} {tally.downvoteCount !== 1 ? 'downvotes' : 'downvote'}</div>
+          </div>
+        )}
       </div>
 
-      {pendingDirection && (
-        <VoteConfirmModal
-          direction={pendingDirection}
-          sequenceNumber={pendingSeq}
-          costPence={pendingCost}
-          totalSpentPence={totalSpentPence}
-          onConfirm={() => castVote(pendingDirection)}
-          onCancel={() => setPendingDirection(null)}
-        />
-      )}
-    </>
+      <button
+        onClick={() => handleVoteClick('down')}
+        disabled={disabled}
+        title={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Downvote'}
+        aria-label={!user ? 'Log in to vote' : isOwnContent ? 'Cannot vote on own content' : 'Downvote'}
+        className="px-1.5 py-0.5 text-ui-xs transition-opacity hover:opacity-70 disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ color: myVotes.downCount > 0 ? accentColor : mutedColor, fontWeight: myVotes.downCount > 0 ? 500 : undefined }}
+      >
+        ▼
+      </button>
+    </div>
   )
-}
-
-function computeTotalSpent(myVotes: MyVoteCount): number {
-  let total = 0
-  for (let i = 2; i <= myVotes.upCount; i++) {
-    total += voteCostPence('up', i)
-  }
-  for (let i = 1; i <= myVotes.downCount; i++) {
-    total += voteCostPence('down', i)
-  }
-  return total
 }

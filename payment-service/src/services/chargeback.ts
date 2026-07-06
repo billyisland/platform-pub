@@ -76,13 +76,6 @@ export interface ReversalRead {
   isPublication?: boolean
 }
 
-export interface ReversalVote {
-  id: string
-  amountPence: number
-  state: string
-  recipientId: string | null
-}
-
 export interface ReversalAccrual {
   id: string
   readEventId: string
@@ -118,7 +111,6 @@ export interface ReversalPlan {
   /** Every ledger entry to post — the reader reversal first, then writer/tribute reversals. */
   ledgerEntries: ReversalLedgerEntry[]
   chargeBackReadIds: string[]
-  chargeBackVoteIds: string[]
   voidAccrualIds: string[]
 }
 
@@ -126,13 +118,12 @@ export interface ReversalInput {
   readerId: string
   settlementAmountPence: number
   reads: ReversalRead[]
-  votes: ReversalVote[]
   accruals: ReversalAccrual[]
   platformFeeBps: number
 }
 
 export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
-  const { readerId, settlementAmountPence, reads, votes, accruals, platformFeeBps } = input
+  const { readerId, settlementAmountPence, reads, accruals, platformFeeBps } = input
 
   // Index accruals by read for the children/root gross lookups.
   const accrualsByRead = new Map<string, ReversalAccrual[]>()
@@ -203,14 +194,6 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
     }
   }
 
-  const chargeBackVoteIds: string[] = []
-  for (const v of votes) {
-    chargeBackVoteIds.push(v.id)
-    if (v.state === 'writer_paid' && v.recipientId) {
-      addWriter(v.recipientId, perReadNetPence(v.amountPence, platformFeeBps))
-    }
-  }
-
   const voidAccrualIds: string[] = []
   for (const a of accruals) {
     // A claimed-but-not-yet-terminal accrual (held/released/swept) is in-flight to
@@ -268,7 +251,6 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
     tabRestorePence: settlementAmountPence,
     ledgerEntries,
     chargeBackReadIds,
-    chargeBackVoteIds,
     voidAccrualIds,
   }
 }

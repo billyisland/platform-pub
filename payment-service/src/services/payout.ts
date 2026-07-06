@@ -320,7 +320,8 @@ class PayoutService {
     const config = await loadConfig()
 
     // Find writers with enough platform_settled balance and completed KYC.
-    // Combines read_events earnings with upvote earnings (vote_charges with recipient_id set).
+    // Combines read_events earnings with writer subscription earnings (F1).
+    // (F9 removed the former upvote-earnings arm; voting is now free.)
     // FIX #4: Compute net amounts (after platform fee) for payout eligibility.
     //
     // Rounding: the platform fee is applied per-row then summed, not applied
@@ -365,12 +366,6 @@ class PayoutService {
            FROM read_events
            WHERE state = 'platform_settled' AND writer_payout_id IS NULL
              AND publication_id IS NULL
-           UNION ALL
-           SELECT recipient_id AS writer_id, amount_pence
-           FROM vote_charges
-           WHERE state = 'platform_settled'
-             AND recipient_id IS NOT NULL
-             AND writer_payout_id IS NULL
          ) AS earnings
          GROUP BY earnings.writer_id
        ),
@@ -462,13 +457,13 @@ class PayoutService {
   // from the ledger. Now:
   //
   //   1. reserveWriterPayout (Txn 1, committed) — insert 'pending' row and
-  //      stamp read_events / vote_charges with writer_payout_id so no
-  //      concurrent cycle can re-count them.
+  //      stamp read_events with writer_payout_id so no concurrent cycle can
+  //      re-count them.
   //   2. stripe.transfers.create with idempotencyKey=`payout-${payoutId}`
   //      (stable — same key on any retry deduplicates against the prior
   //      transfer).
   //   3. completeWriterPayout (Txn 2, committed) — flip status to 'initiated',
-  //      store stripe_transfer_id, advance reads/vote_charges to writer_paid.
+  //      store stripe_transfer_id, advance reads to writer_paid.
   //
   // If we crash or throw between steps 1 and 3, the 'pending' row survives
   // and resumePendingWriterPayouts (called at cycle start) re-runs steps
@@ -522,9 +517,6 @@ class PayoutService {
                 SELECT amount_pence FROM read_events
                 WHERE writer_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
                   AND publication_id IS NULL
-                UNION ALL
-                SELECT amount_pence FROM vote_charges
-                WHERE recipient_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
               ) AS earnings)
            + (SELECT COALESCE(SUM(amount_pence), 0)
                 FROM subscription_events
@@ -587,17 +579,6 @@ class PayoutService {
       )
       const readNet = claimedReads.reduce((s, r) => s + parseInt(r.net_pence, 10), 0)
 
-      const { rows: claimedVotes } = await client.query<{ net_pence: string }>(
-        `UPDATE vote_charges
-         SET writer_payout_id = $1
-         WHERE recipient_id = $2
-           AND state = 'platform_settled'
-           AND writer_payout_id IS NULL
-         RETURNING ${readNetSql('amount_pence', '$3')} AS net_pence`,
-        [payoutId, writerId, config.platformFeeBps],
-      )
-      const voteNet = claimedVotes.reduce((s, r) => s + parseInt(r.net_pence, 10), 0)
-
       // F1: claim WRITER subscription earnings (already NET) under this payout.
       // No state gate — a subscription_earning is payable once it exists (its
       // reader-tab debit is collected by settlement independently); writer_payout_id
@@ -648,7 +629,7 @@ class PayoutService {
       )
       const returns = claimedReturns.reduce((s, r) => s + r.amount_pence, 0)
 
-      const lockedAmountPence = readNet + voteNet + subNet - carve + returns
+      const lockedAmountPence = readNet + subNet - carve + returns
 
       if (lockedAmountPence <= 0) {
         // Defensive: the peek was > 0 so this is near-impossible under the lock;
@@ -742,14 +723,6 @@ class PayoutService {
         `UPDATE read_events
          SET state = 'writer_paid',
              state_updated_at = now()
-         WHERE writer_payout_id = $1
-           AND state = 'platform_settled'`,
-        [payoutId],
-      )
-
-      await client.query(
-        `UPDATE vote_charges
-         SET state = 'writer_paid'
          WHERE writer_payout_id = $1
            AND state = 'platform_settled'`,
         [payoutId],
@@ -907,15 +880,6 @@ class PayoutService {
        SET state = 'platform_settled',
            writer_payout_id = NULL,
            state_updated_at = now()
-       WHERE writer_payout_id = $1`,
-      [payoutId],
-    )
-
-    // Upvote charges → platform_settled, unclaimed.
-    await client.query(
-      `UPDATE vote_charges
-       SET state = 'platform_settled',
-           writer_payout_id = NULL
        WHERE writer_payout_id = $1`,
       [payoutId],
     )
@@ -1989,12 +1953,7 @@ class PayoutService {
                      WHERE re.writer_id = a.id
                        AND re.state = 'platform_settled'
                        AND re.writer_payout_id IS NULL)
-            -- (2) writer upvote earnings
-            OR EXISTS (SELECT 1 FROM vote_charges vc
-                        WHERE vc.recipient_id = a.id
-                          AND vc.state = 'platform_settled'
-                          AND vc.writer_payout_id IS NULL)
-            -- (3) writer swept-return: ROOT tribute swept shares return to the author
+            -- (2) writer swept-return: ROOT tribute swept shares return to the author
             OR EXISTS (SELECT 1 FROM tribute_accruals ta
                          JOIN tributes t ON t.id = ta.tribute_id
                         WHERE t.author_account_id = a.id
