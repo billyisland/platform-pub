@@ -41,6 +41,32 @@ describe('classifyRead', () => {
     })
   })
 
+  // F14: the free/chargeable split is modelled explicitly, not as a boolean.
+  describe('F14: allowanceConsumedPence (free/chargeable split)', () => {
+    it('card holder consumes no allowance', () => {
+      expect(classifyRead(true, 500, 10).allowanceConsumedPence).toBe(0)
+    })
+
+    it('fully-covered read consumes the whole amount', () => {
+      expect(classifyRead(false, 500, 10).allowanceConsumedPence).toBe(10)
+    })
+
+    it('partially-covered read consumes only the remaining allowance', () => {
+      // 5p left, 10p read → only 5p is free (the boolean bug flagged the full 10p).
+      const result = classifyRead(false, 5, 10)
+      expect(result.allowanceConsumedPence).toBe(5)
+      expect(result.onFreeAllowance).toBe(true)
+    })
+
+    it('read against an exhausted (0) allowance consumes nothing', () => {
+      expect(classifyRead(false, 0, 10).allowanceConsumedPence).toBe(0)
+    })
+
+    it('read against a negative allowance consumes nothing (no negative consumption)', () => {
+      expect(classifyRead(false, -50, 10).allowanceConsumedPence).toBe(0)
+    })
+  })
+
   describe('allowance exhaustion boundary', () => {
     it('triggers when amount exactly equals remaining allowance', () => {
       const result = classifyRead(false, 100, 100)

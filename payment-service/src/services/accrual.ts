@@ -18,6 +18,14 @@ import logger from "../lib/logger.js";
 interface ReadClassification {
   readState: "provisional" | "accrued";
   onFreeAllowance: boolean;
+  /**
+   * Audit F14 (2026-07-06): the pence of THIS read genuinely covered by the free
+   * allowance = max(0, min(remaining, amount)). The chargeable portion is the
+   * remainder (amount − allowanceConsumedPence) — recorded implicitly. Modelling
+   * the split explicitly (rather than a coarse boolean) lets a future settlement
+   * write-off compute against real numbers.
+   */
+  allowanceConsumedPence: number;
   allowanceJustExhausted: boolean;
 }
 
@@ -44,6 +52,16 @@ export function classifyRead(
   freeAllowanceRemainingPence: number,
   amountPence: number,
 ): ReadClassification {
+  // F14: the genuinely-free portion of this read. Card holders consume none (they
+  // pay); a card-less read consumes min(remaining, amount), floored at 0 — a read
+  // when the allowance is already exhausted (≤ 0) consumes nothing of it, so the
+  // whole read is chargeable. This replaces the boolean's "any remaining ⇒ the
+  // WHOLE read is on allowance" mis-classification (5p left, 10p read → only 5p
+  // is free, not 10p).
+  const allowanceConsumedPence = hasCard
+    ? 0
+    : Math.max(0, Math.min(freeAllowanceRemainingPence, amountPence));
+
   const allowanceJustExhausted =
     !hasCard &&
     freeAllowanceRemainingPence > 0 &&
@@ -51,7 +69,10 @@ export function classifyRead(
 
   return {
     readState: hasCard ? "accrued" : "provisional",
-    onFreeAllowance: !hasCard && freeAllowanceRemainingPence > 0,
+    // F14: true iff some allowance was ACTUALLY consumed by this read — the
+    // precise pence split lives in allowanceConsumedPence.
+    onFreeAllowance: allowanceConsumedPence > 0,
+    allowanceConsumedPence,
     allowanceJustExhausted,
   };
 }
@@ -133,10 +154,22 @@ class AccrualService {
         reader.free_allowance_remaining_pence,
         event.amountPence,
       );
-      const { readState, onFreeAllowance, allowanceJustExhausted } =
-        classification;
+      const {
+        readState,
+        onFreeAllowance,
+        allowanceConsumedPence,
+        allowanceJustExhausted,
+      } = classification;
 
       if (!hasCard) {
+        // F14 × F3: decrement by the FULL read amount, not the consumed portion.
+        // free_allowance_remaining_pence is the metering counter the F3 hard gate
+        // bounds (it refuses a read once remaining − amount < FREE_ALLOWANCE_FLOOR_
+        // PENCE), so it must reflect the true over-spend and be allowed to drift to
+        // the floor. Capping the decrement at the consumed portion (floor at 0)
+        // would leave the counter stuck at 0 under a negative floor and re-open the
+        // unmetered-read hole F3 closed. The genuinely-free vs chargeable split is
+        // captured precisely by allowance_consumed_pence below, not by the column.
         await client.query(
           `UPDATE accounts
            SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1,
@@ -150,8 +183,8 @@ class AccrualService {
         `INSERT INTO read_events (
            reader_id, article_id, writer_id, tab_id,
            amount_pence, state, reader_pubkey_hash, on_free_allowance,
-           publication_id
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           allowance_consumed_pence, publication_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *`,
         [
           event.readerId,
@@ -162,6 +195,7 @@ class AccrualService {
           readState,
           event.readerPubkeyHash,
           onFreeAllowance,
+          allowanceConsumedPence,
           event.publicationId ?? null,
         ],
       );

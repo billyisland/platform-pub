@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict rcxDSN9uFmcMlydz7bI1U3WYRWik6ODh0Sw56P6cfBtJQcOvIrSfcd9pufcdGqV
+\restrict FxnTtC7ksQWWp4So6egrKpi0KMK0bSoh8jXLwh35l0GVpMBQpiOYjxA7ouPjc7z
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -2310,7 +2310,8 @@ CREATE TABLE public.read_events (
     state_updated_at timestamp with time zone DEFAULT now() NOT NULL,
     via_subscription_id uuid,
     is_subscription_read boolean DEFAULT false NOT NULL,
-    publication_id uuid
+    publication_id uuid,
+    allowance_consumed_pence integer DEFAULT 0 NOT NULL
 );
 
 
@@ -7471,7 +7472,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict rcxDSN9uFmcMlydz7bI1U3WYRWik6ODh0Sw56P6cfBtJQcOvIrSfcd9pufcdGqV
+\unrestrict FxnTtC7ksQWWp4So6egrKpi0KMK0bSoh8jXLwh35l0GVpMBQpiOYjxA7ouPjc7z
 
 
 INSERT INTO public._migrations (filename) VALUES
@@ -7617,4 +7618,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('140_subscription_to_ledger.sql'),
     ('141_article_unlocks_provisional.sql'),
     ('142_payout_status_reversed.sql'),
-    ('143_tribute_payout_reversed_status.sql');
+    ('143_tribute_payout_reversed_status.sql'),
+    ('144_read_events_allowance_consumed.sql');
