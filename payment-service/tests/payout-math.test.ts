@@ -89,6 +89,26 @@ describe('computePublicationSplits', () => {
       })
     })
 
+    // F10: revenue_bps is a fixed share of the article's revenue — overlapping
+    // overrides on one article are clamped so their cumulative bps can't exceed
+    // 10000 (which would overdraw the article's net and drive the pool negative).
+    it('F10: clamps cumulative revenue_bps per article at 10000', () => {
+      const shares: ArticleShare[] = [
+        { id: 's1', articleId: 'art-1', accountId: 'acc-a', shareType: 'revenue_bps', shareValue: 7000, paidOut: false },
+        { id: 's2', articleId: 'art-1', accountId: 'acc-b', shareType: 'revenue_bps', shareValue: 7000, paidOut: false },
+      ]
+      const earnings = new Map([['art-1', 1000]])
+      const result = computePublicationSplits(10000, feeBps, shares, earnings, [])
+      const rev = result.splits.filter(s => s.shareType === 'article_revenue')
+      // acc-a: floor(1000 * 7000/10000) = 700; acc-b clamped to the remaining
+      // 3000 bps: floor(1000 * 3000/10000) = 300. Sum 1000 == the article net,
+      // never more.
+      expect(rev.find(s => s.accountId === 'acc-a')!.amountPence).toBe(700)
+      expect(rev.find(s => s.accountId === 'acc-b')!.amountPence).toBe(300)
+      const revTotal = rev.reduce((sum, s) => sum + s.amountPence, 0)
+      expect(revTotal).toBe(1000)
+    })
+
     it('skips articles with no earnings', () => {
       const shares: ArticleShare[] = [{
         id: 'share-1', articleId: 'art-1', accountId: 'acc-1',
@@ -146,6 +166,29 @@ describe('computePublicationSplits', () => {
     it('handles no standing members gracefully', () => {
       const result = computePublicationSplits(1000, feeBps, [], new Map(), [])
       expect(result.splits).toHaveLength(0)
+    })
+
+    // F10: fixed share of revenue — a member's bps is a share of the FIXED 10000
+    // base, not a normalized weight over the standing total. A partial standing
+    // set leaves the platform the unallocated remainder.
+    it('F10: a partial standing set leaves the platform a remainder (no renormalisation)', () => {
+      const members: StandingMember[] = [
+        { accountId: 'acc-a', revenueShareBps: 1000 }, // 10% — the ONLY member
+      ]
+      const result = computePublicationSplits(1000, feeBps, [], new Map(), members)
+      const standingSplits = result.splits.filter(s => s.shareType === 'standing')
+      // Pool = 920 → floor(920 * 1000 / 10000) = 92 (NOT the whole 920).
+      expect(standingSplits).toHaveLength(1)
+      expect(standingSplits[0].amountPence).toBe(92)
+    })
+
+    it('F10: a sole 1-bps member gets ~0, not 100% (the renormalisation bug is gone)', () => {
+      const members: StandingMember[] = [
+        { accountId: 'acc-a', revenueShareBps: 1 },
+      ]
+      const result = computePublicationSplits(1000, feeBps, [], new Map(), members)
+      // floor(920 * 1 / 10000) = 0 → no split emitted (payout <= 0 skipped).
+      expect(result.splits.filter(s => s.shareType === 'standing')).toHaveLength(0)
     })
   })
 

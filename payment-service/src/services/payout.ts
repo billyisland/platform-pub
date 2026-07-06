@@ -76,6 +76,11 @@ export function computePublicationSplits(
   const flatFeeShareIds: string[] = []
 
   // Step 1: Per-article overrides
+  // F10: revenue_bps is a FIXED share of the article's revenue. Clamp each
+  // article's cumulative bps at 10000 so overlapping overrides can't overdraw its
+  // net and drive the pool negative (defensive — the write path also rejects a
+  // Σ > 10000 override set). The platform keeps any unallocated bps.
+  const articleBpsUsed = new Map<string, number>()
   for (const share of articleShares) {
     if (share.shareType === 'flat_fee_pence' && !share.paidOut) {
       const fee = share.shareValue
@@ -89,24 +94,36 @@ export function computePublicationSplits(
         articleId: share.articleId,
       })
     } else if (share.shareType === 'revenue_bps') {
+      const used = articleBpsUsed.get(share.articleId) ?? 0
+      const bps = Math.min(share.shareValue, 10000 - used)
+      if (bps <= 0) continue
+      articleBpsUsed.set(share.articleId, used + bps)
       const articleNet = articleEarnings.get(share.articleId) || 0
-      const payout = Math.floor(articleNet * share.shareValue / 10000)
+      const payout = Math.floor(articleNet * bps / 10000)
       if (payout <= 0) continue
       remainingPool -= payout
       splits.push({
         accountId: share.accountId, amountPence: payout,
-        shareType: 'article_revenue', shareBps: share.shareValue,
+        shareType: 'article_revenue', shareBps: bps,
         articleId: share.articleId,
       })
     }
   }
 
-  // Step 2: Standing shares
-  const totalStandingBps = standingMembers.reduce((sum, m) => sum + m.revenueShareBps, 0)
+  // F10: floor the pool at 0 before standing distribution — overrides (or flat
+  // fees) must never drive standing shares or the platform's retained remainder
+  // negative.
+  if (remainingPool < 0) remainingPool = 0
 
-  if (totalStandingBps > 0 && remainingPool > 0) {
+  // Step 2: Standing shares — FIXED share of revenue (F10), NOT normalized weight.
+  // Each member receives bps/10000 of the remaining pool; the platform RETAINS
+  // any unallocated remainder (Σ bps < 10000) rather than renormalising it out to
+  // the members (the old `× bps / totalStandingBps` paid a sole 1-bps member 100%
+  // of the pool). The write path enforces Σ standing bps ≤ 10000, so this can
+  // never overdraw; this fixed-10000 base is the defensive floor for it.
+  if (remainingPool > 0) {
     for (const member of standingMembers) {
-      const payout = Math.floor(remainingPool * member.revenueShareBps / totalStandingBps)
+      const payout = Math.floor(remainingPool * member.revenueShareBps / 10000)
       if (payout <= 0) continue
       splits.push({
         accountId: member.accountId, amountPence: payout,

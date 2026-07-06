@@ -238,6 +238,27 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'Article not found in this publication' })
       }
 
+      // F10: revenue_bps is a FIXED share of the article's revenue — the sum of
+      // all revenue_bps overrides on one article cannot exceed 10,000 bps (100%).
+      // A single override is capped at 10,000; the total (this upsert + the other
+      // recipients' existing revenue_bps shares on this article) is checked too.
+      if (shareType === 'revenue_bps') {
+        if (shareValue > 10000) {
+          return reply.status(400).send({ error: 'A revenue share cannot exceed 10,000 bps (100%)' })
+        }
+        const { rows: [otherBps] } = await pool.query<{ sum: string }>(
+          `SELECT COALESCE(SUM(share_value), 0) AS sum
+             FROM publication_article_shares
+            WHERE article_id = $1 AND share_type = 'revenue_bps' AND account_id <> $2`,
+          [articleId, accountId]
+        )
+        if (parseInt(otherBps.sum, 10) + shareValue > 10000) {
+          return reply.status(400).send({
+            error: 'Total revenue shares for this article cannot exceed 10,000 bps (100%)',
+          })
+        }
+      }
+
       // Upsert the share
       await pool.query(
         `INSERT INTO publication_article_shares (publication_id, article_id, account_id, share_type, share_value)

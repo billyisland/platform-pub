@@ -209,6 +209,25 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'Cannot modify the Owner' })
       }
 
+      // F10: standing revenue_share_bps is a FIXED share of publication revenue —
+      // the sum across all members cannot exceed 10,000 bps (100%). This route
+      // previously bypassed the cap the PATCH /payroll route enforces; guard it
+      // here too so no member-edit path can create an over-100% standing set (the
+      // split fn would otherwise renormalise/overdraw the pool).
+      if (data.revenueShareBps !== undefined && data.revenueShareBps !== null) {
+        const { rows: [otherBps] } = await pool.query<{ sum: string }>(
+          `SELECT COALESCE(SUM(revenue_share_bps), 0) AS sum
+             FROM publication_members
+            WHERE publication_id = $1 AND removed_at IS NULL AND id <> $2`,
+          [id, memberId]
+        )
+        if (parseInt(otherBps.sum, 10) + data.revenueShareBps > 10000) {
+          return reply.status(400).send({
+            error: 'Total standing shares cannot exceed 10,000 bps (100%)',
+          })
+        }
+      }
+
       const setClauses: string[] = []
       const values: any[] = []
       let idx = 1
