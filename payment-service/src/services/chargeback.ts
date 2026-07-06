@@ -63,6 +63,17 @@ export interface ReversalRead {
   /** 'platform_settled' | 'writer_paid' */
   state: string
   writerId: string
+  /**
+   * F2/F5: true for a publication-article read. Publication reads earn NO
+   * personal writer_accrual (settlement.ts skips them) and are paid to the
+   * publication split recipients, not the author — so the author-keyed writer
+   * reversals below MUST NOT fire for them (that would mis-attribute the
+   * chargeback to the author). Until full F5 lands (reversing each split
+   * recipient's receipt), a publication read is charged back on the reader side
+   * only; the platform absorbs the un-reversed split — the safe direction (a
+   * real platform loss, never a mis-posted account balance).
+   */
+  isPublication?: boolean
 }
 
 export interface ReversalVote {
@@ -173,6 +184,11 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
   const chargeBackReadIds: string[] = []
   for (const r of reads) {
     chargeBackReadIds.push(r.id)
+    // F2/F5: a publication read earns no personal writer_accrual and is paid to
+    // split recipients, not the author — so skip BOTH author-keyed reversals
+    // below. It still flips to charged_back (pushed above); the split-recipient
+    // reversal is the deferred F5 work.
+    if (r.isPublication) continue
     // EARNED side: every settled read (platform_settled OR writer_paid) got a
     // writer_accrual of the full net at settlement — reverse it regardless of
     // payout state. cp = reader, mirroring the forward entry.

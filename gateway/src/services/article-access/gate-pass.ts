@@ -150,6 +150,7 @@ export async function performGatePass(
         readerPubkey,
         readerPubkeyHash,
         tabId,
+        publicationId: article.publication_id,
       }),
     });
 
@@ -178,7 +179,12 @@ export async function performGatePass(
 
     // Step 6: Persist unlock immediately so a retry after key-issuance failure
     // hits checkArticleAccess → 'already_unlocked' and skips re-charging.
-    await recordPurchaseUnlock(readerId, article.id);
+    // F3: a provisional (card-less) read's unlock is marked non-permanent.
+    await recordPurchaseUnlock(
+      readerId,
+      article.id,
+      paymentResult.state === "provisional",
+    );
 
     // Step 7: Issue content key
     const keyResult = await fetchContentKey(

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict an0ZvshWbjJ6onBsI5cV2D4hoo1wtxceahrIGtNyPSGcSW2nS4vCTQMnZZl4Kwf
+\restrict slwbhwl4uaQCakPjRRYo2doFyBwKmtcCseOVwROojY1lsIo5F0clOn3yChKTsJZ
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1280,6 +1280,7 @@ CREATE TABLE public.article_unlocks (
     unlocked_via text NOT NULL,
     subscription_id uuid,
     unlocked_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_provisional boolean DEFAULT false NOT NULL,
     CONSTRAINT article_unlocks_unlocked_via_check CHECK ((unlocked_via = ANY (ARRAY['purchase'::text, 'subscription'::text, 'own_content'::text, 'free_allowance'::text, 'author_grant'::text, 'pledge'::text, 'invitation'::text])))
 );
 
@@ -1900,7 +1901,7 @@ CREATE VIEW public.ledger_reader_balance AS
  SELECT account_id,
     ((- sum(amount_pence)))::bigint AS balance_pence
    FROM public.ledger_entries
-  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text, 'subscription_credit'::text, 'opening_balance'::text, 'dispute_stake'::text, 'dispute_stake_refund'::text, 'tab_settlement_reversal'::text]))
+  WHERE (trigger_type = ANY (ARRAY['read_accrual'::text, 'vote_charge'::text, 'pledge_fulfil'::text, 'tab_settlement'::text, 'subscription_credit'::text, 'subscription_charge'::text, 'opening_balance'::text, 'dispute_stake'::text, 'dispute_stake_refund'::text, 'tab_settlement_reversal'::text]))
   GROUP BY account_id;
 
 
@@ -1912,7 +1913,7 @@ CREATE VIEW public.ledger_writer_earned AS
  SELECT account_id,
     (sum(amount_pence))::bigint AS earned_pence
    FROM public.ledger_entries
-  WHERE (trigger_type = ANY (ARRAY['writer_accrual'::text, 'writer_accrual_reversal'::text, 'tribute_carve'::text, 'tribute_carve_reversal'::text]))
+  WHERE (trigger_type = ANY (ARRAY['writer_accrual'::text, 'writer_accrual_reversal'::text, 'tribute_carve'::text, 'tribute_carve_reversal'::text, 'subscription_earning'::text]))
   GROUP BY account_id;
 
 
@@ -2307,7 +2308,8 @@ CREATE TABLE public.read_events (
     read_at timestamp with time zone DEFAULT now() NOT NULL,
     state_updated_at timestamp with time zone DEFAULT now() NOT NULL,
     via_subscription_id uuid,
-    is_subscription_read boolean DEFAULT false NOT NULL
+    is_subscription_read boolean DEFAULT false NOT NULL,
+    publication_id uuid
 );
 
 
@@ -2421,6 +2423,7 @@ CREATE TABLE public.subscription_events (
     description text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     publication_id uuid,
+    writer_payout_id uuid,
     CONSTRAINT subscription_events_event_type_check CHECK ((event_type = ANY (ARRAY['subscription_charge'::text, 'subscription_earning'::text, 'subscription_read'::text, 'expiry_warning_sent'::text]))),
     CONSTRAINT subscription_events_target_check CHECK (((writer_id IS NOT NULL) OR (publication_id IS NOT NULL)))
 );
@@ -5263,6 +5266,13 @@ CREATE INDEX idx_sub_offers_writer ON public.subscription_offers USING btree (wr
 
 
 --
+-- Name: idx_subscription_events_earning_unpaid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_subscription_events_earning_unpaid ON public.subscription_events USING btree (writer_id) WHERE ((event_type = 'subscription_earning'::text) AND (writer_id IS NOT NULL) AND (publication_id IS NULL) AND (writer_payout_id IS NULL));
+
+
+--
 -- Name: idx_subscription_events_publication; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6961,6 +6971,14 @@ ALTER TABLE ONLY public.subscription_events
 
 
 --
+-- Name: subscription_events subscription_events_writer_payout_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_writer_payout_id_fkey FOREIGN KEY (writer_payout_id) REFERENCES public.writer_payouts(id);
+
+
+--
 -- Name: subscription_nudge_log subscription_nudge_log_publication_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7452,7 +7470,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict an0ZvshWbjJ6onBsI5cV2D4hoo1wtxceahrIGtNyPSGcSW2nS4vCTQMnZZl4Kwf
+\unrestrict slwbhwl4uaQCakPjRRYo2doFyBwKmtcCseOVwROojY1lsIo5F0clOn3yChKTsJZ
+
 
 INSERT INTO public._migrations (filename) VALUES
     ('001_add_email_and_magic_links.sql'),
@@ -7592,4 +7611,7 @@ INSERT INTO public._migrations (filename) VALUES
     ('135_settlement_decline_handling.sql'),
     ('136_ledger_writer_earned.sql'),
     ('137_external_source_handle.sql'),
-    ('138_payout_predicate_indexes.sql');
+    ('138_payout_predicate_indexes.sql'),
+    ('139_read_events_publication_id.sql'),
+    ('140_subscription_to_ledger.sql'),
+    ('141_article_unlocks_provisional.sql');

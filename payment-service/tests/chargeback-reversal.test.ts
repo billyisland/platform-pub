@@ -272,4 +272,38 @@ describe('computeChargebackReversal — earned side', () => {
     expect(earnedSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(1000, FEE))
     expect(plan.ledgerEntries.filter((e) => e.trigger === 'tribute_carve_reversal')).toHaveLength(0)
   })
+
+  // F2/F5 safety gate: a publication read earns no personal writer_accrual and
+  // is paid to split recipients, not the author — so it must be charged back on
+  // the reader side only, with NO author-keyed writer reversal (else the
+  // chargeback mis-attributes to the author). Full split-recipient reversal is
+  // deferred F5; the platform absorbs the un-reversed split for now.
+  it('publication read: charged back but no author-side reversal (F2/F5 gate)', () => {
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W', isPublication: true }],
+      votes: [], accruals: [], platformFeeBps: FEE,
+    })
+    // The read flips to charged_back...
+    expect(plan.chargeBackReadIds).toEqual(['R'])
+    // ...the reader's debt is restored...
+    expect(plan.tabRestorePence).toBe(1000)
+    expect(plan.ledgerEntries.filter((e) => e.trigger === 'tab_settlement_reversal')).toHaveLength(1)
+    // ...but NO author-keyed writer/earned reversal fires.
+    expect(writerSideSum(plan.ledgerEntries)).toBe(0)
+    expect(earnedSideSum(plan.ledgerEntries)).toBe(0)
+    expect(plan.ledgerEntries.filter((e) => e.trigger === 'writer_payout_reversal')).toHaveLength(0)
+    expect(plan.ledgerEntries.filter((e) => e.trigger === 'writer_accrual_reversal')).toHaveLength(0)
+  })
+
+  // Control: the SAME read as an individual-writer read DOES reverse to the author.
+  it('individual read: reverses to the author (control for the publication gate)', () => {
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
+      votes: [], accruals: [], platformFeeBps: FEE,
+    })
+    expect(writerSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(1000, FEE))
+    expect(earnedSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(1000, FEE))
+  })
 })

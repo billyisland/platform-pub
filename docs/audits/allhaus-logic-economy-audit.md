@@ -128,6 +128,21 @@ Fix 1 and 2 first (they are revenue-existential and each is a scoped SQL/flow ch
 
 ---
 
+# Implementation status (2026-07-06)
+
+Shipped (migrations 139–141, code + tests + schema.sql regenerated, all checks green):
+
+- **F1** — subscriptions wired into the tab + ledger. `logSubscriptionCharge` now debits `reading_tabs.balance_pence` and posts `subscription_charge` (−price) / `subscription_earning` (+net) ledger entries (migration 140 adds both trigger types to the reader-balance / writer-earned views + `subscription_events.writer_payout_id`); the 5 dead `free_allowance` decrements are removed; writer subscription earnings fold into the payout base (eligibility + reserve claim + rollback). F11 rounding folded in (floor, not round). Publication-subscription *distribution* through the pool is the one deferred sub-piece (collection works; the earning posts no ledger/payout).
+- **F2** — publication reads isolated from the writer cycle via a denormalised `read_events.publication_id` (migration 139): excluded from eligibility/recompute/claim, no personal `writer_accrual`, dropped from the earnings displays.
+- **F3 + F7** — hard-gate floor `FREE_ALLOWANCE_FLOOR_PENCE` in `recordGatePass` (402 on exhaustion); provisional unlocks marked non-permanent (migration 141, cleared on card-connect); per-(reader,article) advisory lock + one-charge-per-pair idempotency check.
+- **F6** — `convertProvisionalReads` and `reserveWriterPayout` now claim via `UPDATE … RETURNING` and derive amounts from the claimed set.
+- **F8 + F12** — `handleFailedPayment` sets the back-off flag + a `status='pending'` guard; `reverseSettlement` sets the same flag to gate post-chargeback re-collection.
+- **F5 (partial)** — fixing F2 *activated* the publication-chargeback mis-attribution F5 warns of, so a safety gate was added: publication reads are charged back on the reader side only (no author-keyed writer/earned reversal), platform absorbs the un-reversed split. Full split-recipient reversal remains deferred F5.
+
+Deferred (later session): **F4** (dead `transfer.paid/failed` branches + `transfer.reversed`), **F5** (full publication-aware chargeback), **F9** (remove paid voting), **F10** (publication split caps), **F14** (allowance-split modelling), **Wave 5** (periodic settlement resume, calendar arithmetic, the `read_at<=settled_at` comment).
+
+---
+
 # Fix implementation plan (2026-07-05)
 
 Ordered in delivery waves. Each item lists the change, the files, migration/ledger implications, and how to verify. The product/architecture decisions that once blocked coding (F3, F9, F1 writer leg, F10, F12, F4) are all **settled** — see *Decisions locked* at the top; Wave 0 records them for the plan. Finding 13 is retracted (no work).

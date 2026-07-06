@@ -38,11 +38,14 @@ export async function recordSubscriptionRead(
 export async function recordPurchaseUnlock(
   readerId: string,
   articleId: string,
+  isProvisional = false,
 ): Promise<void> {
+  // F3: a provisional (card-less) read's unlock is marked non-permanent; it is
+  // cleared to permanent when the reader connects a card (convertProvisionalReads).
   await pool.query(
-    `INSERT INTO article_unlocks (reader_id, article_id, unlocked_via)
-     VALUES ($1, $2, 'purchase')
+    `INSERT INTO article_unlocks (reader_id, article_id, unlocked_via, is_provisional)
+     VALUES ($1, $2, 'purchase', $3)
      ON CONFLICT (reader_id, article_id) DO NOTHING`,
-    [readerId, articleId]
+    [readerId, articleId, isProvisional]
   )
 }

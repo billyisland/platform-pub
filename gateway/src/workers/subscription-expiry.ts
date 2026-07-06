@@ -139,16 +139,10 @@ export async function expireAndRenewSubscriptions(): Promise<number> {
           return;
         }
 
-        // Period rolled exactly once. Now charge the reader. The reading tab
-        // (free_allowance_remaining_pence) accrues negative — it is settled via
-        // Stripe later. Match the subscribe paths, which deduct without a floor;
-        // an earlier GREATEST(..,0) here silently undercharged the reader while
-        // still crediting the writer in full.
-        await client.query(
-          `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
-          [renewalPrice, sub.reader_id],
-        );
-
+        // Period rolled exactly once. Now charge the reader. F1: the charge
+        // debits the reading tab (inside logSubscriptionCharge) and is collected
+        // by the normal settlement machinery — the free_allowance column (which
+        // was never collected) is no longer touched.
         await logSubscriptionCharge(
           client,
           sub.id,

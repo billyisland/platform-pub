@@ -77,6 +77,8 @@ export type LedgerTriggerType =
   | 'vote_charge'         // vote_charges
   | 'pledge_fulfil'       // drive pledge fulfilment (pledges → read_events)
   | 'subscription_credit' // spend→subscription conversion credits the reader's tab down
+  | 'subscription_charge'  // F1: a subscription charge debits the reader's tab (−price, cp = writer/NULL). Reader-tab entry: keeps −SUM == reading_tabs.balance_pence, so the existing settlement machinery collects it (replaces the dead free_allowance decrement). Counted by ledger_reader_balance.
+  | 'subscription_earning' // F1: the writer's post-fee subscription income (+net, account = writer, cp = reader). The earned-side mirror of subscription_charge for WRITER subscriptions; folded into the per-read payout base (claimed once via subscription_events.writer_payout_id). Counted by ledger_writer_earned. Publication subscriptions post NO earning entry here (their income flows through the publication pool — follow-on).
   | 'opening_balance'     // Phase-3 one-time per-account opening tab balance (backfill)
   | 'dispute_stake'       // Upstream Edges: third-party dispute stake (−amount, debits the disputant's tab)
   | 'dispute_stake_refund'// Upstream Edges: dispute stake returned on withdrawal (+amount)

@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { pool } from '@platform-pub/shared/db/client.js'
-import { accrualService } from '../services/accrual.js'
+import { accrualService, AllowanceExhaustedError } from '../services/accrual.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
 import logger from '../lib/logger.js'
@@ -47,6 +47,7 @@ const GatePassSchema = z.object({
   readerPubkey: z.string().regex(/^[0-9a-f]{64}$/),
   readerPubkeyHash: z.string().regex(/^[0-9a-f]{64}$/),
   tabId: z.string().uuid(),
+  publicationId: z.string().uuid().nullable().optional(),
 })
 
 const CardConnectedSchema = z.object({
@@ -81,6 +82,11 @@ export async function paymentRoutes(app: FastifyInstance) {
 
       return reply.status(201).send({ readEventId: readEvent.id, state: readEvent.state, allowanceJustExhausted })
     } catch (err: any) {
+      // F3: the free-allowance floor was reached — refuse the gate pass (402),
+      // not a 500. The gateway maps 402 → payment_required (prompt for a card).
+      if (err instanceof AllowanceExhaustedError) {
+        return reply.status(402).send({ error: 'free_allowance_exhausted' })
+      }
       logger.error({ err }, 'Gate pass failed')
       return reply.status(500).send({ error: 'Internal error' })
     }

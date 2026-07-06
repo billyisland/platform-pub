@@ -551,9 +551,16 @@ class SettlementService {
         writer_id: string;
         net_pence: string;
       }>(
+        // F2: publication reads carry the human author's writer_id but their
+        // revenue belongs to the publication pool, not the author personally.
+        // Skip them here so no personal writer_accrual is posted (and the earned
+        // views / dashboard stop claiming pool money as personal earnings). The
+        // reads still advanced to platform_settled above; the publication payout
+        // cycle distributes them.
         `SELECT id, writer_id, ${readNetSql("amount_pence", "$2")} AS net_pence
          FROM read_events
-         WHERE tab_settlement_id = $1 AND state = 'platform_settled'`,
+         WHERE tab_settlement_id = $1 AND state = 'platform_settled'
+           AND publication_id IS NULL`,
         [settlement.id, config.platformFeeBps],
       );
       for (const r of settledReads) {
@@ -661,6 +668,20 @@ class SettlementService {
   //
   // Since tab balance is never modified at initiation, failure handling is
   // simple: mark the settlement as failed. Reads remain accrued.
+  //
+  // Audit F8 (2026-07-05): two hardenings.
+  //   (a) Status guard. The flip is now `WHERE id = $1 AND status = 'pending'`
+  //       (mirrors completeSettlement/confirmSettlement). A late or duplicate
+  //       payment_intent.payment_failed arriving AFTER the settlement already
+  //       reached 'completed' would otherwise flip completed → failed — state
+  //       corruption. Only a still-pending settlement may be marked failed.
+  //   (b) Back-off flag. On a genuine flip, set accounts.card_action_required_at
+  //       (mirror of the synchronous terminal-decline path in completeSettlement)
+  //       so checkAndSettle — which runs on EVERY gate pass — stops re-attempting
+  //       against a known-bad card until the reader re-attaches one
+  //       (connectPaymentMethod clears the flag). Without it, an async decline
+  //       triggers a fresh settlement attempt per read: decline fees, issuer risk
+  //       flags, pending-settlement churn.
   // ---------------------------------------------------------------------------
 
   async handleFailedPayment(
@@ -673,8 +694,9 @@ class SettlementService {
         reader_id: string;
         tab_id: string;
         amount_pence: number;
+        status: string;
       }>(
-        `SELECT id, reader_id, tab_id, amount_pence
+        `SELECT id, reader_id, tab_id, amount_pence, status
          FROM tab_settlements
          WHERE stripe_payment_intent_id = $1`,
         [paymentIntentId],
@@ -684,14 +706,30 @@ class SettlementService {
 
       const settlement = settlementRow.rows[0];
 
-      await client.query(
-        `UPDATE tab_settlements SET status = 'failed' WHERE id = $1`,
+      const flipped = await client.query(
+        `UPDATE tab_settlements SET status = 'failed'
+         WHERE id = $1 AND status = 'pending'`,
         [settlement.id],
+      );
+      if (flipped.rowCount === 0) {
+        logger.warn(
+          { settlementId: settlement.id, paymentIntentId, status: settlement.status },
+          "handleFailedPayment: settlement not 'pending' — ignoring (late/duplicate webhook)",
+        );
+        return;
+      }
+
+      // Back-off: settle no more against this card until it is re-attached.
+      await client.query(
+        `UPDATE accounts
+         SET card_action_required_at = now(), updated_at = now()
+         WHERE id = $1`,
+        [settlement.reader_id],
       );
 
       logger.warn(
         { settlementId: settlement.id, paymentIntentId, failureMessage },
-        "Payment failed — settlement marked failed, tab balance unchanged",
+        "Payment failed — settlement marked failed, card-action flagged (back-off)",
       );
     });
   }
@@ -781,8 +819,9 @@ class SettlementService {
         amount_pence: number;
         state: string;
         writer_id: string;
+        publication_id: string | null;
       }>(
-        `SELECT id, amount_pence, state, writer_id
+        `SELECT id, amount_pence, state, writer_id, publication_id
          FROM read_events
          WHERE tab_settlement_id = $1
            AND state IN ('platform_settled', 'writer_paid')`,
@@ -838,6 +877,7 @@ class SettlementService {
         amountPence: r.amount_pence,
         state: r.state,
         writerId: r.writer_id,
+        isPublication: r.publication_id !== null,
       }));
       const planVotes: ReversalVote[] = votes.map((v) => ({
         id: v.id,
@@ -877,6 +917,22 @@ class SettlementService {
          SET balance_pence = balance_pence + $1, updated_at = now()
          WHERE id = $2`,
         [plan.tabRestorePence, settlement.tab_id],
+      );
+
+      // Audit F12 (2026-07-05): gate re-collection after a chargeback. The debt
+      // restore above is ledger-correct, but the next threshold crossing would
+      // otherwise auto-recharge the same card for the exact amount the cardholder
+      // just disputed — which card networks punish (repeat disputes, monitoring
+      // programmes). Set the settlement back-off flag (reused from the decline
+      // path; cleared when the reader re-attaches a card) so collection is gated
+      // on an explicit card re-attach rather than fired automatically. The debt
+      // is preserved; only automatic collection is held. Re-consent-before-resume
+      // is deferred — this is the hold-flag posture chosen 2026-07-05.
+      await client.query(
+        `UPDATE accounts
+         SET card_action_required_at = now(), updated_at = now()
+         WHERE id = $1`,
+        [settlement.reader_id],
       );
 
       // All reversal ledger entries (reader first, then writer/tribute), each

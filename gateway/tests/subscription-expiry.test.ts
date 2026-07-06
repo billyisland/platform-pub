@@ -99,16 +99,18 @@ describe('expireAndRenewSubscriptions — renewal', () => {
     txCalls = []
   })
 
-  it('deducts the renewal price from the tab without flooring at zero', async () => {
+  it('charges the full renewal price via logSubscriptionCharge (F1: tab, not free_allowance)', async () => {
     routePool([writerSub()])
     await expireAndRenewSubscriptions()
 
-    const allowance = txCalls.find((c) => /free_allowance_remaining_pence/.test(c.sql))
-    expect(allowance).toBeDefined()
-    // The tab accrues negative — no GREATEST floor (the bug we fixed).
-    expect(allowance!.sql).not.toMatch(/GREATEST/i)
-    expect(allowance!.params[0]).toBe(500)
+    // F1: the worker no longer decrements the dead free_allowance column — the
+    // charge is now a reading-tab debit inside logSubscriptionCharge (mocked
+    // here), so the worker issues no free_allowance UPDATE at all.
+    expect(txCalls.find((c) => /free_allowance_remaining_pence/.test(c.sql))).toBeUndefined()
     expect(logSubscriptionCharge).toHaveBeenCalledOnce()
+    // The full renewal price (500) is passed as the charge amount (arg index 4),
+    // unfloored (the D-fix: no GREATEST clamp).
+    expect(logSubscriptionCharge.mock.calls[0][4]).toBe(500)
     // writer subscription: writer_id arg set, publication_id arg null
     expect(logSubscriptionCharge.mock.calls[0][3]).toBe('writer-1')
     expect(logSubscriptionCharge.mock.calls[0][7]).toBeNull()

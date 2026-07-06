@@ -76,10 +76,8 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
             [now, periodEnd, pricePence, sub.id, period],
           );
 
-          await client.query(
-            `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
-            [pricePence, readerId],
-          );
+          // F1: charge the reading tab (inside logSubscriptionCharge), not the
+          // dead free_allowance column — so the charge is actually collected.
           await logSubscriptionCharge(
             client,
             sub.id,
@@ -138,10 +136,8 @@ export async function subscriptionPublicationRoutes(app: FastifyInstance) {
         );
         const subscriptionId = rows[0].id;
 
-        await client.query(
-          `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
-          [pricePence, readerId],
-        );
+        // F1: charge the reading tab (inside logSubscriptionCharge), not the
+        // dead free_allowance column — so the charge is actually collected.
         await logSubscriptionCharge(
           client,
           subscriptionId,

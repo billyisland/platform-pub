@@ -1,10 +1,33 @@
 import { loadConfig } from '@platform-pub/shared/db/client.js'
+import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 
 // =============================================================================
-// Helper — log subscription charge and earning events
+// Helper — log subscription charge and earning events (audit F1, 2026-07-05)
 //
 // The hourly renewal/expiry worker lives in workers/subscription-expiry.ts
 // and imports logSubscriptionCharge from this file (via the directory index).
+//
+// BEFORE F1 this only wrote two subscription_events rows and the CALLER
+// decremented accounts.free_allowance_remaining_pence. That column is NOT the
+// reading tab: no code path ever converted a negative allowance into a
+// settleable balance, so subscription revenue was never collected and the
+// writer's credit never entered a payout (audit finding 1, a P0). F1 makes the
+// charge collectable by the SAME settlement machinery reads use:
+//
+//   • Reader leg — debit reading_tabs.balance_pence by the full price (a debt,
+//     exactly like a read accrual) and post the mirror subscription_charge
+//     ledger entry (−price), so −SUM(reader entries) == reading_tabs.balance_pence
+//     holds and settlement.ts collects it. The free_allowance decrement is
+//     removed from all call sites.
+//   • Writer leg — post subscription_earning (+net) for WRITER subscriptions and
+//     fold it into the per-read payout base (payout.ts claims it once via
+//     subscription_events.writer_payout_id). Publication subscriptions collect
+//     (reader leg) but post no earning ledger entry here — publication income
+//     flows through the publication pool, a follow-on.
+//
+// Rounding (audit F11): the platform fee now FLOORs (Math.floor), matching the
+// per-row-then-floor rule the rest of the money paths follow — not the prior
+// Math.round, a second definition of "net".
 // =============================================================================
 
 // A subscription targets a writer (writerId) XOR a publication (publicationId);
@@ -21,25 +44,70 @@ export async function logSubscriptionCharge(
   publicationId: string | null = null,
 ) {
   const { platformFeeBps } = await loadConfig()
-  const platformFeePence = Math.round((pricePence * platformFeeBps) / 10000)
+  const platformFeePence = Math.floor((pricePence * platformFeeBps) / 10000)
   const writerEarningPence = pricePence - platformFeePence
   const feePct = (platformFeeBps / 100).toFixed(platformFeeBps % 100 === 0 ? 0 : 2)
 
-  // Debit event for reader
+  // --- Reader leg: collect via the reading tab, not the free-allowance column. ---
+  // Ensure the reader has a tab (they may not yet) and lock it, then debit the
+  // full price as a tab movement. The subscription_charge ledger entry mirrors it.
+  const tabRow = await client.query(
+    `INSERT INTO reading_tabs (reader_id)
+     VALUES ($1)
+     ON CONFLICT ON CONSTRAINT one_tab_per_reader
+     DO UPDATE SET updated_at = now()
+     RETURNING id`,
+    [readerId],
+  )
+  const tabId = tabRow.rows[0].id
+  await client.query(`SELECT id FROM reading_tabs WHERE id = $1 FOR UPDATE`, [tabId])
   await client.query(
+    `UPDATE reading_tabs
+     SET balance_pence = balance_pence + $1, last_read_at = now(), updated_at = now()
+     WHERE id = $2`,
+    [pricePence, tabId],
+  )
+
+  // Debit event for reader
+  const { rows: [chargeEvent] } = await client.query(
     `INSERT INTO subscription_events
        (subscription_id, event_type, reader_id, writer_id, publication_id, amount_pence, period_start, period_end, description)
-     VALUES ($1, 'subscription_charge', $2, $3, $4, $5, $6, $7, $8)`,
+     VALUES ($1, 'subscription_charge', $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id`,
     [subscriptionId, readerId, writerId, publicationId, pricePence, periodStart, periodEnd,
      `Subscription charge`]
   )
+  await recordLedger(client, {
+    accountId: readerId,
+    counterpartyId: writerId,
+    amountPence: -pricePence,
+    triggerType: 'subscription_charge',
+    refTable: 'subscription_events',
+    refId: chargeEvent.id,
+  })
 
   // Credit event for writer/publication (after platform fee)
-  await client.query(
+  const { rows: [earningEvent] } = await client.query(
     `INSERT INTO subscription_events
        (subscription_id, event_type, reader_id, writer_id, publication_id, amount_pence, period_start, period_end, description)
-     VALUES ($1, 'subscription_earning', $2, $3, $4, $5, $6, $7, $8)`,
+     VALUES ($1, 'subscription_earning', $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id`,
     [subscriptionId, readerId, writerId, publicationId, writerEarningPence, periodStart, periodEnd,
      `Subscriber income (after ${feePct}% fee)`]
   )
+
+  // Writer leg: only WRITER subscriptions post an earned ledger entry + fold into
+  // the per-read payout base. The +net credits the writer's earned total (mirror
+  // of the reader's subscription_charge debit); payout.ts pays it via the base
+  // UNION, claimed once by subscription_events.writer_payout_id.
+  if (writerId) {
+    await recordLedger(client, {
+      accountId: writerId,
+      counterpartyId: readerId,
+      amountPence: writerEarningPence,
+      triggerType: 'subscription_earning',
+      refTable: 'subscription_events',
+      refId: earningEvent.id,
+    })
+  }
 }

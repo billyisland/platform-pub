@@ -21,6 +21,24 @@ interface ReadClassification {
   allowanceJustExhausted: boolean;
 }
 
+// Audit F3 (2026-07-05): the hard-gate floor. A card-less read is REFUSED once
+// `free_allowance_remaining_pence − amount < FREE_ALLOWANCE_FLOOR_PENCE` (default
+// 0 = refuse the moment the read would push the allowance negative). This closes
+// the unmetered-giveaway hole where a burner account unlocked the entire paid
+// catalogue for free, the only consequence an ever-more-negative column.
+const FREE_ALLOWANCE_FLOOR_PENCE = parseInt(
+  process.env.FREE_ALLOWANCE_FLOOR_PENCE ?? "0",
+  10,
+);
+
+/** Thrown by recordGatePass when a card-less read is refused at the F3 floor. */
+export class AllowanceExhaustedError extends Error {
+  constructor() {
+    super("free_allowance_exhausted");
+    this.name = "AllowanceExhaustedError";
+  }
+}
+
 export function classifyRead(
   hasCard: boolean,
   freeAllowanceRemainingPence: number,
@@ -60,6 +78,30 @@ class AccrualService {
     event: GatePassEvent,
   ): Promise<{ readEvent: ReadEvent; allowanceJustExhausted: boolean }> {
     const result = await withTransaction(async (client) => {
+      // Audit F7 (2026-07-05): serialise concurrent first-reads of this
+      // (reader, article) so exactly one charges — the other blocks here and
+      // sees the winner's committed read below. Released at txn end.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))`,
+        [event.readerId, event.articleId],
+      );
+
+      // Audit F7: idempotency. The access model is unlock-once, so there is at
+      // most one charged read per (reader, article) ever. A pre-existing read
+      // means a prior gate pass already charged — return it rather than charging
+      // again. Covers both the serialised concurrent race above and the retry
+      // window where the payment committed but the gateway's permanent-unlock
+      // row (the usual short-circuit) had not yet been written.
+      const existing = await client.query<ReadEvent>(
+        `SELECT * FROM read_events
+         WHERE reader_id = $1 AND article_id = $2
+         ORDER BY read_at ASC LIMIT 1`,
+        [event.readerId, event.articleId],
+      );
+      if (existing.rowCount! > 0) {
+        return { readEvent: existing.rows[0], allowanceJustExhausted: false };
+      }
+
       const readerRow = await client.query<{
         stripe_customer_id: string | null;
         free_allowance_remaining_pence: number;
@@ -75,6 +117,16 @@ class AccrualService {
 
       const reader = readerRow.rows[0];
       const hasCard = reader.stripe_customer_id !== null;
+
+      // Audit F3: hard-gate the card-less path at the allowance floor. Card
+      // holders always accrue (they pay), so the floor only bounds free reading.
+      if (
+        !hasCard &&
+        reader.free_allowance_remaining_pence - event.amountPence <
+          FREE_ALLOWANCE_FLOOR_PENCE
+      ) {
+        throw new AllowanceExhaustedError();
+      }
 
       const classification = classifyRead(
         hasCard,
@@ -97,8 +149,9 @@ class AccrualService {
       const readEventRow = await client.query<ReadEvent>(
         `INSERT INTO read_events (
            reader_id, article_id, writer_id, tab_id,
-           amount_pence, state, reader_pubkey_hash, on_free_allowance
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           amount_pence, state, reader_pubkey_hash, on_free_allowance,
+           publication_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *`,
         [
           event.readerId,
@@ -109,6 +162,7 @@ class AccrualService {
           readState,
           event.readerPubkeyHash,
           onFreeAllowance,
+          event.publicationId ?? null,
         ],
       );
 
@@ -176,21 +230,6 @@ class AccrualService {
 
   async convertProvisionalReads(readerId: string): Promise<number> {
     return withTransaction(async (client) => {
-      // Get all provisional reads for this reader
-      const { rows: provisionalReads } = await client.query<{
-        id: string;
-        amount_pence: number;
-        writer_id: string;
-      }>(
-        `SELECT id, amount_pence, writer_id
-         FROM read_events
-         WHERE reader_id = $1 AND state = 'provisional'
-         FOR UPDATE`,
-        [readerId],
-      );
-
-      if (provisionalReads.length === 0) return 0;
-
       // FIX #12: Ensure the reader has a tab — they may not have had one
       // during the provisional period. Upsert to handle the race safely.
       const tabRow = await client.query<{ id: string }>(
@@ -203,19 +242,34 @@ class AccrualService {
       );
       const tabId = tabRow.rows[0].id;
 
-      const totalPence = provisionalReads.reduce(
-        (sum, r) => sum + r.amount_pence,
-        0,
-      );
-
-      // Update all provisional reads to accrued, assigning the tab
-      await client.query(
+      // Audit F6 (2026-07-05): claim-and-read atomically via RETURNING instead of
+      // SELECT-FOR-UPDATE then a separate blanket UPDATE. The old form summed the
+      // selected rows, then ran a blanket `UPDATE … WHERE state='provisional'`
+      // whose predicate could match a fresh provisional read a concurrent
+      // recordGatePass committed in between — recordGatePass locks the ACCOUNT
+      // row, not the individual read rows, so it does not block this converter.
+      // That interloping row would flip to 'accrued' but be absent from both
+      // totalPence (tab under-incremented) and the ledger loop (missing debit),
+      // silently breaking the Phase-3 −SUM == balance invariant. Deriving the
+      // total AND the ledger loop from exactly the flipped rows closes it — the
+      // same RETURNING shape the vote-charges branch already used.
+      const { rows: provisionalReads } = await client.query<{
+        id: string;
+        amount_pence: number;
+        writer_id: string;
+      }>(
         `UPDATE read_events
          SET state = 'accrued',
              tab_id = $1,
              state_updated_at = now()
-         WHERE reader_id = $2 AND state = 'provisional'`,
+         WHERE reader_id = $2 AND state = 'provisional'
+         RETURNING id, amount_pence, writer_id`,
         [tabId, readerId],
+      );
+
+      const totalPence = provisionalReads.reduce(
+        (sum, r) => sum + r.amount_pence,
+        0,
       );
 
       // Also convert provisional vote_charges to accrued
@@ -235,15 +289,21 @@ class AccrualService {
         0,
       );
 
+      if (provisionalReads.length === 0 && provisionalVoteCharges.length === 0) {
+        return 0;
+      }
+
       // Add total to tab balance (reads + vote charges)
-      await client.query(
-        `UPDATE reading_tabs
-         SET balance_pence = balance_pence + $1,
-             last_read_at  = now(),
-             updated_at    = now()
-         WHERE id = $2`,
-        [totalPence + voteChargeTotal, tabId],
-      );
+      if (totalPence + voteChargeTotal > 0) {
+        await client.query(
+          `UPDATE reading_tabs
+           SET balance_pence = balance_pence + $1,
+               last_read_at  = now(),
+               updated_at    = now()
+           WHERE id = $2`,
+          [totalPence + voteChargeTotal, tabId],
+        );
+      }
 
       // Ledger: these provisional reads/votes never moved the tab when created
       // (no card ⇒ no balance). Conversion is the first tab movement, so the
@@ -269,6 +329,15 @@ class AccrualService {
           refId: vc.id,
         });
       }
+
+      // F3: the reader has committed to paying (connected a card), so their
+      // provisional unlocks become permanent.
+      await client.query(
+        `UPDATE article_unlocks
+         SET is_provisional = FALSE
+         WHERE reader_id = $1 AND is_provisional = TRUE`,
+        [readerId],
+      );
 
       logger.info(
         { readerId, convertedCount: provisionalReads.length, totalPence },

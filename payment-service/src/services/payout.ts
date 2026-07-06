@@ -179,7 +179,8 @@ class PayoutService {
          GROUP BY ta.read_event_id
        ) acc ON acc.read_event_id = r.id
        WHERE r.writer_id = $1
-         AND r.state IN ('platform_settled', 'writer_paid')`,
+         AND r.state IN ('platform_settled', 'writer_paid')
+         AND r.publication_id IS NULL`,
       [writerId, config.platformFeeBps]
     )
 
@@ -281,6 +282,7 @@ class PayoutService {
        ) acc ON acc.read_event_id = r.id
        WHERE r.writer_id = $1
          AND r.state IN ('platform_settled', 'writer_paid')
+         AND r.publication_id IS NULL
        GROUP BY a.id, a.title, a.nostr_d_tag, a.published_at
        ORDER BY net_earnings_pence DESC`,
       [writerId, config.platformFeeBps]
@@ -348,6 +350,12 @@ class PayoutService {
       net_pence: string
       stripe_connect_id: string
     }>(
+      // F2: `AND publication_id IS NULL` excludes publication-article reads from
+      // the individual writer cycle — the publication payout cycle pools them.
+      // F1: the `sub` CTE folds WRITER subscription earnings (already NET) into
+      // the base, added as a separate term (NOT through readNetSql, which would
+      // re-apply the fee). Publication subscriptions (publication_id NOT NULL)
+      // are excluded here — their income flows through the publication pool.
       `WITH base AS (
          SELECT earnings.writer_id,
                 SUM(earnings.amount_pence) AS gross_pence,
@@ -356,6 +364,7 @@ class PayoutService {
            SELECT writer_id, amount_pence
            FROM read_events
            WHERE state = 'platform_settled' AND writer_payout_id IS NULL
+             AND publication_id IS NULL
            UNION ALL
            SELECT recipient_id AS writer_id, amount_pence
            FROM vote_charges
@@ -365,12 +374,22 @@ class PayoutService {
          ) AS earnings
          GROUP BY earnings.writer_id
        ),
+       sub AS (
+         SELECT writer_id, SUM(amount_pence) AS sub_net_pence
+         FROM subscription_events
+         WHERE event_type = 'subscription_earning'
+           AND writer_id IS NOT NULL
+           AND publication_id IS NULL
+           AND writer_payout_id IS NULL
+         GROUP BY writer_id
+       ),
        carve AS (
          SELECT re.writer_id, SUM(ta.amount_pence) AS carve_pence
          FROM tribute_accruals ta
          JOIN read_events re ON re.id = ta.read_event_id
          JOIN tributes t ON t.id = ta.tribute_id
          WHERE re.state = 'platform_settled' AND re.writer_payout_id IS NULL
+           AND re.publication_id IS NULL
            AND t.parent_tribute_id IS NULL
          GROUP BY re.writer_id
        ),
@@ -385,21 +404,26 @@ class PayoutService {
        candidates AS (
          SELECT writer_id FROM base
          UNION
+         SELECT writer_id FROM sub
+         UNION
          SELECT writer_id FROM ret
        )
        SELECT c.writer_id,
               COALESCE(base.gross_pence, 0) AS gross_pence,
-              (COALESCE(base.net_pence, 0) - COALESCE(carve.carve_pence, 0)
+              (COALESCE(base.net_pence, 0) + COALESCE(sub.sub_net_pence, 0)
+                 - COALESCE(carve.carve_pence, 0)
                  + COALESCE(ret.return_pence, 0)) AS net_pence,
               a.stripe_connect_id
        FROM candidates c
        JOIN accounts a ON a.id = c.writer_id
        LEFT JOIN base  ON base.writer_id  = c.writer_id
+       LEFT JOIN sub   ON sub.writer_id   = c.writer_id
        LEFT JOIN carve ON carve.writer_id = c.writer_id
        LEFT JOIN ret   ON ret.writer_id   = c.writer_id
        WHERE a.stripe_connect_kyc_complete = TRUE
          AND a.stripe_connect_id IS NOT NULL
-         AND (COALESCE(base.net_pence, 0) - COALESCE(carve.carve_pence, 0)
+         AND (COALESCE(base.net_pence, 0) + COALESCE(sub.sub_net_pence, 0)
+                - COALESCE(carve.carve_pence, 0)
                 + COALESCE(ret.return_pence, 0)) >= $1`,
       [config.writerPayoutThresholdPence, config.platformFeeBps]
     )
@@ -483,28 +507,35 @@ class PayoutService {
       )
 
       const config = await loadConfig()
-      // Authoritative (locked) recompute of the same net the eligibility query
-      // used: base per-read/upvote net − ROOT tribute carve (the author's direct
-      // children, state-agnostic, on the settled-unpaid reads) + swept ROOT
-      // returns owed to this author. The swept accruals are CLAIMED below under
-      // swept_return_payout_id (kind 'writer'); the carved accruals stay tied to
-      // their reads (their disposition is the root inspirer's payout or a later
-      // sweep). Tribute subqueries are no-ops when dark.
-      const balanceRow = await client.query<{ net_pence: string }>(
+
+      // Peek at the same net the eligibility query used, under the account lock,
+      // to decide whether to proceed at all. This stays stale-HIGH-safe but never
+      // stale-low vs the claim below: while we hold the account lock, reads only
+      // ADD to platform_settled (confirmSettlement) and no other payout claims
+      // this writer's rows. So a <= 0 peek means the balance was already claimed
+      // by a pending payout from a prior (crashed) cycle — return cleanly with no
+      // rows touched. Tribute subqueries are no-ops when dark.
+      const peekRow = await client.query<{ net_pence: string }>(
         `SELECT (
            (SELECT COALESCE(SUM(${readNetSql('amount_pence', '$2')}), 0)
               FROM (
                 SELECT amount_pence FROM read_events
                 WHERE writer_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
+                  AND publication_id IS NULL
                 UNION ALL
                 SELECT amount_pence FROM vote_charges
                 WHERE recipient_id = $1 AND state = 'platform_settled' AND writer_payout_id IS NULL
               ) AS earnings)
+           + (SELECT COALESCE(SUM(amount_pence), 0)
+                FROM subscription_events
+                WHERE writer_id = $1 AND event_type = 'subscription_earning'
+                  AND publication_id IS NULL AND writer_payout_id IS NULL)
            - (SELECT COALESCE(SUM(ta.amount_pence), 0)
                 FROM tribute_accruals ta
                 JOIN read_events re ON re.id = ta.read_event_id
                 JOIN tributes t ON t.id = ta.tribute_id
                 WHERE re.writer_id = $1 AND re.state = 'platform_settled' AND re.writer_payout_id IS NULL
+                  AND re.publication_id IS NULL
                   AND t.parent_tribute_id IS NULL)
            + (SELECT COALESCE(SUM(ta.amount_pence), 0)
                 FROM tribute_accruals ta
@@ -515,14 +546,117 @@ class PayoutService {
         [writerId, config.platformFeeBps],
       )
 
-      const lockedAmountPence = parseInt(balanceRow.rows[0].net_pence, 10)
+      const peekAmountPence = parseInt(peekRow.rows[0].net_pence, 10)
 
-      if (lockedAmountPence <= 0) {
+      if (peekAmountPence <= 0) {
         logger.warn(
           { writerId, expected: expectedAmountPence },
           'Writer has no unreserved balance — skipping (likely claimed by a pending payout)',
         )
         return null
+      }
+
+      // Insert the payout row first so we have an id to stamp onto the rows we
+      // claim; the amount is patched from the claim below.
+      const payoutRow = await client.query<{ id: string }>(
+        `INSERT INTO writer_payouts (
+           writer_id, amount_pence, stripe_connect_id, status
+         ) VALUES ($1, 0, $2, 'pending')
+         RETURNING id`,
+        [writerId, stripeConnectId],
+      )
+      const payoutId = payoutRow.rows[0].id
+
+      // Audit F6 (2026-07-05): claim rows FIRST and derive the transfer amount
+      // from exactly what we claimed (RETURNING), rather than summing a subquery
+      // then blanket-UPDATE-ing. The old form left a settlement race open: a read
+      // advancing accrued→platform_settled in a concurrent confirmSettlement
+      // (which does NOT hold this writer's account lock) got stamped with our
+      // payout_id by the unconstrained UPDATE but was absent from the pre-summed
+      // amount — the writer was underpaid for rows marked writer_paid. Summing the
+      // claimed set closes it.
+      const { rows: claimedReads } = await client.query<{ net_pence: string }>(
+        `UPDATE read_events
+         SET writer_payout_id = $1
+         WHERE writer_id = $2
+           AND state = 'platform_settled'
+           AND writer_payout_id IS NULL
+           AND publication_id IS NULL
+         RETURNING ${readNetSql('amount_pence', '$3')} AS net_pence`,
+        [payoutId, writerId, config.platformFeeBps],
+      )
+      const readNet = claimedReads.reduce((s, r) => s + parseInt(r.net_pence, 10), 0)
+
+      const { rows: claimedVotes } = await client.query<{ net_pence: string }>(
+        `UPDATE vote_charges
+         SET writer_payout_id = $1
+         WHERE recipient_id = $2
+           AND state = 'platform_settled'
+           AND writer_payout_id IS NULL
+         RETURNING ${readNetSql('amount_pence', '$3')} AS net_pence`,
+        [payoutId, writerId, config.platformFeeBps],
+      )
+      const voteNet = claimedVotes.reduce((s, r) => s + parseInt(r.net_pence, 10), 0)
+
+      // F1: claim WRITER subscription earnings (already NET) under this payout.
+      // No state gate — a subscription_earning is payable once it exists (its
+      // reader-tab debit is collected by settlement independently); writer_payout_id
+      // makes each earning claimed exactly once. Rolled back with the reads on a
+      // failed transfer (rollbackWriterPayoutRows).
+      const { rows: claimedSubs } = await client.query<{ amount_pence: number }>(
+        `UPDATE subscription_events
+         SET writer_payout_id = $1
+         WHERE writer_id = $2
+           AND event_type = 'subscription_earning'
+           AND publication_id IS NULL
+           AND writer_payout_id IS NULL
+         RETURNING amount_pence`,
+        [payoutId, writerId],
+      )
+      const subNet = claimedSubs.reduce((s, r) => s + r.amount_pence, 0)
+
+      // ROOT tribute carve on the reads we JUST claimed (state-agnostic — each
+      // root's disposition is the second leg). Computed against the claimed set
+      // (writer_payout_id = $1) so it can't drift from what we're paying. No-op
+      // when dark.
+      const { rows: [carveRow] } = await client.query<{ carve_pence: string }>(
+        `SELECT COALESCE(SUM(ta.amount_pence), 0) AS carve_pence
+         FROM tribute_accruals ta
+         JOIN read_events re ON re.id = ta.read_event_id
+         JOIN tributes t ON t.id = ta.tribute_id
+         WHERE re.writer_payout_id = $1
+           AND t.parent_tribute_id IS NULL`,
+        [payoutId],
+      )
+      const carve = parseInt(carveRow.carve_pence, 10)
+
+      // Claim the swept (declined/lapsed) ROOT tribute shares owed back to this
+      // author under the payout (kind 'writer'), summing them. State stays 'swept'
+      // until completeWriterPayout advances it to 'returned'; a failed transfer
+      // rolls the claim back.
+      const { rows: claimedReturns } = await client.query<{ amount_pence: number }>(
+        `UPDATE tribute_accruals ta
+            SET swept_return_payout_id = $1, swept_return_kind = 'writer'
+           FROM tributes t
+          WHERE t.id = ta.tribute_id
+            AND t.author_account_id = $2
+            AND t.parent_tribute_id IS NULL
+            AND ta.state = 'swept'
+            AND ta.swept_return_payout_id IS NULL
+         RETURNING ta.amount_pence`,
+        [payoutId, writerId],
+      )
+      const returns = claimedReturns.reduce((s, r) => s + r.amount_pence, 0)
+
+      const lockedAmountPence = readNet + voteNet + subNet - carve + returns
+
+      if (lockedAmountPence <= 0) {
+        // Defensive: the peek was > 0 so this is near-impossible under the lock;
+        // throw to roll back the payout row + all claims rather than commit an
+        // empty payout. The cycle's per-writer try/catch logs and continues.
+        throw new Error(
+          `Writer payout net <= 0 after claim (writer=${writerId}, peek=${peekAmountPence}) — rolling back`,
+        )
       }
 
       if (lockedAmountPence !== expectedAmountPence) {
@@ -532,49 +666,9 @@ class PayoutService {
         )
       }
 
-      const payoutRow = await client.query<{ id: string }>(
-        `INSERT INTO writer_payouts (
-           writer_id, amount_pence, stripe_connect_id, status
-         ) VALUES ($1, $2, $3, 'pending')
-         RETURNING id`,
-        [writerId, lockedAmountPence, stripeConnectId],
-      )
-      const payoutId = payoutRow.rows[0].id
-
       await client.query(
-        `UPDATE read_events
-         SET writer_payout_id = $1
-         WHERE writer_id = $2
-           AND state = 'platform_settled'
-           AND writer_payout_id IS NULL`,
-        [payoutId, writerId],
-      )
-
-      await client.query(
-        `UPDATE vote_charges
-         SET writer_payout_id = $1
-         WHERE recipient_id = $2
-           AND state = 'platform_settled'
-           AND writer_payout_id IS NULL`,
-        [payoutId, writerId],
-      )
-
-      // Claim the swept (declined/lapsed) ROOT tribute shares owed back to this
-      // author under the payout via the generic swept-return vehicle (kind
-      // 'writer' — the author is the depth-0 parent; deeper nodes use kind
-      // 'tribute'). State stays 'swept' until completeWriterPayout advances it to
-      // 'returned'; a failed transfer rolls the claim back. The lockedAmountPence
-      // above already includes their sum.
-      await client.query(
-        `UPDATE tribute_accruals ta
-            SET swept_return_payout_id = $1, swept_return_kind = 'writer'
-           FROM tributes t
-          WHERE t.id = ta.tribute_id
-            AND t.author_account_id = $2
-            AND t.parent_tribute_id IS NULL
-            AND ta.state = 'swept'
-            AND ta.swept_return_payout_id IS NULL`,
-        [payoutId, writerId],
+        `UPDATE writer_payouts SET amount_pence = $1 WHERE id = $2`,
+        [lockedAmountPence, payoutId],
       )
 
       logger.info(
@@ -822,6 +916,14 @@ class PayoutService {
       `UPDATE vote_charges
        SET state = 'platform_settled',
            writer_payout_id = NULL
+       WHERE writer_payout_id = $1`,
+      [payoutId],
+    )
+
+    // F1: release claimed subscription earnings (no state column — just unclaim).
+    await client.query(
+      `UPDATE subscription_events
+       SET writer_payout_id = NULL
        WHERE writer_payout_id = $1`,
       [payoutId],
     )

@@ -63,6 +63,8 @@ cd "$ROOT"
 #   drives.ts    1  (pledge fulfilment)
 #   subscription-convert.ts 1 (spend→subscription tab credit-back)
 #   upstream-edges.ts 2 (dispute stake debit + withdrawal refund)
+#   subscriptions/shared.ts 2 (F1: subscription_charge reader-tab debit +
+#                    subscription_earning writer credit — logSubscriptionCharge)
 REGISTRY=(
   "payment-service/src/services/accrual.ts::3"
   "payment-service/src/services/settlement.ts::3"
@@ -71,6 +73,7 @@ REGISTRY=(
   "gateway/src/routes/drives.ts::1"
   "gateway/src/routes/articles/subscription-convert.ts::1"
   "gateway/src/routes/upstream-edges.ts::2"
+  "gateway/src/routes/subscriptions/shared.ts::2"
 )
 
 # Money-movement markers for the new-site scan (PCRE).

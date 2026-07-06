@@ -145,13 +145,8 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
             [now, periodEnd, pricePence, sub.id, period, offerId, offerPeriodsRemaining]
           )
 
-          // Deduct from free allowance (can go negative)
-          await client.query(
-            `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
-            [pricePence, readerId]
-          )
-
-          // Log the charge and earning
+          // F1: charge the reading tab (inside logSubscriptionCharge), not the
+          // dead free_allowance column — so the charge is actually collected.
           await logSubscriptionCharge(client, sub.id, readerId, writerId, pricePence, now, periodEnd)
 
           logger.info({ readerId, writerId, subscriptionId: sub.id }, 'Subscription reactivated')
@@ -209,13 +204,8 @@ export async function subscriptionWriterRoutes(app: FastifyInstance) {
 
         const subscriptionId = subResult.rows[0].id
 
-        // Deduct from free allowance (can go negative — same as article reads)
-        await client.query(
-          `UPDATE accounts SET free_allowance_remaining_pence = free_allowance_remaining_pence - $1, updated_at = now() WHERE id = $2`,
-          [pricePence, readerId]
-        )
-
-        // Log the charge and earning
+        // F1: charge the reading tab (inside logSubscriptionCharge), not the
+        // dead free_allowance column — so the charge is actually collected.
         await logSubscriptionCharge(client, subscriptionId, readerId, writerId, pricePence, now, periodEnd)
 
         logger.info({ readerId, writerId, subscriptionId, pricePence }, 'Subscription created')
