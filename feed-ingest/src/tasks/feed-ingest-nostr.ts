@@ -1,23 +1,19 @@
 import type { Task } from "graphile-worker";
-import { randomUUID } from "node:crypto";
-import { WebSocket } from "ws";
-import { nip19, verifyEvent } from "nostr-tools";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
-import {
-  pinnedWebSocketOptions,
-  type PinnedWebSocketOptions,
-} from "@platform-pub/shared/lib/http-client.js";
-import { truncatePreview } from "@platform-pub/shared/lib/text.js";
-import {
-  recordRepostEdge,
-  type DetectedRepost,
-} from "../lib/repost-edge.js";
+import { pinnedWebSocketOptions } from "@platform-pub/shared/lib/http-client.js";
+import { recordRepostEdge } from "../lib/repost-edge.js";
 import { getPlatformConfig } from "../lib/platform-config.js";
-
-// Reject events claiming timestamps more than this far in the future — prevents
-// a hostile relay from poisoning the cursor into year 2100.
-const FUTURE_DRIFT_WINDOW_SECONDS = 10 * 60; // 10 minutes
+import {
+  type NostrEvent,
+  validateNostrEvents,
+  insertNostrItem,
+  applyNostrDeletions,
+  detectNostrRepost,
+  nostrNip05,
+  nostrProfileUpdate,
+  fetchNostrRelayEvents,
+} from "../lib/nostr-ingest.js";
 
 // =============================================================================
 // feed_ingest_nostr — per-source external Nostr relay fetch job
@@ -26,48 +22,14 @@ const FUTURE_DRIFT_WINDOW_SECONDS = 10 * 60; // 10 minutes
 // REQ for recent events by the source pubkey, normalises into external_items
 // + feed_items, and handles kind 5 deletions.
 //
+// Orchestration only — the per-event machinery (validation, identity encoding,
+// the ratchet writer, deletions, metadata ratchet) is shared with the
+// subscribe-time backfill task via lib/nostr-ingest.ts (§4.3).
+//
 // See docs/adr/UNIVERSAL-FEED-ADR.md §VI.2 for full spec.
 // =============================================================================
 
-interface NostrEvent {
-  id: string;
-  pubkey: string;
-  created_at: number;
-  kind: number;
-  tags: string[][];
-  content: string;
-  sig: string;
-}
-
 const DEFAULT_LOOKBACK_SECONDS = 48 * 60 * 60; // 48 hours
-
-// NIP-01 replaceable-event ranges. Parameterized replaceable events
-// (30000-39999, including kind 30023 long-form) key on (pubkey, kind, d-tag)
-// rather than event id — a new revision with the same d-tag supersedes the
-// old one. Store these under naddr so republishes upsert into one row.
-function isParameterizedReplaceable(kind: number): boolean {
-  return kind >= 30000 && kind < 40000;
-}
-
-// Relay-FREE nostr THING identity (UNIVERSAL-POST §2.1, C1 fix).
-//
-// feed_items.post_id is derived from external_items.source_item_uri (the 098
-// trigger), and source_item_uri is also the (protocol, source_item_uri) upsert
-// dedup key. Relay hints therefore MUST NOT enter this encoding: if they did,
-//   (a) the same event from two relay sources would mint two different post_ids
-//       (and two THING rows), defeating §5 dedup-to-one, and
-//   (b) a boost — which only knows the target's id/coordinate, never the relay
-//       hints the THING happened to be fetched with — could never reconstruct
-//       the THING's key, so nostr boosts would never re-float or attribute.
-// Relay hints survive in external_items.interaction_data for fetch/links; they
-// are deliberately excluded from identity. Used by BOTH the THING path and
-// detectNostrRepost so the two encodings cannot drift (the original C1 hazard).
-function nostrEventUri(id: string): string {
-  return nip19.neventEncode({ id });
-}
-function nostrAddrUri(kind: number, pubkey: string, identifier: string): string {
-  return nip19.naddrEncode({ kind, pubkey, identifier });
-}
 
 export const feedIngestNostr: Task = async (payload, _helpers) => {
   const { sourceId } = payload as { sourceId: string };
@@ -99,6 +61,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     logger.warn({ sourceId }, "Nostr source has no relay URLs — skipping");
     return;
   }
+  const relayUrls = source.relay_urls;
 
   // Load config (process-cached, 30s TTL — A5)
   const config = await getPlatformConfig();
@@ -122,8 +85,6 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
 
   const hexPubkey = source.source_uri;
 
-  const expectedPubkey = hexPubkey.toLowerCase();
-
   try {
     // Fetch events from all relay URLs, deduplicate by event ID
     const eventsMap = new Map<string, NostrEvent>();
@@ -131,60 +92,33 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     const repostEvents = new Map<string, NostrEvent>();
     let latestProfile: NostrEvent | null = null;
 
-    const nowSecs = Math.floor(Date.now() / 1000);
-    const maxCreatedAt = nowSecs + FUTURE_DRIFT_WINDOW_SECONDS;
-
-    for (const relayUrl of source.relay_urls) {
+    for (const relayUrl of relayUrls) {
       try {
         const wsOpts = await pinnedWebSocketOptions(relayUrl);
-        const rawEvents = await fetchFromRelay(
+        const rawEvents = await fetchNostrRelayEvents(
           relayUrl,
-          hexPubkey,
-          since,
+          [
+            {
+              // 1 note, 5 deletion, 30023 long-form (THINGs); 6/16 reposts (edges).
+              kinds: [1, 5, 6, 16, 30023],
+              authors: [hexPubkey],
+              since,
+            },
+            {
+              // Kind 0 pulls the latest profile metadata without a `since`
+              // filter; the loop below keeps only the newest one received.
+              kinds: [0],
+              authors: [hexPubkey],
+              limit: 1,
+            },
+          ],
           wsOpts,
         );
 
-        // Validate all events from this relay concurrently. A hostile relay
-        // can ship events claiming any pubkey; Schnorr verify is CPU-bound
-        // but running the map through Promise.all lets the event loop
-        // interleave other IO between verifies rather than pinning it for
-        // the full batch. Returns null for rejected events.
-        const validated = await Promise.all(
-          rawEvents.map(async (event) => {
-            if (event.created_at > maxCreatedAt) {
-              logger.warn(
-                {
-                  sourceId,
-                  relayUrl,
-                  eventId: event.id,
-                  createdAt: event.created_at,
-                },
-                "Rejecting Nostr event with future timestamp",
-              );
-              return null;
-            }
-            if (event.pubkey?.toLowerCase() !== expectedPubkey) {
-              logger.warn(
-                {
-                  sourceId,
-                  relayUrl,
-                  eventId: event.id,
-                  eventPubkey: event.pubkey,
-                },
-                "Rejecting Nostr event: pubkey mismatch",
-              );
-              return null;
-            }
-            if (!verifyEvent(event as any)) {
-              logger.warn(
-                { sourceId, relayUrl, eventId: event.id },
-                "Rejecting Nostr event: invalid signature",
-              );
-              return null;
-            }
-            return event;
-          }),
-        );
+        const validated = await validateNostrEvents(rawEvents, hexPubkey, {
+          sourceId,
+          relayUrl,
+        });
 
         for (const event of validated) {
           if (!event) continue;
@@ -224,21 +158,7 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
       .sort((a, b) => b.created_at - a.created_at)
       .slice(0, maxItems);
 
-    // nip05 (NIP-05 verified handle) from the latest kind-0, if any. Persisted
-    // as the external_items author_handle so the feed_items identity trigger
-    // propagates it to external_authors.handle — that's what the card byline and
-    // hover bio render as the verified @handle (Nostr has no handle@host).
-    let sourceNip05: string | null = null;
-    if (latestProfile) {
-      try {
-        const p = JSON.parse(latestProfile.content);
-        if (typeof p?.nip05 === "string" && p.nip05.trim()) {
-          sourceNip05 = p.nip05.trim();
-        }
-      } catch {
-        // Malformed profile — ignore (handled again in the metadata block below).
-      }
-    }
+    const sourceNip05 = nostrNip05(latestProfile);
 
     // Upsert events into external_items + feed_items
     let inserted = 0;
@@ -246,103 +166,12 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
 
     let updated = 0;
     for (const event of events) {
-      const normalised = normaliseNostrEvent(event, source.relay_urls);
-      const outcome = await withTransaction(async (client) => {
-        // Ratchet upsert: keyed on (protocol, source_item_uri). For regular
-        // kinds the URI is an nevent so a re-fetch of the same event has
-        // equal published_at and the WHERE blocks the update. For
-        // parameterized replaceable kinds (30023) the URI is an naddr —
-        // same for every revision — so a newer created_at wins and older
-        // revisions are dropped silently.
-        const { rowCount, rows } = await client.query<{
-          id: string;
-          was_insert: boolean;
-        }>(
-          `
-          INSERT INTO external_items (
-            source_id, protocol, tier,
-            source_item_uri, author_name, author_handle,
-            content_text, title,
-            media, published_at,
-            source_reply_uri, interaction_data
-          ) VALUES (
-            $1, 'nostr_external', 'tier2',
-            $2, $3, $4,
-            $5, $6,
-            '[]', to_timestamp($7),
-            $8, $9
-          )
-          ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
-            content_text = EXCLUDED.content_text,
-            title = EXCLUDED.title,
-            published_at = EXCLUDED.published_at,
-            source_reply_uri = EXCLUDED.source_reply_uri,
-            interaction_data = EXCLUDED.interaction_data,
-            author_name = EXCLUDED.author_name,
-            author_handle = COALESCE(EXCLUDED.author_handle, external_items.author_handle),
-            deleted_at = NULL
-          WHERE external_items.published_at < EXCLUDED.published_at
-          RETURNING id, (xmax = 0) AS was_insert
-        `,
-          [
-            sourceId,
-            normalised.sourceItemUri,
-            normalised.authorName ?? source.display_name ?? "Unknown",
-            normalised.authorHandle ?? sourceNip05,
-            normalised.contentText,
-            normalised.title,
-            event.created_at,
-            normalised.sourceReplyUri,
-            JSON.stringify(normalised.interactionData),
-          ],
-        );
-
-        if (!rowCount || rowCount === 0) return "skipped";
-
-        // Dual-write feed_items. On insert, create the row; on a replaceable-
-        // kind revision update, refresh the denormalised fields so the feed
-        // shows the newest title/preview without waiting for reconcile.
-        await client.query(
-          `
-          INSERT INTO feed_items (
-            item_type, external_item_id,
-            author_name, author_avatar,
-            title, content_preview,
-            published_at,
-            source_protocol, source_item_uri, source_id, media,
-            is_reply
-          ) VALUES (
-            'external', $1,
-            $2, $3,
-            $4, $5,
-            to_timestamp($6),
-            'nostr_external', $7, $8, '[]'::jsonb,
-            $9
-          )
-          ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO UPDATE SET
-            title = EXCLUDED.title,
-            content_preview = EXCLUDED.content_preview,
-            published_at = EXCLUDED.published_at,
-            source_item_uri = EXCLUDED.source_item_uri,
-            author_name = EXCLUDED.author_name,
-            is_reply = EXCLUDED.is_reply,
-            deleted_at = NULL
-        `,
-          [
-            rows[0].id,
-            normalised.authorName ?? source.display_name ?? "Unknown",
-            source.avatar_url,
-            normalised.title,
-            truncatePreview(normalised.contentText),
-            event.created_at,
-            normalised.sourceItemUri,
-            sourceId,
-            normalised.sourceReplyUri != null,
-          ],
-        );
-
-        return rows[0].was_insert ? "inserted" : "updated";
-      });
+      const outcome = await withTransaction(async (client) =>
+        insertNostrItem(client, source, event, {
+          relays: relayUrls,
+          sourceNip05,
+        }),
+      );
 
       if (outcome === "inserted") inserted++;
       else if (outcome === "updated") updated++;
@@ -374,109 +203,14 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
       if (event.created_at > newestCreatedAt) newestCreatedAt = event.created_at;
     }
 
-    // Handle kind 5 deletions. Pubkey + signature were already verified above,
-    // so by the time we get here delEvent.pubkey === source.source_uri.
-    //
-    // NIP-09 supports two targeting forms:
-    //   • 'e' tag: event id — matches a specific nevent-keyed row via
-    //     interaction_data.id (source_item_uri bakes in relay_urls at insert
-    //     time, so URI-based matching can silently break after a relay-list
-    //     change).
-    //   • 'a' tag (replaceable events, "kind:pubkey:d_tag") — matches the
-    //     naddr-keyed row directly. For parameterized-replaceable items we
-    //     only keep the latest revision under one naddr, so 'a' is the only
-    //     form that reliably hits the row after a revision.
-    for (const delEvent of cappedDeletes) {
-      const eTagIds = delEvent.tags
-        .filter((t) => t[0] === "e" && t[1])
-        .map((t) => t[1]);
-      const aTagAddrs = delEvent.tags
-        .filter((t) => t[0] === "a" && t[1])
-        .map((t) => t[1]);
+    // Handle kind 5 deletions (pubkey + signature verified above).
+    await applyNostrDeletions(pool, sourceId, cappedDeletes, hexPubkey);
 
-      for (const deletedId of eTagIds) {
-        await pool.query(
-          `UPDATE external_items SET deleted_at = now()
-           WHERE source_id = $1 AND protocol = 'nostr_external'
-             AND interaction_data->>'id' = $2
-             AND deleted_at IS NULL`,
-          [sourceId, deletedId],
-        );
-        await pool.query(
-          `UPDATE feed_items SET deleted_at = now()
-           WHERE external_item_id IN (
-             SELECT id FROM external_items
-             WHERE source_id = $1 AND protocol = 'nostr_external'
-               AND interaction_data->>'id' = $2
-           ) AND deleted_at IS NULL`,
-          [sourceId, deletedId],
-        );
-      }
-
-      for (const aAddr of aTagAddrs) {
-        const [kindStr, aPubkey, dTag] = aAddr.split(":");
-        const kind = parseInt(kindStr ?? "", 10);
-        // Only act on addresses the source actually owns — a hostile signer
-        // can't forge the pubkey, but a mis-authored kind-5 could still
-        // carry a foreign 'a' tag. Also gate to replaceable kinds.
-        if (!Number.isFinite(kind)) continue;
-        if (!aPubkey || aPubkey.toLowerCase() !== expectedPubkey) continue;
-        if (
-          !isParameterizedReplaceable(kind) &&
-          !(kind >= 10000 && kind < 20000)
-        )
-          continue;
-
-        // Relay-free, to match the THING's relay-free source_item_uri.
-        const naddr = nostrAddrUri(kind, aPubkey, dTag ?? "");
-
-        await pool.query(
-          `UPDATE external_items SET deleted_at = now()
-           WHERE source_id = $1 AND protocol = 'nostr_external'
-             AND source_item_uri = $2
-             AND deleted_at IS NULL`,
-          [sourceId, naddr],
-        );
-        await pool.query(
-          `UPDATE feed_items SET deleted_at = now()
-           WHERE external_item_id IN (
-             SELECT id FROM external_items
-             WHERE source_id = $1 AND protocol = 'nostr_external'
-               AND source_item_uri = $2
-           ) AND deleted_at IS NULL`,
-          [sourceId, naddr],
-        );
-      }
-    }
-
-    // Apply kind-0 profile update only if strictly newer than the last one
-    // we accepted. Guards against a cached/stale kind-0 from a misbehaving
-    // relay clobbering fresher metadata we already saw elsewhere — the
-    // previous COALESCE write had no temporal ratchet.
-    let profileName: string | null | undefined;
-    let profileAvatar: string | null | undefined;
-    let profileCreatedAt: number | null = null;
-    if (latestProfile) {
-      const storedAtSec = source.metadata_updated_at
-        ? Math.floor(source.metadata_updated_at.getTime() / 1000)
-        : 0;
-      if (latestProfile.created_at > storedAtSec) {
-        try {
-          const profile = JSON.parse(latestProfile.content);
-          profileName =
-            typeof profile?.display_name === "string"
-              ? profile.display_name
-              : typeof profile?.name === "string"
-                ? profile.name
-                : undefined;
-          profileAvatar =
-            typeof profile?.picture === "string" ? profile.picture : undefined;
-          profileCreatedAt = latestProfile.created_at;
-        } catch {
-          // Malformed profile — ignore
-        }
-      }
-    }
+    // Kind-0 profile update, gated by the newest-wins metadata ratchet.
+    const { profileName, profileAvatar, profileCreatedAt } = nostrProfileUpdate(
+      latestProfile,
+      source.metadata_updated_at,
+    );
 
     // Update source: cursor, reset errors, optionally refresh display metadata.
     // metadata_updated_at only moves forward when we actually apply a profile
@@ -500,8 +234,8 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
       [
         sourceId,
         String(newestCreatedAt),
-        profileName ?? null,
-        profileAvatar ?? null,
+        profileName,
+        profileAvatar,
         profileCreatedAt,
       ],
     );
@@ -559,197 +293,3 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     }
   }
 };
-
-// =============================================================================
-// Fetch events from a single Nostr relay
-// =============================================================================
-
-function fetchFromRelay(
-  relayUrl: string,
-  pubkey: string,
-  since: number,
-  wsOpts: PinnedWebSocketOptions,
-): Promise<NostrEvent[]> {
-  return new Promise((resolve, reject) => {
-    const events: NostrEvent[] = [];
-    const ws = new WebSocket(relayUrl, wsOpts);
-    // Unique per-subscription id — Date.now() collides on busy workers when
-    // two fetches open inside the same millisecond, and some relays reject
-    // or merge the duplicate REQ.
-    const subId = `fi-${randomUUID()}`;
-
-    const timeout = setTimeout(() => {
-      // Politely close the subscription before tearing the socket down —
-      // some relays flag an abrupt disconnect without a prior CLOSE as abuse.
-      try {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify(["CLOSE", subId]));
-        }
-      } catch {
-        // socket may already be draining — ignore
-      }
-      ws.close();
-      // Return whatever we have even on timeout
-      resolve(events);
-    }, 10_000);
-
-    ws.on("open", () => {
-      // Kind 0 pulls the latest profile metadata without a `since` filter; the
-      // ingest loop keeps only the newest one received. Regular/deletion events
-      // use the per-source cursor.
-      ws.send(
-        JSON.stringify([
-          "REQ",
-          subId,
-          {
-            // 1 note, 5 deletion, 30023 long-form (THINGs); 6/16 reposts (edges).
-            kinds: [1, 5, 6, 16, 30023],
-            authors: [pubkey],
-            since,
-          },
-          {
-            kinds: [0],
-            authors: [pubkey],
-            limit: 1,
-          },
-        ]),
-      );
-    });
-
-    ws.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        if (msg[0] === "EVENT" && msg[1] === subId) {
-          events.push(msg[2] as NostrEvent);
-        } else if (msg[0] === "EOSE" && msg[1] === subId) {
-          clearTimeout(timeout);
-          ws.send(JSON.stringify(["CLOSE", subId]));
-          ws.close();
-          resolve(events);
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    });
-
-    ws.on("error", (err) => {
-      clearTimeout(timeout);
-      reject(err);
-    });
-
-    ws.on("close", () => {
-      clearTimeout(timeout);
-      resolve(events);
-    });
-  });
-}
-
-// =============================================================================
-// Normalise a Nostr event into external_items fields
-// =============================================================================
-
-interface NormalisedNostrItem {
-  sourceItemUri: string;
-  authorName: string | null;
-  authorHandle: string | null;
-  contentText: string;
-  title: string | null;
-  sourceReplyUri: string | null;
-  interactionData: { id: string; pubkey: string; relays: string[] };
-}
-
-// =============================================================================
-// Detect a NIP-18 repost (kind 6) / generic repost (kind 16) into an edge.
-//
-// The boosted THING is identified by the 'e' tag (event id, for note reposts)
-// or the 'a' tag ("kind:pubkey:d-tag" addressable coordinate). The booster is
-// the event pubkey; the kind-6/16 event id is the boost's own origin id.
-//
-// targetHandle is the boosted THING's RELAY-FREE source_item_uri, produced by
-// the SAME nostrEventUri/nostrAddrUri helpers the THING path uses (C1 fix). An
-// addressable target (long-form, stored under naddr) is referenced by the 'a'
-// tag and so takes precedence; a regular note (stored under nevent) by the 'e'
-// tag. Because both sides share the encoders, the edge's target_post_id now
-// equals the boosted THING's feed_items.post_id, so the boost re-floats and
-// attributes its THING (and two sources boosting one event still dedup to one
-// target_post_id, since the encoding carries no relay hints).
-// =============================================================================
-export function detectNostrRepost(event: NostrEvent): DetectedRepost | null {
-  if (event.kind !== 6 && event.kind !== 16) return null;
-  const aTag = event.tags.find((t) => t[0] === "a" && t[1]);
-  const eTag = event.tags.find((t) => t[0] === "e" && t[1]);
-
-  let targetHandle: string | null = null;
-  if (aTag) {
-    // 'a' coordinate is "<kind>:<pubkey>:<d-identifier>"; the d-identifier may
-    // itself contain ':' so keep everything after the second colon.
-    const [kindStr, pubkey, ...rest] = aTag[1].split(":");
-    const kind = parseInt(kindStr ?? "", 10);
-    if (Number.isFinite(kind) && pubkey) {
-      targetHandle = nostrAddrUri(kind, pubkey, rest.join(":"));
-    }
-  }
-  if (!targetHandle && eTag) {
-    targetHandle = nostrEventUri(eTag[1]);
-  }
-  if (!targetHandle) return null;
-
-  return {
-    protocol: "nostr_external",
-    targetProtocol: "nostr_external",
-    targetHandle,
-    actorHandle: event.pubkey,
-    boostedAt: new Date(event.created_at * 1000),
-    originUri: event.id,
-  };
-}
-
-function normaliseNostrEvent(
-  event: NostrEvent,
-  relayUrls: string[],
-): NormalisedNostrItem {
-  // Key parameterized-replaceable events (kind 30023 long-form, etc.) under
-  // naddr so successive revisions of the same (pubkey, kind, d-tag) upsert
-  // into one row. Everything else is keyed on event id via nevent.
-  // Relay-free identity (see nostrEventUri/nostrAddrUri). post_id + the upsert
-  // dedup key + reply-threading all key off these, so they must be relay-stable.
-  let sourceItemUri: string;
-  if (isParameterizedReplaceable(event.kind)) {
-    const dTag = event.tags.find((t) => t[0] === "d")?.[1] ?? "";
-    sourceItemUri = nostrAddrUri(event.kind, event.pubkey, dTag);
-  } else {
-    sourceItemUri = nostrEventUri(event.id);
-  }
-
-  // Extract reply target (NIP-10: last 'e' tag with 'reply' marker, or last 'e' tag)
-  let sourceReplyUri: string | null = null;
-  const eTags = event.tags.filter((t) => t[0] === "e");
-  const replyTag =
-    eTags.find((t) => t[3] === "reply") ??
-    (eTags.length > 0 ? eTags[eTags.length - 1] : null);
-  if (replyTag) {
-    // Relay-free so a reply's parent ref matches the parent THING's source_item_uri.
-    sourceReplyUri = nostrEventUri(replyTag[1]);
-  }
-
-  // For kind 30023 (long-form), extract title from tags
-  let title: string | null = null;
-  if (event.kind === 30023) {
-    const titleTag = event.tags.find((t) => t[0] === "title");
-    title = titleTag ? titleTag[1] : null;
-  }
-
-  return {
-    sourceItemUri,
-    authorName: null, // Populated from source display_name
-    authorHandle: null,
-    contentText: event.content,
-    title,
-    sourceReplyUri,
-    interactionData: {
-      id: event.id,
-      pubkey: event.pubkey,
-      relays: relayUrls,
-    },
-  };
-}

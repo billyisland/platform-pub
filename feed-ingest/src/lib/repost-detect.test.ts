@@ -5,7 +5,7 @@ import {
   type JetstreamCommit,
 } from "../adapters/atproto.js";
 import { detectActivityPubRepost } from "../adapters/activitypub.js";
-import { detectNostrRepost } from "../tasks/feed-ingest-nostr.js";
+import { detectNostrRepost } from "./nostr-ingest.js";
 import { nip19 } from "nostr-tools";
 
 // =============================================================================

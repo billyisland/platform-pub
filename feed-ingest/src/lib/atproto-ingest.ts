@@ -4,12 +4,21 @@ import { truncatePreview } from "@platform-pub/shared/lib/text.js";
 
 // =============================================================================
 // Shared atproto ingest write path — used by both the Jetstream listener and
-// the backfill job. Dual-writes external_items + feed_items with the same
-// ON CONFLICT DO NOTHING pattern, so either caller can safely rewrite the
-// same post without producing duplicate rows.
+// the backfill job. Dual-writes external_items + feed_items; either caller can
+// safely rewrite the same post without producing duplicate rows.
 //
-// Returns true if a new external_items row was inserted (i.e. not a dedupe
-// hit), so callers can count newly-ingested items.
+// The ON CONFLICT is promotion-GATED (EXTERNAL-AUTHOR-HISTORY-ADR §4.2): a row
+// first persisted context-only by thread/profile hydration is promoted to
+// first-class on real ingest — flags cleared, source_id re-homed from the
+// hydrating focal's source to the author's own (deletion matching and feed
+// membership both key on source_id), deleted_at cleared. A REAL existing row
+// makes the WHERE false, no row returns, and the caller sees the exact old
+// DO NOTHING semantics. The feed_items conflict can only fire in the promotion
+// case (a fresh external_items insert mints a fresh id), so its DO UPDATE is
+// the promotion refresh of the row the hydration dual-write left behind.
+//
+// Returns true if an external_items row was inserted or promoted (i.e. not a
+// dedupe hit), so callers can count newly-ingested items.
 // =============================================================================
 
 interface AtprotoIngestSource {
@@ -69,7 +78,12 @@ export async function insertAtprotoItem(
       $14, $15, $16,
       $17
     )
-    ON CONFLICT (protocol, source_item_uri) DO NOTHING
+    ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+      is_context_only = FALSE,
+      is_profile_hydrated = FALSE,
+      source_id = EXCLUDED.source_id,
+      deleted_at = NULL
+    WHERE external_items.is_context_only IS TRUE
     RETURNING id
   `,
     [
@@ -112,7 +126,15 @@ export async function insertAtprotoItem(
       'atproto', $6, $7, $8,
       $9
     )
-    ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING
+    ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO UPDATE SET
+      source_id = EXCLUDED.source_id,
+      author_name = EXCLUDED.author_name,
+      author_avatar = EXCLUDED.author_avatar,
+      content_preview = EXCLUDED.content_preview,
+      published_at = EXCLUDED.published_at,
+      media = EXCLUDED.media,
+      is_reply = EXCLUDED.is_reply,
+      deleted_at = NULL
   `,
     [
       rows[0].id,

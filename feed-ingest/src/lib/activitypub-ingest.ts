@@ -4,8 +4,12 @@ import { truncatePreview } from "@platform-pub/shared/lib/text.js";
 
 // =============================================================================
 // ActivityPub dual-write — external_items + feed_items.
-// Mirrors the atproto-ingest pattern. ON CONFLICT DO NOTHING so the
-// occasional overlap between backfill and steady-state polling is safe.
+// Mirrors the atproto-ingest pattern: the ON CONFLICT is promotion-gated
+// (EXTERNAL-AUTHOR-HISTORY-ADR §4.2) — a context-only hydration row is
+// promoted on real ingest (flags cleared, source_id re-homed, deleted_at
+// cleared), while a real existing row keeps the old DO NOTHING semantics
+// (WHERE false ⇒ no row ⇒ caller returns false), so the occasional overlap
+// between backfill and steady-state polling stays safe.
 // =============================================================================
 
 interface ActivityPubIngestSource {
@@ -43,7 +47,12 @@ export async function insertActivityPubItem(
       $14,
       $15
     )
-    ON CONFLICT (protocol, source_item_uri) DO NOTHING
+    ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+      is_context_only = FALSE,
+      is_profile_hydrated = FALSE,
+      source_id = EXCLUDED.source_id,
+      deleted_at = NULL
+    WHERE external_items.is_context_only IS TRUE
     RETURNING id
   `,
     [
@@ -85,7 +94,16 @@ export async function insertActivityPubItem(
       'activitypub', $7, $8, $9,
       $10
     )
-    ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO NOTHING
+    ON CONFLICT (external_item_id) WHERE external_item_id IS NOT NULL DO UPDATE SET
+      source_id = EXCLUDED.source_id,
+      author_name = EXCLUDED.author_name,
+      author_avatar = EXCLUDED.author_avatar,
+      title = EXCLUDED.title,
+      content_preview = EXCLUDED.content_preview,
+      published_at = EXCLUDED.published_at,
+      media = EXCLUDED.media,
+      is_reply = EXCLUDED.is_reply,
+      deleted_at = NULL
   `,
     [
       rows[0].id,

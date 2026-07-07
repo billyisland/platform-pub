@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 5N1hIWFGVMfwLATX1LUPmoWVKgyFZb1o5MUHT5PpJ6xgZY2TXJ50hvOCj3onddv
+\restrict HuDl1LciiEO3DZ4af9ymgXgqzbd3P5gmHGLmmOwrRdrqcvpAfxGRqJ8eDmhSwED
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1617,6 +1617,7 @@ CREATE TABLE public.external_items (
     content_warning text,
     canonical_url text,
     dedup_fingerprint text,
+    is_profile_hydrated boolean DEFAULT false NOT NULL,
     CONSTRAINT protocol_tier_consistency CHECK ((((protocol = 'nostr_external'::public.external_protocol) AND (tier = 'tier2'::public.content_tier)) OR ((protocol = ANY (ARRAY['atproto'::public.external_protocol, 'activitypub'::public.external_protocol, 'farcaster'::public.external_protocol])) AND (tier = 'tier3'::public.content_tier)) OR ((protocol = ANY (ARRAY['rss'::public.external_protocol, 'telegram'::public.external_protocol, 'matrix'::public.external_protocol, 'email'::public.external_protocol])) AND (tier = 'tier4'::public.content_tier))))
 );
 
@@ -7465,10 +7466,13 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 5N1hIWFGVMfwLATX1LUPmoWVKgyFZb1o5MUHT5PpJ6xgZY2TXJ50hvOCj3onddv
+\unrestrict HuDl1LciiEO3DZ4af9ymgXgqzbd3P5gmHGLmmOwrRdrqcvpAfxGRqJ8eDmhSwED
 
 
-
+--
+-- Seed _migrations so migrate.ts treats every baked-in migration as applied
+-- on a fresh schema.sql-bootstrapped database.
+--
 INSERT INTO public._migrations (filename) VALUES
     ('001_add_email_and_magic_links.sql'),
     ('002_draft_upsert_index.sql'),
@@ -7616,4 +7620,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('144_read_events_allowance_consumed.sql'),
     ('145_drop_is_writer_is_reader.sql'),
     ('146_subscription_earning_settled.sql'),
-    ('147_backfill_initiated_payouts.sql');
+    ('147_backfill_initiated_payouts.sql'),
+    ('148_external_items_profile_hydrated.sql');
