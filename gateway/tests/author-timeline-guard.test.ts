@@ -71,6 +71,7 @@ describe("author timeline hydration gates", () => {
       authorId: AUTHOR,
       protocol: "nostr_external",
       followUri: PUBKEY,
+      stableHandle: PUBKEY,
     });
     expect(willHydrateAuthorTimeline(AUTHOR, "nostr_external")).toBe(false);
     // …and the guard is per-author, not global.
@@ -90,6 +91,7 @@ describe("author timeline hydration gates", () => {
       authorId: AUTHOR,
       protocol: "nostr_external",
       followUri: PUBKEY,
+      stableHandle: PUBKEY,
     });
     delete process.env.AUTHOR_TIMELINE_HYDRATION_ENABLED;
     expect(willHydrateAuthorTimeline(AUTHOR, "nostr_external")).toBe(true);

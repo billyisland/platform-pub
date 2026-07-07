@@ -507,6 +507,7 @@ export async function authorRoutes(app: FastifyInstance) {
                 authorId: xa.id,
                 protocol: xa.protocol,
                 followUri,
+                stableHandle: xa.stable_handle,
               });
             }
           }
