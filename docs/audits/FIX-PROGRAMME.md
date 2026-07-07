@@ -23,6 +23,45 @@ starts.
 
 ## Progress
 
+- **2026-07-07** — **paywall publish + unlock hardened end-to-end** (commit
+  `339b43e`; prompted by a live prod failure: 'Vault encryption failed: 400 —
+  [object Object]' + a £5-starter-float unlock failure, both traced to one
+  root). Root: the editor auto-suggests **£0.00** for <700-word articles and
+  the gateway `IndexArticleSchema` accepted paywalled price 0 while the
+  key-service `PublishVaultSchema` requires positive — so a short paywalled
+  article indexed live, vault encryption 400'd, and the result was a
+  **poisoned article** (live, paywalled, no vault key) that then broke reader
+  unlocks (price 0 fails gate-pass validation; a priced-but-vaultless article
+  charged the float then 404'd key issuance forever). Fixes, publish side:
+  editor pre-publish validation (`web/src/lib/publish-validation.ts`: gate ⇒
+  price ≥ 1p, non-empty paywalled section, no paywall in publications; NaN
+  guard on the price field); `IndexArticleSchema` superRefine mirrors the
+  vault schema; `publishArticle` reworked to the scheduler's convergent shape
+  (paywalled v1 **signed only**, payload-tagged v2 is the only relay event;
+  NEW-article vault/v2 failure soft-deletes the index row — no poisoned
+  residue). **Publication paywalls hard-blocked** (submit/approve/
+  `publishToPublication`, `PublicationPaywallUnsupportedError`): that pipeline
+  has NO vault step — it silently discarded the paywall body and would charge
+  readers for content never stored; scheduler un-schedules such drafts.
+  Reader side: **gate-pass backstop** — before any charge, verify vault_keys
+  row + price ≥ 1p, else 409 `article_misconfigured` (closes the whole
+  charge-for-undeliverable class); unlock retry no longer fails silently (the
+  stale-closure error guard); distinct 402 copy + add-card CTA
+  (`web/src/lib/unlock-errors.ts`); PaywallGate copy now matches server
+  behaviour (card ⇒ tab; float-covers-price ⇒ allowance; price > remaining ⇒
+  honest over-float copy) and refreshes the allowance figure post-unlock; 15s
+  timeouts on gate-pass/proxy hops (F7 idempotency makes retry safe).
+  Cross-cutting: `shared/lib/validation.ts::zodValidationError` — paywall-path
+  zod 400s return `{error:'validation_failed', message, details}`, never a raw
+  flatten object. Validated: shared 81 · gateway 161 · key-service 11 ·
+  payment 105 · web 132 (one pre-existing collision.test failure, unrelated);
+  `next build` green; root lint 0. NOT runtime-verified (containers need a
+  user restart). **Prod follow-up**: run
+  `SELECT a.id, a.title FROM articles a LEFT JOIN vault_keys vk ON
+  vk.article_id = a.id WHERE a.access_mode='paywalled' AND vk.id IS NULL AND
+  a.deleted_at IS NULL` — unpublish hits, check `read_events` for charges
+  against them, and have the test writer re-publish from their draft.
+
 - **2026-07-07** — **EXTERNAL-AUTHOR-HISTORY-ADR implemented — all four phases**
   (commits `3b2d51d`…`57099e1`; spec `docs/adr/EXTERNAL-AUTHOR-HISTORY-ADR.md`,
   status updated). External author profiles no longer render empty histories.
