@@ -14,6 +14,12 @@ recover from git history; superseded with no residual value).
 
 ---
 
+## Trackers — SUPERSEDED
+
+| Doc | What it was | Live home of its content |
+| --- | --- | --- |
+| `feature-debt.md` | the root debt tracker + work log + attack order (2026-04 → 2026-07) | retired 2026-07-07: work-log entries duplicate `docs/audits/FIX-PROGRAMME.md` (the work log); open items absorbed into `docs/audits/CONSOLIDATED-TODO.md` (the canonical queue); the rest is shipped-work history. Docs citing "feature-debt §N" resolve here. |
+
 ## Relocated (now live, not archived)
 
 | Doc | Was | Now |
