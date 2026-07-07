@@ -23,6 +23,33 @@ starts.
 
 ## Progress
 
+- **2026-07-07** — **EXTERNAL-AUTHOR-HISTORY-ADR implemented — all four phases**
+  (commits `3b2d51d`…`57099e1`; spec `docs/adr/EXTERNAL-AUTHOR-HISTORY-ADR.md`,
+  status updated). External author profiles no longer render empty histories.
+  Groundwork fixed a **live bug** on its own: the §1.5 one-way door — an event
+  first persisted as a thread-hydration context row was never promoted when the
+  same post later arrived through real ingest (invisible in feeds + profile
+  forever). All three ingest writers (the newly extracted
+  `feed-ingest/src/lib/nostr-ingest.ts`, `insertAtprotoItem`,
+  `insertActivityPubItem`) now promote: flags cleared, `source_id` re-homed on
+  external_items AND feed_items (kind-5 deletion application and feed
+  membership both match on `source_id`); real rows keep exact prior semantics.
+  Part A: `feed_ingest_nostr_backfill` (migration-less; NIP-65-first relay set
+  persisted onto `relay_urls`, 168h/5-page/200-item `until` pager, forward-only
+  cursor handoff, distinct job key `feed_ingest_backfill_<id>` so the 60s poll
+  can't job-key-clobber it) + the §2.6 relay-less-source repair. Part B:
+  profile-view timeline hydration (migration **148**
+  `external_items.is_profile_hydrated`; shadow sources `is_active=FALSE`, no
+  subscription row; per-author 10-min TTL guard; kill switch
+  `AUTHOR_TIMELINE_HYDRATION_ENABLED` default ON) for nostr + atproto +
+  activitypub, with the atproto/AP fetchers pinning `author_uri` to the
+  profile's exact `stable_handle` (else the identity trigger files the rows
+  under a different author record — implementation hazard recorded in the ADR).
+  Validated: shared 78 · feed-ingest 212 · gateway 178 (DB-integration suites
+  against dev); drift guard exit 0; root lint 0 errors; `next build` green.
+  NOT runtime-verified (containers need a user restart); prod: migration 148
+  before service restart.
+
 - **2026-07-06** — **four-day commit audit — Wave 3 (P0 + five P1s)**. A
   multi-agent review of the 2026-07-04→06 commits found the remediation waves
   themselves had opened seams; all six confirmed money findings fixed same-day
