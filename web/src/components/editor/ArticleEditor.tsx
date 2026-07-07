@@ -14,6 +14,7 @@ import { TagInput } from './TagInput'
 import { EmbedNode } from './EmbedNode'
 import { PaywallGateNode, PAYWALL_GATE_MARKER } from './PaywallGateNode'
 import { uploadImage } from '../../lib/media'
+import { validatePaywalledPublish } from '../../lib/publish-validation'
 
 // =============================================================================
 // Article Editor
@@ -244,6 +245,17 @@ export function ArticleEditor({
         gatePositionPct = totalLen > 0 ? Math.min(99, Math.max(1, Math.round((freeContent.length / totalLen) * 100))) : 50
       }
 
+      const validationError = validatePaywalledPublish({
+        isPaywalled,
+        paywallContent,
+        pricePence,
+        publicationId: selectedPublicationId,
+      })
+      if (validationError) {
+        setPublishError(validationError)
+        return
+      }
+
       const data: PublishData = {
         title: title.trim(),
         dek: dek.trim(),
@@ -304,6 +316,17 @@ export function ArticleEditor({
         paywallContent = splitResult.paywall
         const totalLen = freeContent.length + paywallContent.length
         gatePositionPct = totalLen > 0 ? Math.min(99, Math.max(1, Math.round((freeContent.length / totalLen) * 100))) : 50
+      }
+
+      const validationError = validatePaywalledPublish({
+        isPaywalled,
+        paywallContent,
+        pricePence,
+        publicationId: selectedPublicationId,
+      })
+      if (validationError) {
+        setPublishError(validationError)
+        return
       }
 
       const data: PublishData = {
@@ -596,7 +619,11 @@ export function ArticleEditor({
                 value={(pricePence / 100).toFixed(2)}
                 onChange={(e) => {
                   userSetPrice.current = true
-                  setPricePence(Math.round(parseFloat(e.target.value) * 100))
+                  // A cleared/partial field parses to NaN, which would JSON-
+                  // serialise to null and fail publish — treat it as 0 and let
+                  // the pre-publish validation ask for a real price.
+                  const pence = Math.round(parseFloat(e.target.value) * 100)
+                  setPricePence(Number.isFinite(pence) ? pence : 0)
                 }}
                 className="w-24 bg-glasshouse-well border-none px-3 py-1.5 text-sm focus:outline-none"
               />

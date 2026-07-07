@@ -11,8 +11,10 @@ import {
 import {
   publishToPublication,
   approveAndPublishArticle,
+  PublicationPaywallUnsupportedError,
 } from "../../services/publication-publisher.js";
 import logger from "@platform-pub/shared/lib/logger.js";
+import { zodValidationError } from "@platform-pub/shared/lib/validation.js";
 
 // =============================================================================
 // Publication CMS — author-facing article management inside a publication
@@ -112,13 +114,23 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const parsed = SubmitArticleSchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() });
+        return reply.status(400).send(zodValidationError(parsed.error));
       }
 
       const { id } = req.params;
       const member = req.publicationMember!;
       const userId = req.session!.sub;
       const userPubkey = req.session!.pubkey;
+
+      // The publication pipeline has no vault step — a paywalled submission
+      // would charge readers for content that was never stored. Refuse with
+      // a clear message rather than let the deeper guard 500.
+      if (parsed.data.accessMode === "paywalled") {
+        return reply.status(400).send({
+          error: "publication_paywall_unsupported",
+          message: new PublicationPaywallUnsupportedError().message,
+        });
+      }
 
       const result = await publishToPublication({
         publicationId: id,
@@ -147,7 +159,7 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const parsed = EditArticleSchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() });
+        return reply.status(400).send(zodValidationError(parsed.error));
       }
 
       const { id, articleId } = req.params;
@@ -307,8 +319,18 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
       const { id, articleId } = req.params;
       const editorId = req.session!.sub;
 
-      const result = await approveAndPublishArticle(id, articleId, editorId);
-      return reply.send(result);
+      try {
+        const result = await approveAndPublishArticle(id, articleId, editorId);
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof PublicationPaywallUnsupportedError) {
+          return reply.status(400).send({
+            error: "publication_paywall_unsupported",
+            message: err.message,
+          });
+        }
+        throw err;
+      }
     },
   );
 

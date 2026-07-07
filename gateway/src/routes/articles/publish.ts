@@ -5,6 +5,7 @@ import { requireAuth, optionalAuth } from "../../middleware/auth.js";
 import { checkAndTriggerDriveFulfilment } from "../drives.js";
 import { sendPublishNotifications } from "@platform-pub/shared/lib/publish-emails.js";
 import { slugify } from "@platform-pub/shared/lib/slug.js";
+import { zodValidationError } from "@platform-pub/shared/lib/validation.js";
 import { truncatePreview } from "@platform-pub/shared/lib/text.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { KEY_SERVICE_URL } from "./shared.js";
@@ -17,22 +18,44 @@ import { KEY_SERVICE_URL } from "./shared.js";
 // GET  /articles/by-event/:nostrEventId     — Fetch article by Nostr event ID
 // =============================================================================
 
-const IndexArticleSchema = z.object({
-  nostrEventId: z.string().min(1),
-  dTag: z.string().min(1),
-  title: z.string().min(1),
-  summary: z.string().optional(),
-  content: z.string(), // free section content
-  accessMode: z
-    .enum(["public", "paywalled", "invitation_only"])
-    .default("public"),
-  pricePence: z.number().int().min(0).max(999999),
-  gatePositionPct: z.number().int().min(0).max(99),
-  vaultEventId: z.string().optional(),
-  coverImageUrl: z.string().url().nullable().optional(),
-  draftId: z.string().optional(),
-  sendEmail: z.boolean().optional(), // writer opt-in/out for publish notification email
-});
+const IndexArticleSchema = z
+  .object({
+    nostrEventId: z.string().min(1),
+    dTag: z.string().min(1),
+    title: z.string().min(1),
+    summary: z.string().optional(),
+    content: z.string(), // free section content
+    accessMode: z
+      .enum(["public", "paywalled", "invitation_only"])
+      .default("public"),
+    pricePence: z.number().int().min(0).max(999999),
+    gatePositionPct: z.number().int().min(0).max(99),
+    vaultEventId: z.string().optional(),
+    coverImageUrl: z.string().url().nullable().optional(),
+    draftId: z.string().optional(),
+    sendEmail: z.boolean().optional(), // writer opt-in/out for publish notification email
+  })
+  // Keep the paywall rules in lockstep with the key-service PublishVaultSchema
+  // (price positive, gate 1..99). The old min(0) here let a price-0 paywalled
+  // article index cleanly and then fail vault encryption with a 400 — leaving
+  // a live paywalled article with no vault key.
+  .superRefine((data, ctx) => {
+    if (data.accessMode !== "paywalled") return;
+    if (data.pricePence < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pricePence"],
+        message: "A paywalled article needs a price of at least 1 pence",
+      });
+    }
+    if (data.gatePositionPct < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["gatePositionPct"],
+        message: "A paywalled article needs a gate position between 1 and 99",
+      });
+    }
+  });
 
 export async function articlePublishRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
@@ -45,7 +68,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
   app.post("/articles", { preHandler: requireAuth }, async (req, reply) => {
     const parsed = IndexArticleSchema.safeParse(req.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() });
+      return reply.status(400).send(zodValidationError(parsed.error));
     }
 
     const writerId = req.session!.sub;

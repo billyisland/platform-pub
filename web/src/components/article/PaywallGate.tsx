@@ -6,12 +6,14 @@ import { ForAllMark } from '../icons/ForAllMark'
 
 interface PaywallGateProps {
   pricePounds: string | null
+  pricePence?: number | null
   freeAllowanceRemaining: number
   hasPaymentMethod: boolean
   isLoggedIn: boolean
   onUnlock: () => void
   unlocking: boolean
   error: string | null
+  errorNeedsCard?: boolean
   writerUsername?: string
   writerName?: string
   subscriptionPricePence?: number
@@ -24,30 +26,43 @@ interface PaywallGateProps {
 }
 
 export function PaywallGate({
-  pricePounds, freeAllowanceRemaining, hasPaymentMethod, isLoggedIn,
-  onUnlock, unlocking, error,
+  pricePounds, pricePence, freeAllowanceRemaining, hasPaymentMethod, isLoggedIn,
+  onUnlock, unlocking, error, errorNeedsCard,
   writerUsername, writerName, subscriptionPricePence, isSubscribed,
   onSubscribe, subscribing,
   writerSpendThisMonthPence, nudgeShownThisMonth, writerId,
 }: PaywallGateProps) {
-  let heading: string
+  const heading = 'Keep reading'
   let subtext: string
-  let buttonLabel: string
+  let buttonLabel = 'Continue reading'
   let showPrice = false
+  let suggestCard = false
+
+  // The copy must match what the server will actually do (accrual.ts):
+  // card on file → the read accrues to the tab (allowance untouched);
+  // no card → the read draws on the free credit, and is REFUSED once the
+  // price exceeds what's left (the F3 floor). Never claim an article is
+  // "part of your free allowance" when the credit can't cover it.
+  const remainingPounds = (freeAllowanceRemaining / 100).toFixed(2)
+  const coveredByAllowance =
+    pricePence == null || pricePence <= freeAllowanceRemaining
 
   if (!isLoggedIn) {
-    heading = 'Keep reading'
     subtext = 'Create a free account to continue. Your first £5 of reading is on us — no card required.'
     buttonLabel = 'Sign up to read'
-  } else if (freeAllowanceRemaining > 0) {
-    heading = 'Keep reading'
-    subtext = `This article is part of your free reading allowance. You have £${(freeAllowanceRemaining / 100).toFixed(2)} remaining.`
-    buttonLabel = 'Continue reading'
-  } else {
-    heading = 'Keep reading'
+  } else if (hasPaymentMethod) {
     subtext = 'This will be added to your reading tab.'
-    buttonLabel = 'Continue reading'
     showPrice = true
+  } else if (freeAllowanceRemaining > 0 && coveredByAllowance) {
+    subtext = `This article is part of your free reading credit. You have £${remainingPounds} remaining.`
+  } else if (freeAllowanceRemaining > 0) {
+    subtext = `This article costs more than your remaining free credit (£${remainingPounds}). Add a payment card to keep reading — you only pay for what you read.`
+    showPrice = true
+    suggestCard = true
+  } else {
+    subtext = 'You’ve used your free reading credit. Add a payment card to keep reading — you only pay for what you read.'
+    showPrice = true
+    suggestCard = true
   }
 
   const showSubscribeOption = isLoggedIn && !isSubscribed && subscriptionPricePence && subscriptionPricePence > 0
@@ -122,6 +137,17 @@ export function PaywallGate({
         <button onClick={onUnlock} disabled={unlocking} className="btn-accent disabled:opacity-50">
           {unlocking ? 'Unlocking...' : buttonLabel}
         </button>
+
+        {/* Add-card affordance whenever a card is the fix (pre-empted by the
+            copy above, or surfaced by a 402 from the unlock attempt). Links to
+            the Settings overlay; a full-page hop lands back in the workspace. */}
+        {isLoggedIn && !hasPaymentMethod && (suggestCard || errorNeedsCard) && (
+          <div className="mt-4">
+            <a href="/reader?overlay=settings" className="btn-text">
+              Add a payment card →
+            </a>
+          </div>
+        )}
 
         {/* Subscribe option */}
         {showSubscribeOption && (

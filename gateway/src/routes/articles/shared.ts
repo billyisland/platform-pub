@@ -26,7 +26,12 @@ export async function proxyToService(
     if (req.headers['x-reader-pubkey']) headers['x-reader-pubkey'] = req.headers['x-reader-pubkey'] as string
     if (req.headers['x-writer-id']) headers['x-writer-id'] = req.headers['x-writer-id'] as string
 
-    const fetchOpts: RequestInit = { method, headers }
+    const fetchOpts: RequestInit = {
+      method,
+      headers,
+      // Bound the proxy hop — a hung upstream becomes a 502, not a hung client.
+      signal: AbortSignal.timeout(15_000),
+    }
     if (method !== 'GET' && method !== 'HEAD' && req.body) {
       fetchOpts.body = JSON.stringify(req.body)
     }

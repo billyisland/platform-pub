@@ -4,6 +4,7 @@ import { vaultService, KeyServiceError } from "../services/vault.js";
 import { decryptContentKey } from "../lib/kms.js";
 import { wrapKeyForReader } from "../lib/nip44.js";
 import { pool } from "@platform-pub/shared/db/client.js";
+import { zodValidationError } from "@platform-pub/shared/lib/validation.js";
 import logger from "../lib/logger.js";
 
 // =============================================================================
@@ -49,7 +50,7 @@ export async function keyRoutes(app: FastifyInstance) {
 
       const parsed = PublishVaultSchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() });
+        return reply.status(400).send(zodValidationError(parsed.error));
       }
 
       // Verify the writer owns this article
@@ -106,7 +107,7 @@ export async function keyRoutes(app: FastifyInstance) {
 
       const parsed = UpdateVaultEventIdSchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.flatten() });
+        return reply.status(400).send(zodValidationError(parsed.error));
       }
 
       const { rows } = await pool.query<{ id: string }>(

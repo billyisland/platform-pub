@@ -4,7 +4,10 @@ import {
   type SignedNostrEvent,
 } from "@platform-pub/shared/lib/relay-outbox.js";
 import { signEvent } from "../lib/key-custody-client.js";
-import { publishToPublication } from "../services/publication-publisher.js";
+import {
+  publishToPublication,
+  PublicationPaywallUnsupportedError,
+} from "../services/publication-publisher.js";
 import { sendPublishNotifications } from "@platform-pub/shared/lib/publish-emails.js";
 import { checkAndTriggerDriveFulfilment } from "../routes/drives.js";
 import logger from "@platform-pub/shared/lib/logger.js";
@@ -77,6 +80,21 @@ export async function publishScheduledDrafts(): Promise<void> {
         "Scheduler: draft published successfully",
       );
     } catch (err) {
+      if (err instanceof PublicationPaywallUnsupportedError) {
+        // Permanent rejection — retrying can never succeed. Un-schedule the
+        // draft (it returns to the writer's plain drafts, content intact).
+        await pool
+          .query(
+            "UPDATE article_drafts SET scheduled_at = NULL WHERE id = $1",
+            [draft.id],
+          )
+          .catch(() => {});
+        logger.warn(
+          { draftId: draft.id, writerId: draft.writer_id },
+          "Scheduler: paywalled publication draft un-scheduled (publication paywalls unsupported)",
+        );
+        continue;
+      }
       // Restore scheduled_at so the draft is retried next cycle
       await pool
         .query("UPDATE article_drafts SET scheduled_at = now() WHERE id = $1", [

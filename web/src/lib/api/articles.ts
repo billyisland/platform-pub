@@ -75,6 +75,11 @@ export const articles = {
     request<{ pinned: boolean }>(`/articles/${articleId}/pin`, {
       method: "POST",
     }),
+
+  // Soft-delete (writer-owned). Used by the publish pipeline to compensate a
+  // failed paywalled publish so no broken article stays live.
+  remove: (articleId: string) =>
+    request<{ ok: boolean }>(`/articles/${articleId}`, { method: "DELETE" }),
 };
 
 // =============================================================================

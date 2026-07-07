@@ -90,6 +90,12 @@ export async function articleGatePassRoutes(app: FastifyInstance) {
             return reply.status(404).send({ error: "Article not found" });
           case "not_gated":
             return reply.status(400).send({ error: "Article is not gated" });
+          case "misconfigured":
+            return reply.status(409).send({
+              error: "article_misconfigured",
+              message:
+                "This article can't be unlocked right now — its paywalled content wasn't stored correctly. You have not been charged. The author needs to re-publish it.",
+            });
           case "invitation_required":
             return reply.status(403).send({
               error: "invitation_required",

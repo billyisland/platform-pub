@@ -6,16 +6,27 @@ import type { PublishData } from '../components/editor/ArticleEditor'
 // =============================================================================
 // Publishing Service
 //
-// Orchestrates the full article publishing pipeline:
+// Orchestrates the full article publishing pipeline.
 //
-//   1. Build and sign the NIP-23 article event v1 (free content only)
-//   2. Publish v1 to the relay via gateway
-//   3. Index v1 in the platform database → get back the article UUID
-//   4. If paywalled:
-//      a. Call key service to encrypt the paywall body (needs real article UUID)
-//      b. Build NIP-23 event v2 with ['payload', ciphertext, algorithm] tag
-//      c. Sign and publish v2 via gateway
-//      d. Re-index with v2 event ID
+// Free articles:
+//   1. Build, sign AND publish the NIP-23 event (v1 is canonical)
+//   2. Index in the platform database (on failure: retract v1 from the relay)
+//
+// Paywalled articles (mirrors the scheduler pipeline — v1 never reaches the
+// relay, so a failure part-way can't leave a live article whose paywall body
+// was never vaulted, the "poisoned article" class):
+//   1. Build and sign v1 (free content only) — SIGN ONLY, no relay publish.
+//      v1 exists purely as the vault-ownership anchor: the key service
+//      verifies the article row's nostr_event_id against it.
+//   2. Index v1 → get the article UUID (row not on the relay yet)
+//   3. Call key service to encrypt the paywall body (vault_keys row)
+//   4. Build v2 with the ['payload', ciphertext, algorithm] tag, sign and
+//      publish — the only event that ever reaches the relay
+//   5. Re-index with v2's event ID (upsert on (writer, dTag))
+//   On a step-3/4 failure for a NEW article, the just-created index row is
+//   soft-deleted (best-effort) so nothing broken stays in feeds; the draft
+//   still holds the full content. Edits are left in place — their original
+//   vault key is intact, so reader unlocks keep working via the DB ciphertext.
 // =============================================================================
 
 // Use relative URLs so requests go through the Next.js rewrite (same origin).
@@ -33,39 +44,55 @@ export async function publishArticle(
   existingDTag?: string
 ): Promise<PublishResult> {
   const dTag = existingDTag ?? generateDTag(data.title)
+  const isPaywalled = data.isPaywalled
 
-  // Step 1: Build and publish NIP-23 v1 (free content only — no payload yet)
-  const v1 = buildNip23Event(data, dTag, null)
-  const signedV1 = await signAndPublish(v1)
+  // A paywalled publish with nothing behind the gate can never be vaulted
+  // (the key service rejects an empty body) — refuse before touching anything.
+  // The editor validates this too; this is the pipeline's own guard.
+  if (isPaywalled && !data.paywallContent.trim()) {
+    throw new Error('There is no content after the paywall gate — move the gate up, or remove it.')
+  }
 
-  // Step 2: Index v1 → get article UUID
-  let articleId!: string
-  try {
-    const result = await articlesApi.index({
-      nostrEventId: signedV1.id,
+  const indexArticle = (nostrEventId: string, includeSendEmail: boolean) =>
+    articlesApi.index({
+      nostrEventId,
       dTag,
       title: data.title,
       summary: data.dek?.trim() || undefined,
       content: data.freeContent,
-      accessMode: data.isPaywalled ? 'paywalled' : 'public',
+      accessMode: isPaywalled ? 'paywalled' : 'public',
       pricePence: data.pricePence,
       gatePositionPct: data.gatePositionPct,
       coverImageUrl: data.coverImageUrl ?? null,
-      sendEmail: data.sendEmail,
+      ...(includeSendEmail ? { sendEmail: data.sendEmail } : {}),
     })
+
+  // Step 1: Build and sign NIP-23 v1 (free content only — no payload yet).
+  // Free articles publish it to the relay; paywalled articles ONLY SIGN it
+  // (nothing on the relay until the vault is sealed and v2 exists).
+  const v1 = buildNip23Event(data, dTag, null)
+  const signedV1 = isPaywalled ? await signViaGateway(v1) : await signAndPublish(v1)
+
+  // Step 2: Index v1 → get article UUID
+  let articleId!: string
+  try {
+    const result = await indexArticle(signedV1.id, true)
     articleId = result.articleId
   } catch (indexErr) {
-    // Retract v1 from relay so it doesn't become a dead link
-    try {
-      await signAndPublish({
-        kind: KIND_DELETION,
-        content: '',
-        tags: [
-          ['e', signedV1.id],
-          ['a', `30023:${writerPubkey}:${dTag}`],
-        ],
-      })
-    } catch { /* best-effort */ }
+    if (!isPaywalled) {
+      // Retract v1 from relay so it doesn't become a dead link
+      try {
+        await signAndPublish({
+          kind: KIND_DELETION,
+          content: '',
+          tags: [
+            ['e', signedV1.id],
+            ['a', `30023:${writerPubkey}:${dTag}`],
+          ],
+        })
+      } catch { /* best-effort */ }
+    }
+    // Paywalled: v1 was never published — nothing to retract.
     throw indexErr
   }
 
@@ -74,36 +101,42 @@ export async function publishArticle(
     try { await tagsApi.setForArticle(articleId, data.tags) } catch { /* non-fatal */ }
   }
 
-  if (!data.isPaywalled || !data.paywallContent) {
+  if (!isPaywalled) {
     return { articleEventId: signedV1.id, dTag, articleId }
   }
 
-  // Step 3: Encrypt the paywall body — needs articleId for vault key FK
-  const { ciphertext, algorithm } = await encryptPaywallBody(
-    signedV1.id,
-    articleId,
-    dTag,
-    data
-  )
+  let signedV2
+  try {
+    // Step 3: Encrypt the paywall body — needs articleId for vault key FK
+    const { ciphertext, algorithm } = await encryptPaywallBody(
+      signedV1.id,
+      articleId,
+      dTag,
+      data
+    )
 
-  // Step 4: Build NIP-23 v2 with embedded payload tag, sign and publish
-  // Replaceable events (kind 30023) require strictly newer created_at to replace
-  // the prior version on the relay. Pin v2 one second ahead of v1.
-  const v2 = buildNip23Event(data, dTag, { ciphertext, algorithm })
-  const signedV2 = await signAndPublish({ ...v2, created_at: signedV1.created_at + 1 })
+    // Step 4: Build NIP-23 v2 with embedded payload tag, sign and publish.
+    // This is the only event that reaches the relay. Replaceable events
+    // (kind 30023) need strictly newer created_at to replace a prior version
+    // on edit — pin v2 one second ahead of v1.
+    const v2 = buildNip23Event(data, dTag, { ciphertext, algorithm })
+    signedV2 = await signAndPublish({ ...v2, created_at: signedV1.created_at + 1 })
+  } catch (err) {
+    if (!existingDTag) {
+      // New article: the index row just created would be a live paywalled
+      // article with no vault key — readers must never see it. Soft-delete
+      // (best-effort); the editor keeps the draft, so nothing is lost.
+      try { await articlesApi.remove(articleId) } catch { /* best-effort */ }
+    }
+    // Edits keep their original vault key, so the live article still works.
+    throw new Error(
+      `Publishing the paywalled section failed — ${err instanceof Error ? err.message : 'unknown error'}. ` +
+      'Nothing broken went live and your draft is intact. Please try publishing again.'
+    )
+  }
 
-  // Step 5: Re-index with v2 event ID (upsert on nostr_event_id)
-  await articlesApi.index({
-    nostrEventId: signedV2.id,
-    dTag,
-    title: data.title,
-    summary: data.dek?.trim() || undefined,
-    content: data.freeContent,
-    accessMode: data.isPaywalled ? 'paywalled' : 'public',
-    pricePence: data.pricePence,
-    gatePositionPct: data.gatePositionPct,
-    coverImageUrl: data.coverImageUrl ?? null,
-  })
+  // Step 5: Re-index with v2 event ID (upsert on (writer, dTag))
+  await indexArticle(signedV2.id, false)
 
   return { articleEventId: signedV2.id, dTag, articleId }
 }
@@ -170,7 +203,14 @@ async function encryptPaywallBody(
 
   if (!res.ok) {
     const body = await res.json().catch(() => null)
-    throw new Error(`Vault encryption failed: ${res.status} — ${body?.error ?? 'unknown'}`)
+    // Prefer the human `message`; never string-interpolate a non-string
+    // `error` (a zod flatten object renders as "[object Object]").
+    const detail =
+      typeof body?.message === 'string' ? body.message
+      : typeof body?.error === 'string' ? body.error
+      : body?.error != null ? JSON.stringify(body.error)
+      : 'unknown'
+    throw new Error(`Vault encryption failed: ${res.status} — ${detail}`)
   }
 
   const result = await res.json()

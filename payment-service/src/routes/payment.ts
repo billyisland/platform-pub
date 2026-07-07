@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { pool } from '@platform-pub/shared/db/client.js'
+import { zodValidationError } from '@platform-pub/shared/lib/validation.js'
 import { accrualService, AllowanceExhaustedError } from '../services/accrual.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
@@ -66,7 +67,7 @@ export async function paymentRoutes(app: FastifyInstance) {
 
     const parsed = GatePassSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
+      return reply.status(400).send(zodValidationError(parsed.error))
     }
 
     try {
@@ -102,7 +103,7 @@ export async function paymentRoutes(app: FastifyInstance) {
 
     const parsed = CardConnectedSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.flatten() })
+      return reply.status(400).send(zodValidationError(parsed.error))
     }
 
     const { readerId, stripeCustomerId } = parsed.data

@@ -6,6 +6,7 @@ import { PaywallGate } from './PaywallGate'
 import { GiftLinkModal } from './GiftLinkModal'
 import { QuoteSelector } from './QuoteSelector'
 import { unwrapContentKey, decryptVaultContent } from '../../lib/vault'
+import { mapUnlockError } from '../../lib/unlock-errors'
 import { renderMarkdown } from '../../lib/markdown'
 import { Avatar } from '../ui/Avatar'
 import { ReportButton } from '../ui/ReportButton'
@@ -63,6 +64,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
   const [paywallBody, setPaywallBody] = useState<string | null>(null)
   const [unlocking, setUnlocking] = useState(false)
   const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [unlockNeedsCard, setUnlockNeedsCard] = useState(false)
   const [showAllowanceModal, setShowAllowanceModal] = useState(false)
   const [freeHtml, setFreeHtml] = useState<string>(preRenderedFreeHtml ?? '')
   const [paywallHtml, setPaywallHtml] = useState<string>('')
@@ -127,6 +129,7 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
         setUnlockError(res.status === 402
           ? 'Add a payment card in Settings to subscribe.'
           : 'Failed to subscribe. Try again.')
+        setUnlockNeedsCard(res.status === 402)
         return
       }
       setIsSubscribed(true)
@@ -137,23 +140,22 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
 
   async function handleUnlock() {
     if (!user) { window.location.href = '/auth?mode=signup'; return }
-    setUnlocking(true); setUnlockError(null)
+    setUnlocking(true); setUnlockError(null); setUnlockNeedsCard(false)
     try {
       let gatePassResult
       try { gatePassResult = await articlesApi.gatePass(article.id) }
       catch (err: any) {
-        if (err.status === 402) {
-          setUnlockError('Payment required.')
-          return
-        }
-        throw err
+        const view = mapUnlockError(err?.status, err?.body)
+        setUnlockError(view.message)
+        setUnlockNeedsCard(view.needsCard)
+        return
       }
 
       const ciphertext: string | undefined = gatePassResult.ciphertext
         ?? article.encryptedPayload
 
       if (!ciphertext) {
-        setUnlockError('Could not find the encrypted content.')
+        setUnlockError('Could not find the encrypted content. Try again — you won’t be charged twice.')
         return
       }
 
@@ -161,14 +163,16 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
       const contentKeyBase64 = await unwrapContentKey(gatePassResult.encryptedKey)
       const body = await decryptVaultContent(ciphertext, contentKeyBase64, algorithm)
       setPaywallBody(body)
-      sessionStorage.setItem(`unlocked:${article.id}`, body)
+      try { sessionStorage.setItem(`unlocked:${article.id}`, body) } catch { /* quota — cache only */ }
       if (gatePassResult.allowanceJustExhausted) setShowAllowanceModal(true)
+      // The gate copy reads the remaining free credit off the auth store —
+      // refresh it so the next paywall shows the post-unlock figure.
+      void useAuth.getState().fetchMe()
     } catch (err: any) {
+      // Post-payment stage (key unwrap / decrypt). The unlock row is already
+      // persisted server-side, so a retry re-issues the key without charging.
       console.error('Paywall unlock failed:', err)
-      if (!unlockError) {
-        const msg = err?.body?.message ?? err?.body?.error ?? err?.message
-        setUnlockError(msg && msg !== '[object Object]' ? msg : 'Something went wrong. Please try again.')
-      }
+      setUnlockError('Unlocking failed after payment was recorded. Try again — you won’t be charged twice.')
     } finally { setUnlocking(false) }
   }
 
@@ -263,12 +267,14 @@ export function ArticleReader({ article, articleDbId, writerName, writerUsername
               {article.isPaywalled && !isUnlocked && (
                 <PaywallGate
                   pricePounds={pricePounds}
+                  pricePence={article.pricePence ?? null}
                   freeAllowanceRemaining={user?.freeAllowanceRemainingPence ?? 0}
                   hasPaymentMethod={user?.hasPaymentMethod ?? false}
                   isLoggedIn={!!user}
                   onUnlock={handleUnlock}
                   unlocking={unlocking}
                   error={unlockError}
+                  errorNeedsCard={unlockNeedsCard}
                   writerUsername={writerUsername}
                   writerName={writerName}
                   subscriptionPricePence={subscriptionPricePence}

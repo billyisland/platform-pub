@@ -51,6 +51,7 @@ type GatePassResult =
   | { kind: "success"; body: GatePassSuccessBody }
   | { kind: "not_found" }
   | { kind: "not_gated" }
+  | { kind: "misconfigured" }
   | { kind: "invitation_required" }
   | { kind: "payment_required"; error: string }
   | { kind: "key_issuance_failed_after_payment"; readEventId: string | null }
@@ -83,6 +84,33 @@ export async function performGatePass(
     const article = articleRow.rows[0];
     if (article.access_mode === "public") {
       return { kind: "not_gated" };
+    }
+
+    // Step 1b: never charge for undeliverable content. A paywalled article
+    // must have a vault key (the encrypted body) and a chargeable price
+    // before ANY money moves. A row that fails this check is a broken publish
+    // (e.g. the vault-encryption step failed after indexing) — refusing here
+    // turns "reader pays, then key issuance 404s forever" into a clean error.
+    if (article.access_mode === "paywalled") {
+      const vaultRow = await pool.query<{ ok: number }>(
+        `SELECT 1 AS ok FROM vault_keys WHERE article_id = $1`,
+        [article.id],
+      );
+      const hasVaultKey = vaultRow.rows.length > 0;
+      const priceValid =
+        article.price_pence !== null && article.price_pence >= 1;
+      if (!hasVaultKey || !priceValid) {
+        logger.error(
+          {
+            articleId: article.id,
+            nostrEventId,
+            pricePence: article.price_pence,
+            hasVaultKey,
+          },
+          "Gate pass refused: paywalled article misconfigured (missing vault key or invalid price)",
+        );
+        return { kind: "misconfigured" };
+      }
     }
 
     // Step 2: Free-access fast path
@@ -142,6 +170,11 @@ export async function performGatePass(
         "Content-Type": "application/json",
         "x-internal-token": INTERNAL_SERVICE_TOKEN,
       },
+      // A hung payment service must not hang every unlock. On timeout the
+      // charge may or may not have committed — that ambiguity is safe: the
+      // payment service's gate-pass is idempotent per (reader, article) (F7),
+      // so the reader's retry either finds the committed read or charges once.
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
         readerId,
         articleId: article.id,
@@ -266,6 +299,9 @@ async function fetchContentKey(
         "x-reader-id": readerId,
         "x-reader-pubkey": readerPubkey,
       },
+      // Timeout after payment is safe: the unlock row is already persisted,
+      // so the reader's retry re-issues the key without re-charging.
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({}),
     },
   );
@@ -311,10 +347,15 @@ function isNetworkError(err: unknown): boolean {
     message?: string;
     cause?: { code?: string };
   };
+  const name = (err as { name?: string }).name;
   return (
     e.cause?.code === "ECONNREFUSED" ||
     e.cause?.code === "ENOTFOUND" ||
     e.code === "ECONNREFUSED" ||
+    // AbortSignal.timeout fires TimeoutError (AbortError on some runtimes) —
+    // an unresponsive upstream is "unreachable", not an internal error.
+    name === "TimeoutError" ||
+    name === "AbortError" ||
     (typeof e.message === "string" && e.message.includes("fetch failed"))
   );
 }

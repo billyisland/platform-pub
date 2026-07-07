@@ -46,9 +46,37 @@ interface PublishToPublicationResult {
   dTag: string;
 }
 
+/**
+ * Thrown when a paywalled article is submitted to a publication. The
+ * publication pipeline has NO vault step — it never encrypts or stores the
+ * paywall body (fullContent is only used for word count), so a "paywalled"
+ * publication article would take readers' money against content that does
+ * not exist server-side. Publishing paywalled publication articles stays
+ * blocked until the pipeline gains the vault call the personal scheduler
+ * pipeline already has (scheduler.ts::createVault).
+ */
+export class PublicationPaywallUnsupportedError extends Error {
+  constructor() {
+    super(
+      "Paywalled articles aren't supported in publications yet — publish on your personal profile, or remove the paywall gate.",
+    );
+    this.name = "PublicationPaywallUnsupportedError";
+  }
+}
+
 export async function publishToPublication(
   input: PublishToPublicationInput,
 ): Promise<PublishToPublicationResult> {
+  // Hard block — see PublicationPaywallUnsupportedError. Checked here (not
+  // only at the routes) so every caller is covered: CMS submit, the web
+  // editor path, and the scheduled-draft worker. Tested via a widened local
+  // so TS doesn't narrow input.accessMode to "public" — the downstream
+  // paywalled branches stay compilable for when the vault pipeline lands.
+  const requestedAccessMode: string = input.accessMode;
+  if (requestedAccessMode === "paywalled") {
+    throw new PublicationPaywallUnsupportedError();
+  }
+
   const dTag = input.existingDTag ?? generateDTag(input.title);
 
   // Fetch publication for its nostr pubkey and pricing config
@@ -322,6 +350,13 @@ export async function approveAndPublishArticle(
   );
   if (articles.length === 0) throw new Error("Article not found");
   const article = articles[0];
+
+  // Same block as publishToPublication: a submitted paywalled article has no
+  // vault (its paywall body was never stored), so approving it would put a
+  // charge-for-nothing article live.
+  if (article.access_mode === "paywalled") {
+    throw new PublicationPaywallUnsupportedError();
+  }
 
   const { rows: pubs } = await pool.query<{ nostr_pubkey: string }>(
     "SELECT nostr_pubkey FROM publications WHERE id = $1",
