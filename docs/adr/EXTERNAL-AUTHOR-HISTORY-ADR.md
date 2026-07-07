@@ -1,7 +1,15 @@
 # EXTERNAL-AUTHOR-HISTORY-ADR — External author posting history
 
-**Status: Accepted — spec verified against the codebase 2026-07-06; nothing
-implemented yet. Build plan in §7.**
+**Status: Implemented 2026-07-07 — all four §7 phases shipped (migration 148;
+promotion fix in all three writers; `feed_ingest_nostr_backfill`; profile-view
+hydration for nostr + atproto + activitypub behind
+`AUTHOR_TIMELINE_HYDRATION_ENABLED`, default on). One implementation addition
+beyond the spec: the atproto/AP timeline fetchers pin
+`external_items.author_uri` to the profile's exact `stable_handle` — the
+identity trigger mints `external_authors` from `author_uri` for those
+protocols, so an origin-shaped value (bsky.app URL / account web URL) would
+attribute the hydrated rows to a different author record and the profile would
+stay empty.**
 
 External author profiles — reached from any byline via `/author/:authorId` —
 routinely render an empty posting history. For Nostr authors it is empty almost
