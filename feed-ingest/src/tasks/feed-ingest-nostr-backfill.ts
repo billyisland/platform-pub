@@ -7,6 +7,7 @@ import {
 } from "@platform-pub/shared/lib/http-client.js";
 import { recordRepostEdge } from "../lib/repost-edge.js";
 import { getPlatformConfig } from "../lib/platform-config.js";
+import { mergeNostrRelayUrls } from "@platform-pub/shared/lib/nip65.js";
 import { NOSTR_FALLBACK_RELAYS } from "../lib/nostr-relay.js";
 import {
   type NostrEvent,
@@ -64,14 +65,13 @@ export function buildBackfillRelaySet(
 
 // Persistence union for external_sources.relay_urls: existing entries first
 // (user-supplied relays are never dropped), discovered write relays appended,
-// deduped, capped at 10.
+// deduped, capped at 10. Rule lives in shared/ (the gateway's profile-view
+// hydration applies the same union to shadow sources).
 export function mergeRelayUrls(
   existing: string[],
   discovered: string[],
 ): string[] {
-  return [...new Set([...existing, ...discovered])]
-    .filter((r) => r.startsWith("ws://") || r.startsWith("wss://"))
-    .slice(0, NOSTR_RELAY_PERSIST_CAP);
+  return mergeNostrRelayUrls(existing, discovered, NOSTR_RELAY_PERSIST_CAP);
 }
 
 export interface CollectedBackfill {

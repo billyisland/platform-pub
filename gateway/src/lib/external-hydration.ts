@@ -94,28 +94,47 @@ export function willHydrateThread(itemId: string, protocol: string): boolean {
 // Dual-write a batch of hydrated nodes (external_items + feed_items) in one
 // transaction. Context-only; deduped by (protocol, source_item_uri) so a node
 // already ingested for real is left as a counts refresh, never duplicated.
-async function persistHydratedThreadNodes(
+//
+// opts.profileHydrated (EXTERNAL-AUTHOR-HISTORY-ADR §3.3/§3.4): profile-view
+// timeline hydration writes is_profile_hydrated = TRUE so the rows show in
+// GET /author/:id/posts while inheriting everything is_context_only already
+// buys (feed exclusion, context GC, thread-projector expansion). On conflict
+// the flag OR-folds: thread hydration (EXCLUDED = FALSE) never changes
+// anything; profile hydration GRADUATES a pre-existing thread-context row of
+// this author into the profile view; setting it on an already-real row is
+// harmless (real rows pass the /posts filter via is_context_only regardless,
+// and GC only looks at is_context_only). is_context_only itself is never
+// touched on conflict — hydration can never demote a real row (§4.2 is the
+// promotion mirror, in the ingest writers).
+//
+// opts.client: run on the caller's open transaction instead of opening one
+// (used by tests to roll fixtures back).
+export async function persistHydratedThreadNodes(
   sourceId: string,
   protocol: "atproto" | "activitypub" | "nostr_external",
   nodes: HydratedNode[],
+  opts: { profileHydrated?: boolean; client?: { query: any } } = {},
 ): Promise<void> {
   if (nodes.length === 0) return;
   // atproto + activitypub both map to content_tier 'tier3' (migration 099 §7);
   // nostr_external is 'tier2', matching the native nostr ingest path
   // (feed-ingest-nostr.ts) so a hydrated node and a later real ingest agree.
   const tier = protocol === "nostr_external" ? "tier2" : "tier3";
-  await withTransaction(async (client) => {
+  const profileHydrated = opts.profileHydrated === true;
+  const run = async (client: { query: any }) => {
     for (const n of nodes) {
-      const ins = await client.query<{ id: string }>(
+      const ins = await client.query(
         `INSERT INTO external_items (
            source_id, protocol, tier, source_item_uri,
            author_name, author_handle, author_avatar_url, author_uri,
            content_text, content_html, media,
            source_reply_uri, interaction_data,
            like_count, reply_count, repost_count,
-           published_at, source_quote_uri, is_context_only
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, TRUE)
+           published_at, source_quote_uri, is_context_only,
+           is_profile_hydrated
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, TRUE, $19)
          ON CONFLICT (protocol, source_item_uri) DO UPDATE SET
+           is_profile_hydrated = external_items.is_profile_hydrated OR EXCLUDED.is_profile_hydrated,
            like_count = EXCLUDED.like_count,
            reply_count = EXCLUDED.reply_count,
            repost_count = EXCLUDED.repost_count,
@@ -164,6 +183,7 @@ async function persistHydratedThreadNodes(
           n.repostCount,
           n.publishedAt,
           n.sourceQuoteUri,
+          profileHydrated,
         ],
       );
       const extId = ins.rows[0]?.id;
@@ -201,7 +221,12 @@ async function persistHydratedThreadNodes(
         ],
       );
     }
-  });
+  };
+  if (opts.client) {
+    await run(opts.client);
+  } else {
+    await withTransaction(run);
+  }
 }
 
 // Walk a Bluesky getPostThread response into hydrated nodes (parent chain +

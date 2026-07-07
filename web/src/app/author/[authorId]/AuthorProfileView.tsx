@@ -94,18 +94,42 @@ export function AuthorProfileView({
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // The gateway kicked a background timeline hydration for this author
+  // (EXTERNAL-AUTHOR-HISTORY-ADR §3.1): show a quiet status line while the
+  // log is empty and refetch the first page once after ~2.5s (single retry,
+  // then rest — the thread projector's established pattern).
+  const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    let refetchTimer: ReturnType<typeof setTimeout> | undefined;
     setLoading(true);
     setError(false);
     setNotFound(false);
+    setHydrating(false);
     Promise.all([authorProfile(authorId), authorPosts(authorId)])
       .then(([prof, posts]) => {
         if (cancelled) return;
         setProfile(prof);
         setItems(posts.items);
         setCursor(posts.nextCursor);
+        if (posts.hydrating) {
+          setHydrating(true);
+          refetchTimer = setTimeout(() => {
+            authorPosts(authorId)
+              .then((res) => {
+                if (cancelled) return;
+                setItems(res.items);
+                setCursor(res.nextCursor);
+              })
+              .catch(() => {
+                /* keep whatever the first page showed */
+              })
+              .finally(() => {
+                if (!cancelled) setHydrating(false);
+              });
+          }, 2500);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -117,6 +141,7 @@ export function AuthorProfileView({
       });
     return () => {
       cancelled = true;
+      if (refetchTimer) clearTimeout(refetchTimer);
     };
   }, [authorId]);
 
@@ -307,7 +332,7 @@ export function AuthorProfileView({
 
       {items.length === 0 ? (
         <div className="label-ui text-grey-600 py-12 text-center">
-          NO POSTS YET
+          {hydrating ? "FETCHING RECENT POSTS FROM THE NETWORK…" : "NO POSTS YET"}
         </div>
       ) : (
         <div className="space-y-[40px]">

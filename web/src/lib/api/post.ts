@@ -125,18 +125,21 @@ export function deleteIdentityLink(
 // GET /author/:authorId/posts → chronological full-view Post log (paginated).
 // `kind` narrows the native log to articles or notes (the profile Work / Social
 // tabs); omit for the combined log (the constructed author profile).
+// `hydrating` (external authors, first page only) signals the gateway kicked a
+// background timeline hydration — the caller should refetch once shortly after
+// (EXTERNAL-AUTHOR-HISTORY-ADR §3.1).
 export function authorPosts(
   authorId: string,
   cursor?: string,
   kind?: "article" | "note",
   limit?: number,
-): Promise<{ items: Post[]; nextCursor?: string }> {
+): Promise<{ items: Post[]; nextCursor?: string; hydrating?: boolean }> {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
   if (kind) params.set("kind", kind);
   if (limit) params.set("limit", String(limit));
   const qs = params.toString();
-  return request<{ items: Post[]; nextCursor?: string }>(
+  return request<{ items: Post[]; nextCursor?: string; hydrating?: boolean }>(
     `/author/${authorId}/posts${qs ? `?${qs}` : ""}`,
   );
 }

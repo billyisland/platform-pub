@@ -18,6 +18,10 @@ import {
   buildExternalProfileUrl,
 } from "../lib/author-resolve.js";
 import { fetchNostrAuthorProfile } from "../lib/nostr-relay.js";
+import {
+  willHydrateAuthorTimeline,
+  hydrateAuthorTimeline,
+} from "../lib/author-timeline-hydration.js";
 
 // =============================================================================
 // Constructed author profile — UNIVERSAL-POST-ADR Phase 4 (§4.4, §9, §VI.3)
@@ -48,6 +52,13 @@ import { fetchNostrAuthorProfile } from "../lib/nostr-relay.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
+
+// The /posts context filter (EXTERNAL-AUTHOR-HISTORY-ADR §3.3): pure
+// thread-hydration context rows stay OUT (they're feed-pipeline pollution
+// guards), but profile-hydrated timeline rows are IN — they exist precisely
+// for this endpoint. Exported so the filter matrix is testable as SQL.
+export const AUTHOR_POSTS_CONTEXT_FILTER =
+  "(ei.is_context_only IS NOT TRUE OR ei.is_profile_hydrated IS TRUE)";
 
 
 interface ExternalAuthorRow {
@@ -481,8 +492,24 @@ export async function authorRoutes(app: FastifyInstance) {
         // author across every source; native filters by author_id.
         const xa = await loadExternalAuthor(authorId);
         let authorFilter: string;
+        let hydrating = false;
         if (xa) {
           authorFilter = "fi.external_author_id = $1";
+          // §3.1 — profile-view timeline hydration: first page only, whenever
+          // the TTL guard is clear (not only when the log is empty — a stale
+          // cache should refresh on view; the guard bounds cost). Background,
+          // never awaited: the client refetches once shortly after.
+          if (!cursor) {
+            const followUri = authorFollowUri(xa);
+            if (followUri && willHydrateAuthorTimeline(xa.id, xa.protocol)) {
+              hydrating = true;
+              void hydrateAuthorTimeline({
+                authorId: xa.id,
+                protocol: xa.protocol,
+                followUri,
+              });
+            }
+          }
         } else if (await isNativeAccount(authorId)) {
           authorFilter = kind
             ? `fi.author_id = $1 AND fi.item_type = '${kind}'`
@@ -506,7 +533,7 @@ export async function authorRoutes(app: FastifyInstance) {
           ${POST_JOINS}
           WHERE fi.deleted_at IS NULL
             AND ${authorFilter}
-            AND (ei.is_context_only IS NOT TRUE)
+            AND ${AUTHOR_POSTS_CONTEXT_FILTER}
             ${cursorClause}
           ORDER BY fi.published_at DESC, fi.id DESC
           LIMIT $2
@@ -526,7 +553,11 @@ export async function authorRoutes(app: FastifyInstance) {
           ? `${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
           : undefined;
 
-        return reply.send({ items, nextCursor });
+        return reply.send({
+          items,
+          nextCursor,
+          ...(hydrating ? { hydrating: true } : {}),
+        });
       } catch (err) {
         logger.error({ err, authorId }, "Author posts fetch failed");
         return reply.status(500).send({ error: "Author posts fetch failed" });

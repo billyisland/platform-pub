@@ -18,6 +18,21 @@ const WRITE_RELAY_CAP = 8;
 // read+write; marker "write" means write-only; marker "read" is excluded.
 // Scheme-checked (ws:// / wss://), deduped, capped. Empty input / no usable
 // tags ⇒ [] (callers fall back to hints + NOSTR_FALLBACK_RELAYS).
+// Persistence union for external_sources.relay_urls (§2.2 step 3 / §3.2):
+// existing entries first (user-supplied relays are never dropped), discovered
+// write relays appended, deduped, scheme-checked, capped. Shared by the
+// feed-ingest backfill and the gateway profile-view hydration so the rule
+// cannot drift.
+export function mergeNostrRelayUrls(
+  existing: string[],
+  discovered: string[],
+  cap = 10,
+): string[] {
+  return [...new Set([...existing, ...discovered])]
+    .filter((r) => r.startsWith("ws://") || r.startsWith("wss://"))
+    .slice(0, cap);
+}
+
 export function pickNostrWriteRelays(events: Nip65Event[]): string[] {
   if (events.length === 0) return [];
   const newest = events.reduce((a, b) => (b.created_at > a.created_at ? b : a));
