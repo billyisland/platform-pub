@@ -6,15 +6,16 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import { markFollowListDirty } from "../../lib/discovery-publish.js";
 import { UUID_RE, loadFeed, tagged, stepToWeight } from "./shared.js";
 
-// Maps an external protocol to its one-shot ingest job. nostr/rss/activitypub
-// poll; atproto backfills prior history (the Jetstream listener picks up live
-// posts via its DID refresh). null ⇒ no immediate job.
-function externalFetchTask(protocol: string): string | null {
+// Maps an external protocol to its one-shot subscribe-time ingest job.
+// rss/activitypub poll; atproto and nostr backfill prior history (steady state
+// is owned by the Jetstream listener and the 60s poll scheduler respectively).
+// null ⇒ no immediate job.
+export function externalFetchTask(protocol: string): string | null {
   switch (protocol) {
     case "rss":
       return "feed_ingest_rss";
     case "nostr_external":
-      return "feed_ingest_nostr";
+      return "feed_ingest_nostr_backfill";
     case "activitypub":
       return "feed_ingest_activitypub";
     case "atproto":
@@ -22,6 +23,21 @@ function externalFetchTask(protocol: string): string | null {
     default:
       return null;
   }
+}
+
+// Job key for the subscribe-time enqueue. The nostr backfill MUST NOT share
+// the poll scheduler's `feed_ingest_<sourceId>` key: a fresh source has
+// last_fetched_at IS NULL, so it is due on the very next 60s poll tick, and a
+// shared key would let graphile-worker's job-key replacement swap the
+// still-queued backfill for a plain poll job — silently skipping the backfill
+// almost every time (EXTERNAL-AUTHOR-HISTORY-ADR §2.1; precedent: the atproto
+// enrichment job's feed_ingest_enrich_<id>). Other protocols keep the shared
+// key deliberately — their subscribe job IS the poll job, so replacement is
+// dedup, not loss.
+export function externalFetchJobKey(task: string, sourceId: string): string {
+  return task === "feed_ingest_nostr_backfill"
+    ? `feed_ingest_backfill_${sourceId}`
+    : `feed_ingest_${sourceId}`;
 }
 
 const patchSourceSchema = z.object({
@@ -291,10 +307,14 @@ async function addSource(
           `SELECT graphile_worker.add_job(
              $2,
              json_build_object('sourceId', $1::text),
-             job_key := 'feed_ingest_' || $1::text,
+             job_key := $3,
              max_attempts := 1
            )`,
-          [input.externalSourceId, fetchTask],
+          [
+            input.externalSourceId,
+            fetchTask,
+            externalFetchJobKey(fetchTask, input.externalSourceId),
+          ],
         );
       }
       return insertSource(
@@ -390,10 +410,10 @@ async function addSource(
         `SELECT graphile_worker.add_job(
            $2,
            json_build_object('sourceId', $1::text),
-           job_key := 'feed_ingest_' || $1::text,
+           job_key := $3,
            max_attempts := 1
          )`,
-        [src.id, fetchTask],
+        [src.id, fetchTask, externalFetchJobKey(fetchTask, src.id)],
       );
     }
 

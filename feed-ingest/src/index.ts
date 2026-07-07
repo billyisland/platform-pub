@@ -14,6 +14,7 @@ import { sourceMetadataRefresh } from "./tasks/source-metadata-refresh.js";
 import { feedItemsReconcile } from "./tasks/feed-items-reconcile.js";
 import { feedItemsAuthorRefresh } from "./tasks/feed-items-author-refresh.js";
 import { feedIngestAtprotoBackfill } from "./tasks/feed-ingest-atproto-backfill.js";
+import { feedIngestNostrBackfill } from "./tasks/feed-ingest-nostr-backfill.js";
 import { feedIngestActivityPub } from "./tasks/feed-ingest-activitypub.js";
 import { outboundCrossPost } from "./tasks/outbound-cross-post.js";
 import { outboundTokenRefresh } from "./tasks/outbound-token-refresh.js";
@@ -134,6 +135,7 @@ async function start() {
       feed_items_reconcile: feedItemsReconcile,
       feed_items_author_refresh: feedItemsAuthorRefresh,
       feed_ingest_atproto_backfill: feedIngestAtprotoBackfill,
+      feed_ingest_nostr_backfill: feedIngestNostrBackfill,
       feed_ingest_activitypub: feedIngestActivityPub,
       outbound_cross_post: outboundCrossPost,
       outbound_token_refresh: outboundTokenRefresh,

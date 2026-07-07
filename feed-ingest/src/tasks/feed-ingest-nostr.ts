@@ -4,6 +4,7 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import { pinnedWebSocketOptions } from "@platform-pub/shared/lib/http-client.js";
 import { recordRepostEdge } from "../lib/repost-edge.js";
 import { getPlatformConfig } from "../lib/platform-config.js";
+import { NOSTR_FALLBACK_RELAYS } from "../lib/nostr-relay.js";
 import {
   type NostrEvent,
   validateNostrEvents,
@@ -57,11 +58,13 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     return;
   }
 
-  if (!source.relay_urls || source.relay_urls.length === 0) {
-    logger.warn({ sourceId }, "Nostr source has no relay URLs — skipping");
-    return;
-  }
-  const relayUrls = source.relay_urls;
+  // §2.6 repair: a relay-less source used to be skipped outright — permanently
+  // dead ingest. Fall back to the broad fallback set at QUERY time instead
+  // (never written to the row: the durable fix is the backfill's NIP-65
+  // persistence; the fallbacks are a default, not discovered author data).
+  const relayUrls = source.relay_urls?.length
+    ? source.relay_urls
+    : NOSTR_FALLBACK_RELAYS;
 
   // Load config (process-cached, 30s TTL — A5)
   const config = await getPlatformConfig();
