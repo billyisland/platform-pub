@@ -23,6 +23,17 @@ starts.
 
 ## Progress
 
+- **2026-07-08** — **Stripe webhooks routed through nginx.** The webhook handler
+  (`payment-service/src/routes/webhook.ts`, `POST /webhooks/stripe`) is registered
+  with **no prefix**, so it does not sit under the `/api/` → gateway proxy. `nginx.conf`
+  had no matching `location`, so the path fell through to `location /` (web) and 404'd
+  — Stripe events never reached the payment service. Added a dedicated
+  `location = /webhooks/stripe` → `http://payment:3001` block (set-var + shared
+  `127.0.0.11` resolver, matching the `/media/` convention; raw body forwarded
+  untouched for signature verification). Prod activation still needs the Stripe
+  dashboard endpoint pointed at `https://all.haus/webhooks/stripe`, the signing
+  secret(s) in `payment-service/.env`, and an nginx **force-recreate** (single-file
+  bind-mount inode trap). Docs: `DEPLOYMENT.md` *Known limitations* › Stripe.
 - **2026-07-08** — **media uploads moved onto the Blossom blob store (BUD-02)**
   (commit `9664366`; `docs/adr/ADR-blossom-migration.md` Phases 1–3, **live on
   prod**). The gateway now crunches to WebP then signs a kind-24242 auth with the
