@@ -1,30 +1,32 @@
 import sharp from "sharp";
 import fs from "fs/promises";
-import path from "path";
 import type { FastifyInstance } from "fastify";
 import { pool } from "@platform-pub/shared/db/client.js";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
+import { signEvent } from "../lib/key-custody-client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 
 // =============================================================================
 // Media Routes
 //
-// POST /media/upload       — Upload image (Sharp crunch → local disk)
+// POST /media/upload       — Upload image (Sharp crunch → Blossom BUD-02)
 // GET  /media/oembed       — Proxy oEmbed lookups
 //
-// At launch, images are stored on a local Docker volume and served directly
-// by nginx at /media/<sha256>.webp. This avoids the complexity of the Blossom
-// BUD-02 auth protocol while delivering the same outcome: content-addressed
-// image hosting.
-//
-// Post-launch, migrate to Blossom or S3 by changing where fileBuffer is
-// written — the public URL scheme stays the same.
+// Images are crunched to WebP, then uploaded to the internal Blossom blob store
+// via BUD-02 PUT /upload — the gateway signs the kind-24242 authorization event
+// server-side with the uploader's custodial key. nginx proxies
+// /media/<sha256>.webp → Blossom's /<sha256>.webp. The stored/public URL scheme
+// (PUBLIC_MEDIA_URL/<sha256>.webp) is backend-independent, so swapping the store
+// again needs no URL rewrites. See docs/adr/ADR-blossom-migration.md.
 // =============================================================================
 
 const MEDIA_DIR = process.env.MEDIA_DIR ?? "/app/media";
 const PUBLIC_MEDIA_URL =
   process.env.PUBLIC_MEDIA_URL ?? "https://all.haus/media";
+// Internal Blossom blob store (BUD-02). Fixed service hop — see the deliberate
+// safeFetch exemption at the upload call site.
+const BLOSSOM_URL = process.env.BLOSSOM_URL ?? "http://blossom:3003";
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -62,7 +64,7 @@ export async function mediaRoutes(app: FastifyInstance) {
   //   2. Crunch with Sharp (resize 1200px wide, convert to WebP quality 80)
   //   3. SHA-256 hash the crunched buffer (content-addressed filename)
   //   4. Check for duplicate in DB → return existing URL if found
-  //   5. Write to local disk at MEDIA_DIR/<sha256>.webp
+  //   5. Sign a kind-24242 auth + PUT the blob to Blossom (BUD-02), verify hash
   //   6. Record in media_uploads table
   //   7. Return public URL
   // ---------------------------------------------------------------------------
@@ -116,12 +118,59 @@ export async function mediaRoutes(app: FastifyInstance) {
           });
         }
 
-        // 5. Write to disk
         const filename = `${sha256}.webp`;
-        const filepath = path.join(MEDIA_DIR, filename);
-        await fs.writeFile(filepath, fileBuffer);
 
-        // 6. Build URLs
+        // 5. Upload the crunched blob to Blossom (BUD-02). Sign a kind-24242
+        //    authorization event server-side with the uploader's custodial key
+        //    (the same signEvent path used across the codebase).
+        const nowSec = Math.floor(Date.now() / 1000);
+        const authTemplate = {
+          kind: 24242,
+          content: `Upload ${filename}`,
+          tags: [
+            ["t", "upload"],
+            ["x", sha256],
+            ["expiration", String(nowSec + 60)],
+          ],
+          created_at: nowSec,
+        };
+        const signed = await signEvent(uploaderId, authTemplate, "account");
+        const authHeader = `Nostr ${Buffer.from(JSON.stringify(signed)).toString("base64")}`;
+
+        // Deliberate safeFetch exemption: BLOSSOM_URL is a fixed internal
+        // service hop (Docker hostname → private 172.x), not an
+        // attacker-influenceable host. safeFetch unconditionally rejects private
+        // IPs (shared/lib/http-client.ts), so it CANNOT reach Blossom — same
+        // reason key-custody-client.ts uses plain fetch. Do not "harden" this.
+        const blossomRes = await fetch(`${BLOSSOM_URL}/upload`, {
+          method: "PUT",
+          headers: { Authorization: authHeader, "Content-Type": "image/webp" },
+          // Uint8Array (a BodyInit) — Node's fetch types don't accept Buffer directly.
+          body: new Uint8Array(fileBuffer),
+        });
+        if (!blossomRes.ok) {
+          const detail = await blossomRes.text().catch(() => "");
+          logger.error(
+            { uploaderId, sha256, status: blossomRes.status, detail },
+            "Blossom upload failed",
+          );
+          return reply.status(500).send({ error: "Upload failed" });
+        }
+        // Blossom hashes the body independently — verify it stored what we sent
+        // before recording the row. Mismatch ⇒ abort, no INSERT.
+        const descriptor = (await blossomRes.json().catch(() => ({}))) as {
+          sha256?: string;
+        };
+        if (descriptor.sha256 !== sha256) {
+          logger.error(
+            { uploaderId, sha256, returned: descriptor.sha256 },
+            "Blossom returned a mismatched hash — aborting insert",
+          );
+          return reply.status(500).send({ error: "Upload failed" });
+        }
+
+        // 6. Build the public URL (backend-independent; nginx proxies
+        //    /media/<sha256>.webp → Blossom).
         const publicUrl = `${PUBLIC_MEDIA_URL}/${filename}`;
 
         // 7. Record in DB
@@ -132,7 +181,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         );
 
         logger.info(
-          { uploaderId, sha256, size: fileBuffer.length, path: filepath },
+          { uploaderId, sha256, size: fileBuffer.length },
           "Media uploaded",
         );
 
