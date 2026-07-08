@@ -179,8 +179,12 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         "Article indexed",
       );
 
-      // Check if this article is linked to a pledge drive and trigger fulfilment
-      checkAndTriggerDriveFulfilment(
+      // Check if this article is linked to a pledge drive and trigger
+      // fulfilment. Awaited (the match/stamp txn only — payout batches stay
+      // async): the client deletes the working draft right after this
+      // response, which SET NULLs pledge_drives.draft_id, so the match must
+      // land before we respond.
+      await checkAndTriggerDriveFulfilment(
         writerId,
         articleId,
         data.draftId ?? null,

@@ -74,6 +74,7 @@ export function EditorOverlay() {
             initialCommentsEnabled={init.initialData?.commentsEnabled}
             initialTags={init.initialData?.tags}
             initialCoverImageUrl={init.initialData?.coverImageUrl ?? null}
+            initialDraftId={init.initialData?.draftId ?? null}
             editingEventId={init.initialData?.editingEventId}
             editingDTag={init.initialData?.editingDTag}
             publicationMemberships={init.pubMemberships}

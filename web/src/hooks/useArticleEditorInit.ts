@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../stores/auth";
 import type { PublishData, PublicationContext } from "../components/editor/ArticleEditor";
 import { publishArticle, publishToPublication } from "../lib/publish";
-import { loadDraft, saveDraft, scheduleDraft } from "../lib/drafts";
+import { loadDraft, saveDraft, scheduleDraft, deleteDraft } from "../lib/drafts";
 import {
   publications as publicationsApi,
   tags as tagsApi,
@@ -25,6 +25,8 @@ export interface ArticleEditorInitialData {
   price: number;
   commentsEnabled: boolean;
   tags?: string[];
+  /** Set when continuing a saved draft — pins the editor's saves to that row. */
+  draftId?: string;
   editingEventId?: string;
   editingDTag?: string;
   publicationId?: string | null;
@@ -157,6 +159,7 @@ export function useArticleEditorInit({
             gatePosition: draft.gatePositionPct ?? 50,
             price: draft.pricePence ?? 0,
             commentsEnabled: true,
+            draftId,
             editingDTag: draft.dTag ?? undefined,
             coverImageUrl: draft.coverImageUrl ?? null,
           });
@@ -183,19 +186,35 @@ export function useArticleEditorInit({
     void loadEditData();
   }, [user, editEventId, draftId, seedContent, seedTitle]);
 
+  // Best-effort: the article is safely out the door; a surviving draft row is
+  // cosmetic (the old "draft + published, both in the dashboard" bug), so a
+  // cleanup failure must never surface as a publish error.
+  async function cleanUpDraft(draftId: string | null | undefined) {
+    if (!draftId) return;
+    try {
+      await deleteDraft(draftId);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   async function handlePublish(data: PublishData) {
     if (!user) return;
 
     if (data.publicationId) {
-      await publishToPublication(
+      const result = await publishToPublication(
         data.publicationId,
         { ...data, showOnWriterProfile: data.showOnWriterProfile },
         initialData?.editingDTag,
       );
+      // A submission that lands in review keeps its draft — the pending
+      // article isn't the writer's editable copy yet.
+      if (result.status === "published") await cleanUpDraft(data.draftId);
       const pub = pubMemberships.find((p) => p.id === data.publicationId);
       onComplete({ overlay: "dashboard", context: pub?.slug ?? "", tab: "articles" });
     } else {
       await publishArticle(data, user.pubkey, initialData?.editingDTag);
+      await cleanUpDraft(data.draftId);
       onComplete({ overlay: "dashboard", tab: "articles" });
     }
   }
@@ -213,6 +232,7 @@ export function useArticleEditorInit({
       content,
       gatePositionPct: data.gatePositionPct,
       pricePence: data.pricePence,
+      draftId: data.draftId ?? undefined,
       dTag: initialData?.editingDTag,
       coverImageUrl: data.coverImageUrl ?? null,
     });

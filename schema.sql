@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict HuDl1LciiEO3DZ4af9ymgXgqzbd3P5gmHGLmmOwrRdrqcvpAfxGRqJ8eDmhSwED
+\restrict LjbrQ5JQCesxM6Oyjcnk4RGc04I1ZxCEz0giOZe9cAR9JEMWrgJ315jt2kef316
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -6691,7 +6691,7 @@ ALTER TABLE ONLY public.pledge_drives
 --
 
 ALTER TABLE ONLY public.pledge_drives
-    ADD CONSTRAINT pledge_drives_draft_id_fkey FOREIGN KEY (draft_id) REFERENCES public.article_drafts(id);
+    ADD CONSTRAINT pledge_drives_draft_id_fkey FOREIGN KEY (draft_id) REFERENCES public.article_drafts(id) ON DELETE SET NULL;
 
 
 --
@@ -7466,7 +7466,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict HuDl1LciiEO3DZ4af9ymgXgqzbd3P5gmHGLmmOwrRdrqcvpAfxGRqJ8eDmhSwED
+\unrestrict LjbrQ5JQCesxM6Oyjcnk4RGc04I1ZxCEz0giOZe9cAR9JEMWrgJ315jt2kef316
 
 
 --
@@ -7621,4 +7621,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('145_drop_is_writer_is_reader.sql'),
     ('146_subscription_earning_settled.sql'),
     ('147_backfill_initiated_payouts.sql'),
-    ('148_external_items_profile_hydrated.sql');
+    ('148_external_items_profile_hydrated.sql'),
+    ('149_pledge_drives_draft_fk_set_null.sql');

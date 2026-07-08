@@ -112,6 +112,7 @@ export default function WritePage() {
       initialCommentsEnabled={initialData?.commentsEnabled}
       initialTags={initialData?.tags}
       initialCoverImageUrl={initialData?.coverImageUrl ?? null}
+      initialDraftId={initialData?.draftId ?? null}
       editingEventId={initialData?.editingEventId}
       editingDTag={initialData?.editingDTag}
       publicationMemberships={pubMemberships}

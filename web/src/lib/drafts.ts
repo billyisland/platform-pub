@@ -20,6 +20,7 @@ export interface DraftData {
   content: string; // full raw editor content
   gatePositionPct: number;
   pricePence: number;
+  draftId?: string; // echo of a previous save's draftId — pins saves to that exact row
   dTag?: string; // set when editing an existing article
   coverImageUrl?: string | null;
   publicationId?: string | null;

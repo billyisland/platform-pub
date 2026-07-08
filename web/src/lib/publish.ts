@@ -64,6 +64,9 @@ export async function publishArticle(
       pricePence: data.pricePence,
       gatePositionPct: data.gatePositionPct,
       coverImageUrl: data.coverImageUrl ?? null,
+      // Links the article to its working draft so pledge-drive fulfilment can
+      // match on it (the drive check runs before the index route responds).
+      draftId: data.draftId ?? undefined,
       ...(includeSendEmail ? { sendEmail: data.sendEmail } : {}),
     })
 

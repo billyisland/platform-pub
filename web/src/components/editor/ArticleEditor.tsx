@@ -39,6 +39,8 @@ interface EditorProps {
   initialCommentsEnabled?: boolean
   initialTags?: string[]
   initialCoverImageUrl?: string | null
+  /** Set when reopening a saved draft — pins every save to that exact row. */
+  initialDraftId?: string | null
   editingEventId?: string
   editingDTag?: string
   publicationMemberships?: PublicationContext[]
@@ -73,6 +75,8 @@ export interface PublishData {
   sendEmail?: boolean
   tags: string[]
   coverImageUrl?: string | null
+  /** The working draft row, if one exists — deleted after a successful publish. */
+  draftId?: string | null
 }
 
 export function ArticleEditor({
@@ -84,6 +88,7 @@ export function ArticleEditor({
   initialCommentsEnabled = true,
   initialTags = [],
   initialCoverImageUrl = null,
+  initialDraftId = null,
   editingEventId,
   editingDTag,
   publicationMemberships = [],
@@ -104,7 +109,7 @@ export function ArticleEditor({
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [draftStatus, setDraftStatus] = useState<string | null>(null)
-  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(initialDraftId ?? null)
   const [uploading, setUploading] = useState(false)
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(initialPublicationId)
   const [showOnWriterProfile, setShowOnWriterProfile] = useState(true)
@@ -128,6 +133,8 @@ export function ArticleEditor({
   pricePenceRef.current = pricePence
   const coverImageUrlRef = useRef(coverImageUrl)
   coverImageUrlRef.current = coverImageUrl
+  const currentDraftIdRef = useRef(currentDraftId)
+  currentDraftIdRef.current = currentDraftId
 
   const autoSaver = useMemo(() => createAutoSaver(3000), [])
 
@@ -194,10 +201,12 @@ export function ArticleEditor({
         pricePenceRef.current = suggested
       }
 
-      // Auto-save draft
+      // Auto-save draft — pinned to the working row via draftId (dTag covers
+      // the first save when editing a published article, so the edit draft
+      // never shadows an unrelated new-article draft)
       const content = editor.storage.markdown.getMarkdown()
       autoSaver(
-        { title: titleRef.current, dek: dekRef.current, content, gatePositionPct: 50, pricePence: pricePenceRef.current, coverImageUrl: coverImageUrlRef.current },
+        { title: titleRef.current, dek: dekRef.current, content, gatePositionPct: 50, pricePence: pricePenceRef.current, coverImageUrl: coverImageUrlRef.current, draftId: currentDraftIdRef.current ?? undefined, dTag: editingDTag },
         (saved) => {
           setCurrentDraftId(saved.draftId)
           setDraftStatus('Saved')
@@ -224,6 +233,9 @@ export function ArticleEditor({
   const handlePublish = useCallback(async () => {
     if (!editor || !title.trim()) return
 
+    // A debounced autosave landing mid-publish could recreate the draft row
+    // after the publish flow deletes it — drop any pending save first.
+    autoSaver.cancel()
     setPublishing(true)
     setPublishError(null)
     setShowPublishConfirm(false)
@@ -271,6 +283,7 @@ export function ArticleEditor({
         sendEmail: isEditing ? false : sendEmail,
         tags: articleTags,
         coverImageUrl,
+        draftId: currentDraftId,
       }
 
       if (onPublish) {
@@ -282,7 +295,7 @@ export function ArticleEditor({
     } finally {
       setPublishing(false)
     }
-  }, [editor, title, dek, pricePence, onPublish, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, sendEmail, isEditing, articleTags, coverImageUrl])
+  }, [editor, title, dek, pricePence, onPublish, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, sendEmail, isEditing, articleTags, coverImageUrl, currentDraftId, autoSaver])
 
   // Show the publish confirmation panel for new personal articles;
   // submit-for-review and edits skip confirmation and go straight through.
@@ -299,6 +312,8 @@ export function ArticleEditor({
   const handleScheduleSubmit = useCallback(async () => {
     if (!editor || !title.trim() || !scheduleDateTime || !onSchedule) return
 
+    // Same as publish: a pending autosave must not race the schedule save.
+    autoSaver.cancel()
     setPublishing(true)
     setPublishError(null)
 
@@ -344,6 +359,7 @@ export function ArticleEditor({
         sendEmail: false,
         tags: articleTags,
         coverImageUrl,
+        draftId: currentDraftId,
       }
 
       await onSchedule(data, new Date(scheduleDateTime).toISOString())
@@ -355,7 +371,7 @@ export function ArticleEditor({
       setShowSchedulePicker(false)
       setScheduleDateTime('')
     }
-  }, [editor, title, dek, pricePence, onSchedule, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, articleTags, scheduleDateTime, coverImageUrl])
+  }, [editor, title, dek, pricePence, onSchedule, hasGateMarker, commentsEnabled, selectedPublicationId, showOnWriterProfile, articleTags, scheduleDateTime, coverImageUrl, currentDraftId, autoSaver])
 
   if (!editor) return null
 
@@ -718,6 +734,7 @@ export function ArticleEditor({
               const content = editor.storage.markdown.getMarkdown()
               const saved = await saveDraft({
                 title, dek, content, gatePositionPct: 50, pricePence,
+                coverImageUrl, draftId: currentDraftId ?? undefined, dTag: editingDTag,
               })
               setCurrentDraftId(saved.draftId)
               setDraftStatus('Saved')

@@ -166,7 +166,9 @@ async function publishPublicationDraft(draft: ScheduledDraft): Promise<void> {
       ),
     );
 
-    checkAndTriggerDriveFulfilment(
+    // Awaited: the caller deletes the draft next, which SET NULLs any
+    // pledge_drives.draft_id — the drive match must land first.
+    await checkAndTriggerDriveFulfilment(
       draft.writer_id,
       result.articleId,
       draft.id,
@@ -386,7 +388,9 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
     logger.error({ err, draftId: draft.id }, "Scheduler: publish email failed"),
   );
 
-  checkAndTriggerDriveFulfilment(draft.writer_id, articleId, draft.id).catch(
+  // Awaited: the caller deletes the draft next, which SET NULLs any
+  // pledge_drives.draft_id — the drive match must land first.
+  await checkAndTriggerDriveFulfilment(draft.writer_id, articleId, draft.id).catch(
     (err) =>
       logger.error(
         { err, draftId: draft.id },

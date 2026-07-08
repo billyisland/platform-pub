@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { pool } from '@platform-pub/shared/db/client.js'
+import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth } from '../middleware/auth.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
@@ -14,8 +14,14 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // POST   /drafts/:id/schedule — Schedule a draft for future publication
 // DELETE /drafts/:id/schedule — Unschedule a draft
 //
-// Drafts are stored in the article_drafts table. One draft per d-tag
-// (for edits of existing articles) or one auto-created per new article.
+// Drafts are stored in the article_drafts table. Row targeting, in priority
+// order: an explicit draftId (the editor echoes back the id it was given, so
+// saves always land on the row being edited), else the (writer, dTag) upsert
+// (edits of published articles), else the writer's most recent untagged draft
+// — that guess exists only for the very first save of a new article, and runs
+// under a per-writer advisory lock so two concurrent first saves (debounced
+// autosave racing the explicit Save click) can't both INSERT. The duplicate
+// row that race minted was the "draft + published, both in the dashboard" bug.
 // =============================================================================
 
 const SaveDraftSchema = z.object({
@@ -23,6 +29,7 @@ const SaveDraftSchema = z.object({
   content: z.string().optional(),
   gatePositionPct: z.number().int().min(0).max(100).optional(),
   pricePence: z.number().int().min(0).optional(),
+  draftId: z.string().uuid().optional(),  // echo of a previous save's draftId — targets that exact row
   dTag: z.string().optional(),   // set when editing an existing published article
   publicationId: z.string().uuid().optional(),  // set when writing in publication context
   coverImageUrl: z.string().url().nullable().optional(),
@@ -41,6 +48,32 @@ export async function draftRoutes(app: FastifyInstance) {
     const data = parsed.data
 
     try {
+      // Explicit draftId: update that exact row (writer-scoped). If the row is
+      // gone (published & cleaned up, or deleted in another tab) fall through
+      // to the create paths below so no content is lost.
+      if (data.draftId) {
+        const result = await pool.query<{ id: string; auto_saved_at: string }>(
+          `UPDATE article_drafts
+           SET title = COALESCE($1, title),
+               content_raw = COALESCE($2, content_raw),
+               gate_position_pct = COALESCE($3, gate_position_pct),
+               price_pence = COALESCE($4, price_pence),
+               publication_id = COALESCE($5, publication_id),
+               cover_image_url = COALESCE($6, cover_image_url),
+               auto_saved_at = now()
+           WHERE id = $7 AND writer_id = $8
+           RETURNING id, auto_saved_at`,
+          [data.title ?? null, data.content ?? null, data.gatePositionPct ?? null, data.pricePence ?? null, data.publicationId ?? null, data.coverImageUrl ?? null, data.draftId, writerId]
+        )
+
+        if (result.rows.length > 0) {
+          return reply.status(200).send({
+            draftId: result.rows[0].id,
+            autoSavedAt: result.rows[0].auto_saved_at,
+          })
+        }
+      }
+
       // If we have a dTag, upsert by (writer_id, nostr_d_tag)
       // Otherwise create a new draft row
       if (data.dTag) {
@@ -65,44 +98,50 @@ export async function draftRoutes(app: FastifyInstance) {
           autoSavedAt: result.rows[0].auto_saved_at,
         })
       } else {
-        // New draft — check if writer already has a "no dTag" draft, update it
-        const existing = await pool.query<{ id: string }>(
-          `SELECT id FROM article_drafts
-           WHERE writer_id = $1 AND nostr_d_tag IS NULL
-           ORDER BY auto_saved_at DESC LIMIT 1`,
-          [writerId]
-        )
+        // First save of a new article (no draftId learned yet, no dTag).
+        // Serialise per writer: without the lock, a debounced autosave racing
+        // the explicit Save both read "no draft" and both INSERT — the
+        // duplicate-draft bug. Under the lock the loser sees the winner's row.
+        const { row, created } = await withTransaction(async (client) => {
+          await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+            `draft_new:${writerId}`,
+          ])
 
-        if (existing.rows.length > 0) {
-          const result = await pool.query<{ id: string; auto_saved_at: string }>(
-            `UPDATE article_drafts
-             SET title = COALESCE($1, title),
-                 content_raw = COALESCE($2, content_raw),
-                 gate_position_pct = COALESCE($3, gate_position_pct),
-                 price_pence = COALESCE($4, price_pence),
-                 cover_image_url = COALESCE($5, cover_image_url),
-                 auto_saved_at = now()
-             WHERE id = $6
-             RETURNING id, auto_saved_at`,
-            [data.title ?? null, data.content ?? null, data.gatePositionPct ?? null, data.pricePence ?? null, data.coverImageUrl ?? null, existing.rows[0].id]
+          const existing = await client.query<{ id: string }>(
+            `SELECT id FROM article_drafts
+             WHERE writer_id = $1 AND nostr_d_tag IS NULL
+             ORDER BY auto_saved_at DESC LIMIT 1`,
+            [writerId]
           )
 
-          return reply.status(200).send({
-            draftId: result.rows[0].id,
-            autoSavedAt: result.rows[0].auto_saved_at,
-          })
-        }
+          if (existing.rows.length > 0) {
+            const result = await client.query<{ id: string; auto_saved_at: string }>(
+              `UPDATE article_drafts
+               SET title = COALESCE($1, title),
+                   content_raw = COALESCE($2, content_raw),
+                   gate_position_pct = COALESCE($3, gate_position_pct),
+                   price_pence = COALESCE($4, price_pence),
+                   cover_image_url = COALESCE($5, cover_image_url),
+                   auto_saved_at = now()
+               WHERE id = $6
+               RETURNING id, auto_saved_at`,
+              [data.title ?? null, data.content ?? null, data.gatePositionPct ?? null, data.pricePence ?? null, data.coverImageUrl ?? null, existing.rows[0].id]
+            )
+            return { row: result.rows[0], created: false }
+          }
 
-        const result = await pool.query<{ id: string; auto_saved_at: string }>(
-          `INSERT INTO article_drafts (writer_id, title, content_raw, gate_position_pct, price_pence, publication_id, cover_image_url, auto_saved_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-           RETURNING id, auto_saved_at`,
-          [writerId, data.title ?? null, data.content ?? null, data.gatePositionPct ?? null, data.pricePence ?? null, data.publicationId ?? null, data.coverImageUrl ?? null]
-        )
+          const result = await client.query<{ id: string; auto_saved_at: string }>(
+            `INSERT INTO article_drafts (writer_id, title, content_raw, gate_position_pct, price_pence, publication_id, cover_image_url, auto_saved_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+             RETURNING id, auto_saved_at`,
+            [writerId, data.title ?? null, data.content ?? null, data.gatePositionPct ?? null, data.pricePence ?? null, data.publicationId ?? null, data.coverImageUrl ?? null]
+          )
+          return { row: result.rows[0], created: true }
+        })
 
-        return reply.status(201).send({
-          draftId: result.rows[0].id,
-          autoSavedAt: result.rows[0].auto_saved_at,
+        return reply.status(created ? 201 : 200).send({
+          draftId: row.id,
+          autoSavedAt: row.auto_saved_at,
         })
       }
     } catch (err) {

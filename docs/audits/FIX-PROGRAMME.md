@@ -23,6 +23,50 @@ starts.
 
 ## Progress
 
+- **2026-07-08** — **duplicate-draft-after-publish fixed (drafts row targeting
+  + post-publish cleanup + drive FK)** (migration 149). Reported symptom: a
+  scheduled article that had been drafted, saved, then scheduled persisted in
+  the dashboard in **two forms** — a leftover draft and the published article.
+  Root: the editor never told the server *which* draft row it was editing —
+  autosave, the "Save draft" button, and the schedule-save all `POST /drafts`
+  with no id. For a new article the gateway guessed the row via
+  SELECT-then-INSERT ("most recent untagged draft, else INSERT") with no
+  concurrency guard, so the 3s debounced autosave racing the explicit Save
+  both saw "no draft" and **both INSERTed** — a duplicate. Every later save +
+  the schedule action then targeted only the newest twin; the scheduler
+  published and deleted that one, orphaning the older twin (full text intact)
+  in the dashboard forever. A second deterministic path: **publish-now never
+  deleted the working draft at all** (only the *scheduler* path deleted the
+  row it published), so any autosaved article published via the button left
+  its draft behind every time. Fixes: (1) the editor now echoes its
+  `currentDraftId` (and editing `dTag`) through every save; `POST /drafts`
+  targets that exact row first, keeping the "most recent" guess only for the
+  genuine first save — now under a per-writer `pg_advisory_xact_lock`
+  (`draft_new:<writer>`) so concurrent first saves converge on one row. A
+  stale/deleted `draftId` falls through to create (no content loss). (2)
+  `useArticleEditorInit.handlePublish` deletes the working draft after a
+  successful publish (best-effort; publication submissions that land *in
+  review* keep their draft); `publishArticle` forwards `draftId` to the index
+  route (wiring publish-now pledge-drive fulfilment too). A pending autosave
+  is cancelled before publish/schedule so it can't recreate the row. (3)
+  migration 149 makes `pledge_drives.draft_id` `ON DELETE SET NULL` (was
+  action-less) and the drive-fulfilment match is now *awaited* before any
+  draft delete — closes a latent wedge where a drive-backed scheduled draft's
+  post-publish DELETE threw, reset `scheduled_at`, and republished every 60s.
+  Also closes the family of clobbering bugs the row-guess caused (autosave
+  writing into the wrong draft when an older one is reopened; an edit-mode
+  autosave shadowing a published article; a new-article autosave overwriting a
+  waiting *scheduled* draft). Verified with a harness driving the real
+  `draftRoutes` + `publishScheduledDrafts` against the dev DB (9/9 checks:
+  concurrent-save convergence, id pinning, stale-id recovery, scheduled
+  publish deletes the draft, drive matched before delete). Files:
+  `gateway/src/routes/drafts.ts`, `gateway/src/workers/scheduler.ts`,
+  `gateway/src/routes/articles/publish.ts`,
+  `web/src/components/editor/ArticleEditor.tsx`,
+  `web/src/hooks/useArticleEditorInit.ts`, `web/src/lib/drafts.ts`,
+  `web/src/lib/publish.ts`, `web/src/lib/api/articles.ts` (already had
+  `draftId`), `migrations/149_pledge_drives_draft_fk_set_null.sql`, `schema.sql`.
+
 - **2026-07-07** — **paywall publish + unlock hardened end-to-end** (commit
   `339b43e`; prompted by a live prod failure: 'Vault encryption failed: 400 —
   [object Object]' + a £5-starter-float unlock failure, both traced to one
