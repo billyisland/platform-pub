@@ -66,6 +66,11 @@ starts.
   `web/src/hooks/useArticleEditorInit.ts`, `web/src/lib/drafts.ts`,
   `web/src/lib/publish.ts`, `web/src/lib/api/articles.ts` (already had
   `draftId`), `migrations/149_pledge_drives_draft_fk_set_null.sql`, `schema.sql`.
+  **Prod cleanup** (the fix does not retroactively remove the twins already
+  stranded before deploy): `scripts/cleanup-orphaned-drafts.sql` — dry-run by
+  default, deletes only the Tier 1 exact-content-match set with `-v apply=true`
+  (Tier 2 title-only + drive-linked candidates reported for manual review,
+  never auto-deleted). → CONSOLIDATED-TODO §11 verification-debt bullet.
 
 - **2026-07-07** — **paywall publish + unlock hardened end-to-end** (commit
   `339b43e`; prompted by a live prod failure: 'Vault encryption failed: 400 —
