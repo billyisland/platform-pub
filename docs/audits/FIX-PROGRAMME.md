@@ -23,6 +23,23 @@ starts.
 
 ## Progress
 
+- **2026-07-08** — **media uploads moved onto the Blossom blob store (BUD-02)**
+  (commit `9664366`; `docs/adr/ADR-blossom-migration.md` Phases 1–3, **live on
+  prod**). The gateway now crunches to WebP then signs a kind-24242 auth with the
+  uploader's custodial key and `PUT`s the blob to the internal Blossom server
+  (pinned `6.2.0`), verifying the returned hash before the `media_uploads`
+  insert; nginx proxies `/media/<sha256>.webp` → Blossom. Public URL scheme
+  unchanged (`PUBLIC_MEDIA_URL/<sha256>.webp`), so no stored-URL rewrites. Phase 0
+  spiked the real image and settled three facts the repo couldn't: v6 Deno config
+  schema (rewrote `blossom-config.yml`), `rules: []` rejects all uploads (needs an
+  `image/*` rule + 100y expiration so pruning is a no-op), and the image ships
+  only `deno` (healthcheck switched off `wget`). One-off
+  `scripts/migrate-media-to-blossom.ts` backfills disk blobs (idempotent, HEAD-
+  deduped). `media_data` kept mounted for rollback; **Phase 4** (drop the volume +
+  dead disk code) waits one soak cycle. Cutover gotchas — logged in the ADR's
+  *Deployment notes* and `DEPLOYMENT.md`: `up -d gateway` reuses the old image
+  (must `build --no-cache`), and nginx's single-file bind-mount serves a **stale**
+  config after `git reset` (needs `up -d --force-recreate nginx`, not `reload`).
 - **2026-07-08** — **duplicate-draft-after-publish fixed (drafts row targeting
   + post-publish cleanup + drive FK)** (migration 149). Reported symptom: a
   scheduled article that had been drafted, saved, then scheduled persisted in

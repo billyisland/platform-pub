@@ -1,6 +1,6 @@
 # ADR: Move Media Uploads onto the Blossom Server
 
-**Status:** Draft
+**Status:** Accepted — **Phases 1–3 shipped to prod 2026-07-08** (commit `9664366`); Phase 4 (remove disk backend) pending one soak cycle. See *Deployment notes* at the end.
 **Context date:** July 2026
 
 ## Current state (verified against the codebase)
@@ -190,3 +190,14 @@ After one clean soak cycle serving production reads from Blossom:
 - `media_uploads.blossom_url` is now honestly named — no DDL.
 
 **Exit:** uploads + reads still work with the volume gone (backend-only change; hairline/lint/`next build` unaffected).
+
+## Deployment notes (2026-07-08 — Phases 1–3 shipped, commit `9664366`)
+
+The plan held; the friction was all in the operational cutover, not the design. Recorded so the next storage/nginx change doesn't relearn it:
+
+- **Migration was a no-op — the 7 existing blobs were *already* in Blossom.** The one-off reported `already present: 7, migrated: 0`; a direct GET of all 7 off Blossom returned `200 image/webp` with real sizes. The `blossom_data` volume already held them (Blossom had received them at some earlier point), so the disk→Blossom copy had nothing to do. The HEAD existence-check (`blossomHas`) is accurate for this image — but **always verify with a real GET before trusting an "already present" skip**, because a false skip would leave the read path 404-ing after cutover.
+- **`docker compose up -d gateway` does NOT rebuild the image — it silently kept the old disk code live.** After the cutover deploy, new uploads still vanished: the gateway had the new `BLOSSOM_URL` env (env comes from compose at runtime) but the **old compiled code** (image reused because `up` doesn't rebuild). Old code wrote the blob to disk while nginx now proxied `/media/` to Blossom ⇒ the new blob 404'd. Fix: **`docker compose build --no-cache gateway && docker compose up -d gateway`**. Diagnose by grepping the *compiled* route in the running container: `docker compose exec gateway sh -c 'grep -c BLOSSOM_URL /app/gateway/dist/routes/media.js'` (0 = stale image; the source lives at `gateway/dist/routes/`, **not** `/app/dist`).
+- **nginx single-file bind-mount goes stale after `git reset` — `reload`/`restart` is NOT enough.** `nginx.conf` is bind-mounted as one file, so nginx pins its *inode* at container start; `git reset --hard` replaces the file with a new inode, so `nginx -s reload` / `restart` keep reading the **pre-pull** config. The new `/media/` proxy block was on disk + in git yet nginx served the old `alias` block, 404-ing Blossom-only images with a **text/html** 404 (nginx `try_files =404`, vs Blossom's `text/plain`). Fix: **`docker compose up -d --force-recreate nginx`** to re-bind. (Folded into `DEPLOYMENT.md` › Media uploads.)
+- **Blossom `6.2.0` realities settled in Phase 0 that the runbook depends on:** v6 Deno config schema (not the old `master` format); `rules: []` **rejects** all uploads (needs an `image/*` rule with a long `expiration` so pruning is a no-op); image ships only `deno`, so the healthcheck is a `deno eval` fetch. See the Phase-0 note above.
+
+**Still pending:** Phase 4 (drop the `media_data` mounts + volume, delete `MEDIA_DIR`/`ensureMediaDir`/`fs` in `media.ts`) after one clean soak cycle — this removes the rollback path, so it waits.

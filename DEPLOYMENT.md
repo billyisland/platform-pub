@@ -19,7 +19,7 @@ Internet
   │            ├─ /api/*      → gateway:3000
   │            ├─ /ingest/*   → traffology-ingest:3005
   │            ├─ /relay      → strfry:7777  (WebSocket upgrade)
-  │            ├─ /media/*    → static files from media_data volume
+  │            ├─ /media/*    → blossom:3003 (Blossom blob store; rewrite → /<sha256>)
   │            └─ /*          → web:3000     (Next.js)
   │
   └─ :80 ─→ nginx (→ 301 HTTPS, plus certbot ACME challenges)
@@ -30,7 +30,7 @@ Internal only:
                   ─→ keyservice:3002
                   ─→ key-custody:3004
                   ─→ traffology-ingest:3005
-                  ─→ writes to /app/media/ (shared volume)
+                  ─→ blossom:3003 (media blob store — BUD-02 PUT /upload)
   payment:3001    ─→ postgres:5432, strfry:7777, Stripe API
   keyservice:3002 ─→ postgres:5432, strfry:7777
   key-custody:3004 → postgres:5432
@@ -56,7 +56,7 @@ Internal only:
 | nginx             | nginx:alpine                          | 80, 443                     | Reverse proxy, TLS, static media                                                         |
 | traffology-ingest | ./traffology-ingest/Dockerfile        | 3005 (Docker internal only) | Analytics beacon receiver, session tracking                                              |
 | traffology-worker | ./traffology-worker/Dockerfile        | — (background)              | Graphile Worker: hourly/daily/weekly aggregation, source resolution, interpretation      |
-| blossom           | ghcr.io/hzrd149/blossom-server:master | 3000 (Docker internal only) | Nostr media server — **not currently in the upload path**; kept for future BUD-02/federation. Gateway writes uploads directly to `media_data`. |
+| blossom           | ghcr.io/hzrd149/blossom-server:6.2.0  | 3003 (Docker internal only) | Media blob store — **primary media backend**. Gateway signs a kind-24242 (BUD-02) auth and PUTs each crunched image; nginx proxies `/media/`. Healthcheck uses `deno` (image has no `wget`/`curl`). |
 | certbot           | certbot/certbot                       | —                           | TLS certificate renewal                                                                  |
 
 ### Docker volumes
@@ -65,8 +65,8 @@ Internal only:
 | ------------- | ------------------------ | ----------------------------------------- |
 | pgdata        | postgres                 | Database storage                          |
 | strfry_data   | strfry                   | Relay event database (LMDB)               |
-| media_data    | gateway (rw), nginx (ro) | Uploaded images (WebP, content-addressed) |
-| blossom_data  | blossom                  | Blossom blob storage                      |
+| media_data    | gateway (rw), nginx (ro) | **Legacy** on-disk images — reads/writes now go to Blossom; retained for rollback only, removed after soak (ADR-blossom-migration Phase 4) |
+| blossom_data  | blossom                  | Blossom blob storage (primary media store) |
 | certbot_data  | nginx, certbot           | ACME challenge files                      |
 | certbot_certs | nginx, certbot           | TLS certificates                          |
 
@@ -646,9 +646,18 @@ Then sign up a fresh account to confirm it lands on a clone (`SELECT cloned_from
 
 ## Media uploads
 
-`POST /api/v1/media/upload` resizes to max 1200px, converts to WebP (q80), and writes to `media_data` at `/app/media/<sha256>.webp`. Nginx serves `/media/<sha256>.webp` with 1-year cache headers. Max upload 12 MB (enforced by Fastify `bodyLimit` and `@fastify/multipart`).
+`POST /api/v1/media/upload` resizes to max 1200px, converts to WebP (q80), then uploads the blob to the internal **Blossom** blob store via BUD-02 `PUT /upload` — the gateway signs a kind-24242 authorization event server-side with the uploader's custodial key (key-custody), and verifies Blossom's returned hash before recording the `media_uploads` row. nginx **proxies** `/media/<sha256>.webp` → Blossom's `/<sha256>.webp` (1-year cache headers). The stored/public URL (`PUBLIC_MEDIA_URL/<sha256>.webp`) is backend-independent. Max upload 12 MB (Fastify `bodyLimit` + `@fastify/multipart`). Blossom is pinned to `6.2.0` (v6 Deno config schema; internal-only, no published port; healthcheck uses `deno`, as the image ships no `wget`/`curl`). The `media_data` disk volume stays mounted **one soak cycle for rollback** — `docs/adr/ADR-blossom-migration.md` Phase 4 removes it plus the dead disk code. Spec: that ADR.
 
-**CSP and external video.** Feed video is fetched cross-origin from the source's own CDN (Bluesky `video.bsky.app`, Mastodon instance media, RSS enclosures), so the nginx `Content-Security-Policy` (`nginx.conf`) must keep `media-src 'self' blob: data: https:` and a `connect-src` that includes `https:`. The `blob:` is required for the `hls.js` MediaSource URL; `connect-src https:` is required for `hls.js` to fetch the `.m3u8` manifest + segments. Dropping either silently CSP-blocks all video and the player spins forever (the symptom is invisible in local dev, which runs Next.js directly with no nginx/CSP). **`nginx.conf` is bind-mounted `:ro` and read once at container start, so a CSP edit takes effect only after the nginx container reloads — the routine `docker compose build web && up -d web` deploy does NOT touch nginx and leaves the old CSP live.** After pulling a `nginx.conf` change, run `docker compose restart nginx` (or `docker compose exec nginx nginx -t && docker compose exec nginx nginx -s reload`) and confirm with `curl -sI https://all.haus/ | grep -i content-security-policy`. (This is exactly why the 2026-06-17 CSP fix appeared not to work: nginx was never reloaded, so prod kept serving the pre-fix `media-src`-less / stripe-only-`connect-src` policy.)
+**Deploying an `nginx.conf` change — reload/restart is NOT enough after `git reset`.** `nginx.conf` is bind-mounted `:ro` as a **single file**, so nginx pins the file's *inode* at container start. The prod pull path (`git reset --hard origin/master`) *replaces* the file with a **new inode**, so `nginx -s reload` and `docker compose restart nginx` keep reading the **stale pre-pull config** — the container is still bound to the old inode. **Recreate the container to re-bind:**
+
+```bash
+docker compose up -d --force-recreate nginx
+docker compose exec nginx grep -A4 'location /media/' /etc/nginx/nginx.conf   # confirm new block is live
+```
+
+This bit the 2026-07-08 Blossom cutover: the new `/media/` proxy block was on disk + in git, but nginx kept serving the old `alias /app/media/` block, so freshly-uploaded (Blossom-only) images 404'd with a **text/html** 404 (nginx's own `try_files =404`, distinct from Blossom's `text/plain` 404) while disk-backed images still resolved — until the force-recreate. The same single-file-inode trap applies to any `nginx.conf` edit (e.g. the CSP note below).
+
+**CSP and external video.** Feed video is fetched cross-origin from the source's own CDN (Bluesky `video.bsky.app`, Mastodon instance media, RSS enclosures), so the nginx `Content-Security-Policy` (`nginx.conf`) must keep `media-src 'self' blob: data: https:` and a `connect-src` that includes `https:`. The `blob:` is required for the `hls.js` MediaSource URL; `connect-src https:` is required for `hls.js` to fetch the `.m3u8` manifest + segments. Dropping either silently CSP-blocks all video and the player spins forever (the symptom is invisible in local dev, which runs Next.js directly with no nginx/CSP). **`nginx.conf` is bind-mounted `:ro` and read once at container start, so a CSP edit takes effect only after the nginx container is recreated — the routine `docker compose build web && up -d web` deploy does NOT touch nginx and leaves the old CSP live.** After pulling a `nginx.conf` change, run **`docker compose up -d --force-recreate nginx`** (a plain `restart`/`reload` re-reads the *stale* bind-mounted inode — see the note above) and confirm with `curl -sI https://all.haus/ | grep -i content-security-policy`. (This is exactly why the 2026-06-17 CSP fix appeared not to work: nginx was serving the pre-fix `media-src`-less / stripe-only-`connect-src` policy.)
 
 ---
 
@@ -724,7 +733,7 @@ docker compose run --rm certbot renew && docker compose restart nginx
 
 ## Known limitations
 
-- **Docker healthchecks** on some Alpine containers can report "unhealthy" due to a missing `wget`/`curl` in the image despite the service running correctly.
+- **Docker healthchecks** on some Alpine containers can report "unhealthy" due to a missing `wget`/`curl` in the image despite the service running correctly. The **Blossom** image (`6.2.0`) ships **only `deno`** — its healthcheck is a `deno eval` fetch, not `wget` (a `wget` probe silently never passes, which is why the old `:master` healthcheck was always red).
 - **Stripe collection** must be configured (test/live keys + webhook secret) before real money flows; verify `payment_intent.succeeded` and `transfer.paid` webhooks are reaching `/webhooks/stripe`.
   - **Connect events must reach the endpoint.** `account.updated`, `account.application.deauthorized`, and `transfer.*` are emitted on *connected* accounts. They only reach `/webhooks/stripe` if the Stripe dashboard endpoint is set to **"Listen to events on Connected accounts."** Verify this in the dashboard — the code cannot enforce it. If instead you use a *separate* endpoint for Connect events, set `STRIPE_CONNECT_WEBHOOK_SECRET` to its secret (the verifier tries both). Without one of these, writer KYC/payability flips (incl. revocation) and tribute/publication transfer confirmations are silently never delivered.
   - **livemode guard.** The handler derives the expected mode from `STRIPE_SECRET_KEY` (`sk_live_`/`rk_live_` → live) and ignores (acks with 200, does not process) any event whose `livemode` disagrees — a misrouted test event can't touch live money state.
