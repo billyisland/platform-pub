@@ -19,7 +19,7 @@ Internet
   │            ├─ /api/*      → gateway:3000
   │            ├─ /ingest/*   → traffology-ingest:3005
   │            ├─ /relay      → strfry:7777  (WebSocket upgrade)
-  │            ├─ /media/*    → blossom:3003 (Blossom blob store; rewrite → /<sha256>)
+  │            ├─ /media/*    → blossom:3003 (Blossom blob store; GET/HEAD hash paths only; rewrite → /<sha256>)
   │            └─ /*          → web:3000     (Next.js)
   │
   └─ :80 ─→ nginx (→ 301 HTTPS, plus certbot ACME challenges)
@@ -65,7 +65,7 @@ Internal only:
 | ------------- | ------------------------ | ----------------------------------------- |
 | pgdata        | postgres                 | Database storage                          |
 | strfry_data   | strfry                   | Relay event database (LMDB)               |
-| media_data    | gateway (rw), nginx (ro) | **Legacy** on-disk images — reads/writes now go to Blossom; retained for rollback only, removed after soak (ADR-blossom-migration Phase 4) |
+| media_data    | gateway (rw), nginx (ro) | **Legacy** on-disk images — reads/writes now go to Blossom; retained for rollback of *pre-cutover* blobs only (post-cutover blobs are Blossom-only), removed after soak (ADR-blossom-migration Phase 4) |
 | blossom_data  | blossom                  | Blossom blob storage (primary media store) |
 | certbot_data  | nginx, certbot           | ACME challenge files                      |
 | certbot_certs | nginx, certbot           | TLS certificates                          |
@@ -646,13 +646,17 @@ Then sign up a fresh account to confirm it lands on a clone (`SELECT cloned_from
 
 ## Media uploads
 
-`POST /api/v1/media/upload` resizes to max 1200px, converts to WebP (q80), then uploads the blob to the internal **Blossom** blob store via BUD-02 `PUT /upload` — the gateway signs a kind-24242 authorization event server-side with the uploader's custodial key (key-custody), and verifies Blossom's returned hash before recording the `media_uploads` row. nginx **proxies** `/media/<sha256>.webp` → Blossom's `/<sha256>.webp` (1-year cache headers). The stored/public URL (`PUBLIC_MEDIA_URL/<sha256>.webp`) is backend-independent. Max upload 12 MB (Fastify `bodyLimit` + `@fastify/multipart`). Blossom is pinned to `6.2.0` (v6 Deno config schema; internal-only, no published port; healthcheck uses `deno`, as the image ships no `wget`/`curl`). The `media_data` disk volume stays mounted **one soak cycle for rollback** — `docs/adr/ADR-blossom-migration.md` Phase 4 removes it plus the dead disk code. Spec: that ADR.
+`POST /api/v1/media/upload` resizes to max 1200px, converts to WebP (q80), then uploads the blob to the internal **Blossom** blob store via BUD-02 `PUT /upload` — the gateway signs a kind-24242 authorization event server-side with the uploader's custodial key (key-custody), and verifies Blossom's returned hash before recording the `media_uploads` row. nginx **proxies `/media/<sha256>.webp` → Blossom's `/<sha256>.webp` read-only** (1-year cache headers): the location is a quoted regex matching only hash-shaped paths, with `limit_except GET` (2026-07-09 audit fix — the earlier blanket proxy exposed Blossom's `PUT /upload`/`DELETE /<sha>` to the internet, and BUD-02 auth accepts any self-signed event, so internal-only reachability IS the access control; never widen this block). The stored/public URL (`PUBLIC_MEDIA_URL/<sha256>.webp`) is backend-independent. Max upload 12 MB (Fastify `bodyLimit` + `@fastify/multipart`). Blossom is pinned to `6.2.0` (v6 Deno config schema; internal-only, no published port; healthcheck uses `deno`, as the image ships no `wget`/`curl`). The `media_data` disk volume stays mounted **one soak cycle for rollback of *pre-cutover* blobs only** — post-cutover blobs exist solely in `blossom_data`, so a plain revert 404s them (a real rollback needs a Blossom→disk copy script that doesn't exist yet); `docs/adr/ADR-blossom-migration.md` Phase 4 removes the volume plus the dead disk code. Spec: that ADR.
 
 **Deploying an `nginx.conf` change — reload/restart is NOT enough after `git reset`.** `nginx.conf` is bind-mounted `:ro` as a **single file**, so nginx pins the file's *inode* at container start. The prod pull path (`git reset --hard origin/master`) *replaces* the file with a **new inode**, so `nginx -s reload` and `docker compose restart nginx` keep reading the **stale pre-pull config** — the container is still bound to the old inode. **Recreate the container to re-bind:**
 
 ```bash
 docker compose up -d --force-recreate nginx
-docker compose exec nginx grep -A4 'location /media/' /etc/nginx/nginx.conf   # confirm new block is live
+docker compose exec nginx grep -A4 '/media/' /etc/nginx/nginx.conf   # confirm new block is live
+# After the 2026-07-09 read-only fix, verify the lockdown took:
+curl -s -o /dev/null -w '%{http_code}\n' -X PUT https://all.haus/media/upload      # expect 404 (falls through to web)
+curl -sI https://all.haus/media/<any-known-sha256>.webp | head -1                  # expect 200
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE https://all.haus/media/<any-known-sha256>.webp  # expect 403
 ```
 
 This bit the 2026-07-08 Blossom cutover: the new `/media/` proxy block was on disk + in git, but nginx kept serving the old `alias /app/media/` block, so freshly-uploaded (Blossom-only) images 404'd with a **text/html** 404 (nginx's own `try_files =404`, distinct from Blossom's `text/plain` 404) while disk-backed images still resolved — until the force-recreate. The same single-file-inode trap applies to any `nginx.conf` edit (e.g. the CSP note below).
