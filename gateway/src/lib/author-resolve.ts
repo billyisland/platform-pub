@@ -193,11 +193,16 @@ export async function resolveNativeAuthor(
     followerCount: parseInt(followerResult.rows[0].count, 10),
     followingCount: parseInt(followingResult.rows[0].count, 10),
     postCount: parseInt(articleResult.rows[0].count, 10),
-    followTarget: {
-      type: "user",
-      id: userId,
-      isFollowing: isFollowingResult.rows[0].exists,
-    },
+    // No followTarget for the viewer's own account — POST /follows rejects
+    // self-follows, so offering the button would only ever silently revert.
+    followTarget:
+      viewerId === userId
+        ? undefined
+        : {
+            type: "user",
+            id: userId,
+            isFollowing: isFollowingResult.rows[0].exists,
+          },
   };
 }
 

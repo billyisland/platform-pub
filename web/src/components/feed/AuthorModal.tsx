@@ -200,7 +200,11 @@ function ModalContent({
           LIMITED INFO FROM THIS SOURCE
         </p>
         {data.followTarget && (
-          <FollowButton target={data.followTarget} onClose={onClose} />
+          <FollowButton
+            target={data.followTarget}
+            onClose={onClose}
+            feedId={feedId}
+          />
         )}
       </div>
     );

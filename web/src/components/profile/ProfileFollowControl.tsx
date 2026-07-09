@@ -178,15 +178,17 @@ function SourceFollowPicker({ target }: { target: FollowTarget }) {
 
   const toggleFeed = useCallback(
     async (feedId: string) => {
-      if (busyFeeds.has(feedId) || !target.protocol || !target.sourceUri)
-        return;
+      if (busyFeeds.has(feedId)) return;
       const existing = membership?.[feedId];
       setBusy(feedId, true);
       try {
         if (existing) {
+          // Removal only needs the feed_sources row id — never gate it on
+          // protocol/sourceUri, or an unfollow of an already-followed source
+          // silently no-ops when those are absent (mirrors AuthorModal).
           await workspaceFeeds.removeSource(feedId, existing);
           setMembership((m) => ({ ...m, [feedId]: null }));
-        } else {
+        } else if (target.protocol && target.sourceUri) {
           const { source } = await workspaceFeeds.addSource(feedId, {
             sourceType: "external_source",
             protocol: target.protocol as

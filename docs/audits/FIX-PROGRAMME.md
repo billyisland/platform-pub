@@ -23,6 +23,31 @@ starts.
 
 ## Progress
 
+- **2026-07-09** — **follow/unfollow symmetry audit (3 fixes).** Audited every
+  profile-type follow affordance (native profile page/overlay, `/author/:id`,
+  `AuthorModal` hover card, publication surfaces, NetworkPanel/FollowingTab)
+  for the rule *"anywhere you can follow, you can unfollow when following"*.
+  (1) **Dead unfollow in the profile feed-picker**
+  (`ProfileFollowControl.tsx::toggleFeed`): the `!target.protocol ||
+  !target.sourceUri` guard sat above both branches, but removal only needs the
+  `feed_sources` row id — a followTarget with those absent rendered a
+  "Following ▾" picker whose untick silently no-opped. Guard now scoped to the
+  add branch, mirroring `AuthorModal.handleClick`. (2) **Self-follow button**:
+  `resolveNativeAuthor` (`gateway/src/lib/author-resolve.ts`) emitted
+  `followTarget` even for `viewerId === userId`, so hovering your own byline /
+  viewing your own `/author/:id` offered a FOLLOW whose click 400'd
+  (`Cannot follow yourself`) and silently reverted. Now omitted for self —
+  one gateway change covers both client consumers, which already render
+  nothing without a followTarget. (3) **Tier-D follow parity**
+  (`AuthorModal.tsx`): the tier-D branch didn't pass `feedId` to
+  `FollowButton` (tier C did), so a followable tier-D RSS byline hovered
+  inside a feed had no follow affordance at all; now passed, and the button
+  still self-gates on protocol (email stays affordance-free). Non-gaps
+  verified in the same audit: WriterActivity toggle, PubFollowButton
+  (hover→Unfollow), NetworkPanel/FollowingTab unfollows, and the per-feed
+  "FOLLOW while following elsewhere" hover-card label (deliberate — the
+  profile picker is the all-feeds view). Validation: gateway tsc, web tsc +
+  `next build`, hairline tripwire, root eslint 0 errors.
 - **2026-07-09** — **commit-audit §0 findings fixed (items 1–7: 3 HIGH, 2 MEDIUM,
   2 LOW)** from the four-agent review of the July 7–8 ships (CONSOLIDATED-TODO §0,
   queued at `2fda554`). (1) **nginx `/media/` public-write exposure**: the blanket
