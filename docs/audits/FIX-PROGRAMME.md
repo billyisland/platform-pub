@@ -23,6 +23,41 @@ starts.
 
 ## Progress
 
+- **2026-07-09** — **quote-tile click-to-focus parity (native quotes + surface
+  wiring).** Audited the "clicking any card focuses it as the expanded
+  conversation's focal" rule across first-order feed cards, thread
+  ancestors/replies, and quoted embeds. Body clicks and ancestor/reply re-root
+  were already uniform (one engine: `PostThread`/`usePostThread`/`level-spec`);
+  the gaps were all in quote embeds. (1) **Native quote tiles never focused the
+  quoted post** (`QuotedEmbed.tsx`): only the external branch forwarded
+  `onQuoteOpen` — a native note quoting a native post rendered an inert tile,
+  and one quoting an external post linked straight out to origin. Now every
+  quote tile with a wired host focuses the quoted post in place
+  (`role="button"` + keyboard, `stopPropagation`, the `QuotedPostTile`
+  grammar), including the previously-inert no-preview and `stub` buttons
+  (closing the old "Phase 3" TODO); the origin permalink link-out survives only
+  as the static-context fallback (no `onQuoteOpen`) — in-place focus wins, the
+  out-link stays reachable from the focused post's source-attribution line.
+  (2) **`SourceSurface` + `AuthorProfileView` collapsed cards passed no
+  `onQuoteOpen`**, so even external quote tiles were static there: their
+  `expanded: Set<postId>` became `Map<hostId, rootId>` (the WorkspaceView
+  `expandQuote` grammar) so a quote click roots the thread on the QUOTED post.
+  (3) **Failed re-root no longer strands the thread**
+  (`usePostThread.ts::reroot`/`fetchFocal`): a re-root target whose `/thread`
+  fetch fails (e.g. a quoted post's context-only twin reclaimed by
+  `external-context-gc`) reverts the focal to where it was instead of deriving
+  against a missing node — unless the target is already renderable from the
+  pool (only its descendant page failed), where the click is kept. Known
+  residual (pre-existing, unchanged): a quote whose target is an
+  `article`-type post expands it as a thread focal rather than opening the
+  reader (the host-side `type !== "article"` guard can't see the target's type
+  pre-fetch), and the article focal's click then opens the reader, not
+  collapse. Validated: web `tsc` clean, `next build` clean, root eslint 0
+  errors, hairline tripwire clean on touched files (the one vitest failure,
+  `collision.test.ts`, pre-exists on clean HEAD). CLAUDE.md card-behaviour
+  bullet updated (quote-tile rule now native+external; stale
+  `ConversationView`/`ExternalAncestorRail` wiring pointers replaced with the
+  live `PostThread`/`usePostThread` engine).
 - **2026-07-09** — **follow/unfollow symmetry audit (3 fixes).** Audited every
   profile-type follow affordance (native profile page/overlay, `/author/:id`,
   `AuthorModal` hover card, publication surfaces, NetworkPanel/FollowingTab)

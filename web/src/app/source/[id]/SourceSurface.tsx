@@ -53,7 +53,10 @@ export function SourceSurface({ id }: { id: string }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // host post id → thread root id. Usually root === host; a quote-tile click on
+  // a collapsed card roots the thread on the QUOTED post instead (fresh focal,
+  // no residue of the quoting host — the WorkspaceView expandQuote grammar).
+  const [expanded, setExpanded] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -96,11 +99,15 @@ export function SourceSurface({ id }: { id: string }) {
 
   const toggleExpand = useCallback((postId: string) => {
     setExpanded((prev) => {
-      const next = new Set(prev);
+      const next = new Map(prev);
       if (next.has(postId)) next.delete(postId);
-      else next.add(postId);
+      else next.set(postId, postId);
       return next;
     });
+  }, []);
+
+  const expandQuote = useCallback((hostId: string, quotedPostId: string) => {
+    setExpanded((prev) => new Map(prev).set(hostId, quotedPostId));
   }, []);
 
   // Article → its addressable reader page (no overlay is mounted off-workspace).
@@ -186,7 +193,7 @@ export function SourceSurface({ id }: { id: string }) {
             expanded.has(post.id) && post.type !== "article" ? (
               <PostThread
                 key={post.id}
-                rootPostId={post.id}
+                rootPostId={expanded.get(post.id) ?? post.id}
                 ctx={CTX}
                 onCollapse={() => toggleExpand(post.id)}
                 onReply={replyFromPost}
@@ -200,6 +207,7 @@ export function SourceSurface({ id }: { id: string }) {
                 expanded={false}
                 ctx={CTX}
                 onExpand={() => toggleExpand(post.id)}
+                onQuoteOpen={(qid) => expandQuote(post.id, qid)}
                 onOpenReader={openReader}
                 onReply={
                   post.author.pubkey ? () => replyFromPost(post) : undefined

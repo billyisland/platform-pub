@@ -30,20 +30,32 @@ export function QuotedEmbed({
   post: Post;
   mode: QuoteMode;
   palette: VesselPalette;
-  // Re-root onto the quoted post (the host wires this to thread.reroot). When
-  // absent the quote tile stays static. The id is the quoted post's deterministic
-  // post_id, carried on the host as `post.quotes`.
+  // Re-root onto the quoted post (the host wires this to thread.reroot, or to
+  // expand-as-fresh-focal on a collapsed feed card). When absent the quote tile
+  // stays static. The id is the quoted post's deterministic post_id, carried on
+  // the host as `post.quotes`.
   onQuoteOpen?: (quotedPostId: string) => void;
 }) {
   if (mode === "none" || !post.quotes) return null;
+  const quotedId = post.quotes;
+
+  // In-place focus wins over any origin permalink: whenever the host wires
+  // onQuoteOpen, a quote tile — native or external — focuses the quoted post
+  // (re-root / fresh focal). The origin link stays reachable from the focused
+  // post's own source-attribution line. stopPropagation throughout so the host
+  // card's own click (expand/re-root) never fires from the tile.
+  const openQuoted = onQuoteOpen ? () => onQuoteOpen(quotedId) : undefined;
 
   if (mode === "stub") {
     return (
       <button
         type="button"
-        onClick={(e) => e.stopPropagation() /* Phase 3: re-root onto the quoted post */}
+        onClick={(e) => {
+          e.stopPropagation();
+          openQuoted?.();
+        }}
         className="font-mono text-[11px] uppercase tracking-[0.06em] mt-2 hover:opacity-80"
-        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: palette.cardMeta }}
+        style={{ background: "none", border: "none", padding: 0, cursor: openQuoted ? "pointer" : "default", color: palette.cardMeta }}
       >
         Quoted a post →
       </button>
@@ -57,14 +69,11 @@ export function QuotedEmbed({
   const native = post.origin.protocol === "nostr" && !!post.author.pubkey;
   if (!native) {
     if (!post.externalItemId) return null;
-    const quotedId = post.quotes;
     return (
       <QuotedPostTile
         itemId={post.externalItemId}
         palette={palette}
-        onOpen={
-          onQuoteOpen && quotedId ? () => onQuoteOpen(quotedId) : undefined
-        }
+        onOpen={openQuoted}
       />
     );
   }
@@ -75,9 +84,12 @@ export function QuotedEmbed({
     return (
       <button
         type="button"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          openQuoted?.();
+        }}
         className="font-mono text-[11px] uppercase tracking-[0.06em] mt-2 hover:opacity-80"
-        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: palette.cardMeta }}
+        style={{ background: "none", border: "none", padding: 0, cursor: openQuoted ? "pointer" : "default", color: palette.cardMeta }}
       >
         Quoted a post →
       </button>
@@ -113,10 +125,37 @@ export function QuotedEmbed({
     </>
   );
 
-  // External quote with a permalink → the tile links out to the origin (the one
-  // sanctioned route to the source platform). Click must not bubble to the card.
-  // Only http(s) is a permitted href — the gateway already enforces this, but
-  // guard here too so a non-http(s) value can never reach href (no javascript:).
+  // Interactive host (feed card / thread node): the tile focuses the quoted post
+  // in place — the same grammar as QuotedPostTile's onOpen.
+  if (openQuoted) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={`Open quoted post${preview.author ? ` by ${preview.author}` : ""}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          openQuoted();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            openQuoted();
+          }
+        }}
+        className="mt-2 cursor-pointer hover:opacity-90"
+        style={{ background: palette.quoteBg, padding: "10px 12px" }}
+      >
+        {inner}
+      </div>
+    );
+  }
+
+  // Static context (no onQuoteOpen): an external quote with a permalink links
+  // out to the origin. Click must not bubble to the card. Only http(s) is a
+  // permitted href — the gateway already enforces this, but guard here too so a
+  // non-http(s) value can never reach href (no javascript:).
   const safeUrl = preview.url && /^https?:\/\//i.test(preview.url) ? preview.url : null;
   if (safeUrl) {
     return (
@@ -136,7 +175,7 @@ export function QuotedEmbed({
   return (
     <div
       className="mt-2"
-      style={{ background: palette.interior, padding: "10px 12px" }}
+      style={{ background: palette.quoteBg, padding: "10px 12px" }}
     >
       {inner}
     </div>

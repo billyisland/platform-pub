@@ -73,6 +73,7 @@ type Action =
   | { kind: "init-start" }
   | { kind: "set-focal"; id: string }
   | { kind: "reroot-start" }
+  | { kind: "reroot-failed"; revertTo: string | null }
   | { kind: "more-start" }
   | { kind: "error" }
   | { kind: "ingest"; res: PostThreadResponse; root?: boolean }
@@ -99,6 +100,19 @@ function reducer(state: State, action: Action): State {
       return { ...state, focalId: action.id };
     case "reroot-start":
       return { ...state, rerooting: true, error: false };
+    case "reroot-failed": {
+      // A re-root target that couldn't be fetched (e.g. a quoted post whose
+      // context-only twin was GC'd): put the focal back where it was so the
+      // loaded thread stays intact instead of deriving against a missing node.
+      // If the target is already in the pool the view still renders (only its
+      // descendant page failed) — keep the user's click in that case.
+      const focalMissing = !state.focalId || !state.pool.has(state.focalId);
+      return {
+        ...state,
+        focalId: focalMissing ? (action.revertTo ?? state.focalId) : state.focalId,
+        rerooting: false,
+      };
+    }
     case "more-start":
       return { ...state, loadingMore: true };
     case "error":
@@ -257,7 +271,7 @@ export function usePostThread(
     };
   }, [enabled, rootPostId, refreshKey]);
 
-  const fetchFocal = useCallback((id: string) => {
+  const fetchFocal = useCallback((id: string, revertTo: string | null) => {
     const seq = ++reqSeq.current;
     dispatch({ kind: "reroot-start" });
     const cached = readCache(id);
@@ -270,15 +284,16 @@ export function usePostThread(
       dispatch({ kind: "ingest", res });
     }).catch(() => {
       if (!mounted.current || seq !== reqSeq.current) return;
-      dispatch({ kind: "error" });
+      dispatch({ kind: "reroot-failed", revertTo });
     });
   }, []);
 
   const reroot = useCallback(
     (id: string) => {
+      const prevFocal = stateRef.current.focalId;
       dispatch({ kind: "set-focal", id });
       // Already-loaded subtree → pure client-side (no fetch). Otherwise fill it.
-      if (!stateRef.current.meta.get(id)?.descLoaded) fetchFocal(id);
+      if (!stateRef.current.meta.get(id)?.descLoaded) fetchFocal(id, prevFocal);
     },
     [fetchFocal],
   );
