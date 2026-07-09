@@ -1,5 +1,6 @@
 import { UUID_RE } from "../lib/uuid.js";
 import type { FastifyInstance } from 'fastify'
+import type { PoolClient } from 'pg'
 import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
@@ -681,12 +682,61 @@ export async function driveRoutes(app: FastifyInstance) {
 }
 
 // =============================================================================
-// Publication trigger — called from article indexing route
+// Publication trigger — called from the publish pipelines
 //
 // Checks if a newly published article is linked to a pledge drive via draft_id.
 // If found, marks the drive as 'published' and queues async fulfilment.
+//
+// The match/stamp is split from the fulfilment kick so the article-index route
+// can run the match INSIDE its own index transaction: a match failure then
+// rolls back the whole index (the client keeps the draft and retries) instead
+// of committing an article whose drive silently never matched — the draft
+// delete that follows would SET NULL pledge_drives.draft_id, the sole match
+// key, orphaning the drive permanently.
 // =============================================================================
 
+// Match/stamp only — run inside the caller's transaction. Returns the drive id
+// to pass to queueDriveFulfilment() AFTER the transaction commits.
+export async function matchDriveForPublish(
+  client: PoolClient,
+  writerId: string,
+  articleId: string,
+  draftId: string | null
+): Promise<string | null> {
+  if (!draftId) return null
+
+  const driveRow = await client.query<{ id: string }>(
+    `SELECT id FROM pledge_drives
+     WHERE target_writer_id = $1 AND draft_id = $2 AND status IN ('open', 'funded')
+     FOR UPDATE`,
+    [writerId, draftId]
+  )
+
+  if (driveRow.rows.length === 0) return null
+
+  const id = driveRow.rows[0].id
+
+  await client.query(
+    `UPDATE pledge_drives SET article_id = $1, status = 'published',
+     published_at = now() WHERE id = $2`,
+    [articleId, id]
+  )
+
+  return id
+}
+
+// Kick async pledge processing (runs outside the publish request path). Call
+// only after the transaction that stamped the drive has committed.
+export function queueDriveFulfilment(driveId: string | null): void {
+  if (!driveId) return
+  fulfillDrive(driveId).catch(err => {
+    logger.error({ err, driveId }, 'Drive fulfilment failed')
+  })
+}
+
+// Own-transaction wrapper for callers outside a transaction (the scheduler).
+// A throw here must NOT be swallowed by the caller: the draft delete that
+// follows destroys the drive's only match key.
 export async function checkAndTriggerDriveFulfilment(
   writerId: string,
   articleId: string,
@@ -694,33 +744,11 @@ export async function checkAndTriggerDriveFulfilment(
 ): Promise<void> {
   if (!draftId) return
 
-  const driveId = await withTransaction(async (client) => {
-    const driveRow = await client.query<{ id: string }>(
-      `SELECT id FROM pledge_drives
-       WHERE target_writer_id = $1 AND draft_id = $2 AND status IN ('open', 'funded')
-       FOR UPDATE`,
-      [writerId, draftId]
-    )
+  const driveId = await withTransaction((client) =>
+    matchDriveForPublish(client, writerId, articleId, draftId)
+  )
 
-    if (driveRow.rows.length === 0) return null
-
-    const id = driveRow.rows[0].id
-
-    await client.query(
-      `UPDATE pledge_drives SET article_id = $1, status = 'published',
-       published_at = now() WHERE id = $2`,
-      [articleId, id]
-    )
-
-    return id
-  })
-
-  if (!driveId) return
-
-  // Queue async fulfilment (runs outside the publish request path)
-  fulfillDrive(driveId).catch(err => {
-    logger.error({ err, driveId }, 'Drive fulfilment failed')
-  })
+  queueDriveFulfilment(driveId)
 }
 
 // =============================================================================

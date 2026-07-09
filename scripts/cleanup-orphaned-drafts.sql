@@ -25,7 +25,11 @@
 --     touched here;
 --   * it is NOT scheduled (scheduled_at IS NULL) — a scheduled draft is live
 --     work, never swept;
---   * a non-deleted article by the SAME writer has the SAME (non-empty) title.
+--   * a non-deleted, PUBLISHED article by the SAME writer has the SAME
+--     (non-empty) title. published_at IS NOT NULL is load-bearing: a pending
+--     publication submission is a real articles row with published_at NULL
+--     whose body equals the draft — and its draft is deliberately KEPT while
+--     in review (the writer's only copy if the submission is rejected).
 --
 -- Confidence tiers:
 --   * TIER 1 (auto-deletable with -v apply=true): the draft's body, once the
@@ -79,6 +83,7 @@ CROSS JOIN marker
 JOIN articles a
   ON a.writer_id = d.writer_id
  AND a.deleted_at IS NULL
+ AND a.published_at IS NOT NULL
  AND a.title = d.title
 WHERE d.nostr_d_tag IS NULL
   AND d.scheduled_at IS NULL

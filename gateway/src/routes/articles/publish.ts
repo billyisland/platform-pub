@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth, optionalAuth } from "../../middleware/auth.js";
-import { checkAndTriggerDriveFulfilment } from "../drives.js";
+import { matchDriveForPublish, queueDriveFulfilment } from "../drives.js";
 import { sendPublishNotifications } from "@platform-pub/shared/lib/publish-emails.js";
 import { slugify } from "@platform-pub/shared/lib/slug.js";
 import { zodValidationError } from "@platform-pub/shared/lib/validation.js";
@@ -32,8 +32,19 @@ const IndexArticleSchema = z
     gatePositionPct: z.number().int().min(0).max(99),
     vaultEventId: z.string().optional(),
     coverImageUrl: z.string().url().nullable().optional(),
+    // draftId links the article to its working draft for pledge-drive
+    // fulfilment. The paywalled pipeline sends it ONLY on the final (v2)
+    // index call — a drive matched at the v1 step would charge pledgers
+    // before the vault seals, and a vault failure would leave them charged
+    // for a never-published article.
     draftId: z.string().optional(),
     sendEmail: z.boolean().optional(), // writer opt-in/out for publish notification email
+    // Set by the paywalled pipeline's final (v2) index call when the step-2
+    // v1 index reported isNew: the v2 upsert is never isNew itself, but the
+    // article IS new and subscribers should hear about it — only now, after
+    // the vault sealed and v2 is live (a step-2 email would link a soft-
+    // deleted 404 if the vault failed).
+    emailAsNew: z.boolean().optional(),
   })
   // Keep the paywall rules in lockstep with the key-service PublishVaultSchema
   // (price positive, gate 1..99). The old min(0) here let a price-0 paywalled
@@ -82,7 +93,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
     try {
       const isGated = data.accessMode === "paywalled";
 
-      const { articleId, isNew } = await withTransaction(async (client) => {
+      const { articleId, isNew, driveId } = await withTransaction(async (client) => {
         const result = await client.query<{ id: string; is_new: boolean }>(
           `INSERT INTO articles (
              writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
@@ -171,7 +182,20 @@ export async function articlePublishRoutes(app: FastifyInstance) {
           ],
         );
 
-        return { articleId: artId, isNew: result.rows[0].is_new };
+        // Pledge-drive match/stamp INSIDE the index txn: if it fails, the
+        // whole index rolls back and the client keeps the draft (retry
+        // re-matches). Committing the index with the match silently failed
+        // is the orphaned-drive bug — the client deletes the draft right
+        // after this response, which SET NULLs pledge_drives.draft_id, the
+        // sole match key. Pledge charging stays async (queued post-commit).
+        const matchedDriveId = await matchDriveForPublish(
+          client,
+          writerId,
+          artId,
+          data.draftId ?? null,
+        );
+
+        return { articleId: artId, isNew: result.rows[0].is_new, driveId: matchedDriveId };
       });
 
       logger.info(
@@ -179,24 +203,12 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         "Article indexed",
       );
 
-      // Check if this article is linked to a pledge drive and trigger
-      // fulfilment. Awaited (the match/stamp txn only — payout batches stay
-      // async): the client deletes the working draft right after this
-      // response, which SET NULLs pledge_drives.draft_id, so the match must
-      // land before we respond.
-      await checkAndTriggerDriveFulfilment(
-        writerId,
-        articleId,
-        data.draftId ?? null,
-      ).catch((err) => {
-        logger.error(
-          { err, articleId, writerId },
-          "Drive fulfilment trigger failed",
-        );
-      });
+      queueDriveFulfilment(driveId);
 
-      // Notify subscribers via email on first publish (not on edits)
-      if (isNew && data.sendEmail !== false) {
+      // Notify subscribers via email on first publish (not on edits).
+      // emailAsNew: the paywalled pipeline defers the new-article email to
+      // its final v2 index call (see the schema comment).
+      if ((isNew || data.emailAsNew === true) && data.sendEmail !== false) {
         sendPublishNotifications(
           writerId,
           articleId,
@@ -212,7 +224,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         });
       }
 
-      return reply.status(201).send({ articleId });
+      return reply.status(201).send({ articleId, isNew });
     } catch (err) {
       logger.error({ err, writerId }, "Article indexing failed");
       return reply.status(500).send({ error: "Indexing failed" });

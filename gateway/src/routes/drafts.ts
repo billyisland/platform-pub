@@ -107,9 +107,13 @@ export async function draftRoutes(app: FastifyInstance) {
             `draft_new:${writerId}`,
           ])
 
+          // scheduled_at IS NULL: a scheduled draft is a waiting publication,
+          // never a guess target — without the filter, scheduling article A
+          // then starting article B let B's first autosave overwrite A's
+          // waiting draft (the scheduler would then publish B in A's slot).
           const existing = await client.query<{ id: string }>(
             `SELECT id FROM article_drafts
-             WHERE writer_id = $1 AND nostr_d_tag IS NULL
+             WHERE writer_id = $1 AND nostr_d_tag IS NULL AND scheduled_at IS NULL
              ORDER BY auto_saved_at DESC LIMIT 1`,
             [writerId]
           )

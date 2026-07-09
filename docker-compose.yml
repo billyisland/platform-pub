@@ -84,8 +84,10 @@ services:
       blossom:
         condition: service_healthy
     volumes:
-      # Kept mounted through the migration + one soak cycle for instant rollback
-      # (revert → disk backend serves every blob). Dropped in Phase 4.
+      # Kept mounted through the migration + one soak cycle for rollback of
+      # PRE-cutover blobs only — post-cutover blobs exist solely in blossom_data,
+      # so a revert needs a Blossom→disk copy first (no script yet; see
+      # ADR-blossom-migration Sequencing §5). Dropped in Phase 4.
       - media_data:/app/media
     environment:
       DATABASE_URL: postgresql://platformpub:${POSTGRES_PASSWORD}@postgres:5432/platformpub

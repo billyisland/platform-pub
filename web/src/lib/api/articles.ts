@@ -65,8 +65,9 @@ export const articles = {
     coverImageUrl?: string | null;
     draftId?: string;
     sendEmail?: boolean;
+    emailAsNew?: boolean;
   }) =>
-    request<{ articleId: string }>("/articles", {
+    request<{ articleId: string; isNew: boolean }>("/articles", {
       method: "POST",
       body: JSON.stringify(data),
     }),

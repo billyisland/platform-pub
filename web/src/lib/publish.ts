@@ -27,6 +27,9 @@ import type { PublishData } from '../components/editor/ArticleEditor'
 //   soft-deleted (best-effort) so nothing broken stays in feeds; the draft
 //   still holds the full content. Edits are left in place — their original
 //   vault key is intact, so reader unlocks keep working via the DB ciphertext.
+//
+// Drive fulfilment (draftId) and the subscriber email ride only the FINAL
+// index call (step 2 for free, step 5 for paywalled) — see indexArticle below.
 // =============================================================================
 
 // Use relative URLs so requests go through the Next.js rewrite (same origin).
@@ -53,7 +56,17 @@ export async function publishArticle(
     throw new Error('There is no content after the paywall gate — move the gate up, or remove it.')
   }
 
-  const indexArticle = (nostrEventId: string, includeSendEmail: boolean) =>
+  // `final` marks the index call after which the article is fully live (the
+  // only call for free articles; step 5 / v2 for paywalled). Drive fulfilment
+  // (draftId) and the subscriber email ride ONLY the final call: matched or
+  // sent at the paywalled step-2 v1 index, a vault failure would charge
+  // pledgers / email subscribers about an article that soft-deletes and never
+  // publishes. emailAsNew tells the route the step-5 upsert is really a new
+  // article (its own isNew is always false), echoed from step 2's response.
+  const indexArticle = (
+    nostrEventId: string,
+    opts: { final: boolean; emailAsNew?: boolean }
+  ) =>
     articlesApi.index({
       nostrEventId,
       dTag,
@@ -64,10 +77,9 @@ export async function publishArticle(
       pricePence: data.pricePence,
       gatePositionPct: data.gatePositionPct,
       coverImageUrl: data.coverImageUrl ?? null,
-      // Links the article to its working draft so pledge-drive fulfilment can
-      // match on it (the drive check runs before the index route responds).
-      draftId: data.draftId ?? undefined,
-      ...(includeSendEmail ? { sendEmail: data.sendEmail } : {}),
+      draftId: opts.final ? data.draftId ?? undefined : undefined,
+      sendEmail: opts.final ? data.sendEmail : false,
+      ...(opts.emailAsNew ? { emailAsNew: true } : {}),
     })
 
   // Step 1: Build and sign NIP-23 v1 (free content only — no payload yet).
@@ -76,11 +88,15 @@ export async function publishArticle(
   const v1 = buildNip23Event(data, dTag, null)
   const signedV1 = isPaywalled ? await signViaGateway(v1) : await signAndPublish(v1)
 
-  // Step 2: Index v1 → get article UUID
+  // Step 2: Index v1 → get article UUID. For free articles this is the final
+  // (and only) call; for paywalled it's the anchor-only index — no draftId,
+  // no email — the final call is step 5.
   let articleId!: string
+  let indexedAsNew = false
   try {
-    const result = await indexArticle(signedV1.id, true)
+    const result = await indexArticle(signedV1.id, { final: !isPaywalled })
     articleId = result.articleId
+    indexedAsNew = result.isNew === true
   } catch (indexErr) {
     if (!isPaywalled) {
       // Retract v1 from relay so it doesn't become a dead link
@@ -138,8 +154,9 @@ export async function publishArticle(
     )
   }
 
-  // Step 5: Re-index with v2 event ID (upsert on (writer, dTag))
-  await indexArticle(signedV2.id, false)
+  // Step 5: Re-index with v2 event ID (upsert on (writer, dTag)). The final
+  // call: carries draftId (drive fulfilment) + fires the new-article email.
+  await indexArticle(signedV2.id, { final: true, emailAsNew: indexedAsNew })
 
   return { articleEventId: signedV2.id, dTag, articleId }
 }

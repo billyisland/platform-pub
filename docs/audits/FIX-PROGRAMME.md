@@ -23,6 +23,49 @@ starts.
 
 ## Progress
 
+- **2026-07-09** — **commit-audit §0 findings fixed (items 1–7: 3 HIGH, 2 MEDIUM,
+  2 LOW)** from the four-agent review of the July 7–8 ships (CONSOLIDATED-TODO §0,
+  queued at `2fda554`). (1) **nginx `/media/` public-write exposure**: the blanket
+  proxy exposed Blossom's `PUT /upload` + `DELETE /<sha>` to the open internet
+  (BUD-02 auth accepts any self-signed kind-24242 event — internal-only
+  reachability IS its access control). Now a quoted-regex location admitting only
+  `^/media/[0-9a-f]{64}(\.[a-z0-9]+)?$` with `limit_except GET` (GET implies HEAD;
+  DELETE on a hash path → 403; everything else under `/media/` falls through to
+  web → 404). `nginx -t` verified in a throwaway container — the unquoted `{64}`
+  quantifier is a syntax error, hence the quotes. **Prod needs the nginx
+  force-recreate** (bind-mount inode trap). (2) **Draft guess vs scheduled
+  drafts**: the first-save untagged-draft guess (`drafts.ts`) now filters
+  `scheduled_at IS NULL`, so a new article's first autosave can no longer
+  COALESCE-overwrite a *waiting scheduled* draft (which the scheduler would then
+  publish under the wrong slot and delete). (3) **Drive fulfilment timing**: the
+  web pipeline now sends `draftId` only on the FINAL index call (the only call
+  for free; step-5/v2 for paywalled) so a pledge drive can never match — and
+  charge pledgers — before the vault seals (`web/src/lib/publish.ts`). (4)
+  **Fulfilment failure must block the draft delete**: `checkAndTriggerDriveFulfilment`
+  split into `matchDriveForPublish(client,…)` (txn-scoped match/stamp) +
+  `queueDriveFulfilment` (post-commit async kick). The index route runs the match
+  INSIDE the article-index transaction — a match failure rolls back the whole
+  index and the client keeps the draft (retry converges) instead of committing an
+  article whose drive is permanently orphaned once the draft delete SET NULLs
+  `pledge_drives.draft_id`. The scheduler's two call sites no longer swallow the
+  error (`.catch(log)` removed) — failure restores `scheduled_at`, retry next
+  cycle. (5) **Cleanup-script predicate**: `scripts/cleanup-orphaned-drafts.sql`
+  Tier 1 now requires `a.published_at IS NOT NULL`, so an in-review publication
+  submission's draft (deliberately kept while pending) can no longer classify as
+  an auto-deletable orphan. Unblocks the §11 prod run. (6) **Paywalled publish
+  email deferred to completion**: step 2 (v1 anchor index) sends `sendEmail:false`;
+  the step-5 v2 index carries the new `emailAsNew` flag (echoing step 2's `isNew`,
+  now returned by `POST /articles`), and the route emails when
+  `(isNew || emailAsNew) && sendEmail !== false` — so subscribers are never
+  emailed links to an article whose vault failure soft-deletes it. Edits still
+  never email (both flags false). (7) **Blossom rollback docs corrected**
+  (ADR Sequencing §5 + Phase 3 + compose comment): a revert serves only
+  PRE-cutover blobs; post-cutover blobs live solely in `blossom_data` and need a
+  Blossom→disk copy script (unwritten) before the soak-cycle rollback is real.
+  Item 8 (cosmetic tail) stays queued, batched with §7. Validation: gateway tsc
+  + 161 tests green; root eslint 0 errors; web `next build` green (the one web
+  test failure is the documented pre-existing `collision.test.ts` flake);
+  `nginx -t` pass. NOT runtime-verified — the §11 verify list covers it.
 - **2026-07-08** — **Stripe webhooks routed through nginx.** The webhook handler
   (`payment-service/src/routes/webhook.ts`, `POST /webhooks/stripe`) is registered
   with **no prefix**, so it does not sit under the `/api/` → gateway proxy. `nginx.conf`

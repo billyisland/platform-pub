@@ -116,7 +116,7 @@ One-off `scripts/migrate-media-to-blossom.ts`:
 2. **Migrate existing blobs (§4) against the still-live disk backend.** The gateway is still writing to `media_data`, so every blob to date is on the volume; the script copies them all into Blossom. Idempotent, so a partial run is safe to resume.
 3. **Cutover deploy — gateway + nginx together, in one release.** Land the §2 `media.ts` change (disk write → Blossom PUT, plain `fetch`), the §3 nginx proxy, `BLOSSOM_URL`, and `depends_on: blossom`. From this deploy on, new uploads go straight to Blossom and `/media/` reads are proxied to it.
 4. **Immediately re-run the migration script (§2 of §4) once** to sweep any blobs written to disk in the window between step 2 and the cutover. Idempotent + hash-deduped, so it only moves stragglers. Then spot-check N random `/media/<sha256>.webp` URLs through nginx (mix of old-migrated and freshly-uploaded).
-5. **Rollback plan:** the cutover is one deploy, so rollback is reverting it — the `media_data` volume is still mounted and intact (nothing is removed in step 3), so the reverted disk backend serves every blob immediately.
+5. **Rollback plan:** the cutover is one deploy, so rollback is reverting it — the `media_data` volume is still mounted and intact (nothing is removed in step 3), so the reverted disk backend serves every **pre-cutover** blob immediately. ⚠️ *Corrected 2026-07-09 (commit-audit):* blobs uploaded **after** cutover exist only in `blossom_data` (`media.ts` no longer writes disk), so a plain revert 404s them; a real rollback additionally needs a Blossom→disk copy of the post-cutover set (no such script exists — write it before leaning on this path).
 6. **After one soak cycle:** remove the `media_data` volume + its gateway/nginx mounts and delete the dead disk code (§6). This is the point of no return — do it only once Blossom has served production reads cleanly for a cycle.
 
 ## Build plan
@@ -178,7 +178,7 @@ Spiked the real pinned image on the compose network. **The image ships the v6 De
 
 **Exit:** a fresh upload round-trips (editor → gateway → Blossom → rendered); old images still resolve; both carry `image/webp`.
 
-**Rollback:** revert the single cutover commit — `media_data` is still mounted + complete, so the disk backend serves every blob immediately.
+**Rollback:** revert the single cutover commit — `media_data` is still mounted, so the disk backend serves every **pre-cutover** blob immediately. Post-cutover blobs live only in `blossom_data` and 404 on a plain revert; copy them Blossom→disk first (no script exists yet — see the Sequencing §5 correction).
 
 ### Phase 4 — Soak, then remove the disk backend *(ADR §6; point of no return)*
 

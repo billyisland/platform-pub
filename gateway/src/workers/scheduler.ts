@@ -166,17 +166,14 @@ async function publishPublicationDraft(draft: ScheduledDraft): Promise<void> {
       ),
     );
 
-    // Awaited: the caller deletes the draft next, which SET NULLs any
-    // pledge_drives.draft_id — the drive match must land first.
+    // Awaited and NOT swallowed: the caller deletes the draft next, which
+    // SET NULLs pledge_drives.draft_id — the drive's only match key. A
+    // failure here must propagate so the outer catch restores scheduled_at
+    // and the whole publish retries (the upsert pipeline converges).
     await checkAndTriggerDriveFulfilment(
       draft.writer_id,
       result.articleId,
       draft.id,
-    ).catch((err) =>
-      logger.error(
-        { err, draftId: draft.id },
-        "Scheduler: drive fulfilment check failed",
-      ),
     );
   }
 }
@@ -388,15 +385,11 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
     logger.error({ err, draftId: draft.id }, "Scheduler: publish email failed"),
   );
 
-  // Awaited: the caller deletes the draft next, which SET NULLs any
-  // pledge_drives.draft_id — the drive match must land first.
-  await checkAndTriggerDriveFulfilment(draft.writer_id, articleId, draft.id).catch(
-    (err) =>
-      logger.error(
-        { err, draftId: draft.id },
-        "Scheduler: drive fulfilment check failed",
-      ),
-  );
+  // Awaited and NOT swallowed: the caller deletes the draft next, which
+  // SET NULLs pledge_drives.draft_id — the drive's only match key. A
+  // failure here must propagate so the outer catch restores scheduled_at
+  // and the whole publish retries (the upsert pipeline converges).
+  await checkAndTriggerDriveFulfilment(draft.writer_id, articleId, draft.id);
 }
 
 // =============================================================================
