@@ -23,6 +23,21 @@ starts.
 
 ## Progress
 
+- **2026-07-09** — **thread context never clips (parents/replies at full
+  length).** In an expanded conversation, long ancestors/replies were
+  truncated by the feed card's collapse-truncate (220/200-char text cuts, an
+  8-line clamp on external HTML bodies), and the only way to read the rest was
+  clicking the entry — which re-roots the whole thread on it. The §4
+  capability-matrix table already said thread-parent/thread-reply body text is
+  "full"; the implementation had drifted by reusing the feed level's `full`
+  body mode. Fix: `LEVEL_SPEC["thread-parent"]`/`["thread-reply"]` now use the
+  unclipped `expanded` body mode (`web/src/lib/post/level-spec.ts`), so thread
+  entries render whole bodies (articles: full standfirst) with no clamp. Feed
+  cards and quoted-embed minis keep their truncation — clipping is a
+  collapsed-feed affordance only. ADR §4 note added recording the
+  interpretation. Validated: web `tsc` clean, `next build` clean, level-spec
+  matrix tests 17/17, hairline tripwire clean on touched files.
+
 - **2026-07-09** — **quote-tile click-to-focus parity (native quotes + surface
   wiring).** Audited the "clicking any card focuses it as the expanded
   conversation's focal" rule across first-order feed cards, thread

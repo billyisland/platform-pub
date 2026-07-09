@@ -11,9 +11,9 @@ import type { VesselPalette } from "../workspace/tokens";
 // =============================================================================
 // PostBody — title / summary / text / html for any Post, governed by body mode.
 //
-//   "expanded"  (focal)            — full text, no clamp
-//   "full"      (feed/parent/reply)— full text with a collapse-truncate for long bodies
-//   "one-line"  (condensed)        — a single truncated line
+//   "expanded"  (focal/parent/reply) — full text, no clamp (thread context never clips)
+//   "full"      (feed)               — full text with a collapse-truncate for long bodies
+//   "one-line"  (condensed)          — a single truncated line
 //
 // bodyPx arrives ALREADY scaled by the level's textScale (PostCard does the
 // multiply + readability floor). Content warnings wrap the body; polls render
