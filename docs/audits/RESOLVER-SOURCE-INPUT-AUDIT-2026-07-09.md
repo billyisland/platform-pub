@@ -18,8 +18,10 @@ FIX-PROGRAMME and amend both.
 > handling is a down-payment on **F1**, not its discharge. **F2** discharged
 > 2026-07-10 (nostr-model error accounting + re-throw in the atproto backfill's
 > outer catch; `externalFetchMaxAttempts` gives it 5 subscribe-time attempts —
-> FIX-PROGRAMME 2026-07-10). Still open, tracked in CONSOLIDATED-TODO §0b: **F4**
-> (omnivorous-input violations on DM/invite surfaces), **F1** (addSource liveness),
+> FIX-PROGRAMME 2026-07-10). **F4** discharged 2026-07-10 (all three surfaces
+> onto `useResolverInput`: picked-match actions replace the blind `results[0]`,
+> the MembersTab stale race is closed — FIX-PROGRAMME 2026-07-10). Still open,
+> tracked in CONSOLIDATED-TODO §0b: **F1** (addSource liveness),
 > **F5** remainder (native-URL short-circuit, njump re-entry, AP actor probe, JSON
 > Feed autodiscovery), **F6** (deactivated-source signal). Findings below are the
 > frozen audit-time snapshot — file:line refs and the branch table predate the

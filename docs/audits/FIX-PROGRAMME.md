@@ -23,6 +23,30 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Resolver audit F4: the three omnivorous-input violators
+  moved onto `useResolverInput`.**
+  `RESOLVER-SOURCE-INPUT-AUDIT-2026-07-09.md` §F4. DM new-conversation
+  (`MessagesInbox.tsx`) and DM fee override (`DmFeeSettings.tsx`) were
+  username-only `GET /v1/search?type=writers` taking `results[0]` blind
+  (with `alert()` errors); the publication invite (`MembersTab.tsx`) used the
+  resolver but through a hand-rolled debounce with no stale-request guard
+  (fast typing could land an old match over a newer one). All three now ride
+  `useResolverInput` (contexts `dm`/`dm`/`invite` — native-only server-side):
+  matches render as clickable rows and the action fires on a PICKED account,
+  never a first-result guess (Enter picks only an unambiguous single match);
+  errors are inline text, no `alert()`. `MatchOption` gains an additive
+  `account?: {id, username, displayName}` carried from `native_account`
+  matches (matchToOptions) so person-picking surfaces act on the account
+  rather than a feed-source add. MembersTab keeps its pre-F4 conveniences:
+  a single match resolves implicitly ("Resolved: …"), multiple matches need
+  an explicit pick, and no-match falls back to invite-by-email (message now
+  distinguishes email-shaped input); the hook's `genRef` closes the race.
+  Fee override picks into a clearable chip; Add is disabled until a person
+  is selected. Validated: web tsc clean, `next build` clean, resolve tests
+  extended (24 passed), hairline tripwire clean, root eslint 0 errors.
+  (Pre-existing, unrelated: `web/tests/collision.test.ts` "pushes upward"
+  fails on the clean tree too — not introduced here.)
+
 - **2026-07-10** — **Resolver audit F2: atproto backfill failure accounting +
   retry (HIGH — the silent data-loss hole).**
   `RESOLVER-SOURCE-INPUT-AUDIT-2026-07-09.md` §F2. The atproto backfill's

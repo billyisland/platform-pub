@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { dmPricing, type DmPricingOverride } from '../../lib/api'
+import { useResolverInput } from '../../hooks/useResolverInput'
 
 export function DmFeeSettings() {
   const [dmPrice, setDmPrice] = useState('')
@@ -9,9 +10,18 @@ export function DmFeeSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
-  const [overrideUsername, setOverrideUsername] = useState('')
   const [overridePrice, setOverridePrice] = useState('')
   const [addingOverride, setAddingOverride] = useState(false)
+  // Omnivorous person input (CLAUDE.md rule; audit F4) — replaces the old
+  // username-only /v1/search + blind results[0]. Picking a match selects the
+  // account; Add then acts on the selection, never a guess.
+  const ri = useResolverInput({ context: 'dm', maxPolls: 3 })
+  const [overrideTarget, setOverrideTarget] = useState<{
+    id: string
+    username: string
+    displayName: string
+  } | null>(null)
+  const overrideMatches = ri.matches.filter(m => m.account)
 
   useEffect(() => {
     dmPricing.get().then(data => {
@@ -93,47 +103,96 @@ export function DmFeeSettings() {
 
             <form onSubmit={async (e) => {
               e.preventDefault()
-              if (!overrideUsername.trim()) return
+              if (!overrideTarget) return
               setAddingOverride(true)
               try {
-                const res = await fetch(`/api/v1/search?q=${encodeURIComponent(overrideUsername.trim())}&type=writers`, { credentials: 'include' })
-                const data = await res.json()
-                const found = data.results?.[0]
-                if (!found) { setMsg('User not found.'); setAddingOverride(false); return }
                 const pence = overridePrice.trim() ? Math.round(parseFloat(overridePrice) * 100) : 0
-                await dmPricing.setOverride(found.id, pence)
-                setDmOverrides(prev => [...prev.filter(x => x.userId !== found.id), {
-                  userId: found.id,
-                  username: found.username,
-                  displayName: found.displayName,
+                await dmPricing.setOverride(overrideTarget.id, pence)
+                setDmOverrides(prev => [...prev.filter(x => x.userId !== overrideTarget.id), {
+                  userId: overrideTarget.id,
+                  username: overrideTarget.username,
+                  displayName: overrideTarget.displayName,
                   pricePence: pence,
                 }])
-                setOverrideUsername('')
+                setOverrideTarget(null)
                 setOverridePrice('')
               } catch { setMsg('Failed to add override.') }
               finally { setAddingOverride(false) }
-            }} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={overrideUsername}
-                onChange={(e) => setOverrideUsername(e.target.value)}
-                placeholder="Username"
-                className="w-32 bg-grey-100 px-2 py-1 text-ui-xs text-black placeholder-grey-300"
-              />
-              <span className="text-ui-xs text-grey-400">£</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={overridePrice}
-                onChange={(e) => setOverridePrice(e.target.value)}
-                placeholder="0.00"
-                className="w-20 bg-grey-100 px-2 py-1 text-ui-xs text-black placeholder-grey-300"
-              />
-              <button type="submit" disabled={addingOverride} className="btn-text underline underline-offset-4">
-                {addingOverride ? '...' : 'Add'}
-              </button>
+            }}>
+              <div className="flex items-center gap-2">
+                {overrideTarget ? (
+                  <span className="flex w-40 items-center justify-between gap-1 bg-grey-100 px-2 py-1 text-ui-xs text-black">
+                    <span className="truncate">{overrideTarget.displayName || `@${overrideTarget.username}`}</span>
+                    <button
+                      type="button"
+                      onClick={() => setOverrideTarget(null)}
+                      aria-label="Clear person"
+                      className="flex-shrink-0 text-grey-400 hover:text-black"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ) : (
+                  <input
+                    type="text"
+                    value={ri.query}
+                    onChange={(e) => { setMsg(null); ri.onQueryChange(e.target.value) }}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return
+                      e.preventDefault()
+                      if (overrideMatches.length === 1 && !ri.resolving) {
+                        setOverrideTarget(overrideMatches[0].account!)
+                        ri.reset()
+                      } else ri.submit()
+                    }}
+                    placeholder="Username, email, npub…"
+                    className="w-40 bg-grey-100 px-2 py-1 text-ui-xs text-black placeholder-grey-300"
+                  />
+                )}
+                <span className="text-ui-xs text-grey-400">£</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={overridePrice}
+                  onChange={(e) => setOverridePrice(e.target.value)}
+                  placeholder="0.00"
+                  className="w-20 bg-grey-100 px-2 py-1 text-ui-xs text-black placeholder-grey-300"
+                />
+                <button type="submit" disabled={addingOverride || !overrideTarget} className="btn-text underline underline-offset-4 disabled:opacity-50">
+                  {addingOverride ? '...' : 'Add'}
+                </button>
+              </div>
+              {!overrideTarget && (
+                <div className="mt-1 min-h-[20px]">
+                  {ri.resolving && (
+                    <p className="label-ui text-grey-600 py-0.5">RESOLVING…</p>
+                  )}
+                  {!ri.resolving && (ri.doneEmpty || ri.resolveError) && overrideMatches.length === 0 && (
+                    <p className="text-ui-xs text-grey-600 py-0.5">
+                      No one found — try a username, email, or npub.
+                    </p>
+                  )}
+                  {overrideMatches.length > 0 && (
+                    <div className="flex flex-col gap-0.5">
+                      {overrideMatches.map(m => (
+                        <button
+                          key={m.key}
+                          type="button"
+                          onClick={() => { setOverrideTarget(m.account!); ri.reset() }}
+                          className="flex w-full items-center justify-between gap-2 px-1 py-1 text-left text-ui-xs text-black hover:bg-grey-100 transition-colors"
+                        >
+                          <span className="truncate">{m.label}</span>
+                          {m.sublabel && (
+                            <span className="label-ui text-grey-600">{m.sublabel}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </form>
           </details>
         </>

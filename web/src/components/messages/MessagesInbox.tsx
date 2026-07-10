@@ -6,6 +6,7 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import { useBackGuard } from '../../lib/backGuard'
 import { useUnreadCounts } from '../../stores/unread'
 import { messages as messagesApi, type Conversation } from '../../lib/api'
+import { useResolverInput } from '../../hooks/useResolverInput'
 import { ConversationList } from './ConversationList'
 import { MessageThread } from './MessageThread'
 import { NotificationsPanel } from '../notifications/NotificationsPanel'
@@ -45,8 +46,13 @@ export function MessagesInbox({
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConvId, setActiveConvId] = useState<string | null>(null)
   const [showNewMessage, setShowNewMessage] = useState(false)
-  const [newRecipient, setNewRecipient] = useState('')
   const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  // Omnivorous recipient input (CLAUDE.md rule; audit F4): username, email,
+  // npub, URL — whatever the user has. The `dm` context keeps candidates
+  // native-only server-side.
+  const ri = useResolverInput({ context: 'dm', maxPolls: 3 })
+  const recipientMatches = ri.matches.filter(m => m.account)
 
   // Mobile pager — the horizontal swipe between the two peer pages. `pagerRef`
   // is the snap-scroll container; `mobilePage` mirrors the resting page so the
@@ -113,11 +119,13 @@ export function MessagesInbox({
   // mobile, ensure we're on the Messages page so the thread is in view.
   const selectConversation = useCallback((id: string | null) => {
     setShowNewMessage(false)
+    setCreateError(null)
+    ri.reset()
     setActiveConvId(id)
     // Seat the list underneath the cover so popping the thread reveals it (and
     // the segmented header reads "Messages"). Instant — the cover hides it.
     if (isMobile && id) goToPage(1, false)
-  }, [isMobile, goToPage])
+  }, [isMobile, goToPage, ri.reset])
 
   // Leave the thread / new-message form → back to the conversation list. On the
   // mobile drill-down this is the thread's back arrow (and the right-swipe); on
@@ -125,7 +133,9 @@ export function MessagesInbox({
   const clearActive = useCallback(() => {
     setShowNewMessage(false)
     setActiveConvId(null)
-  }, [])
+    setCreateError(null)
+    ri.reset()
+  }, [ri.reset])
 
   // Mobile drill-down back-guard: while the thread cover is up, a browser Back /
   // OS edge-swipe pops it back to the conversation list (like the back arrow and
@@ -165,23 +175,20 @@ export function MessagesInbox({
     if (dx > 64 && Math.abs(dx) > Math.abs(dy) * 1.5) clearActive()
   }, [clearActive])
 
-  async function handleNewConversation(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newRecipient.trim() || creating) return
+  // Start a conversation with a PICKED match — never a blind first-result
+  // guess (audit F4: the old path took search results[0] for whatever the
+  // user typed).
+  async function startConversation(accountId: string) {
+    if (creating) return
     setCreating(true)
+    setCreateError(null)
     try {
-      const res = await fetch(`/api/v1/search?q=${encodeURIComponent(newRecipient.trim())}&type=writers`, { credentials: 'include' })
-      if (!res.ok) throw new Error()
-      const data = await res.json()
-      const writer = data.results?.[0]
-      if (!writer) { alert('User not found.'); return }
-
-      const result = await messagesApi.createConversation([writer.id])
+      const result = await messagesApi.createConversation([accountId])
       setActiveConvId(result.conversationId)
       setShowNewMessage(false)
-      setNewRecipient('')
+      ri.reset()
       void fetchConversations()
-    } catch { alert('Failed to start conversation.') }
+    } catch { setCreateError('Couldn’t start the conversation. Try again.') }
     finally { setCreating(false) }
   }
 
@@ -196,29 +203,62 @@ export function MessagesInbox({
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-4 py-3 mb-1">
         <button
-          onClick={() => setShowNewMessage(false)}
+          onClick={() => { setShowNewMessage(false); setCreateError(null); ri.reset() }}
           className="label-ui text-grey-600 hover:text-black"
         >
           &#8592;
         </button>
         <p className="text-ui-sm font-sans font-semibold text-black">New message</p>
       </div>
-      <form onSubmit={handleNewConversation} className="p-4">
+      <div className="p-4">
         <label className="label-ui text-grey-600 block mb-2">To</label>
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={newRecipient}
-            onChange={(e) => setNewRecipient(e.target.value)}
-            placeholder="Username"
-            className="flex-1 bg-glasshouse-well px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300"
-            autoFocus
-          />
-          <button type="submit" disabled={creating} className="btn text-sm disabled:opacity-50">
-            {creating ? '…' : 'Start'}
-          </button>
+        <input
+          type="text"
+          value={ri.query}
+          onChange={(e) => { setCreateError(null); ri.onQueryChange(e.target.value) }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            // Enter picks an unambiguous match; otherwise re-resolves.
+            if (recipientMatches.length === 1 && !ri.resolving)
+              void startConversation(recipientMatches[0].account!.id)
+            else ri.submit()
+          }}
+          placeholder="Username, email, npub…"
+          className="w-full bg-glasshouse-well px-3 py-2 text-ui-sm font-sans text-black placeholder-grey-300"
+          autoFocus
+        />
+        <div className="mt-1.5 min-h-[24px]">
+          {ri.resolving && (
+            <p className="label-ui text-grey-600 px-1 py-1">RESOLVING…</p>
+          )}
+          {!ri.resolving && (ri.doneEmpty || ri.resolveError) && recipientMatches.length === 0 && (
+            <p className="text-ui-xs text-grey-600 px-1 py-1">
+              No one found — try a username, email, or npub.
+            </p>
+          )}
+          {recipientMatches.length > 0 && (
+            <div className="flex flex-col gap-0.5">
+              {recipientMatches.map(m => (
+                <button
+                  key={m.key}
+                  onClick={() => void startConversation(m.account!.id)}
+                  disabled={creating}
+                  className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-ui-xs text-black hover:bg-glasshouse-well transition-colors disabled:opacity-50"
+                >
+                  <span className="truncate">{m.label}</span>
+                  {m.sublabel && (
+                    <span className="label-ui text-grey-600">{creating ? '…' : m.sublabel}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {createError && (
+            <p className="text-ui-xs text-crimson px-1 pt-1">{createError}</p>
+          )}
         </div>
-      </form>
+      </div>
     </div>
   )
 

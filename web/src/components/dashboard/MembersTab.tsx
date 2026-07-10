@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { publications as pubApi, resolver, type PublicationMember, type ResolverMatch } from '../../lib/api'
+import React, { useState, useEffect } from 'react'
+import { publications as pubApi, type PublicationMember } from '../../lib/api'
+import { useResolverInput } from '../../hooks/useResolverInput'
 
 interface Props {
   publicationId: string
@@ -15,14 +16,23 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Invite form (resolver-backed omnivorous input)
-  const [inviteQuery, setInviteQuery] = useState('')
+  // Invite form — omnivorous input via useResolverInput (audit F4: the prior
+  // hand-rolled debounce had no stale-request guard, so fast typing could land
+  // an old match over a newer one; the hook's genRef closes that race).
   const [inviteRole, setInviteRole] = useState<string>('contributor')
   const [inviting, setInviting] = useState(false)
   const [inviteMsg, setInviteMsg] = useState<string | null>(null)
-  const [resolvedMatch, setResolvedMatch] = useState<ResolverMatch | null>(null)
-  const [resolving, setResolving] = useState(false)
-  const resolveDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [invitePick, setInvitePick] = useState<{
+    id: string
+    username: string
+    displayName: string
+  } | null>(null)
+  const ri = useResolverInput({ context: 'invite', maxPolls: 3 })
+  const inviteMatches = ri.matches.filter(m => m.account)
+  // An unambiguous single match resolves implicitly (the pre-F4 UX); multiple
+  // matches render as rows and need an explicit pick.
+  const resolvedAccount =
+    invitePick ?? (inviteMatches.length === 1 ? inviteMatches[0].account! : null)
 
   // Inline role editing
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -39,55 +49,32 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
       .finally(() => setLoading(false))
   }, [publicationId])
 
-  // Resolve the invite input as the user types
   function handleInviteQueryChange(value: string) {
-    setInviteQuery(value)
-    setResolvedMatch(null)
+    setInvitePick(null)
     setInviteMsg(null)
-
-    if (resolveDebounce.current) clearTimeout(resolveDebounce.current)
-    if (!value.trim()) return
-
-    resolveDebounce.current = setTimeout(async () => {
-      setResolving(true)
-      try {
-        const res = await resolver.resolve(value.trim(), 'invite')
-        // Find the best native account match
-        const accountMatch = res.matches.find(m => m.type === 'native_account')
-        setResolvedMatch(accountMatch ?? null)
-        if (!accountMatch && res.matches.length === 0 && !res.error) {
-          setInviteMsg('No platform account found for this identifier')
-        } else if (res.error) {
-          setInviteMsg(res.error)
-        }
-      } catch {
-        setInviteMsg('Resolution failed')
-      } finally {
-        setResolving(false)
-      }
-    }, 300)
+    ri.onQueryChange(value)
   }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
-    if (!inviteQuery.trim()) return
+    if (!ri.query.trim()) return
     setInviting(true)
     setInviteMsg(null)
 
     try {
-      // If we have a resolved account, use accountId; otherwise try as email
+      // A resolved account invites by accountId; otherwise fall back to
+      // treating the input as an email (the gateway validates it).
       const inviteData: { email?: string; accountId?: string; role?: string } = { role: inviteRole }
-      if (resolvedMatch?.account) {
-        inviteData.accountId = resolvedMatch.account.id
+      if (resolvedAccount) {
+        inviteData.accountId = resolvedAccount.id
       } else {
-        // Fall back to treating input as email
-        inviteData.email = inviteQuery.trim()
+        inviteData.email = ri.query.trim()
       }
 
       const result = await pubApi.invite(publicationId, inviteData)
-      setInviteMsg(`Invite sent${resolvedMatch?.account ? ` to ${resolvedMatch.account.displayName}` : ''}. Token: ${result.token}`)
-      setInviteQuery('')
-      setResolvedMatch(null)
+      setInviteMsg(`Invite sent${resolvedAccount ? ` to ${resolvedAccount.displayName}` : ''}. Token: ${result.token}`)
+      ri.reset()
+      setInvitePick(null)
     } catch {
       setInviteMsg('Failed to send invite.')
     } finally {
@@ -242,20 +229,44 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
               <div className="relative">
                 <input
                   type="text"
-                  value={inviteQuery}
+                  value={ri.query}
                   onChange={e => handleInviteQueryChange(e.target.value)}
                   className="bg-grey-100 px-3 py-1.5 text-sm text-black w-60"
                   placeholder="writer@example.com or @username"
                 />
-                {resolving && (
+                {ri.resolving && (
                   <div className="absolute right-2 top-1/2 -translate-y-1/2">
                     <div className="w-3 h-3 border-2 border-grey-300 border-t-black rounded-full animate-spin" />
                   </div>
                 )}
               </div>
-              {resolvedMatch?.account && (
+              {resolvedAccount && (
                 <p className="text-mono-xs text-black mt-1">
-                  Resolved: {resolvedMatch.account.displayName} (@{resolvedMatch.account.username})
+                  Resolved: {resolvedAccount.displayName} (@{resolvedAccount.username})
+                </p>
+              )}
+              {!resolvedAccount && inviteMatches.length > 1 && (
+                <div className="mt-1 flex w-60 flex-col gap-0.5">
+                  {inviteMatches.map(m => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => setInvitePick(m.account!)}
+                      className="flex w-full items-center justify-between gap-2 px-1 py-1 text-left text-ui-xs text-black hover:bg-grey-100 transition-colors"
+                    >
+                      <span className="truncate">{m.label}</span>
+                      {m.sublabel && (
+                        <span className="label-ui text-grey-600">{m.sublabel}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!resolvedAccount && !ri.resolving && ri.doneEmpty && (
+                <p className="text-ui-xs text-grey-600 mt-1">
+                  {/@.+\./.test(ri.query)
+                    ? 'No account with this email — sending will invite them by email.'
+                    : 'No platform account found for this identifier.'}
                 </p>
               )}
             </div>

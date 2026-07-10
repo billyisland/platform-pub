@@ -6,6 +6,10 @@ export interface MatchOption {
   sublabel: string | null;
   add: AddWorkspaceFeedSourceInput;
   confidence?: ResolverMatch["confidence"];
+  /** Present on native_account options — the resolved account's identity, for
+   *  surfaces that act on a person (DM, invite, fee override) rather than add
+   *  a feed source. */
+  account?: { id: string; username: string; displayName: string };
 }
 
 export function matchToOptions(match: ResolverMatch): MatchOption[] {
@@ -17,6 +21,11 @@ export function matchToOptions(match: ResolverMatch): MatchOption[] {
       sublabel: match.account.username ? `@${match.account.username}` : null,
       add: { sourceType: "account", accountId: match.account.id },
       confidence: match.confidence,
+      account: {
+        id: match.account.id,
+        username: match.account.username,
+        displayName: match.account.displayName,
+      },
     });
   }
   if (match.type === "external_source" && match.externalSource) {

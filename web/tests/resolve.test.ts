@@ -50,6 +50,9 @@ describe("matchToOptions", () => {
       sublabel: "@alice",
       add: { sourceType: "account", accountId: "acc-1" },
       confidence: "exact",
+      // Carried for the person-picking surfaces (DM / invite / fee override,
+      // audit F4) — they act on the account, not a feed-source add.
+      account: { id: "acc-1", username: "alice", displayName: "Alice A" },
     });
   });
 
