@@ -23,6 +23,52 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Discovery-expansion post-ship review: six fixes + the
+  §8.3 author-deletion tombstone + the squatter amendment (migration 151).**
+  Same-day five-agent review of the shipped RESOLVER-DISCOVERY-ADR phases
+  found six bugs; all fixed, plus two owner-decided design amendments.
+  (1) DM/invite implicit pick treated a lone SPECULATIVE fuzzy match as
+  unambiguous — Enter DM'd/invited a name-similar stranger
+  (`MessagesInbox`/`MembersTab`/`DmFeeSettings` now gate on
+  `confidence !== 'speculative'`; MembersTab renders pick rows for a lone
+  unresolved match). (2) Stale-Enter race: during the 300ms debounce window
+  `matches` answered the PREVIOUS query while `resolving` was false —
+  `useResolverInput` now tracks `resolvedFor` and exposes `pending`
+  (also hardens `doneEmpty`); the three pick surfaces gate on it.
+  (3) A literal NUL byte committed inside `searchKnownWorld`'s dedupe-key
+  template made `resolver.ts` classify as BINARY — grep/ripgrep silently
+  skipped the whole 1,400-line file (any grep-based audit/tripwire was blind
+  to it); now the backslash-u0000 escape. (4) Catalog `rss_feed` vs known-world
+  `external_source(rss)` never deduped (`rssfeed:` vs `rss:` key-spaces) —
+  the same feed rendered under both Matches and Suggestions; unified on
+  `rss:` in `resolver-merge.ts`. (5) Catalog alias-in-query over-match:
+  unbounded `q.includes(a)` let short generic aliases ("thor" in "thorough",
+  "paid") hijack queries and outrank every network branch via the precision
+  tie-break — that direction now requires ≥5-char aliases on word boundaries
+  (`aliasInQuery`). (6) `mergeCatalogs` lacked the script's multi-tenant
+  feed-host exemption — one curated feedburner/megaphone head entry would
+  silently delete every generated tenant on that host at load; the set moved
+  to `discovery-catalog.ts` (script imports it back) and the merge dedupes
+  those hosts by full URL. **§8.3 tombstone (migration 151)**: the ADR's
+  "honour deletes" claim covered items, not the AUTHORS the known-world index
+  surfaces (no code path ever deleted an `external_authors` row) —
+  `external_authors.deleted_at` added; stamped by AP actor/outbox HTTP 410
+  (typed `ApFetchStatusError`; 410 also deactivates the source immediately)
+  and nostr kind-0 `deleted:true` riding the existing metadata ratchet
+  (stamp + clear, poll AND backfill so the ratchet can't swallow it);
+  `searchKnownWorld` excludes tombstoned authors and their source-leg twins
+  (atproto signal deferred — Jetstream doesn't subscribe account events).
+  **Squatter amendment**: an exact native username hit no longer suppresses
+  the external world in SUBSCRIBE context (a user named "guardian" shadowed
+  The Guardian) — known-world + discovery run alongside; exact still ranks
+  first; invite/dm/general keep the short-circuit; fuzzy natives stay
+  suppressed by an exact hit. Tests: gateway 263 passed (+5 new: boundary
+  matcher ×3, multi-tenant merge, rss cross-shape dedupe, squatter
+  orchestration), feed-ingest 209 passed, web 136 passed (1 pre-existing
+  `collision.test.ts` failure, untouched by this work), drift guard 4/4
+  green, root eslint 0 errors, `next build` clean. Remaining review findings
+  queued in CONSOLIDATED-TODO §0b.
+
 - **2026-07-10** — **Resolver audit F1: addSource liveness verification +
   error-space split (HIGH — the resolver was advisory).**
   `RESOLVER-SOURCE-INPUT-AUDIT-2026-07-09.md` §F1, fix shape (b). The

@@ -5,6 +5,7 @@
 **Extends:** `UNIVERSAL-FEED-ADR.md` §V.5.8 (discovery fallback, branches 1–3 shipped 2026-06-08)
 **Companion audit:** `docs/audits/RESOLVER-SOURCE-INPUT-AUDIT-2026-07-09.md` (queue: CONSOLIDATED-TODO §0b)
 **Audit findings this ADR discharges when built:** F3 (confidence never rendered), F5.4 (context priority ordering), F7 (discovery reach / catalog vs branch 4), plus the F8 orchestration-test prerequisite as Phase 0.
+**Post-ship review (2026-07-10, same day):** a five-agent review of the shipped phases found six bugs (all fixed — see FIX-PROGRAMME 2026-07-10 "post-ship review") and drove two owner-decided amendments now reflected in the sections below: the **§8.3 author-deletion tombstone** (migration 151 — the original "honour deletes" claim covered items, not the authors the known-world index surfaces) and the **§4.3 squatter amendment** (an exact native username hit no longer suppresses the external world in subscribe context). Remaining open findings queued in CONSOLIDATED-TODO §0b.
 
 ---
 
@@ -93,6 +94,11 @@ LIMIT 10;   -- over-fetch, then dedupe by (protocol, canonical identity) → cap
 - **Exclusions:** orphaned/inactive sources excluded (query above). Shadow sources (`is_active = FALSE` profile-hydration anchors, EXTERNAL-AUTHOR-HISTORY-ADR) are therefore excluded as *sources* — but their **authors** still surface via `external_authors`, which is the correct semantics (the identity is real; the source row is plumbing). Bridge mirrors are *not* excluded here; the merge step collapses them (§6.1).
 - **Minimum query length 3** after trim — single/double-character trigram scans are noise and an enumeration surface (§8).
 - Tier note: `external_authors` is tier-A/B only by CHECK constraint, so every hit has a real identity; no tier-C/D placeholder-byline risk.
+- **Deletion tombstone (§8.3, migration 151):** both legs exclude tombstoned authors — the author leg on `deleted_at IS NULL`, the source leg via a `NOT EXISTS` against a deleted author twin (a deleted author's source row must not resurface them).
+
+### 4.3 Squatter amendment (2026-07-10, post-ship review)
+
+As originally specced, `searchKnownWorld` + discovery ran only on the **no-exact-hit** `platform_username` branch — so a native account squatting a publication name ("guardian") permanently shadowed the external world for that name. Amended: in **subscribe context only**, an exact native hit runs known-world + discovery **alongside** it (the exact hit still ranks first — exact > probable > speculative); `invite`/`dm`/`general` keep the short-circuit, and fuzzy native search stays suppressed by an exact hit in all contexts. Pinned by the orchestration harness.
 
 ## 5. Branch 6 — `activitypub_discovery` (Phase B, behind a provider interface)
 
@@ -146,6 +152,8 @@ Matches currently return in insertion order. Sort the merged list by, in order:
 
 Pure function over the merged list — prime unit-test material for the Phase 0 harness.
 
+*Post-ship fix (2026-07-10):* the alias-dedupe key for a catalog `rss_feed` nomination is `rss:<url>` — the **same key-space** as a known-world `external_source(protocol: rss)` hit, so the same feed reached through both shapes collapses to one candidate (the probable known-world hit wins). The original `rssfeed:`/`rss:` split rendered head-catalog feeds twice, once per section.
+
 ### 6.3 Where the merge lives
 
 `resolveAsync` currently appends per-chain results incrementally via `storeAsyncResult`. Keep incremental persistence (partial results are load-bearing UX) but make each `storeAsyncResult` write pass through one `mergeMatches(existing, incoming, context)` that dedupes (per-protocol key-space + cross-protocol bridge keys) and re-sorts (§6.2). One function, one test surface.
@@ -165,6 +173,7 @@ Grow `PUBLICATION_CATALOG` from 11 to ~300–500 entries via an **offline genera
 - Emit `gateway/src/lib/discovery-catalog.generated.ts` (marked generated, never hand-edited) merged at load with the hand-curated head entries, which keep priority. Dedupe by feed host.
 - Alias hygiene: lowercase, strip diacritics to match `searchCatalog`'s substring-both-directions matching; drop aliases shorter than 3 chars (they'd match everything).
 - **Perf ceiling:** the current in-memory linear scan is fine to ~5k entries; beyond that, move the catalog into a DB table under the same trgm indexes as §4. Not expected to be needed.
+- *Post-ship fixes (2026-07-10):* (a) the **alias-in-query** match direction requires ≥5-char aliases on word boundaries (`aliasInQuery`) — unbounded `q.includes(a)` let short generic aliases ("thor" in "thorough", "paid") hijack long queries and, via §6.2 branch precision, outrank every network candidate; query-in-alias stays an unbounded substring. (b) The **multi-tenant feed-host set** lives in `discovery-catalog.ts` (the script imports it back) and `mergeCatalogs`' head-collision check dedupes those hosts by full URL — host-level would let one curated feedburner/megaphone entry silently delete every generated tenant on that host at load.
 
 ### 7.2 Branch 4 (web-search bridge): deferred, spec pinned
 
@@ -176,7 +185,7 @@ The fediverse's indexing politics are live and unforgiving — Holos Discover di
 
 1. **No browsable directory, ever.** The known-world index (§4) is reachable only as ranked candidates for a specific typed query (min length 3, capped at 5, per-request); no endpoint enumerates, pages, or dumps external identities. Nothing in this ADR ships a "directory of fediverse users" surface.
 2. **Resolution-cache semantics only.** AP search results live solely in `resolver_async_results` (60s TTL, initiator-scoped, pruned) — never persisted as profiles. A real `external_sources`/`external_authors` row is minted only by the existing authoritative path (pick → exact resolve → `addSource`). The local index adds **no new data collection** — it reads rows ingest already holds for feed delivery, the same caching every Mastodon instance performs.
-3. **Honour deletes.** Ingest already applies kind-5 tombstones and AP Deletes; the index inherits that (it reads live tables, no snapshot). Any future materialised variant must re-verify this property.
+3. **Honour deletes — at the AUTHOR level, because authors are what the index surfaces.** *(Rewritten 2026-07-10 — the original claim ("ingest already applies kind-5 tombstones and AP Deletes; the index inherits that") covered **items** only: no code path ever deleted an `external_authors` row, and AP Deletes aren't even seen by read-only outbox polling — a deleted account stayed a "probable" candidate forever.)* Now: `external_authors.deleted_at` (migration 151) is stamped by the deletion signals each protocol's existing ingest path actually delivers — **ActivityPub**: HTTP 410 Gone on the actor/outbox fetch (the fediverse deletion tombstone; typed `ApFetchStatusError` in the adapter, and a 410 also deactivates the source immediately rather than burning the error budget); **Nostr**: a kind-0 with `deleted: true` riding the existing newest-wins metadata ratchet (stamps; a newer kind-0 without the flag clears — applied in both the poll task and the backfill, since the backfill advances the ratchet and would otherwise swallow the signal). `searchKnownWorld` excludes tombstoned authors on both legs (§4.2). **Deferred, tracked in §0b:** the atproto signal (Jetstream doesn't subscribe account events; `getProfile` error classification is brittle) and whether profile surfaces should also consume `deleted_at` (historical bylines still resolve today — a product call). Any future materialised variant must re-verify the whole property.
 4. **Inherit, don't override, network consent policy.** Instance search (§5.2) returns what the instance's own policy allows; we add no scraping around it. A FASP provider is only adopted if its opt-in posture is settled (§5.1).
 5. **Discovery stays submit-only and context-gated** (§V.5.8 guardrails) — per-keystroke external fan-out is banned; `invite`/`dm` never see external candidates.
 
