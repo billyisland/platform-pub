@@ -832,6 +832,8 @@ Branches run concurrently (`Promise.all`) and persist incrementally via the exis
 
 Branches run with incremental `storeAsyncResult` persistence in `resolveAsync` (catalog first, then Bluesky + Nostr concurrently via `Promise.all`), the same partial-result pattern used by `dotted_host`. Surfaces: `gateway/src/lib/{atproto-resolve,resolver,discovery-catalog}.ts`, `gateway/src/routes/resolve.ts`; frontend `web/src/hooks/useResolverInput.ts` (`submit()`), `FeedComposer`/`VesselBar` (Enter → `submit`). Tests: `gateway/tests/{atproto-discovery,discovery-catalog,nostr-profile-parse}.test.ts`. Branch 4 (web-search → URL bridge, feature-flagged) remains unimplemented.
 
+**Expansion accepted 2026-07-10 — see `docs/adr/RESOLVER-DISCOVERY-ADR.md`** (supersedes nothing here; adds to it): a Phase-A known-world index over already-ingested external identities, an `activitypub_discovery` Phase-B branch (unauthenticated Mastodon account search behind a FASP-ready provider interface), bridge-aware merge dedup (Bridgy Fed / Mostr / NIP-48), the §V.5.3 context-priority ordering, rendered confidence tiers, and a generated (Wikidata/OPML) catalog. Branch 4 stays deferred behind a flag; Feedly's feed-search API was evaluated and ruled out on API-ToS grounds (documented there, §2.1).
+
 ---
 
 ## VI. Protocol-specific design
