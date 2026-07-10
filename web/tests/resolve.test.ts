@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   matchToOptions,
+  partitionMatchOptions,
   tagFallback,
   resolveMatches,
 } from "../src/lib/workspace/resolve";
@@ -202,5 +203,58 @@ describe("resolveMatches", () => {
 
   it("returns empty array when no matches and query is not a tag", () => {
     expect(resolveMatches("hello", [])).toEqual([]);
+  });
+});
+
+describe("partitionMatchOptions (RESOLVER-DISCOVERY-ADR §6.4)", () => {
+  it("splits exact/probable into matches and speculative into suggestions", () => {
+    const options = resolveMatches("query", [
+      nativeMatch, // exact
+      externalMatch, // probable
+      rssMatch, // speculative
+    ]);
+    const sections = partitionMatchOptions(options);
+    expect(sections.matches.map((o) => o.confidence)).toEqual([
+      "exact",
+      "probable",
+    ]);
+    expect(sections.suggestions.map((o) => o.confidence)).toEqual([
+      "speculative",
+    ]);
+  });
+
+  it("counts an option with no confidence as a match", () => {
+    const sections = partitionMatchOptions([
+      {
+        key: "x",
+        label: "X",
+        sublabel: null,
+        add: { sourceType: "tag", tagName: "x" },
+      },
+    ]);
+    expect(sections.matches).toHaveLength(1);
+    expect(sections.suggestions).toHaveLength(0);
+  });
+
+  it("puts the tag fallback (exact) under matches", () => {
+    const options = resolveMatches("#music", [rssMatch]);
+    const sections = partitionMatchOptions(options);
+    expect(sections.matches.map((o) => o.key)).toEqual(["tag:music"]);
+    expect(sections.suggestions.map((o) => o.key)).toEqual([
+      "rss:https://example.com/rss",
+    ]);
+  });
+
+  it("preserves relative order within each section", () => {
+    const spec2 = {
+      ...rssMatch,
+      rssFeed: { feedUrl: "https://example.com/rss2" },
+    };
+    const options = resolveMatches("query", [rssMatch, spec2]);
+    const sections = partitionMatchOptions(options);
+    expect(sections.suggestions.map((o) => o.key)).toEqual([
+      "rss:https://example.com/rss",
+      "rss:https://example.com/rss2",
+    ]);
   });
 });

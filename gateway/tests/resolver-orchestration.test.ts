@@ -656,6 +656,113 @@ describe("activitypub discovery", () => {
 });
 
 // =============================================================================
+// Merge step — bridge dedup + ordering (RESOLVER-DISCOVERY-ADR §6 — Phase 3)
+// =============================================================================
+
+describe("merge step (Phase 3)", () => {
+  it("a Bridgy Fed AP mirror of a native Bluesky candidate yields one candidate", async () => {
+    mockSearchActors.mockResolvedValue([
+      { did: "did:plc:guardian", handle: "guardian.bsky.social" },
+    ]);
+    mockSearchApAccounts.mockResolvedValue([
+      {
+        acct: "guardian.bsky.social@bsky.brid.gy",
+        displayName: "The Guardian (bridged)",
+        url: "https://bsky.brid.gy/ap/did:plc:guardian",
+      },
+    ]);
+
+    const res = await resolve("the guardian news", "subscribe", INITIATOR, true);
+    const final = await waitComplete(res.requestId!);
+
+    expect(
+      final.matches.filter(
+        (m: any) => m.externalSource?.protocol === "activitypub",
+      ),
+    ).toHaveLength(0);
+    expect(
+      final.matches.filter((m: any) => m.externalSource?.protocol === "atproto"),
+    ).toHaveLength(1);
+  });
+
+  it("a NIP-48-proxied nostr mirror of a known-world AP author is dropped", async () => {
+    knownWorldRows = [
+      {
+        protocol: "activitypub",
+        identity: "https://mastodon.social/users/guardian",
+        display_name: "The Guardian",
+        handle: "guardian@mastodon.social",
+        avatar: null,
+        kind: "author",
+      },
+    ];
+    mockSearchNostrProfiles.mockResolvedValue([
+      {
+        pubkey: HEX_PUBKEY,
+        displayName: "guardian (mostr)",
+        tags: [
+          ["proxy", "https://mastodon.social/users/guardian", "activitypub"],
+        ],
+      },
+    ]);
+
+    const res = await resolve("the guardian news", "subscribe", INITIATOR, true);
+    const final = await waitComplete(res.requestId!);
+
+    expect(
+      final.matches.some(
+        (m: any) => m.externalSource?.protocol === "nostr_external",
+      ),
+    ).toBe(false);
+    expect(
+      final.matches.some(
+        (m: any) =>
+          m.externalSource?.sourceUri ===
+          "https://mastodon.social/users/guardian",
+      ),
+    ).toBe(true);
+  });
+
+  it("the final row is ordered by confidence: known-world probable before speculative discovery", async () => {
+    knownWorldRows = [
+      {
+        protocol: "atproto",
+        identity: "did:plc:knownworld",
+        display_name: "Guardian (followed)",
+        handle: "guardian.bsky.social",
+        avatar: null,
+        kind: "author",
+      },
+    ];
+    // Nostr lands a speculative hit FIRST (catalog is empty, bluesky slow) so
+    // ordering can't come from insertion order alone.
+    mockSearchNostrProfiles.mockResolvedValue([
+      { pubkey: HEX_PUBKEY, displayName: "guardian" },
+    ]);
+    mockSearchActors.mockImplementation(async () => {
+      await sleep(20);
+      return [{ did: "did:plc:speculative", handle: "g.bsky.social" }];
+    });
+
+    const res = await resolve("the guardian news", "subscribe", INITIATOR, true);
+    const final = await waitComplete(res.requestId!);
+
+    const confidences = final.matches.map((m: any) => m.confidence);
+    expect(confidences[0]).toBe("probable");
+    expect(final.matches[0].externalSource?.sourceUri).toBe("did:plc:knownworld");
+    // No speculative row sorts above a probable one.
+    const firstSpec = confidences.indexOf("speculative");
+    expect(confidences.lastIndexOf("probable")).toBeLessThan(firstSpec);
+    // Within the speculative tier, branch precision: Bluesky before Nostr.
+    const spec = final.matches.filter((m: any) => m.confidence === "speculative");
+    expect(spec.map((m: any) => m.externalSource?.protocol)).toEqual([
+      "atproto",
+      "nostr_external",
+    ]);
+  });
+});
+
+// =============================================================================
 // Per-chain failure isolation
 // =============================================================================
 

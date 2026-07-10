@@ -22,6 +22,15 @@ import {
   fetchNostrProfile,
   searchNostrProfiles,
 } from "./nostr-search.js";
+import {
+  mergeMatches,
+  type ResolveContext,
+  type ResolverMatch,
+} from "./resolver-merge.js";
+
+// Match/context types live in resolver-merge.ts (§8.5 decomposition);
+// re-exported for existing callers (routes/resolve.ts).
+export type { ResolveContext };
 
 // =============================================================================
 // Universal Resolver
@@ -49,34 +58,6 @@ type InputType =
   | "dotted_host"
   | "platform_username"
   | "free_text";
-
-type MatchType = "native_account" | "external_source" | "rss_feed";
-type Confidence = "exact" | "probable" | "speculative";
-export type ResolveContext = "subscribe" | "invite" | "dm" | "general";
-
-interface ResolverMatch {
-  type: MatchType;
-  confidence: Confidence;
-  account?: {
-    id: string;
-    username: string;
-    displayName: string;
-    avatar?: string;
-  };
-  externalSource?: {
-    protocol: "atproto" | "activitypub" | "rss" | "nostr_external";
-    sourceUri: string;
-    displayName?: string;
-    avatar?: string;
-    description?: string;
-    relayUrls?: string[];
-  };
-  rssFeed?: {
-    feedUrl: string;
-    title?: string;
-    description?: string;
-  };
-}
 
 interface ResolverResult {
   inputType: InputType;
@@ -390,9 +371,14 @@ export async function resolve(
   const requestId =
     pendingResolutions.length > 0 && initiatorId ? randomUUID() : undefined;
 
+  // Every emitted match set passes through the merge step (§6.2/§6.3): here it
+  // orders Phase A (e.g. probable known-world hits ahead of fuzzy natives in
+  // subscribe context) before the seed row / sync return.
+  const mergedMatches = mergeMatches([], matches, context);
+
   const result: ResolverResult = {
     inputType,
-    matches,
+    matches: mergedMatches,
     status: requestId ? "pending" : "complete",
     requestId,
     pendingResolutions: requestId ? pendingResolutions : undefined,
@@ -416,7 +402,7 @@ export async function resolve(
       initiatorId,
       trimmed,
       inputType,
-      matches,
+      mergedMatches,
       context,
       discover,
     ).catch((err) => {
@@ -458,7 +444,11 @@ async function resolveAsync(
   context: ResolveContext,
   discover = false,
 ): Promise<void> {
-  const matches = [...existingMatches];
+  // Every chain result folds in via mergeMatches (§6.3): alias dedupe,
+  // bridge-collision drop, §6.2 re-sort. The read-merge-reassign is
+  // synchronous inside each chain's continuation, so concurrent chains can't
+  // lose updates; the storePartial closures read the current binding.
+  let matches = mergeMatches([], existingMatches, context);
   // External Phase B chains (URL/RSS, atproto, activitypub) only ever produce
   // external_source / rss_feed matches. Surfaces that act on platform accounts
   // — invite a publication member, start a DM — can't use those, so skip the
@@ -469,7 +459,7 @@ async function resolveAsync(
 
   if (inputType === "url" && !skipExternal) {
     const urlMatches = await safeChain("url_resolution", resolveUrl(query), []);
-    matches.push(...urlMatches);
+    matches = mergeMatches(matches, urlMatches, context);
   }
 
   if (inputType === "dotted_host" && !skipExternal) {
@@ -488,7 +478,7 @@ async function resolveAsync(
       safeChain("url_resolution", resolveUrl(`https://${query}`), []).then(
         async (urlMatches) => {
           if (urlMatches.length > 0) {
-            matches.push(...urlMatches);
+            matches = mergeMatches(matches, urlMatches, context);
             await storePartial();
           }
         },
@@ -496,7 +486,7 @@ async function resolveAsync(
       safeChain("atproto_profile", resolveAtproto(query), null).then(
         async (atprotoMatch) => {
           if (atprotoMatch) {
-            matches.push(atprotoMatch);
+            matches = mergeMatches(matches, [atprotoMatch], context);
             await storePartial();
           }
         },
@@ -510,26 +500,17 @@ async function resolveAsync(
       resolveNip05(query),
       [],
     );
-    matches.push(...nip05Matches);
+    matches = mergeMatches(matches, nip05Matches, context);
     if (!skipExternal) {
       // Also try WebFinger — many fediverse accounts take the bare `user@host`
       // form (no @ prefix) and the ambiguous chain is the only place to catch
-      // them. Dedupe against any existing activitypub match by actor URI.
+      // them. mergeMatches dedupes against any existing activitypub match.
       const apMatch = await safeChain(
         "webfinger_resolution",
         resolveActivityPubHandle(query),
         null,
       );
-      if (
-        apMatch &&
-        !matches.some(
-          (m) =>
-            m.externalSource?.protocol === "activitypub" &&
-            m.externalSource?.sourceUri === apMatch.externalSource?.sourceUri,
-        )
-      ) {
-        matches.push(apMatch);
-      }
+      if (apMatch) matches = mergeMatches(matches, [apMatch], context);
     }
   }
 
@@ -539,7 +520,7 @@ async function resolveAsync(
       resolveActivityPubHandle(query),
       null,
     );
-    if (apMatch) matches.push(apMatch);
+    if (apMatch) matches = mergeMatches(matches, [apMatch], context);
   }
 
   if (
@@ -551,7 +532,7 @@ async function resolveAsync(
       resolveAtproto(query),
       null,
     );
-    if (atprotoMatch) matches.push(atprotoMatch);
+    if (atprotoMatch) matches = mergeMatches(matches, [atprotoMatch], context);
   }
 
   if (
@@ -611,7 +592,7 @@ async function resolveAsync(
     // renders without waiting on the network branches.
     const catalogMatches = discoverCatalog(query, matches);
     if (catalogMatches.length > 0) {
-      matches.push(...catalogMatches);
+      matches = mergeMatches(matches, catalogMatches, context);
       await storeDiscoveryPartial();
     }
 
@@ -623,7 +604,7 @@ async function resolveAsync(
       safeChain("bluesky_discovery", discoverBluesky(query, matches), []).then(
         async (candidates) => {
           if (candidates.length > 0) {
-            matches.push(...candidates);
+            matches = mergeMatches(matches, candidates, context);
             await storeDiscoveryPartial();
           }
         },
@@ -631,7 +612,7 @@ async function resolveAsync(
       safeChain("nostr_discovery", discoverNostr(query, matches), []).then(
         async (candidates) => {
           if (candidates.length > 0) {
-            matches.push(...candidates);
+            matches = mergeMatches(matches, candidates, context);
             await storeDiscoveryPartial();
           }
         },
@@ -642,7 +623,7 @@ async function resolveAsync(
         [],
       ).then(async (candidates) => {
         if (candidates.length > 0) {
-          matches.push(...candidates);
+          matches = mergeMatches(matches, candidates, context);
           await storeDiscoveryPartial();
         }
       }),
@@ -678,6 +659,9 @@ async function discoverBluesky(
     out.push({
       type: "external_source",
       confidence: "speculative",
+      // Merge hint (§6.1): a *.ap.brid.gy handle marks a Bridgy Fed
+      // fediverse→Bluesky mirror the merge step can collapse.
+      handle: p.handle,
       externalSource: {
         protocol: "atproto",
         sourceUri: p.did,
@@ -738,9 +722,21 @@ async function discoverNostr(
   for (const c of candidates) {
     if (seen.has(c.pubkey)) continue;
     seen.add(c.pubkey);
+    // NIP-48 (§6.1): a kind-0 carrying ["proxy", <origin-id>, <protocol>] is a
+    // bridged mirror whose origin key joins the merge collision set.
+    // Best-effort — host patterns are the primary signal.
+    const proxyTag = c.tags?.find(
+      (t) =>
+        t[0] === "proxy" &&
+        typeof t[1] === "string" &&
+        t[1] &&
+        typeof t[2] === "string" &&
+        t[2],
+    );
     out.push({
       type: "external_source",
       confidence: "speculative",
+      proxy: proxyTag ? { origin: proxyTag[1], protocol: proxyTag[2] } : undefined,
       externalSource: {
         protocol: "nostr_external",
         sourceUri: c.pubkey,
@@ -782,6 +778,9 @@ async function discoverActivityPub(
     out.push({
       type: "external_source",
       confidence: "speculative",
+      // Merge hint (§6.1): the actor URI is where bridge hosts (bsky.brid.gy,
+      // mostr.pub) are detected — the acct alone can't carry a Bridgy DID.
+      actorUrl: c.url,
       externalSource: {
         protocol: "activitypub",
         sourceUri: c.acct,
@@ -1141,6 +1140,7 @@ async function resolveAtproto(
     return {
       type: "external_source",
       confidence: "exact",
+      handle: profile.handle,
       externalSource: {
         protocol: "atproto",
         sourceUri: profile.did,
@@ -1159,6 +1159,7 @@ async function resolveAtproto(
       return {
         type: "external_source",
         confidence: "probable",
+        handle: trimmed,
         externalSource: {
           protocol: "atproto",
           sourceUri: did,
@@ -1191,6 +1192,7 @@ async function resolveActivityPubByActor(
   return {
     type: "external_source",
     confidence: "exact",
+    handle: profile.handle ?? undefined,
     externalSource: {
       protocol: "activitypub",
       sourceUri: profile.actorUri,
@@ -1391,6 +1393,9 @@ async function searchKnownWorld(query: string): Promise<ResolverMatch[]> {
       type: "external_source",
       confidence: "probable",
       kind: row.kind,
+      // Merge hint (§6.1): the acct / atproto handle keys the bridge-collision
+      // space (an AP author's identity is the actor URI; its acct rides here).
+      handle: row.handle ?? undefined,
       externalSource: {
         protocol: row.protocol,
         sourceUri: row.identity,
@@ -1401,6 +1406,7 @@ async function searchKnownWorld(query: string): Promise<ResolverMatch[]> {
     if (existing) {
       // Source row supersedes an author twin in place (order already set).
       existing.kind = match.kind;
+      existing.handle = match.handle;
       existing.externalSource = match.externalSource;
     } else if (byIdentity.size < KNOWN_WORLD_LIMIT) {
       byIdentity.set(key, match);

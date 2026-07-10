@@ -105,6 +105,10 @@ export interface NostrCandidate {
   displayName?: string;
   about?: string;
   picture?: string;
+  /** Raw kind-0 event tags (RESOLVER-DISCOVERY-ADR §6.1): a `["proxy",
+   *  <origin-id>, <protocol>]` tag (NIP-48) marks a bridged mirror whose
+   *  origin key joins the merge step's bridge-collision set. */
+  tags?: string[][];
 }
 
 function getNostrSearchRelay(): string {
@@ -137,7 +141,10 @@ export async function searchNostrProfiles(
     const subId = `resolver-search-${randomUUID()}`;
     // Newest kind-0 per pubkey wins, so a relay returning stale + fresh
     // metadata for the same author collapses to one candidate.
-    const collected = new Map<string, { content: string; created_at: number }>();
+    const collected = new Map<
+      string,
+      { content: string; created_at: number; tags?: string[][] }
+    >();
     let settled = false;
 
     const finish = () => {
@@ -157,6 +164,7 @@ export async function searchNostrProfiles(
           displayName: profile?.displayName,
           about: profile?.about,
           picture: profile?.picture,
+          tags: ev.tags,
         });
         if (out.length >= limit) break;
       }
@@ -188,6 +196,11 @@ export async function searchNostrProfiles(
               collected.set(event.pubkey, {
                 content: event.content,
                 created_at: event.created_at,
+                tags:
+                  Array.isArray(event.tags) &&
+                  event.tags.every((t: unknown) => Array.isArray(t))
+                    ? (event.tags as string[][])
+                    : undefined,
               });
             }
           }

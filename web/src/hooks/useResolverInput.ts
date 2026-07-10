@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resolver, type ResolverResult } from "../lib/api";
-import { resolveMatches, type MatchOption } from "../lib/workspace/resolve";
+import {
+  partitionMatchOptions,
+  resolveMatches,
+  type MatchOption,
+  type MatchSections,
+} from "../lib/workspace/resolve";
 
 const DEBOUNCE_MS = 300;
 const MAX_POLLS = 8;
@@ -12,6 +17,9 @@ export interface UseResolverInput {
    *  enabled (§V.5.8), searching the external world for the current query. */
   submit: () => void;
   matches: MatchOption[];
+  /** Confidence-tier split of `matches` (RESOLVER-DISCOVERY-ADR §6.4):
+   *  exact/probable under `matches`, speculative under `suggestions`. */
+  sections: MatchSections;
   resolving: boolean;
   resolveError: boolean;
   doneEmpty: boolean;
@@ -128,6 +136,7 @@ export function useResolverInput(opts?: {
   }, []);
 
   const matches = resolveMatches(query, result?.matches ?? []);
+  const sections = partitionMatchOptions(matches);
   const doneEmpty =
     !resolving &&
     result !== null &&
@@ -139,6 +148,7 @@ export function useResolverInput(opts?: {
     onQueryChange,
     submit,
     matches,
+    sections,
     resolving,
     resolveError,
     doneEmpty,

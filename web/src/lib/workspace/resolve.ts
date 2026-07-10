@@ -84,3 +84,23 @@ export function resolveMatches(
   }
   return items;
 }
+
+// Rendered confidence tiers (RESOLVER-DISCOVERY-ADR §6.4, audit F3): the match
+// well splits into "Matches" (exact + probable — verified identifiers and
+// platform-held known-world identities) and "Suggestions" (speculative
+// discovery nominations). Partitioned once here so the three consumer surfaces
+// just render two lists; an option with no confidence (older gateway rows)
+// counts as a match. Server ordering (§6.2) is preserved within each section.
+export interface MatchSections {
+  matches: MatchOption[];
+  suggestions: MatchOption[];
+}
+
+export function partitionMatchOptions(options: MatchOption[]): MatchSections {
+  const matches: MatchOption[] = [];
+  const suggestions: MatchOption[] = [];
+  for (const o of options) {
+    (o.confidence === "speculative" ? suggestions : matches).push(o);
+  }
+  return { matches, suggestions };
+}

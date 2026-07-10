@@ -8,6 +8,10 @@ import {
 } from "../../lib/api/post";
 import { invalidateAuthorCardCache } from "../../hooks/useAuthorCard";
 import { useResolverInput } from "../../hooks/useResolverInput";
+import {
+  partitionMatchOptions,
+  type MatchOption,
+} from "../../lib/workspace/resolve";
 
 // =============================================================================
 // IdentityLinkControl — the "Link to…" / "Unlink" affordance on the external
@@ -90,6 +94,9 @@ export function IdentityLinkControl({
       (l) => l.protocol === protocol && l.sourceUri === sourceUri,
     );
   });
+  // Confidence tiers (RESOLVER-DISCOVERY-ADR §6.4), partitioned AFTER the
+  // linkable filter so section headers never label filtered-out rows.
+  const linkableSections = partitionMatchOptions(linkable);
 
   const addLink = useCallback(
     async (key: string, protocol: string, sourceUri: string) => {
@@ -141,6 +148,25 @@ export function IdentityLinkControl({
   );
 
   const count = links.length;
+
+  const renderLinkOption = (opt: MatchOption) => {
+    // Narrowed to the { protocol, sourceUri } variant by the linkable
+    // filter above (TS can't carry that across the .filter).
+    const add = opt.add as Extract<typeof opt.add, { protocol: string }>;
+    return (
+      <button
+        key={opt.key}
+        onClick={() => void addLink(opt.key, add.protocol, add.sourceUri)}
+        disabled={busyKey === opt.key}
+        className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-ui-xs text-black hover:bg-glasshouse-well transition-colors disabled:opacity-50"
+      >
+        <span className="truncate">{opt.label}</span>
+        <span className="label-ui text-grey-600">
+          {busyKey === opt.key ? "…" : protoLabel(add.protocol)}
+        </span>
+      </button>
+    );
+  };
 
   return (
     <div ref={wrapRef} className="relative inline-block">
@@ -219,30 +245,22 @@ export function IdentityLinkControl({
               </p>
             )}
             {linkable.length > 0 && (
+              // Confidence tiers (§6.4): MATCHES (exact + probable), then
+              // SUGGESTIONS (speculative). Glasshouse surface — headers are
+              // .label-ui text-grey-600, the local idiom. The MATCHES header
+              // only appears when both sections are present.
               <div className="flex flex-col gap-0.5">
-                {linkable.map((opt) => {
-                  // Narrowed to the { protocol, sourceUri } variant by the
-                  // filter above (TS can't carry that across the .filter).
-                  const add = opt.add as Extract<
-                    typeof opt.add,
-                    { protocol: string }
-                  >;
-                  return (
-                    <button
-                      key={opt.key}
-                      onClick={() =>
-                        void addLink(opt.key, add.protocol, add.sourceUri)
-                      }
-                      disabled={busyKey === opt.key}
-                      className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-ui-xs text-black hover:bg-glasshouse-well transition-colors disabled:opacity-50"
-                    >
-                      <span className="truncate">{opt.label}</span>
-                      <span className="label-ui text-grey-600">
-                        {busyKey === opt.key ? "…" : protoLabel(add.protocol)}
-                      </span>
-                    </button>
-                  );
-                })}
+                {linkableSections.matches.length > 0 &&
+                  linkableSections.suggestions.length > 0 && (
+                    <p className="label-ui text-grey-600 px-1 pt-1">MATCHES</p>
+                  )}
+                {linkableSections.matches.map(renderLinkOption)}
+                {linkableSections.suggestions.length > 0 && (
+                  <p className="label-ui text-grey-600 px-1 pt-1">
+                    SUGGESTIONS
+                  </p>
+                )}
+                {linkableSections.suggestions.map(renderLinkOption)}
               </div>
             )}
           </div>

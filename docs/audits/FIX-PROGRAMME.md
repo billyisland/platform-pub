@@ -23,6 +23,45 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Resolver discovery expansion Phase 3: bridge-aware merge +
+  rendered confidence tiers (discharges audit F3 + F5.4).**
+  `RESOLVER-DISCOVERY-ADR.md` §6. The pure bridge helpers relocated from
+  `feed-ingest/src/tasks/identity-link-detect.ts` to
+  `shared/src/lib/bridge-identity.ts` (gateway can't import feed-ingest;
+  structural `BridgeSourceLike` input so `DetectSourceRow` passes unchanged;
+  feed-ingest re-imports + re-exports and its 32 existing tests pin the move —
+  `nostr-tools` added to shared deps). New `gateway/src/lib/resolver-merge.ts`
+  (owns the match-shape types — second bite of the §8.5 decomposition):
+  `mergeMatches(existing, incoming, context)` = alias dedupe (per-protocol
+  key-space + AP acct ↔ actor URI cross-keys; higher confidence wins, ties keep
+  the persisted candidate) → bridge-collision drop (a mirror whose decoded
+  origin key collides with a native candidate is dropped; twin-less mirrors
+  survive) → §6.2 sort (confidence rank → context priority → branch
+  precision). Every match-set assembly in `resolve()`/`resolveAsync()` now
+  passes through it (replacing raw pushes), so each `storeAsyncResult` write
+  persists a merged, ordered set. Bridge keys ride new additive `ResolverMatch`
+  hint fields (`handle`/`actorUrl`/`proxy` — never rendered, never re-enter
+  addSource): Bluesky discovery + atproto exact/probable + known-world + AP
+  exact carry `handle`, AP discovery carries `actorUrl`, and `discoverNostr`
+  lifts the NIP-48 `["proxy", origin, protocol]` tag from the now-retained
+  `NostrCandidate.tags` (`nostr-search.ts`). All three bridge directions
+  collapse (Bridgy Fed both ways + Mostr, incl. the acct-only npub form and a
+  NIP-48-proxied nostr mirror of a native AP actor). §6.2 refinement recorded
+  in the ADR: branch precision applies only within the speculative tier (where
+  branch ≡ match shape), so known-world trgm score order survives the stable
+  sort with no provenance field. Frontend (§6.4, audit F3):
+  `partitionMatchOptions` in `web/src/lib/workspace/resolve.ts` → `sections`
+  on `useResolverInput`; Matches/Suggestions rendered on all three surfaces in
+  their own contrast vocabulary (FeedComposer `TOKENS.hintFg`, VesselBar
+  vessel-palette `barTextMuted`, IdentityLinkControl `.label-ui text-grey-600`
+  partitioned after its `linkable` filter); the Matches header only renders
+  when both sections are present. Tests: `gateway/tests/resolver-merge.test.ts`
+  (18, pure), 3 orchestration-harness extensions (bridge dedupe e2e, NIP-48
+  drop, final-row ordering — 28 total), 4 web partition tests. Validated:
+  gateway 228 passed / 17 skipped, feed-ingest 204, shared 81, web 24
+  (resolve), `tsc` clean ×3, root eslint 0 errors, hairline tripwire clean,
+  `next build` green.
+
 - **2026-07-10** — **Resolver discovery expansion Phase 2: `activitypub_discovery`
   + addSource acct handling.** `RESOLVER-DISCOVERY-ADR.md` §5. New
   `gateway/src/lib/ap-account-search.ts`: `ApAccountSearchProvider` interface

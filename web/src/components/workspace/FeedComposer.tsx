@@ -182,6 +182,51 @@ export function FeedComposer({
     }
   }
 
+  const renderMatchOption = (opt: MatchOption) => (
+    <button
+      key={opt.key}
+      type="button"
+      onClick={() => void handleAdd(opt)}
+      disabled={busyKey === opt.key}
+      className="font-sans text-ui-xs"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "8px 10px",
+        background: "transparent",
+        border: "none",
+        color: TOKENS.panelBorder,
+        cursor: busyKey === opt.key ? "default" : "pointer",
+        textAlign: "left",
+      }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.background = TOKENS.matchHoverBg)
+      }
+      onMouseLeave={(e) =>
+        (e.currentTarget.style.background = "transparent")
+      }
+    >
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {opt.label}
+      </span>
+      {opt.sublabel && (
+        <span
+          className="label-ui"
+          style={{ color: TOKENS.hintFg, marginLeft: 12 }}
+        >
+          {opt.sublabel}
+        </span>
+      )}
+    </button>
+  );
+
   // Reach (Following/Explore) is the global feed dial as a composable source —
   // no text to resolve, so it's a direct add rather than a resolver match.
   async function handleAddReach(reachKind: "following" | "explore") {
@@ -504,51 +549,36 @@ export function FeedComposer({
             </div>
           )}
           {ri.matches.length > 0 && (
+            // Confidence tiers rendered as two sections (§6.4): "Matches"
+            // (exact + probable) and "Suggestions" (speculative discovery
+            // nominations). The Matches header only appears when both
+            // sections are present — alone it would be noise.
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {ri.matches.map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => void handleAdd(opt)}
-                  disabled={busyKey === opt.key}
-                  className="font-sans text-ui-xs"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "8px 10px",
-                    background: "transparent",
-                    border: "none",
-                    color: TOKENS.panelBorder,
-                    cursor: busyKey === opt.key ? "default" : "pointer",
-                    textAlign: "left",
-                  }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = TOKENS.matchHoverBg)
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = "transparent")
-                  }
-                >
-                  <span
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
+              {ri.sections.matches.length > 0 &&
+                ri.sections.suggestions.length > 0 && (
+                  <div
+                    className="label-ui"
+                    style={{ color: TOKENS.hintFg, padding: "2px 10px 0" }}
                   >
-                    {opt.label}
-                  </span>
-                  {opt.sublabel && (
-                    <span
-                      className="label-ui"
-                      style={{ color: TOKENS.hintFg, marginLeft: 12 }}
-                    >
-                      {opt.sublabel}
-                    </span>
-                  )}
-                </button>
-              ))}
+                    Matches
+                  </div>
+                )}
+              {ri.sections.matches.map(renderMatchOption)}
+              {ri.sections.suggestions.length > 0 && (
+                <div
+                  className="label-ui"
+                  style={{
+                    color: TOKENS.hintFg,
+                    padding:
+                      ri.sections.matches.length > 0
+                        ? "8px 10px 0"
+                        : "2px 10px 0",
+                  }}
+                >
+                  Suggestions
+                </div>
+              )}
+              {ri.sections.suggestions.map(renderMatchOption)}
             </div>
           )}
         </div>

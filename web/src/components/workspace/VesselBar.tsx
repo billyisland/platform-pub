@@ -172,60 +172,111 @@ export function VesselBar({
               No match — press Enter to search, or try a URL, @user, npub, #tag
             </div>
           )}
-          {ri.matches.map((opt) => (
-            <button
+          {/* Confidence tiers (§6.4): Matches (exact + probable), then
+              Suggestions (speculative). Headers derive from the vessel
+              palette — a hard-coded grey is a dark-mode regression here. */}
+          {ri.sections.matches.length > 0 &&
+            ri.sections.suggestions.length > 0 && (
+              <SectionHeader color={palette.barTextMuted} label="Matches" />
+            )}
+          {ri.sections.matches.map((opt) => (
+            <MatchRow
               key={opt.key}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => void handleAdd(opt)}
-              disabled={adding}
-              className="font-mono text-mono-xs tracking-[0.02em]"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                width: "100%",
-                padding: "8px 10px",
-                background: "transparent",
-                border: "none",
-                color: palette.barText,
-                cursor: adding ? "default" : "pointer",
-                textAlign: "left",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = palette.barDropdownHover)
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "transparent")
-              }
-            >
-              <span
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  minWidth: 0,
-                }}
-              >
-                {opt.label}
-              </span>
-              {opt.sublabel && (
-                <span
-                  className="font-mono text-[10px] uppercase tracking-[0.06em]"
-                  style={{
-                    color: palette.barTextMuted,
-                    marginLeft: 8,
-                    flexShrink: 0,
-                  }}
-                >
-                  {opt.sublabel}
-                </span>
-              )}
-            </button>
+              opt={opt}
+              adding={adding}
+              palette={palette}
+              onAdd={() => void handleAdd(opt)}
+            />
+          ))}
+          {ri.sections.suggestions.length > 0 && (
+            <SectionHeader color={palette.barTextMuted} label="Suggestions" />
+          )}
+          {ri.sections.suggestions.map((opt) => (
+            <MatchRow
+              key={opt.key}
+              opt={opt}
+              adding={adding}
+              palette={palette}
+              onAdd={() => void handleAdd(opt)}
+            />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function SectionHeader({ color, label }: { color: string; label: string }) {
+  return (
+    <div
+      className="font-mono text-[10px] uppercase tracking-[0.06em]"
+      style={{ padding: "6px 10px 2px", color }}
+    >
+      {label}
+    </div>
+  );
+}
+
+function MatchRow({
+  opt,
+  adding,
+  palette,
+  onAdd,
+}: {
+  opt: MatchOption;
+  adding: boolean;
+  palette: VesselPalette;
+  onAdd: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onAdd}
+      disabled={adding}
+      className="font-mono text-mono-xs tracking-[0.02em]"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+        padding: "8px 10px",
+        background: "transparent",
+        border: "none",
+        color: palette.barText,
+        cursor: adding ? "default" : "pointer",
+        textAlign: "left",
+      }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.background = palette.barDropdownHover)
+      }
+      onMouseLeave={(e) =>
+        (e.currentTarget.style.background = "transparent")
+      }
+    >
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          minWidth: 0,
+        }}
+      >
+        {opt.label}
+      </span>
+      {opt.sublabel && (
+        <span
+          className="font-mono text-[10px] uppercase tracking-[0.06em]"
+          style={{
+            color: palette.barTextMuted,
+            marginLeft: 8,
+            flexShrink: 0,
+          }}
+        >
+          {opt.sublabel}
+        </span>
+      )}
+    </button>
   );
 }
 
