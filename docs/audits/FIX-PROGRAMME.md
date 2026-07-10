@@ -23,6 +23,30 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Resolver discovery expansion Phase 1: known-world index
+  (migration 150).** `RESOLVER-DISCOVERY-ADR.md` §4. New Phase A branch
+  `searchKnownWorld` (`gateway/src/lib/resolver.ts`): pg_trgm fuzzy match over
+  the external identities the platform already holds — `external_authors`
+  (identity = `stable_handle`: nostr hex / atproto DID / AP actor URI, all
+  addSource-able verbatim) UNION addSource-able `external_sources` (identity =
+  `source_uri`; `is_active AND orphaned_at IS NULL`, protocols restricted to
+  `rss`/`nostr_external`/`atproto`/`activitypub` — email sources excluded).
+  Wired into the `free_text` case and the no-exact-hit `platform_username`
+  branch, in `Promise.all` with `searchPlatform`, gated `!skipExternal`
+  (invite/dm stay native-only); zero network I/O so hits land instantly,
+  pre-Phase-B, as `confidence:'probable'`. Min query length 3 (trigram noise +
+  enumeration surface, ADR §8), over-fetch ×2 then dedupe author/source twins
+  on `(protocol, identity)` preferring the source row, cap 5. Migration 150
+  adds the four GIN trgm indexes (display_name/handle × authors/sources);
+  schema.sql regenerated from a fully-migrated throwaway (pg_dump + seed
+  re-append in one step), drift guard all four checks green; dev DB migrated.
+  8 new tests on the Phase 0 harness (Phase-A instant + probable mapping,
+  platform_username fallback, exact-hit short-circuit, min-length no-query,
+  invite/dm native-only, twin dedupe source-wins, cap-5). Frontend untouched —
+  known-world hits ride the existing `externalSource` match shape (tier
+  rendering is Phase 3). Validated: gateway suite 184 passed / 17 skipped,
+  `tsc` clean, root eslint 0 errors, live SQL exercised against dev.
+
 - **2026-07-10** — **Resolver discovery expansion Phase 0: orchestration
   harness (audit F8) + nostr-search extraction + structural chain isolation.**
   `RESOLVER-DISCOVERY-ADR.md` Phase 0. New

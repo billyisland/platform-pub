@@ -88,6 +88,9 @@ const byUsername = new Map<string, any>();
 const byPubkey = new Map<string, any>();
 const byEmail = new Map<string, any>();
 let fuzzyAccounts: any[] = [];
+// Rows the known-world UNION query returns (RESOLVER-DISCOVERY-ADR §4),
+// in the score order the real SQL would produce.
+let knownWorldRows: any[] = [];
 
 const mockQuery = vi.fn();
 
@@ -129,6 +132,9 @@ function fakeQuery(sql: string, params?: any[]) {
   if (sql.includes("ILIKE")) {
     return Promise.resolve({ rows: fuzzyAccounts });
   }
+  if (sql.includes("FROM external_authors")) {
+    return Promise.resolve({ rows: knownWorldRows });
+  }
   return Promise.resolve({ rows: [] });
 }
 
@@ -161,6 +167,7 @@ beforeEach(() => {
   byPubkey.clear();
   byEmail.clear();
   fuzzyAccounts = [];
+  knownWorldRows = [];
 
   mockQuery.mockImplementation(fakeQuery);
   mockGetProfile.mockResolvedValue(null);
@@ -419,6 +426,137 @@ describe("initiator scoping", () => {
     const result = await getAsyncResult("not-a-uuid", INITIATOR);
     expect(result).toBeNull();
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Known-world index (RESOLVER-DISCOVERY-ADR §4 — Phase 1)
+// =============================================================================
+
+describe("known-world index (Phase A)", () => {
+  const AUTHOR_ROW = {
+    protocol: "atproto",
+    identity: "did:plc:guardian",
+    display_name: "The Guardian",
+    handle: "guardian.bsky.social",
+    avatar: "https://cdn.example/a.png",
+    kind: "author",
+  };
+  const SOURCE_ROW = {
+    protocol: "rss",
+    identity: "https://www.theguardian.com/rss",
+    display_name: "The Guardian",
+    handle: null,
+    avatar: "https://cdn.example/s.png",
+    kind: "source",
+  };
+
+  const knownWorldQueried = () =>
+    mockQuery.mock.calls.some(([sql]: any[]) =>
+      String(sql).includes("FROM external_authors"),
+    );
+
+  it("free_text surfaces known-world hits instantly in Phase A as 'probable'", async () => {
+    knownWorldRows = [AUTHOR_ROW, SOURCE_ROW];
+
+    // discover=false: no Phase B — known-world is synchronous Phase A.
+    const res = await resolve("the guardian", "subscribe", INITIATOR);
+
+    expect(res.status).toBe("complete");
+    const ext = res.matches.filter((m) => m.type === "external_source");
+    expect(ext).toHaveLength(2);
+    expect(ext[0].confidence).toBe("probable");
+    expect(ext[0].externalSource?.protocol).toBe("atproto");
+    expect(ext[0].externalSource?.sourceUri).toBe("did:plc:guardian");
+    expect(ext[0].externalSource?.displayName).toBe("The Guardian");
+    expect(ext[1].externalSource?.protocol).toBe("rss");
+    // No stray internal field leaks onto the wire shape.
+    expect("kind" in ext[0]).toBe(false);
+  });
+
+  it("platform_username with no exact hit also searches the known world", async () => {
+    knownWorldRows = [AUTHOR_ROW];
+
+    const res = await resolve("guardian", "general", INITIATOR);
+
+    expect(
+      res.matches.some(
+        (m) => m.externalSource?.sourceUri === "did:plc:guardian",
+      ),
+    ).toBe(true);
+  });
+
+  it("an exact platform_username hit short-circuits the known world", async () => {
+    byUsername.set("guardian", {
+      id: "acc-1",
+      username: "guardian",
+      display_name: "The Guardian",
+      avatar_blossom_url: null,
+    });
+    knownWorldRows = [AUTHOR_ROW];
+
+    const res = await resolve("guardian", "general", INITIATOR);
+
+    expect(res.matches).toHaveLength(1);
+    expect(res.matches[0].type).toBe("native_account");
+    expect(knownWorldQueried()).toBe(false);
+  });
+
+  it("queries shorter than 3 chars never touch the index", async () => {
+    knownWorldRows = [AUTHOR_ROW];
+
+    await resolve("ab", "general", INITIATOR);
+
+    expect(knownWorldQueried()).toBe(false);
+  });
+
+  it.each(["invite", "dm"] as const)(
+    "%s context is native-only: the known world is not searched",
+    async (context) => {
+      knownWorldRows = [AUTHOR_ROW];
+
+      const res = await resolve("the guardian", context, INITIATOR);
+
+      expect(knownWorldQueried()).toBe(false);
+      expect(res.matches.every((m) => m.type === "native_account")).toBe(true);
+    },
+  );
+
+  it("author/source twins dedupe to one match, preferring the source row", async () => {
+    // Same (protocol, identity): the author scored higher (first), the source
+    // row supersedes its data in place.
+    const twinSource = {
+      ...AUTHOR_ROW,
+      kind: "source",
+      display_name: "The Guardian (feed)",
+      avatar: "https://cdn.example/s.png",
+    };
+    knownWorldRows = [AUTHOR_ROW, twinSource];
+
+    const res = await resolve("the guardian", "subscribe", INITIATOR);
+
+    const ext = res.matches.filter((m) => m.type === "external_source");
+    expect(ext).toHaveLength(1);
+    expect(ext[0].externalSource?.displayName).toBe("The Guardian (feed)");
+    expect(ext[0].externalSource?.avatar).toBe("https://cdn.example/s.png");
+  });
+
+  it("caps known-world results at 5 even when the over-fetch returns more", async () => {
+    knownWorldRows = Array.from({ length: 8 }, (_, i) => ({
+      protocol: "rss",
+      identity: `https://feed${i}.example/rss`,
+      display_name: `Guardian ${i}`,
+      handle: null,
+      avatar: null,
+      kind: "source",
+    }));
+
+    const res = await resolve("guardian weekly", "subscribe", INITIATOR);
+
+    const ext = res.matches.filter((m) => m.type === "external_source");
+    expect(ext).toHaveLength(5);
+    // Score order (the stubbed row order) is preserved.
+    expect(ext[0].externalSource?.displayName).toBe("Guardian 0");
   });
 });
 

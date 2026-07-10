@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict LjbrQ5JQCesxM6Oyjcnk4RGc04I1ZxCEz0giOZe9cAR9JEMWrgJ315jt2kef316
+\restrict vcKO77btMQ5t4VNgPweTxxBhqEncG1rLm2WhqHeCQ7mAWYHNmNgS5v0OdBVhg2U
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -4667,10 +4667,38 @@ CREATE INDEX idx_external_authors_account_id ON public.external_authors USING bt
 
 
 --
+-- Name: idx_external_authors_display_name_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_external_authors_display_name_trgm ON public.external_authors USING gin (display_name public.gin_trgm_ops);
+
+
+--
+-- Name: idx_external_authors_handle_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_external_authors_handle_trgm ON public.external_authors USING gin (handle public.gin_trgm_ops);
+
+
+--
 -- Name: idx_external_items_dedup_fp; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_external_items_dedup_fp ON public.external_items USING btree (dedup_fingerprint) WHERE (dedup_fingerprint IS NOT NULL);
+
+
+--
+-- Name: idx_external_sources_display_name_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_external_sources_display_name_trgm ON public.external_sources USING gin (display_name public.gin_trgm_ops);
+
+
+--
+-- Name: idx_external_sources_handle_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_external_sources_handle_trgm ON public.external_sources USING gin (handle public.gin_trgm_ops);
 
 
 --
@@ -7466,7 +7494,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict LjbrQ5JQCesxM6Oyjcnk4RGc04I1ZxCEz0giOZe9cAR9JEMWrgJ315jt2kef316
+\unrestrict vcKO77btMQ5t4VNgPweTxxBhqEncG1rLm2WhqHeCQ7mAWYHNmNgS5v0OdBVhg2U
+
 
 
 --
@@ -7622,4 +7651,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('146_subscription_earning_settled.sql'),
     ('147_backfill_initiated_payouts.sql'),
     ('148_external_items_profile_hydrated.sql'),
-    ('149_pledge_drives_draft_fk_set_null.sql');
+    ('149_pledge_drives_draft_fk_set_null.sql'),
+    ('150_discovery_known_world_trgm.sql');

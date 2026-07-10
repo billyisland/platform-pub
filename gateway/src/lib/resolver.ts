@@ -234,8 +234,13 @@ export async function resolve(
       if (account) {
         matches.push(account);
       } else {
-        const fuzzy = await searchPlatform(usernameQuery);
-        matches.push(...fuzzy);
+        // Fuzzy native + known-world external (RESOLVER-DISCOVERY-ADR §4) in
+        // parallel — both local, both Phase A. invite/dm stay native-only.
+        const [fuzzy, knownWorld] = await Promise.all([
+          searchPlatform(usernameQuery),
+          skipExternal ? [] : searchKnownWorld(usernameQuery),
+        ]);
+        matches.push(...fuzzy, ...knownWorld);
         // No exact native account — fall back to external discovery (§V.5.8)
         // so a bare name like "Guardian" can surface subscribable sources.
         if (discover && !skipExternal) {
@@ -358,8 +363,11 @@ export async function resolve(
     }
 
     case "free_text": {
-      const searchResults = await searchPlatform(usernameQuery);
-      matches.push(...searchResults);
+      const [searchResults, knownWorld] = await Promise.all([
+        searchPlatform(usernameQuery),
+        skipExternal ? [] : searchKnownWorld(usernameQuery),
+      ]);
+      matches.push(...searchResults, ...knownWorld);
       // Free-text is never an exact identifier — if discovery is requested,
       // search the external world for candidates (§V.5.8).
       if (discover && !skipExternal) {
@@ -1258,4 +1266,90 @@ async function searchPlatform(query: string): Promise<ResolverMatch[]> {
   }
 
   return matches;
+}
+
+// =============================================================================
+// Known-world index (RESOLVER-DISCOVERY-ADR §4) — Phase A, synchronous.
+//
+// Fuzzy-matches the external identities ingest already holds: external_authors
+// (minted by the identity trigger; tier-A/B only, so every hit has a real
+// identity) and addSource-able external_sources. Zero network I/O — pg_trgm
+// over migration-150 GIN indexes — so it runs next to searchPlatform and lands
+// before any Phase B chain. Hits are verified-real identities we hold:
+// 'probable' — stronger than a remote speculative guess, weaker than an exact
+// identifier. Consent posture (ADR §8): reachable only as ranked candidates
+// for a typed query ≥3 chars, capped; never enumerable.
+// =============================================================================
+
+const KNOWN_WORLD_LIMIT = 5;
+
+async function searchKnownWorld(query: string): Promise<ResolverMatch[]> {
+  // 1–2 char trigram scans are noise and an enumeration surface (ADR §8).
+  const q = query.trim();
+  if (q.length < 3) return [];
+
+  // Both legs restricted to addSource-able protocols: email (and any future
+  // non-subscribable protocol) sources exist but can't re-enter addSource.
+  // Author identity is stable_handle (nostr hex pubkey / atproto DID / AP
+  // actor URI) — all re-enter addSource verbatim; source identity is
+  // source_uri. Over-fetch, then dedupe by (protocol, identity) below.
+  const { rows } = await pool.query<{
+    protocol: "atproto" | "activitypub" | "rss" | "nostr_external";
+    identity: string;
+    display_name: string | null;
+    handle: string | null;
+    avatar: string | null;
+    kind: "author" | "source";
+  }>(
+    `SELECT protocol, identity, display_name, handle, avatar, kind FROM (
+       SELECT protocol::text AS protocol, stable_handle AS identity,
+              display_name, handle, avatar, 'author' AS kind,
+              GREATEST(similarity(display_name, $1), similarity(handle, $1)) AS score
+         FROM external_authors
+        WHERE (display_name % $1 OR handle % $1)
+          AND protocol IN ('rss','nostr_external','atproto','activitypub')
+       UNION ALL
+       SELECT protocol::text, source_uri, display_name, handle,
+              avatar_url, 'source',
+              GREATEST(similarity(display_name, $1), similarity(handle, $1))
+         FROM external_sources
+        WHERE (display_name % $1 OR handle % $1)
+          AND is_active AND orphaned_at IS NULL
+          AND protocol IN ('rss','nostr_external','atproto','activitypub')
+     ) candidates
+     ORDER BY score DESC
+     LIMIT $2`,
+    [q, KNOWN_WORLD_LIMIT * 2],
+  );
+
+  // Dedupe author/source twins on (protocol, stable_handle = source_uri) —
+  // the same equivalence identity-link-detect.ts joins on. Prefer the source
+  // row (it carries subscription metadata); keep the better-scored position.
+  type KnownWorldEntry = ResolverMatch & { kind: "author" | "source" };
+  const byIdentity = new Map<string, KnownWorldEntry>();
+  for (const row of rows) {
+    const key = `${row.protocol} ${row.identity}`;
+    const existing = byIdentity.get(key);
+    if (existing && !(row.kind === "source" && existing.kind === "author"))
+      continue;
+    const match: KnownWorldEntry = {
+      type: "external_source",
+      confidence: "probable",
+      kind: row.kind,
+      externalSource: {
+        protocol: row.protocol,
+        sourceUri: row.identity,
+        displayName: row.display_name ?? row.handle ?? undefined,
+        avatar: row.avatar ?? undefined,
+      },
+    };
+    if (existing) {
+      // Source row supersedes an author twin in place (order already set).
+      existing.kind = match.kind;
+      existing.externalSource = match.externalSource;
+    } else if (byIdentity.size < KNOWN_WORLD_LIMIT) {
+      byIdentity.set(key, match);
+    }
+  }
+  return [...byIdentity.values()].map(({ kind: _kind, ...m }) => m);
 }
