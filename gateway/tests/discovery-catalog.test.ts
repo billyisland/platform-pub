@@ -1,8 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   searchCatalog,
+  foldDiacritics,
+  feedHost,
+  mergeCatalogs,
   PUBLICATION_CATALOG,
+  FULL_CATALOG,
+  type CatalogEntry,
 } from "../src/lib/discovery-catalog.js";
+import { GENERATED_PUBLICATION_CATALOG } from "../src/lib/discovery-catalog.generated.js";
 
 // Curated publication catalog — discovery fallback branch 3
 // (UNIVERSAL-FEED-ADR §V.5.8). Pure, instant, no I/O.
@@ -58,6 +64,75 @@ describe("searchCatalog (discovery fallback branch 3)", () => {
       expect(entry.aliases.length).toBeGreaterThan(0);
       // Aliases must be lowercase so case-insensitive matching is symmetric.
       for (const a of entry.aliases) expect(a).toBe(a.toLowerCase());
+    }
+  });
+
+  it("the curated head keeps priority in the merged catalog", () => {
+    // FULL_CATALOG scans in order and searchCatalog caps, so the head must be
+    // the merged list's prefix — a generated near-duplicate can never outrank
+    // the canonical curated entry.
+    expect(FULL_CATALOG.slice(0, PUBLICATION_CATALOG.length)).toEqual(
+      PUBLICATION_CATALOG,
+    );
+    expect(searchCatalog("guardian")[0]?.feedUrl).toBe(
+      "https://www.theguardian.com/international/rss",
+    );
+  });
+
+  it("matches diacritic queries against the folded aliases", () => {
+    expect(foldDiacritics("Süddeutsche Zeitung")).toBe("Suddeutsche Zeitung");
+    expect(foldDiacritics("plain ascii")).toBe("plain ascii"); // no-op on ASCII
+    // searchCatalog folds the query, so an accented query hits an ASCII alias.
+    expect(searchCatalog("güardian")[0]?.title).toBe("The Guardian");
+  });
+});
+
+describe("mergeCatalogs (generated tail under the curated head)", () => {
+  const head: CatalogEntry[] = [
+    { title: "A", feedUrl: "https://www.a.example/rss", aliases: ["aaa"] },
+  ];
+
+  it("drops a generated entry whose feed host collides with the head", () => {
+    const generated: CatalogEntry[] = [
+      // Same host as the head entry, www-insensitively — dropped.
+      { title: "A dup", feedUrl: "https://a.example/other.xml", aliases: ["dup"] },
+      { title: "B", feedUrl: "https://b.example/rss", aliases: ["bbb"] },
+    ];
+    const merged = mergeCatalogs(head, generated);
+    expect(merged.map((e) => e.title)).toEqual(["A", "B"]);
+  });
+
+  it("does not host-dedupe generated entries against each other", () => {
+    // Multi-tenant hosts (podcast platforms) legitimately repeat within the
+    // generated set — generation-time dedup owns that axis, not the merge.
+    const generated: CatalogEntry[] = [
+      { title: "P1", feedUrl: "https://feeds.example/p1", aliases: ["podcast one"] },
+      { title: "P2", feedUrl: "https://feeds.example/p2", aliases: ["podcast two"] },
+    ];
+    expect(mergeCatalogs(head, generated)).toHaveLength(3);
+  });
+
+  it("feedHost strips www. and lowercases; null on garbage", () => {
+    expect(feedHost("https://WWW.Example.COM/feed")).toBe("example.com");
+    expect(feedHost("not a url")).toBeNull();
+  });
+});
+
+describe("GENERATED_PUBLICATION_CATALOG hygiene (RESOLVER-DISCOVERY-ADR §7.1)", () => {
+  it("meets the Phase 4 acceptance floor (≥300 probed-live entries)", () => {
+    expect(GENERATED_PUBLICATION_CATALOG.length).toBeGreaterThanOrEqual(300);
+  });
+
+  it("every generated entry passes alias hygiene and URL shape", () => {
+    for (const entry of GENERATED_PUBLICATION_CATALOG) {
+      expect(entry.title.trim().length).toBeGreaterThan(0);
+      expect(entry.feedUrl).toMatch(/^https?:\/\//);
+      expect(entry.aliases.length).toBeGreaterThan(0);
+      for (const a of entry.aliases) {
+        expect(a.length).toBeGreaterThanOrEqual(3);
+        expect(a).toBe(a.toLowerCase());
+        expect(a).toBe(foldDiacritics(a)); // already folded at generation
+      }
     }
   });
 });

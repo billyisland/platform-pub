@@ -23,6 +23,40 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Resolver discovery expansion Phase 4: generated catalog
+  (discharges audit F7 — the last built phase; the ADR's remaining items are
+  deferred-by-design).** `RESOLVER-DISCOVERY-ADR.md` §7.1. New
+  `scripts/gen-discovery-catalog.ts` (offline, operator-run): pulls candidates
+  from Wikidata (CC0; P1019 "web feed URL" per news/media/blog/podcast class,
+  one SPARQL query per class, sitelink count as prominence rank; en label
+  required, aliases from 9 Latin-script langs) plus optional licence-vetted
+  local OPML (`--opml`, repeatable — none used for v1, Wikidata alone cleared
+  the floor); dedupes by feed host in rank order (best-ranked per host wins,
+  with a multi-tenant feed-host exemption — megaphone/libsyn/feedburner/… —
+  where dedup is by full URL, else one podcast platform tenant would silently
+  swallow the rest); probes every candidate through `safeFetch` + real
+  rss-parser confirm (the same bar as the runtime `tryRssFetch`), in rank
+  order with early stop at target, so dead feeds never enter. §7.1 alias
+  hygiene at generation: lowercase, NFKD diacritic-fold, ≥3 chars, capped 8,
+  plus a bare-form alias with the leading article stripped. Output
+  `gateway/src/lib/discovery-catalog.generated.ts` (marked generated,
+  committed; 500 entries, all probed live 2026-07-10). Runtime:
+  `discovery-catalog.ts` gains `mergeCatalogs` (curated head keeps priority;
+  a generated entry colliding with a head feed host is dropped at load —
+  head-vs-generated only, generated-vs-generated dedup is generation-time),
+  `foldDiacritics` + `feedHost`, and the module-level `FULL_CATALOG`;
+  `searchCatalog` scans the merged list with a diacritic-folded query
+  ("Süddeutsche" now matches the folded aliases) — still pure, zero-I/O,
+  linear scan (§7.1 perf ceiling ~5k). Script exits 1 below the 300-entry
+  acceptance floor; a test pins the same floor + per-entry hygiene
+  invariants. Tests: 7 new in `discovery-catalog.test.ts` (16 total — head
+  priority, merge host-dedupe semantics, folding, generated hygiene).
+  Validated: gateway 235 passed / 17 skipped, `tsc` clean, root eslint 0
+  errors. Web untouched (catalog hits ride the existing `rssFeed` match
+  shape). Remaining ADR items are deliberately deferred: branch 4 web-search
+  bridge behind `DISCOVERY_WEBSEARCH_ENABLED` (build-triggered by a measured
+  zero-result rate), FASP provider (§5.1 adoption bar).
+
 - **2026-07-10** — **Resolver discovery expansion Phase 3: bridge-aware merge +
   rendered confidence tiers (discharges audit F3 + F5.4).**
   `RESOLVER-DISCOVERY-ADR.md` §6. The pure bridge helpers relocated from

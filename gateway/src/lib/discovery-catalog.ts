@@ -1,12 +1,18 @@
 // =============================================================================
-// Curated publication catalog — discovery fallback branch 3
-// (UNIVERSAL-FEED-ADR §V.5.8)
+// Publication catalog — discovery fallback branch 3
+// (UNIVERSAL-FEED-ADR §V.5.8; growth: RESOLVER-DISCOVERY-ADR §7.1)
 //
-// A tiny seed table mapping common publication names → canonical RSS feed URL.
+// A seed table mapping common publication names → canonical RSS feed URL.
 // It covers the head of the distribution cheaply: instant, zero network I/O,
 // very high precision, low recall *by design* — one precise branch among
 // several, not the whole answer. A user who types "Guardian" expecting The
 // Guardian's feed gets a pickable candidate without any external search.
+//
+// Two layers, merged at load (see mergeCatalogs):
+//   1. PUBLICATION_CATALOG — the small hand-curated head. Keeps priority.
+//   2. GENERATED_PUBLICATION_CATALOG — produced offline by
+//      scripts/gen-discovery-catalog.ts from Wikidata (CC0) + vetted OPML,
+//      every feed probed live at generation time. Never hand-edited.
 //
 // A catalog hit is a *nomination*, not a subscription: selecting one re-enters
 // the exact resolver via its feedUrl (§V.5.2 step 3), which fetches and
@@ -14,13 +20,16 @@
 // URL is non-fatal — it simply won't resolve when picked.
 // =============================================================================
 
+import { GENERATED_PUBLICATION_CATALOG } from "./discovery-catalog.generated.js";
+
 export interface CatalogEntry {
   title: string;
   feedUrl: string;
   description?: string;
-  // Lowercase names the user might type. Matched by substring in both
-  // directions (alias ⊆ query or query ⊆ alias), so partials and supersets
-  // both hit ("guard" → Guardian; "guardian newspaper" → Guardian).
+  // Lowercase, diacritic-folded names the user might type. Matched by
+  // substring in both directions (alias ⊆ query or query ⊆ alias), so partials
+  // and supersets both hit ("guard" → Guardian; "guardian newspaper" →
+  // Guardian). ≥3 chars each in the generated tail (§7.1 alias hygiene).
   aliases: string[];
 }
 
@@ -102,15 +111,62 @@ export interface CatalogMatch {
   description?: string;
 }
 
-// Match the query against the catalog by case-insensitive substring in both
-// directions. Capped at `limit`. Requires ≥2 chars so a single keystroke can't
-// match the broad short aliases ("hn", "ars").
+// Strip combining marks so accented queries match the ASCII-folded aliases the
+// generation script emits ("Süddeutsche" → "suddeutsche"). Pure, cheap.
+export function foldDiacritics(s: string): string {
+  return s.normalize("NFKD").replace(/\p{M}+/gu, "");
+}
+
+// Lowercased feed host with any leading "www." dropped — the dedup key between
+// the curated head and the generated tail. Null for an unparseable URL.
+export function feedHost(feedUrl: string): string | null {
+  try {
+    return new URL(feedUrl).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+// Merge the hand-curated head with the generated tail. The head keeps priority
+// (searchCatalog scans in order and caps), and a generated entry whose feed
+// host collides with a head entry is dropped — the head's canonical URL wins.
+// Generated-vs-generated host dedup already happened at generation time (with
+// a multi-tenant-host exemption the script owns), so only head collisions are
+// checked here.
+export function mergeCatalogs(
+  head: CatalogEntry[],
+  generated: CatalogEntry[],
+): CatalogEntry[] {
+  const headHosts = new Set(
+    head.map((e) => feedHost(e.feedUrl)).filter((h): h is string => h !== null),
+  );
+  const out = [...head];
+  for (const entry of generated) {
+    const host = feedHost(entry.feedUrl);
+    if (host && headHosts.has(host)) continue;
+    out.push(entry);
+  }
+  return out;
+}
+
+// The full searchable catalog, assembled once at load. Generated entries are
+// prominence-ordered (Wikidata sitelink count) so the best-known publications
+// surface within searchCatalog's cap. Linear scan is fine to ~5k entries
+// (RESOLVER-DISCOVERY-ADR §7.1 perf ceiling).
+export const FULL_CATALOG: CatalogEntry[] = mergeCatalogs(
+  PUBLICATION_CATALOG,
+  GENERATED_PUBLICATION_CATALOG,
+);
+
+// Match the query against the catalog by case-insensitive, diacritic-folded
+// substring in both directions. Capped at `limit`. Requires ≥2 chars so a
+// single keystroke can't match the broad short aliases ("hn", "ars").
 export function searchCatalog(query: string, limit = 5): CatalogMatch[] {
-  const q = query.trim().toLowerCase();
+  const q = foldDiacritics(query.trim().toLowerCase());
   if (q.length < 2) return [];
 
   const out: CatalogMatch[] = [];
-  for (const entry of PUBLICATION_CATALOG) {
+  for (const entry of FULL_CATALOG) {
     const hit = entry.aliases.some((a) => a.includes(q) || q.includes(a));
     if (!hit) continue;
     out.push({
