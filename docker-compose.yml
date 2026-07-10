@@ -120,6 +120,11 @@ services:
       # hosts — each is a full extra HTTP round-trip per discovery submit
       # (RESOLVER-DISCOVERY-ADR §5.2). Distinct from the ASSISTED allowlist above.
       MASTODON_DISCOVERY_INSTANCES: ${MASTODON_DISCOVERY_INSTANCES:-mastodon.social}
+      # addSource liveness probes (resolver audit F1): default on. Set to 0 as
+      # an operator brake (e.g. the default nostr profile relays collectively
+      # down blocking follows) — canonical-form inputs then skip the probe;
+      # normalisation of accts/handles/npubs still runs.
+      SOURCE_LIVENESS_ENFORCED: ${SOURCE_LIVENESS_ENFORCED:-1}
       # Nostr outbound interop (discovery). Ships dark: DISCOVERY_PUBLISH_ENABLED
       # off ⇒ no kind 0/3/10002 produced. With it on, PUBLIC_FANOUT_RELAY_URLS
       # empty ⇒ in-house relay only; set it to fan discovery events to the public

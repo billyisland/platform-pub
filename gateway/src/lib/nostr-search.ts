@@ -31,7 +31,9 @@ export interface NostrProfile {
   picture?: string;
 }
 
-function getDefaultProfileRelays(): string[] {
+// Exported for the addSource liveness probe (source-liveness.ts), which
+// unions these with the caller's relay hints.
+export function getDefaultProfileRelays(): string[] {
   const env = process.env.NOSTR_PROFILE_RELAYS;
   if (!env) return DEFAULT_NOSTR_PROFILE_RELAYS;
   return env

@@ -17,6 +17,22 @@ export class ApiError extends Error {
   }
 }
 
+// Human-readable server message from an ApiError body ({ error, message }),
+// when the endpoint sent one (e.g. addSource's liveness verdicts) — null
+// otherwise, so callers fall back to their own copy instead of rendering the
+// raw "API error 422: {...}" string.
+export function apiErrorMessage(err: unknown): string | null {
+  if (
+    err instanceof ApiError &&
+    err.body &&
+    typeof err.body.message === 'string' &&
+    err.body.message
+  ) {
+    return err.body.message
+  }
+  return null
+}
+
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...options.headers as Record<string, string> }
   if (options.body) headers['Content-Type'] = 'application/json'

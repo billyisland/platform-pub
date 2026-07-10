@@ -1,19 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   extractFromMastodonUrl,
   extractFromThreadiverseUrl,
-  resolveApSourceUri,
+  isAcctShape,
 } from "../src/lib/activitypub-resolve.js";
 
-// safeFetch is only exercised by resolveApSourceUri's webfinger path — the
-// extract* functions are pure.
-const mockSafeFetch = vi.fn();
-
-vi.mock("@platform-pub/shared/lib/http-client.js", () => ({
-  safeFetch: (...a: any[]) => mockSafeFetch(...a),
-  pinnedWebSocketOptions: vi.fn(),
-}));
-
+// Everything exercised here is pure — the network legs (webfinger, actor
+// fetch) are covered via source-liveness.test.ts, which superseded
+// resolveApSourceUri's block when addSource moved onto verifySourceLiveness
+// (2026-07-09 audit F1).
 vi.mock("@platform-pub/shared/lib/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -97,83 +92,17 @@ describe("extractFromThreadiverseUrl", () => {
   });
 });
 
-// =============================================================================
-// resolveApSourceUri — addSource's acct-tolerant AP sourceUri normalisation
-// (RESOLVER-DISCOVERY-ADR §5.2 pick-path). Discovery candidates nominate
-// canonical accts; this webfingers them to the actor URI addSource requires.
-// =============================================================================
-
-describe("resolveApSourceUri", () => {
-  const ACTOR = "https://mastodon.social/users/alice";
-
-  function webfingerOk(href: string | null) {
-    mockSafeFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: JSON.stringify({
-        links: href
-          ? [{ rel: "self", type: "application/activity+json", href }]
-          : [],
-      }),
-      headers: { get: () => null },
-    });
-  }
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockSafeFetch.mockResolvedValue({
-      ok: false,
-      status: 404,
-      text: "",
-      headers: { get: () => null },
-    });
+describe("isAcctShape", () => {
+  it("accepts user@domain", () => {
+    expect(isAcctShape("alice@mastodon.social")).toBe(true);
   });
 
-  it("passes an https actor URI through unchanged, without webfinger", async () => {
-    expect(await resolveApSourceUri(ACTOR)).toBe(ACTOR);
-    expect(mockSafeFetch).not.toHaveBeenCalled();
+  it("rejects a leading @ (callers strip it first)", () => {
+    expect(isAcctShape("@alice@mastodon.social")).toBe(false);
   });
 
-  it("rejects a non-https URL", async () => {
-    expect(await resolveApSourceUri("http://mastodon.social/users/alice")).toBeNull();
-    expect(mockSafeFetch).not.toHaveBeenCalled();
-  });
-
-  it("webfingers an acct shape to its actor URI", async () => {
-    webfingerOk(ACTOR);
-
-    expect(await resolveApSourceUri("alice@mastodon.social")).toBe(ACTOR);
-    expect(String(mockSafeFetch.mock.calls[0][0])).toContain(
-      "https://mastodon.social/.well-known/webfinger?resource=acct%3Aalice%40mastodon.social",
-    );
-  });
-
-  it("accepts a leading @ on the acct", async () => {
-    webfingerOk(ACTOR);
-
-    expect(await resolveApSourceUri("@alice@mastodon.social")).toBe(ACTOR);
-  });
-
-  it("returns null when webfinger finds no self link (the caller's 404)", async () => {
-    webfingerOk(null);
-
-    expect(await resolveApSourceUri("alice@mastodon.social")).toBeNull();
-  });
-
-  it("returns null when webfinger fails", async () => {
-    mockSafeFetch.mockRejectedValue(new Error("connect ECONNREFUSED"));
-
-    expect(await resolveApSourceUri("alice@mastodon.social")).toBeNull();
-  });
-
-  it("returns null when the resolved actor URI is not https", async () => {
-    webfingerOk("http://mastodon.social/users/alice");
-
-    expect(await resolveApSourceUri("alice@mastodon.social")).toBeNull();
-  });
-
-  it("rejects input that is neither URL nor acct", async () => {
-    expect(await resolveApSourceUri("just a name")).toBeNull();
-    expect(mockSafeFetch).not.toHaveBeenCalled();
+  it("rejects free text and bare domains", () => {
+    expect(isAcctShape("just a name")).toBe(false);
+    expect(isAcctShape("mastodon.social")).toBe(false);
   });
 });

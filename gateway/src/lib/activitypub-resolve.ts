@@ -62,35 +62,16 @@ export async function resolveWebFinger(acct: string): Promise<string | null> {
 }
 
 // -----------------------------------------------------------------------------
-// AP sourceUri normalisation for addSource (RESOLVER-DISCOVERY-ADR §5.2).
-//
-// Discovery candidates nominate canonical accts (user@domain); addSource's AP
-// branch historically required an https actor URI, so an acct-shaped pick
-// would 404 on every add. Accept both: an https URL passes through unchanged;
-// an acct shape (optional leading @) is webfingered to its actor URI. Returns
-// null when the input is neither, or webfinger fails or yields a non-https
-// URI — the caller maps null onto its existing TARGET_NOT_FOUND 404.
+// Canonical acct shape (user@domain, no leading @) — shared by addSource's
+// AP liveness leg (source-liveness.ts, which superseded the §5.2
+// resolveApSourceUri normaliser 2026-07-10, audit F1) so the malformed /
+// unreachable error split keys off the same shape webfinger accepts.
 // -----------------------------------------------------------------------------
 
 const ACCT_SHAPE = /^[\w.+-]+@[\w.-]+\.[\w.]+$/;
 
-export async function resolveApSourceUri(
-  sourceUri: string,
-): Promise<string | null> {
-  try {
-    return new URL(sourceUri).protocol === "https:" ? sourceUri : null;
-  } catch {
-    // Not a URL — fall through to the acct shape.
-  }
-  const clean = sourceUri.replace(/^@+/, "");
-  if (!ACCT_SHAPE.test(clean)) return null;
-  const actorUri = await resolveWebFinger(clean);
-  if (!actorUri) return null;
-  try {
-    return new URL(actorUri).protocol === "https:" ? actorUri : null;
-  } catch {
-    return null;
-  }
+export function isAcctShape(s: string): boolean {
+  return ACCT_SHAPE.test(s);
 }
 
 // -----------------------------------------------------------------------------

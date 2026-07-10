@@ -45,8 +45,11 @@ export async function loadFeed(
   return rows[0] ?? null;
 }
 
-export function tagged(code: string): Error & { code: string } {
-  const e = new Error(code) as Error & { code: string };
+export function tagged(
+  code: string,
+  message?: string,
+): Error & { code: string } {
+  const e = new Error(message ?? code) as Error & { code: string };
   e.code = code;
   return e;
 }

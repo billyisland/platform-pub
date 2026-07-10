@@ -7,6 +7,7 @@ import {
   type WorkspaceFeed,
   type WorkspaceFeedSource,
 } from "../../lib/api";
+import { apiErrorMessage } from "../../lib/api/client";
 import { useResolverInput } from "../../hooks/useResolverInput";
 import type { MatchOption } from "../../lib/workspace/resolve";
 import { Glasshouse } from "./Glasshouse";
@@ -176,7 +177,7 @@ export function FeedComposer({
       await refreshSources(feed.id);
       onSourcesChanged?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add source.");
+      setError(apiErrorMessage(err) ?? "Failed to add source.");
     } finally {
       setBusyKey(null);
     }
@@ -239,7 +240,7 @@ export function FeedComposer({
       await refreshSources(feed.id);
       onSourcesChanged?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add source.");
+      setError(apiErrorMessage(err) ?? "Failed to add source.");
     } finally {
       setBusyKey(null);
     }

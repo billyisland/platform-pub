@@ -23,6 +23,44 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Resolver audit F1: addSource liveness verification +
+  error-space split (HIGH — the resolver was advisory).**
+  `RESOLVER-SOURCE-INPUT-AUDIT-2026-07-09.md` §F1, fix shape (b). The
+  `(protocol, sourceUri)` branch validated syntax only — a well-formed dead
+  RSS URL, nonexistent DID, or random hex pubkey got 201 Created plus a live
+  subscription, and the failure surfaced only as an asynchronously climbing
+  `error_count` the user never saw; all real verification lived in `/resolve`,
+  on the write path by frontend convention alone. New
+  `gateway/src/lib/source-liveness.ts::verifySourceLiveness(protocol,
+  sourceUri, relayUrls?)` runs pre-transaction in `addSource`: normalises the
+  input to its canonical stored form (AP acct → actor URI via webfinger,
+  atproto handle → DID via `getProfile`, npub/nprofile → hex via nip19 — the
+  omnivorous-input rule; it subsumes the §5.2 `resolveApSourceUri`
+  down-payment, now retired) and probes liveness per protocol (rss: fetch +
+  rss-parser confirm, **JSON Feed accepted** — ingest supports it; atproto:
+  AppView `getProfile`; nostr: kind-0 on hint ∪ default relays; AP: actor
+  document fetch, canonical id stored). Error space split per the audit:
+  malformed → 400 `{error:'invalid_source_uri', message}`, unreachable → 422
+  `{error:'source_unreachable', message}` (was one collapsed 404; also fixes
+  the misleading-404 minor note for atproto handles — they now just work).
+  Probe metadata (feed title / profile name / avatar) backfills display
+  fields when the caller sends none. A `(protocol, sourceUri)` pair already
+  held as a healthy row (`is_active, error_count=0, last_fetched_at` set)
+  skips the probe — canonical-form picks stay fast. Operator brake
+  `SOURCE_LIVENESS_ENFORCED=0` (docker-compose + DEPLOYMENT.md) skips probes
+  for canonical inputs, keeping normalisation. Frontend: `apiErrorMessage`
+  helper in `web/src/lib/api/client.ts`; FeedComposer renders the server
+  verdict instead of the raw ApiError string; VesselBar gains an inline
+  dropdown error (was `console.error`-only silence). Tests: 26-case
+  `gateway/tests/source-liveness.test.ts` (per-protocol canonical/normalise/
+  malformed/unreachable/brake matrix); `resolveApSourceUri`'s block replaced
+  by `isAcctShape` tests. **Verified live end-to-end** against the dev DB
+  with the compiled gateway: all five negative verdicts (incl. the audit's
+  random-hex-pubkey 201 → now 422), Guardian RSS title backfill,
+  `jay.bsky.team` → DID canonicalisation, `@Gargron@mastodon.social` acct
+  add, and duplicate-via-handle → 409. Gateway tsc + 257 tests, `next build`,
+  hairline tripwire, root eslint 0 errors all clean.
+
 - **2026-07-10** — **Resolver audit F4: the three omnivorous-input violators
   moved onto `useResolverInput`.**
   `RESOLVER-SOURCE-INPUT-AUDIT-2026-07-09.md` §F4. DM new-conversation

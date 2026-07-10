@@ -15,15 +15,18 @@ FIX-PROGRAMME and amend both.
 > ordering, Phase 3 `mergeMatches`), and **F7** (discovery reach: catalog grown to
 > 500 generated probed-live entries, Phase 4; branch 4 stays deferred behind
 > `DISCOVERY_WEBSEARCH_ENABLED` per its §7.2). Phase 2's addSource acct→webfinger
-> handling is a down-payment on **F1**, not its discharge. **F2** discharged
+> handling was a down-payment on **F1**; F1 proper discharged 2026-07-10
+> (fix shape (b): `source-liveness.ts` liveness probes + normalisation in
+> `addSource`, error-space split 400/422, `SOURCE_LIVENESS_ENFORCED` brake —
+> FIX-PROGRAMME 2026-07-10). **F2** discharged
 > 2026-07-10 (nostr-model error accounting + re-throw in the atproto backfill's
 > outer catch; `externalFetchMaxAttempts` gives it 5 subscribe-time attempts —
 > FIX-PROGRAMME 2026-07-10). **F4** discharged 2026-07-10 (all three surfaces
 > onto `useResolverInput`: picked-match actions replace the blind `results[0]`,
 > the MembersTab stale race is closed — FIX-PROGRAMME 2026-07-10). Still open,
-> tracked in CONSOLIDATED-TODO §0b: **F1** (addSource liveness),
-> **F5** remainder (native-URL short-circuit, njump re-entry, AP actor probe, JSON
-> Feed autodiscovery), **F6** (deactivated-source signal). Findings below are the
+> tracked in CONSOLIDATED-TODO §0b: **F5** remainder (native-URL
+> short-circuit, njump re-entry, AP actor probe, JSON Feed autodiscovery),
+> **F6** (deactivated-source signal). Findings below are the
 > frozen audit-time snapshot — file:line refs and the branch table predate the
 > expansion.
 

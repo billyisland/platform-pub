@@ -4,7 +4,7 @@ import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { markFollowListDirty } from "../../lib/discovery-publish.js";
-import { resolveApSourceUri } from "../../lib/activitypub-resolve.js";
+import { verifySourceLiveness } from "../../lib/source-liveness.js";
 import { UUID_RE, loadFeed, tagged, stepToWeight } from "./shared.js";
 
 // Maps an external protocol to its one-shot subscribe-time ingest job.
@@ -346,28 +346,48 @@ async function addSource(
   const { protocol, displayName, description, avatarUrl, relayUrls } = input;
   let { sourceUri } = input;
 
-  if (protocol === "rss") {
-    try {
-      const u = new URL(sourceUri);
-      if (u.protocol !== "http:" && u.protocol !== "https:")
-        throw tagged("TARGET_NOT_FOUND");
-    } catch {
-      throw tagged("TARGET_NOT_FOUND");
+  // Verify the target is real and reachable BEFORE any write (2026-07-09
+  // resolver audit F1): this branch used to validate syntax only, so a
+  // well-formed dead URL/DID/pubkey got 201 + a live subscription and only
+  // ever surfaced as a climbing error_count. verifySourceLiveness normalises
+  // the input to its canonical stored form (acct → actor URI, atproto
+  // handle → DID, npub/nprofile → hex — omnivorous-input rule) and probes it
+  // per protocol, splitting the old collapsed 404 into malformed (400) vs
+  // unreachable (422). A (protocol, sourceUri) pair we already hold as a
+  // healthy row skips the probe — it re-enters the existing verified row
+  // (canonical-form picks from profiles/discovery stay fast).
+  const { rows: knownRows } = await pool.query<{
+    is_active: boolean;
+    error_count: number;
+    last_fetched_at: Date | null;
+  }>(
+    `SELECT is_active, error_count, last_fetched_at
+       FROM external_sources
+      WHERE protocol = $1 AND source_uri = $2`,
+    [protocol, sourceUri],
+  );
+  const knownHealthy =
+    knownRows.length > 0 &&
+    knownRows[0].is_active &&
+    knownRows[0].error_count === 0 &&
+    knownRows[0].last_fetched_at !== null;
+  let probed: {
+    displayName?: string;
+    description?: string;
+    avatarUrl?: string;
+  } = {};
+  if (!knownHealthy) {
+    const verdict = await verifySourceLiveness(protocol, sourceUri, relayUrls);
+    if (!verdict.ok) {
+      throw tagged(
+        verdict.reason === "malformed"
+          ? "SOURCE_URI_INVALID"
+          : "SOURCE_UNREACHABLE",
+        verdict.message,
+      );
     }
-  } else if (protocol === "activitypub") {
-    // Accept an https actor URI or a canonical acct (user@domain, optional
-    // leading @) — discovery picks nominate accts (RESOLVER-DISCOVERY-ADR
-    // §5.2), and every AP add path is acct-tolerant per the omnivorous-input
-    // rule. The webfinger runs here, before the transaction; failure maps to
-    // the existing 404.
-    const resolved = await resolveApSourceUri(sourceUri);
-    if (!resolved) throw tagged("TARGET_NOT_FOUND");
-    sourceUri = resolved;
-  } else if (protocol === "atproto") {
-    if (!/^did:(plc|web):[a-zA-Z0-9.:_-]+$/.test(sourceUri))
-      throw tagged("TARGET_NOT_FOUND");
-  } else if (protocol === "nostr_external") {
-    if (!/^[0-9a-f]{64}$/i.test(sourceUri)) throw tagged("TARGET_NOT_FOUND");
+    sourceUri = verdict.sourceUri;
+    probed = verdict;
   }
 
   const { inserted, ensured } = await withTransaction(async (client) => {
@@ -392,9 +412,12 @@ async function addSource(
       [
         protocol,
         sourceUri,
-        displayName ?? null,
-        description ?? null,
-        avatarUrl ?? null,
+        // Caller-provided display fields win; the liveness probe's metadata
+        // (feed title, profile name, …) backfills direct-API adds that send
+        // none, so a probed source never lands with a bare-URI label.
+        displayName ?? probed.displayName ?? null,
+        description ?? probed.description ?? null,
+        avatarUrl ?? probed.avatarUrl ?? null,
         protocol === "nostr_external" && relayUrls && relayUrls.length > 0
           ? relayUrls
           : null,
@@ -591,10 +614,26 @@ export function registerFeedSourcesRoutes(app: FastifyInstance) {
           .status(201)
           .send({ source: result.source, ensured: result.ensured });
       } catch (err) {
-        if ((err as { code?: string } | null)?.code === "TARGET_NOT_FOUND") {
+        const code = (err as { code?: string } | null)?.code;
+        if (code === "TARGET_NOT_FOUND") {
           return reply.status(404).send({ error: "Source target not found" });
         }
-        if ((err as { code?: string } | null)?.code === "DUPLICATE") {
+        // Audit F1 error-space split: input that can never name a source in
+        // the protocol (400) vs well-formed but no live target answering
+        // (422). `message` is the human-readable probe verdict.
+        if (code === "SOURCE_URI_INVALID") {
+          return reply.status(400).send({
+            error: "invalid_source_uri",
+            message: (err as Error).message,
+          });
+        }
+        if (code === "SOURCE_UNREACHABLE") {
+          return reply.status(422).send({
+            error: "source_unreachable",
+            message: (err as Error).message,
+          });
+        }
+        if (code === "DUPLICATE") {
           return reply.status(409).send({ error: "Source already on feed" });
         }
         logger.error({ err, feedId: id }, "Add source failed");

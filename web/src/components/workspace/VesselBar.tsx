@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { workspaceFeeds as workspaceFeedsApi } from "../../lib/api";
+import { apiErrorMessage } from "../../lib/api/client";
 import { useResolverInput } from "../../hooks/useResolverInput";
 import type { MatchOption } from "../../lib/workspace/resolve";
 import type { VesselPalette } from "./tokens";
@@ -27,6 +28,7 @@ export function VesselBar({
 }: VesselBarProps) {
   const ri = useResolverInput();
   const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -34,11 +36,16 @@ export function VesselBar({
   async function handleAdd(opt: MatchOption) {
     if (adding) return;
     setAdding(true);
+    setAddError(null);
     try {
       await workspaceFeedsApi.addSource(feedId, opt.add);
       ri.reset();
       onSourceAdded?.();
     } catch (err) {
+      // Server liveness verdicts (invalid_source_uri / source_unreachable,
+      // audit F1) carry a human-readable message — show it in the dropdown
+      // instead of failing silently.
+      setAddError(apiErrorMessage(err) ?? "Failed to add source.");
       console.error("VesselBar add source error:", err);
     } finally {
       setAdding(false);
@@ -48,7 +55,11 @@ export function VesselBar({
   const showDropdown =
     focused &&
     ri.query.trim().length > 0 &&
-    (ri.matches.length > 0 || ri.resolving || ri.doneEmpty || ri.resolveError);
+    (ri.matches.length > 0 ||
+      ri.resolving ||
+      ri.doneEmpty ||
+      ri.resolveError ||
+      addError !== null);
 
   return (
     <div ref={barRef} style={{ position: "relative" }}>
@@ -104,7 +115,10 @@ export function VesselBar({
             ref={inputRef}
             type="text"
             value={ri.query}
-            onChange={(e) => ri.onQueryChange(e.target.value)}
+            onChange={(e) => {
+              setAddError(null);
+              ri.onQueryChange(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -162,6 +176,14 @@ export function VesselBar({
               style={{ padding: "8px 10px", color: palette.crimson }}
             >
               Resolution failed
+            </div>
+          )}
+          {addError && (
+            <div
+              className="font-mono text-[11px] uppercase tracking-[0.04em]"
+              style={{ padding: "8px 10px", color: palette.crimson }}
+            >
+              {addError}
             </div>
           )}
           {ri.doneEmpty && (
