@@ -522,6 +522,36 @@ describe("known-world index (Phase A)", () => {
     expect(knownWorldQueried()).toBe(false);
   });
 
+  it("subscribe context runs the known world ALONGSIDE an exact native hit (squatter amendment)", async () => {
+    // A native account squatting a publication name must not shadow the
+    // external world in subscribe context; the exact hit still ranks first.
+    byUsername.set("guardian", {
+      id: "acc-1",
+      username: "guardian",
+      display_name: "The Guardian",
+      avatar_blossom_url: null,
+    });
+    knownWorldRows = [AUTHOR_ROW];
+
+    const res = await resolve("guardian", "subscribe", INITIATOR, true);
+
+    expect(res.matches[0].type).toBe("native_account");
+    expect(res.matches[0].confidence).toBe("exact");
+    expect(
+      res.matches.some(
+        (m) => m.externalSource?.sourceUri === "did:plc:guardian",
+      ),
+    ).toBe(true);
+    // Fuzzy native search stays suppressed by the exact hit…
+    expect(
+      res.matches.filter((m) => m.type === "native_account"),
+    ).toHaveLength(1);
+    // …and discovery chains still register.
+    expect(res.pendingResolutions).toEqual(
+      expect.arrayContaining(["catalog_discovery", "activitypub_discovery"]),
+    );
+  });
+
   it("queries shorter than 3 chars never touch the index", async () => {
     knownWorldRows = [AUTHOR_ROW];
 

@@ -213,19 +213,28 @@ export async function resolve(
   switch (inputType) {
     case "platform_username": {
       const account = await lookupByUsername(usernameQuery);
-      if (account) {
-        matches.push(account);
-      } else {
+      if (account) matches.push(account);
+      // An exact native hit short-circuits the external world EXCEPT in
+      // subscribe context: a username there is often a publication name a
+      // native account happens to squat ("guardian"), and an exact native
+      // match and subscribable external candidates aren't mutually exclusive —
+      // the exact hit still ranks first (exact > probable > speculative).
+      // invite/dm/general keep the short-circuit (RESOLVER-DISCOVERY-ADR
+      // squatter amendment, 2026-07-10). Fuzzy natives only when there was no
+      // exact native hit.
+      const runExternal =
+        !skipExternal && (!account || context === "subscribe");
+      if (!account || runExternal) {
         // Fuzzy native + known-world external (RESOLVER-DISCOVERY-ADR §4) in
         // parallel — both local, both Phase A. invite/dm stay native-only.
         const [fuzzy, knownWorld] = await Promise.all([
-          searchPlatform(usernameQuery),
-          skipExternal ? [] : searchKnownWorld(usernameQuery),
+          account ? [] : searchPlatform(usernameQuery),
+          runExternal ? searchKnownWorld(usernameQuery) : [],
         ]);
         matches.push(...fuzzy, ...knownWorld);
-        // No exact native account — fall back to external discovery (§V.5.8)
-        // so a bare name like "Guardian" can surface subscribable sources.
-        if (discover && !skipExternal) {
+        // External discovery (§V.5.8) so a bare name like "Guardian" can
+        // surface subscribable sources.
+        if (discover && runExternal) {
           pendingResolutions.push(
             "catalog_discovery",
             "bluesky_discovery",
@@ -1365,14 +1374,23 @@ async function searchKnownWorld(query: string): Promise<ResolverMatch[]> {
          FROM external_authors
         WHERE (display_name % $1 OR handle % $1)
           AND protocol IN ('rss','nostr_external','atproto','activitypub')
+          AND deleted_at IS NULL
        UNION ALL
-       SELECT protocol::text, source_uri, display_name, handle,
-              avatar_url, 'source',
-              GREATEST(similarity(display_name, $1), similarity(handle, $1))
-         FROM external_sources
-        WHERE (display_name % $1 OR handle % $1)
-          AND is_active AND orphaned_at IS NULL
-          AND protocol IN ('rss','nostr_external','atproto','activitypub')
+       SELECT s.protocol::text, s.source_uri, s.display_name, s.handle,
+              s.avatar_url, 'source',
+              GREATEST(similarity(s.display_name, $1), similarity(s.handle, $1))
+         FROM external_sources s
+        WHERE (s.display_name % $1 OR s.handle % $1)
+          AND s.is_active AND s.orphaned_at IS NULL
+          AND s.protocol IN ('rss','nostr_external','atproto','activitypub')
+          -- Author-level deletion tombstone (§8.3): a deleted author's source
+          -- twin must not resurface them through the source leg.
+          AND NOT EXISTS (
+            SELECT 1 FROM external_authors ea
+             WHERE ea.protocol = s.protocol
+               AND ea.stable_handle = s.source_uri
+               AND ea.deleted_at IS NOT NULL
+          )
      ) candidates
      ORDER BY score DESC
      LIMIT $2`,
@@ -1385,7 +1403,7 @@ async function searchKnownWorld(query: string): Promise<ResolverMatch[]> {
   type KnownWorldEntry = ResolverMatch & { kind: "author" | "source" };
   const byIdentity = new Map<string, KnownWorldEntry>();
   for (const row of rows) {
-    const key = `${row.protocol} ${row.identity}`;
+    const key = `${row.protocol}\u0000${row.identity}`;
     const existing = byIdentity.get(key);
     if (existing && !(row.kind === "source" && existing.kind === "author"))
       continue;

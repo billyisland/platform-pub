@@ -41,6 +41,7 @@ import { fileURLToPath } from "node:url";
 import Parser from "rss-parser";
 import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import {
+  MULTI_TENANT_FEED_HOSTS,
   PUBLICATION_CATALOG,
   foldDiacritics,
   feedHost,
@@ -73,27 +74,8 @@ const WIKIDATA_CLASSES = [
 // keyboard; non-Latin aliases would never match the folded substring search.
 const ALIAS_LANGS = ["en", "de", "fr", "es", "it", "pt", "nl", "sv", "da"];
 
-// Feed *hosting* platforms where one host serves many unrelated publications
-// (podcast hosts, feed proxies). Host-level dedup would keep exactly one
-// tenant and silently drop the rest, so these dedupe by full feed URL.
-const MULTI_TENANT_FEED_HOSTS = new Set([
-  "feeds.megaphone.fm",
-  "feeds.simplecast.com",
-  "feeds.buzzsprout.com",
-  "feeds.transistor.fm",
-  "feeds.acast.com",
-  "feeds.soundcloud.com",
-  "feeds.libsyn.com",
-  "feeds.feedburner.com",
-  "feeds.captivate.fm",
-  "anchor.fm",
-  "rss.art19.com",
-  "feeds.podcastmirror.com",
-  "podcastfeeds.nbcnews.com",
-  "feeds.audiomeans.fr",
-  "medium.com",
-  "rss.beta.prx.org",
-]);
+// Multi-tenant feed-host exemption (dedupe by full URL, not host) now lives
+// in discovery-catalog.ts — shared with mergeCatalogs' load-time head check.
 
 const MAX_ALIASES_PER_ENTRY = 8;
 const PROBE_TIMEOUT_MS = 8000;

@@ -219,8 +219,16 @@ export function MessagesInbox({
           onKeyDown={(e) => {
             if (e.key !== 'Enter') return
             e.preventDefault()
-            // Enter picks an unambiguous match; otherwise re-resolves.
-            if (recipientMatches.length === 1 && !ri.resolving)
+            // Enter picks an unambiguous match; otherwise re-resolves. A lone
+            // SPECULATIVE fuzzy match is not unambiguous (one name-similar
+            // stranger must never be DM'd implicitly), and `pending` guards
+            // the debounce window where matches still answer the previous
+            // query — explicit click-pick stays available for both.
+            if (
+              recipientMatches.length === 1 &&
+              !ri.pending &&
+              recipientMatches[0].confidence !== 'speculative'
+            )
               void startConversation(recipientMatches[0].account!.id)
             else ri.submit()
           }}

@@ -378,12 +378,32 @@ export const feedIngestNostrBackfill: Task = async (payload, _helpers) => {
     await applyNostrDeletions(pool, sourceId, collected.deletions, pubkey);
 
     // Metadata ratchet + forward-only cursor handoff (§2.4).
+    const profileUpdate = nostrProfileUpdate(
+      collected.latestProfile,
+      source.metadata_updated_at,
+    );
     await completeBackfillSource(
       pool,
       sourceId,
       collected.newestCreatedAt,
-      nostrProfileUpdate(collected.latestProfile, source.metadata_updated_at),
+      profileUpdate,
     );
+
+    // Author-level deletion tombstone (RESOLVER-DISCOVERY-ADR §8.3, migration
+    // 151) — mirrored from the poll task. The backfill advances the metadata
+    // ratchet, so if it swallows a deleted:true kind-0 without stamping here,
+    // the poll would never see it as "newer" and the tombstone would be lost.
+    if (profileUpdate.profileDeleted !== null) {
+      await pool.query(
+        `UPDATE external_authors
+            SET deleted_at = CASE
+              WHEN $2 THEN COALESCE(deleted_at, now())
+              ELSE NULL
+            END
+          WHERE protocol = 'nostr_external' AND stable_handle = $1`,
+        [pubkey, profileUpdate.profileDeleted],
+      );
+    }
 
     logger.info(
       {

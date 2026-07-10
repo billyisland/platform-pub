@@ -127,23 +127,58 @@ export function feedHost(feedUrl: string): string | null {
   }
 }
 
+// Feed *hosting* platforms where one host serves many unrelated publications
+// (podcast hosts, feed proxies). Host-level dedup would keep exactly one
+// tenant and silently drop the rest, so these dedupe by full feed URL — in
+// the generation script's generated-vs-generated pass AND in mergeCatalogs'
+// head-collision check below (one curated feedburner entry must not delete
+// every generated feedburner tenant at load). Shared with
+// scripts/gen-discovery-catalog.ts; keys match feedHost() output.
+export const MULTI_TENANT_FEED_HOSTS = new Set([
+  "feeds.megaphone.fm",
+  "feeds.simplecast.com",
+  "feeds.buzzsprout.com",
+  "feeds.transistor.fm",
+  "feeds.acast.com",
+  "feeds.soundcloud.com",
+  "feeds.libsyn.com",
+  "feeds.feedburner.com",
+  "feeds.captivate.fm",
+  "anchor.fm",
+  "rss.art19.com",
+  "feeds.podcastmirror.com",
+  "podcastfeeds.nbcnews.com",
+  "feeds.audiomeans.fr",
+  "medium.com",
+  "rss.beta.prx.org",
+]);
+
 // Merge the hand-curated head with the generated tail. The head keeps priority
 // (searchCatalog scans in order and caps), and a generated entry whose feed
-// host collides with a head entry is dropped — the head's canonical URL wins.
-// Generated-vs-generated host dedup already happened at generation time (with
-// a multi-tenant-host exemption the script owns), so only head collisions are
-// checked here.
+// host collides with a head entry is dropped — the head's canonical URL wins —
+// EXCEPT on multi-tenant hosts, where collision is by full feed URL.
+// Generated-vs-generated host dedup already happened at generation time (same
+// exemption), so only head collisions are checked here.
 export function mergeCatalogs(
   head: CatalogEntry[],
   generated: CatalogEntry[],
 ): CatalogEntry[] {
-  const headHosts = new Set(
-    head.map((e) => feedHost(e.feedUrl)).filter((h): h is string => h !== null),
-  );
+  const headHosts = new Set<string>();
+  const headUrls = new Set<string>();
+  for (const e of head) {
+    const host = feedHost(e.feedUrl);
+    if (!host) continue;
+    if (MULTI_TENANT_FEED_HOSTS.has(host)) headUrls.add(e.feedUrl.toLowerCase());
+    else headHosts.add(host);
+  }
   const out = [...head];
   for (const entry of generated) {
     const host = feedHost(entry.feedUrl);
-    if (host && headHosts.has(host)) continue;
+    if (host && MULTI_TENANT_FEED_HOSTS.has(host)) {
+      if (headUrls.has(entry.feedUrl.toLowerCase())) continue;
+    } else if (host && headHosts.has(host)) {
+      continue;
+    }
     out.push(entry);
   }
   return out;
@@ -158,16 +193,41 @@ export const FULL_CATALOG: CatalogEntry[] = mergeCatalogs(
   GENERATED_PUBLICATION_CATALOG,
 );
 
+const WORD_CHAR = /[a-z0-9]/;
+
+// The alias-in-query direction (superset queries: "guardian newspaper" →
+// Guardian) is the over-match hazard: an unbounded substring test lets a short
+// alias fire inside an unrelated word ("thor" in "thorough" → The History of
+// Rome) and generic 3–4 char acronyms ("paid", "days") hijack long queries —
+// and those junk hits outrank every network discovery branch in the merge
+// step's precision tie-break. So this direction requires the alias to be ≥5
+// chars AND to sit on word boundaries in the query. The query-in-alias
+// direction stays an unbounded substring (typing a fragment of a name is the
+// point, and short-acronym aliases still hit when typed exactly).
+function aliasInQuery(q: string, a: string): boolean {
+  if (a.length < 5) return false;
+  let idx = q.indexOf(a);
+  while (idx !== -1) {
+    const boundedLeft = idx === 0 || !WORD_CHAR.test(q[idx - 1]);
+    const boundedRight =
+      idx + a.length >= q.length || !WORD_CHAR.test(q[idx + a.length]);
+    if (boundedLeft && boundedRight) return true;
+    idx = q.indexOf(a, idx + 1);
+  }
+  return false;
+}
+
 // Match the query against the catalog by case-insensitive, diacritic-folded
-// substring in both directions. Capped at `limit`. Requires ≥2 chars so a
-// single keystroke can't match the broad short aliases ("hn", "ars").
+// substring (query-in-alias) or bounded whole-word containment
+// (alias-in-query — see aliasInQuery). Capped at `limit`. Requires ≥2 chars so
+// a single keystroke can't match the broad short aliases ("hn", "ars").
 export function searchCatalog(query: string, limit = 5): CatalogMatch[] {
   const q = foldDiacritics(query.trim().toLowerCase());
   if (q.length < 2) return [];
 
   const out: CatalogMatch[] = [];
   for (const entry of FULL_CATALOG) {
-    const hit = entry.aliases.some((a) => a.includes(q) || q.includes(a));
+    const hit = entry.aliases.some((a) => a.includes(q) || aliasInQuery(q, a));
     if (!hit) continue;
     out.push({
       title: entry.title,

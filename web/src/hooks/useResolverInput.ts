@@ -21,6 +21,12 @@ export interface UseResolverInput {
    *  exact/probable under `matches`, speculative under `suggestions`. */
   sections: MatchSections;
   resolving: boolean;
+  /** True whenever `matches` may not answer the CURRENT query: a resolve is
+   *  in flight OR the query changed and the debounced resolve hasn't landed
+   *  yet (during that window `matches` still reflect the previous query while
+   *  `resolving` is false). Implicit-pick logic (Enter picks the single match)
+   *  MUST gate on this, not on `resolving` — the stale-Enter race. */
+  pending: boolean;
   resolveError: boolean;
   doneEmpty: boolean;
   reset: () => void;
@@ -34,6 +40,9 @@ export function useResolverInput(opts?: {
   const context = opts?.context ?? "subscribe";
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<ResolverResult | null>(null);
+  // The trimmed query the current `result` answers — the staleness signal
+  // behind `pending`. Set only where `result` is set.
+  const [resolvedFor, setResolvedFor] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,6 +93,7 @@ export function useResolverInput(opts?: {
         const res = await resolver.resolve(value.trim(), context, discover);
         if (gen !== genRef.current) return;
         setResult(res);
+        setResolvedFor(value.trim());
         if (res.requestId && res.status === "pending")
           void pollForResults(res.requestId, gen);
         else setResolving(false);
@@ -103,6 +113,7 @@ export function useResolverInput(opts?: {
       if (!value.trim()) {
         genRef.current++;
         setResult(null);
+        setResolvedFor(null);
         setResolving(false);
         setResolveError(false);
         return;
@@ -131,14 +142,17 @@ export function useResolverInput(opts?: {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setQuery("");
     setResult(null);
+    setResolvedFor(null);
     setResolving(false);
     setResolveError(false);
   }, []);
 
   const matches = resolveMatches(query, result?.matches ?? []);
   const sections = partitionMatchOptions(matches);
+  const pending =
+    query.trim().length > 0 && (resolving || resolvedFor !== query.trim());
   const doneEmpty =
-    !resolving &&
+    !pending &&
     result !== null &&
     matches.length === 0 &&
     query.trim().length > 0;
@@ -150,6 +164,7 @@ export function useResolverInput(opts?: {
     matches,
     sections,
     resolving,
+    pending,
     resolveError,
     doneEmpty,
     reset,

@@ -136,6 +136,25 @@ describe("alias dedupe", () => {
     );
     expect(out).toHaveLength(3);
   });
+
+  it("a catalog rss_feed nomination collapses onto a known-world rss source for the same URL", () => {
+    // The same feed reached through two shapes: a followed external_sources
+    // row (known-world, probable) and a catalog nomination (rss_feed,
+    // speculative). One key-space — the probable known-world hit survives.
+    const knownWorld: ResolverMatch = {
+      type: "external_source",
+      confidence: "probable",
+      externalSource: {
+        protocol: "rss",
+        sourceUri: "https://www.theguardian.com/international/rss",
+      },
+    };
+    const catalog = rssFeed("https://www.theguardian.com/international/RSS");
+    const out = mergeMatches([knownWorld], [catalog], "subscribe");
+    expect(out).toHaveLength(1);
+    expect(out[0].type).toBe("external_source");
+    expect(out[0].confidence).toBe("probable");
+  });
 });
 
 describe("bridge-collision drop (§6.1)", () => {

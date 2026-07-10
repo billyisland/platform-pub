@@ -210,10 +210,24 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
     await applyNostrDeletions(pool, sourceId, cappedDeletes, hexPubkey);
 
     // Kind-0 profile update, gated by the newest-wins metadata ratchet.
-    const { profileName, profileAvatar, profileCreatedAt } = nostrProfileUpdate(
-      latestProfile,
-      source.metadata_updated_at,
-    );
+    const { profileName, profileAvatar, profileCreatedAt, profileDeleted } =
+      nostrProfileUpdate(latestProfile, source.metadata_updated_at);
+
+    // Author-level deletion tombstone (RESOLVER-DISCOVERY-ADR §8.3, migration
+    // 151): a newer kind-0 with deleted:true stamps it; a newer kind-0 without
+    // clears it (the account came back). Rides the same ratchet as the
+    // metadata write, so a stale relay can't flap it.
+    if (profileDeleted !== null) {
+      await pool.query(
+        `UPDATE external_authors
+            SET deleted_at = CASE
+              WHEN $2 THEN COALESCE(deleted_at, now())
+              ELSE NULL
+            END
+          WHERE protocol = 'nostr_external' AND stable_handle = $1`,
+        [hexPubkey, profileDeleted],
+      );
+    }
 
     // Update source: cursor, reset errors, optionally refresh display metadata.
     // metadata_updated_at only moves forward when we actually apply a profile

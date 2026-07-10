@@ -1,7 +1,11 @@
 import type { Task } from "graphile-worker";
 import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
-import { fetchActor, fetchOutbox } from "../adapters/activitypub.js";
+import {
+  ApFetchStatusError,
+  fetchActor,
+  fetchOutbox,
+} from "../adapters/activitypub.js";
 import {
   insertActivityPubItem,
   recordInstanceSuccess,
@@ -171,7 +175,13 @@ export const feedIngestActivityPub: Task = async (payload, helpers) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const newErrorCount = source.error_count + 1;
-    const deactivate = newErrorCount >= maxErrors;
+    // HTTP 410 Gone is the fediverse's account-deletion tombstone — permanent,
+    // so deactivate immediately (no point burning the error budget) and stamp
+    // the author-level tombstone the known-world discovery index reads
+    // (RESOLVER-DISCOVERY-ADR §8.3; migration 151). AP stable_handle is the
+    // actor URI, i.e. this source's source_uri.
+    const gone = err instanceof ApFetchStatusError && err.status === 410;
+    const deactivate = gone || newErrorCount >= maxErrors;
     const backoff =
       defaultInterval * Math.pow(backoffFac, Math.min(newErrorCount, 6));
 
@@ -188,6 +198,14 @@ export const feedIngestActivityPub: Task = async (payload, helpers) => {
     `,
       [sourceId, newErrorCount, msg, deactivate, Math.round(backoff)],
     );
+
+    if (gone) {
+      await pool.query(
+        `UPDATE external_authors SET deleted_at = COALESCE(deleted_at, now())
+          WHERE protocol = 'activitypub' AND stable_handle = $1`,
+        [source.source_uri],
+      );
+    }
 
     await withTransaction(async (client) =>
       recordInstanceFailure(client, host, msg),

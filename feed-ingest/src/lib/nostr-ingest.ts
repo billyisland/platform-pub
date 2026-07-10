@@ -478,6 +478,11 @@ export interface NostrProfileUpdate {
   profileName: string | null;
   profileAvatar: string | null;
   profileCreatedAt: number | null;
+  /** Author-level deletion signal (RESOLVER-DISCOVERY-ADR §8.3): the kind-0
+   *  carried `deleted: true` (the community wipe convention). `true` stamps
+   *  the external_authors tombstone, `false` (a newer kind-0 without the
+   *  flag) clears it — the account came back. `null` = nothing newer to say. */
+  profileDeleted: boolean | null;
 }
 
 // Apply a kind-0 profile update only if strictly newer than the last one we
@@ -493,6 +498,7 @@ export function nostrProfileUpdate(
     profileName: null,
     profileAvatar: null,
     profileCreatedAt: null,
+    profileDeleted: null,
   };
   if (!profileEvent) return none;
   const storedAtSec = metadataUpdatedAt
@@ -513,6 +519,7 @@ export function nostrProfileUpdate(
       profileName,
       profileAvatar,
       profileCreatedAt: profileEvent.created_at,
+      profileDeleted: profile?.deleted === true,
     };
   } catch {
     return none; // Malformed profile — ignore

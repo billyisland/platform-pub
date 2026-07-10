@@ -85,6 +85,31 @@ describe("searchCatalog (discovery fallback branch 3)", () => {
     // searchCatalog folds the query, so an accented query hits an ASCII alias.
     expect(searchCatalog("güardian")[0]?.title).toBe("The Guardian");
   });
+
+  it("alias-in-query requires word boundaries — no mid-word alias fire", () => {
+    // "thorough" must not fire a hypothetical short alias "thor", and more
+    // generally no generated alias may hit inside an unrelated word. "hn" is a
+    // real head alias sitting inside "john" — it must not nominate Hacker News.
+    const hits = searchCatalog("john thorough");
+    expect(hits.map((h) => h.title)).not.toContain("Hacker News");
+  });
+
+  it("alias-in-query requires ≥5-char aliases — short acronyms only hit typed exactly", () => {
+    // "hn" (2 chars) as a standalone word in a longer query: too generic to
+    // nominate from inside a sentence…
+    expect(searchCatalog("the hn thing").map((h) => h.title)).not.toContain(
+      "Hacker News",
+    );
+    // …but typing the acronym itself still hits (query-in-alias direction —
+    // alongside other aliases containing "hn", e.g. "technica").
+    expect(searchCatalog("hn").map((h) => h.title)).toContain("Hacker News");
+  });
+
+  it("alias-in-query still matches a ≥5-char alias on word boundaries", () => {
+    expect(searchCatalog("the guardian newspaper")[0]?.title).toBe(
+      "The Guardian",
+    );
+  });
 });
 
 describe("mergeCatalogs (generated tail under the curated head)", () => {
@@ -115,6 +140,32 @@ describe("mergeCatalogs (generated tail under the curated head)", () => {
   it("feedHost strips www. and lowercases; null on garbage", () => {
     expect(feedHost("https://WWW.Example.COM/feed")).toBe("example.com");
     expect(feedHost("not a url")).toBeNull();
+  });
+
+  it("multi-tenant hosts collide by full URL, not host — one curated tenant does not delete the rest", () => {
+    const multiHead: CatalogEntry[] = [
+      {
+        title: "Curated Pod",
+        feedUrl: "https://feeds.feedburner.com/curated",
+        aliases: ["curated pod"],
+      },
+    ];
+    const generated: CatalogEntry[] = [
+      // Exact-URL duplicate of the head — dropped.
+      {
+        title: "Curated Pod (gen)",
+        feedUrl: "https://feeds.feedburner.com/curated",
+        aliases: ["curated"],
+      },
+      // Different tenant on the same multi-tenant host — must survive.
+      {
+        title: "Other Pod",
+        feedUrl: "https://feeds.feedburner.com/other",
+        aliases: ["other pod"],
+      },
+    ];
+    const merged = mergeCatalogs(multiHead, generated);
+    expect(merged.map((e) => e.title)).toEqual(["Curated Pod", "Other Pod"]);
   });
 });
 

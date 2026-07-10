@@ -30,9 +30,17 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
   const ri = useResolverInput({ context: 'invite', maxPolls: 3 })
   const inviteMatches = ri.matches.filter(m => m.account)
   // An unambiguous single match resolves implicitly (the pre-F4 UX); multiple
-  // matches render as rows and need an explicit pick.
+  // matches render as rows and need an explicit pick. A lone SPECULATIVE fuzzy
+  // match is NOT unambiguous — the invite must not silently target a
+  // name-similar account instead of falling back to email — and `pending`
+  // guards the debounce window where matches still answer the previous query.
   const resolvedAccount =
-    invitePick ?? (inviteMatches.length === 1 ? inviteMatches[0].account! : null)
+    invitePick ??
+    (inviteMatches.length === 1 &&
+    !ri.pending &&
+    inviteMatches[0].confidence !== 'speculative'
+      ? inviteMatches[0].account!
+      : null)
 
   // Inline role editing
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -245,7 +253,9 @@ export function MembersTab({ publicationId, publicationName, canManageMembers, i
                   Resolved: {resolvedAccount.displayName} (@{resolvedAccount.username})
                 </p>
               )}
-              {!resolvedAccount && inviteMatches.length > 1 && (
+              {/* Rows render whenever nothing auto-resolved — including a lone
+                  speculative fuzzy match, which needs an explicit pick. */}
+              {!resolvedAccount && inviteMatches.length > 0 && (
                 <div className="mt-1 flex w-60 flex-col gap-0.5">
                   {inviteMatches.map(m => (
                     <button

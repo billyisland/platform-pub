@@ -81,9 +81,26 @@ export interface NormalisedActivityPubItem {
 // Actor fetch
 // =============================================================================
 
+/** Fetch error carrying the HTTP status so the ingest task can distinguish a
+ *  transient failure from a 410 Gone — the fediverse's account-deletion
+ *  tombstone (RESOLVER-DISCOVERY-ADR §8.3). */
+export class ApFetchStatusError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApFetchStatusError";
+  }
+}
+
 export async function fetchActor(actorUri: string): Promise<ActorMetadata> {
   const res = await safeFetch(actorUri, { headers: { Accept: AP_ACCEPT } });
-  if (!res.ok) throw new Error(`Actor fetch returned HTTP ${res.status}`);
+  if (!res.ok)
+    throw new ApFetchStatusError(
+      `Actor fetch returned HTTP ${res.status}`,
+      res.status,
+    );
 
   let actor: any;
   try {
@@ -212,7 +229,11 @@ export async function fetchOutbox(
     page++
   ) {
     const res = await safeFetch(nextUrl, { headers: { Accept: AP_ACCEPT } });
-    if (!res.ok) throw new Error(`Outbox page returned HTTP ${res.status}`);
+    if (!res.ok)
+      throw new ApFetchStatusError(
+        `Outbox page returned HTTP ${res.status}`,
+        res.status,
+      );
 
     let body: any;
     try {
@@ -296,7 +317,11 @@ async function resolveFirstPageUrl(
   itemsPerPage: number,
 ): Promise<string> {
   const res = await safeFetch(outboxUrl, { headers: { Accept: AP_ACCEPT } });
-  if (!res.ok) throw new Error(`Outbox returned HTTP ${res.status}`);
+  if (!res.ok)
+    throw new ApFetchStatusError(
+      `Outbox returned HTTP ${res.status}`,
+      res.status,
+    );
   let body: any;
   try {
     body = JSON.parse(res.text);

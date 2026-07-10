@@ -116,7 +116,10 @@ function dedupeAliases(m: ResolverMatch): string[] {
     return [`native:${m.account.id}`];
   }
   if (m.type === "rss_feed" && m.rssFeed) {
-    return [`rssfeed:${m.rssFeed.feedUrl.toLowerCase()}`];
+    // Same key-space as an external_source rss row: a catalog nomination and a
+    // known-world hit for the same feed URL are the same identity (the
+    // known-world hit wins on confidence — it's 'probable').
+    return [`rss:${m.rssFeed.feedUrl.toLowerCase()}`];
   }
   const x = m.externalSource;
   if (!x) return [];

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict vcKO77btMQ5t4VNgPweTxxBhqEncG1rLm2WhqHeCQ7mAWYHNmNgS5v0OdBVhg2U
+\restrict o06DkuswcoY89PUarPVQuhheZKAtK1ValSmJ5ZIpeP0O7aJ6gTt2ybUPlMiMsnF
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1559,6 +1559,7 @@ CREATE TABLE public.external_authors (
     website text,
     lightning_address text,
     profile_fetched_at timestamp with time zone,
+    deleted_at timestamp with time zone,
     CONSTRAINT external_authors_tier_check CHECK ((tier = ANY (ARRAY['A'::text, 'B'::text])))
 );
 
@@ -7494,8 +7495,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict vcKO77btMQ5t4VNgPweTxxBhqEncG1rLm2WhqHeCQ7mAWYHNmNgS5v0OdBVhg2U
-
+\unrestrict o06DkuswcoY89PUarPVQuhheZKAtK1ValSmJ5ZIpeP0O7aJ6gTt2ybUPlMiMsnF
 
 
 --
@@ -7652,4 +7652,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('147_backfill_initiated_payouts.sql'),
     ('148_external_items_profile_hydrated.sql'),
     ('149_pledge_drives_draft_fk_set_null.sql'),
-    ('150_discovery_known_world_trgm.sql');
+    ('150_discovery_known_world_trgm.sql'),
+    ('151_external_authors_deleted_at.sql');

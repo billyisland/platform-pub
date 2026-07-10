@@ -140,7 +140,15 @@ export function DmFeeSettings() {
                     onKeyDown={(e) => {
                       if (e.key !== 'Enter') return
                       e.preventDefault()
-                      if (overrideMatches.length === 1 && !ri.resolving) {
+                      // A lone speculative fuzzy match is not unambiguous, and
+                      // `pending` guards the debounce window where matches
+                      // still answer the previous query (explicit click-pick
+                      // below stays available for both).
+                      if (
+                        overrideMatches.length === 1 &&
+                        !ri.pending &&
+                        overrideMatches[0].confidence !== 'speculative'
+                      ) {
                         setOverrideTarget(overrideMatches[0].account!)
                         ri.reset()
                       } else ri.submit()
