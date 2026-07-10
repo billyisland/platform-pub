@@ -41,6 +41,15 @@ export function externalFetchJobKey(task: string, sourceId: string): string {
     : `feed_ingest_${sourceId}`;
 }
 
+// Subscribe-time attempt budget. atproto has NO poll fallback while Jetstream
+// is healthy (feed-ingest-poll.ts skips the protocol), so its backfill
+// re-throws on failure and graphile-worker's retry is the only retry path —
+// give it real attempts (2026-07-09 audit F2). Every other protocol recovers
+// via the 60s poll scheduler, so one attempt is enough.
+export function externalFetchMaxAttempts(task: string): number {
+  return task === "feed_ingest_atproto_backfill" ? 5 : 1;
+}
+
 const patchSourceSchema = z.object({
   step: z.number().int().min(0).max(5).optional(),
   sampling: z.enum(["random", "top"]).optional(),
@@ -309,12 +318,13 @@ async function addSource(
              $2,
              json_build_object('sourceId', $1::text),
              job_key := $3,
-             max_attempts := 1
+             max_attempts := $4
            )`,
           [
             input.externalSourceId,
             fetchTask,
             externalFetchJobKey(fetchTask, input.externalSourceId),
+            externalFetchMaxAttempts(fetchTask),
           ],
         );
       }
@@ -408,9 +418,14 @@ async function addSource(
            $2,
            json_build_object('sourceId', $1::text),
            job_key := $3,
-           max_attempts := 1
+           max_attempts := $4
          )`,
-        [src.id, fetchTask, externalFetchJobKey(fetchTask, src.id)],
+        [
+          src.id,
+          fetchTask,
+          externalFetchJobKey(fetchTask, src.id),
+          externalFetchMaxAttempts(fetchTask),
+        ],
       );
     }
 

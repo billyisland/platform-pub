@@ -23,6 +23,37 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Resolver audit F2: atproto backfill failure accounting +
+  retry (HIGH — the silent data-loss hole).**
+  `RESOLVER-SOURCE-INPUT-AUDIT-2026-07-09.md` §F2. The atproto backfill's
+  outer catch was log-only — a failed backfill left the source
+  `is_active=TRUE, error_count=0`, looking healthy while producing nothing —
+  and all subscribe-time ingest jobs were `max_attempts := 1`, which for
+  atproto meant NO retry ever (the 60s poll scheduler skips the protocol
+  while Jetstream is healthy, and Jetstream only carries posts *after*
+  subscribe). Fix, both halves:
+  (1) `feed-ingest-atproto-backfill.ts` now runs the same error-count /
+  backoff / deactivation accounting as the nostr backfill on its outer catch
+  (`feed_ingest_max_error_count` / `feed_ingest_error_backoff_factor` via
+  `getPlatformConfig`, replacing the one-off raw `platform_config` read),
+  then **re-throws** so graphile-worker retries; a first-page `getAuthorFeed`
+  HTTP failure now throws into that path instead of falling through to the
+  success branch and resetting `error_count = 0` (a mid-pagination failure
+  still keeps the partial backfill as success). The enrichment-failure
+  accounting (2026-07-06 residual) is untouched — listener-owned self-heal.
+  (2) `gateway/routes/feeds/sources.ts` gains `externalFetchMaxAttempts`:
+  5 attempts for `feed_ingest_atproto_backfill` at both subscribe-time
+  enqueue sites, 1 (unchanged) for the poll-recovered protocols — their
+  retry IS the poll scheduler. Interactions checked: the listener's
+  enrichment filter backs off on the same `error_count` (compatible — a live
+  event resets it); deactivation at the cap drops the DID from Jetstream,
+  which is the intended terminal state for a deleted account. Tests: new
+  `feed-ingest-atproto-backfill.test.ts` (5 — accounting params + rethrow on
+  page-0 HTTP failure and network throw, deactivation at cap, success reset,
+  mid-pagination partial-success) + `externalFetchMaxAttempts` pinned in
+  `feed-sources-enqueue.test.ts`. Validated: feed-ingest 209 passed +
+  gateway 235 passed, both `tsc` clean, root eslint 0 errors.
+
 - **2026-07-10** — **Resolver discovery expansion Phase 4: generated catalog
   (discharges audit F7 — the last built phase; the ADR's remaining items are
   deferred-by-design).** `RESOLVER-DISCOVERY-ADR.md` §7.1. New

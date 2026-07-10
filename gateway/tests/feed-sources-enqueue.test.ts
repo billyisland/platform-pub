@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   externalFetchTask,
   externalFetchJobKey,
+  externalFetchMaxAttempts,
 } from "../src/routes/feeds/sources.js";
 
 // =============================================================================
@@ -48,6 +49,23 @@ describe("externalFetchJobKey", () => {
       expect(externalFetchJobKey(task, SOURCE_ID)).toBe(
         `feed_ingest_${SOURCE_ID}`,
       );
+    }
+  });
+});
+
+describe("externalFetchMaxAttempts", () => {
+  // Audit F2 (2026-07-09): atproto has no poll fallback while Jetstream is
+  // healthy, so its backfill re-throws on failure and rides graphile-worker's
+  // retry — it must get a real attempt budget. The poll-recovered protocols
+  // stay at 1 (their retry IS the 60s poll scheduler).
+  it("gives the atproto backfill retries and everything else one attempt", () => {
+    expect(externalFetchMaxAttempts("feed_ingest_atproto_backfill")).toBe(5);
+    for (const task of [
+      "feed_ingest_rss",
+      "feed_ingest_activitypub",
+      "feed_ingest_nostr_backfill",
+    ]) {
+      expect(externalFetchMaxAttempts(task)).toBe(1);
     }
   });
 });

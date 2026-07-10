@@ -7,6 +7,7 @@ import {
   type BskyPostRecord,
 } from "../adapters/atproto.js";
 import { insertAtprotoItem } from "../lib/atproto-ingest.js";
+import { getPlatformConfig } from "../lib/platform-config.js";
 
 // =============================================================================
 // feed_ingest_atproto_backfill — one-time backfill for a new Bluesky source.
@@ -20,6 +21,13 @@ import { insertAtprotoItem } from "../lib/atproto-ingest.js";
 // Runs once per subscription (enqueued from the subscribe endpoint). Duplicate
 // or re-run invocations are safe — the ON CONFLICT DO NOTHING in the ingest
 // writer dedupes against anything the listener has already captured.
+//
+// Failure semantics (2026-07-09 audit F2): a fetch failure records the same
+// error-count / backoff / deactivation accounting as the other protocols'
+// tasks, then RE-THROWS. Unlike rss/activitypub/nostr — which recover via the
+// 60s poll scheduler — atproto has no poll fallback while Jetstream is healthy
+// (feed-ingest-poll.ts skips the protocol), so graphile-worker's retry
+// (subscribe-time max_attempts, gateway sources.ts) is the only retry path.
 // =============================================================================
 
 const APPVIEW = "https://public.api.bsky.app";
@@ -91,8 +99,9 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
     handle: string | null;
     display_name: string | null;
     avatar_url: string | null;
+    error_count: number;
   }>(
-    `SELECT id, source_uri, handle, display_name, avatar_url
+    `SELECT id, source_uri, handle, display_name, avatar_url, error_count
       FROM external_sources
       WHERE id = $1 AND protocol = 'atproto' AND is_active = TRUE`,
     [sourceId],
@@ -138,12 +147,19 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
     );
   }
 
-  const {
-    rows: [cfgRow],
-  } = await pool.query<{ value: string }>(
-    `SELECT value FROM platform_config WHERE key = 'feed_ingest_atproto_backfill_hours'`,
+  const config = await getPlatformConfig();
+  const lookbackHours = parseInt(
+    config.get("feed_ingest_atproto_backfill_hours") ?? "24",
+    10,
   );
-  const lookbackHours = parseInt(cfgRow?.value ?? "24", 10);
+  const maxErrors = parseInt(
+    config.get("feed_ingest_max_error_count") ?? "10",
+    10,
+  );
+  const backoffFactor = parseInt(
+    config.get("feed_ingest_error_backoff_factor") ?? "2",
+    10,
+  );
   const cutoff = Date.now() - lookbackHours * 60 * 60 * 1000;
 
   let cursor: string | undefined;
@@ -164,9 +180,14 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
         headers: { Accept: "application/json" },
       });
       if (!res.ok) {
+        // First page failing means zero history was fetched — that is a
+        // failed backfill, not a short one; route it through the error
+        // accounting below. A mid-pagination failure keeps what landed.
+        if (page === 0)
+          throw new Error(`getAuthorFeed HTTP ${res.status}`);
         logger.warn(
-          { sourceId, status: res.status },
-          "getAuthorFeed failed — ending backfill",
+          { sourceId, status: res.status, page },
+          "getAuthorFeed failed mid-pagination — keeping partial backfill",
         );
         break;
       }
@@ -277,10 +298,44 @@ export const feedIngestAtprotoBackfill: Task = async (payload, helpers) => {
       );
     }
   } catch (err) {
+    // Same error-count / backoff / deactivation accounting as the nostr
+    // backfill and the poll tasks (audit F2) — a failed backfill must never
+    // leave the source looking healthy (error_count 0, no last_error).
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const newErrorCount = source.error_count + 1;
+    const shouldDeactivate = newErrorCount >= maxErrors;
+    const backoffInterval =
+      300 * Math.pow(backoffFactor, Math.min(newErrorCount, 6));
+
+    await pool.query(
+      `
+      UPDATE external_sources SET
+        last_fetched_at = now(),
+        error_count = $2,
+        last_error = $3,
+        is_active = CASE WHEN $4 THEN FALSE ELSE is_active END,
+        fetch_interval_seconds = $5,
+        updated_at = now()
+      WHERE id = $1
+    `,
+      [
+        sourceId,
+        newErrorCount,
+        errorMessage.slice(0, 1000),
+        shouldDeactivate,
+        Math.round(backoffInterval),
+      ],
+    );
+
     logger.warn(
-      { sourceId, err: err instanceof Error ? err.message : String(err) },
+      { sourceId, errorCount: newErrorCount, err: errorMessage },
       "atproto backfill failed",
     );
+
+    // Re-throw so graphile-worker retries (see the header note: the poll
+    // scheduler never re-runs atproto while Jetstream is healthy, so the
+    // job's own max_attempts is the only retry this backfill gets).
+    throw err;
   }
 };
 

@@ -15,8 +15,10 @@ FIX-PROGRAMME and amend both.
 > ordering, Phase 3 `mergeMatches`), and **F7** (discovery reach: catalog grown to
 > 500 generated probed-live entries, Phase 4; branch 4 stays deferred behind
 > `DISCOVERY_WEBSEARCH_ENABLED` per its §7.2). Phase 2's addSource acct→webfinger
-> handling is a down-payment on **F1**, not its discharge. Still open, tracked in
-> CONSOLIDATED-TODO §0b: **F2** (atproto backfill silent no-op), **F4**
+> handling is a down-payment on **F1**, not its discharge. **F2** discharged
+> 2026-07-10 (nostr-model error accounting + re-throw in the atproto backfill's
+> outer catch; `externalFetchMaxAttempts` gives it 5 subscribe-time attempts —
+> FIX-PROGRAMME 2026-07-10). Still open, tracked in CONSOLIDATED-TODO §0b: **F4**
 > (omnivorous-input violations on DM/invite surfaces), **F1** (addSource liveness),
 > **F5** remainder (native-URL short-circuit, njump re-entry, AP actor probe, JSON
 > Feed autodiscovery), **F6** (deactivated-source signal). Findings below are the
