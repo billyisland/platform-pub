@@ -23,6 +23,35 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Resolver discovery expansion Phase 0: orchestration
+  harness (audit F8) + nostr-search extraction + structural chain isolation.**
+  `RESOLVER-DISCOVERY-ADR.md` Phase 0. New
+  `gateway/tests/resolver-orchestration.test.ts` (15 tests) exercises
+  `resolve()`/`resolveAsync()` through the public surface (`resolve` +
+  `getAsyncResult` over a faked `resolver_async_results`/accounts store, all
+  network chains mocked at module seams, zero live I/O): Phase A→B assembly +
+  enrichment, the `discover`/`skipExternal`/context gating matrix (invite/dm
+  never register discovery chains; exact-username short-circuit), incremental
+  partial persistence order (catalog partial lands before network branches,
+  final row `complete`), initiator scoping (+ non-UUID guard), and per-chain
+  failure isolation. Two source changes ride it: (1) the Nostr relay leaves
+  (`searchNostrProfiles`/`fetchNostrProfile`/`parseNostrProfileContent` +
+  socket lifecycle) extracted behaviour-identically to
+  `gateway/src/lib/nostr-search.ts` — first bite of the `resolver.ts`
+  decomposition (CONSOLIDATED-TODO §8.5) and the mockable seam the harness
+  needed (the NIP-50 chain was in-file, unreachable by `vi.mock`); resolver
+  drops its `ws`/`pinnedWebSocketOptions` imports. (2) `safeChain` wraps every
+  Phase B chain call in `resolveAsync` — previously isolation relied on each
+  leaf catching internally, so a throwing chain rejected the discovery
+  `Promise.all`, dropped sibling results, and stranded the async row `pending`
+  until TTL; now it degrades to "no candidates from that chain" with a warn
+  log, structurally. ADR amended with the 2026-07-10 build-time verifications
+  (§4.2 AP identity shape = actor URI, addSource-ready; §5.2 pick-path
+  correction — picks go straight to `addSource`, so Phase 2 teaches its AP
+  branch acct→webfinger→actor-URI, a down-payment on audit F1; §6.4
+  per-surface header styling). Validated: gateway suite 176 passed / 17
+  skipped (pre-existing skips), `tsc` clean, root eslint 0 errors.
+
 - **2026-07-09** — **thread context never clips (parents/replies at full
   length).** In an expanded conversation, long ancestors/replies were
   truncated by the feed card's collapse-truncate (220/200-char text cuts, an

@@ -1,11 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { nip19 } from "nostr-tools";
-import { WebSocket } from "ws";
 import { pool } from "@platform-pub/shared/db/client.js";
-import {
-  pinnedWebSocketOptions,
-  safeFetch,
-} from "@platform-pub/shared/lib/http-client.js";
+import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import {
   getProfile as atprotoGetProfile,
@@ -21,6 +17,10 @@ import {
   extractFromThreadiverseUrl,
 } from "./activitypub-resolve.js";
 import { searchCatalog } from "./discovery-catalog.js";
+import {
+  fetchNostrProfile,
+  searchNostrProfiles,
+} from "./nostr-search.js";
 
 // =============================================================================
 // Universal Resolver
@@ -420,6 +420,24 @@ export async function resolve(
 // Phase B — async remote resolutions
 // =============================================================================
 
+// Per-chain failure isolation (§V.5.8): one chain throwing must never abort
+// the other chains or leave the async row stuck 'pending' until TTL. The leaf
+// resolvers are already fail-soft internally; this wrapper makes the guarantee
+// structural at the orchestration seam, so a future chain that forgets an
+// internal catch degrades to "no candidates from that chain", not a dead poll.
+async function safeChain<T>(
+  chain: string,
+  work: Promise<T>,
+  fallback: T,
+): Promise<T> {
+  try {
+    return await work;
+  } catch (err) {
+    logger.warn({ err, chain }, "Resolver Phase B chain failed");
+    return fallback;
+  }
+}
+
 async function resolveAsync(
   requestId: string,
   initiatorId: string,
@@ -439,7 +457,7 @@ async function resolveAsync(
   const skipExternal = context === "invite" || context === "dm";
 
   if (inputType === "url" && !skipExternal) {
-    const urlMatches = await resolveUrl(query);
+    const urlMatches = await safeChain("url_resolution", resolveUrl(query), []);
     matches.push(...urlMatches);
   }
 
@@ -456,29 +474,41 @@ async function resolveAsync(
       }).catch(() => {});
     };
     await Promise.all([
-      resolveUrl(`https://${query}`).then(async (urlMatches) => {
-        if (urlMatches.length > 0) {
-          matches.push(...urlMatches);
-          await storePartial();
-        }
-      }),
-      resolveAtproto(query).then(async (atprotoMatch) => {
-        if (atprotoMatch) {
-          matches.push(atprotoMatch);
-          await storePartial();
-        }
-      }),
+      safeChain("url_resolution", resolveUrl(`https://${query}`), []).then(
+        async (urlMatches) => {
+          if (urlMatches.length > 0) {
+            matches.push(...urlMatches);
+            await storePartial();
+          }
+        },
+      ),
+      safeChain("atproto_profile", resolveAtproto(query), null).then(
+        async (atprotoMatch) => {
+          if (atprotoMatch) {
+            matches.push(atprotoMatch);
+            await storePartial();
+          }
+        },
+      ),
     ]);
   }
 
   if (inputType === "ambiguous_at") {
-    const nip05Matches = await resolveNip05(query);
+    const nip05Matches = await safeChain(
+      "nip05_resolution",
+      resolveNip05(query),
+      [],
+    );
     matches.push(...nip05Matches);
     if (!skipExternal) {
       // Also try WebFinger — many fediverse accounts take the bare `user@host`
       // form (no @ prefix) and the ambiguous chain is the only place to catch
       // them. Dedupe against any existing activitypub match by actor URI.
-      const apMatch = await resolveActivityPubHandle(query);
+      const apMatch = await safeChain(
+        "webfinger_resolution",
+        resolveActivityPubHandle(query),
+        null,
+      );
       if (
         apMatch &&
         !matches.some(
@@ -493,7 +523,11 @@ async function resolveAsync(
   }
 
   if (inputType === "fediverse_handle" && !skipExternal) {
-    const apMatch = await resolveActivityPubHandle(query);
+    const apMatch = await safeChain(
+      "activitypub_profile",
+      resolveActivityPubHandle(query),
+      null,
+    );
     if (apMatch) matches.push(apMatch);
   }
 
@@ -501,7 +535,11 @@ async function resolveAsync(
     (inputType === "did" || inputType === "bluesky_handle") &&
     !skipExternal
   ) {
-    const atprotoMatch = await resolveAtproto(query);
+    const atprotoMatch = await safeChain(
+      "atproto_profile",
+      resolveAtproto(query),
+      null,
+    );
     if (atprotoMatch) matches.push(atprotoMatch);
   }
 
@@ -518,9 +556,13 @@ async function resolveAsync(
       (m) => m.externalSource?.protocol === "nostr_external",
     );
     if (target?.externalSource) {
-      const profile = await fetchNostrProfile(
-        target.externalSource.sourceUri,
-        target.externalSource.relayUrls,
+      const profile = await safeChain(
+        "nostr_profile",
+        fetchNostrProfile(
+          target.externalSource.sourceUri,
+          target.externalSource.relayUrls,
+        ),
+        null,
       );
       if (profile) {
         target.externalSource.displayName =
@@ -566,18 +608,22 @@ async function resolveAsync(
     // persist partials as each returns. Each dedupes against its own protocol's
     // existing matches, so concurrent pushes touch disjoint key-spaces.
     await Promise.all([
-      discoverBluesky(query, matches).then(async (candidates) => {
-        if (candidates.length > 0) {
-          matches.push(...candidates);
-          await storeDiscoveryPartial();
-        }
-      }),
-      discoverNostr(query, matches).then(async (candidates) => {
-        if (candidates.length > 0) {
-          matches.push(...candidates);
-          await storeDiscoveryPartial();
-        }
-      }),
+      safeChain("bluesky_discovery", discoverBluesky(query, matches), []).then(
+        async (candidates) => {
+          if (candidates.length > 0) {
+            matches.push(...candidates);
+            await storeDiscoveryPartial();
+          }
+        },
+      ),
+      safeChain("nostr_discovery", discoverNostr(query, matches), []).then(
+        async (candidates) => {
+          if (candidates.length > 0) {
+            matches.push(...candidates);
+            await storeDiscoveryPartial();
+          }
+        },
+      ),
     ]);
   }
 
@@ -1013,287 +1059,6 @@ async function resolveNip05(identifier: string): Promise<ResolverMatch[]> {
   return matches;
 }
 
-// =============================================================================
-// Nostr profile (kind 0) lookup — opens a temporary relay WebSocket and pulls
-// the most recent kind-0 metadata event for the pubkey. Used to enrich
-// external_source matches with displayName/avatar so the SubscribeInput
-// dropdown shows something better than a hex string.
-// =============================================================================
-
-const NOSTR_PROFILE_TIMEOUT_MS = 4_000;
-const DEFAULT_NOSTR_PROFILE_RELAYS = [
-  "wss://relay.damus.io",
-  "wss://relay.nostr.band",
-  "wss://nos.lol",
-];
-
-interface NostrProfile {
-  displayName?: string;
-  about?: string;
-  picture?: string;
-}
-
-function getDefaultProfileRelays(): string[] {
-  const env = process.env.NOSTR_PROFILE_RELAYS;
-  if (!env) return DEFAULT_NOSTR_PROFILE_RELAYS;
-  return env
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-// Parse a kind-0 metadata event's JSON content into the fields we surface.
-// Shared by single-profile enrichment (fetchNostrProfile) and name search
-// (searchNostrProfiles). Returns null on malformed JSON.
-export function parseNostrProfileContent(content: string): NostrProfile | null {
-  try {
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    return {
-      displayName:
-        typeof parsed.display_name === "string" && parsed.display_name
-          ? parsed.display_name
-          : typeof parsed.name === "string"
-            ? parsed.name
-            : undefined,
-      about: typeof parsed.about === "string" ? parsed.about : undefined,
-      picture: typeof parsed.picture === "string" ? parsed.picture : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchNostrProfile(
-  pubkey: string,
-  relayHints?: string[],
-): Promise<NostrProfile | null> {
-  if (!HEX_64.test(pubkey)) return null;
-  const relays =
-    relayHints && relayHints.length > 0
-      ? relayHints
-      : getDefaultProfileRelays();
-  // Race relays — first successful kind-0 wins. Newest createdAt as tiebreaker.
-  const results = await Promise.allSettled(
-    relays.map((relayUrl) => fetchKind0FromRelay(relayUrl, pubkey)),
-  );
-
-  let best: { event: { content: string; created_at: number } } | null = null;
-  for (const r of results) {
-    if (r.status === "fulfilled" && r.value) {
-      if (!best || r.value.created_at > best.event.created_at) {
-        best = { event: r.value };
-      }
-    }
-  }
-  if (!best) return null;
-  return parseNostrProfileContent(best.event.content);
-}
-
-// =============================================================================
-// Nostr name search (NIP-50) — discovery fallback branch 2 (§V.5.8)
-//
-// Opens a temporary WebSocket to a search relay and runs a NIP-50 full-text
-// query (`{ kinds: [0], search }`) for profiles matching a bare name. Returns
-// candidate pubkeys with their kind-0 metadata. Mirrors fetchKind0FromRelay's
-// connection lifecycle; the only difference is the search filter and that we
-// collect multiple results (newest kind-0 per pubkey wins).
-// =============================================================================
-
-const NOSTR_SEARCH_TIMEOUT_MS = 4_000;
-const DEFAULT_NOSTR_SEARCH_RELAY = "wss://relay.nostr.band";
-
-interface NostrCandidate {
-  pubkey: string;
-  displayName?: string;
-  about?: string;
-  picture?: string;
-}
-
-function getNostrSearchRelay(): string {
-  return (
-    process.env.NOSTR_SEARCH_RELAY ?? DEFAULT_NOSTR_SEARCH_RELAY
-  ).trim();
-}
-
-async function searchNostrProfiles(
-  query: string,
-  limit = 5,
-): Promise<NostrCandidate[]> {
-  const q = query.trim();
-  if (!q) return [];
-
-  const relayUrl = getNostrSearchRelay();
-  let wsOpts;
-  try {
-    wsOpts = await pinnedWebSocketOptions(relayUrl);
-  } catch (err) {
-    logger.warn(
-      { relayUrl, err },
-      "Nostr search relay rejected by SSRF guard",
-    );
-    return [];
-  }
-
-  return new Promise((resolve) => {
-    const ws = new WebSocket(relayUrl, wsOpts);
-    const subId = `resolver-search-${randomUUID()}`;
-    // Newest kind-0 per pubkey wins, so a relay returning stale + fresh
-    // metadata for the same author collapses to one candidate.
-    const collected = new Map<string, { content: string; created_at: number }>();
-    let settled = false;
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      try {
-        ws.send(JSON.stringify(["CLOSE", subId]));
-      } catch {}
-      try {
-        ws.close();
-      } catch {}
-      const out: NostrCandidate[] = [];
-      for (const [pubkey, ev] of collected) {
-        const profile = parseNostrProfileContent(ev.content);
-        out.push({
-          pubkey,
-          displayName: profile?.displayName,
-          about: profile?.about,
-          picture: profile?.picture,
-        });
-        if (out.length >= limit) break;
-      }
-      resolve(out);
-    };
-
-    const timeout = setTimeout(finish, NOSTR_SEARCH_TIMEOUT_MS);
-
-    ws.on("open", () => {
-      ws.send(
-        JSON.stringify(["REQ", subId, { kinds: [0], search: q, limit }]),
-      );
-    });
-
-    ws.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        if (msg[0] === "EVENT" && msg[1] === subId) {
-          const event = msg[2];
-          if (
-            event &&
-            typeof event.content === "string" &&
-            typeof event.created_at === "number" &&
-            typeof event.pubkey === "string" &&
-            HEX_64.test(event.pubkey)
-          ) {
-            const prev = collected.get(event.pubkey);
-            if (!prev || event.created_at > prev.created_at) {
-              collected.set(event.pubkey, {
-                content: event.content,
-                created_at: event.created_at,
-              });
-            }
-          }
-        } else if (msg[0] === "EOSE" && msg[1] === subId) {
-          clearTimeout(timeout);
-          finish();
-        }
-      } catch {
-        // ignore parse errors
-      }
-    });
-
-    ws.on("error", () => {
-      clearTimeout(timeout);
-      finish();
-    });
-
-    ws.on("close", () => {
-      clearTimeout(timeout);
-      finish();
-    });
-  });
-}
-
-function fetchKind0FromRelay(
-  relayUrl: string,
-  pubkey: string,
-): Promise<{ content: string; created_at: number } | null> {
-  return new Promise(async (resolve) => {
-    let wsOpts;
-    try {
-      wsOpts = await pinnedWebSocketOptions(relayUrl);
-    } catch (err) {
-      logger.warn(
-        { relayUrl, err },
-        "Nostr profile relay rejected by SSRF guard",
-      );
-      resolve(null);
-      return;
-    }
-
-    const ws = new WebSocket(relayUrl, wsOpts);
-    const subId = `resolver-profile-${randomUUID()}`;
-    let latest: { content: string; created_at: number } | null = null;
-    let settled = false;
-    const finish = (value: { content: string; created_at: number } | null) => {
-      if (settled) return;
-      settled = true;
-      try {
-        ws.send(JSON.stringify(["CLOSE", subId]));
-      } catch {}
-      try {
-        ws.close();
-      } catch {}
-      resolve(value);
-    };
-
-    const timeout = setTimeout(() => finish(latest), NOSTR_PROFILE_TIMEOUT_MS);
-
-    ws.on("open", () => {
-      ws.send(
-        JSON.stringify([
-          "REQ",
-          subId,
-          { kinds: [0], authors: [pubkey], limit: 1 },
-        ]),
-      );
-    });
-
-    ws.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        if (msg[0] === "EVENT" && msg[1] === subId) {
-          const event = msg[2];
-          if (
-            event &&
-            typeof event.content === "string" &&
-            typeof event.created_at === "number" &&
-            event.pubkey === pubkey
-          ) {
-            if (!latest || event.created_at > latest.created_at) {
-              latest = { content: event.content, created_at: event.created_at };
-            }
-          }
-        } else if (msg[0] === "EOSE" && msg[1] === subId) {
-          clearTimeout(timeout);
-          finish(latest);
-        }
-      } catch {
-        // ignore parse errors
-      }
-    });
-
-    ws.on("error", () => {
-      clearTimeout(timeout);
-      finish(null);
-    });
-
-    ws.on("close", () => {
-      clearTimeout(timeout);
-      finish(latest);
-    });
-  });
-}
 
 // =============================================================================
 // AT Protocol (Bluesky) resolution — DIDs, handles, bsky.app URLs all land

@@ -2,15 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 
 // parseNostrProfileContent backs both single-profile enrichment and the NIP-50
 // name search used by discovery fallback branch 2 (UNIVERSAL-FEED-ADR §V.5.8).
-// resolver.ts touches the DB pool and ws at import time only lazily, but it
-// pulls in pg via the shared client — mock the heavy deps so the pure helper
-// can be imported in isolation.
-vi.mock("@platform-pub/shared/db/client.js", () => ({ pool: { query: vi.fn() } }));
+// It lives in nostr-search.ts (extracted from resolver.ts, RESOLVER-DISCOVERY-ADR
+// Phase 0); mock the logger so the pure helper imports in isolation.
 vi.mock("@platform-pub/shared/lib/logger.js", () => ({
   default: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
-const { parseNostrProfileContent } = await import("../src/lib/resolver.js");
+const { parseNostrProfileContent } = await import("../src/lib/nostr-search.js");
 
 describe("parseNostrProfileContent (nostr name search branch 2)", () => {
   it("prefers display_name over name", () => {
