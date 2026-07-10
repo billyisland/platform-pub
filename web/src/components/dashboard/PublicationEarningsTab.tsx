@@ -33,6 +33,9 @@ export function PublicationEarningsTab({ publicationId }: Props) {
         <SummaryCard label="Pending" value={fmt(summary.pendingPence)} />
         <SummaryCard label="Paid out" value={fmt(summary.paidPence)} />
         <SummaryCard label="Paid reads" value={summary.readCount.toLocaleString()} />
+        {summary.subscriptionNetPence > 0 && (
+          <SummaryCard label="From subscriptions" value={fmt(summary.subscriptionNetPence)} />
+        )}
       </div>
 
       {/* Per-article table */}
@@ -74,12 +77,13 @@ export function PublicationEarningsTab({ publicationId }: Props) {
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-ui-xs text-black">
-                      {fmt(p.totalPoolPence - p.platformFeePence)} distributed
+                      {fmt(p.totalPoolPence - p.platformFeePence + (p.subNetPence ?? 0))} distributed
                     </p>
                     <p className="text-ui-xs text-grey-300">
                       {new Date(p.triggeredAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                       {' \u00b7 '}Platform fee: {fmt(p.platformFeePence)}
                       {p.flatFeesPaidPence > 0 && ` \u00b7 Flat fees: ${fmt(p.flatFeesPaidPence)}`}
+                      {(p.subNetPence ?? 0) > 0 && ` \u00b7 Subscriptions: ${fmt(p.subNetPence)}`}
                     </p>
                   </div>
                   <span className={`text-ui-xs ${p.status === 'completed' ? 'text-grey-400' : 'text-black'}`}>

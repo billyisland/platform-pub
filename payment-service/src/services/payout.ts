@@ -64,13 +64,21 @@ export function computePublicationSplits(
   articleShares: ArticleShare[],
   articleEarnings: Map<string, number>,
   standingMembers: StandingMember[],
+  subNetPence: number = 0,
 ): SplitResult {
   // Sum-then-floor on the GROSS pool — deliberately a DIFFERENT formula from the
   // per-row-then-floor rule in readNetSql/perReadNetPence (shared/lib/per-read-net.ts).
   // A publication distributes one pooled fee across the whole pool, not a fee per
   // read, so do NOT "consolidate" this into readNetSql — it would change the rounding.
+  //
+  // subNetPence (§1.3): publication SUBSCRIPTION earnings joining this pool.
+  // Already NET — logSubscriptionCharge floors the platform fee per charge —
+  // so it is added to the pool AFTER the pooled fee, never run through it
+  // (the same already-net rule as the writer cycle's `sub` CTE). Sub income is
+  // not tied to an article, so it never feeds article-override earnings; it
+  // enlarges the pool that flat fees draw from and standing members split.
   const platformFeePence = Math.floor(grossPence * feeBps / 10000)
-  let remainingPool = grossPence - platformFeePence
+  let remainingPool = grossPence - platformFeePence + subNetPence
   let flatFeesPaidPence = 0
   const splits: Split[] = []
   const flatFeeShareIds: string[] = []
@@ -1077,13 +1085,43 @@ class PayoutService {
       // cycles non-complementary — an article joining a publication left its
       // old reads claimable by BOTH, an article leaving stranded its reads with
       // NEITHER). A read belongs to the cycle its snapshot says, forever.
-      `SELECT r.publication_id, SUM(r.amount_pence) AS gross_pence
-       FROM read_events r
-       WHERE r.publication_id IS NOT NULL
-         AND r.state = 'platform_settled'
-         AND r.writer_payout_id IS NULL
-       GROUP BY r.publication_id
-       HAVING SUM(${readNetSql('r.amount_pence', '$1')}) >= $2`,
+      //
+      // §1.3: the `subs` CTE folds publication SUBSCRIPTION earnings (already
+      // NET) into the threshold — the publication twin of the writer cycle's
+      // `sub` CTE, with the same collection gate (settled_at IS NOT NULL,
+      // migration 146: only earnings whose reader-tab debit was actually
+      // collected). The UNION candidate set lets a publication with only
+      // subscription income qualify.
+      `WITH reads AS (
+         SELECT r.publication_id,
+                SUM(r.amount_pence) AS gross_pence,
+                SUM(${readNetSql('r.amount_pence', '$1')}) AS net_pence
+         FROM read_events r
+         WHERE r.publication_id IS NOT NULL
+           AND r.state = 'platform_settled'
+           AND r.writer_payout_id IS NULL
+         GROUP BY r.publication_id
+       ),
+       subs AS (
+         SELECT publication_id, SUM(amount_pence) AS sub_net_pence
+         FROM subscription_events
+         WHERE event_type = 'subscription_earning'
+           AND publication_id IS NOT NULL
+           AND publication_payout_id IS NULL
+           AND settled_at IS NOT NULL
+         GROUP BY publication_id
+       ),
+       candidates AS (
+         SELECT publication_id FROM reads
+         UNION
+         SELECT publication_id FROM subs
+       )
+       SELECT c.publication_id,
+              COALESCE(reads.gross_pence, 0) AS gross_pence
+       FROM candidates c
+       LEFT JOIN reads ON reads.publication_id = c.publication_id
+       LEFT JOIN subs  ON subs.publication_id  = c.publication_id
+       WHERE COALESCE(reads.net_pence, 0) + COALESCE(subs.sub_net_pence, 0) >= $2`,
       [config.platformFeeBps, config.writerPayoutThresholdPence]
     )
 
@@ -1119,9 +1157,11 @@ class PayoutService {
   // rows while N transfers stayed live. Now:
   //
   //   1. reservePublicationPayout (Txn 1) — insert publication_payouts row as
-  //      'pending', insert all splits as 'pending', mark flat-fee shares as
-  //      paid_out, and stamp read_events with writer_payout_id so another
-  //      cycle can't re-count the same reads.
+  //      'pending', claim read_events (writer_payout_id) + publication
+  //      subscription earnings (subscription_events.publication_payout_id, §1.3)
+  //      under it so another cycle can't re-count them, compute splits from
+  //      exactly the claimed sets, insert all splits as 'pending', mark
+  //      flat-fee shares as paid_out.
   //   2. processPublicationSplits — per-split Stripe call with stable
   //      idempotencyKey=`pub-split-${payoutId}-${accountId}`, each split
   //      status update in its own small transaction. Stripe throw flips only
@@ -1156,9 +1196,10 @@ class PayoutService {
     return totalTransferred
   }
 
-  // Txn 1: reserve — insert a 'pending' publication_payouts row, insert all
-  // splits as 'pending', mark flat-fee shares paid_out, stamp read_events
-  // under the payout. Commits before any Stripe call.
+  // Txn 1: reserve — insert a 'pending' publication_payouts row, claim the
+  // publication's unpaid reads + subscription earnings under it, compute the
+  // splits from the claimed sets, insert all splits as 'pending', mark
+  // flat-fee shares paid_out. Commits before any Stripe call.
   private async reservePublicationPayout(
     publicationId: string,
     feeBps: number,
@@ -1169,19 +1210,64 @@ class PayoutService {
         [publicationId],
       )
 
-      const { rows: [balRow] } = await client.query<{ gross_pence: string }>(
-        // r.publication_id, not the article's current publication — must match
-        // the claim UPDATE below exactly (see the eligibility query's note).
-        `SELECT COALESCE(SUM(r.amount_pence), 0) AS gross_pence
-         FROM read_events r
-         WHERE r.publication_id = $1
-           AND r.state = 'platform_settled'
-           AND r.writer_payout_id IS NULL`,
+      // Insert the payout row first (zero totals, patched from the claimed
+      // sets below) so there is an id to stamp onto the rows we claim — then
+      // claim FIRST and derive every amount from exactly what was claimed
+      // (RETURNING), never sum-a-subquery-then-blanket-UPDATE. The old shape
+      // had the same settlement race audit F6 closed in the writer cycle: a
+      // read advancing to platform_settled in a concurrent confirmSettlement
+      // (which does NOT hold this publication's lock) between the sum and the
+      // stamp got claimed by the unconstrained UPDATE but was absent from the
+      // pre-summed pool — advanced to writer_paid while its money was never
+      // distributed. Summing the claimed set closes it.
+      const { rows: [payoutRow] } = await client.query<{ id: string }>(
+        `INSERT INTO publication_payouts
+           (publication_id, total_pool_pence, platform_fee_pence, flat_fees_paid_pence, remaining_pool_pence, status)
+         VALUES ($1, 0, 0, 0, 0, 'pending')
+         RETURNING id`,
         [publicationId],
       )
+      const payoutId = payoutRow.id
 
-      const lockedGross = parseInt(balRow.gross_pence, 10)
-      if (lockedGross <= 0) {
+      // Claim reads: r.publication_id, not the article's current publication —
+      // the exact complement of the writer cycle's exclusion (see the
+      // eligibility query's note).
+      const { rows: claimedReads } = await client.query<{ amount_pence: number }>(
+        `UPDATE read_events
+         SET writer_payout_id = $1
+         WHERE read_events.publication_id = $2
+           AND read_events.state = 'platform_settled'
+           AND read_events.writer_payout_id IS NULL
+         RETURNING amount_pence`,
+        [payoutId, publicationId],
+      )
+      const lockedGross = claimedReads.reduce((s, r) => s + r.amount_pence, 0)
+
+      // §1.3: claim publication SUBSCRIPTION earnings (already NET) under this
+      // payout — the publication twin of the writer cycle's F1 claim.
+      // Collection gate (migration 146): settled_at IS NOT NULL — only earnings
+      // whose reader-tab debit was actually collected (stamped by
+      // confirmSettlement, or at charge time when pre-paid credit funded it).
+      // Never reintroduce an ungated claim. publication_payout_id makes each
+      // earning claimed exactly once; a terminal split failure keeps the claim
+      // (same manual re-pay posture as the reads, §1.2).
+      const { rows: claimedSubs } = await client.query<{ amount_pence: number }>(
+        `UPDATE subscription_events
+         SET publication_payout_id = $1
+         WHERE publication_id = $2
+           AND event_type = 'subscription_earning'
+           AND publication_payout_id IS NULL
+           AND settled_at IS NOT NULL
+         RETURNING amount_pence`,
+        [payoutId, publicationId],
+      )
+      const subNetPence = claimedSubs.reduce((s, r) => s + r.amount_pence, 0)
+
+      if (claimedReads.length === 0 && claimedSubs.length === 0) {
+        // Nothing to distribute — claimed by a pending payout from a prior
+        // (crashed) cycle, or charged back since the eligibility scan. Nothing
+        // was stamped, so drop the empty payout row and bow out.
+        await client.query(`DELETE FROM publication_payouts WHERE id = $1`, [payoutId])
         logger.warn(
           { publicationId },
           'Publication has no unreserved revenue — skipping (likely claimed by a pending payout)',
@@ -1206,19 +1292,18 @@ class PayoutService {
 
       if (articleIds.length > 0) {
         const { rows: artRows } = await client.query<{ article_id: string; net_pence: string }>(
-          // r.publication_id = $3: overrides distribute only reads THIS pool is
-          // claiming — an article that joined the publication after accruing
-          // personal (publication_id NULL) reads must not have those reads'
-          // net counted into its override here while the writer cycle pays them.
+          // Keyed on the CLAIMED set (writer_payout_id = this payout) so the
+          // override base can't drift from what the pool is distributing. This
+          // subsumes the old publication_id filter: an article that joined the
+          // publication after accruing personal (publication_id NULL) reads
+          // never has those reads claimed here — the writer cycle pays them.
           `SELECT r.article_id,
                   COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence
            FROM read_events r
            WHERE r.article_id = ANY($1)
-             AND r.publication_id = $3
-             AND r.state = 'platform_settled'
-             AND r.writer_payout_id IS NULL
+             AND r.writer_payout_id = $3
            GROUP BY r.article_id`,
-          [articleIds, feeBps, publicationId],
+          [articleIds, feeBps, payoutId],
         )
         for (const r of artRows) {
           articleEarnings.set(r.article_id, parseInt(r.net_pence, 10))
@@ -1255,17 +1340,7 @@ class PayoutService {
       }))
 
       const { platformFeePence, splits, remainingPool, flatFeesPaidPence, flatFeeShareIds } =
-        computePublicationSplits(lockedGross, feeBps, articleShares, articleEarnings, standingMembers)
-
-      // --- Insert publication_payouts as pending ---
-      const { rows: [payoutRow] } = await client.query<{ id: string }>(
-        `INSERT INTO publication_payouts
-           (publication_id, total_pool_pence, platform_fee_pence, flat_fees_paid_pence, remaining_pool_pence, status)
-         VALUES ($1, $2, $3, $4, $5, 'pending')
-         RETURNING id`,
-        [publicationId, lockedGross, platformFeePence, flatFeesPaidPence, remainingPool],
-      )
-      const payoutId = payoutRow.id
+        computePublicationSplits(lockedGross, feeBps, articleShares, articleEarnings, standingMembers, subNetPence)
 
       // --- Insert all splits as pending ---
       for (const split of splits) {
@@ -1279,7 +1354,7 @@ class PayoutService {
         )
       }
 
-      // --- Reserve flat-fee shares and read_events under this payout ---
+      // --- Reserve flat-fee shares under this payout ---
       if (flatFeeShareIds.length > 0) {
         await client.query(
           `UPDATE publication_article_shares SET paid_out = TRUE WHERE id = ANY($1)`,
@@ -1287,17 +1362,21 @@ class PayoutService {
         )
       }
 
+      // Patch the payout row's totals from the claimed sets. total_pool_pence
+      // stays Σ gross read amounts; sub_net_pence carries the subscription leg
+      // separately (the F5 chargeback prorates by read_gross ÷ (pool + sub_net),
+      // so sub-derived split money is never reversed by a read chargeback).
       await client.query(
-        `UPDATE read_events
-         SET writer_payout_id = $1
-         WHERE read_events.publication_id = $2
-           AND read_events.state = 'platform_settled'
-           AND read_events.writer_payout_id IS NULL`,
-        [payoutId, publicationId],
+        `UPDATE publication_payouts
+         SET total_pool_pence = $2, platform_fee_pence = $3,
+             flat_fees_paid_pence = $4, remaining_pool_pence = $5,
+             sub_net_pence = $6
+         WHERE id = $1`,
+        [payoutId, lockedGross, platformFeePence, flatFeesPaidPence, remainingPool, subNetPence],
       )
 
       logger.info(
-        { payoutId, publicationId, grossPence: lockedGross, platformFeePence, splits: splits.length },
+        { payoutId, publicationId, grossPence: lockedGross, subNetPence, platformFeePence, splits: splits.length },
         'Publication payout reserved (pending Stripe transfers)',
       )
 

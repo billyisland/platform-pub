@@ -25,6 +25,47 @@ describe('computePublicationSplits', () => {
     })
   })
 
+  describe('subscription leg (§1.3)', () => {
+    it('sub net joins the pool AFTER the pooled fee — never run through it', () => {
+      const result = computePublicationSplits(1000, feeBps, [], new Map(), [], 500)
+      // Fee is computed on gross reads only; the sub leg is already net
+      // (logSubscriptionCharge floors the fee per charge).
+      expect(result.platformFeePence).toBe(80)
+      expect(result.remainingPool).toBe(920 + 500)
+    })
+
+    it('a subscription-only pool distributes with zero read gross', () => {
+      const members: StandingMember[] = [{ accountId: 'acc-1', revenueShareBps: 5000 }]
+      const result = computePublicationSplits(0, feeBps, [], new Map(), members, 400)
+      expect(result.platformFeePence).toBe(0)
+      expect(result.remainingPool).toBe(400)
+      expect(result.splits).toHaveLength(1)
+      expect(result.splits[0]).toMatchObject({ accountId: 'acc-1', amountPence: 200 })
+    })
+
+    it('standing members split the sub-enlarged pool', () => {
+      const members: StandingMember[] = [{ accountId: 'acc-1', revenueShareBps: 5000 }]
+      const result = computePublicationSplits(1000, feeBps, [], new Map(), members, 500)
+      expect(result.splits[0].amountPence).toBe(710) // floor((920 + 500) * 0.5)
+    })
+
+    it('flat fees can draw from the sub leg', () => {
+      const shares: ArticleShare[] = [{
+        id: 'share-1', articleId: 'art-1', accountId: 'acc-1',
+        shareType: 'flat_fee_pence', shareValue: 200, paidOut: false,
+      }]
+      const result = computePublicationSplits(0, feeBps, shares, new Map(), [], 300)
+      expect(result.flatFeesPaidPence).toBe(200)
+      expect(result.remainingPool).toBe(100)
+    })
+
+    it('omitted sub leg defaults to 0 (unchanged legacy behaviour)', () => {
+      const withDefault = computePublicationSplits(1000, feeBps, [], new Map(), [])
+      const withZero = computePublicationSplits(1000, feeBps, [], new Map(), [], 0)
+      expect(withDefault).toEqual(withZero)
+    })
+  })
+
   describe('flat fee shares', () => {
     it('deducts flat fee from pool and creates a split', () => {
       const shares: ArticleShare[] = [{

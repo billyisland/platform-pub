@@ -22,8 +22,11 @@ import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 //   • Writer leg — post subscription_earning (+net) for WRITER subscriptions and
 //     fold it into the per-read payout base (payout.ts claims it once via
 //     subscription_events.writer_payout_id). Publication subscriptions collect
-//     (reader leg) but post no earning ledger entry here — publication income
-//     flows through the publication pool, a follow-on.
+//     (reader leg) and post no earning ledger entry here — like publication
+//     reads, they enter the ledger only at payout time (publication_split
+//     entries); the publication payout cycle claims the earning event via
+//     subscription_events.publication_payout_id and distributes it through the
+//     pool (§1.3, migration 152).
 //
 // Rounding (audit F11): the platform fee now FLOORs (Math.floor), matching the
 // per-row-then-floor rule the rest of the money paths follow — not the prior
@@ -108,7 +111,9 @@ export async function logSubscriptionCharge(
   // Writer leg: only WRITER subscriptions post an earned ledger entry + fold into
   // the per-read payout base. The +net credits the writer's earned total (mirror
   // of the reader's subscription_charge debit); payout.ts pays it via the base
-  // UNION, claimed once by subscription_events.writer_payout_id.
+  // UNION, claimed once by subscription_events.writer_payout_id. A PUBLICATION
+  // earning posts no ledger entry (publication distribution is modeled at payout
+  // time, per split) — the pool cycle claims it via publication_payout_id (§1.3).
   if (writerId) {
     await recordLedger(client, {
       accountId: writerId,

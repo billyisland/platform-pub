@@ -304,7 +304,11 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
       )
       const feeBps = feeRows.length > 0 ? parseInt(feeRows[0].value, 10) : 800
 
-      // Summary totals: gross reads for publication articles, net after platform fee
+      // Summary totals: gross reads for publication articles, net after platform fee.
+      // Keyed on the denormalised r.publication_id — the same column the payout
+      // cycle selects/claims on — never articles.publication_id (an article
+      // moving publications must not re-home its historical reads; the display
+      // must match what the pool actually distributes).
       const { rows: [summary] } = await pool.query<{
         gross_pence: string
         net_pence: string
@@ -321,10 +325,32 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
              THEN ${readNetSql('r.amount_pence', '$2')} ELSE 0 END), 0) AS paid_pence,
            COUNT(r.id) AS read_count
          FROM read_events r
-         JOIN articles a ON a.id = r.article_id
-         WHERE a.publication_id = $1
+         WHERE r.publication_id = $1
            AND r.state IN ('platform_settled', 'writer_paid')`,
         [id, feeBps]
+      )
+
+      // Subscription income (§1.3): already NET (fee floored per charge).
+      // Collected (settled_at NOT NULL) mirrors the reads' platform_settled
+      // gate — uncollected charges are excluded from all three buckets, same
+      // as accrued reads. Pending = collected but unclaimed; paid = claimed by
+      // a publication payout.
+      const { rows: [subSummary] } = await pool.query<{
+        sub_net_pence: string
+        sub_pending_pence: string
+        sub_paid_pence: string
+      }>(
+        `SELECT
+           COALESCE(SUM(CASE WHEN settled_at IS NOT NULL
+             THEN amount_pence ELSE 0 END), 0) AS sub_net_pence,
+           COALESCE(SUM(CASE WHEN settled_at IS NOT NULL AND publication_payout_id IS NULL
+             THEN amount_pence ELSE 0 END), 0) AS sub_pending_pence,
+           COALESCE(SUM(CASE WHEN publication_payout_id IS NOT NULL
+             THEN amount_pence ELSE 0 END), 0) AS sub_paid_pence
+         FROM subscription_events
+         WHERE publication_id = $1
+           AND event_type = 'subscription_earning'`,
+        [id]
       )
 
       // Per-article breakdown
@@ -334,7 +360,9 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
            COUNT(r.id) AS read_count,
            COALESCE(SUM(${readNetSql('r.amount_pence', '$2')}), 0) AS net_pence
          FROM articles a
-         LEFT JOIN read_events r ON r.article_id = a.id AND r.state IN ('platform_settled', 'writer_paid')
+         LEFT JOIN read_events r ON r.article_id = a.id
+           AND r.publication_id = $1
+           AND r.state IN ('platform_settled', 'writer_paid')
          WHERE a.publication_id = $1 AND a.published_at IS NOT NULL AND a.deleted_at IS NULL
          GROUP BY a.id, a.title, a.slug, a.published_at
          ORDER BY net_pence DESC`,
@@ -343,7 +371,8 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
 
       // Recent payouts
       const { rows: payouts } = await pool.query(
-        `SELECT pp.id, pp.total_pool_pence, pp.platform_fee_pence, pp.flat_fees_paid_pence,
+        `SELECT pp.id, pp.total_pool_pence, pp.sub_net_pence, pp.platform_fee_pence,
+                pp.flat_fees_paid_pence,
                 pp.remaining_pool_pence, pp.status, pp.triggered_at, pp.completed_at,
                 json_agg(json_build_object(
                   'accountId', pps.account_id,
@@ -364,13 +393,18 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
         [id]
       )
 
+      // Headline pending/paid/net fold BOTH legs (reads + subscriptions) so
+      // they track what the pool actually distributes; subscriptionNetPence is
+      // the sub leg broken out for display.
+      const subNetPence = parseInt(subSummary.sub_net_pence, 10)
       return reply.send({
         summary: {
           grossPence: parseInt(summary.gross_pence, 10),
-          netPence: parseInt(summary.net_pence, 10),
-          pendingPence: parseInt(summary.pending_pence, 10),
-          paidPence: parseInt(summary.paid_pence, 10),
+          netPence: parseInt(summary.net_pence, 10) + subNetPence,
+          pendingPence: parseInt(summary.pending_pence, 10) + parseInt(subSummary.sub_pending_pence, 10),
+          paidPence: parseInt(summary.paid_pence, 10) + parseInt(subSummary.sub_paid_pence, 10),
           readCount: parseInt(summary.read_count, 10),
+          subscriptionNetPence: subNetPence,
         },
         articles: articles.map((a: any) => ({
           articleId: a.article_id,
@@ -383,6 +417,7 @@ export async function publicationRevenueRoutes(app: FastifyInstance) {
         payouts: payouts.map((p: any) => ({
           id: p.id,
           totalPoolPence: p.total_pool_pence,
+          subNetPence: p.sub_net_pence,
           platformFeePence: p.platform_fee_pence,
           flatFeesPaidPence: p.flat_fees_paid_pence,
           remainingPoolPence: p.remaining_pool_pence,

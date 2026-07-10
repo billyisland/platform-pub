@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict o06DkuswcoY89PUarPVQuhheZKAtK1ValSmJ5ZIpeP0O7aJ6gTt2ybUPlMiMsnF
+\restrict BUVVXyVpNzUKie0rjxVheewjAauZNkpqHfBCrKfinIwSIKUgoI9mffDqaxG7UET
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1877,7 +1877,8 @@ CREATE TABLE public.publication_payouts (
     status public.payout_status DEFAULT 'pending'::public.payout_status NOT NULL,
     triggered_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    sub_net_pence integer DEFAULT 0 NOT NULL
 );
 
 
@@ -2428,6 +2429,7 @@ CREATE TABLE public.subscription_events (
     publication_id uuid,
     writer_payout_id uuid,
     settled_at timestamp with time zone,
+    publication_payout_id uuid,
     CONSTRAINT subscription_events_event_type_check CHECK ((event_type = ANY (ARRAY['subscription_charge'::text, 'subscription_earning'::text, 'subscription_read'::text, 'expiry_warning_sent'::text]))),
     CONSTRAINT subscription_events_target_check CHECK (((writer_id IS NOT NULL) OR (publication_id IS NOT NULL)))
 );
@@ -5242,6 +5244,13 @@ CREATE INDEX idx_sub_events_created ON public.subscription_events USING btree (c
 
 
 --
+-- Name: idx_sub_events_pub_earning_unpaid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sub_events_pub_earning_unpaid ON public.subscription_events USING btree (publication_id) WHERE ((event_type = 'subscription_earning'::text) AND (publication_id IS NOT NULL) AND (publication_payout_id IS NULL));
+
+
+--
 -- Name: idx_sub_events_reader; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6972,6 +6981,14 @@ ALTER TABLE ONLY public.subscription_events
 
 
 --
+-- Name: subscription_events subscription_events_publication_payout_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subscription_events
+    ADD CONSTRAINT subscription_events_publication_payout_id_fkey FOREIGN KEY (publication_payout_id) REFERENCES public.publication_payouts(id);
+
+
+--
 -- Name: subscription_events subscription_events_reader_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7495,7 +7512,8 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict o06DkuswcoY89PUarPVQuhheZKAtK1ValSmJ5ZIpeP0O7aJ6gTt2ybUPlMiMsnF
+\unrestrict BUVVXyVpNzUKie0rjxVheewjAauZNkpqHfBCrKfinIwSIKUgoI9mffDqaxG7UET
+
 
 
 --
@@ -7653,4 +7671,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('148_external_items_profile_hydrated.sql'),
     ('149_pledge_drives_draft_fk_set_null.sql'),
     ('150_discovery_known_world_trgm.sql'),
-    ('151_external_authors_deleted_at.sql');
+    ('151_external_authors_deleted_at.sql'),
+    ('152_publication_subscription_pool.sql');

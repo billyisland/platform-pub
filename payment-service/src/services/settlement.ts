@@ -899,7 +899,8 @@ class SettlementService {
       );
 
       // F5: for the publication reads being charged back, load the paying
-      // publication payout's gross pool + its PAID splits (initiated|completed —
+      // publication payout's pool (gross reads + subscription leg, §1.3) + its
+      // PAID splits (initiated|completed —
       // money that actually left the platform) so the planner can reverse each
       // split recipient proportionally. A publication read's writer_payout_id is
       // a publication_payouts.id (the column is overloaded across payout kinds;
@@ -918,12 +919,19 @@ class SettlementService {
       if (pubPayoutIds.length > 0) {
         const { rows: poolRows } = await client.query<{
           id: string;
-          total_pool_pence: number;
+          pool_pence: number;
         }>(
-          `SELECT id, total_pool_pence FROM publication_payouts WHERE id = ANY($1::uuid[])`,
+          // §1.3: the prorating denominator is the WHOLE pool the payout
+          // distributed — gross reads + the subscription leg. Splits are paid
+          // from both, but a read chargeback must only reverse the read-derived
+          // slice: subscription debt on chargeback is the recorded
+          // platform-absorbs posture (chargeback.ts header), so the sub leg
+          // dilutes the read's share rather than being reversed itself.
+          `SELECT id, total_pool_pence + sub_net_pence AS pool_pence
+           FROM publication_payouts WHERE id = ANY($1::uuid[])`,
           [pubPayoutIds],
         );
-        for (const p of poolRows) poolByPayout.set(p.id, p.total_pool_pence);
+        for (const p of poolRows) poolByPayout.set(p.id, p.pool_pence);
 
         const { rows: splitRows } = await client.query<{
           publication_payout_id: string;

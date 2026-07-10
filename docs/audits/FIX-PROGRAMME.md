@@ -23,6 +23,48 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Publication-subscription distribution (CONSOLIDATED-TODO
+  §1.3, migration 152) — the last hole in the subscription money model.**
+  A publication subscription collected the reader leg (tab debit +
+  `subscription_charge`, F1/migration 140) and then the money sat: no earning
+  ledger entry (deliberate — publication distribution is modeled at payout
+  time) and no payout leg (the writer cycle's sub CTE excludes
+  `publication_id IS NOT NULL`; the publication pool summed only
+  `read_events`). Now the publication payout cycle claims and distributes it.
+  **Migration 152**: `subscription_events.publication_payout_id` (FK →
+  `publication_payouts`; `writer_payout_id` couldn't be overloaded the way
+  `read_events`' is — it carries an FK to `writer_payouts`), partial claim
+  index, and `publication_payouts.sub_net_pence` (the sub leg recorded
+  separately — `total_pool_pence` stays Σ gross reads). **Cycle** (`payout.ts`):
+  eligibility UNIONs reads + settled unclaimed publication sub earnings
+  (threshold on readNet + subNet); `computePublicationSplits` gains
+  `subNetPence`, added to the pool AFTER the pooled fee (sub earnings are
+  already net — fee floored per charge — the same never-through-the-fee rule
+  as the writer cycle's `sub` CTE); reserve claims sub events gated
+  `settled_at IS NOT NULL` (migration-146 collection gate — never ungated).
+  **Reserve also converted to claim-first-then-sum (RETURNING)** — the old
+  sum-then-stamp had the same settlement race audit F6 closed in the writer
+  cycle (a read settling between sum and stamp was claimed but never
+  distributed); article-override earnings now key on the claimed set. A
+  subscription-only pool (zero reads) qualifies and distributes. **F5
+  chargeback** (`settlement.ts` loader): proration denominator is now
+  `total_pool_pence + sub_net_pence` — splits are paid from both legs but a
+  read chargeback reverses only the read-derived slice (subscription debt on
+  chargeback stays the recorded platform-absorbs posture, chargeback.ts
+  header). **Display** (`/publications/:id/earnings`): summary folds both
+  legs into net/pending/paid + breaks out `subscriptionNetPence`; payout rows
+  carry `subNetPence`; also fixed the summary keying on
+  `articles.publication_id` → the denormalised `read_events.publication_id`
+  (invariant conformance — display now matches what the pool distributes);
+  web `PublicationEarningsTab` shows a "From subscriptions" card + per-payout
+  subscription line. Validation: payment-service build + 110 tests (5 new
+  `computePublicationSplits` sub-leg tests), gateway build + 263 tests, web
+  `next build` clean, root eslint 0 errors, drift guard 4/4 green, ledger
+  adjacency green, migration applied to dev. NOT runtime-verified (needs
+  container rebuild + a pub-subscription → settle → cycle walk; queued in
+  CONSOLIDATED-TODO §11). The remaining publication-sub caveat: renewal
+  charges still ride the shared expiry worker — nothing §1.3-specific left.
+
 - **2026-07-10** — **Discovery-expansion post-ship review: six fixes + the
   §8.3 author-deletion tombstone + the squatter amendment (migration 151).**
   Same-day five-agent review of the shipped RESOLVER-DISCOVERY-ADR phases

@@ -95,9 +95,12 @@ export interface ReversalRead {
    */
   isPublication?: boolean
   /**
-   * F5: the gross pool of the publication payout that paid this read
-   * (publication_payouts.total_pool_pence = Σ gross read amounts in that payout).
-   * The prorating base for splitting this one read's chargeback across recipients.
+   * F5: the whole pool of the publication payout that paid this read —
+   * total_pool_pence (Σ gross read amounts) + sub_net_pence (the subscription
+   * leg, §1.3). The prorating base for splitting this one read's chargeback
+   * across recipients: splits were paid from both legs, but only the
+   * read-derived slice reverses (subscription debt on chargeback is the
+   * platform-absorbs posture above), so the sub leg dilutes the read's share.
    */
   publicationPoolPence?: number
   /**
