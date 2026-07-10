@@ -4,6 +4,7 @@ import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { requireAuth } from "../../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { markFollowListDirty } from "../../lib/discovery-publish.js";
+import { resolveApSourceUri } from "../../lib/activitypub-resolve.js";
 import { UUID_RE, loadFeed, tagged, stepToWeight } from "./shared.js";
 
 // Maps an external protocol to its one-shot subscribe-time ingest job.
@@ -332,14 +333,8 @@ async function addSource(
   }
 
   // (protocol, sourceUri) — upsert source + ensure subscription + insert row
-  const {
-    protocol,
-    sourceUri,
-    displayName,
-    description,
-    avatarUrl,
-    relayUrls,
-  } = input;
+  const { protocol, displayName, description, avatarUrl, relayUrls } = input;
+  let { sourceUri } = input;
 
   if (protocol === "rss") {
     try {
@@ -350,12 +345,14 @@ async function addSource(
       throw tagged("TARGET_NOT_FOUND");
     }
   } else if (protocol === "activitypub") {
-    try {
-      const u = new URL(sourceUri);
-      if (u.protocol !== "https:") throw tagged("TARGET_NOT_FOUND");
-    } catch {
-      throw tagged("TARGET_NOT_FOUND");
-    }
+    // Accept an https actor URI or a canonical acct (user@domain, optional
+    // leading @) — discovery picks nominate accts (RESOLVER-DISCOVERY-ADR
+    // §5.2), and every AP add path is acct-tolerant per the omnivorous-input
+    // rule. The webfinger runs here, before the transaction; failure maps to
+    // the existing 404.
+    const resolved = await resolveApSourceUri(sourceUri);
+    if (!resolved) throw tagged("TARGET_NOT_FOUND");
+    sourceUri = resolved;
   } else if (protocol === "atproto") {
     if (!/^did:(plc|web):[a-zA-Z0-9.:_-]+$/.test(sourceUri))
       throw tagged("TARGET_NOT_FOUND");

@@ -23,6 +23,37 @@ starts.
 
 ## Progress
 
+- **2026-07-10** — **Resolver discovery expansion Phase 2: `activitypub_discovery`
+  + addSource acct handling.** `RESOLVER-DISCOVERY-ADR.md` §5. New
+  `gateway/src/lib/ap-account-search.ts`: `ApAccountSearchProvider` interface
+  (the FASP hedge — a Fediscovery `account_search` provider slots in with no
+  resolver changes once §5.1's adoption bar clears) with the v1
+  `mastodon_instances` provider — unauthenticated `GET /api/v2/search?type=accounts`
+  (free since Mastodon 4.0; no `resolve`, deliberate — webfinger happens once,
+  at pick time) against `MASTODON_DISCOVERY_INSTANCES` (comma-separated, default
+  `mastodon.social`; docker-compose + DEPLOYMENT.md rows added, distinct from
+  the ASSISTED allowlist). Good-citizen guards per §5.2: `safeFetch` 5s
+  timeout, per-(instance, query) 5-min LRU memo (errors/429 memo an empty
+  result, suppressing immediate retries), per-instance concurrency 1
+  (tail-chained), per-instance fail-soft to `[]`, min query length 3. Acct
+  canonicalisation: domainless local accts get the instance host appended;
+  cross-instance dedupe by lowercased canonical acct; `Account.uri` (actor
+  identifier) carried on the candidate for known-world dedupe. Resolver:
+  `activitypub_discovery` registered at both trigger sites (free_text +
+  no-exact-hit platform_username), gated `discover && !skipExternal` like its
+  siblings; `discoverActivityPub` maps candidates to speculative activitypub
+  matches (sourceUri = canonical acct) deduping against existing AP matches on
+  BOTH key-spaces (acct + actor URI — a Phase A known-world hit wins, it's
+  probable). Pick path (§5.2 correction, down-payment on audit F1):
+  `addSource`'s AP branch now accepts an acct via new
+  `resolveApSourceUri` (`activitypub-resolve.ts`) — https actor URI passes
+  through; acct shape (optional leading @) webfingers to the actor URI before
+  the transaction; failure → the existing 404. Tests: 13 new provider tests
+  (`ap-account-search.test.ts`), 8 new `resolveApSourceUri` tests, harness
+  extended (AP branch in the gating matrix + isolation + known-world-dedupe;
+  25 orchestration tests). Validated: gateway suite 207 passed / 17 skipped,
+  `tsc` clean, root eslint 0 errors.
+
 - **2026-07-10** — **Resolver discovery expansion Phase 1: known-world index
   (migration 150).** `RESOLVER-DISCOVERY-ADR.md` §4. New Phase A branch
   `searchKnownWorld` (`gateway/src/lib/resolver.ts`): pg_trgm fuzzy match over

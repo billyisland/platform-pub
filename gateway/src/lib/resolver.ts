@@ -17,6 +17,7 @@ import {
   extractFromThreadiverseUrl,
 } from "./activitypub-resolve.js";
 import { searchCatalog } from "./discovery-catalog.js";
+import { searchApAccounts } from "./ap-account-search.js";
 import {
   fetchNostrProfile,
   searchNostrProfiles,
@@ -248,6 +249,7 @@ export async function resolve(
             "catalog_discovery",
             "bluesky_discovery",
             "nostr_discovery",
+            "activitypub_discovery",
           );
         }
       }
@@ -375,6 +377,7 @@ export async function resolve(
           "catalog_discovery",
           "bluesky_discovery",
           "nostr_discovery",
+          "activitypub_discovery",
         );
       }
       break;
@@ -612,9 +615,10 @@ async function resolveAsync(
       await storeDiscoveryPartial();
     }
 
-    // Branches 1 (Bluesky) + 2 (Nostr) do network I/O — run concurrently and
-    // persist partials as each returns. Each dedupes against its own protocol's
-    // existing matches, so concurrent pushes touch disjoint key-spaces.
+    // Branches 1 (Bluesky) + 2 (Nostr) + 6 (ActivityPub) do network I/O — run
+    // concurrently and persist partials as each returns. Each dedupes against
+    // its own protocol's existing matches, so concurrent pushes touch disjoint
+    // key-spaces.
     await Promise.all([
       safeChain("bluesky_discovery", discoverBluesky(query, matches), []).then(
         async (candidates) => {
@@ -632,6 +636,16 @@ async function resolveAsync(
           }
         },
       ),
+      safeChain(
+        "activitypub_discovery",
+        discoverActivityPub(query, matches),
+        [],
+      ).then(async (candidates) => {
+        if (candidates.length > 0) {
+          matches.push(...candidates);
+          await storeDiscoveryPartial();
+        }
+      }),
     ]);
   }
 
@@ -733,6 +747,47 @@ async function discoverNostr(
         displayName: c.displayName,
         description: c.about,
         avatar: c.picture,
+      },
+    });
+  }
+  return out;
+}
+
+// ActivityPub account search (RESOLVER-DISCOVERY-ADR §5, branch 6) →
+// speculative activitypub matches. sourceUri is the canonical acct
+// (user@domain) — a pick re-enters addSource, whose AP branch webfingers an
+// acct shape to the actor URI (resolveApSourceUri, the §5.2 pick-path fix).
+// Dedupes against existing activitypub matches on BOTH key-spaces, lowercased:
+// canonical acct (this branch's own identity) and actor URI (known-world
+// Phase A hits carry the actor URI as sourceUri; the provider surfaces each
+// candidate's Account.uri) — known-world wins, it's 'probable'.
+async function discoverActivityPub(
+  query: string,
+  existing: ResolverMatch[],
+): Promise<ResolverMatch[]> {
+  const seen = new Set<string>();
+  for (const m of existing) {
+    if (m.externalSource?.protocol === "activitypub") {
+      seen.add(m.externalSource.sourceUri.toLowerCase());
+    }
+  }
+  const candidates = await searchApAccounts(query, 5);
+  const out: ResolverMatch[] = [];
+  for (const c of candidates) {
+    const acct = c.acct.toLowerCase();
+    const actorUri = c.url?.toLowerCase();
+    if (seen.has(acct) || (actorUri && seen.has(actorUri))) continue;
+    seen.add(acct);
+    if (actorUri) seen.add(actorUri);
+    out.push({
+      type: "external_source",
+      confidence: "speculative",
+      externalSource: {
+        protocol: "activitypub",
+        sourceUri: c.acct,
+        displayName: c.displayName ?? `@${c.acct}`,
+        description: c.note,
+        avatar: c.avatar,
       },
     });
   }

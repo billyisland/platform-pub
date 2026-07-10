@@ -115,6 +115,11 @@ services:
       # (NETWORK-CONCIERGE-ADR §9).
       MASTODON_ASSISTED_ENABLED: ${MASTODON_ASSISTED_ENABLED:-0}
       MASTODON_ASSISTED_INSTANCES: ${MASTODON_ASSISTED_INSTANCES:-mastodon.social}
+      # Resolver discovery branch 6 (activitypub account search) queries these
+      # instances' unauthenticated /api/v2/search on submit. One or at most two
+      # hosts — each is a full extra HTTP round-trip per discovery submit
+      # (RESOLVER-DISCOVERY-ADR §5.2). Distinct from the ASSISTED allowlist above.
+      MASTODON_DISCOVERY_INSTANCES: ${MASTODON_DISCOVERY_INSTANCES:-mastodon.social}
       # Nostr outbound interop (discovery). Ships dark: DISCOVERY_PUBLISH_ENABLED
       # off ⇒ no kind 0/3/10002 produced. With it on, PUBLIC_FANOUT_RELAY_URLS
       # empty ⇒ in-house relay only; set it to fan discovery events to the public

@@ -55,6 +55,12 @@ vi.mock("../src/lib/discovery-catalog.js", () => ({
   searchCatalog: (...a: any[]) => mockSearchCatalog(...a),
 }));
 
+const mockSearchApAccounts = vi.fn();
+
+vi.mock("../src/lib/ap-account-search.js", () => ({
+  searchApAccounts: (...a: any[]) => mockSearchApAccounts(...a),
+}));
+
 const mockFetchNostrProfile = vi.fn();
 const mockSearchNostrProfiles = vi.fn();
 
@@ -180,6 +186,7 @@ beforeEach(() => {
   mockExtractFromMastodonUrl.mockReturnValue(null);
   mockExtractFromThreadiverseUrl.mockReturnValue(null);
   mockSearchCatalog.mockReturnValue([]);
+  mockSearchApAccounts.mockResolvedValue([]);
   mockFetchNostrProfile.mockResolvedValue(null);
   mockSearchNostrProfiles.mockResolvedValue([]);
   mockSafeFetch.mockResolvedValue({
@@ -270,11 +277,19 @@ describe("discovery gating matrix", () => {
     },
   ];
   const NOSTR_HIT = [{ pubkey: HEX_PUBKEY, displayName: "guardian" }];
+  const AP_HIT = [
+    {
+      acct: "guardian@mastodon.social",
+      displayName: "The Guardian",
+      url: "https://mastodon.social/users/guardian",
+    },
+  ];
 
-  it("free_text + discover + subscribe: all three discovery branches run and land", async () => {
+  it("free_text + discover + subscribe: all four discovery branches run and land", async () => {
     mockSearchCatalog.mockReturnValue(CATALOG_HIT);
     mockSearchActors.mockResolvedValue(BSKY_HIT);
     mockSearchNostrProfiles.mockResolvedValue(NOSTR_HIT);
+    mockSearchApAccounts.mockResolvedValue(AP_HIT);
 
     const res = await resolve("the guardian news", "subscribe", INITIATOR, true);
 
@@ -284,6 +299,7 @@ describe("discovery gating matrix", () => {
       "catalog_discovery",
       "bluesky_discovery",
       "nostr_discovery",
+      "activitypub_discovery",
     ]);
 
     const final = await waitComplete(res.requestId!);
@@ -293,6 +309,7 @@ describe("discovery gating matrix", () => {
     expect(protocols).toContain("rss_feed");
     expect(protocols).toContain("atproto");
     expect(protocols).toContain("nostr_external");
+    expect(protocols).toContain("activitypub");
     // Discovery nominations are speculative, never exact.
     for (const m of final.matches) {
       expect(m.confidence).toBe("speculative");
@@ -308,6 +325,7 @@ describe("discovery gating matrix", () => {
     expect(mockSearchCatalog).not.toHaveBeenCalled();
     expect(mockSearchActors).not.toHaveBeenCalled();
     expect(mockSearchNostrProfiles).not.toHaveBeenCalled();
+    expect(mockSearchApAccounts).not.toHaveBeenCalled();
   });
 
   it.each(["invite", "dm"] as const)(
@@ -323,6 +341,7 @@ describe("discovery gating matrix", () => {
       expect(mockSearchCatalog).not.toHaveBeenCalled();
       expect(mockSearchActors).not.toHaveBeenCalled();
       expect(mockSearchNostrProfiles).not.toHaveBeenCalled();
+      expect(mockSearchApAccounts).not.toHaveBeenCalled();
     },
   );
 
@@ -352,6 +371,7 @@ describe("discovery gating matrix", () => {
       "catalog_discovery",
       "bluesky_discovery",
       "nostr_discovery",
+      "activitypub_discovery",
     ]);
     await waitComplete(res.requestId!);
   });
@@ -561,12 +581,88 @@ describe("known-world index (Phase A)", () => {
 });
 
 // =============================================================================
+// ActivityPub discovery (RESOLVER-DISCOVERY-ADR §5 — Phase 2)
+// =============================================================================
+
+describe("activitypub discovery", () => {
+  const GUARDIAN_ACTOR = "https://mastodon.social/users/guardian";
+  const AP_CANDIDATE = {
+    acct: "guardian@mastodon.social",
+    displayName: "The Guardian",
+    note: "News. Sport. Culture.",
+    avatar: "https://cdn.example/g.png",
+    url: GUARDIAN_ACTOR,
+  };
+
+  it("candidates land as speculative activitypub matches with the acct as sourceUri", async () => {
+    mockSearchApAccounts.mockResolvedValue([AP_CANDIDATE]);
+
+    const res = await resolve("the guardian news", "subscribe", INITIATOR, true);
+    const final = await waitComplete(res.requestId!);
+
+    const ap = final.matches.find(
+      (m: any) => m.externalSource?.protocol === "activitypub",
+    );
+    expect(ap).toBeDefined();
+    expect(ap.confidence).toBe("speculative");
+    expect(ap.externalSource.sourceUri).toBe("guardian@mastodon.social");
+    expect(ap.externalSource.displayName).toBe("The Guardian");
+    expect(ap.externalSource.description).toBe("News. Sport. Culture.");
+    expect(ap.externalSource.avatar).toBe("https://cdn.example/g.png");
+  });
+
+  it("a candidate whose actor URI collides with a known-world hit is dropped (known-world wins)", async () => {
+    // Phase A known-world: the AP author's stable_handle IS the actor URI.
+    knownWorldRows = [
+      {
+        protocol: "activitypub",
+        identity: GUARDIAN_ACTOR,
+        display_name: "The Guardian",
+        handle: "guardian@mastodon.social",
+        avatar: null,
+        kind: "author",
+      },
+    ];
+    mockSearchApAccounts.mockResolvedValue([
+      AP_CANDIDATE,
+      { acct: "guardian-fans@other.instance", displayName: "Guardian Fans" },
+    ]);
+
+    const res = await resolve("the guardian news", "subscribe", INITIATOR, true);
+    const final = await waitComplete(res.requestId!);
+
+    const ap = final.matches.filter(
+      (m: any) => m.externalSource?.protocol === "activitypub",
+    );
+    // One probable known-world hit + the non-colliding candidate; the
+    // colliding mirror is gone.
+    expect(ap).toHaveLength(2);
+    expect(
+      ap.find((m: any) => m.externalSource.sourceUri === GUARDIAN_ACTOR)
+        ?.confidence,
+    ).toBe("probable");
+    expect(
+      ap.some(
+        (m: any) => m.externalSource.sourceUri === "guardian@mastodon.social",
+      ),
+    ).toBe(false);
+    expect(
+      ap.find(
+        (m: any) =>
+          m.externalSource.sourceUri === "guardian-fans@other.instance",
+      )?.confidence,
+    ).toBe("speculative");
+  });
+});
+
+// =============================================================================
 // Per-chain failure isolation
 // =============================================================================
 
 describe("per-chain failure isolation", () => {
   it("a throwing discovery branch never fails the resolve or drops its siblings", async () => {
     mockSearchActors.mockRejectedValue(new Error("bsky appview down"));
+    mockSearchApAccounts.mockRejectedValue(new Error("instance down"));
     mockSearchNostrProfiles.mockResolvedValue([
       { pubkey: HEX_PUBKEY, displayName: "guardian" },
     ]);
@@ -582,6 +678,11 @@ describe("per-chain failure isolation", () => {
     ).toBe(true);
     expect(
       final.matches.some((m: any) => m.externalSource?.protocol === "atproto"),
+    ).toBe(false);
+    expect(
+      final.matches.some(
+        (m: any) => m.externalSource?.protocol === "activitypub",
+      ),
     ).toBe(false);
   });
 
