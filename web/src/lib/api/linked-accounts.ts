@@ -22,6 +22,10 @@ export interface NetworkCapabilities {
   // graph the server can read today. Empty/absent while the flag is dark —
   // every import affordance gates on membership here.
   followImportProtocols?: string[]
+  // OPML upload (Phase 1d) — separate from followImportProtocols because that
+  // list drives the "import this account's follows" resolver affordances, and
+  // a plain rss feed URL has no follow graph. Gates the upload surface only.
+  followImportOpml?: boolean
 }
 
 // Honest framing for the ASSISTED hand-off (NETWORK-CONCIERGE-ADR §6.1.1 S5,

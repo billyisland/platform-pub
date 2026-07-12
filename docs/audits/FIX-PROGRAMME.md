@@ -23,6 +23,41 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (third entry)** — **Follow-graph import Phase 1d OPML upload
+  (FOLLOW-GRAPH-IMPORT-ADR §5.4/§11.4) — RSS subscriptions import from a
+  reader export, dark behind `FOLLOW_IMPORT_ENABLED`.** **Parser/planner**
+  (`gateway/src/lib/opml.ts`, pure + unit-tested): jsdom in strict-XML mode
+  (already a gateway dep — the §11.4 "new XML dep" turned out unnecessary);
+  folders map to one feed per folder with nested folders flattened into their
+  top-level ancestor, loose entries + folders beyond `OPML_MAX_FEEDS` (10)
+  fold into the base feed (named from `feedName` param → OPML head title →
+  "Imported feeds"), per-feed URL dedupe, non-http(s)/unparseable xmlUrls
+  counted as `invalidEntries` (surfaced, never silent), and the per-import
+  1000 cap applied across the plan in order with truncation surfaced.
+  **Route**: `POST /follow-imports/opml` (3MiB bodyLimit; text in JSON) mints
+  one feed + `follow_imports` run per planned feed in one transaction — with
+  **no `feed_import_bindings` row** (OPML is a snapshot by nature, §5.4:
+  "Sync now" doesn't apply, re-import = new run) — and returns all runs plus
+  the aggregate plan facts. **Engine**: rss runs keep the liveness probe ON
+  (`skipProbe: run.protocol !== 'rss'` — the D6 exception: reader exports
+  rot; addSource normalises the URL + backfills the feed title, and dead
+  entries land in `failed`, reported in the summary). `readFollowGraph('rss')`
+  now points at the upload. **Capabilities**: `followImportOpml` — a separate
+  boolean, deliberately NOT an entry in `followImportProtocols` (that list
+  gates resolver-match "Import follows" affordances, and a plain rss feed URL
+  has no follow graph to read). **Web**: `followImports.createOpml`,
+  `useOpmlImport` (multi-run sibling of `useFollowImportRun` — one 2s poll
+  across all unfinished runs, every minted feed announced via
+  `useFeedArrivals`), and the upload block in `FollowImportSection`
+  (client-side DOMParser preview → "N feed URLs in M folders / creates up to
+  K feeds" confirmation per §6.5 → per-run progress lines + the aggregate
+  truncation / folded-folders / invalid-entries / dead-entries copy).
+  Vitest: `opml.test.ts` (14 cases) + an engine case for the rss probe
+  contract; gateway suite 293 green; root eslint 0 errors; `next build`
+  clean; hairline tripwire clean. No migration (reuses 153's tables).
+  Remaining: 1c ActivityPub (live scope check first, §6.4 soak), Phase 2
+  "Sync now", Phase 3 onboarding.
+
 - **2026-07-12 (second entry)** — **Follow-graph import Phase 1a/1b web
   surfaces (FOLLOW-GRAPH-IMPORT-ADR §7/§11.4) — atproto + Nostr imports are
   now user-visible, still dark behind `FOLLOW_IMPORT_ENABLED`.**

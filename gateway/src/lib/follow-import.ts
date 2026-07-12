@@ -123,6 +123,14 @@ export async function readFollowGraph(
       return readAtprotoGraph(originIdentity.trim());
     case "nostr_external":
       return readNostrGraph(originIdentity.trim());
+    case "rss":
+      // Phase 1d: RSS has no remote graph to read — the artifact is an OPML
+      // file, which arrives through POST /follow-imports/opml instead.
+      return {
+        ok: false,
+        reason: "unsupported",
+        message: "RSS subscriptions import from an OPML file — upload one instead",
+      };
     default:
       return {
         ok: false,
@@ -355,8 +363,12 @@ async function processRun(run: FollowImportRow): Promise<void> {
         const result = await addSource(run.feed_id, run.account_id, input, {
           // D6: graph membership is liveness evidence; identities were
           // canonicalised at graph-read time. The poller's failure handling
-          // marks any stragglers dead.
-          skipProbe: true,
+          // marks any stragglers dead. EXCEPTION — rss (OPML, Phase 1d):
+          // reader exports rot, so the probe runs (addSource normalises the
+          // URL and backfills the feed title); dead entries throw
+          // SOURCE_UNREACHABLE and land in `failed`, reported in the summary
+          // rather than silently dropped.
+          skipProbe: run.protocol !== "rss",
           // §6.4b: trickle the subscribe-time ingest jobs instead of dumping
           // N immediate fetches on the worker.
           enqueueRunAt: new Date(

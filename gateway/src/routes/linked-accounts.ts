@@ -170,6 +170,11 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         followImportProtocols: followImportEnabled()
           ? IMPORTABLE_PROTOCOLS
           : [],
+        // OPML upload (Phase 1d) — deliberately NOT an entry in
+        // followImportProtocols: that list gates the "import this account's
+        // follows" affordances on resolver matches, and a plain rss feed URL
+        // has no follow graph to read. The upload surface gates on this flag.
+        followImportOpml: followImportEnabled(),
       },
     };
   });

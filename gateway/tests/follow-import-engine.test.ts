@@ -255,6 +255,38 @@ describe("runFollowImportSweep", () => {
     expect(cursors).toEqual([25, 50, 60]);
   });
 
+  it("keeps the liveness probe ON for rss runs (OPML, the D6 exception) and reports dead entries as failed", async () => {
+    const run = makeRun({
+      protocol: "rss",
+      identities: [
+        { uri: "https://alive.example/rss", displayName: "Alive" },
+        { uri: "https://dead.example/rss", displayName: "Dead" },
+      ],
+    });
+    const calls = primePool(run);
+    addSource
+      .mockResolvedValueOnce({
+        source: {},
+        ensured: { externalSourceId: "xs-1", subscriptionId: "s1" },
+      })
+      // What addSource throws when verifySourceLiveness fails the probe.
+      .mockRejectedValueOnce(
+        Object.assign(new Error("The feed URL could not be fetched"), {
+          code: "SOURCE_UNREACHABLE",
+        }),
+      );
+
+    await runFollowImportSweep();
+
+    expect(addSource).toHaveBeenCalledTimes(2);
+    // rss = probe on (reader exports rot); every other protocol skips it.
+    expect(addSource.mock.calls[0][3].skipProbe).toBe(false);
+    const counterCall = calls.find((c) => c.sql.includes("SET imported ="));
+    // imported=1, skipped=0, failed=1 (the dead entry, reported not silent)
+    expect(counterCall!.params).toEqual([RUN_ID, 1, 0, 1, 2]);
+    expect(calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
+  });
+
   it("marks the run failed when processing throws wholesale", async () => {
     const run = makeRun({ identities: "junk" as never });
     // Array.isArray guard turns junk into [] → completes as done; instead

@@ -12,7 +12,9 @@ import {
   readFollowGraph,
   kickFollowImportSweep,
   FOLLOW_IMPORT_CAP,
+  type ImportIdentity,
 } from "../lib/follow-import.js";
+import { parseOpml, planOpmlImport, OPML_MAX_FEEDS } from "../lib/opml.js";
 
 // =============================================================================
 // Follow-graph import runs (FOLLOW-GRAPH-IMPORT-ADR §11.3).
@@ -164,6 +166,140 @@ export default async function followImportRoutes(app: FastifyInstance) {
           cap: FOLLOW_IMPORT_CAP,
         },
         feed: feedRowToResponse(feed),
+      });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // POST /follow-imports/opml — OPML upload (Phase 1d, ADR §5.4)
+  //
+  // RSS's "follow graph" is the OPML export every feed reader produces. The
+  // client reads the file and sends its text; folders map to one feed per
+  // folder under the OPML_MAX_FEEDS cap (overflow folds into the base feed),
+  // so one upload can mint SEVERAL runs — the response carries them all, plus
+  // the aggregate no-silent-caps facts. Unlike the graph protocols there is
+  // no feed_import_bindings row: OPML is a snapshot by nature ("Sync now"
+  // doesn't apply; re-import = new run), and the engine keeps the liveness
+  // probe ON for rss runs (D6 exception — dead entries land in `failed`).
+  // ---------------------------------------------------------------------------
+  const opmlImportSchema = z.object({
+    opml: z.string().min(1).max(2_000_000),
+    feedName: z.string().trim().min(1).max(80).optional(),
+  });
+
+  app.post<{ Body: unknown }>(
+    "/follow-imports/opml",
+    // Default 1MiB body limit is too tight for a large reader export wrapped
+    // in JSON escaping; the zod max above still bounds the OPML text itself.
+    { preHandler: requireAuth, bodyLimit: 3 * 1024 * 1024 },
+    async (req, reply) => {
+      if (!followImportEnabled())
+        return reply.status(404).send({ error: "Not found" });
+      const ownerId = req.session!.sub;
+
+      const parsedBody = opmlImportSchema.safeParse(req.body);
+      if (!parsedBody.success) {
+        return reply
+          .status(400)
+          .send({ error: "Invalid body", details: parsedBody.error.flatten() });
+      }
+      const { opml, feedName } = parsedBody.data;
+
+      const parsed = parseOpml(opml);
+      if (!parsed) {
+        return reply.status(400).send({
+          error: "opml_invalid",
+          message:
+            "Could not read this file as OPML — export a fresh copy from your reader and try again",
+        });
+      }
+      const plan = planOpmlImport(parsed, {
+        baseName: feedName,
+        maxFeeds: OPML_MAX_FEEDS,
+        cap: FOLLOW_IMPORT_CAP,
+      });
+      if (plan.feeds.length === 0) {
+        return reply.status(422).send({
+          error: "empty_opml",
+          message: "No feed URLs found in this file",
+        });
+      }
+
+      // originIdentity has no remote-account meaning for a file upload; the
+      // head title is the most useful provenance we have.
+      const originIdentity = parsed.title ?? "OPML file";
+
+      const created = await withTransaction(async (client) => {
+        const out: Array<{
+          importId: string;
+          feed: Awaited<ReturnType<typeof createFeedForOwner>>;
+          total: number;
+        }> = [];
+        for (const planned of plan.feeds) {
+          const feedRow = await createFeedForOwner(
+            ownerId,
+            planned.name,
+            client,
+          );
+          const identities: ImportIdentity[] = planned.entries.map((e) => ({
+            uri: e.url,
+            displayName: e.title,
+          }));
+          const {
+            rows: [run],
+          } = await client.query<{ id: string }>(
+            `INSERT INTO follow_imports
+               (account_id, protocol, origin_identity, feed_id, total, identities)
+             VALUES ($1, 'rss', $2, $3, $4, $5::jsonb)
+             RETURNING id`,
+            [
+              ownerId,
+              originIdentity,
+              feedRow.id,
+              identities.length,
+              JSON.stringify(identities),
+            ],
+          );
+          out.push({ importId: run.id, feed: feedRow, total: identities.length });
+        }
+        return out;
+      });
+
+      kickFollowImportSweep().catch((err) =>
+        logger.warn({ err }, "follow import kick failed (opml)"));
+
+      return reply.status(201).send({
+        runs: created.map((c) => ({
+          import: {
+            id: c.importId,
+            protocol: "rss",
+            originIdentity,
+            originLabel: originIdentity,
+            feedId: c.feed.id,
+            status: "pending",
+            total: c.total,
+            imported: 0,
+            skipped: 0,
+            failed: 0,
+            // Truncation is reported once, at the plan level below — a run
+            // never sees more than its post-cap share.
+            remoteTotal: c.total,
+            truncated: false,
+            cap: FOLLOW_IMPORT_CAP,
+          },
+          feed: feedRowToResponse(c.feed),
+        })),
+        // Aggregate no-silent-caps facts (§6.5): identity-cap truncation,
+        // folders folded by the feed cap, and invalid entries dropped at
+        // parse time — the upload summary states them all.
+        plan: {
+          totalEntries: plan.totalEntries,
+          remoteTotal: plan.remoteTotal,
+          truncated: plan.truncated,
+          cap: FOLLOW_IMPORT_CAP,
+          foldedFolders: plan.foldedFolders,
+          invalidEntries: plan.invalidEntries,
+        },
       });
     },
   );

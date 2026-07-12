@@ -58,6 +58,7 @@ export function NetworkReachPanel() {
   // paste-an-identity section below share this hook + its status area.
   const followImport = useFollowImportRun()
   const importable = capabilities?.followImportProtocols ?? []
+  const opmlImportable = capabilities?.followImportOpml ?? false
   const importBusy =
     followImport.starting ||
     followImport.run?.status === 'pending' ||
@@ -432,10 +433,12 @@ export function NetworkReachPanel() {
 
           {/* Follow-graph import (FOLLOW-GRAPH-IMPORT-ADR §7.2): the inbound
               half of network reach — paste any identity with a public graph
-              (D8, no link required). Hidden while the server flag is dark. */}
-          {importable.length > 0 && (
+              (D8, no link required), or upload an OPML reader export (Phase
+              1d). Hidden while the server flag is dark. */}
+          {(importable.length > 0 || opmlImportable) && (
             <FollowImportSection
               importable={importable}
+              opml={opmlImportable}
               followImport={followImport}
             />
           )}

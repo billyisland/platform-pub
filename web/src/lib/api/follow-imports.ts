@@ -37,6 +37,18 @@ export interface FollowImportCreated extends FollowImportRun {
   cap: number
 }
 
+// Aggregate no-silent-caps facts for an OPML upload (§6.5): identity-cap
+// truncation, folders folded into the base feed by the feed cap, and invalid
+// entries dropped at parse time — the upload summary states them all.
+export interface OpmlImportPlanSummary {
+  totalEntries: number
+  remoteTotal: number
+  truncated: boolean
+  cap: number
+  foldedFolders: number
+  invalidEntries: number
+}
+
 export const followImports = {
   create: (data: {
     protocol: FollowImportProtocol
@@ -47,6 +59,17 @@ export const followImports = {
       '/follow-imports',
       { method: 'POST', body: JSON.stringify(data) },
     ),
+
+  // OPML upload (Phase 1d): folders map to one feed per folder under the
+  // server's feed cap, so one upload can mint SEVERAL runs.
+  createOpml: (data: { opml: string; feedName?: string }) =>
+    request<{
+      runs: { import: FollowImportCreated; feed: WorkspaceFeed }[]
+      plan: OpmlImportPlanSummary
+    }>('/follow-imports/opml', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   get: (id: string) =>
     request<{ import: FollowImportRun }>(`/follow-imports/${id}`),
