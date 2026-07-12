@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import nextDynamic from "next/dynamic";
 import { useAuth } from "../../stores/auth";
 import { useWorkspace } from "../../stores/workspace";
 import {
@@ -63,6 +64,7 @@ import { EmptyFeedTile } from "./EmptyFeedTile";
 import { MergeFeedConfirm } from "./MergeFeedConfirm";
 import { MobileWorkspace } from "./MobileWorkspace";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useGlasshousePresence } from "../../stores/glasshouse";
 
 const FLOOR = "var(--ah-bone)"; // grey-100 per Step 1 / Colour tokens committed
 const DEFAULT_FEED_NAME = "Founder's feed";
@@ -106,6 +108,19 @@ const EXTERNAL_QUOTE_LABEL: Record<string, string> = {
 // across logouts on the same browser; the responsive (new-feed) ceremony has
 // no equivalent gate since it's a per-action animation, not an onboarding.
 const CEREMONY_SEEN_PREFIX = "workspace:ceremony_seen:";
+
+// "Bring your world" (FOLLOW-GRAPH-IMPORT-ADR §7.4): the first-session import
+// offer rides the same zero-feeds signal. Its seen-key is written only when
+// the sheet is actually dismissed — a dark import flag renders no sheet and
+// burns nothing.
+const BRING_WORLD_SEEN_PREFIX = "workspace:bring_world_seen:";
+
+// Lazy like the LazyOverlays surfaces: only brand-new accounts ever render
+// this, so its chunk (resolver input + import hooks) stays out of /reader.
+const BringYourWorld = nextDynamic(
+  () => import("./BringYourWorld").then((m) => m.BringYourWorld),
+  { ssr: false },
+);
 
 // Ceremony box dimensions (mirrors ForallCeremony's BOX_W / BOX_H — kept
 // duplicated locally so the positioning math doesn't need to import the
@@ -267,6 +282,7 @@ export function WorkspaceView() {
     null,
   );
   const [ceremony, setCeremony] = useState<PendingCeremony | null>(null);
+  const [bringWorld, setBringWorld] = useState(false);
   const [pendingMerge, setPendingMerge] = useState<{
     source: WorkspaceFeed;
     target: WorkspaceFeed;
@@ -918,6 +934,22 @@ export function WorkspaceView() {
           // });
         }
 
+        // "Bring your world" (ADR §7.4): same first-session signal as the
+        // ceremony, its own seen-key (written on dismiss, not here — a dark
+        // import flag renders no sheet and must not consume the one shot).
+        // Skipped when a deep-linked overlay already claimed the Glasshouse —
+        // superseding what the user explicitly navigated to would be rude.
+        if (
+          mintedFounderFeed &&
+          typeof window !== "undefined" &&
+          window.localStorage.getItem(
+            `${BRING_WORLD_SEEN_PREFIX}${user.id}`,
+          ) !== "true" &&
+          !useGlasshousePresence.getState().isOpen
+        ) {
+          setBringWorld(true);
+        }
+
         for (const feed of list) {
           if (cancelled) return;
           // Covered feeds already have their first page from the aggregate;
@@ -1502,6 +1534,24 @@ export function WorkspaceView() {
           if (target) void loadVesselItems(target.feed);
         }}
       />
+      {bringWorld && (
+        <BringYourWorld
+          onClose={() => {
+            setBringWorld(false);
+            if (user && typeof window !== "undefined") {
+              try {
+                window.localStorage.setItem(
+                  `${BRING_WORLD_SEEN_PREFIX}${user.id}`,
+                  "true",
+                );
+              } catch {
+                // Quota / private browsing — worst case the offer shows once
+                // more, which is harmless (it never imports by itself).
+              }
+            }
+          }}
+        />
+      )}
       {ceremony && (
         <ForallCeremony
           key={ceremony.feedId}

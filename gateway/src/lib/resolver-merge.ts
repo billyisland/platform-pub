@@ -30,7 +30,12 @@ import {
 
 export type MatchType = "native_account" | "external_source" | "rss_feed";
 export type Confidence = "exact" | "probable" | "speculative";
-export type ResolveContext = "subscribe" | "invite" | "dm" | "general";
+export type ResolveContext =
+  | "subscribe"
+  | "invite"
+  | "dm"
+  | "import"
+  | "general";
 
 export interface ResolverMatch {
   type: MatchType;
@@ -209,11 +214,13 @@ function precision(m: ResolverMatch): number {
 
 /** Context priority (§6.2 rule 2, ADR §V.5.3): invite/dm native-first
  *  (mostly moot — skipExternal already filters, but Phase A can still mix),
- *  subscribe external-first, general neutral. */
+ *  subscribe/import external-first (import consumes only external sources —
+ *  FOLLOW-GRAPH-IMPORT-ADR §7.4), general neutral. */
 function contextPriority(m: ResolverMatch, context: ResolveContext): number {
   if (context === "invite" || context === "dm")
     return m.type === "native_account" ? 0 : 1;
-  if (context === "subscribe") return m.type === "native_account" ? 1 : 0;
+  if (context === "subscribe" || context === "import")
+    return m.type === "native_account" ? 1 : 0;
   return 0;
 }
 

@@ -23,6 +23,35 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (eighth entry)** — **Follow-graph import Phase 3 "Bring your
+  world" (FOLLOW-GRAPH-IMPORT-ADR §7.4 / §8 Phase 3).** Two decisions settled
+  at build (recorded in the ADR §7.4 build note): no signup wizard exists
+  (CONSOLIDATED-TODO §3.3 unbuilt), so the step is a first-session Glasshouse
+  sheet riding the founder-feed-mint signal in the workspace bootstrap (zero
+  feeds = brand-new account — the parked ceremony's own discriminator), and
+  the `import` resolver context ships subscribe-shaped (external-first
+  ranking; an exact native-username hit does not short-circuit the external
+  world — the squatter case matters more for import, which consumes only
+  external sources). Gateway: `ResolveContext` + `contextPriority` +
+  `runExternal` gain `import` (resolver-merge.ts / resolver.ts; unit test
+  added). Web: `BringYourWorld.tsx` (lazy-chunked; capabilities-gated so a
+  dark `FOLLOW_IMPORT_ENABLED` renders nothing and never burns the
+  once-per-user seen-key, which is written only on actual dismissal;
+  suppressed when a deep-linked overlay already claimed the Glasshouse;
+  D7-strict pure offer reusing `FollowImportSection` — paste + OPML — with the
+  evergreen Network/FeedComposer paths named in closing copy); WorkspaceView
+  trigger + render; `useResolverInput`/`resolver.resolve` context unions
+  widened; `FollowImportSection` passes `context: 'import'`. Verified live in
+  the dev stack (gateway + web rebuilt): fresh-signup capabilities expose all
+  three protocols + OPML; `import` ≡ `subscribe` and ≠ `general`/`dm` on
+  squatted ('steveruizok' minted natively → general returns 1 native, import
+  returns native + 3 externals) and unsquatted queries; async atproto chain
+  completes under `import`; test accounts removed after. Checks: gateway
+  vitest + tsc, root eslint 0 errors, hairline tripwire clean, `next build`
+  green (it caught one missed union in `lib/api/resolver.ts`). Residual: a
+  browser-level look at the sheet on next dev browse. Remaining on the ADR:
+  prod flag flip; AP sub-brake soak + one authed self-import.
+
 - **2026-07-12 (seventh entry)** — **Fresh-DB graphile_worker crash-loop:
   durable fix (was CONSOLIDATED-TODO "later" item 12, found in the sixth-entry
   run-through).** `schema.sql` carried the whole `graphile_worker` schema from

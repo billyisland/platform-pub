@@ -219,11 +219,15 @@ export async function resolve(
       // native account happens to squat ("guardian"), and an exact native
       // match and subscribable external candidates aren't mutually exclusive —
       // the exact hit still ranks first (exact > probable > speculative).
-      // invite/dm/general keep the short-circuit (RESOLVER-DISCOVERY-ADR
-      // squatter amendment, 2026-07-10). Fuzzy natives only when there was no
-      // exact native hit.
+      // import context gets the same treatment for the inverse reason: it
+      // consumes only external sources (a follow-graph read needs the remote
+      // account, FOLLOW-GRAPH-IMPORT-ADR §7.4), so a native squatter must not
+      // short-circuit the external world. invite/dm/general keep the
+      // short-circuit (RESOLVER-DISCOVERY-ADR squatter amendment, 2026-07-10).
+      // Fuzzy natives only when there was no exact native hit.
       const runExternal =
-        !skipExternal && (!account || context === "subscribe");
+        !skipExternal &&
+        (!account || context === "subscribe" || context === "import");
       if (!account || runExternal) {
         // Fuzzy native + known-world external (RESOLVER-DISCOVERY-ADR §4) in
         // parallel — both local, both Phase A. invite/dm stay native-only.

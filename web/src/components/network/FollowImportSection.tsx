@@ -28,7 +28,10 @@ export function FollowImportSection({
   opml?: boolean
   followImport: UseFollowImportRun
 }) {
-  const ri = useResolverInput({ maxPolls: 3 })
+  // `import` context (ADR §7.4): external-first ranking, and an exact native
+  // username hit no longer short-circuits the external account whose graph
+  // this surface actually needs.
+  const ri = useResolverInput({ maxPolls: 3, context: 'import' })
 
   const isCandidate = (m: MatchOption) =>
     m.add.sourceType === 'external_source' &&

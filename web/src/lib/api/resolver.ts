@@ -39,7 +39,7 @@ export const resolver = {
   // never on the debounced-keystroke typeahead path.
   resolve: (
     query: string,
-    context?: 'subscribe' | 'invite' | 'dm' | 'general',
+    context?: 'subscribe' | 'invite' | 'dm' | 'import' | 'general',
     discover?: boolean,
   ) =>
     request<ResolverResult>('/resolve', {

@@ -246,6 +246,16 @@ describe("§6.2 ordering (audit F5.4)", () => {
     expect(out[1].type).toBe("native_account");
   });
 
+  it("import context puts external before native within a tier (FOLLOW-GRAPH-IMPORT-ADR §7.4)", () => {
+    const out = mergeMatches(
+      [],
+      [native("alice", "speculative"), atproto("did:plc:a", "speculative")],
+      "import",
+    );
+    expect(out[0].type).toBe("external_source");
+    expect(out[1].type).toBe("native_account");
+  });
+
   it("invite context puts native before external within a tier", () => {
     const out = mergeMatches(
       [],

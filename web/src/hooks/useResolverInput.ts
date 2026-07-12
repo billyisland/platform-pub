@@ -34,7 +34,7 @@ export interface UseResolverInput {
 
 export function useResolverInput(opts?: {
   maxPolls?: number;
-  context?: "subscribe" | "invite" | "dm" | "general";
+  context?: "subscribe" | "invite" | "dm" | "import" | "general";
 }): UseResolverInput {
   const maxPolls = opts?.maxPolls ?? MAX_POLLS;
   const context = opts?.context ?? "subscribe";
