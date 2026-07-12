@@ -149,7 +149,15 @@ export async function getFollows(
   const follows: AtprotoFollow[] = [];
   let cursor: string | undefined;
   let firstPage = true;
+  // Hard page ceiling — the AppView host is pinned (not attacker-steerable),
+  // but loop progress is measured in VALID parsed follows, so an AppView
+  // regression emitting non-advancing cursors with empty/unparseable pages
+  // would otherwise wedge the import route or sweep in a hot loop. Ceiling
+  // hit = truncated read (complete: false), which suppresses sync removals.
+  const maxPages = Math.ceil(cap / 100) + 7;
+  let pages = 0;
   while (follows.length < cap) {
+    if (++pages > maxPages) return { follows, complete: false };
     const limit = Math.min(100, cap - follows.length);
     const params = new URLSearchParams({ actor: actorDid, limit: String(limit) });
     if (cursor) params.set("cursor", cursor);

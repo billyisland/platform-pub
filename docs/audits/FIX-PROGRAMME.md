@@ -23,6 +23,52 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (tenth entry)** — **Same-day commit audit: four fixes (two DoS
+  guards on the follow-import readers, two workspace-UI bugs).** A four-agent
+  adversarial review of the day's eleven commits confirmed every audited
+  invariant held (one-way inbound, pure-offer sheet, exclusion symmetry,
+  feed-derived subscriptions, SSRF, migration/schema hygiene, hairlines) and
+  surfaced four fixable defects, all fixed same-day:
+  1. **AP follow pager unbounded** (`activitypub-resolve.ts::
+     fetchMastodonFollowing`) — loop progress was measured in PARSED accounts,
+     so a hostile instance (origin derives from a user-pasted handle) serving
+     non-empty pages of unparseable entries plus an endless same-origin
+     rel=next chain looped forever inside the request handler. Fixed with a
+     hard page ceiling (`cap/80 + 7`); ceiling hit returns `complete: false`,
+     which the sync engine already treats as removal-suppressing. Same ceiling
+     added to atproto `getFollows` (`cap/100 + 7`) — its AppView host is
+     pinned, but empty-page-with-fresh-cursor responses (legitimately emitted
+     for all-deactivated pages) plus a cursor regression would have wedged the
+     sweep. Tests: hostile-pager cases in `activitypub-follow-reader.test.ts`
+     + `atproto-discovery.test.ts`.
+  2. **OPML parse quadratic in nesting depth** (`opml.ts::parseOpml`) —
+     jsdom's XML parse is O(depth²): a measured 336KB / 12k-deep upload (well
+     under the 2MB cap) cost ~31s of synchronous CPU on the single-threaded
+     gateway per request. Fixed with `opmlShapeOk`, a linear quote-aware
+     pre-parse scan (depth ≤ 100, outlines ≤ 50k; quote-awareness so `'/>'`
+     inside an attribute value can't fake a self-closing tag and evade the
+     depth count) — the same payload now rejects as `opml_invalid` in 2ms,
+     and the depth cap also bounds `collect()`'s recursion (closing the
+     500-instead-of-400 overflow window). Tests: depth/evasion/breadth cases
+     in `opml.test.ts`.
+  3. **`adoptFeed` impure updater** (`WorkspaceView.tsx`) — the `known` flag
+     was assigned inside the `setVessels` updater and read synchronously
+     after, and two zustand writes lived inside it; that only works while
+     React evaluates the updater eagerly, and the arrivals drain loop (routine
+     for a multi-feed OPML import) queues updates, deferring later updaters to
+     the render phase (stale `known`, setState-during-render). Restructured:
+     membership check + store writes outside the updater, same-tick dedup via
+     `vesselsRef`, the updater pure. Companion fix: the drain effect's
+     wholesale `clear()` could wipe an announce landing between render and
+     effect — `feedArrivals.clear` replaced by batch-scoped `consume`.
+  4. **Sync-now Apply double-fire** (`FeedSyncSection.tsx`) — no in-flight
+     guard during the `confirmSync` await, so a double-click POSTed confirm
+     twice; the loser 404s and painted an error beside a sync that started.
+     Added a `confirming` state folded into `busy` + disabled buttons.
+  Remaining low-severity audit residue queued in CONSOLIDATED-TODO §0c.
+  Validation: gateway vitest 320 passed, `tsc` clean, root eslint 0 errors,
+  `next build` clean, hairline tripwire clean, 12k-depth payload timed at 2ms.
+
 - **2026-07-12 (ninth entry)** — **Container healthchecks: every backend has
   reported "unhealthy" forever (cosmetic, but it masks real failures).**
   Spotted during the follow-import prod flip: gateway/payment/keyservice/

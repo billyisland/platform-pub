@@ -13,11 +13,15 @@ import type { WorkspaceFeed } from "../lib/api";
 interface FeedArrivalsState {
   pending: WorkspaceFeed[];
   announce: (feed: WorkspaceFeed) => void;
-  clear: () => void;
+  /** Remove a drained batch. Batch-scoped (not a wholesale clear) so an
+   *  announce landing between the drainer's render and its effect survives
+   *  for the next drain instead of being wiped unadopted. */
+  consume: (drained: WorkspaceFeed[]) => void;
 }
 
 export const useFeedArrivals = create<FeedArrivalsState>((set) => ({
   pending: [],
   announce: (feed) => set((s) => ({ pending: [...s.pending, feed] })),
-  clear: () => set({ pending: [] }),
+  consume: (drained) =>
+    set((s) => ({ pending: s.pending.filter((f) => !drained.includes(f)) })),
 }));

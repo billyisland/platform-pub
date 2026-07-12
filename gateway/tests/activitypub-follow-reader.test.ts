@@ -205,6 +205,25 @@ describe("fetchMastodonFollowing", () => {
     const [, opts] = mockSafeFetch.mock.calls[0];
     expect(opts.headers.Authorization).toBe("Bearer tok-123");
   });
+
+  it("bounds a hostile endless pager: unparseable non-empty pages + a same-origin next chain terminate as an incomplete read", async () => {
+    // Progress is measured in PARSED accounts, so without the page ceiling a
+    // server feeding [{}] pages with rel=next forever would never terminate.
+    mockSafeFetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse([{}], {
+          link: `<${ORIGIN}/api/v1/accounts/42/following?max_id=1>; rel="next"`,
+        }),
+      ),
+    );
+    const cap = 80;
+    const out = await fetchMastodonFollowing(ORIGIN, "42", cap);
+    expect(out?.accounts).toHaveLength(0);
+    expect(out?.complete).toBe(false); // ceiling hit = truncated, suppresses sync removals
+    expect(mockSafeFetch.mock.calls.length).toBeLessThanOrEqual(
+      Math.ceil(cap / 80) + 7,
+    );
+  });
 });
 
 describe("readFollowGraph('activitypub', …)", () => {

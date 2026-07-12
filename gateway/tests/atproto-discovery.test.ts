@@ -11,7 +11,9 @@ vi.mock("@platform-pub/shared/lib/logger.js", () => ({
   default: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
-const { searchActors } = await import("../src/lib/atproto-resolve.js");
+const { searchActors, getFollows } = await import(
+  "../src/lib/atproto-resolve.js"
+);
 
 function ok(body: unknown) {
   return { ok: true, text: JSON.stringify(body) };
@@ -88,5 +90,24 @@ describe("searchActors (discovery fallback)", () => {
   it("swallows fetch errors and returns []", async () => {
     safeFetch.mockRejectedValueOnce(new Error("network"));
     expect(await searchActors("x")).toEqual([]);
+  });
+});
+
+describe("getFollows pager ceiling", () => {
+  beforeEach(() => safeFetch.mockReset());
+
+  it("bounds a non-advancing pager: empty pages with a fresh cursor terminate as an incomplete read", async () => {
+    // Progress is measured in VALID parsed follows, so an AppView regression
+    // emitting empty pages with a cursor forever would otherwise loop hot.
+    safeFetch.mockImplementation(() =>
+      Promise.resolve(ok({ follows: [], cursor: "stuck" })),
+    );
+    const cap = 100;
+    const out = await getFollows("did:plc:someone", cap);
+    expect(out?.follows).toHaveLength(0);
+    expect(out?.complete).toBe(false); // ceiling hit = truncated, suppresses sync removals
+    expect(safeFetch.mock.calls.length).toBeLessThanOrEqual(
+      Math.ceil(cap / 100) + 7,
+    );
   });
 });

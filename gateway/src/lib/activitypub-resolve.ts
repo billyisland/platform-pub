@@ -299,7 +299,17 @@ export async function fetchMastodonFollowing(
   let next: string | null =
     `${apiOrigin}/api/v1/accounts/${encodeURIComponent(accountId)}/following?limit=80`;
   let firstPage = true;
+  // Hard page ceiling. The origin is attacker-steerable (it derives from a
+  // user-pasted handle) and loop progress is measured in PARSED accounts, so
+  // a hostile instance serving non-empty pages of unparseable entries plus an
+  // endless same-origin rel=next chain would otherwise never terminate.
+  // cap/80 pages covers a well-behaved graph; the slack absorbs sparse pages.
+  // Hitting the ceiling is a truncated read (complete: false), which the sync
+  // engine already treats as removal-suppressing.
+  const maxPages = Math.ceil(cap / 80) + 7;
+  let pages = 0;
   while (next && accounts.length < cap) {
+    if (++pages > maxPages) return { accounts, complete: false };
     let page: unknown;
     let linkHeader: string | null = null;
     try {

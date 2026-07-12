@@ -692,33 +692,32 @@ export function WorkspaceView() {
   // Adopt a feed minted server-side (the NewFeedPrompt create, or a feed
   // announced from outside this component — a follow-graph import started in
   // the Settings overlay / FeedComposer) into a live vessel. Idempotent: a
-  // feed already showing is left alone.
+  // feed already showing is left alone. The membership check and the store
+  // writes stay OUTSIDE the setVessels updater — an impure updater only
+  // behaves while React evaluates it eagerly, and the multi-feed drain loop
+  // below queues updates, deferring later updaters to the render phase. The
+  // ref append keeps same-tick loop calls deduped with sequential grid slots
+  // (the updater still re-checks membership itself, so it stays pure and
+  // double-invocation-safe).
   function adoptFeed(feed: WorkspaceFeed) {
-    let known = false;
-    setVessels((prev) => {
-      if (prev.some((v) => v.feed.id === feed.id)) {
-        known = true;
-        return prev;
-      }
-      const next = [
-        ...prev,
-        {
-          feed,
-          items: [],
-          sources: [],
-          status: "loading" as const,
-        },
-      ];
-      const slot = defaultGridSlot(
-        next.length - 1,
-        window.innerWidth,
-        window.innerHeight,
-      );
-      setVesselPosition(feed.id, slot);
-      setVesselSize(feed.id, { w: 300, h: slot.h });
-      return next;
-    });
-    if (!known) void loadVesselItems(feed);
+    if (vesselsRef.current.some((v) => v.feed.id === feed.id)) return;
+    vesselsRef.current = [
+      ...vesselsRef.current,
+      { feed, items: [], sources: [], status: "loading" as const },
+    ];
+    setVessels((prev) =>
+      prev.some((v) => v.feed.id === feed.id)
+        ? prev
+        : [...prev, { feed, items: [], sources: [], status: "loading" as const }],
+    );
+    const slot = defaultGridSlot(
+      vesselsRef.current.length - 1,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    setVesselPosition(feed.id, slot);
+    setVesselSize(feed.id, { w: 300, h: slot.h });
+    void loadVesselItems(feed);
   }
 
   // Drain feeds announced by out-of-component creators (follow-graph imports,
@@ -727,8 +726,10 @@ export function WorkspaceView() {
   useEffect(() => {
     if (pendingArrivals.length === 0) return;
     pendingArrivals.forEach(adoptFeed);
-    useFeedArrivals.getState().clear();
-    // adoptFeed is a stable-enough plain function (state via updaters); the
+    // Consume only the drained snapshot — an announce landing between render
+    // and this effect stays queued for the next run instead of being wiped.
+    useFeedArrivals.getState().consume(pendingArrivals);
+    // adoptFeed is a stable-enough plain function (dedup via vesselsRef); the
     // queue itself is the trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingArrivals]);

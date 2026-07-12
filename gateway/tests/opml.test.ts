@@ -104,6 +104,45 @@ describe("parseOpml", () => {
     expect(parseOpml("just some text")).toBeNull();
     expect(parseOpml('{"not": "xml"}')).toBeNull();
   });
+
+  // Shape guard — jsdom's XML parse is quadratic in nesting depth, so
+  // pathological shapes are rejected by a linear pre-parse scan before jsdom
+  // sees the text (the parseOpml DoS fix, 2026-07-12).
+  it("rejects pathological nesting depth before jsdom parses it", () => {
+    const depth = 5_000;
+    const deep =
+      "<outline text=\"d\">".repeat(depth) + "</outline>".repeat(depth);
+    const started = Date.now();
+    expect(parseOpml(opml(deep))).toBeNull();
+    // The whole point is that rejection is cheap — jsdom at this depth
+    // costs multiple seconds of synchronous CPU.
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("the depth scan is quote-aware: '/>' inside an attribute value can't fake a self-closing tag", () => {
+    // Each opener smuggles '/>' in an attribute; a naive scanner reads it as
+    // self-closing (depth 0) while the real parser nests all 5000 levels.
+    const depth = 5_000;
+    const deep =
+      '<outline text="/>x">'.repeat(depth) + "</outline>".repeat(depth);
+    expect(parseOpml(opml(deep))).toBeNull();
+  });
+
+  it("still accepts realistic breadth and folder nesting", () => {
+    const flat = Array.from(
+      { length: 2_000 },
+      (_, i) => `<outline text="F${i}" xmlUrl="https://h.example/${i}"/>`,
+    ).join("");
+    const parsed = parseOpml(opml(flat));
+    expect(parsed).not.toBeNull();
+    expect(parsed!.groups[0].entries).toHaveLength(2_000);
+
+    const nested =
+      "<outline text=\"a\"><outline text=\"b\"><outline text=\"c\">" +
+      "<outline text=\"leaf\" xmlUrl=\"https://h.example/leaf\"/>" +
+      "</outline></outline></outline>";
+    expect(parseOpml(opml(nested))).not.toBeNull();
+  });
 });
 
 describe("planOpmlImport", () => {

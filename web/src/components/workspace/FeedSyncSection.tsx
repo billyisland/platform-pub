@@ -57,6 +57,7 @@ export function FeedSyncSection({
   onApplied: () => void;
 }) {
   const [previewing, setPreviewing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [preview, setPreview] = useState<FollowImportSyncPreview | null>(null);
   const [run, setRun] = useState<FollowImportRun | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +66,7 @@ export function FeedSyncSection({
   const [syncedAt, setSyncedAt] = useState<string | null>(binding.lastSyncedAt);
 
   const applying = run?.status === "pending" || run?.status === "running";
-  const busy = previewing || applying;
+  const busy = previewing || confirming || applying;
 
   const handleSyncNow = useCallback(async () => {
     if (busy) return;
@@ -85,7 +86,11 @@ export function FeedSyncSection({
   }, [busy, feedId]);
 
   const handleApply = useCallback(async () => {
+    // confirming (via busy) is the in-flight guard: without it a double-click
+    // POSTs confirm twice — the loser 404s ("no confirmable preview") and
+    // paints an error next to a sync that actually started.
     if (!preview || preview.upToDate || busy) return;
+    setConfirming(true);
     setError(null);
     try {
       const { import: started } = await followImports.confirmSync(preview.id);
@@ -93,6 +98,8 @@ export function FeedSyncSection({
       setPreview(null);
     } catch (err) {
       setError(apiErrorMessage(err) ?? "Could not start the sync — try again.");
+    } finally {
+      setConfirming(false);
     }
   }, [preview, busy]);
 
@@ -220,27 +227,29 @@ export function FeedSyncSection({
             <button
               type="button"
               onClick={() => void handleApply()}
+              disabled={busy}
               className="label-ui"
               style={{
                 padding: "6px 10px",
-                background: T.fieldBg,
+                background: busy ? "transparent" : T.fieldBg,
                 border: "none",
-                color: T.fg,
-                cursor: "pointer",
+                color: busy ? T.hintFg : T.fg,
+                cursor: busy ? "default" : "pointer",
               }}
             >
-              Apply
+              {confirming ? "Starting…" : "Apply"}
             </button>
             <button
               type="button"
               onClick={handleCancel}
+              disabled={confirming}
               className="label-ui"
               style={{
                 padding: "6px 10px",
                 background: "transparent",
                 border: "none",
                 color: T.hintFg,
-                cursor: "pointer",
+                cursor: confirming ? "default" : "pointer",
               }}
             >
               Cancel

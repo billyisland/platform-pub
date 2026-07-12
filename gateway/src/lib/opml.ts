@@ -69,7 +69,55 @@ function validFeedUrl(raw: string): string | null {
   }
 }
 
+// Pre-parse shape guard — jsdom's XML parse is quadratic in element nesting
+// DEPTH (measured: ~12k nested outlines in a 336KB file, well under the 2MB
+// upload cap, costs ~30s of synchronous CPU on the request path), so a small
+// crafted upload could freeze the single-threaded gateway. Real OPML nests
+// folders 2–3 deep; reject pathological shapes with a linear, quote-aware
+// scan before jsdom ever sees the text. Breadth is cheap (40k flat outlines
+// parse in under a second), so the count bound is generous. Capping depth
+// here also bounds collect()'s recursion below, so it can't overflow.
+const MAX_OUTLINE_DEPTH = 100;
+const MAX_OUTLINE_COUNT = 50_000;
+
+export function opmlShapeOk(text: string): boolean {
+  let depth = 0;
+  let count = 0;
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const lt = text.indexOf("<", i);
+    if (lt === -1) break;
+    // Scan to the tag's real '>' respecting quoted attribute values, so an
+    // attribute containing '>' or '/>' can't skew the depth count.
+    let j = lt + 1;
+    let quote: '"' | "'" | null = null;
+    while (j < n) {
+      const c = text[j];
+      if (quote) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'") {
+        quote = c;
+      } else if (c === ">") {
+        break;
+      }
+      j++;
+    }
+    if (j >= n) break; // unterminated tag — jsdom rejects the file anyway
+    const tag = text.slice(lt + 1, j);
+    if (/^outline(?:[\s/]|$)/i.test(tag)) {
+      if (++count > MAX_OUTLINE_COUNT) return false;
+      if (!tag.endsWith("/") && ++depth > MAX_OUTLINE_DEPTH) return false;
+    } else if (/^\/outline\s*$/i.test(tag)) {
+      if (depth > 0) depth--;
+    }
+    i = j + 1;
+  }
+  return true;
+}
+
 export function parseOpml(text: string): ParsedOpml | null {
+  if (!opmlShapeOk(text)) return null;
   let doc: Document;
   try {
     doc = new JSDOM(text, { contentType: "text/xml" }).window.document;
