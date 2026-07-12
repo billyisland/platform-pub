@@ -63,11 +63,14 @@ export type FollowImportSyncPreview =
 
 // The POST response additionally carries the origin label and the
 // no-silent-caps truncation facts (§6.5) for the offer/summary copy.
+// `unresolved` (AP only, rare): entries the graph read couldn't canonicalise
+// to an account — dropped, but stated.
 export interface FollowImportCreated extends FollowImportRun {
   originLabel: string
   remoteTotal: number
   truncated: boolean
   cap: number
+  unresolved?: number
 }
 
 // Aggregate no-silent-caps facts for an OPML upload (§6.5): identity-cap

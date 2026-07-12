@@ -9,6 +9,16 @@ import {
   type AddSourceInput,
 } from "../routes/feeds/sources.js";
 import { getProfile as atprotoGetProfile, getFollows } from "./atproto-resolve.js";
+import {
+  extractFromMastodonUrl,
+  fetchActorProfile,
+  fetchMastodonFollowing,
+  isAcctShape,
+  lookupMastodonAccount,
+  resolveWebFinger,
+  type MastodonApiAccount,
+} from "./activitypub-resolve.js";
+import { decryptJson } from "@platform-pub/shared/lib/crypto.js";
 import { fetchNostrContacts } from "./nostr-relay.js";
 import { getDefaultProfileRelays } from "./nostr-search.js";
 
@@ -32,6 +42,18 @@ import { getDefaultProfileRelays } from "./nostr-search.js";
 
 export function followImportEnabled(): boolean {
   return process.env.FOLLOW_IMPORT_ENABLED === "1";
+}
+
+// §6.6 — the per-protocol brake the ADR anticipated for activitypub: 1c is
+// gated on the §6.4 poller-fairness work having SOAKED under 1a/1b load (an
+// AP import is the one that stresses the per-host outbox-poll budget), so AP
+// import stays dark until the operator flips this in addition to the master
+// switch.
+export function followImportApEnabled(): boolean {
+  return (
+    followImportEnabled() &&
+    process.env.FOLLOW_IMPORT_ACTIVITYPUB_ENABLED === "1"
+  );
 }
 
 // Per-import cap (§6.5, v1: 1000, most-recently-followed first). Truncation is
@@ -68,19 +90,21 @@ export interface ImportIdentity {
 
 export type ImportProtocol = "atproto" | "nostr_external" | "activitypub" | "rss";
 
-// Protocols whose graph reader is live (§8 phasing: 1a atproto + 1b Nostr;
-// activitypub is 1c, OPML/rss is 1d). Surfaced to the web client via the
-// /linked-accounts capabilities block so import affordances appear only for
-// what the server can honour — 1c/1d light up here with no web change.
-export const IMPORTABLE_PROTOCOLS: ImportProtocol[] = [
-  "atproto",
-  "nostr_external",
-];
+// Protocols whose graph reader is live (§8 phasing: 1a atproto + 1b Nostr +
+// 1c activitypub behind its §6.6 sub-brake; OPML/rss is 1d, a separate
+// capability). Surfaced to the web client via the /linked-accounts
+// capabilities block so import affordances appear only for what the server
+// can honour.
+export function importableProtocols(): ImportProtocol[] {
+  const protocols: ImportProtocol[] = ["atproto", "nostr_external"];
+  if (followImportApEnabled()) protocols.push("activitypub");
+  return protocols;
+}
 
 export type FollowGraphResult =
   | {
       ok: true;
-      /** Canonical origin identity (handle → DID, npub → hex, …). */
+      /** Canonical origin identity (handle → DID, npub → hex, acct, …). */
       originIdentity: string;
       /** Human label for the origin (handle etc.), for feed naming/UI. */
       originLabel: string;
@@ -88,10 +112,16 @@ export type FollowGraphResult =
       /** Remote graph size before the cap (best known). */
       total: number;
       truncated: boolean;
+      /** Entries the read couldn't canonicalise (AP WebFinger fallback
+       *  failures) — dropped from identities but never silently (§6.5). */
+      unresolved?: number;
     }
   | {
       ok: false;
-      reason: "unsupported" | "malformed" | "unreachable";
+      // "hidden" is AP-only (§5.3): the account hides its follow list from
+      // the public endpoint — the fix is linking the account, so the client
+      // gets a distinct error to say so.
+      reason: "unsupported" | "malformed" | "unreachable" | "hidden";
       message: string;
     };
 
@@ -110,20 +140,36 @@ export function importFeedName(protocol: ImportProtocol): string {
 }
 
 // -----------------------------------------------------------------------------
-// Graph readers (Phase 1a atproto, 1b Nostr). activitypub is Phase 1c (gated
-// on the §6.4 fairness work having soaked); rss/OPML is Phase 1d (file upload,
-// different liveness policy) — both refuse here for now.
+// Graph readers (Phase 1a atproto, 1b Nostr, 1c activitypub). rss/OPML is
+// Phase 1d (file upload, different liveness policy) — it refuses here.
+//
+// opts.accountId is the REQUESTING account (both routes pass the session
+// owner): the AP reader uses it to find a matching linked presence whose
+// token makes the read work even when the account hides its follows (the
+// authed self-call bypasses hide_results?, verified against Mastodon source).
 // -----------------------------------------------------------------------------
 
 export async function readFollowGraph(
   protocol: ImportProtocol,
   originIdentity: string,
+  opts: { accountId?: string } = {},
 ): Promise<FollowGraphResult> {
   switch (protocol) {
     case "atproto":
       return readAtprotoGraph(originIdentity.trim());
     case "nostr_external":
       return readNostrGraph(originIdentity.trim());
+    case "activitypub":
+      // §6.6: AP import waits on the poller-fairness soak — behind its own
+      // brake even while the master switch is on.
+      if (!followImportApEnabled()) {
+        return {
+          ok: false,
+          reason: "unsupported",
+          message: "Importing fediverse follows is not enabled yet",
+        };
+      }
+      return readActivityPubGraph(originIdentity.trim(), opts.accountId);
     case "rss":
       // Phase 1d: RSS has no remote graph to read — the artifact is an OPML
       // file, which arrives through POST /follow-imports/opml instead.
@@ -283,6 +329,284 @@ async function resolveNip05Pubkey(
     logger.warn({ identifier, err }, "NIP-05 resolution failed");
     return null;
   }
+}
+
+// -----------------------------------------------------------------------------
+// ActivityPub (§5.3, Phase 1c): acct / @acct / profile URL / actor URI → the
+// origin instance's Mastodon client API. Two legs on one path: a matching
+// LINKED presence supplies a bearer token (scope read:accounts authorises the
+// endpoint, and the authed self-call works even with hidden follows); anyone
+// else's public graph reads unauthenticated (D8), with hidden follows
+// detected as empty-list + following_count > 0 and surfaced as "hidden" so
+// the client can point at linking. Entries canonicalise to the actor URI —
+// free where the Account entity carries `uri` (Mastodon ≥4.2), WebFinger
+// per-host-throttled for the rest; unresolvable entries are dropped but
+// COUNTED (unresolved — no-silent-caps).
+// -----------------------------------------------------------------------------
+
+const WEBFINGER_HOST_CONCURRENCY = 4;
+
+async function readActivityPubGraph(
+  input: string,
+  accountId?: string,
+): Promise<FollowGraphResult> {
+  // 1. Whatever the user pasted → a full user@domain acct.
+  let acct: string | null = null;
+  try {
+    const url = new URL(input);
+    if (url.protocol !== "https:") {
+      return {
+        ok: false,
+        reason: "malformed",
+        message: "Fediverse profile URLs must use https://",
+      };
+    }
+    const extracted = extractFromMastodonUrl(url);
+    if (extracted?.acct) {
+      acct = extracted.acct;
+    } else {
+      // Actor-shaped (or unrecognised) URL — the actor document names its
+      // own acct via preferredUsername + host.
+      const profile = await fetchActorProfile(
+        extracted?.actorUri ?? input,
+      );
+      if (!profile?.handle) {
+        return {
+          ok: false,
+          reason: "unreachable",
+          message: "This URL did not resolve to a fediverse account",
+        };
+      }
+      acct = profile.handle;
+    }
+  } catch {
+    // Not a URL — try the acct shape.
+    const clean = input.replace(/^@+/, "");
+    if (isAcctShape(clean)) acct = clean;
+  }
+  if (!acct) {
+    return {
+      ok: false,
+      reason: "malformed",
+      message:
+        "Expected a fediverse handle (user@instance) or a profile URL",
+    };
+  }
+  acct = acct.toLowerCase();
+
+  // 2. WebFinger pins the canonical host — the acct's identity domain and
+  //    the instance's API host can differ (split-domain installs), and the
+  //    actor URI's origin is the API host.
+  const actorUri = await resolveWebFinger(acct);
+  if (!actorUri) {
+    return {
+      ok: false,
+      reason: "unreachable",
+      message: `Could not resolve @${acct} via WebFinger`,
+    };
+  }
+  let apiOrigin: string;
+  try {
+    apiOrigin = new URL(actorUri).origin;
+  } catch {
+    return {
+      ok: false,
+      reason: "unreachable",
+      message: `@${acct} resolved to an invalid actor URI`,
+    };
+  }
+
+  // 3. The requester's own linked presence, when it IS this identity,
+  //    supplies the bearer token (always readable, hidden or not).
+  let accessToken: string | undefined;
+  let presenceExternalId: string | undefined;
+  if (accountId) {
+    const { rows } = await pool.query<{
+      external_id: string;
+      handle: string | null;
+      service_url: string | null;
+      credentials_enc: string | null;
+    }>(
+      `SELECT external_id, handle, service_url, credentials_enc
+         FROM network_presences
+        WHERE account_id = $1 AND protocol = 'activitypub'
+          AND lifecycle_state = 'active' AND is_valid`,
+      [accountId],
+    );
+    const presence = rows.find((r) => r.handle?.toLowerCase() === acct);
+    if (presence?.credentials_enc) {
+      try {
+        const creds = decryptJson<{ accessToken?: string }>(
+          presence.credentials_enc,
+        );
+        if (creds.accessToken) {
+          accessToken = creds.accessToken;
+          presenceExternalId = presence.external_id;
+          if (presence.service_url) {
+            try {
+              apiOrigin = new URL(presence.service_url).origin;
+            } catch {
+              // keep the WebFinger-derived origin
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          { accountId, acct, err },
+          "AP import: presence token decrypt failed — reading public graph",
+        );
+      }
+    }
+  }
+
+  // 4. Public lookup for the instance-local account id + following_count
+  //    (also the hidden-follows denominator). A linked presence already
+  //    carries the id, so lookup failure is fatal only for the public leg.
+  const looked = await lookupMastodonAccount(apiOrigin, acct);
+  const instanceAccountId = looked?.id ?? presenceExternalId;
+  if (!instanceAccountId) {
+    return {
+      ok: false,
+      reason: "unreachable",
+      message:
+        "This instance doesn't expose a readable follow list (a Mastodon-compatible API is required)",
+    };
+  }
+  const followingCount = looked?.followingCount ?? null;
+
+  const fetched = await fetchMastodonFollowing(
+    apiOrigin,
+    instanceAccountId,
+    FOLLOW_IMPORT_CAP,
+    accessToken,
+  );
+  if (fetched === null) {
+    // Bad/expired token: one public retry — the graph may be readable anyway.
+    const publicRetry = accessToken
+      ? await fetchMastodonFollowing(
+          apiOrigin,
+          instanceAccountId,
+          FOLLOW_IMPORT_CAP,
+        )
+      : null;
+    if (publicRetry === null) {
+      return {
+        ok: false,
+        reason: "unreachable",
+        message: "Could not read the follow list from this instance",
+      };
+    }
+    accessToken = undefined;
+    return finishActivityPubGraph(acct, apiOrigin, publicRetry, followingCount, false);
+  }
+  return finishActivityPubGraph(
+    acct,
+    apiOrigin,
+    fetched,
+    followingCount,
+    accessToken !== undefined,
+  );
+}
+
+async function finishActivityPubGraph(
+  acct: string,
+  apiOrigin: string,
+  fetched: MastodonApiAccount[],
+  followingCount: number | null,
+  authed: boolean,
+): Promise<FollowGraphResult> {
+  // §5.3: hide_collections yields an empty list, not an error — only the
+  // count betrays it. The authed self-call bypasses the hide, so this can
+  // only fire on the public leg.
+  if (fetched.length === 0 && !authed && (followingCount ?? 0) > 0) {
+    return {
+      ok: false,
+      reason: "hidden",
+      message:
+        "This account's follows are hidden — link the account under Reach other networks to import them",
+    };
+  }
+
+  const { identities, unresolved } = await canonicaliseApEntries(
+    fetched,
+    apiOrigin,
+  );
+  return {
+    ok: true,
+    originIdentity: acct,
+    originLabel: `@${acct}`,
+    identities,
+    total: Math.max(followingCount ?? 0, fetched.length),
+    truncated: (followingCount ?? 0) > fetched.length,
+    unresolved,
+  };
+}
+
+// Actor-URI canonicalisation for entries the origin instance didn't
+// serialize a `uri` for (pre-4.2). WebFinger per followed account, grouped
+// by host: hosts run in a small parallel pool, requests within one host stay
+// sequential (politeness — the "big instance" concentration is per-host).
+async function canonicaliseApEntries(
+  fetched: MastodonApiAccount[],
+  apiOrigin: string,
+): Promise<{ identities: ImportIdentity[]; unresolved: number }> {
+  const originHost = new URL(apiOrigin).hostname;
+  const fullAcct = (a: { acct: string }) =>
+    a.acct.includes("@") ? a.acct : `${a.acct}@${originHost}`;
+
+  const missing = fetched.filter((a) => !a.uri);
+  const resolvedUris = new Map<string, string>(); // full acct → actor URI
+  if (missing.length > 0) {
+    const byHost = new Map<string, string[]>();
+    for (const a of missing) {
+      const full = fullAcct(a);
+      const host = full.split("@")[1];
+      byHost.set(host, [...(byHost.get(host) ?? []), full]);
+    }
+    const groups = [...byHost.values()];
+    let next = 0;
+    const worker = async () => {
+      for (;;) {
+        const group = groups[next++];
+        if (!group) return;
+        for (const full of group) {
+          const uri = await resolveWebFinger(full);
+          if (uri) resolvedUris.set(full, uri);
+        }
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(WEBFINGER_HOST_CONCURRENCY, groups.length) },
+        worker,
+      ),
+    );
+  }
+
+  const seen = new Set<string>();
+  const identities: ImportIdentity[] = [];
+  let unresolved = 0;
+  for (const a of fetched) {
+    const uri = a.uri ?? resolvedUris.get(fullAcct(a));
+    if (!uri) {
+      unresolved++;
+      continue;
+    }
+    if (seen.has(uri)) continue;
+    seen.add(uri);
+    identities.push({
+      uri,
+      displayName: a.displayName || `@${fullAcct(a)}`,
+      avatarUrl: a.avatar ?? undefined,
+    });
+  }
+  if (unresolved > 0) {
+    logger.warn(
+      { apiOrigin, unresolved },
+      "AP import: entries dropped — no actor URI and WebFinger failed",
+    );
+  }
+  return { identities, unresolved };
 }
 
 // -----------------------------------------------------------------------------

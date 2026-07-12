@@ -178,6 +178,147 @@ export function extractFromMastodonUrl(
 }
 
 // -----------------------------------------------------------------------------
+// Mastodon-API follow graph (FOLLOW-GRAPH-IMPORT-ADR §5.3, Phase 1c)
+//
+// The graph read is the Mastodon client API, not raw ActivityPub (AP
+// `following` collections are commonly hidden or unpaged; the client API is
+// what both the authed linked-token path and the public pasted-handle path
+// speak). Live-verified against mastodon.social 2026-07-12:
+//   - GET /api/v1/accounts/lookup?acct=…  is public and returns the numeric
+//     account id + following_count + the actor `uri`
+//   - GET /api/v1/accounts/:id/following  is public unless the account hides
+//     follows (then it returns an EMPTY LIST, not an error — detection is
+//     empty + following_count > 0); with a token it authorises scope
+//     `read` ∪ `read:accounts` (mastodon/mastodon main,
+//     following_accounts_controller.rb) — our linked tokens carry
+//     `read:accounts` — and the self-call bypasses hidden-follows entirely
+//   - pagination is a Link header rel="next" with max_id, newest follow
+//     first, ≤80/page — so a capped read keeps the freshest slice
+//   - each entry is an Account entity whose `uri` IS the canonical actor URI
+//     (local and remote alike), so canonicalisation is free on ≥4.2 origin
+//     instances; WebFinger is only the fallback for older serializers
+// -----------------------------------------------------------------------------
+
+export interface MastodonApiAccount {
+  id: string;
+  acct: string;
+  /** Actor URI (canonical stored form) — absent on pre-4.2 origin instances. */
+  uri: string | null;
+  displayName: string | null;
+  avatar: string | null;
+  followingCount: number | null;
+}
+
+function parseApiAccount(raw: unknown): MastodonApiAccount | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const a = raw as Record<string, unknown>;
+  if (typeof a.id !== "string" || typeof a.acct !== "string") return null;
+  let uri: string | null = null;
+  if (typeof a.uri === "string") {
+    try {
+      if (new URL(a.uri).protocol === "https:") uri = a.uri;
+    } catch {
+      // not a URL — leave null, the WebFinger fallback handles it
+    }
+  }
+  return {
+    id: a.id,
+    acct: a.acct,
+    uri,
+    displayName:
+      typeof a.display_name === "string" && a.display_name
+        ? a.display_name
+        : null,
+    avatar: typeof a.avatar === "string" ? a.avatar : null,
+    followingCount:
+      typeof a.following_count === "number" ? a.following_count : null,
+  };
+}
+
+export async function lookupMastodonAccount(
+  apiOrigin: string,
+  acct: string,
+): Promise<MastodonApiAccount | null> {
+  try {
+    const res = await safeFetch(
+      `${apiOrigin}/api/v1/accounts/lookup?acct=${encodeURIComponent(acct)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    return parseApiAccount(JSON.parse(res.text));
+  } catch (err) {
+    logger.warn({ apiOrigin, acct, err }, "Mastodon account lookup failed");
+    return null;
+  }
+}
+
+// Link: <https://host/api/v1/accounts/1/following?max_id=…>; rel="next", …
+// Only a same-origin next URL is honoured — the header is remote-controlled
+// input and the pager must never be steered off the instance it started on.
+export function parseNextLink(
+  linkHeader: string | null,
+  apiOrigin: string,
+): string | null {
+  if (!linkHeader) return null;
+  for (const part of linkHeader.split(",")) {
+    const m = part.match(/<([^>]+)>\s*;\s*rel="?next"?/);
+    if (!m) continue;
+    try {
+      const url = new URL(m[1]);
+      if (url.origin === new URL(apiOrigin).origin) return url.toString();
+    } catch {
+      // malformed — ignore
+    }
+    return null;
+  }
+  return null;
+}
+
+// Page through /following. Mirrors atproto getFollows' failure contract:
+// null only when the FIRST page fails (bad token / account gone / instance
+// not speaking the Mastodon API); a mid-pagination failure returns the
+// partial list rather than discarding pages already fetched.
+export async function fetchMastodonFollowing(
+  apiOrigin: string,
+  accountId: string,
+  cap: number,
+  accessToken?: string,
+): Promise<MastodonApiAccount[] | null> {
+  const accounts: MastodonApiAccount[] = [];
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  let next: string | null =
+    `${apiOrigin}/api/v1/accounts/${encodeURIComponent(accountId)}/following?limit=80`;
+  let firstPage = true;
+  while (next && accounts.length < cap) {
+    let page: unknown;
+    let linkHeader: string | null = null;
+    try {
+      const res = await safeFetch(next, { headers });
+      if (!res.ok) throw new Error(`following returned HTTP ${res.status}`);
+      linkHeader = res.headers?.get?.("link") ?? null;
+      page = JSON.parse(res.text);
+    } catch (err) {
+      logger.warn(
+        { apiOrigin, accountId, page: firstPage ? "first" : "later", err },
+        "Mastodon following fetch failed",
+      );
+      return firstPage ? null : accounts;
+    }
+    firstPage = false;
+    if (!Array.isArray(page)) break;
+    for (const raw of page) {
+      const parsed = parseApiAccount(raw);
+      if (parsed) accounts.push(parsed);
+      if (accounts.length >= cap) break;
+    }
+    if (page.length === 0) break;
+    next = parseNextLink(linkHeader, apiOrigin);
+  }
+  return accounts;
+}
+
+// -----------------------------------------------------------------------------
 // Threadiverse URL patterns — Lemmy, PieFed, and Mbin use different path
 // conventions from Mastodon. All support WebFinger, so we extract an acct
 // handle and let the standard resolution path take it from there.

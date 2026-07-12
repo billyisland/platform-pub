@@ -105,9 +105,11 @@ export function SettingsPanel({
 
         {/* Post-link follow-import offer (FOLLOW-GRAPH-IMPORT-ADR §7.1) —
             separate from the transient banner so it outlives the auto-dismiss.
-            The component gates itself on the server capability. */}
-        {initialLinked === 'bluesky' && (
+            The component gates itself on the server capability (so the
+            mastodon offer stays hidden while the §6.6 AP sub-brake is on). */}
+        {(initialLinked === 'bluesky' || initialLinked === 'mastodon') && (
           <PostLinkImportOffer
+            network={initialLinked}
             follows={
               initialFollows && /^\d+$/.test(initialFollows)
                 ? parseInt(initialFollows, 10)

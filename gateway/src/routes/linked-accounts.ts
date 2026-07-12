@@ -8,7 +8,7 @@ import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
 import { getProfile, isDid, normaliseHandle } from "../lib/atproto-resolve.js";
 import {
   followImportEnabled,
-  IMPORTABLE_PROTOCOLS,
+  importableProtocols,
 } from "../lib/follow-import.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireEnv } from "@platform-pub/shared/lib/env.js";
@@ -105,6 +105,9 @@ interface MastodonVerifyCredentialsResponse {
   display_name: string;
   avatar: string;
   url: string;
+  // The post-link import offer's count (FOLLOW-GRAPH-IMPORT-ADR §7.1) —
+  // free because this call already happens.
+  following_count?: number;
 }
 
 // ---- Route handlers ---------------------------------------------------------
@@ -166,9 +169,11 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           : [],
         // Follow-graph import (FOLLOW-GRAPH-IMPORT-ADR §7): the protocols
         // whose remote graph the import engine can read today. Empty while
-        // the master switch is dark.
+        // the master switch is dark; activitypub additionally rides its §6.6
+        // sub-brake (FOLLOW_IMPORT_ACTIVITYPUB_ENABLED) pending the §6.4
+        // fairness soak.
         followImportProtocols: followImportEnabled()
-          ? IMPORTABLE_PROTOCOLS
+          ? importableProtocols()
           : [],
         // OPML upload (Phase 1d) — deliberately NOT an entry in
         // followImportProtocols: that list gates the "import this account's
@@ -547,7 +552,17 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           },
           "Mastodon account linked",
         );
-        return redirectOk("mastodon");
+        // The follow count rides the same ?linked= redirect channel the
+        // connect banner reads (§7.1), mirroring the Bluesky callback — only
+        // while AP import is live (incl. the §6.6 sub-brake), so nothing
+        // leaks while it's dark.
+        const qs = new URLSearchParams({ linked: "mastodon" });
+        if (
+          importableProtocols().includes("activitypub") &&
+          typeof profile.following_count === "number"
+        )
+          qs.set("follows", String(profile.following_count));
+        return reply.redirect(`${APP_URL}/settings?${qs.toString()}`);
       } catch (err) {
         // 23505 = the (protocol, external_id) unique index (migration 115):
         // another account already links this identity. Reject cleanly rather

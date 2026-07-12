@@ -59,9 +59,10 @@ export function FollowImportSection({
     <div>
       <p className="text-ui-sm text-black">Bring your follows</p>
       <p className="text-ui-xs text-grey-600 mt-1 leading-relaxed">
-        Already follow people elsewhere? Paste a Bluesky handle, an npub, or a
-        NIP-05 address and all.haus builds a new feed from everyone that account
-        follows. One-way: nothing changes on the other network.
+        Already follow people elsewhere? Paste a Bluesky handle,
+        {importable.includes('activitypub') && ' a Mastodon handle,'} an npub,
+        or a NIP-05 address and all.haus builds a new feed from everyone that
+        account follows. One-way: nothing changes on the other network.
       </p>
       <input
         type="text"
@@ -73,7 +74,11 @@ export function FollowImportSection({
             ri.submit()
           }
         }}
-        placeholder="alice.bsky.social · npub1… · name@domain.com"
+        placeholder={
+          importable.includes('activitypub')
+            ? 'alice.bsky.social · @user@instance · npub1…'
+            : 'alice.bsky.social · npub1… · name@domain.com'
+        }
         className="w-full bg-glasshouse-well px-4 py-2.5 text-sm text-black placeholder-grey-300 focus:outline-none max-w-sm mt-3"
       />
       <div className="mt-2 space-y-1">

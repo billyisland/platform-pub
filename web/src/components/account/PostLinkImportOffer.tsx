@@ -3,22 +3,54 @@
 // =============================================================================
 // PostLinkImportOffer — the post-link follow-import prompt (FOLLOW-GRAPH-
 // IMPORT-ADR §7.1). Rides the same ?linked= redirect channel as the connect
-// banner: the gateway appends &follows=<count> to a successful Bluesky link
-// while the import feature is live, the /settings shim forwards it, and
-// SettingsPanel mounts this under the banner. Opt-in per run (D7) — the offer
-// does nothing until the user says yes, and "Not now" costs nothing (the same
-// import stays reachable from "Reach other networks" and the FeedComposer).
+// banner: the gateway appends &follows=<count> to a successful link while the
+// import feature is live, the /settings shim forwards it, and SettingsPanel
+// mounts this under the banner. Opt-in per run (D7) — the offer does nothing
+// until the user says yes, and "Not now" costs nothing (the same import stays
+// reachable from "Reach other networks" and the FeedComposer).
 //
-// Bluesky-only today (1a); the Mastodon offer lands with the 1c reader.
+// Bluesky (1a) + Mastodon (1c). The origin identity is protocol-shaped: the
+// DID for atproto, the user@instance handle for activitypub (the presence's
+// external_id is a per-instance numeric id the graph reader can't use).
 // =============================================================================
 
 import { useEffect, useState } from 'react'
-import { getNetworkCapabilities } from '../../lib/api/linked-accounts'
+import {
+  getNetworkCapabilities,
+  type LinkedAccount,
+} from '../../lib/api/linked-accounts'
 import { useLinkedAccounts } from '../../hooks/useLinkedAccounts'
 import { useFollowImportRun } from '../../hooks/useFollowImportRun'
+import type { FollowImportProtocol } from '../../lib/api'
 import { FollowImportStatus } from '../network/FollowImportStatus'
 
-export function PostLinkImportOffer({ follows }: { follows: number | null }) {
+const NETWORKS: Record<
+  'bluesky' | 'mastodon',
+  {
+    protocol: FollowImportProtocol
+    label: string
+    origin: (a: LinkedAccount) => string | null
+  }
+> = {
+  bluesky: {
+    protocol: 'atproto',
+    label: 'Bluesky',
+    origin: a => a.externalId ?? null,
+  },
+  mastodon: {
+    protocol: 'activitypub',
+    label: 'Mastodon',
+    origin: a => a.externalHandle ?? null,
+  },
+}
+
+export function PostLinkImportOffer({
+  network,
+  follows,
+}: {
+  network: 'bluesky' | 'mastodon'
+  follows: number | null
+}) {
   const [importable, setImportable] = useState<string[]>([])
   const [dismissed, setDismissed] = useState(false)
   const accounts = useLinkedAccounts()
@@ -30,9 +62,11 @@ export function PostLinkImportOffer({ follows }: { follows: number | null }) {
     )
   }, [])
 
-  const did =
-    accounts?.find(a => a.protocol === 'atproto')?.externalId ?? null
-  if (dismissed || !importable.includes('atproto') || !did) return null
+  const net = NETWORKS[network]
+  const account =
+    accounts?.find(a => a.protocol === net.protocol) ?? null
+  const origin = account ? net.origin(account) : null
+  if (dismissed || !importable.includes(net.protocol) || !origin) return null
 
   // The offer stays up until a run exists (an error keeps the buttons so the
   // user can retry); once started, the status line takes over.
@@ -44,20 +78,20 @@ export function PostLinkImportOffer({ follows }: { follows: number | null }) {
         <>
           <p className="text-ui-sm text-black">
             {follows !== null && follows > 0
-              ? `Import the ${follows} accounts you follow on Bluesky as a new feed?`
-              : 'Import the accounts you follow on Bluesky as a new feed?'}
+              ? `Import the ${follows} accounts you follow on ${net.label} as a new feed?`
+              : `Import the accounts you follow on ${net.label} as a new feed?`}
           </p>
           <p className="text-ui-xs text-grey-600 leading-relaxed">
             It lands as an ordinary feed — retune, redistribute, or delete it
-            with the usual tools. One-way: nothing changes on Bluesky. You can
-            also do this later from &ldquo;Reach other networks&rdquo;.
+            with the usual tools. One-way: nothing changes on {net.label}. You
+            can also do this later from &ldquo;Reach other networks&rdquo;.
           </p>
           <div className="flex gap-3">
             <button
               onClick={() =>
                 void followImport.start({
-                  protocol: 'atproto',
-                  originIdentity: did,
+                  protocol: net.protocol,
+                  originIdentity: origin,
                 })
               }
               disabled={inFlight}

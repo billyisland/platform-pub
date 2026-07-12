@@ -102,7 +102,9 @@ export default async function followImportRoutes(app: FastifyInstance) {
       }
       const { protocol, originIdentity, feedName } = parsed.data;
 
-      const graph = await readFollowGraph(protocol, originIdentity);
+      const graph = await readFollowGraph(protocol, originIdentity, {
+        accountId: ownerId,
+      });
       if (!graph.ok) {
         if (graph.reason === "unsupported")
           return reply
@@ -112,6 +114,13 @@ export default async function followImportRoutes(app: FastifyInstance) {
           return reply
             .status(400)
             .send({ error: "invalid_origin", message: graph.message });
+        if (graph.reason === "hidden")
+          // AP-only (§5.3): the follow list exists but the public endpoint
+          // hides it — linking the account is the fix, so the client gets a
+          // distinct code to say so.
+          return reply
+            .status(422)
+            .send({ error: "follows_hidden", message: graph.message });
         return reply
           .status(422)
           .send({ error: "origin_unreachable", message: graph.message });
@@ -174,10 +183,12 @@ export default async function followImportRoutes(app: FastifyInstance) {
           imported: 0,
           skipped: 0,
           failed: 0,
-          // No-silent-caps rule: the offer/summary states truncation.
+          // No-silent-caps rule: the offer/summary states truncation and
+          // any entries the read couldn't canonicalise (AP, rare).
           remoteTotal: graph.total,
           truncated: graph.truncated,
           cap: FOLLOW_IMPORT_CAP,
+          unresolved: graph.unresolved ?? 0,
         },
         feed: feedRowToResponse(feed),
       });
@@ -385,6 +396,7 @@ export default async function followImportRoutes(app: FastifyInstance) {
       const graph = await readFollowGraph(
         binding.protocol,
         binding.origin_identity,
+        { accountId: ownerId },
       );
       if (!graph.ok) {
         if (graph.reason === "unsupported")
@@ -395,6 +407,10 @@ export default async function followImportRoutes(app: FastifyInstance) {
           return reply
             .status(400)
             .send({ error: "invalid_origin", message: graph.message });
+        if (graph.reason === "hidden")
+          return reply
+            .status(422)
+            .send({ error: "follows_hidden", message: graph.message });
         return reply
           .status(422)
           .send({ error: "origin_unreachable", message: graph.message });
@@ -423,11 +439,17 @@ export default async function followImportRoutes(app: FastifyInstance) {
         displayName: r.display_name ?? undefined,
       }));
 
+      // Removals need certainty about the FULL remote set: a truncated read
+      // can't tell "unfollowed" from "outside the window", and an entry the
+      // read couldn't canonicalise (AP unresolved) is still followed even
+      // though it's missing from the desired set — either way, suppress.
+      const removalsSuppressed =
+        graph.truncated || (graph.unresolved ?? 0) > 0;
       const { toAdd, toRemove } = computeSyncDiff(
         graph.identities,
         exclusions,
         members,
-        { removalsAllowed: !graph.truncated },
+        { removalsAllowed: !removalsSuppressed },
       );
 
       if (toAdd.length === 0 && toRemove.length === 0) {
@@ -442,7 +464,7 @@ export default async function followImportRoutes(app: FastifyInstance) {
             feedId,
             protocol: binding.protocol,
             originLabel: graph.originLabel,
-            removalsSkipped: graph.truncated,
+            removalsSkipped: removalsSuppressed,
           },
         });
       }
@@ -494,7 +516,7 @@ export default async function followImportRoutes(app: FastifyInstance) {
           truncated: graph.truncated,
           remoteTotal: graph.total,
           cap: FOLLOW_IMPORT_CAP,
-          removalsSkipped: graph.truncated,
+          removalsSkipped: removalsSuppressed,
         },
       });
     },

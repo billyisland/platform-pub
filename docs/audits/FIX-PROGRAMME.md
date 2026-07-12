@@ -23,6 +23,63 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (fifth entry)** — **Follow-graph import Phase 1c ActivityPub
+  (FOLLOW-GRAPH-IMPORT-ADR §5.3/§11.4) — Mastodon-API follow-graph reader,
+  dark behind `FOLLOW_IMPORT_ENABLED` × the new §6.6 sub-brake
+  `FOLLOW_IMPORT_ACTIVITYPUB_ENABLED` (default off pending the §6.4
+  poller-fairness soak).** **The gating live scope check ran first** (§2's
+  re-consent risk): (a) verified against mastodon/mastodon main —
+  `following_accounts_controller.rb` authorises `:read, :'read:accounts'`, so
+  the already-granted `read:accounts` covers the endpoint, **no re-consent
+  flow needed**; bonus finding: `hide_results?` is bypassed when
+  `current_account.id == @account.id`, so the authed self-call reads hidden
+  follows too. (b) Live against mastodon.social: `lookup` + `following` are
+  public; the REST Account entity carries `uri` (the actor URI) for local AND
+  remote entries, so canonicalisation is free on ≥4.2 origin instances;
+  pagination is a Link header `rel="next"` (`max_id`), newest-follow-first
+  (the cap keeps the freshest slice); hidden follows yield an EMPTY LIST, not
+  an error. Residual live gap: the authed leg wasn't exercised against a real
+  token (no linked AP presence in dev) — do one authed self-import on a
+  linked account before flipping the sub-brake in prod. **Reader**
+  (`activitypub-resolve.ts` + `follow-import.ts`): input omnivorous (acct /
+  @acct / profile URL / actor URI) → WebFinger pins the canonical host (the
+  actor URI's origin is the API host — split-domain safe) → a matching linked
+  presence (handle = acct) supplies the bearer token from `credentials_enc`
+  (bad token → one public retry) → public `lookup` for the instance-local id
+  + `following_count` → paged `following` read under `FOLLOW_IMPORT_CAP`,
+  same-origin-only Link-header pager (the header is remote-controlled input),
+  atproto-mirroring failure contract (first page fails → null; later →
+  partial). Hidden detection = public leg + empty + `following_count > 0` →
+  new `hidden` graph-result reason → 422 `follows_hidden` ("link the account
+  to import"). Entries canonicalise to actor URIs via the entity `uri`, with
+  a per-host-throttled WebFinger fallback (4 host-groups parallel, sequential
+  within a host) for pre-4.2 origins; unresolvable entries are dropped but
+  COUNTED (`unresolved`, threaded to the create response + status line —
+  no-silent-caps). **Sync-safety fix that fell out**: `unresolved > 0` now
+  suppresses sync removals exactly like truncation (a dropped-but-still-
+  followed entry must not read as an unfollow), folded into
+  `removalsSkipped`. **Post-link offer** (§7.1): the Mastodon callback now
+  appends `&follows=<following_count>` (from the existing
+  `verify_credentials` response) to its success redirect — only while AP
+  import is live — mirroring Bluesky; `PostLinkImportOffer` generalised to
+  both networks (origin identity is protocol-shaped: DID for atproto,
+  user@instance for activitypub — the AP `external_id` is a per-instance
+  numeric id the reader can't use, which also fixed NetworkReachPanel's
+  per-presence affordance to pass `externalHandle` for AP); SettingsPanel
+  mounts the offer for `linked=mastodon`; FollowImportSection copy/placeholder
+  go capability-aware. `IMPORTABLE_PROTOCOLS` became `importableProtocols()`
+  (env-dependent), so the capabilities list lights up `activitypub` with no
+  web change when both flags flip. Vitest: new
+  `activitypub-follow-reader.test.ts` (13 cases: pager same-origin
+  enforcement, cap, failure split, sub-brake, malformed, public happy path,
+  hidden detection, authed bypass-of-hidden + bearer contract, WebFinger
+  fallback + unresolved accounting, stale-token public retry); gateway suite
+  312 green; root eslint 0 errors; `next build` clean; hairline tripwire
+  clean; no migration (Phase 2's schema already fits). Remaining: flip
+  `FOLLOW_IMPORT_ENABLED` after a dev-stack run-through; flip the AP
+  sub-brake only after the §6.4 soak + one live authed self-import; Phase 3
+  onboarding.
+
 - **2026-07-12 (fourth entry)** — **Follow-graph import Phase 2 "Sync now"
   (FOLLOW-GRAPH-IMPORT-ADR §11.5) — exclusion-aware re-sync of import-bound
   feeds, dark behind `FOLLOW_IMPORT_ENABLED`.** **Migration 154**:

@@ -65,6 +65,8 @@ export function FollowImportStatus({
           : `Building “${feedName}” in your workspace — you can keep working while it fills.`}
         {run.truncated &&
           ` Imported the most recent ${run.total} of ${run.remoteTotal} follows; the rest stay on the origin network.`}
+        {(run.unresolved ?? 0) > 0 &&
+          ` ${run.unresolved} follows couldn't be matched to an account and were skipped.`}
         {run.protocol === 'nostr_external' &&
           ' Names fill in over the next few minutes as profiles arrive from relays.'}
       </p>

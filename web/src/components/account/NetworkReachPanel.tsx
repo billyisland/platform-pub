@@ -290,22 +290,31 @@ export function NetworkReachPanel() {
                           <span className="label-ui text-grey-600">Default on</span>
                         </label>
                         {/* Follow-graph import for a linked presence (§7.2) —
-                            only for protocols the server can read (1a today).
-                            Opt-in per run (D7): this click is the explicit yes. */}
-                        {importable.includes(net.protocol) && (
-                          <button
-                            onClick={() =>
-                              void followImport.start({
-                                protocol: net.protocol,
-                                originIdentity: acct.externalId,
-                              })
-                            }
-                            disabled={importBusy}
-                            className="btn-text"
-                          >
-                            Import follows
-                          </button>
-                        )}
+                            only for protocols the server can read. Opt-in per
+                            run (D7): this click is the explicit yes. Origin is
+                            protocol-shaped: DID for atproto, user@instance for
+                            activitypub (external_id there is a per-instance
+                            numeric id the graph reader can't use). */}
+                        {importable.includes(net.protocol) &&
+                          (net.protocol === 'activitypub'
+                            ? acct.externalHandle
+                            : acct.externalId) && (
+                            <button
+                              onClick={() =>
+                                void followImport.start({
+                                  protocol: net.protocol,
+                                  originIdentity:
+                                    net.protocol === 'activitypub'
+                                      ? acct.externalHandle!
+                                      : acct.externalId,
+                                })
+                              }
+                              disabled={importBusy}
+                              className="btn-text"
+                            >
+                              Import follows
+                            </button>
+                          )}
                         <button onClick={() => handleDisconnect(acct.id)} className="btn-text-danger">
                           Disconnect
                         </button>
