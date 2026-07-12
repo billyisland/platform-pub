@@ -23,6 +23,23 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (ninth entry)** — **Container healthchecks: every backend has
+  reported "unhealthy" forever (cosmetic, but it masks real failures).**
+  Spotted during the follow-import prod flip: gateway/payment/keyservice/
+  key-custody showed `(unhealthy)` on prod AND dev while serving fine. Cause:
+  the compose healthchecks probe `http://localhost:<port>/health` with busybox
+  wget, but in-container `localhost` resolves to `::1` (alpine) while Fastify
+  listens on `0.0.0.0` (IPv4-only) — connection refused on every probe since
+  the checks were added. nginx had the same ::1 bind problem **plus** its
+  port-80 `location /` is a bare 301 to https, which wget would follow out
+  through public DNS and back. Fix: all wget healthchecks now probe
+  `127.0.0.1`, and nginx gets a dedicated `location = /nginx-health { return
+  200; }` on the :80 server (no redirect, no upstream). Verified in dev: all
+  four backends flip to `(healthy)` within one probe interval. A permanently
+  red healthcheck is worse than none — it trains the operator to ignore the
+  column, and anything gated on `service_healthy` (the blossom dependency
+  already is) can never be gated on these services until this works.
+
 - **2026-07-12 (eighth entry)** — **Follow-graph import Phase 3 "Bring your
   world" (FOLLOW-GRAPH-IMPORT-ADR §7.4 / §8 Phase 3).** Two decisions settled
   at build (recorded in the ADR §7.4 build note): no signup wizard exists
