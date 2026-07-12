@@ -66,6 +66,7 @@ Waves 1–3 of the 2026-07-05 logic-economy audit all shipped (migrations 139–
 3. **Writer onboarding flow** — no post-signup wizard (profile → first article → pricing). Related: the first-login ceremony is commented out behind `// TODO: re-enable / refine entrance animation` (`WorkspaceView.tsx:885-893`). → frontend audit #6.
 4. **Publication homepage templates** — wireframe-quality; the "publishing house" pitch needs a magazine layout that looks like one. → frontend audit #5.
 5. **Import tooling** — Substack CSV/ZIP → NIP-23 importer (Ghost/WordPress later). Launch-cohort switching cost. → frontend audit #8.
+6. **Follow-graph import (reader-side twin of §3.5)** — bring a user's existing follows in from any network as a new feed: atproto (public AppView, DID only), Nostr (public kind-3 from a pasted npub), ActivityPub (linked token has `read:accounts`; needs poller fairness first — the 100/tick + 2/host/tick AP budget has no per-user fairness), OPML upload for RSS. Snapshot import first, exclusion-aware "Sync now" second, continuous sync deferred; one-way only (never write follows back). Design accepted 2026-07-12; phasing + per-source matrix: `docs/adr/FOLLOW-GRAPH-IMPORT-ADR.md`.
 
 ## 4. Subscriptions Phase 2
 
