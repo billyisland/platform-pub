@@ -47,7 +47,10 @@ beforeAll(() => {
 })
 
 describe('gateway boot', () => {
-  it('every route module registers without throwing or colliding', async () => {
+  // Explicit timeout: this test imports the gateway's entire route module
+  // graph, which takes several seconds cold — under a full parallel suite it
+  // flakes against vitest's 5s default (first hit 2026-07-12).
+  it('every route module registers without throwing or colliding', { timeout: 30_000 }, async () => {
     // Dynamic imports so the env stubs in beforeAll land before
     // module-scope requireEnv() / new Stripe() / Zod schema construction.
     const Fastify = (await import('fastify')).default
@@ -87,6 +90,7 @@ describe('gateway boot', () => {
     const { linkedAccountsRoutes } = await import('../src/routes/linked-accounts.js')
     const { trustRoutes } = await import('../src/routes/trust.js')
     const { readingPositionRoutes } = await import('../src/routes/reading-positions.js')
+    const followImportRoutes = (await import('../src/routes/follow-imports.js')).default
     const { feedsRoutes } = await import('../src/routes/feeds/index.js')
 
     const app = Fastify({ logger: false })
@@ -127,6 +131,7 @@ describe('gateway boot', () => {
     await app.register(linkedAccountsRoutes, { prefix: '/api/v1' })
     await app.register(trustRoutes, { prefix: '/api/v1' })
     await app.register(readingPositionRoutes, { prefix: '/api/v1' })
+    await app.register(followImportRoutes, { prefix: '/api/v1' })
     await app.register(feedsRoutes, { prefix: '/api/v1/workspace' })
 
     // ready() flushes pending plugin registration and surfaces any deferred

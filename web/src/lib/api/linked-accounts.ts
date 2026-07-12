@@ -18,6 +18,10 @@ export interface NetworkCapabilities {
   // Curated open-registration instances for the Mastodon ASSISTED hand-off
   // (§9); first entry is the default. Empty while the flag is dark.
   assistedMastodonInstances?: string[]
+  // Follow-graph import (FOLLOW-GRAPH-IMPORT-ADR §7): protocols whose remote
+  // graph the server can read today. Empty/absent while the flag is dark —
+  // every import affordance gates on membership here.
+  followImportProtocols?: string[]
 }
 
 // Honest framing for the ASSISTED hand-off (NETWORK-CONCIERGE-ADR §6.1.1 S5,

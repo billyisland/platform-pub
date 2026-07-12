@@ -10,10 +10,14 @@ import { redirect } from 'next/navigation'
 export default function SettingsPage({
   searchParams,
 }: {
-  searchParams: { linked?: string | string[] }
+  searchParams: { linked?: string | string[]; follows?: string | string[] }
 }) {
   const params = new URLSearchParams({ overlay: 'settings' })
   const linked = Array.isArray(searchParams.linked) ? searchParams.linked[0] : searchParams.linked
   if (linked) params.set('linked', linked)
+  // Post-link follow-import offer count (FOLLOW-GRAPH-IMPORT-ADR §7.1) —
+  // rides the same channel as the connect flag.
+  const follows = Array.isArray(searchParams.follows) ? searchParams.follows[0] : searchParams.follows
+  if (follows) params.set('follows', follows)
   redirect(`/reader?${params.toString()}`)
 }

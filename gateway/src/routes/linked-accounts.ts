@@ -6,6 +6,10 @@ import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import { encryptJson, decryptJson } from "@platform-pub/shared/lib/crypto.js";
 import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
 import { getProfile, isDid, normaliseHandle } from "../lib/atproto-resolve.js";
+import {
+  followImportEnabled,
+  IMPORTABLE_PROTOCOLS,
+} from "../lib/follow-import.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireEnv } from "@platform-pub/shared/lib/env.js";
 import logger from "@platform-pub/shared/lib/logger.js";
@@ -159,6 +163,12 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         // first entry is the default. Empty while the flag is dark.
         assistedMastodonInstances: mastodonAssistedEnabled()
           ? mastodonAssistedInstances()
+          : [],
+        // Follow-graph import (FOLLOW-GRAPH-IMPORT-ADR §7): the protocols
+        // whose remote graph the import engine can read today. Empty while
+        // the master switch is dark.
+        followImportProtocols: followImportEnabled()
+          ? IMPORTABLE_PROTOCOLS
           : [],
       },
     };
@@ -750,11 +760,16 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
         if (appState !== statePayload.nonce) return redirectOk("error");
         const did = session.did;
 
-        // Pull handle/display name from the AppView for a nicer handle.
+        // Pull handle/display name from the AppView for a nicer handle. The
+        // same response carries followsCount — the post-link import offer's
+        // count (FOLLOW-GRAPH-IMPORT-ADR §7.1), free because this call already
+        // happens.
         let handle: string = did;
+        let followsCount: number | undefined;
         try {
           const profile = await getProfile(did);
           if (profile?.handle) handle = profile.handle;
+          followsCount = profile?.followsCount;
         } catch {
           // non-fatal
         }
@@ -783,7 +798,13 @@ export async function linkedAccountsRoutes(app: FastifyInstance) {
           { userId, did, handle, provenance },
           "Bluesky account linked",
         );
-        return redirectOk("bluesky");
+        // The follow count rides the same ?linked= redirect channel the
+        // connect banner reads (§7.1); only while the import feature is live,
+        // so nothing leaks while the flag is dark.
+        const qs = new URLSearchParams({ linked: "bluesky" });
+        if (followImportEnabled() && followsCount !== undefined)
+          qs.set("follows", String(followsCount));
+        return reply.redirect(`${APP_URL}/settings?${qs.toString()}`);
       } catch (err) {
         // 23505 = the (protocol, external_id) unique index (migration 115):
         // another account already links this DID. Reject cleanly rather than

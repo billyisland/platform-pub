@@ -32,6 +32,7 @@ import {
 import { useColorScheme } from "../../stores/colorScheme";
 import { ForallMenu, type ForallAction } from "./ForallMenu";
 import { useMobileActiveFeed } from "../../stores/mobileActiveFeed";
+import { useFeedArrivals } from "../../stores/feedArrivals";
 import { Composer, type ReplyTarget } from "./Composer";
 import type { QuoteTarget } from "../../lib/publishNote";
 import { getCachedWriterName, resolveWriterName } from "../../hooks/useWriterName";
@@ -672,10 +673,17 @@ export function WorkspaceView() {
     }
   }
 
-  async function handleCreateFeed(name: string) {
-    const { feed } = await workspaceFeedsApi.create(name);
-    let slot = { x: 0, y: 0, h: DEFAULT_GRID.rowHeight };
+  // Adopt a feed minted server-side (the NewFeedPrompt create, or a feed
+  // announced from outside this component — a follow-graph import started in
+  // the Settings overlay / FeedComposer) into a live vessel. Idempotent: a
+  // feed already showing is left alone.
+  function adoptFeed(feed: WorkspaceFeed) {
+    let known = false;
     setVessels((prev) => {
+      if (prev.some((v) => v.feed.id === feed.id)) {
+        known = true;
+        return prev;
+      }
       const next = [
         ...prev,
         {
@@ -685,7 +693,7 @@ export function WorkspaceView() {
           status: "loading" as const,
         },
       ];
-      slot = defaultGridSlot(
+      const slot = defaultGridSlot(
         next.length - 1,
         window.innerWidth,
         window.innerHeight,
@@ -694,10 +702,27 @@ export function WorkspaceView() {
       setVesselSize(feed.id, { w: 300, h: slot.h });
       return next;
     });
+    if (!known) void loadVesselItems(feed);
+  }
+
+  // Drain feeds announced by out-of-component creators (follow-graph imports,
+  // FOLLOW-GRAPH-IMPORT-ADR §7) so the new vessel appears immediately.
+  const pendingArrivals = useFeedArrivals((s) => s.pending);
+  useEffect(() => {
+    if (pendingArrivals.length === 0) return;
+    pendingArrivals.forEach(adoptFeed);
+    useFeedArrivals.getState().clear();
+    // adoptFeed is a stable-enough plain function (state via updaters); the
+    // queue itself is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingArrivals]);
+
+  async function handleCreateFeed(name: string) {
+    const { feed } = await workspaceFeedsApi.create(name);
+    adoptFeed(feed);
     setNewFeedOpen(false);
     // TODO: re-enable / refine entrance animation
     // setCeremony({ feedId: feed.id, pace: "responsive", target: slot });
-    void loadVesselItems(feed);
   }
 
   useEffect(() => {

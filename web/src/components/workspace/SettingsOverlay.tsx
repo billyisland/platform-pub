@@ -14,7 +14,7 @@ import { Glasshouse } from "./Glasshouse";
 import { SettingsPanel } from "../account/SettingsPanel";
 
 export function SettingsOverlay() {
-  const { isOpen, linked, close } = useSettingsOverlay();
+  const { isOpen, linked, follows, close } = useSettingsOverlay();
   if (!isOpen) return null;
 
   // 720px keeps the settings form at its article-reading rhythm (the body is
@@ -23,7 +23,7 @@ export function SettingsOverlay() {
   return (
     <Glasshouse onClose={close} maxWidth={720} ariaLabel="Settings" persistKey="settings">
       <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
-        <SettingsPanel inOverlay initialLinked={linked} />
+        <SettingsPanel inOverlay initialLinked={linked} initialFollows={follows} />
       </div>
     </Glasshouse>
   );

@@ -34,6 +34,7 @@ export const OVERLAY_PARAM_KEYS = [
   "context",
   "conversation",
   "linked",
+  "follows",
   "draft",
   "edit",
   "pub",
@@ -74,7 +75,10 @@ export function openOverlayFromParams(params: URLSearchParams): boolean {
       useLedgerOverlay.getState().open();
       return true;
     case "settings":
-      useSettingsOverlay.getState().open({ linked: params.get("linked") });
+      useSettingsOverlay.getState().open({
+        linked: params.get("linked"),
+        follows: params.get("follows"),
+      });
       return true;
     case "library":
       useLibraryOverlay

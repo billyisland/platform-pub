@@ -6,10 +6,14 @@ import {
   workspaceFeeds as workspaceFeedsApi,
   type WorkspaceFeed,
   type WorkspaceFeedSource,
+  type FollowImportProtocol,
 } from "../../lib/api";
 import { apiErrorMessage } from "../../lib/api/client";
 import { useResolverInput } from "../../hooks/useResolverInput";
 import type { MatchOption } from "../../lib/workspace/resolve";
+import { getNetworkCapabilities } from "../../lib/api/linked-accounts";
+import { useFollowImportRun } from "../../hooks/useFollowImportRun";
+import { FollowImportStatus } from "../network/FollowImportStatus";
 import { Glasshouse } from "./Glasshouse";
 import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
@@ -129,6 +133,14 @@ export function FeedComposer({
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Follow-graph import (FOLLOW-GRAPH-IMPORT-ADR §7.3): a resolved external
+  // account whose graph the server can read additionally offers "import
+  // everyone they follow" — a NEW feed (D1), announced to the workspace via
+  // the run hook; progress renders below the match well. Which protocols
+  // qualify comes from the capabilities block (empty while the flag is dark).
+  const [importable, setImportable] = useState<string[]>([]);
+  const followImport = useFollowImportRun();
+
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -150,11 +162,19 @@ export function FeedComposer({
     }
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    void getNetworkCapabilities().then((c) =>
+      setImportable(c.followImportProtocols ?? []),
+    );
+  }, [open]);
+
   // Escape + scroll-lock are owned by Glasshouse; this effect only resets the
   // composer's own state and loads sources when it opens.
   useEffect(() => {
     if (!open || !feed) return;
     ri.reset();
+    followImport.reset();
     setBusyKey(null);
     setError(null);
     setEditingName(false);
@@ -183,49 +203,95 @@ export function FeedComposer({
     }
   }
 
+  // §7.3: importable = a resolved external account whose follow graph the
+  // server can read (capabilities-gated). The option's sourceUri doubles as
+  // the import origin identity.
+  const canImportFollows = (opt: MatchOption) =>
+    opt.add.sourceType === "external_source" &&
+    "sourceUri" in opt.add &&
+    importable.includes(opt.add.protocol);
+
+  const importBusy =
+    followImport.starting ||
+    followImport.run?.status === "pending" ||
+    followImport.run?.status === "running";
+
+  async function handleImportFollows(opt: MatchOption) {
+    if (opt.add.sourceType !== "external_source" || !("sourceUri" in opt.add))
+      return;
+    const ok = await followImport.start({
+      protocol: opt.add.protocol as FollowImportProtocol,
+      originIdentity: opt.add.sourceUri,
+    });
+    if (ok) ri.reset();
+  }
+
   const renderMatchOption = (opt: MatchOption) => (
-    <button
-      key={opt.key}
-      type="button"
-      onClick={() => void handleAdd(opt)}
-      disabled={busyKey === opt.key}
-      className="font-sans text-ui-xs"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "8px 10px",
-        background: "transparent",
-        border: "none",
-        color: TOKENS.panelBorder,
-        cursor: busyKey === opt.key ? "default" : "pointer",
-        textAlign: "left",
-      }}
-      onMouseEnter={(e) =>
-        (e.currentTarget.style.background = TOKENS.matchHoverBg)
-      }
-      onMouseLeave={(e) =>
-        (e.currentTarget.style.background = "transparent")
-      }
-    >
-      <span
+    <div key={opt.key} style={{ display: "flex", flexDirection: "column" }}>
+      <button
+        type="button"
+        onClick={() => void handleAdd(opt)}
+        disabled={busyKey === opt.key}
+        className="font-sans text-ui-xs"
         style={{
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "8px 10px",
+          background: "transparent",
+          border: "none",
+          color: TOKENS.panelBorder,
+          cursor: busyKey === opt.key ? "default" : "pointer",
+          textAlign: "left",
         }}
+        onMouseEnter={(e) =>
+          (e.currentTarget.style.background = TOKENS.matchHoverBg)
+        }
+        onMouseLeave={(e) =>
+          (e.currentTarget.style.background = "transparent")
+        }
       >
-        {opt.label}
-      </span>
-      {opt.sublabel && (
         <span
-          className="label-ui"
-          style={{ color: TOKENS.hintFg, marginLeft: 12 }}
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
         >
-          {opt.sublabel}
+          {opt.label}
         </span>
+        {opt.sublabel && (
+          <span
+            className="label-ui"
+            style={{ color: TOKENS.hintFg, marginLeft: 12 }}
+          >
+            {opt.sublabel}
+          </span>
+        )}
+      </button>
+      {canImportFollows(opt) && (
+        <button
+          type="button"
+          onClick={() => void handleImportFollows(opt)}
+          disabled={importBusy}
+          className="label-ui"
+          style={{
+            padding: "0 10px 8px 22px",
+            background: "transparent",
+            border: "none",
+            color: TOKENS.hintFg,
+            cursor: importBusy ? "default" : "pointer",
+            textAlign: "left",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.color = TOKENS.panelBorder)
+          }
+          onMouseLeave={(e) => (e.currentTarget.style.color = TOKENS.hintFg)}
+        >
+          ↳ or import everyone they follow as a new feed
+        </button>
       )}
-    </button>
+    </div>
   );
 
   // Reach (Following/Explore) is the global feed dial as a composable source —
@@ -583,6 +649,20 @@ export function FeedComposer({
             </div>
           )}
         </div>
+
+        {/* Follow-import progress (§7.3): the run builds a NEW feed behind the
+            glass (announced to the workspace on start); status lives here so
+            the composer that launched it stays informative. */}
+        {(followImport.starting || followImport.run || followImport.error) && (
+          <div style={{ marginBottom: 8 }}>
+            <FollowImportStatus
+              starting={followImport.starting}
+              run={followImport.run}
+              feed={followImport.feed}
+              error={followImport.error}
+            />
+          </div>
+        )}
 
         {/* Reach — the global Following/Explore dial as a composable source.
             Added directly (no text to resolve); removed via the list above.

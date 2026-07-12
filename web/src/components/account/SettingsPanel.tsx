@@ -19,6 +19,7 @@ import { useAuth } from '../../stores/auth'
 import { useRouter } from 'next/navigation'
 import { invalidateLinkedAccounts } from '../../hooks/useLinkedAccounts'
 import { ProfileSection } from './ProfileSection'
+import { PostLinkImportOffer } from './PostLinkImportOffer'
 import { EmailChange } from './EmailChange'
 import { PaymentSection } from './PaymentSection'
 import { NetworkReachPanel } from './NetworkReachPanel'
@@ -45,9 +46,13 @@ function bannerFor(linked: string | null): { kind: 'ok' | 'error'; msg: string }
 export function SettingsPanel({
   inOverlay = false,
   initialLinked = null,
+  initialFollows = null,
 }: {
   inOverlay?: boolean
   initialLinked?: string | null
+  // Post-link follow-import offer count (FOLLOW-GRAPH-IMPORT-ADR §7.1) —
+  // appended by the gateway's Bluesky callback while the import flag is live.
+  initialFollows?: string | null
 }) {
   const { user, loading } = useAuth()
   const router = useRouter()
@@ -96,6 +101,19 @@ export function SettingsPanel({
           <div className={`px-4 py-3 text-ui-sm ${banner.kind === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
             {banner.msg}
           </div>
+        )}
+
+        {/* Post-link follow-import offer (FOLLOW-GRAPH-IMPORT-ADR §7.1) —
+            separate from the transient banner so it outlives the auto-dismiss.
+            The component gates itself on the server capability. */}
+        {initialLinked === 'bluesky' && (
+          <PostLinkImportOffer
+            follows={
+              initialFollows && /^\d+$/.test(initialFollows)
+                ? parseInt(initialFollows, 10)
+                : null
+            }
+          />
         )}
 
         <SettingsGroup title="Account">

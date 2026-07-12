@@ -67,6 +67,15 @@ export interface ImportIdentity {
 
 export type ImportProtocol = "atproto" | "nostr_external" | "activitypub" | "rss";
 
+// Protocols whose graph reader is live (§8 phasing: 1a atproto + 1b Nostr;
+// activitypub is 1c, OPML/rss is 1d). Surfaced to the web client via the
+// /linked-accounts capabilities block so import affordances appear only for
+// what the server can honour — 1c/1d light up here with no web change.
+export const IMPORTABLE_PROTOCOLS: ImportProtocol[] = [
+  "atproto",
+  "nostr_external",
+];
+
 export type FollowGraphResult =
   | {
       ok: true;

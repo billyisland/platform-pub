@@ -21,6 +21,8 @@ import {
   assistedMastodonConsent,
   type NetworkCapabilities,
 } from '../../lib/api/linked-accounts'
+import { useFollowImportRun } from '../../hooks/useFollowImportRun'
+import { FollowImportSection } from '../network/FollowImportSection'
 
 type SatelliteKey = 'mastodon' | 'bluesky'
 
@@ -50,6 +52,16 @@ export function NetworkReachPanel() {
   // Nostr presence (the degenerate concierge) — relocated from PrivacyPreferences.
   const [discoveryEnabled, setDiscoveryEnabled] = useState<boolean | null>(null)
   const [publishFollowGraph, setPublishFollowGraph] = useState<boolean | null>(null)
+
+  // Follow-graph import (FOLLOW-GRAPH-IMPORT-ADR §7.2). One run at a time
+  // across this panel: the per-presence "Import follows" affordance and the
+  // paste-an-identity section below share this hook + its status area.
+  const followImport = useFollowImportRun()
+  const importable = capabilities?.followImportProtocols ?? []
+  const importBusy =
+    followImport.starting ||
+    followImport.run?.status === 'pending' ||
+    followImport.run?.status === 'running'
 
   async function load() {
     try {
@@ -276,6 +288,23 @@ export function NetworkReachPanel() {
                           />
                           <span className="label-ui text-grey-600">Default on</span>
                         </label>
+                        {/* Follow-graph import for a linked presence (§7.2) —
+                            only for protocols the server can read (1a today).
+                            Opt-in per run (D7): this click is the explicit yes. */}
+                        {importable.includes(net.protocol) && (
+                          <button
+                            onClick={() =>
+                              void followImport.start({
+                                protocol: net.protocol,
+                                originIdentity: acct.externalId,
+                              })
+                            }
+                            disabled={importBusy}
+                            className="btn-text"
+                          >
+                            Import follows
+                          </button>
+                        )}
                         <button onClick={() => handleDisconnect(acct.id)} className="btn-text-danger">
                           Disconnect
                         </button>
@@ -399,6 +428,16 @@ export function NetworkReachPanel() {
                 </div>
               )
             })
+          )}
+
+          {/* Follow-graph import (FOLLOW-GRAPH-IMPORT-ADR §7.2): the inbound
+              half of network reach — paste any identity with a public graph
+              (D8, no link required). Hidden while the server flag is dark. */}
+          {importable.length > 0 && (
+            <FollowImportSection
+              importable={importable}
+              followImport={followImport}
+            />
           )}
         </div>
 

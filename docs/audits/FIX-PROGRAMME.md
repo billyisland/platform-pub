@@ -23,6 +23,39 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (second entry)** — **Follow-graph import Phase 1a/1b web
+  surfaces (FOLLOW-GRAPH-IMPORT-ADR §7/§11.4) — atproto + Nostr imports are
+  now user-visible, still dark behind `FOLLOW_IMPORT_ENABLED`.**
+  **Capabilities gate**: `/linked-accounts` capabilities gains
+  `followImportProtocols` (`IMPORTABLE_PROTOCOLS` from `follow-import.ts`,
+  empty while the flag is dark) — every web affordance keys off it, so 1c/1d
+  light up server-side with no web change. **Post-link offer (§7.1)**: the
+  Bluesky OAuth callback rides `&follows=<followsCount>` on its existing
+  `?linked=` redirect (the count is free — the callback already calls
+  `getProfile` for the handle), threaded through the /settings shim →
+  overlays dispatcher → `useSettingsOverlay` → `SettingsPanel`, which mounts
+  `PostLinkImportOffer` (offer + Not now; separate from the auto-dismissing
+  connect banner so it persists). **NetworkReachPanel (§7.2)**: per-presence
+  "Import follows" on the linked row (protocols in the capability list) plus
+  the paste-an-identity `FollowImportSection` (D8 — universal-resolver input;
+  resolved external accounts with readable graphs offer "Import follows";
+  resolvable-but-unimportable networks say so). **FeedComposer (§7.3)**: an
+  importable resolver match adds "↳ or import everyone they follow as a new
+  feed" under the option row. **Shared machinery**: `web/lib/api/follow-imports.ts`
+  client; `useFollowImportRun` (start + 2s progress poll, one run at a time
+  per surface) + `FollowImportStatus` (progress/summary line — truncation
+  always stated per the no-silent-caps rule, Nostr's names-self-heal caveat
+  said plainly); `useFeedArrivals` store so the live workspace adopts the
+  minted feed immediately (`WorkspaceView.adoptFeed`, also dedupes the
+  NewFeedPrompt path). **Bookkeeping**: the two §10 invariants (one-way
+  inbound; opt-in per run) added to CLAUDE.md; boot.test.ts drift fixed
+  (follow-imports module was missing from the route mirror) + given an
+  explicit 30s timeout (it was flaking at vitest's 5s default under the full
+  parallel suite — pre-existing at HEAD, not introduced here). Gateway suite
+  278 green; root eslint 0 errors; `next build` clean; hairline tripwire
+  clean. Remaining: 1c ActivityPub (live scope check first, §6.4 soak), 1d
+  OPML, Phase 2 "Sync now", Phase 3 onboarding.
+
 - **2026-07-12** — **Follow-graph import Phase 0 + 1a/1b backend
   (FOLLOW-GRAPH-IMPORT-ADR §11, migration 153) — engine, rails, and the
   atproto/Nostr graph readers; dark behind `FOLLOW_IMPORT_ENABLED`.**
