@@ -54,6 +54,15 @@
 # which would also make Check 3's name-grep obsolete (a from-zero replay is the
 # gold standard this heuristic stands in for until then).
 #
+# NOTE on graphile_worker: schema.sql deliberately EXCLUDES the graphile_worker
+# schema (2026-07-12). graphile-worker owns its schema lifecycle end-to-end —
+# baking a structure-only copy into schema.sql shipped an EMPTY
+# graphile_worker.migrations bookkeeping table (data doesn't ride a schema
+# dump), so on a fresh schema.sql-booted DB the worker re-ran its migration 1
+# into `relation "jobs" already exists` and crash-looped. Regenerate with
+# `pg_dump … --exclude-schema=graphile_worker`; Check 2's dump carries the same
+# flag, so a regen that forgets it round-trips dirty and fails here.
+#
 # Uses the running dev Postgres container for throwaway databases; runs the
 # host-side migrate.ts over the exposed port. Read-only w.r.t. your real dev DB.
 #
@@ -219,7 +228,8 @@ norm() {
   grep -vE "^--|^\\\\(un)?restrict |^INSERT INTO public\._migrations|^[[:space:]]*\('[0-9]+_" \
     | sed '/^[[:space:]]*$/d'
 }
-docker exec "$CONTAINER" pg_dump -U "$PGUSER" --schema-only --no-owner --no-privileges "$DB_SCHEMA" \
+docker exec "$CONTAINER" pg_dump -U "$PGUSER" --schema-only --no-owner --no-privileges \
+    --exclude-schema=graphile_worker "$DB_SCHEMA" \
   | norm > /tmp/schema-roundtrip.sql
 norm < schema.sql > /tmp/schema-committed.sql
 if ! diff /tmp/schema-committed.sql /tmp/schema-roundtrip.sql >/tmp/schema-struct.diff; then

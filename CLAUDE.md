@@ -50,7 +50,7 @@ Migrations are numbered SQL files in `migrations/`, applied in numeric-prefix or
 
 **`schema.sql` is the genesis base, not a derivative.** A fresh DB (dev `initdb.d` and prod) boots from `schema.sql`, *then* `migrate.ts` applies anything newer. So `schema.sql` must already contain every migration's effect **and** seed `_migrations` with every migration filename (so `migrate.ts` is a clean no-op on fresh boot). There is no genesis migration — migration `001` ALTERs tables only `schema.sql` creates — so the chain can't be replayed from empty; `schema.sql` is load-bearing.
 
-After adding a migration or changing the schema, regenerate `schema.sql` with `pg_dump` from a fully-migrated DB (never hand-edit — that breaks canonical round-trip), re-append the `_migrations` seed in the same step, then run the drift guard:
+After adding a migration or changing the schema, regenerate `schema.sql` with `pg_dump --exclude-schema=graphile_worker` from a fully-migrated DB (never hand-edit — that breaks canonical round-trip; graphile-worker owns its schema lifecycle end-to-end, and a baked-in structure-only copy crash-loops the worker on fresh boot — see the drift-guard header), re-append the `_migrations` seed in the same step, then run the drift guard:
 
 ```bash
 scripts/check-schema-drift.sh   # 0: seed lists all migrations · 3: every migration-created object is in schema.sql · 1: migrate is a no-op on a schema.sql DB · 2: schema.sql round-trips clean

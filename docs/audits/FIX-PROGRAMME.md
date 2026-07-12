@@ -23,6 +23,25 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (seventh entry)** — **Fresh-DB graphile_worker crash-loop:
+  durable fix (was CONSOLIDATED-TODO "later" item 12, found in the sixth-entry
+  run-through).** `schema.sql` carried the whole `graphile_worker` schema from
+  past pg_dump regens, but graphile's own `migrations` bookkeeping table shipped
+  **empty** (data doesn't ride a schema-only dump, and unlike `_migrations` it
+  was never re-seeded) — so a fresh schema.sql-booted DB made the worker re-run
+  its migration 1 into `relation "jobs" already exists` and crash-loop. Fix:
+  one cleansing regen of `schema.sql` via throwaway-from-committed with
+  `--exclude-schema=graphile_worker` (7801 → 7236 lines; graphile-worker owns
+  its schema lifecycle end-to-end and recreates it cleanly on first boot);
+  the same flag added to the drift guard's Check-2 pg_dump so a future regen
+  that forgets it round-trips dirty and **fails the guard** (enforced, not
+  documented-only); regen drill amended in CLAUDE.md + the drift-guard header.
+  Safety checked before the cut: every `graphile_worker.add_job` call site is
+  request-time (no boot-time dependency on the schema existing), and migration
+  137's enqueue is already guarded on the schema being installed. Drift guard:
+  all four checks green post-regen. Prod note: nothing to deploy-time here —
+  the fix matters on the next fresh boot (DR restore), which now works.
+
 - **2026-07-12 (sixth entry)** — **Follow-graph import dev-stack run-through
   PASSED + the claimed-count truncation bug fixed (FOLLOW-GRAPH-IMPORT-ADR §11.6
   "flip after a dev-stack run-through" — the run-through half is now done).**
