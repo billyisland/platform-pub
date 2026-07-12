@@ -277,13 +277,22 @@ export function parseNextLink(
 // Page through /following. Mirrors atproto getFollows' failure contract:
 // null only when the FIRST page fails (bad token / account gone / instance
 // not speaking the Mastodon API); a mid-pagination failure returns the
-// partial list rather than discarding pages already fetched.
+// partial list rather than discarding pages already fetched. `complete` is
+// false whenever the read was BOUNDED (cap hit with a next link remaining,
+// mid-pagination failure, malformed page) — pagination's own verdict, never
+// the actor's following_count, which drifts (suspended/moved accounts) and
+// would falsely suppress sync removals.
+export interface MastodonFollowingRead {
+  accounts: MastodonApiAccount[];
+  complete: boolean;
+}
+
 export async function fetchMastodonFollowing(
   apiOrigin: string,
   accountId: string,
   cap: number,
   accessToken?: string,
-): Promise<MastodonApiAccount[] | null> {
+): Promise<MastodonFollowingRead | null> {
   const accounts: MastodonApiAccount[] = [];
   const headers: Record<string, string> = { Accept: "application/json" };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
@@ -303,19 +312,24 @@ export async function fetchMastodonFollowing(
         { apiOrigin, accountId, page: firstPage ? "first" : "later", err },
         "Mastodon following fetch failed",
       );
-      return firstPage ? null : accounts;
+      return firstPage ? null : { accounts, complete: false };
     }
     firstPage = false;
-    if (!Array.isArray(page)) break;
-    for (const raw of page) {
-      const parsed = parseApiAccount(raw);
+    if (!Array.isArray(page)) return { accounts, complete: false };
+    if (page.length === 0) return { accounts, complete: true };
+    let i = 0;
+    for (; i < page.length && accounts.length < cap; i++) {
+      const parsed = parseApiAccount(page[i]);
       if (parsed) accounts.push(parsed);
-      if (accounts.length >= cap) break;
     }
-    if (page.length === 0) break;
     next = parseNextLink(linkHeader, apiOrigin);
+    if (accounts.length >= cap) {
+      // Cap bounded the read: complete only if this page was fully consumed
+      // and the instance reports no further page.
+      return { accounts, complete: i >= page.length && next === null };
+    }
   }
-  return accounts;
+  return { accounts, complete: true };
 }
 
 // -----------------------------------------------------------------------------

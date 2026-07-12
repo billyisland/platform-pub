@@ -23,6 +23,53 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (sixth entry)** — **Follow-graph import dev-stack run-through
+  PASSED + the claimed-count truncation bug fixed (FOLLOW-GRAPH-IMPORT-ADR §11.6
+  "flip after a dev-stack run-through" — the run-through half is now done).**
+  Full stack rebuilt (gateway/web/feed-ingest images were 6 weeks stale) with
+  the two flags newly wired into `docker-compose.yml` (`FOLLOW_IMPORT_ENABLED`,
+  `FOLLOW_IMPORT_ACTIVITYPUB_ENABLED`, both `:-0` defaults per house pattern)
+  and exercised live against real networks: **1a atproto** @bsky.app 11/11 and
+  @pfrazee.com 618/618 (batching + the §6.5 >50-source volume default → weight
+  1.0; real handles/names/avatars via the D6 metadata pass-through; synthetic
+  `last_fetched_at` on every source); **1b Nostr** 251/251 kind-3 contacts as
+  bare hex (relay-free invariant; `markFollowListDirty` correctly no-opped for
+  a non-discovery-opted account); **1c AP public leg** @Gargron@mastodon.social
+  717/717, `unresolved: 0` (every Account entity carried `uri` — no WebFinger
+  fallback needed); **1d OPML** folder→feed mapping with the dead entry counted
+  in `failed` (D6 probe-on exception), live entries imported. **Phase 2 loop**:
+  preview → confirm applied a real `−1` removal; sync removals appended NO
+  exclusion (`recordExclusion: false`); a local exclusion suppressed the
+  re-add (`upToDate: true` with the excluded account still remotely followed);
+  a manual re-add revoked the exclusion (§6.3 symmetry); `importBinding` +
+  `lastSyncedAt` ride `GET /workspace/feeds/:id/sources`. §6.4 rails held at
+  ~1,600 sources (no tick starvation; ingest spread across all protocols).
+  **One bug found and FIXED — `truncated` derived from the remote's claimed
+  count**: all three readers compared fetched length against `followsCount`
+  (atproto) / `following_count` (AP), but those counts include deactivated/
+  suspended accounts the list endpoints omit, so nearly every aged account
+  read as permanently truncated — and §11.5's truncation guard then suppressed
+  sync REMOVALS forever (verified live: @pfrazee.com counts 647, lists 618).
+  `truncated` now comes only from the pagination machinery: `getFollows` /
+  `fetchMastodonFollowing` return `{…, complete}` (false on cap-bounded read,
+  mid-pagination failure, or malformed page; the Nostr reader was already
+  exact and is untouched), the readers set `truncated: !complete`, and the
+  claimed count stays display-only in `total`. Post-fix the 647-vs-618 sync
+  previews `removalsSkipped: false`. Files: `gateway/src/lib/atproto-resolve.ts`
+  (getFollows → `AtprotoFollowsRead`), `gateway/src/lib/activitypub-resolve.ts`
+  (fetchMastodonFollowing → `MastodonFollowingRead`),
+  `gateway/src/lib/follow-import.ts` (both readers + import),
+  `gateway/tests/activitypub-follow-reader.test.ts` (shapes + a count-drift
+  regression test), `docker-compose.yml`. Root eslint 0 errors; 30/30
+  follow-import tests green. **Also found (separate item, CONSOLIDATED-TODO
+  §8.12): a schema.sql-booted fresh DB crash-loops feed-ingest** — the dump
+  carries graphile_worker's tables but its `migrations` bookkeeping ships
+  empty, so graphile re-runs migration 1 into `relation "jobs" already
+  exists`; dev unblocked with `DROP SCHEMA graphile_worker CASCADE` (the
+  worker recreates it). Remaining before full light-up: the prod env flip
+  (deploy-time), the AP sub-brake's §6.4 soak + one authed self-import
+  against a real linked token, Phase 3 onboarding.
+
 - **2026-07-12 (fifth entry)** — **Follow-graph import Phase 1c ActivityPub
   (FOLLOW-GRAPH-IMPORT-ADR §5.3/§11.4) — Mastodon-API follow-graph reader,
   dark behind `FOLLOW_IMPORT_ENABLED` × the new §6.6 sub-brake

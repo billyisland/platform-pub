@@ -122,7 +122,12 @@ export async function searchActors(
 // the graph. Stops at `cap` follows or when the cursor runs out. Returns null
 // only when the FIRST page fails (actor unknown / AppView unreachable) —
 // a mid-pagination failure returns the partial list rather than discarding
-// pages already fetched (the import summary surfaces the shortfall via total).
+// pages already fetched. `complete` is false whenever the read was BOUNDED —
+// cap hit with a cursor remaining, a mid-pagination failure, or a malformed
+// page — and must come only from the pagination machinery, never from the
+// profile's followsCount (which counts deactivated accounts the AppView
+// omits; deriving truncation from it suppressed sync removals for nearly
+// every aged account — the 2026-07-12 run-through bug).
 // =============================================================================
 
 export interface AtprotoFollow {
@@ -132,10 +137,15 @@ export interface AtprotoFollow {
   avatar?: string;
 }
 
+export interface AtprotoFollowsRead {
+  follows: AtprotoFollow[];
+  complete: boolean;
+}
+
 export async function getFollows(
   actorDid: string,
   cap: number,
-): Promise<AtprotoFollow[] | null> {
+): Promise<AtprotoFollowsRead | null> {
   const follows: AtprotoFollow[] = [];
   let cursor: string | undefined;
   let firstPage = true;
@@ -156,11 +166,14 @@ export async function getFollows(
         { actorDid, page: firstPage ? "first" : "later", err },
         "getFollows failed",
       );
-      return firstPage ? null : follows;
+      return firstPage ? null : { follows, complete: false };
     }
     firstPage = false;
-    if (!Array.isArray(data.follows)) break;
-    for (const raw of data.follows) {
+    if (!Array.isArray(data.follows))
+      return { follows, complete: false };
+    let i = 0;
+    for (; i < data.follows.length && follows.length < cap; i++) {
+      const raw = data.follows[i];
       if (typeof raw !== "object" || raw === null) continue;
       const f = raw as {
         did?: unknown;
@@ -177,12 +190,21 @@ export async function getFollows(
           typeof f.displayName === "string" ? f.displayName : undefined,
         avatar: typeof f.avatar === "string" ? f.avatar : undefined,
       });
-      if (follows.length >= cap) break;
     }
-    if (typeof data.cursor !== "string" || data.cursor === "") break;
-    cursor = data.cursor;
+    const nextCursor =
+      typeof data.cursor === "string" && data.cursor !== "" ? data.cursor : null;
+    if (follows.length >= cap) {
+      // Cap bounded the read: complete only if this page was fully consumed
+      // and the AppView reports nothing beyond it.
+      return {
+        follows,
+        complete: i >= data.follows.length && nextCursor === null,
+      };
+    }
+    if (!nextCursor) break;
+    cursor = nextCursor;
   }
-  return follows;
+  return { follows, complete: true };
 }
 
 // =============================================================================

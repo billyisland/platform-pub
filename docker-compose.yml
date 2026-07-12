@@ -131,6 +131,14 @@ services:
       # mesh. PLATFORM_RELAY_WS_URL is the internal fan-out target; PUBLIC_RELAY_URL
       # is the relay we *advertise* in kind 10002 / NIP-05.
       DISCOVERY_PUBLISH_ENABLED: ${DISCOVERY_PUBLISH_ENABLED:-0}
+      # Follow-graph import (FOLLOW-GRAPH-IMPORT-ADR). Ships dark: master flag
+      # off ⇒ /follow-imports routes 404, the sweep no-ops, and the
+      # followImportProtocols capability list is empty (all import affordances
+      # hidden). The activitypub sub-brake is ANDed with the master switch —
+      # flip it only after the §6.4 poller-fairness soak plus one authed live
+      # self-import (ADR §2 / §6.6).
+      FOLLOW_IMPORT_ENABLED: ${FOLLOW_IMPORT_ENABLED:-0}
+      FOLLOW_IMPORT_ACTIVITYPUB_ENABLED: ${FOLLOW_IMPORT_ACTIVITYPUB_ENABLED:-0}
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
       PUBLIC_RELAY_URL: ${PUBLIC_RELAY_URL:-wss://all.haus/relay}
       PUBLIC_FANOUT_RELAY_URLS: ${PUBLIC_FANOUT_RELAY_URLS:-}

@@ -153,7 +153,7 @@ describe("parseNextLink", () => {
 });
 
 describe("fetchMastodonFollowing", () => {
-  it("pages through rel=next and stops at the cap", async () => {
+  it("pages through rel=next and stops at the cap (an incomplete read)", async () => {
     const page1 = Array.from({ length: 3 }, (_, i) => apiAccount(i));
     const page2 = Array.from({ length: 3 }, (_, i) => apiAccount(10 + i));
     mockSafeFetch
@@ -164,11 +164,21 @@ describe("fetchMastodonFollowing", () => {
       )
       .mockResolvedValueOnce(jsonResponse(page2));
     const out = await fetchMastodonFollowing(ORIGIN, "42", 5);
-    expect(out).toHaveLength(5); // capped mid-page-2
+    expect(out?.accounts).toHaveLength(5); // capped mid-page-2
+    expect(out?.complete).toBe(false);
     expect(mockSafeFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("returns null when the FIRST page fails, partial on a later failure", async () => {
+  it("a full read that ends at the last page is complete", async () => {
+    mockSafeFetch.mockResolvedValueOnce(
+      jsonResponse([apiAccount(1), apiAccount(2)]),
+    );
+    const out = await fetchMastodonFollowing(ORIGIN, "42", 10);
+    expect(out?.accounts).toHaveLength(2);
+    expect(out?.complete).toBe(true);
+  });
+
+  it("returns null when the FIRST page fails, incomplete partial on a later failure", async () => {
     mockSafeFetch.mockResolvedValueOnce({
       ok: false,
       status: 401,
@@ -185,7 +195,8 @@ describe("fetchMastodonFollowing", () => {
       )
       .mockRejectedValueOnce(new Error("boom"));
     const partial = await fetchMastodonFollowing(ORIGIN, "42", 10);
-    expect(partial).toHaveLength(1);
+    expect(partial?.accounts).toHaveLength(1);
+    expect(partial?.complete).toBe(false);
   });
 
   it("sends the bearer token when given one", async () => {
@@ -224,6 +235,28 @@ describe("readFollowGraph('activitypub', …)", () => {
     expect(res.total).toBe(2);
     expect(res.truncated).toBe(false);
     expect(res.unresolved).toBe(0);
+  });
+
+  it("a drifting following_count does NOT mark a full read truncated", async () => {
+    // following_count counts suspended/moved accounts the list omits; a full
+    // pagination (no next link) is complete regardless — deriving truncation
+    // from the count difference suppressed sync removals for nearly every
+    // aged account (2026-07-12 run-through fix).
+    routeStandard({
+      [`${ORIGIN}/api/v1/accounts/lookup`]: () =>
+        jsonResponse({
+          id: "42",
+          acct: "alice",
+          uri: `${ORIGIN}/users/alice`,
+          following_count: 5,
+        }),
+    });
+    const res = await readFollowGraph("activitypub", "alice@inst.test");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.identities).toHaveLength(2);
+    expect(res.total).toBe(5); // display keeps the claimed count
+    expect(res.truncated).toBe(false); // but the pager's verdict wins
   });
 
   it("detects hidden follows on the public leg (empty + count > 0)", async () => {

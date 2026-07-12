@@ -17,6 +17,7 @@ import {
   lookupMastodonAccount,
   resolveWebFinger,
   type MastodonApiAccount,
+  type MastodonFollowingRead,
 } from "./activitypub-resolve.js";
 import { decryptJson } from "@platform-pub/shared/lib/crypto.js";
 import { fetchNostrContacts } from "./nostr-relay.js";
@@ -199,20 +200,24 @@ async function readAtprotoGraph(input: string): Promise<FollowGraphResult> {
       message: "No account found for this identity on the AT Protocol network",
     };
   }
-  const follows = await getFollows(profile.did, FOLLOW_IMPORT_CAP);
-  if (follows === null) {
+  const read = await getFollows(profile.did, FOLLOW_IMPORT_CAP);
+  if (read === null) {
     return {
       ok: false,
       reason: "unreachable",
       message: "Could not read the follow list from the AT Protocol network",
     };
   }
-  const identities: ImportIdentity[] = follows.map((f) => ({
+  const identities: ImportIdentity[] = read.follows.map((f) => ({
     uri: f.did,
     // Handle as the label fallback — a DID-only label is the §V.1 trap.
     displayName: f.displayName || `@${f.handle}`,
     avatarUrl: f.avatar,
   }));
+  // followsCount is display-only: it counts deactivated accounts the AppView
+  // omits from getFollows, so it must never drive `truncated` (which gates
+  // sync-removal suppression — deriving it from the count difference disabled
+  // removals for nearly every aged account). Truncation is the pager's call.
   const total = Math.max(profile.followsCount ?? 0, identities.length);
   return {
     ok: true,
@@ -220,7 +225,7 @@ async function readAtprotoGraph(input: string): Promise<FollowGraphResult> {
     originLabel: `@${profile.handle}`,
     identities,
     total,
-    truncated: total > identities.length,
+    truncated: !read.complete,
   };
 }
 
@@ -511,14 +516,14 @@ async function readActivityPubGraph(
 async function finishActivityPubGraph(
   acct: string,
   apiOrigin: string,
-  fetched: MastodonApiAccount[],
+  fetched: MastodonFollowingRead,
   followingCount: number | null,
   authed: boolean,
 ): Promise<FollowGraphResult> {
   // §5.3: hide_collections yields an empty list, not an error — only the
   // count betrays it. The authed self-call bypasses the hide, so this can
   // only fire on the public leg.
-  if (fetched.length === 0 && !authed && (followingCount ?? 0) > 0) {
+  if (fetched.accounts.length === 0 && !authed && (followingCount ?? 0) > 0) {
     return {
       ok: false,
       reason: "hidden",
@@ -528,16 +533,18 @@ async function finishActivityPubGraph(
   }
 
   const { identities, unresolved } = await canonicaliseApEntries(
-    fetched,
+    fetched.accounts,
     apiOrigin,
   );
+  // following_count is display-only (it drifts — suspended/moved accounts);
+  // truncation is the pager's verdict, same rule as the atproto reader.
   return {
     ok: true,
     originIdentity: acct,
     originLabel: `@${acct}`,
     identities,
-    total: Math.max(followingCount ?? 0, fetched.length),
-    truncated: (followingCount ?? 0) > fetched.length,
+    total: Math.max(followingCount ?? 0, fetched.accounts.length),
+    truncated: !fetched.complete,
     unresolved,
   };
 }
