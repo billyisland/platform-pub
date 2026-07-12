@@ -7,6 +7,7 @@ import {
   type WorkspaceFeed,
   type WorkspaceFeedSource,
   type FollowImportProtocol,
+  type FeedImportBinding,
 } from "../../lib/api";
 import { apiErrorMessage } from "../../lib/api/client";
 import { useResolverInput } from "../../hooks/useResolverInput";
@@ -14,6 +15,7 @@ import type { MatchOption } from "../../lib/workspace/resolve";
 import { getNetworkCapabilities } from "../../lib/api/linked-accounts";
 import { useFollowImportRun } from "../../hooks/useFollowImportRun";
 import { FollowImportStatus } from "../network/FollowImportStatus";
+import { FeedSyncSection } from "./FeedSyncSection";
 import { Glasshouse } from "./Glasshouse";
 import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
@@ -141,6 +143,12 @@ export function FeedComposer({
   const [importable, setImportable] = useState<string[]>([]);
   const followImport = useFollowImportRun();
 
+  // Phase 2 "Sync now" (§11.5): present iff this feed was minted by a
+  // follow-graph import (the origin binding rides the sources response).
+  const [importBinding, setImportBinding] = useState<FeedImportBinding | null>(
+    null,
+  );
+
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -155,6 +163,7 @@ export function FeedComposer({
     try {
       const data = await workspaceFeedsApi.listSources(feedId);
       setSources(data.sources);
+      setImportBinding(data.importBinding ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sources.");
     } finally {
@@ -712,6 +721,21 @@ export function FeedComposer({
           >
             {error}
           </div>
+        )}
+
+        {/* "Sync now" for import-bound feeds (§11.5) — only when the server
+            can actually re-read this protocol's graph (capabilities gate,
+            empty while the flag is dark). */}
+        {importBinding && importable.includes(importBinding.protocol) && (
+          <FeedSyncSection
+            key={feed.id}
+            feedId={feed.id}
+            binding={importBinding}
+            onApplied={() => {
+              void refreshSources(feed.id);
+              onSourcesChanged?.();
+            }}
+          />
         )}
 
         {showAppearance && (

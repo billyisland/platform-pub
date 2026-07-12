@@ -25,8 +25,10 @@ vi.mock("@platform-pub/shared/lib/logger.js", () => ({
 }));
 
 const addSource = vi.fn();
+const removeSource = vi.fn();
 vi.mock("../src/routes/feeds/sources.js", () => ({
   addSource: (...args: unknown[]) => addSource(...args),
+  removeSource: (...args: unknown[]) => removeSource(...args),
 }));
 
 // Graph readers aren't exercised by the sweep — mock them so the module graph
@@ -45,7 +47,10 @@ vi.mock("@platform-pub/shared/lib/http-client.js", () => ({
   safeFetch: vi.fn(),
 }));
 
-import { runFollowImportSweep } from "../src/lib/follow-import.js";
+import {
+  runFollowImportSweep,
+  computeSyncDiff,
+} from "../src/lib/follow-import.js";
 
 const RUN_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 const FEED_ID = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -56,7 +61,11 @@ interface FakeRun {
   account_id: string;
   protocol: string;
   feed_id: string;
+  kind: "import" | "sync";
   identities: Array<{ uri: string; displayName?: string }>;
+  removals: Array<{ uri: string; displayName?: string }>;
+  removal_cursor: number;
+  removed: number;
   cursor: number;
   imported: number;
   skipped: number;
@@ -69,11 +78,15 @@ function makeRun(overrides: Partial<FakeRun> = {}): FakeRun {
     account_id: ACCOUNT_ID,
     protocol: "atproto",
     feed_id: FEED_ID,
+    kind: "import",
     identities: [
       { uri: "did:plc:one", displayName: "@one" },
       { uri: "did:plc:two", displayName: "@two" },
       { uri: "did:plc:three", displayName: "@three" },
     ],
+    removals: [],
+    removal_cursor: 0,
+    removed: 0,
     cursor: 0,
     imported: 0,
     skipped: 0,
@@ -84,7 +97,16 @@ function makeRun(overrides: Partial<FakeRun> = {}): FakeRun {
 
 // Route pool.query calls by SQL shape. Claim returns the run once, then
 // nothing (the sweep's loop-until-empty).
-function primePool(run: FakeRun, opts: { counterRowCount?: number } = {}) {
+function primePool(
+  run: FakeRun,
+  opts: {
+    counterRowCount?: number;
+    // sync-path routing: feed_sources id lookup per removal uri (null = gone)
+    // and the apply-time exclusion set.
+    memberSourceIds?: Record<string, string | null>;
+    exclusions?: string[];
+  } = {},
+) {
   let claimed = false;
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   mockPoolQuery.mockImplementation((sql: string, params: unknown[] = []) => {
@@ -98,6 +120,20 @@ function primePool(run: FakeRun, opts: { counterRowCount?: number } = {}) {
       return Promise.resolve({
         rows: [],
         rowCount: opts.counterRowCount ?? 1,
+      });
+    }
+    if (sql.includes("SELECT fs.id")) {
+      const uri = params[2] as string;
+      const id = opts.memberSourceIds?.[uri] ?? null;
+      return Promise.resolve({
+        rows: id ? [{ id }] : [],
+        rowCount: id ? 1 : 0,
+      });
+    }
+    if (sql.includes("FROM feed_import_exclusions")) {
+      return Promise.resolve({
+        rows: (opts.exclusions ?? []).map((identity) => ({ identity })),
+        rowCount: (opts.exclusions ?? []).length,
       });
     }
     return Promise.resolve({ rows: [], rowCount: 1 });
@@ -287,6 +323,123 @@ describe("runFollowImportSweep", () => {
     expect(calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
   });
 
+  it("applies a sync run: removals before adds, no exclusion recording, no volume rewrite", async () => {
+    const run = makeRun({
+      kind: "sync",
+      identities: [{ uri: "did:plc:new", displayName: "@new" }],
+      removals: [
+        { uri: "did:plc:gone", displayName: "@gone" },
+        { uri: "did:plc:already-out" }, // no feed_sources row anymore
+      ],
+    });
+    const calls = primePool(run, {
+      memberSourceIds: { "did:plc:gone": "fs-1", "did:plc:already-out": null },
+    });
+    removeSource.mockResolvedValue({ notFound: false, toreDownNostr: false });
+    addSource.mockResolvedValue({
+      source: {},
+      ensured: { externalSourceId: "xs-new", subscriptionId: "s-new" },
+    });
+
+    await runFollowImportSweep();
+
+    // The one still-present removal goes through removeSource WITHOUT an
+    // exclusion (it mirrors a remote unfollow, not a deliberate local edit);
+    // the already-gone one is a silent skip.
+    expect(removeSource).toHaveBeenCalledTimes(1);
+    expect(removeSource).toHaveBeenCalledWith(FEED_ID, ACCOUNT_ID, "fs-1", {
+      recordExclusion: false,
+    });
+    const removalCall = calls.find((c) => c.sql.includes("SET removed ="));
+    // removed=1, removal_cursor=2, failed=0
+    expect(removalCall!.params).toEqual([RUN_ID, 1, 2, 0]);
+    // Removals resolved before the add ran.
+    expect(
+      calls.findIndex((c) => c.sql.includes("SELECT fs.id")),
+    ).toBeLessThan(calls.findIndex((c) => c.sql.includes("SET imported =")));
+    expect(addSource).toHaveBeenCalledTimes(1);
+    expect(calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
+    // Sync never rewrites the feed's volume defaults.
+    expect(
+      calls.some((c) => c.sql.includes("UPDATE feed_sources")),
+    ).toBe(false);
+  });
+
+  it("re-checks exclusions at apply time on sync adds (a removal between preview and confirm wins)", async () => {
+    const run = makeRun({
+      kind: "sync",
+      identities: [
+        { uri: "did:plc:kept", displayName: "@kept" },
+        { uri: "did:plc:excluded-since-preview", displayName: "@ex" },
+      ],
+      removals: [],
+    });
+    const calls = primePool(run, {
+      exclusions: ["did:plc:excluded-since-preview"],
+    });
+    addSource.mockResolvedValue({
+      source: {},
+      ensured: { externalSourceId: "xs-k", subscriptionId: "s-k" },
+    });
+
+    await runFollowImportSweep();
+
+    expect(addSource).toHaveBeenCalledTimes(1);
+    expect(addSource.mock.calls[0][2]).toMatchObject({
+      sourceUri: "did:plc:kept",
+    });
+    const counterCall = calls.find((c) => c.sql.includes("SET imported ="));
+    // imported=1, skipped=1 (the exclusion), failed=0, cursor=2
+    expect(counterCall!.params).toEqual([RUN_ID, 1, 1, 0, 2]);
+  });
+
+  it("resumes a killed sync from removal_cursor without re-removing", async () => {
+    const run = makeRun({
+      kind: "sync",
+      identities: [],
+      removals: [{ uri: "did:plc:r1" }, { uri: "did:plc:r2" }],
+      removal_cursor: 1,
+      removed: 1,
+    });
+    const calls = primePool(run, {
+      memberSourceIds: { "did:plc:r2": "fs-2" },
+    });
+    removeSource.mockResolvedValue({ notFound: false, toreDownNostr: false });
+
+    await runFollowImportSweep();
+
+    expect(removeSource).toHaveBeenCalledTimes(1);
+    expect(removeSource.mock.calls[0][2]).toBe("fs-2");
+    const removalCall = calls.find((c) => c.sql.includes("SET removed ="));
+    expect(removalCall!.params).toEqual([RUN_ID, 2, 2, 0]);
+    expect(calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
+  });
+
+  it("counts a failed removal as failed and keeps going", async () => {
+    const run = makeRun({
+      kind: "sync",
+      identities: [],
+      removals: [{ uri: "did:plc:boom" }, { uri: "did:plc:fine" }],
+    });
+    const calls = primePool(run, {
+      memberSourceIds: { "did:plc:boom": "fs-b", "did:plc:fine": "fs-f" },
+    });
+    removeSource
+      .mockRejectedValueOnce(new Error("db hiccup"))
+      .mockResolvedValueOnce({ notFound: false, toreDownNostr: false });
+
+    await runFollowImportSweep();
+
+    expect(removeSource).toHaveBeenCalledTimes(2);
+    const removalCall = calls.find((c) => c.sql.includes("SET removed ="));
+    // removed=1, removal_cursor=2, failed=1
+    expect(removalCall!.params).toEqual([RUN_ID, 1, 2, 1]);
+    expect(calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
+    expect(calls.some((c) => c.sql.includes("SET status = 'failed'"))).toBe(
+      false,
+    );
+  });
+
   it("marks the run failed when processing throws wholesale", async () => {
     const run = makeRun({ identities: "junk" as never });
     // Array.isArray guard turns junk into [] → completes as done; instead
@@ -319,5 +472,43 @@ describe("runFollowImportSweep", () => {
     expect(failed).toBeDefined();
     expect(failed!.params![1]).toBe("db exploded");
     void run;
+  });
+});
+
+describe("computeSyncDiff", () => {
+  const members = [
+    { uri: "did:plc:a", displayName: "@a" },
+    { uri: "did:plc:b", displayName: "@b" },
+    { uri: "did:plc:excluded" },
+  ];
+
+  it("diffs (remote − exclusions) against membership", () => {
+    const { toAdd, toRemove } = computeSyncDiff(
+      [
+        { uri: "did:plc:a" }, // already a member — not re-added
+        { uri: "did:plc:new", displayName: "@new" }, // newly followed
+        { uri: "did:plc:excluded" }, // deliberately removed here — never resurrected
+      ],
+      new Set(["did:plc:excluded"]),
+      members,
+      { removalsAllowed: true },
+    );
+    expect(toAdd).toEqual([{ uri: "did:plc:new", displayName: "@new" }]);
+    // b was unfollowed remotely → removed. The excluded-but-member row is
+    // outside sync's remit entirely — neither re-added nor removed (addSource
+    // clears exclusions on manual re-add, so this state is residual; the
+    // membership is the user's evident intent).
+    expect(toRemove.map((r) => r.uri)).toEqual(["did:plc:b"]);
+  });
+
+  it("suppresses removals entirely when the graph read was truncated", () => {
+    const { toAdd, toRemove } = computeSyncDiff(
+      [{ uri: "did:plc:new" }],
+      new Set(),
+      members,
+      { removalsAllowed: false },
+    );
+    expect(toAdd).toEqual([{ uri: "did:plc:new" }]);
+    expect(toRemove).toEqual([]);
   });
 });

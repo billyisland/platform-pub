@@ -47,6 +47,14 @@ export type WorkspaceFeedSourceKind =
 
 export type ReachKind = "following" | "explore";
 
+// Origin binding of an import-minted feed (FOLLOW-GRAPH-IMPORT-ADR §6.3):
+// which network graph it came from, for the FeedComposer's "Sync now".
+export interface FeedImportBinding {
+  protocol: string;
+  originIdentity: string;
+  lastSyncedAt: string | null;
+}
+
 export interface WorkspaceFeedSource {
   id: string;
   sourceType: WorkspaceFeedSourceKind;
@@ -168,9 +176,12 @@ export const workspaceFeeds = {
 
   // Slice 4: source authoring
   listSources: (id: string) =>
-    request<{ sources: WorkspaceFeedSource[] }>(
-      `/workspace/feeds/${id}/sources`,
-    ),
+    request<{
+      sources: WorkspaceFeedSource[];
+      // Present iff the feed was minted by a follow-graph import
+      // (FOLLOW-GRAPH-IMPORT-ADR §6.3) — the composer's "Sync now" hook.
+      importBinding?: FeedImportBinding | null;
+    }>(`/workspace/feeds/${id}/sources`),
 
   addSource: (id: string, input: AddWorkspaceFeedSourceInput) =>
     request<{ source: WorkspaceFeedSource }>(`/workspace/feeds/${id}/sources`, {

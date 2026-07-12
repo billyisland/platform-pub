@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict N4Zc4qYQebDfR8qT6xSMbEsfSrmvhJ8wkQT5yQLDWXTin3zl3FF3a8VYjYa6ydY
+\restrict Mp5EHFjdbZWIh2LqEJt99KbdJMKQdCFjckcvhSh1SlVRrjNAea1DknFbcAoZLC1
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1832,7 +1832,12 @@ CREATE TABLE public.follow_imports (
     error text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     finished_at timestamp with time zone,
-    CONSTRAINT follow_imports_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
+    kind text DEFAULT 'import'::text NOT NULL,
+    removals jsonb DEFAULT '[]'::jsonb NOT NULL,
+    removal_cursor integer DEFAULT 0 NOT NULL,
+    removed integer DEFAULT 0 NOT NULL,
+    CONSTRAINT follow_imports_kind_check CHECK ((kind = ANY (ARRAY['import'::text, 'sync'::text]))),
+    CONSTRAINT follow_imports_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text, 'preview'::text])))
 );
 
 
@@ -4900,7 +4905,7 @@ CREATE INDEX idx_follow_imports_account ON public.follow_imports USING btree (ac
 -- Name: idx_follow_imports_unfinished; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_follow_imports_unfinished ON public.follow_imports USING btree (created_at) WHERE (status = ANY (ARRAY['pending'::text, 'running'::text]));
+CREATE INDEX idx_follow_imports_unfinished ON public.follow_imports USING btree (created_at) WHERE (status = ANY (ARRAY['pending'::text, 'running'::text, 'preview'::text]));
 
 
 --
@@ -7631,7 +7636,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict N4Zc4qYQebDfR8qT6xSMbEsfSrmvhJ8wkQT5yQLDWXTin3zl3FF3a8VYjYa6ydY
+\unrestrict Mp5EHFjdbZWIh2LqEJt99KbdJMKQdCFjckcvhSh1SlVRrjNAea1DknFbcAoZLC1
 
 
 
@@ -7792,4 +7797,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('150_discovery_known_world_trgm.sql'),
     ('151_external_authors_deleted_at.sql'),
     ('152_publication_subscription_pool.sql'),
-    ('153_follow_imports.sql');
+    ('153_follow_imports.sql'),
+    ('154_follow_import_sync.sql');

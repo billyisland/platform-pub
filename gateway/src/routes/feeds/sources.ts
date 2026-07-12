@@ -299,12 +299,17 @@ export async function addSource(
 
   // external_source — two shapes
   if ("externalSourceId" in input) {
-    const { rows } = await pool.query<{ id: string; protocol: string }>(
-      `SELECT id, protocol FROM external_sources WHERE id = $1`,
+    const { rows } = await pool.query<{
+      id: string;
+      protocol: string;
+      source_uri: string;
+    }>(
+      `SELECT id, protocol, source_uri FROM external_sources WHERE id = $1`,
       [input.externalSourceId],
     );
     if (rows.length === 0) throw tagged("TARGET_NOT_FOUND");
     const protocol = rows[0].protocol;
+    const canonicalUri = rows[0].source_uri;
     // Adding an existing source by id must also ensure the derived
     // subscription (a feed_sources row without one would let the GC orphan an
     // in-use source) and revive a previously-orphaned source.
@@ -347,6 +352,9 @@ export async function addSource(
           ],
         );
       }
+      // Re-adding to an import-bound feed revokes the exclusion (§6.3 — "the
+      // user who wants it back re-adds it"), so "Sync now" tracks it again.
+      await clearImportExclusion(client, feedId, protocol, canonicalUri);
       return insertSource(
         feedId,
         "external_source",
@@ -480,6 +488,11 @@ export async function addSource(
       );
     }
 
+    // Re-adding to an import-bound feed revokes the exclusion (§6.3), so
+    // "Sync now" tracks it again. (Sync's own adds are pre-filtered against
+    // exclusions, so this only fires for genuine manual re-adds.)
+    await clearImportExclusion(client, feedId, protocol, sourceUri);
+
     const ins = await insertSource(
       feedId,
       "external_source",
@@ -582,6 +595,23 @@ async function recordImportExclusion(
   );
 }
 
+// The inverse: a manual re-add revokes the exclusion (§6.3 — the user's
+// evident intent is membership, so "Sync now" resumes tracking it). No-op on
+// feeds with no binding / no recorded exclusion. Runs inside the caller's
+// transaction.
+async function clearImportExclusion(
+  client: { query: typeof pool.query },
+  feedId: string,
+  protocol: string,
+  identity: string,
+) {
+  await client.query(
+    `DELETE FROM feed_import_exclusions
+      WHERE feed_id = $1 AND protocol = $2 AND identity = $3`,
+    [feedId, protocol, identity],
+  );
+}
+
 // Remove a source from a feed, with the feed-derived-subscription teardown:
 // when an external source leaves the owner's *last* feed we drop the derived
 // subscription and orphan the shared row (the GC then deactivates/culls it).
@@ -590,10 +620,16 @@ async function recordImportExclusion(
 // could under-count and wrongly delete a still-referenced subscription.
 // Extracted from the DELETE route handler (FOLLOW-GRAPH-IMPORT-ADR §11.1) so
 // the Phase 2 sync engine can call the same invariant-bearing path.
+//
+// recordExclusion (default true): an exclusion marks a DELIBERATE LOCAL
+// removal so re-sync never resurrects it (§6.3). The sync engine's own
+// removals mirror a remote unfollow — not local intent — so it passes false;
+// otherwise a re-follow at the origin could never sync back in.
 export async function removeSource(
   feedId: string,
   ownerId: string,
   sourceId: string,
+  opts: { recordExclusion?: boolean } = {},
 ): Promise<{ notFound: boolean; toreDownNostr: boolean }> {
   const result = await withTransaction(async (client) => {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
@@ -618,7 +654,8 @@ export async function removeSource(
 
     // A removal from an import-bound feed is a deliberate local edit — record
     // it so "Sync now" never re-adds this source (§6.3).
-    await recordImportExclusion(client, feedId, external_source_id);
+    if (opts.recordExclusion !== false)
+      await recordImportExclusion(client, feedId, external_source_id);
 
     // Any remaining feed memberships for this source across the owner's feeds?
     const {
@@ -716,7 +753,31 @@ export function registerFeedSourcesRoutes(app: FastifyInstance) {
       const feed = await loadFeed(id, ownerId);
       if (!feed) return reply.status(404).send({ error: "Feed not found" });
 
-      return reply.send({ sources: await loadFeedSources(id) });
+      // Import-bound feeds carry their origin binding so the composer can
+      // offer "Sync now" (FOLLOW-GRAPH-IMPORT-ADR §6.3/§11.5). Null for the
+      // (vast majority of) feeds that were never imported.
+      const {
+        rows: [binding],
+      } = await pool.query<{
+        protocol: string;
+        origin_identity: string;
+        last_synced_at: Date | null;
+      }>(
+        `SELECT protocol, origin_identity, last_synced_at
+           FROM feed_import_bindings WHERE feed_id = $1`,
+        [id],
+      );
+
+      return reply.send({
+        sources: await loadFeedSources(id),
+        importBinding: binding
+          ? {
+              protocol: binding.protocol,
+              originIdentity: binding.origin_identity,
+              lastSyncedAt: binding.last_synced_at?.toISOString() ?? null,
+            }
+          : null,
+      });
     },
   );
 

@@ -20,13 +20,46 @@ export interface FollowImportRun {
   protocol: FollowImportProtocol
   originIdentity: string
   feedId: string
-  status: 'pending' | 'running' | 'done' | 'failed'
+  // 'sync' = a Phase 2 "Sync now" run; 'preview' = its unconfirmed plan.
+  kind?: 'import' | 'sync'
+  status: 'pending' | 'running' | 'done' | 'failed' | 'preview'
   total: number
   imported: number
   skipped: number
   failed: number
+  removed?: number
+  removalsTotal?: number
   error?: string | null
 }
+
+// The "Sync now" preview (Phase 2, ADR §11.5): the +N/−M plan awaiting
+// confirmation, or the up-to-date verdict (no plan row minted). Removals are
+// suppressed when the graph read hit the cap (removalsSkipped) — past it the
+// server can't tell "unfollowed" from "outside the window".
+export type FollowImportSyncPreview =
+  | {
+      upToDate: true
+      feedId: string
+      protocol: FollowImportProtocol
+      originLabel: string
+      removalsSkipped: boolean
+    }
+  | {
+      upToDate: false
+      id: string
+      feedId: string
+      protocol: FollowImportProtocol
+      originIdentity: string
+      originLabel: string
+      adds: number
+      removes: number
+      addSample: string[]
+      removeSample: string[]
+      truncated: boolean
+      remoteTotal: number
+      cap: number
+      removalsSkipped: boolean
+    }
 
 // The POST response additionally carries the origin label and the
 // no-silent-caps truncation facts (§6.5) for the offer/summary copy.
@@ -73,4 +106,20 @@ export const followImports = {
 
   get: (id: string) =>
     request<{ import: FollowImportRun }>(`/follow-imports/${id}`),
+
+  // Phase 2 "Sync now": preview the diff, then confirm (applies it via the
+  // same background engine) or cancel the unconfirmed plan.
+  syncPreview: (feedId: string) =>
+    request<{ preview: FollowImportSyncPreview }>('/follow-imports/sync', {
+      method: 'POST',
+      body: JSON.stringify({ feedId }),
+    }),
+
+  confirmSync: (id: string) =>
+    request<{ import: FollowImportRun }>(`/follow-imports/${id}/confirm`, {
+      method: 'POST',
+    }),
+
+  cancelSync: (id: string) =>
+    request<void>(`/follow-imports/${id}`, { method: 'DELETE' }),
 }

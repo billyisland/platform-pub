@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-07-12 (fourth entry)** — **Follow-graph import Phase 2 "Sync now"
+  (FOLLOW-GRAPH-IMPORT-ADR §11.5) — exclusion-aware re-sync of import-bound
+  feeds, dark behind `FOLLOW_IMPORT_ENABLED`.** **Migration 154**:
+  `follow_imports` gains `kind` (`import`|`sync`), `removals jsonb`,
+  `removal_cursor`, `removed`, and a `preview` status (a persisted plan
+  awaiting confirmation — never claimed by the sweep); the unfinished partial
+  index now covers previews. **Routes** (`follow-imports.ts`):
+  `POST /follow-imports/sync {feedId}` re-reads the bound origin graph, diffs
+  (remote − exclusions) against current same-protocol membership
+  (`computeSyncDiff`, pure + unit-tested), and persists the `+N/−M` plan as a
+  `preview` run (superseding any unconfirmed prior preview for the feed; 409
+  while a run is in flight; a zero diff stamps `last_synced_at` and returns
+  up-to-date with no row). **Removals are suppressed when the graph read was
+  truncated** — past the cap the server can't tell "unfollowed" from "outside
+  the newest-N window", so a capped read must never drive removals; the skip
+  is surfaced (`removalsSkipped`, no-silent-caps). `POST
+  /follow-imports/:id/confirm` flips preview→pending and kicks the sweep;
+  `DELETE /follow-imports/:id` cancels a preview (previews also GC'd by the
+  sweep after a day). **Engine** (`follow-import.ts`): sync runs apply
+  removals BEFORE adds, cursor-persisted per batch (restartable like the add
+  side); each removal resolves its `feed_sources` row at apply time
+  (already-gone → silent skip) and goes through `removeSource` with the new
+  `recordExclusion: false` option — **a sync removal mirrors a remote
+  unfollow, not local intent, so it must NOT append an exclusion** (else a
+  re-follow at the origin could never sync back in); sync adds re-check
+  exclusions at apply time (a deliberate removal between preview and confirm
+  wins over the stale plan); the >50-source sampled-volume default is
+  import-only (by sync time the feed's volume character is the user's);
+  completion stamps `last_synced_at` as before. **Exclusion symmetry fix
+  (both `addSource` external branches)**: a manual re-add of a source to an
+  import-bound feed now DELETEs the matching `feed_import_exclusions` row
+  (§6.3's "the user who wants it back re-adds it" — previously the exclusion
+  survived the re-add, so `computeSyncDiff` would have counted the re-added
+  member as a removal and sync would undo the user's evident intent);
+  `computeSyncDiff` additionally leaves any residual excluded-but-member row
+  untouched in both directions. **Web**: `GET /feeds/:id/sources` now carries
+  `importBinding` (protocol, origin identity, `last_synced_at`) for bound
+  feeds; new `FeedSyncSection` in the FeedComposer (shown only when the
+  binding's protocol is in the `followImportProtocols` capability list) —
+  origin line + "Sync now" → `+N to add · −M to remove` preview with sample
+  names and the one-way reassurance ("nothing is unfollowed there by us") →
+  Apply/Cancel → 2s progress poll → completion summary + source-list reload;
+  API client gains `syncPreview`/`confirmSync`/`cancelSync` and the run shape
+  gains `kind`/`removed`/`removalsTotal`. Vitest: 4 new engine cases
+  (removals-before-adds + no-exclusion contract, removal-cursor resume,
+  apply-time exclusion skip, failed-removal accounting) + 2 `computeSyncDiff`
+  cases; gateway suite 299 green; schema.sql regenerated from a
+  throwaway-from-committed DB + drift guard all green; root eslint 0 errors;
+  `next build` clean; hairline tripwire clean. Remaining: 1c ActivityPub
+  (live scope check first, §6.4 soak), Phase 3 onboarding.
+
 - **2026-07-12 (third entry)** — **Follow-graph import Phase 1d OPML upload
   (FOLLOW-GRAPH-IMPORT-ADR §5.4/§11.4) — RSS subscriptions import from a
   reader export, dark behind `FOLLOW_IMPORT_ENABLED`.** **Parser/planner**

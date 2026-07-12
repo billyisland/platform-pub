@@ -5,6 +5,7 @@ import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import { ADVISORY_LOCKS } from "@platform-pub/shared/lib/advisory-locks.js";
 import {
   addSource,
+  removeSource,
   type AddSourceInput,
 } from "../routes/feeds/sources.js";
 import { getProfile as atprotoGetProfile, getFollows } from "./atproto-resolve.js";
@@ -285,6 +286,45 @@ async function resolveNip05Pubkey(
 }
 
 // -----------------------------------------------------------------------------
+// Sync diff (Phase 2, §11.5) — pure: (remote graph − exclusions) diffed
+// against the feed's current same-protocol membership.
+//
+// removalsAllowed=false when the graph read was TRUNCATED: past the cap we
+// don't know the full remote set, so a current member outside the
+// newest-N window would wrongly read as "unfollowed". Adds still apply;
+// the skipped removals are surfaced to the user (no-silent-caps).
+// -----------------------------------------------------------------------------
+
+export interface SyncMember {
+  uri: string;
+  displayName?: string;
+}
+
+export function computeSyncDiff(
+  desired: ImportIdentity[],
+  exclusions: Set<string>,
+  members: SyncMember[],
+  opts: { removalsAllowed: boolean },
+): { toAdd: ImportIdentity[]; toRemove: ImportIdentity[] } {
+  // Excluded identities are outside sync's remit ENTIRELY — never re-added
+  // (the §6.3 promise) and never removed (an excluded-but-member row means
+  // conflicting signals — addSource clears the exclusion on a manual re-add,
+  // so this state is residual data; membership is the user's evident intent,
+  // so leave it be).
+  const wanted = desired.filter((d) => !exclusions.has(d.uri));
+  const memberUris = new Set(members.map((m) => m.uri));
+  const wantedUris = new Set(wanted.map((w) => w.uri));
+  return {
+    toAdd: wanted.filter((w) => !memberUris.has(w.uri)),
+    toRemove: opts.removalsAllowed
+      ? members
+          .filter((m) => !wantedUris.has(m.uri) && !exclusions.has(m.uri))
+          .map((m) => ({ uri: m.uri, displayName: m.displayName }))
+      : [],
+  };
+}
+
+// -----------------------------------------------------------------------------
 // The sweep
 // -----------------------------------------------------------------------------
 
@@ -293,7 +333,11 @@ interface FollowImportRow {
   account_id: string;
   protocol: ImportProtocol;
   feed_id: string;
+  kind: "import" | "sync";
   identities: ImportIdentity[];
+  removals: ImportIdentity[];
+  removal_cursor: number;
+  removed: number;
   cursor: number;
   imported: number;
   skipped: number;
@@ -306,6 +350,17 @@ interface FollowImportRow {
 export async function runFollowImportSweep(): Promise<void> {
   if (!followImportEnabled()) return;
 
+  // GC abandoned sync previews (Phase 2): a preview the user never confirmed
+  // or cancelled is a stale plan against a graph that has moved on — and its
+  // identities payload is the table's bulk. A fresh "Sync now" mints a fresh
+  // preview anyway.
+  await pool
+    .query(
+      `DELETE FROM follow_imports
+        WHERE status = 'preview' AND created_at < now() - interval '1 day'`,
+    )
+    .catch((err) => logger.warn({ err }, "follow import preview GC failed"));
+
   for (;;) {
     // Claim the oldest unfinished run. 'running' rows are claimed too — a
     // gateway restart mid-run leaves one behind, and cursor/counters make
@@ -317,7 +372,8 @@ export async function runFollowImportSweep(): Promise<void> {
                      WHERE status IN ('pending', 'running')
                      ORDER BY created_at ASC, id ASC
                      LIMIT 1)
-        RETURNING id, account_id, protocol, feed_id, identities, cursor,
+        RETURNING id, account_id, protocol, feed_id, kind, identities,
+                  removals, removal_cursor, removed, cursor,
                   imported, skipped, failed`,
     );
     if (rows.length === 0) return;
@@ -347,10 +403,80 @@ async function processRun(run: FollowImportRow): Promise<void> {
   const identities = Array.isArray(run.identities) ? run.identities : [];
   let { cursor, imported, skipped, failed } = run;
 
+  // Phase 2 sync runs apply removals BEFORE adds (§11.5): a remote unfollow
+  // leaves the feed before newly-followed sources arrive. Each removal
+  // resolves its feed_sources row at apply time (membership may have moved
+  // since the preview — an already-gone row is a silent skip) and goes
+  // through removeSource WITHOUT recording an exclusion (these mirror remote
+  // unfollows, not deliberate local edits — a re-follow at the origin must
+  // stay syncable back in).
+  if (run.kind === "sync") {
+    const removals = Array.isArray(run.removals) ? run.removals : [];
+    let { removal_cursor: removalCursor, removed } = run;
+    while (removalCursor < removals.length) {
+      const batch = removals.slice(removalCursor, removalCursor + BATCH_SIZE);
+      for (const identity of batch) {
+        try {
+          const { rows } = await pool.query<{ id: string }>(
+            `SELECT fs.id
+               FROM feed_sources fs
+               JOIN external_sources xs ON xs.id = fs.external_source_id
+              WHERE fs.feed_id = $1 AND xs.protocol = $2 AND xs.source_uri = $3
+              LIMIT 1`,
+            [run.feed_id, run.protocol, identity.uri],
+          );
+          if (rows.length === 0) continue; // already gone — nothing to remove
+          const result = await removeSource(
+            run.feed_id,
+            run.account_id,
+            rows[0].id,
+            { recordExclusion: false },
+          );
+          if (!result.notFound) removed++;
+        } catch (err) {
+          failed++;
+          logger.warn(
+            { err, importId: run.id, uri: identity.uri },
+            "follow sync: removeSource failed",
+          );
+        }
+      }
+      removalCursor += batch.length;
+      const { rowCount } = await pool.query(
+        `UPDATE follow_imports
+            SET removed = $2, removal_cursor = $3, failed = $4
+          WHERE id = $1`,
+        [run.id, removed, removalCursor, failed],
+      );
+      // Feed deleted mid-run (cascade took the row) — stop.
+      if (rowCount === 0) return;
+    }
+  }
+
+  // Sync adds re-check exclusions at apply time: a source the user
+  // deliberately removed between preview and confirm must not be re-added by
+  // the stale plan (§6.3 — the exclusion always wins).
+  const applyExclusions =
+    run.kind === "sync" && cursor < identities.length
+      ? new Set(
+          (
+            await pool.query<{ identity: string }>(
+              `SELECT identity FROM feed_import_exclusions
+                WHERE feed_id = $1 AND protocol = $2`,
+              [run.feed_id, run.protocol],
+            )
+          ).rows.map((r) => r.identity),
+        )
+      : null;
+
   while (cursor < identities.length) {
     const batch = identities.slice(cursor, cursor + BATCH_SIZE);
     const mintedSourceIds: string[] = [];
     for (const [i, identity] of batch.entries()) {
+      if (applyExclusions?.has(identity.uri)) {
+        skipped++;
+        continue;
+      }
       const input: AddSourceInput = {
         sourceType: "external_source",
         protocol: run.protocol,
@@ -424,8 +550,9 @@ async function processRun(run: FollowImportRow): Promise<void> {
 
   // Completion. Volume default first (§6.5): above the threshold the feed
   // defaults to sampled volume — a post-import bulk UPDATE, guarded to rows
-  // still at the 4.0 default so a re-run never clobbers user tuning.
-  if (identities.length > VOLUME_SAMPLE_THRESHOLD) {
+  // still at the 4.0 default so a re-run never clobbers user tuning. Initial
+  // imports only: by sync time the feed's volume character is the user's.
+  if (run.kind !== "sync" && identities.length > VOLUME_SAMPLE_THRESHOLD) {
     await pool.query(
       `UPDATE feed_sources
           SET weight = $2

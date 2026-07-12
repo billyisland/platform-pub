@@ -5,14 +5,17 @@ import logger from "@platform-pub/shared/lib/logger.js";
 import { requireAuth } from "../middleware/auth.js";
 import { UUID_RE } from "../lib/uuid.js";
 import { createFeedForOwner } from "./feeds/crud.js";
-import { feedRowToResponse } from "./feeds/shared.js";
+import { feedRowToResponse, loadFeed } from "./feeds/shared.js";
 import {
   followImportEnabled,
   importFeedName,
   readFollowGraph,
   kickFollowImportSweep,
+  computeSyncDiff,
   FOLLOW_IMPORT_CAP,
   type ImportIdentity,
+  type ImportProtocol,
+  type SyncMember,
 } from "../lib/follow-import.js";
 import { parseOpml, planOpmlImport, OPML_MAX_FEEDS } from "../lib/opml.js";
 
@@ -41,15 +44,23 @@ interface FollowImportStatusRow {
   protocol: string;
   origin_identity: string;
   feed_id: string;
+  kind: string;
   status: string;
   total: number;
   imported: number;
   skipped: number;
   failed: number;
+  removed: number;
+  removals_total: number;
   error: string | null;
   created_at: Date;
   finished_at: Date | null;
 }
+
+const STATUS_ROW_COLUMNS = `id, protocol, origin_identity, feed_id, kind,
+       status, total, imported, skipped, failed, removed,
+       jsonb_array_length(removals) AS removals_total,
+       error, created_at, finished_at`;
 
 function importRowToResponse(row: FollowImportStatusRow) {
   return {
@@ -57,11 +68,14 @@ function importRowToResponse(row: FollowImportStatusRow) {
     protocol: row.protocol,
     originIdentity: row.origin_identity,
     feedId: row.feed_id,
+    kind: row.kind,
     status: row.status,
     total: row.total,
     imported: row.imported,
     skipped: row.skipped,
     failed: row.failed,
+    removed: row.removed,
+    removalsTotal: Number(row.removals_total),
     error: row.error,
     createdAt: row.created_at.toISOString(),
     finishedAt: row.finished_at?.toISOString() ?? null,
@@ -305,6 +319,251 @@ export default async function followImportRoutes(app: FastifyInstance) {
   );
 
   // ---------------------------------------------------------------------------
+  // POST /follow-imports/sync — "Sync now" preview (Phase 2, ADR §11.5)
+  //
+  // Re-reads the bound feed's remote graph, diffs (remote − exclusions)
+  // against current same-protocol membership, and persists the plan as a
+  // status='preview' run the user confirms (below) or cancels. Removals are
+  // computed only when the graph read was NOT truncated (past the cap we
+  // can't tell "unfollowed" from "outside the window") — skipped removals
+  // are stated in the response, never silent. A diff of nothing stamps
+  // last_synced_at and reports up-to-date without minting a row.
+  // ---------------------------------------------------------------------------
+  const syncSchema = z.object({ feedId: z.string().regex(UUID_RE) });
+
+  app.post<{ Body: unknown }>(
+    "/follow-imports/sync",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!followImportEnabled())
+        return reply.status(404).send({ error: "Not found" });
+      const ownerId = req.session!.sub;
+
+      const parsed = syncSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+      const { feedId } = parsed.data;
+
+      const feed = await loadFeed(feedId, ownerId);
+      if (!feed) return reply.status(404).send({ error: "Feed not found" });
+
+      const {
+        rows: [binding],
+      } = await pool.query<{
+        protocol: ImportProtocol;
+        origin_identity: string;
+      }>(
+        `SELECT protocol, origin_identity
+           FROM feed_import_bindings WHERE feed_id = $1`,
+        [feedId],
+      );
+      if (!binding) {
+        return reply.status(409).send({
+          error: "not_syncable",
+          message: "This feed wasn't imported from a network, so there's nothing to sync",
+        });
+      }
+
+      const {
+        rows: [inFlight],
+      } = await pool.query(
+        `SELECT 1 FROM follow_imports
+          WHERE feed_id = $1 AND status IN ('pending', 'running')
+          LIMIT 1`,
+        [feedId],
+      );
+      if (inFlight) {
+        return reply.status(409).send({
+          error: "sync_in_progress",
+          message: "An import or sync is already running for this feed",
+        });
+      }
+
+      const graph = await readFollowGraph(
+        binding.protocol,
+        binding.origin_identity,
+      );
+      if (!graph.ok) {
+        if (graph.reason === "unsupported")
+          return reply
+            .status(400)
+            .send({ error: "import_unsupported", message: graph.message });
+        if (graph.reason === "malformed")
+          return reply
+            .status(400)
+            .send({ error: "invalid_origin", message: graph.message });
+        return reply
+          .status(422)
+          .send({ error: "origin_unreachable", message: graph.message });
+      }
+
+      const exclusions = new Set(
+        (
+          await pool.query<{ identity: string }>(
+            `SELECT identity FROM feed_import_exclusions
+              WHERE feed_id = $1 AND protocol = $2`,
+            [feedId, binding.protocol],
+          )
+        ).rows.map((r) => r.identity),
+      );
+      const members: SyncMember[] = (
+        await pool.query<{ source_uri: string; display_name: string | null }>(
+          `SELECT xs.source_uri, xs.display_name
+             FROM feed_sources fs
+             JOIN external_sources xs ON xs.id = fs.external_source_id
+            WHERE fs.feed_id = $1 AND fs.source_type = 'external_source'
+              AND xs.protocol = $2`,
+          [feedId, binding.protocol],
+        )
+      ).rows.map((r) => ({
+        uri: r.source_uri,
+        displayName: r.display_name ?? undefined,
+      }));
+
+      const { toAdd, toRemove } = computeSyncDiff(
+        graph.identities,
+        exclusions,
+        members,
+        { removalsAllowed: !graph.truncated },
+      );
+
+      if (toAdd.length === 0 && toRemove.length === 0) {
+        await pool.query(
+          `UPDATE feed_import_bindings SET last_synced_at = now()
+            WHERE feed_id = $1`,
+          [feedId],
+        );
+        return reply.send({
+          preview: {
+            upToDate: true,
+            feedId,
+            protocol: binding.protocol,
+            originLabel: graph.originLabel,
+            removalsSkipped: graph.truncated,
+          },
+        });
+      }
+
+      const importId = await withTransaction(async (client) => {
+        // Supersede any unconfirmed earlier preview for this feed — one live
+        // plan at a time.
+        await client.query(
+          `DELETE FROM follow_imports
+            WHERE feed_id = $1 AND status = 'preview'`,
+          [feedId],
+        );
+        const {
+          rows: [run],
+        } = await client.query<{ id: string }>(
+          `INSERT INTO follow_imports
+             (account_id, protocol, origin_identity, feed_id, kind, status,
+              total, identities, removals)
+           VALUES ($1, $2, $3, $4, 'sync', 'preview', $5, $6::jsonb, $7::jsonb)
+           RETURNING id`,
+          [
+            ownerId,
+            binding.protocol,
+            graph.originIdentity,
+            feedId,
+            toAdd.length,
+            JSON.stringify(toAdd),
+            JSON.stringify(toRemove),
+          ],
+        );
+        return run.id;
+      });
+
+      const label = (i: ImportIdentity) => i.displayName ?? i.uri;
+      return reply.status(201).send({
+        preview: {
+          upToDate: false,
+          id: importId,
+          feedId,
+          protocol: binding.protocol,
+          originIdentity: graph.originIdentity,
+          originLabel: graph.originLabel,
+          adds: toAdd.length,
+          removes: toRemove.length,
+          addSample: toAdd.slice(0, 12).map(label),
+          removeSample: toRemove.slice(0, 12).map(label),
+          // No-silent-caps facts: a truncated graph read caps the adds AND
+          // suppresses removals entirely (see route comment).
+          truncated: graph.truncated,
+          remoteTotal: graph.total,
+          cap: FOLLOW_IMPORT_CAP,
+          removalsSkipped: graph.truncated,
+        },
+      });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // POST /follow-imports/:id/confirm — apply a previewed sync plan
+  // ---------------------------------------------------------------------------
+  app.post<{ Params: { id: string } }>(
+    "/follow-imports/:id/confirm",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!followImportEnabled())
+        return reply.status(404).send({ error: "Not found" });
+      const ownerId = req.session!.sub;
+      const { id } = req.params;
+      if (!UUID_RE.test(id))
+        return reply.status(400).send({ error: "Invalid import id" });
+
+      const { rows } = await pool.query<FollowImportStatusRow>(
+        `UPDATE follow_imports
+            SET status = 'pending'
+          WHERE id = $1 AND account_id = $2
+            AND kind = 'sync' AND status = 'preview'
+          RETURNING ${STATUS_ROW_COLUMNS}`,
+        [id, ownerId],
+      );
+      if (rows.length === 0)
+        return reply
+          .status(404)
+          .send({ error: "No confirmable sync preview with this id" });
+
+      kickFollowImportSweep().catch((err) =>
+        logger.warn({ err, importId: id }, "follow sync kick failed"));
+
+      return reply.send({ import: importRowToResponse(rows[0]) });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // DELETE /follow-imports/:id — cancel an unconfirmed sync preview
+  // ---------------------------------------------------------------------------
+  app.delete<{ Params: { id: string } }>(
+    "/follow-imports/:id",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!followImportEnabled())
+        return reply.status(404).send({ error: "Not found" });
+      const ownerId = req.session!.sub;
+      const { id } = req.params;
+      if (!UUID_RE.test(id))
+        return reply.status(400).send({ error: "Invalid import id" });
+
+      // Previews only — pending/running/terminal runs are progress history,
+      // not cancellable plans.
+      const { rowCount } = await pool.query(
+        `DELETE FROM follow_imports
+          WHERE id = $1 AND account_id = $2 AND status = 'preview'`,
+        [id, ownerId],
+      );
+      if (rowCount === 0)
+        return reply
+          .status(404)
+          .send({ error: "No cancellable sync preview with this id" });
+      return reply.status(204).send();
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // GET /follow-imports/:id — progress poll
   // ---------------------------------------------------------------------------
   app.get<{ Params: { id: string } }>(
@@ -319,8 +578,7 @@ export default async function followImportRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Invalid import id" });
 
       const { rows } = await pool.query<FollowImportStatusRow>(
-        `SELECT id, protocol, origin_identity, feed_id, status, total,
-                imported, skipped, failed, error, created_at, finished_at
+        `SELECT ${STATUS_ROW_COLUMNS}
            FROM follow_imports
           WHERE id = $1 AND account_id = $2`,
         [id, ownerId],
