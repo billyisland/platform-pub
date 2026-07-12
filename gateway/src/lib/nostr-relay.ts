@@ -94,6 +94,59 @@ export async function fetchNostrEvents(
 const NOSTR_PROFILE_RELAY_CAP = 6;
 const NOSTR_PROFILE_REQ_TIMEOUT_MS = 5_000;
 const NIP65_REQ_TIMEOUT_MS = 6_000;
+const CONTACTS_REQ_TIMEOUT_MS = 8_000;
+
+// One followed account from a kind-3 contact list. The relay hint is
+// connection metadata ONLY — it may seed external_sources.relay_urls but must
+// never enter the source identity (relay-free Nostr identity invariant).
+export interface NostrContact {
+  pubkey: string; // 64-hex, lowercase — the canonical source identity
+  relayHint?: string;
+}
+
+// Fetch an author's kind-3 contact list (FOLLOW-GRAPH-IMPORT-ADR §5.2).
+// Every reachable relay's answer is collected and the newest event wins
+// (replaceable-event semantics across a fallback-relay race). Returns the
+// deduped contacts in the list's own append order — kind-3 `p` tags are
+// append-ordered oldest-first, so callers wanting "most recently followed
+// first" take the TAIL and reverse. A duplicate pubkey keeps its LAST
+// occurrence (the more recent follow). Returns null when no kind 3 is
+// reachable at all — distinct from a reachable-but-empty list ([]).
+export async function fetchNostrContacts(
+  pubkey: string,
+  hintRelays: string[] = [],
+): Promise<NostrContact[] | null> {
+  if (!/^[0-9a-f]{64}$/i.test(pubkey)) return null;
+  const relays = [...new Set([...hintRelays, ...NOSTR_FALLBACK_RELAYS])]
+    .filter((r) => r.startsWith("ws://") || r.startsWith("wss://"))
+    .slice(0, NOSTR_PROFILE_RELAY_CAP);
+  if (relays.length === 0) return null;
+
+  const events = await fetchNostrEvents(
+    relays,
+    [{ kinds: [3], authors: [pubkey.toLowerCase()], limit: 1 }],
+    CONTACTS_REQ_TIMEOUT_MS,
+  );
+  if (events.length === 0) return null;
+  const newest = events.reduce((a, b) => (b.created_at > a.created_at ? b : a));
+
+  const byPubkey = new Map<string, NostrContact>();
+  for (const tag of newest.tags ?? []) {
+    if (!Array.isArray(tag) || tag[0] !== "p") continue;
+    const contactPk = typeof tag[1] === "string" ? tag[1].toLowerCase() : "";
+    if (!/^[0-9a-f]{64}$/.test(contactPk)) continue;
+    const hint =
+      typeof tag[2] === "string" &&
+      (tag[2].startsWith("ws://") || tag[2].startsWith("wss://"))
+        ? tag[2]
+        : undefined;
+    // Keep the LAST occurrence's position: delete-then-set so a re-follow
+    // moves the contact to its newer place in the append order.
+    byPubkey.delete(contactPk);
+    byPubkey.set(contactPk, { pubkey: contactPk, relayHint: hint });
+  }
+  return [...byPubkey.values()];
+}
 
 // Fetch an author's NIP-65 relay list (kind 10002) and pick their write relays
 // (EXTERNAL-AUTHOR-HISTORY-ADR §4.1). The discovery set is the caller's hints

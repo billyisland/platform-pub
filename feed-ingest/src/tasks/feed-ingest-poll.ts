@@ -39,7 +39,17 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
   // itself unhealthy — otherwise we'd duplicate work.
   const jetstreamHealthy = config.get("jetstream_healthy") !== "false";
 
-  // Find sources due for polling
+  // Find sources due for polling, capped per host IN THE SELECTION
+  // (FOLLOW-GRAPH-IMPORT-ADR §6.4a). The per-host cap used to be applied only
+  // in JS, AFTER a flat `ORDER BY last_fetched_at ASC NULLS FIRST LIMIT 100`
+  // — so a large single-host backlog (a 500-follow Mastodon import) filled the
+  // whole selection window with its own rows every tick, the JS cap passed 2
+  // of them, and the tick enqueued ~2 jobs SYSTEM-WIDE (all protocols, all
+  // users) until that backlog drained. The window function caps each host's
+  // contribution to the window itself, so other hosts' due sources stay
+  // selectable. Host extraction mirrors the JS grouping below: first relay
+  // hostname for nostr, else the source URI hostname, else the raw URI
+  // (DIDs/pubkeys group as themselves).
   const { rows: sources } = await pool.query<{
     id: string;
     protocol: string;
@@ -47,19 +57,43 @@ export const feedIngestPoll: Task = async (_payload, helpers) => {
     relay_urls: string[] | null;
   }>(
     `
+    WITH due AS (
+      SELECT id, protocol, source_uri, relay_urls, last_fetched_at,
+        COALESCE(
+          substring(
+            CASE WHEN protocol = 'nostr_external'
+                   AND relay_urls IS NOT NULL AND array_length(relay_urls, 1) > 0
+                 THEN relay_urls[1]
+                 ELSE source_uri
+            END
+            FROM '^[A-Za-z][A-Za-z0-9+.-]*://([^/:?#]+)'
+          ),
+          source_uri
+        ) AS host
+      FROM external_sources
+      WHERE is_active = TRUE
+        AND protocol != 'email'
+        AND (protocol != 'atproto' OR $1::boolean = FALSE)
+        AND (
+          last_fetched_at IS NULL
+          OR last_fetched_at + (fetch_interval_seconds || ' seconds')::interval <= now()
+        )
+    ),
+    ranked AS (
+      SELECT id, protocol, source_uri, relay_urls, last_fetched_at,
+             row_number() OVER (
+               PARTITION BY host
+               ORDER BY last_fetched_at ASC NULLS FIRST, id ASC
+             ) AS host_rank
+      FROM due
+    )
     SELECT id, protocol, source_uri, relay_urls
-    FROM external_sources
-    WHERE is_active = TRUE
-      AND protocol != 'email'
-      AND (protocol != 'atproto' OR $1::boolean = FALSE)
-      AND (
-        last_fetched_at IS NULL
-        OR last_fetched_at + (fetch_interval_seconds || ' seconds')::interval <= now()
-      )
-    ORDER BY last_fetched_at ASC NULLS FIRST
+    FROM ranked
+    WHERE host_rank <= $2
+    ORDER BY last_fetched_at ASC NULLS FIRST, id ASC
     LIMIT 100
   `,
-    [jetstreamHealthy],
+    [jetstreamHealthy, maxPerHost],
   );
 
   if (sources.length === 0) return;

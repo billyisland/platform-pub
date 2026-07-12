@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict BUVVXyVpNzUKie0rjxVheewjAauZNkpqHfBCrKfinIwSIKUgoI9mffDqaxG7UET
+\restrict N4Zc4qYQebDfR8qT6xSMbEsfSrmvhJ8wkQT5yQLDWXTin3zl3FF3a8VYjYa6ydY
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -1677,6 +1677,31 @@ CREATE TABLE public.feed_engagement (
 
 
 --
+-- Name: feed_import_bindings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.feed_import_bindings (
+    feed_id uuid NOT NULL,
+    protocol public.external_protocol NOT NULL,
+    origin_identity text NOT NULL,
+    last_synced_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: feed_import_exclusions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.feed_import_exclusions (
+    feed_id uuid NOT NULL,
+    protocol public.external_protocol NOT NULL,
+    identity text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: feed_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1784,6 +1809,30 @@ CREATE TABLE public.feeds (
     is_starter_template boolean DEFAULT false NOT NULL,
     cloned_from_feed_id uuid,
     CONSTRAINT feeds_name_length CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80)))
+);
+
+
+--
+-- Name: follow_imports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.follow_imports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    protocol public.external_protocol NOT NULL,
+    origin_identity text NOT NULL,
+    feed_id uuid NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    total integer DEFAULT 0 NOT NULL,
+    imported integer DEFAULT 0 NOT NULL,
+    skipped integer DEFAULT 0 NOT NULL,
+    failed integer DEFAULT 0 NOT NULL,
+    identities jsonb DEFAULT '[]'::jsonb NOT NULL,
+    cursor integer DEFAULT 0 NOT NULL,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT follow_imports_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
 );
 
 
@@ -3419,6 +3468,22 @@ ALTER TABLE ONLY public.feed_engagement
 
 
 --
+-- Name: feed_import_bindings feed_import_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_import_bindings
+    ADD CONSTRAINT feed_import_bindings_pkey PRIMARY KEY (feed_id);
+
+
+--
+-- Name: feed_import_exclusions feed_import_exclusions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_import_exclusions
+    ADD CONSTRAINT feed_import_exclusions_pkey PRIMARY KEY (feed_id, protocol, identity);
+
+
+--
 -- Name: feed_items feed_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3464,6 +3529,14 @@ ALTER TABLE ONLY public.feed_sources
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: follow_imports follow_imports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.follow_imports
+    ADD CONSTRAINT follow_imports_pkey PRIMARY KEY (id);
 
 
 --
@@ -4814,6 +4887,20 @@ CREATE INDEX idx_feed_scores_published ON public.feed_scores USING btree (publis
 --
 
 CREATE INDEX idx_feed_scores_score ON public.feed_scores USING btree (score DESC);
+
+
+--
+-- Name: idx_follow_imports_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_follow_imports_account ON public.follow_imports USING btree (account_id, created_at DESC);
+
+
+--
+-- Name: idx_follow_imports_unfinished; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_follow_imports_unfinished ON public.follow_imports USING btree (created_at) WHERE (status = ANY (ARRAY['pending'::text, 'running'::text]));
 
 
 --
@@ -6341,6 +6428,22 @@ ALTER TABLE ONLY public.feed_engagement
 
 
 --
+-- Name: feed_import_bindings feed_import_bindings_feed_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_import_bindings
+    ADD CONSTRAINT feed_import_bindings_feed_id_fkey FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
+
+
+--
+-- Name: feed_import_exclusions feed_import_exclusions_feed_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feed_import_exclusions
+    ADD CONSTRAINT feed_import_exclusions_feed_id_fkey FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
+
+
+--
 -- Name: feed_items feed_items_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6490,6 +6593,22 @@ ALTER TABLE ONLY public.read_events
 
 ALTER TABLE ONLY public.vote_charges
     ADD CONSTRAINT fk_vote_charges_writer_payout FOREIGN KEY (writer_payout_id) REFERENCES public.writer_payouts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: follow_imports follow_imports_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.follow_imports
+    ADD CONSTRAINT follow_imports_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: follow_imports follow_imports_feed_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.follow_imports
+    ADD CONSTRAINT follow_imports_feed_id_fkey FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
 
 
 --
@@ -7512,7 +7631,7 @@ ALTER TABLE graphile_worker._private_tasks ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict BUVVXyVpNzUKie0rjxVheewjAauZNkpqHfBCrKfinIwSIKUgoI9mffDqaxG7UET
+\unrestrict N4Zc4qYQebDfR8qT6xSMbEsfSrmvhJ8wkQT5yQLDWXTin3zl3FF3a8VYjYa6ydY
 
 
 
@@ -7672,4 +7791,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('149_pledge_drives_draft_fk_set_null.sql'),
     ('150_discovery_known_world_trgm.sql'),
     ('151_external_authors_deleted_at.sql'),
-    ('152_publication_subscription_pool.sql');
+    ('152_publication_subscription_pool.sql'),
+    ('153_follow_imports.sql');

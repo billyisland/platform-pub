@@ -61,6 +61,11 @@ import { extractRoutes } from "./routes/extract.js";
 import { authorCardRoutes } from "./routes/author-card.js";
 import { authorRoutes } from "./routes/author.js";
 import { identityLinkRoutes } from "./routes/identity-links.js";
+import followImportRoutes from "./routes/follow-imports.js";
+import {
+  followImportEnabled,
+  runFollowImportSweep,
+} from "./lib/follow-import.js";
 import { getAtprotoClient } from "@platform-pub/shared/lib/atproto-oauth.js";
 import { publishScheduledDrafts } from "./workers/scheduler.js";
 import { runDiscoverySweep } from "./lib/discovery-publish.js";
@@ -263,6 +268,10 @@ async function start() {
   // Cross-source identity links (Slice 8 P2): /author/:id/links create + unlink
   await app.register(identityLinkRoutes, { prefix: "/api/v1" });
 
+  // Follow-graph imports (FOLLOW-GRAPH-IMPORT-ADR): POST run + progress poll.
+  // Dark behind FOLLOW_IMPORT_ENABLED (routes 404 when off).
+  await app.register(followImportRoutes, { prefix: "/api/v1" });
+
   // Workspace feeds (slice 3 — owner-private feed objects rendered by vessels).
   // Mounted under /api/v1/workspace because external-feeds.ts already owns the
   // /api/v1/feeds namespace for RSS/Mastodon/Bluesky/Nostr subscriptions.
@@ -383,6 +392,7 @@ async function start() {
   const LOCK_SCHEDULER = ADVISORY_LOCKS.SCHEDULER;
   const LOCK_DISCOVERY = ADVISORY_LOCKS.DISCOVERY;
   const LOCK_TRIBUTES = ADVISORY_LOCKS.TRIBUTES;
+  const LOCK_FOLLOW_IMPORT = ADVISORY_LOCKS.FOLLOW_IMPORT;
   const SCHEDULER_INTERVAL_MS = 60 * 1000; // 1 minute
 
   async function withAdvisoryLock(
@@ -440,6 +450,14 @@ async function start() {
       "Nostr discovery sweep",
       runDiscoverySweep,
     ).catch((err) => logger.error({ err }, "Discovery sweep worker failed"));
+    // Follow-graph import sweep — dark behind FOLLOW_IMPORT_ENABLED.
+    if (followImportEnabled()) {
+      withAdvisoryLock(
+        LOCK_FOLLOW_IMPORT,
+        "Follow import sweep",
+        runFollowImportSweep,
+      ).catch((err) => logger.error({ err }, "Follow import sweep failed"));
+    }
   }, SCHEDULER_INTERVAL_MS);
 
   // Run once on startup
@@ -468,6 +486,14 @@ async function start() {
     "Nostr discovery sweep",
     runDiscoverySweep,
   ).catch((err) => logger.error({ err }, "Discovery sweep worker failed (startup)"));
+  if (followImportEnabled()) {
+    withAdvisoryLock(
+      LOCK_FOLLOW_IMPORT,
+      "Follow import sweep",
+      runFollowImportSweep,
+    ).catch((err) =>
+      logger.error({ err }, "Follow import sweep failed (startup)"));
+  }
 }
 
 start().catch((err) => {

@@ -116,6 +116,76 @@ export async function searchActors(
 }
 
 // =============================================================================
+// getFollows: DID → the accounts this actor follows (FOLLOW-GRAPH-IMPORT-ADR
+// §5.1). Public AppView, no auth, paginated at ~100/page; the AppView returns
+// most-recently-followed first, so a capped read keeps the freshest slice of
+// the graph. Stops at `cap` follows or when the cursor runs out. Returns null
+// only when the FIRST page fails (actor unknown / AppView unreachable) —
+// a mid-pagination failure returns the partial list rather than discarding
+// pages already fetched (the import summary surfaces the shortfall via total).
+// =============================================================================
+
+export interface AtprotoFollow {
+  did: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+}
+
+export async function getFollows(
+  actorDid: string,
+  cap: number,
+): Promise<AtprotoFollow[] | null> {
+  const follows: AtprotoFollow[] = [];
+  let cursor: string | undefined;
+  let firstPage = true;
+  while (follows.length < cap) {
+    const limit = Math.min(100, cap - follows.length);
+    const params = new URLSearchParams({ actor: actorDid, limit: String(limit) });
+    if (cursor) params.set("cursor", cursor);
+    let data: { follows?: unknown; cursor?: unknown };
+    try {
+      const res = await safeFetch(
+        `${APPVIEW}/xrpc/app.bsky.graph.getFollows?${params.toString()}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!res.ok) throw new Error(`AppView returned HTTP ${res.status}`);
+      data = JSON.parse(res.text) as { follows?: unknown; cursor?: unknown };
+    } catch (err) {
+      logger.warn(
+        { actorDid, page: firstPage ? "first" : "later", err },
+        "getFollows failed",
+      );
+      return firstPage ? null : follows;
+    }
+    firstPage = false;
+    if (!Array.isArray(data.follows)) break;
+    for (const raw of data.follows) {
+      if (typeof raw !== "object" || raw === null) continue;
+      const f = raw as {
+        did?: unknown;
+        handle?: unknown;
+        displayName?: unknown;
+        avatar?: unknown;
+      };
+      if (typeof f.did !== "string" || !isDid(f.did)) continue;
+      if (typeof f.handle !== "string") continue;
+      follows.push({
+        did: f.did,
+        handle: f.handle,
+        displayName:
+          typeof f.displayName === "string" ? f.displayName : undefined,
+        avatar: typeof f.avatar === "string" ? f.avatar : undefined,
+      });
+      if (follows.length >= cap) break;
+    }
+    if (typeof data.cursor !== "string" || data.cursor === "") break;
+    cursor = data.cursor;
+  }
+  return follows;
+}
+
+// =============================================================================
 // resolveHandle: handle → DID
 // =============================================================================
 

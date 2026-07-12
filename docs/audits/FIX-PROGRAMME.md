@@ -23,6 +23,45 @@ starts.
 
 ## Progress
 
+- **2026-07-12** — **Follow-graph import Phase 0 + 1a/1b backend
+  (FOLLOW-GRAPH-IMPORT-ADR §11, migration 153) — engine, rails, and the
+  atproto/Nostr graph readers; dark behind `FOLLOW_IMPORT_ENABLED`.**
+  **Prerequisite refactors** (§11.1): `addSource` exported with an options bag
+  (`skipProbe` — the per-call D6 liveness skip; `enqueueRunAt` — jittered
+  `run_at` threaded into both subscribe-time `add_job` calls); `removeSource`
+  extracted from the DELETE route (route + future Phase-2 sync both call it);
+  `createFeedForOwner` extracted from `POST /feeds`; exclusion hooks in
+  `removeSource` AND the move handler (`recordImportExclusion` — INSERT…SELECT
+  gated on a protocol-matching `feed_import_bindings` row, inside the existing
+  transaction). **Migration 153**: `follow_imports` (run row with `identities`
+  jsonb + `cursor` for deterministic restart), `feed_import_bindings`,
+  `feed_import_exclusions`; schema.sql regenerated + drift guard green.
+  **Engine** (`gateway/src/lib/follow-import.ts`): `runFollowImportSweep`
+  claims the oldest pending/running run, loops 25-identity batches within one
+  invocation, DUPLICATE→skipped / per-source failure→failed (never fails the
+  run), seeds synthetic `last_fetched_at` (§6.4a poll stagger), applies the
+  >50-source sampled-volume default (bulk weight 4.0→1.0) at completion, and
+  stamps `last_synced_at`; registered on the gateway 1-min scheduler + startup
+  under advisory lock 100007, with a best-effort immediate kick from POST.
+  **Routes** (`gateway/src/routes/follow-imports.ts`): `POST /follow-imports`
+  (read graph once → cap 1000 most-recent-first → feed + binding + run row in
+  one transaction; truncation surfaced, never silent) and `GET
+  /follow-imports/:id` progress poll; 404 while the flag is off. **Graph
+  readers**: `getFollows` (atproto-resolve, paginated public AppView) and
+  `fetchNostrContacts` (nostr-relay, newest kind-3 wins, p-tag dedup keeps the
+  last occurrence, relay hints → metadata only) with npub/nprofile/hex/NIP-05
+  origin normalisation; activitypub (1c) and OPML (1d) refuse with
+  `import_unsupported` pending §6.4 soak / the upload endpoint. **Poller
+  fairness** (§6.4a, `feed-ingest-poll.ts`): the per-host cap now applies
+  INSIDE the selection window (window function, host extracted in SQL
+  mirroring the JS grouping) so a 500-source single-host import can no longer
+  starve the entire poller to ~2 jobs/tick. Vitest: engine batching / resume
+  from cursor / DUPLICATE→skipped / feed-deleted abort / volume default
+  (`follow-import-engine.test.ts`), exclusion hooks on delete + move
+  (`feed-source-exclusions.test.ts`). Remaining for Phase 1 proper: web
+  surfaces (post-link offer, NetworkReachPanel, FeedComposer affordance,
+  progress UI) — then the two §10 invariants land in CLAUDE.md.
+
 - **2026-07-10** — **Publication-subscription distribution (CONSOLIDATED-TODO
   §1.3, migration 152) — the last hole in the subscription money model.**
   A publication subscription collected the reader leg (tab debit +

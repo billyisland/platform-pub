@@ -200,6 +200,26 @@ export async function listFeedsForOwner(ownerId: string): Promise<FeedRow[]> {
   return rows;
 }
 
+// Create a feed for an owner, ranked last (max+1 within the owner's set). A
+// concurrent create can tie; ties are fine (read order falls back to
+// created_at). Extracted from POST /feeds (FOLLOW-GRAPH-IMPORT-ADR §11.1) so
+// the follow-import engine can mint the import's target feed through the same
+// path. Returns the full FeedRow (source_count 0 by construction).
+export async function createFeedForOwner(
+  ownerId: string,
+  name: string,
+  db: { query: typeof pool.query } = pool,
+): Promise<FeedRow> {
+  const { rows } = await db.query<FeedRow>(
+    `INSERT INTO feeds (owner_id, name, sort_rank)
+     VALUES ($1, $2,
+       (SELECT COALESCE(MAX(sort_rank), 0) + 1 FROM feeds WHERE owner_id = $1))
+     RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at, 0::int AS source_count`,
+    [ownerId, name],
+  );
+  return rows[0];
+}
+
 export function registerFeedCrudRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // GET /feeds — list mine, in rank order
@@ -224,16 +244,8 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
           .status(400)
           .send({ error: "Invalid body", details: parsed.error.flatten() });
       }
-      // New feeds rank last: max+1 within the owner's set. A concurrent
-      // create can tie; ties are fine (read order falls back to created_at).
-      const { rows } = await pool.query<FeedRow>(
-        `INSERT INTO feeds (owner_id, name, sort_rank)
-       VALUES ($1, $2,
-         (SELECT COALESCE(MAX(sort_rank), 0) + 1 FROM feeds WHERE owner_id = $1))
-       RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at, 0::int AS source_count`,
-        [ownerId, parsed.data.name],
-      );
-      return reply.status(201).send({ feed: feedRowToResponse(rows[0]) });
+      const feed = await createFeedForOwner(ownerId, parsed.data.name);
+      return reply.status(201).send({ feed: feedRowToResponse(feed) });
     },
   );
 

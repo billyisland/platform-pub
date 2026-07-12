@@ -124,7 +124,21 @@ const addSourceSchema = z.union([
       .optional(),
   }),
 ]);
-type AddSourceInput = z.infer<typeof addSourceSchema>;
+export type AddSourceInput = z.infer<typeof addSourceSchema>;
+
+// Options bag for programmatic callers (FOLLOW-GRAPH-IMPORT-ADR §11.1). The
+// route handler passes none; the follow-import engine passes both.
+export interface AddSourceOptions {
+  /** Skip the synchronous per-source liveness probe (D6: graph membership is
+   *  liveness evidence). The caller MUST supply the canonical stored form
+   *  (DID / hex pubkey / actor URI / feed URL) — normalisation is skipped
+   *  along with the probe, and nothing backfills display labels, so pass
+   *  displayName/avatarUrl through the input. */
+  skipProbe?: boolean;
+  /** Defer the subscribe-time ingest job to this time instead of "now" —
+   *  the §6.4b stampede brake for bulk imports. */
+  enqueueRunAt?: Date;
+}
 
 interface SourceRow {
   id: string;
@@ -225,10 +239,11 @@ function sourceRowToResponse(row: SourceRow) {
   };
 }
 
-async function addSource(
+export async function addSource(
   feedId: string,
   ownerId: string,
   input: AddSourceInput,
+  opts: AddSourceOptions = {},
 ) {
   // Per source_type, validate the target exists and bind the polymorphic FK.
   // For external_source with a (protocol, sourceUri) pair we additionally
@@ -313,18 +328,22 @@ async function addSource(
       );
       const fetchTask = externalFetchTask(protocol);
       if (fetchTask) {
+        // run_at is NULL for interactive adds (add_job coalesces to now());
+        // bulk imports pass a jittered enqueueRunAt (§6.4b stampede brake).
         await client.query(
           `SELECT graphile_worker.add_job(
              $2,
              json_build_object('sourceId', $1::text),
              job_key := $3,
-             max_attempts := $4
+             max_attempts := $4,
+             run_at := $5
            )`,
           [
             input.externalSourceId,
             fetchTask,
             externalFetchJobKey(fetchTask, input.externalSourceId),
             externalFetchMaxAttempts(fetchTask),
+            opts.enqueueRunAt ?? null,
           ],
         );
       }
@@ -355,22 +374,28 @@ async function addSource(
   // per protocol, splitting the old collapsed 404 into malformed (400) vs
   // unreachable (422). A (protocol, sourceUri) pair we already hold as a
   // healthy row skips the probe — it re-enters the existing verified row
-  // (canonical-form picks from profiles/discovery stay fast).
-  const { rows: knownRows } = await pool.query<{
-    is_active: boolean;
-    error_count: number;
-    last_fetched_at: Date | null;
-  }>(
-    `SELECT is_active, error_count, last_fetched_at
-       FROM external_sources
-      WHERE protocol = $1 AND source_uri = $2`,
-    [protocol, sourceUri],
-  );
-  const knownHealthy =
-    knownRows.length > 0 &&
-    knownRows[0].is_active &&
-    knownRows[0].error_count === 0 &&
-    knownRows[0].last_fetched_at !== null;
+  // (canonical-form picks from profiles/discovery stay fast). A bulk-import
+  // caller skips it per-call instead (opts.skipProbe; D6 — graph membership
+  // is liveness evidence, and 500 serial probes at import time is a
+  // non-starter), taking on the canonical-form obligation itself.
+  let knownHealthy = opts.skipProbe === true;
+  if (!knownHealthy) {
+    const { rows: knownRows } = await pool.query<{
+      is_active: boolean;
+      error_count: number;
+      last_fetched_at: Date | null;
+    }>(
+      `SELECT is_active, error_count, last_fetched_at
+         FROM external_sources
+        WHERE protocol = $1 AND source_uri = $2`,
+      [protocol, sourceUri],
+    );
+    knownHealthy =
+      knownRows.length > 0 &&
+      knownRows[0].is_active &&
+      knownRows[0].error_count === 0 &&
+      knownRows[0].last_fetched_at !== null;
+  }
   let probed: {
     displayName?: string;
     description?: string;
@@ -436,18 +461,21 @@ async function addSource(
 
     const fetchTask = externalFetchTask(protocol);
     if (fetchTask) {
+      // run_at as above — NULL means now(), imports pass a jittered time.
       await client.query(
         `SELECT graphile_worker.add_job(
            $2,
            json_build_object('sourceId', $1::text),
            job_key := $3,
-           max_attempts := $4
+           max_attempts := $4,
+           run_at := $5
          )`,
         [
           src.id,
           fetchTask,
           externalFetchJobKey(fetchTask, src.id),
           externalFetchMaxAttempts(fetchTask),
+          opts.enqueueRunAt ?? null,
         ],
       );
     }
@@ -530,6 +558,118 @@ async function insertSource(
       throw tagged("DUPLICATE");
     throw err;
   }
+}
+
+// Record an import exclusion when an external source leaves a bound feed
+// (FOLLOW-GRAPH-IMPORT-ADR §6.3): re-sync must never resurrect a source the
+// user deliberately removed/moved out here. No-op unless the feed carries a
+// feed_import_bindings row whose protocol matches the source's — removals of
+// hand-added other-protocol sources from a bound feed are not sync-relevant.
+// Runs inside the caller's transaction.
+async function recordImportExclusion(
+  client: { query: typeof pool.query },
+  feedId: string,
+  externalSourceId: string,
+) {
+  await client.query(
+    `INSERT INTO feed_import_exclusions (feed_id, protocol, identity)
+     SELECT b.feed_id, xs.protocol, xs.source_uri
+       FROM feed_import_bindings b
+       JOIN external_sources xs ON xs.id = $2
+      WHERE b.feed_id = $1 AND xs.protocol = b.protocol
+     ON CONFLICT (feed_id, protocol, identity) DO NOTHING`,
+    [feedId, externalSourceId],
+  );
+}
+
+// Remove a source from a feed, with the feed-derived-subscription teardown:
+// when an external source leaves the owner's *last* feed we drop the derived
+// subscription and orphan the shared row (the GC then deactivates/culls it).
+// The owner-scoped advisory lock serialises the read-then-write against a
+// concurrent addSource of the same source into another feed — without it we
+// could under-count and wrongly delete a still-referenced subscription.
+// Extracted from the DELETE route handler (FOLLOW-GRAPH-IMPORT-ADR §11.1) so
+// the Phase 2 sync engine can call the same invariant-bearing path.
+export async function removeSource(
+  feedId: string,
+  ownerId: string,
+  sourceId: string,
+): Promise<{ notFound: boolean; toreDownNostr: boolean }> {
+  const result = await withTransaction(async (client) => {
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `feed_sub:${ownerId}`,
+    ]);
+
+    const { rows } = await client.query<{
+      source_type: string;
+      external_source_id: string | null;
+    }>(
+      `DELETE FROM feed_sources
+         WHERE id = $1 AND feed_id = $2
+       RETURNING source_type, external_source_id`,
+      [sourceId, feedId],
+    );
+    if (rows.length === 0) return { notFound: true as const };
+
+    const { source_type, external_source_id } = rows[0];
+    if (source_type !== "external_source" || !external_source_id) {
+      return { notFound: false as const, toreDownNostr: false };
+    }
+
+    // A removal from an import-bound feed is a deliberate local edit — record
+    // it so "Sync now" never re-adds this source (§6.3).
+    await recordImportExclusion(client, feedId, external_source_id);
+
+    // Any remaining feed memberships for this source across the owner's feeds?
+    const {
+      rows: [{ remaining }],
+    } = await client.query<{ remaining: string }>(
+      `SELECT COUNT(*)::int AS remaining
+         FROM feed_sources fs
+         JOIN feeds f ON f.id = fs.feed_id
+        WHERE fs.external_source_id = $1 AND f.owner_id = $2`,
+      [external_source_id, ownerId],
+    );
+    if (Number(remaining) > 0) {
+      return { notFound: false as const, toreDownNostr: false };
+    }
+
+    // Last feed — drop this owner's derived subscription…
+    await client.query(
+      `DELETE FROM external_subscriptions
+         WHERE subscriber_id = $1 AND source_id = $2`,
+      [ownerId, external_source_id],
+    );
+    // …and orphan the source iff no subscription anywhere still references it.
+    await client.query(
+      `UPDATE external_sources
+          SET orphaned_at = now()
+        WHERE id = $1 AND orphaned_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM external_subscriptions WHERE source_id = $1
+          )`,
+      [external_source_id],
+    );
+    const {
+      rows: [src],
+    } = await client.query<{ protocol: string }>(
+      `SELECT protocol FROM external_sources WHERE id = $1`,
+      [external_source_id],
+    );
+    return {
+      notFound: false as const,
+      toreDownNostr: src?.protocol === "nostr_external",
+    };
+  });
+
+  if (result.notFound) return { notFound: true, toreDownNostr: false };
+
+  // A retracted external Nostr follow must leave the published kind-3 list.
+  if (result.toreDownNostr) {
+    markFollowListDirty(ownerId).catch((err) =>
+      logger.warn({ err, ownerId }, "Failed to mark follow list dirty"));
+  }
+  return { notFound: false, toreDownNostr: result.toreDownNostr };
 }
 
 // Load a feed's source rows with target display info, mapped to the wire shape.
@@ -667,77 +807,9 @@ export function registerFeedSourcesRoutes(app: FastifyInstance) {
       const feed = await loadFeed(id, ownerId);
       if (!feed) return reply.status(404).send({ error: "Feed not found" });
 
-      const result = await withTransaction(async (client) => {
-        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
-          `feed_sub:${ownerId}`,
-        ]);
-
-        const { rows } = await client.query<{
-          source_type: string;
-          external_source_id: string | null;
-        }>(
-          `DELETE FROM feed_sources
-             WHERE id = $1 AND feed_id = $2
-           RETURNING source_type, external_source_id`,
-          [sourceId, id],
-        );
-        if (rows.length === 0) return { notFound: true as const };
-
-        const { source_type, external_source_id } = rows[0];
-        if (source_type !== "external_source" || !external_source_id) {
-          return { notFound: false as const, toreDownNostr: false };
-        }
-
-        // Any remaining feed memberships for this source across the owner's feeds?
-        const {
-          rows: [{ remaining }],
-        } = await client.query<{ remaining: string }>(
-          `SELECT COUNT(*)::int AS remaining
-             FROM feed_sources fs
-             JOIN feeds f ON f.id = fs.feed_id
-            WHERE fs.external_source_id = $1 AND f.owner_id = $2`,
-          [external_source_id, ownerId],
-        );
-        if (Number(remaining) > 0) {
-          return { notFound: false as const, toreDownNostr: false };
-        }
-
-        // Last feed — drop this owner's derived subscription…
-        await client.query(
-          `DELETE FROM external_subscriptions
-             WHERE subscriber_id = $1 AND source_id = $2`,
-          [ownerId, external_source_id],
-        );
-        // …and orphan the source iff no subscription anywhere still references it.
-        await client.query(
-          `UPDATE external_sources
-              SET orphaned_at = now()
-            WHERE id = $1 AND orphaned_at IS NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM external_subscriptions WHERE source_id = $1
-              )`,
-          [external_source_id],
-        );
-        const {
-          rows: [src],
-        } = await client.query<{ protocol: string }>(
-          `SELECT protocol FROM external_sources WHERE id = $1`,
-          [external_source_id],
-        );
-        return {
-          notFound: false as const,
-          toreDownNostr: src?.protocol === "nostr_external",
-        };
-      });
-
+      const result = await removeSource(id, ownerId, sourceId);
       if (result.notFound)
         return reply.status(404).send({ error: "Source not found" });
-
-      // A retracted external Nostr follow must leave the published kind-3 list.
-      if (result.toreDownNostr) {
-        markFollowListDirty(ownerId).catch((err) =>
-          logger.warn({ err, ownerId }, "Failed to mark follow list dirty"));
-      }
       return reply.status(204).send();
     },
   );
@@ -784,12 +856,27 @@ export function registerFeedSourcesRoutes(app: FastifyInstance) {
         if (!targetFeed)
           return reply.status(404).send({ error: "Target feed not found" });
 
-        const { rowCount } = await pool.query(
-          `UPDATE feed_sources SET feed_id = $1
-           WHERE id = $2 AND feed_id = $3`,
-          [targetFeedId, sourceId, id],
-        );
-        if (rowCount === 0)
+        const moved = await withTransaction(async (client) => {
+          const { rows } = await client.query<{
+            source_type: string;
+            external_source_id: string | null;
+          }>(
+            `UPDATE feed_sources SET feed_id = $1
+             WHERE id = $2 AND feed_id = $3
+             RETURNING source_type, external_source_id`,
+            [targetFeedId, sourceId, id],
+          );
+          if (rows.length === 0) return false;
+          // Moving a source OUT of an import-bound feed is a deliberate local
+          // edit like removal — record the exclusion so re-sync doesn't re-add
+          // it to the import feed, duplicating it across two feeds (§6.3).
+          const { source_type, external_source_id } = rows[0];
+          if (source_type === "external_source" && external_source_id) {
+            await recordImportExclusion(client, id, external_source_id);
+          }
+          return true;
+        });
+        if (!moved)
           return reply.status(404).send({ error: "Source not found" });
 
         return reply.send({ ok: true });
