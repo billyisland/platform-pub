@@ -11,6 +11,9 @@ COPY web/ .
 ARG NEXT_PUBLIC_RELAY_URL
 ARG NEXT_PUBLIC_GATEWAY_URL
 ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+# Pledge drives + commissioning (parked 2026-07-13). Inlined into the client
+# bundle here; default 0 (off). Revive with a rebuild, not just a restart.
+ARG NEXT_PUBLIC_PLEDGES_ENABLED
 # next.config.js rewrites() is evaluated at BUILD time and baked into
 # .next/routes-manifest.json — so GATEWAY_URL must be present here, not just at
 # runtime, or the /api proxy destination falls back to localhost:3000 (which,
@@ -19,6 +22,7 @@ ARG GATEWAY_URL
 ENV NEXT_PUBLIC_RELAY_URL=$NEXT_PUBLIC_RELAY_URL
 ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL
 ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_PLEDGES_ENABLED=$NEXT_PUBLIC_PLEDGES_ENABLED
 ENV GATEWAY_URL=$GATEWAY_URL
 RUN npm run build
 

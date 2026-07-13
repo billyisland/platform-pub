@@ -139,6 +139,12 @@ services:
       # self-import (ADR §2 / §6.6).
       FOLLOW_IMPORT_ENABLED: ${FOLLOW_IMPORT_ENABLED:-0}
       FOLLOW_IMPORT_ACTIVITYPUB_ENABLED: ${FOLLOW_IMPORT_ACTIVITYPUB_ENABLED:-0}
+      # Pledge drives + commissioning (parked 2026-07-13). Ships dark: flag off
+      # ⇒ every /drives route 403s (feature_disabled), so no drive/pledge/
+      # commission can be created or read; fulfilment plumbing goes inert. The
+      # web twin is the build-time NEXT_PUBLIC_PLEDGES_ENABLED (web build.args).
+      # Revive by flipping both to 1 (+ rebuild web). See FIX-PROGRAMME 2026-07-13.
+      PLEDGES_ENABLED: ${PLEDGES_ENABLED:-0}
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
       PUBLIC_RELAY_URL: ${PUBLIC_RELAY_URL:-wss://all.haus/relay}
       PUBLIC_FANOUT_RELAY_URLS: ${PUBLIC_FANOUT_RELAY_URLS:-}
@@ -289,6 +295,10 @@ services:
         NEXT_PUBLIC_RELAY_URL: wss://all.haus/relay
         NEXT_PUBLIC_GATEWAY_URL: ""
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+        # Pledge drives + commissioning (parked 2026-07-13). Build-time inlined,
+        # so flipping to 1 requires `docker compose build web` (not just up).
+        # Gateway twin is PLEDGES_ENABLED. See FIX-PROGRAMME 2026-07-13.
+        NEXT_PUBLIC_PLEDGES_ENABLED: ${NEXT_PUBLIC_PLEDGES_ENABLED:-0}
         # Baked into the Next.js /api rewrite at build time (see web/Dockerfile).
         # Must be the in-cluster gateway address the web server proxies to, else
         # the proxy falls back to localhost:3000 and every API call ECONNRESETs.
