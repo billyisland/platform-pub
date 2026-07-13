@@ -35,6 +35,64 @@ const NOTE_COLLAPSE_CHARS = 220; // matches NoteVesselCard collapse
 const EXTERNAL_COLLAPSE_CHARS = 200; // matches ExternalVesselCard collapse
 const ONE_LINE_CHARS = 90;
 
+// Bare http(s) URLs in plain-text bodies (HTML/markdown notes already carry real
+// <a>). We linkify only in the expanded/full text modes (a truncated one-line
+// URL is meaningless). Trailing sentence punctuation is trimmed off the link so
+// "see https://x.com." doesn't swallow the period; an unbalanced closing bracket
+// is trimmed too, but a ')' is kept when the URL itself opened one (wiki links).
+const URL_RE = /(https?:\/\/[^\s<]+)/g;
+
+function linkifyText(text: string, palette: VesselPalette): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  URL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = URL_RE.exec(text)) !== null) {
+    let url = m[0];
+    let trail = "";
+    // Trim trailing punctuation unlikely to belong to the URL.
+    const tm = url.match(/[.,;:!?)\]]+$/);
+    if (tm) {
+      let cut = tm[0];
+      // Keep a ')'/']' the URL itself balances (e.g. Wikipedia anchors).
+      while (
+        cut.length &&
+        ((cut.endsWith(")") &&
+          (url.slice(0, url.length - cut.length).match(/\(/g)?.length ?? 0) >
+            (url.slice(0, url.length - cut.length).match(/\)/g)?.length ?? 0)) ||
+          (cut.endsWith("]") &&
+            (url.slice(0, url.length - cut.length).match(/\[/g)?.length ?? 0) >
+              (url.slice(0, url.length - cut.length).match(/\]/g)?.length ?? 0)))
+      ) {
+        cut = cut.slice(0, -1);
+      }
+      if (cut) {
+        trail = cut;
+        url = url.slice(0, url.length - cut.length);
+      }
+    }
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    parts.push(
+      <a
+        key={key++}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        style={{ color: palette.crimson, textDecoration: "underline" }}
+      >
+        {url}
+      </a>,
+    );
+    if (trail) parts.push(trail);
+    last = m.index + m[0].length;
+  }
+  if (parts.length === 0) return text;
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 export function PostBody({
   post,
   bodyPx,
@@ -183,7 +241,7 @@ function BodyInner({
               : {}),
           }}
         >
-          {text}
+          {mode === "one-line" ? text : linkifyText(text, palette)}
         </p>
       )}
       {post.body.poll && mode !== "one-line" && (

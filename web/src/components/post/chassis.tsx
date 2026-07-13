@@ -3,6 +3,7 @@
 import React from "react";
 import type { Density, VesselPalette } from "../workspace/tokens";
 import type { PipStatus } from "../../lib/ndk";
+import { isDragSurface } from "../../lib/dragSurface";
 
 // =============================================================================
 // PostCard chassis — the shared shell + context for the unified card family.
@@ -47,12 +48,47 @@ export function PostCardShell({
   children: React.ReactNode;
 }) {
   const padding = ctx.density === "compact" ? "8px 12px" : "16px";
-  const draggable = !!ctx.dragData && ctx.density !== "compact";
+  const canDrag = !!ctx.dragData && ctx.density !== "compact";
+  const rootRef = React.useRef<HTMLDivElement>(null);
+
+  // `draggable` and text selection are mutually exclusive: a draggable element
+  // swallows the mousedown that would otherwise begin a selection. So instead of
+  // pinning `draggable` on, we resolve it per pointerdown — land on bare card
+  // chrome (padding / margins) and the HTML5 drag-to-another-feed is armed; land
+  // on the body text, a link, or a control and we disarm it so the browser is
+  // free to select or click. Set imperatively (not via state) so it lands before
+  // the same gesture's dragstart, with no re-render race.
+  const onPointerDown = canDrag
+    ? (e: React.PointerEvent) => {
+        const el = rootRef.current;
+        if (!el || e.button !== 0) return;
+        el.draggable = isDragSurface(
+          e.target as Element,
+          el,
+          e.clientX,
+          e.clientY,
+        );
+      }
+    : undefined;
+
+  // A body click focuses the card (expand), but ending a text drag-select must
+  // not: at click time a real selection is non-empty (a plain click leaves it
+  // collapsed/empty), so bail then. Links carry their own stopPropagation, but
+  // guard anchor targets too in case one slips through.
+  const handleClick = onClick
+    ? (e: React.MouseEvent) => {
+        if ((window.getSelection()?.toString() ?? "").length > 0) return;
+        if ((e.target as Element).closest?.("a")) return;
+        onClick();
+      }
+    : undefined;
+
   return (
     <div
+      ref={rootRef}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
+      onClick={handleClick}
       onKeyDown={
         onClick
           ? (e) => {
@@ -63,9 +99,9 @@ export function PostCardShell({
             }
           : undefined
       }
-      draggable={draggable || undefined}
+      onPointerDown={onPointerDown}
       onDragStart={
-        draggable
+        canDrag
           ? (e) => {
               e.dataTransfer.setData(
                 "application/x-vessel-card",

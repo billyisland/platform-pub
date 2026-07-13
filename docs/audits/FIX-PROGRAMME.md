@@ -23,6 +23,42 @@ starts.
 
 ## Progress
 
+- **2026-07-13** — **Selectable + linkable feed-card text** (CONSOLIDATED-TODO
+  §12). Feed cards now let you highlight/copy body text and click bare URLs,
+  without losing click-to-focal or drag-card-across-feeds. The conflict was that
+  the card shell (`web/src/components/post/chassis.tsx`) pinned
+  `draggable={true}` (a draggable element swallows the mousedown that starts a
+  selection) and fired `onClick={onExpand}` on any body click with no guard (a
+  drag-select ended in an expand).
+  - **Shared drag-surface judgment** — factored `isPaneDragSurface` out of
+    `Glasshouse.tsx` into `web/src/lib/dragSurface.ts` (`isDragSurface` +
+    `hasOwnText` + `NO_DRAG_SELECTOR`); Glasshouse now imports it (behaviour
+    byte-identical). It answers "did this pointerdown land on grabbable chrome,
+    or on text / a link / a control / a scrollbar gutter?"
+  - **Dynamic `draggable`** (`chassis.tsx`) — instead of a static attribute, an
+    `onPointerDown` resolves `el.draggable` per gesture via `isDragSurface`:
+    bare chrome (padding/margins) → armed, so HTML5 drag-to-another-feed
+    (`x-vessel-card` → `Vessel.tsx` `moveSource`) is untouched; body text / link
+    / control → disarmed, so selection and clicks work. Set imperatively on the
+    ref so it lands before the same gesture's `dragstart` (no re-render race).
+  - **Guarded `onClick`** (`chassis.tsx`) — a body click still focuses the card,
+    but bails when `window.getSelection()` is non-empty (ending a highlight) or
+    the target is inside an `<a>`, so finishing a drag-select or clicking a URL
+    never expands. A plain click (empty selection) on chrome or text still
+    focuses — requirement (a) preserved.
+  - **Linkify plain-text bodies** (`web/src/components/post/PostBody.tsx`) — bare
+    `http(s)` URLs in native/external plain-text notes render as
+    `<a target="_blank" rel="noopener noreferrer">` with `stopPropagation` (same
+    treatment quote tiles use), only in the expanded/full modes (a truncated
+    one-line URL is meaningless). Trailing sentence punctuation is trimmed;
+    URL-balanced brackets kept. HTML/markdown notes already carried real `<a>`.
+  - Touch path unchanged (tap = focal; selectable text is a pointer affordance,
+    matching the hover-only card panels). Pre-flight: `check-hairlines.sh` on the
+    four touched files (clean), `next build` (green), root eslint (0). **Not yet
+    exercised in a running browser** — the DOM-interaction behaviour (selection
+    vs drag vs click, linkify) wants a manual pass after `docker compose build
+    web`.
+
 - **2026-07-13** — **Pledge drives + commissioning parked behind a feature flag
   (default OFF).** The whole crowdfund/commission subsystem ships dark while
   it's out of play, same shape as the `TRUST_SYSTEM_ENABLED` / trust parking:

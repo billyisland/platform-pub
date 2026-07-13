@@ -16,7 +16,7 @@
 //     the brighter white wells. It opens snapped-centred on the 20px lattice and
 //     is DRAGGABLE by any empty part of itself (the top-centre grip is just the
 //     discoverable affordance; a pointerdown on margins/chrome drags too, while
-//     prose stays highlightable and controls stay live — see isPaneDragSurface) —
+//     prose stays highlightable and controls stay live — see isDragSurface) —
 //     drag is free, snaps to the lattice on release, clamps to
 //     the viewport, and (with `persistKey`) remembers its spot per overlay. It
 //     stays modal throughout: the scrim, one-at-a-time, and scroll-lock are
@@ -51,6 +51,7 @@ import { snap } from "../../lib/workspace/grid";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGlasshousePresence } from "../../stores/glasshouse";
 import { useBackGuard } from "../../lib/backGuard";
+import { isDragSurface } from "../../lib/dragSurface";
 import { MOBILE_BAR_H } from "./MobileWorkspace";
 
 // Gutter between the pane and the viewport edge, on the 20px lattice.
@@ -80,47 +81,9 @@ const clampN = (v: number, lo: number, hi: number) =>
 // just the top grip). A pointerdown on the pane starts a drag UNLESS it landed
 // on something already doing its own thing: an interactive control, selectable
 // text, or a native scrollbar gutter. So the margins move the window while the
-// article prose stays highlightable and links/buttons stay clickable.
-const NO_DRAG_SELECTOR =
-  'a, button, input, textarea, select, label, audio, video, [role="button"], [role="link"], [role="textbox"], [contenteditable=""], [contenteditable="true"], [data-no-drag]';
-
-// Does this element hold its own selectable text (a <p>/<span>/heading), versus
-// being a bare layout container (the margins)? Only direct text nodes count, so
-// a wrapper whose text lives in child elements still reads as draggable chrome.
-function hasOwnText(el: Element): boolean {
-  for (const node of Array.from(el.childNodes)) {
-    if (node.nodeType === 3 && (node.textContent ?? "").trim().length > 0)
-      return true;
-  }
-  return false;
-}
-
-function isPaneDragSurface(
-  target: Element,
-  pane: Element,
-  clientX: number,
-  clientY: number,
-): boolean {
-  let el: Element | null = target;
-  while (el && el !== pane) {
-    if (el.matches?.(NO_DRAG_SELECTOR)) return false;
-    el = el.parentElement;
-  }
-  if (hasOwnText(target)) return false;
-  // Native scrollbar gutter of a scrollable element → let it scroll, don't drag.
-  const rect = target.getBoundingClientRect();
-  if (
-    target.scrollHeight > target.clientHeight &&
-    clientX >= rect.left + target.clientWidth
-  )
-    return false;
-  if (
-    target.scrollWidth > target.clientWidth &&
-    clientY >= rect.top + target.clientHeight
-  )
-    return false;
-  return true;
-}
+// article prose stays highlightable and links/buttons stay clickable. The
+// judgment lives in the shared `isDragSurface` helper (also used by the feed
+// card's drag-to-another-feed).
 
 // Persisted drag position, keyed per overlay so each surface remembers its own
 // spot between appearances. Best-effort — storage can throw (private mode, quota).
@@ -477,14 +440,14 @@ export function Glasshouse({
 
   // Whole-pane drag: grab the window by any empty/margin part of it. Bails on
   // interactive controls, selectable text, and scrollbar gutters (see
-  // isPaneDragSurface) so prose stays highlightable and controls stay live. The
+  // isDragSurface) so prose stays highlightable and controls stay live. The
   // explicit grip stays as a discoverable affordance. Disabled on the mobile
   // full-screen sheet (startDrag is null there).
   const onPanePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || !pane.startDrag) return;
     const paneEl = pane.paneRef.current;
     if (!paneEl) return;
-    if (!isPaneDragSurface(e.target as Element, paneEl, e.clientX, e.clientY))
+    if (!isDragSurface(e.target as Element, paneEl, e.clientX, e.clientY))
       return;
     pane.startDrag(e);
   };
