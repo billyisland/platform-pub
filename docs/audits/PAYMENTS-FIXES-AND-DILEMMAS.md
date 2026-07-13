@@ -1,7 +1,7 @@
 # ADR: Payments — the fixes to ship and the dilemmas to decide
 
-**Status:** Part 1 (§1.1–§1.7) accepted, ready to scope for build. Part 2: §2.2 decided (Dial A, 2026-07-13); §2.1 and §2.3 open, pending counsel.
-**Date:** 2026-07-13 (rev. 2026-07-13 — §1.7 decided *no*; §1.1 revised to step-primitives; §2.2 code-vs-paper gate added; build sequence made scope-ready).
+**Status:** Part 1 (§1.1–§1.8) accepted, ready to scope for build. Part 2: §2.2 decided (Dial A, 2026-07-13); §2.1 and §2.3 open, pending counsel.
+**Date:** 2026-07-13 (rev. 2026-07-13 — §1.7 decided *no*; §1.1 revised to step-primitives; §2.2 code-vs-paper gate added; build sequence made scope-ready; §1.8 split `applyLedgerDelta` out to the tab-debit sites and the lock-ordering gate promoted to a standalone item).
 **Deciders:** Ed Lake.
 **Related:** `docs/adr/UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md`, `docs/adr/UPSTREAM-EDGES-BUILD-PLAN.md` (Dial-A rework), `docs/audits/STRIPE-INTEGRATION-AUDIT-2026-06-25.md`, `docs/audits/allhaus-logic-economy-audit.md`.
 
@@ -21,6 +21,8 @@ Everything in Part 1 is worth doing regardless of how the forks in Part 2 resolv
 
 **Decision.** Do **NOT** build a parameterised whole-flow skeleton over the four sagas (the original proposal here, now rejected). A single spine over all four would need per-flow boolean flags — settlement is a *charge* saga with async webhook confirm + apportionment, the payouts are *synchronous transfer* sagas — and per-flow flags on a shared money spine are exactly where hidden divergence loses money. Instead: extract shared **step-primitives**, and keep all four flows as explicit, top-to-bottom sequences that call them. The *pattern* stays cloned per flow (which is the point — four readable clones of the industry-standard Stripe reserve→idempotent-call→confirm→reconcile pattern beat one bespoke abstraction over live money); only the *hazardous primitives* stop being cloned. See §1.7 for why the code is a faithful clone of the standard pattern rather than homemade jank, and why this is the chosen alternative to durable execution.
 
+**Scope note.** This section covers the **saga control-flow** primitives only — the Stripe-call and status-transition machinery shared by the four flows. The ledger⇄column same-signed-delta mirror — the single most valuable primitive, and the only invariant here that has actually lost money — is **not** a saga concern: three of the four sagas are *transfer* flows that mutate no running-balance column, and most of the mirror's real call sites are plain tab debits *outside* these four flows. It is extracted separately and **earlier** as §1.8; do not gate it behind this refactor.
+
 **Sequence — tests first, refactor second, tribute last.**
 
 1. **Write a table-driven conformance battery against the CURRENT code, per flow.** These tests are mandatory regardless of the refactor — they are the drift-pinning suite that lets us keep running clones safely (they encode §1.2's invariants as executable checks). Cover at minimum:
@@ -34,19 +36,18 @@ Everything in Part 1 is worth doing regardless of how the forks in Part 2 resolv
    - ledger parity: `−SUM(ledger_entries) == balance` after every scenario;
    - same-signed-delta: column and ledger move by the same signed amount, no `GREATEST(0,…)` clamps.
 
-   **Go/no-go gate, also in step 1:** verify all four flows take row locks in the same order (account → payout/settlement row). If they differ, **STOP and report** — that is a pre-existing deadlock bug to surface before any refactor line is written, not a refactor detail.
+   **Go/no-go gate — now a standalone this-week item (see Build scope), not buried in this refactor:** verify all four flows take row locks in the same order (account → payout/settlement row). If they differ, **STOP and report** — that is a pre-existing deadlock bug to surface *before any refactor line is written*, and it is worth running on its own **even if the §1.1 refactor never happens**. It has no prerequisite and gates nothing; it is pure risk-surfacing, so it leads the queue.
 
-2. **Only once the battery is green, extract primitives — one flow at a time, each its own commit.** Candidate set (adjust to what the code actually repeats; don't force it):
-   - **`applyLedgerDelta(...)` — the star of the exercise.** Writes the ledger row + the column update in one place, mechanically enforcing same-signed-delta / no-clamp. This converts §1.2's load-bearing comment into a *mechanism*. If only this primitive and the battery shipped, most of the value is captured.
+2. **Only once the battery is green, extract primitives — one flow at a time, each its own commit.** Candidate set (adjust to what the code actually repeats; don't force it). The ledger-mirror primitive is deliberately **absent** here — it is §1.8, extracted separately and earlier, because most of its call sites are plain tab debits outside these four flows:
    - **`executeStripeIdempotent(key, call, classifier)` — classify-and-signal ONLY.** Takes the explicit classifier (`isTerminalChargeError` vs the deliberately narrower `isTerminalTransferError` stay **separate and named** — that divergence is real, keep it visible). It makes the idempotent call, classifies terminal-vs-ambiguous, re-throws on ambiguous (so resume retries with the same key), and on terminal **signals back to the flow**. The flow does its own per-flow terminal cleanup (settlement: drop the pending-guard + flag `card_action_required_at`; payout: roll back claimed reads/accruals). The primitive must **not** own that cleanup, or it needs a flow flag.
    - **`statusGuardedTransition(client, table, id, from, to, extraSet?)`** — the `UPDATE … WHERE status = $from` pattern, returning whether it won.
    - ~~`resumeSweep(...)`~~ — **dropped from the set.** Its `completer` callback is the closest thing to the banned inversion of control, and the sweep loop itself is cheap, non-hazardous boilerplate (the hazard lives in the per-flow completer). Leave it cloned per flow unless it can stay a plain, flag-free function.
 
 **Hard constraints.**
 - **No boolean flags** on any primitive that encode "which flow am I in." If a primitive needs one, the extraction is wrong — leave that code in the flow.
-- **No inversion of control:** primitives are plain functions the flow calls; the flow's reserve → call → complete → confirm sequence must remain readable top-to-bottom in one place per flow.
+- **No primitive owns cross-step control flow or cleanup.** Primitives are leaf helpers the flow calls; the flow's reserve → call → complete → confirm sequence must remain readable top-to-bottom in one place per flow. (A primitive taking a `call` thunk or a `classifier` — as `executeStripeIdempotent` does — is fine: it classifies and signals *back*, it does not decide the next step or run the per-flow cleanup. The banned shape is a primitive that owns the sequencing or the terminal cleanup — e.g. `resumeSweep`'s `completer` callback, which is why it stays cloned below.)
 - Every primitive takes a `flowName` for log/error context; per-flow distinguishability of logs and stack traces must not regress.
-- **Tribute goes LAST, after the Dial-A rework** (see §2.2). Dial A is a net deletion of the held/swept/returned path, so batterying + refactoring the current tribute flow now is refactoring code about to be deleted. Do writer → publication → settlement now; tribute's battery is written against the **post-Dial-A** shape, and its extraction lands after that rework.
+- **Tribute goes LAST, after the Dial-A rework** (see §2.2). Dial A is a net deletion of the held/swept/returned path, so batterying + refactoring the current tribute flow now is refactoring code about to be deleted. Do writer → settlement → publication now — prove the primitive against **both** saga shapes on single-object flows first (writer = one transfer / `isTerminalTransferError`; settlement = one charge / `isTerminalChargeError`), then apply the hardened primitive to the **multi-leg publication** flow last, whose partial-double-pay blast radius is the worst of the four. Tribute's battery is written against the **post-Dial-A** shape, and its extraction lands after that rework.
 - Settlement's apportionment logic (`confirmSettlement` read-claiming + fee split) is **out of scope** for this pass — do not touch it.
 - Do not modify `charge-errors.ts`, `per-read-net.ts`, or `recordLedger` semantics; they are already the centralised hazardous core.
 
@@ -62,7 +63,7 @@ Everything in Part 1 is worth doing regardless of how the forks in Part 2 resolv
 
 Several correctness arguments live only in prose: the confirm-path interleaving argument in `confirmSettlement`, the "stale-high-safe but never stale-low" peek reasoning in `reserveWriterPayout`, the no-clamp signed-delta rule ("column and ledger must move by the SAME signed delta"). If a future edit violates one, nothing fails until money diverges.
 
-**Fix:** encode each as a test or a database constraint where possible — e.g. a parity check that `−SUM(ledger_entries) = reading_tabs.balance_pence` per account run as a scheduled reconciliation job (not just a test fixture), and property-style tests for the tribute telescoping conservation (`author + Σ retained == read_net`), which the audit-fixes doc says already has 8 conservation tests — extend the same treatment to settlement/read attribution. **Note:** the §1.1 conformance battery *is* the executable form of several of these invariants; §1.2 is the superset (scheduled reconciliation job + the property tests the battery doesn't cover).
+**Fix:** encode each as a test or a database constraint where possible — e.g. a parity check that `−SUM(ledger_entries) = reading_tabs.balance_pence` per account run as a scheduled reconciliation job (not just a test fixture), and property-style tests for the tribute telescoping conservation (`author + Σ retained == read_net`), which the audit-fixes doc says already has 8 conservation tests — extend the same treatment to settlement/read attribution. **Note:** the §1.1 conformance battery *is* the executable form of several of these invariants; §1.2 is the superset (scheduled reconciliation job + the property tests the battery doesn't cover). The scheduled reconciliation job must specify its **action on mismatch** (alert + halt payouts, not detect-and-log — detection without a defined response is half a control). The no-clamp signed-delta invariant is the one case promoted from comment to *construction* rather than merely a test — see §1.8's `applyLedgerDelta`.
 
 ### 1.3 Test the untested money-adjacent surfaces
 
@@ -100,6 +101,39 @@ Roughly half of `payment-service` is crash/retry/webhook-ordering scaffolding (`
 - **Reframe, don't refactor.** The sagas are not homemade jank: they are a faithful hand-implementation of *the* canonical Stripe "separate charges and transfers" pattern (reserve → idempotent create → webhook confirm → reconcile sweep), with the genuinely hazardous parts already centralised (`charge-errors.ts`, `recordLedger`, `per-read-net.ts`). That is the battle-tested clone we want; it lives as our code only because the tab/ledger boundary is ours and no library owns it.
 
 **The chosen alternative is §1.1** (step-primitives dedup) — capture the maintainability win *without* importing an engine or building a bespoke skeleton.
+
+### 1.8 Extract `applyLedgerDelta` across the tab-debit sites (the star, re-homed)
+
+`recordLedger` inserts the ledger row *only*; every mutation of `reading_tabs.balance_pence` is a **separate** SQL statement at the call site, and the two are kept in lockstep — same signed delta, no clamp — by a **comment**, not a mechanism. This is the single invariant that has actually lost money here: all three 2026-06-20 HIGH findings (settlement `GREATEST(0,…)`, subscription credit-back, pledge non-upsert) were a column and its mirror ledger entry drifting apart. The primitive that fixes this is `applyLedgerDelta` — and it was mis-scoped in the original §1.1, which filed it under a saga refactor it doesn't belong to.
+
+**Why it is NOT a saga primitive.** Three of §1.1's four sagas are *transfer* flows: they post `+amount` payout entries with a `NULL` platform counterparty and mutate **no** running-balance column (writer/publication earnings are `SUM()` views). The column⇄ledger mirror hazard exists only where a real balance moves — and those sites are overwhelmingly **outside** the four sagas:
+
+- `gateway/src/routes/upstream-edges.ts` — the **dispute stake** debit *and* its withdraw/refund (`±DISPUTE_STAKE_PENCE`). Real £5 tab debits, **zero tests**, the worst gap in the repo (§1.3), guarded today by the literal comment *"The ledger debit mirrors the tab movement by the same signed delta."* Exactly the shape the primitive exists to abolish.
+- pledge-drive fulfilment debits (§1.3(2)).
+- per-read **accrual** and the **settlement** `+settled` write (the one saga that does mirror a column).
+- **subscription** charge / credit-back (`subscription_charge` / `subscription_credit`).
+- the migration-121 `opening_balance` backfill (one-time, same pattern).
+
+**The primitive.**
+
+```
+applyLedgerDelta(client, {
+  accountId, counterpartyId, deltaPence,     // signed; NO clamp, NO floor
+  triggerType, refTable, refId,
+})
+```
+
+It mutates `reading_tabs.balance_pence` by `deltaPence` **and** posts the mirror `recordLedger` entry by the *same signed delta*, as one indivisible pair. It wraps `recordLedger` (whose semantics are **not** modified) and owns the `balance_pence = balance_pence + $delta` UPDATE. Because the column may legitimately go negative (migration 124 dropped the non-negative CHECK), the primitive **must not** clamp — clamping the column while the ledger posts the full amount *is* the bug class it closes.
+
+**Sequencing — this ships WITH §1.3, not behind the saga battery.** It is a mechanical wrap of an existing `UPDATE + recordLedger` pair, not a control-flow refactor; it needs no conformance battery in front of it and has no dependency on §1.1. It must land **before disputes un-dark**, because it is what structurally prevents the clamp bug on precisely the route §1.3(1) is racing to test. Do §1.3(1)'s tests and §1.8 together: the tests pin the behaviour, the primitive makes it hard to break.
+
+**CI note.** `scripts/check-ledger-adjacency.sh` currently asserts every `balance_pence = balance_pence [-+]` site has an *adjacent* `recordLedger`. Centralising the pair inside `applyLedgerDelta` relocates that adjacency into the primitive — update the tripwire to treat `applyLedgerDelta` as the sanctioned adjacency site **and** to flag any *raw* `balance_pence` UPDATE that bypasses it, or the refactor trips its own guard.
+
+**Scope boundary.** The payout-side sagas stay out: their correctness is claim-rollback (`rollback*PayoutRows`), not column mirroring, and forcing them through `applyLedgerDelta` would need a "no column" flag — the banned shape. `applyLedgerDelta` is a **tab** primitive.
+
+**Acceptance.** Every `reading_tabs.balance_pence` write routes through `applyLedgerDelta`; a grep finds no raw balance UPDATE paired with a separate `recordLedger`; the adjacency tripwire is green against the new sanctioned site; ledger parity (`−SUM == balance`) holds across the dispute/pledge/subscription round-trip tests from §1.3.
+
+**Effort:** small — days. **Risk:** low, and *decoupled* from the saga refactor's risk.
 
 ---
 
@@ -145,17 +179,89 @@ Ready-to-scope ordering. Items marked **[build]** are code; **[decision]** are h
 - **[build] Dial-A rework** (`UPSTREAM-EDGES-BUILD-PLAN.md` › *Dial-A rework*) — net deletion of the held/swept/returned tribute path. Blocks: §1.1 tribute-flow extraction, §2.1 Branch A, the `TRIBUTES_ENABLED` flip. Scope this first; it is a §2.2 prerequisite, not optional cleanup.
 
 **This week (decision-independent, no prerequisite):**
-1. **[build]** §1.3(1) — dispute-stake debit/refund/withdraw tests. *Before un-darking disputes.*
-2. **[build]** §1.4 — chargeback-attribution policy paragraph.
-3. **[build]** §1.5 — tax schema migration (empty columns + `vat` trigger type).
-4. **[decision]** Put **only** the §2.3 baseline sign-off request to Harper James. The §2.2 question is closed (Dial A) — do not ask about an unconsented-hold characterisation; there isn't one. §2.1 waits on §2.3.
+1. **[build] Lock-ordering gate** (§1.1 step 1, promoted) — verify all four flows lock in the same order (account → payout/settlement row); **STOP and report** if they differ. No prerequisite, gates nothing, pure risk-surfacing — run it first and on its own, whether or not the §1.1 refactor ever happens.
+2. **[build]** §1.8 — `applyLedgerDelta` across the tab-debit sites (dispute/pledge/accrual/subscription), + adjacency-tripwire update. *Before un-darking disputes.* Pairs with item 3.
+3. **[build]** §1.3(1) — dispute-stake debit/refund/withdraw tests. *Before un-darking disputes.*
+4. **[build]** §1.4 — chargeback-attribution policy paragraph.
+5. **[build]** §1.5 — tax schema migration (empty columns + `vat` trigger type).
+6. **[decision]** Put **only** the §2.3 baseline sign-off request to Harper James. The §2.2 question is closed (Dial A) — do not ask about an unconsented-hold characterisation; there isn't one. §2.1 waits on §2.3.
 
 **Before launch:**
-5. **[build]** §1.1 step 1 — conformance battery + lock-ordering gate, all four flows (tribute's battery written against the post-Dial-A shape).
-6. **[build]** §1.1 step 2 — primitive extraction, one flow per commit, order **writer → publication → settlement → (tribute, after Dial-A)**. `applyLedgerDelta` first.
-7. **[build]** §1.2 — scheduled reconciliation job + remaining property tests.
-8. **[build]** §1.3(2–3) — pledge + paid-DM tests.
-9. **[build]** §1.6 — merchant-posture module.
+7. **[build]** §1.1 step 1 — conformance battery, all four flows (tribute's battery written against the post-Dial-A shape; lock-ordering gate already run as item 1).
+8. **[build]** §1.1 step 2 — **saga** primitive extraction (`executeStripeIdempotent`, `statusGuardedTransition`), one flow per commit, order **writer → settlement → publication → (tribute, after Dial-A)** — multi-leg publication last, after both saga shapes are proven. (`applyLedgerDelta` already shipped as item 2 — it is not part of this pass.)
+9. **[build]** §1.2 — scheduled reconciliation job (with a defined mismatch response: alert + halt payouts) + remaining property tests.
+10. **[build]** §1.3(2–3) — pledge + paid-DM tests.
+11. **[build]** §1.6 — merchant-posture module.
 
 **On the compliance answers:**
-10. **[decision → build]** Execute the pre-decided branch of §2.1 once §2.3 returns. Branch A only after the Dial-A rework has shipped (§2.2 hard gate). Branch B pulls §1.5/§1.6 from schema-stubs into live VAT/invoice code.
+12. **[decision → build]** Execute the pre-decided branch of §2.1 once §2.3 returns. Branch A only after the Dial-A rework has shipped (§2.2 hard gate). Branch B pulls §1.5/§1.6 from schema-stubs into live VAT/invoice code.
+
+---
+
+## Appendix — Build scoping, verified against code (2026-07-13)
+
+Each Part-1 item was checked against the current tree (migrations through 154; `payout.ts` 2457 / `settlement.ts` 1185 lines, matching the framing). This appendix records the concrete file:line targets, four places where the code differs from the body above, and the outcome of the lock-ordering gate. Where this appendix and the body disagree on a *fact*, the appendix is the checked one; the body's *decisions* stand.
+
+### A. Lock-ordering gate (item 1) — RAN, found a real defect, FIXED
+
+The gate ("verify all four flows lock in the same order; STOP and report if they differ") was run. The three payout flows (writer/publication/tribute) are each internally consistent but anchor on *different* tables (`accounts` / `publications` / `tributes`) and none lock an `accounts` row alongside a payout row — so there is no cross-flow contention to deadlock on. **Settlement was the outlier**, and the defect is real (verified by reading the code, not inferred):
+
+| Path | Lock order on `{reading_tabs, tab_settlements}` | Ref |
+|---|---|---|
+| `reserveSettlement` | `reading_tabs` FOR UPDATE → insert `tab_settlements` | `settlement.ts:178 → 224` |
+| `reverseSettlement` | `reading_tabs` FOR UPDATE → update `tab_settlements` | `settlement.ts:864 → 871` |
+| `confirmSettlement` (pre-fix) | update `tab_settlements` → update `reading_tabs` | `settlement.ts:534 → 557` |
+
+`confirmSettlement` acquired the two rows in the **opposite** order from its siblings, and `reconcileSettlements` inherits it. A reconcile-driven `confirmSettlement` racing a `reverseSettlement` (refund/dispute webhook) on the same settlement could form a lock cycle → Postgres deadlock-kills one txn on the money path.
+
+**Fixed 2026-07-13:** `confirmSettlement` now takes `SELECT balance_pence FROM reading_tabs WHERE id = $tab_id FOR UPDATE` before claiming the `tab_settlements` row (`settlement.ts`, just above the `stripe_charge_id` claim), making its order `reading_tabs → tab_settlements` like the other two. The lock is already held through the balance debit below, so there is no extra round-trip. Typecheck clean; the 17 settlement/parity/writer-accrual tests pass unchanged. This was decision-independent and shipped ahead of the rest of Part 1, exactly as item 1 anticipated.
+
+### B. Four corrections where the code differs from Part 1
+
+1. **§1.3(3) "paid-DM pricing and charge path" — the charge path does not exist.** `dm_pricing.price_pence` can be set/read (`gateway/src/services/messages.ts:546–611`, routes `messages.ts:174–204`), but `sendMessage()` (`services/messages.ts:306–414`) never reads the price, never touches `reading_tabs`, never calls `recordLedger`. This is an *unbuilt feature*, not a test gap — remove it from the §1.3 test queue and re-file as build work if paid DMs are wanted.
+2. **§1.3 gift links are not a money feature.** Redemption inserts `article_unlocks` with `unlocked_via='author_grant'` (`gateway/src/routes/gift-links.ts:149–188`) — a free author comp, no ledger/tab. Nothing money-adjacent to test; drop from scope. The real §1.3 money-path targets are only: **(1) dispute stakes** (live, untested), **(2) pledge fulfilment** (dark behind `PLEDGES_ENABLED`, untested), and **(4) traffology math** (analytics, no money).
+3. **§1.6 merchant-posture is greenfield, not a de-dup.** There are no scattered receipt/seller/refund-source strings to consolidate. The single charge site (`settlement.ts:266–285`) sets no `statement_descriptor`, `receipt_email`, `description`, or seller-of-record posture; refunds are pure webhook logic (`payment-service/src/routes/webhook.ts:234–282`, `chargeback.ts`). The "Nostr receipts" (kind 9901) are proof-of-read, unrelated. The module *introduces* this surface — effort is design + new copy, not grep-and-move.
+4. **§1.5 ledger vocabulary is a TS union, not a DB CHECK.** `ledger_entries.trigger_type` has no CHECK; the authoritative list is `LedgerTriggerType` in `shared/src/lib/ledger.ts:72–92`. Adding `vat` is a one-line TS edit (+ any partitioning-view WHERE-clauses in `schema.sql`). Only the `tab_settlements` columns need an actual migration — **next number is 155**.
+
+### C. §1.8 `applyLedgerDelta` — verified call-site inventory (blast radius)
+
+Nine `reading_tabs.balance_pence`-moving sites, all currently dual-written with an adjacent `recordLedger`, none clamped:
+
+| # | Site | Δ | Trigger | Note |
+|---|---|---|---|---|
+| 1 | `accrual.ts:211` (`recordGatePass`) | + | `read_accrual` | plain UPDATE |
+| 2 | `accrual.ts:319` (`convertProvisionalReads`) | + | `read_accrual` (loop) | plain UPDATE |
+| 3 | `settlement.ts:556` (`confirmSettlement`) | − | `tab_settlement` | parity test hard-matches this SQL shape |
+| 4 | `settlement.ts:1027` (`reverseSettlement`) | + | `tab_settlement_reversal` (+ writer/tribute legs) | plain UPDATE |
+| 5 | `subscriptions/shared.ts:68` (`logSubscriptionCharge`) | + | `subscription_charge` **and** `subscription_earning` | two ledger calls |
+| 6 | `articles/subscription-convert.ts:142` | − | `subscription_credit` | plain UPDATE |
+| 7 | `drives.ts:826` (`fulfillDrive`) | + | `pledge_fulfil` | **upsert** (`ON CONFLICT DO UPDATE`) |
+| 8 | `upstream-edges.ts:464` (dispute stake debit) | + | `dispute_stake` | **upsert** |
+| 9 | `upstream-edges.ts:557` (dispute stake refund/withdraw) | − | `dispute_stake_refund` | **upsert** |
+
+Design consequences: (a) `applyLedgerDelta` must support **create-or-update** (sites 7–9 upsert to mint the tab if absent), not UPDATE-only; (b) site 5 posts **two** ledger entries per balance move — the primitive must allow N mirror entries or the caller posts the second (`subscription_earning`) itself; (c) `settlement-ledger-parity.test.ts` regex-matches `balance_pence = balance_pence - $1` and must be updated when site 3 is centralized; (d) `scripts/check-ledger-adjacency.sh` (registry + the `balance_pence = balance_pence [-+]` marker) must be updated to treat `applyLedgerDelta` as the sanctioned adjacency site and flag any raw balance UPDATE that bypasses it. The `opening_balance` backfill (migration 121) inserts ledger rows only, does **not** move the column — out of scope. Payout-side sagas stay out (claim-rollback, not column-mirror).
+
+### D. §1.5 tax-schema migration (155) — concrete shape
+
+`tab_settlements` (`schema.sql:2100–2118`) confirmed to carry no tax columns. Migration 155: add nullable `vat_pence int`, `vat_rate_bps int`, `tax_point timestamptz`; add `vat` to `LedgerTriggerType` (`shared/src/lib/ledger.ts:72`); leave unused. Then regenerate `schema.sql` via `pg_dump --exclude-schema=graphile_worker`, re-append the `_migrations` seed in the same step, and run `scripts/check-schema-drift.sh` (CI-enforced).
+
+### E. Dial-A rework (prerequisite) — verified blast radius
+
+Net deletion, ~8 code files + 1 migration, concentrated in `payout.ts`. Per `docs/adr/UPSTREAM-EDGES-BUILD-PLAN.md:8–21`:
+
+- **Migration**: narrow `tribute_accruals.state` CHECK from `held/released/paid/swept/returned/voided` (`schema.sql:2146`) to `released/paid/voided`; drop `swept_return_payout_id` + `swept_return_kind` and their two CHECKs (`schema.sql:2147–2148`); drop `idx_tribute_accruals_swept_unclaimed` (`schema.sql:4962`); keep historical rows valid.
+- **`settlement.ts:658–719`**: rewrite apportionment to `live`-only, always `released` (drop the `proposed→held` branch, line 713).
+- **`payout.ts`** (largest surface): strip swept-return claim/advance/rollback + `held` handling from `runPayoutCycle`/`reserveWriterPayout`/`completeWriterPayout` and `runTributePayoutCycle`/`completeTributePayout`/`rollbackTributePayoutRows` and the eligibility predicate — ~lines 371–429, 561–570, 658–665, 779–783, 1017–1022, 1602–1763, 2137–2150, 2365–2391. The `tribute_carve` post at `:1888` **stays** (now the sole carve entry point, mechanic unchanged).
+- **`gateway/src/routes/tributes.ts:364/422`** and **`gateway/src/lib/tribute-sweep.ts:149`**: consent/decline/lapse become status-only (no accrual state flips).
+- **`chargeback.ts:253–280`**: collapse the `held`/`swept`/`returned`/in-flight cases to `released`-unclaimed→`voided` and `paid`→`tribute_payout_reversal`; simplify `ReversalAccrual`; re-verify the 8 conservation tests telescope to −`read_net`.
+- **Display**: carve on `released|paid` of `live` only — `payout.ts:206–312` (incl. `reservedPence` at :239) and `gateway/src/routes/my-account.ts:178–180, 306–308`.
+- **`scripts/reconcile-ledger.sql`**: drop A10c (`:202`, swept-return consistency); keep/reword A11 (`:215`). Re-run adjacency + drift after the migration.
+
+Blocks: §1.1 tribute-flow extraction, §2.1 Branch A, the `TRIBUTES_ENABLED` flip.
+
+### F. Corrected queue (supersedes the counts above only where noted)
+
+**Done:** A — settlement lock-order fix (shipped 2026-07-13, this appendix).
+**This week:** §1.8 `applyLedgerDelta` (§C) + adjacency-tripwire update, paired with §1.3(1) dispute-stake tests, both **before disputes un-dark**; §1.4 policy paragraph; §1.5 migration 155 (§D); §2.3 baseline sign-off to counsel.
+**Prerequisite, scope-first:** Dial-A rework (§E).
+**Before launch:** §1.1 battery → primitive extraction (writer → settlement → publication → tribute-post-Dial-A); §1.2 reconciliation job (alert + halt on mismatch); §1.3(2) pledge tests + §1.3(4) traffology math (§1.3(3) paid-DM and gift links dropped per §B); §1.6 merchant-posture module, greenfield (§B3).

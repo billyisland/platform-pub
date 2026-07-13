@@ -531,6 +531,20 @@ class SettlementService {
         return;
       }
 
+      // Lock the tab BEFORE claiming the settlement row, so this path acquires
+      // {reading_tabs, tab_settlements} in the SAME order as reserveSettlement
+      // (178→224) and reverseSettlement (864→871): reading_tabs first, then
+      // tab_settlements. Without this, confirmSettlement locked tab_settlements
+      // (the UPDATE below) before reading_tabs (the balance UPDATE further down),
+      // the reverse order — so a reconcile-driven confirmSettlement racing a
+      // reverseSettlement (refund/dispute webhook) on the same settlement could
+      // deadlock (each holding one row, waiting for the other). We already hold
+      // this lock through the balance debit below, so there is no extra round.
+      await client.query(
+        "SELECT balance_pence FROM reading_tabs WHERE id = $1 FOR UPDATE",
+        [settlement.tab_id],
+      );
+
       const claimed = await client.query(
         `UPDATE tab_settlements SET stripe_charge_id = $1 WHERE id = $2 AND stripe_charge_id IS NULL`,
         [stripeChargeId, settlement.id],

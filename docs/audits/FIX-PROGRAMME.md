@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-07-13** — **Settlement lock-order deadlock fixed + payments ADR Part 1
+  scoped.** Scoping the payments ADR (`PAYMENTS-FIXES-AND-DILEMMAS.md`) ran its
+  item-1 lock-ordering gate ("verify all four money sagas lock in the same order;
+  STOP and report if they differ") against the code. The three payout flows
+  (writer/publication/tribute) anchor on different tables and never co-lock an
+  `accounts` row with a payout row — no cross-flow contention. **Settlement was the
+  outlier and had a real defect:** `confirmSettlement` locked `tab_settlements`
+  (its `stripe_charge_id` claim) *before* `reading_tabs` (the balance debit) —
+  the **opposite** order from `reserveSettlement` (`178→224`) and `reverseSettlement`
+  (`864→871`), which both take `reading_tabs FOR UPDATE` first. `reconcileSettlements`
+  inherits confirm's order, so a reconcile-driven `confirmSettlement` racing a
+  `reverseSettlement` (refund/dispute webhook) on the same settlement could form a
+  lock cycle → Postgres deadlock-kills one txn on the money path. **Fix:**
+  `confirmSettlement` now takes `SELECT balance_pence FROM reading_tabs WHERE id=$1
+  FOR UPDATE` before claiming the settlement row (`payment-service/src/services/settlement.ts`,
+  above the `stripe_charge_id` UPDATE), matching the sibling order; the lock is
+  held through the balance debit below, so no extra round-trip. Typecheck clean;
+  the 17 settlement/parity/writer-accrual tests pass unchanged; the added `SELECT`
+  is not a `balance_pence` write so the ledger-adjacency tripwire is untouched.
+  **Also written:** the *Appendix — Build scoping* in `PAYMENTS-FIXES-AND-DILEMMAS.md`
+  — verified file:line targets for §1.8 (9 tab-write sites, 2 are upserts, 1 posts
+  two ledger entries), §1.5 (migration 155; the ledger vocabulary is a TS union,
+  not a DB CHECK), the Dial-A blast radius (~8 files + 1 migration), and four
+  corrections where the code differs from the ADR body: paid-DM charge path is
+  unbuilt (not untested), gift links are a free comp (no money), §1.6 merchant-posture
+  is greenfield, §1.5 vocab is TS-only. → `PAYMENTS-FIXES-AND-DILEMMAS.md` Appendix;
+  CONSOLIDATED-TODO §1 item 12.
+
 - **2026-07-13** — **Tribute model ruling: Dial A adopted (consent-gated,
   forward-only accrual).** Design/compliance decision (docs only; code rework
   tracked, not yet done). The tribute ADR is amended away from accrue-from-creation:
