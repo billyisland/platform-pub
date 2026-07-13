@@ -5,7 +5,24 @@
 
 **Status:** Phase 1 **complete** — backend + read-side rendering (2026-06-22), authoring UI + inline-prose citation marker (2026-06-23). **Phase 2 complete** — tribute authoring + contact, shipped dark behind `TRIBUTES_ENABLED` (2026-06-23); see *Phase 2 — as built* below. **Phase 3 code complete** — settlement apportionment + author carve/return + inspirer payout, shipped dark behind `TRIBUTES_ENABLED` (2026-06-24); see *Phase 3 — as built* below. The production money flag stays OFF pending the compliance owner's human sign-off (compliance memo residual #1). **Phase 4 composition — citation→tribute seam wired (2026-06-24)**; see *Phase 4 — as built* below. The optional publication × tribute composition (D1 revisit) stays deferred. **Phase 5 (tribute chains — recursive re-division) code complete 2026-06-24**, shipped dark behind the same `TRIBUTES_ENABLED` / `NEXT_PUBLIC_TRIBUTES_ENABLED` flags — a net-new feature on the shipped phases, opening no new compliance question (ADR C6); see *Phase 5 — as built* below.
 
+## Dial-A rework (REQUIRED before `TRIBUTES_ENABLED` flips) — 2026-07-13
+
+**Ruling:** the ADR is amended to **Dial A — consent-gated, forward-only accrual** (ADR *⚠ Amended 2026-07-13*; rationale in `UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md` › *Decision (2026-07-13)*). The Phase-3/Phase-5 code below shipped the **superseded accrue-from-creation model** (settlement freezes accruals for `live|proposed` tributes; `held` shares for un-consented parties reduce the author's payable; `swept`/`returned` walk them back). That code must be reworked to Dial A before the money flag is enabled. **This is now a hard pre-flag gate alongside compliance residual #1.** The rework is a **net simplification** (a deletion of the compliance-sensitive hold/return machinery), not new complexity.
+
+**The delta, concretely:**
+
+1. **Settlement freeze — `live` only.** `confirmSettlement`'s apportionment inserts a `tribute_accruals` row **only for `live` tributes**, always in state `released` (drop the `proposed`→`held` branch entirely). A `proposed` tribute produces no accrual; the full read net stays the author's ordinary payable. Forward-only falls out for free — a tribute that goes `live` today only sees reads that settle from now on (settlement runs per charge, never retroactively over already-settled reads). **Do not** retro-recompute in-window reads at consent (explicitly rejected — memo *Decision* consequence 4).
+2. **Retire `held` / `swept` / `returned`.** No un-consented hold ⇒ nothing to sweep back. Remove the `held` and `swept`/`returned` handling from `runPayoutCycle`/`reserveWriterPayout` (the author's carve now only ever subtracts `released|paid` accruals; there is no swept-return leg) and from `runTributePayoutCycle`. Retire the author swept-return columns and the Phase-5 **`swept_return_payout_id` / `swept_return_kind`** chain-return plumbing (a `live` child never un-consents, so no child share ever returns to a parent). Accrual states collapse to `released → paid` (+ `voided` on chargeback). Consent (`POST /tributes/:id/consent`) no longer flips `held → released` (there were no held rows); decline/lapse (`tribute-sweep.ts`) no longer sweeps money — it only flips the tribute's own status. A migration retires the dead states/columns (or CHECK-narrows them; keep any historical rows valid).
+3. **Display = projection, not reservation.** The author's earnings figures (`getWriterEarnings`/`getPerArticleEarnings`/`my-account.ts`) subtract only **`released|paid`** accruals of `live` tributes — a `proposed` tribute subtracts nothing. `reservedPence` (compliance #4) now means only genuinely-reserved money: `released`-not-yet-`paid` for a **consented, onboarded** party — regulatorily fine. The public render line for a `proposed` tribute is a pure **projection** ("X% will go to Y **if** they accept") and must not imply anything is accruing/held.
+4. **Copy.** The inspirer-facing copy is already conditional-offer wording ("nothing is held in your name" — condition #2, done 2026-06-23) and stays. The author-side `BalanceHeader` "Reserved for tributes" line renders only once a tribute is `live` with in-flight `released` accruals; a `proposed` tribute shows a projected line, never a reserved one.
+5. **Chargeback (`chargeback.ts`).** Simpler: the `held`/`swept`/`returned`/claimed-in-flight cases (the F3/F17 machinery for those) become dead. Only `released`-unclaimed → `voided`, `paid` → reversing `tribute_payout_reversal`. Re-verify conservation still telescopes to −`read_net`.
+6. **Guards/reconcile.** Drop the reconcile assertions referencing `held`/`swept`/`returned` accruals; keep A9/A10a/A10b (tribute_payout ↔ paid accruals) and A11 (no unpaid `released` accrual has a ledger entry). Re-run adjacency + drift after the migration.
+
+**Compliance effect:** residual #2 and characterisation point #2 drop out of the gate (no held share for a non-consenting party). The only remaining compliance gate is residual #1 (platform-wide Stripe-PI baseline); the only remaining *engineering* gate is this rework.
+
 ## Phase 5 — as built (2026-06-24)
+
+> **⚠ Superseded model (2026-07-13):** everything in this Phase-5 section (and Phase 3) below implements accrue-from-creation. See *Dial-A rework* above for what changes before the flag flips.
 
 A uniform recursive generalisation of the shipped Phase-3 money model — every node (author at depth 0, every inspirer below) now runs the *same* carve. Shipped dark behind `TRIBUTES_ENABLED`; the production money flag stays OFF (compliance residual #1, unchanged — C6 opens no new gate). Built in the planned 5a → 5b → 5c order.
 
@@ -27,6 +44,8 @@ The `tributes.citation_edge_id` seam (latent since migration 126) is now exercis
 - **Checks:** gateway tsc 0, web tsc 0, hairline tripwire clean on the touched file, root promise-safety lint 0 errors, `next build` clean. Still dark behind `TRIBUTES_ENABLED` / `NEXT_PUBLIC_TRIBUTES_ENABLED` (the affordance and the whole Tributes section are gated off in prod). The optional D1 revisit (publication × tribute composition) remains deferred.
 
 ## Phase 3 — as built (2026-06-24)
+
+> **⚠ Superseded model (2026-07-13):** this implements accrue-from-creation (`held`/`swept`/`returned`). The Dial-A rework above is the pre-flag gate.
 
 Shipped behind `TRIBUTES_ENABLED` (migration `127_tribute_money.sql` + the payment-service settlement/payout changes + the gateway display carve). No money moves until the operator sets the flag (compliance gate). Concrete decisions and the one deliberate deviation from the plan's prose:
 

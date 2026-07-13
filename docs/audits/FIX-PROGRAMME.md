@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-07-13** — **Tribute model ruling: Dial A adopted (consent-gated,
+  forward-only accrual).** Design/compliance decision (docs only; code rework
+  tracked, not yet done). The tribute ADR is amended away from accrue-from-creation:
+  **no `tribute_accruals` row (no held share) exists until a tribute is `live`**
+  (consented + the inspirer is a real, onboarding account); before consent the
+  author keeps their full payable and sees only a projection, and accrual runs
+  **forward-only** from consent (pre-consent reads paid the author in full, never
+  clawed back — retroactive recompute explicitly rejected). **Why:** the
+  accrue-from-creation model depended on characterising a share held for a
+  *non-consenting* party as "still the author's money" with *no ring-fencing*,
+  which collides head-on with any future Stripe funds-segregation (segregation
+  ring-fences the writer float, asserting exactly what that framing denies —
+  `PAYMENTS-FIXES-AND-DILEMMAS.md` §2.2). Dial A removes the held share entirely,
+  so the collision dissolves, residual #2 + the characterisation point become
+  moot (compliance collapses to residual #1, the platform-wide Stripe-PI baseline),
+  and segregation would now compose cleanly if ever taken. It is also a **net
+  code deletion** — `held`/`swept`/`returned`, the author swept-return columns,
+  and the chain swept-return-to-parent plumbing all retire; an accrual is only
+  ever `released → paid` (+ `voided` on chargeback). **Cost accepted:** the "money
+  was always waiting for you" cushion is gone (a late accepter earns only forward).
+  **Gate change:** `TRIBUTES_ENABLED` now has two pre-flag gates — compliance
+  residual #1, and the Dial-A code rework (`UPSTREAM-EDGES-BUILD-PLAN.md` ›
+  *Dial-A rework*). Docs updated: `UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md` (Decision +
+  reframed dials/recommendation), `UPSTREAM-EDGES-ADR.md` (amendment + Decisions
+  4/5 + schema states + C6), `UPSTREAM-EDGES-BUILD-PLAN.md` (Dial-A rework section +
+  Phase 3/5 superseded banners), `UPSTREAM-EDGES-AUDIT-FIXES.md`, `CLAUDE.md`
+  (Money-ledger invariant), `PAYMENTS-FIXES-AND-DILEMMAS.md` §2.2, CONSOLIDATED-TODO §1.
+
 - **2026-07-13** — **Selectable + linkable feed-card text** (CONSOLIDATED-TODO
   §12). Feed cards now let you highlight/copy body text and click bare URLs,
   without losing click-to-focal or drag-card-across-feeds. The conflict was that
