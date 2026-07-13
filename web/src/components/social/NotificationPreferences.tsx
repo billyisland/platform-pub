@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { notifications } from '../../lib/api'
+import { pledgesEnabled } from '../../lib/featureFlags'
 
+// 'commission_request' is gated with the parked pledge-drives feature (2026-07-13).
 const CATEGORIES: { key: string; label: string }[] = [
   { key: 'new_follower', label: 'New followers' },
   { key: 'new_reply', label: 'Replies to your articles' },
   { key: 'new_mention', label: 'Mentions' },
   { key: 'new_quote', label: 'Quotes of your work' },
-  { key: 'commission_request', label: 'Commission requests' },
+  ...(pledgesEnabled() ? [{ key: 'commission_request', label: 'Commission requests' }] : []),
   { key: 'pub_events', label: 'Publication events' },
   { key: 'subscription_activity', label: 'Subscription activity' },
 ]

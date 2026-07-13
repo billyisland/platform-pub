@@ -21,3 +21,13 @@ export function trustEnabled(): boolean {
 export function traffologyEnabled(): boolean {
   return process.env.NEXT_PUBLIC_TRAFFOLOGY_ENABLED === "1";
 }
+
+// Pledge drives (commissioning + pledging) — parked 2026-07-13. When off, every
+// pledge/commission entry point hides: the DM "Commission" button, the dashboard
+// "New pledge drive"/drive/commission cards (subscription offers in the same tab
+// stay), the profile ProfileDriveCard, and the Ledger "my pledges" list. The
+// gateway /drives routes 403 in lockstep. Server counterpart: PLEDGES_ENABLED
+// (shared/src/lib/env.ts). Revive by setting both to "1".
+export function pledgesEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_PLEDGES_ENABLED === "1";
+}

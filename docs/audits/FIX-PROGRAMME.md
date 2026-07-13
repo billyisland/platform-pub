@@ -23,6 +23,35 @@ starts.
 
 ## Progress
 
+- **2026-07-13** — **Pledge drives + commissioning parked behind a feature flag
+  (default OFF).** The whole crowdfund/commission subsystem ships dark while
+  it's out of play, same shape as the `TRUST_SYSTEM_ENABLED` / trust parking:
+  a server switch `PLEDGES_ENABLED` (`shared/src/lib/env.ts::pledgesEnabled`)
+  and its client twin `NEXT_PUBLIC_PLEDGES_ENABLED`
+  (`web/src/lib/featureFlags.ts::pledgesEnabled`), both default OFF (absent ⇒
+  off). Nothing is deleted — flip both to `"1"` to revive the feature whole.
+  - **Gateway** (`gateway/src/routes/drives.ts`) — one plugin-scoped
+    `onRequest` hook 403s (`feature_disabled`) every `/drives` route when off,
+    so no drive/pledge/commission can be created or read. The route
+    registration itself **stays** (keeps the CI ledger-adjacency check's
+    `drives` money-path satisfied), and the fulfilment plumbing
+    (`matchDriveForPublish` / `fulfillDrive` / drive-expiry) is left inert —
+    with no open drive the publish-time match is a harmless no-op. Tables, the
+    `pledge_fulfil` ledger trigger type, and the `draftId` threading are all
+    untouched.
+  - **Web entry points hidden** in lockstep: the Ledger "my pledges" list
+    (`LedgerPanel` → `PledgesSection`), the dashboard Proposals tab's
+    commissions + drives halves — fetches, filter pills, "New pledge drive"
+    button, create form, and the two card sections (`ProposalsTab`; the
+    subscription-offer half stays), the DM "Commission" button + modal
+    (`MessageThread`), the profile drive fetch/cards (`WorkTab` skips the
+    `/drives/by-user` call entirely), and the `commission_request`
+    notification-preference category (`NotificationPreferences`).
+  - Historical `commission_request` / `drive_funded` / `pledge_fulfilled`
+    notifications still render (`NotificationsPanel` display types left as-is)
+    — correct, since none can be newly created.
+  Validation: `tsc` clean on shared + gateway, `next build` clean.
+
 - **2026-07-12 (tenth entry)** — **Same-day commit audit: four fixes (two DoS
   guards on the follow-import readers, two workspace-UI bugs).** A four-agent
   adversarial review of the day's eleven commits confirmed every audited

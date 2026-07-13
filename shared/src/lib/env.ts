@@ -43,6 +43,19 @@ export function tributesEnabled(): boolean {
   return process.env.TRIBUTES_ENABLED === "1"
 }
 
+// Pledge drives (crowdfund + commission) — parked 2026-07-13. Default OFF: the
+// whole commissioning/pledging subsystem ships dark while it's out of play. When
+// off, every /drives route 403s (create/pledge/accept/decline/…), so no new drive
+// or pledge can be created; the fulfilment plumbing (matchDriveForPublish /
+// fulfillDrive / drive-expiry) is left in place and simply goes inert — with no
+// open drive, the publish-time match is a harmless no-op. Tables, ledger trigger
+// type (pledge_fulfil) and the draftId threading are untouched, so flipping this
+// back on revives the feature whole. Same shape as TRUST_SYSTEM_ENABLED. Client
+// counterpart: NEXT_PUBLIC_PLEDGES_ENABLED.
+export function pledgesEnabled(): boolean {
+  return process.env.PLEDGES_ENABLED === "1"
+}
+
 // Cross-source identity-link detection (Slice 8 P3). Default OFF — the daily
 // detection task writes GLOBAL links that suppress cross-posted duplicates in
 // everyone's feed, so it ships dark behind this switch. When off, feed-ingest

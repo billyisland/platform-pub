@@ -7,6 +7,7 @@ import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
+import { pledgesEnabled } from '@platform-pub/shared/lib/env.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
 // =============================================================================
@@ -54,6 +55,18 @@ const PledgeSchema = z.object({
 })
 
 export async function driveRoutes(app: FastifyInstance) {
+
+  // Pledge drives are parked behind PLEDGES_ENABLED (default OFF, 2026-07-13).
+  // One plugin-scoped guard 403s every route below so no new drive/pledge/
+  // commission can be created or read while the feature is out of play. The
+  // registration itself stays (keeps the CI ledger-adjacency check's `drives`
+  // money-path happy) and the fulfilment plumbing is left inert. Revive by
+  // setting PLEDGES_ENABLED=1 (+ the web NEXT_PUBLIC_PLEDGES_ENABLED twin).
+  app.addHook('onRequest', async (_req, reply) => {
+    if (!pledgesEnabled()) {
+      return reply.status(403).send({ error: 'feature_disabled' })
+    }
+  })
 
   // ---------------------------------------------------------------------------
   // POST /drives — create a pledge drive

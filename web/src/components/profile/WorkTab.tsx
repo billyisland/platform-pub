@@ -16,6 +16,7 @@ import type { Post } from "../../lib/post/types";
 import type { WriterProfile, PledgeDrive } from "../../lib/api";
 import { useCompose } from "../../stores/compose";
 import { useColorScheme } from "../../stores/colorScheme";
+import { pledgesEnabled } from "../../lib/featureFlags";
 
 // =============================================================================
 // Profile Work tab — the writer's articles + pledge drives, rendered through the
@@ -79,11 +80,15 @@ export function WorkTab({ username, writer, isOwnProfile }: WorkTabProps) {
           })
             .then((r) => (r.ok ? r.json() : { articles: [] }))
             .catch(() => ({ articles: [] })),
-          fetch(`/api/v1/drives/by-user/${writer.id}`, {
-            credentials: "include",
-          })
-            .then((r) => (r.ok ? r.json() : { drives: [] }))
-            .catch(() => ({ drives: [] })),
+          // Pledge drives parked behind PLEDGES_ENABLED (2026-07-13) — skip the
+          // fetch entirely when off so no drive cards appear on the profile.
+          pledgesEnabled()
+            ? fetch(`/api/v1/drives/by-user/${writer.id}`, {
+                credentials: "include",
+              })
+                .then((r) => (r.ok ? r.json() : { drives: [] }))
+                .catch(() => ({ drives: [] }))
+            : Promise.resolve({ drives: [] }),
         ]);
         if (cancelled) return;
 

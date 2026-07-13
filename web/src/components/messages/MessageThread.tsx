@@ -8,6 +8,7 @@ import { useMediaAttachments } from '../../hooks/useMediaAttachments'
 import { MediaPreview } from '../ui/MediaPreview'
 import { MediaContent } from '../ui/MediaContent'
 import { CommissionForm } from '../ui/CommissionForm'
+import { pledgesEnabled } from '../../lib/featureFlags'
 
 const POLL_INTERVAL = 5_000
 
@@ -295,8 +296,8 @@ export function MessageThread({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Commission modal */}
-      {showCommission && memberId && (
+      {/* Commission modal — pledge drives parked (pledgesEnabled) */}
+      {pledgesEnabled() && showCommission && memberId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowCommission(false)}>
           <div className="w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
             <CommissionForm
@@ -320,7 +321,7 @@ export function MessageThread({
           )}
           <p className="text-ui-sm font-sans font-semibold text-black">{memberName}</p>
         </div>
-        {memberId && (
+        {pledgesEnabled() && memberId && (
           <button
             onClick={() => setShowCommission(true)}
             className="text-[12px] font-mono uppercase tracking-[0.04em] text-grey-600 hover:text-black transition-colors"

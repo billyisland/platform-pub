@@ -20,6 +20,7 @@ import { BalanceHeader } from './BalanceHeader'
 import { AccountLedger } from './AccountLedger'
 import { SubscriptionsSection } from './SubscriptionsSection'
 import { PledgesSection } from './PledgesSection'
+import { pledgesEnabled } from '../../lib/featureFlags'
 import { PageShell, PageHeader } from '../ui/PageShell'
 
 export function LedgerPanel({ inOverlay = false }: { inOverlay?: boolean }) {
@@ -77,7 +78,7 @@ export function LedgerPanel({ inOverlay = false }: { inOverlay?: boolean }) {
       <AccountLedger initialIncludeFreeReads={false} />
 
       <SubscriptionsSection />
-      <PledgesSection />
+      {pledgesEnabled() && <PledgesSection />}
     </>
   )
 

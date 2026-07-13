@@ -5,8 +5,13 @@ import { drives as drivesApi, subscriptionOffers, type Commission, type PledgeDr
 import { CommissionCard } from './CommissionsTab'
 import { DriveCard } from './DriveCard'
 import { DriveCreateForm } from './DriveCreateForm'
+import { pledgesEnabled } from '../../lib/featureFlags'
 
 type ProposalFilter = 'all' | 'commissions' | 'drives' | 'offers'
+
+// Pledge drives + commissions are parked behind PLEDGES_ENABLED (2026-07-13).
+// When off, only the subscription-offer half of this tab renders.
+const showPledges = pledgesEnabled()
 
 export function ProposalsTab({ userId }: { userId: string }) {
   const [commissions, setCommissions] = useState<Commission[]>([])
@@ -25,8 +30,8 @@ export function ProposalsTab({ userId }: { userId: string }) {
     setError(null)
     try {
       const [commRes, driveRes, offerRes] = await Promise.all([
-        drivesApi.myCommissions().catch(() => ({ commissions: [] })),
-        drivesApi.listByUser(userId).catch(() => ({ drives: [] })),
+        showPledges ? drivesApi.myCommissions().catch(() => ({ commissions: [] })) : Promise.resolve({ commissions: [] }),
+        showPledges ? drivesApi.listByUser(userId).catch(() => ({ drives: [] })) : Promise.resolve({ drives: [] }),
         subscriptionOffers.list().catch(() => ({ offers: [] })),
       ])
       setCommissions(commRes.commissions)
@@ -60,8 +65,12 @@ export function ProposalsTab({ userId }: { userId: string }) {
 
   const filters: { key: ProposalFilter; label: string }[] = [
     { key: 'all', label: 'All' },
-    { key: 'commissions', label: `Commissions (${commissions.length})` },
-    { key: 'drives', label: `Pledge drives (${drives.length})` },
+    ...(showPledges
+      ? ([
+          { key: 'commissions', label: `Commissions (${commissions.length})` },
+          { key: 'drives', label: `Pledge drives (${drives.length})` },
+        ] as { key: ProposalFilter; label: string }[])
+      : []),
     { key: 'offers', label: `Offers (${offers.length})` },
   ]
 
@@ -81,7 +90,7 @@ export function ProposalsTab({ userId }: { userId: string }) {
           ))}
         </div>
         <div className="flex items-center gap-3">
-          {!showDriveForm && (
+          {showPledges && !showDriveForm && (
             <button onClick={() => { setShowDriveForm(true); setFilter('drives') }} className="btn-text underline underline-offset-4">
               New pledge drive
             </button>
@@ -99,8 +108,8 @@ export function ProposalsTab({ userId }: { userId: string }) {
         </div>
       </div>
 
-      {/* Drive creation form */}
-      {showDriveForm && (
+      {/* Drive creation form — pledge drives parked (showPledges) */}
+      {showPledges && showDriveForm && (
         <div className="mb-8">
           <DriveCreateForm onCreated={() => { setShowDriveForm(false); void fetchAll() }} onCancel={() => setShowDriveForm(false)} />
         </div>
@@ -116,12 +125,16 @@ export function ProposalsTab({ userId }: { userId: string }) {
       {isEmpty && (
         <div className="py-20 text-center">
           <p className="text-ui-sm text-grey-600 mb-4">No proposals yet.</p>
-          <p className="text-ui-xs text-grey-600">Commission requests from readers, your pledge drives, and subscription offers will appear here.</p>
+          <p className="text-ui-xs text-grey-600">
+            {showPledges
+              ? 'Commission requests from readers, your pledge drives, and subscription offers will appear here.'
+              : 'Your subscription offers will appear here.'}
+          </p>
         </div>
       )}
 
-      {/* Commissions section */}
-      {showCommissions && commissions.length > 0 && (
+      {/* Commissions section — parked (showPledges) */}
+      {showPledges && showCommissions && commissions.length > 0 && (
         <div className="mb-8">
           <p className="label-ui text-grey-600 mb-4">Commissions</p>
           <div className="space-y-2">
@@ -130,8 +143,8 @@ export function ProposalsTab({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* Pledge drives section */}
-      {showDrives && drives.length > 0 && (
+      {/* Pledge drives section — parked (showPledges) */}
+      {showPledges && showDrives && drives.length > 0 && (
         <div className="mb-8">
           <p className="label-ui text-grey-600 mb-4">Pledge drives</p>
           <div className="space-y-2">
