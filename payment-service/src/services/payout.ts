@@ -1700,9 +1700,10 @@ class PayoutService {
     stripeConnectId: string,
     amountPence: number,
   ): Promise<void> {
-    let transfer: Stripe.Transfer
-    try {
-      transfer = await this.stripe.transfers.create({
+    const outcome = await executeStripeIdempotent(
+      'tribute-payout',
+      `tribute-payout-${payoutId}`,
+      () => this.stripe.transfers.create({
         amount: amountPence,
         currency: 'gbp',
         destination: stripeConnectId,
@@ -1714,24 +1715,24 @@ class PayoutService {
         },
       }, {
         idempotencyKey: `tribute-payout-${payoutId}`,
-      })
-    } catch (err) {
+      }),
+      isTerminalTransferError,
+    )
+    if (!outcome.ok) {
       // Same terminal-rejection gap as completeWriterPayout: a revoked-capability
       // create throws, no transfer object exists, no transfer.failed webhook ever
       // fires, so handleFailedTributePayout never runs and the row sits 'pending'
       // forever with its accruals frozen. Mark failed + release for re-pay on a
-      // deterministic rejection; re-throw anything ambiguous (resume retries with
-      // the stable key → never double-pay). STRIPE audit S1 follow-on.
-      if (isTerminalTransferError(err)) {
-        const reason =
-          (err as { code?: string }).code ??
-          (err as { type?: string }).type ??
-          'transfer_rejected'
-        await this.failTributePayoutTerminal(payoutId, reason)
-        return
-      }
-      throw err
+      // deterministic rejection. (Ambiguous errors never reach here — the
+      // primitive re-throws them so resume retries with the stable key → never
+      // double-pay.) STRIPE audit S1 follow-on.
+      await this.failTributePayoutTerminal(
+        payoutId,
+        stripeErrorCode(outcome.err, 'transfer_rejected'),
+      )
+      return
     }
+    const transfer = outcome.object
 
     await withTransaction(async (client) => {
       // Audit F4 (2026-07-06): completion keyed off the create response (see
