@@ -23,6 +23,36 @@ starts.
 
 ## Progress
 
+- **2026-07-14** — **Payments ADR §1.2 shipped — scheduled ledger-reconciliation
+  job with alert + halt-payouts on mismatch.** Promotes the reader-tab parity
+  invariant (`−SUM(reader ledger) == reading_tabs.balance_pence`) from a manual
+  psql script to an enforced control. New `payment-service/src/services/reconcile-ledger.ts::reconcileLedger`
+  runs the five "must always be empty" reader-tab checks — B1 reader parity, A1
+  read_accrual magnitude, A3 tab_settlement magnitude, A7 dispute-stake integrity,
+  A6 orphans (the halt-worthy subset of `scripts/reconcile-ledger.sql`, which
+  stays the comprehensive human-run superset; the payout-side B2/A4/A5/A9/A10
+  checks are *expected-nonzero* and deliberately omitted so a benign known gap
+  can't false-halt every payout). **Response on ANY mismatch** (§1.2's demanded
+  "action on mismatch", never detect-and-log): `runLedgerReconcileAndEnforce`
+  emits a `logger.fatal` alert (`alert:'payouts_halted'`) AND halts payouts via a
+  durable `platform_config.payouts_halted` flag (`payment-service/src/lib/payout-halt.ts`,
+  first-writer-wins so the ORIGINAL divergence reason survives a re-run). The
+  three payout cycles (`runPayoutCycle`/`runPublicationPayoutCycle`/`runTributePayoutCycle`)
+  check the flag at entry — before the resume sweep — and no-op past it, freezing
+  ALL outbound money. Settlement (charging readers) is deliberately NOT halted:
+  the hazard a divergence guards against is irreversible money leaving on books
+  that don't balance, and halting charges only strands readers. Scheduled 3×/day
+  (`workers/ledger-reconcile.ts`, 01:45/09:45/17:45 UTC — the 01:45 run gates the
+  02:30 payout). Manual controls (internal, `requireInternalToken`): `POST
+  /reconcile-ledger` (run + enforce), `GET /payouts/halt-status`, `POST
+  /payouts/resume` (clear once a human reconciles). No migration — the flag lives
+  in the existing `platform_config` k/v table. 7 tests (`tests/ledger-reconcile.test.ts`:
+  halt round-trip + first-writer-wins + every check independently trips the halt +
+  clean-books-no-halt); the existing conformance harnesses stay green (their
+  query-router default returns empty rows, so the gate reads not-halted). Suite
+  158 green, typecheck clean. **Still open in §1.2:** the settlement/read-attribution
+  conservation *property* tests (the superset half).
+
 - **2026-07-14** — **Payments ADR §1.1 step 2 shipped — saga primitive extraction
   (`executeStripeIdempotent`), all four flows.** The one hazardous-and-identical
   step every money-moving Stripe create shares — idempotent call → terminal-vs-

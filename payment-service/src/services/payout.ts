@@ -6,6 +6,7 @@ import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
 import { tributesEnabled } from '@platform-pub/shared/lib/env.js'
 import { readNetSql } from '@platform-pub/shared/lib/per-read-net.js'
 import { isConnectPayable } from '../lib/connect-payable.js'
+import { isPayoutsHalted } from '../lib/payout-halt.js'
 import { isTerminalTransferError } from '../lib/charge-errors.js'
 import {
   executeStripeIdempotent,
@@ -350,6 +351,14 @@ class PayoutService {
   // ---------------------------------------------------------------------------
 
   async runPayoutCycle(): Promise<{ processed: number; totalPaidPence: number }> {
+    // §1.2 halt gate: if the ledger-reconciliation job flagged a reader-tab
+    // divergence, refuse to move any money out until a human reconciles and
+    // clears the flag. Gates the resume sweep too — freeze ALL outbound.
+    if (await isPayoutsHalted(pool)) {
+      logger.warn('Payouts halted (ledger reconciliation mismatch) — skipping writer payout cycle')
+      return { processed: 0, totalPaidPence: 0 }
+    }
+
     // Resume any pending payouts from previous runs first. A pending row means
     // we committed the reservation but crashed before Stripe returned or before
     // the 'initiated' update landed. Stable idempotency keys make the Stripe
@@ -1012,6 +1021,12 @@ class PayoutService {
   // ===========================================================================
 
   async runPublicationPayoutCycle(): Promise<{ processed: number; totalPaidPence: number }> {
+    // §1.2 halt gate (see runPayoutCycle).
+    if (await isPayoutsHalted(pool)) {
+      logger.warn('Payouts halted (ledger reconciliation mismatch) — skipping publication payout cycle')
+      return { processed: 0, totalPaidPence: 0 }
+    }
+
     // Resume any pending publication payouts from prior runs before taking on
     // new work. Stable idempotency keys on per-split transfers make this safe
     // to call repeatedly — Stripe deduplicates if the transfer already exists.
@@ -1541,6 +1556,12 @@ class PayoutService {
 
   async runTributePayoutCycle(): Promise<{ processed: number; totalPaidPence: number }> {
     if (!tributesEnabled()) return { processed: 0, totalPaidPence: 0 }
+
+    // §1.2 halt gate (see runPayoutCycle).
+    if (await isPayoutsHalted(pool)) {
+      logger.warn('Payouts halted (ledger reconciliation mismatch) — skipping tribute payout cycle')
+      return { processed: 0, totalPaidPence: 0 }
+    }
 
     await this.resumePendingTributePayouts()
 

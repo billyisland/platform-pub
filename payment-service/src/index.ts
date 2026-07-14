@@ -6,6 +6,7 @@ import { webhookRoutes } from "./routes/webhook.js";
 import { startPayoutWorker } from "./workers/payout.js";
 import { startKycReconcileWorker } from "./workers/kyc-reconcile.js";
 import { startSettlementReconcileWorker } from "./workers/settlement-reconcile.js";
+import { startLedgerReconcileWorker } from "./workers/ledger-reconcile.js";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger, { pinoConfig } from "./lib/logger.js";
 import { requireEnv } from "@platform-pub/shared/lib/env.js";
@@ -60,6 +61,7 @@ async function start() {
   startPayoutWorker();
   startKycReconcileWorker();
   startSettlementReconcileWorker();
+  startLedgerReconcileWorker();
 
   logger.info({ port }, "Payment service started");
 }

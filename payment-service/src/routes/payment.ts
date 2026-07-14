@@ -6,6 +6,8 @@ import { zodValidationError } from '@platform-pub/shared/lib/validation.js'
 import { accrualService, AllowanceExhaustedError } from '../services/accrual.js'
 import { settlementService } from '../services/settlement.js'
 import { payoutService } from '../services/payout.js'
+import { runLedgerReconcileAndEnforce } from '../services/reconcile-ledger.js'
+import { getPayoutHaltState, resumePayouts } from '../lib/payout-halt.js'
 import logger from '../lib/logger.js'
 
 // requireInternalToken — the single guard for the mutating internal routes
@@ -168,6 +170,31 @@ export async function paymentRoutes(app: FastifyInstance) {
 
     const result = await payoutService.runPayoutCycle()
     return reply.status(200).send(result)
+  })
+
+  // ---------------------------------------------------------------------------
+  // Ledger reconciliation + payout-halt controls (PAYMENTS ADR §1.2)
+  //
+  // POST /reconcile-ledger    — run the parity checks now; halts payouts + alerts
+  //                             on mismatch (the manual twin of the scheduled
+  //                             worker).
+  // GET  /payouts/halt-status — report whether payouts are halted, why, since when.
+  // POST /payouts/resume      — clear the halt once a human has reconciled.
+  // ---------------------------------------------------------------------------
+
+  app.post('/reconcile-ledger', { preHandler: requireInternalToken }, async (req, reply) => {
+    const result = await runLedgerReconcileAndEnforce()
+    return reply.status(200).send(result)
+  })
+
+  app.get('/payouts/halt-status', { preHandler: requireInternalToken }, async (req, reply) => {
+    return reply.status(200).send(await getPayoutHaltState(pool))
+  })
+
+  app.post('/payouts/resume', { preHandler: requireInternalToken }, async (req, reply) => {
+    await resumePayouts(pool)
+    logger.warn('Payouts manually resumed — halt flag cleared')
+    return reply.status(200).send({ resumed: true })
   })
 
   // ---------------------------------------------------------------------------
