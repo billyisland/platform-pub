@@ -23,6 +23,33 @@ starts.
 
 ## Progress
 
+- **2026-07-14** — **Payments ADR §1.1 step 2 shipped — saga primitive extraction
+  (`executeStripeIdempotent`), all four flows.** The one hazardous-and-identical
+  step every money-moving Stripe create shares — idempotent call → terminal-vs-
+  ambiguous classify → re-throw on ambiguous (never roll back → never double-pay)
+  → on terminal return `{ ok:false, err }` so the FLOW runs its OWN per-flow
+  cleanup — extracted to `payment-service/src/lib/stripe-idempotent.ts` (+ a
+  `stripeErrorCode(err, fallback)` leaf helper for the `code ?? type ?? fallback`
+  idiom the four cleanups repeated). Classifier stays **passed-in and named** at
+  each call site (`isTerminalTransferError` for the three transfer sagas, the
+  narrower-on-purpose `isTerminalChargeError` for the settlement charge). All four
+  flows routed through it, **one commit each**, order writer → settlement →
+  publication → tribute (tribute against the shipped post-Dial-A shape); each flow
+  still reads reserve → call → complete → confirm top-to-bottom, its terminal
+  cleanup (`fail*PayoutTerminal` / settlement's PI-id-COALESCE + card-action flag)
+  untouched in the flow. Publication's two context-rich per-split logs (terminal
+  → mark split failed + continue; ambiguous → re-throw for the sweep) preserved.
+  **No boolean flow flags, no primitive-owned control flow / cleanup** — the ADR's
+  banned shapes. `statusGuardedTransition` **assessed and NOT extracted**: the
+  four guarded flips carry different extra SET columns with positional params, so
+  a generic version would be a dynamic-SQL builder over money tables (a worse
+  hazard than four readable clones), and its one hazardous bit — the `rowCount`-
+  gated ledger post — is a one-liner whose extraction needs the banned callback
+  inversion (same reason `resumeSweep` stayed cloned). 8 new primitive unit tests;
+  the item-7 conformance battery stayed green after every flow. Full payment-
+  service suite **151/151** (143 prior + 8), typecheck clean throughout. Spec:
+  `docs/audits/PAYMENTS-FIXES-AND-DILEMMAS.md` §1.1 step 2 + Build scope item 8.
+
 - **2026-07-14** — **Payments ADR §1.1 step 1 shipped — the saga conformance
   battery, all four flows.** The drift-pinning suite that §1.1 makes mandatory
   *regardless of the refactor* (it lets us keep running four cloned sagas safely,
