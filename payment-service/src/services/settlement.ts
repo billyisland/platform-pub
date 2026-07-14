@@ -5,7 +5,7 @@ import {
   withTransaction,
   loadConfig,
 } from "@platform-pub/shared/db/client.js";
-import { recordLedger } from "@platform-pub/shared/lib/ledger.js";
+import { recordLedger, applyLedgerDelta } from "@platform-pub/shared/lib/ledger.js";
 import { tributesEnabled } from "@platform-pub/shared/lib/env.js";
 import { readNetSql } from "@platform-pub/shared/lib/per-read-net.js";
 import { isTerminalChargeError } from "../lib/charge-errors.js";
@@ -557,36 +557,27 @@ class SettlementService {
         return;
       }
 
-      // No GREATEST(0, …) clamp: the column and the ledger must move by the
-      // SAME signed delta (migration 124 dropped the >= 0 CHECK). The settle
-      // amount was clamped to the locked balance at reservation
-      // (reserveSettlement: actualAmount = min(lockedBalance, expected)), so an
-      // over-settlement only arises if the balance dropped between reserve and
-      // confirm (e.g. an interleaved subscription credit-back). A clamp here
-      // would floor the column at 0 while the unclamped ledger entry below
-      // credits the full amount → −SUM(ledger) ≠ balance_pence permanently
-      // (the Phase-3 "agree to the penny" guarantee). Letting it go negative is
-      // correct: negative = platform owes the reader / pre-paid credit.
-      await client.query(
-        `UPDATE reading_tabs
-         SET balance_pence = balance_pence - $1,
-             last_settled_at = now(),
-             updated_at = now()
-         WHERE id = $2`,
-        [settlement.amount_pence, settlement.tab_id],
-      );
-
-      // Ledger: reader credit — the Stripe charge pays the tab down by the
-      // settled amount. Counterparty is the platform (NULL). This is the (+)
-      // side that nets against the read_accrual / vote_charge / pledge_fulfil
-      // debits so the reader's SUM tracks reading_tabs.balance_pence.
-      await recordLedger(client, {
+      // Reader credit — the Stripe charge pays the tab DOWN by the settled amount
+      // (deltaPence = −amount), and applyLedgerDelta posts the mirror +amount
+      // ledger entry as one indivisible, unclamped pair (counterparty = platform
+      // / NULL). NO GREATEST(0, …) clamp: the amount was clamped to the locked
+      // balance at reservation (reserveSettlement: actualAmount = min(lockedBalance,
+      // expected)), so an over-settlement only arises if the balance dropped
+      // between reserve and confirm (e.g. an interleaved subscription credit-back).
+      // Flooring the column at 0 while the ledger credits the full amount would
+      // break −SUM(ledger) == balance_pence permanently (the Phase-3 "agree to
+      // the penny" guarantee); letting it go negative is correct (negative =
+      // platform owes the reader / pre-paid credit). The tab was locked FOR UPDATE
+      // above, before the tab_settlements claim, for the confirm↔reverse lock
+      // ordering — applyLedgerDelta re-locks the same (already-held) row.
+      await applyLedgerDelta(client, {
         accountId: settlement.reader_id,
         counterpartyId: null,
-        amountPence: settlement.amount_pence,
+        deltaPence: -settlement.amount_pence,
         triggerType: "tab_settlement",
         refTable: "tab_settlements",
         refId: settlement.id,
+        touch: ["last_settled_at"],
       });
 
       // Wave-5 P3 note: the `read_at <= settled_at` predicate advances every
@@ -1036,14 +1027,19 @@ class SettlementService {
       });
 
       // Restore the reader's tab — the settlement credit is clawed back, so the
-      // debt returns. No clamp (negative permitted): the column and its ledger
-      // entry move by the same signed delta.
-      await client.query(
-        `UPDATE reading_tabs
-         SET balance_pence = balance_pence + $1, updated_at = now()
-         WHERE id = $2`,
-        [plan.tabRestorePence, settlement.tab_id],
-      );
+      // debt returns (deltaPence = +tabRestorePence). applyLedgerDelta moves the
+      // column AND posts the reader's mirror `tab_settlement_reversal` entry
+      // (−tabRestorePence == plan's reader entry) as one unclamped pair; that
+      // entry is therefore EXCLUDED from the writer/tribute-leg loop below (those
+      // legs are pure ledger reversals, no column). No clamp (negative permitted).
+      await applyLedgerDelta(client, {
+        accountId: settlement.reader_id,
+        counterpartyId: null,
+        deltaPence: plan.tabRestorePence,
+        triggerType: "tab_settlement_reversal",
+        refTable: "tab_settlements",
+        refId: settlement.id,
+      });
 
       // Audit F12 (2026-07-05): gate re-collection after a chargeback. The debt
       // restore above is ledger-correct, but the next threshold crossing would
@@ -1061,9 +1057,12 @@ class SettlementService {
         [settlement.reader_id],
       );
 
-      // All reversal ledger entries (reader first, then writer/tribute), each
-      // referencing the settlement that was reversed.
+      // Writer/tribute reversal ledger entries — pure ledger legs, no column.
+      // The reader's `tab_settlement_reversal` entry is skipped: applyLedgerDelta
+      // above already posted it as the mirror of the tab restore (posting it here
+      // too would double-count the reader credit-back).
       for (const entry of plan.ledgerEntries) {
+        if (entry.trigger === "tab_settlement_reversal") continue;
         await recordLedger(client, {
           accountId: entry.accountId,
           counterpartyId: entry.counterpartyId,

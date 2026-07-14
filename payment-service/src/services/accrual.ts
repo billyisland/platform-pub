@@ -7,7 +7,7 @@ import {
   withTransaction,
 } from "@platform-pub/shared/db/client.js";
 import { enqueueRelayPublish } from "@platform-pub/shared/lib/relay-outbox.js";
-import { recordLedger } from "@platform-pub/shared/lib/ledger.js";
+import { applyLedgerDelta } from "@platform-pub/shared/lib/ledger.js";
 import { signReceiptEvent, createPortableReceipt } from "../lib/nostr.js";
 import logger from "../lib/logger.js";
 
@@ -203,29 +203,24 @@ class AccrualService {
       const readEvent = readEventRow.rows[0];
 
       if (readState === "accrued") {
+        // Lock the tab first (serialises concurrent gate passes for this
+        // reader), then move the balance + post the mirror ledger debit as one
+        // pair via applyLedgerDelta. The reader owes amountPence for this read,
+        // so the column grows by +amountPence and the ledger entry is −amountPence
+        // (reader-tab mirror; balance == −SUM(ledger)). Emitted only on the
+        // accrued path — exactly when the balance moves.
         await client.query(
           `SELECT id FROM reading_tabs WHERE id = $1 FOR UPDATE`,
           [event.tabId],
         );
-        await client.query(
-          `UPDATE reading_tabs
-           SET balance_pence = balance_pence + $1,
-               last_read_at  = now(),
-               updated_at    = now()
-           WHERE id = $2`,
-          [event.amountPence, event.tabId],
-        );
-
-        // Ledger: reader debit (owes amountPence for this read). Emitted only
-        // on the accrued path — exactly when the tab balance moves — so the
-        // reader's SUM mirrors reading_tabs.balance_pence (see ledger.ts).
-        await recordLedger(client, {
+        await applyLedgerDelta(client, {
           accountId: event.readerId,
           counterpartyId: event.writerId,
-          amountPence: -event.amountPence,
+          deltaPence: event.amountPence,
           triggerType: "read_accrual",
           refTable: "read_events",
           refId: readEvent.id,
+          touch: ["last_read_at"],
         });
       }
 
@@ -313,30 +308,22 @@ class AccrualService {
         return 0;
       }
 
-      // Add total to tab balance
-      if (totalPence > 0) {
-        await client.query(
-          `UPDATE reading_tabs
-           SET balance_pence = balance_pence + $1,
-               last_read_at  = now(),
-               updated_at    = now()
-           WHERE id = $2`,
-          [totalPence, tabId],
-        );
-      }
-
-      // Ledger: these provisional reads never moved the tab when created (no
-      // card ⇒ no balance). Conversion is the first tab movement, so the debit
-      // entries are emitted here, one per converted row, summing to the tab
-      // increment above.
+      // Move the tab balance + post the mirror ledger debit per converted read.
+      // These provisional reads never moved the tab when created (no card ⇒ no
+      // balance); conversion is the first tab movement. Each read is its own
+      // column+ledger pair through applyLedgerDelta (deltaPence = +amount, ledger
+      // = −amount), so the per-read debits sum to the total tab increment and
+      // every balance write stays inside the primitive (no raw aggregate UPDATE).
+      // Zero-amount reads post a zero pair — harmless, matches the prior loop.
       for (const r of provisionalReads) {
-        await recordLedger(client, {
+        await applyLedgerDelta(client, {
           accountId: readerId,
           counterpartyId: r.writer_id,
-          amountPence: -r.amount_pence,
+          deltaPence: r.amount_pence,
           triggerType: "read_accrual",
           refTable: "read_events",
           refId: r.id,
+          touch: ["last_read_at"],
         });
       }
 

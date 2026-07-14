@@ -46,8 +46,10 @@ vi.mock('@platform-pub/shared/db/client.js', () => ({
 }))
 
 const recordLedger = vi.fn(async () => undefined)
+const applyLedgerDelta = vi.fn(async () => ({ ledgerId: 'led-1', balancePence: 0, tabId: 'tab-1' }))
 vi.mock('@platform-pub/shared/lib/ledger.js', () => ({
   recordLedger: (...args: any[]) => recordLedger(...args),
+  applyLedgerDelta: (...args: any[]) => applyLedgerDelta(...args),
 }))
 
 vi.mock('../src/lib/logger.js', () => ({
@@ -59,6 +61,7 @@ import { settlementService } from '../src/services/settlement.js'
 describe('confirmSettlement — writer_accrual earned-side posting', () => {
   beforeEach(() => {
     recordLedger.mockClear()
+    applyLedgerDelta.mockClear()
     clientCalls = []
   })
 
@@ -76,8 +79,11 @@ describe('confirmSettlement — writer_accrual earned-side posting', () => {
     expect(accruals).toContainEqual(
       expect.objectContaining({ accountId: 'writer-B', counterpartyId: 'reader-1', amountPence: net(300), triggerType: 'writer_accrual', refTable: 'read_events', refId: 'read-B' }),
     )
-    // Plus the reader tab_settlement credit — earned side is additive, not a swap.
-    expect(recordLedger.mock.calls.map((c) => c[1].triggerType)).toContain('tab_settlement')
+    // Plus the reader tab_settlement credit via applyLedgerDelta (deltaPence =
+    // −800, the full settle amount) — the earned side is additive, not a swap.
+    const tabMove = applyLedgerDelta.mock.calls.find((c) => (c[1] as any).triggerType === 'tab_settlement')
+    expect(tabMove).toBeDefined()
+    expect((tabMove![1] as any).deltaPence).toBe(-800)
   })
 
   it('stamps unsettled subscription_earnings collected (migration 146 gate)', async () => {

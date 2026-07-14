@@ -6,7 +6,7 @@ import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
 import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
-import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
+import { applyLedgerDelta } from '@platform-pub/shared/lib/ledger.js'
 import { pledgesEnabled } from '@platform-pub/shared/lib/env.js'
 import logger from '@platform-pub/shared/lib/logger.js'
 
@@ -817,32 +817,21 @@ async function fulfillDrive(driveId: string): Promise<void> {
           [pledge.pledger_id, drive.article_id]
         )
 
-        // 3. Update reading_tabs balance (charge becomes real). Upsert, not a
-        // bare UPDATE: pledging needs no card, so a pledger may have no tab row
-        // yet — a bare UPDATE would touch 0 rows while the unconditional ledger
-        // debit below still posts, overstating −SUM(ledger) vs the column. The
-        // constraint is one_tab_per_reader UNIQUE (reader_id), so ON CONFLICT
-        // (reader_id) targets it directly.
-        await client.query(
-          `INSERT INTO reading_tabs (reader_id, balance_pence, last_read_at)
-           VALUES ($2, $1, now())
-           ON CONFLICT (reader_id) DO UPDATE
-             SET balance_pence = reading_tabs.balance_pence + EXCLUDED.balance_pence,
-                 last_read_at = now()`,
-          [pledge.amount_pence, pledge.pledger_id]
-        )
-
-        // Ledger: pledger debit — the pledge charge becomes real here (the tab
-        // moved above). −amount, counterparty = the funded writer. The batch
-        // txn is the unit of work, and fulfilled pledges aren't re-selected, so
-        // this is one entry per pledge. ref = the read_events row just minted.
-        await recordLedger(client, {
+        // 3. Update reading_tabs balance (charge becomes real): the pledge debits
+        //    the pledger's tab by +amount and posts the mirror pledge_fulfil entry
+        //    (−amount, counterparty = the funded writer) as one pair via
+        //    applyLedgerDelta, which UPSERTS the tab — pledging needs no card, so a
+        //    pledger may have no tab row yet (one_tab_per_reader UNIQUE reader_id).
+        //    The batch txn is the unit of work and fulfilled pledges aren't
+        //    re-selected, so this is one entry per pledge, ref = the read_events row.
+        await applyLedgerDelta(client, {
           accountId: pledge.pledger_id,
           counterpartyId: drive.target_writer_id,
-          amountPence: -pledge.amount_pence,
+          deltaPence: pledge.amount_pence,
           triggerType: 'pledge_fulfil',
           refTable: 'read_events',
           refId: readEvent.rows[0].id,
+          touch: ['last_read_at'],
         })
 
         // 4. Mark pledge as fulfilled

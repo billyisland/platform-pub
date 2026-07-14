@@ -4,7 +4,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import { nip19 } from 'nostr-tools'
 import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
-import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
+import { applyLedgerDelta } from '@platform-pub/shared/lib/ledger.js'
 import { enqueueRelayPublish, type SignedNostrEvent } from '@platform-pub/shared/lib/relay-outbox.js'
 import { requireAuth, optionalAuth } from '../middleware/auth.js'
 import { signEvent } from '../lib/key-custody-client.js'
@@ -457,29 +457,23 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
         return
       }
 
-      // Third-party dispute → hold a refundable stake. The disputant may have
-      // no tab yet (drive-by account), so UPSERT the tab; balance grows (debt).
-      // The ledger debit mirrors the tab movement by the same signed delta.
+      // Third-party dispute → hold a refundable stake: debit the disputant's tab
+      // by +stake (a debt) and post the mirror dispute_stake entry (−stake) as one
+      // pair. applyLedgerDelta UPSERTS the tab — the disputant may have none yet
+      // (drive-by account) — and returns the ledger id we persist for the refund.
       if (!isByCitedAuthor) {
-        await client.query(
-          `INSERT INTO reading_tabs (reader_id, balance_pence, last_read_at)
-           VALUES ($1, $2, now())
-           ON CONFLICT (reader_id) DO UPDATE
-             SET balance_pence = reading_tabs.balance_pence + EXCLUDED.balance_pence,
-                 last_read_at = now()`,
-          [disputantId, DISPUTE_STAKE_PENCE],
-        )
-        const ledger = await recordLedger(client, {
+        const { ledgerId } = await applyLedgerDelta(client, {
           accountId: disputantId,
           counterpartyId: null,
-          amountPence: -DISPUTE_STAKE_PENCE,
+          deltaPence: DISPUTE_STAKE_PENCE,
           triggerType: 'dispute_stake',
           refTable: 'dispute_edges',
           refId: disputeId,
+          touch: ['last_read_at'],
         })
         await client.query(
           `UPDATE dispute_edges SET stake_ledger_entry_id = $1 WHERE id = $2`,
-          [ledger.id, disputeId],
+          [ledgerId, disputeId],
         )
       }
 
@@ -551,24 +545,18 @@ export async function upstreamEdgeRoutes(app: FastifyInstance) {
           return
         }
 
-        // Refund a held stake: credit the tab back by the same magnitude, mirror
-        // it in the ledger (+amount). No clamp — the column may go negative.
+        // Refund a held stake: credit the tab back DOWN by the same magnitude
+        // (deltaPence = −stake) and post the mirror dispute_stake_refund entry
+        // (+stake) as one pair. No clamp — the column may go negative.
         if (rows[0].stake_ledger_entry_id) {
-          await client.query(
-            `INSERT INTO reading_tabs (reader_id, balance_pence, last_read_at)
-             VALUES ($1, $2, now())
-             ON CONFLICT (reader_id) DO UPDATE
-               SET balance_pence = reading_tabs.balance_pence + EXCLUDED.balance_pence,
-                   last_read_at = now()`,
-            [disputantId, -DISPUTE_STAKE_PENCE],
-          )
-          await recordLedger(client, {
+          await applyLedgerDelta(client, {
             accountId: disputantId,
             counterpartyId: null,
-            amountPence: DISPUTE_STAKE_PENCE,
+            deltaPence: -DISPUTE_STAKE_PENCE,
             triggerType: 'dispute_stake_refund',
             refTable: 'dispute_edges',
             refId: req.params.id,
+            touch: ['last_read_at'],
           })
         }
 

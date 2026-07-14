@@ -1,7 +1,7 @@
 # ADR: Payments — the fixes to ship and the dilemmas to decide
 
-**Status:** Part 1 (§1.1–§1.8) accepted, ready to scope for build. Part 2: §2.2 decided (Dial A, 2026-07-13); §2.1 and §2.3 open, pending counsel.
-**Date:** 2026-07-13 (rev. 2026-07-13 — §1.7 decided *no*; §1.1 revised to step-primitives; §2.2 code-vs-paper gate added; build sequence made scope-ready; §1.8 split `applyLedgerDelta` out to the tab-debit sites and the lock-ordering gate promoted to a standalone item).
+**Status:** Part 1 (§1.1–§1.8) accepted, ready to scope for build. **Shipped so far:** item A (settlement lock-order fix, 2026-07-13); **§1.8 `applyLedgerDelta` + §1.3(1) dispute-stake tests (2026-07-14).** Part 2: §2.2 decided (Dial A, 2026-07-13); §2.1 and §2.3 open, pending counsel.
+**Date:** 2026-07-13 (rev. 2026-07-14 — §1.8 `applyLedgerDelta` shipped across all 9 tab-debit sites + adjacency-tripwire Guard 2 rewrite + §1.3(1) dispute-stake round-trip tests; earlier 2026-07-13 rev — §1.7 decided *no*; §1.1 revised to step-primitives; §2.2 code-vs-paper gate added; build sequence made scope-ready; §1.8 split `applyLedgerDelta` out to the tab-debit sites and the lock-ordering gate promoted to a standalone item).
 **Deciders:** Ed Lake.
 **Related:** `docs/adr/UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md`, `docs/adr/UPSTREAM-EDGES-BUILD-PLAN.md` (Dial-A rework), `docs/audits/STRIPE-INTEGRATION-AUDIT-2026-06-25.md`, `docs/audits/allhaus-logic-economy-audit.md`.
 
@@ -71,6 +71,8 @@ Zero dedicated tests currently cover: **upstream-edges dispute stakes** (real £
 
 **Fix, in priority order:** (1) dispute stake debit/refund round-trip including the withdraw path; (2) pledge fulfilment against the ledger parity check; (3) paid-DM pricing and charge path; (4) traffology aggregation math (lower stakes — analytics errors are silent rather than financial, but they inform writer decisions). **Do (1) before un-darking disputes, without exception.**
 
+> **(1) SHIPPED 2026-07-14** — `gateway/tests/dispute-stake.test.ts` (5 tests). Drives POST/DELETE `/disputes` through the REAL `applyLedgerDelta` against a stateful scripted client that tracks balance + every ledger entry, asserting `−SUM(ledger) == balance` across the full debit→withdraw round-trip, plus the three money guards: cited-author holds no stake, a duplicate (`ON CONFLICT` no-op) doesn't double-charge, and a second withdraw (guarded `UPDATE` claims 0 rows) refunds nothing. (2)/(3)/(4) still open — but per §B, (3) paid-DM is an *unbuilt feature* (no charge path) and gift links carry no ledger, so the real remaining §1.3 targets are only (2) pledge fulfilment and (4) traffology.
+
 ### 1.4 Write the chargeback-attribution constraint into policy now
 
 The read↔settlement attribution is documented in `confirmSettlement` as approximate: a read accruing between a settlement's reservation and its confirmation advances under *this* settlement but is collected by the *next* one. Money conserves globally, but "exactly which reads did this disputed charge pay for" has no answer in principle. The chargeback planner (`chargeback.ts`) works with this, but the *policy* — what a reader is told, what writers see clawed back — must not promise per-charge precision that the data model cannot deliver.
@@ -103,6 +105,8 @@ Roughly half of `payment-service` is crash/retry/webhook-ordering scaffolding (`
 **The chosen alternative is §1.1** (step-primitives dedup) — capture the maintainability win *without* importing an engine or building a bespoke skeleton.
 
 ### 1.8 Extract `applyLedgerDelta` across the tab-debit sites (the star, re-homed)
+
+> **SHIPPED 2026-07-14.** `applyLedgerDelta` added to `shared/src/lib/ledger.ts`; all **9** call sites (§C inventory) routed through it — accrual (recordGatePass + convert loop), settlement confirm + reverse, subscription charge, subscription-convert credit, pledge fulfilment, dispute stake debit + refund. The primitive UPSERTS the tab by `reader_id` (create-or-update, sites 7–9), takes `deltaPence` = the signed **column** delta and posts the mirror ledger entry at **−deltaPence** (the reader-tab convention `balance == −SUM`; the sign is derived, not passed — a caller cannot pass a mismatched pair), never clamps, and takes no `FOR UPDATE` (confirmSettlement keeps its own prior lock for the confirm↔reverse ordering). Returns `{ ledgerId, balancePence, tabId }` (site 8 persists `ledgerId`; site 5 branches on `balancePence`). Callers posting a SECOND non-tab entry (subscription `subscription_earning`) keep that as a plain `recordLedger`. reverseSettlement's reader `tab_settlement_reversal` entry moved into the applyLedgerDelta call and is filtered out of the writer/tribute-leg loop. **Adjacency tripwire rewritten** (`scripts/check-ledger-adjacency.sh`): Guard 1 now counts both funnels; new **Guard 2** allows the raw-balance-write marker ONLY in `shared/src/lib/ledger.ts` and flags any bypass; Guard 3 is the payout-INSERT scan. Tests: 6 new `applyLedgerDelta` unit tests (mirror/no-clamp/upsert/touch, `payment-service/tests/ledger.test.ts`); `settlement-ledger-parity.test.ts` reworked to assert the confirm→applyLedgerDelta delta; writer-accrual + parity mocks updated. Typecheck + all 116 payment-service / 325 gateway tests green.
 
 `recordLedger` inserts the ledger row *only*; every mutation of `reading_tabs.balance_pence` is a **separate** SQL statement at the call site, and the two are kept in lockstep — same signed delta, no clamp — by a **comment**, not a mechanism. This is the single invariant that has actually lost money here: all three 2026-06-20 HIGH findings (settlement `GREATEST(0,…)`, subscription credit-back, pledge non-upsert) were a column and its mirror ledger entry drifting apart. The primitive that fixes this is `applyLedgerDelta` — and it was mis-scoped in the original §1.1, which filed it under a saga refactor it doesn't belong to.
 
@@ -261,7 +265,7 @@ Blocks: §1.1 tribute-flow extraction, §2.1 Branch A, the `TRIBUTES_ENABLED` fl
 
 ### F. Corrected queue (supersedes the counts above only where noted)
 
-**Done:** A — settlement lock-order fix (shipped 2026-07-13, this appendix).
-**This week:** §1.8 `applyLedgerDelta` (§C) + adjacency-tripwire update, paired with §1.3(1) dispute-stake tests, both **before disputes un-dark**; §1.4 policy paragraph; §1.5 migration 155 (§D); §2.3 baseline sign-off to counsel.
+**Done:** A — settlement lock-order fix (shipped 2026-07-13, this appendix); **§1.8 `applyLedgerDelta` across all 9 tab-debit sites + adjacency-tripwire Guard-2 rewrite, paired with §1.3(1) dispute-stake round-trip tests (shipped 2026-07-14).** Both were the "before disputes un-dark" gate — that gate is now met for the dispute path.
+**This week (remaining):** §1.4 policy paragraph; §1.5 migration 155 (§D); §2.3 baseline sign-off to counsel.
 **Prerequisite, scope-first:** Dial-A rework (§E).
 **Before launch:** §1.1 battery → primitive extraction (writer → settlement → publication → tribute-post-Dial-A); §1.2 reconciliation job (alert + halt on mismatch); §1.3(2) pledge tests + §1.3(4) traffology math (§1.3(3) paid-DM and gift links dropped per §B); §1.6 merchant-posture module, greenfield (§B3).

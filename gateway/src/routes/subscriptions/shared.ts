@@ -1,5 +1,5 @@
 import { loadConfig } from '@platform-pub/shared/db/client.js'
-import { recordLedger } from '@platform-pub/shared/lib/ledger.js'
+import { recordLedger, applyLedgerDelta } from '@platform-pub/shared/lib/ledger.js'
 
 // =============================================================================
 // Helper — log subscription charge and earning events (audit F1, 2026-07-05)
@@ -52,34 +52,10 @@ export async function logSubscriptionCharge(
   const feePct = (platformFeeBps / 100).toFixed(platformFeeBps % 100 === 0 ? 0 : 2)
 
   // --- Reader leg: collect via the reading tab, not the free-allowance column. ---
-  // Ensure the reader has a tab (they may not yet) and lock it, then debit the
-  // full price as a tab movement. The subscription_charge ledger entry mirrors it.
-  const tabRow = await client.query(
-    `INSERT INTO reading_tabs (reader_id)
-     VALUES ($1)
-     ON CONFLICT ON CONSTRAINT one_tab_per_reader
-     DO UPDATE SET updated_at = now()
-     RETURNING id`,
-    [readerId],
-  )
-  const tabId = tabRow.rows[0].id
-  await client.query(`SELECT id FROM reading_tabs WHERE id = $1 FOR UPDATE`, [tabId])
-  const balRow = await client.query(
-    `UPDATE reading_tabs
-     SET balance_pence = balance_pence + $1, last_read_at = now(), updated_at = now()
-     WHERE id = $2
-     RETURNING balance_pence`,
-    [pricePence, tabId],
-  )
-  // Collection gate (migration 146): a post-charge balance <= 0 means the
-  // charge was fully funded by pre-paid credit (negative balance = platform
-  // owes reader), so it is already collected — no settlement will ever fire
-  // for it (nothing to charge), and the earning is payable immediately.
-  // Otherwise the earning stays settled_at NULL until confirmSettlement stamps
-  // it when the reader's tab settlement lands.
-  const chargeCollected = balRow.rows[0].balance_pence <= 0
-
-  // Debit event for reader
+  // Debit the full price as a tab movement (a debt, exactly like a read accrual);
+  // applyLedgerDelta upserts the tab (the reader may not have one yet), moves the
+  // balance by +price, and posts the mirror subscription_charge entry (−price) as
+  // one pair. The debit event is created first so the ledger entry can reference it.
   const { rows: [chargeEvent] } = await client.query(
     `INSERT INTO subscription_events
        (subscription_id, event_type, reader_id, writer_id, publication_id, amount_pence, period_start, period_end, description)
@@ -88,14 +64,23 @@ export async function logSubscriptionCharge(
     [subscriptionId, readerId, writerId, publicationId, pricePence, periodStart, periodEnd,
      `Subscription charge`]
   )
-  await recordLedger(client, {
+  const { balancePence } = await applyLedgerDelta(client, {
     accountId: readerId,
     counterpartyId: writerId,
-    amountPence: -pricePence,
+    deltaPence: pricePence,
     triggerType: 'subscription_charge',
     refTable: 'subscription_events',
     refId: chargeEvent.id,
+    touch: ['last_read_at'],
   })
+
+  // Collection gate (migration 146): a post-charge balance <= 0 means the
+  // charge was fully funded by pre-paid credit (negative balance = platform
+  // owes reader), so it is already collected — no settlement will ever fire
+  // for it (nothing to charge), and the earning is payable immediately.
+  // Otherwise the earning stays settled_at NULL until confirmSettlement stamps
+  // it when the reader's tab settlement lands.
+  const chargeCollected = balancePence <= 0
 
   // Credit event for writer/publication (after platform fee)
   const { rows: [earningEvent] } = await client.query(

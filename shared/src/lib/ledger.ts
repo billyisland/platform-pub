@@ -133,3 +133,121 @@ export async function recordLedger(
   )
   return { id: rows[0].id }
 }
+
+// =============================================================================
+// applyLedgerDelta — the tab-debit / ledger-mirror primitive (PAYMENTS ADR §1.8)
+//
+// Every mutation of reading_tabs.balance_pence must post a mirror ledger_entries
+// row, and — the invariant that has actually lost money here (the three
+// 2026-06-20 HIGH findings: settlement GREATEST(0,…), subscription credit-back,
+// pledge non-upsert) — the column and its ledger entry must move together, by
+// the locked magnitude, with NO clamp/floor. Before this primitive that pairing
+// was held by an *adjacent comment* at ~9 hand-written call sites; here it is
+// held by *construction*.
+//
+// deltaPence is the signed amount added to reading_tabs.balance_pence (the
+// physical column mutation — the same sign the call site used to write into its
+// `balance_pence = balance_pence + $delta`). The mirror ledger entry is posted
+// at −deltaPence, because reader-tab entries satisfy the reconciliation anchor
+//     reading_tabs.balance_pence == −SUM(reader tab-affecting ledger entries)
+// (see the sign convention on recordLedger above). Deriving the ledger sign from
+// the column delta is the point: a caller cannot pass a column delta and a
+// mismatched ledger amount, and there is no code path that can clamp one side
+// while the other posts full — the divergence bug class is removed, not merely
+// tested against.
+//
+// The write is an UPSERT keyed on reader_id (one_tab_per_reader UNIQUE): it
+// creates the tab if absent (drive-by dispute / pledge / subscription accounts
+// may have no tab yet) or adds the delta to the existing balance, in one
+// statement. It does NOT clamp — the column may legitimately go negative
+// (migration 124 dropped the >= 0 CHECK; negative = platform owes the reader /
+// pre-paid credit). It does NOT take its own FOR UPDATE: the upsert's ON CONFLICT
+// path row-locks the tab, and callers that must lock *earlier* for cross-table
+// lock ordering (confirmSettlement locks reading_tabs before tab_settlements)
+// keep their own prior SELECT … FOR UPDATE — this primitive never reorders it.
+//
+// SCOPE: this is a READING-TAB primitive only. The payout-side sagas
+// (writer/publication/tribute) post +amount payout entries with a NULL platform
+// counterparty and mutate NO running-balance column — their correctness is
+// claim-rollback, not column mirroring — so they stay OUT (routing them through
+// here would need a "no column" flag, the banned shape). Callers that post a
+// SECOND, non-tab ledger entry alongside the tab move (logSubscriptionCharge's
+// writer subscription_earning) post that extra entry themselves with a plain
+// recordLedger — applyLedgerDelta owns exactly the one tab movement + its mirror.
+// =============================================================================
+
+/** reading_tabs timestamp columns applyLedgerDelta may bump to now() alongside
+ * the balance move. updated_at is ALWAYS set; these are the optional extras a
+ * call site used to set in its hand-written UPDATE. */
+export type TabTimestamp = 'last_read_at' | 'last_settled_at'
+
+export interface ApplyLedgerDeltaInput {
+  /** The tab owner (reader_id). The tab is upserted on this id. */
+  accountId: string
+  /** The other side of the ledger movement; NULL when it is the platform. */
+  counterpartyId?: string | null
+  /** Signed minor units ADDED to reading_tabs.balance_pence. NO clamp, NO floor.
+   * The mirror ledger entry is posted at −deltaPence (reader-tab convention). */
+  deltaPence: number
+  /** ISO-4217; defaults to GBP (passed through to the ledger entry). */
+  currency?: string
+  /** The economic event this movement records. */
+  triggerType: LedgerTriggerType
+  /** Originating table + row, for reconciliation back to the live record. */
+  refTable: string
+  refId: string
+  /** Extra now()-columns to bump on the tab beyond updated_at (default none). */
+  touch?: TabTimestamp[]
+}
+
+export interface ApplyLedgerDeltaResult {
+  /** id of the mirror ledger_entries row (call sites that persist it, e.g. the
+   * dispute stake's stake_ledger_entry_id). */
+  ledgerId: string
+  /** The tab's balance_pence AFTER the delta (call sites that branch on it, e.g.
+   * logSubscriptionCharge's pre-paid-credit collection gate). */
+  balancePence: number
+  /** id of the affected reading_tabs row. */
+  tabId: string
+}
+
+const ALLOWED_TAB_TIMESTAMPS: readonly TabTimestamp[] = ['last_read_at', 'last_settled_at']
+
+export async function applyLedgerDelta(
+  client: PoolClient,
+  input: ApplyLedgerDeltaInput,
+): Promise<ApplyLedgerDeltaResult> {
+  // Allowlist the timestamp columns — they are interpolated into SQL, so they
+  // must be fixed identifiers from this enum, never caller-supplied strings.
+  const touch = (input.touch ?? []).filter((c) => ALLOWED_TAB_TIMESTAMPS.includes(c))
+  const insertCols = ['reader_id', 'balance_pence', ...touch]
+  const insertVals = ['$1', '$2', ...touch.map(() => 'now()')]
+  const conflictSets = [
+    // No GREATEST/clamp: the column mirrors the ledger by the same magnitude.
+    'balance_pence = reading_tabs.balance_pence + EXCLUDED.balance_pence',
+    'updated_at = now()',
+    ...touch.map((c) => `${c} = now()`),
+  ]
+
+  const { rows } = await client.query<{ id: string; balance_pence: number }>(
+    `INSERT INTO reading_tabs (${insertCols.join(', ')})
+     VALUES (${insertVals.join(', ')})
+     ON CONFLICT (reader_id) DO UPDATE
+       SET ${conflictSets.join(', ')}
+     RETURNING id, balance_pence`,
+    [input.accountId, input.deltaPence],
+  )
+  const tab = rows[0]
+
+  const ledger = await recordLedger(client, {
+    accountId: input.accountId,
+    counterpartyId: input.counterpartyId ?? null,
+    amountPence: -input.deltaPence, // reader-tab mirror: balance == −SUM(ledger)
+    currency: input.currency,
+    triggerType: input.triggerType,
+    refTable: input.refTable,
+    refId: input.refId,
+  })
+
+  return { ledgerId: ledger.id, balancePence: tab.balance_pence, tabId: tab.id }
+}

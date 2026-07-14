@@ -23,6 +23,44 @@ starts.
 
 ## Progress
 
+- **2026-07-14** — **Payments ADR §1.8 `applyLedgerDelta` + §1.3(1) dispute-stake
+  tests shipped** (the "star" of Part 1, and its paired test gap). The
+  column⇄ledger same-signed-delta mirror — the one invariant here that has
+  actually lost money (all three 2026-06-20 HIGH findings were a `reading_tabs.balance_pence`
+  UPDATE and its adjacent `recordLedger` drifting apart) — was held at ~9 call
+  sites by a *comment*, not a mechanism. New primitive
+  `shared/src/lib/ledger.ts::applyLedgerDelta(client, {accountId, counterpartyId,
+  deltaPence, triggerType, refTable, refId, touch?})`: UPSERTs the tab by
+  `reader_id` (create-or-update — tab-less dispute/pledge/subscription accounts),
+  moves `balance_pence` by the signed `deltaPence` with **no clamp**, and posts
+  the mirror ledger entry at **−deltaPence** (the reader-tab convention
+  `balance == −SUM`; the sign is *derived*, so a mismatched/clamped pair is
+  unrepresentable). Returns `{ledgerId, balancePence, tabId}`. All **9** §C-inventory
+  sites routed through it: accrual `recordGatePass` + `convertProvisionalReads`
+  (per-read loop), `confirmSettlement` + `reverseSettlement` (its reader
+  `tab_settlement_reversal` moved into the primitive and filtered out of the
+  writer/tribute-leg loop), `logSubscriptionCharge` (the writer `subscription_earning`
+  stays a plain `recordLedger`), spend→subscription credit-back, pledge fulfilment,
+  and the dispute-stake **debit + refund**. confirmSettlement keeps its own prior
+  `reading_tabs FOR UPDATE` (the 2026-07-13 lock-order fix — the primitive takes
+  no lock of its own). **Adjacency tripwire rewritten** (`scripts/check-ledger-adjacency.sh`):
+  Guard 1 counts both funnels (`applyLedgerDelta`/`recordLedger`); new **Guard 2**
+  permits the raw `balance_pence = balance_pence [-+]` / `+ EXCLUDED` / `GREATEST`
+  marker ONLY in `shared/src/lib/ledger.ts` and flags any bypass; Guard 3 is the
+  payout-INSERT registry scan. **Tests:** 6 new `applyLedgerDelta` unit tests
+  (mirror/no-clamp/upsert/touch/returns; `payment-service/tests/ledger.test.ts`);
+  `settlement-ledger-parity.test.ts` reworked to assert the confirm→applyLedgerDelta
+  delta (the primitive's own mirror is proven in the unit tests); writer-accrual +
+  transfer-reversal mocks updated for the new export; and **`gateway/tests/dispute-stake.test.ts`**
+  (5 tests, §1.3(1)) drives POST/DELETE `/disputes` through the *real* `applyLedgerDelta`
+  against a stateful scripted client, proving `−SUM(ledger) == balance` across the
+  full £5 debit→withdraw round-trip plus the guards (cited-author no-stake, duplicate
+  `ON CONFLICT` no-op, idempotent withdraw). Typecheck clean; root promise-safety
+  lint 0 errors; 116 payment-service + 325 gateway tests green. Decision-independent;
+  it was the "before disputes un-dark" gate for the dispute path. Next in the
+  §F queue: §1.4 chargeback-attribution policy paragraph, §1.5 tax-schema
+  migration 155, §2.3 baseline sign-off to counsel.
+
 - **2026-07-13** — **Settlement lock-order deadlock fixed + payments ADR Part 1
   scoped.** Scoping the payments ADR (`PAYMENTS-FIXES-AND-DILEMMAS.md`) ran its
   item-1 lock-ordering gate ("verify all four money sagas lock in the same order;
