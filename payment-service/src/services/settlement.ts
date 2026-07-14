@@ -10,6 +10,10 @@ import { tributesEnabled } from "@platform-pub/shared/lib/env.js";
 import { readNetSql } from "@platform-pub/shared/lib/per-read-net.js";
 import { isTerminalChargeError } from "../lib/charge-errors.js";
 import {
+  executeStripeIdempotent,
+  stripeErrorCode,
+} from "../lib/stripe-idempotent.js";
+import {
   computeChargebackReversal,
   type ReversalRead,
   type ReversalAccrual,
@@ -261,72 +265,72 @@ class SettlementService {
     tabId: string,
     triggerType: "threshold" | "monthly_fallback",
   ): Promise<void> {
-    let paymentIntent: Stripe.PaymentIntent;
-    try {
-      paymentIntent = await this.stripe.paymentIntents.create(
-        {
-          amount: amountPence,
-          currency: "gbp",
-          customer: stripeCustomerId,
-          payment_method_types: ["card"],
-          confirm: true,
-          off_session: true,
-          metadata: {
-            platform: "all.haus",
-            reader_id: readerId,
-            tab_id: tabId,
-            settlement_id: settlementId,
-            trigger_type: triggerType,
+    const outcome = await executeStripeIdempotent(
+      "settlement",
+      `settlement-${settlementId}`,
+      () =>
+        this.stripe.paymentIntents.create(
+          {
+            amount: amountPence,
+            currency: "gbp",
+            customer: stripeCustomerId,
+            payment_method_types: ["card"],
+            confirm: true,
+            off_session: true,
+            metadata: {
+              platform: "all.haus",
+              reader_id: readerId,
+              tab_id: tabId,
+              settlement_id: settlementId,
+              trigger_type: triggerType,
+            },
           },
-        },
-        {
-          idempotencyKey: `settlement-${settlementId}`,
-        },
-      );
-    } catch (err) {
+          {
+            idempotencyKey: `settlement-${settlementId}`,
+          },
+        ),
+      isTerminalChargeError,
+    );
+    if (!outcome.ok) {
       // Terminal decline / SCA / unusable card: mark the settlement 'failed' so
       // the reserveSettlement pending-guard releases and the tab unfreezes, and
       // flag the account so settlement backs off until the reader re-attaches a
       // card. Without this the row stays 'pending' forever (STRIPE audit S1, P0).
-      if (isTerminalChargeError(err)) {
-        const piId =
-          (err as { payment_intent?: { id?: string } }).payment_intent?.id ??
-          (err as { raw?: { payment_intent?: { id?: string } } }).raw
-            ?.payment_intent?.id ??
-          null;
-        const code =
-          (err as { code?: string }).code ??
-          (err as { type?: string }).type ??
-          "charge_failed";
-        await withTransaction(async (client) => {
-          // COALESCE keeps any PI id Stripe minted (it does for a confirmed-then-
-          // declined PI) so payment_intent.payment_failed matches handleFailedPayment.
-          await client.query(
-            `UPDATE tab_settlements
+      // (Transient errors never reach here — the primitive re-throws them so
+      // resumePendingSettlements retries with the stable key; the charge may
+      // have succeeded, so it must NOT be marked failed.)
+      const err = outcome.err;
+      const piId =
+        (err as { payment_intent?: { id?: string } }).payment_intent?.id ??
+        (err as { raw?: { payment_intent?: { id?: string } } }).raw
+          ?.payment_intent?.id ??
+        null;
+      const code = stripeErrorCode(err, "charge_failed");
+      await withTransaction(async (client) => {
+        // COALESCE keeps any PI id Stripe minted (it does for a confirmed-then-
+        // declined PI) so payment_intent.payment_failed matches handleFailedPayment.
+        await client.query(
+          `UPDATE tab_settlements
              SET status = 'failed',
                  stripe_payment_intent_id = COALESCE($1, stripe_payment_intent_id),
                  failure_reason = $2
              WHERE id = $3 AND status = 'pending'`,
-            [piId, code, settlementId],
-          );
-          await client.query(
-            `UPDATE accounts
+          [piId, code, settlementId],
+        );
+        await client.query(
+          `UPDATE accounts
              SET card_action_required_at = now(), updated_at = now()
              WHERE id = $1`,
-            [readerId],
-          );
-        });
-        logger.warn(
-          { settlementId, readerId, code, paymentIntentId: piId },
-          "Settlement charge declined — settlement marked failed, tab unfrozen, card-action flagged",
+          [readerId],
         );
-        return;
-      }
-      // Transient (network / 5xx / rate-limit): leave the row 'pending' and
-      // re-throw. resumePendingSettlements retries with the stable idempotency
-      // key; the charge may have succeeded, so we must NOT mark it failed.
-      throw err;
+      });
+      logger.warn(
+        { settlementId, readerId, code, paymentIntentId: piId },
+        "Settlement charge declined — settlement marked failed, tab unfrozen, card-action flagged",
+      );
+      return;
     }
+    const paymentIntent = outcome.object;
 
     await pool.query(
       `UPDATE tab_settlements
