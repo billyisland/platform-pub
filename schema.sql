@@ -2113,6 +2113,9 @@ CREATE TABLE public.tab_settlements (
     reversed_at timestamp with time zone,
     reversal_reason text,
     failure_reason text,
+    vat_pence integer,
+    vat_rate_bps integer,
+    tax_point timestamp with time zone,
     CONSTRAINT tab_settlements_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text]))),
     CONSTRAINT tab_settlements_trigger_type_check CHECK ((trigger_type = ANY (ARRAY['threshold'::text, 'monthly_fallback'::text])))
 );
@@ -7233,4 +7236,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('151_external_authors_deleted_at.sql'),
     ('152_publication_subscription_pool.sql'),
     ('153_follow_imports.sql'),
-    ('154_follow_import_sync.sql');
+    ('154_follow_import_sync.sql'),
+    ('155_tax_schema_prepositioning.sql');

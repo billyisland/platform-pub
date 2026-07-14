@@ -1,6 +1,6 @@
 # ADR: Payments — the fixes to ship and the dilemmas to decide
 
-**Status:** Part 1 (§1.1–§1.8) accepted, ready to scope for build. **Shipped so far:** item A (settlement lock-order fix, 2026-07-13); **§1.8 `applyLedgerDelta` + §1.3(1) dispute-stake tests (2026-07-14).** Part 2: §2.2 decided (Dial A, 2026-07-13); §2.1 and §2.3 open, pending counsel.
+**Status:** Part 1 (§1.1–§1.8) accepted, ready to scope for build. **Shipped so far:** item A (settlement lock-order fix, 2026-07-13); **§1.8 `applyLedgerDelta` + §1.3(1) dispute-stake tests (2026-07-14); §1.4 chargeback-attribution policy paragraph + §1.5 tax-schema migration 155 (2026-07-14).** The whole "this week (decision-independent)" build queue is now shipped — only §2.3 (counsel sign-off) remains this-week. Part 2: §2.2 decided (Dial A, 2026-07-13); §2.1 and §2.3 open, pending counsel.
 **Date:** 2026-07-13 (rev. 2026-07-14 — §1.8 `applyLedgerDelta` shipped across all 9 tab-debit sites + adjacency-tripwire Guard 2 rewrite + §1.3(1) dispute-stake round-trip tests; earlier 2026-07-13 rev — §1.7 decided *no*; §1.1 revised to step-primitives; §2.2 code-vs-paper gate added; build sequence made scope-ready; §1.8 split `applyLedgerDelta` out to the tab-debit sites and the lock-ordering gate promoted to a standalone item).
 **Deciders:** Ed Lake.
 **Related:** `docs/adr/UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md`, `docs/adr/UPSTREAM-EDGES-BUILD-PLAN.md` (Dial-A rework), `docs/audits/STRIPE-INTEGRATION-AUDIT-2026-06-25.md`, `docs/audits/allhaus-logic-economy-audit.md`.
@@ -80,6 +80,8 @@ The read↔settlement attribution is documented in `confirmSettlement` as approx
 **Fix:** one paragraph in the refund/dispute policy and in the writer-facing earnings documentation stating that reversals are computed against the settlement's read set, not a per-penny pairing. Do this before the first live dispute forces an improvised answer.
 
 ### 1.5 Pre-position the tax schema (empty)
+
+> **SHIPPED 2026-07-14** — migration `155_tax_schema_prepositioning.sql` adds nullable `vat_pence int` / `vat_rate_bps int` / `tax_point timestamptz` to `tab_settlements` (unused); `vat` added to `LedgerTriggerType` (`shared/src/lib/ledger.ts`, TS union — no DB CHECK). `schema.sql` regenerated (columns + seed line 155), all four drift-guard checks green, migration applied to the dev DB. The one-settlement-=-one-consolidated-supply position is documented in the migration header; counsel blessing of it is folded into the §2.3 sign-off request.
 
 There is currently zero VAT/tax/invoice code anywhere in the money path (confirmed: `tab_settlements` has no tax columns; no `vat` ledger trigger type). Whatever Part 2 resolves to, retro-deriving tax positions from historical settlement rows is miserable; carrying empty columns is cheap.
 
@@ -225,7 +227,7 @@ The gate ("verify all four flows lock in the same order; STOP and report if they
 1. **§1.3(3) "paid-DM pricing and charge path" — the charge path does not exist.** `dm_pricing.price_pence` can be set/read (`gateway/src/services/messages.ts:546–611`, routes `messages.ts:174–204`), but `sendMessage()` (`services/messages.ts:306–414`) never reads the price, never touches `reading_tabs`, never calls `recordLedger`. This is an *unbuilt feature*, not a test gap — remove it from the §1.3 test queue and re-file as build work if paid DMs are wanted.
 2. **§1.3 gift links are not a money feature.** Redemption inserts `article_unlocks` with `unlocked_via='author_grant'` (`gateway/src/routes/gift-links.ts:149–188`) — a free author comp, no ledger/tab. Nothing money-adjacent to test; drop from scope. The real §1.3 money-path targets are only: **(1) dispute stakes** (live, untested), **(2) pledge fulfilment** (dark behind `PLEDGES_ENABLED`, untested), and **(4) traffology math** (analytics, no money).
 3. **§1.6 merchant-posture is greenfield, not a de-dup.** There are no scattered receipt/seller/refund-source strings to consolidate. The single charge site (`settlement.ts:266–285`) sets no `statement_descriptor`, `receipt_email`, `description`, or seller-of-record posture; refunds are pure webhook logic (`payment-service/src/routes/webhook.ts:234–282`, `chargeback.ts`). The "Nostr receipts" (kind 9901) are proof-of-read, unrelated. The module *introduces* this surface — effort is design + new copy, not grep-and-move.
-4. **§1.5 ledger vocabulary is a TS union, not a DB CHECK.** `ledger_entries.trigger_type` has no CHECK; the authoritative list is `LedgerTriggerType` in `shared/src/lib/ledger.ts:72–92`. Adding `vat` is a one-line TS edit (+ any partitioning-view WHERE-clauses in `schema.sql`). Only the `tab_settlements` columns need an actual migration — **next number is 155**.
+4. **§1.5 ledger vocabulary is a TS union, not a DB CHECK.** `ledger_entries.trigger_type` has no CHECK; the authoritative list is `LedgerTriggerType` in `shared/src/lib/ledger.ts:72–92`. Adding `vat` is a one-line TS edit (+ any partitioning-view WHERE-clauses in `schema.sql`). Only the `tab_settlements` columns need an actual migration (shipped as 155; **next number is now 156**).
 
 ### C. §1.8 `applyLedgerDelta` — verified call-site inventory (blast radius)
 
@@ -245,9 +247,9 @@ Nine `reading_tabs.balance_pence`-moving sites, all currently dual-written with 
 
 Design consequences: (a) `applyLedgerDelta` must support **create-or-update** (sites 7–9 upsert to mint the tab if absent), not UPDATE-only; (b) site 5 posts **two** ledger entries per balance move — the primitive must allow N mirror entries or the caller posts the second (`subscription_earning`) itself; (c) `settlement-ledger-parity.test.ts` regex-matches `balance_pence = balance_pence - $1` and must be updated when site 3 is centralized; (d) `scripts/check-ledger-adjacency.sh` (registry + the `balance_pence = balance_pence [-+]` marker) must be updated to treat `applyLedgerDelta` as the sanctioned adjacency site and flag any raw balance UPDATE that bypasses it. The `opening_balance` backfill (migration 121) inserts ledger rows only, does **not** move the column — out of scope. Payout-side sagas stay out (claim-rollback, not column-mirror).
 
-### D. §1.5 tax-schema migration (155) — concrete shape
+### D. §1.5 tax-schema migration (155) — concrete shape — SHIPPED 2026-07-14
 
-`tab_settlements` (`schema.sql:2100–2118`) confirmed to carry no tax columns. Migration 155: add nullable `vat_pence int`, `vat_rate_bps int`, `tax_point timestamptz`; add `vat` to `LedgerTriggerType` (`shared/src/lib/ledger.ts:72`); leave unused. Then regenerate `schema.sql` via `pg_dump --exclude-schema=graphile_worker`, re-append the `_migrations` seed in the same step, and run `scripts/check-schema-drift.sh` (CI-enforced).
+`tab_settlements` (`schema.sql:2100–2118`) confirmed to carry no tax columns. Migration 155: add nullable `vat_pence int`, `vat_rate_bps int`, `tax_point timestamptz`; add `vat` to `LedgerTriggerType` (`shared/src/lib/ledger.ts:72`); leave unused. Then regenerate `schema.sql` via `pg_dump --exclude-schema=graphile_worker`, re-append the `_migrations` seed in the same step, and run `scripts/check-schema-drift.sh` (CI-enforced). **Done exactly as specified** — columns hand-appended to the `tab_settlements` CREATE (matching pg_dump attnum order), seed line added, all four drift checks green (round-trip clean confirms the hand-edit is canonical), migration applied to the dev DB.
 
 ### E. Dial-A rework (prerequisite) — verified blast radius
 
@@ -265,7 +267,7 @@ Blocks: §1.1 tribute-flow extraction, §2.1 Branch A, the `TRIBUTES_ENABLED` fl
 
 ### F. Corrected queue (supersedes the counts above only where noted)
 
-**Done:** A — settlement lock-order fix (shipped 2026-07-13, this appendix); **§1.8 `applyLedgerDelta` across all 9 tab-debit sites + adjacency-tripwire Guard-2 rewrite, paired with §1.3(1) dispute-stake round-trip tests (shipped 2026-07-14).** Both were the "before disputes un-dark" gate — that gate is now met for the dispute path.
-**This week (remaining):** §1.4 policy paragraph; §1.5 migration 155 (§D); §2.3 baseline sign-off to counsel.
+**Done:** A — settlement lock-order fix (shipped 2026-07-13, this appendix); **§1.8 `applyLedgerDelta` across all 9 tab-debit sites + adjacency-tripwire Guard-2 rewrite, paired with §1.3(1) dispute-stake round-trip tests (shipped 2026-07-14).** Both were the "before disputes un-dark" gate — that gate is now met for the dispute path. **§1.4 chargeback-attribution policy paragraph (`docs/HOW-MONEY-MOVES.md`, refund/chargeback section) + §1.5 tax-schema migration 155 (`vat_pence`/`vat_rate_bps`/`tax_point` nullable on `tab_settlements`, empty; `vat` added to `LedgerTriggerType`; schema.sql regenerated + drift guard green) (shipped 2026-07-14).** The entire "this week (decision-independent)" build queue is now shipped.
+**This week (remaining):** §2.3 baseline sign-off to counsel (decision only).
 **Prerequisite, scope-first:** Dial-A rework (§E).
 **Before launch:** §1.1 battery → primitive extraction (writer → settlement → publication → tribute-post-Dial-A); §1.2 reconciliation job (alert + halt on mismatch); §1.3(2) pledge tests + §1.3(4) traffology math (§1.3(3) paid-DM and gift links dropped per §B); §1.6 merchant-posture module, greenfield (§B3).

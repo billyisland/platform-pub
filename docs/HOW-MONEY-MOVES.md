@@ -236,6 +236,23 @@ ledger lines, and reverses the writers' earnings for those reads (marking them
 cleanly split it, so it raises a **"manual review required"** flag for a human
 instead of guessing.
 
+**Which reads a reversal claws back — settlement-set, not per-penny.** A
+settlement doesn't pair one-to-one with individual reads. Reads that accrue
+between a settlement's *reservation* and its *confirmation* advance under that
+settlement but are collected by the **next** one, so "exactly which reads did
+this one disputed charge pay for" has no answer in principle. Money still
+conserves globally — every penny is accounted for — but reversals are computed
+against **the settlement's read set as a whole**, not a per-penny pairing of
+charge → read. Concretely, this means: a reader is refunded the settlement
+amount, and the writers' earnings clawed back are those attributed to that
+settlement's reads — which may not be the literal articles the reader would name
+as "the ones I'm disputing." all.haus does not, and by construction cannot,
+promise per-charge precision on that mapping. Reader-facing refund copy and the
+writer-facing earnings/clawback view must both describe reversals as
+settlement-level, never per-article. (Mechanics: `confirmSettlement`
+read-claiming + `chargeback.ts`; the approximation is documented at the
+`confirmSettlement` call site.)
+
 ---
 
 ## The two ideas that hold it all together

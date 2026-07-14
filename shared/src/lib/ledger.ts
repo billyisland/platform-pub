@@ -90,6 +90,7 @@ export type LedgerTriggerType =
   | 'writer_accrual_reversal' // Reverses a charged-back read's writer_accrual (−read_net, account = writer, cp = reader). Fires for EVERY charged-back settled read (platform_settled and writer_paid), unlike writer_payout_reversal (paid reads only) — the accrual was posted at settlement regardless.
   | 'tribute_carve'         // The author's redirect executing: a ROOT tribute accrual reaching the inspirer's real account (released→paid) debits the author's earned by the carve. −accrual.amount, account = root author, cp = root inspirer. Posted in completeTributePayout for root accruals only (parent_tribute_id IS NULL) — the held share stays OUT of the ledger until this moment (build-plan guard #7). Counted by ledger_writer_earned.
   | 'tribute_carve_reversal' // Reverses a charged-back read's already-paid root carve, restoring the author's earned (+accrual.amount, account = root author, cp = root inspirer). Pairs with tribute_payout_reversal (which backs out the inspirer's receipt) on the earned side.
+  | 'vat'                    // §1.5 pre-positioned (empty). Reserved for a Part-2 Merchant-of-Record pivot (§2.1 Branch B): the VAT leg of a settlement's consolidated supply. NO caller today; posted only if/when MoR ships. Mirrors tab_settlements.vat_pence (migration 155).
 
 export interface LedgerEntryInput {
   /** Whose ledger this movement belongs to. */
