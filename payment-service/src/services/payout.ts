@@ -7,6 +7,10 @@ import { tributesEnabled } from '@platform-pub/shared/lib/env.js'
 import { readNetSql } from '@platform-pub/shared/lib/per-read-net.js'
 import { isConnectPayable } from '../lib/connect-payable.js'
 import { isTerminalTransferError } from '../lib/charge-errors.js'
+import {
+  executeStripeIdempotent,
+  stripeErrorCode,
+} from '../lib/stripe-idempotent.js'
 import logger from '../lib/logger.js'
 
 // =============================================================================
@@ -677,9 +681,10 @@ class PayoutService {
     stripeConnectId: string,
     amountPence: number,
   ): Promise<void> {
-    let transfer: Stripe.Transfer
-    try {
-      transfer = await this.stripe.transfers.create({
+    const outcome = await executeStripeIdempotent(
+      'writer-payout',
+      `payout-${payoutId}`,
+      () => this.stripe.transfers.create({
         amount: amountPence,
         currency: 'gbp',
         destination: stripeConnectId,
@@ -690,27 +695,26 @@ class PayoutService {
         },
       }, {
         idempotencyKey: `payout-${payoutId}`,
-      })
-    } catch (err) {
+      }),
+      isTerminalTransferError,
+    )
+    if (!outcome.ok) {
       // Terminal rejection (e.g. the destination's transfers capability was
       // revoked): Stripe created NO transfer and never emits transfer.failed, so
       // handleFailedPayout — keyed on stripe_transfer_id — would never fire and
       // the row would sit 'pending' forever, its claimed reads frozen, resume
       // retrying every cycle (the payout-side twin of the settlement orphan).
       // Mark the payout failed and release its earnings so the next cycle re-pays
-      // under a fresh id. Transient/ambiguous errors re-throw — the transfer may
-      // have gone through, so resume retries with the stable key (never roll back
-      // → never double-pay). STRIPE audit S1 follow-on.
-      if (isTerminalTransferError(err)) {
-        const reason =
-          (err as { code?: string }).code ??
-          (err as { type?: string }).type ??
-          'transfer_rejected'
-        await this.failWriterPayoutTerminal(payoutId, writerId, reason)
-        return
-      }
-      throw err
+      // under a fresh id. (Ambiguous errors never reach here — the primitive
+      // re-throws them so resume retries with the stable key → never double-pay.)
+      await this.failWriterPayoutTerminal(
+        payoutId,
+        writerId,
+        stripeErrorCode(outcome.err, 'transfer_rejected'),
+      )
+      return
     }
+    const transfer = outcome.object
 
     await withTransaction(async (client) => {
       // Audit F4 (2026-07-06): key completion off the successful transfers.create
