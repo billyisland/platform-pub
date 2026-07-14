@@ -10,6 +10,7 @@ import { isTerminalTransferError } from '../lib/charge-errors.js'
 import {
   executeStripeIdempotent,
   stripeErrorCode,
+  type StripeIdempotentOutcome,
 } from '../lib/stripe-idempotent.js'
 import logger from '../lib/logger.js'
 
@@ -1362,77 +1363,90 @@ class PayoutService {
         continue
       }
 
+      // Capture the guard-narrowed connect id in a const so the narrowing
+      // survives into the thunk closure below (control-flow narrowing of the
+      // mutable `acc.stripe_connect_id` does not persist into a callback).
+      const destination = acc.stripe_connect_id
+      let outcome: StripeIdempotentOutcome<Stripe.Transfer>
       try {
-        const transfer = await this.stripe.transfers.create({
-          amount: split.amount_pence,
-          currency: 'gbp',
-          destination: acc.stripe_connect_id,
-          metadata: {
-            platform: 'all.haus',
-            publication_payout_id: payoutId,
-            split_id: split.id,
-            account_id: split.account_id,
-          },
-        }, {
-          idempotencyKey: `pub-split-${payoutId}-${split.account_id}`,
-        })
-
-        // Flip the split and post its ledger entry in ONE txn so they commit
-        // together: if the flip committed but the entry didn't, the split would
-        // never be re-selected (the loop only picks 'pending') and the credit
-        // would be lost. Gated on the pending→completed flip for idempotency.
-        // Audit F4 (2026-07-06): completion keyed off the create response — a
-        // platform→connected transfer gets no transfer.paid webhook, so the split
-        // reaches 'completed' the moment its transfer is created (a later reversal
-        // is caught by transfer.reversed → reversePublicationSplit).
-        await withTransaction(async (client) => {
-          const flipped = await client.query(
-            `UPDATE publication_payout_splits
-             SET status = 'completed', stripe_transfer_id = $1
-             WHERE id = $2 AND status = 'pending'`,
-            [transfer.id, split.id],
-          )
-          if (flipped.rowCount! > 0) {
-            // Ledger: publication-member credit — money received. +amount,
-            // counterparty = platform (NULL). SUM == historic split sums.
-            await recordLedger(client, {
-              accountId: split.account_id,
-              counterpartyId: null,
-              amountPence: split.amount_pence,
-              triggerType: 'publication_split',
-              refTable: 'publication_payout_splits',
-              refId: split.id,
-            })
-          }
-        })
-        totalTransferred += split.amount_pence
+        outcome = await executeStripeIdempotent(
+          'publication-split',
+          `pub-split-${payoutId}-${split.account_id}`,
+          () => this.stripe.transfers.create({
+            amount: split.amount_pence,
+            currency: 'gbp',
+            destination,
+            metadata: {
+              platform: 'all.haus',
+              publication_payout_id: payoutId,
+              split_id: split.id,
+              account_id: split.account_id,
+            },
+          }, {
+            idempotencyKey: `pub-split-${payoutId}-${split.account_id}`,
+          }),
+          isTerminalTransferError,
+        )
       } catch (err) {
-        // Terminal vs ambiguous (Stripe invariant; 2026-07-06 audit P1 — this
-        // catch predated F4 and blanket-failed every error). Terminal rejection
-        // (isTerminalTransferError): Stripe created NO transfer — mark the split
-        // 'failed' so the parent payout surfaces it. Ambiguous (network/timeout/
-        // 5xx): the transfer MAY exist — the split must stay 'pending' so the
-        // resume sweep retries with the SAME idempotency key (which dedupes a
-        // transfer that did go through); marking it 'failed' here stranded real
-        // money with no ledger entry and froze the parent at 'pending' forever.
-        // Re-throw so the caller's cycle logs the sweep-level failure.
-        if (isTerminalTransferError(err)) {
-          logger.error(
-            { err, splitId: split.id, accountId: split.account_id, payoutId },
-            'Stripe transfer terminally rejected for publication split',
-          )
-          await pool.query(
-            `UPDATE publication_payout_splits SET status = 'failed' WHERE id = $1`,
-            [split.id],
-          )
-          continue
-        }
+        // Ambiguous (network/timeout/5xx): the primitive re-threw because the
+        // transfer MAY exist — the split must stay 'pending' so the resume sweep
+        // retries with the SAME idempotency key (which dedupes a transfer that
+        // did go through); marking it 'failed' here would strand real money with
+        // no ledger entry and freeze the parent at 'pending' forever. Re-throw
+        // (with split context) so the caller's cycle logs the sweep-level failure.
         logger.error(
           { err, splitId: split.id, accountId: split.account_id, payoutId },
           'Publication split transfer ambiguous — left pending for the resume sweep',
         )
         throw err
       }
+
+      if (!outcome.ok) {
+        // Terminal rejection (isTerminalTransferError; 2026-07-06 audit P1 —
+        // the pre-F4 catch blanket-failed every error): Stripe created NO
+        // transfer — mark the split 'failed' so the parent payout surfaces it,
+        // then move to the next split (the parent stays 'pending').
+        logger.error(
+          { err: outcome.err, splitId: split.id, accountId: split.account_id, payoutId },
+          'Stripe transfer terminally rejected for publication split',
+        )
+        await pool.query(
+          `UPDATE publication_payout_splits SET status = 'failed' WHERE id = $1`,
+          [split.id],
+        )
+        continue
+      }
+      const transfer = outcome.object
+
+      // Flip the split and post its ledger entry in ONE txn so they commit
+      // together: if the flip committed but the entry didn't, the split would
+      // never be re-selected (the loop only picks 'pending') and the credit
+      // would be lost. Gated on the pending→completed flip for idempotency.
+      // Audit F4 (2026-07-06): completion keyed off the create response — a
+      // platform→connected transfer gets no transfer.paid webhook, so the split
+      // reaches 'completed' the moment its transfer is created (a later reversal
+      // is caught by transfer.reversed → reversePublicationSplit).
+      await withTransaction(async (client) => {
+        const flipped = await client.query(
+          `UPDATE publication_payout_splits
+             SET status = 'completed', stripe_transfer_id = $1
+             WHERE id = $2 AND status = 'pending'`,
+          [transfer.id, split.id],
+        )
+        if (flipped.rowCount! > 0) {
+          // Ledger: publication-member credit — money received. +amount,
+          // counterparty = platform (NULL). SUM == historic split sums.
+          await recordLedger(client, {
+            accountId: split.account_id,
+            counterpartyId: null,
+            amountPence: split.amount_pence,
+            triggerType: 'publication_split',
+            refTable: 'publication_payout_splits',
+            refId: split.id,
+          })
+        }
+      })
+      totalTransferred += split.amount_pence
     }
 
     return totalTransferred
