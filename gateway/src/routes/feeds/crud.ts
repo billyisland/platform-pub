@@ -191,7 +191,9 @@ export async function listFeedsForOwner(ownerId: string): Promise<FeedRow[]> {
   }
   const { rows } = await pool.query<FeedRow>(
     `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
-       (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
+       (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count,
+       EXISTS (SELECT 1 FROM feeds t
+               WHERE t.id = f.cloned_from_feed_id AND t.is_starter_template) AS from_starter
      FROM feeds f
      WHERE f.owner_id = $1
      ORDER BY f.sort_rank ASC, f.created_at ASC, f.id ASC`,
@@ -214,7 +216,7 @@ export async function createFeedForOwner(
     `INSERT INTO feeds (owner_id, name, sort_rank)
      VALUES ($1, $2,
        (SELECT COALESCE(MAX(sort_rank), 0) + 1 FROM feeds WHERE owner_id = $1))
-     RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at, 0::int AS source_count`,
+     RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at, 0::int AS source_count, false AS from_starter`,
     [ownerId, name],
   );
   return rows[0];
@@ -293,7 +295,9 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
         `UPDATE feeds SET ${sets.join(", ")}
          WHERE id = $1 AND owner_id = $2
          RETURNING id, name, appearance, sort_rank, hidden, created_at, updated_at,
-           (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = feeds.id) AS source_count`,
+           (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = feeds.id) AS source_count,
+           EXISTS (SELECT 1 FROM feeds t
+                   WHERE t.id = feeds.cloned_from_feed_id AND t.is_starter_template) AS from_starter`,
         [id, ownerId, ...vals],
       );
       if (rows.length === 0)
@@ -349,7 +353,9 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
 
       const { rows } = await pool.query<FeedRow>(
         `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
-           (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
+           (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count,
+           EXISTS (SELECT 1 FROM feeds t
+                   WHERE t.id = f.cloned_from_feed_id AND t.is_starter_template) AS from_starter
          FROM feeds f
          WHERE f.owner_id = $1
          ORDER BY f.sort_rank ASC, f.created_at ASC, f.id ASC`,

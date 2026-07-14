@@ -24,6 +24,10 @@ export interface WorkspaceFeed {
   createdAt: string;
   updatedAt: string;
   sourceCount: number;
+  // Computed provenance (EXPLAIN-ADR D7): true iff this feed is a clone of the
+  // starter template. Drives the first-run / Explain copy fork off the anchored
+  // vessel (`vessel.feed.fromStarter`). A hand-created feed is always false.
+  fromStarter: boolean;
 }
 
 // The items + saves endpoints emit the unified Post[] (gateway feedItemToPost) —

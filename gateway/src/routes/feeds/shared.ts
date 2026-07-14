@@ -16,6 +16,10 @@ export interface FeedRow {
   created_at: Date;
   updated_at: Date;
   source_count: number;
+  // Computed provenance (EXPLAIN-ADR D7): true iff this feed is a clone of a
+  // starter template. Drives the first-run / Explain copy fork. Derived from
+  // the existing feeds.cloned_from_feed_id — no column, no leaked template id.
+  from_starter: boolean;
 }
 
 export function feedRowToResponse(row: FeedRow) {
@@ -28,6 +32,7 @@ export function feedRowToResponse(row: FeedRow) {
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     sourceCount: Number(row.source_count),
+    fromStarter: row.from_starter,
   };
 }
 
@@ -37,7 +42,9 @@ export async function loadFeed(
 ): Promise<FeedRow | null> {
   const { rows } = await pool.query<FeedRow>(
     `SELECT f.id, f.name, f.appearance, f.sort_rank, f.hidden, f.created_at, f.updated_at,
-       (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count
+       (SELECT COUNT(*)::int FROM feed_sources fs WHERE fs.feed_id = f.id) AS source_count,
+       EXISTS (SELECT 1 FROM feeds t
+               WHERE t.id = f.cloned_from_feed_id AND t.is_starter_template) AS from_starter
      FROM feeds f
      WHERE f.id = $1 AND f.owner_id = $2`,
     [feedId, ownerId],

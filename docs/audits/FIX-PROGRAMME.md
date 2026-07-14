@@ -23,6 +23,31 @@ starts.
 
 ## Progress
 
+- **2026-07-14** — **Explain ADR scoped + slice 1 (`from_starter` wire) shipped.**
+  Scoped `docs/adr/EXPLAIN-ADR.md` (first-run onboarding + the Explain annotator)
+  into `docs/adr/EXPLAIN-BUILD-PLAN.md` — a file-verified implementation plan
+  (new/modified files with line refs, build order as independently-landable
+  slices, decisions/risks). Correcting the ADR's stated state: `ForallMenu` is
+  under `components/workspace/` (not `layout/`); the first-login ceremony is dead
+  code today (`setCeremony` commented out, `WorkspaceView.tsx:928-935`), so D6's
+  ceremony gate is trivially satisfied but should still subscribe defensively; and
+  the `from_starter` wire touches **6** backend sites, not 3. **Slice 1 (the wire)
+  shipped:** exposes the existing `feeds.cloned_from_feed_id` provenance (migration
+  114) as a computed `from_starter` boolean on the feed wire object — D7, so first-
+  run/Explain copy can fork "starter clone vs neutral" off the anchored vessel.
+  Gateway `feeds/shared.ts` (`FeedRow.from_starter` + `feedRowToResponse` +
+  `loadFeed` SELECT) and `feeds/crud.ts` (`EXISTS` subquery on the list/order/PATCH
+  reads — `feeds.` alias on the PATCH RETURNING; literal `false` on the
+  `createFeedForOwner` INSERT since a new feed is never a clone); web
+  `WorkspaceFeed.fromStarter` (kept **required** — no `WorkspaceFeed` literals in
+  fixtures, so nothing broke). No column/migration/`schema.sql` regen. Uses the
+  stricter `EXISTS(… AND t.is_starter_template)` over `IS NOT NULL` (survives a
+  renamed/deleted/un-flagged template). Gateway + web `tsc` clean; the `EXISTS`
+  expression verified both branches against the dev DB in a rolled-back txn
+  (template→false, clone-of-template→true, hand-created→false). `bootstrap.ts`
+  inherits the field for free via `listFeedsForOwner` + `feedRowToResponse`.
+  Slices 2–7 (the engine + first-run program) remain. → `docs/adr/EXPLAIN-BUILD-PLAN.md`.
+
 - **2026-07-14** — **Payments ADR §1.2 completed — settlement/read-attribution
   conservation property tests (the superset half).** Closes the "still open" note
   from the §1.2 reconciliation-job entry below. The correctness argument for
