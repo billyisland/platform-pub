@@ -60,6 +60,7 @@ recover from git history; superseded with no residual value).
 | `universal-feed-audit.md` | RESOLVED | 4 passes, all findings closed |
 | `BASELINE-2026-05.md` | SUPERSEDED | static-analysis snapshot; superseded by CI |
 | `FEED-INGEST-HYDRATION-AUDIT.md` | RESOLVED | Tranches A/B shipped; C deferred — live plan is `docs/audits/FEED-INGEST-HYDRATION-PLAN.md` |
+| `PAYMENTS-FIXES-AND-DILEMMAS.md` | SHIPPED / SUPERSEDED | Payments fixes-and-forks ADR (2026-07-13). Part 1 (§1.1–§1.8) shipped in full; §1.7 & §2.2 decided; archived 2026-07-14. Open remainder (all gated: §2.1 Stripe fork + §1.6 module on counsel §2.3; §1.3(2)/(4) tests on mothballed features) folded into `docs/audits/CONSOLIDATED-TODO.md` §1.12 / §2.5 / §10. Retained as the detailed record; shipped log in `FIX-PROGRAMME.md`. |
 
 ## Speculative specs — designed, never built (parked)
 
