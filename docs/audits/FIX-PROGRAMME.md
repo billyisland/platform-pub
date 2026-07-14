@@ -23,6 +23,35 @@ starts.
 
 ## Progress
 
+- **2026-07-14** — **Payments ADR §1.1 step 1 shipped — the saga conformance
+  battery, all four flows.** The drift-pinning suite that §1.1 makes mandatory
+  *regardless of the refactor* (it lets us keep running four cloned sagas safely,
+  and is the executable form of several §1.2 invariants). 32 new tests across
+  `payment-service/tests/conformance-{settlement,writer-payout,publication-payout,tribute-payout}.test.ts`
+  (+ `tests/support/conformance.ts`), each DRIVING the real service against a
+  stateful in-memory model of its tables + ledger and a Stripe double that models
+  idempotency replay (a repeated create under the same key mints nothing new — the
+  crux of exactly-once on resume) and programmable terminal/ambiguous outcomes.
+  Covers the full §1.1-step-1 checklist per flow: crash between reserve and the
+  Stripe call → resume completes exactly once; crash after the call before local
+  complete → resume dedups on the stable key; terminal error → failed state +
+  correct rollback (settlement: card-action flag + unfreeze; payouts: claimed
+  reads/accruals released); ambiguous error → **NO rollback**, row stays pending
+  for resume; settlement webhook double-delivery + out-of-order; the **publication
+  multi-leg crash** (crash after leg 2 of 4 → legs 1–2 never re-paid, legs 3–4
+  finish exactly once, parent completes only when every leg has); resume-sweep
+  idempotency; and — settlement only, via the REAL `applyLedgerDelta` — ledger
+  parity (`−SUM(reader entries) == balance`) plus the no-clamp regression (a
+  confirm whose amount exceeds a since-dropped balance drives the column NEGATIVE,
+  never `GREATEST(0,…)` — the money-losing bug class, now pinned by construction
+  *and* by test). Tribute battery written against the **post-Dial-A** shape
+  (accruals only released→paid; root-only `tribute_carve`). Full payment-service
+  suite 143/143 green (111 prior + 32). **Not** part of this: §1.1 step 2 (the
+  `executeStripeIdempotent` / `statusGuardedTransition` primitive extraction) —
+  the battery is the green baseline that de-risks it. The lock-ordering go/no-go
+  gate (§1.1 step 1's other half) already ran 2026-07-13 (settlement lock-order
+  fix). Spec: `docs/audits/PAYMENTS-FIXES-AND-DILEMMAS.md` §1.1 + Build scope item 7.
+
 - **2026-07-14** — **Payments ADR §1.4 + §1.5 shipped — the decision-independent
   "this week" build queue is now clear** (only §2.3 counsel sign-off remains).
   **§1.5 (tax-schema pre-positioning):** migration `155_tax_schema_prepositioning.sql`
