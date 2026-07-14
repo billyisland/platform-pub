@@ -23,6 +23,35 @@ starts.
 
 ## Progress
 
+- **2026-07-14** — **Payments ADR §1.2 completed — settlement/read-attribution
+  conservation property tests (the superset half).** Closes the "still open" note
+  from the §1.2 reconciliation-job entry below. The correctness argument for
+  `confirmSettlement`'s apportionment lived only in prose (`settlement.ts:587–596`):
+  reads advance to `platform_settled` by the TIME predicate `read_at <= settled_at`,
+  NOT by which reads' grosses summed to the charged `amount_pence` — so read↔
+  settlement pairing is *approximate*, yet money must conserve GLOBALLY. New
+  `payment-service/tests/settlement-attribution-conservation.test.ts` (5 tests)
+  promotes that to executable properties by driving the **real** `confirmSettlement`
+  (incl. the real `applyLedgerDelta` + `recordLedger`) against a stateful in-memory
+  model of `{tab_settlements, reading_tabs, read_events, ledger}` with **numeric
+  virtual timestamps** so the advance window is deterministic. §1.1 forbids touching
+  the apportionment SQL, so the properties are pinned by OBSERVATION, never by
+  reimplementation. Asserted: **P1** each accrued read reaches `platform_settled`
+  under exactly one settlement (the `state='accrued'` guard — no double-settle, no
+  loss); **P2** `Σ(writer_accrual) == Σ perReadNet(gross)` over settled NON-pub
+  reads, once each (F2: publication reads advance but earn no personal accrual);
+  **P3** reader parity `−Σ(reader ledger) == balance` after every confirm; **P4**
+  the fee split conserves (`amount == fee + net`; `Σgross == writer net + implicit
+  platform fee`; per-row-then-floor keeps the dust with the writer); **P5** GLOBAL
+  conservation under approximate attribution — two scenarios: reads attribute to
+  the settlement whose time-window covers their `read_at` (`Σ charged == Σ settled
+  read gross`), and a settlement whose `amount_pence` ≠ `Σ(advanced read gross)`
+  because subscription debt rides the same tab (writers still earn only their reads;
+  the tab still drains to a balanced ledger). Plus a double-webhook idempotence
+  check (second confirm no-ops: reads settle once, writers earn once). Suite 163
+  green (was 158; +5), typecheck clean. **§1.2 is now fully shipped** — scheduled
+  control (below) + property superset (here).
+
 - **2026-07-14** — **Payments ADR §1.2 shipped — scheduled ledger-reconciliation
   job with alert + halt-payouts on mismatch.** Promotes the reader-tab parity
   invariant (`−SUM(reader ledger) == reading_tabs.balance_pence`) from a manual
@@ -50,8 +79,9 @@ starts.
   halt round-trip + first-writer-wins + every check independently trips the halt +
   clean-books-no-halt); the existing conformance harnesses stay green (their
   query-router default returns empty rows, so the gate reads not-halted). Suite
-  158 green, typecheck clean. **Still open in §1.2:** the settlement/read-attribution
-  conservation *property* tests (the superset half).
+  158 green, typecheck clean. **Superset half (settlement/read-attribution
+  conservation property tests) shipped 2026-07-14** — see the §1.2-completed entry
+  above; §1.2 is now fully closed.
 
 - **2026-07-14** — **Payments ADR §1.1 step 2 shipped — saga primitive extraction
   (`executeStripeIdempotent`), all four flows.** The one hazardous-and-identical
