@@ -9,12 +9,11 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // The contact window needs an owner: a periodic sweep, not an implicit wait. On
 // each tick it (1) sends the 30-day reminder for still-proposed tributes whose
 // first contact was >= 30 days ago and unreminded, and (2) flips proposed →
-// lapsed past the 60-day window, sweeping any held suspense back to the author.
+// lapsed past the 60-day window.
 //
-// State only — this worker moves NO money. The held→swept flip is posted here;
-// the actual return to the author's payable is realised in Phase 3's payout
-// cycle (which returns 'swept' accruals). In Phase 2 tribute_accruals is empty,
-// so the accrual update is a no-op.
+// State only — this worker moves NO money. Dial A: a proposed tribute never
+// accrues (a share is frozen only for a `live` tribute), so lapse/decline are
+// pure status flips with no held suspense to sweep back.
 //
 // Registered in gateway/src/index.ts on the hourly worker cadence, advisory-
 // locked (ADVISORY_LOCKS.TRIBUTES), and only when TRIBUTES_ENABLED is set.
@@ -134,9 +133,9 @@ async function sendReminderEmail(r: ReminderRow, rawToken: string): Promise<void
   })
 }
 
-// 60-day lapse. Flip proposed → lapsed and sweep held suspense back to the
-// author, atomically. (The trigger early-returns for a lapsed row, so no
-// ceiling/D1 re-check.) Money is realised later, in Phase 3's payout cycle.
+// 60-day lapse. Flip proposed → lapsed. (The trigger early-returns for a lapsed
+// row, so no ceiling/D1 re-check.) Dial A: a proposed tribute never accrued, so
+// there is no held suspense to sweep — this is a pure status flip.
 async function lapseExpired(): Promise<void> {
   await withTransaction(async (client) => {
     const { rows } = await client.query<{ id: string }>(
@@ -145,11 +144,6 @@ async function lapseExpired(): Promise<void> {
       RETURNING id`,
     )
     if (rows.length === 0) return
-    await client.query(
-      `UPDATE tribute_accruals SET state = 'swept'
-        WHERE tribute_id = ANY($1) AND state = 'held'`,
-      [rows.map((r) => r.id)],
-    )
     logger.info({ count: rows.length }, 'Tributes lapsed (window expired)')
   })
 }

@@ -328,9 +328,10 @@ export async function tributeRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // POST /tributes/:id/consent — the inspirer accepts. proposed → live.
   //
-  // Connect onboarding is NOT gated here (Phase 2 is money-free): consent flips
-  // the held accruals to released; the Phase-3 inspirer-payout sweep is the one
-  // that requires a completed Stripe Connect account before paying.
+  // Connect onboarding is NOT gated here (Phase 2 is money-free): Dial A means
+  // consent is status-only (proposed → live) and accrual starts forward from
+  // here; the Phase-3 inspirer-payout sweep is the one that requires a completed
+  // Stripe Connect account before paying.
   //
   // Phase-5 (C1): consenting is also the gate to passing a share UPSTREAM — only
   // a live tribute may spawn children. The response returns enough context
@@ -359,12 +360,9 @@ export async function tributeRoutes(app: FastifyInstance) {
           )
           if (rows.length === 0) return
           result = { articleId: rows[0].article_id, percentageBps: rows[0].percentage_bps }
-          // Release any held suspense to the inspirer (no-op until Phase 3).
-          await client.query(
-            `UPDATE tribute_accruals SET state = 'released'
-              WHERE tribute_id = $1 AND state = 'held'`,
-            [req.params.id],
-          )
+          // Dial A: consent is status-only. No accrual exists before consent
+          // (accruals are frozen only for a `live` tribute, forward-only from
+          // here), so there is no held suspense to release.
         })
       } catch (err) {
         // status='live' fires the validate-write trigger (ceiling/D1/parent-live);
@@ -417,12 +415,9 @@ export async function tributeRoutes(app: FastifyInstance) {
             notFound = true
             return
           }
-          // Sweep any held suspense back to the author (no-op until Phase 3).
-          await client.query(
-            `UPDATE tribute_accruals SET state = 'swept'
-              WHERE tribute_id = $1 AND state = 'held'`,
-            [req.params.id],
-          )
+          // Dial A: decline is status-only. A proposed tribute never accrued
+          // (accruals are frozen only for a `live` tribute), so there is no held
+          // suspense to sweep back to the author.
         })
       } catch (err) {
         // status='declined' early-returns in the validate-write trigger, so a

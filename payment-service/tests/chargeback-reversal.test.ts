@@ -6,10 +6,14 @@ import { perReadNetPence } from '@platform-pub/shared/lib/per-read-net.js'
 // F3 chargeback reversal — conservation of the pure planner (repo idiom: the
 // SQL just feeds this; the math is proven here, not against a DB).
 //
-// The spine: for a charged-back read where every accrual has resolved
-// (all 'paid'/'returned'), the writer + tribute reversal entries sum to exactly
-// −read_net. Money never paid out (held/swept-voided, unpaid reads) is PREVENTED,
-// not reversed, so it is correctly absent from the sum.
+// The spine: for a charged-back read where every accrual has resolved (all
+// 'paid'), the writer + tribute reversal entries sum to exactly −read_net. Money
+// never paid out (released-voided accruals, unpaid reads) is PREVENTED, not
+// reversed, so it is correctly absent from the sum.
+//
+// Dial A (consent-gated accrual): an accrual is only ever 'released' → 'paid'
+// (+ 'voided' here). The held/swept/returned states and the swept-return-to-
+// parent reversal are gone — a live tribute never un-consents.
 // ---------------------------------------------------------------------------
 
 const FEE = 800 // 8%
@@ -34,8 +38,7 @@ function earnedSideSum(entries: { trigger: string; amountPence: number }[]): num
 const baseAccrual = (over: Partial<ReversalAccrual>): ReversalAccrual => ({
   id: 'a', readEventId: 'R', tributeId: 'T', parentTributeId: null,
   amountPence: 0, state: 'paid', resolvedAccountId: 'I', authorAccountId: 'W',
-  parentResolvedAccountId: null, parentAuthorAccountId: null,
-  sweptReturnKind: null, claimed: false, ...over,
+  claimed: false, ...over,
 })
 
 describe('computeChargebackReversal', () => {
@@ -68,7 +71,7 @@ describe('computeChargebackReversal', () => {
     // read 1000 → net 920. Root T1 (→I1) accrued 300 gross; child T2 (→I2) 100.
     const accruals: ReversalAccrual[] = [
       baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'paid', resolvedAccountId: 'I1', authorAccountId: 'W' }),
-      baseAccrual({ id: 'a2', tributeId: 'T2', parentTributeId: 'T1', amountPence: 100, state: 'paid', resolvedAccountId: 'I2', authorAccountId: 'I1', parentResolvedAccountId: 'I1', parentAuthorAccountId: 'W' }),
+      baseAccrual({ id: 'a2', tributeId: 'T2', parentTributeId: 'T1', amountPence: 100, state: 'paid', resolvedAccountId: 'I2', authorAccountId: 'I1' }),
     ]
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
@@ -86,25 +89,11 @@ describe('computeChargebackReversal', () => {
     expect(plan.voidAccrualIds).toEqual([])
   })
 
-  it('held root accrual: voided, NOT reversed (platform keeps the held float)', () => {
-    const accruals: ReversalAccrual[] = [
-      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'held', resolvedAccountId: 'I1', authorAccountId: 'W' }),
-    ]
-    const plan = computeChargebackReversal({
-      readerId: 'reader', settlementAmountPence: 1000,
-      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      accruals, platformFeeBps: FEE,
-    })
-    // author reversed only for what it received: net − carved root = 920 − 300 = 620
-    expect(writerSideSum(plan.ledgerEntries)).toBe(-620)
-    expect(plan.voidAccrualIds).toEqual(['a1'])
-  })
-
   it('claimed (mid-payout) released accrual is reversed as paid, not skipped — conservation holds', () => {
-    // The accrual is in-flight to 'paid' via a reserved tribute payout (claimed,
-    // sweptReturnKind null). Reversing it as paid is what closes the money hole:
-    // the in-flight transfer pays the inspirer clawed-back money, so a reversal
-    // must exist. Not voided (it WILL be paid).
+    // The accrual is in-flight to 'paid' via a reserved tribute payout (claimed).
+    // Reversing it as paid is what closes the money hole: the in-flight transfer
+    // pays the inspirer clawed-back money, so a reversal must exist. Not voided
+    // (it WILL be paid).
     const accruals: ReversalAccrual[] = [
       baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'released', resolvedAccountId: 'I1', authorAccountId: 'W', claimed: true }),
     ]
@@ -121,7 +110,7 @@ describe('computeChargebackReversal', () => {
     expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
   })
 
-  it('UNclaimed released accrual is still voided (not reversed)', () => {
+  it('UNclaimed released accrual is voided (not reversed) — platform keeps the float', () => {
     const accruals: ReversalAccrual[] = [
       baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'released', resolvedAccountId: 'I1', authorAccountId: 'W', claimed: false }),
     ]
@@ -131,73 +120,8 @@ describe('computeChargebackReversal', () => {
       accruals, platformFeeBps: FEE,
     })
     expect(plan.voidAccrualIds).toEqual(['a1'])
-    // Only the author's carve-reduced net is reversed (the held float is kept).
+    // Only the author's carve-reduced net is reversed (the reserved float is kept).
     expect(writerSideSum(plan.ledgerEntries)).toBe(-620)
-  })
-
-  it('claimed swept-return (kind writer) is reversed against the author as a returned share', () => {
-    const accruals: ReversalAccrual[] = [
-      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'swept', sweptReturnKind: 'writer', resolvedAccountId: 'I1', authorAccountId: 'W', claimed: true }),
-    ]
-    const plan = computeChargebackReversal({
-      readerId: 'reader', settlementAmountPence: 1000,
-      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      accruals, platformFeeBps: FEE,
-    })
-    const net = perReadNetPence(1000, FEE)
-    expect(plan.voidAccrualIds).toEqual([])
-    // Same outcome as a fully-returned root (kind writer): author reversed base + return.
-    expect(plan.ledgerEntries.find((e) => e.accountId === 'W' && e.trigger === 'writer_payout_reversal')!.amountPence).toBe(-net)
-  })
-
-  it('claimed swept-return (kind tribute) is reversed against the parent inspirer', () => {
-    const accruals: ReversalAccrual[] = [
-      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'paid', resolvedAccountId: 'I1', authorAccountId: 'W' }),
-      baseAccrual({ id: 'a2', tributeId: 'T2', parentTributeId: 'T1', amountPence: 100, state: 'swept', sweptReturnKind: 'tribute', resolvedAccountId: 'I2', authorAccountId: 'I1', parentResolvedAccountId: 'I1', parentAuthorAccountId: 'W', claimed: true }),
-    ]
-    const plan = computeChargebackReversal({
-      readerId: 'reader', settlementAmountPence: 1000,
-      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      accruals, platformFeeBps: FEE,
-    })
-    const net = perReadNetPence(1000, FEE)
-    expect(plan.voidAccrualIds).toEqual([])
-    // I1 received own paid net (300−100=200) + the in-flight returned child (100) = 300.
-    expect(plan.ledgerEntries.find((e) => e.accountId === 'I1')!.amountPence).toBe(-300)
-    expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
-  })
-
-  it('swept-then-returned root (kind writer): author reversed for base + return = −read_net', () => {
-    const accruals: ReversalAccrual[] = [
-      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'returned', sweptReturnKind: 'writer', resolvedAccountId: 'I1', authorAccountId: 'W' }),
-    ]
-    const plan = computeChargebackReversal({
-      readerId: 'reader', settlementAmountPence: 1000,
-      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      accruals, platformFeeBps: FEE,
-    })
-    const net = perReadNetPence(1000, FEE)
-    expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
-    // single merged writer entry for W: base 620 + returned 300 = 920
-    expect(plan.ledgerEntries.find((e) => e.accountId === 'W' && e.trigger === 'writer_payout_reversal')!.amountPence).toBe(-net)
-  })
-
-  it('returned child (kind tribute): reversed against the parent inspirer', () => {
-    // Parent T1 paid (→I1), child T2 swept-then-returned up to I1.
-    const accruals: ReversalAccrual[] = [
-      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'paid', resolvedAccountId: 'I1', authorAccountId: 'W' }),
-      baseAccrual({ id: 'a2', tributeId: 'T2', parentTributeId: 'T1', amountPence: 100, state: 'returned', sweptReturnKind: 'tribute', resolvedAccountId: 'I2', authorAccountId: 'I1', parentResolvedAccountId: 'I1', parentAuthorAccountId: 'W' }),
-    ]
-    const plan = computeChargebackReversal({
-      readerId: 'reader', settlementAmountPence: 1000,
-      reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
-      accruals, platformFeeBps: FEE,
-    })
-    const net = perReadNetPence(1000, FEE)
-    // I1 received: own paid net (300−100=200) + returned child (100) = 300 → reversed −300
-    expect(plan.ledgerEntries.find((e) => e.accountId === 'I1')!.amountPence).toBe(-300)
-    // conservation: author 620 + I1 300 = 920
-    expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
   })
 })
 
@@ -227,7 +151,7 @@ describe('computeChargebackReversal — earned side', () => {
   it('fully-resolved chain: earned side nets to the author retained (−620), not −read_net', () => {
     const accruals: ReversalAccrual[] = [
       baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'paid', resolvedAccountId: 'I1', authorAccountId: 'W' }),
-      baseAccrual({ id: 'a2', tributeId: 'T2', parentTributeId: 'T1', amountPence: 100, state: 'paid', resolvedAccountId: 'I2', authorAccountId: 'I1', parentResolvedAccountId: 'I1', parentAuthorAccountId: 'W' }),
+      baseAccrual({ id: 'a2', tributeId: 'T2', parentTributeId: 'T1', amountPence: 100, state: 'paid', resolvedAccountId: 'I2', authorAccountId: 'I1' }),
     ]
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
@@ -245,17 +169,17 @@ describe('computeChargebackReversal — earned side', () => {
     expect(plan.ledgerEntries.filter((e) => e.trigger === 'tribute_carve_reversal')).toHaveLength(1)
   })
 
-  it('held root carve: accrual reversed in full, NO carve reversal (carve never paid)', () => {
+  it('unclaimed released carve: accrual reversed in full, NO carve reversal (carve never paid)', () => {
     const accruals: ReversalAccrual[] = [
-      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'held', resolvedAccountId: 'I1', authorAccountId: 'W' }),
+      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'released', resolvedAccountId: 'I1', authorAccountId: 'W', claimed: false }),
     ]
     const plan = computeChargebackReversal({
       readerId: 'reader', settlementAmountPence: 1000,
       reads: [{ id: 'R', amountPence: 1000, state: 'writer_paid', writerId: 'W' }],
       accruals, platformFeeBps: FEE,
     })
-    // The held carve never entered the ledger (guard #7), so no carve reversal;
-    // the full read_net accrual still backs out.
+    // The released (unpaid) carve never entered the ledger (guard #7), so no carve
+    // reversal; the full read_net accrual still backs out.
     expect(earnedSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(1000, FEE))
     expect(plan.ledgerEntries.filter((e) => e.trigger === 'tribute_carve_reversal')).toHaveLength(0)
   })

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict UnW9k1ZHPalLwyOvCtlaisMfOhlTiUaXsG77DiYhXyGLfhnnGa8sDNui1eMPPfy
+\restrict fOChDqhO27jo1YPVojel05BoIUODoqYlYF1aTTdfTgsbIhPby10ytpudwBApOac
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -2144,11 +2144,7 @@ CREATE TABLE public.tribute_accruals (
     state text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     tribute_payout_id uuid,
-    swept_return_payout_id uuid,
-    swept_return_kind text,
-    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['held'::text, 'released'::text, 'paid'::text, 'swept'::text, 'returned'::text, 'voided'::text]))),
-    CONSTRAINT tribute_accruals_swept_return_consistency CHECK (((swept_return_payout_id IS NULL) = (swept_return_kind IS NULL))),
-    CONSTRAINT tribute_accruals_swept_return_kind_check CHECK ((swept_return_kind = ANY (ARRAY['writer'::text, 'tribute'::text])))
+    CONSTRAINT tribute_accruals_state_check CHECK ((state = ANY (ARRAY['released'::text, 'paid'::text, 'voided'::text])))
 );
 
 
@@ -4959,13 +4955,6 @@ CREATE INDEX idx_tribute_accruals_state ON public.tribute_accruals USING btree (
 
 
 --
--- Name: idx_tribute_accruals_swept_unclaimed; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_tribute_accruals_swept_unclaimed ON public.tribute_accruals USING btree (tribute_id) WHERE ((state = 'swept'::text) AND (swept_return_payout_id IS NULL));
-
-
---
 -- Name: idx_tribute_accruals_tribute; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7074,8 +7063,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict UnW9k1ZHPalLwyOvCtlaisMfOhlTiUaXsG77DiYhXyGLfhnnGa8sDNui1eMPPfy
-
+\unrestrict fOChDqhO27jo1YPVojel05BoIUODoqYlYF1aTTdfTgsbIhPby10ytpudwBApOac
 
 
 --
@@ -7237,4 +7225,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('152_publication_subscription_pool.sql'),
     ('153_follow_imports.sql'),
     ('154_follow_import_sync.sql'),
-    ('155_tax_schema_prepositioning.sql');
+    ('155_tax_schema_prepositioning.sql'),
+    ('156_dial_a_tribute_simplification.sql');

@@ -29,35 +29,29 @@ import type { LedgerTriggerType } from '@platform-pub/shared/lib/ledger.js'
 //                            reversal is a separate ledger fact, so reconcile
 //                            A9/A10a stay intact — they pair on the original
 //                            trigger, never the *_reversal one).
-//   • accrual returned     → reverse the swept share against whoever it returned
-//                            to: kind 'writer' → author (writer_payout_reversal);
-//                            kind 'tribute' → parent inspirer (tribute_payout_
-//                            reversal). State left 'returned'.
-//   • accrual held/released/swept, UNCLAIMED → 'voided' (never paid; just
-//                            prevent it). No ledger.
-//   • accrual held/released/swept, CLAIMED (a payout reserved it concurrently)
-//                            → reverse AS IF it had reached its terminal state.
-//                            A claimed accrual is in-flight: the reserved payout
-//                            row exists and the cycle WILL pay/return it (synchronously
-//                            or on resume), so the in-flight transfer is money the
-//                            reader is clawing back. Treat it as 'paid' (released
-//                            claimed via tribute_payout_id) or 'returned' (swept
-//                            claimed via swept_return_payout_id; sweptReturnKind
-//                            tells us which) and post the matching reversal —
-//                            otherwise the payout pays out clawed-back money with
-//                            no reversing entry (money created). Residual (far
-//                            rarer than the old skip): if that in-flight payout's
-//                            transfer ultimately FAILS or stays permanently
-//                            pending (inspirer lost KYC), the reversal slightly
-//                            over-reports the platform's loss — a reconciliation-
-//                            only artefact, never user-facing phantom money.
+//   • accrual released, UNCLAIMED → 'voided' (never paid; just prevent it). No ledger.
+//   • accrual released, CLAIMED (a tribute payout reserved it concurrently)
+//                            → reverse AS IF 'paid'. A claimed released accrual is
+//                            in-flight: the reserved tribute_payout row exists and
+//                            the cycle WILL pay it (synchronously or on resume), so
+//                            that transfer is money the reader is clawing back.
+//                            Treat it as 'paid' (claimed via tribute_payout_id) and
+//                            post the matching reversal — otherwise the payout pays
+//                            out clawed-back money with no reversing entry (money
+//                            created). Residual (far rarer than the old skip): if
+//                            that in-flight payout's transfer ultimately FAILS or
+//                            stays permanently pending (inspirer lost KYC), the
+//                            reversal slightly over-reports the platform's loss — a
+//                            reconciliation-only artefact, never phantom money.
+//   (Dial A — consent-gated accrual: a share is only ever released → paid, so
+//   the held/swept/returned states and their swept-return-to-parent reversal are
+//   gone; a live tribute never un-consents, so nothing returns to the author.)
 //
 // Conservation (telescoping): the author carves roots; each node carves its own
-// direct children; a returned share is reversed against its recipient. For a
-// read where every accrual resolved (all 'paid'/'returned'), the sum negates
-// exactly what each account received → −read_net. Money never paid out (held/
-// swept-voided, platform_settled reads) is correctly NOT reversed — it is
-// prevented instead, and the platform simply keeps the held float it never
+// direct children. For a read where every accrual resolved (all 'paid'), the sum
+// negates exactly what each account received → −read_net. Money never paid out
+// (released-voided accruals, platform_settled reads) is correctly NOT reversed —
+// it is prevented instead, and the platform simply keeps the float it never
 // disbursed. Degrades to the platform-wide case with zero accruals: author net =
 // read_net, so the writer reversal is the full read net — no tribute branch
 // needed, no flag gate (data-driven).
@@ -120,18 +114,13 @@ export interface ReversalAccrual {
   tributeId: string
   parentTributeId: string | null
   amountPence: number
-  /** held | released | paid | swept | returned (voided rows are excluded upstream) */
+  /** released | paid (voided rows are excluded upstream). Dial A: no held/swept/returned. */
   state: string
   /** tribute.resolved_account_id — the inspirer (party-of-funds for this node). */
   resolvedAccountId: string
   /** tribute.author_account_id — the party whose share was redirected to the node. */
   authorAccountId: string
-  /** Parent tribute's resolved/author, for reversing a 'returned' (kind 'tribute') share. */
-  parentResolvedAccountId: string | null
-  parentAuthorAccountId: string | null
-  /** 'writer' | 'tribute' | null — how a swept share was/returned. */
-  sweptReturnKind: string | null
-  /** True if a payout has reserved this accrual (tribute_payout_id or swept_return_payout_id set). */
+  /** True if a tribute payout has reserved this accrual (tribute_payout_id set). */
   claimed: boolean
 }
 
@@ -250,16 +239,11 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
 
   const voidAccrualIds: string[] = []
   for (const a of accruals) {
-    // A claimed-but-not-yet-terminal accrual (held/released/swept) is in-flight to
-    // its terminal state via a reserved payout that WILL pay/return it — so treat
-    // it as already there and reverse it, rather than skip (which lets that payout
-    // pay clawed-back money with no reversal). sweptReturnKind distinguishes the
-    // claim vehicle: set ⇒ a swept-return claim (→ 'returned'); null ⇒ a
-    // tribute_payout_id claim of a released accrual (→ 'paid').
-    const terminal =
-      a.claimed && (a.state === 'held' || a.state === 'released' || a.state === 'swept')
-        ? (a.sweptReturnKind ? 'returned' : 'paid')
-        : a.state
+    // Dial A: an accrual is only ever 'released' → 'paid'. A claimed-but-still-
+    // 'released' accrual is in-flight to 'paid' via a reserved tribute_payout that
+    // WILL pay it — treat it as already 'paid' and reverse it, rather than skip
+    // (which lets that payout pay clawed-back money with no reversal).
+    const terminal = a.claimed && a.state === 'released' ? 'paid' : a.state
 
     if (terminal === 'paid') {
       // Node received its gross minus the carve of its own direct children.
@@ -269,15 +253,8 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
       // only (child carves never debited the article author). account = author,
       // cp = inspirer, mirroring the forward tribute_carve.
       if (a.parentTributeId === null) addCarve(a.authorAccountId, a.resolvedAccountId, a.amountPence)
-    } else if (terminal === 'returned') {
-      // The swept share was (or will be) paid back to its recipient — reverse against them.
-      if (a.sweptReturnKind === 'writer') {
-        addWriter(a.authorAccountId, a.amountPence) // root → article author, via writer payout
-      } else if (a.sweptReturnKind === 'tribute' && a.parentResolvedAccountId) {
-        addTribute(a.parentResolvedAccountId, a.parentAuthorAccountId, a.amountPence)
-      }
     } else {
-      // held/released/swept AND unclaimed — never paid out; prevent it, don't reverse.
+      // released AND unclaimed — never paid out; prevent it, don't reverse.
       voidAccrualIds.push(a.id)
     }
   }

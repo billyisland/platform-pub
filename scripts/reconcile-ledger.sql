@@ -192,30 +192,15 @@ WHERE (SELECT COALESCE(SUM(le.amount_pence), 0)
           FROM tribute_accruals ta JOIN tributes t ON t.id = ta.tribute_id
          WHERE ta.state = 'paid' AND t.parent_tribute_id IS NULL);
 
--- A10c: swept-return-kind consistency (Phase-5 C5). A claimed/returned swept
--- accrual folds into the PARENT's payout via the polymorphic
--- swept_return_payout_id + swept_return_kind discriminator: kind 'writer' ⇒ a
--- ROOT tribute's share folded into the author's writer_payouts run; kind
--- 'tribute' ⇒ a deeper child's share folded into the parent inspirer's
--- tribute_payouts run. Any row whose kind contradicts its depth, or whose payout
--- id is absent from the matching table (orphan), is a breach.
-\echo '-- A10c: swept_return_kind matches depth + payout table (expect ZERO) --'
-SELECT ta.id, ta.swept_return_kind, ta.swept_return_payout_id, t.parent_tribute_id
-FROM tribute_accruals ta JOIN tributes t ON t.id = ta.tribute_id
-WHERE ta.swept_return_payout_id IS NOT NULL
-  AND (
-    (ta.swept_return_kind = 'writer'
-       AND (t.parent_tribute_id IS NOT NULL
-            OR NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = ta.swept_return_payout_id)))
-    OR (ta.swept_return_kind = 'tribute'
-       AND (t.parent_tribute_id IS NULL
-            OR NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = ta.swept_return_payout_id)))
-  );
+-- (Dial A retired A10c — the swept-return-kind consistency check. There is no
+-- swept-return vehicle any more: a live tribute never un-consents, so no accrual
+-- folds back to a parent, and swept_return_payout_id/kind were dropped in
+-- migration 156.)
 
--- A11: a held/released/swept/returned share is the parent beneficiary's deferred
--- earning held OUTSIDE the ledger (build-plan guard #7) — no ledger entry ever
--- references a tribute_accruals row; the only tribute ledger entry references
--- tribute_payouts. Any row here is an off-ledger-invariant breach.
+-- A11: a released/paid share is the beneficiary's deferred earning held OUTSIDE
+-- the ledger (build-plan guard #7) — no ledger entry ever references a
+-- tribute_accruals row; the only tribute ledger entry references tribute_payouts.
+-- Any row here is an off-ledger-invariant breach.
 \echo '-- A11: no ledger entry references tribute_accruals directly (expect ZERO) --'
 SELECT id, trigger_type, ref_table, ref_id FROM ledger_entries WHERE ref_table = 'tribute_accruals';
 

@@ -661,17 +661,23 @@ class SettlementService {
       }
 
       // Tribute apportionment (Upstream Edges Phase 3 + Phase-5 chains, dark
-      // behind TRIBUTES_ENABLED). For each read just advanced to platform_settled
-      // on a tributed (proposed|live) article, freeze one tribute_accruals row
-      // per NODE of the tribute tree: that node's GROSS inflow for THIS read =
+      // behind TRIBUTES_ENABLED). DIAL A (consent-gated, forward-only accrual —
+      // UPSTREAM-EDGES-TRIBUTE-COMPLIANCE.md › Decision 2026-07-13): a share is
+      // frozen ONLY for a `live` tribute (consented + onboarding), and only on
+      // reads that settle AFTER it went live — so nothing is ever held for a
+      // non-consenting party. For each read just advanced to platform_settled on
+      // an article with a `live` tribute, freeze one tribute_accruals row per
+      // `live` NODE of the tribute tree: that node's GROSS inflow for THIS read =
       // read_net × (∏ bps along the node's path) ÷ 10000^pathlen, computed with
-      // the fee bps of the moment and never recomputed. Each carving party
-      // (author at depth 0, every inspirer below) subtracts its DIRECT children's
-      // gross at payout — conservation telescopes to author + Σ(every node's
-      // retained) == read_net (no clamp; each node keeps its children's floor
-      // dust). A node accrues straight to 'released' when its OWN tribute is
-      // already 'live' (no held→released flip is coming for reads that settle
-      // after that node consented), else 'held'.
+      // the fee bps of the moment and never recomputed. Every accrual is born
+      // 'released' (its tribute is already live; there is no held→released flip).
+      // A `proposed` node produces NO accrual — the recursive walk filters on
+      // status = 'live' at every level, so a non-live node prunes itself AND its
+      // descendants (a child earns a share of the parent's share; no live parent
+      // share ⇒ no child accrual). Each carving party (author at depth 0, every
+      // inspirer below) subtracts its DIRECT children's gross at payout —
+      // conservation telescopes to author + Σ(every live node's retained) ==
+      // read_net (no clamp; each node keeps its children's floor dust).
       //
       // The path product is carried as NUMERIC down a WITH RECURSIVE walk so it
       // can't overflow bigint at depth (10000^8), and FLOORed once per (node,
@@ -696,29 +702,31 @@ class SettlementService {
            ),
            tree AS (
              -- Roots (depth 0): source-of-funds is the piece net; path factor = bps/10000.
-             SELECT t.id AS tribute_id, t.status, sr.read_event_id,
+             SELECT t.id AS tribute_id, sr.read_event_id,
                     sr.read_net,
                     (t.percentage_bps::numeric / 10000) AS path_factor
              FROM tributes t
              JOIN settled_reads sr ON sr.article_id = t.article_id
              WHERE t.parent_tribute_id IS NULL
-               AND t.status IN ('proposed', 'live')
+               AND t.status = 'live'
                AND t.deleted_at IS NULL
              UNION ALL
-             -- Children: source-of-funds is the parent's share; multiply the factor.
-             SELECT c.id, c.status, parent.read_event_id,
+             -- Children: source-of-funds is the parent's share; multiply the
+             -- factor. Only a live child accrues (Dial A) — a proposed child
+             -- and everything below it is pruned here.
+             SELECT c.id, parent.read_event_id,
                     parent.read_net,
                     parent.path_factor * (c.percentage_bps::numeric / 10000)
              FROM tree parent
              JOIN tributes c
                ON c.parent_tribute_id = parent.tribute_id
-              AND c.status IN ('proposed', 'live')
+              AND c.status = 'live'
               AND c.deleted_at IS NULL
            )
            INSERT INTO tribute_accruals (tribute_id, read_event_id, amount_pence, state)
            SELECT tribute_id, read_event_id,
                   FLOOR(read_net * path_factor)::bigint,
-                  CASE WHEN status = 'live' THEN 'released' ELSE 'held' END
+                  'released'
            FROM tree
            WHERE FLOOR(read_net * path_factor) > 0
            ON CONFLICT (tribute_id, read_event_id) DO NOTHING`,
@@ -959,6 +967,8 @@ class SettlementService {
 
       // Every non-voided accrual on the reads this charge settled, with the
       // tribute (and its parent) so the planner can attribute net per node.
+      // Dial A: an accrual is only ever released|paid, claimed iff a
+      // tribute_payout_id reserved it (the swept-return vehicle is gone).
       const { rows: accrualRows } = await client.query<{
         id: string;
         read_event_id: string;
@@ -968,20 +978,13 @@ class SettlementService {
         state: string;
         resolved_account_id: string;
         author_account_id: string;
-        parent_resolved_account_id: string | null;
-        parent_author_account_id: string | null;
-        swept_return_kind: string | null;
         claimed: boolean;
       }>(
         `SELECT a.id, a.read_event_id, a.tribute_id, a.amount_pence, a.state,
-                a.swept_return_kind,
-                (a.tribute_payout_id IS NOT NULL OR a.swept_return_payout_id IS NOT NULL) AS claimed,
-                t.parent_tribute_id, t.resolved_account_id, t.author_account_id,
-                pt.resolved_account_id AS parent_resolved_account_id,
-                pt.author_account_id  AS parent_author_account_id
+                (a.tribute_payout_id IS NOT NULL) AS claimed,
+                t.parent_tribute_id, t.resolved_account_id, t.author_account_id
          FROM tribute_accruals a
          JOIN tributes t ON t.id = a.tribute_id
-         LEFT JOIN tributes pt ON pt.id = t.parent_tribute_id
          JOIN read_events re ON re.id = a.read_event_id
          WHERE re.tab_settlement_id = $1
            AND a.state <> 'voided'`,
@@ -1012,9 +1015,6 @@ class SettlementService {
         state: a.state,
         resolvedAccountId: a.resolved_account_id,
         authorAccountId: a.author_account_id,
-        parentResolvedAccountId: a.parent_resolved_account_id,
-        parentAuthorAccountId: a.parent_author_account_id,
-        sweptReturnKind: a.swept_return_kind,
         claimed: a.claimed,
       }));
 
