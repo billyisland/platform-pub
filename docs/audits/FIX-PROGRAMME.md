@@ -23,6 +23,31 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain: disc label now reachable in the Explain program
+  (the slice-7 follow-up, fixed).** The "About all.haus" button (the D3 chrome
+  swap, z-60, the one live control above the Explain scrim) now reveals the `disc`
+  label on hover, honouring Explain's "hover anything, read its label" contract —
+  previously the label was byte-verbatim in the data but unreachable (the scrim's
+  pointermove hit-test never reaches a control above it, and Explain has no
+  stepper). Fix is 2 lines in `ForallMenu.tsx`: the button's own
+  `onMouseEnter`/`onMouseLeave` set/clear the Explain hover to `{kind:"disc"}`;
+  the overlay's existing hover renderer anchors the bubble to the button's
+  registered `disc` ref and draws the leader. No new concepts, no document-level
+  listener, and D1's frozen-floor contract is untouched (the About button was
+  already the sanctioned live exception; click still opens About, hover teaches).
+  It also makes the disc hoverable in first-run. Verified end-to-end in a browser:
+  hovering the button surfaces the `disc` label verbatim incl. the literal `∀`
+  glyph ("...this same corner is the ∀ menu..."), the pinned floor bubble dims,
+  and the label clears on mouse-leave. `tsc` + eslint (0 err) + hairlines +
+  `next build` clean. **Dev-env gotchas hit during verify (not code issues):**
+  (1) `docker compose build web` served `COPY web/ .` from a **stale BuildKit
+  context cache** — the edited file never reached the build even with
+  `--no-cache` (which only disables layer cache, not context transfer); confirmed
+  by grepping the built bundle. (2) Fell back to running the local production
+  build directly, where the `/api` rewrite destination is **baked into
+  `routes-manifest.json` at build time** from `web/.env` (`GATEWAY_URL=
+  http://gateway:3000`, unresolvable off the docker network) — fixed by building
+  with a `web/.env.local` override to `http://localhost:3000` (removed after).
 - **2026-07-15** — **Explain slice 7 (on-screen copy pass) shipped — the Explain
   build plan is COMPLETE (all 7 slices).** Verified the engine's copy is verbatim
   against EXPLAIN-ADR Appendix A; no code change was needed (copy was entered as

@@ -436,6 +436,14 @@ export function ForallMenu({
           className="forall-trigger font-sans font-medium"
           aria-label="About all.haus"
           onClick={() => useAboutOverlay.getState().open()}
+          // The About button is the one live control above the Explain scrim, so
+          // the scrim's pointermove hit-test never reaches the disc (EXPLAIN-ADR
+          // D1/D3). Wire its own hover to the disc annotation so it honours
+          // Explain's "hover anything, read its label" contract — the overlay's
+          // hover renderer anchors the bubble to discRef. Click still opens About
+          // (its real job); hover teaches. The floor stays frozen.
+          onMouseEnter={() => useExplain.getState().setHover({ kind: "disc" })}
+          onMouseLeave={() => useExplain.getState().setHover(null)}
           style={{
             height: discSize,
             display: "flex",
