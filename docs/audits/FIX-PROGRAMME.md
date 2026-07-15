@@ -23,6 +23,35 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain slice 3 (store + scrim + pointer routing +
+  hit-testing) shipped — inert until a program opens.** The engine's visible
+  layer (EXPLAIN-ADR D1/D9/D12), still with no live trigger (the ∀-menu row is
+  slice 5). New `web/src/stores/explain.ts`: the D12 state machine
+  (`idle → active` on `open(program)`, back on `close()`), two concurrent
+  channels with no mode enum — pinned (`index` cursor, `next`/`prev`/`pin`) +
+  transient `hover` (`setHover`, does not touch `index`); DOM-free, so `open`
+  takes a pre-resolved `Program` (registry→sequence resolution is slice 4/5) and
+  `pin` mints an on-the-fly annotation for a hover-only non-representative card
+  (D5); no history push (ephemeral chrome). New
+  `web/src/components/workspace/ExplainOverlay.tsx`: a z-50 flat wash
+  (`rgb(var(--ah-true-black-rgb)/0.14)`, **no** `backdrop-filter` per D9 — feeds
+  stay legible behind their own labels) rendered as a single full-viewport
+  catcher that intercepts every pointer event, so the `overflow:hidden` floor is
+  frozen while active (D1); `pointermove` → live coordinate hit-test → hover,
+  click → pin-or-dismiss. Hit-testing resolves **leaf > vessel > floor** via
+  `document.elementsFromPoint` + `closest('[data-explain]')` for tagged leaves
+  and registry-root element-identity for roots, skipping the overlay's own chrome
+  (`data-explain-chrome`); the hover bubble's copy folds the `vessel` provenance
+  fork (D7) off the anchored vessel's registration params. `WorkspaceView` mounts
+  `<ExplainOverlay />` **desktop-only** (`!isMobile`, build-plan §2 mobile guard).
+  The bubble is a deliberate STUB (a positioned box with a crude viewport clamp)
+  — the real placement (right→left→below→above), 2px crimson leader + 4px end-dot,
+  live `getBoundingClientRect` + `ResizeObserver` invalidation, drag suspension
+  (`onDragFrame`) and reduced-motion path are slice 4 (D11). Web `tsc` + root
+  eslint (0 errors) + hairline tripwire + `next build` all clean. Slices 4–7
+  (bubble renderer, Explain program + menu row + chrome swap, first-run, copy
+  pass) remain. → `docs/adr/EXPLAIN-BUILD-PLAN.md` §3.3.
+
 - **2026-07-15** — **Explain slice 2 (registration substrate + `data-explain`
   tagging) shipped — no visible UI.** The engine's discovery layer (EXPLAIN-ADR
   D4/§8), landable ahead of the engine. New `web/src/lib/explain/registry.ts`:
