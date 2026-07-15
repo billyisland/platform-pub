@@ -13,6 +13,7 @@ import { workspaceFeeds } from "../../lib/api";
 import { openProfileHref, isModifiedClick } from "../ui/ProfileLink";
 import { useLightbox } from "../../stores/lightbox";
 import { useFollows } from "../../stores/follows";
+import { useExplain } from "../../stores/explain";
 import { SourceVolume } from "./SourceVolume";
 
 interface AuthorModalProps {
@@ -578,10 +579,25 @@ export function useAuthorHover(type: AuthorCardType, id: string | null) {
 
   const onMouseEnter = useCallback(() => {
     if (!supportsHover || !id) return;
+    // D2: native hover surfaces are suppressed while Explain is active. D1
+    // already stops events reaching the byline through the scrim, but this is
+    // belt-and-braces for any hover armed just before activation.
+    if (useExplain.getState().isActive) return;
     clearCloseTimer();
     clearOpenTimer();
     openTimerRef.current = setTimeout(() => setOpen(true), 300);
   }, [supportsHover, id, clearCloseTimer, clearOpenTimer]);
+
+  // D2: a modal already open when Explain activates closes rather than lingering
+  // under the scrim.
+  const explainActive = useExplain((s) => s.isActive);
+  useEffect(() => {
+    if (explainActive) {
+      clearOpenTimer();
+      clearCloseTimer();
+      setOpen(false);
+    }
+  }, [explainActive, clearOpenTimer, clearCloseTimer]);
 
   const onMouseLeave = useCallback(() => {
     clearOpenTimer();

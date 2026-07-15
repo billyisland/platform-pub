@@ -21,6 +21,7 @@ import { Vessel } from "./Vessel";
 import { ExplainProvider, useExplainable } from "./ExplainProvider";
 import { useExplain } from "../../stores/explain";
 import { ExplainOverlay } from "./ExplainOverlay";
+import { AboutOverlay } from "./AboutOverlay";
 import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
@@ -1599,8 +1600,10 @@ export function WorkspaceView() {
       <LibraryOverlay />
       <NetworkOverlay />
       {/* Desktop only — the Explain engine must never mount on the mobile
-          branch (EXPLAIN build-plan §2, ADR §Surface). */}
+          branch (EXPLAIN build-plan §2, ADR §Surface). AboutOverlay is the D3
+          chrome-swap target (opened from the swapped "About all.haus" button). */}
       {!isMobile && <ExplainOverlay />}
+      {!isMobile && <AboutOverlay />}
       </Floor>
     </ExplainProvider>
   );

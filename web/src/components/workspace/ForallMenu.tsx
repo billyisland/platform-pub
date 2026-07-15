@@ -13,6 +13,9 @@ import { useNetworkOverlay } from "../../stores/networkOverlay";
 import { useGlasshousePresence } from "../../stores/glasshouse";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useColorScheme } from "../../stores/colorScheme";
+import { useExplain } from "../../stores/explain";
+import { useAboutOverlay } from "../../stores/aboutOverlay";
+import { useOpenExplain, useExplainable } from "./ExplainProvider";
 import { SearchPanel } from "./SearchPanel";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 
@@ -71,6 +74,10 @@ type FocusRow =
       // (Messages · Dashboard) over a quieter account cluster, without dropping
       // any destination (they all stay reachable here).
       muted?: boolean;
+      // D10: the Explain row disables (dim + title, inert on select) while any
+      // Glasshouse pane is open — v1 discovery never has to arbitrate occlusion.
+      disabled?: boolean;
+      disabledTitle?: string;
     }
   | { kind: "link"; href: string; label: string; count: number }
   | { kind: "restore"; id: string; label: string };
@@ -125,6 +132,24 @@ export function ForallMenu({
   const glasshouseOpen = useGlasshousePresence((s) => s.isOpen);
   const mobileSheetOpen = isMobile && glasshouseOpen;
 
+  // Explain chrome swap (EXPLAIN-ADR D3). While an Explain program is active the
+  // disc + wordmark are replaced by an "About all.haus" button at the same z-60
+  // layer (the one live control above the Explain scrim). `isActive` is only
+  // ever set on the desktop floor (Explain is desktop-only), so this naturally
+  // scopes to the floating anchor. While the About pane itself is open, even the
+  // swapped chrome is suppressed — the pane owns its own dismiss — and restored
+  // when it closes.
+  const explainActive = useExplain((s) => s.isActive);
+  const aboutOpen = useAboutOverlay((s) => s.isOpen);
+  const openExplain = useOpenExplain();
+  // The `disc` explainable root anchors to the About button, not the ∀ disc:
+  // both programs swap the disc away (D3), so the ∀ glyph is never on screen
+  // during a program — the disc annotation's leader points at the control that
+  // actually is (the About button). Registration is deferred to here (not
+  // slice 2) for exactly this reason. The ref holds null until the swap mounts
+  // the button, which is precisely when the disc annotation is shown.
+  const discRef = useExplainable<HTMLButtonElement>("disc");
+
   const [view, setView] = useState<View>("closed");
 
   // On mobile the ∀ menu and its in-place panels (Search) are not Glasshouse
@@ -178,6 +203,22 @@ export function ForallMenu({
     { kind: "action", key: "new-article", label: "Write an article" },
     { kind: "action", key: "new-feed", label: "New feed" },
   ];
+  // Explain — its own group, single primary option (EXPLAIN-ADR §8, keep the
+  // menu slim). Desktop only (Explain doesn't mount on the mobile branch), and
+  // disabled while any Glasshouse pane is open (D10): v1 discovery never has to
+  // arbitrate which surface is topmost.
+  const explainRows: FocusRow[] = !isMobile
+    ? [
+        {
+          kind: "overlay",
+          onOpen: () => openExplain(),
+          label: "Explain",
+          count: 0,
+          disabled: glasshouseOpen,
+          disabledTitle: "close this pane to use Explain",
+        },
+      ]
+    : [];
   // The go-group keeps all six destinations but reads in two tiers: a primary
   // pair (the high-traffic inbox + dashboard) over a muted account cluster.
   // Same group-gap separates them; the muted weight does the demoting.
@@ -251,6 +292,7 @@ export function ForallMenu({
     findRows,
     feedRows,
     createRows,
+    explainRows,
     goPrimaryRows,
     goSecondaryRows,
     restoreRows,
@@ -300,6 +342,7 @@ export function ForallMenu({
         setView(row.target);
         return;
       case "overlay":
+        if (row.disabled) return; // D10: inert while disabled (keep menu open)
         setView("closed");
         buttonRef.current?.focus();
         row.onOpen();
@@ -366,6 +409,52 @@ export function ForallMenu({
       e.preventDefault();
       setActiveIndex(rows.length - 1);
     }
+  }
+
+  // D3 chrome swap: while an Explain program is active, the disc + wordmark give
+  // way to a single "About all.haus" button at the same z-60 layer — the one
+  // live control above the Explain scrim, with a defined, safe job (open About)
+  // instead of a floor-toggle that would fire through. Suppressed entirely while
+  // the About pane is open (it owns its own dismiss); restored on close. Islanded
+  // like the disc so its tokens resolve canonical-light, then it takes the same
+  // dark-mode photo-negative (bone pill + ink label) the disc does.
+  if (explainActive && !inBar) {
+    if (aboutOpen) return null;
+    return (
+      <div
+        style={{
+          ...LIGHT_ISLAND_STYLE,
+          position: "fixed",
+          right: 24,
+          bottom: 24,
+          zIndex: 60,
+        }}
+      >
+        <button
+          ref={discRef}
+          type="button"
+          className="forall-trigger font-sans font-medium"
+          aria-label="About all.haus"
+          onClick={() => useAboutOverlay.getState().open()}
+          style={{
+            height: discSize,
+            display: "flex",
+            alignItems: "center",
+            padding: "0 22px",
+            borderRadius: discSize / 2,
+            background: discBg,
+            color: discGlyph,
+            border: "none",
+            cursor: "pointer",
+            fontSize: 16,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          About all.haus
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -691,9 +780,12 @@ const MenuRow = forwardRef<HTMLButtonElement, MenuRowProps>(function MenuRow(
   ref,
 ) {
   const isRestore = row.kind === "restore";
+  const disabled = row.kind === "overlay" && row.disabled === true;
   // Secondary-tier destinations dim to the muted weight too, but keep the
-  // normal row font (only restores get the small label-ui treatment).
-  const muted = isRestore || (row.kind === "overlay" && row.muted === true);
+  // normal row font (only restores get the small label-ui treatment). A disabled
+  // row (D10 Explain-while-pane-open) reads muted as well.
+  const muted =
+    disabled || isRestore || (row.kind === "overlay" && row.muted === true);
   const count =
     row.kind === "open" || row.kind === "link" || row.kind === "overlay"
       ? row.count
@@ -703,6 +795,10 @@ const MenuRow = forwardRef<HTMLButtonElement, MenuRowProps>(function MenuRow(
       ref={ref}
       role="menuitem"
       type="button"
+      aria-disabled={disabled || undefined}
+      title={
+        row.kind === "overlay" && disabled ? row.disabledTitle : undefined
+      }
       onClick={onSelect}
       onMouseEnter={onHover}
       className={`${isRestore ? "label-ui" : "font-sans text-ui-sm"} block w-full text-left`}
@@ -712,12 +808,13 @@ const MenuRow = forwardRef<HTMLButtonElement, MenuRowProps>(function MenuRow(
         justifyContent: "space-between",
         gap: 12,
         color: muted ? TOKENS.itemMuted : TOKENS.itemFg,
+        opacity: disabled ? 0.55 : 1,
         padding: isRestore ? "8px 14px 8px 24px" : "10px 14px",
         background: active ? TOKENS.itemFocusBg : "transparent",
         transition: "background 80ms linear",
         outline: "none",
         border: "none",
-        cursor: "pointer",
+        cursor: disabled ? "default" : "pointer",
       }}
     >
       <span>{row.label}</span>

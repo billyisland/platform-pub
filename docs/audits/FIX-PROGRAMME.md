@@ -23,6 +23,37 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain slice 5 (Explain program + ∀-menu row + chrome swap)
+  shipped — the engine is now live in production.** The Explain program is now
+  resolvable and openable end to end: `ExplainProvider.tsx` gains
+  `resolveExplainProgram` + the `useOpenExplain()` hook — built once at open()
+  from the live registry, ordered floor → per-vessel (by sort_rank) → one
+  representative card kind each (D5, gated on any vessel actually having cards) →
+  disc, with the `vessel`/card copy resolved (vessel provenance fork off the
+  anchored feed's `fromStarter` param, D7). `ExplainOverlay.elementFor` now
+  anchors each card-kind representative to the topmost tagged leaf in the
+  **lowest-sort_rank** vessel that has it (D5, was a bare document-order
+  `querySelector`), and carries a capture-phase Esc handler with the D12
+  precedence (open Glasshouse → Explain → ForallMenu dropdown: early-returns
+  while the About pane is open so the pane consumes Esc, else closes Explain and
+  stops propagation). `ForallMenu.tsx` adds the **Explain row** in its own group
+  (desktop only; disabled + `title` + inert-on-select while any Glasshouse pane
+  is open, D10) → `useOpenExplain()`, and the **D3 chrome swap**: while a program
+  is active the disc + wordmark give way to a single islanded **"About all.haus"**
+  button at z-60 (registered as the `disc` explainable root — slice 2 deferred
+  this because the disc annotation anchors to the About button, the only control
+  on screen during a program, not the swapped-away ∀); the button opens `/about`
+  through the new `useAboutOverlay` store + `AboutOverlay.tsx` (a standard
+  Glasshouse wrapping the same `AboutContent`, ephemeral/no-URL like Explain),
+  and the swapped chrome is suppressed entirely while the About pane is open
+  (it owns its own dismiss), restored on close — the presence registry drives
+  the suppression for free. D2 hover guard added to `useAuthorHover`
+  (`AuthorModal.tsx`): `onMouseEnter` early-returns while Explain is active and
+  an already-open modal closes on activation. `AboutOverlay` mounts desktop-only
+  next to `ExplainOverlay` in `WorkspaceView`. `tsc` + eslint (0 err) +
+  hairlines + `next build` clean. Remaining: first-run program (slice 6) + the
+  on-screen copy pass (slice 7).
+
 - **2026-07-15** — **Explain slice 4 (bubble renderer) shipped — inert until a
   program opens.** `ExplainOverlay.tsx` replaces the stub bubble with the real
   renderer (EXPLAIN-ADR D11/D9). The new `Bubble` two-pass self-measures

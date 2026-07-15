@@ -8,7 +8,13 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import type { ExplainKind } from "../../lib/explain/registry";
+import {
+  type ExplainKind,
+  buildExplainSequence,
+  explainCopy,
+  explainVesselLabel,
+} from "../../lib/explain/registry";
+import { useExplain, type Annotation, type Program } from "../../stores/explain";
 
 // =============================================================================
 // ExplainProvider — the registration substrate for the Explain engine.
@@ -76,6 +82,65 @@ export function ExplainProvider({ children }: { children: React.ReactNode }) {
 // Read the registry directly (the engine's resolver, later slice).
 export function useExplainRegistry(): ExplainRegistry | null {
   return useContext(ExplainContext);
+}
+
+// ---------------------------------------------------------------------------
+// Program resolution (EXPLAIN-ADR §9 slice 4, D4/D5/D7).
+//
+// The Explain program is built ONCE at open() from the live registry: the
+// registered vessel roots ∪ the tagged descendants present at that moment,
+// ordered floor → per-vessel (by sort_rank) → representative card kinds → disc
+// (buildExplainSequence). Each step's copy is resolved here — the vessel label
+// forks on the anchored feed's `fromStarter` param (D7); card kinds contribute
+// ONE representative annotation each (D5, gated on any vessel actually having
+// cards). Runs against the registry, so it must be called from inside the
+// provider (the ForallMenu Explain row is — it lives on the floor).
+// ---------------------------------------------------------------------------
+
+function resolveExplainProgram(registry: ExplainRegistry): Program {
+  const roots = registry.snapshot();
+  const vesselRoots = roots.filter((r) => r.kind === "vessel");
+
+  // A vessel "has cards" iff its live subtree contains a tagged card leaf. The
+  // representative card annotation (D5) then anchors to the lowest-sort_rank
+  // such vessel (resolved in the overlay's elementFor).
+  const hasCards = vesselRoots.some(
+    (v) => !!v.ref.current?.querySelector('[data-explain="card"]'),
+  );
+
+  const steps = buildExplainSequence(
+    vesselRoots.map((v) => ({ key: v.key, order: v.order ?? 0 })),
+    hasCards,
+  );
+
+  const fromStarterByKey = new Map(
+    vesselRoots.map((v) => [v.key, !!v.params?.fromStarter]),
+  );
+
+  const annotations: Annotation[] = steps.map((s) => ({
+    kind: s.kind,
+    key: s.key,
+    copy:
+      s.kind === "vessel"
+        ? explainVesselLabel(fromStarterByKey.get(s.key ?? "") ?? false)
+        : explainCopy(s.kind),
+  }));
+
+  return { kind: "explain", annotations };
+}
+
+// Returns a callback that resolves the Explain program from the live registry
+// and opens it (EXPLAIN-ADR §8). No-op outside a provider or with zero targets
+// (the latter is genuinely unreachable on the desktop floor once ≥1 vessel is
+// registered — floor + disc alone already give a non-empty sequence).
+export function useOpenExplain(): () => void {
+  const registry = useContext(ExplainContext);
+  return useCallback(() => {
+    if (!registry) return;
+    const program = resolveExplainProgram(registry);
+    if (program.annotations.length === 0) return;
+    useExplain.getState().open(program);
+  }, [registry]);
 }
 
 // Register an explainable ROOT. Pass an existing `ref` (the vessel/floor already

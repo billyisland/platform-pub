@@ -15,6 +15,7 @@ import {
 import { useExplainRegistry } from "./ExplainProvider";
 import { type ExplainKind, explainCopy } from "../../lib/explain/registry";
 import { prefersReducedMotion } from "../../lib/workspace/motion";
+import { useGlasshousePresence } from "../../stores/glasshouse";
 
 // =============================================================================
 // ExplainOverlay — the visible engine layer (EXPLAIN-ADR §5, D1, D9, D11, D12).
@@ -126,6 +127,24 @@ export function ExplainOverlay() {
           v?.querySelector<HTMLElement>(`[data-explain="${t.kind}"]`) ?? null
         );
       }
+      // Card kinds carry no key: the representative sequential annotation (D5)
+      // anchors to the topmost such leaf in the lowest-sort_rank vessel that has
+      // it (DOM order within a vessel is top-to-bottom). A pinned hover-only
+      // card would carry a key, but non-representative cards aren't measured by
+      // instance here — the pin path mints them without a distinct anchor, so
+      // any live leaf of the kind is the correct target.
+      if (t.kind.startsWith("card")) {
+        const vessels = roots
+          .filter((r) => r.kind === "vessel")
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        for (const v of vessels) {
+          const el = v.ref.current?.querySelector<HTMLElement>(
+            `[data-explain="${t.kind}"]`,
+          );
+          if (el) return el;
+        }
+        return null;
+      }
       return document.querySelector<HTMLElement>(`[data-explain="${t.kind}"]`);
     },
     [registry],
@@ -196,6 +215,22 @@ export function ExplainOverlay() {
       window.removeEventListener("resize", bump);
     };
   }, [isActive, registry, pinnedEl]);
+
+  // Esc precedence (D12): open Glasshouse → Explain → ForallMenu dropdown. One
+  // capture-phase handler early-returns while the About pane is open (its own
+  // Escape handler consumes it, Glasshouse.tsx), otherwise closes Explain and
+  // stops propagation so the ForallMenu dropdown's Esc never also fires.
+  useEffect(() => {
+    if (!isActive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (useGlasshousePresence.getState().isOpen) return;
+      e.stopPropagation();
+      close();
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [isActive, close]);
 
   if (!isActive) return null;
 
