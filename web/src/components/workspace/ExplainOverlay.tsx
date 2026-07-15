@@ -57,8 +57,11 @@ export function ExplainOverlay() {
   const index = useExplain((s) => s.index);
   const hover = useExplain((s) => s.hover);
   const dragging = useExplain((s) => s.draggingFeedId != null);
+  const programKind = useExplain((s) => s.program?.kind);
   const setHover = useExplain((s) => s.setHover);
   const pin = useExplain((s) => s.pin);
+  const next = useExplain((s) => s.next);
+  const prev = useExplain((s) => s.prev);
   const close = useExplain((s) => s.close);
 
   const reduced = prefersReducedMotion();
@@ -223,10 +226,24 @@ export function ExplainOverlay() {
   useEffect(() => {
     if (!isActive) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (useGlasshousePresence.getState().isOpen) return;
-      e.stopPropagation();
-      close();
+      if (e.key === "Escape") {
+        if (useGlasshousePresence.getState().isOpen) return;
+        e.stopPropagation();
+        close();
+        return;
+      }
+      // First-run arrow stepping (the sequence's free-floating beats can't be
+      // clicked to advance). Ignored while typing in a field.
+      if (useExplain.getState().program?.kind !== "firstrun") return;
+      const el = document.activeElement;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        useExplain.getState().next();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        useExplain.getState().prev();
+      }
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
@@ -265,6 +282,18 @@ export function ExplainOverlay() {
           dimmed={!!hoverAnn}
           reduced={reduced}
           measureTick={measureTick}
+          stepper={
+            programKind === "firstrun"
+              ? {
+                  index,
+                  total: annotations.length,
+                  done: !!pinned.done,
+                  onPrev: prev,
+                  onNext: next,
+                  onDone: close,
+                }
+              : null
+          }
         />
       )}
       {hoverAnn && (
@@ -397,18 +426,33 @@ function leaderPoints(
   }
 }
 
+// The first-run stepping controls carried in the pinned bubble (§6, D12). The
+// free-floating floor beats can't be clicked to advance, so the sequence needs
+// explicit Back / Next, and beat 6 needs the "done" affordance.
+interface Stepper {
+  index: number;
+  total: number;
+  done: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onDone: () => void;
+}
+
 function Bubble({
   annotation,
   el,
   dimmed,
   hover,
   reduced,
+  stepper,
 }: {
   annotation: Annotation;
   el: HTMLElement | null;
   dimmed?: boolean;
   hover?: boolean;
   reduced: boolean;
+  // First-run only, pinned bubble only (§6). Null for Explain + hover bubbles.
+  stepper?: Stepper | null;
   // Re-render trigger: the overlay bumps it on reflow so the target rect below
   // is re-read. Not consumed directly — its identity change forces this render.
   measureTick: number;
@@ -514,6 +558,53 @@ function Bubble({
         }}
       >
         {copy}
+        {stepper && (
+          // pointerEvents:auto so the controls are clickable through the
+          // otherwise inert bubble; whitespace (marginTop, never a rule)
+          // separates them from the copy.
+          <div
+            style={{
+              pointerEvents: "auto",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              marginTop: 16,
+            }}
+          >
+            <span className="label-ui text-grey-400">
+              {stepper.index + 1} / {stepper.total}
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+              {stepper.index > 0 && (
+                <button
+                  type="button"
+                  className="btn-text-muted"
+                  onClick={stepper.onPrev}
+                >
+                  Back
+                </button>
+              )}
+              {stepper.done ? (
+                <button
+                  type="button"
+                  className="btn-text"
+                  onClick={stepper.onDone}
+                >
+                  Done
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-text"
+                  onClick={stepper.onNext}
+                >
+                  Next
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

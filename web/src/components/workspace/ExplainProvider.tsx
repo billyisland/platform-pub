@@ -13,8 +13,10 @@ import {
   buildExplainSequence,
   explainCopy,
   explainVesselLabel,
+  firstRunBeats,
 } from "../../lib/explain/registry";
 import { useExplain, type Annotation, type Program } from "../../stores/explain";
+import { useGlasshousePresence } from "../../stores/glasshouse";
 
 // =============================================================================
 // ExplainProvider — the registration substrate for the Explain engine.
@@ -141,6 +143,118 @@ export function useOpenExplain(): () => void {
     if (program.annotations.length === 0) return;
     useExplain.getState().open(program);
   }, [registry]);
+}
+
+// ---------------------------------------------------------------------------
+// First-run program (EXPLAIN-ADR §9 slice 6, D6-D8).
+//
+// The six-beat sequence, resolved from the live registry at open(). Beats 1-2
+// (the vessel and its add-source) anchor to the LOWEST-sort_rank vessel; the
+// provenance fork (D7) reads that vessel's `fromStarter`. Beat 3 (card.byline)
+// and beat 4 (disc) carry no key (representative card / singleton). Beats 5-6
+// free-float over the floor (`alwaysFloat`); beat 6 carries the "done"
+// affordance. Anchor-or-float is decided per beat in the overlay (D8): a beat
+// whose target element is absent at render renders free-floating centred.
+// ---------------------------------------------------------------------------
+
+function resolveFirstRunProgram(registry: ExplainRegistry): Program {
+  const anchor = registry
+    .snapshot()
+    .filter((r) => r.kind === "vessel")
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0];
+  const anchorKey = anchor?.key;
+  const fromStarter = !!anchor?.params?.fromStarter;
+
+  const annotations: Annotation[] = firstRunBeats(fromStarter).map((b) => ({
+    kind: b.kind,
+    // Beats 1 (vessel) + 2 (vessel.addSource) anchor to the same vessel; every
+    // other beat is a singleton / representative card and carries no key.
+    key:
+      b.kind === "vessel" || b.kind === "vessel.addSource"
+        ? anchorKey
+        : undefined,
+    copy: b.copy,
+    alwaysFloat: b.alwaysFloat,
+    done: b.done,
+  }));
+
+  return { kind: "firstrun", annotations };
+}
+
+// Resolve the first-run program from the live registry and open it. No-op
+// outside a provider or with zero annotations (unreachable — the six beats are
+// fixed). Used by the FirstRunController's D6 auto-entry.
+export function useOpenFirstRun(): () => void {
+  const registry = useContext(ExplainContext);
+  return useCallback(() => {
+    if (!registry) return;
+    const program = resolveFirstRunProgram(registry);
+    if (program.annotations.length === 0) return;
+    useExplain.getState().open(program);
+  }, [registry]);
+}
+
+export const FIRSTRUN_SEEN_PREFIX = "workspace:firstrun_seen:";
+
+// Headless D6 auto-entry controller — mounted inside the provider on the DESKTOP
+// floor only. `armed` carries the WorkspaceView-owned gates: bootstrap ready,
+// the ForallCeremony not pending/playing (defensively subscribed even though it
+// is dark today — D6/§0.2), and BringYourWorld not showing. This component adds
+// the rest of D6: (a) the per-device seen-flag, (d) ≥1 vessel registered, the
+// ≤4s wait for a card.byline (beat-3 readiness) then run-anyway on timeout, and
+// the courtesy of never firing over a deep-linked Glasshouse. The seen-flag is
+// written when first-run OPENS (§6), so a one-gesture dismiss still counts.
+export function FirstRunController({
+  userId,
+  armed,
+}: {
+  userId: string;
+  armed: boolean;
+}) {
+  const registry = useContext(ExplainContext);
+  const openFirstRun = useOpenFirstRun();
+
+  useEffect(() => {
+    if (!armed || !registry || typeof window === "undefined") return;
+    const seenKey = `${FIRSTRUN_SEEN_PREFIX}${userId}`;
+    if (window.localStorage.getItem(seenKey) === "true") return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const started = Date.now();
+
+    const poll = () => {
+      if (cancelled) return;
+      const vessels = registry.snapshot().filter((r) => r.kind === "vessel");
+      // (d) ≥1 vessel rendered — else keep waiting.
+      if (vessels.length === 0) {
+        timer = setTimeout(poll, 200);
+        return;
+      }
+      // Never open over a deep-linked Glasshouse the user navigated to; retry on
+      // a later mount (no seen-flag written, so first-run isn't consumed).
+      if (useGlasshousePresence.getState().isOpen) return;
+      // Beat-3 readiness (D6): wait up to 4s for a card with a linked byline,
+      // then run anyway with beat 3 free-floating (D8).
+      const hasByline = vessels.some((v) =>
+        v.ref.current?.querySelector('[data-explain="card.byline"]'),
+      );
+      if (!hasByline && Date.now() - started < 4000) {
+        timer = setTimeout(poll, 200);
+        return;
+      }
+      window.localStorage.setItem(seenKey, "true"); // seen-on-open (D6)
+      openFirstRun();
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [armed, userId, registry, openFirstRun]);
+
+  return null;
 }
 
 // Register an explainable ROOT. Pass an existing `ref` (the vessel/floor already

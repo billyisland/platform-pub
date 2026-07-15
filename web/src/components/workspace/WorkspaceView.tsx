@@ -18,7 +18,11 @@ import {
 } from "../../lib/api";
 import type { PipStatus } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
-import { ExplainProvider, useExplainable } from "./ExplainProvider";
+import {
+  ExplainProvider,
+  FirstRunController,
+  useExplainable,
+} from "./ExplainProvider";
 import { useExplain } from "../../stores/explain";
 import { ExplainOverlay } from "./ExplainOverlay";
 import { AboutOverlay } from "./AboutOverlay";
@@ -1604,6 +1608,16 @@ export function WorkspaceView() {
           chrome-swap target (opened from the swapped "About all.haus" button). */}
       {!isMobile && <ExplainOverlay />}
       {!isMobile && <AboutOverlay />}
+      {/* First-run auto-entry (D6). Armed once bootstrap is ready and neither
+          the (dark) ceremony nor BringYourWorld holds the first-session moment;
+          the controller owns the seen-flag, the vessel gate, and the ≤4s
+          card.byline wait. Desktop only. */}
+      {!isMobile && (
+        <FirstRunController
+          userId={user.id}
+          armed={bootstrap === "ready" && !ceremony && !bringWorld}
+        />
+      )}
       </Floor>
     </ExplainProvider>
   );

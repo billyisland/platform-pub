@@ -23,6 +23,38 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain slice 6 (first-run program) shipped.** The six-beat
+  first-run onboarding now auto-runs once per user per device (EXPLAIN-ADR
+  D6-D8). `ExplainProvider.tsx` gains `resolveFirstRunProgram` (the `firstRunBeats`
+  sequence resolved from the live registry: beats 1-2 — the vessel + its
+  add-source — anchor to the **lowest-sort_rank** vessel, whose `fromStarter`
+  drives the beat-1 provenance fork, D7; beats 3-4 carry no key; beats 5-6
+  free-float over the floor, D8, and beat 6 carries the "done" affordance), a
+  `useOpenFirstRun()` hook, and a headless **`FirstRunController`** that runs the
+  D6 gate: seen-flag unset (`workspace:firstrun_seen:<userId>`, following the
+  ceremony namespace), ≥1 vessel registered, then a ≤4s wait for a `card.byline`
+  (beat-3 readiness) before running anyway with beat 3 free-floating; it never
+  fires over a deep-linked Glasshouse, and writes the seen-flag **on open** (§6, so
+  a one-gesture dismiss still counts). Mounted desktop-only in `WorkspaceView`,
+  `armed` on `bootstrap === "ready" && !ceremony && !bringWorld` (defensively
+  subscribed to the dark ceremony signal per §0.2). `ExplainOverlay.tsx` adds the
+  first-run **stepping footer** on the pinned bubble (a `label-ui` "N / M" counter
+  + `.btn-text` Back/Next, swapping to **Done** on the beat-6 `done` beat; the
+  footer sets `pointerEvents:auto` so the controls are live through the otherwise
+  inert bubble, separated from the copy by whitespace, no rule) plus **ArrowLeft/
+  ArrowRight** stepping (first-run only, ignored in fields) folded into the
+  existing capture-phase key handler. Explain (slice 5) is untouched — the footer
+  is gated on `program.kind === "firstrun"`. Verified end-to-end in a browser
+  (Playwright against a throwaway container off the fresh web image, dev-login as
+  `runthrough`): first-run auto-fired on a flag-clear load with the beat-1 bubble
+  leader-anchored to vessel 1 and the "About all.haus" chrome swap present; the
+  neutral beat-1 variant rendered (the test feeds aren't starter clones);
+  Back/Next, Back-reverses, and 2×ArrowRight → beat 3 all stepped the counter;
+  beat 6 free-floated with Back + Done and the worldview copy; Done closed the
+  overlay and restored the ∀ chrome; and a clean reload with the flag set did
+  **not** refire. `tsc` + eslint (0 err) + hairlines + `next build` clean.
+  Remaining: slice 7 (on-screen copy pass — the copy is already verbatim from
+  Appendix A and em-dash-free in the string literals).
 - **2026-07-15** — **Explain slice 5 (Explain program + ∀-menu row + chrome swap)
   shipped — the engine is now live in production.** The Explain program is now
   resolvable and openable end to end: `ExplainProvider.tsx` gains
