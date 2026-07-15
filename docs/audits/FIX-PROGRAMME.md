@@ -23,6 +23,29 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain slice 7 (on-screen copy pass) shipped — the Explain
+  build plan is COMPLETE (all 7 slices).** Verified the engine's copy is verbatim
+  against EXPLAIN-ADR Appendix A; no code change was needed (copy was entered as
+  data in slice 2). A programmatic diff (extract every Appendix-A blockquote vs
+  every copy string literal in `registry.ts`) confirmed all **20** strings — 7
+  first-run beats + 9 Tier-1 labels + 4 Tier-2 labels — match **byte-for-byte in
+  both directions**, and that **no em/en dashes** appear in any copy string (the
+  editorial rule; dashes exist only in code comments). On-screen render confirmed
+  in a browser (throwaway container off the fresh web image, `runthrough`): the
+  first-run beats (1 + 6, incl. beat 6's `\n\n` paragraph break) and the Explain
+  labels `floor` / `vessel.gear` / `card.byline` / `vessel.addSource` all render
+  verbatim, cleanly anchored. **Follow-up flagged (slice-5 gap, NOT a copy
+  defect):** the Explain `disc` label — byte-verbatim incl. the literal `∀`
+  glyph, last in the Explain sequence — is **unreachable in the Explain program**.
+  The "About all.haus" button sits at z-60 above the Explain scrim (z-50), so a
+  `pointermove` over it never reaches the scrim's hit-test (no hover resolution)
+  and a click opens About rather than pinning; and the Explain program has no
+  stepper (that's first-run only), so the pinned cursor never advances to the
+  disc annotation. It renders fine in first-run (beat 4, via the stepper). To
+  make it reachable in Explain would need a slice-5 decision — either a
+  document-level hover path for the disc (breaking D1's scrim-only pointer model
+  deliberately for the one control above the scrim) or an Explain-program stepper.
+  Deferred, not fixed here (copy proof-read scope).
 - **2026-07-15** — **Explain slice 6 (first-run program) shipped.** The six-beat
   first-run onboarding now auto-runs once per user per device (EXPLAIN-ADR
   D6-D8). `ExplainProvider.tsx` gains `resolveFirstRunProgram` (the `firstRunBeats`
