@@ -93,6 +93,10 @@ export function PostCardShell({
       onKeyDown={
         onClick
           ? (e) => {
+              // Mirror the click path's anchor guard: Enter on a focused link
+              // inside the card must follow the link (native default), never
+              // toggle the card.
+              if ((e.target as Element).closest?.("a")) return;
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 onClick();

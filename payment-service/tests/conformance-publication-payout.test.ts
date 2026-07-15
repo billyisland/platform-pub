@@ -6,7 +6,8 @@ import { connectionError, invalidRequest, type LedgerRow } from './support/confo
 //
 // The MULTI-LEG transfer saga: one publication_payouts parent fans out to N
 // publication_payout_splits, each paid by its OWN transfers.create under a
-// per-leg stable key `pub-split-<payoutId>-<accountId>`. The worst blast radius
+// per-leg ROW-stable key `pub-split-<payoutId>-<splitId>` (split.id, never
+// account_id — one account can hold two splits in a payout). The worst blast radius
 // of the four flows (partial double-pay), so the headline scenario is the
 // multi-leg crash: crash after leg 2 of 4 → legs 1–2 stay 'completed' and are
 // NEVER re-paid, legs 3–4 complete on resume EXACTLY once, parent completes only
@@ -224,9 +225,9 @@ describe('publication payout — multi-leg crash after leg 2 of 4', () => {
 
     expect(db.splits.every((s) => s.status === 'completed')).toBe(true)
     expect(transfers.distinctKeys).toBe(4) // exactly one transfer per recipient
-    expect(transfers.createCountFor('pub-split-pp-1-A')).toBe(1) // leg 1 NEVER re-attempted
-    expect(transfers.createCountFor('pub-split-pp-1-B')).toBe(1) // leg 2 NEVER re-attempted
-    expect(transfers.createCountFor('pub-split-pp-1-C')).toBe(2) // leg 3 retried (deduped)
+    expect(transfers.createCountFor('pub-split-pp-1-split-1')).toBe(1) // leg 1 NEVER re-attempted
+    expect(transfers.createCountFor('pub-split-pp-1-split-2')).toBe(1) // leg 2 NEVER re-attempted
+    expect(transfers.createCountFor('pub-split-pp-1-split-3')).toBe(2) // leg 3 retried (deduped)
     expect(splitEntries()).toHaveLength(4) // one ledger entry per recipient
     expect(db.parents.get('pp-1')!.status).toBe('completed')
     expect(db.reads[0].state).toBe('writer_paid') // finalise advanced the reads
@@ -292,7 +293,27 @@ describe('publication payout — resume idempotency & KYC gating', () => {
 
     expect(split('split-1').status).toBe('completed')
     expect(split('split-2').status).toBe('pending') // skipped — no transfer attempted
-    expect(transfers.createCountFor('pub-split-pp-1-B')).toBe(0)
+    expect(transfers.createCountFor('pub-split-pp-1-split-2')).toBe(0)
     expect(db.parents.get('pp-1')!.status).toBe('pending')
+  })
+
+  it('two splits for the SAME account pay under distinct row-stable keys', async () => {
+    // A standing member who also holds an article share gets two split rows in
+    // one payout. A per-account key made the second create a param-mismatch
+    // idempotency collision (wedged pending forever); the row-stable split.id
+    // key must pay both legs independently (2026-07-15 audit fix).
+    seedPayout('pp-1', 'pub-1', [
+      { account: 'A', amount: 1000 },
+      { account: 'A', amount: 2500 },
+    ])
+    await payoutService.resumePendingPublicationPayouts()
+
+    expect(transfers.distinctKeys).toBe(2)
+    expect(transfers.createCountFor('pub-split-pp-1-split-1')).toBe(1)
+    expect(transfers.createCountFor('pub-split-pp-1-split-2')).toBe(1)
+    expect(db.splits.every((s) => s.status === 'completed')).toBe(true)
+    expect(db.parents.get('pp-1')!.status).toBe('completed')
+    expect(splitEntries()).toHaveLength(2) // one ledger credit per split, both to A
+    expect(splitEntries().every((e) => e.account === 'A')).toBe(true)
   })
 })

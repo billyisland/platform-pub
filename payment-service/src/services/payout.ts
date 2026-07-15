@@ -1124,7 +1124,7 @@ class PayoutService {
   //      exactly the claimed sets, insert all splits as 'pending', mark
   //      flat-fee shares as paid_out.
   //   2. processPublicationSplits — per-split Stripe call with stable
-  //      idempotencyKey=`pub-split-${payoutId}-${accountId}`, each split
+  //      idempotencyKey=`pub-split-${payoutId}-${split.id}`, each split
   //      status update in its own small transaction. Stripe throw flips only
   //      that split to 'failed'; other splits are unaffected.
   //   3. finalisePublicationPayout (Txn 2) — advance reserved reads to
@@ -1382,11 +1382,18 @@ class PayoutService {
       // survives into the thunk closure below (control-flow narrowing of the
       // mutable `acc.stripe_connect_id` does not persist into a callback).
       const destination = acc.stripe_connect_id
+      // Keyed on split.id, NOT account_id: computePublicationSplits can emit
+      // two splits for the same account in one payout (a standing member who
+      // also holds an article share), and a per-account key would make the
+      // second create a param-mismatch idempotency_error — classified
+      // ambiguous, re-thrown, wedging the payout's remaining legs 'pending'
+      // forever (2026-07-15 audit). split.id is the row-stable key.
+      const idempotencyKey = `pub-split-${payoutId}-${split.id}`
       let outcome: StripeIdempotentOutcome<Stripe.Transfer>
       try {
         outcome = await executeStripeIdempotent(
           'publication-split',
-          `pub-split-${payoutId}-${split.account_id}`,
+          idempotencyKey,
           () => this.stripe.transfers.create({
             amount: split.amount_pence,
             currency: 'gbp',
@@ -1398,7 +1405,7 @@ class PayoutService {
               account_id: split.account_id,
             },
           }, {
-            idempotencyKey: `pub-split-${payoutId}-${split.account_id}`,
+            idempotencyKey,
           }),
           isTerminalTransferError,
         )

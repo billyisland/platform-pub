@@ -23,6 +23,39 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Three-day commit audit (Jul 12–15) follow-ups: the four
+  small-and-worst findings fixed.** A five-stream review of the window's 41
+  commits (follow-import, payments core, payments idempotency/reconcile,
+  Explain, misc) found no high-severity issues; the four cheap medium ones are
+  fixed here, the rest queued. (1) **Publication-split idempotency key is now
+  row-stable** — `payout.ts` keyed transfers on
+  `pub-split-<payoutId>-<accountId>`, but `computePublicationSplits` can emit
+  two splits for the same account in one payout (standing member + article
+  share), so the second create was a param-mismatch `idempotency_error` →
+  classified ambiguous → re-thrown every cycle → the payout's remaining legs
+  wedged `pending` forever. Now keyed on `split.id`; the conformance battery
+  gained a same-account-twice test (the old seed shape couldn't express the
+  collision — 164/164 green). **Deploy note:** the key format changed, so
+  before deploying confirm no `publication_payout_splits` row sits `pending`
+  mid-create (a split whose transfer went through under the OLD key but whose
+  flip didn't commit would retry under the NEW key and double-pay; the resume
+  sweep normally clears these within a cycle). (2) **Card shell keyboard
+  guard** — `chassis.tsx` `onKeyDown` now mirrors the click path's
+  `closest("a")` guard, so Enter on a focused in-card link follows the link
+  instead of toggling the card (gap opened by the 82274a8 linkify work).
+  (3) **Explain click-dismiss is now reachable** — the full-viewport floor
+  registration meant `hitTest` never returned null, so the ADR's promised
+  empty-click dismiss was dead and Esc was the only mouse-free exit; a click
+  resolving to the floor now counts as the empty click and dismisses (floor
+  copy stays hoverable and is the pinned opening annotation). (4) **First-run
+  ignores clicks** — click-pin used to warp the six-beat tour (clicking empty
+  floor jumped to beat 5; clicking an off-tour target minted a 7th annotation
+  with a no-op Next and no Done); the overlay's click handler now early-returns
+  during `firstrun` (stepper/arrows/Done/Esc drive it). EXPLAIN-ADR §1-D1/§6
+  amended to record both resolutions. Remaining audit findings (Explain
+  wrong-instance anchoring + keyboard freeze, drives in-flight prod check,
+  reconcile/test hygiene) queued in CONSOLIDATED-TODO §0d.
+
 - **2026-07-15** — **Explain: disc label now reachable in the Explain program
   (the slice-7 follow-up, fixed).** The "About all.haus" button (the D3 chrome
   swap, z-60, the one live control above the Explain scrim) now reveals the `disc`

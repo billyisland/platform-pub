@@ -32,7 +32,9 @@ import { useGlasshousePresence } from "../../stores/glasshouse";
 // that intercepts ALL pointer events (wheel/touch included), so the frozen floor
 // cannot scroll and the surface is annotated exactly as it stood at open().
 //   - pointermove → coordinate hit-test → live hover (D4).
-//   - click on a discoverable target → pin it; click anywhere else → dismiss.
+//   - click on a discoverable target → pin it; click anywhere else — including
+//     the full-viewport floor target — → dismiss (§6). First-run ignores
+//     clicks entirely (stepper/arrows/Done only).
 // Hit-test sources (D1): (a) `[data-explain]` tagged leaves via elementsFromPoint
 // → closest, and (b) the registration Map's live root rects (floor / vessel /
 // disc) by element identity.
@@ -171,12 +173,22 @@ export function ExplainOverlay() {
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
+      // First-run is the fixed six-beat sequence, driven only by Next/Back/
+      // arrows and finished by Done/Esc — a stray click must neither warp the
+      // cursor (the floor beat matches any empty click) nor mint off-tour
+      // annotations into the sequence, and a click must not dismiss a tour
+      // the user is mid-way through (2026-07-15 audit).
+      if (useExplain.getState().program?.kind === "firstrun") return;
       const hit = hitTest(e.clientX, e.clientY);
-      if (hit) {
-        pin({ kind: hit.kind, key: hit.key }); // D1 click-pin
-      } else {
+      // The floor registration spans the whole viewport, so a click resolving
+      // to it IS the "any non-target region" click of §6/D3 — dismiss. The
+      // floor's copy stays reachable via hover, and it is the pinned opening
+      // annotation (index 0) at open().
+      if (!hit || hit.kind === "floor") {
         close(); // D1 empty-click dismiss
+        return;
       }
+      pin({ kind: hit.kind, key: hit.key }); // D1 click-pin
     },
     [hitTest, pin, close],
   );
