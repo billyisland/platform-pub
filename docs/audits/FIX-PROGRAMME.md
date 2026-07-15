@@ -23,6 +23,24 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **∀ disc sat ~8px off its anchor — inline-block baseline
+  descent (Explain About-button alignment).** In Explain mode the "About
+  all.haus" pill read as hanging below the disc's horizontal rules. The pill
+  was never wrong (56px tall, `bottom: 24`, 28px end radius — exactly the
+  disc's box): the **disc button itself** was floating ~8px above its anchor.
+  Its style never set `display`, so the button rendered as the UA-default
+  inline-block, sitting on the bottom-anchored container's text BASELINE —
+  and the line box reserved strut-descent space (half-leading + font descent
+  ≈ 8px at 16px/1.5) *below* the disc, pushing it up off `bottom: 24`. Fix:
+  `display: "block"` on the disc trigger (`ForallMenu.tsx`), killing the line
+  box. Knock-ons are restorations, not changes: the dropdown (`bottom: 64`)
+  and SearchPanel (`bottom: 72`) offsets were authored assuming disc-bottom =
+  container-bottom (56 + 8px / 16px gaps) — the descent had been eating those
+  gaps (the menu literally touched the disc) — and the wordmark, centred in
+  the same 56px box, had always sat slightly low relative to the disc. Mobile
+  bar anchor is top-anchored, unaffected. Disc + About pill now read as the
+  intended disc/elongated-disc pair on one shared bottom rule (the mobile
+  pip-strip grammar, EXPLAIN-ADR D3).
 - **2026-07-15** — **One "Write something" menu entry + note→article seed
   carry-over fix.** The ∀ menu's create group carried two write rows ("New
   note" + "Write an article"); collapsed to a single **"Write something"** row

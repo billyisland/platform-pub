@@ -634,6 +634,14 @@ export function ForallMenu({
         }}
         style={{
           position: "relative",
+          // Block, not the button-default inline-block: an inline-block child
+          // sits on its container's text BASELINE, so the line box reserves
+          // strut-descent space (~8px) below the disc — and with the container
+          // anchored bottom:24 that descent pushed the disc up off its anchor,
+          // visibly above the About pill / wordmark sharing the same bottom
+          // rule. Block-level kills the line box; the disc sits exactly at the
+          // anchor, flush with its siblings ("disc + elongated disc").
+          display: "block",
           width: discSize,
           height: discSize,
           borderRadius: "50%",
