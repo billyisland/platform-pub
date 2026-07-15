@@ -15,6 +15,10 @@ export type ExplainKind =
   // singletons
   | "floor"
   | "disc"
+  // the "About all.haus" button that stands in for the wordmark while a
+  // program is active (D3, 2026-07-15 form). Hover-only: never in the
+  // sequence, annotated via the button's own hover handlers.
+  | "about"
   // per-feed instance + tagged leaves
   | "vessel"
   | "vessel.name"
@@ -32,6 +36,7 @@ export type ExplainKind =
 export const EXPLAIN_KINDS: readonly ExplainKind[] = [
   "floor",
   "disc",
+  "about",
   "vessel",
   "vessel.name",
   "vessel.gear",
@@ -54,10 +59,13 @@ export const EXPLAIN_KINDS: readonly ExplainKind[] = [
 export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   floor:
     "This space is yours to fill with feeds. You can have as many as you want, configured as you like and positioned however suits you. They stay where they are put.",
-  // disc anchors to the About button (D3): leads with About, then notes the
-  // menu role the corner resumes once Explain closes.
+  // disc annotates the REAL ∀ disc (D3, 2026-07-15 form: only the wordmark
+  // gives way to the About button, so the disc stays on screen and is
+  // described as itself).
   disc:
-    "Right now this opens About: a fuller account of what all.haus is and how it works. When Explain is off, this same corner is the ∀ menu, where everything runs from: writing, searching, your messages, your money, your settings. There is no other interface to learn.",
+    "This is the ∀ menu, where everything runs from: writing, searching, your messages, your money, your settings. There is no other interface to learn. While Explain is on, clicking it simply takes you back to your workspace.",
+  about:
+    "This opens About: a fuller account of what all.haus is and how it works, worth reading once.",
   "vessel.name":
     "This is the feed's name. Click to rename it and manage its sources, or click and drag to move the feed container around this workspace.",
   "vessel.gear":
@@ -130,7 +138,7 @@ export function firstRunBeats(fromStarter: boolean): FirstRunBeat[] {
     },
     {
       kind: "disc",
-      copy: "This is About: the full account of what all.haus is and how it works, worth reading once. The rest of the time, this same corner is your menu, the one place everything runs from: writing, searching, your messages, your money, your settings. There is no other interface to learn.",
+      copy: "This is the ∀ menu, the one place everything runs from: writing, searching, your messages, your money, your settings. Next to it, About has the fuller account of what all.haus is and how it works, worth reading once. There is no other interface to learn.",
     },
     {
       kind: "floor",

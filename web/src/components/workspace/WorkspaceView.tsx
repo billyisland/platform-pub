@@ -18,11 +18,7 @@ import {
 } from "../../lib/api";
 import type { PipStatus } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
-import {
-  ExplainProvider,
-  FirstRunController,
-  useExplainable,
-} from "./ExplainProvider";
+import { ExplainProvider, useExplainable } from "./ExplainProvider";
 import { useExplain } from "../../stores/explain";
 import { ExplainOverlay } from "./ExplainOverlay";
 import { AboutOverlay } from "./AboutOverlay";
@@ -1608,16 +1604,12 @@ export function WorkspaceView() {
           chrome-swap target (opened from the swapped "About all.haus" button). */}
       {!isMobile && <ExplainOverlay />}
       {!isMobile && <AboutOverlay />}
-      {/* First-run auto-entry (D6). Armed once bootstrap is ready and neither
-          the (dark) ceremony nor BringYourWorld holds the first-session moment;
-          the controller owns the seen-flag, the vessel gate, and the ≤4s
-          card.byline wait. Desktop only. */}
-      {!isMobile && (
-        <FirstRunController
-          userId={user.id}
-          armed={bootstrap === "ready" && !ceremony && !bringWorld}
-        />
-      )}
+      {/* First-run auto-entry (D6) is DORMANT (2026-07-15): auto-dropping a
+          fresh device into Explain on load proved disorienting on the live
+          site, so the six-beat tour no longer mounts — Explain is strictly
+          ∀-menu-invoked. Revive by remounting <FirstRunController userId
+          armed={bootstrap === "ready" && !ceremony && !bringWorld} /> here
+          (ExplainProvider.tsx keeps the controller + program intact). */}
       </Floor>
     </ExplainProvider>
   );

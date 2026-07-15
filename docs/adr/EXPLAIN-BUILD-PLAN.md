@@ -2,7 +2,7 @@
 
 **Companion to** `docs/adr/EXPLAIN-ADR.md` (the ADR is the source of truth for behaviour and copy; this file is the implementation scope).
 **Scope:** `/reader` (`WorkspaceView`) **desktop only** — `MobileWorkspace` is explicitly out (ADR §Surface). The engine must not mount on the mobile branch.
-**Status:** COMPLETE — all seven slices shipped (2026-07-14/15). The engine is live: Explain runs from the ∀-menu row, and first-run auto-runs once per user per device. Copy verified verbatim against Appendix A. The one follow-up noted at slice 7 — the Explain `disc` label being unreachable in the Explain program — is now fixed (the About button reveals it on hover). All "current state" line references below were verified against the codebase (see §0).
+**Status:** COMPLETE, then reworked after the first live session (2026-07-15 — see the ADR's "Post-live amendments"): first-run auto-entry is **dormant** (`FirstRunController` unmounted; Explain is strictly ∀-menu-invoked), the Explain program is **hover-only with a cursor-following bubble** (no pinned sequence bubble, no click-pin, any click dismisses), and the chrome swap replaces **only the wordmark** with the About button (the ∀ disc stays, is annotated in place via a new hover-only `about` kind + rewritten `disc` copy, and clicking it exits Explain). Copy re-verified verbatim against the amended Appendix A. All "current state" line references below were verified against the codebase (see §0); slice narratives below describe the original form.
 
 ---
 

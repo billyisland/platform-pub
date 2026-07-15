@@ -132,23 +132,18 @@ export function ForallMenu({
   const glasshouseOpen = useGlasshousePresence((s) => s.isOpen);
   const mobileSheetOpen = isMobile && glasshouseOpen;
 
-  // Explain chrome swap (EXPLAIN-ADR D3). While an Explain program is active the
-  // disc + wordmark are replaced by an "About all.haus" button at the same z-60
-  // layer (the one live control above the Explain scrim). `isActive` is only
-  // ever set on the desktop floor (Explain is desktop-only), so this naturally
-  // scopes to the floating anchor. While the About pane itself is open, even the
-  // swapped chrome is suppressed — the pane owns its own dismiss — and restored
-  // when it closes.
+  // Explain chrome swap (EXPLAIN-ADR D3, 2026-07-15 form). While an Explain
+  // program is active only the WORDMARK gives way to an "About all.haus"
+  // button; the ∀ disc itself stays on screen, is annotated in place (hovering
+  // it surfaces the `disc` label), and clicking it exits Explain — no more
+  // awkwardly describing an invisible menu. `isActive` is only ever set on the
+  // desktop floor (Explain is desktop-only), so this naturally scopes to the
+  // floating anchor. While the About pane itself is open the About button is
+  // suppressed (the pane owns its own dismiss) and the disc flips to the X,
+  // closing the pane back to Explain.
   const explainActive = useExplain((s) => s.isActive);
   const aboutOpen = useAboutOverlay((s) => s.isOpen);
   const openExplain = useOpenExplain();
-  // The `disc` explainable root anchors to the About button, not the ∀ disc:
-  // both programs swap the disc away (D3), so the ∀ glyph is never on screen
-  // during a program — the disc annotation's leader points at the control that
-  // actually is (the About button). Registration is deferred to here (not
-  // slice 2) for exactly this reason. The ref holds null until the swap mounts
-  // the button, which is precisely when the disc annotation is shown.
-  const discRef = useExplainable<HTMLButtonElement>("disc");
 
   const [view, setView] = useState<View>("closed");
 
@@ -161,8 +156,15 @@ export function ForallMenu({
   // open — a mouse can click outside, and an X on a small anchored dropdown
   // would read oddly.
   const mobileMenuOpen = isMobile && view !== "closed";
-  // The disc shows the close glyph whenever it would act as a minimise-X.
-  const showClose = menuOverlayOpen || mobileSheetOpen || mobileMenuOpen;
+  // The disc shows the close glyph whenever it would act as a minimise-X —
+  // including the About pane opened from Explain (a click closes it back to
+  // Explain). During plain Explain the disc keeps the ∀: it is being annotated
+  // as the menu, so it must look like the menu.
+  const showClose =
+    menuOverlayOpen ||
+    mobileSheetOpen ||
+    mobileMenuOpen ||
+    (explainActive && aboutOpen);
   const [activeIndex, setActiveIndex] = useState(0);
   // ∀ glyph rotation. Hover rotates it to 180° (a right-side-up A) and holds;
   // leaving completes the turn to 360° (back to ∀), then snaps to 0 for next
@@ -174,6 +176,11 @@ export function ForallMenu({
   const containerRef = useRef<HTMLDivElement>(null);
   const wordmarkRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // The `disc` explainable root is the REAL ∀ disc (2026-07-15 rework: the
+  // chrome swap keeps the disc on screen, replacing only the wordmark), so the
+  // first-run beat-4 leader and any anchored fallback point at the disc itself.
+  useExplainable<HTMLButtonElement>("disc", { ref: buttonRef });
 
   // Rows are grouped find → make → go: search first (the way in), then the
   // create actions, then the destinations, then any hidden-feed restores. The
@@ -318,6 +325,14 @@ export function ForallMenu({
   // the back-to-workspace button (close the overlay); otherwise it toggles the
   // command menu.
   function onTriggerClick() {
+    // While Explain is active the disc is the way back out (EXPLAIN-ADR D3,
+    // 2026-07-15 form): close the About pane if it is open (back to Explain),
+    // else close Explain itself. Never toggle the menu over the frozen floor.
+    if (explainActive) {
+      if (aboutOpen) useAboutOverlay.getState().close();
+      else useExplain.getState().close();
+      return;
+    }
     // Mobile: any open full-screen sheet (incl. the six destinations, which are
     // also Glasshouses) minimises through the presence registry.
     if (mobileSheetOpen) {
@@ -411,70 +426,65 @@ export function ForallMenu({
     }
   }
 
-  // D3 chrome swap: while an Explain program is active, the disc + wordmark give
-  // way to a single "About all.haus" button at the same z-60 layer — the one
-  // live control above the Explain scrim, with a defined, safe job (open About)
-  // instead of a floor-toggle that would fire through. Suppressed entirely while
-  // the About pane is open (it owns its own dismiss); restored on close. Islanded
-  // like the disc so its tokens resolve canonical-light, then it takes the same
-  // dark-mode photo-negative (bone pill + ink label) the disc does.
-  if (explainActive && !inBar) {
-    if (aboutOpen) return null;
-    return (
-      <div
-        style={{
-          ...LIGHT_ISLAND_STYLE,
-          position: "fixed",
-          right: 24,
-          bottom: 24,
-          zIndex: 60,
-        }}
-      >
-        <button
-          ref={discRef}
-          type="button"
-          className="forall-trigger font-sans font-medium"
-          aria-label="About all.haus"
-          onClick={() => useAboutOverlay.getState().open()}
-          // The About button is the one live control above the Explain scrim, so
-          // the scrim's pointermove hit-test never reaches the disc (EXPLAIN-ADR
-          // D1/D3). Wire its own hover to the disc annotation so it honours
-          // Explain's "hover anything, read its label" contract — the overlay's
-          // hover renderer anchors the bubble to discRef. Click still opens About
-          // (its real job); hover teaches. The floor stays frozen.
-          onMouseEnter={() => useExplain.getState().setHover({ kind: "disc" })}
-          onMouseLeave={() => useExplain.getState().setHover(null)}
-          style={{
-            height: discSize,
-            display: "flex",
-            alignItems: "center",
-            padding: "0 22px",
-            borderRadius: discSize / 2,
-            background: discBg,
-            color: discGlyph,
-            border: "none",
-            cursor: "pointer",
-            fontSize: 16,
-            lineHeight: 1,
-            whiteSpace: "nowrap",
-          }}
-        >
-          About all.haus
-        </button>
-      </div>
-    );
-  }
-
   return (
     <>
+      {/* D3 chrome swap (2026-07-15 form): while an Explain program is active
+          only the WORDMARK gives way to an "About all.haus" button in the same
+          spot — the disc stays, gets annotated as itself, and its click exits
+          Explain (onTriggerClick above). The button is islanded like the disc
+          so its tokens resolve canonical-light, then takes the same dark-mode
+          photo-negative (bone pill + ink label). Suppressed while the About
+          pane is open (the pane owns its own dismiss); restored on close. */}
+      {!inBar && explainActive && !aboutOpen && (
+        <div
+          style={{
+            ...LIGHT_ISLAND_STYLE,
+            position: "fixed",
+            right: 24 + discSize + 14,
+            bottom: 24,
+            zIndex: 60,
+          }}
+        >
+          <button
+            type="button"
+            className="forall-trigger font-sans font-medium"
+            aria-label="About all.haus"
+            onClick={() => useAboutOverlay.getState().open()}
+            // The button sits above the Explain scrim, so the scrim's
+            // pointermove hit-test never reaches it — it reports its own hover
+            // (the `about` label) to honour Explain's "hover anything, read its
+            // label" contract. Click opens About; hover teaches.
+            onMouseEnter={() =>
+              useExplain.getState().setHover({ kind: "about" })
+            }
+            onMouseLeave={() => useExplain.getState().setHover(null)}
+            style={{
+              height: discSize,
+              display: "flex",
+              alignItems: "center",
+              padding: "0 22px",
+              borderRadius: discSize / 2,
+              background: discBg,
+              color: discGlyph,
+              border: "none",
+              cursor: "pointer",
+              fontSize: 16,
+              lineHeight: 1,
+              whiteSpace: "nowrap",
+            }}
+          >
+            About all.haus
+          </button>
+        </div>
+      )}
       {/* Wordmark lockup — "all.haus" set to the LEFT of the ∀ disc so the two
           read as one mark (text · glyph). It's part of the trigger's click
           target (same toggle + glyph-spin as the disc) and, like the disc,
           stays CRISP above the frost: it sits at z-60 (the ForallMenu layer),
           above the Glasshouse scrim (z-[55]), so an open overlay never blurs or
           dims it. Floating only — the mobile bar already carries its own
-          wordmark. */}
-      {!inBar && (
+          wordmark. Gives way to the About button while Explain is active. */}
+      {!inBar && !explainActive && (
         <button
           ref={wordmarkRef}
           type="button"
@@ -584,13 +594,17 @@ export function ForallMenu({
         type="button"
         className="forall-trigger"
         aria-label={
-          mobileMenuOpen && !menuOverlayOpen && !mobileSheetOpen
-            ? "Close menu"
-            : showClose
-              ? "Back to workspace"
-              : `Workspace actions${
-                  totalUnread > 0 ? ` (${totalUnread} unread)` : ""
-                }`
+          explainActive
+            ? aboutOpen
+              ? "Back to Explain"
+              : "Exit Explain"
+            : mobileMenuOpen && !menuOverlayOpen && !mobileSheetOpen
+              ? "Close menu"
+              : showClose
+                ? "Back to workspace"
+                : `Workspace actions${
+                    totalUnread > 0 ? ` (${totalUnread} unread)` : ""
+                  }`
         }
         aria-haspopup="menu"
         aria-expanded={view !== "closed"}
@@ -598,10 +612,17 @@ export function ForallMenu({
         onMouseEnter={() => {
           setSpinTransition(true);
           setGlyphRot(180);
+          // The disc sits above the Explain scrim, so it reports its own hover
+          // to the engine (the `disc` label) — the scrim's hit-test never
+          // reaches it. Suppressed while the About pane is open (bubbles
+          // render below the Glasshouse scrim).
+          if (explainActive && !aboutOpen)
+            useExplain.getState().setHover({ kind: "disc" });
         }}
         onMouseLeave={() => {
           setSpinTransition(true);
           setGlyphRot(360);
+          if (explainActive) useExplain.getState().setHover(null);
         }}
         style={{
           position: "relative",

@@ -23,6 +23,35 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain post-live rework (EXPLAIN-ADR "Post-live
+  amendments"): four calls reversed after the first session on production.**
+  (1) **First-run auto-entry dormant** — refreshing the live site dropped the
+  user straight into Explain mode (the once-per-device six-beat tour), which
+  read as a malfunction; `FirstRunController` is unmounted in `WorkspaceView`
+  (kept intact in `ExplainProvider.tsx` for revival) and Explain is strictly
+  ∀-menu-invoked. (2) **Hover bubble at the cursor** — element-anchored
+  placement (right→left→below→above of the whole target rect) landed bubbles
+  far from the pointer on large targets, reading as haphazard; the Explain
+  bubble is now a cursor-following tooltip (`CursorBubble`, offset below-right,
+  flips at viewport edges; cursor tracked document-wide so the z-60 disc/About
+  hovers place correctly). (3) **Pinned channel not rendered in Explain** — the
+  index-0 floor bubble sat permanently dimmed at 0.35 alpha (the full-viewport
+  floor target means hover is never empty), the "faintly half-triggered"
+  ghost; Explain is hover-only (one persistent bubble, copy swaps in place, no
+  per-target re-fade), click-pin is deleted (any click dismisses), hover is
+  suppressed during first-run, and the dim rule is gone. Anchored placement +
+  leader + stepper survive untouched for the (dormant) first-run pinned beats.
+  (4) **Chrome swap is wordmark-only** — the ∀ disc now stays on screen during
+  a program (no more explaining an invisible menu): it registers as the `disc`
+  root, surfaces the rewritten `disc` label on hover, and clicking it exits
+  Explain (About pane open → closes that first, glyph flips to X); the "About
+  all.haus" button takes the wordmark's spot and carries a new hover-only
+  `about` kind. Copy re-verified byte-identical between `registry.ts` and the
+  amended Appendix A (disc, about, beat 4). Files: `ExplainOverlay.tsx`,
+  `ForallMenu.tsx`, `ExplainProvider.tsx`, `WorkspaceView.tsx`,
+  `stores/explain.ts`, `lib/explain/registry.ts`; ADR + build plan amended.
+  tsc + eslint (0 err) + hairlines + `next build` clean.
+
 - **2026-07-15** — **Three-day commit audit (Jul 12–15) follow-ups: the four
   small-and-worst findings fixed.** A five-stream review of the window's 41
   commits (follow-import, payments core, payments idempotency/reconcile,

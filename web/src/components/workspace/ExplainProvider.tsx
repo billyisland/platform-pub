@@ -97,6 +97,11 @@ export function useExplainRegistry(): ExplainRegistry | null {
 // ONE representative annotation each (D5, gated on any vessel actually having
 // cards). Runs against the registry, so it must be called from inside the
 // provider (the ForallMenu Explain row is — it lives on the floor).
+//
+// NOTE (2026-07-15): the Explain program renders HOVER-ONLY (bubble at the
+// cursor), so this resolved sequence is currently consumed only as the
+// non-empty gate in useOpenExplain. The ordering machinery is kept — it is the
+// seam for any future stepped walk-through of the floor.
 // ---------------------------------------------------------------------------
 
 function resolveExplainProgram(registry: ExplainRegistry): Program {
@@ -196,7 +201,11 @@ export function useOpenFirstRun(): () => void {
 
 export const FIRSTRUN_SEEN_PREFIX = "workspace:firstrun_seen:";
 
-// Headless D6 auto-entry controller — mounted inside the provider on the DESKTOP
+// Headless D6 auto-entry controller — DORMANT since 2026-07-15 (no longer
+// mounted): auto-running the tour on a fresh device's first load proved
+// disorienting on the live site, so Explain is strictly ∀-menu-invoked. Kept
+// intact for revival — remount it in WorkspaceView's desktop branch.
+// When mounted, it lives inside the provider on the DESKTOP
 // floor only. `armed` carries the WorkspaceView-owned gates: bootstrap ready,
 // the ForallCeremony not pending/playing (defensively subscribed even though it
 // is dark today — D6/§0.2), and BringYourWorld not showing. This component adds

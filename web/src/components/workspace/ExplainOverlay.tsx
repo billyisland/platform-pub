@@ -18,26 +18,34 @@ import { prefersReducedMotion } from "../../lib/workspace/motion";
 import { useGlasshousePresence } from "../../stores/glasshouse";
 
 // =============================================================================
-// ExplainOverlay — the visible engine layer (EXPLAIN-ADR §5, D1, D9, D11, D12).
+// ExplainOverlay — the visible engine layer (EXPLAIN-ADR §5, D1, D9, D11, D12;
+// 2026-07-15 post-live rework).
 //
-// Slice 4 replaces the stub bubble with the real renderer: viewport-clamped
-// placement (right → left → below → above), a 2px crimson leader with a 4px dot
-// at the target end, live `getBoundingClientRect` measurement re-run on a
-// ResizeObserver (floor container + the pinned target's own vessel scroll
-// container, D11), drag suspension (D11 seam), and a reduced-motion path
-// (opacity only, no leader draw). Still inert in production until the ∀-menu row
-// (slice 5) opens a program.
+// The two programs render differently:
+//   - Explain is a pure HOVER annotator: one bubble, rendered AT THE CURSOR
+//     (a tooltip that follows the pointer), describing whatever is under it.
+//     No pinned sequence bubble, no leader — the element-anchored placement
+//     scattered bubbles across the screen and the perpetually-dimmed pinned
+//     bubble read as half-triggered noise (2026-07-15 live review).
+//   - First-run (dormant) keeps the pinned stepping bubble: element-anchored
+//     placement (right → left → below → above), the 2px crimson leader with a
+//     4px dot at the target end, live `getBoundingClientRect` measurement
+//     re-run on a ResizeObserver (floor container + the pinned target's own
+//     vessel scroll container, D11), drag suspension (D11 seam), and a
+//     reduced-motion path. Hover is SUPPRESSED during first-run — the tour is
+//     the fixed sequence, and stray cursor bubbles over it are noise.
 //
 // D1 — the floor is inert while active: the scrim is a single full-viewport div
 // that intercepts ALL pointer events (wheel/touch included), so the frozen floor
 // cannot scroll and the surface is annotated exactly as it stood at open().
 //   - pointermove → coordinate hit-test → live hover (D4).
-//   - click on a discoverable target → pin it; click anywhere else — including
-//     the full-viewport floor target — → dismiss (§6). First-run ignores
-//     clicks entirely (stepper/arrows/Done only).
+//   - any click → dismiss (§6, 2026-07-15 form: click-pin is deleted — the
+//     hover bubble is already at the cursor, so a pin adds nothing). First-run
+//     ignores clicks entirely (stepper/arrows/Done only).
 // Hit-test sources (D1): (a) `[data-explain]` tagged leaves via elementsFromPoint
-// → closest, and (b) the registration Map's live root rects (floor / vessel /
-// disc) by element identity.
+// → closest, and (b) the registration Map's live root rects (floor / vessel)
+// by element identity. The disc + About button sit ABOVE the scrim (z-60) and
+// report their own hover to the store instead.
 // =============================================================================
 
 // Marks the overlay's own DOM so hit-testing looks straight through it.
@@ -47,6 +55,8 @@ const BUBBLE_WIDTH = 300; // fixed width → predictable placement; height adapt
 const GAP = 14; // target edge → bubble gap
 const MARGIN = 10; // viewport margin the bubble keeps clear
 const ENTER_MS = 200; // opacity / leader-draw enter duration
+const CURSOR_GAP_X = 18; // cursor → hover-bubble offset (flips to keep on-screen)
+const CURSOR_GAP_Y = 22;
 
 interface ResolvedTarget extends HoverTarget {
   el: HTMLElement;
@@ -61,17 +71,32 @@ export function ExplainOverlay() {
   const dragging = useExplain((s) => s.draggingFeedId != null);
   const programKind = useExplain((s) => s.program?.kind);
   const setHover = useExplain((s) => s.setHover);
-  const pin = useExplain((s) => s.pin);
   const next = useExplain((s) => s.next);
   const prev = useExplain((s) => s.prev);
   const close = useExplain((s) => s.close);
 
+  const isFirstRun = programKind === "firstrun";
   const reduced = prefersReducedMotion();
 
   // Bumped by the ResizeObserver / window-resize so bubbles re-measure their
   // live target rect (D11). The floor is frozen (D1), so there is no scroll
   // trigger — only reflow (vessel add/remove/resize, async interior growth).
   const [measureTick, setMeasureTick] = useState(0);
+
+  // Live cursor position for the Explain hover bubble (the bubble renders AT
+  // the pointer, 2026-07-15). Tracked document-wide, capture phase, so it stays
+  // fresh over the z-60 chrome (disc / About button) the scrim never sees.
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!isActive) return;
+    const onMove = (e: PointerEvent) =>
+      setCursor({ x: e.clientX, y: e.clientY });
+    document.addEventListener("pointermove", onMove, true);
+    return () => {
+      document.removeEventListener("pointermove", onMove, true);
+      setCursor(null);
+    };
+  }, [isActive]);
 
   // Resolve the pointer to the most specific explainable target under it.
   // elementsFromPoint returns deepest-painted first, so a tagged leaf (a
@@ -171,27 +196,17 @@ export function ExplainOverlay() {
     [hitTest, setHover],
   );
 
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      // First-run is the fixed six-beat sequence, driven only by Next/Back/
-      // arrows and finished by Done/Esc — a stray click must neither warp the
-      // cursor (the floor beat matches any empty click) nor mint off-tour
-      // annotations into the sequence, and a click must not dismiss a tour
-      // the user is mid-way through (2026-07-15 audit).
-      if (useExplain.getState().program?.kind === "firstrun") return;
-      const hit = hitTest(e.clientX, e.clientY);
-      // The floor registration spans the whole viewport, so a click resolving
-      // to it IS the "any non-target region" click of §6/D3 — dismiss. The
-      // floor's copy stays reachable via hover, and it is the pinned opening
-      // annotation (index 0) at open().
-      if (!hit || hit.kind === "floor") {
-        close(); // D1 empty-click dismiss
-        return;
-      }
-      pin({ kind: hit.kind, key: hit.key }); // D1 click-pin
-    },
-    [hitTest, pin, close],
-  );
+  const handleClick = useCallback(() => {
+    // First-run is the fixed six-beat sequence, driven only by Next/Back/
+    // arrows and finished by Done/Esc — a stray click must not dismiss a tour
+    // the user is mid-way through (2026-07-15 audit).
+    if (useExplain.getState().program?.kind === "firstrun") return;
+    // Explain: ANY click on the scrim dismisses (§6, 2026-07-15 form). Click-
+    // pin is deleted — the hover bubble already sits at the cursor, so pinning
+    // added nothing but a second, half-dimmed bubble. The disc + About button
+    // live above the scrim and keep their own click jobs.
+    close();
+  }, [close]);
 
   // Copy for a live hover target, folding the vessel provenance fork (D7): read
   // fromStarter off the anchored vessel's registration params.
@@ -207,15 +222,21 @@ export function ExplainOverlay() {
     [registry],
   );
 
-  const pinned: Annotation | null = annotations[index] ?? null;
+  // The pinned channel renders only for the first-run tour (2026-07-15):
+  // Explain is hover-only, so its resolved sequence is never walked.
+  const pinned: Annotation | null = isFirstRun
+    ? (annotations[index] ?? null)
+    : null;
   const pinnedEl = pinned ? elementFor(pinned) : null;
 
   // D11 re-measure: observe the floor container (vessel add/remove/resize) and,
   // while a target is pinned, that target's own vessel scroll container (async
   // ingestion can reflow the interior under the pinned card, a shift the floor
-  // observer misses). No `scroll` trigger — the floor is frozen (D1).
+  // observer misses). No `scroll` trigger — the floor is frozen (D1). First-run
+  // only: the Explain hover bubble is cursor-positioned, nothing to re-measure.
   useEffect(() => {
-    if (!isActive || typeof ResizeObserver === "undefined") return;
+    if (!isActive || !isFirstRun || typeof ResizeObserver === "undefined")
+      return;
     const bump = () => setMeasureTick((t) => t + 1);
     const ro = new ResizeObserver(bump);
     const floor = registry
@@ -229,7 +250,7 @@ export function ExplainOverlay() {
       ro.disconnect();
       window.removeEventListener("resize", bump);
     };
-  }, [isActive, registry, pinnedEl]);
+  }, [isActive, isFirstRun, registry, pinnedEl]);
 
   // Esc precedence (D12): open Glasshouse → Explain → ForallMenu dropdown. One
   // capture-phase handler early-returns while the About pane is open (its own
@@ -263,8 +284,10 @@ export function ExplainOverlay() {
 
   if (!isActive) return null;
 
+  // Explain's cursor bubble: whatever the pointer is over, described in place.
+  // Suppressed during first-run (the tour IS the sequence) and mid-drag (D11).
   const hoverAnn: Annotation | null =
-    hover && !dragging
+    !isFirstRun && hover && !dragging && cursor
       ? { kind: hover.kind, key: hover.key, copy: copyForHover(hover) }
       : null;
 
@@ -272,10 +295,12 @@ export function ExplainOverlay() {
     <>
       {/* Scrim — z-50, flat wash ≤0.18 alpha, no backdrop-filter (D9): feeds
           stay legible behind their own labels. Catches every pointer event so
-          the floor is frozen (D1). */}
+          the floor is frozen (D1). Pointer leaving the viewport clears the
+          hover so no stale bubble lingers. */}
       <div
         {...{ [CHROME_ATTR]: "" }}
         onPointerMove={handlePointerMove}
+        onPointerLeave={() => setHover(null)}
         onClick={handleClick}
         style={{
           position: "fixed",
@@ -285,37 +310,34 @@ export function ExplainOverlay() {
           cursor: "default",
         }}
       />
-      {/* Pinned bubble — suspended (hidden) while a vessel is dragged (D11). */}
+      {/* First-run pinned bubble — suspended (hidden) while a vessel is
+          dragged (D11). */}
       {pinned && !dragging && (
         <Bubble
           key={`pin:${pinned.kind}:${pinned.key ?? ""}`}
           annotation={pinned}
           el={pinnedEl}
-          dimmed={!!hoverAnn}
           reduced={reduced}
           measureTick={measureTick}
-          stepper={
-            programKind === "firstrun"
-              ? {
-                  index,
-                  total: annotations.length,
-                  done: !!pinned.done,
-                  onPrev: prev,
-                  onNext: next,
-                  onDone: close,
-                }
-              : null
-          }
+          stepper={{
+            index,
+            total: annotations.length,
+            done: !!pinned.done,
+            onPrev: prev,
+            onNext: next,
+            onDone: close,
+          }}
         />
       )}
-      {hoverAnn && (
-        <Bubble
-          key={`hover:${hoverAnn.kind}:${hoverAnn.key ?? ""}`}
-          annotation={hoverAnn}
-          el={elementFor(hoverAnn)}
+      {/* One persistent cursor bubble (not keyed per target) so sweeping the
+          pointer across the floor swaps its copy in place instead of re-fading
+          a fresh bubble per element (the "faint half-triggered" flicker). */}
+      {hoverAnn && cursor && (
+        <CursorBubble
+          copy={hoverAnn.copy}
+          x={cursor.x}
+          y={cursor.y}
           reduced={reduced}
-          hover
-          measureTick={measureTick}
         />
       )}
     </>
@@ -323,12 +345,12 @@ export function ExplainOverlay() {
 }
 
 // -----------------------------------------------------------------------------
-// Bubble — measures the live target rect, places itself in the side with most
-// free room (right → left → below → above, clamped to the viewport), and draws
-// a 2px crimson leader from the target edge midpoint to the bubble edge with a
-// 4px dot at the target end (D11). A free-float annotation (floor/disc beats, or
-// a target whose element has deregistered) centres over the floor with no
-// leader (D8).
+// Bubble — the first-run pinned bubble. Measures the live target rect, places
+// itself in the side with most free room (right → left → below → above, clamped
+// to the viewport), and draws a 2px crimson leader from the target edge midpoint
+// to the bubble edge with a 4px dot at the target end (D11). A free-float
+// annotation (floor beats, or a target whose element has deregistered) centres
+// over the floor with no leader (D8).
 // -----------------------------------------------------------------------------
 
 type Side = "right" | "left" | "below" | "above";
@@ -453,18 +475,14 @@ interface Stepper {
 function Bubble({
   annotation,
   el,
-  dimmed,
-  hover,
   reduced,
   stepper,
 }: {
   annotation: Annotation;
   el: HTMLElement | null;
-  dimmed?: boolean;
-  hover?: boolean;
   reduced: boolean;
-  // First-run only, pinned bubble only (§6). Null for Explain + hover bubbles.
-  stepper?: Stepper | null;
+  // The first-run stepping footer (§6).
+  stepper: Stepper;
   // Re-render trigger: the overlay bumps it on reflow so the target rect below
   // is re-read. Not consumed directly — its identity change forces this render.
   measureTick: number;
@@ -499,7 +517,7 @@ function Bubble({
   const place = placeBubble(rect, size);
 
   const copy = annotation.copy || `[${annotation.kind}]`;
-  const opacity = shown ? (dimmed ? 0.35 : 1) : 0;
+  const opacity = shown ? 1 : 0;
 
   const leader =
     rect && place.side ? leaderPoints(place.side, rect, place) : null;
@@ -559,7 +577,7 @@ function Bubble({
           left: place.left,
           top: place.top,
           width: BUBBLE_WIDTH,
-          zIndex: hover ? 53 : 52,
+          zIndex: 52,
           padding: "14px 16px",
           borderRadius: 10,
           fontSize: "14px",
@@ -619,5 +637,83 @@ function Bubble({
         )}
       </div>
     </>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// CursorBubble — the Explain hover bubble (2026-07-15 rework). A tooltip that
+// rides the pointer: offset below-right of the cursor, flipping above/left when
+// it would leave the viewport, clamped to MARGIN. One persistent instance whose
+// copy swaps in place as the hover target changes — it fades in once when hover
+// first resolves, never per target. No leader: the cursor is already on the
+// thing being described.
+// -----------------------------------------------------------------------------
+
+function CursorBubble({
+  copy,
+  x,
+  y,
+  reduced,
+}: {
+  copy: string;
+  x: number;
+  y: number;
+  reduced: boolean;
+}) {
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number }>({
+    w: BUBBLE_WIDTH,
+    h: 80,
+  });
+  const [shown, setShown] = useState(false);
+
+  // Measure own box each render (copy changes height); converges, so no loop.
+  useLayoutEffect(() => {
+    const node = bubbleRef.current;
+    if (!node) return;
+    const r = node.getBoundingClientRect();
+    setSize((prev) =>
+      prev.w === r.width && prev.h === r.height
+        ? prev
+        : { w: r.width, h: r.height },
+    );
+  });
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let left = x + CURSOR_GAP_X;
+  if (left + size.w > vw - MARGIN) left = x - CURSOR_GAP_X - size.w;
+  let top = y + CURSOR_GAP_Y;
+  if (top + size.h > vh - MARGIN) top = y - CURSOR_GAP_Y - size.h;
+  left = clamp(left, MARGIN, Math.max(MARGIN, vw - size.w - MARGIN));
+  top = clamp(top, MARGIN, Math.max(MARGIN, vh - size.h - MARGIN));
+
+  return (
+    <div
+      {...{ [CHROME_ATTR]: "" }}
+      ref={bubbleRef}
+      className="bg-glasshouse text-black shadow-lg whitespace-pre-line"
+      style={{
+        position: "fixed",
+        left,
+        top,
+        width: BUBBLE_WIDTH,
+        zIndex: 53,
+        padding: "14px 16px",
+        borderRadius: 10,
+        fontSize: "14px",
+        lineHeight: 1.5,
+        pointerEvents: "none",
+        opacity: shown ? 1 : 0,
+        transition: reduced ? undefined : `opacity ${ENTER_MS}ms ease-out`,
+      }}
+    >
+      {copy}
+    </div>
   );
 }

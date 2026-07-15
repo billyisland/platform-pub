@@ -8,10 +8,11 @@ import { type ExplainKind, explainCopy } from "../lib/explain/registry";
 //
 // Two concurrent channels inside `active`, no mode enum:
 //   - pinned: the sequential cursor `index` into `annotations`, driven by
-//     next/prev and click-pin (D1).
+//     next/prev. RENDERED ONLY BY FIRST-RUN (2026-07-15): the Explain program
+//     is hover-only, so its resolved sequence is never walked.
 //   - hover:  transient, resolved live from the pointer by the overlay; does
-//     not touch `index`. While a hover bubble shows, the overlay dims the
-//     pinned bubble (D12).
+//     not touch `index`. The overlay renders it AT the cursor (2026-07-15),
+//     and suppresses it during first-run.
 //
 // Ephemeral chrome, so NO history push (D12) — Explain is not a shareable URL.
 // The store is DOM-free: annotation resolution (registry snapshot → ordered
@@ -96,6 +97,9 @@ export const useExplain = create<ExplainState>((set, get) => ({
   prev: () => set((s) => ({ index: Math.max(s.index - 1, 0) })),
 
   pin: (t) => {
+    // DORMANT (2026-07-15): click-pin was deleted from the Explain program
+    // (any click dismisses; the hover bubble already rides the cursor). Kept as
+    // the D1 seam in case a pinning affordance returns.
     const { annotations } = get();
     const existing = annotations.findIndex((a) => sameTarget(a, t));
     if (existing >= 0) {

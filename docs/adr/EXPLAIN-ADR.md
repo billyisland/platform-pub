@@ -17,6 +17,15 @@ Both produce the same `Annotation[]` and share anchoring, stepping, hover, dismi
 
 **Division of labour (decided this session):** first-run editorialises, Explain describes. Explain labels contain at most trace personality; every "why" claim beyond one sentence belongs in first-run or the About pane.
 
+### Post-live amendments (2026-07-15)
+
+The first live session on production reversed four calls; the decision texts below carry dated notes where they changed:
+
+1. **First-run auto-entry is dormant.** Landing in Explain mode on load without asking for it read as a malfunction, not a welcome. `FirstRunController` is no longer mounted (kept intact in `ExplainProvider.tsx` for revival); Explain is strictly ∀-menu-invoked (amends D6).
+2. **The Explain hover bubble renders at the cursor**, tooltip-style (one persistent bubble, copy swaps in place), not element-anchored — anchoring to a large target's rect scattered bubbles far from the pointer (amends D11 for the Explain program; first-run pinned beats keep anchored placement + leader).
+3. **The Explain pinned channel is not rendered** (and click-pin is deleted; any click dismisses). The index-0 floor bubble + the 0.35-alpha dim while hovering meant a ghost bubble was near-permanently on screen — the floor target spans the viewport, so hover was never empty (amends D1/D12; the pinned channel now renders only in first-run).
+4. **The chrome swap replaces only the wordmark.** The ∀ disc stays on screen during a program, registers as the `disc` explainable root, surfaces the `disc` label on its own hover, and its click exits Explain (About pane open → closes that first, glyph flips to X). The "About all.haus" button takes the wordmark's spot and carries a new hover-only `about` kind (rewrites D3; the disc copy now describes the disc).
+
 ---
 
 ## 2. Current state (verified against the codebase)
@@ -41,9 +50,8 @@ Numbered for reference. D1–D9 resolve the gaps identified in the spec review; 
 While `isActive`, the underlying product does not respond to input. Interaction routing:
 
 - The Explain scrim (§8) is a single full-viewport div that **intercepts all pointer events**. No `pointer-events: none` pass-through. **This includes wheel and touch, so the floor is frozen while Explain is active.** The `/reader` floor is a fixed `overflow:hidden` canvas (`WorkspaceView.tsx:1607`) whose vessels scroll *internally* (`Vessel.tsx:479`); the page itself never scrolls, and the scrim sitting above the vessels swallows their wheel/touch too. So "scroll" cannot reveal new content mid-Explain — the engine annotates the surface exactly as it stands at `open()`. (This is what resolves the draft's scroll ambiguity: D4's "cards mount on scroll" and a live-`scroll` re-measure both assumed a scrollable floor. They don't apply; see D4, D11.) If a frozen surface proves too limiting in review, the sanctioned v2 forwards wheel/touch deltas to the scroll container under the pointer — deliberately deferred, exactly like D9's cutout.
-- **Hover** is resolved by the engine from the scrim's `pointermove` via coordinate hit-test against (a) the registration Map's live rects and (b) `document.elementsFromPoint` → `closest('[data-explain]')` for tagged descendants. This makes hover discovery live by construction (no stale snapshot; see D4).
-- **Click on a discoverable target** pins that target's annotation: the pinned channel's `index` jumps to the matching annotation (creating one on the fly for hover-only instance targets). Clicks therefore have a job, and it is an Explain job, not a product job. *(Explain program only — first-run ignores clicks entirely: its fixed sequence is driven by Next/Back/arrows and finished by Done/Esc, so a stray click can neither warp the cursor nor mint off-tour annotations. 2026-07-15.)*
-- **Click anywhere else** (not a bubble, not the About button, not a target) dismisses, per §7. **The floor registration spans the whole viewport, so a click that hit-tests to the floor counts as "anywhere else" and dismisses** — otherwise the non-target set would be empty and click-dismiss unreachable (the floor's copy stays reachable via hover, and it is the pinned opening annotation). *(2026-07-15 — resolves a latent contradiction between the full-viewport floor target and this dismiss rule.)*
+- **Hover** is resolved by the engine from the scrim's `pointermove` via coordinate hit-test against (a) the registration Map's live rects and (b) `document.elementsFromPoint` → `closest('[data-explain]')` for tagged descendants. This makes hover discovery live by construction (no stale snapshot; see D4). *(2026-07-15: the hover bubble renders AT the cursor — see amendment 2 — and the z-60 chrome the scrim never sees, the disc + About button, reports its own hover to the store.)*
+- **Any click dismisses** *(2026-07-15 form, amendment 3 — click-pin is deleted: the hover bubble already rides the cursor, so pinning duplicated it, and the perpetually-dimmed pinned bubble read as half-triggered noise)*. First-run still ignores clicks entirely: its fixed sequence is driven by Next/Back/arrows and finished by Done/Esc, so a stray click cannot dismiss a mid-tour state.
 - No product action fires through the scrim. The gear does not open settings; the byline does not open `AuthorModal`; reply does not focus a composer. Explain explains; it does not drive.
 
 *Rationale:* the draft spec's dismiss rules implied a click-catching scrim while its hover channel implied a pointer-transparent one. Those are incompatible. Inert-floor resolves the contradiction, honours the stated non-goal ("does not drive the user anywhere"), and reduces the scrim to one implementation instead of per-target listener plumbing.
@@ -52,11 +60,11 @@ While `isActive`, the underlying product does not respond to input. Interaction 
 
 D1 already prevents `AuthorModal` from opening (events never reach the byline), but belt-and-braces: `useAuthorHover` early-returns when `useExplain.getState().isActive`, so a modal already open at Explain-activation time closes rather than lingering under the scrim. Same guard on any future hover affordance (pip panel, if unparked).
 
-### D3 — Chrome swap wins; the toggle dismiss is deleted
+### D3 — Chrome swap: wordmark only; the disc stays and is annotated in place *(rewritten 2026-07-15, amendment 4)*
 
-While active, `ForallMenu` swaps the disc + wordmark for the **"About all.haus"** button (subscribing to `isActive`), at the same z-60 layer, disc glyph machinery untouched. The swap is not cosmetic: the disc sits at z-60 **above** the Explain scrim (z-50), so it is the one live control during Explain — swapping it to About gives it a defined, safe job instead of a floor-toggle that would fire through. Since the ∀ disc is therefore unreachable, the draft spec's "re-select the ∀ Explain row to toggle off" dismiss gesture **cannot exist and is removed**. Dismiss is Esc / empty-click / first-run's "done" only (§7). The About button opens `/about` as a standard Glasshouse pane (existing machinery whole: scrim, ✕, Esc, scroll-lock, `useGlasshousePresence` — the same pattern `SurfaceOverlay` uses for `/pub/:slug/about`). While the About pane is open, the swapped chrome is suppressed (the pane owns its own dismiss); restored on pane close.
+While active, `ForallMenu` swaps only the **wordmark** for the **"About all.haus"** button (same spot, left of the disc, same z-60 layer, islanded like the disc). The **∀ disc stays on screen**: it registers as the `disc` explainable root, reports its own hover to the engine (surfacing the `disc` label — it sits above the scrim, which therefore never hit-tests it), and **its click exits Explain** (with the About pane open, the click closes that first and the glyph flips to the X). Hiding the disc and then explaining "the corner is really a menu you can't currently see" was the original form's awkwardness; now the engine points at the real thing. The draft spec's "re-select the ∀ Explain row to toggle off" gesture still does not exist — the menu never opens over the frozen floor — but the disc click is a sanctioned dismiss alongside Esc / any click (§7). The About button opens `/about` as a standard Glasshouse pane (existing machinery whole: scrim, ✕, Esc, scroll-lock, `useGlasshousePresence`) and carries its own hover-only **`about`** kind; the button is suppressed while the About pane is open (the pane owns its own dismiss), restored on close.
 
-**Anchoring — resolves Open-1.** Both programs set `isActive`, so **first-run also swaps** the disc to About; there is never a moment during any program when the ∀ glyph is on screen. The `disc`-position annotation (first-run beat 4 and the Explain `disc` label) therefore anchors its leader to the **About button** — the control actually on screen — and **leads with the About button's current function**, then notes the ∀-menu role the corner resumes once Explain closes. This keeps the engine's point-at-what-is-there contract (D4) instead of describing an invisible ∀. Beat 4 additionally avoids naming "Explain" (not yet introduced at that beat), saying "the rest of the time" rather than "when Explain is off"; the Explain label may name it (the user is in Explain). Copy in Appendix A is written to this. The earlier "decide on-screen" is closed.
+**Anchoring.** The `disc` annotation (first-run beat 4 and the Explain `disc` label) anchors to the disc itself and describes the ∀ menu directly; the About button is described by its own `about` label. Copy in Appendix A is written to this. (The original D3 form — swap the whole lockup, anchor the disc label to the About button, lead with About — is superseded; it survived one live session, 2026-07-15.)
 
 ### D4 — Discovery: registered roots + delegated leaves; sequence gets a snapshot, hover gets live resolution
 
@@ -70,6 +78,8 @@ While active, `ForallMenu` swaps the disc + wordmark for the **"About all.haus"*
 Card kinds (`card`, `card.byline`, `card.reply`, `card.quote`) would otherwise multiply the sequence by the number of visible cards. Rule: each card kind contributes **one** sequential annotation, anchored to the topmost fully visible card in the first (lowest `sort_rank`) vessel that has cards. All instances remain hover-discoverable. If no vessel has cards, card kinds are omitted from the sequence and remain hover-only.
 
 ### D6 — First-run entry: sequenced after the ceremony, gated on content, seen-on-open
+
+**DORMANT (2026-07-15, amendment 1):** the auto-entry no longer runs — `FirstRunController` is unmounted (kept intact in `ExplainProvider.tsx`). Landing in Explain mode on load without asking for it read as a malfunction on the live site. The gates below remain the spec for any revival.
 
 Entry condition, all of: (a) `workspace:firstrun_seen:<userId>` unset; (b) `ForallCeremony` not pending/playing — first-run subscribes to ceremony completion (or its seen-flag being pre-set) rather than racing it; (c) `BringYourWorld` not showing; (d) the workspace has ≥ 1 vessel rendered.
 
@@ -109,13 +119,15 @@ Explain scrim is a flat wash at **≤ 0.18 alpha**, no `backdrop-filter` — fee
 
 Panes register no targets in v1. Therefore: while any Glasshouse is open, the ∀-menu **Explain row is disabled** (dimmed, with title text "close this pane to use Explain"). Discovery never has to arbitrate occlusion. The registration Map remains the seam: when pane interiors come into scope, panes register their own targets and discovery keys off the presence registry to pick the surface. The draft's general visibility oracle ("visible, in viewport, not behind a higher-z surface") is retired as a v1 requirement.
 
-### D11 — Anchoring, measurement, drag (carried forward, unchanged)
+### D11 — Anchoring, measurement, drag
+
+*(2026-07-15, amendment 2: everything below now applies to the **first-run pinned bubble only**. The Explain hover bubble is a cursor tooltip — offset below-right of the pointer, flipping above/left at the viewport edges, clamped to the margin, no leader, one persistent instance whose copy swaps in place — because element-anchored placement put bubbles far from the pointer on large targets, which read as haphazard.)*
 
 Bubbles position from the target's live `getBoundingClientRect()`, measured when the target becomes active (pinned) or on hover-resolve (hover) — never all up front, never cached. Re-measure the active target via `ResizeObserver` — on the floor container (vessel add / remove / resize) and, while a target is pinned, on that target's own vessel scroll container as well (async ingestion can reflow a vessel's interior under the pinned card, a shift a floor-level observer misses). **No `scroll` trigger** — the floor is frozen while Explain is active (D1), so the pre-`open()` clip state is the only one; the partially-scrolled / fully-scrolled-out clauses below describe that frozen state, not live scrolling. During a vessel drag: **suspend** the pinned bubble (restore on `onDragEnd` via the existing `onDragFrame`/drag callbacks), suppress hover. A bubble chasing a dragged object is noise. Placement: side with most free room (right → left → below → above), clamp into viewport; 2 px crimson leader from target edge midpoint to bubble anchor edge, 4 px dot at the target end; partially-scrolled target → anchor to the visible clip edge; fully scrolled out → drop the leader, pin to the vessel header. Reduced motion (`lib/workspace/motion`): no leader draw, no slide; opacity steps only.
 
 ### D12 — State machine, store, layering (carried forward with D1/D3 amendments)
 
-`idle → active` on `open(program)`, back on `close()`. Within `active`, two concurrent channels, no mode enum: **pinned** (sequential cursor `index`, driven by next/prev/click-pin per D1) and **hover** (transient, does not touch `index`; while showing, the pinned bubble dims by opacity and restores on leave). Zustand store per overlay-store conventions, **no history push** — Explain is ephemeral chrome, not a shareable URL.
+`idle → active` on `open(program)`, back on `close()`. Within `active`, two concurrent channels, no mode enum: **pinned** (sequential cursor `index`, driven by next/prev) and **hover** (transient, does not touch `index`). *(2026-07-15, amendments 2–3: the pinned channel renders only during first-run — Explain is hover-only, and hover is suppressed during first-run, so exactly one channel is ever visible and the dim-while-hovering rule is deleted. `pin` remains in the store as a dormant seam.)* Zustand store per overlay-store conventions, **no history push** — Explain is ephemeral chrome, not a shareable URL.
 
 ```ts
 interface ExplainState {
@@ -145,6 +157,9 @@ Supersedes the draft spec's §2 union (which predated the byline re-anchoring an
 type ExplainKind =
   // singletons
   | "floor" | "disc"
+  // the About button standing in for the wordmark during a program
+  // (hover-only, never sequenced — 2026-07-15, amendment 4)
+  | "about"
   // per-feed instance + tagged leaves
   | "vessel" | "vessel.name" | "vessel.gear"
   | "vessel.hide" | "vessel.addSource" | "vessel.resize"
@@ -152,7 +167,7 @@ type ExplainKind =
   | "card" | "card.byline" | "card.reply" | "card.quote";
 ```
 
-Twelve kinds. Explain's derived order: `floor` → per-vessel (`vessel`, then its leaves) by `sort_rank` → card kinds (representative instance, D5) → `disc` last.
+Thirteen kinds. Explain's derived order: `floor` → per-vessel (`vessel`, then its leaves) by `sort_rank` → card kinds (representative instance, D5) → `disc` last. *(2026-07-15: the derived order is retained as the seam for a future stepped walk-through, but the live Explain program is hover-only and never walks it.)*
 
 ---
 
@@ -165,13 +180,13 @@ Twelve kinds. Explain's derived order: `floor` → per-vessel (`vessel`, then it
 | Explain bubbles + leaders | z-52 | pinned + hover | crisp above the dim |
 | Glasshouse scrim | z-55 | About backdrop (blur) | only while About open |
 | Glasshouse pane | z-56 | About content | |
-| ForallMenu / swapped chrome | z-60 | disc ⇄ "About all.haus" | suppressed while About pane open (D3) |
+| ForallMenu / swapped chrome | z-60 | disc stays; wordmark ⇄ "About all.haus" | About button suppressed while its pane is open (D3, 2026-07-15 form) |
 
 ---
 
 ## 6. Dismiss & persistence
 
-- **Explain:** Esc (subject to precedence, D12) or click on any non-target, non-bubble, non-About region — **including the floor** (the full-viewport floor target counts as empty for clicks, D1). Completing the last sequential step is **not** an auto-dismiss (re-reading and hovering remain available). No toggle dismiss (D3).
+- **Explain:** Esc (subject to precedence, D12), **any click on the scrim** (2026-07-15 form, amendment 3 — click-pin is deleted, so every scrim click is a dismiss), or **a click on the ∀ disc** (amendment 4). The About button keeps its own job (opens the pane). No toggle dismiss (D3).
 - **First-run:** Esc or the explicit "done" affordance on beat 6 — one gesture kills it. Clicks are inert during first-run (D1): they neither dismiss (a reflex click must not lose a mid-tour state) nor pin.
 - **Seen-flag:** `localStorage["workspace:firstrun_seen:" + user.id] = "true"`, written at open (D6). Per-device; copy fork per D7 makes that safe.
 
@@ -237,8 +252,8 @@ Copy is data; the engine renders it verbatim. No em-dashes anywhere by editorial
 **3 · `card.byline`** *(free-floats if no card rendered, D8)*
 > Hover over a name to follow that person and set how prominent they are in this feed. It's basically a volume knob: louder, quieter, or mute. The mixing is done by you, not for you.
 
-**4 · `disc`** *(anchors to the About button; leads with About, D3)*
-> This is About: the full account of what all.haus is and how it works, worth reading once. The rest of the time, this same corner is your menu, the one place everything runs from: writing, searching, your messages, your money, your settings. There is no other interface to learn.
+**4 · `disc`** *(anchors to the ∀ disc itself, D3 2026-07-15 form)*
+> This is the ∀ menu, the one place everything runs from: writing, searching, your messages, your money, your settings. Next to it, About has the fuller account of what all.haus is and how it works, worth reading once. There is no other interface to learn.
 
 **5 · `floor`** *(free-floats, D8)*
 > Make as many feeds as you like and arrange them however suits you. They stay where they are put.
@@ -274,8 +289,11 @@ Copy is data; the engine renders it verbatim. No em-dashes anywhere by editorial
 **`vessel.resize`**
 > Drag this corner to make the feed bigger or smaller.
 
-**`disc`** *(anchors to the About button, D3)*
-> Right now this opens About: a fuller account of what all.haus is and how it works. When Explain is off, this same corner is the ∀ menu, where everything runs from: writing, searching, your messages, your money, your settings. There is no other interface to learn.
+**`disc`** *(the real ∀ disc, D3 2026-07-15 form)*
+> This is the ∀ menu, where everything runs from: writing, searching, your messages, your money, your settings. There is no other interface to learn. While Explain is on, clicking it simply takes you back to your workspace.
+
+**`about`** *(the About button standing in for the wordmark; hover-only, 2026-07-15)*
+> This opens About: a fuller account of what all.haus is and how it works, worth reading once.
 
 ### A.3 Explain labels — Tier 2
 
