@@ -19,6 +19,7 @@ import {
 import type { PipStatus } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
 import { ExplainProvider, useExplainable } from "./ExplainProvider";
+import { ExplainOverlay } from "./ExplainOverlay";
 import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
@@ -1593,6 +1594,9 @@ export function WorkspaceView() {
       <SettingsOverlay />
       <LibraryOverlay />
       <NetworkOverlay />
+      {/* Desktop only — the Explain engine must never mount on the mobile
+          branch (EXPLAIN build-plan §2, ADR §Surface). */}
+      {!isMobile && <ExplainOverlay />}
       </Floor>
     </ExplainProvider>
   );
