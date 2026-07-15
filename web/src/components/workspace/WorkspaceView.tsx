@@ -246,6 +246,9 @@ export function WorkspaceView() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        // Frozen floor (EXPLAIN-ADR D1): while an Explain program is active
+        // nothing may open over the scrim, the composer included.
+        if (useExplain.getState().isActive) return;
         if (useEditorOverlay.getState().isOpen) return;
         e.preventDefault();
         if (composerOpenRef.current) return;

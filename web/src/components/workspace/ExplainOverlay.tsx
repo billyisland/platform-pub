@@ -244,13 +244,67 @@ export function ExplainOverlay() {
       .find((r) => r.kind === "floor")?.ref.current;
     if (floor) ro.observe(floor);
     const vesselScroll = pinnedEl?.closest<HTMLElement>("[data-vessel-scroll]");
-    if (vesselScroll) ro.observe(vesselScroll);
+    if (vesselScroll) {
+      ro.observe(vesselScroll);
+      // A height-set vessel's scroll box is a fixed frame whose own size
+      // never changes when the interior reflows — the growth happens on the
+      // scrolled CONTENT — so observe the content wrapper too, else the
+      // pinned bubble drifts off a target that async ingestion pushed down.
+      const content = vesselScroll.firstElementChild;
+      if (content) ro.observe(content);
+    }
     window.addEventListener("resize", bump);
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", bump);
     };
   }, [isActive, isFirstRun, registry, pinnedEl]);
+
+  // D1 for the KEYBOARD: the scrim freezes the pointer by stacking alone, but
+  // Tab could still walk focus into the frozen floor and Enter would activate
+  // what a click cannot reach. Real `inert` on the floor is not usable here —
+  // the spec makes an inert subtree hit-test as pointer-events:none, so
+  // document.elementsFromPoint would stop seeing the vessels and the hover
+  // hit-test above would go blind (and the floor CONTAINS this overlay's own
+  // chrome plus the z-60 disc layer, so a blanket attribute is wrong anyway).
+  // Instead: (a) any focus landing outside the Explain chrome set — the
+  // bubbles, the disc/About layer (`.forall-trigger`), or an open Glasshouse
+  // pane (the About pane owns its own focus) — bounces to the program's
+  // primary control (the first-run stepper button, else the ∀ disc, the way
+  // out); (b) the vessel roots are aria-hidden for the same window so
+  // assistive tech cannot read or activate the frozen content the pointer
+  // cannot reach.
+  useEffect(() => {
+    if (!isActive || typeof document === "undefined") return;
+    const vesselEls = (registry?.snapshot() ?? [])
+      .filter((r) => r.kind === "vessel")
+      .map((r) => r.ref.current)
+      .filter((el): el is HTMLElement => !!el);
+    for (const el of vesselEls) el.setAttribute("aria-hidden", "true");
+
+    const allowed = (t: EventTarget | null): boolean => {
+      if (useGlasshousePresence.getState().isOpen) return true;
+      return (
+        t instanceof Element &&
+        !!(t.closest(`[${CHROME_ATTR}]`) || t.closest(".forall-trigger"))
+      );
+    };
+    const bounce = () => {
+      const primary =
+        document.querySelector<HTMLElement>("[data-explain-primary]") ??
+        registry?.snapshot().find((r) => r.kind === "disc")?.ref.current;
+      primary?.focus();
+    };
+    if (!allowed(document.activeElement)) bounce();
+    const onFocusIn = (e: FocusEvent) => {
+      if (!allowed(e.target)) bounce();
+    };
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn, true);
+      for (const el of vesselEls) el.removeAttribute("aria-hidden");
+    };
+  }, [isActive, registry]);
 
   // Esc precedence (D12): open Glasshouse → Explain → ForallMenu dropdown. One
   // capture-phase handler early-returns while the About pane is open (its own
@@ -266,8 +320,11 @@ export function ExplainOverlay() {
         return;
       }
       // First-run arrow stepping (the sequence's free-floating beats can't be
-      // clicked to advance). Ignored while typing in a field.
+      // clicked to advance). Ignored while typing in a field, and while the
+      // About pane is open — the tour is hidden under the Glasshouse frost,
+      // so arrows must not step it blind.
       if (useExplain.getState().program?.kind !== "firstrun") return;
+      if (useGlasshousePresence.getState().isOpen) return;
       const el = document.activeElement;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       if (e.key === "ArrowRight") {
@@ -365,6 +422,30 @@ interface Placement {
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(v, hi));
+}
+
+// The D11 clipped-target clauses: clip the target's rect to its vessel scroll
+// box and the viewport, so a partially clipped target anchors to its visible
+// remainder (the leader points at the clip edge, never at a phantom midpoint
+// outside the vessel), and a fully clipped one returns null — rendered exactly
+// like an absent target (free-float, no leader).
+function visibleTargetRect(el: HTMLElement): DOMRect | null {
+  const r = el.getBoundingClientRect();
+  let { left, top, right, bottom } = r;
+  const clip = el.closest<HTMLElement>("[data-vessel-scroll]");
+  if (clip) {
+    const c = clip.getBoundingClientRect();
+    left = Math.max(left, c.left);
+    top = Math.max(top, c.top);
+    right = Math.min(right, c.right);
+    bottom = Math.min(bottom, c.bottom);
+  }
+  left = Math.max(left, 0);
+  top = Math.max(top, 0);
+  right = Math.min(right, window.innerWidth);
+  bottom = Math.min(bottom, window.innerHeight);
+  if (right <= left || bottom <= top) return null;
+  return new DOMRect(left, top, right - left, bottom - top);
 }
 
 function placeBubble(rect: DOMRect | null, size: { w: number; h: number }): Placement {
@@ -511,9 +592,20 @@ function Bubble({
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Live rect, re-read every render (the overlay re-renders on reflow, D11).
+  // SR/keyboard surface: focus follows each beat onto the primary stepper
+  // button, so keyboard users step the tour with Enter and screen readers
+  // hear the beat's copy through the live region below. Depends on the
+  // annotation (not a mount effect): beats 5 and 6 share a kind/key, so the
+  // bubble is NOT remounted between them.
+  const primaryRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    primaryRef.current?.focus();
+  }, [annotation]);
+
+  // Live rect, re-read every render (the overlay re-renders on reflow, D11),
+  // clipped to the vessel scroll box + viewport (fully clipped → free-float).
   const rect =
-    annotation.alwaysFloat || !el ? null : el.getBoundingClientRect();
+    annotation.alwaysFloat || !el ? null : visibleTargetRect(el);
   const place = placeBubble(rect, size);
 
   const copy = annotation.copy || `[${annotation.kind}]`;
@@ -571,7 +663,9 @@ function Bubble({
       <div
         {...{ [CHROME_ATTR]: "" }}
         ref={bubbleRef}
-        className="bg-glasshouse text-black shadow-lg whitespace-pre-line"
+        role="dialog"
+        aria-label={`Welcome tour, step ${stepper.index + 1} of ${stepper.total}`}
+        className="bg-glasshouse text-black shadow-lg whitespace-pre-line text-ui-sm"
         style={{
           position: "fixed",
           left: place.left,
@@ -580,14 +674,12 @@ function Bubble({
           zIndex: 52,
           padding: "14px 16px",
           borderRadius: 10,
-          fontSize: "14px",
-          lineHeight: 1.5,
           pointerEvents: "none",
           opacity,
           transition: reduced ? undefined : `opacity ${ENTER_MS}ms ease-out`,
         }}
       >
-        {copy}
+        <div aria-live="polite">{copy}</div>
         {stepper && (
           // pointerEvents:auto so the controls are clickable through the
           // otherwise inert bubble; whitespace (marginTop, never a rule)
@@ -618,6 +710,8 @@ function Bubble({
               {stepper.done ? (
                 <button
                   type="button"
+                  ref={primaryRef}
+                  data-explain-primary=""
                   className="btn-text"
                   onClick={stepper.onDone}
                 >
@@ -626,6 +720,8 @@ function Bubble({
               ) : (
                 <button
                   type="button"
+                  ref={primaryRef}
+                  data-explain-primary=""
                   className="btn-text"
                   onClick={stepper.onNext}
                 >
@@ -697,7 +793,10 @@ function CursorBubble({
     <div
       {...{ [CHROME_ATTR]: "" }}
       ref={bubbleRef}
-      className="bg-glasshouse text-black shadow-lg whitespace-pre-line"
+      // A polite live region: the copy swaps in place as the hover target
+      // changes, so assistive tech hears each label without focus moving.
+      role="status"
+      className="bg-glasshouse text-black shadow-lg whitespace-pre-line text-ui-sm"
       style={{
         position: "fixed",
         left,
@@ -706,8 +805,6 @@ function CursorBubble({
         zIndex: 53,
         padding: "14px 16px",
         borderRadius: 10,
-        fontSize: "14px",
-        lineHeight: 1.5,
         pointerEvents: "none",
         opacity: shown ? 1 : 0,
         transition: reduced ? undefined : `opacity ${ENTER_MS}ms ease-out`,

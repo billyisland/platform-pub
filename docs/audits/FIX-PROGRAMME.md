@@ -23,6 +23,50 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain residue pass (§0d items 2–4 closed).** (1)
+  **Keyboard/SR freeze (§0d.3)** — D1 froze the pointer only (the scrim is a
+  stacking freeze): Tab could walk focus into controls under the scrim, Enter
+  activated them, and ⌘K opened the composer over it; bubbles carried no
+  role/aria-live, so the tour was imperceptible to screen readers. Real
+  `inert` on the floor is unusable (the spec makes an inert subtree hit-test
+  as `pointer-events:none`, blinding the hover hit-test's
+  `elementsFromPoint`; the floor also CONTAINS the overlay chrome + disc
+  layer), so the freeze is focus-policing: a capture-phase `focusin` bounces
+  any focus outside the Explain chrome set (bubbles / `.forall-trigger`
+  disc+About / an open Glasshouse pane) to the program's primary control
+  (first-run stepper button, else the ∀ disc), and the vessel roots are
+  `aria-hidden` for the window so AT can't activate what the pointer can't
+  reach. ⌘K gated on `useExplain.isActive` in `WorkspaceView`. The first-run
+  bubble is now `role="dialog"` (labelled "Welcome tour, step N of M") with
+  the copy in an `aria-live="polite"` region and focus following each beat
+  onto the primary button (keyed on the annotation — beats 5/6 share a
+  kind:key and don't remount); the cursor bubble is `role="status"`. (2)
+  **§0d.2 (card-kind hover/pin anchors to the representative instance) closed
+  as MOOT** — the same-day post-live rework (`30c790f`, after the audit
+  write-up) made hover a cursor bubble with no anchor/leader and deleted
+  click-pin; `elementFor` now serves only the first-run pinned channel, whose
+  representative card anchor is by design (D5). The dormant `pin` seam in
+  `stores/explain.ts` now carries the instance-key requirement in its comment
+  so a revival doesn't reintroduce the bug. (3) **§0d.4 smaller residue, all
+  seven**: the D11 ResizeObserver also observes the pinned target's scroll
+  CONTENT wrapper (a height-set vessel's scroll box never resizes when its
+  interior reflows, so the pinned bubble drifted); the clipped-target leader
+  clauses are implemented (`visibleTargetRect` clips the target rect to its
+  `[data-vessel-scroll]` box + viewport — partial clip anchors the leader to
+  the visible remainder, full clip renders free-float/no-leader like an
+  absent target); `FirstRunController`'s `localStorage` get/set are
+  try/caught (private-mode throw escaped the effect); arrow keys no longer
+  step the hidden tour under an open About pane (glasshouse-presence guard in
+  the keydown handler); both bubbles use `text-ui-sm` instead of inline
+  `fontSize:"14px"` (scales with the type-size control); the unused
+  `EXPLAIN_KINDS` export is deleted; the About-button stale-hover was already
+  fixed same-day in `3151a85`. Files: `ExplainOverlay.tsx`,
+  `ExplainProvider.tsx`, `WorkspaceView.tsx`, `stores/explain.ts`,
+  `lib/explain/registry.ts`. eslint (0 err) + hairlines + `next build` clean.
+  NOT browser-verified (needs `docker compose build web && up -d web`) — the
+  §0d keyboard walk: open Explain, Tab (focus stays on disc/About), ⌘K
+  (nothing), hover a card in a second vessel (bubble at cursor), Esc.
+
 - **2026-07-15** — **Explain post-live rework (EXPLAIN-ADR "Post-live
   amendments"): four calls reversed after the first session on production.**
   (1) **First-run auto-entry dormant** — refreshing the live site dropped the

@@ -99,7 +99,11 @@ export const useExplain = create<ExplainState>((set, get) => ({
   pin: (t) => {
     // DORMANT (2026-07-15): click-pin was deleted from the Explain program
     // (any click dismisses; the hover bubble already rides the cursor). Kept as
-    // the D1 seam in case a pinning affordance returns.
+    // the D1 seam in case a pinning affordance returns. If revived for card
+    // kinds, thread an INSTANCE key through the hit → pin path first: a
+    // keyless card annotation anchors to the representative instance (the
+    // lowest-rank vessel's leaf), not the one that was clicked (§0d.2,
+    // 2026-07-15 audit).
     const { annotations } = get();
     const existing = annotations.findIndex((a) => sameTarget(a, t));
     if (existing >= 0) {

@@ -33,22 +33,6 @@ export type ExplainKind =
   | "card.reply"
   | "card.quote";
 
-export const EXPLAIN_KINDS: readonly ExplainKind[] = [
-  "floor",
-  "disc",
-  "about",
-  "vessel",
-  "vessel.name",
-  "vessel.gear",
-  "vessel.hide",
-  "vessel.addSource",
-  "vessel.resize",
-  "card",
-  "card.byline",
-  "card.reply",
-  "card.quote",
-] as const;
-
 // ---------------------------------------------------------------------------
 // Explain-program labels — Appendix A.2 / A.3, verbatim.
 //

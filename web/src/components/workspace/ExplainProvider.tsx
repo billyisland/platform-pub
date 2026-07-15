@@ -226,7 +226,13 @@ export function FirstRunController({
   useEffect(() => {
     if (!armed || !registry || typeof window === "undefined") return;
     const seenKey = `${FIRSTRUN_SEEN_PREFIX}${userId}`;
-    if (window.localStorage.getItem(seenKey) === "true") return;
+    try {
+      if (window.localStorage.getItem(seenKey) === "true") return;
+    } catch {
+      // Private browsing / storage disabled — treat as unseen and fall
+      // through (the write below is guarded too; worst case the tour offers
+      // again next session, which is harmless).
+    }
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -252,7 +258,12 @@ export function FirstRunController({
         timer = setTimeout(poll, 200);
         return;
       }
-      window.localStorage.setItem(seenKey, "true"); // seen-on-open (D6)
+      try {
+        window.localStorage.setItem(seenKey, "true"); // seen-on-open (D6)
+      } catch {
+        // Quota / private browsing — run the tour anyway; it may offer once
+        // more next session, which is harmless.
+      }
       openFirstRun();
     };
 
