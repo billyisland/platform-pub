@@ -139,6 +139,7 @@ function NativeByline({
         nameRef={hover.bylineRef}
         onNameMouseEnter={hover.onMouseEnter}
         onNameMouseLeave={hover.onMouseLeave}
+        dataExplain="card.byline"
       />
       {hover.open && hover.id && (
         <AuthorModal
@@ -195,6 +196,7 @@ function ExternalByline({
         nameRef={hover.bylineRef}
         onNameMouseEnter={hover.onMouseEnter}
         onNameMouseLeave={hover.onMouseLeave}
+        dataExplain="card.byline"
       />
       {hover.open && hover.id && (
         <AuthorModal

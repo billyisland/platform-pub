@@ -80,6 +80,7 @@ export function PostActions({
         <button
           type="button"
           onClick={onReply}
+          data-explain="card.reply"
           className={ACTION_CLS}
           style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: palette.cardMeta }}
         >
@@ -90,6 +91,7 @@ export function PostActions({
         <button
           type="button"
           onClick={onQuote}
+          data-explain="card.quote"
           className={ACTION_CLS}
           style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: palette.cardMeta }}
         >

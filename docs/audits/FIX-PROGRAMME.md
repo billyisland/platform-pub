@@ -23,6 +23,33 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain slice 2 (registration substrate + `data-explain`
+  tagging) shipped — no visible UI.** The engine's discovery layer (EXPLAIN-ADR
+  D4/§8), landable ahead of the engine. New `web/src/lib/explain/registry.ts`:
+  the 12-kind `ExplainKind` union, Appendix-A copy as data (Explain labels
+  A.2/A.3 + the six first-run beats A.1, both verbatim, no em-dashes), the
+  provenance-fork selectors (`explainVesselLabel` / beat-1 copy fork on
+  `fromStarter`, D7), and the pure derived-ordering fn `buildExplainSequence`
+  (floor → per-vessel leaves by `sort_rank` → representative card kinds → disc,
+  D4/D5). New `web/src/components/workspace/ExplainProvider.tsx`: a context
+  holding a live `Map` of explainable ROOTS + `useExplainable(kind, opts)` for
+  registration (reuses the caller's existing ref so a registration tracks the
+  node through drag/reorder; remount-race-guarded delete; inert no-op outside a
+  provider). Wiring: `WorkspaceView` wraps the desktop floor in
+  `<ExplainProvider>` and passes `sortRank`/`fromStarter` to each `Vessel`;
+  `Floor` registers the `floor` root; `Vessel` registers the `vessel` root
+  (keyed by feedId, `order: sortRank`, `params: {feedName, fromStarter}`) and
+  tags `vessel.name` (the numeral/drag-handle roundel) + `vessel.resize`;
+  `VesselBar` tags `vessel.gear`/`vessel.hide` (via a `dataExplain` passthrough
+  on the shared `BarButton`) + `vessel.addSource`; the post components tag `card`
+  (`PostCardShell` chassis), `card.byline` (a `dataExplain` passthrough on the
+  shared `Byline`, so it stays untagged in thread/playscript contexts),
+  `card.reply` + `card.quote` (`PostActions`). Nothing consumes the Map yet —
+  the store/scrim/overlay are slice 3, the ∀-menu row + chrome swap + `disc`
+  registration are slices 4-5. Web `tsc` + root eslint (0 errors) + hairline
+  tripwire + `next build` all clean. Slices 3–7 (engine + first-run) remain.
+  → `docs/adr/EXPLAIN-BUILD-PLAN.md` §3.2.
+
 - **2026-07-14** — **Explain ADR scoped + slice 1 (`from_starter` wire) shipped.**
   Scoped `docs/adr/EXPLAIN-ADR.md` (first-run onboarding + the Explain annotator)
   into `docs/adr/EXPLAIN-BUILD-PLAN.md` — a file-verified implementation plan

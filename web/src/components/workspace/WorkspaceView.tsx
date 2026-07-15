@@ -18,6 +18,7 @@ import {
 } from "../../lib/api";
 import type { PipStatus } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
+import { ExplainProvider, useExplainable } from "./ExplainProvider";
 import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
 import type { CardContext } from "../post/chassis";
@@ -1239,7 +1240,12 @@ export function WorkspaceView() {
   }
 
   return (
-    <Floor floorRef={floorRef}>
+    // ExplainProvider holds the registration Map (EXPLAIN-ADR §8). It wraps the
+    // whole floor; registration is inert on the mobile branch (MobileWorkspace
+    // renders no Vessel roots), and the Explain overlay + first-run entry effect
+    // that later slices add mount on the desktop path only.
+    <ExplainProvider>
+      <Floor floorRef={floorRef}>
       {bootstrap === "loading" && (
         <CenteredHint>BOOTSTRAPPING WORKSPACE…</CenteredHint>
       )}
@@ -1286,6 +1292,8 @@ export function WorkspaceView() {
                 feedId={v.feed.id}
                 numeral={feedNumerals.get(v.feed.id) ?? 1}
                 descriptiveName={v.feed.name || undefined}
+                sortRank={v.feed.sortRank}
+                fromStarter={v.feed.fromStarter}
                 onNameClick={() => setFeedComposerFor(v.feed)}
                 onSourceAdded={() => {
                   void loadVesselItems(v.feed);
@@ -1585,7 +1593,8 @@ export function WorkspaceView() {
       <SettingsOverlay />
       <LibraryOverlay />
       <NetworkOverlay />
-    </Floor>
+      </Floor>
+    </ExplainProvider>
   );
 }
 
@@ -1596,9 +1605,12 @@ function Floor({
   children?: React.ReactNode;
   floorRef?: React.RefObject<HTMLDivElement>;
 }) {
+  // Register the floor as an explainable root (EXPLAIN-ADR D4). Inert outside an
+  // ExplainProvider (the loading/redirect Floor), so this is a no-op there.
+  const ref = useExplainable("floor", { ref: floorRef });
   return (
     <div
-      ref={floorRef}
+      ref={ref}
       style={{
         background: FLOOR,
         minHeight: "100vh",

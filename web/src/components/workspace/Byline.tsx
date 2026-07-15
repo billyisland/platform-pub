@@ -26,6 +26,7 @@ export function Byline({
   nameRef,
   onNameMouseEnter,
   onNameMouseLeave,
+  dataExplain,
 }: {
   pipNode?: React.ReactNode;
   name: string;
@@ -39,6 +40,9 @@ export function Byline({
   nameRef?: React.Ref<HTMLElement>;
   onNameMouseEnter?: () => void;
   onNameMouseLeave?: () => void;
+  // Explain-engine leaf tag (EXPLAIN-ADR D4). Only PostByline passes it, so the
+  // shared Byline stays untagged in its other (thread / playscript) contexts.
+  dataExplain?: string;
 }) {
   const nameHover = {
     onMouseEnter: onNameMouseEnter,
@@ -48,6 +52,7 @@ export function Byline({
     <div
       className={`flex items-center gap-2 label-ui ${className}`}
       style={{ color: palette.cardMeta }}
+      data-explain={dataExplain}
     >
       {replyingTo && (
         <>

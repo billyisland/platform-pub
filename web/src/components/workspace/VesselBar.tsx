@@ -86,6 +86,7 @@ export function VesselBar({
             color={palette.barText}
             mutedColor={palette.barTextMuted}
             onClick={onNameClick}
+            dataExplain="vessel.gear"
           />
         )}
 
@@ -96,6 +97,7 @@ export function VesselBar({
             color={palette.barText}
             mutedColor={palette.barTextMuted}
             onClick={onHide}
+            dataExplain="vessel.hide"
           />
         )}
 
@@ -104,6 +106,7 @@ export function VesselBar({
 
         {/* Source search input */}
         <div
+          data-explain="vessel.addSource"
           style={{
             position: "relative",
             maxWidth: 200,
@@ -308,12 +311,14 @@ function BarButton({
   color,
   mutedColor,
   onClick,
+  dataExplain,
 }: {
   label: string;
   glyph: string;
   color: string;
   mutedColor: string;
   onClick: () => void;
+  dataExplain?: string;
 }) {
   return (
     <button
@@ -321,6 +326,7 @@ function BarButton({
       onClick={onClick}
       title={label}
       aria-label={label}
+      data-explain={dataExplain}
       className="label-ui select-none"
       style={{
         color: mutedColor,

@@ -86,6 +86,7 @@ export function PostCardShell({
   return (
     <div
       ref={rootRef}
+      data-explain="card"
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={handleClick}

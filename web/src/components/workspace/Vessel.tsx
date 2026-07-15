@@ -27,6 +27,7 @@ import {
 import { VesselBar, BAR_H } from "./VesselBar";
 import { PullToRefresh } from "./PullToRefresh";
 import { useColorScheme } from "../../stores/colorScheme";
+import { useExplainable } from "./ExplainProvider";
 
 // Vessel — the ⊔ chassis, per WIREFRAME-DECISIONS-CONSOLIDATED.md Step 1.
 //
@@ -72,6 +73,10 @@ interface VesselProps {
   feedId: string;
   numeral: number;
   descriptiveName?: string;
+  // Explain engine (EXPLAIN-ADR D4/D7): the vessel registers as a root keyed by
+  // feedId, ordered by sort_rank, carrying the copy-fork inputs off the feed.
+  sortRank?: number;
+  fromStarter?: boolean;
   onNameClick?: () => void;
   onSourceAdded?: () => void;
   position: { x: number; y: number };
@@ -101,6 +106,8 @@ export function Vessel({
   feedId,
   numeral,
   descriptiveName,
+  sortRank,
+  fromStarter,
   onNameClick,
   onSourceAdded,
   position,
@@ -124,6 +131,15 @@ export function Vessel({
   const dragControls = useDragControls();
   const [isDragTarget, setIsDragTarget] = useState(false);
   const vesselRef = useRef<HTMLDivElement>(null);
+  // Register the vessel as an explainable root (EXPLAIN-ADR D4). Reuses the
+  // existing vesselRef so the registration tracks the live node through drag /
+  // reorder; the copy fork (D7) reads feedName/fromStarter off params.
+  useExplainable("vessel", {
+    ref: vesselRef,
+    key: feedId,
+    order: sortRank,
+    params: { feedName: descriptiveName ?? null, fromStarter: !!fromStarter },
+  });
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   const mx = useMotionValue(position.x);
   const my = useMotionValue(position.y);
@@ -422,8 +438,10 @@ export function Vessel({
           outlineOffset: -2,
         }}
       >
-        {/* Feed numeral — bottom-left corner */}
+        {/* Feed numeral — bottom-left corner. Doubles as the vessel name/drag
+            handle (double-click renames, drag repositions) → Explain `vessel.name`. */}
         <div
+          data-explain="vessel.name"
           onMouseEnter={() => setRoundelHovered(true)}
           onMouseLeave={() => setRoundelHovered(false)}
           onDoubleClick={() => onNameClick?.()}
@@ -522,6 +540,7 @@ export function Vessel({
           <div
             role="button"
             aria-label="Resize vessel"
+            data-explain="vessel.resize"
             onPointerDown={handleResizePointerDown}
             onPointerMove={handleResizePointerMove}
             onPointerUp={handleResizePointerUp}
