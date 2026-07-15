@@ -489,6 +489,7 @@ export function Vessel({
 
         <div
           ref={scrollBodyRef}
+          data-vessel-scroll=""
           onPointerDown={(e) => e.stopPropagation()}
           style={{
             padding: `${PAD}px`,

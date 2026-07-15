@@ -19,6 +19,7 @@ import {
 import type { PipStatus } from "../../lib/ndk";
 import { Vessel } from "./Vessel";
 import { ExplainProvider, useExplainable } from "./ExplainProvider";
+import { useExplain } from "../../stores/explain";
 import { ExplainOverlay } from "./ExplainOverlay";
 import { PostCardInteractive } from "../post/PostCardInteractive";
 import { PostThread } from "../post/PostThread";
@@ -306,6 +307,8 @@ export function WorkspaceView() {
 
   function handleVesselDragStart(feedId: string) {
     dragActiveRef.current = feedId;
+    // D11 drag-suspension seam (inert under the frozen floor; see explain.ts).
+    if (useExplain.getState().isActive) useExplain.getState().setDragging(feedId);
   }
 
   function handleVesselDragFrame(
@@ -358,6 +361,7 @@ export function WorkspaceView() {
   function handleVesselDragEnd(feedId: string, pos: { x: number; y: number }) {
     setVesselPosition(feedId, pos);
     dragActiveRef.current = null;
+    if (useExplain.getState().draggingFeedId) useExplain.getState().setDragging(null);
 
     const floor = floorRef.current;
     if (!floor) return;

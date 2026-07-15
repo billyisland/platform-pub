@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   useExplain,
   type Annotation,
@@ -8,15 +14,18 @@ import {
 } from "../../stores/explain";
 import { useExplainRegistry } from "./ExplainProvider";
 import { type ExplainKind, explainCopy } from "../../lib/explain/registry";
+import { prefersReducedMotion } from "../../lib/workspace/motion";
 
 // =============================================================================
-// ExplainOverlay — the visible engine layer (EXPLAIN-ADR §5, D1, D9, D12).
+// ExplainOverlay — the visible engine layer (EXPLAIN-ADR §5, D1, D9, D11, D12).
 //
-// This slice ships the scrim + pointer routing + hit-testing with a STUB bubble
-// (build-plan §3 slice 3). The real bubble renderer — placement, crimson leader,
-// live measurement / ResizeObserver invalidation, drag suspension, reduced
-// motion — is slice 4 (D11). Nothing opens a program yet (the ∀-menu row is
-// slice 5), so this is inert in production until then.
+// Slice 4 replaces the stub bubble with the real renderer: viewport-clamped
+// placement (right → left → below → above), a 2px crimson leader with a 4px dot
+// at the target end, live `getBoundingClientRect` measurement re-run on a
+// ResizeObserver (floor container + the pinned target's own vessel scroll
+// container, D11), drag suspension (D11 seam), and a reduced-motion path
+// (opacity only, no leader draw). Still inert in production until the ∀-menu row
+// (slice 5) opens a program.
 //
 // D1 — the floor is inert while active: the scrim is a single full-viewport div
 // that intercepts ALL pointer events (wheel/touch included), so the frozen floor
@@ -31,6 +40,11 @@ import { type ExplainKind, explainCopy } from "../../lib/explain/registry";
 // Marks the overlay's own DOM so hit-testing looks straight through it.
 const CHROME_ATTR = "data-explain-chrome";
 
+const BUBBLE_WIDTH = 300; // fixed width → predictable placement; height adapts
+const GAP = 14; // target edge → bubble gap
+const MARGIN = 10; // viewport margin the bubble keeps clear
+const ENTER_MS = 200; // opacity / leader-draw enter duration
+
 interface ResolvedTarget extends HoverTarget {
   el: HTMLElement;
 }
@@ -41,9 +55,17 @@ export function ExplainOverlay() {
   const annotations = useExplain((s) => s.annotations);
   const index = useExplain((s) => s.index);
   const hover = useExplain((s) => s.hover);
+  const dragging = useExplain((s) => s.draggingFeedId != null);
   const setHover = useExplain((s) => s.setHover);
   const pin = useExplain((s) => s.pin);
   const close = useExplain((s) => s.close);
+
+  const reduced = prefersReducedMotion();
+
+  // Bumped by the ResizeObserver / window-resize so bubbles re-measure their
+  // live target rect (D11). The floor is frozen (D1), so there is no scroll
+  // trigger — only reflow (vessel add/remove/resize, async interior growth).
+  const [measureTick, setMeasureTick] = useState(0);
 
   // Resolve the pointer to the most specific explainable target under it.
   // elementsFromPoint returns deepest-painted first, so a tagged leaf (a
@@ -111,6 +133,7 @@ export function ExplainOverlay() {
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      if (useExplain.getState().draggingFeedId) return; // suppress hover mid-drag
       const hit = hitTest(e.clientX, e.clientY);
       const cur = useExplain.getState().hover;
       const next: HoverTarget | null = hit
@@ -150,12 +173,36 @@ export function ExplainOverlay() {
     [registry],
   );
 
+  const pinned: Annotation | null = annotations[index] ?? null;
+  const pinnedEl = pinned ? elementFor(pinned) : null;
+
+  // D11 re-measure: observe the floor container (vessel add/remove/resize) and,
+  // while a target is pinned, that target's own vessel scroll container (async
+  // ingestion can reflow the interior under the pinned card, a shift the floor
+  // observer misses). No `scroll` trigger — the floor is frozen (D1).
+  useEffect(() => {
+    if (!isActive || typeof ResizeObserver === "undefined") return;
+    const bump = () => setMeasureTick((t) => t + 1);
+    const ro = new ResizeObserver(bump);
+    const floor = registry
+      ?.snapshot()
+      .find((r) => r.kind === "floor")?.ref.current;
+    if (floor) ro.observe(floor);
+    const vesselScroll = pinnedEl?.closest<HTMLElement>("[data-vessel-scroll]");
+    if (vesselScroll) ro.observe(vesselScroll);
+    window.addEventListener("resize", bump);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", bump);
+    };
+  }, [isActive, registry, pinnedEl]);
+
   if (!isActive) return null;
 
-  const pinned: Annotation | null = annotations[index] ?? null;
-  const hoverAnn: Annotation | null = hover
-    ? { kind: hover.kind, key: hover.key, copy: copyForHover(hover) }
-    : null;
+  const hoverAnn: Annotation | null =
+    hover && !dragging
+      ? { kind: hover.kind, key: hover.key, copy: copyForHover(hover) }
+      : null;
 
   return (
     <>
@@ -174,70 +221,265 @@ export function ExplainOverlay() {
           cursor: "default",
         }}
       />
-      {pinned && (
-        <StubBubble
+      {/* Pinned bubble — suspended (hidden) while a vessel is dragged (D11). */}
+      {pinned && !dragging && (
+        <Bubble
+          key={`pin:${pinned.kind}:${pinned.key ?? ""}`}
           annotation={pinned}
-          el={elementFor(pinned)}
-          dimmed={!!hover}
+          el={pinnedEl}
+          dimmed={!!hoverAnn}
+          reduced={reduced}
+          measureTick={measureTick}
         />
       )}
       {hoverAnn && (
-        <StubBubble annotation={hoverAnn} el={elementFor(hoverAnn)} hover />
+        <Bubble
+          key={`hover:${hoverAnn.kind}:${hoverAnn.key ?? ""}`}
+          annotation={hoverAnn}
+          el={elementFor(hoverAnn)}
+          reduced={reduced}
+          hover
+          measureTick={measureTick}
+        />
       )}
     </>
   );
 }
 
-// Placeholder bubble — proves hit-testing + resolution wiring. Slice 4 replaces
-// this with the real placement/leader/measurement renderer (D11). Positions to
-// the right of the target's live rect, centred when it has no element
-// (floor / disc free-float, D8).
-function StubBubble({
+// -----------------------------------------------------------------------------
+// Bubble — measures the live target rect, places itself in the side with most
+// free room (right → left → below → above, clamped to the viewport), and draws
+// a 2px crimson leader from the target edge midpoint to the bubble edge with a
+// 4px dot at the target end (D11). A free-float annotation (floor/disc beats, or
+// a target whose element has deregistered) centres over the floor with no
+// leader (D8).
+// -----------------------------------------------------------------------------
+
+type Side = "right" | "left" | "below" | "above";
+
+interface Placement {
+  left: number;
+  top: number;
+  bw: number;
+  bh: number;
+  side: Side | null; // null → free-float, no leader
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(v, hi));
+}
+
+function placeBubble(rect: DOMRect | null, size: { w: number; h: number }): Placement {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const bw = size.w || BUBBLE_WIDTH;
+  const bh = size.h || 120;
+
+  if (!rect) {
+    // Free-float: centred horizontally, upper-middle of the floor (D8).
+    return {
+      left: clamp(vw / 2 - bw / 2, MARGIN, vw - bw - MARGIN),
+      top: clamp(vh * 0.4 - bh / 2, MARGIN, vh - bh - MARGIN),
+      bw,
+      bh,
+      side: null,
+    };
+  }
+
+  const sideTop = clamp(
+    rect.top + rect.height / 2 - bh / 2,
+    MARGIN,
+    Math.max(MARGIN, vh - bh - MARGIN),
+  );
+  const stackLeft = clamp(
+    rect.left + rect.width / 2 - bw / 2,
+    MARGIN,
+    Math.max(MARGIN, vw - bw - MARGIN),
+  );
+
+  const candidates: { side: Side; free: number; fits: boolean; left: number; top: number }[] = [
+    {
+      side: "right",
+      free: vw - rect.right - GAP,
+      fits: vw - rect.right - GAP >= bw + MARGIN,
+      left: rect.right + GAP,
+      top: sideTop,
+    },
+    {
+      side: "left",
+      free: rect.left - GAP,
+      fits: rect.left - GAP >= bw + MARGIN,
+      left: rect.left - GAP - bw,
+      top: sideTop,
+    },
+    {
+      side: "below",
+      free: vh - rect.bottom - GAP,
+      fits: vh - rect.bottom - GAP >= bh + MARGIN,
+      left: stackLeft,
+      top: rect.bottom + GAP,
+    },
+    {
+      side: "above",
+      free: rect.top - GAP,
+      fits: rect.top - GAP >= bh + MARGIN,
+      left: stackLeft,
+      top: rect.top - GAP - bh,
+    },
+  ];
+
+  const pick =
+    candidates.find((c) => c.fits) ??
+    candidates.reduce((a, b) => (b.free > a.free ? b : a));
+
+  return {
+    left: clamp(pick.left, MARGIN, Math.max(MARGIN, vw - bw - MARGIN)),
+    top: clamp(pick.top, MARGIN, Math.max(MARGIN, vh - bh - MARGIN)),
+    bw,
+    bh,
+    side: pick.side,
+  };
+}
+
+// Leader endpoints: from the target's facing-edge midpoint to the bubble's
+// near-edge midpoint. The dot sits at the target end (x1, y1).
+function leaderPoints(
+  side: Side,
+  rect: DOMRect,
+  p: Placement,
+): { x1: number; y1: number; x2: number; y2: number } {
+  const tcx = rect.left + rect.width / 2;
+  const tcy = rect.top + rect.height / 2;
+  switch (side) {
+    case "right":
+      return { x1: rect.right, y1: tcy, x2: p.left, y2: p.top + p.bh / 2 };
+    case "left":
+      return { x1: rect.left, y1: tcy, x2: p.left + p.bw, y2: p.top + p.bh / 2 };
+    case "below":
+      return { x1: tcx, y1: rect.bottom, x2: p.left + p.bw / 2, y2: p.top };
+    case "above":
+      return { x1: tcx, y1: rect.top, x2: p.left + p.bw / 2, y2: p.top + p.bh };
+  }
+}
+
+function Bubble({
   annotation,
   el,
   dimmed,
   hover,
+  reduced,
 }: {
   annotation: Annotation;
   el: HTMLElement | null;
   dimmed?: boolean;
   hover?: boolean;
+  reduced: boolean;
+  // Re-render trigger: the overlay bumps it on reflow so the target rect below
+  // is re-read. Not consumed directly — its identity change forces this render.
+  measureTick: number;
 }) {
-  const rect = el?.getBoundingClientRect() ?? null;
-  const WIDTH = 260;
-  let left: number;
-  let top: number;
-  if (rect) {
-    left = rect.right + 12;
-    top = rect.top;
-    // Crude viewport clamp; real placement (right→left→below→above) is slice 4.
-    if (left + WIDTH > window.innerWidth) left = rect.left - WIDTH - 12;
-    if (left < 8) left = 8;
-    top = Math.max(8, Math.min(top, window.innerHeight - 120));
-  } else {
-    left = Math.max(8, window.innerWidth / 2 - WIDTH / 2);
-    top = window.innerHeight / 2 - 60;
-  }
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number }>({
+    w: BUBBLE_WIDTH,
+    h: 120,
+  });
+  const [shown, setShown] = useState(false);
+
+  // Measure own box each render; converges (only sets on change) so no loop.
+  useLayoutEffect(() => {
+    const node = bubbleRef.current;
+    if (!node) return;
+    const r = node.getBoundingClientRect();
+    setSize((prev) =>
+      prev.w === r.width && prev.h === r.height
+        ? prev
+        : { w: r.width, h: r.height },
+    );
+  });
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  // Live rect, re-read every render (the overlay re-renders on reflow, D11).
+  const rect =
+    annotation.alwaysFloat || !el ? null : el.getBoundingClientRect();
+  const place = placeBubble(rect, size);
 
   const copy = annotation.copy || `[${annotation.kind}]`;
+  const opacity = shown ? (dimmed ? 0.35 : 1) : 0;
+
+  const leader =
+    rect && place.side ? leaderPoints(place.side, rect, place) : null;
+  const leaderLen = leader
+    ? Math.hypot(leader.x2 - leader.x1, leader.y2 - leader.y1)
+    : 0;
+  // Reduced motion: static leader (offset 0), opacity-only enter. Otherwise the
+  // leader draws from the target toward the bubble.
+  const leaderOffset = reduced ? 0 : shown ? 0 : leaderLen;
 
   return (
-    <div
-      {...{ [CHROME_ATTR]: "" }}
-      className="bg-glasshouse text-ui-sm text-black shadow-lg"
-      style={{
-        position: "fixed",
-        left,
-        top,
-        width: WIDTH,
-        zIndex: hover ? 53 : 52,
-        padding: "12px 14px",
-        borderRadius: 8,
-        pointerEvents: "none",
-        opacity: dimmed ? 0.4 : 1,
-      }}
-    >
-      {copy}
-    </div>
+    <>
+      {leader && (
+        <svg
+          {...{ [CHROME_ATTR]: "" }}
+          width="100%"
+          height="100%"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 51,
+            pointerEvents: "none",
+            overflow: "visible",
+            opacity,
+            transition: reduced ? undefined : `opacity ${ENTER_MS}ms ease-out`,
+          }}
+        >
+          <line
+            x1={leader.x1}
+            y1={leader.y1}
+            x2={leader.x2}
+            y2={leader.y2}
+            strokeWidth={2}
+            strokeDasharray={leaderLen}
+            strokeDashoffset={leaderOffset}
+            style={{
+              stroke: "var(--ah-crimson)",
+              transition: reduced
+                ? undefined
+                : `stroke-dashoffset ${ENTER_MS}ms ease-out`,
+            }}
+          />
+          <circle
+            cx={leader.x1}
+            cy={leader.y1}
+            r={2}
+            style={{ fill: "var(--ah-crimson)" }}
+          />
+        </svg>
+      )}
+      <div
+        {...{ [CHROME_ATTR]: "" }}
+        ref={bubbleRef}
+        className="bg-glasshouse text-black shadow-lg whitespace-pre-line"
+        style={{
+          position: "fixed",
+          left: place.left,
+          top: place.top,
+          width: BUBBLE_WIDTH,
+          zIndex: hover ? 53 : 52,
+          padding: "14px 16px",
+          borderRadius: 10,
+          fontSize: "14px",
+          lineHeight: 1.5,
+          pointerEvents: "none",
+          opacity,
+          transition: reduced ? undefined : `opacity ${ENTER_MS}ms ease-out`,
+        }}
+      >
+        {copy}
+      </div>
+    </>
   );
 }

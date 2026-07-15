@@ -23,6 +23,30 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain slice 4 (bubble renderer) shipped — inert until a
+  program opens.** `ExplainOverlay.tsx` replaces the stub bubble with the real
+  renderer (EXPLAIN-ADR D11/D9). The new `Bubble` two-pass self-measures
+  (`useLayoutEffect` size → `placeBubble`) and places itself in the side with
+  the most free room — right → left → below → above, else max-free — clamped to
+  the viewport with a `MARGIN`; draws a 2px crimson leader (`<svg><line>`, stroke
+  via `style` per the SVG-can't-resolve-`var()` rule) from the target's
+  facing-edge midpoint to the bubble's near-edge midpoint plus a 4px dot
+  (`<circle r=2>`) at the target end; and free-floats centred with **no** leader
+  for `alwaysFloat` beats or a target whose element has deregistered (D8). Live
+  measurement is a `getBoundingClientRect` re-read every render, invalidated by a
+  `measureTick` bumped from a `ResizeObserver` on the floor root + (while pinned)
+  the pinned target's `[data-vessel-scroll]` container (new marker attribute on
+  `Vessel.tsx`'s scroll body) + a window-resize listener — **no `scroll`
+  trigger**, the floor is frozen (D1). Drag suspension is a new `explain` store
+  seam — `draggingFeedId` + `setDragging`, wired to `WorkspaceView`'s vessel
+  drag start/end — that hides the pinned bubble and suppresses hover mid-drag;
+  it is **inert in v1** (the scrim swallows pointerdown, so a vessel drag cannot
+  begin while Explain is active) but the seam is complete for the sanctioned v2
+  that forwards pointer deltas. Reduced motion (`prefersReducedMotion`) drops the
+  leader draw + slide, opacity-only enter. `tsc` + eslint (0 err) + hairlines +
+  `next build` all clean. Nothing opens a program yet (∀-menu row is slice 5), so
+  still inert in production. Build plan slice 4.
+
 - **2026-07-15** — **Explain slice 3 (store + scrim + pointer routing +
   hit-testing) shipped — inert until a program opens.** The engine's visible
   layer (EXPLAIN-ADR D1/D9/D12), still with no live trigger (the ∀-menu row is

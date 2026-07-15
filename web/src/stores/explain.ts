@@ -50,11 +50,19 @@ interface ExplainState {
   annotations: Annotation[]; // resolved at open()
   index: number; // pinned cursor
   hover: HoverTarget | null;
+  // D11 drag suspension: the feedId of a vessel being dragged, else null. While
+  // set, the overlay suspends the pinned bubble and suppresses hover (a bubble
+  // chasing a dragged object is noise). Inert under v1's frozen floor — the
+  // scrim swallows pointerdown, so a vessel drag cannot begin while Explain is
+  // active — but the seam is complete for the sanctioned v2 (D1) that forwards
+  // pointer deltas to the surface.
+  draggingFeedId: string | null;
   open: (p: Program) => void;
   next: () => void;
   prev: () => void;
   pin: (t: HoverTarget) => void; // D1 click-pin
   setHover: (t: HoverTarget | null) => void;
+  setDragging: (feedId: string | null) => void;
   close: () => void;
 }
 
@@ -68,6 +76,7 @@ export const useExplain = create<ExplainState>((set, get) => ({
   annotations: [],
   index: 0,
   hover: null,
+  draggingFeedId: null,
 
   open: (p) =>
     set({
@@ -76,6 +85,7 @@ export const useExplain = create<ExplainState>((set, get) => ({
       annotations: p.annotations,
       index: 0,
       hover: null,
+      draggingFeedId: null,
     }),
 
   next: () =>
@@ -106,6 +116,8 @@ export const useExplain = create<ExplainState>((set, get) => ({
 
   setHover: (t) => set({ hover: t }),
 
+  setDragging: (feedId) => set({ draggingFeedId: feedId }),
+
   close: () =>
     set({
       isActive: false,
@@ -113,5 +125,6 @@ export const useExplain = create<ExplainState>((set, get) => ({
       annotations: [],
       index: 0,
       hover: null,
+      draggingFeedId: null,
     }),
 }));
