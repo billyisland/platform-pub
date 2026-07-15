@@ -26,6 +26,12 @@ The first live session on production reversed four calls; the decision texts bel
 3. **The Explain pinned channel is not rendered** (and click-pin is deleted; any click dismisses). The index-0 floor bubble + the 0.35-alpha dim while hovering meant a ghost bubble was near-permanently on screen — the floor target spans the viewport, so hover was never empty (amends D1/D12; the pinned channel now renders only in first-run).
 4. **The chrome swap replaces only the wordmark.** The ∀ disc stays on screen during a program, registers as the `disc` explainable root, surfaces the `disc` label on its own hover, and its click exits Explain (About pane open → closes that first, glyph flips to X). The "About all.haus" button takes the wordmark's spot and carries a new hover-only `about` kind (rewrites D3; the disc copy now describes the disc).
 
+### Second-session amendments (2026-07-15, Explain over panes)
+
+5. **D10 is reversed — Explain annotates an open Glasshouse.** The ∀-menu Explain row is never disabled: with a pane open, `resolveExplainProgram` returns a **pane-surfaced program** (`Program.surface: "floor" | "pane"`) whose sole resolved annotation is the new **`pane`** kind, tagged on the Glasshouse pane root (`Glasshouse.tsx`) so every pane inherits it; everything else is hover-discovered live from `[data-explain]` tags inside the pane, the same delegated-leaf model as the floor. In pane mode the scrim rises to z-57 and the cursor bubble to z-58 (above the pane's z-55/56 bands, under the ForallMenu's z-60); hit-testing resolves **only** tags inside the pane root — the frozen floor visible through nothing but the gh-scrim never answers; focus/ARIA freezing targets the pane instead of the vessel roots; and the pane closing (Esc — precedence unchanged, the pane consumes it first — or any store-side close such as a popstate) **closes Explain with it**, rather than falling back to the floor mid-frost. Per-surface interior kinds arrive with the caption slices; until then the pane root answers every interior hover.
+6. **The wordmark→About swap is floor-mode only.** During a pane-mode program the wordmark stays put: clicking "About all.haus" would open a pane that *supersedes the very pane being explained* (the one-Glasshouse rule) — a rug-pull.
+7. **The desktop disc never flips to the X for open panes** (`ForallMenu`). The six-destination close-on-click was mobile's minimise-X bleeding into a surface already carrying ✕ / Esc / scrim-click, and it made the menu — and therefore Explain — unreachable over any pane. The disc now always toggles the menu on desktop (the dropdown renders at z-60, above every Glasshouse; destination-hopping rides the supersede rule); the only desktop X left is Explain's own (About pane open → X closes back to Explain). Mobile is untouched (the disc-X remains a sheet's sole dismiss affordance there). The menu's Explain group is now an **Explain / About pair on desktop** and **About alone on mobile** (Explain has no hover branch there; `AboutOverlay` mounts on both branches).
+
 ---
 
 ## 2. Current state (verified against the codebase)
@@ -117,7 +123,9 @@ Resolves the draft's open question 2. First-run beats resolve their targets from
 
 Explain scrim is a flat wash at **≤ 0.18 alpha**, no `backdrop-filter` — feeds must stay legible behind their own labels (the deliberate inversion of `.gh-scrim`, whose blur suppresses identity). **No spotlight cutout in v1**: elevating the active vessel above a fixed sibling scrim is unreliable (framer-motion transforms create stacking contexts), and a masked-hole scrim turns one div into geometry. The light dim keeps the active target readable without special-casing it. If review finds the active target insufficiently distinguished, the sanctioned v2 is a four-rectangle scrim around the active rect — not z-index games with transformed vessels.
 
-### D10 — Topmost-surface rule, stated as what v1 does
+### D10 — Topmost-surface rule, stated as what v1 does *(REVERSED 2026-07-15, amendment 5)*
+
+**Superseded:** Explain now runs over an open Glasshouse as a pane-surfaced program (amendment 5) and the Explain row is never disabled. The original v1 rule below is retained for the record.
 
 Panes register no targets in v1. Therefore: while any Glasshouse is open, the ∀-menu **Explain row is disabled** (dimmed, with title text "close this pane to use Explain"). Discovery never has to arbitrate occlusion. The registration Map remains the seam: when pane interiors come into scope, panes register their own targets and discovery keys off the presence registry to pick the surface. The draft's general visibility oracle ("visible, in viewport, not behind a higher-z surface") is retired as a v1 requirement.
 
@@ -162,6 +170,10 @@ type ExplainKind =
   // the About button standing in for the wordmark during a program
   // (hover-only, never sequenced — 2026-07-15, amendment 4)
   | "about"
+  // the Glasshouse pane root — the base annotation of a pane-mode program
+  // (2026-07-15, amendment 5); per-surface interior kinds arrive with the
+  // caption slices
+  | "pane"
   // per-feed instance + tagged leaves
   | "vessel" | "vessel.name" | "vessel.gear"
   | "vessel.hide" | "vessel.addSource" | "vessel.resize"
@@ -169,7 +181,7 @@ type ExplainKind =
   | "card" | "card.byline" | "card.reply" | "card.quote";
 ```
 
-Thirteen kinds. Explain's derived order: `floor` → per-vessel (`vessel`, then its leaves) by `sort_rank` → card kinds (representative instance, D5) → `disc` last. *(2026-07-15: the derived order is retained as the seam for a future stepped walk-through, but the live Explain program is hover-only and never walks it.)*
+Fourteen kinds. Explain's derived order: `floor` → per-vessel (`vessel`, then its leaves) by `sort_rank` → card kinds (representative instance, D5) → `disc` last. *(2026-07-15: the derived order is retained as the seam for a future stepped walk-through, but the live Explain program is hover-only and never walks it.)*
 
 ---
 
@@ -296,6 +308,9 @@ Copy is data; the engine renders it verbatim. No em-dashes anywhere by editorial
 
 **`about`** *(the About button standing in for the wordmark; hover-only, 2026-07-15)*
 > This opens About: a fuller account of what all.haus is and how it works, worth reading once.
+
+**`pane`** *(the Glasshouse pane root — the pane-mode base annotation; 2026-07-15, amendment 5)*
+> This is a pane, floating over your workspace. Drag it by any empty part of itself to move it, and it will remember where you leave it. Close it by clicking outside, pressing Escape, or with the ✕ in the corner.
 
 ### A.3 Explain labels — Tier 2
 

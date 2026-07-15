@@ -23,6 +23,31 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **Explain over Glasshouse panes (engine) + menu/disc chrome
+  corrections (EXPLAIN-ADR second-session amendments 5–7).** Three linked
+  changes. (1) **Desktop disc-X removed**: the six-destination close-on-click
+  was mobile's minimise-X bled into a surface already carrying ✕/Esc/scrim
+  (`ForallMenu.tsx` — `menuOverlayOpen` + `closeMenuOverlays` deleted); the
+  desktop disc now always toggles the menu, which opens at z-60 over any pane
+  (destination-hopping rides the supersede rule). Mobile untouched; the one
+  desktop X left is Explain's About-pane state. (2) **D10 reversed — pane-mode
+  Explain**: `Program.surface: "floor" | "pane"` decided at `open()`
+  (`ExplainProvider.resolveExplainProgram` checks `useGlasshousePresence`);
+  pane mode raises the scrim/bubble to z-57/58 (above pane z-56, under menu
+  z-60), hit-tests ONLY `[data-explain]` tags inside the new pane root tag
+  (`Glasshouse.tsx` `data-explain="pane"` — every pane inherits the base
+  caption, new `pane` registry kind), freezes focus/ARIA on the pane instead
+  of the vessels, closes Explain when the pane closes (presence
+  subscription; Esc precedence unchanged — pane consumes first), and
+  suppresses the wordmark→About swap (About would supersede the explained
+  pane). Explain-row D10 disable deleted. (3) **About in the menu**: the
+  Explain group is an Explain / About pair on desktop, About alone on mobile
+  (Explain has no hover branch there); `AboutOverlay` now mounts on both
+  branches (`WorkspaceView`). Per-surface pane captions (the C-slices) are
+  the follow-on work. Docs: EXPLAIN-ADR amendments 5–7 + D10 strike + §4
+  `pane` kind + Appendix A.2 `pane` label; CLAUDE.md ForallMenu-invariant
+  paragraph rewritten.
+
 - **2026-07-15** — **∀ disc sat ~8px off its anchor — inline-block baseline
   descent (Explain About-button alignment).** In Explain mode the "About
   all.haus" pill read as hanging below the disc's horizontal rules. The pill

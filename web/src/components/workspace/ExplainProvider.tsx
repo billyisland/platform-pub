@@ -105,6 +105,21 @@ export function useExplainRegistry(): ExplainRegistry | null {
 // ---------------------------------------------------------------------------
 
 function resolveExplainProgram(registry: ExplainRegistry): Program {
+  // PANE mode (D10 reversal, 2026-07-15 second session): with a Glasshouse
+  // open, the pane is the topmost surface and the program annotates IT, not
+  // the floor behind the frost. The program is just the `pane` root (the
+  // hover channel discovers everything else live from `[data-explain]` tags
+  // inside the pane — the same delegated-leaf model as the floor); it exists
+  // so the non-empty gate in useOpenExplain holds and as the seam for any
+  // future stepped pane walk-through.
+  if (useGlasshousePresence.getState().isOpen) {
+    return {
+      kind: "explain",
+      surface: "pane",
+      annotations: [{ kind: "pane", copy: explainCopy("pane") }],
+    };
+  }
+
   const roots = registry.snapshot();
   const vesselRoots = roots.filter((r) => r.kind === "vessel");
 
@@ -133,7 +148,7 @@ function resolveExplainProgram(registry: ExplainRegistry): Program {
         : explainCopy(s.kind),
   }));
 
-  return { kind: "explain", annotations };
+  return { kind: "explain", surface: "floor", annotations };
 }
 
 // Returns a callback that resolves the Explain program from the live registry
@@ -183,7 +198,7 @@ function resolveFirstRunProgram(registry: ExplainRegistry): Program {
     done: b.done,
   }));
 
-  return { kind: "firstrun", annotations };
+  return { kind: "firstrun", surface: "floor", annotations };
 }
 
 // Resolve the first-run program from the live registry and open it. No-op

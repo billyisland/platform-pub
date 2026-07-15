@@ -3,11 +3,13 @@
 // =============================================================================
 // AboutOverlay — /about rendered in a workspace Glasshouse (EXPLAIN-ADR D3).
 //
-// Opened from the ForallMenu's "About all.haus" button, which replaces the ∀
-// disc while an Explain program is active. Wraps the same AboutContent the
-// standalone /about page renders, in the canonical frosted overlay, so the
-// ForallMenu chrome stays crisp above it and Esc/✕/scrim-click all dismiss it.
-// Mounted on the desktop workspace path only (Explain is desktop-only).
+// Opened from the ∀ menu's "About" row (both desktop and mobile — on mobile it
+// occupies the slot Explain would, since Explain has no hover branch there)
+// and, during a floor-mode Explain program, from the "About all.haus" button
+// that replaces the wordmark. Wraps the same AboutContent the standalone
+// /about page renders, in the canonical frosted overlay, so the ForallMenu
+// chrome stays crisp above it and Esc/✕/scrim-click all dismiss it; on mobile
+// it is a full-screen sheet the disc-X minimises.
 // =============================================================================
 
 import { useAboutOverlay } from "../../stores/aboutOverlay";

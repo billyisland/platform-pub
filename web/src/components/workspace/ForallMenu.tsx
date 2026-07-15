@@ -74,8 +74,9 @@ type FocusRow =
       // (Messages · Dashboard) over a quieter account cluster, without dropping
       // any destination (they all stay reachable here).
       muted?: boolean;
-      // D10: the Explain row disables (dim + title, inert on select) while any
-      // Glasshouse pane is open — v1 discovery never has to arbitrate occlusion.
+      // Generic disable machinery (dim + title, inert on select). Currently
+      // unused — the D10 Explain-while-pane-open disable was retired when
+      // pane-mode Explain shipped (2026-07-15) — but kept as row plumbing.
       disabled?: boolean;
       disabledTitle?: string;
     }
@@ -106,28 +107,15 @@ export function ForallMenu({
   const notificationCount = useUnreadCounts((s) => s.notificationCount);
   const totalUnread = dmCount + notificationCount;
 
-  // True whenever a ∀-menu destination overlay is open (Messages / Dashboard /
-  // Library / Network / Ledger / Settings). While one is, the disc is the way
-  // back to the workspace: its glyph becomes an X and a click closes the overlay
-  // (the workspace underneath resumes the feed you left — on mobile via the
-  // resume key). This is the "always a way back" affordance — no in-panel
-  // "back to workspace" prompts needed.
-  const msgOpen = useMessagesOverlay((s) => s.isOpen);
-  const dashOpen = useDashboardOverlay((s) => s.isOpen);
-  const libOpen = useLibraryOverlay((s) => s.isOpen);
-  const netOpen = useNetworkOverlay((s) => s.isOpen);
-  const ledgerOpen = useLedgerOverlay((s) => s.isOpen);
-  const settingsOpen = useSettingsOverlay((s) => s.isOpen);
-  const menuOverlayOpen =
-    msgOpen || dashOpen || libOpen || netOpen || ledgerOpen || settingsOpen;
-
   // On the mobile workspace every Glasshouse is a full-screen sheet (note /
   // article / feed composers, reader, profile, the six destinations …), so the
-  // disc is the minimise-X for *any* of them — not just the six menu
-  // destinations. The presence registry tracks whichever single sheet is live;
-  // we collapse it to the disc-X and close it on tap. On desktop those non-menu
-  // panes are draggable windows with their own ✕, so the disc stays the ∀ there
-  // and only the six destinations flip it (the existing behaviour).
+  // disc is the minimise-X for *any* of them — the sheet's only dismiss
+  // affordance on touch. The presence registry tracks whichever single sheet
+  // is live; we collapse it to the disc-X and close it on tap. On DESKTOP the
+  // disc never flips to an X for an open pane (removed 2026-07-15 — that was
+  // mobile's necessity bleeding into a surface with ✕ / Esc / scrim-click to
+  // spare): it stays the ∀ and the menu opens OVER any pane, which is also
+  // what makes Explain reachable while one is up.
   const isMobile = useIsMobile();
   const glasshouseOpen = useGlasshousePresence((s) => s.isOpen);
   const mobileSheetOpen = isMobile && glasshouseOpen;
@@ -140,8 +128,12 @@ export function ForallMenu({
   // desktop floor (Explain is desktop-only), so this naturally scopes to the
   // floating anchor. While the About pane itself is open the About button is
   // suppressed (the pane owns its own dismiss) and the disc flips to the X,
-  // closing the pane back to Explain.
+  // closing the pane back to Explain. PANE-mode Explain (annotating an open
+  // Glasshouse, D10 reversal) suppresses the swap entirely: clicking About
+  // there would open a pane that SUPERSEDES the very pane being explained (the
+  // one-Glasshouse rule) — a rug-pull — so the wordmark stays put.
   const explainActive = useExplain((s) => s.isActive);
+  const paneExplain = useExplain((s) => s.program?.surface === "pane");
   const aboutOpen = useAboutOverlay((s) => s.isOpen);
   const openExplain = useOpenExplain();
 
@@ -156,15 +148,13 @@ export function ForallMenu({
   // open — a mouse can click outside, and an X on a small anchored dropdown
   // would read oddly.
   const mobileMenuOpen = isMobile && view !== "closed";
-  // The disc shows the close glyph whenever it would act as a minimise-X —
-  // including the About pane opened from Explain (a click closes it back to
-  // Explain). During plain Explain the disc keeps the ∀: it is being annotated
-  // as the menu, so it must look like the menu.
+  // The disc shows the close glyph whenever it would act as a minimise-X: any
+  // mobile sheet / open mobile menu, and — the one desktop X left — the About
+  // pane opened from Explain (a click closes it back to Explain). During plain
+  // Explain the disc keeps the ∀: it is being annotated as the menu, so it
+  // must look like the menu.
   const showClose =
-    menuOverlayOpen ||
-    mobileSheetOpen ||
-    mobileMenuOpen ||
-    (explainActive && aboutOpen);
+    mobileSheetOpen || mobileMenuOpen || (explainActive && aboutOpen);
   const [activeIndex, setActiveIndex] = useState(0);
   // ∀ glyph rotation. Hover rotates it to 180° (a right-side-up A) and holds;
   // leaving completes the turn to 360° (back to ∀), then snaps to 0 for next
@@ -212,22 +202,30 @@ export function ForallMenu({
     { kind: "action", key: "new-note", label: "Write something" },
     { kind: "action", key: "new-feed", label: "New feed" },
   ];
-  // Explain — its own group, single primary option (EXPLAIN-ADR §8, keep the
-  // menu slim). Desktop only (Explain doesn't mount on the mobile branch), and
-  // disabled while any Glasshouse pane is open (D10): v1 discovery never has to
-  // arbitrate which surface is topmost.
-  const explainRows: FocusRow[] = !isMobile
-    ? [
-        {
-          kind: "overlay",
-          onOpen: () => openExplain(),
-          label: "Explain",
-          count: 0,
-          disabled: glasshouseOpen,
-          disabledTitle: "close this pane to use Explain",
-        },
-      ]
-    : [];
+  // The "what is this place" group (EXPLAIN-ADR §8, keep the menu slim).
+  // Desktop: an Explain / About pair — Explain now works over an open
+  // Glasshouse too (pane-mode program; the D10 disable is gone), and About is
+  // reachable without entering Explain first. Mobile: About alone — Explain
+  // has no hover branch there (ADR §Surface), so the row it would occupy
+  // carries the About page instead.
+  const explainRows: FocusRow[] = [
+    ...(!isMobile
+      ? [
+          {
+            kind: "overlay",
+            onOpen: () => openExplain(),
+            label: "Explain",
+            count: 0,
+          } as FocusRow,
+        ]
+      : []),
+    {
+      kind: "overlay",
+      onOpen: () => useAboutOverlay.getState().open(),
+      label: "About",
+      count: 0,
+    },
+  ];
   // The go-group keeps all six destinations but reads in two tiers: a primary
   // pair (the high-traffic inbox + dashboard) over a muted account cluster.
   // Same group-gap separates them; the muted weight does the demoting.
@@ -314,22 +312,16 @@ export function ForallMenu({
     buttonRef.current?.focus();
   }
 
-  function closeMenuOverlays() {
-    useMessagesOverlay.getState().close();
-    useDashboardOverlay.getState().close();
-    useLibraryOverlay.getState().close();
-    useNetworkOverlay.getState().close();
-    useLedgerOverlay.getState().close();
-    useSettingsOverlay.getState().close();
-  }
-
-  // The disc / wordmark trigger. While a menu destination overlay is open it is
-  // the back-to-workspace button (close the overlay); otherwise it toggles the
-  // command menu.
+  // The disc / wordmark trigger. On mobile, with a sheet open, it is the
+  // back-to-workspace button (close the sheet); otherwise — including on
+  // desktop with any pane open — it toggles the command menu, which renders at
+  // z-60 above every Glasshouse.
   function onTriggerClick() {
     // While Explain is active the disc is the way back out (EXPLAIN-ADR D3,
     // 2026-07-15 form): close the About pane if it is open (back to Explain),
-    // else close Explain itself. Never toggle the menu over the frozen floor.
+    // else close Explain itself (in pane mode the explained pane stays open —
+    // the click sheds only the annotations). Never toggle the menu over the
+    // frozen surface.
     if (explainActive) {
       if (aboutOpen) useAboutOverlay.getState().close();
       else useExplain.getState().close();
@@ -339,10 +331,6 @@ export function ForallMenu({
     // also Glasshouses) minimises through the presence registry.
     if (mobileSheetOpen) {
       useGlasshousePresence.getState().close();
-      return;
-    }
-    if (menuOverlayOpen) {
-      closeMenuOverlays();
       return;
     }
     setView((v) => (v === "closed" ? "menu" : "closed"));
@@ -436,8 +424,10 @@ export function ForallMenu({
           Explain (onTriggerClick above). The button is islanded like the disc
           so its tokens resolve canonical-light, then takes the same dark-mode
           photo-negative (bone pill + ink label). Suppressed while the About
-          pane is open (the pane owns its own dismiss); restored on close. */}
-      {!inBar && explainActive && !aboutOpen && (
+          pane is open (the pane owns its own dismiss); restored on close.
+          Also suppressed for the whole of a PANE-mode program (see paneExplain
+          above) — opening About would supersede the explained pane. */}
+      {!inBar && explainActive && !paneExplain && !aboutOpen && (
         <div
           style={{
             ...LIGHT_ISLAND_STYLE,
@@ -491,8 +481,9 @@ export function ForallMenu({
           stays CRISP above the frost: it sits at z-60 (the ForallMenu layer),
           above the Glasshouse scrim (z-[55]), so an open overlay never blurs or
           dims it. Floating only — the mobile bar already carries its own
-          wordmark. Gives way to the About button while Explain is active. */}
-      {!inBar && !explainActive && (
+          wordmark. Gives way to the About button while a FLOOR-mode Explain
+          program is active; stays put through a pane-mode one. */}
+      {!inBar && (!explainActive || paneExplain) && (
         <button
           ref={wordmarkRef}
           type="button"
@@ -606,10 +597,10 @@ export function ForallMenu({
             ? aboutOpen
               ? "Back to Explain"
               : "Exit Explain"
-            : mobileMenuOpen && !menuOverlayOpen && !mobileSheetOpen
-              ? "Close menu"
-              : showClose
-                ? "Back to workspace"
+            : mobileSheetOpen
+              ? "Back to workspace"
+              : mobileMenuOpen
+                ? "Close menu"
                 : `Workspace actions${
                     totalUnread > 0 ? ` (${totalUnread} unread)` : ""
                   }`

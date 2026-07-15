@@ -1599,10 +1599,13 @@ export function WorkspaceView() {
       <LibraryOverlay />
       <NetworkOverlay />
       {/* Desktop only — the Explain engine must never mount on the mobile
-          branch (EXPLAIN build-plan §2, ADR §Surface). AboutOverlay is the D3
-          chrome-swap target (opened from the swapped "About all.haus" button). */}
+          branch (EXPLAIN build-plan §2, ADR §Surface). AboutOverlay mounts on
+          BOTH branches: desktop reaches it via the menu's About row and the D3
+          chrome-swap button; mobile via its menu's About row (the slot Explain
+          would occupy — no hover branch there), rendering as a full-screen
+          sheet the disc-X dismisses. */}
       {!isMobile && <ExplainOverlay />}
-      {!isMobile && <AboutOverlay />}
+      <AboutOverlay />
       {/* First-run auto-entry (D6) is DORMANT (2026-07-15): auto-dropping a
           fresh device into Explain on load proved disorienting on the live
           site, so the six-beat tour no longer mounts — Explain is strictly

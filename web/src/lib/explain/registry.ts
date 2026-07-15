@@ -6,9 +6,9 @@
 // it — first-run (editorialises) and Explain (describes) — sharing the kinds.
 
 // ---------------------------------------------------------------------------
-// Kinds (§4). Twelve; `vessel.numeral`/`source.volume`/`card.pip` are cut or
-// parked. Reserved `[next]` kinds (menu-open, pane interiors) ship no copy and
-// no registration, so they are not in this union yet.
+// Kinds (§4). Reserved `[next]` kinds (menu-open, per-surface pane interiors)
+// ship no copy and no registration, so they are not in this union yet;
+// `vessel.numeral`/`source.volume`/`card.pip` are cut or parked.
 // ---------------------------------------------------------------------------
 
 export type ExplainKind =
@@ -19,6 +19,12 @@ export type ExplainKind =
   // program is active (D3, 2026-07-15 form). Hover-only: never in the
   // sequence, annotated via the button's own hover handlers.
   | "about"
+  // the Glasshouse pane root — the base annotation of a PANE-mode Explain
+  // program (D10 reversal, 2026-07-15 second session): when Explain opens
+  // while a Glasshouse is up, the pane is the annotated surface and this kind
+  // answers any hover its interior leaves don't. Tagged in Glasshouse.tsx, so
+  // every pane inherits it; per-surface leaves arrive with the C-slices.
+  | "pane"
   // per-feed instance + tagged leaves
   | "vessel"
   | "vessel.name"
@@ -50,6 +56,7 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
     "This is the ∀ menu, where everything runs from: writing, searching, your messages, your money, your settings. There is no other interface to learn. While Explain is on, clicking it simply takes you back to your workspace.",
   about:
     "This opens About: a fuller account of what all.haus is and how it works, worth reading once.",
+  pane: "This is a pane, floating over your workspace. Drag it by any empty part of itself to move it, and it will remember where you leave it. Close it by clicking outside, pressing Escape, or with the ✕ in the corner.",
   "vessel.name":
     "This is the feed's name. Click to rename it and manage its sources, or click and drag to move the feed container around this workspace.",
   "vessel.gear":

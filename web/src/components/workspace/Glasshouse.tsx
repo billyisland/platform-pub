@@ -512,6 +512,11 @@ export function Glasshouse({
           role="dialog"
           aria-modal="true"
           aria-label={ariaLabel}
+          // The Explain engine's pane-mode root (EXPLAIN-ADR, D10 reversal
+          // 2026-07-15): every Glasshouse is explainable as a pane, and this
+          // tag answers any interior hover a more specific `data-explain` leaf
+          // doesn't. Inert outside an active pane-mode Explain program.
+          data-explain="pane"
           onPointerDown={onPanePointerDown}
           className="absolute bg-glasshouse shadow-lg overflow-hidden"
           // `--gh-h` is the on-screen height available to the body — it tracks the

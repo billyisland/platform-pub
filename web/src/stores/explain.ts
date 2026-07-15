@@ -34,9 +34,18 @@ export interface Annotation {
 
 export type ExplainProgramKind = "explain" | "firstrun";
 
+// Which surface the program annotates, decided at open() and fixed for the
+// program's life (D10 reversal, 2026-07-15 second session): "floor" is the
+// workspace canvas (the original form); "pane" annotates the open Glasshouse —
+// the scrim/bubble bands rise above the pane (z-57/58 vs 50/53), hit-testing
+// resolves only tags inside the pane, and the pane closing closes Explain
+// with it. First-run is always "floor".
+export type ExplainSurface = "floor" | "pane";
+
 // A resolved program: which flavour + the annotation sequence built at open().
 export interface Program {
   kind: ExplainProgramKind;
+  surface: ExplainSurface;
   annotations: Annotation[];
 }
 

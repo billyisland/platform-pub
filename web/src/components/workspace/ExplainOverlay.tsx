@@ -46,6 +46,13 @@ import { useGlasshousePresence } from "../../stores/glasshouse";
 // → closest, and (b) the registration Map's live root rects (floor / vessel)
 // by element identity. The disc + About button sit ABOVE the scrim (z-60) and
 // report their own hover to the store instead.
+//
+// PANE mode (D10 reversal, 2026-07-15 second session): when the program's
+// surface is "pane", the open Glasshouse is the annotated subject — the scrim
+// rises to z-57 and the cursor bubble to z-58 (above the pane's z-55/56 bands,
+// under the ForallMenu's z-60), hit-testing resolves only `[data-explain]`
+// tags inside the pane root, focus/ARIA freezing targets the pane instead of
+// the vessels, and the pane closing (Esc, popstate) closes Explain with it.
 // =============================================================================
 
 // Marks the overlay's own DOM so hit-testing looks straight through it.
@@ -70,12 +77,18 @@ export function ExplainOverlay() {
   const hover = useExplain((s) => s.hover);
   const dragging = useExplain((s) => s.draggingFeedId != null);
   const programKind = useExplain((s) => s.program?.kind);
+  const programSurface = useExplain((s) => s.program?.surface);
   const setHover = useExplain((s) => s.setHover);
   const next = useExplain((s) => s.next);
   const prev = useExplain((s) => s.prev);
   const close = useExplain((s) => s.close);
 
   const isFirstRun = programKind === "firstrun";
+  // PANE mode (D10 reversal, 2026-07-15 second session): the program annotates
+  // the open Glasshouse, so the scrim/bubble bands rise above the pane
+  // (z-57/58, still under the ForallMenu at z-60) and hit-testing resolves
+  // only tags inside the pane. First-run is always floor-surfaced.
+  const paneMode = programSurface === "pane";
   const reduced = prefersReducedMotion();
 
   // Bumped by the ResizeObserver / window-resize so bubbles re-measure their
@@ -105,6 +118,27 @@ export function ExplainOverlay() {
   const hitTest = useCallback(
     (x: number, y: number): ResolvedTarget | null => {
       if (typeof document === "undefined") return null;
+      // PANE mode: the open Glasshouse is the annotated surface. Only tags
+      // inside the pane root resolve — elementsFromPoint sees straight through
+      // the gh-scrim to the frozen floor beneath, and a vessel label answering
+      // a hover beside the pane would annotate something the user cannot even
+      // see. Off-pane hovers resolve to nothing (the pane is the subject).
+      if (paneMode) {
+        const paneRoot = document.querySelector<HTMLElement>(
+          '[data-explain="pane"]',
+        );
+        if (!paneRoot) return null;
+        const stack = document.elementsFromPoint(x, y) as HTMLElement[];
+        for (const el of stack) {
+          if (el.closest(`[${CHROME_ATTR}]`)) continue;
+          const tagged = el.closest<HTMLElement>("[data-explain]");
+          if (tagged && paneRoot.contains(tagged)) {
+            const kind = tagged.getAttribute("data-explain") as ExplainKind;
+            return { kind, el: tagged };
+          }
+        }
+        return null;
+      }
       const roots = registry?.snapshot() ?? [];
       const vessels = roots.filter((r) => r.kind === "vessel");
       const stack = document.elementsFromPoint(x, y) as HTMLElement[];
@@ -132,7 +166,7 @@ export function ExplainOverlay() {
       }
       return null;
     },
-    [registry],
+    [registry, paneMode],
   );
 
   // Resolve an annotation's live DOM element for measurement (D11). Roots come
@@ -276,14 +310,25 @@ export function ExplainOverlay() {
   // cannot reach.
   useEffect(() => {
     if (!isActive || typeof document === "undefined") return;
-    const vesselEls = (registry?.snapshot() ?? [])
-      .filter((r) => r.kind === "vessel")
-      .map((r) => r.ref.current)
-      .filter((el): el is HTMLElement => !!el);
-    for (const el of vesselEls) el.setAttribute("aria-hidden", "true");
+    // The frozen content set: the vessel roots on the floor, or — pane mode —
+    // the open Glasshouse pane itself (it is the annotated subject, frozen
+    // exactly like a vessel; without this, Tab walks into the pane and Enter
+    // activates what the pointer cannot reach).
+    const frozenEls = paneMode
+      ? [document.querySelector<HTMLElement>('[data-explain="pane"]')].filter(
+          (el): el is HTMLElement => !!el,
+        )
+      : (registry?.snapshot() ?? [])
+          .filter((r) => r.kind === "vessel")
+          .map((r) => r.ref.current)
+          .filter((el): el is HTMLElement => !!el);
+    for (const el of frozenEls) el.setAttribute("aria-hidden", "true");
 
     const allowed = (t: EventTarget | null): boolean => {
-      if (useGlasshousePresence.getState().isOpen) return true;
+      // Floor mode: an open Glasshouse is the About pane opened FROM Explain —
+      // live, and it owns its own focus. Pane mode: the open Glasshouse is the
+      // frozen subject, so focus there is NOT allowed.
+      if (!paneMode && useGlasshousePresence.getState().isOpen) return true;
       return (
         t instanceof Element &&
         !!(t.closest(`[${CHROME_ATTR}]`) || t.closest(".forall-trigger"))
@@ -302,14 +347,31 @@ export function ExplainOverlay() {
     document.addEventListener("focusin", onFocusIn, true);
     return () => {
       document.removeEventListener("focusin", onFocusIn, true);
-      for (const el of vesselEls) el.removeAttribute("aria-hidden");
+      for (const el of frozenEls) el.removeAttribute("aria-hidden");
     };
-  }, [isActive, registry]);
+  }, [isActive, registry, paneMode]);
+
+  // Pane mode: the explained pane closing (Esc consumed by the pane, a
+  // popstate, any store-side close) takes Explain down with it — the program's
+  // subject is gone, and falling back to annotating the floor mid-frost would
+  // be a silent surface swap. Decided with the D10 reversal (2026-07-15).
+  useEffect(() => {
+    if (!isActive || !paneMode) return;
+    if (!useGlasshousePresence.getState().isOpen) {
+      close();
+      return;
+    }
+    return useGlasshousePresence.subscribe((s) => {
+      if (!s.isOpen) close();
+    });
+  }, [isActive, paneMode, close]);
 
   // Esc precedence (D12): open Glasshouse → Explain → ForallMenu dropdown. One
-  // capture-phase handler early-returns while the About pane is open (its own
-  // Escape handler consumes it, Glasshouse.tsx), otherwise closes Explain and
-  // stops propagation so the ForallMenu dropdown's Esc never also fires.
+  // capture-phase handler early-returns while a Glasshouse is open — floor
+  // mode: the About pane consumes Esc (its own handler, Glasshouse.tsx); pane
+  // mode: the explained pane consumes it and the presence subscription above
+  // then closes Explain too. Otherwise closes Explain and stops propagation so
+  // the ForallMenu dropdown's Esc never also fires.
   useEffect(() => {
     if (!isActive) return;
     const onKey = (e: KeyboardEvent) => {
@@ -350,10 +412,12 @@ export function ExplainOverlay() {
 
   return (
     <>
-      {/* Scrim — z-50, flat wash ≤0.18 alpha, no backdrop-filter (D9): feeds
-          stay legible behind their own labels. Catches every pointer event so
-          the floor is frozen (D1). Pointer leaving the viewport clears the
-          hover so no stale bubble lingers. */}
+      {/* Scrim — flat wash ≤0.18 alpha, no backdrop-filter (D9): the surface
+          stays legible behind its own labels. Catches every pointer event so
+          the annotated surface is frozen (D1). Floor mode sits at z-50 (under
+          any Glasshouse); pane mode rises to z-57 — above the pane (z-56) it
+          annotates, still under the ForallMenu (z-60). Pointer leaving the
+          viewport clears the hover so no stale bubble lingers. */}
       <div
         {...{ [CHROME_ATTR]: "" }}
         onPointerMove={handlePointerMove}
@@ -362,7 +426,7 @@ export function ExplainOverlay() {
         style={{
           position: "fixed",
           inset: 0,
-          zIndex: 50,
+          zIndex: paneMode ? 57 : 50,
           background: "rgb(var(--ah-true-black-rgb) / 0.14)",
           cursor: "default",
         }}
@@ -395,6 +459,7 @@ export function ExplainOverlay() {
           x={cursor.x}
           y={cursor.y}
           reduced={reduced}
+          zIndex={paneMode ? 58 : 53}
         />
       )}
     </>
@@ -750,11 +815,15 @@ function CursorBubble({
   x,
   y,
   reduced,
+  zIndex,
 }: {
   copy: string;
   x: number;
   y: number;
   reduced: boolean;
+  // z-53 over the floor; z-58 in pane mode (above the pane's z-56 + the raised
+  // z-57 scrim, under the ForallMenu at z-60).
+  zIndex: number;
 }) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({
@@ -802,7 +871,7 @@ function CursorBubble({
         left,
         top,
         width: BUBBLE_WIDTH,
-        zIndex: 53,
+        zIndex,
         padding: "14px 16px",
         borderRadius: 10,
         pointerEvents: "none",
