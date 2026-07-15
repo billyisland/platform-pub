@@ -76,6 +76,22 @@ export function useArticleEditorInit({
   const [pubMemberships, setPubMemberships] = useState<PublicationContext[]>([]);
   const [initialPubId, setInitialPubId] = useState<string | null>(null);
 
+  // The EditorOverlay mounts this hook globally and reuses it across opens, so
+  // a previous open's state (editorReady=true, a stale initialData) would
+  // otherwise leak into the next target's first render — ArticleEditor reads
+  // its initial* props only at mount, so it would mount empty before the load
+  // effect runs and then ignore the data (the note→article seed-loss bug).
+  // Reset synchronously when the load target changes (render-phase derived
+  // state) so the caller's !editorReady gate holds until the target is loaded.
+  const loadKey = JSON.stringify([editEventId, draftId, seedContent, seedTitle]);
+  const [prevLoadKey, setPrevLoadKey] = useState(loadKey);
+  if (prevLoadKey !== loadKey) {
+    setPrevLoadKey(loadKey);
+    setEditorReady(false);
+    setInitialData(null);
+    setLoadError(null);
+  }
+
   // Load publication memberships
   useEffect(() => {
     if (!user) return;

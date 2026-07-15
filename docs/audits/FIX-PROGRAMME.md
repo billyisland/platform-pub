@@ -23,6 +23,29 @@ starts.
 
 ## Progress
 
+- **2026-07-15** — **One "Write something" menu entry + note→article seed
+  carry-over fix.** The ∀ menu's create group carried two write rows ("New
+  note" + "Write an article"); collapsed to a single **"Write something"** row
+  opening the note composer — article writing is reached through the
+  composer's existing "Write an article →" escalation (`ForallAction`
+  `new-article` removed; the editor overlay stays reachable via the dashboard
+  rows and the `?overlay=editor` deep link). The escalation's promised body
+  carry-over was silently broken: `EditorOverlay` is mounted globally, so
+  `useArticleEditorInit`'s `editorReady` flag was already stale-`true` from
+  the boot-time effect run — `ArticleEditor` (which reads its `initial*`
+  props at mount only) mounted before the load effect populated
+  `initialData`, then ignored the seed when it arrived. Same dead gate also
+  silently emptied **draft/edit loads** through the overlay. Fixed in the
+  hook with a render-phase reset keyed on the load target
+  (`JSON.stringify([editEventId, draftId, seedContent, seedTitle])` — key
+  change → `editorReady=false` + `initialData`/`loadError` cleared before
+  paint), and `EditorOverlay`'s mount gate widened from
+  `(editEventId||draftId) && !editorReady` to `!editorReady` so every target
+  (edits, drafts, seeds) waits for its data. Verified end-to-end (throwaway
+  web container + Playwright): single menu row; typed note body lands in the
+  article editor; `# Heading` first line promotes to the title without
+  duplication; draft deep-link loads title+body in the overlay.
+
 - **2026-07-15** — **Explain residue pass (§0d items 2–4 closed).** (1)
   **Keyboard/SR freeze (§0d.3)** — D1 froze the pointer only (the scrim is a
   stacking freeze): Tab could walk focus into controls under the scrim, Enter

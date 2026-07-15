@@ -30,7 +30,7 @@ const TOKENS = {
   badgeFg: "var(--ah-white)",
 };
 
-export type ForallAction = "new-feed" | "new-note" | "new-article";
+export type ForallAction = "new-feed" | "new-note";
 
 export interface HiddenFeed {
   id: string;
@@ -206,8 +206,10 @@ export function ForallMenu({
         ]
       : [];
   const createRows: FocusRow[] = [
-    { kind: "action", key: "new-note", label: "New note" },
-    { kind: "action", key: "new-article", label: "Write an article" },
+    // One write entry. It opens the note composer; article writing is reached
+    // through its "Write an article →" escalation (which carries the typed
+    // body along), never a second menu row.
+    { kind: "action", key: "new-note", label: "Write something" },
     { kind: "action", key: "new-feed", label: "New feed" },
   ];
   // Explain — its own group, single primary option (EXPLAIN-ADR §8, keep the

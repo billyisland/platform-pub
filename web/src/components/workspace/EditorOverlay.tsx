@@ -58,7 +58,11 @@ export function EditorOverlay() {
           <div className="px-6 sm:px-10 py-12 text-center">
             <p className="text-red-600">{init.loadError}</p>
           </div>
-        ) : (editEventId || draftId) && !init.editorReady ? (
+        ) : !init.editorReady ? (
+          // Gate on readiness for EVERY target (edit/draft loads AND the
+          // note→article seed): ArticleEditor reads its initial* props only at
+          // mount, so mounting it before the init effect has populated
+          // initialData permanently drops the target's content.
           <div className="px-6 sm:px-10 py-12 text-center">
             <div className="h-8 w-48 mx-auto animate-pulse rounded bg-grey-100" />
             <p className="mt-4 text-sm text-grey-600">Loading…</p>

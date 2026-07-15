@@ -526,10 +526,6 @@ export function WorkspaceView() {
       setComposerOpen("note");
       return;
     }
-    if (key === "new-article") {
-      useEditorOverlay.getState().open();
-      return;
-    }
     if (key === "new-feed") {
       setNewFeedOpen(true);
       return;
