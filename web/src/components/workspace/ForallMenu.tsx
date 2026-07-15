@@ -449,7 +449,13 @@ export function ForallMenu({
             type="button"
             className="forall-trigger font-sans font-medium"
             aria-label="About all.haus"
-            onClick={() => useAboutOverlay.getState().open()}
+            onClick={() => {
+              // Clear the hover before the pane mounts: opening About unmounts
+              // this button without a mouseleave, and a stale `about` bubble
+              // would linger faintly under the Glasshouse frost.
+              useExplain.getState().setHover(null);
+              useAboutOverlay.getState().open();
+            }}
             // The button sits above the Explain scrim, so the scrim's
             // pointermove hit-test never reaches it — it reports its own hover
             // (the `about` label) to honour Explain's "hover anything, read its
