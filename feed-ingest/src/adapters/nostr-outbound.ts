@@ -81,8 +81,24 @@ export async function publishNostrToRelays(
   return eventId
 }
 
+// The in-house relay (PLATFORM_RELAY_WS_URL, e.g. ws://strfry:7777) resolves to
+// a private compose address, which the SSRF pin rejects by default — so without
+// this exemption every native publish (articles, notes, kind-5 tombstones,
+// discovery events) fails the pin on claim and eventually abandons. The value is
+// operator-controlled config, never user input; external cross-post relays get
+// no exemption (their host won't match).
+function platformRelayHosts(): string[] {
+  const url = process.env.PLATFORM_RELAY_WS_URL
+  if (!url) return []
+  try {
+    return [new URL(url).hostname]
+  } catch {
+    return []
+  }
+}
+
 async function publishOne(relayUrl: string, event: NostrSignedEvent): Promise<void> {
-  const wsOpts = await pinnedWebSocketOptions(relayUrl)
+  const wsOpts = await pinnedWebSocketOptions(relayUrl, { allowHosts: platformRelayHosts() })
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(relayUrl, wsOpts)
     const timeout = setTimeout(() => {

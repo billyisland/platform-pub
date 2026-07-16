@@ -3,6 +3,7 @@ import {
   isPrivateIpv4,
   isPrivateIpv6,
   parseIpv6,
+  pinnedWebSocketOptions,
 } from "../src/lib/http-client.js";
 
 describe("isPrivateIpv4", () => {
@@ -164,5 +165,32 @@ describe("isPrivateIpv6", () => {
     it("::ffff:8.8.8.8 IPv4-mapped public", () => {
       expect(isPrivateIpv6("::ffff:8.8.8.8")).toBe(false);
     });
+  });
+});
+
+describe("pinnedWebSocketOptions — platform-relay exemption (C1)", () => {
+  it("rejects a private-IP host by default", async () => {
+    await expect(pinnedWebSocketOptions("ws://127.0.0.1:7777")).rejects.toThrow(
+      /private IP/,
+    );
+  });
+
+  it("permits a private-IP host when it is in allowHosts", async () => {
+    const opts = await pinnedWebSocketOptions("ws://127.0.0.1:7777", {
+      allowHosts: ["127.0.0.1"],
+    });
+    // The pin is still enforced: the lookup forces the cleared address.
+    const address = await new Promise<string>((resolve, reject) => {
+      opts.lookup("127.0.0.1", {}, (err: Error | null, addr: string) =>
+        err ? reject(err) : resolve(addr),
+      );
+    });
+    expect(address).toBe("127.0.0.1");
+  });
+
+  it("does not exempt a host that isn't an exact allowHosts match", async () => {
+    await expect(
+      pinnedWebSocketOptions("ws://127.0.0.1:7777", { allowHosts: ["strfry"] }),
+    ).rejects.toThrow(/private IP/);
   });
 });

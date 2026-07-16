@@ -170,13 +170,22 @@ interface ResolvedHost {
   family: 4 | 6;
 }
 
-async function resolveAndValidateHost(hostname: string): Promise<ResolvedHost> {
+// `allowPrivate` opts out of the private/reserved-IP rejection for a single,
+// operator-controlled host (never user input) — e.g. the in-house Nostr relay
+// at `ws://strfry:7777`, which Docker DNS resolves to a 172.18.x compose
+// address. The pin itself is unchanged: the caller-cleared host is still
+// resolved once and that exact address is what undici/ws connect to, so this
+// is a targeted exemption, not a weakening of the DNS-rebinding guard.
+async function resolveAndValidateHost(
+  hostname: string,
+  allowPrivate = false,
+): Promise<ResolvedHost> {
   // Short-circuit literal IPs so safeFetch('http://10.0.0.1') still gets
   // caught — dns.resolve* only works on hostnames. Use net.isIP* rather than
   // regex so non-canonical IPv6 forms ("[::1]" stripped of brackets, etc.)
   // aren't silently treated as hostnames and fall through to DNS.
   if (net.isIPv4(hostname)) {
-    if (isPrivateIpv4(hostname)) {
+    if (!allowPrivate && isPrivateIpv4(hostname)) {
       throw new Error(
         `Hostname ${hostname} resolves to private IP ${hostname}`,
       );
@@ -184,7 +193,7 @@ async function resolveAndValidateHost(hostname: string): Promise<ResolvedHost> {
     return { address: hostname, family: 4 };
   }
   if (net.isIPv6(hostname)) {
-    if (isPrivateIpv6(hostname)) {
+    if (!allowPrivate && isPrivateIpv6(hostname)) {
       throw new Error(
         `Hostname ${hostname} resolves to private IP ${hostname}`,
       );
@@ -204,11 +213,13 @@ async function resolveAndValidateHost(hostname: string): Promise<ResolvedHost> {
       throw new Error(`Could not resolve hostname: ${hostname}`);
     }
 
-    for (const { address } of allAddrs) {
-      if (isPrivateIp(address)) {
-        throw new Error(
-          `Hostname ${hostname} resolves to private IP ${address}`,
-        );
+    if (!allowPrivate) {
+      for (const { address } of allAddrs) {
+        if (isPrivateIp(address)) {
+          throw new Error(
+            `Hostname ${hostname} resolves to private IP ${address}`,
+          );
+        }
       }
     }
     // Return the first validated address — undici pins to this one via the
@@ -404,10 +415,20 @@ export interface PinnedWebSocketOptions {
   lookup: LookupFunction;
 }
 
+export interface PinnedWebSocketConfig {
+  maxLength?: number;
+  // Hostnames exempt from the private-IP rejection (operator-controlled infra,
+  // never user input) — e.g. the in-house `strfry` relay. The URL's host must
+  // match one of these *exactly* for the exemption to apply; the pin is still
+  // enforced against that host's resolved address.
+  allowHosts?: readonly string[];
+}
+
 export async function pinnedWebSocketOptions(
   url: string,
-  maxLength = 2048,
+  config: PinnedWebSocketConfig = {},
 ): Promise<PinnedWebSocketOptions> {
+  const { maxLength = 2048, allowHosts = [] } = config;
   if (url.length > maxLength) {
     throw new Error(`WebSocket URL exceeds ${maxLength} chars`);
   }
@@ -421,7 +442,8 @@ export async function pinnedWebSocketOptions(
     throw new Error(`Unsupported WebSocket scheme: ${parsed.protocol}`);
   }
 
-  const resolved = await resolveAndValidateHost(parsed.hostname);
+  const allowPrivate = allowHosts.includes(parsed.hostname);
+  const resolved = await resolveAndValidateHost(parsed.hostname, allowPrivate);
   const expectedHost = parsed.hostname;
 
   return {

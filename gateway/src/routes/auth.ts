@@ -620,8 +620,11 @@ export async function authRoutes(app: FastifyInstance) {
       const accountId = req.session!.sub;
 
       // Verify the email matches
-      const { rows: accountRows } = await pool.query<{ email: string }>(
-        "SELECT email FROM accounts WHERE id = $1",
+      const { rows: accountRows } = await pool.query<{
+        email: string;
+        nostr_pubkey: string;
+      }>(
+        "SELECT email, nostr_pubkey FROM accounts WHERE id = $1",
         [accountId],
       );
       if (accountRows.length === 0) {
@@ -671,7 +674,10 @@ export async function authRoutes(app: FastifyInstance) {
               content: "",
               tags: [
                 ["e", article.nostr_event_id],
-                ["a", `30023:${accountRows[0].email}:${article.nostr_d_tag}`],
+                [
+                  "a",
+                  `30023:${accountRows[0].nostr_pubkey}:${article.nostr_d_tag}`,
+                ],
               ],
               created_at: Math.floor(Date.now() / 1000),
             });
