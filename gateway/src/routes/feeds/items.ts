@@ -348,7 +348,13 @@ async function placeholderExploreItems(
 
   const result = await pool.query<any>(
     `
-    SELECT ${FEED_SELECT}${POST_SELECT}
+    SELECT ${FEED_SELECT}${POST_SELECT},
+      -- Full-precision epoch for the cursor (M13): published_at_epoch is
+      -- ::bigint (whole seconds, for display), but the ORDER BY and the
+      -- to_timestamp() cursor filter are full-precision, so a whole-second
+      -- cursor skips/duplicates rows sharing a second. to_timestamp() accepts
+      -- fractional seconds, so carry the fractional epoch in the cursor.
+      EXTRACT(EPOCH FROM fi.published_at) AS published_at_secs
     FROM feed_items fi
     ${FEED_JOINS}${POST_JOINS}
     WHERE fi.deleted_at IS NULL
@@ -375,7 +381,7 @@ async function placeholderExploreItems(
     ? encodeFeedCursor({
         kind: "explore",
         score: lastRow.score ?? 0,
-        ts: Number(lastRow.published_at_epoch),
+        ts: Number(lastRow.published_at_secs),
         id: lastRow.fi_id,
       })
     : undefined;

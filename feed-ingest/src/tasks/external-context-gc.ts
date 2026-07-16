@@ -24,9 +24,14 @@ export const externalContextGc: Task = async (_payload, _helpers) => {
         FROM external_items ei
        WHERE ei.is_context_only = TRUE
          AND ei.created_at < now() - ($1 || ' days')::interval
-         AND ei.deleted_at IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM notes n WHERE n.external_parent_id = ei.id
+         )
+         -- citation_edges.source_external_item_id has no ON DELETE action, so a
+         -- cited item would fail the DELETE with a RESTRICT violation and wedge
+         -- the whole batch permanently (M15, same as external-items-prune).
+         AND NOT EXISTS (
+           SELECT 1 FROM citation_edges ce WHERE ce.source_external_item_id = ei.id
          )
     ),
     del_fi AS (

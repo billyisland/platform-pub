@@ -76,6 +76,15 @@ export const externalSourcesGc: Task = async (_payload, _helpers) => {
           WHERE l.source_a_id = external_sources.id
              OR l.source_b_id = external_sources.id
        )
+       -- Culling a source CASCADEs to its external_items; if one of those items
+       -- is cited by a citation_edge (source_external_item_id FK has no ON DELETE
+       -- action), the cascade hits a RESTRICT violation and fails the whole
+       -- batch — nothing culled ever again (M15 wedge). Spare such a source.
+       AND NOT EXISTS (
+         SELECT 1 FROM external_items ei
+           JOIN citation_edges ce ON ce.source_external_item_id = ei.id
+          WHERE ei.source_id = external_sources.id
+       )
   `, [cullDays])
 
   if ((marked.rowCount ?? 0) > 0 || (deactivated.rowCount ?? 0) > 0 || (deleted.rowCount ?? 0) > 0) {

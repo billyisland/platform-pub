@@ -528,7 +528,12 @@ export async function authorRoutes(app: FastifyInstance) {
 
         const result = await pool.query<any>(
           `
-          SELECT ${FEED_SELECT}${POST_SELECT}
+          SELECT ${FEED_SELECT}${POST_SELECT},
+            -- Fractional epoch for the cursor (M13) — published_at_epoch is
+            -- whole seconds, but the ORDER BY / to_timestamp() filter are
+            -- full-precision, so a whole-second cursor skips/duplicates rows
+            -- sharing a second.
+            EXTRACT(EPOCH FROM fi.published_at) AS published_at_secs
           FROM feed_items fi
           ${FEED_JOINS}
           ${POST_JOINS}
@@ -551,7 +556,7 @@ export async function authorRoutes(app: FastifyInstance) {
             ? result.rows[result.rows.length - 1]
             : undefined;
         const nextCursor = lastRow
-          ? `${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
+          ? `${Number(lastRow.published_at_secs)}:${lastRow.fi_id}`
           : undefined;
 
         return reply.send({
@@ -618,6 +623,9 @@ export async function authorRoutes(app: FastifyInstance) {
                  feed_items_derive_post_id('nostr', c.target_event_id) AS root_post_id,
                  c.content,
                  EXTRACT(EPOCH FROM c.published_at)::bigint AS published_at_epoch,
+                 -- Fractional epoch for the cursor only (M13); published_at_epoch
+                 -- stays whole-seconds for display.
+                 EXTRACT(EPOCH FROM c.published_at) AS published_at_secs,
                  c.deleted_at,
                  c.author_id,
                  acc.display_name AS acc_display_name,
@@ -648,7 +656,7 @@ export async function authorRoutes(app: FastifyInstance) {
             ? result.rows[result.rows.length - 1]
             : undefined;
         const nextCursor = lastRow
-          ? `${Number(lastRow.published_at_epoch)}:${lastRow.id}`
+          ? `${Number(lastRow.published_at_secs)}:${lastRow.id}`
           : undefined;
 
         return reply.send({ items, nextCursor });

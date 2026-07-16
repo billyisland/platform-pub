@@ -66,7 +66,11 @@ export function registerFeedSavesRoutes(app: FastifyInstance) {
       `
       SELECT ${FEED_SELECT}${POST_SELECT},
         EXTRACT(EPOCH FROM fs.created_at)::bigint AS saved_at_epoch,
-        EXTRACT(EPOCH FROM fs.created_at)::bigint * 1000 AS saved_at_ms,
+        -- Preserve sub-second precision in the cursor (M13): the ::bigint cast
+        -- BEFORE ×1000 truncated created_at to whole seconds, so with several
+        -- saves in one second the cursor (whole-second) compared against the
+        -- full-precision fs.created_at skipped/duplicated rows at page edges.
+        (EXTRACT(EPOCH FROM fs.created_at) * 1000)::bigint AS saved_at_ms,
         fs.id AS save_id
       FROM feed_saves fs
       JOIN feed_items fi ON fi.id = fs.feed_item_id

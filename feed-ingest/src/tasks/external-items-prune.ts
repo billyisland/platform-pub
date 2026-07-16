@@ -5,9 +5,23 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // =============================================================================
 // external_items_prune — daily cleanup of old external items
 //
-// Deletes items older than the retention period, but preserves items that
-// have user interactions (bookmarks, votes, note replies) to prevent
-// silently vanishing bookmarks or broken reply threads.
+// Deletes items older than the retention period, but preserves items still
+// referenced (a native reply's parent, a citation edge, a vote) so pruning
+// never breaks a thread or fails on a foreign key.
+//
+// Three prior defects (M15, 2026-07-16 deep audit):
+//   • The "reply thread" guard was `NOT EXISTS (… WHERE FALSE)` — dead code, so
+//     a native reply's external parent (notes.external_parent_id, ON DELETE SET
+//     NULL) was deleted at retention and the thread broke. Replaced with a real
+//     guard on notes.external_parent_id.
+//   • citation_edges.source_external_item_id has NO ON DELETE action, so
+//     deleting a cited item raised a RESTRICT violation that failed the whole
+//     batch — after which nothing was ever pruned again (permanent wedge,
+//     unbounded growth). Now we skip cited items.
+//   • The `deleted_at IS NULL` filter EXCLUDED author-tombstoned items from the
+//     prune, so exactly the content a user deleted was the one class retained
+//     forever (inverted retention, a privacy problem). Dropped — tombstoned old
+//     items are now pruned too (still subject to the reference guards).
 // =============================================================================
 
 export const externalItemsPrune: Task = async (_payload, _helpers) => {
@@ -19,11 +33,11 @@ export const externalItemsPrune: Task = async (_payload, _helpers) => {
   const { rowCount } = await pool.query(`
     DELETE FROM external_items ei
     WHERE ei.created_at < now() - ($1 || ' days')::interval
-      AND ei.deleted_at IS NULL
       AND NOT EXISTS (
-        SELECT 1 FROM bookmarks b
-        JOIN articles a ON a.nostr_event_id = b.article_id::text
-        WHERE FALSE  -- bookmarks reference articles, not external items directly (yet)
+        SELECT 1 FROM notes n WHERE n.external_parent_id = ei.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM citation_edges ce WHERE ce.source_external_item_id = ei.id
       )
       AND NOT EXISTS (
         SELECT 1 FROM votes v WHERE v.target_nostr_event_id = ei.id::text

@@ -23,6 +23,32 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit MEDIUM feeds batch #2 (M13, M15).**
+  - **M15 — external-items-prune broken two ways + a permanent wedge.** In
+    `external-items-prune.ts`: (1) the "reply thread" guard was
+    `NOT EXISTS (… WHERE FALSE)` — dead code, so a native reply's external parent
+    (`notes.external_parent_id`, ON DELETE SET NULL) was deleted at retention and
+    the thread broke; replaced with a real `notes.external_parent_id` guard. (2)
+    `citation_edges.source_external_item_id` has no ON DELETE action, so deleting
+    a cited item raised a RESTRICT violation that failed the whole batch — after
+    which nothing was pruned ever again (unbounded growth); added a
+    `citation_edges` guard. (3) `deleted_at IS NULL` EXCLUDED author-tombstoned
+    items, retaining exactly the content a user deleted forever (inverted
+    retention / privacy); dropped it. The citation_edges wedge fix was extended to
+    the two tasks the audit flagged with the same defect: `external-context-gc`
+    (added the guard, dropped its `deleted_at IS NULL`) and `external-sources-gc`
+    Phase B (spare a source whose items are cited — the source-delete cascade to
+    external_items would otherwise hit the same RESTRICT wedge).
+  - **M13 — cursor truncation to whole seconds.** Four time-based keyset cursors
+    emitted `EXTRACT(EPOCH …)::bigint` (whole seconds) but compared it via
+    `to_timestamp()` against the full-precision `published_at`/`created_at` in the
+    ORDER BY, so several rows sharing a second were skipped/duplicated at page
+    boundaries. `feed_saves` now emits `(EXTRACT(EPOCH …) * 1000)::bigint` (ms,
+    divided back to fractional seconds for the filter); the explore-placeholder
+    (`items.ts`) and both author-log cursors (`author.ts`) carry a fractional
+    `EXTRACT(EPOCH …)` value (to_timestamp accepts fractional). The display
+    `published_at_epoch` stays whole-seconds. Verified: gateway + feed-ingest
+    typecheck clean.
 - **2026-07-16** — **Deep-audit MEDIUM infra/shared batch (M24, M25) + M10
   test.**
   - **M25 — safeFetch leaked credentials across cross-origin redirects.**
