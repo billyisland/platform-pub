@@ -326,9 +326,31 @@ Copy is data; the engine renders it verbatim. No em-dashes anywhere by editorial
 **`card.quote`**
 > This quotes the item into a post of your own, so you can add your thoughts on top. The original stays attached and attributed.
 
+### A.3b Explain labels — pane chrome + Reader interior (C1, shipped 2026-07-16)
+
+All hover-only (pane mode has no sequence by design). The ✕ is deliberately uncaptioned. Wiring notes: the skip ears are siblings of the pane root, so the pane-mode hit-test scopes to the pane's wrapper; the frame strips and a dimmed ear are pointer-events:none, so they are made hit-testable only while a program is active (`explainActive` in `Glasshouse.tsx`).
+
+**`pane.resize`** *(the bottom-right stretch handle, resizable panes)*
+> Drag this corner to make the pane bigger or smaller. It will remember the size you choose.
+
+**`pane.frame`** *(the coloured top bar + side rules, feed-launched panes only)*
+> This frame takes its colour from the feed you opened this from, so you can tell at a glance where a pane came from. Panes opened any other way go without.
+
+**`pane.ear.prev`** *(left skip ear)*
+> This steps back to the previous article in the feed you came from. The ← key does the same.
+
+**`pane.ear.next`** *(right skip ear; carries the ↑/↓ hint for the pair)*
+> This steps forward to the next article in the feed you came from. The → key does the same, and ↑ and ↓ scroll the page as you read.
+
+**`reader`** *(the reading surface — ReaderOverlay's scroll body)*
+> This is the reader. Anything you open from a feed is read here: pieces by all.haus writers and pieces from elsewhere, all in the same place.
+
+**`reader.gate`** *(the paywall gate, when a paywalled article is showing)*
+> This is where the free part of the article ends. Continue and the price is added to your reading tab: you pay only for what you read, and settle the tab later. The tab lives under Ledger in the ∀ menu.
+
 ### A.4 Copy notes
 
-- Deliberate duplications: "they stay where they are put" (beat 5 ↔ `floor` label) and the volume-knob line (beat 3 ↔ `card.byline` label). A user typically meets only one surface per session; the repetition harmonises rather than clashes.
+- Deliberate duplications: "they stay where they are put" (beat 5 ↔ `floor` label) and the volume-knob line (beat 3 ↔ `card.byline` label). A user typically meets only one surface per session; the repetition harmonises rather than clashes. `pane.resize` opens with the `vessel.resize` sentence by the same reasoning: one grammar for one gesture.
 - The Billy Island provenance appears in beat 1 and the starter `vessel` label by the same reasoning, and only ever on the actual starter clone (D7).
 - Cut kinds: `vessel.numeral` (folded into `vessel`), `source.volume` (superseded by `card.byline`), `card.pip` (parked, unlabelled).
 - Source-type list in add-source copy is aspirational by decision; revisit at launch against what `feed-ingest` actually accepts.

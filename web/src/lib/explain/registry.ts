@@ -25,6 +25,19 @@ export type ExplainKind =
   // answers any hover its interior leaves don't. Tagged in Glasshouse.tsx, so
   // every pane inherits it; per-surface leaves arrive with the C-slices.
   | "pane"
+  // C1 (2026-07-16) — universal pane chrome, tagged in Glasshouse.tsx: the
+  // stretch handle (resizable panes), the feed-identity frame (feed-launched
+  // panes), and the skip ears (feed-launched reader; the ear copy also teaches
+  // the arrow keys). All hover-only: pane mode has no sequence by design.
+  | "pane.resize"
+  | "pane.frame"
+  | "pane.ear.prev"
+  | "pane.ear.next"
+  // C1 — the reader interior: the reading surface (ReaderOverlay's scroll
+  // body, answering hovers the gate doesn't) and the paywall gate
+  // (PaywallGate, only present when a paywalled article is showing).
+  | "reader"
+  | "reader.gate"
   // per-feed instance + tagged leaves
   | "vessel"
   | "vessel.name"
@@ -57,6 +70,21 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   about:
     "This opens About: a fuller account of what all.haus is and how it works, worth reading once.",
   pane: "This is a pane, floating over your workspace. Drag it by any empty part of itself to move it, and it will remember where you leave it. Close it by clicking outside, pressing Escape, or with the ✕ in the corner.",
+  // First sentence deliberately echoes vessel.resize: same grammar for the
+  // same gesture (Appendix A.4 harmonisation note).
+  "pane.resize":
+    "Drag this corner to make the pane bigger or smaller. It will remember the size you choose.",
+  "pane.frame":
+    "This frame takes its colour from the feed you opened this from, so you can tell at a glance where a pane came from. Panes opened any other way go without.",
+  "pane.ear.prev":
+    "This steps back to the previous article in the feed you came from. The ← key does the same.",
+  // The ↑/↓ hint lives on this ear only, so the pair never repeats it verbatim.
+  "pane.ear.next":
+    "This steps forward to the next article in the feed you came from. The → key does the same, and ↑ and ↓ scroll the page as you read.",
+  reader:
+    "This is the reader. Anything you open from a feed is read here: pieces by all.haus writers and pieces from elsewhere, all in the same place.",
+  "reader.gate":
+    "This is where the free part of the article ends. Continue and the price is added to your reading tab: you pay only for what you read, and settle the tab later. The tab lives under Ledger in the ∀ menu.",
   "vessel.name":
     "This is the feed's name. Click to rename it and manage its sources, or click and drag to move the feed container around this workspace.",
   "vessel.gear":

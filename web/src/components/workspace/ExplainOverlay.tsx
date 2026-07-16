@@ -128,11 +128,18 @@ export function ExplainOverlay() {
           '[data-explain="pane"]',
         );
         if (!paneRoot) return null;
+        // Scope to the pane's z-56 wrapper, not the pane root alone: the skip
+        // ears (C1) are SIBLINGS of the pane — they render outside its
+        // overflow-hidden clip — but share the wrapper. Only explicit
+        // [data-explain] tags match, and the floor's vessel/card tags live
+        // outside the wrapper, so the wider scope cannot leak an annotation
+        // for something hidden under the frost.
+        const scope = paneRoot.parentElement ?? paneRoot;
         const stack = document.elementsFromPoint(x, y) as HTMLElement[];
         for (const el of stack) {
           if (el.closest(`[${CHROME_ATTR}]`)) continue;
           const tagged = el.closest<HTMLElement>("[data-explain]");
-          if (tagged && paneRoot.contains(tagged)) {
+          if (tagged && scope.contains(tagged)) {
             const kind = tagged.getAttribute("data-explain") as ExplainKind;
             return { kind, el: tagged };
           }

@@ -23,6 +23,26 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Explain C1 shipped — pane chrome + Reader interior captions
+  (EXPLAIN-ADR Appendix A.3b).** Six new hover-only kinds, copy Ed-approved
+  as drafted: `pane.resize` (stretch handle; opens with the `vessel.resize`
+  sentence — one grammar for one gesture, A.4), `pane.frame` (feed-identity
+  frame), `pane.ear.prev`/`pane.ear.next` (skip ears; the ear copy teaches
+  ←/→, the next-ear alone carries the ↑/↓ scroll hint), `reader` (the
+  ReaderOverlay scroll body — answers interior hovers ahead of the generic
+  `pane` tag), `reader.gate` (PaywallGate; first reading-tab money copy on a
+  surface, points at Ledger in the ∀ menu). The ✕ stays uncaptioned by
+  decision. Two engine accommodations: the pane-mode hit-test scopes to the
+  pane's z-56 WRAPPER (`ExplainOverlay.hitTest`) because the ears are
+  siblings of the pane root (outside its overflow-hidden clip; only explicit
+  tags match, so the wider scope can't leak a frozen-floor annotation), and
+  the pointer-events:none chrome (frame strips, a dimmed ear) flips
+  hit-testable only while a program is active (`explainActive` in
+  `Glasshouse.tsx` — `elementsFromPoint` skips pointer-events:none; zero
+  live-behaviour change since Explain's scrim intercepts all real pointer
+  events for exactly that window). Next: C2 (writing surfaces), C3
+  (destinations incl. Ledger), C4 (profile + surface overlays), captions
+  drafted for editorial review before wiring each.
 - **2026-07-15** — **Explain over Glasshouse panes (engine) + menu/disc chrome
   corrections (EXPLAIN-ADR second-session amendments 5–7).** Three linked
   changes. (1) **Desktop disc-X removed**: the six-destination close-on-click

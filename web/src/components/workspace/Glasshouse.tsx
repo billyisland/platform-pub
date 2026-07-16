@@ -50,6 +50,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { snap } from "../../lib/workspace/grid";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGlasshousePresence } from "../../stores/glasshouse";
+import { useExplain } from "../../stores/explain";
 import { useBackGuard } from "../../lib/backGuard";
 import { isDragSurface } from "../../lib/dragSurface";
 import { MOBILE_BAR_H } from "./MobileWorkspace";
@@ -438,6 +439,13 @@ export function Glasshouse({
   const showEars = !!frameColor && !!sideNav && !isMobile && paneH > 0;
   const earArrowColor = frameTextColor ?? "var(--ah-bone)";
 
+  // While an Explain program is up, the pointer-events-none chrome (the frame
+  // strips, a dimmed ear) is made hit-testable so its `data-explain` tags
+  // resolve under the cursor — elementsFromPoint skips pointer-events:none
+  // elements. Zero live-behaviour change: Explain's scrim (z-57 in pane mode)
+  // intercepts every real pointer event for exactly the same window.
+  const explainActive = useExplain((s) => s.isActive);
+
   // Whole-pane drag: grab the window by any empty/margin part of it. Bails on
   // interactive controls, selectable text, and scrollbar gutters (see
   // isDragSurface) so prose stays highlightable and controls stay live. The
@@ -549,16 +557,31 @@ export function Glasshouse({
               className="pointer-events-none absolute inset-0 z-[5]"
             >
               <div
+                data-explain="pane.frame"
                 className="absolute left-0 right-0 top-0"
-                style={{ height: FRAME_TOP, background: frameColor }}
+                style={{
+                  height: FRAME_TOP,
+                  background: frameColor,
+                  pointerEvents: explainActive ? "auto" : undefined,
+                }}
               />
               <div
+                data-explain="pane.frame"
                 className="absolute bottom-0 left-0 top-0"
-                style={{ width: FRAME_SIDE, background: frameColor }}
+                style={{
+                  width: FRAME_SIDE,
+                  background: frameColor,
+                  pointerEvents: explainActive ? "auto" : undefined,
+                }}
               />
               <div
+                data-explain="pane.frame"
                 className="absolute bottom-0 right-0 top-0"
-                style={{ width: FRAME_SIDE, background: frameColor }}
+                style={{
+                  width: FRAME_SIDE,
+                  background: frameColor,
+                  pointerEvents: explainActive ? "auto" : undefined,
+                }}
               />
             </div>
           )}
@@ -597,6 +620,7 @@ export function Glasshouse({
               role="button"
               aria-label="Resize"
               title="Drag to resize"
+              data-explain="pane.resize"
               onPointerDown={pane.startResize}
               className="absolute z-10 text-grey-600"
               style={{
@@ -636,6 +660,7 @@ export function Glasshouse({
               type="button"
               aria-label="Previous article"
               title="Previous article"
+              data-explain="pane.ear.prev"
               disabled={!sideNav.canPrev}
               onClick={(e) => {
                 e.stopPropagation();
@@ -652,7 +677,10 @@ export function Glasshouse({
                 border: "none",
                 cursor: sideNav.canPrev ? "pointer" : "default",
                 opacity: sideNav.canPrev ? 1 : 0.3,
-                pointerEvents: sideNav.canPrev ? "auto" : "none",
+                // A dimmed ear passes clicks through to the wrapper (close);
+                // during Explain it stays hit-testable so its label resolves.
+                pointerEvents:
+                  sideNav.canPrev || explainActive ? "auto" : "none",
               }}
             >
               <span
@@ -670,6 +698,7 @@ export function Glasshouse({
               type="button"
               aria-label="Next article"
               title="Next article"
+              data-explain="pane.ear.next"
               disabled={!sideNav.canNext}
               onClick={(e) => {
                 e.stopPropagation();
@@ -686,7 +715,8 @@ export function Glasshouse({
                 border: "none",
                 cursor: sideNav.canNext ? "pointer" : "default",
                 opacity: sideNav.canNext ? 1 : 0.3,
-                pointerEvents: sideNav.canNext ? "auto" : "none",
+                pointerEvents:
+                  sideNav.canNext || explainActive ? "auto" : "none",
               }}
             >
               <span

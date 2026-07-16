@@ -113,6 +113,9 @@ export function PaywallGate({
       <div className="relative h-[100px] -mt-[100px] pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent, var(--ah-white))' }} />
 
       <div
+        // Explain C1: the paywall gate's own label (reading-tab money copy).
+        // Inert outside a pane-mode Explain program.
+        data-explain="reader.gate"
         className="px-8 py-12 text-center"
         style={{ borderTop: '4px solid var(--ah-crimson)', borderBottom: '4px solid var(--ah-crimson)' }}
       >

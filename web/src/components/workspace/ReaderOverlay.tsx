@@ -176,6 +176,10 @@ export function ReaderOverlay() {
         ref={scrollRef}
         onTouchStart={onSwipeStart}
         onTouchEnd={onSwipeEnd}
+        // Explain C1: the reading surface's own label — answers any interior
+        // hover a more specific leaf (reader.gate) doesn't, ahead of the
+        // generic `pane` tag on the Glasshouse root.
+        data-explain="reader"
         className="overflow-y-auto max-h-[var(--gh-h)]"
       >
         {target.kind === "external" ? (
