@@ -23,6 +23,36 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit MEDIUM gateway/auth batch (M5, M6, M7, M9,
+  M10).** Five contained gateway/auth defects from `DEEP-AUDIT-2026-07-16.md`.
+  - **M5 — members roster leaked to anonymous.** `GET /publications/:id/members`
+    had no preHandler, exposing every member's account id, permission matrix, and
+    `revenue_share_bps` to any anonymous caller. Added `requireAuth` + an active-
+    member check (403 otherwise); the roster is shown to every member by the UI
+    (only management actions are permission-gated client-side), so membership —
+    not `can_manage_members` — is the right gate. Public projection stays the
+    masthead route.
+  - **M6 — publication unpublish left the article in feeds.** `POST …/unpublish`
+    (`cms.ts`) only nulled `published_at`; feed queries filter on
+    `feed_items.deleted_at`, so the pulled card lingered. Now deletes `feed_items`
+    in the same transaction (matching personal unpublish).
+  - **M7 — by-event served withdrawn articles.** `GET /articles/by-event/:id`
+    (the editor-load route) had no `published_at` guard, so any authed user with
+    the event id read metadata + full `content_free` after withdrawal. Now gates
+    `published_at IS NOT NULL OR writer_id = caller` — the author still loads their
+    own withdrawn draft to edit, non-authors get 404.
+  - **M9 — members-manager could escalate above itself.** Both the invite and the
+    PATCH member routes (gated only on `can_manage_members`) let a manager grant
+    `editor_in_chief` / set `can_manage_finances`/`can_manage_settings` on a
+    colluding account — powers the grantor lacks. Added a shared `escalationBeyond`
+    helper (owner exempt) that rejects granting any permission the grantor doesn't
+    hold; wired into invite (against `ROLE_DEFAULTS[role]`) and PATCH (against the
+    explicit `can_*` fields).
+  - **M10 — magic-link single-use non-atomic.** `verifyMagicLink` did SELECT-then-
+    UPDATE, so two concurrent verifications of one intercepted token both minted
+    sessions. Collapsed to one atomic `UPDATE … WHERE used_at IS NULL … RETURNING`
+    — exactly one racer's UPDATE matches.
+  Verified: shared + gateway typecheck clean. No schema change.
 - **2026-07-16** — **Deep-audit H14 (mobile back-guard self-closes reader/
   profile) — final HIGH.** `web/src/lib/backGuard.ts`'s unregister cleanup
   assumed its history sentinel was always the top entry and fired a balancing

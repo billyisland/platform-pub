@@ -43,6 +43,28 @@ const TransferOwnershipSchema = z.object({
   newOwnerId: z.string().uuid(),
 })
 
+// No privilege escalation (M9): a member with can_manage_members must never
+// GRANT a permission they don't themselves hold — otherwise a members-manager
+// could invite/patch a colluding account as editor_in_chief (which confers
+// can_manage_finances + can_manage_settings) and gain powers above their own.
+// The owner is exempt (holds everything). Returns the first offending
+// permission, or null when the grant is within the grantor's own powers.
+const PERMISSION_KEYS = [
+  'can_publish', 'can_edit_others', 'can_manage_members',
+  'can_manage_finances', 'can_manage_settings',
+] as const
+
+function escalationBeyond(
+  grantor: { is_owner: boolean } & Record<(typeof PERMISSION_KEYS)[number], boolean>,
+  granted: Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>>,
+): string | null {
+  if (grantor.is_owner) return null
+  for (const key of PERMISSION_KEYS) {
+    if (granted[key] === true && grantor[key] !== true) return key
+  }
+  return null
+}
+
 export async function publicationMembersRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // GET /publications/:id/members — List members
@@ -50,8 +72,23 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>(
     '/publications/:id/members',
+    { preHandler: requireAuth },
     async (req, reply) => {
       const { id } = req.params
+
+      // Members-only: this roster carries revenue_share_bps + the full
+      // permission matrix, so it must never be anonymous (the public projection
+      // is the masthead route — name/role/title only). Any active member may
+      // read it (the UI shows the roster to every member; only management
+      // actions are permission-gated client-side).
+      const { rowCount } = await pool.query(
+        `SELECT 1 FROM publication_members
+          WHERE publication_id = $1 AND account_id = $2 AND removed_at IS NULL`,
+        [id, req.session!.sub]
+      )
+      if (rowCount === 0) {
+        return reply.status(403).send({ error: 'Not a member of this publication' })
+      }
 
       const { rows } = await pool.query(
         `SELECT pm.id, pm.account_id, pm.role, pm.contributor_type, pm.title, pm.is_owner,
@@ -85,6 +122,14 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
       const { id } = req.params
       const userId = req.session!.sub
       const { email, accountId, role, contributorType, message } = parsed.data
+
+      // Block granting a role that confers a permission the inviter lacks (M9).
+      const offending = escalationBeyond(req.publicationMember!, ROLE_DEFAULTS[role])
+      if (offending) {
+        return reply.status(403).send({
+          error: `Cannot invite as ${role}: it confers ${offending}, which you do not hold`,
+        })
+      }
 
       const { rows } = await pool.query<{ id: string; token: string }>(
         `INSERT INTO publication_invites
@@ -217,6 +262,22 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
       }
       if (target[0].is_owner) {
         return reply.status(403).send({ error: 'Cannot modify the Owner' })
+      }
+
+      // Block granting a permission the editor lacks (M9). role is a label here
+      // (PATCH doesn't apply ROLE_DEFAULTS to the columns — only the explicit
+      // can_* fields change), so guard exactly the permission fields being set.
+      const offending = escalationBeyond(req.publicationMember!, {
+        can_publish: data.canPublish,
+        can_edit_others: data.canEditOthers,
+        can_manage_members: data.canManageMembers,
+        can_manage_finances: data.canManageFinances,
+        can_manage_settings: data.canManageSettings,
+      })
+      if (offending) {
+        return reply.status(403).send({
+          error: `Cannot grant ${offending}, which you do not hold`,
+        })
       }
 
       const setClauses: string[] = []

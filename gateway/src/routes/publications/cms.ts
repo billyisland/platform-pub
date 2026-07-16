@@ -344,11 +344,18 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id, articleId } = req.params;
 
-      await pool.query(
-        `UPDATE articles SET publication_article_status = 'unpublished', published_at = NULL
-         WHERE id = $1 AND publication_id = $2`,
-        [articleId, id],
-      );
+      await withTransaction(async (client) => {
+        await client.query(
+          `UPDATE articles SET publication_article_status = 'unpublished', published_at = NULL
+           WHERE id = $1 AND publication_id = $2`,
+          [articleId, id],
+        );
+        // Remove from every workspace feed (M6). Feed queries filter only on
+        // feed_items.deleted_at, never published_at, and the daily reconcile is
+        // ON CONFLICT DO NOTHING — so without this the pulled article's card
+        // lingers in feeds indefinitely (personal unpublish deletes them too).
+        await client.query(`DELETE FROM feed_items WHERE article_id = $1`, [articleId]);
+      });
 
       return reply.send({ ok: true });
     },

@@ -79,13 +79,17 @@ export async function requestMagicLink(email: string): Promise<MagicLinkResult |
 export async function verifyMagicLink(token: string): Promise<string | null> {
   const tokenHash = hashToken(token)
 
-  // Find unused, non-expired magic link
-  const { rows } = await pool.query<{ id: string; account_id: string }>(
-    `SELECT id, account_id FROM magic_links
+  // Claim the token in ONE atomic UPDATE — the single-use guarantee is the
+  // defence against a link intercepted in transit, so a SELECT-then-UPDATE
+  // (two statements) let concurrent verifications of the same token both find
+  // it unused and both mint a session. `used_at IS NULL` in the WHERE means
+  // exactly one racer's UPDATE matches a row; the loser's RETURNING is empty.
+  const { rows } = await pool.query<{ account_id: string }>(
+    `UPDATE magic_links SET used_at = now()
      WHERE token_hash = $1
        AND used_at IS NULL
        AND expires_at > now()
-     LIMIT 1`,
+     RETURNING account_id`,
     [tokenHash]
   )
 
@@ -94,17 +98,9 @@ export async function verifyMagicLink(token: string): Promise<string | null> {
     return null
   }
 
-  const magicLink = rows[0]
+  logger.info({ accountId: rows[0].account_id }, 'Magic link verified')
 
-  // Mark as used (single-use)
-  await pool.query(
-    'UPDATE magic_links SET used_at = now() WHERE id = $1',
-    [magicLink.id]
-  )
-
-  logger.info({ accountId: magicLink.account_id }, 'Magic link verified')
-
-  return magicLink.account_id
+  return rows[0].account_id
 }
 
 // ---------------------------------------------------------------------------

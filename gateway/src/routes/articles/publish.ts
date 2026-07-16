@@ -383,8 +383,9 @@ export async function articlePublishRoutes(app: FastifyInstance) {
                 a.access_mode, a.price_pence, a.gate_position_pct,
                 a.vault_event_id, a.cover_image_url, a.published_at
          FROM articles a
-         WHERE a.nostr_event_id = $1 AND a.deleted_at IS NULL`,
-        [nostrEventId],
+         WHERE a.nostr_event_id = $1 AND a.deleted_at IS NULL
+           AND (a.published_at IS NOT NULL OR a.writer_id = $2)`,
+        [nostrEventId, userId],
       );
 
       if (rows.length === 0) {

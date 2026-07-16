@@ -93,12 +93,12 @@ Seven-agent adversarial audit of the whole repo at HEAD (`c000beb`), one agent p
 - **Pledge fulfilment inserts `read_events` with NULL `tab_id`** → pledger charged, writer never paid (`gateway/src/routes/drives.ts:804-810`; settlement advances `WHERE tab_id=$2`). Latent (pledges parked); HIGH on revival.
 - **Chargeback during a reserved-but-pending payout pays out clawed-back money with no reversal** (`chargeback.ts:226-237` reverses only `writer_paid`; resume sweep transfers the fixed pending amount). Publication-split analogue too.
 - **`computePublicationSplits` bps overrides unclamped to remaining pool** (`payout.ts:110-130`) — flat+bps can overdraw; platform funds the difference. Shares load has no `ORDER BY`.
-- **`GET /publications/:id/members` has no auth, leaks `revenue_share_bps` + permission matrix** to anonymous callers (`publications/members.ts:51-70`).
-- **Publication unpublish leaves the article in all feeds** (`publications/cms.ts:341-355`, no `feed_items` cleanup).
-- **`GET /articles/by-event/:id` serves withdrawn articles** (no `published_at IS NOT NULL`, `articles/publish.ts:380-391`).
+- **✅ SHIPPED 2026-07-16.** ~~`GET /publications/:id/members` has no auth, leaks `revenue_share_bps` + permission matrix~~ — now `requireAuth` + an active-member check (403 for non-members); the public projection stays the masthead route.
+- **✅ SHIPPED 2026-07-16.** ~~Publication unpublish leaves the article in all feeds~~ (`publications/cms.ts`) — now deletes `feed_items` in the same transaction, like personal unpublish.
+- **✅ SHIPPED 2026-07-16.** ~~`GET /articles/by-event/:id` serves withdrawn articles~~ — the editor-load query now gates `published_at IS NOT NULL OR writer_id = caller`, so the author still loads their withdrawn draft but non-authors can't.
 - **Event-id squatting on `POST /articles`/`POST /notes`** — client `nostrEventId` trusted, relay publish precedes indexing, attacker registers the victim's id first.
-- **`can_manage_members` alone can mint an `editor_in_chief`** (privilege escalation above the inviter, `publications/members.ts:76-109`).
-- **Magic-link single-use is non-atomic SELECT-then-UPDATE** (`shared/src/auth/magic-links.ts:80-100`) — concurrent verifies both mint sessions.
+- **✅ SHIPPED 2026-07-16.** ~~`can_manage_members` alone can mint an `editor_in_chief`~~ — a shared `escalationBeyond` guard on both invite and PATCH blocks granting any permission the (non-owner) grantor doesn't hold.
+- **✅ SHIPPED 2026-07-16.** ~~Magic-link single-use is non-atomic SELECT-then-UPDATE~~ (`shared/src/auth/magic-links.ts`) — now one atomic `UPDATE … WHERE used_at IS NULL … RETURNING`, so only one racer claims the token.
 - **Dedup can hide both copies** when the component winner is filtered out post-suppression (`dedup-sql.ts:96-122` vs `items.ts:281-286`) — exactly the SLICE-8 failure mode; apply visibility predicates inside `candidates`.
 - **Feed merge 500s when both feeds carry the same `reach` source** (`crud.ts:461-476` omits the reach arm → `feed_sources_reach_uniq` violation).
 - **Cursor truncation to whole seconds** duplicates/skips page-boundary rows in `feed_saves` (`saves.ts:69`), explore placeholders (`items.ts:343`), author log (`author.ts:523`).
