@@ -3,6 +3,7 @@ import { pool, withTransaction } from "@platform-pub/shared/db/client.js";
 import { generateKeypair } from "../lib/key-custody-client.js";
 import { createSession } from "@platform-pub/shared/auth/session.js";
 import { getAccount } from "@platform-pub/shared/auth/accounts.js";
+import { invalidateAuthCache } from "../middleware/auth.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -160,12 +161,24 @@ export async function googleAuthRoutes(app: FastifyInstance) {
       let accountId: string;
 
       if (existing.rows.length > 0) {
-        if (existing.rows[0].status !== "active") {
+        const status = existing.rows[0].status;
+        // Only suspended (admin action) blocks login. A deactivated account
+        // reactivates on login — the promised reactivation path, mirroring the
+        // magic-link /auth/verify branch.
+        if (status !== "active" && status !== "deactivated") {
           return reply
             .status(403)
             .send({ error: "Account suspended or not found" });
         }
         accountId = existing.rows[0].id;
+        if (status === "deactivated") {
+          await pool.query(
+            `UPDATE accounts SET status = 'active', updated_at = now() WHERE id = $1`,
+            [accountId],
+          );
+          invalidateAuthCache(accountId);
+          logger.info({ accountId }, "Account reactivated on Google login");
+        }
         logger.info(
           { accountId, email: email.slice(0, 3) + "***" },
           "Google login — existing account",

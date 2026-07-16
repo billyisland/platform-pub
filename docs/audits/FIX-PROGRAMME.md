@@ -23,6 +23,55 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit H4–H8 (schedule-path pair, moderation
+  completeness, deactivation reactivation, feed-delete teardown).** Five HIGHs
+  from `DEEP-AUDIT-2026-07-16.md`, continuing the attack order after H1/H2/H3/
+  H9/H10.
+  - **H7 — top-of-article paywall scheduled free.** `handleSchedule`
+    (`web/src/hooks/useArticleEditorInit.ts`) reassembled the gate marker only
+    when `data.freeContent` was truthy; a gate at the very top makes freeContent
+    an empty string (legal — validation checks only paywallContent), so it fell
+    back to `data.content` (marker already stripped) and the scheduler published
+    the whole paid body as a free public article. Now reassembles whenever
+    `data.isPaywalled` (validation guarantees paywallContent is present).
+  - **H8 — scheduled publication article published as personal.**
+    `handleSchedule`'s `saveDraft` omitted `publicationId`; the field is plumbed
+    end-to-end (drafts client → gateway schema → `article_drafts.publication_id`
+    → scheduler branches on it), so a scheduled "Publishing as <pub>" article
+    silently went to the personal profile, bypassing review/splits/byline. Now
+    passed through.
+  - **H4 — admin removal cosmetic.** `remove_content`/`suspend_account` only
+    nulled `articles.published_at` (feed queries filter on `feed_items.deleted_at`,
+    never `published_at`) and never enqueued a kind-5, so a removed article's card
+    + free body stayed in every feed and the full NIP-23 event stayed served by
+    the platform relay — moderation was cosmetic for `illegal_content`. Added
+    `removeArticle`/`removeNote`/`removeContentByEventId`/`removeAllContentForAccount`
+    to `moderation.ts`: soft-delete the article's `feed_items`, enqueue the kind-5
+    tombstone (article *and* note — the normal note-delete path tombstones too,
+    moderation's `DELETE FROM notes` didn't), signed with the content author's own
+    custodial key, mirroring the self-delete paths in `articles/manage.ts` +
+    `notes.ts`. Wired into all three sites (report resolve remove/suspend + direct
+    `POST /admin/suspend/:accountId`).
+  - **H5 — deactivation a permanent lockout.** `POST /auth/deactivate` set
+    `status='deactivated'` and the UI promised reactivation-on-login, but nothing
+    ever set `active` back (`requestMagicLink` filtered `status='active'`, Google
+    403'd non-active, `requireAuth` 403'd surviving sessions). Now `requestMagicLink`
+    admits `deactivated` (`status IN ('active','deactivated')`), and `/auth/verify`
+    + the Google exchange flip `deactivated`→`active` + `invalidateAuthCache` on
+    successful login; suspended (admin action) stays blocked in every path.
+  - **H6 — feed delete orphans subscriptions.** `DELETE /feeds/:id` deleted the
+    feed and cascaded `feed_sources` without passing through `removeSource`, so
+    the derived `external_subscriptions` row survived (the GC keys "orphaned" on
+    it → the source polls forever), the author card stayed "Following" with no
+    surface to undo it, and a `nostr_external` follow stayed on the published
+    kind-3. The handler now `loadFeed`-gates ownership, enumerates the feed's
+    `external_source` rows and tears each down via `removeSource(..., {recordExclusion:false})`
+    (its own last-feed count + `feed_sub:<owner>` lock + kind-3 dirty-mark) before
+    deleting the feed.
+  Verified: shared + gateway + web typecheck clean; `next build` clean;
+  hairline tripwire clean on the touched web file. No DB/schema change. §0e HIGHs
+  remaining: H11–H14 (feed-ingest Jetstream + doppelgänger authors, mobile
+  back-guard).
 - **2026-07-16** — **Deep-audit H2 (subscription-convert money pump — exploit
   closed).** `POST /subscriptions/:writerId/convert` was an unmetered money
   pump: no card gate (creates an active/auto_renew sub with no

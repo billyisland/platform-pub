@@ -171,6 +171,22 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Account not found" });
       }
 
+      // A suspended account must never mint a session, even holding a valid link.
+      if (account.status === "suspended") {
+        return reply.status(403).send({ error: "Account suspended" });
+      }
+
+      // Reactivate on login — logging back in is the promised reactivation path
+      // (POST /auth/deactivate). Only 'deactivated' → 'active'; no-op otherwise.
+      if (account.status === "deactivated") {
+        await pool.query(
+          `UPDATE accounts SET status = 'active', updated_at = now() WHERE id = $1`,
+          [account.id],
+        );
+        invalidateAuthCache(account.id);
+        logger.info({ accountId: account.id }, "Account reactivated on login");
+      }
+
       // Create session
       await createSession(reply, {
         id: account.id,

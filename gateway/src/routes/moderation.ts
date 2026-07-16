@@ -1,8 +1,119 @@
 import type { FastifyInstance } from 'fastify'
+import type { PoolClient } from 'pg'
 import { z } from 'zod'
 import { pool, withTransaction } from '@platform-pub/shared/db/client.js'
 import { requireAuth, invalidateAuthCache } from '../middleware/auth.js'
+import { signEvent } from '../lib/key-custody-client.js'
+import {
+  enqueueRelayPublish,
+  type SignedNostrEvent,
+} from '@platform-pub/shared/lib/relay-outbox.js'
 import logger from '@platform-pub/shared/lib/logger.js'
+
+// -----------------------------------------------------------------------------
+// Removal helpers — an admin removal must be as complete as the author's own
+// delete paths (articles/manage.ts, notes.ts): un-publishing alone left the
+// card, title and free body in every workspace feed (feed queries filter only
+// on feed_items.deleted_at, never published_at) and left the full NIP-23 /
+// kind-1 event served forever by the platform's own relay (no kind-5). So we
+// (a) soft-delete the feed_items rows and (b) enqueue the kind-5 tombstone in
+// the same transaction. Notes cascade out of feed_items on DELETE, so they only
+// need the tombstone. Signed with the content author's own custodial key (the
+// platform holds it), exactly as a self-delete would be.
+// -----------------------------------------------------------------------------
+
+interface RemovableArticle {
+  id: string
+  nostr_event_id: string | null
+  nostr_d_tag: string | null
+  writer_id: string
+  nostr_pubkey: string
+}
+
+async function removeArticle(client: PoolClient, a: RemovableArticle): Promise<void> {
+  await client.query(
+    `UPDATE articles SET published_at = NULL, updated_at = now() WHERE id = $1`,
+    [a.id]
+  )
+  await client.query(
+    `UPDATE feed_items SET deleted_at = now() WHERE article_id = $1 AND deleted_at IS NULL`,
+    [a.id]
+  )
+  if (a.nostr_event_id && a.nostr_d_tag) {
+    const deletionEvent = await signEvent(a.writer_id, {
+      kind: 5,
+      content: '',
+      tags: [
+        ['e', a.nostr_event_id],
+        ['a', `30023:${a.nostr_pubkey}:${a.nostr_d_tag}`],
+      ],
+      created_at: Math.floor(Date.now() / 1000),
+    })
+    await enqueueRelayPublish(client, {
+      entityType: 'article_deletion',
+      entityId: a.id,
+      signedEvent: deletionEvent as SignedNostrEvent,
+    })
+  }
+}
+
+interface RemovableNote {
+  id: string
+  nostr_event_id: string | null
+  author_id: string
+}
+
+async function removeNote(client: PoolClient, n: RemovableNote): Promise<void> {
+  if (n.nostr_event_id) {
+    const deletionEvent = await signEvent(n.author_id, {
+      kind: 5,
+      content: '',
+      tags: [['e', n.nostr_event_id]],
+      created_at: Math.floor(Date.now() / 1000),
+    })
+    await enqueueRelayPublish(client, {
+      entityType: 'note_deletion',
+      entityId: n.id,
+      signedEvent: deletionEvent as SignedNostrEvent,
+    })
+  }
+  // Cascades to feed_items via feed_items_note_id_fkey ON DELETE CASCADE.
+  await client.query(`DELETE FROM notes WHERE id = $1`, [n.id])
+}
+
+// Remove one target by its Nostr event id (article or note).
+async function removeContentByEventId(client: PoolClient, eventId: string): Promise<void> {
+  const { rows: articles } = await client.query<RemovableArticle>(
+    `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, a.writer_id, acc.nostr_pubkey
+       FROM articles a JOIN accounts acc ON acc.id = a.writer_id
+      WHERE a.nostr_event_id = $1 AND a.deleted_at IS NULL`,
+    [eventId]
+  )
+  for (const a of articles) await removeArticle(client, a)
+
+  const { rows: notes } = await client.query<RemovableNote>(
+    `SELECT id, nostr_event_id, author_id FROM notes WHERE nostr_event_id = $1`,
+    [eventId]
+  )
+  for (const n of notes) await removeNote(client, n)
+}
+
+// Remove all of an account's published articles + notes from every surface.
+async function removeAllContentForAccount(client: PoolClient, accountId: string): Promise<void> {
+  const { rows: articles } = await client.query<RemovableArticle>(
+    `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, a.writer_id, acc.nostr_pubkey
+       FROM articles a JOIN accounts acc ON acc.id = a.writer_id
+      WHERE a.writer_id = $1 AND a.published_at IS NOT NULL AND a.deleted_at IS NULL`,
+    [accountId]
+  )
+  for (const a of articles) await removeArticle(client, a)
+
+  const { rows: notes } = await client.query<RemovableNote>(
+    `SELECT id, nostr_event_id, author_id FROM notes WHERE author_id = $1`,
+    [accountId]
+  )
+  for (const n of notes) await removeNote(client, n)
+}
 
 // =============================================================================
 // Moderation Routes
@@ -259,23 +370,14 @@ export async function moderationRoutes(app: FastifyInstance) {
           case 'remove_content':
             resolvedStatus = 'resolved_removed'
 
-            // Remove the content from the platform DB index
+            // Remove from every workspace feed AND the relay (kind-5), not just
+            // un-publish — see the removal-helper header.
             if (report.target_nostr_event_id) {
-              // Remove article
-              await client.query(
-                `UPDATE articles SET published_at = NULL, updated_at = now()
-                 WHERE nostr_event_id = $1`,
-                [report.target_nostr_event_id]
-              )
-              // Remove note
-              await client.query(
-                `DELETE FROM notes WHERE nostr_event_id = $1`,
-                [report.target_nostr_event_id]
-              )
+              await removeContentByEventId(client, report.target_nostr_event_id)
 
               logger.info(
                 { nostrEventId: report.target_nostr_event_id, reportId },
-                'Content removed from platform index'
+                'Content removed from platform surfaces + relay'
               )
             }
             break
@@ -295,22 +397,12 @@ export async function moderationRoutes(app: FastifyInstance) {
               )
               suspendedAccountId = report.target_account_id
 
-              // Un-publish all their articles (remove from surfaces)
-              await client.query(
-                `UPDATE articles SET published_at = NULL, updated_at = now()
-                 WHERE writer_id = $1`,
-                [report.target_account_id]
-              )
-
-              // Remove all their notes
-              await client.query(
-                `DELETE FROM notes WHERE author_id = $1`,
-                [report.target_account_id]
-              )
+              // Remove all their content from every feed AND the relay.
+              await removeAllContentForAccount(client, report.target_account_id)
 
               logger.info(
                 { accountId: report.target_account_id, reportId },
-                'Account suspended — content removed from platform surfaces'
+                'Account suspended — content removed from platform surfaces + relay'
               )
             }
             break
@@ -351,14 +443,7 @@ export async function moderationRoutes(app: FastifyInstance) {
           `UPDATE accounts SET status = 'suspended', updated_at = now() WHERE id = $1`,
           [accountId]
         )
-        await client.query(
-          `UPDATE articles SET published_at = NULL, updated_at = now() WHERE writer_id = $1`,
-          [accountId]
-        )
-        await client.query(
-          `DELETE FROM notes WHERE author_id = $1`,
-          [accountId]
-        )
+        await removeAllContentForAccount(client, accountId)
 
         logger.info({ accountId, adminId: req.session!.sub }, 'Account suspended directly')
 

@@ -10,6 +10,7 @@ import {
   loadFeed,
   tagged,
 } from "./shared.js";
+import { removeSource } from "./sources.js";
 
 const createFeedSchema = z.object({
   name: z.string().trim().max(80).default(""),
@@ -377,6 +378,9 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
       if (!UUID_RE.test(id))
         return reply.status(400).send({ error: "Invalid feed id" });
 
+      const feed = await loadFeed(id, ownerId);
+      if (!feed) return reply.status(404).send({ error: "Feed not found" });
+
       const {
         rows: [{ count }],
       } = await pool.query<{ count: string }>(
@@ -387,6 +391,24 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
         return reply
           .status(409)
           .send({ error: "Cannot delete your only feed" });
+
+      // Tear down external sources through removeSource FIRST (H6). A bare
+      // DELETE cascades feed_sources away without passing through the
+      // feed-derived-subscription teardown: the derived external_subscriptions
+      // row would survive, so the source polls forever (the GC keys "orphaned"
+      // on external_subscriptions), the author card stays "Following" with no
+      // surface left to undo it, and a nostr_external follow stays on the
+      // published kind-3. Each call handles its own last-feed check + advisory
+      // lock. recordExclusion:false — deleting a feed isn't a curation edit, and
+      // its feed_import_exclusions cascade away with it anyway.
+      const { rows: extSources } = await pool.query<{ id: string }>(
+        `SELECT id FROM feed_sources
+          WHERE feed_id = $1 AND source_type = 'external_source'`,
+        [id],
+      );
+      for (const s of extSources) {
+        await removeSource(id, ownerId, s.id, { recordExclusion: false });
+      }
 
       const { rowCount } = await pool.query(
         `DELETE FROM feeds WHERE id = $1 AND owner_id = $2`,

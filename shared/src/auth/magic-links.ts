@@ -34,10 +34,13 @@ export interface MagicLinkResult {
 }
 
 export async function requestMagicLink(email: string): Promise<MagicLinkResult | null> {
-  // Look up account by email
+  // Look up account by email. Deactivated accounts are eligible: the deactivate
+  // flow promises "you can reactivate by logging back in", so the login link
+  // must reach them — the /auth/verify route flips status back to 'active' on
+  // successful verification. Suspended accounts (admin action) stay locked out.
   const { rows } = await pool.query<{ id: string }>(
-    'SELECT id FROM accounts WHERE email = $1 AND status = $2',
-    [email.toLowerCase().trim(), 'active']
+    `SELECT id FROM accounts WHERE email = $1 AND status IN ('active', 'deactivated')`,
+    [email.toLowerCase().trim()]
   )
 
   if (rows.length === 0) {

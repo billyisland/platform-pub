@@ -238,10 +238,15 @@ export function useArticleEditorInit({
   async function handleSchedule(data: PublishData, scheduledAt: string) {
     if (!user) return;
 
-    const content =
-      data.isPaywalled && data.freeContent && data.paywallContent
-        ? `${data.freeContent}\n\n<!-- paywall-gate -->\n\n${data.paywallContent}`
-        : data.content;
+    // Reassemble the gate marker whenever the article is paywalled. freeContent
+    // is legitimately empty when the gate sits at the very top, so gating the
+    // reassembly on `data.freeContent` (the old bug) dropped the marker and fell
+    // back to data.content — the marker-stripped body — publishing the entire
+    // paid section as a free public article. Validation guarantees paywallContent
+    // is non-empty by this point.
+    const content = data.isPaywalled
+      ? `${data.freeContent}\n\n<!-- paywall-gate -->\n\n${data.paywallContent}`
+      : data.content;
     const saved = await saveDraft({
       title: data.title,
       dek: data.dek,
@@ -251,6 +256,10 @@ export function useArticleEditorInit({
       draftId: data.draftId ?? undefined,
       dTag: initialData?.editingDTag,
       coverImageUrl: data.coverImageUrl ?? null,
+      // Without this a scheduled publication article publishes to the personal
+      // profile (wrong byline/surface, bypassing review + splits) — the field is
+      // plumbed end-to-end (drafts schema → scheduler branches on publication_id).
+      publicationId: data.publicationId ?? undefined,
     });
 
     await scheduleDraft(saved.draftId, scheduledAt);
