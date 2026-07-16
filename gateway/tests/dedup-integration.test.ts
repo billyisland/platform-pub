@@ -33,7 +33,7 @@ const DB_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 // seeded feed_items directly so the dedup CTEs run over exactly our fixtures.
 const SUPPRESSED_SQL = `
   WITH RECURSIVE matched AS (
-    SELECT id AS fi_id FROM feed_items WHERE id = ANY($2::uuid[])
+    SELECT id AS fi_id, TRUE AS allow_replies FROM feed_items WHERE id = ANY($2::uuid[])
   ),
   ${DEDUP_CTES}
   SELECT fi_id FROM suppressed
@@ -42,7 +42,7 @@ const SUPPRESSED_SQL = `
 // Survivors + their provenance, exercising the real suppress filter + lateral.
 const SURVIVORS_SQL = `
   WITH RECURSIVE matched AS (
-    SELECT id AS fi_id FROM feed_items WHERE id = ANY($2::uuid[])
+    SELECT id AS fi_id, TRUE AS allow_replies FROM feed_items WHERE id = ANY($2::uuid[])
   ),
   ${DEDUP_CTES},
   scored AS (

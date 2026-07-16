@@ -103,6 +103,15 @@ export const DEDUP_CTES = `
         JOIN external_items ei ON ei.id = fi.external_item_id   -- external only
         JOIN source_component sc ON sc.sid = fi.source_id       -- linked sources only (the guard) + tag its component
         WHERE ei.dedup_fingerprint IS NOT NULL
+          -- Mirror the host's post-suppression visibility predicates (items.ts
+          -- scored WHERE) so a row that will be FILTERED can never be the dedup
+          -- winner: otherwise a context-only or reply-suppressed twin could
+          -- suppress its visible sibling and then be filtered itself, hiding BOTH
+          -- copies (M11 — the exact SLICE-8 failure the candidate universe must
+          -- prevent). These match the external-applicable filters at
+          -- items.ts:281 (is_context_only) and :284 (is_reply / allow_replies).
+          AND ei.is_context_only IS NOT TRUE
+          AND (fi.is_reply IS NOT TRUE OR m.allow_replies)
     ),
     -- A candidate loses when another candidate in the SAME component with the same
     -- fingerprint ranks ahead under the total order tprio (A→0…D→3) ASC,

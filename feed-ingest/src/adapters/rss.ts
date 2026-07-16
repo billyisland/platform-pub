@@ -160,14 +160,17 @@ export async function fetchRssFeed(
 
     const interactionData = buildPodcastInteractionData(entry);
 
-    let publishedAt: Date;
-    try {
-      publishedAt = entry.pubDate
-        ? new Date(entry.pubDate)
-        : entry.isoDate
-          ? new Date(entry.isoDate)
-          : new Date();
-    } catch {
+    // new Date(badString) yields an Invalid Date (getTime() === NaN), it does
+    // NOT throw — so the old try/catch was dead code and `NaN > x` is false, so
+    // an Invalid Date slipped through, poisoned the batched INSERT, failed the
+    // whole fetch, and after ~10 polls deactivated the source. Guard on isNaN
+    // (matching the AP/atproto adapters).
+    let publishedAt = entry.pubDate
+      ? new Date(entry.pubDate)
+      : entry.isoDate
+        ? new Date(entry.isoDate)
+        : new Date();
+    if (isNaN(publishedAt.getTime())) {
       publishedAt = new Date();
     }
     // Reject dates in the far future (likely parsing errors)
@@ -400,12 +403,11 @@ function parseJsonFeed(
       });
     }
 
-    let publishedAt: Date;
-    try {
-      publishedAt = entry.date_published
-        ? new Date(entry.date_published)
-        : new Date();
-    } catch {
+    // As above: new Date(bad) is an Invalid Date, not a throw — guard on isNaN.
+    let publishedAt = entry.date_published
+      ? new Date(entry.date_published)
+      : new Date();
+    if (isNaN(publishedAt.getTime())) {
       publishedAt = new Date();
     }
     if (publishedAt.getTime() > Date.now() + 86_400_000) {

@@ -239,6 +239,10 @@ export const feedIngestNostr: Task = async (payload, _helpers) => {
         cursor = $2,
         error_count = 0,
         last_error = NULL,
+        -- Reset the poll interval to the base (the error path backs off up to
+        -- 300·factor^6 ≈ 19,200s; without this a recovered source stayed on
+        -- its last backed-off interval forever — AP already resets on success).
+        fetch_interval_seconds = 300,
         display_name = COALESCE($3, display_name),
         avatar_url = COALESCE($4, avatar_url),
         metadata_updated_at = CASE

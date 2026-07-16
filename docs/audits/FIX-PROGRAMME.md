@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit MEDIUM feeds/ingest batch (M11, M12, M14, M18).**
+  - **M11 — dedup could hide both copies.** The `candidates` CTE
+    (`gateway/src/lib/dedup-sql.ts`) picked the cross-source winner from `matched`
+    without the context-only/reply visibility predicates the host applies
+    afterward (`items.ts` `scored` WHERE), so a context-only or reply-suppressed
+    twin could win, suppress its visible sibling, then be filtered itself — both
+    copies gone (the exact SLICE-8 failure the candidate universe must prevent).
+    Mirrored `ei.is_context_only IS NOT TRUE` and `(fi.is_reply IS NOT TRUE OR
+    m.allow_replies)` into `candidates`. The integration test's `matched` stub
+    gained `allow_replies` to match production's CTE contract; all 13 dedup
+    integration tests pass against the dev DB.
+  - **M12 — feed merge 500 on a shared reach source.** The merge duplicate guard
+    (`crud.ts`) enumerated account/publication/external/tag but omitted `reach`,
+    so merging two feeds that both carry Following/Explore violated
+    `feed_sources_reach_uniq` and the unhandled 23505 rolled back the whole merge
+    (common with starter-template feeds). Added the `reach`/`reach_kind` arm.
+  - **M14 — one bad RSS pubDate deactivated the feed.** `new Date(bad)` yields an
+    Invalid Date (NaN), not a throw, so the try/catch was dead and `NaN > x` is
+    false — an Invalid Date reached the batched INSERT, failed the whole fetch,
+    and after ~10 polls deactivated the source. Both the RSS and `parseJsonFeed`
+    date parses now guard `isNaN(getTime())` (matching AP/atproto).
+  - **M18 — nostr poll interval never reset on success.** The error path backs
+    off `fetch_interval_seconds` up to ~19,200s, but the success path reset only
+    `error_count`/`last_error`, so a recovered source polled every ~5.3h forever
+    (AP already resets). Both the main poll and the backfill completer now set
+    `fetch_interval_seconds = 300` (the backoff base) on success.
+  Verified: gateway + feed-ingest typecheck clean; dedup integration suite green
+  against the dev DB; feed-ingest unit suite green.
 - **2026-07-16** — **Deep-audit MEDIUM gateway/auth batch (M5, M6, M7, M9,
   M10).** Five contained gateway/auth defects from `DEEP-AUDIT-2026-07-16.md`.
   - **M5 — members roster leaked to anonymous.** `GET /publications/:id/members`

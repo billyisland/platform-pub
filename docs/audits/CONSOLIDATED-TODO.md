@@ -99,14 +99,14 @@ Seven-agent adversarial audit of the whole repo at HEAD (`c000beb`), one agent p
 - **Event-id squatting on `POST /articles`/`POST /notes`** — client `nostrEventId` trusted, relay publish precedes indexing, attacker registers the victim's id first.
 - **✅ SHIPPED 2026-07-16.** ~~`can_manage_members` alone can mint an `editor_in_chief`~~ — a shared `escalationBeyond` guard on both invite and PATCH blocks granting any permission the (non-owner) grantor doesn't hold.
 - **✅ SHIPPED 2026-07-16.** ~~Magic-link single-use is non-atomic SELECT-then-UPDATE~~ (`shared/src/auth/magic-links.ts`) — now one atomic `UPDATE … WHERE used_at IS NULL … RETURNING`, so only one racer claims the token.
-- **Dedup can hide both copies** when the component winner is filtered out post-suppression (`dedup-sql.ts:96-122` vs `items.ts:281-286`) — exactly the SLICE-8 failure mode; apply visibility predicates inside `candidates`.
-- **Feed merge 500s when both feeds carry the same `reach` source** (`crud.ts:461-476` omits the reach arm → `feed_sources_reach_uniq` violation).
+- **✅ SHIPPED 2026-07-16.** ~~Dedup can hide both copies~~ (`dedup-sql.ts`) — the `candidates` CTE now mirrors the host's context-only/reply visibility predicates, so a row that would be filtered can't be the dedup winner and suppress its visible twin. Test harness `matched` gained `allow_replies`; all 13 dedup integration tests pass against the dev DB.
+- **✅ SHIPPED 2026-07-16.** ~~Feed merge 500s when both feeds carry the same `reach` source~~ (`crud.ts`) — the merge duplicate guard gained the `reach`/`reach_kind` arm, so a shared reach source is skipped instead of violating `feed_sources_reach_uniq`.
 - **Cursor truncation to whole seconds** duplicates/skips page-boundary rows in `feed_saves` (`saves.ts:69`), explore placeholders (`items.ts:343`), author log (`author.ts:523`).
-- **RSS: one unparseable `pubDate` deactivates the whole feed** (`adapters/rss.ts:163-175` — dead try/catch, `NaN>x` false; same in `parseJsonFeed`).
+- **✅ SHIPPED 2026-07-16.** ~~RSS: one unparseable `pubDate` deactivates the whole feed~~ (`adapters/rss.ts`) — both the RSS and JSON-feed date parses now guard `isNaN(getTime())` (the dead try/catch is gone), matching the AP/atproto adapters, so an Invalid Date falls back to now() instead of poisoning the batch.
 - **`external-items-prune` broken 2 ways + permanent wedge** (`external-items-prune.ts:19-31`: `WHERE FALSE` reply guard breaks threads at 90d; `citation_edges` FK has no ON DELETE → one old edge wedges all pruning; `deleted_at IS NULL` retains tombstoned content forever).
 - **RSS guid dedup is global** → cross-feed suppression, incl. hostile guid-replay (`feed-ingest-rss.ts:179`, `schema.sql:3544`).
 - **Email fuzzy dedup drops distinct newsletters globally** (`email-ingest.ts:41-55`).
-- **Nostr poll interval never resets on success** — a recovered source polls every ~5.3h forever (`feed-ingest-nostr.ts:235-258`).
+- **✅ SHIPPED 2026-07-16.** ~~Nostr poll interval never resets on success~~ (`feed-ingest-nostr.ts` + the backfill completer) — the success UPDATE now sets `fetch_interval_seconds = 300` (the backoff base), so a recovered source returns to the base cadence instead of staying on its last backed-off interval.
 - **"Allow replies" is dead at publish** (`commentsEnabled` never transmitted; edit-load hardcodes `true`).
 - **Dek/standfirst silently dropped by the whole draft pipeline** (gateway drafts schema has no `dek`) → scheduled articles publish with no summary.
 - **Editor close discards work** — title/dek/price changes never autosave; close/supersede cancels the debounce with no flush/dirty-check.

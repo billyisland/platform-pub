@@ -492,6 +492,7 @@ export function registerFeedCrudRoutes(app: FastifyInstance) {
                      OR (t.source_type = 'publication' AND t.publication_id = feed_sources.publication_id)
                      OR (t.source_type = 'external_source' AND t.external_source_id = feed_sources.external_source_id)
                      OR (t.source_type = 'tag' AND t.tag_name = feed_sources.tag_name)
+                     OR (t.source_type = 'reach' AND t.reach_kind = feed_sources.reach_kind)
                    )
                )`,
             [targetId, sourceFeedId],

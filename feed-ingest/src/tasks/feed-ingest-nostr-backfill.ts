@@ -195,6 +195,9 @@ export async function completeBackfillSource(
       END,
       error_count = 0,
       last_error = NULL,
+      -- Reset the poll interval to the base on a successful backfill (M18) — a
+      -- source that recovered here must not stay on a backed-off interval.
+      fetch_interval_seconds = 300,
       display_name = COALESCE($3, display_name),
       avatar_url = COALESCE($4, avatar_url),
       metadata_updated_at = CASE
