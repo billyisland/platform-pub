@@ -74,11 +74,20 @@ export function pushBackGuard(close: () => void): () => void {
     const idx = stack.findIndex((e) => e.id === id);
     if (idx === -1) return; // already removed by a Back-driven close
     stack.splice(idx, 1);
-    // Consume our sentinel. Surfaces unmount top-first (children before parents
-    // on a shared unmount), so the entry we remove is always the current top —
-    // one history.back() lands on the entry below it.
-    suppress += 1;
-    window.history.back();
+    // Consume our sentinel — but ONLY when it is still the TOP history entry.
+    // The "surfaces unmount top-first" assumption breaks when this sheet opens a
+    // URL-synced overlay (reader / profile / surface): that overlay pushes its
+    // own canonical URL on top of our sentinel *before* the supersede unmounts
+    // us, so a blind history.back() here pops the SUCCESSOR's entry, and its
+    // popstate handler then closes the just-opened pane (H14 — reader/profile
+    // flashed open then self-closed from any guarded mobile sheet). history.state
+    // carries our sentinel id only while it is the top, so gate on it: if
+    // something was pushed above us, leave the (now inert) sentinel buried rather
+    // than popping the wrong entry.
+    if ((window.history.state as { ahBackGuard?: number } | null)?.ahBackGuard === id) {
+      suppress += 1;
+      window.history.back();
+    }
   };
 }
 

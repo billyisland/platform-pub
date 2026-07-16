@@ -23,6 +23,21 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit H14 (mobile back-guard self-closes reader/
+  profile) — final HIGH.** `web/src/lib/backGuard.ts`'s unregister cleanup
+  assumed its history sentinel was always the top entry and fired a balancing
+  `history.back()`. But when a guarded sheet (Library/Dashboard/Messages/Network)
+  opens a URL-synced overlay (reader/profile/surface), that overlay pushes its own
+  canonical URL on top of the sentinel *before* the supersede unmounts the sheet,
+  so the cleanup's `history.back()` popped the successor's entry and its own
+  popstate handler closed the just-opened pane — every reader/profile open from a
+  guarded mobile sheet flashed and self-closed. Now the cleanup consumes the
+  sentinel (`history.back()`) only when `history.state.ahBackGuard === id`, i.e.
+  it is genuinely still the top; if something was pushed above, the inert sentinel
+  is left buried rather than popping the wrong entry. Nested guards (DM cover over
+  Messages) and normal self-close are unaffected. Verified: web typecheck +
+  `next build` clean. **This closes the last HIGH — all 14 HIGHs + the CRITICAL
+  from DEEP-AUDIT-2026-07-16 are shipped; MEDIUM (bar M1, done) and LOW remain.**
 - **2026-07-16** — **Deep-audit H11–H13 (Jetstream dead zone + socket leak;
   doppelgänger external authors).**
   - **H11 — Jetstream filtered-mode dead zone.** `listener.ts` built the
