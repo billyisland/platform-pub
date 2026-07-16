@@ -4,6 +4,8 @@ import logger from '@platform-pub/shared/lib/logger.js'
 export const KEY_SERVICE_URL = requireEnv('KEY_SERVICE_URL')
 export const PAYMENT_SERVICE_URL = requireEnv('PAYMENT_SERVICE_URL')
 
+const INTERNAL_SECRET = requireEnv('INTERNAL_SECRET')
+
 export { UUID_RE } from '../../lib/uuid.js'
 
 // =============================================================================
@@ -19,6 +21,9 @@ export async function proxyToService(
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      // Upstream internal services trust the identity headers below only from
+      // the gateway; the secret is what proves this hop is the gateway.
+      'x-internal-secret': INTERNAL_SECRET,
     }
 
     // Forward auth headers

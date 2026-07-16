@@ -23,6 +23,38 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit H1 + H10 (key-service internal-secret gate +
+  loopback port bindings).** Next two HIGHs off the 2026-07-16 deep audit
+  (§0e), both single-surface network-hardening fixes. **H1**: `key-service`'s
+  vault/key routes trusted gateway-injected identity headers
+  (`x-writer-id`/`x-reader-id`/`x-reader-pubkey`) with **no** proof the caller
+  was the gateway — only the two `x-internal-secret`-gated routes checked. Any
+  container on the compose bridge (web SSR the realistic pivot) could POST
+  `/api/v1/articles/<id>/key` with `x-reader-id: <writer's uuid>` and, via the
+  `readerId===writerId` self-issue branch in `vault.ts`, decrypt **any**
+  paywalled article with no payment. Fix: a plugin-scope `preHandler` on
+  `keyRoutes` requires `x-internal-secret === INTERNAL_SECRET` (constant-time
+  compare via `timingSafeEqual`, fail-closed if the env is unset) for **every**
+  route; the two per-route secret checks it subsumes were removed. The two
+  previously-ungated gateway call sites now send the header —
+  `proxyToService` (the vault/key/patch proxies) and `fetchContentKey` (the
+  gate-pass key fetch). **H10**: `web:3010` and `strfry:4848` were published on
+  `0.0.0.0`; Docker's DNAT in the `DOCKER` iptables chain runs before UFW's
+  INPUT rules, so `harden-server.sh`'s 22/80/443 allowlist never saw them — on
+  prod the whole app (incl. the Next `/api/*`→gateway rewrite, bypassing
+  nginx/TLS/security-headers/the `/media` read-only lock) was reachable over
+  plaintext on `:3010`, and the raw relay on `:4848`. Fix: both re-bound to
+  `127.0.0.1:` (matching postgres/gateway); nginx reaches them by service name
+  over the compose network, and dev browser access
+  (`ws://localhost:4848`, `http://localhost:3010`) is unchanged. Verified:
+  shared+gateway+key-service typecheck clean; gateway 325 tests + key-service
+  11 tests green; images rebuilt and the stack recreated; the H1 exploit
+  (no secret) returns **401**, the authorised path (with the secret) passes the
+  gate to a normal **404** not-found, and both ports now publish on
+  `127.0.0.1` only with web still 200ing locally. **Prod runbook**: deploy,
+  then `docker compose up -d web strfry` to re-create the two containers with
+  the loopback bindings (a plain restart keeps the old `0.0.0.0` publish). No
+  DB, schema, or migration change. Remaining §0e HIGHs (H2/H4–H9/H11–H14) open.
 - **2026-07-16** — **Deep-audit C1 + H3 (relay-publish unblock + kind-5 email
   leak).** First two items off the 2026-07-16 deep audit (§0e), landed as a
   pair per the ordering constraint. **C1**: the SSRF pin rejected the in-house

@@ -46,13 +46,13 @@ Internal only:
 | Service           | Image / Build                         | Port                        | Purpose                                                                                  |
 | ----------------- | ------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
 | postgres          | postgres:16-alpine                    | 5432 (localhost only)       | Shared database                                                                          |
-| strfry            | dockurr/strfry:latest                 | 4848→7777                   | Nostr relay                                                                              |
+| strfry            | dockurr/strfry:latest                 | 4848→7777 (localhost only)  | Nostr relay                                                                              |
 | gateway           | ./gateway/Dockerfile                  | 3000 (localhost only)       | API gateway, auth, media upload, all client-facing API                                  |
 | payment           | ./payment-service/Dockerfile          | 3001 (Docker internal only) | Stripe, settlement, payouts                                                              |
 | keyservice        | ./key-service/Dockerfile              | 3002 (Docker internal only) | Vault encryption, NIP-44 key issuance                                                    |
 | key-custody       | ./key-custody/Dockerfile              | 3004 (Docker internal only) | Custodial Nostr keypair service (sole holder of `ACCOUNT_KEY_HEX`)                       |
 | feed-ingest       | ./feed-ingest/Dockerfile              | — (background)              | Universal Feed ingestion: RSS, ActivityPub/Mastodon, AT Protocol/Bluesky, Nostr, email; outbound cross-posting |
-| web               | ./web/Dockerfile                      | 3010→3000                   | Next.js frontend                                                                         |
+| web               | ./web/Dockerfile                      | 3010→3000 (localhost only)  | Next.js frontend                                                                         |
 | nginx             | nginx:alpine                          | 80, 443                     | Reverse proxy, TLS, static media                                                         |
 | traffology-ingest | ./traffology-ingest/Dockerfile        | 3005 (Docker internal only) | Analytics beacon receiver, session tracking                                              |
 | traffology-worker | ./traffology-worker/Dockerfile        | — (background)              | Graphile Worker: hourly/daily/weekly aggregation, source resolution, interpretation      |

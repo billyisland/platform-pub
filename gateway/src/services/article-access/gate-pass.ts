@@ -30,6 +30,7 @@ const KEY_SERVICE_URL = requireEnv("KEY_SERVICE_URL");
 const PAYMENT_SERVICE_URL = requireEnv("PAYMENT_SERVICE_URL");
 const READER_HASH_KEY = requireEnv("READER_HASH_KEY");
 const INTERNAL_SERVICE_TOKEN = requireEnv("INTERNAL_SERVICE_TOKEN");
+const INTERNAL_SECRET = requireEnv("INTERNAL_SECRET");
 
 interface GatePassInput {
   readerId: string;
@@ -296,6 +297,7 @@ async function fetchContentKey(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "x-internal-secret": INTERNAL_SECRET,
         "x-reader-id": readerId,
         "x-reader-pubkey": readerPubkey,
       },

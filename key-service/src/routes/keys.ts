@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { vaultService, KeyServiceError } from "../services/vault.js";
 import { decryptContentKey } from "../lib/kms.js";
@@ -15,10 +16,20 @@ import logger from "../lib/logger.js";
 // PATCH /articles/:nostrEventId/vault  — update vault event ID after relay publish
 // GET  /writers/export-keys            — export all vault keys wrapped to the writer
 //
-// Auth: all routes require a valid session token (verified at gateway).
-// The gateway injects x-reader-id and x-reader-pubkey headers after verification.
-// The publish route requires x-writer-id instead.
+// Auth: every route trusts gateway-injected identity headers (x-reader-id /
+// x-reader-pubkey / x-writer-id), so every route must prove the caller IS the
+// gateway: the plugin-scope preHandler below requires x-internal-secret to
+// match INTERNAL_SECRET. Fail-closed — no secret configured means no access.
 // =============================================================================
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  // timingSafeEqual throws on unequal lengths; a length mismatch is already a
+  // non-match, and the secret is high-entropy so leaking its length is harmless.
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 const PublishVaultSchema = z.object({
   articleId: z.string().uuid(),
@@ -33,6 +44,23 @@ const UpdateVaultEventIdSchema = z.object({
 });
 
 export async function keyRoutes(app: FastifyInstance) {
+  // Internal-secret gate for the whole plugin scope. The identity headers these
+  // routes act on are only trustworthy when the gateway injected them; without
+  // this gate any container on the compose network could mint itself a
+  // writer/reader identity and decrypt paywalled content.
+  app.addHook("preHandler", async (req, reply) => {
+    const rawSecret = req.headers["x-internal-secret"];
+    const secret = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret;
+    const expected = process.env.INTERNAL_SECRET;
+    if (
+      !expected ||
+      typeof secret !== "string" ||
+      !constantTimeEqual(secret, expected)
+    ) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+  });
+
   // ---------------------------------------------------------------------------
   // POST /articles/:nostrEventId/vault
   // Called by the publishing pipeline after the writer hits publish.
@@ -200,13 +228,6 @@ export async function keyRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
 
   app.get("/writers/export-keys", async (req, reply) => {
-    // Validate internal service secret — only the gateway should call this endpoint
-    const rawSecret = req.headers["x-internal-secret"];
-    const secret = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret;
-    if (typeof secret !== "string" || secret !== process.env.INTERNAL_SECRET) {
-      return reply.status(401).send({ error: "Unauthorized" });
-    }
-
     const writerId = req.headers["x-writer-id"];
     const writerPubkey = req.headers["x-writer-pubkey"];
 
@@ -268,15 +289,6 @@ export async function keyRoutes(app: FastifyInstance) {
   app.get<{ Params: { articleId: string } }>(
     "/articles/:articleId/paywall-content",
     async (req, reply) => {
-      const rawSecret = req.headers["x-internal-secret"];
-      const secret = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret;
-      if (
-        typeof secret !== "string" ||
-        secret !== process.env.INTERNAL_SECRET
-      ) {
-        return reply.status(401).send({ error: "Unauthorized" });
-      }
-
       const writerId = req.headers["x-writer-id"];
       if (!writerId || typeof writerId !== "string") {
         return reply.status(401).send({ error: "Missing x-writer-id" });

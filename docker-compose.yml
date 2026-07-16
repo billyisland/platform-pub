@@ -54,7 +54,11 @@ services:
         soft: 1000000
         hard: 1000000
     ports:
-      - "4848:7777"
+      # Loopback-only: Docker-published ports bypass UFW (the DOCKER chain
+      # DNATs before INPUT), so a 0.0.0.0 bind exposes the raw relay to the
+      # internet on prod. nginx reaches strfry by service name over the compose
+      # network; dev browser access via ws://localhost:4848 still works.
+      - "127.0.0.1:4848:7777"
     volumes:
       - ./relay/strfry.conf:/etc/strfry.conf:ro
       - strfry_data:/app/strfry-db
@@ -305,7 +309,10 @@ services:
         GATEWAY_URL: http://gateway:3000
     restart: unless-stopped
     ports:
-      - "3010:3000"
+      # Loopback-only (same UFW-bypass reasoning as strfry): on prod a 0.0.0.0
+      # bind served the whole app — including the /api rewrite to the gateway —
+      # over plaintext http://all.haus:3010, skipping nginx/TLS entirely.
+      - "127.0.0.1:3010:3000"
     env_file: web/.env
     depends_on:
       - gateway
