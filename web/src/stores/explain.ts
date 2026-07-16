@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import { type ExplainKind, explainCopy } from "../lib/explain/registry";
+import {
+  type ExplainKind,
+  explainCardCopy,
+  explainCopy,
+} from "../lib/explain/registry";
 
 // =============================================================================
 // Explain engine store — the state machine (EXPLAIN-ADR D12).
@@ -52,6 +56,11 @@ export interface Program {
 export interface HoverTarget {
   kind: ExplainKind;
   key?: string;
+  // Per-instance copy parameter, read off the element's data-explain-param by
+  // the overlay's hit-test (2026-07-16). Today only card flavours use it (a
+  // Bluesky post vs an RSS item vs a native article); resolution lives in
+  // registry.ts::explainCardCopy.
+  param?: string;
 }
 
 interface ExplainState {
@@ -77,7 +86,11 @@ interface ExplainState {
 }
 
 function sameTarget(a: HoverTarget, b: HoverTarget): boolean {
-  return a.kind === b.kind && (a.key ?? undefined) === (b.key ?? undefined);
+  return (
+    a.kind === b.kind &&
+    (a.key ?? undefined) === (b.key ?? undefined) &&
+    (a.param ?? undefined) === (b.param ?? undefined)
+  );
 }
 
 export const useExplain = create<ExplainState>((set, get) => ({
@@ -125,7 +138,12 @@ export const useExplain = create<ExplainState>((set, get) => ({
     set((s) => ({
       annotations: [
         ...s.annotations,
-        { kind: t.kind, key: t.key, copy: explainCopy(t.kind) },
+        {
+          kind: t.kind,
+          key: t.key,
+          copy:
+            t.kind === "card" ? explainCardCopy(t.param) : explainCopy(t.kind),
+        },
       ],
       index: s.annotations.length,
     }));

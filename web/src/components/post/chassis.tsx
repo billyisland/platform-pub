@@ -39,12 +39,17 @@ export function PostCardShell({
   indentPx,
   gapBelowPx,
   onClick,
+  explainParam,
   children,
 }: {
   ctx: CardContext;
   indentPx: number;
   gapBelowPx: number;
   onClick?: () => void;
+  // Explain card flavour (registry.ts::explainCardFlavour): rides the card as
+  // data-explain-param so the Explain hover caption can say WHAT KIND of card
+  // this is (a Bluesky post, an RSS item, …). Absent → the generic card copy.
+  explainParam?: string | null;
   children: React.ReactNode;
 }) {
   const padding = ctx.density === "compact" ? "8px 12px" : "16px";
@@ -87,6 +92,7 @@ export function PostCardShell({
     <div
       ref={rootRef}
       data-explain="card"
+      data-explain-param={explainParam ?? undefined}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={handleClick}

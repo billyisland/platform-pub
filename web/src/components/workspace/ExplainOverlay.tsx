@@ -13,7 +13,11 @@ import {
   type HoverTarget,
 } from "../../stores/explain";
 import { useExplainRegistry } from "./ExplainProvider";
-import { type ExplainKind, explainCopy } from "../../lib/explain/registry";
+import {
+  type ExplainKind,
+  explainCardCopy,
+  explainCopy,
+} from "../../lib/explain/registry";
 import { prefersReducedMotion } from "../../lib/workspace/motion";
 import { useGlasshousePresence } from "../../stores/glasshouse";
 
@@ -35,9 +39,13 @@ import { useGlasshousePresence } from "../../stores/glasshouse";
 //     reduced-motion path. Hover is SUPPRESSED during first-run — the tour is
 //     the fixed sequence, and stray cursor bubbles over it are noise.
 //
-// D1 — the floor is inert while active: the scrim is a single full-viewport div
-// that intercepts ALL pointer events (wheel/touch included), so the frozen floor
-// cannot scroll and the surface is annotated exactly as it stood at open().
+// D1 — the surface is inert for CLICKS while active: the scrim is a single
+// full-viewport div that intercepts all pointer events, so nothing under it can
+// be activated. Wheel scroll is NOT frozen (D1 amendment, 2026-07-16): the
+// scrim forwards it to the scrollable under the cursor — pane bodies and
+// vessel interiors stay readable mid-Explain — and re-resolves the hover
+// after. First-run keeps the fully frozen surface (its pinned bubbles anchor
+// to element rects; D11 has no scroll re-measure).
 //   - pointermove → coordinate hit-test → live hover (D4).
 //   - any click → dismiss (§6, 2026-07-15 form: click-pin is deleted — the
 //     hover bubble is already at the cursor, so a pin adds nothing). First-run
@@ -141,7 +149,9 @@ export function ExplainOverlay() {
           const tagged = el.closest<HTMLElement>("[data-explain]");
           if (tagged && scope.contains(tagged)) {
             const kind = tagged.getAttribute("data-explain") as ExplainKind;
-            return { kind, el: tagged };
+            const param =
+              tagged.getAttribute("data-explain-param") ?? undefined;
+            return { kind, param, el: tagged };
           }
         }
         return null;
@@ -159,7 +169,8 @@ export function ExplainOverlay() {
           const key = kind.startsWith("vessel.")
             ? vessels.find((v) => v.ref.current?.contains(tagged))?.key
             : undefined;
-          return { kind, key, el: tagged };
+          const param = tagged.getAttribute("data-explain-param") ?? undefined;
+          return { kind, key, param, el: tagged };
         }
         // A registered root (floor / vessel / disc) — identity match.
         const root = roots.find((r) => r.ref.current === el);
@@ -227,11 +238,12 @@ export function ExplainOverlay() {
       const hit = hitTest(e.clientX, e.clientY);
       const cur = useExplain.getState().hover;
       const next: HoverTarget | null = hit
-        ? { kind: hit.kind, key: hit.key }
+        ? { kind: hit.kind, key: hit.key, param: hit.param }
         : null;
       const changed =
         (cur?.kind ?? null) !== (next?.kind ?? null) ||
-        (cur?.key ?? undefined) !== (next?.key ?? undefined);
+        (cur?.key ?? undefined) !== (next?.key ?? undefined) ||
+        (cur?.param ?? undefined) !== (next?.param ?? undefined);
       if (changed) setHover(next);
     },
     [hitTest, setHover],
@@ -249,8 +261,59 @@ export function ExplainOverlay() {
     close();
   }, [close]);
 
-  // Copy for a live hover target, folding the vessel provenance fork (D7): read
-  // fromStarter off the anchored vessel's registration params.
+  // Scroll forwarding (D1 amendment, 2026-07-16): the surface is frozen for
+  // clicks but LIVE for scroll. A wheel over the scrim scrolls whatever
+  // scrollable sits under the cursor — a pane body, a Messages column, a
+  // vessel interior — then re-resolves the hover in place, since what sits
+  // under the unmoved pointer has changed. First-run keeps the fully frozen
+  // surface: its pinned bubbles anchor to element rects, and D11 deliberately
+  // has no scroll re-measure trigger for them.
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (useExplain.getState().program?.kind === "firstrun") return;
+      // Normalise deltaMode (Firefox reports lines / pages, not pixels).
+      const scale =
+        e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+      const dy = e.deltaY * scale;
+      const dx = e.deltaX * scale;
+      const stack = document.elementsFromPoint(
+        e.clientX,
+        e.clientY,
+      ) as HTMLElement[];
+      // Deepest painted element under the cursor that isn't Explain chrome,
+      // then the nearest ancestor that can actually scroll in the gesture's
+      // axis — the same element the wheel would have reached with no scrim.
+      const start = stack.find((el) => !el.closest(`[${CHROME_ATTR}]`));
+      let node: HTMLElement | null = start ?? null;
+      while (node) {
+        const s = getComputedStyle(node);
+        const scrollsY =
+          /(auto|scroll)/.test(s.overflowY) &&
+          node.scrollHeight > node.clientHeight;
+        const scrollsX =
+          /(auto|scroll)/.test(s.overflowX) &&
+          node.scrollWidth > node.clientWidth;
+        if ((dy !== 0 && scrollsY) || (dx !== 0 && scrollsX)) {
+          node.scrollBy({
+            top: scrollsY ? dy : 0,
+            left: scrollsX ? dx : 0,
+          });
+          break;
+        }
+        node = node.parentElement;
+      }
+      // The pointer hasn't moved but its target may have: refresh the hover so
+      // the caption tracks what scrolled into place.
+      const hit = hitTest(e.clientX, e.clientY);
+      setHover(hit ? { kind: hit.kind, key: hit.key, param: hit.param } : null);
+    },
+    [hitTest, setHover],
+  );
+
+  // Copy for a live hover target, folding the two per-instance forks: the
+  // vessel provenance fork (D7, fromStarter off the vessel's registration
+  // params) and the card flavour fork (2026-07-16, the flavour off the card's
+  // data-explain-param — a Bluesky post reads differently from an RSS item).
   const copyForHover = useCallback(
     (t: HoverTarget): string => {
       if (t.kind === "vessel") {
@@ -258,6 +321,7 @@ export function ExplainOverlay() {
         const v = roots.find((r) => r.kind === "vessel" && r.key === t.key);
         return explainCopy("vessel", !!v?.params?.fromStarter);
       }
+      if (t.kind === "card") return explainCardCopy(t.param);
       return explainCopy(t.kind);
     },
     [registry],
@@ -421,14 +485,17 @@ export function ExplainOverlay() {
     <>
       {/* Scrim — flat wash ≤0.18 alpha, no backdrop-filter (D9): the surface
           stays legible behind its own labels. Catches every pointer event so
-          the annotated surface is frozen (D1). Floor mode sits at z-50 (under
-          any Glasshouse); pane mode rises to z-57 — above the pane (z-56) it
-          annotates, still under the ForallMenu (z-60). Pointer leaving the
-          viewport clears the hover so no stale bubble lingers. */}
+          the annotated surface is frozen for CLICKS (D1); wheel scroll is
+          forwarded to the scrollable under the cursor (D1 amendment,
+          2026-07-16). Floor mode sits at z-50 (under any Glasshouse); pane
+          mode rises to z-57 — above the pane (z-56) it annotates, still under
+          the ForallMenu (z-60). Pointer leaving the viewport clears the hover
+          so no stale bubble lingers. */}
       <div
         {...{ [CHROME_ATTR]: "" }}
         onPointerMove={handlePointerMove}
         onPointerLeave={() => setHover(null)}
+        onWheel={handleWheel}
         onClick={handleClick}
         style={{
           position: "fixed",

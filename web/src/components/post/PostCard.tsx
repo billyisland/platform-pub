@@ -2,6 +2,7 @@
 
 import React from "react";
 import { resolveSpec } from "../../lib/post/level-spec";
+import { explainCardFlavour } from "../../lib/explain/registry";
 import type { Level, Post } from "../../lib/post/types";
 import { PostCardShell, type CardContext, type PipOpen } from "./chassis";
 import { PostByline } from "./PostByline";
@@ -112,7 +113,7 @@ export function PostCard({
   }
 
   return (
-    <PostCardShell ctx={ctx} indentPx={spec.indentPx} gapBelowPx={spec.gapBelowPx} onClick={onClick}>
+    <PostCardShell ctx={ctx} indentPx={spec.indentPx} gapBelowPx={spec.gapBelowPx} onClick={onClick} explainParam={explainCardFlavour(post)}>
       {header}
       <PostByline post={post} palette={ctx.palette} bylineProfile={spec.bylineProfile} onPipOpen={onPipOpen} feedId={ctx.feedId} />
       <PostBody post={post} bodyPx={bodyPx} mode={spec.body} palette={ctx.palette} pollVote={pollVote} />

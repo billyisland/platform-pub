@@ -23,6 +23,28 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Explain post-programme trio: scroll-through, card
+  flavours, one copy file (EXPLAIN-ADR third-session amendments 8–10).**
+  (1) All caption prose extracted to `web/src/lib/explain/copy.ts` — strings
+  only (`EXPLAIN_LABELS`/`CARD_FLAVOUR_COPY`/`VESSEL_COPY`/`FIRST_RUN_COPY`),
+  the one file to edit until the copy feels right; `registry.ts` keeps the
+  machinery and the `Record<Kind, string>` typing fails the build on a lost
+  caption. (2) The `card` hover caption now says what kind of card it is —
+  native article / native note / open-Nostr / Bluesky / Fediverse / RSS /
+  email newsletter: `PostCard` derives the flavour (`explainCardFlavour`,
+  native = nostr + pubkey mirroring `isNativePost`), the chassis carries it
+  as `data-explain-param`, the hit-test folds it into hover identity (so
+  adjacent cards of different flavours swap copy), `explainCardCopy` resolves
+  with the generic label as fallback; the param channel is generic for any
+  future per-instance copy. (3) The Explain scrim forwards wheel scroll (D1
+  softened: frozen for clicks, live for scroll — the sanctioned v2 seam):
+  nearest axis-scrollable ancestor under the cursor via `elementsFromPoint`,
+  then a hover re-resolve at the unmoved pointer so the caption tracks what
+  scrolled in; pane bodies, Messages columns and vessel interiors all scroll
+  mid-Explain. First-run stays fully frozen (pinned bubbles anchor to rects;
+  D11 has no scroll re-measure). Verified: tsc, root eslint, `next build`,
+  hairline tripwire all clean (the one vitest failure, collision.test.ts,
+  pre-exists on HEAD).
 - **2026-07-16** — **Dev stack rebuilt to HEAD (all six app images) + first
   `reconcile-ledger.sql` run (§1.9), clean.** The dev containers run baked
   images (no source mounts) and had drifted badly: web predated the same-day
