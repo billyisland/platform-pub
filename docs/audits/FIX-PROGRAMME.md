@@ -23,6 +23,36 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit C1 + H3 (relay-publish unblock + kind-5 email
+  leak).** First two items off the 2026-07-16 deep audit (§0e), landed as a
+  pair per the ordering constraint. **C1**: the SSRF pin rejected the in-house
+  relay's private compose address (`ws://strfry:7777`), so every native publish
+  enqueued into `relay_outbox` failed the pin on claim and abandoned after
+  `max_attempts` while the API reported success — native Nostr publishing had
+  been silently dead since the DNS-hardening commit `8375365` (2026-05-16).
+  Fix: `pinnedWebSocketOptions` now takes an `allowHosts` list (options-bag 2nd
+  arg, replacing the positional `maxLength`); a host is exempted from the
+  private-IP rejection only on **exact hostname match**, and the DNS-rebinding
+  pin is still fully enforced against that host's resolved address. The outbound
+  publisher (`feed-ingest/src/adapters/nostr-outbound.ts`) passes only the
+  operator-configured `PLATFORM_RELAY_WS_URL` host; external cross-post relays
+  get no exemption. **H3**: account deletion built the kind-5 `a` coordinate
+  from `accounts.email` (`30023:<email>:<d_tag>`) instead of the pubkey —
+  publishing the user's email in permanently-public signed events and
+  mis-addressing the replaceable-event deletion. Fixed to `nostr_pubkey`,
+  matching the publications path. Landing H3 with C1 is load-bearing: the
+  redrive flushes queued deletion events, and the leak is baked into each
+  already-signed payload. Ships with **`scripts/redrive-relay-outbox.sql`** —
+  dry-run by default (`-v apply=true` to mutate), it **purges** the
+  email-poisoned `article_deletion` rows (detected by an `@` in an `a`-tag
+  coordinate) **before** redriving the rest (`abandoned`/`failed` → `pending`,
+  fresh attempt budget). Verified: shared/gateway/feed-ingest typecheck clean,
+  3 new `pinnedWebSocketOptions` exemption tests (44 http-client / 81 shared
+  green), lint 0 errors, and the redrive script exercised end-to-end against
+  dev with seeded poisoned + clean rows (purged exactly the leak, redrove the
+  rest). **Prod runbook**: deploy + restart `feed-ingest`/`gateway`, then run
+  the redrive dry-run, inspect, re-run with `-v apply=true`. Commit `a157834`.
+  Remaining §0e HIGHs (H1/H2/H4–H14) still open.
 - **2026-07-16** — **Menu slimming + composer label (EXPLAIN-ADR amendment
   11).** About removed from the desktop ∀ menu — the Explain group is
   Explain alone there (About via Explain's "About all.haus" button or
