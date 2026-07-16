@@ -113,8 +113,22 @@ const CRITICAL_CHECKS: Check[] = [
                AND NOT EXISTS (SELECT 1 FROM dispute_edges de WHERE de.id = le.ref_id))
          OR (le.trigger_type = 'tribute_payout'
                AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
-         OR (le.trigger_type IN ('tab_settlement_reversal', 'writer_payout_reversal', 'tribute_payout_reversal')
+         -- Reversals must resolve against the table each handler actually refs,
+         -- not all against tab_settlements (the old bug: a real writer_payout_
+         -- reversal / tribute_payout_reversal whose ref_id is a writer_payouts /
+         -- tribute_payouts id would fail the tab_settlements lookup and halt ALL
+         -- payouts on the next run — recurring forever, the entry being append-
+         -- only). writer_payout_reversal is dual-table: F5 reuses it for
+         -- publication-split-recipient reversals with ref_table
+         -- 'publication_payout_splits'.
+         OR (le.trigger_type = 'tab_settlement_reversal'
                AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'writer_payouts'
+               AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
+         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'publication_payout_splits'
+               AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
+         OR (le.trigger_type = 'tribute_payout_reversal'
+               AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
       LIMIT ${SAMPLE_LIMIT}`,
   },
 ]

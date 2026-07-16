@@ -89,7 +89,7 @@ Seven-agent adversarial audit of the whole repo at HEAD (`c000beb`), one agent p
 
 **MEDIUM** (25 — full detail in the audit doc; headline set)
 
-- **Reconcile `ledger_orphans` false-positive halts all payouts** on any real `transfer.reversed` (`payment-service/src/services/reconcile-ledger.ts:116-117` ignores `ref_table`; the three reversal handlers ref non-`tab_settlements` tables). Fix before a live reversal arrives.
+- **✅ SHIPPED 2026-07-16 (FIX-PROGRAMME).** ~~Reconcile `ledger_orphans` false-positive halts all payouts~~ on any real `transfer.reversed` — the A6 orphan check (both `reconcile-ledger.ts` and `scripts/reconcile-ledger.sql`) resolved `writer_payout_reversal`/`tribute_payout_reversal` against `tab_settlements`, but those refs are `writer_payouts`/`tribute_payouts` (and F5 reuses `writer_payout_reversal` with `ref_table='publication_payout_splits'`), so one real reversal would flag as orphan → `haltPayouts()` forever. Now `ref_table`-aware per reversal type; validated against dev DB (0 rows).
 - **Pledge fulfilment inserts `read_events` with NULL `tab_id`** → pledger charged, writer never paid (`gateway/src/routes/drives.ts:804-810`; settlement advances `WHERE tab_id=$2`). Latent (pledges parked); HIGH on revival.
 - **Chargeback during a reserved-but-pending payout pays out clawed-back money with no reversal** (`chargeback.ts:226-237` reverses only `writer_paid`; resume sweep transfers the fixed pending amount). Publication-split analogue too.
 - **`computePublicationSplits` bps overrides unclamped to remaining pool** (`payout.ts:110-130`) — flat+bps can overdraw; platform funds the difference. Shares load has no `ORDER BY`.

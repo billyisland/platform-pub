@@ -221,15 +221,25 @@ WHERE (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
          AND NOT EXISTS (SELECT 1 FROM dispute_edges de WHERE de.id = le.ref_id))
    OR (le.trigger_type = 'tribute_payout'
          AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
-   OR (le.trigger_type IN ('tab_settlement_reversal', 'writer_payout_reversal', 'tribute_payout_reversal')
-         AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id));
+   -- Reversals resolve against the table each handler refs (ref_table), not all
+   -- against tab_settlements. writer_payout_reversal is dual-table: F5 reuses it
+   -- for publication-split-recipient reversals (ref_table 'publication_payout_splits').
+   OR (le.trigger_type = 'tab_settlement_reversal'
+         AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+   OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'writer_payouts'
+         AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
+   OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'publication_payout_splits'
+         AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
+   OR (le.trigger_type = 'tribute_payout_reversal'
+         AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id));
 
 -- A12: F3 reversal pairing. Every reversed settlement (reversed_at set) holds
 -- exactly one reader-side reversal of −amount_pence (the restored debt), and no
 -- un-reversed settlement carries any reversal entry. The writer/tribute reversal
--- entries (writer_payout_reversal / tribute_payout_reversal) also ref the
--- settlement but are checked only for orphans (A6) — their magnitudes are the
--- per-node telescoped nets, not the settlement total, so they are not summed here.
+-- entries (writer_payout_reversal / tribute_payout_reversal) ref the payout row
+-- (writer_payouts / tribute_payouts), not the settlement, and are checked only
+-- for orphans (A6) — their magnitudes are the per-node telescoped nets, not the
+-- settlement total, so they are not summed here.
 \echo '-- A12: reversed settlement ↔ tab_settlement_reversal pairing (expect ZERO) --'
 WITH reversed AS (
   SELECT id, amount_pence FROM tab_settlements WHERE reversed_at IS NOT NULL

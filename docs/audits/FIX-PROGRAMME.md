@@ -23,6 +23,24 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit M1 (reconcile `ledger_orphans` false-halt).**
+  The A6 orphan check — in both `payment-service/src/services/reconcile-ledger.ts`
+  and `scripts/reconcile-ledger.sql` — resolved `writer_payout_reversal` and
+  `tribute_payout_reversal` refs against `tab_settlements`, but those handlers
+  post `ref_id` into `writer_payouts` / `tribute_payouts` (confirmed at
+  `payout.ts:899/1970`), and F5's publication-split-recipient reversal reuses
+  `writer_payout_reversal` with `ref_table='publication_payout_splits'`
+  (`payout.ts:2201`). So the first real `transfer.reversed` would post a reversal
+  entry whose `ref_id` is absent from `tab_settlements`, the NOT-EXISTS fires,
+  `ledger_orphans` flags it, and `runLedgerReconcileAndEnforce` calls
+  `haltPayouts()` — recurring on every subsequent run (the entry is append-only)
+  until a human resumes, blocking *all* payout cycles. Made the check
+  `ref_table`-aware: `tab_settlement_reversal`→`tab_settlements`,
+  `writer_payout_reversal`→`writer_payouts` OR `publication_payout_splits` (split
+  by `ref_table`), `tribute_payout_reversal`→`tribute_payouts`. Also corrected the
+  A12 comment that shared the wrong "reversals ref the settlement" assumption.
+  Verified: payment-service typecheck clean; the corrected orphan SQL runs against
+  the dev DB and returns 0 rows.
 - **2026-07-16** — **Deep-audit H4–H8 (schedule-path pair, moderation
   completeness, deactivation reactivation, feed-delete teardown).** Five HIGHs
   from `DEEP-AUDIT-2026-07-16.md`, continuing the attack order after H1/H2/H3/
