@@ -23,6 +23,26 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Dev stack rebuilt to HEAD (all six app images) + first
+  `reconcile-ledger.sql` run (§1.9), clean.** The dev containers run baked
+  images (no source mounts) and had drifted badly: web predated the same-day
+  C4 commit, gateway was at 07-12, and payment/keyservice were on **May 25**
+  images — the whole July payments rework (`applyLedgerDelta`, migrations
+  152–156, Dial-A) and the paywall validator lockstep were not what dev was
+  running. Rebuilt web/gateway/payment/keyservice/key-custody/feed-ingest at
+  `2e85b22`, recreated; all healthy, DB already migrated through 156.
+  Verified the new code is serving: C4 Explain kinds present in the web
+  bundle, `applyLedgerDelta` in the payment container's shared/dist,
+  web `/` + gateway `/health` 200. (An over-eager `up -d` also started the
+  prod-only nginx/certbot — stopped again; dev runs without nginx.) Then ran
+  `scripts/reconcile-ledger.sql` against dev (read-only): **every divergence
+  check zero rows** — no orphan entries, no unpaired reversals, B1 reader
+  view == tabs, B2 writer view == payouts. Caveat: dev holds no live money
+  rows (all aggregates 0), so this proves the script executes end-to-end and
+  finds no structural divergence, not penny-parity under load — the
+  meaningful run is prod post-deploy. The §11 "consolidated smoke session"
+  browser verifies are now actually possible (stack at HEAD) but remain to
+  be done interactively.
 - **2026-07-16** — **Explain C4 shipped — profile + surface-overlay captions
   (EXPLAIN-ADR Appendix A.3e). The caption programme is complete.** 11 new
   hover-only kinds, copy Ed-approved (minimal set: avatar lightbox, RSS links
