@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -137,13 +137,43 @@ export function ArticleEditor({
   commentsEnabledRef.current = commentsEnabled
   const currentDraftIdRef = useRef(currentDraftId)
   currentDraftIdRef.current = currentDraftId
+  const editorRef = useRef<Editor | null>(null)
+  // Set once the article is published/scheduled — its working draft is disposed
+  // (publish-now deletes it; schedule owns it), so the unmount flush must NOT
+  // recreate it (that was the "draft + published article, both listed" bug).
+  const disposedRef = useRef(false)
 
   const autoSaver = useMemo(() => createAutoSaver(3000), [])
 
-  // Cancel any pending debounced save on unmount — in the EditorOverlay this
-  // component closes far more often than the standalone /write page ever
-  // unmounted, so a queued save must not fire after teardown.
-  useEffect(() => () => autoSaver.cancel(), [autoSaver])
+  // A DraftData snapshot from the current refs. Always carries the known
+  // draftId/dTag so a save TARGETS the existing row (never re-guesses — the
+  // duplicate-draft invariant).
+  const snapshotDraft = useCallback(() => ({
+    title: titleRef.current,
+    dek: dekRef.current,
+    content: editorRef.current?.storage.markdown.getMarkdown() ?? '',
+    gatePositionPct: 50,
+    pricePence: pricePenceRef.current,
+    coverImageUrl: coverImageUrlRef.current,
+    commentsEnabled: commentsEnabledRef.current,
+    draftId: currentDraftIdRef.current ?? undefined,
+    dTag: editingDTag,
+  }), [editingDTag])
+
+  // Flush any unsaved work on unmount instead of silently dropping it (M21).
+  // The editor closes far more often as an overlay than the old /write page
+  // did, and title/dek/price-only changes (or edits within the 3s debounce
+  // window) had no persisted state. Fire-and-forget so teardown isn't blocked;
+  // gated on isDirty + real content so we never spawn an empty draft row.
+  useEffect(() => () => {
+    autoSaver.cancel()
+    if (disposedRef.current) return
+    const data = snapshotDraft()
+    const hasContent = !!(data.title.trim() || data.content.trim() || data.dek.trim())
+    if (hasContent && autoSaver.isDirty(data)) {
+      void saveDraft(data).catch(() => {})
+    }
+  }, [autoSaver, snapshotDraft])
 
   const handleCoverUpload = useCallback(async (file: File) => {
     setCoverUploading(true)
@@ -218,6 +248,30 @@ export function ArticleEditor({
       )
     },
   })
+  editorRef.current = editor
+
+  // Autosave on metadata changes too (M21) — the TipTap onUpdate above only
+  // fires on BODY edits, so a title/dek/price/cover/comments change scheduled
+  // nothing. Skip the initial mount (nothing dirtied yet) and only fire once
+  // the editor exists so the snapshot has real content.
+  const didMountRef = useRef(false)
+  useEffect(() => {
+    if (!editor) return
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      return
+    }
+    autoSaver(
+      snapshotDraft(),
+      (saved) => {
+        setCurrentDraftId(saved.draftId)
+        setDraftStatus('Saved')
+        setTimeout(() => setDraftStatus(null), 2000)
+      },
+      () => setDraftStatus('Save failed'),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, dek, pricePence, coverImageUrl, commentsEnabled, editor])
 
   // Check if a paywall gate marker exists in the document
   const hasGateMarker = useCallback(() => {
@@ -290,6 +344,7 @@ export function ArticleEditor({
 
       if (onPublish) {
         await onPublish(data)
+        disposedRef.current = true // draft disposed — don't let the flush recreate it
       }
     } catch (err) {
       console.error('Publish error:', err)
@@ -365,6 +420,7 @@ export function ArticleEditor({
       }
 
       await onSchedule(data, new Date(scheduleDateTime).toISOString())
+      disposedRef.current = true // scheduled draft is owned by the scheduler now
     } catch (err) {
       console.error('Schedule error:', err)
       setPublishError(err instanceof Error ? err.message : 'Scheduling failed — please try again.')
@@ -740,10 +796,13 @@ export function ArticleEditor({
             setDraftStatus('Saving...')
             try {
               const content = editor.storage.markdown.getMarkdown()
-              const saved = await saveDraft({
+              const draftData = {
                 title, dek, content, gatePositionPct: 50, pricePence,
                 coverImageUrl, commentsEnabled, draftId: currentDraftId ?? undefined, dTag: editingDTag,
-              })
+              }
+              const saved = await saveDraft(draftData)
+              // Record the fingerprint so the unmount flush doesn't re-save it.
+              autoSaver.markSaved(draftData)
               setCurrentDraftId(saved.draftId)
               setDraftStatus('Saved')
               setTimeout(() => setDraftStatus(null), 2000)

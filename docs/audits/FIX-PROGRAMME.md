@@ -23,6 +23,29 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit M2 (pledge NULL tab_id) + M21 (editor close
+  discards work).**
+  - **M2 — pledge fulfilment left `read_events.tab_id` NULL.** `drives.ts` INSERTed
+    the fulfilment read with no `tab_id` (it can't know it — `applyLedgerDelta`
+    upserts the tab), but `confirmSettlement` advances reads `WHERE tab_id = $2`,
+    so the read stuck at `accrued`: the pledger's tab was debited + collected but
+    the writer was never paid. Now stamps `tab_id` from `applyLedgerDelta`'s
+    returned `tabId`. Latent (pledges parked) but no longer a money bug on revival.
+  - **M21 — editor close silently discarded work.** Autosave keyed its
+    idempotency fingerprint on `title|content` only (so dek/price/cover/comments
+    changes never saved) and fired only from TipTap body edits (a title-only new
+    article persisted nothing); close/supersede just `cancel()`led the debounce
+    with no flush. Now: the fingerprint (`createAutoSaver`) covers every persisted
+    field; a metadata-change `useEffect` autosaves title/dek/price/cover/comments
+    edits (skipping the settled initial mount — both editor surfaces gate mount on
+    `editorReady`, so there's no async-load race); and unmount flushes a
+    fire-and-forget `saveDraft` when `isDirty` + real content exists. Crucially a
+    `disposedRef` (set after publish/schedule) suppresses the flush so it can't
+    recreate a disposed draft (the "draft + published article, both listed" bug),
+    and explicit Save calls the new `markSaved` so the flush skips identical
+    content — every save still targets `currentDraftId`/`dTag` (one-draft-per-
+    article invariant). Verified: gateway + web typecheck clean; `next build`
+    clean; hairline tripwire clean.
 - **2026-07-16** — **Deep-audit M20 (dek dropped by the draft pipeline) +
   M19 scheduled residual (migration 157).** `article_drafts` had no column for
   the dek (standfirst) or the "allow replies" toggle, so the whole draft pipeline

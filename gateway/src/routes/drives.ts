@@ -824,7 +824,7 @@ async function fulfillDrive(driveId: string): Promise<void> {
         //    pledger may have no tab row yet (one_tab_per_reader UNIQUE reader_id).
         //    The batch txn is the unit of work and fulfilled pledges aren't
         //    re-selected, so this is one entry per pledge, ref = the read_events row.
-        await applyLedgerDelta(client, {
+        const { tabId } = await applyLedgerDelta(client, {
           accountId: pledge.pledger_id,
           counterpartyId: drive.target_writer_id,
           deltaPence: pledge.amount_pence,
@@ -833,6 +833,16 @@ async function fulfillDrive(driveId: string): Promise<void> {
           refId: readEvent.rows[0].id,
           touch: ['last_read_at'],
         })
+
+        // 3b. Stamp the read with its tab (M2): confirmSettlement advances reads
+        // `WHERE tab_id = $2`, so a NULL tab_id (the read INSERT can't know the
+        // tab id — applyLedgerDelta upserts it) left the read stuck 'accrued' —
+        // the pledger's tab was debited and collected but the read never reached
+        // platform_settled, so no writer_accrual/payout ever fired.
+        await client.query(
+          `UPDATE read_events SET tab_id = $1 WHERE id = $2`,
+          [tabId, readEvent.rows[0].id]
+        )
 
         // 4. Mark pledge as fulfilled
         await client.query(

@@ -121,6 +121,18 @@ export async function unscheduleDraft(draftId: string): Promise<void> {
 //   debouncedSave({ title, content, gatePositionPct, pricePence })
 // =============================================================================
 
+function fingerprintOf(data: DraftData): string {
+  return [
+    data.title ?? "",
+    data.content ?? "",
+    data.dek ?? "",
+    data.pricePence ?? "",
+    data.gatePositionPct ?? "",
+    data.coverImageUrl ?? "",
+    data.commentsEnabled ?? "",
+  ].join("|");
+}
+
 export function createAutoSaver(delayMs = 3000) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastSavedContent = "";
@@ -133,7 +145,9 @@ export function createAutoSaver(delayMs = 3000) {
     if (timer) clearTimeout(timer);
 
     timer = setTimeout(async () => {
-      const fingerprint = `${data.title}|${data.content}`;
+      // Fingerprint covers every persisted field (M21): keying on title|content
+      // alone meant a dek / price / cover / comments-only change never saved.
+      const fingerprint = fingerprintOf(data);
       if (fingerprint === lastSavedContent) return;
 
       try {
@@ -151,6 +165,15 @@ export function createAutoSaver(delayMs = 3000) {
       clearTimeout(timer);
       timer = null;
     }
+  };
+
+  // Whether `data` differs from the last successful save — lets a caller decide
+  // to flush on close without risking a redundant write.
+  debouncedSave.isDirty = (data: DraftData) => fingerprintOf(data) !== lastSavedContent;
+  // Record a save made outside the debounce (an explicit Save) so the next
+  // autosave/flush doesn't re-persist identical content.
+  debouncedSave.markSaved = (data: DraftData) => {
+    lastSavedContent = fingerprintOf(data);
   };
 
   return debouncedSave;
