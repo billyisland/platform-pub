@@ -113,7 +113,11 @@ export function computePublicationSplits(
       if (bps <= 0) continue
       articleBpsUsed.set(share.articleId, used + bps)
       const articleNet = articleEarnings.get(share.articleId) || 0
-      const payout = Math.floor(articleNet * bps / 10000)
+      // Clamp to the remaining pool like the flat-fee branch (M4): the override
+      // pays a fraction of the ARTICLE's net, but flat fees already consumed part
+      // of the shared pool, so an unclamped combined flat+bps distribution could
+      // pay out more than the pool — the platform funding the difference.
+      const payout = Math.min(Math.floor(articleNet * bps / 10000), remainingPool)
       if (payout <= 0) continue
       remainingPool -= payout
       splits.push({
@@ -1241,10 +1245,15 @@ class PayoutService {
         id: string; article_id: string; account_id: string;
         share_type: string; share_value: number; paid_out: boolean;
       }>(
+        // Deterministic order (M4): when the pool is short the earlier-processed
+        // shares get funded first, so the ordering is load-bearing. Flat fees
+        // ('flat_fee' < 'revenue_bps') are honoured before proportional bps
+        // overrides, then stable by (article_id, id) for reproducibility.
         `SELECT pas.id, pas.article_id, pas.account_id, pas.share_type, pas.share_value, pas.paid_out
          FROM publication_article_shares pas
          JOIN articles a ON a.id = pas.article_id
-         WHERE pas.publication_id = $1`,
+         WHERE pas.publication_id = $1
+         ORDER BY pas.share_type, pas.article_id, pas.id`,
         [publicationId],
       )
 

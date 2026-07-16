@@ -1009,6 +1009,14 @@ class SettlementService {
           r.writer_payout_id !== null
             ? splitsByPayout.get(r.writer_payout_id)
             : undefined,
+        // M3: an individual read claimed by a still-pending writer payout
+        // (platform_settled + writer_payout_id set; completion would have flipped
+        // it to writer_paid). The pending transfer's amount is locked and will
+        // pay this read in full, so treat it as paid for the reversal.
+        claimedByPendingPayout:
+          r.publication_id === null &&
+          r.state === 'platform_settled' &&
+          r.writer_payout_id !== null,
       }));
       const planAccruals: ReversalAccrual[] = accrualRows.map((a) => ({
         id: a.id,

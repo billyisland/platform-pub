@@ -106,6 +106,19 @@ export interface ReversalRead {
    * was never paid out; the read is charged back on the reader side only.
    */
   publicationSplits?: { accountId: string; amountPence: number }[]
+  /**
+   * M3: an INDIVIDUAL (non-publication) read that is claimed by a still-PENDING
+   * writer payout — state='platform_settled' but writer_payout_id IS NOT NULL.
+   * The payout's transfer amount was locked at claim time and the resume sweep
+   * WILL transfer it in full (a writer payout is atomic — all-or-nothing), so
+   * this read's slice is money the reader is clawing back exactly like a
+   * 'writer_paid' read. Without reversing it, the pending payout pays out
+   * clawed-back money with no reversing entry (money created). Mirrors the
+   * released-but-claimed tribute-accrual treatment above. Residual (rare): if
+   * that payout ultimately fails terminally, the reversal slightly over-reports
+   * the platform's loss — a reconciliation-only artefact, never phantom money.
+   */
+  claimedByPendingPayout?: boolean
 }
 
 export interface ReversalAccrual {
@@ -228,10 +241,12 @@ export function computeChargebackReversal(input: ReversalInput): ReversalPlan {
     // payout state. cp = reader, mirroring the forward entry.
     const readNet = perReadNetPence(r.amountPence, platformFeeBps)
     if (readNet !== 0) addAccrual(r.writerId, readNet)
-    if (r.state === 'writer_paid') {
+    if (r.state === 'writer_paid' || r.claimedByPendingPayout) {
       // PAID side: author's actual receipt for R = read net minus the carve of
       // its DIRECT children — the roots (the author's depth-0 children), matching
       // the state-agnostic carve at payout. Zero accruals ⇒ full read net.
+      // Fires for a read already paid OR one claimed by a pending payout that
+      // will pay it in full (M3 — see ReversalRead.claimedByPendingPayout).
       const authorNet = readNet - rootGross(r.id)
       if (authorNet !== 0) addWriter(r.writerId, authorNet)
     }

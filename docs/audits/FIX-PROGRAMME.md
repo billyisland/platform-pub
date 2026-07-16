@@ -23,6 +23,32 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit MEDIUM money batch (M3, M4).**
+  - **M4 — publication-split overdraw + nondeterministic short-pool order.** In
+    `computePublicationSplits` (`payout.ts`) the flat-fee branch checked
+    `remainingPool` but the `revenue_bps` override computed `articleNet·bps/10000`
+    unchecked, so a combined flat+bps distribution could pay out more than the
+    pool (platform funding the difference). Clamped the override to
+    `Math.min(…, remainingPool)`. Also added `ORDER BY pas.share_type,
+    pas.article_id, pas.id` to the shares load (flat fees before proportional bps,
+    stable by id) so which fee is honoured when the pool is short is deterministic.
+  - **M3 — chargeback during a pending payout created money.** The chargeback
+    planner (`chargeback.ts`) reversed the author's paid slice only for
+    `state='writer_paid'` reads, but a read claimed by a still-PENDING writer
+    payout (state='platform_settled', writer_payout_id set) has its transfer
+    amount locked at claim time and the resume sweep transfers it in full — so
+    that slice was clawed-back money paid with no reversing entry. Added
+    `ReversalRead.claimedByPendingPayout` (set in `settlement.ts` for a non-pub,
+    platform_settled, claimed read) and reverse it as-if-paid, mirroring the
+    already-closed released-but-claimed tribute-accrual case. A writer payout is
+    atomic (all-or-nothing), so the residual (payout later fails terminally →
+    slight over-report) is reconciliation-only, never phantom money. **The
+    publication-split analogue is deliberately left open** — its split load stays
+    paid-only because a pending pub payout's splits can individually fail KYC, so
+    reversing not-yet-paid splits would risk over-debiting; carried as a residual
+    in CONSOLIDATED-TODO §0e.
+  Verified: payment-service typecheck clean; full payment-service suite green
+  (164 passed).
 - **2026-07-16** — **Deep-audit MEDIUM feeds/ingest batch (M11, M12, M14, M18).**
   - **M11 — dedup could hide both copies.** The `candidates` CTE
     (`gateway/src/lib/dedup-sql.ts`) picked the cross-source winner from `matched`
