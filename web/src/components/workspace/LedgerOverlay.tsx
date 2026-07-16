@@ -22,7 +22,7 @@ export function LedgerOverlay() {
   // 64px (my-8) vertical margin.
   return (
     <Glasshouse onClose={close} maxWidth={1040} ariaLabel="Ledger" persistKey="ledger">
-      <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
+      <div data-explain="ledger" className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
         <LedgerPanel inOverlay />
       </div>
     </Glasshouse>

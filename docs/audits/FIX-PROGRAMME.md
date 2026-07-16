@@ -23,6 +23,33 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Explain C3 shipped — destination-surface captions
+  (EXPLAIN-ADR Appendix A.3d).** 29 new hover-only kinds across the six
+  ∀-menu destinations, copy Ed-approved as drafted with all four new money
+  sites (dashboard.pricing, dashboard.gifts, network.dmFee, settings.payment)
+  confirmed: `messages` (+ .notifications/.new/.thread), `dashboard`
+  (+ .context/.articles/.gifts/.pricing), `library` (+ .bookmarks/.history),
+  `network` (+ .dmFee/.following/.blocked/.muted), `ledger` (+ .balance/
+  .allowance/.transactions/.subscriptions — the base carries the approved
+  "this is your reading tab" sentence), `settings` (+ .payment/.discovery/
+  .reach/.theme/.typeSize/.export). Base kinds ride the overlay scroll
+  bodies (Messages, flush, tags the `MessagesInbox` roots); `SettingsSection`/
+  `SettingsRow` gained the optional `dataExplain` prop; nested tags
+  (ledger.allowance ⊂ ledger.balance, settings.discovery ⊂ settings.reach)
+  resolve innermost via `closest()`. No engine work. Deliberately
+  uncaptioned: flag-gated affordances, publication-context dashboard tabs,
+  transient panels, self-describing forms, the Followers tab (A.3d lists
+  them). Also removed SubscriptionsSection's pre-existing `divide-y`
+  hairline (touched file; rows' own py-4 rhythm separates). Remaining: C4
+  (profile + surface overlays), copy to be drafted for review first.
+- **2026-07-16** — **Explain C2 shipped — writing-surface captions
+  (EXPLAIN-ADR Appendix A.3c; logged late, shipped in `63d1ee6`).** 24
+  hover-only kinds across the note Composer, the article editor, and the
+  FeedComposer; copy Ed-approved as drafted. Wiring patterns established:
+  `editor.gate` set in `PaywallGateNode`'s node-view DOM;
+  `ToolbarButton`/`AppearanceControl` carry the optional `dataExplain` prop;
+  `feedComposer.volume` nests inside `feedComposer.source` so the row's two
+  ×s resolve to different copy.
 - **2026-07-16** — **Explain C1 shipped — pane chrome + Reader interior captions
   (EXPLAIN-ADR Appendix A.3b).** Six new hover-only kinds, copy Ed-approved
   as drafted: `pane.resize` (stretch handle; opens with the `vessel.resize`

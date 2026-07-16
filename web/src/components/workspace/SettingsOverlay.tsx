@@ -22,7 +22,7 @@ export function SettingsOverlay() {
   // vertical margin.
   return (
     <Glasshouse onClose={close} maxWidth={720} ariaLabel="Settings" persistKey="settings">
-      <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
+      <div data-explain="settings" className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
         <SettingsPanel inOverlay initialLinked={linked} initialFollows={follows} />
       </div>
     </Glasshouse>

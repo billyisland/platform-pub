@@ -63,7 +63,7 @@ export function AccountLedger({ initialIncludeFreeReads = false }: { initialIncl
   useEffect(() => { void fetchEntries(filter, 0, false, includeFreeReads) }, [filter, includeFreeReads])
 
   return (
-    <div className="mb-10">
+    <div data-explain="ledger.transactions" className="mb-10">
       {/* Filter tabs */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-1">

@@ -192,7 +192,7 @@ export function NetworkReachPanel() {
     <>
         <div className="space-y-8">
           {/* Nostr — the root, always present. "Go public" is the discovery opt-in. */}
-          <div>
+          <div data-explain="settings.discovery">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 pr-6">
                 <p className="text-ui-sm text-black">Nostr</p>

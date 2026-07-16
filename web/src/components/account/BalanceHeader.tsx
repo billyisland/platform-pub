@@ -17,7 +17,7 @@ export function BalanceHeader({ balancePence, freeAllowanceRemainingPence, freeA
     : 0
 
   return (
-    <div className="bg-glasshouse-well px-6 py-8 mb-8">
+    <div data-explain="ledger.balance" className="bg-glasshouse-well px-6 py-8 mb-8">
       <p className="label-ui text-grey-300 mb-2">Net balance</p>
       <p className={`font-serif text-[40px] font-light tracking-tight ${isPositive ? 'text-black' : 'text-crimson'}`}>
         {!isPositive && '−'}£{(Math.abs(balancePence) / 100).toFixed(2)}
@@ -27,7 +27,7 @@ export function BalanceHeader({ balancePence, freeAllowanceRemainingPence, freeA
       </p>
 
       {freeAllowanceTotalPence > 0 && (
-        <div className="mt-6">
+        <div data-explain="ledger.allowance" className="mt-6">
           <div className="flex items-center justify-between mb-1.5">
             <p className="label-ui text-grey-300">Free allowance</p>
             <p className="font-mono text-mono-xs text-grey-400">

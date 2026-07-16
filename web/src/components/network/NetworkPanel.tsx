@@ -140,7 +140,7 @@ export function NetworkPanel({
 
       {/* Always-visible settings */}
       <div className="space-y-8 mb-8">
-        <section className="bg-glasshouse-well px-6 py-5">
+        <section data-explain="network.dmFee" className="bg-glasshouse-well px-6 py-5">
           <DmFeeSettings />
         </section>
       </div>
@@ -190,6 +190,7 @@ export function NetworkPanel({
           role="tabpanel"
           id="network-panel-following"
           aria-labelledby="network-tab-following"
+          data-explain="network.following"
         >
           {writersLoading ? (
             <ListSkeleton />
@@ -304,6 +305,7 @@ export function NetworkPanel({
           role="tabpanel"
           id="network-panel-blocked"
           aria-labelledby="network-tab-blocked"
+          data-explain="network.blocked"
         >
           <section className="bg-glasshouse-well px-6 py-5">
             <BlockList />
@@ -317,6 +319,7 @@ export function NetworkPanel({
           role="tabpanel"
           id="network-panel-muted"
           aria-labelledby="network-tab-muted"
+          data-explain="network.muted"
         >
           <section className="bg-glasshouse-well px-6 py-5">
             <MuteList />

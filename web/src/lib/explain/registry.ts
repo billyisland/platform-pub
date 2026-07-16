@@ -67,6 +67,40 @@ export type ExplainKind =
   | "feedComposer.order"
   | "feedComposer.hide"
   | "feedComposer.delete"
+  // C3 (2026-07-16) — destination surfaces, all hover-only (pane mode). Each
+  // overlay's base kind rides its scroll body (the `reader` pattern); the
+  // generic `pane` copy keeps answering pane chrome. Messages (the merged
+  // notifications + DMs inbox), the writer Dashboard, Library, Network,
+  // Ledger (the money surface; copy Ed-approved), and Settings.
+  | "messages"
+  | "messages.notifications"
+  | "messages.new"
+  | "messages.thread"
+  | "dashboard"
+  | "dashboard.context"
+  | "dashboard.articles"
+  | "dashboard.gifts"
+  | "dashboard.pricing"
+  | "library"
+  | "library.bookmarks"
+  | "library.history"
+  | "network"
+  | "network.dmFee"
+  | "network.following"
+  | "network.blocked"
+  | "network.muted"
+  | "ledger"
+  | "ledger.balance"
+  | "ledger.allowance"
+  | "ledger.transactions"
+  | "ledger.subscriptions"
+  | "settings"
+  | "settings.payment"
+  | "settings.discovery"
+  | "settings.reach"
+  | "settings.theme"
+  | "settings.typeSize"
+  | "settings.export"
   // per-feed instance + tagged leaves
   | "vessel"
   | "vessel.name"
@@ -167,6 +201,73 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
     "This hides the feed without destroying it. Restore a hidden one from the menu at any time.",
   "feedComposer.delete":
     "This deletes the feed for good. If you only want it out of the way, hide it instead.",
+  // --- C3: destination surfaces (Appendix A.3d) ---
+  messages:
+    "This is your inbox, in three parts: notifications on the left, your conversations in the middle, and the open conversation on the right. Everything addressed to you lands somewhere here.",
+  "messages.notifications":
+    "This is the activity log: follows, replies, quotes, mentions, and news from any publication you belong to. Click a row to open the thing it is about; a message notification opens the conversation here in place.",
+  // Echoes the omnivorous grammar of feedComposer.addSource ("whatever you
+  // have"): one grammar for one gesture (A.4).
+  "messages.new":
+    "This starts a conversation. Address it with whatever you have: a username, an email address, an npub.",
+  "messages.thread":
+    "This is the open conversation. Write at the bottom; hover any message to like it or answer it directly. Older messages load from the top.",
+  dashboard:
+    "This is your dashboard: what you have written, who subscribes to you, what your work earns and what it costs to read. Money itself moves in the Ledger; this is where you run the writing.",
+  "dashboard.context":
+    "Dashboards come one per identity: your own, and one for each publication you belong to. Switch here, or start a new publication.",
+  "dashboard.articles":
+    "Drafts and published pieces share this table, drafts first. Schedule a draft and it publishes itself at the time you set; publish it and the draft is cleared away, leaving the piece with its reads and earnings. Replies turns a piece's thread on or off.",
+  "dashboard.gifts":
+    "This makes gift links for a paywalled piece: anyone opening one reads it free. Each link carries a set number of uses and can be revoked.",
+  "dashboard.pricing":
+    "Your prices live here: what a monthly subscription to you costs, and the default price of a paywalled article, either scaling with length or fixed. Getting paid out needs the Stripe connection at the bottom, made once.",
+  library:
+    "This is your library: pieces you have bookmarked and pieces you have read. Anything here opens straight back into the reader.",
+  "library.bookmarks":
+    "Pieces you have saved with the Bookmark action on a card. They stay here until you unbookmark them.",
+  "library.history":
+    "Every piece you have opened, newest first, marked paid or free. What the paid ones actually cost you is in the Ledger.",
+  network:
+    "This is your network: who you follow, who follows you, and the accounts you have blocked or muted.",
+  "network.dmFee":
+    "This puts a price on messages from people you don't follow: set one and a stranger pays it to reach you. Blank means anyone can write free. Overrides give particular people a different price, or none.",
+  // Teaches the feed-derived external-follow invariant from the reader's side.
+  "network.following":
+    "Writers you follow on all.haus. Following someone from another network works differently: add them to one of your feeds, and the following is done there.",
+  "network.blocked":
+    "Accounts you have blocked: they disappear from your feeds and can no longer reply to your work. Unblock here.",
+  "network.muted":
+    "Accounts you have muted: you no longer see them, and they are not told. To also stop someone replying to you, block instead.",
+  // Carries the Ed-approved "this is your reading tab" sentence (C3 scope).
+  ledger:
+    "This is your ledger: everything your account earns and spends, listed to the penny. Most of it is your reading tab: paid pieces add their price as you read, and the tab settles in one small charge later, not one card form per article.",
+  "ledger.balance":
+    "One figure for the whole account: what you have earned minus what you have read. In credit, the balance is yours; outstanding, it settles from your card when the tab reaches its threshold.",
+  "ledger.allowance":
+    "This is your free allowance, spent before the tab is touched: paid reading draws it down first, and only when it is gone do prices start landing on your tab.",
+  "ledger.transactions":
+    "Every movement, one row each: reads, settlements, subscriptions, earnings. Filter by direction, or hide the free reads.",
+  "ledger.subscriptions":
+    "Subscriptions you hold. Each row manages its own: whether new pieces reach your email, whether the subscription shows on your profile, and cancelling, which keeps your access to the end of the period.",
+  settings:
+    "These are the account's settings: who you are, how you pay and get paid, how far your words travel, and this device's preferences. Anything about a particular feed lives in that feed's composer instead.",
+  "settings.payment":
+    "The card on file settles your reading tab, at the threshold or monthly, and pays for subscriptions. Stripe Connect is the other direction: it is how your earnings reach your bank.",
+  "settings.discovery":
+    "This is your visibility on the open Nostr network. Public publishes your profile beyond all.haus, so people anywhere can find and follow you; Private withdraws it.",
+  // Reciprocates composer.crosspost ("The default for each network is set in
+  // Settings, under Reach other networks").
+  "settings.reach":
+    "Networks you have linked, and what each may do: whether your notes crosspost there by default, and whether the people you follow there can be brought into your feeds. The composer's per-note switches start from these defaults.",
+  "settings.theme":
+    "Light or dark for the whole site, on this device; System follows the machine's setting. Feeds keep their own colours in both.",
+  // Reciprocates feedComposer.textSize ("the sitewide type size lives in
+  // Settings").
+  "settings.typeSize":
+    "This steps the site's type size on this device. A single feed can be stepped on its own too, from its feed composer.",
+  "settings.export":
+    "This downloads everything that is yours: your keys, your writing, your receipts. The keys are the point: with them, your identity and your audience work anywhere on the open network, not just here.",
   "vessel.name":
     "This is the feed's name. Click to rename it and manage its sources, or click and drag to move the feed container around this workspace.",
   "vessel.gear":

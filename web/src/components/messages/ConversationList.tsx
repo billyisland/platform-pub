@@ -22,6 +22,7 @@ export function ConversationList({
         </p>
         <button
           onClick={onNewMessage}
+          data-explain="messages.new"
           className="text-ui-xs font-sans text-crimson hover:text-crimson-dark"
         >
           New

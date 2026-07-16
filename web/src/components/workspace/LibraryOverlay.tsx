@@ -22,7 +22,7 @@ export function LibraryOverlay() {
   // scroll fills the pane minus its 64px (my-8) vertical margin.
   return (
     <Glasshouse onClose={close} maxWidth={780} ariaLabel="Library" persistKey="library">
-      <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
+      <div data-explain="library" className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
         <LibraryPanel inOverlay initialTab={tab} />
       </div>
     </Glasshouse>

@@ -216,7 +216,7 @@ export function NotificationsPanel({
   }
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    <div data-explain="messages.notifications" className={`flex flex-col ${className}`}>
       <div className={`flex items-baseline justify-between mb-6 ${inOverlay ? 'pr-10' : ''}`}>
         <div>
           <h1 className="font-sans text-2xl font-medium text-black tracking-tight">Notifications</h1>

@@ -148,6 +148,7 @@ All re-verified in source 2026-07-07 unless marked. (The stale ForallMenu z-50 c
 15. Feed-card chassis: byline/dialogue pinned at `text-[11px]`/`text-[14.5px]` px — migrate to rem tokens so the global type-size control scales cards; amend the chassis spec in CLAUDE.md.
 16. Pre-existing hairline debt (PipPanel/NewFeedPrompt 1px borders, globals.css comment hit) — burn down opportunistically per the no-new-hairlines rule.
 17. `AUDIT-REPORT.md` residue: publications PATCH interpolates Zod-parsed keys as SQL column names (#6 — verified, `gateway/src/routes/publications/core.ts:134-149`; injection-bounded by the schema but fragile); stale CLAUDE.md doc refs (#14); inconsistent error shapes (#19 — see §8.8; note the `sendError` helper was **deleted** in the Day-6 P2 pass, so this now needs a fresh helper); pervasive `as any` (#20, ~23 in web); `requirePublicationPermission()` no-args (#21) and no note soft-delete (#24) — both carried unverified; naming (#25–27; `platform-pub`/`platformpub` vs all.haus in compose/package/credentials).
+18. **BalanceHeader sub-copy muddled** (flagged in the Explain C3 review, 2026-07-16) — `web/src/components/account/BalanceHeader.tsx:26` shows "In credit — settles when threshold reached" for a *positive* net balance, but positive means the platform owes the reader (earnings exceed tab); the threshold-settlement clause describes the *negative* (outstanding-tab) case. Swap/reword the two branches. (The `ledger.balance` Explain caption already describes the intended meaning.)
 
 ## 8. Performance, scaling & infrastructure
 

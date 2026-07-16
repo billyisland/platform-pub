@@ -295,7 +295,7 @@ export function MessageThread({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div data-explain="messages.thread" className="flex flex-col h-full">
       {/* Commission modal — pledge drives parked (pledgesEnabled) */}
       {pledgesEnabled() && showCommission && memberId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowCommission(false)}>

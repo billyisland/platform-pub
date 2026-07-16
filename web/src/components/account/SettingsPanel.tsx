@@ -125,10 +125,11 @@ export function SettingsPanel({
           <SettingsSection label="Email">
             <EmailChange />
           </SettingsSection>
-          <SettingsSection label="Payment & payouts">
+          <SettingsSection label="Payment & payouts" dataExplain="settings.payment">
             <PaymentSection />
           </SettingsSection>
           <SettingsSection
+            dataExplain="settings.reach"
             label="Reach other networks"
             description="Your all.haus account is a Nostr identity. Reach outward to other networks — link an account you already have, or have all.haus set one up and run it for you."
           >
@@ -151,12 +152,14 @@ export function SettingsPanel({
               <SettingsRow
                 label="Theme"
                 description="Light or dark across the site. System follows your device."
+                dataExplain="settings.theme"
               >
                 <ColorModeControl />
               </SettingsRow>
               <SettingsRow
                 label="Type size"
                 description="Scales text across the whole site."
+                dataExplain="settings.typeSize"
               >
                 <TypeSizeControl />
               </SettingsRow>
@@ -169,7 +172,7 @@ export function SettingsPanel({
             label="Export my data"
             description="Download your data, receipts, and content keys."
           >
-            <button onClick={() => setShowExport(true)} className="btn">Export</button>
+            <button onClick={() => setShowExport(true)} data-explain="settings.export" className="btn">Export</button>
           </SettingsSection>
         </SettingsGroup>
 

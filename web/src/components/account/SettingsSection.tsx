@@ -42,14 +42,17 @@ export function SettingsGroup({
 export function SettingsRow({
   label,
   description,
+  dataExplain,
   children,
 }: {
   label: string
   description?: string
+  // Optional Explain tag (C3) — the ToolbarButton/AppearanceControl pattern.
+  dataExplain?: string
   children: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-1">
+    <div data-explain={dataExplain} className="flex items-center justify-between gap-4 py-1">
       <div className="min-w-0 pr-4">
         <p className="text-ui-sm text-black">{label}</p>
         {description && (
@@ -67,15 +70,18 @@ export function SettingsSection({
   label,
   description,
   tone = 'default',
+  dataExplain,
   children,
 }: {
   label: string
   description?: string
   tone?: 'default' | 'danger'
+  // Optional Explain tag (C3) — covers the label + card as one target.
+  dataExplain?: string
   children: ReactNode
 }) {
   return (
-    <div>
+    <div data-explain={dataExplain}>
       <p
         className={`label-ui mb-2 ${
           tone === 'danger' ? 'text-crimson' : 'text-grey-600'

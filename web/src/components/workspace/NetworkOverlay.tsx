@@ -21,7 +21,7 @@ export function NetworkOverlay() {
   // the pane minus its 64px (my-8) vertical margin.
   return (
     <Glasshouse onClose={close} maxWidth={780} ariaLabel="Network" persistKey="network">
-      <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
+      <div data-explain="network" className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
         <NetworkPanel inOverlay initialTab={tab} />
       </div>
     </Glasshouse>

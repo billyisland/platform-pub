@@ -430,6 +430,111 @@ All hover-only, same as A.3b. Each surface carries a base kind on its scroll bod
 **`feedComposer.delete`** *(the Delete button)*
 > This deletes the feed for good. If you only want it out of the way, hide it instead.
 
+### A.3d Explain labels — destination surfaces (C3, shipped 2026-07-16; copy Ed-approved as drafted, all four money sites confirmed)
+
+All hover-only, same as A.3b/A.3c. Each of the six ∀-menu destinations carries a base kind on its overlay scroll body (the `reader` pattern; Messages, which is flush, tags the `MessagesInbox` root on both its desktop and mobile returns); the generic `pane` copy keeps answering pane chrome. Wiring notes: `SettingsSection` and `SettingsRow` gained the optional `dataExplain` prop (the ToolbarButton/AppearanceControl pattern); the Library tab bodies are wrapped in plain tagged divs (their components return state-dependent roots); `ledger.allowance` nests inside `ledger.balance` and `settings.discovery` inside `settings.reach` — the hit-test's `closest()` resolves the innermost tag, the same nesting grammar as `feedComposer.volume`. No engine work was needed.
+
+Deliberately uncaptioned: flag-gated affordances (Vouches tab, the thread Commission button, Ledger's pledges section + tributes-reserved block, Analytics tabs, assisted "Set one up", follow-import affordances, PostLinkImportOffer); the publication-context dashboard tabs (Members/Settings/Rate card/Payroll/Earnings — deep conditional surface, named by `dashboard.context`; its own slice if ever wanted); transient panels (schedule picker, gift-links expansion, new-message form, export modal, publication-create form, connect banner); self-describing forms (Profile/Email, notification + reading toggles, danger zone); the read-only Followers tab (base covers it).
+
+#### Messages (`MessagesInbox`)
+
+**`messages`** *(base: the inbox root, desktop three-column and mobile pager alike)*
+> This is your inbox, in three parts: notifications on the left, your conversations in the middle, and the open conversation on the right. Everything addressed to you lands somewhere here.
+
+**`messages.notifications`** *(the notifications column, `NotificationsPanel` root)*
+> This is the activity log: follows, replies, quotes, mentions, and news from any publication you belong to. Click a row to open the thing it is about; a message notification opens the conversation here in place.
+
+**`messages.new`** *(the New button on the conversation list; echoes the omnivorous "whatever you have" grammar of `feedComposer.addSource`)*
+> This starts a conversation. Address it with whatever you have: a username, an email address, an npub.
+
+**`messages.thread`** *(the reading pane, `MessageThread` root)*
+> This is the open conversation. Write at the bottom; hover any message to like it or answer it directly. Older messages load from the top.
+
+#### Dashboard (`DashboardPanel`)
+
+**`dashboard`** *(base)*
+> This is your dashboard: what you have written, who subscribes to you, what your work earns and what it costs to read. Money itself moves in the Ledger; this is where you run the writing.
+
+**`dashboard.context`** *(the Personal / publication switcher row, incl. "+ New publication")*
+> Dashboards come one per identity: your own, and one for each publication you belong to. Switch here, or start a new publication.
+
+**`dashboard.articles`** *(the unified drafts + published table)*
+> Drafts and published pieces share this table, drafts first. Schedule a draft and it publishes itself at the time you set; publish it and the draft is cleared away, leaving the piece with its reads and earnings. Replies turns a piece's thread on or off.
+
+**`dashboard.gifts`** *(the Gifts action, paywalled rows only)*
+> This makes gift links for a paywalled piece: anyone opening one reads it free. Each link carries a set number of uses and can be revoked.
+
+**`dashboard.pricing`** *(the Pricing tab body)*
+> Your prices live here: what a monthly subscription to you costs, and the default price of a paywalled article, either scaling with length or fixed. Getting paid out needs the Stripe connection at the bottom, made once.
+
+#### Library (`LibraryPanel`)
+
+**`library`** *(base)*
+> This is your library: pieces you have bookmarked and pieces you have read. Anything here opens straight back into the reader.
+
+**`library.bookmarks`** *(the Bookmarks tab body)*
+> Pieces you have saved with the Bookmark action on a card. They stay here until you unbookmark them.
+
+**`library.history`** *(the History tab body)*
+> Every piece you have opened, newest first, marked paid or free. What the paid ones actually cost you is in the Ledger.
+
+#### Network (`NetworkPanel`)
+
+**`network`** *(base)*
+> This is your network: who you follow, who follows you, and the accounts you have blocked or muted.
+
+**`network.dmFee`** *(the DM access card above the tabs)*
+> This puts a price on messages from people you don't follow: set one and a stranger pays it to reach you. Blank means anyone can write free. Overrides give particular people a different price, or none.
+
+**`network.following`** *(the Following tab body; teaches the feed-derived external-follow invariant from the reader's side)*
+> Writers you follow on all.haus. Following someone from another network works differently: add them to one of your feeds, and the following is done there.
+
+**`network.blocked`** *(the Blocked tab body)*
+> Accounts you have blocked: they disappear from your feeds and can no longer reply to your work. Unblock here.
+
+**`network.muted`** *(the Muted tab body)*
+> Accounts you have muted: you no longer see them, and they are not told. To also stop someone replying to you, block instead.
+
+#### Ledger (`LedgerPanel`)
+
+**`ledger`** *(base — carries the approved "this is your reading tab" sentence)*
+> This is your ledger: everything your account earns and spends, listed to the penny. Most of it is your reading tab: paid pieces add their price as you read, and the tab settles in one small charge later, not one card form per article.
+
+**`ledger.balance`** *(the Net balance header)*
+> One figure for the whole account: what you have earned minus what you have read. In credit, the balance is yours; outstanding, it settles from your card when the tab reaches its threshold.
+
+**`ledger.allowance`** *(the Free allowance meter, when present; nests inside `ledger.balance`)*
+> This is your free allowance, spent before the tab is touched: paid reading draws it down first, and only when it is gone do prices start landing on your tab.
+
+**`ledger.transactions`** *(the transaction table + filter pills)*
+> Every movement, one row each: reads, settlements, subscriptions, earnings. Filter by direction, or hide the free reads.
+
+**`ledger.subscriptions`** *(the Subscriptions section, when present)*
+> Subscriptions you hold. Each row manages its own: whether new pieces reach your email, whether the subscription shows on your profile, and cancelling, which keeps your access to the end of the period.
+
+#### Settings (`SettingsPanel`)
+
+**`settings`** *(base)*
+> These are the account's settings: who you are, how you pay and get paid, how far your words travel, and this device's preferences. Anything about a particular feed lives in that feed's composer instead.
+
+**`settings.payment`** *(the Payment & payouts section)*
+> The card on file settles your reading tab, at the threshold or monthly, and pays for subscriptions. Stripe Connect is the other direction: it is how your earnings reach your bank.
+
+**`settings.discovery`** *(the Nostr Public/Private block inside Reach other networks; nests inside `settings.reach`)*
+> This is your visibility on the open Nostr network. Public publishes your profile beyond all.haus, so people anywhere can find and follow you; Private withdraws it.
+
+**`settings.reach`** *(the Reach other networks section; reciprocates `composer.crosspost`)*
+> Networks you have linked, and what each may do: whether your notes crosspost there by default, and whether the people you follow there can be brought into your feeds. The composer's per-note switches start from these defaults.
+
+**`settings.theme`** *(the Theme row)*
+> Light or dark for the whole site, on this device; System follows the machine's setting. Feeds keep their own colours in both.
+
+**`settings.typeSize`** *(the Type size row; reciprocates `feedComposer.textSize`)*
+> This steps the site's type size on this device. A single feed can be stepped on its own too, from its feed composer.
+
+**`settings.export`** *(the Export button in Your data)*
+> This downloads everything that is yours: your keys, your writing, your receipts. The keys are the point: with them, your identity and your audience work anywhere on the open network, not just here.
+
 ### A.4 Copy notes
 
 - Deliberate duplications: "they stay where they are put" (beat 5 ↔ `floor` label) and the volume-knob line (beat 3 ↔ `card.byline` label). A user typically meets only one surface per session; the repetition harmonises rather than clashes. `pane.resize` opens with the `vessel.resize` sentence by the same reasoning: one grammar for one gesture.

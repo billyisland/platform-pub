@@ -291,7 +291,7 @@ export function MessagesInbox({
     ]
     const coverActive = !!activeConvId || showNewMessage
     return (
-      <div className={`relative flex flex-col ${className}`}>
+      <div data-explain="messages" className={`relative flex flex-col ${className}`}>
         {/* Segmented header — tracks the swipe, taps to jump. Right padding
             clears the Glasshouse ✕ in the top-right corner. */}
         <div role="tablist" aria-label="Messages sections" className="flex items-stretch gap-6 px-5 pr-12 shrink-0">
@@ -361,7 +361,7 @@ export function MessagesInbox({
   // Desktop — three columns side-by-side.
   // ---------------------------------------------------------------------------
   return (
-    <div className={`flex ${className}`}>
+    <div data-explain="messages" className={`flex ${className}`}>
       {/* Notifications — left */}
       <div className="md:flex-1 md:min-w-[300px] shrink-0 flex flex-col min-h-0 px-5 sm:px-8 py-10">
         <NotificationsPanel

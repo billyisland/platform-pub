@@ -174,7 +174,7 @@ export function DashboardPanel({
   return (
     <>
       {/* Context switcher */}
-      <div className="flex items-center gap-2 mb-6 text-ui-xs flex-wrap">
+      <div data-explain="dashboard.context" className="flex items-center gap-2 mb-6 text-ui-xs flex-wrap">
         {pubMemberships.length > 0 && (
           <>
             <span className="text-grey-600">Dashboard:</span>
@@ -475,7 +475,7 @@ function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pu
   if (items.length === 0) return <div className="py-20 text-center"><p className="text-ui-sm text-grey-600 mb-4">No articles or drafts yet.</p>{inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open() }} className="btn-text underline underline-offset-4">Write your first article</button> : <Link href="/write" className="btn-text underline underline-offset-4">Write your first article</Link>}</div>
 
   return (
-    <div className="overflow-x-auto bg-glasshouse-well">
+    <div data-explain="dashboard.articles" className="overflow-x-auto bg-glasshouse-well">
       <table className="w-full text-ui-xs">
         <thead><tr className="border-b-2 border-grey-200"><th className="px-4 py-3 text-left label-ui text-grey-400">Title</th><th className="px-4 py-3 text-left label-ui text-grey-400">Status</th><th className="px-4 py-3 text-right label-ui text-grey-400">Reads</th><th className="px-4 py-3 text-right label-ui text-grey-400">Earned</th><th className="px-4 py-3 text-center label-ui text-grey-400">Replies</th><th className="px-4 py-3 text-right label-ui text-grey-400">Actions</th></tr></thead>
         <tbody>{items.map(item => {
@@ -550,7 +550,7 @@ function ArticlesTab({ userId, pubkey, inOverlay = false }: { userId: string; pu
               <td className="px-4 py-3 text-right">
                 <div className="flex items-center justify-end gap-3">
                   {a.isPaywalled && (
-                    <button onClick={() => setGiftLinksOpenId(giftLinksOpenId === a.id ? null : a.id)} className={`text-grey-300 hover:text-black ${giftLinksOpenId === a.id ? 'text-black' : ''}`}>Gifts</button>
+                    <button onClick={() => setGiftLinksOpenId(giftLinksOpenId === a.id ? null : a.id)} data-explain="dashboard.gifts" className={`text-grey-300 hover:text-black ${giftLinksOpenId === a.id ? 'text-black' : ''}`}>Gifts</button>
                   )}
                   {inOverlay ? <button type="button" onClick={() => { useDashboardOverlay.getState().close(); useEditorOverlay.getState().open({ editEventId: a.nostrEventId }) }} className="text-grey-400 hover:text-black">Edit</button> : <Link href={`/write?edit=${a.nostrEventId}`} className="text-grey-400 hover:text-black">Edit</Link>}
                   <button onClick={() => handleUnpublish(a.id)} disabled={unpublishingId===a.id} className="text-grey-300 hover:text-black disabled:opacity-50">{unpublishingId===a.id ? '...' : 'Unpublish'}</button>
@@ -615,7 +615,7 @@ function PricingTab({ stripeReady }: { stripeReady: boolean }) {
   const annualPounds = (annualPence / 100).toFixed(2)
 
   return (
-    <div className="space-y-8">
+    <div data-explain="dashboard.pricing" className="space-y-8">
       <form onSubmit={handleSavePrice} className="space-y-8">
         {/* Subscription price */}
         <div className="bg-glasshouse-well px-6 py-5">

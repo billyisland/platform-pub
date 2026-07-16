@@ -74,8 +74,16 @@ export function LibraryPanel({
         ))}
       </div>
 
-      {tab === 'bookmarks' && <BookmarksTab inOverlay={inOverlay} />}
-      {tab === 'history' && <ReadingHistory inOverlay={inOverlay} />}
+      {tab === 'bookmarks' && (
+        <div data-explain="library.bookmarks">
+          <BookmarksTab inOverlay={inOverlay} />
+        </div>
+      )}
+      {tab === 'history' && (
+        <div data-explain="library.history">
+          <ReadingHistory inOverlay={inOverlay} />
+        </div>
+      )}
     </>
   )
 

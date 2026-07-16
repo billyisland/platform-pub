@@ -35,9 +35,11 @@ export function SubscriptionsSection() {
   if (subs.length === 0) return null
 
   return (
-    <div className="mb-10">
+    <div data-explain="ledger.subscriptions" className="mb-10">
       <p className="label-ui text-grey-400 mb-4">Subscriptions</p>
-      <div className="bg-glasshouse-well divide-y divide-grey-200/50">
+      {/* Row separation is the rows' own py-4 rhythm (CLAUDE.md: separation
+          is whitespace, never a thin divider) */}
+      <div className="bg-glasshouse-well">
         {subs.map(s => (
           <div key={s.id} className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-3 min-w-0">
