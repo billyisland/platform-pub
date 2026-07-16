@@ -154,7 +154,7 @@ export async function subscriptionSubscribersRoutes(app: FastifyInstance) {
             `INSERT INTO subscriptions (reader_id, writer_id, price_pence, status, is_comp, auto_renew,
              current_period_start, current_period_end)
            VALUES ($1, $2, 0, 'active', TRUE, FALSE, $3, $4)
-           ON CONFLICT (reader_id, writer_id) DO UPDATE
+           ON CONFLICT (reader_id, writer_id) WHERE writer_id IS NOT NULL DO UPDATE
              SET status = 'active', auto_renew = FALSE, is_comp = TRUE, price_pence = 0,
                  cancelled_at = NULL, current_period_start = EXCLUDED.current_period_start,
                  current_period_end = EXCLUDED.current_period_end, updated_at = now()

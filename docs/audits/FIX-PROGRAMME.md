@@ -23,6 +23,21 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit H9 (comp-subscription grant ON CONFLICT
+  arbiter).** `POST /subscriptions/:writerId/grant`'s first-time-grant INSERT
+  used `ON CONFLICT (reader_id, writer_id)` with no predicate, but migration
+  038 replaced the full unique with a **partial** index
+  (`idx_subscriptions_reader_writer … WHERE (writer_id IS NOT NULL)`), and
+  Postgres refuses to infer a partial index without a matching predicate — so
+  **every** first-time comp grant raised 42P10 (`there is no unique or
+  exclusion constraint matching the ON CONFLICT specification`) and 500'd; only
+  reactivations survived, via the SELECT-then-UPDATE branch. This is the §1.10
+  "functional gift mechanism," so gifting a new recipient was dead. Fix: append
+  `WHERE writer_id IS NOT NULL` to the ON CONFLICT clause. Verified in dev:
+  `EXPLAIN` of the exact statement now plans (Conflict Arbiter Index →
+  `idx_subscriptions_reader_writer`) where it previously errored; gateway
+  typecheck clean, image rebuilt + restarted. No schema change (the index
+  already existed). §0e HIGHs remaining: H2/H4–H8/H11–H14.
 - **2026-07-16** — **Deep-audit H1 + H10 (key-service internal-secret gate +
   loopback port bindings).** Next two HIGHs off the 2026-07-16 deep audit
   (§0e), both single-surface network-hardening fixes. **H1**: `key-service`'s
