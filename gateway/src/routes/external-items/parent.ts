@@ -228,7 +228,7 @@ async function fetchBlueskyParent(
         post.author.displayName || post.author.handle,
         post.author.handle,
         post.author.avatar ?? null,
-        `https://bsky.app/profile/${post.author.did}`,
+        post.author.did,
         post.record.text ?? null,
         JSON.stringify([]),
         parentReplyUri,
@@ -247,7 +247,7 @@ async function fetchBlueskyParent(
       authorName: post.author.displayName || post.author.handle,
       authorHandle: post.author.handle,
       authorAvatarUrl: post.author.avatar ?? null,
-      authorUri: `https://bsky.app/profile/${post.author.did}`,
+      authorUri: post.author.did,
       contentText: post.record.text ?? null,
       contentHtml: null,
       title: null,
@@ -332,6 +332,7 @@ async function fetchMastodonParent(
         display_name: string;
         avatar: string;
         url: string;
+        uri?: string; // ActivityPub actor id — the canonical author_uri
       };
       favourites_count?: number;
       replies_count?: number;
@@ -398,7 +399,7 @@ async function fetchMastodonParent(
         status.account.display_name || status.account.acct,
         status.account.acct,
         status.account.avatar ?? null,
-        status.account.url,
+        status.account.uri ?? status.account.url,
         sanitizeContent(status.content),
         JSON.stringify(media),
         null,
@@ -417,7 +418,7 @@ async function fetchMastodonParent(
       authorName: status.account.display_name || status.account.acct,
       authorHandle: status.account.acct,
       authorAvatarUrl: status.account.avatar ?? null,
-      authorUri: status.account.url,
+      authorUri: status.account.uri ?? status.account.url,
       contentText: null,
       contentHtml: sanitizeContent(status.content),
       title: null,

@@ -132,7 +132,7 @@ function blueskyPostToEntry(tvp: BlueskyThreadViewPost): ExternalThreadEntry {
     id: post.uri,
     authorName: post.author.displayName || post.author.handle,
     authorHandle: post.author.handle,
-    authorUri: `https://bsky.app/profile/${post.author.did}`,
+    authorUri: post.author.did,
     contentHtml: "",
     contentText: post.record.text ?? "",
     publishedAt: post.record.createdAt ?? new Date().toISOString(),
@@ -154,7 +154,7 @@ async function persistBlueskyFocus(
   try {
     const media = extractBlueskyViewMedia(post.embed);
     const authorName = post.author.displayName || post.author.handle;
-    const authorUri = `https://bsky.app/profile/${post.author.did}`;
+    const authorUri = post.author.did;
     const parentReplyUri = post.record.reply?.parent.uri ?? null;
     const publishedAt = Math.floor(
       new Date(post.record.createdAt ?? Date.now()).getTime() / 1000,
@@ -324,7 +324,7 @@ async function fetchMastodonThread(
       id: s.id,
       authorName: s.account.display_name || s.account.acct,
       authorHandle: s.account.acct,
-      authorUri: s.account.url,
+      authorUri: s.account.uri ?? s.account.url,
       contentHtml: sanitizeContent(s.content ?? ""),
       contentText: stripHtmlTags(s.content ?? ""),
       publishedAt: s.created_at,
@@ -390,6 +390,7 @@ async function persistMastodonFocus(
         display_name: string;
         avatar: string;
         url: string;
+        uri?: string; // ActivityPub actor id — the canonical author_uri
       };
       favourites_count?: number;
       replies_count?: number;
@@ -436,7 +437,7 @@ async function persistMastodonFocus(
         authorName,
         status.account.acct,
         status.account.avatar ?? null,
-        status.account.url,
+        status.account.uri ?? status.account.url,
         contentHtml,
         JSON.stringify(media),
         null,
@@ -455,7 +456,7 @@ async function persistMastodonFocus(
       authorName,
       authorHandle: status.account.acct,
       authorAvatarUrl: status.account.avatar ?? null,
-      authorUri: status.account.url,
+      authorUri: status.account.uri ?? status.account.url,
       contentText: stripHtmlTags(status.content ?? ""),
       contentHtml,
       title: null,

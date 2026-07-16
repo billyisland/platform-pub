@@ -60,6 +60,17 @@ const LEADER_POLL_MS = 30_000;
 // Bluesky subscriptions without sharding.
 const WILDCARD_DID_THRESHOLD = 150;
 
+// The pin's default URL cap is 2048 chars — far below a filtered upgrade URL
+// carrying up to WILDCARD_DID_THRESHOLD-1 DIDs (~48 chars each URL-encoded, so
+// ~7 KB at 149 DIDs). Without a larger cap `pinnedWebSocketOptions` throws for
+// any DID set past ~40, and since wildcard mode only engages at 150, every atproto
+// deployment between ~40 and 149 active sources could NEVER connect — connect()
+// threw, was caught, and retried the identical over-length URL forever, degrading
+// all Bluesky ingest to the delete-blind poll fallback (H11). 16 KB covers 149
+// DIDs and sits at the documented server upgrade-URL ceiling; past 150 the URL
+// carries no wantedDids at all, so this cap never binds in wildcard mode.
+const JETSTREAM_MAX_URL_LENGTH = 16384;
+
 // Cursor write batching (#5 / B2). The per-event cursor UPDATE used to fire one
 // row-update to external_sources for every ingested post — in wildcard mode,
 // one write per matched event off the firehose. Instead we accumulate the
@@ -502,7 +513,9 @@ export class JetstreamListener {
     // the reconnect backoff loop will try again.
     let wsOpts;
     try {
-      wsOpts = await pinnedWebSocketOptions(fullUrl);
+      wsOpts = await pinnedWebSocketOptions(fullUrl, {
+        maxLength: JETSTREAM_MAX_URL_LENGTH,
+      });
     } catch (err) {
       logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -540,6 +553,13 @@ export class JetstreamListener {
     });
 
     ws.on("close", (code) => {
+      // Ignore the close of a socket we've already replaced. refreshDids closes
+      // socket A, nulls this.ws, and connects socket B; A's async close event
+      // then arrives later. Without this guard it would null this.ws (now B —
+      // orphaning a live, still-ingesting socket that even stop() can't reach)
+      // and schedule a redundant reconnect (socket C), so connections multiply
+      // across every DID-set refresh / network blip (H13).
+      if (this.ws !== ws) return;
       this.ws = null;
       this.setHealthy(false).catch(() => {});
       if (this.stopping) return;

@@ -249,7 +249,7 @@ function collectBlueskyThreadNodes(
       authorName: post.author.displayName || post.author.handle,
       authorHandle: post.author.handle,
       authorAvatarUrl: post.author.avatar ?? null,
-      authorUri: `https://bsky.app/profile/${post.author.did}`,
+      authorUri: post.author.did,
       contentText: post.record.text ?? null,
       contentHtml: null,
       media: extractBlueskyViewMedia(post.embed),
@@ -354,7 +354,7 @@ async function hydrateMastodonThread(item: ExternalItemRow): Promise<void> {
     authorName: s.account.display_name || s.account.acct,
     authorHandle: s.account.acct,
     authorAvatarUrl: s.account.avatar ?? null,
-    authorUri: s.account.url,
+    authorUri: s.account.uri ?? s.account.url,
     contentText: stripHtmlTags(s.content ?? ""),
     contentHtml: sanitizeContent(s.content ?? ""),
     media: (s.media_attachments ?? []).map((m) => ({

@@ -123,6 +123,7 @@ export interface MastodonStatus {
     acct: string;
     display_name: string;
     url: string;
+    uri?: string; // ActivityPub actor id — the canonical author_uri
   };
   favourites_count?: number;
   replies_count?: number;

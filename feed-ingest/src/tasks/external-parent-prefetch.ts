@@ -358,7 +358,12 @@ async function insertBlueskyParent(
           authorName,
           post.author.handle,
           post.author.avatar ?? null,
-          `https://bsky.app/profile/${post.author.did}`,
+          // author_uri MUST be the canonical DID (matching atproto-ingest.ts),
+          // never the origin-shaped bsky.app URL: the identity trigger mints
+          // external_authors.stable_handle straight from author_uri, so a web
+          // URL forks a doppelgänger author that real ingest's promotion never
+          // rewrites — the post stays permanently mis-filed (H12).
+          post.author.did,
           post.record.text ?? null,
           JSON.stringify([]),
           parentReplyUri,
@@ -418,6 +423,7 @@ async function prefetchMastodonParent(
         display_name: string;
         avatar: string;
         url: string;
+        uri?: string; // ActivityPub actor id — the canonical author_uri
       };
       favourites_count?: number;
       replies_count?: number;
@@ -478,7 +484,12 @@ async function prefetchMastodonParent(
           authorName,
           status.account.acct,
           status.account.avatar ?? null,
-          status.account.url,
+          // Canonical actor URI (matches activitypub-ingest.ts's actor.id),
+          // not the human web `url`: the identity trigger derives stable_handle
+          // from author_uri, so the web URL mints a doppelgänger author that
+          // promotion never rewrites (H12). Fall back to `url` only if a
+          // non-Mastodon server omits `uri`.
+          status.account.uri ?? status.account.url,
           sanitizeContent(status.content),
           null,
           JSON.stringify(media),
@@ -609,7 +620,12 @@ async function insertBlueskyQuote(
           authorName,
           post.author.handle,
           post.author.avatar ?? null,
-          `https://bsky.app/profile/${post.author.did}`,
+          // author_uri MUST be the canonical DID (matching atproto-ingest.ts),
+          // never the origin-shaped bsky.app URL: the identity trigger mints
+          // external_authors.stable_handle straight from author_uri, so a web
+          // URL forks a doppelgänger author that real ingest's promotion never
+          // rewrites — the post stays permanently mis-filed (H12).
+          post.author.did,
           post.record.text ?? null,
           JSON.stringify(media),
           JSON.stringify({ uri: post.uri, cid: post.cid }),
@@ -669,6 +685,7 @@ async function prefetchMastodonQuote(
         display_name: string;
         avatar: string;
         url: string;
+        uri?: string; // ActivityPub actor id — the canonical author_uri
       };
       favourites_count?: number;
       replies_count?: number;
@@ -717,7 +734,12 @@ async function prefetchMastodonQuote(
           authorName,
           status.account.acct,
           status.account.avatar ?? null,
-          status.account.url,
+          // Canonical actor URI (matches activitypub-ingest.ts's actor.id),
+          // not the human web `url`: the identity trigger derives stable_handle
+          // from author_uri, so the web URL mints a doppelgänger author that
+          // promotion never rewrites (H12). Fall back to `url` only if a
+          // non-Mastodon server omits `uri`.
+          status.account.uri ?? status.account.url,
           sanitizeContent(status.content),
           null,
           JSON.stringify(media),

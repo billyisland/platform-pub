@@ -23,6 +23,39 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit H11–H13 (Jetstream dead zone + socket leak;
+  doppelgänger external authors).**
+  - **H11 — Jetstream filtered-mode dead zone.** `listener.ts` built the
+    filtered upgrade URL with one `wantedDids` per DID (~48 chars each) and passed
+    it to `pinnedWebSocketOptions`, whose default cap is 2048 chars — exceeded at
+    ~40 DIDs, while wildcard mode only engages at `WILDCARD_DID_THRESHOLD=150`. In
+    between, connect threw, was caught, and retried the identical over-length URL
+    forever, so every atproto deployment with 40–149 active sources could never
+    connect and all Bluesky ingest degraded to the delete-blind poll fallback.
+    Added `JETSTREAM_MAX_URL_LENGTH=16384` (covers 149 DIDs at the documented
+    server upgrade-URL ceiling; never binds in wildcard mode, which carries no
+    DIDs) and pass it as `maxLength`.
+  - **H13 — Jetstream reconnect leaks live sockets.** The `close` handler
+    unconditionally nulled `this.ws` and scheduled a reconnect. `refreshDids`
+    closes socket A, nulls `this.ws`, connects socket B; A's async close then
+    nulled `this.ws` (now B — orphaning a live socket even `stop()` can't reach)
+    and spawned socket C, multiplying connections across DID churn / blips. Added
+    an `if (this.ws !== ws) return;` identity guard at the top of the handler.
+  - **H12 — doppelgänger `external_authors` from origin-shaped `author_uri`.**
+    The identity trigger (`schema.sql`) derives `external_authors.stable_handle`
+    straight from `author_uri`, so a non-canonical value forks a second author
+    that real ingest's promotion (which re-homes `source_id` but never rewrites
+    `author_uri`) can never merge — the post stays permanently mis-filed (missing
+    from the real profile, invisible to author-level deletions). The prefetch /
+    hydration paths wrote the origin-shaped `https://bsky.app/profile/<did>` (vs
+    the canonical DID in `atproto-ingest.ts`) and the human web `account.url` (vs
+    the actor URI `account.uri`/`actor.id` in `activitypub-ingest.ts`). Fixed all
+    four feed-ingest sites (`external-parent-prefetch.ts`) and the four gateway
+    twins (`external-hydration.ts`, `external-items/{quote,parent,thread}.ts`):
+    atproto → `post.author.did`; AP → `account.uri ?? account.url` (added the
+    optional `uri` actor-id field to the shared `MastodonStatus.account` type and
+    the three inline REST-status types). Verified: feed-ingest + gateway typecheck
+    clean; feed-ingest test suite green (209 passed).
 - **2026-07-16** — **Deep-audit M1 (reconcile `ledger_orphans` false-halt).**
   The A6 orphan check — in both `payment-service/src/services/reconcile-ledger.ts`
   and `scripts/reconcile-ledger.sql` — resolved `writer_payout_reversal` and
