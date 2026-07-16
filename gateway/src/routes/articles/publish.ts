@@ -38,6 +38,7 @@ const IndexArticleSchema = z
     // before the vault seals, and a vault failure would leave them charged
     // for a never-published article.
     draftId: z.string().optional(),
+    commentsEnabled: z.boolean().optional(), // writer's "allow replies" toggle (default true)
     sendEmail: z.boolean().optional(), // writer opt-in/out for publish notification email
     // Set by the paywalled pipeline's final (v2) index call when the step-2
     // v1 index reported isNew: the v2 upsert is never isNew itself, but the
@@ -99,8 +100,8 @@ export async function articlePublishRoutes(app: FastifyInstance) {
              writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
              content_free, word_count, tier,
              access_mode, price_pence, gate_position_pct, vault_event_id,
-             cover_image_url, published_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tier1', $9, $10, $11, $12, $13, now())
+             cover_image_url, comments_enabled, published_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tier1', $9, $10, $11, $12, $13, $14, now())
            ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
              nostr_event_id = EXCLUDED.nostr_event_id,
              title = EXCLUDED.title,
@@ -113,6 +114,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
              gate_position_pct = EXCLUDED.gate_position_pct,
              vault_event_id = EXCLUDED.vault_event_id,
              cover_image_url = EXCLUDED.cover_image_url,
+             comments_enabled = EXCLUDED.comments_enabled,
              updated_at = now()
            RETURNING id, (xmax = 0) AS is_new`,
           [
@@ -129,6 +131,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
             isGated ? data.gatePositionPct : null,
             data.vaultEventId ?? null,
             data.coverImageUrl ?? null,
+            data.commentsEnabled ?? true,
           ],
         );
 
@@ -381,7 +384,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         `SELECT a.id, a.writer_id, a.nostr_event_id, a.nostr_d_tag,
                 a.title, a.slug, a.summary, a.content_free, a.word_count,
                 a.access_mode, a.price_pence, a.gate_position_pct,
-                a.vault_event_id, a.cover_image_url, a.published_at
+                a.vault_event_id, a.cover_image_url, a.comments_enabled, a.published_at
          FROM articles a
          WHERE a.nostr_event_id = $1 AND a.deleted_at IS NULL
            AND (a.published_at IS NOT NULL OR a.writer_id = $2)`,
@@ -430,6 +433,7 @@ export async function articlePublishRoutes(app: FastifyInstance) {
         pricePence: r.price_pence,
         gatePositionPct: r.gate_position_pct,
         coverImageUrl: r.cover_image_url,
+        commentsEnabled: r.comments_enabled,
         publishedAt: r.published_at?.toISOString() ?? null,
       });
     },

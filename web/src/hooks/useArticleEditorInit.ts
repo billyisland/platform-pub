@@ -151,7 +151,7 @@ export function useArticleEditorInit({
             content,
             gatePosition: meta.gatePositionPct ?? 50,
             price: meta.pricePence ?? 0,
-            commentsEnabled: true,
+            commentsEnabled: meta.commentsEnabled ?? true,
             tags: existingTags,
             editingEventId: editEventId,
             editingDTag: meta.dTag ?? "",

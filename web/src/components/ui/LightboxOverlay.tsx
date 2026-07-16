@@ -21,7 +21,15 @@ export function LightboxOverlay() {
   useEffect(() => {
     if (!isOpen) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        // The Lightbox is the topmost modal (z-70, above every Glasshouse), so
+        // Escape must close ONLY it — not the Glasshouse underneath (which would
+        // also fire its history.back() for a URL-synced pane). This document
+        // listener runs before Glasshouse's window listener in the bubble phase,
+        // so stopping propagation here keeps the pane below open (M22).
+        e.stopPropagation();
+        close();
+      }
     }
     document.addEventListener("keydown", onKeyDown);
     // Lock body scroll while enlarged so the page behind doesn't move.

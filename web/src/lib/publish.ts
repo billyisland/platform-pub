@@ -77,6 +77,7 @@ export async function publishArticle(
       pricePence: data.pricePence,
       gatePositionPct: data.gatePositionPct,
       coverImageUrl: data.coverImageUrl ?? null,
+      commentsEnabled: data.commentsEnabled,
       draftId: opts.final ? data.draftId ?? undefined : undefined,
       sendEmail: opts.final ? data.sendEmail : false,
       ...(opts.emailAsNew ? { emailAsNew: true } : {}),

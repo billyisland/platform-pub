@@ -23,6 +23,24 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit MEDIUM web batch (M19, M22).**
+  - **M19 — "Allow replies" dead at publish (publish-now path).**
+    `PublishData.commentsEnabled` was collected in the editor but sent by neither
+    `publishArticle` nor the index route, and the editor's edit-load hardcoded
+    `true`. Now `publishArticle`/`articlesApi.index` send `commentsEnabled`, the
+    gateway `IndexArticleSchema` + INSERT/UPDATE write `articles.comments_enabled`
+    (the column already existed, default true), and edit-load reads the real value
+    from `/articles/by-event` (which now returns it). Scheduled-path residual
+    (`article_drafts` has no such column) folded into the M20 drafts migration.
+  - **M22 — Escape closed the Lightbox AND the Glasshouse under it.** The Lightbox
+    (`document` keydown) and Glasshouse (`window` keydown) had uncoordinated
+    Escape handlers, so enlarging an image inside a pane and pressing Escape closed
+    both (and fired the pane's `history.back()` for URL-synced panes). The
+    Lightbox is the topmost modal (z-70); its `document` listener runs before the
+    `window` listener in the bubble phase, so it now `stopPropagation()`s on
+    Escape — the pane below stays open.
+  Verified: gateway + web typecheck clean; `next build` clean; hairline tripwire
+  clean on touched files.
 - **2026-07-16** — **Deep-audit MEDIUM feeds batch #2 (M13, M15).**
   - **M15 — external-items-prune broken two ways + a permanent wedge.** In
     `external-items-prune.ts`: (1) the "reply thread" guard was

@@ -63,6 +63,7 @@ export const articles = {
     gatePositionPct: number;
     vaultEventId?: string;
     coverImageUrl?: string | null;
+    commentsEnabled?: boolean;
     draftId?: string;
     sendEmail?: boolean;
     emailAsNew?: boolean;
