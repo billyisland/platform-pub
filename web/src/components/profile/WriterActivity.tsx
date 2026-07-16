@@ -210,6 +210,7 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
       {user && !isOwnProfile && (
         <div className="flex flex-wrap items-center gap-2 mb-6 -mt-6">
           <button
+            data-explain="profile.follow"
             onClick={handleToggleFollow}
             disabled={followLoading}
             className={`transition-colors disabled:opacity-50 ${following ? "btn-soft py-1.5 px-4 text-ui-xs" : "btn py-1.5 px-4 text-ui-xs"}`}
@@ -240,6 +241,7 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
             !subStatus.ownContent &&
             (subStatus.subscribed ? (
               <button
+                data-explain="profile.subscribe"
                 onClick={handleUnsubscribe}
                 disabled={subLoading}
                 className="btn-soft py-1.5 px-4 text-ui-xs disabled:opacity-50 transition-colors"
@@ -259,7 +261,12 @@ export function WriterActivity({ username, writer, inOverlay = false }: WriterAc
                   monthlyPence * 12 * (1 - discount / 100),
                 );
                 return (
-                  <div className="flex items-center gap-2">
+                  // C4: one kind for both subscription states — the copy
+                  // reads for Subscribe and Subscribed/cancel alike.
+                  <div
+                    data-explain="profile.subscribe"
+                    className="flex items-center gap-2"
+                  >
                     <button
                       onClick={() => handleSubscribe("monthly")}
                       disabled={subLoading}

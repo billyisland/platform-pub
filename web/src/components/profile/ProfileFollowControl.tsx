@@ -74,6 +74,7 @@ function NativeFollowToggle({ target }: { target: FollowTarget }) {
 
   return (
     <button
+      data-explain="profile.follow"
       onClick={toggle}
       disabled={busy}
       className={`transition-colors disabled:opacity-50 py-1.5 px-4 text-ui-xs ${
@@ -241,7 +242,13 @@ function SourceFollowPicker({ target }: { target: FollowTarget }) {
   if (!followable) return null;
 
   return (
-    <div ref={wrapRef} className="relative inline-block">
+    // C4: the tag rides the wrapper so the trigger and the open picker both
+    // answer as the feed-derived external follow.
+    <div
+      ref={wrapRef}
+      data-explain="profile.followFeeds"
+      className="relative inline-block"
+    >
       <button
         onClick={() => setOpen((o) => !o)}
         className={`transition-colors py-1.5 px-4 text-ui-xs ${

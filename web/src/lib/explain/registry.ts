@@ -101,6 +101,25 @@ export type ExplainKind =
   | "settings.theme"
   | "settings.typeSize"
   | "settings.export"
+  // C4 (2026-07-16) — profile + surface overlays, all hover-only (pane mode).
+  // `profile` rides ProfileOverlay's scroll body so the native and external
+  // branches both inherit it; `source`/`tag`/`pub` ride SurfaceOverlay's
+  // scroll body, switched on the target kind. Leaves live in the profile
+  // action rows (WriterActivity, ProfileFollowControl, IdentityLinkControl,
+  // AuthorProfileView's handle link) and the publication masthead
+  // (PublicationPanel nav, PubFollowButton). The content logs inherit the
+  // card.* kinds from the already-tagged chassis.
+  | "profile"
+  | "profile.follow"
+  | "profile.followFeeds"
+  | "profile.handle"
+  | "profile.subscribe"
+  | "profile.identityLinks"
+  | "source"
+  | "tag"
+  | "pub"
+  | "pub.nav"
+  | "pub.follow"
   // per-feed instance + tagged leaves
   | "vessel"
   | "vessel.name"
@@ -268,6 +287,32 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
     "This steps the site's type size on this device. A single feed can be stepped on its own too, from its feed composer.",
   "settings.export":
     "This downloads everything that is yours: your keys, your writing, your receipts. The keys are the point: with them, your identity and your audience work anywhere on the open network, not just here.",
+  // --- C4: profile + surface overlays (Appendix A.3e) ---
+  profile:
+    "This is a profile. Writers on all.haus and people from other networks both open here, the same way: who they are, what they have posted, and the ways to follow them.",
+  "profile.follow":
+    "This follows the writer: their posts reach any of your feeds carrying the Following stream. Everyone you follow is listed under Network in the ∀ menu.",
+  // Teaches the feed-derived external-follow invariant from the doer's side,
+  // reciprocating network.following (A.4).
+  "profile.followFeeds":
+    "This follows someone from another network, and that works by feed: pick which of your feeds should carry their posts, or start a new one for them. Sitting in at least one feed is what following means.",
+  "profile.handle":
+    "This opens their profile on their home network, in a new tab. The @handle is the one link that leads off all.haus.",
+  // Money site (Ed-approved 2026-07-16). One kind for both states: the copy
+  // reads for Subscribe and for Subscribed/cancel alike.
+  "profile.subscribe":
+    "This is a subscription to the writer, monthly or yearly: while it runs, their paywalled pieces cost nothing more to read. The charge goes on your reading tab, the subscription is managed from the Ledger, and cancelling keeps your access to the end of the period.",
+  "profile.identityLinks":
+    "If the same person posts from more than one place, link their accounts here. Your feeds then treat those accounts as one person, and a piece posted to several networks shows only once.",
+  source:
+    "This is a source's own page: what it publishes, newest first, as far back as all.haus has seen. To keep it in your workspace, add it to one of your feeds.",
+  // Second sentence deliberately reciprocates editor.tags (A.4).
+  tag: "This is a tag's page, collecting every article published under it. A tag can be added to a feed as a source, like anything else that publishes.",
+  pub: "This is a publication: writers publishing together under one name, with a masthead, an archive and followers of its own.",
+  "pub.nav":
+    "These are the publication's pages: its latest pieces, what it is, who makes it, and everything it has published. Each opens here in place.",
+  "pub.follow":
+    "This follows the publication: its new pieces reach any of your feeds carrying the Following stream, and arrive by email until you say otherwise.",
   "vessel.name":
     "This is the feed's name. Click to rename it and manage its sources, or click and drag to move the feed container around this workspace.",
   "vessel.gear":

@@ -273,6 +273,7 @@ export function AuthorProfileView({
                     // The handle links out to the author's profile on the origin
                     // platform (Bluesky / Fediverse / Nostr).
                     <a
+                      data-explain="profile.handle"
                       href={profile.externalUrl}
                       target="_blank"
                       rel="noopener noreferrer"

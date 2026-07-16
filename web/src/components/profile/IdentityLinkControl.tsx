@@ -169,7 +169,13 @@ export function IdentityLinkControl({
   };
 
   return (
-    <div ref={wrapRef} className="relative inline-block">
+    // C4: the tag rides the wrapper so the trigger and the open menu both
+    // answer as identity linking.
+    <div
+      ref={wrapRef}
+      data-explain="profile.identityLinks"
+      className="relative inline-block"
+    >
       <button
         onClick={() => setOpen((o) => !o)}
         className={`transition-colors py-1.5 px-4 text-ui-xs ${

@@ -44,6 +44,7 @@ export function PubFollowButton({ publicationId, initialFollowing }: Props) {
 
   return (
     <button
+      data-explain="pub.follow"
       onClick={handleClick}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}

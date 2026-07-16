@@ -535,6 +535,49 @@ Deliberately uncaptioned: flag-gated affordances (Vouches tab, the thread Commis
 **`settings.export`** *(the Export button in Your data)*
 > This downloads everything that is yours: your keys, your writing, your receipts. The keys are the point: with them, your identity and your audience work anywhere on the open network, not just here.
 
+### A.3e Explain labels — profile + surface overlays (C4, shipped 2026-07-16; copy Ed-approved, minimal set)
+
+All hover-only, same as A.3b–A.3d. The bases ride the overlay scroll bodies: `profile` on ProfileOverlay's (so the native and external branches both inherit it), and `source`/`tag`/`pub` on SurfaceOverlay's, switched on the target kind — the generic `pane` copy keeps answering pane chrome, and the content logs inherit the `card.*` kinds from the already-tagged chassis for free. Wiring notes: the two dropdown controls (`profile.followFeeds`, `profile.identityLinks`) tag their wrapper so trigger and open menu answer alike; `profile.subscribe` is one kind for both subscription states (the Subscribe pair's container and the Subscribed/cancel button), with copy that reads for both; `profile.follow` tags both native toggles (WriterActivity's and ProfileFollowControl's). No engine work was needed.
+
+Deliberately uncaptioned: **AuthorModal and everything inside it** (the feed-scoped FollowButton, SourceVolume) — `useAuthorHover` suppresses the modal while Explain is active, so it is unreachable by construction, and `card.byline` already describes it; flag-gated affordances (Vouch + TrustProfile); logged-out branches ("Log in to follow" — the workspace is login-gated); and, cut as self-describing on editorial review (2026-07-16): the avatar lightbox, the RSS links, the Message button, plus the profile tabs, stats lines, protocol labels, SHOW MORE pagination, masthead member rows, the About view's rendered markdown, and empty states.
+
+#### Profile pane (`ProfileOverlay` — native + external branches)
+
+**`profile`** *(base: the ProfileOverlay scroll body)*
+> This is a profile. Writers on all.haus and people from other networks both open here, the same way: who they are, what they have posted, and the ways to follow them.
+
+**`profile.follow`** *(the native Follow/Following toggle: WriterActivity's and ProfileFollowControl's NativeFollowToggle)*
+> This follows the writer: their posts reach any of your feeds carrying the Following stream. Everyone you follow is listed under Network in the ∀ menu.
+
+**`profile.followFeeds`** *(the external "Follow ▾" feed-picker; teaches the feed-derived invariant from the doer's side, reciprocating `network.following`)*
+> This follows someone from another network, and that works by feed: pick which of your feeds should carry their posts, or start a new one for them. Sitting in at least one feed is what following means.
+
+**`profile.handle`** *(the external @handle out-link, present only with an `externalUrl`)*
+> This opens their profile on their home network, in a new tab. The @handle is the one link that leads off all.haus.
+
+**`profile.subscribe`** *(money site; one kind for both subscription states — the card-on-file requirement is left to the 402 error message by decision)*
+> This is a subscription to the writer, monthly or yearly: while it runs, their paywalled pieces cost nothing more to read. The charge goes on your reading tab, the subscription is managed from the Ledger, and cancelling keeps your access to the end of the period.
+
+**`profile.identityLinks`** *(the "Link to…" control, external profiles only; teaches Slice-8 dedup)*
+> If the same person posts from more than one place, link their accounts here. Your feeds then treat those accounts as one person, and a piece posted to several networks shows only once.
+
+#### Surface overlay (`SurfaceOverlay` — source / tag / publication)
+
+**`source`** *(base: the scroll body when the target is a source — a stream, not a person; it carries none of the profile affordances)*
+> This is a source's own page: what it publishes, newest first, as far back as all.haus has seen. To keep it in your workspace, add it to one of your feeds.
+
+**`tag`** *(base: the scroll body when the target is a tag; second sentence deliberately reciprocates `editor.tags`)*
+> This is a tag's page, collecting every article published under it. A tag can be added to a feed as a source, like anything else that publishes.
+
+**`pub`** *(base: the scroll body when the target is a publication, all four views)*
+> This is a publication: writers publishing together under one name, with a masthead, an archive and followers of its own.
+
+**`pub.nav`** *(the home | about | masthead | archive view nav)*
+> These are the publication's pages: its latest pieces, what it is, who makes it, and everything it has published. Each opens here in place.
+
+**`pub.follow`** *(PubFollowButton; follow feeds the Following reach stream, and `notify_on_publish` defaults true)*
+> This follows the publication: its new pieces reach any of your feeds carrying the Following stream, and arrive by email until you say otherwise.
+
 ### A.4 Copy notes
 
 - Deliberate duplications: "they stay where they are put" (beat 5 ↔ `floor` label) and the volume-knob line (beat 3 ↔ `card.byline` label). A user typically meets only one surface per session; the repetition harmonises rather than clashes. `pane.resize` opens with the `vessel.resize` sentence by the same reasoning: one grammar for one gesture.

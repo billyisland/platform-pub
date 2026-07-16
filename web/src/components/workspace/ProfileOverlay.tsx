@@ -67,7 +67,12 @@ export function ProfileOverlay() {
       persistKey="profile"
       frameColor={frameColor}
     >
-      <div className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12">
+      {/* C4: the base Explain kind rides the scroll body, so the native and
+          external branches both inherit it (leaves answer first via closest). */}
+      <div
+        data-explain="profile"
+        className="overflow-y-auto max-h-[var(--gh-h)] px-6 sm:px-10 py-12"
+      >
         {target.kind === "native" ? (
           <NativeProfilePanel username={target.username} />
         ) : (

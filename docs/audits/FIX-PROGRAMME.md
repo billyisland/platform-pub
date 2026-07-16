@@ -23,6 +23,25 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Explain C4 shipped — profile + surface-overlay captions
+  (EXPLAIN-ADR Appendix A.3e). The caption programme is complete.** 11 new
+  hover-only kinds, copy Ed-approved (minimal set: avatar lightbox, RSS links
+  and the Message button cut as self-describing; the one new money site
+  `profile.subscribe` approved with the card-on-file requirement left to the
+  402 error message): `profile` (+ .follow/.followFeeds/.handle/.subscribe/
+  .identityLinks) and `source`/`tag`/`pub` (+ pub.nav/pub.follow). Bases ride
+  the overlay scroll bodies — `profile` on ProfileOverlay's (native +
+  external branches both inherit), the surface trio on SurfaceOverlay's
+  switched by target kind — and the content logs inherit the `card.*` kinds
+  from the tagged chassis for free. `profile.followFeeds` teaches the
+  feed-derived external-follow invariant from the doer's side (reciprocating
+  `network.following`); `profile.subscribe` is one kind covering both
+  subscription states; dropdown controls tag their wrapper so trigger and
+  open menu answer alike. No engine work. Deliberately uncaptioned:
+  AuthorModal + everything inside it (`useAuthorHover` suppresses the modal
+  while Explain is active, so it is unreachable by construction), flag-gated
+  Vouch/TrustProfile, logged-out branches, and the self-describing residue
+  (A.3e lists them).
 - **2026-07-16** — **Explain C3 shipped — destination-surface captions
   (EXPLAIN-ADR Appendix A.3d).** 29 new hover-only kinds across the six
   ∀-menu destinations, copy Ed-approved as drafted with all four new money

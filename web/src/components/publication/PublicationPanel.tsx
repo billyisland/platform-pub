@@ -127,7 +127,10 @@ export function PublicationPanel({
       </div>
 
       {/* In-overlay sub-nav — swaps views in place, no full-page escape */}
-      <nav className="flex items-center justify-center gap-5 mb-10">
+      <nav
+        data-explain="pub.nav"
+        className="flex items-center justify-center gap-5 mb-10"
+      >
         {NAV.map((n) => (
           <button
             key={n.view}

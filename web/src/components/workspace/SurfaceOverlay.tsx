@@ -77,8 +77,19 @@ export function SurfaceOverlay() {
       persistKey="surface"
     >
       {/* Each surface body supplies its own inner padding (PageShell / mx-auto
-          wrapper); we only own the scroll container. */}
-      <div className="overflow-y-auto max-h-[var(--gh-h)]">
+          wrapper); we only own the scroll container. C4: it also carries the
+          per-target base Explain kind, so all three surfaces inherit one here
+          (leaves + the tagged card chassis answer first via closest). */}
+      <div
+        data-explain={
+          target.kind === "source"
+            ? "source"
+            : target.kind === "tag"
+              ? "tag"
+              : "pub"
+        }
+        className="overflow-y-auto max-h-[var(--gh-h)]"
+      >
         {target.kind === "source" && <SourceSurface id={target.id} />}
         {target.kind === "tag" && (
           <TagBrowser tagName={target.name.toLowerCase()} inOverlay />
