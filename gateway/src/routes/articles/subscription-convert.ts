@@ -51,6 +51,35 @@ export async function articleSubscriptionConvertRoutes(app: FastifyInstance) {
     "/subscriptions/:writerId/convert",
     { preHandler: requireAuth },
     async (req, reply) => {
+      // DISABLED 2026-07-16 (deep-audit H2) — this route is an unmetered money
+      // pump, and NO web UI calls it (PaywallGate shows the conversion nudge but
+      // the convert action was never wired). Gated off behind
+      // SUBSCRIPTION_CONVERT_ENABLED (default off) until the economic rework
+      // lands. Do NOT flip the flag without fixing all four legs first:
+      //   1. No card gate — creates an active/auto_renew sub with no
+      //      stripe_customer_id check (violates the Wave-3 402 card_required
+      //      invariant; cf. writer.ts).
+      //   2. The spend SUM below (read_events) has no `state` filter
+      //      (provisional reads count) and no `publication_id IS NULL` filter,
+      //      so it credits back spend that never debited the tab.
+      //   3. The "charge leg" is a phantom — a bare subscription_events insert
+      //      with no tab debit, no subscription_earning, no writer ledger entry
+      //      (cf. subscriptions/shared.ts::logSubscriptionCharge). The reader is
+      //      never charged; the writer never earns; the credited-back reads
+      //      still pay the writer at settlement — the platform funds the credit.
+      //   4. Repeatable — the 409 fires only on status==='active', so
+      //      cancel→re-convert re-credits the same read_events any number of
+      //      times per month, driving the tab arbitrarily negative.
+      // Revival = fix all four + wire the PaywallGate convert button.
+      // Tracker: CONSOLIDATED-TODO §0e item 4; audit DEEP-AUDIT-2026-07-16 H2.
+      if (process.env.SUBSCRIPTION_CONVERT_ENABLED !== "1") {
+        return reply.status(503).send({
+          error: "conversion_unavailable",
+          message:
+            "Spend-to-subscription conversion is not available right now.",
+        });
+      }
+
       const readerId = req.session!.sub;
       const { writerId } = req.params;
 

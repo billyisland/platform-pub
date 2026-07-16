@@ -23,6 +23,29 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit H2 (subscription-convert money pump — exploit
+  closed).** `POST /subscriptions/:writerId/convert` was an unmetered money
+  pump: no card gate (creates an active/auto_renew sub with no
+  `stripe_customer_id`); the current-month spend SUM had no `state` filter
+  (provisional reads counted) or `publication_id IS NULL` filter, so it credited
+  back spend that never debited the tab; the "charge leg" was a phantom bare
+  `subscription_events` insert (no `applyLedgerDelta`, no `subscription_earning`,
+  no writer entry — so the reader was never charged, the writer never earned, and
+  the credited-back reads still paid the writer at settlement, the platform
+  funding the credit); and it was repeatable (409 only on `status==='active'`, so
+  cancel→re-convert re-credited the same reads unboundedly). Any authed account
+  with one month's spend ≥ 0.7× the sub price could drive its tab arbitrarily
+  negative. **Confirmed no web UI calls it** — `PaywallGate` shows the conversion
+  nudge and posts `/nudge/shown`, but the convert action was never wired — so the
+  route is dead-but-live. Per the audit's option A, gated the handler behind
+  `SUBSCRIPTION_CONVERT_ENABLED` (default off → 503 `conversion_unavailable`)
+  with zero product impact, and documented all four defects in a route block
+  comment so a reviver can't miss them. The **full economic rework** (fix all
+  four legs via `logSubscriptionCharge` + wire the PaywallGate button, then flip
+  the flag) is an owner decision, carried in CONSOLIDATED-TODO §0e item 4.
+  Verified: gateway typecheck clean, image rebuilt + restarted, route reachable
+  (401 pre-auth as expected; the flag-gate is the first statement post-auth). No
+  DB/schema change. §0e HIGHs remaining: H4–H8/H11–H14.
 - **2026-07-16** — **Deep-audit H9 (comp-subscription grant ON CONFLICT
   arbiter).** `POST /subscriptions/:writerId/grant`'s first-time-grant INSERT
   used `ON CONFLICT (reader_id, writer_id)` with no predicate, but migration
