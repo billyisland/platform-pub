@@ -68,7 +68,7 @@ Seven-agent adversarial audit of the whole repo at HEAD (`c000beb`), one agent p
 
 **CRITICAL**
 
-1. **✅ SHIPPED 2026-07-16 (`a157834`, FIX-PROGRAMME).** ~~Relay outbox worker can't reach the platform's own relay — every native Nostr publish silently abandons.~~ `pinnedWebSocketOptions` now takes an `allowHosts` exact-match exemption (pin still enforced); the outbound publisher passes only the operator-configured `PLATFORM_RELAY_WS_URL` host. Ships with `scripts/redrive-relay-outbox.sql` (purges the email-poisoned deletion rows before redriving the rest). **Prod still needs the deploy + redrive run** — `SELECT status, count(*) FROM relay_outbox GROUP BY status;`, then the script dry-run, then `-v apply=true`.
+1. **✅ SHIPPED 2026-07-16 (`a157834`, FIX-PROGRAMME).** ~~Relay outbox worker can't reach the platform's own relay — every native Nostr publish silently abandons.~~ `pinnedWebSocketOptions` now takes an `allowHosts` exact-match exemption (pin still enforced); the outbound publisher passes only the operator-configured `PLATFORM_RELAY_WS_URL` host. Ships with `scripts/redrive-relay-outbox.sql` (purges the email-poisoned deletion rows before redriving the rest). **Prod-verified 2026-07-16 (post-deploy):** 22 abandoned rows, 0 email-poisoned; C1 confirmed fixed (events now reach strfry through the pin). The 22 rows were too stale for strfry's `created_at` window, so recovered via `strfry import` (22 added, 0 rejected) — see FIX-PROGRAMME + the redrive-script header caveat. New publishing works normally.
 
 **HIGH**
 

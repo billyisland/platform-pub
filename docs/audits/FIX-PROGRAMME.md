@@ -123,6 +123,26 @@ starts.
   rest). **Prod runbook**: deploy + restart `feed-ingest`/`gateway`, then run
   the redrive dry-run, inspect, re-run with `-v apply=true`. Commit `a157834`.
   Remaining §0e HIGHs (H1/H2/H4–H14) still open.
+  **Prod-verified 2026-07-16 (post-deploy):** dry-run showed 22 `abandoned`
+  rows, **0 email-poisoned** (the H3 leak never actually queued on prod — the
+  one `article_deletion` row carried no email), so PHASE 2 purged nothing and
+  PHASE 3 redrove all 22 to `pending`. C1 confirmed fixed empirically — the
+  events now reach `ws://strfry:7777`, pass the SSRF pin, and are evaluated by
+  the relay (transport works; the "resolves to private IP" failure is gone).
+  **But** the 22 rows (12 kind-30023 articles, 4 kind-1 notes, 4 kind-14,
+  1 drive, 1 kind-5) were 1–5 weeks stale, and `dockurr/strfry:latest` rejected
+  every one with `invalid: created_at too early` (an older-than default the
+  image applies despite the repo config's `rejectEventsOlderThanSeconds = 0`).
+  Since a signature covers `created_at`, redrive can't freshen them — recovered
+  instead via **`strfry import`** (writes the signed events straight to LMDB,
+  bypassing the write-policy timestamp check): `/app/strfry
+  --config=/etc/strfry.conf import` → **22 added, 0 rejected**, then the rows
+  marked `sent`. strfry applied replaceable-event + kind-5 deletion semantics on
+  import (4 stale article versions dropped in favour of newer live copies; the
+  tombstone applied) — all correct. The stale-event caveat + the exact `strfry
+  import` recovery are now documented in the redrive-script header for the next
+  operator. **New publishing (fresh `created_at`) works normally** — this only
+  affected replaying the long-outage backlog.
 - **2026-07-16** — **Menu slimming + composer label (EXPLAIN-ADR amendment
   11).** About removed from the desktop ∀ menu — the Explain group is
   Explain alone there (About via Explain's "About all.haus" button or

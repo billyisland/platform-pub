@@ -20,6 +20,27 @@
 -- the rest. Dropping them is safe: a deletion event that never reached the relay
 -- (and whose original 30023 almost certainly never did either, since publishing
 -- was broken) has nothing to tombstone.
+--
+-- ─── CAVEAT: STALE EVENTS CANNOT BE REDRIVEN THROUGH THE RELAY ─────────────────
+-- A redriven row re-publishes its ORIGINAL signed event, and a Nostr signature
+-- covers `created_at`. strfry refuses events whose created_at is outside its
+-- accepted window (observed on prod 2026-07-16: `dockurr/strfry:latest` rejected
+-- every 1–5-week-old event with "invalid: created_at too early", even though the
+-- repo strfry.conf sets rejectEventsOlderThanSeconds = 0 — the image applies an
+-- older-than default regardless). So after a long outage the redrive proves the
+-- transport works but the stale rows land in status='failed' and eventually
+-- re-abandon; they cannot be freshened without RE-SIGNING (custodial key). To
+-- actually get the stuck-but-valid content onto the relay, IMPORT the signed
+-- events directly (bypasses the write-policy timestamp check):
+--   docker exec -i <postgres> psql -U platformpub -d platformpub -tAc \
+--     "SELECT signed_event FROM relay_outbox WHERE status IN ('failed','abandoned')" \
+--   | docker exec -i <strfry> /app/strfry --config=/etc/strfry.conf import --show-rejected
+--   docker exec -i <postgres> psql -U platformpub -d platformpub -c \
+--     "UPDATE relay_outbox SET status='sent', sent_at=now() WHERE status IN ('failed','abandoned')"
+-- strfry applies replaceable (d-tag) + kind-5 deletion semantics on import, so a
+-- stale article version is correctly dropped if a newer one is already live, and
+-- an article_deletion tombstone applies — exclude it with
+-- `AND entity_type <> 'article_deletion'` if you don't want to replay a delete.
 -- ------------------------------------------------------------------------------
 
 -- Default to a dry run unless the operator passed -v apply=true.
