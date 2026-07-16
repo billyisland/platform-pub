@@ -381,7 +381,10 @@ export function ArticleEditor({
   const gateInserted = hasGateMarker()
 
   return (
-    <div className={isOverlay ? 'px-6 sm:px-10 py-12 flex-1 flex flex-col' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8 bg-glasshouse min-h-screen'}>
+    // data-explain: the editor's Explain base kind (C2) — answers any interior
+    // hover a more specific leaf doesn't. Inert on the standalone /write page
+    // (Explain only runs in the workspace).
+    <div data-explain="editor" className={isOverlay ? 'px-6 sm:px-10 py-12 flex-1 flex flex-col' : 'mx-auto max-w-editor-frame px-4 sm:px-6 pt-16 lg:pt-8 pb-8 bg-glasshouse min-h-screen'}>
       {/* Sticky title + toolbar — stays visible while scrolling the body.
           Overlay: sticks to the Glasshouse pane top (no black topbar to offset).
           The cards span the full width (matching the body editor below); only the
@@ -401,7 +404,7 @@ export function ArticleEditor({
       </div>
 
       {/* Standfirst card */}
-      <div className="bg-glasshouse-well px-5 py-4 mb-2">
+      <div className="bg-glasshouse-well px-5 py-4 mb-2" data-explain="editor.dek">
         <input
           type="text"
           value={dek}
@@ -561,6 +564,7 @@ export function ArticleEditor({
         <ToolbarButton
           active={gateInserted}
           accent
+          dataExplain="editor.paywall"
           onClick={() => {
             if (gateInserted) {
               editor.commands.removePaywallGate()
@@ -589,7 +593,7 @@ export function ArticleEditor({
       </div>
 
       {/* Tags */}
-      <div className="mt-3">
+      <div className="mt-3" data-explain="editor.tags">
         <TagInput value={articleTags} onChange={setArticleTags} />
       </div>
 
@@ -597,7 +601,7 @@ export function ArticleEditor({
       <div className="mt-3 bg-glasshouse-well/40 px-5 py-4 space-y-3">
         {/* Publishing as */}
         {publicationMemberships.length > 0 && (
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap" data-explain="editor.publication">
             <label className="label-ui text-grey-600">Publishing as</label>
             <select
               value={selectedPublicationId ?? ''}
@@ -624,7 +628,7 @@ export function ArticleEditor({
 
         {/* Price — only when paywall gate is inserted */}
         {gateInserted && (
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4" data-explain="editor.price">
             <label className="label-ui text-grey-600">Price</label>
             <div className="flex items-center gap-2">
               <span className="text-ui-xs text-grey-600">&pound;</span>
@@ -720,6 +724,7 @@ export function ArticleEditor({
           <button
             onClick={() => setShowSchedulePicker(!showSchedulePicker)}
             disabled={publishing || !title.trim() || wordCount < 10}
+            data-explain="editor.schedule"
             className="text-sm text-grey-600 hover:text-black transition-colors disabled:opacity-50"
           >
             Schedule
@@ -727,6 +732,7 @@ export function ArticleEditor({
         )}
         <button
           className="text-sm text-grey-300 hover:text-grey-600 transition-colors"
+          data-explain="editor.draft"
           onClick={async () => {
             if (!editor) return
             setDraftStatus('Saving...')
@@ -788,11 +794,14 @@ export function ArticleEditor({
 function ToolbarButton({
   active,
   accent,
+  dataExplain,
   onClick,
   children,
 }: {
   active: boolean
   accent?: boolean
+  /** Explain kind tag (C2) — same pattern as Byline/VesselBar. */
+  dataExplain?: string
   onClick: () => void
   children: React.ReactNode
 }) {
@@ -807,6 +816,7 @@ function ToolbarButton({
   return (
     <button
       onClick={onClick}
+      data-explain={dataExplain}
       className={`rounded px-1.5 sm:px-2.5 py-1 text-xs font-medium transition-colors ${accentStyles}`}
     >
       {children}

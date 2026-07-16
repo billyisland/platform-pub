@@ -348,6 +348,88 @@ All hover-only (pane mode has no sequence by design). The ✕ is deliberately un
 **`reader.gate`** *(the paywall gate, when a paywalled article is showing)*
 > This is where the free part of the article ends. Continue and the price is added to your reading tab: you pay only for what you read, and settle the tab later. The tab lives under Ledger in the ∀ menu.
 
+### A.3c Explain labels — writing surfaces (C2, shipped 2026-07-16; copy Ed-approved as drafted)
+
+All hover-only, same as A.3b. Each surface carries a base kind on its scroll body (the `reader` pattern: it answers any hover its leaves don't); the generic `pane` copy keeps answering the pane chrome. Flag-gated affordances (follow-graph import, "Sync now") and transient panels (publish confirm, schedule picker) are deliberately uncaptioned; the long-note nudge's Switch button shares `composer.article`. Wiring notes: `editor.gate` is set in `PaywallGateNode`'s node view DOM (the in-document divider); `ToolbarButton` and `AppearanceControl` gained the optional `dataExplain` prop (the Byline/VesselBar pattern); `feedComposer.volume` tags the whole controls row inside a `feedComposer.source` row, so the row's two ×s resolve to different copy. No engine work was needed — every C2 target is an interactive element inside the pane wrapper.
+
+#### Note composer (`Composer`)
+
+**`composer`** *(base: the composer pane body; the same box serves note, reply and quote modes)*
+> This is the note composer. A note is a short post, published under your name to anyone who follows you, here and on the open network beyond. Replies and quotes are written in this same box.
+
+**`composer.crosspost`** *(the per-network toggle pills; present only when a linked network exists)*
+> One switch per network you have linked: dark means this note will also post there. The default for each network is set in Settings, under Reach other networks.
+
+**`composer.article`** *(the "Write an article →" affordance)*
+> This carries what you have written into the article editor. Articles have no length limit and can take a title, a standfirst, images, tags and a paywall.
+
+#### Article editor (`EditorOverlay` / `ArticleEditor`)
+
+**`editor`** *(base: the editor body)*
+> This is the article editor. Write on the page below; the toolbar handles formatting, images, embeds and the paywall. Your work saves itself as a draft while you write.
+
+**`editor.dek`** *(the standfirst field)*
+> This is the standfirst: one line under the title saying what the piece is about. It travels with the title on the article's card in feeds, and it is optional.
+
+**`editor.paywall`** *(the toolbar Paywall button)*
+> This places a paywall in the article. Everything above the line stays free to read; everything below it is paid. Click again to take it out.
+
+**`editor.gate`** *(the inserted gate line in the document; first sentence deliberately identical to `reader.gate`, the same object seen from the other side)*
+> This is where the free part of the article ends. Readers continue past it by paying the price set below, which goes on their reading tab.
+
+**`editor.price`** *(the price field; present only while a gate is inserted)*
+> This is what a reader pays to read past the paywall. A suggested price appears based on length, but it is yours to set.
+
+**`editor.tags`** *(the tag input)*
+> Tags say what the piece is about. Each tag has its own page collecting everything published under it, and readers can add a tag to their feeds as a source.
+
+**`editor.schedule`** *(the Schedule button; hidden when editing a published article)*
+> This publishes the article later, at a time you choose. A scheduled piece waits in your dashboard and goes out on its own.
+
+**`editor.draft`** *(the Save draft button + status)*
+> Saving happens by itself as you write; this button saves on demand. Drafts live in the dashboard, under the ∀ menu.
+
+**`editor.publication`** *(the "Publishing as" select; present only with publication memberships)*
+> This chooses who the article goes out as: yourself, or a publication you belong to. Depending on your role there, a publication piece may need an editor's approval before it goes live.
+
+#### Feed composer (`FeedComposer`)
+
+**`feedComposer`** *(base: the composer pane body)*
+> This is the feed composer: everything about one feed is decided here. Its name, its sources and their volumes, how it looks, and where it sits in the order.
+
+**`feedComposer.addSource`** *(the omnivorous resolver field; first sentence deliberately identical to `vessel.addSource`, one grammar for one gesture)*
+> Type here to add a source: a writer, a blog, a newsletter, a tag, or almost anything else that publishes. Paste whatever you have, a username, a URL, an npub or a #tag, and it will be worked out.
+
+**`feedComposer.source`** *(a source row; the volume cluster inside it carries its own kind below)*
+> This is one of the feed's sources. Click its name to have a look at it; the × at the end of the row removes it from this feed.
+
+**`feedComposer.volume`** *(the volume steps + sampling chips inside a source row)*
+> This is the source's volume in this feed: quieter to the left, louder to the right, and the × in front mutes it without removing it. RANDOM and TOP choose which of its posts get through when it is turned down, and NO REPLIES keeps only its freestanding posts.
+
+**`feedComposer.reach`** *(the Following / Explore chips)*
+> These add the site's shared streams to the feed: Following is everyone you follow, Explore is the wider platform. Either can sit alongside individual sources.
+
+**`feedComposer.colour`** *(the Colour appearance control; the swatch-is-the-name point is the teaching goal)*
+> This cycles the feed's colour scheme. The swatch is its only name: three bars for the feed's frame, its ground and its cards. Light or dark follows your sitewide appearance setting; the character is the feed's own.
+
+**`feedComposer.view`** *(the View density control)*
+> This cycles how much of each post the feed shows: condensed, standard, or full.
+
+**`feedComposer.orientation`** *(the Orientation control)*
+> This turns the feed between tall and wide. The symbol is the feed's own container, open on the side it grows from.
+
+**`feedComposer.textSize`** *(the Text size control)*
+> This steps the feed's text size, one to five. It belongs to this feed alone; the sitewide type size lives in Settings.
+
+**`feedComposer.order`** *(the drag-to-rank list)*
+> Drag the rows to put your feeds in order. The numbers here are the numbers the feeds wear on the floor, and on a phone this is the order you swipe through. Hidden feeds keep their place but wear no number.
+
+**`feedComposer.hide`** *(the Hide/Unhide button; verbatim reuse of `vessel.hide`, one grammar for one gesture)*
+> This hides the feed without destroying it. Restore a hidden one from the menu at any time.
+
+**`feedComposer.delete`** *(the Delete button)*
+> This deletes the feed for good. If you only want it out of the way, hide it instead.
+
 ### A.4 Copy notes
 
 - Deliberate duplications: "they stay where they are put" (beat 5 ↔ `floor` label) and the volume-knob line (beat 3 ↔ `card.byline` label). A user typically meets only one surface per session; the repetition harmonises rather than clashes. `pane.resize` opens with the `vessel.resize` sentence by the same reasoning: one grammar for one gesture.

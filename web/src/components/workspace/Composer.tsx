@@ -298,6 +298,9 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
       <div
         className="flex flex-col h-full max-h-[var(--gh-h)] overflow-y-auto"
         style={{ padding: 24 }}
+        // Explain base kind (C2): answers any interior hover a more specific
+        // leaf doesn't; the pane chrome stays with the generic `pane` tag.
+        data-explain="composer"
       >
         {/* Mode label — also reserves top-right clearance for the Glasshouse ✕. */}
         <div
@@ -402,6 +405,7 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
                 type="button"
                 onClick={openArticleEditor}
                 className="label-ui"
+                data-explain="composer.article"
                 style={{
                   padding: '6px 10px',
                   background: TOKENS.publishBg,
@@ -438,6 +442,7 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
               type="button"
               onClick={openArticleEditor}
               className="font-sans text-ui-xs"
+              data-explain="composer.article"
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -506,6 +511,7 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
                   type="button"
                   onClick={() => setCrossPostOn((prev) => ({ ...prev, [p]: !prev[p] }))}
                   className={`label-ui toggle-chip ${crossPostOn[p] ? 'toggle-chip-active' : 'toggle-chip-inactive'}`}
+                  data-explain="composer.crosspost"
                   title={
                     crossPostOn[p]
                       ? `Will also post to ${PROTOCOL_LABELS[p]} (@${linkedByProtocol[p]?.externalHandle ?? ''})`

@@ -149,6 +149,9 @@ export const PaywallGateNode = Node.create({
       dom.classList.add("paywall-gate-marker");
       dom.contentEditable = "false";
       dom.setAttribute("data-paywall-gate", "");
+      // Explain kind (C2): the writer's side of the paywall line, the
+      // counterpart of the reader-facing `reader.gate`.
+      dom.setAttribute("data-explain", "editor.gate");
 
       const label = document.createElement("span");
       label.classList.add("gate-label");

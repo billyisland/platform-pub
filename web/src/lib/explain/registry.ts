@@ -38,6 +38,35 @@ export type ExplainKind =
   // (PaywallGate, only present when a paywalled article is showing).
   | "reader"
   | "reader.gate"
+  // C2 (2026-07-16) — writing surfaces, all hover-only (pane mode). Each
+  // surface's base kind rides its pane body (the `reader` pattern: it answers
+  // any hover its leaves don't): the note Composer, the article editor
+  // (EditorOverlay/ArticleEditor; `editor.gate` is the in-document paywall
+  // node, tagged in PaywallGateNode's node view), and the FeedComposer.
+  | "composer"
+  | "composer.crosspost"
+  | "composer.article"
+  | "editor"
+  | "editor.dek"
+  | "editor.paywall"
+  | "editor.gate"
+  | "editor.price"
+  | "editor.tags"
+  | "editor.schedule"
+  | "editor.draft"
+  | "editor.publication"
+  | "feedComposer"
+  | "feedComposer.addSource"
+  | "feedComposer.source"
+  | "feedComposer.volume"
+  | "feedComposer.reach"
+  | "feedComposer.colour"
+  | "feedComposer.view"
+  | "feedComposer.orientation"
+  | "feedComposer.textSize"
+  | "feedComposer.order"
+  | "feedComposer.hide"
+  | "feedComposer.delete"
   // per-feed instance + tagged leaves
   | "vessel"
   | "vessel.name"
@@ -85,6 +114,59 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
     "This is the reader. Anything you open from a feed is read here: pieces by all.haus writers and pieces from elsewhere, all in the same place.",
   "reader.gate":
     "This is where the free part of the article ends. Continue and the price is added to your reading tab: you pay only for what you read, and settle the tab later. The tab lives under Ledger in the ∀ menu.",
+  composer:
+    "This is the note composer. A note is a short post, published under your name to anyone who follows you, here and on the open network beyond. Replies and quotes are written in this same box.",
+  "composer.crosspost":
+    "One switch per network you have linked: dark means this note will also post there. The default for each network is set in Settings, under Reach other networks.",
+  "composer.article":
+    "This carries what you have written into the article editor. Articles have no length limit and can take a title, a standfirst, images, tags and a paywall.",
+  editor:
+    "This is the article editor. Write on the page below; the toolbar handles formatting, images, embeds and the paywall. Your work saves itself as a draft while you write.",
+  "editor.dek":
+    "This is the standfirst: one line under the title saying what the piece is about. It travels with the title on the article's card in feeds, and it is optional.",
+  "editor.paywall":
+    "This places a paywall in the article. Everything above the line stays free to read; everything below it is paid. Click again to take it out.",
+  // First sentence deliberately identical to reader.gate: the same object,
+  // seen from the writer's side (Appendix A.4 harmonisation note).
+  "editor.gate":
+    "This is where the free part of the article ends. Readers continue past it by paying the price set below, which goes on their reading tab.",
+  "editor.price":
+    "This is what a reader pays to read past the paywall. A suggested price appears based on length, but it is yours to set.",
+  "editor.tags":
+    "Tags say what the piece is about. Each tag has its own page collecting everything published under it, and readers can add a tag to their feeds as a source.",
+  "editor.schedule":
+    "This publishes the article later, at a time you choose. A scheduled piece waits in your dashboard and goes out on its own.",
+  "editor.draft":
+    "Saving happens by itself as you write; this button saves on demand. Drafts live in the dashboard, under the ∀ menu.",
+  "editor.publication":
+    "This chooses who the article goes out as: yourself, or a publication you belong to. Depending on your role there, a publication piece may need an editor's approval before it goes live.",
+  feedComposer:
+    "This is the feed composer: everything about one feed is decided here. Its name, its sources and their volumes, how it looks, and where it sits in the order.",
+  // First sentence deliberately identical to vessel.addSource: one grammar for
+  // one gesture (Appendix A.4).
+  "feedComposer.addSource":
+    "Type here to add a source: a writer, a blog, a newsletter, a tag, or almost anything else that publishes. Paste whatever you have, a username, a URL, an npub or a #tag, and it will be worked out.",
+  "feedComposer.source":
+    "This is one of the feed's sources. Click its name to have a look at it; the × at the end of the row removes it from this feed.",
+  "feedComposer.volume":
+    "This is the source's volume in this feed: quieter to the left, louder to the right, and the × in front mutes it without removing it. RANDOM and TOP choose which of its posts get through when it is turned down, and NO REPLIES keeps only its freestanding posts.",
+  "feedComposer.reach":
+    "These add the site's shared streams to the feed: Following is everyone you follow, Explore is the wider platform. Either can sit alongside individual sources.",
+  "feedComposer.colour":
+    "This cycles the feed's colour scheme. The swatch is its only name: three bars for the feed's frame, its ground and its cards. Light or dark follows your sitewide appearance setting; the character is the feed's own.",
+  "feedComposer.view":
+    "This cycles how much of each post the feed shows: condensed, standard, or full.",
+  "feedComposer.orientation":
+    "This turns the feed between tall and wide. The symbol is the feed's own container, open on the side it grows from.",
+  "feedComposer.textSize":
+    "This steps the feed's text size, one to five. It belongs to this feed alone; the sitewide type size lives in Settings.",
+  "feedComposer.order":
+    "Drag the rows to put your feeds in order. The numbers here are the numbers the feeds wear on the floor, and on a phone this is the order you swipe through. Hidden feeds keep their place but wear no number.",
+  // Verbatim reuse of vessel.hide: one grammar for one gesture (Appendix A.4).
+  "feedComposer.hide":
+    "This hides the feed without destroying it. Restore a hidden one from the menu at any time.",
+  "feedComposer.delete":
+    "This deletes the feed for good. If you only want it out of the way, hide it instead.",
   "vessel.name":
     "This is the feed's name. Click to rename it and manage its sources, or click and drag to move the feed container around this workspace.",
   "vessel.gear":

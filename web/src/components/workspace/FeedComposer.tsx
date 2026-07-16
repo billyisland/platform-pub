@@ -406,8 +406,14 @@ export function FeedComposer({
       ariaLabel={`Feed composer: ${feed.name}`}
       persistKey="feed-composer"
     >
-      {/* Right padding clears the Glasshouse ✕ at top-right. */}
-      <div className="overflow-y-auto max-h-[var(--gh-h)]" style={{ padding: 24 }}>
+      {/* Right padding clears the Glasshouse ✕ at top-right. data-explain is
+          the composer's Explain base kind (C2): answers any interior hover a
+          more specific leaf doesn't. */}
+      <div
+        className="overflow-y-auto max-h-[var(--gh-h)]"
+        style={{ padding: 24 }}
+        data-explain="feedComposer"
+      >
         <div style={{ marginBottom: 16, paddingRight: 28 }}>
           <div className="label-ui" style={{ color: TOKENS.hintFg }}>
             Feed composer
@@ -596,6 +602,7 @@ export function FeedComposer({
             }
           }}
           placeholder="Username, URL, npub, DID, #tag…"
+          data-explain="feedComposer.addSource"
           className="font-sans text-ui-sm w-full"
           style={{
             background: TOKENS.fieldBg,
@@ -678,6 +685,7 @@ export function FeedComposer({
             A chip for a reach already on the feed reads "added" and is inert. */}
         <div
           style={{ display: "flex", gap: 6, marginTop: 4, marginBottom: 4 }}
+          data-explain="feedComposer.reach"
         >
           {(["following", "explore"] as const).map((kind) => {
             const present = sources.some(
@@ -760,6 +768,7 @@ export function FeedComposer({
               {onSchemeChange && (
                 <AppearanceControl
                   label="Colour"
+                  dataExplain="feedComposer.colour"
                   glyph={<SchemeSwatch scheme={normalizeBrightness(scheme)} />}
                   onClick={() =>
                     onSchemeChange(nextScheme(scheme ?? DEFAULT_BRIGHTNESS))
@@ -769,6 +778,7 @@ export function FeedComposer({
               {onDensityChange && (
                 <AppearanceControl
                   label="View"
+                  dataExplain="feedComposer.view"
                   glyph={
                     {
                       compact: "Condensed",
@@ -784,6 +794,7 @@ export function FeedComposer({
               {onOrientationChange && (
                 <AppearanceControl
                   label="Orientation"
+                  dataExplain="feedComposer.orientation"
                   glyph={
                     <OrientationGlyph
                       orientation={orientation ?? DEFAULT_ORIENTATION}
@@ -799,6 +810,7 @@ export function FeedComposer({
               {onTextSizeChange && (
                 <AppearanceControl
                   label="Text size"
+                  dataExplain="feedComposer.textSize"
                   glyph={
                     <span
                       style={{
@@ -856,6 +868,7 @@ export function FeedComposer({
               type="button"
               onClick={() => onHiddenChange(!hidden)}
               className="label-ui"
+              data-explain="feedComposer.hide"
               style={{
                 marginRight: "auto",
                 padding: "6px 10px 6px 0",
@@ -925,6 +938,7 @@ export function FeedComposer({
               type="button"
               onClick={() => setConfirmingDelete(true)}
               className="label-ui"
+              data-explain="feedComposer.delete"
               style={{
                 padding: "6px 10px",
                 background: "transparent",
@@ -1109,6 +1123,7 @@ function FeedRankList({
         gap: RANK_ROW_GAP,
         marginBottom: 4,
       }}
+      data-explain="feedComposer.order"
     >
       {order.map((id) => {
         const f = byId.get(id);
@@ -1196,15 +1211,21 @@ function AppearanceControl({
   label,
   glyph,
   indicator,
+  dataExplain,
   onClick,
 }: {
   label: string;
   glyph: React.ReactNode;
   indicator?: string;
+  /** Explain kind tag (C2) — same pattern as Byline/VesselBar. */
+  dataExplain?: string;
   onClick: () => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 4 }}
+      data-explain={dataExplain}
+    >
       <div className="label-ui" style={{ color: TOKENS.hintFg }}>
         {label}
       </div>
@@ -1341,7 +1362,10 @@ function SourceRow({
   const href = source.display.href;
 
   return (
-    <div style={{ background: TOKENS.rowBg, padding: "8px 10px" }}>
+    <div
+      style={{ background: TOKENS.rowBg, padding: "8px 10px" }}
+      data-explain="feedComposer.source"
+    >
       <div
         style={{
           display: "flex",
@@ -1438,6 +1462,7 @@ function SourceRow({
           marginTop: 6,
           flexWrap: "wrap",
         }}
+        data-explain="feedComposer.volume"
       >
         {/* Volume: 0=mute, 1..5 = quieter→louder. Step 3 = default weight. */}
         <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
