@@ -31,12 +31,14 @@ interface ScheduledDraft {
   id: string;
   writer_id: string;
   title: string;
+  dek: string | null;
   content_raw: string;
   nostr_d_tag: string | null;
   gate_position_pct: number | null;
   price_pence: number | null;
   publication_id: string | null;
   cover_image_url: string | null;
+  comments_enabled: boolean | null;
 }
 
 export async function publishScheduledDrafts(): Promise<void> {
@@ -55,8 +57,9 @@ export async function publishScheduledDrafts(): Promise<void> {
          ORDER BY scheduled_at ASC
          FOR UPDATE SKIP LOCKED
        )
-       RETURNING id, writer_id, title, content_raw, nostr_d_tag,
-                 gate_position_pct, price_pence, publication_id, cover_image_url`,
+       RETURNING id, writer_id, title, dek, content_raw, nostr_d_tag,
+                 gate_position_pct, price_pence, publication_id, cover_image_url,
+                 comments_enabled`,
     );
     return rows;
   });
@@ -198,6 +201,13 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
     ["published_at", String(Math.floor(Date.now() / 1000))],
   ];
 
+  // NIP-23 summary tag from the draft's dek (M20) — was lost because
+  // article_drafts never carried the dek, so scheduled articles published with
+  // no standfirst and no summary tag.
+  if (draft.dek && draft.dek.trim()) {
+    baseTags.push(["summary", draft.dek.trim()]);
+  }
+
   if (draft.cover_image_url) {
     baseTags.push(["image", draft.cover_image_url]);
   }
@@ -235,21 +245,23 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
   const articleId = await withTransaction(async (client) => {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO articles (
-         writer_id, nostr_event_id, nostr_d_tag, title, slug,
+         writer_id, nostr_event_id, nostr_d_tag, title, slug, summary,
          content_free, word_count, tier,
          access_mode, price_pence, gate_position_pct,
-         cover_image_url, published_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'tier1', $8, $9, $10, $11, now())
+         cover_image_url, comments_enabled, published_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tier1', $9, $10, $11, $12, $13, now())
        ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
          nostr_event_id = EXCLUDED.nostr_event_id,
          title = EXCLUDED.title,
          slug = EXCLUDED.slug,
+         summary = EXCLUDED.summary,
          content_free = EXCLUDED.content_free,
          word_count = EXCLUDED.word_count,
          access_mode = EXCLUDED.access_mode,
          price_pence = EXCLUDED.price_pence,
          gate_position_pct = EXCLUDED.gate_position_pct,
          cover_image_url = EXCLUDED.cover_image_url,
+         comments_enabled = EXCLUDED.comments_enabled,
          published_at = now()
        RETURNING id`,
       [
@@ -258,12 +270,14 @@ async function publishPersonalDraft(draft: ScheduledDraft): Promise<void> {
         dTag,
         draft.title || "Untitled",
         slug,
+        draft.dek?.trim() || null,
         eventContent,
         wordCount,
         isPaywalled ? "paywalled" : "public",
         isPaywalled ? draft.price_pence : null,
         isPaywalled ? (draft.gate_position_pct ?? null) : null,
         draft.cover_image_url,
+        draft.comments_enabled ?? true,
       ],
     );
     const artId = rows[0].id;

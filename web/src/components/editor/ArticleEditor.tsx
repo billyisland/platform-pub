@@ -133,6 +133,8 @@ export function ArticleEditor({
   pricePenceRef.current = pricePence
   const coverImageUrlRef = useRef(coverImageUrl)
   coverImageUrlRef.current = coverImageUrl
+  const commentsEnabledRef = useRef(commentsEnabled)
+  commentsEnabledRef.current = commentsEnabled
   const currentDraftIdRef = useRef(currentDraftId)
   currentDraftIdRef.current = currentDraftId
 
@@ -206,7 +208,7 @@ export function ArticleEditor({
       // never shadows an unrelated new-article draft)
       const content = editor.storage.markdown.getMarkdown()
       autoSaver(
-        { title: titleRef.current, dek: dekRef.current, content, gatePositionPct: 50, pricePence: pricePenceRef.current, coverImageUrl: coverImageUrlRef.current, draftId: currentDraftIdRef.current ?? undefined, dTag: editingDTag },
+        { title: titleRef.current, dek: dekRef.current, content, gatePositionPct: 50, pricePence: pricePenceRef.current, coverImageUrl: coverImageUrlRef.current, commentsEnabled: commentsEnabledRef.current, draftId: currentDraftIdRef.current ?? undefined, dTag: editingDTag },
         (saved) => {
           setCurrentDraftId(saved.draftId)
           setDraftStatus('Saved')
@@ -740,7 +742,7 @@ export function ArticleEditor({
               const content = editor.storage.markdown.getMarkdown()
               const saved = await saveDraft({
                 title, dek, content, gatePositionPct: 50, pricePence,
-                coverImageUrl, draftId: currentDraftId ?? undefined, dTag: editingDTag,
+                coverImageUrl, commentsEnabled, draftId: currentDraftId ?? undefined, dTag: editingDTag,
               })
               setCurrentDraftId(saved.draftId)
               setDraftStatus('Saved')

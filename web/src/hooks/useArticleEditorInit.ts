@@ -174,7 +174,7 @@ export function useArticleEditorInit({
             content: draft.content ?? "",
             gatePosition: draft.gatePositionPct ?? 50,
             price: draft.pricePence ?? 0,
-            commentsEnabled: true,
+            commentsEnabled: draft.commentsEnabled ?? true,
             draftId,
             editingDTag: draft.dTag ?? undefined,
             coverImageUrl: draft.coverImageUrl ?? null,
@@ -260,6 +260,9 @@ export function useArticleEditorInit({
       // profile (wrong byline/surface, bypassing review + splits) — the field is
       // plumbed end-to-end (drafts schema → scheduler branches on publication_id).
       publicationId: data.publicationId ?? undefined,
+      // Carry the reply toggle so a scheduled article keeps its comments setting
+      // (M19); dek (above) keeps the standfirst + NIP-23 summary tag (M20).
+      commentsEnabled: data.commentsEnabled,
     });
 
     await scheduleDraft(saved.draftId, scheduledAt);

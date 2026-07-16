@@ -24,6 +24,7 @@ export interface DraftData {
   dTag?: string; // set when editing an existing article
   coverImageUrl?: string | null;
   publicationId?: string | null;
+  commentsEnabled?: boolean; // "allow replies" toggle
 }
 
 export interface SavedDraft {

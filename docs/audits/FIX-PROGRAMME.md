@@ -23,6 +23,25 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit M20 (dek dropped by the draft pipeline) +
+  M19 scheduled residual (migration 157).** `article_drafts` had no column for
+  the dek (standfirst) or the "allow replies" toggle, so the whole draft pipeline
+  silently dropped the dek (gateway schema had no field → Zod stripped it → GET
+  returned none): reopening a draft lost the standfirst, and a *scheduled* article
+  published with no summary + no NIP-23 `summary` tag; the scheduled article also
+  always published comments-on. Migration 157 adds `article_drafts.dek` +
+  `comments_enabled` (both nullable so existing drafts are unaffected and the
+  upserts' `COALESCE(EXCLUDED.x, existing)` keep-on-conflict pattern works
+  uniformly; NULL comments_enabled reads as true). Plumbed through: the drafts
+  route schema, all four upsert paths (explicit-id UPDATE, dTag upsert,
+  new-article existing-row UPDATE, fresh INSERT) and the GET; the scheduler's
+  claim query + `ScheduledDraft` + a `summary` NIP-23 tag from the dek + the
+  `articles` INSERT (`summary`, `comments_enabled`); the editor's autosave (via a
+  new `commentsEnabledRef`), explicit Save, `handleSchedule`, draft-load
+  (`commentsEnabled` was hardcoded true), and the `DraftData` type. schema.sql
+  regenerated canonically via a throwaway-from-committed + pg_dump (drift guard
+  green: Checks 0/1/2/3 all pass; dev migrated to 157). Verified: gateway + web
+  typecheck clean; `next build` clean.
 - **2026-07-16** — **Deep-audit MEDIUM web batch (M19, M22).**
   - **M19 — "Allow replies" dead at publish (publish-now path).**
     `PublishData.commentsEnabled` was collected in the editor but sent by neither

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict fOChDqhO27jo1YPVojel05BoIUODoqYlYF1aTTdfTgsbIhPby10ytpudwBApOac
+\restrict tgy6nj7wHkUhqs2yNYFfjfliN0RcaQ0EYLY3hS31HKuEmy2Ole73KIZndfKUZve
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -792,7 +792,9 @@ CREATE TABLE public.article_drafts (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     publication_id uuid,
     scheduled_at timestamp with time zone,
-    cover_image_url text
+    cover_image_url text,
+    dek text,
+    comments_enabled boolean
 );
 
 
@@ -7063,7 +7065,8 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fOChDqhO27jo1YPVojel05BoIUODoqYlYF1aTTdfTgsbIhPby10ytpudwBApOac
+\unrestrict tgy6nj7wHkUhqs2yNYFfjfliN0RcaQ0EYLY3hS31HKuEmy2Ole73KIZndfKUZve
+
 
 
 --
@@ -7226,4 +7229,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('153_follow_imports.sql'),
     ('154_follow_import_sync.sql'),
     ('155_tax_schema_prepositioning.sql'),
-    ('156_dial_a_tribute_simplification.sql');
+    ('156_dial_a_tribute_simplification.sql'),
+    ('157_draft_dek_and_comments.sql');
