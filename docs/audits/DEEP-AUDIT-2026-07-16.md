@@ -1,5 +1,16 @@
 # Deep code audit — 2026-07-16
 
+> **Resolution status (updated 2026-07-16).** The CRITICAL, all 14 HIGHs, and 21
+> of 25 MEDIUMs are fixed and shipped; the per-item fix log is in
+> `FIX-PROGRAMME.md` and the live status is in `CONSOLIDATED-TODO.md` §0e.
+> Deliberately deferred as design-sensitive (not mechanical fixes): **M8**
+> (event-id squatting → needs signed-event↔writer ownership verification),
+> **M16** (RSS guid dedup → unique-constraint migration + re-ingest trade-off),
+> **M17** (email fuzzy dedup → per-subscriber read-time suppression), **M23**
+> (strfry open-write → write-policy plugin with a DB-synced pubkey allowlist).
+> The 18 LOWs remain. This document is the historical finding record — do not
+> edit the findings below; track status in CONSOLIDATED-TODO.md.
+
 Seven-agent adversarial audit of the full repo at HEAD (`c000beb`), one agent per subsystem (money/payments, gateway core, feed-ingest, feeds/follow/dedup, key services, web frontend, schema/shared/infra), findings filtered against CONSOLIDATED-TODO.md and FIX-PROGRAMME.md so nothing below is already-tracked work. Findings marked **[verified]** were re-confirmed by the orchestrating auditor against the source (and where noted, empirically against the running dev stack); the rest carry the reporting agent's code excerpts.
 
 Severity legend: CRITICAL = core platform function broken or direct money/key theft · HIGH = money loss, content-integrity, privacy, or invariant violation · MEDIUM = real defect, bounded blast radius · LOW = defence-in-depth / edge case.
