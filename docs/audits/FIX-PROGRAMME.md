@@ -23,6 +23,31 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Deep-audit MEDIUM infra/shared batch (M24, M25) + M10
+  test.**
+  - **M25 — safeFetch leaked credentials across cross-origin redirects.**
+    `safeFetch` (`shared/src/lib/http-client.ts`) re-sent `options.headers` (incl.
+    `Authorization`) and the body verbatim on every redirect hop, so a 302 to a
+    third-party host re-sent the caller's credentials (`activitypub-resolve.ts`
+    threads a user's Mastodon token through it). Now method/headers/body evolve
+    across hops: a hop that changes scheme/host/port strips
+    `authorization`/`cookie`/`proxy-authorization`, and a 301/302/303 downgrades
+    the method to GET and drops the body (307/308 preserve). All 44 http-client
+    tests still pass.
+  - **M24 — migrate.ts had no lock against concurrent runners.** Two simultaneous
+    `migrate.ts` runs read the same applied set and double-apply a pending
+    migration; for the no-transaction path (ALTER TYPE ADD VALUE / CONCURRENTLY) a
+    partial double-apply can't roll back. Added a session `pg_advisory_lock`
+    (acquired before the applied-set read, released in `finally`) so the second
+    runner waits.
+  - **M10 test** updated for the atomic `verifyMagicLink` (single `UPDATE … WHERE
+    used_at IS NULL … RETURNING`) — the two-query mock became one, and a new
+    assertion pins the single-statement atomic claim keyed by the token hash.
+  **Not done — M23 (strfry open-write):** closing it needs a strfry write-policy
+  plugin allow-listing the platform's per-user custodial pubkeys (a DB-synced
+  allowlist + plugin script + config), an operational change out of scope for
+  this code pass; carried in CONSOLIDATED-TODO §0e.
+  Verified: shared typecheck clean; full shared suite green (84 passed).
 - **2026-07-16** — **Deep-audit MEDIUM money batch (M3, M4).**
   - **M4 — publication-split overdraw + nondeterministic short-pool order.** In
     `computePublicationSplits` (`payout.ts`) the flat-fee branch checked

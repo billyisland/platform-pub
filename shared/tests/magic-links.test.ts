@@ -65,9 +65,8 @@ describe("requestMagicLink", () => {
 
 describe("verifyMagicLink", () => {
   it("returns account ID for a valid unused token", async () => {
-    mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: "link-1", account_id: "acct-1" }] }) // SELECT
-      .mockResolvedValueOnce({ rows: [] }); // UPDATE used_at
+    // Single atomic UPDATE … WHERE used_at IS NULL … RETURNING account_id.
+    mockQuery.mockResolvedValueOnce({ rows: [{ account_id: "acct-1" }] });
 
     const result = await verifyMagicLink("valid-token");
     expect(result).toBe("acct-1");
@@ -79,15 +78,21 @@ describe("verifyMagicLink", () => {
     expect(result).toBeNull();
   });
 
-  it("marks the link as used after verification", async () => {
-    mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: "link-1", account_id: "acct-1" }] })
-      .mockResolvedValueOnce({ rows: [] });
+  it("claims the link atomically (single UPDATE … RETURNING)", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ account_id: "acct-1" }] });
 
     await verifyMagicLink("valid-token");
-    const updateCall = mockQuery.mock.calls[1];
+    // One statement, and it is the atomic claim keyed by the token hash — no
+    // separate SELECT that a concurrent verify could race (M10).
+    expect(mockQuery.mock.calls).toHaveLength(1);
+    const updateCall = mockQuery.mock.calls[0];
     expect(updateCall[0]).toContain("UPDATE magic_links SET used_at");
-    expect(updateCall[1][0]).toBe("link-1");
+    expect(updateCall[0]).toContain("used_at IS NULL");
+    expect(updateCall[0]).toContain("RETURNING account_id");
+    const expectedHash = createHash("sha256")
+      .update("valid-token")
+      .digest("hex");
+    expect(updateCall[1][0]).toBe(expectedHash);
   });
 });
 

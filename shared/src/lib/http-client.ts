@@ -292,6 +292,14 @@ export async function safeFetch(
   const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES;
   let currentUrl = url;
   let redirectCount = 0;
+  // Method / headers / body evolve across redirect hops (M25): a cross-origin
+  // hop strips credentials so a 302 to a third party can't exfiltrate the
+  // caller's Authorization/Cookie (e.g. a user's Mastodon token threaded through
+  // activitypub-resolve), and a 301/302/303 downgrades POST→GET and drops the
+  // body, matching browser/fetch semantics.
+  let currentMethod = (options.method ?? "GET").toUpperCase();
+  let currentHeaders: Record<string, string> = { ...(options.headers ?? {}) };
+  let currentBody = options.body;
 
   while (true) {
     const parsed = new URL(currentUrl);
@@ -311,13 +319,13 @@ export async function safeFetch(
 
     try {
       const response = await undiciFetch(currentUrl, {
-        method: options.method ?? "GET",
+        method: currentMethod,
         headers: {
           "User-Agent": USER_AGENT,
           Accept: "*/*",
-          ...options.headers,
+          ...currentHeaders,
         },
-        body: options.body,
+        body: currentBody,
         signal: controller.signal,
         redirect: "manual",
         dispatcher: agent,
@@ -346,7 +354,35 @@ export async function safeFetch(
           throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
         }
         // Resolve relative redirects
-        currentUrl = new URL(location, currentUrl).toString();
+        const nextUrl = new URL(location, currentUrl);
+        // Cross-origin hop (scheme, host, or port changes) → strip credentials
+        // so they're never re-sent to a different host (M25).
+        if (
+          nextUrl.protocol !== parsed.protocol ||
+          nextUrl.hostname !== parsed.hostname ||
+          nextUrl.port !== parsed.port
+        ) {
+          currentHeaders = Object.fromEntries(
+            Object.entries(currentHeaders).filter(([k]) => {
+              const lk = k.toLowerCase();
+              return (
+                lk !== "authorization" &&
+                lk !== "cookie" &&
+                lk !== "proxy-authorization"
+              );
+            }),
+          );
+        }
+        // 301/302/303 → GET with no body; 307/308 preserve method + body.
+        if (
+          response.status === 301 ||
+          response.status === 302 ||
+          response.status === 303
+        ) {
+          if (currentMethod !== "HEAD") currentMethod = "GET";
+          currentBody = undefined;
+        }
+        currentUrl = nextUrl.toString();
         continue;
       }
 
