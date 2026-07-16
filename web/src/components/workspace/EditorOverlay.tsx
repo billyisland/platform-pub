@@ -5,7 +5,8 @@
 // a workspace Glasshouse. Mounted globally in LayoutShell (like ProfileOverlay)
 // so "write an article" is reachable from the workspace, the dashboard overlay,
 // and the note→article handoff. Opened via useEditorOverlay (ForallMenu, the
-// dashboard "New article"/"Edit" rows, the compose "Write an article →" button)
+// dashboard "New article"/"Edit" rows, the compose "Make this an article →"
+// button)
 // or the /reader?overlay=editor deep-link. The standalone /write page remains
 // the addressable full-page editor for direct visits/bookmarks.
 // =============================================================================

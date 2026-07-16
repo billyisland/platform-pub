@@ -237,7 +237,7 @@ export function ComposeOverlay() {
               }}
               className="label-ui text-grey-600 hover:text-black transition-colors"
             >
-              Write an article &rarr;
+              Make this an article &rarr;
             </button>
           )}
 

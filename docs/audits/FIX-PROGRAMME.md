@@ -23,6 +23,17 @@ starts.
 
 ## Progress
 
+- **2026-07-16** — **Menu slimming + composer label (EXPLAIN-ADR amendment
+  11).** About removed from the desktop ∀ menu — the Explain group is
+  Explain alone there (About via Explain's "About all.haus" button or
+  `/about`; mobile keeps About alone; `AboutOverlay` stays mounted both
+  branches). Accepted consequence: with a pane open on desktop, About is
+  unreachable from workspace chrome until the pane closes (pane-mode
+  Explain suppresses the wordmark swap). And the note composer's article
+  escalation now reads **"Make this an article →"** (was "Write an
+  article →") in both compose surfaces (`Composer`, `ComposeOverlay`);
+  the long-note nudge's Switch button is unchanged. CLAUDE.md's two
+  canonical mentions updated.
 - **2026-07-16** — **Explain post-programme trio: scroll-through, card
   flavours, one copy file (EXPLAIN-ADR third-session amendments 8–10).**
   (1) All caption prose extracted to `web/src/lib/explain/copy.ts` — strings

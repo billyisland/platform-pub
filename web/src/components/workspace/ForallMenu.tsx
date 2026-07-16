@@ -197,35 +197,33 @@ export function ForallMenu({
       : [];
   const createRows: FocusRow[] = [
     // One write entry. It opens the note composer; article writing is reached
-    // through its "Write an article →" escalation (which carries the typed
+    // through its "Make this an article →" escalation (which carries the typed
     // body along), never a second menu row.
     { kind: "action", key: "new-note", label: "Write something" },
     { kind: "action", key: "new-feed", label: "New feed" },
   ];
   // The "what is this place" group (EXPLAIN-ADR §8, keep the menu slim).
-  // Desktop: an Explain / About pair — Explain now works over an open
-  // Glasshouse too (pane-mode program; the D10 disable is gone), and About is
-  // reachable without entering Explain first. Mobile: About alone — Explain
-  // has no hover branch there (ADR §Surface), so the row it would occupy
-  // carries the About page instead.
-  const explainRows: FocusRow[] = [
-    ...(!isMobile
-      ? [
-          {
-            kind: "overlay",
-            onOpen: () => openExplain(),
-            label: "Explain",
-            count: 0,
-          } as FocusRow,
-        ]
-      : []),
-    {
-      kind: "overlay",
-      onOpen: () => useAboutOverlay.getState().open(),
-      label: "About",
-      count: 0,
-    },
-  ];
+  // Desktop: Explain alone (2026-07-16, amendment 11) — About left the menu;
+  // it is reached through Explain's own "About all.haus" button (the wordmark
+  // swap) or /about. Mobile: About alone — Explain has no hover branch there
+  // (ADR §Surface), so the row it would occupy carries the About page instead.
+  const explainRows: FocusRow[] = isMobile
+    ? [
+        {
+          kind: "overlay",
+          onOpen: () => useAboutOverlay.getState().open(),
+          label: "About",
+          count: 0,
+        },
+      ]
+    : [
+        {
+          kind: "overlay",
+          onOpen: () => openExplain(),
+          label: "Explain",
+          count: 0,
+        },
+      ];
   // The go-group keeps all six destinations but reads in two tiers: a primary
   // pair (the high-traffic inbox + dashboard) over a muted account cluster.
   // Same group-gap separates them; the muted weight does the demoting.

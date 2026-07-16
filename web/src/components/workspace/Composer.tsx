@@ -451,7 +451,7 @@ export function Composer({ open, replyTarget, quoteTarget, onClose, onPublished,
                 padding: 0,
               }}
             >
-              Write an article →
+              Make this an article →
             </button>
           </div>
         )}
