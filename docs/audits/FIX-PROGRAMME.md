@@ -23,6 +23,49 @@ starts.
 
 ## Progress
 
+- **2026-07-17** — **CRITICAL: strfry rejected 100% of native publishes —
+  `rejectEventsOlderThanSeconds = 0` (C1 was only half-fixed).** Found by the
+  §11 smoke session, driving the real publish path end-to-end in dev rather
+  than trusting the 2026-07-16 sign-off (see the CORRECTION on the `a157834`
+  entry below).
+  - **The bug.** `relay/strfry.conf:57` carried `rejectEventsOlderThanSeconds = 0`
+    under a comment reading "Event retention — keep everything (no expiry at
+    launch)" — i.e. authored believing `0` meant "no limit". It is not a
+    retention switch: strfry **rejects any event whose `created_at` is older
+    than N seconds**, so `0` rejects everything not dated in the future. Present
+    since the `5fbbc0c` baseline (2026-03-20) but *invisible*, because the SSRF
+    pin (`8375365`, 2026-05-16) was failing delivery upstream — every event died
+    before strfry could rule on it. Fixing C1 uncovered it, and C1's own
+    verification then misread it as staleness.
+  - **Blast radius.** Every native Nostr publish — kind-30023 articles, kind-1
+    notes, kind-5 tombstones, discovery kind 0/3/10002 — silently failed, on dev
+    and prod, while every API returned success (the relay-outbox invariant is
+    "signed and durably queued", so rejection surfaces only as worker retries →
+    `abandoned`). Dev's strfry held 175 kind-7003 events from April and nothing
+    else: no notes, no articles, ever.
+  - **Proof (dev, one variable).** Two events identical but for `created_at`:
+    `now` → `failed`, `Relay rejected event: invalid: created_at too early`,
+    absent from strfry; `now+30s` → `sent`, stored. That boundary *is* the
+    0-second window, and it disproves the "image applies its own older-than
+    default" theory (a 3-year default would have accepted both, and would have
+    accepted the 22 stale rows too).
+  - **Fix + verification.** `rejectEventsOlderThanSeconds = 315360000` (10y) with
+    a comment recording the reject-window semantics so `0` is not reintroduced as
+    "unlimited". Generous by intent ("keep everything") and it makes an outage
+    backlog **redrivable** — a signature covers `created_at`, so stale rows can
+    never be freshened, which is the whole reason `strfry import` was needed on
+    2026-07-16. After the fix, config-only change, same code: a normal
+    `created_at=now` publish → `sent`, attempts=1, no error, **present in
+    strfry**; and the previously-`failed` row, redriven, → `sent` + stored (so
+    the `strfry import` workaround is no longer required for a stale backlog).
+  - **Prod residue.** Prod runs this same file (container config byte-identical
+    to the repo). Needs: deploy + `docker compose up -d strfry`, then redrive
+    `relay_outbox` (`scripts/redrive-relay-outbox.sql`) to recover everything
+    that failed since the 2026-07-16 deploy. Carried in CONSOLIDATED-TODO §11.
+  - **Lesson worth keeping:** C1 was signed off "confirmed fixed empirically" on
+    evidence that only proved *transport* reached the relay. The publish path was
+    never driven end-to-end to a stored event. "The pin is fixed" and "publishing
+    works" are different claims.
 - **2026-07-16** — **Deep-audit M2 (pledge NULL tab_id) + M21 (editor close
   discards work).**
   - **M2 — pledge fulfilment left `read_events.tab_id` NULL.** `drives.ts` INSERTed
@@ -453,6 +496,18 @@ starts.
   import` recovery are now documented in the redrive-script header for the next
   operator. **New publishing (fresh `created_at`) works normally** — this only
   affected replaying the long-outage backlog.
+  > **⚠️ CORRECTION 2026-07-17 — the two claims above in bold are FALSE; do not
+  > rely on them.** (a) "New publishing works normally" was never tested, and is
+  > wrong: a fresh-`created_at` publish was rejected too. (b) The rejections were
+  > NOT "an older-than default the image applies despite the config" — that theory
+  > cannot explain its own evidence (a 3-year default would have ACCEPTED 1–5-week
+  > rows). The config was applied exactly as written: `rejectEventsOlderThanSeconds`
+  > is a **reject window**, not a retention switch, and `0` means "reject every
+  > event not dated in the future". So C1's pin fix was real but only got the
+  > worker *to* the relay; strfry then rejected 100% of what it was handed, and
+  > `strfry import` appeared to succeed precisely because it bypasses that check.
+  > Every native publish on prod was silently failing from this deploy until the
+  > 2026-07-17 config fix. Full finding + proof: the 2026-07-17 entry below.
 - **2026-07-16** — **Menu slimming + composer label (EXPLAIN-ADR amendment
   11).** About removed from the desktop ∀ menu — the Explain group is
   Explain alone there (About via Explain's "About all.haus" button or
