@@ -120,7 +120,9 @@ type FeedCursor =
   | { kind: "scored"; score: number; id: string }
   | { kind: "explore"; score: number; ts: number; id: string };
 
-function encodeFeedCursor(c: FeedCursor): string {
+// Exported for the cursor round-trip test (M13): the encode→decode pair must be
+// lossless in the epoch, and a unit test is the only thing that pins that.
+export function encodeFeedCursor(c: FeedCursor): string {
   return c.kind === "scored"
     ? `scored:${c.score}:${c.id}`
     : `explore:${c.score}:${c.ts}:${c.id}`;
@@ -129,7 +131,7 @@ function encodeFeedCursor(c: FeedCursor): string {
 // The tag is the discriminant, so a decoded cursor is self-describing; each
 // caller narrows to the `kind` its branch expects and treats the other kind as
 // undefined (→ restart). A bare/untyped string matches no tag → undefined too.
-function decodeFeedCursor(raw: string | undefined): FeedCursor | undefined {
+export function decodeFeedCursor(raw: string | undefined): FeedCursor | undefined {
   if (!raw) return undefined;
   const parts = raw.split(":");
   if (parts[0] === "scored") {
@@ -142,9 +144,14 @@ function decodeFeedCursor(raw: string | undefined): FeedCursor | undefined {
   if (parts[0] === "explore") {
     if (parts.length !== 4) return undefined;
     const score = Number(parts[1]);
-    const ts = parseInt(parts[2], 10);
+    // Number, never parseInt (M13): the encoder carries a FRACTIONAL epoch
+    // (published_at_secs) precisely so the to_timestamp() filter matches the
+    // full-precision ORDER BY; parseInt stops at the '.' and truncates it back to
+    // the whole second, skipping every remaining row inside that second. Empty is
+    // rejected explicitly (Number("") === 0). See parseCursorEpoch in feed-sql.ts.
+    const ts = parts[2].trim() === "" ? NaN : Number(parts[2]);
     const id = parts[3];
-    if (Number.isNaN(score) || Number.isNaN(ts) || !UUID_RE.test(id))
+    if (!Number.isFinite(score) || !Number.isFinite(ts) || !UUID_RE.test(id))
       return undefined;
     return { kind: "explore", score, ts, id };
   }

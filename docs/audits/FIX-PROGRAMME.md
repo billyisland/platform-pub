@@ -23,6 +23,56 @@ starts.
 
 ## Progress
 
+- **2026-07-17** — **Attack-order 0d: finished the 0b sweep (M13 + M15). Both
+  driven before/after; M13 was found to be STILL LIVE — its own fix defeated by
+  its decoder — and re-fixed.** The pattern held from 0b/0c: audit the evidence,
+  drive the feature where the recorded "typecheck clean" couldn't reach.
+  - **M13 — the fix shipped inert; pagination was still losing rows.** The
+    2026-07-16 fix made the four cursor SQLs emit a *fractional* epoch and the
+    encoders put it on the wire — but the DECODERS (`parseCursor` in `feed-sql.ts`,
+    the explore codec in `feeds/items.ts`) still used `parseInt`, which stops at
+    the `.` and truncates straight back to the whole second. So the round trip
+    stayed whole-second and the bug the fractional cursor exists to prevent was
+    never actually closed. **Driven end-to-end on the running stack** against
+    `GET /tags/:name/posts` (optionalAuth, so reachable): 5 articles inside ONE
+    second, `limit=2` → **page 1 returned 2 rows, page 2 was EMPTY, cursor
+    `1784282400` (bare whole second) — 3 of 5 rows permanently unreachable.** Also
+    found **two cursors the 2026-07-16 fix never touched** — `tags.ts` and
+    `sources.ts` still *encoded* `published_at_epoch` (`::bigint`, whole seconds),
+    so they were defective on the encode side too. Fixed: a shared `parseCursorEpoch`
+    (`Number`, not `parseInt`; empty→NaN so `Number('')===0` can't mean 1970;
+    non-finite rejected), the explore decoder switched to `Number`, and both
+    untouched cursors now emit fractional `published_at_secs`. **Re-driven on a
+    rebuilt gateway image (throwaway container, fix confirmed present in
+    `/app/gateway/dist` first — the [[reference_docker_restart_perms]] rig, since
+    AppArmor blocked recreating the real container): same fixtures, pages of 2/2/1,
+    all 5 rows, no dupes, cursor `1784282400.4`.** The pre-fix build is the
+    negative control. Guarded by `gateway/tests/feed-cursor.test.ts` (15 tests,
+    codec functions exported for it); **mutation: restore `parseInt` → 7 fail**
+    (the 8 that survive are the whole-second/malformed-input controls).
+  - **M15 — fix real and complete; all three claims reproduced.** Unlike M13 this
+    one was correctly wired; the job was to *prove* it, which the original entry
+    hadn't. Drove the DELETE (fixed vs the pinned pre-M15 query, 643fab3) against
+    a live DB over seeded fixtures (old plain / cited / native-reply-parent /
+    author-tombstoned), all rolled back. **All three confirmed: (1) the permanent
+    wedge** — the buggy query raises `23503` on the cited item (`citation_edges`
+    has no on-delete action), which in the daily run fails the whole batch every
+    time → nothing ever pruned again; **(2) the guards** — cited + native-parent
+    spared; **(3) the privacy inversion** — the buggy `deleted_at IS NULL` retained
+    exactly the author-deleted item the fix now prunes. Guarded by
+    `feed-ingest/src/tasks/external-items-prune-integration.test.ts` (4 tests). To
+    stop the test proving a *copy* of the SQL (the M4(b) lesson), the DELETE is
+    extracted to an exported `EXTERNAL_ITEMS_PRUNE_SQL` the task and test share;
+    **mutation: revert the constant to the pre-M15 SQL → 2 fail** (the 2 controls
+    inline `BUGGY_DELETE` and correctly still pass). Rollback proven by before/after
+    row counts (24843 external_items untouched).
+  - **Net:** M13 was a live content-loss bug still open a day after being marked
+    fixed — the strongest vindication yet of the 0b thesis (compile-clean evidence
+    hid a defective *and* incompletely-applied fix). Two new DB-backed tests + one
+    codec test, all mutation-verified; two SQL constants extracted so neither test
+    can drift from production. Test totals: gateway 342→357, feed-ingest 217→221.
+    → `CONSOLIDATED-TODO.md` §11.
+
 - **2026-07-17** — **Attack-order 0c: the M3/M4/M25 tests written. The three
   fixes 0b mutation-proved had ZERO coverage are now covered, and every test is
   mutation-verified.** 248 → 272 tests (payment-service 164 → 175, shared 84 →

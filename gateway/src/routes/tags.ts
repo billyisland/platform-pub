@@ -154,7 +154,12 @@ export async function tagRoutes(app: FastifyInstance) {
           ),
           pool.query<any>(
             `
-            SELECT ${FEED_SELECT}${POST_SELECT}
+            SELECT ${FEED_SELECT}${POST_SELECT},
+              -- Fractional epoch for the cursor (M13) — published_at_epoch is
+              -- ::bigint (whole seconds, for display), but the ORDER BY and the
+              -- to_timestamp() filter are full-precision, so a whole-second
+              -- cursor skips every remaining row inside that second.
+              EXTRACT(EPOCH FROM fi.published_at) AS published_at_secs
             FROM feed_items fi
             ${FEED_JOINS}
             ${POST_JOINS}
@@ -177,7 +182,7 @@ export async function tagRoutes(app: FastifyInstance) {
             ? result.rows[result.rows.length - 1]
             : undefined
         const nextCursor = lastRow
-          ? `${Number(lastRow.published_at_epoch)}:${lastRow.fi_id}`
+          ? `${Number(lastRow.published_at_secs)}:${lastRow.fi_id}`
           : undefined
 
         return reply.send({
