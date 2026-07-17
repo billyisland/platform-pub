@@ -23,6 +23,106 @@ starts.
 
 ## Progress
 
+- **2026-07-17** — **Attack-order 0b: the 2026-07-16 batch's evidence tier,
+  re-checked. 6 fixes driven (all pass), 3 proven to have ZERO test coverage,
+  1 new residual found.** The queued task was to audit *evidence*, not code —
+  for each entry, ask what the recorded proof actually exercised, then drive only
+  what it doesn't reach. Verdict: **the 0b hypothesis is confirmed, and for three
+  items it is worse than "unproven" — the recorded evidence was structurally
+  incapable of supporting the claim.** Every gateway fix was confirmed present in
+  the **running image** before driving (`/app/gateway/dist`, not `/app/dist` — an
+  early "NOT FOUND" was a bad path of mine, not a stale image; the part-1 rebuild
+  holds).
+  - **Driven and PASSED (5 auth/integrity fixes, evidence was "typecheck clean"):**
+    - **M5 members-roster leak** — anon → 401; authed non-member → 403; member →
+      200 with the full roster. Closed, and *not* over-corrected into locking
+      members out.
+    - **M9 escalation guard, both arms** — manager (can_manage_members, NO
+      finances/settings) invites `editor_in_chief` → 403 "it confers
+      can_manage_finances, which you do not hold"; invites contributor/editor
+      (within powers) → 201; PATCH `canManageFinances` → 403; PATCH `canPublish`
+      (held) → 200; owner PATCH → 200 (exempt). Blocks escalation without
+      over-blocking.
+    - **M7 withdrawn-article leak** — driven **with a baseline** (the same
+      non-author got 200 while published): after `published_at=NULL`, non-author →
+      404, author → 200 (still edits their own withdrawn draft). The baseline is
+      what makes the 404 attributable to the withdrawal rather than to an
+      unrelated denial.
+    - **M6 publication unpublish** — `feed_items` row built from the publisher's
+      own INSERT shape (`publication-publisher.ts:265`), then unpublish → row
+      count 1 → 0, status `unpublished`, `published_at` NULL.
+    - **M10 magic-link single-use — proven to the highest standard, with a
+      negative control.** 8 concurrent `POST /auth/verify` of one minted token
+      through the real route → exactly 1 × 200 + 7 × 401, `used_at` set once.
+      Then the control, against real Postgres concurrency: the **pre-M10
+      SELECT-then-UPDATE pattern minted 8 sessions from ONE token**; the shipped
+      atomic UPDATE minted 1. So the harness is demonstrably *sensitive* to the
+      defect — the pass means the fix is the **cause** of the single-use guarantee.
+  - **M24 (migrate.ts advisory lock) — driven, with a negative control.** Built a
+    throwaway `m24test` DB from `schema.sql` (real dev DB never touched), unseeded
+    migration 157 and reversed its columns to make it genuinely pending, then fired
+    two concurrent `migrate.ts` runners. **With the lock:** A applies 1, B waits
+    then reports "All migrations already applied", both exit 0, exactly one
+    `_migrations` row. **Without the lock** (lock stripped + a deterministic window
+    after the applied-set read): both read the set, both apply, and runner A
+    **crashes, exit 1** — `duplicate key value violates unique constraint
+    "_migrations_filename_key"`, rolled back. The lock is what turns a crashed
+    migration run into clean serialization. **Honest limit:** 157 is a
+    *transactional* migration, so its double-apply fails *safely* (unique
+    constraint + ROLLBACK). The corruption case M24 actually cites — the
+    **no-transaction path** (`ALTER TYPE ADD VALUE` / `CONCURRENTLY`), where the
+    DDL runs outside BEGIN and a failed INSERT cannot roll it back — was **not**
+    reproduced. The lock is acquired before the applied-set read regardless of
+    migration type, so the serialization guarantee is generic; but the
+    un-rollbackable case remains undriven.
+  - **ZERO test coverage, proven by MUTATION (revert the fix, re-run the suite —
+    green every time). The recorded evidence could not have failed:**
+    - **M3** (`claimedByPendingPayout`, chargeback during a pending payout —
+      *money*): the identifier appears only in src + docs, **never in a test
+      file**. No test builds the triple state (platform_settled +
+      `writer_payout_id` + non-publication). Deleting `|| r.claimedByPendingPayout`
+      → 164/164 still pass. Note the asymmetry: the *tribute* analogue of the same
+      concept **is** tested (`chargeback-reversal.test.ts:92`). Recorded evidence
+      was "full payment-service suite green (164 passed)".
+    - **M4(a)** (pool clamp): the one combined flat+bps test never overdraws (pool
+      820 vs payout 80 — `Math.min` never binds). Reverting the clamp → 164/164
+      pass. **M4(b)** (short-pool `ORDER BY`): *structurally unreachable* — its
+      enclosing `runPublicationPayoutCycle` is called by **zero** tests, and
+      `computePublicationSplits` receives an already-ordered array, so no unit test
+      can cover the ORDER BY at all. Covering it needs a DB-backed test of the
+      reserve path, which does not exist.
+    - **M25** (safeFetch credential stripping across cross-origin redirects):
+      **`safeFetch` is not even imported** by `shared/tests/http-client.test.ts`.
+      All 44 tests are IP/IPv6/WebSocket classification and predate the fix.
+      Deleting the entire strip-and-downgrade block → 84/84 pass. "All 44
+      http-client tests still pass" is true and carries **zero** evidential weight.
+      Worse: `gateway/tests/activitypub-follow-reader.test.ts:206` asserts a user's
+      Mastodon Bearer token is passed *into* a mocked `safeFetch` — the one test
+      touching the exfiltration risk mocks away the defence.
+  - **NEW RESIDUAL — M9's PATCH arm does not guard `role`** (see CONSOLIDATED-TODO
+    §0e). The invite arm guards the role against `ROLE_DEFAULTS[role]`; the PATCH
+    arm guards only the explicit `can_*` fields — but `role` **is** in its fieldMap
+    and **is** written. So the invite guard is walked around: invite(contributor) →
+    PATCH(role=editor_in_chief). Driven end-to-end: PATCH → 200 with every `can_*`
+    still FALSE, so it is **not** a privilege escalation (the middleware gates on
+    `can_*` only) and **M9's core claim holds**. But `role` is not cosmetic: the
+    **public** masthead (`optionalAuth`) renders it, so a manager can forge the
+    publication's public leadership; and transfer-ownership eligibility is gated
+    *solely* on `role='editor_in_chief'` (`members.ts:407`) — the owner then
+    transferred ownership to the manager-promoted member (**200, ownership moved**).
+    Owner action is still required, so this is a confused-deputy/social-engineering
+    shape, not a unilateral takeover. Fix shape: guard `ROLE_DEFAULTS[data.role]`
+    in the PATCH arm, as invite already does — the **asymmetry between the two arms
+    is the bug**.
+  - **Lesson (the session's own evidence nearly failed the same test).** The first
+    M10 negative control used a 5ms window and reported INCONCLUSIVE — the old
+    buggy pattern also yielded 1 winner. A **false negative**: trusting the
+    uncontrolled race alone would have recorded "M10 verified" on a harness that
+    provably *could not detect the bug* — the exact C1 error, committed inside the
+    audit about that error. Widening to 300ms made it 8/8 vs 1/8. **A verification
+    needs verifying: an un-controlled pass can be the harness passing, not the
+    feature working.** Mutation/negative controls are cheap and are what separate
+    "the suite is green" from "the fix is load-bearing".
 - **2026-07-17** — **§11 smoke session (part 1): 11 verifies driven against a
   HEAD dev stack; 1 CRITICAL found (above), 10 passed.** Stack rebuilt to HEAD
   first (all six images predated the 2026-07-16 M-batch; the M20 SQL and the
