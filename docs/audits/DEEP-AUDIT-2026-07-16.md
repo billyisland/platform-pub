@@ -1,8 +1,19 @@
 # Deep code audit — 2026-07-16
 
-> **Resolution status (updated 2026-07-16).** The CRITICAL, all 14 HIGHs, and 21
+> **Resolution status (updated 2026-07-17).** The CRITICAL, all 14 HIGHs, and 21
 > of 25 MEDIUMs are fixed and shipped; the per-item fix log is in
 > `FIX-PROGRAMME.md` and the live status is in `CONSOLIDATED-TODO.md` §0e.
+>
+> **C1 took TWO fixes, and the 2026-07-16 sign-off on it was wrong.** The pin fix
+> (`a157834`) was real but only got the worker *to* strfry; strfry then rejected
+> 100% of what it was handed (`relay/strfry.conf` had `rejectEventsOlderThanSeconds
+> = 0` — a reject window, not the "no limit" its comment assumed). Native publishing
+> stayed dead for another day while the audit recorded C1 as closed, because the
+> sign-off's evidence only proved *transport* reached the relay and was read as
+> proving publishing worked. Second fix + prod end-to-end verification (a real
+> publish landing, strfry 89→90) shipped 2026-07-17 — see FIX-PROGRAMME 2026-07-17
+> and the corrected §0e C1 entry. **Worth generalising when reading the rest of
+> this document's "shipped" claims: proving a component ≠ proving the feature.**
 > Deliberately deferred as design-sensitive (not mechanical fixes): **M8**
 > (event-id squatting → needs signed-event↔writer ownership verification),
 > **M16** (RSS guid dedup → unique-constraint migration + re-ingest trade-off),
