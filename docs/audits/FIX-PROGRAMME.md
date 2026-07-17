@@ -105,10 +105,28 @@ starts.
     `created_at=now` publish → `sent`, attempts=1, no error, **present in
     strfry**; and the previously-`failed` row, redriven, → `sent` + stored (so
     the `strfry import` workaround is no longer required for a stale backlog).
-  - **Prod residue.** Prod runs this same file (container config byte-identical
-    to the repo). Needs: deploy + `docker compose up -d strfry`, then redrive
-    `relay_outbox` (`scripts/redrive-relay-outbox.sql`) to recover everything
-    that failed since the 2026-07-16 deploy. Carried in CONSOLIDATED-TODO §11.
+  - **Prod: DEPLOYED + VERIFIED same day (2026-07-17).** `git reset --hard
+    origin/master` + `docker compose up -d --force-recreate strfry`. The
+    **`--force-recreate` is load-bearing**: `strfry.conf` is a single-file bind
+    mount (`./relay/strfry.conf:/etc/strfry.conf:ro`), so git replacing the file
+    mints a new inode the running container isn't bound to — the same trap that
+    bit the nginx.conf/Blossom cutover; a plain `up -d`/`restart` can silently
+    keep serving the old config. (A plain `restart` sufficed in dev only because
+    an in-place editor write preserved the inode — do not generalise from that.)
+    Confirmed in-container (`grep rejectEventsOlder` → `315360000`), then proved
+    **end-to-end with a real UI publish**: new `relay_outbox` row `sent`,
+    `attempts=1`, no error; strfry event count 89 → 90.
+  - **Blast radius: ZERO — the earlier "every publish on prod is failing" framing
+    overstated the practical impact.** The pre-fix diagnosis found 22 rows, all
+    already `sent` (the imported batch), and **nothing enqueued since the
+    2026-07-16 deploy at all**: prod was idle (pre-launch, discovery publishing
+    dark by default), so there were no publishes to fail and nothing was lost.
+    The mechanism was real and total; the victim count was nil. **No redrive was
+    needed.** Cosmetic residue for future readers: those 22 imported rows are
+    `sent` yet retain `attempts=5` + a stale `last_error` ("All relays rejected
+    or timed out") from before the import recovery marked them `sent` directly —
+    a `sent` row carrying an error string is import scar tissue, not a live
+    failure.
   - **Lesson worth keeping:** C1 was signed off "confirmed fixed empirically" on
     evidence that only proved *transport* reached the relay. The publish path was
     never driven end-to-end to a stored event. "The pin is fixed" and "publishing
