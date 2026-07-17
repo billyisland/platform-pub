@@ -162,6 +162,37 @@ export function computePublicationSplits(
   return { platformFeePence, splits, remainingPool, flatFeesPaidPence, flatFeeShareIds }
 }
 
+// =============================================================================
+// The reserve path's order-dependent reads — exported for the same reason
+// computePublicationSplits is: they are the half of the allocation that lives in
+// SQL. computePublicationSplits consumes an ALREADY-ORDERED array and funds it
+// first-come-first-served out of a shared pool, so when the pool is short these
+// ORDER BYs decide who gets paid — the ordering is allocation logic, not
+// presentation. Kept as constants so the DB-backed ordering test executes the
+// SAME text the cycle does rather than a copy that can silently drift out of
+// step with it (repo idiom: gateway/src/lib/dedup-sql.ts).
+// =============================================================================
+
+/**
+ * M4: flat fees ('flat_fee_pence' sorts before 'revenue_bps') are honoured
+ * before proportional bps overrides, then stable by (article_id, id) for
+ * reproducibility across runs.
+ */
+export const PUBLICATION_ARTICLE_SHARES_SQL = `SELECT pas.id, pas.article_id, pas.account_id, pas.share_type, pas.share_value, pas.paid_out
+         FROM publication_article_shares pas
+         JOIN articles a ON a.id = pas.article_id
+         WHERE pas.publication_id = $1
+         ORDER BY pas.share_type, pas.article_id, pas.id`
+
+/**
+ * The compute clamp (Σ standing bps capped at 10000) clips whoever comes LAST,
+ * so the order must be deterministic — seniority, then id as the tiebreak.
+ */
+export const PUBLICATION_STANDING_MEMBERS_SQL = `SELECT account_id, revenue_share_bps
+         FROM publication_members
+         WHERE publication_id = $1 AND removed_at IS NULL AND revenue_share_bps > 0
+         ORDER BY created_at ASC, id ASC`
+
 class PayoutService {
   private stripe: Stripe
 
@@ -1246,14 +1277,10 @@ class PayoutService {
         share_type: string; share_value: number; paid_out: boolean;
       }>(
         // Deterministic order (M4): when the pool is short the earlier-processed
-        // shares get funded first, so the ordering is load-bearing. Flat fees
-        // ('flat_fee' < 'revenue_bps') are honoured before proportional bps
-        // overrides, then stable by (article_id, id) for reproducibility.
-        `SELECT pas.id, pas.article_id, pas.account_id, pas.share_type, pas.share_value, pas.paid_out
-         FROM publication_article_shares pas
-         JOIN articles a ON a.id = pas.article_id
-         WHERE pas.publication_id = $1
-         ORDER BY pas.share_type, pas.article_id, pas.id`,
+        // shares get funded first, so the ordering is load-bearing. See the
+        // constant's docblock; it is exported so the ordering test runs this
+        // exact SQL.
+        PUBLICATION_ARTICLE_SHARES_SQL,
         [publicationId],
       )
 
@@ -1284,13 +1311,10 @@ class PayoutService {
       const { rows: standingRows } = await client.query<{
         account_id: string; revenue_share_bps: number;
       }>(
-        // ORDER BY: the compute clamp (Σ standing bps capped at 10000) clips
-        // whoever comes LAST, so the order must be deterministic — seniority,
-        // then id as the tiebreak.
-        `SELECT account_id, revenue_share_bps
-         FROM publication_members
-         WHERE publication_id = $1 AND removed_at IS NULL AND revenue_share_bps > 0
-         ORDER BY created_at ASC, id ASC`,
+        // ORDER BY: the compute clamp clips whoever comes LAST, so the order must
+        // be deterministic. See the constant's docblock; exported so the ordering
+        // test runs this exact SQL.
+        PUBLICATION_STANDING_MEMBERS_SQL,
         [publicationId],
       )
 

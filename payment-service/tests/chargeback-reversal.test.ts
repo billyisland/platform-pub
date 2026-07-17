@@ -67,6 +67,57 @@ describe('computeChargebackReversal', () => {
     expect(plan.chargeBackReadIds).toEqual(['R'])
   })
 
+  it('platform_settled read CLAIMED by a pending payout is reversed as paid (M3)', () => {
+    // Same state as the test directly above; opposite treatment, decided solely
+    // by the claim. A writer payout is atomic — its transfer amount was locked at
+    // claim time and the resume sweep WILL send it in full — so this read's slice
+    // is money leaving the platform exactly like a 'writer_paid' read. Without the
+    // reversal the pending payout pays out clawed-back money with no reversing
+    // entry: money created. The tribute analogue is the claimed-accrual test below.
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'platform_settled', writerId: 'W', claimedByPendingPayout: true }],
+      accruals: [], platformFeeBps: FEE,
+    })
+    const net = perReadNetPence(1000, FEE) // 920
+    expect(writerSideSum(plan.ledgerEntries)).toBe(-net)
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'W' && e.trigger === 'writer_payout_reversal')!.amountPence).toBe(-net)
+  })
+
+  it('claimed-by-pending-payout read takes the carve reduction, like writer_paid (M3)', () => {
+    // The claim routes the read down the paid-side branch, so it must also take
+    // that branch's carve arithmetic — not a bare full-net reversal.
+    const accruals: ReversalAccrual[] = [
+      baseAccrual({ id: 'a1', tributeId: 'T1', parentTributeId: null, amountPence: 300, state: 'paid', resolvedAccountId: 'I1', authorAccountId: 'W' }),
+    ]
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{ id: 'R', amountPence: 1000, state: 'platform_settled', writerId: 'W', claimedByPendingPayout: true }],
+      accruals, platformFeeBps: FEE,
+    })
+    // author keeps net − root carve = 920 − 300 = 620; conservation still −net.
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'W' && e.trigger === 'writer_payout_reversal')!.amountPence).toBe(-620)
+    expect(writerSideSum(plan.ledgerEntries)).toBe(-perReadNetPence(1000, FEE))
+  })
+
+  it('a PUBLICATION read is never author-reversed, even when claimed (M3 is individual-only)', () => {
+    // The third leg of M3's triple state: non-publication. A publication read is
+    // paid to the split recipients, so an author-keyed reversal would be the F5
+    // mis-attribution. The claim flag must not reach past the publication branch.
+    const plan = computeChargebackReversal({
+      readerId: 'reader', settlementAmountPence: 1000,
+      reads: [{
+        id: 'R', amountPence: 1000, state: 'platform_settled', writerId: 'W',
+        claimedByPendingPayout: true, isPublication: true,
+        publicationPoolPence: 1000, publicationSplits: [{ accountId: 'M1', amountPence: 500 }],
+      }],
+      accruals: [], platformFeeBps: FEE,
+    })
+    // Only the split recipient is reversed (500 × 1000/1000), never the author W.
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'W')).toBeUndefined()
+    expect(plan.ledgerEntries.find((e) => e.accountId === 'M1')!.amountPence).toBe(-500)
+  })
+
   it('fully-resolved tribute chain: writer + tribute reversals sum to −read_net', () => {
     // read 1000 → net 920. Root T1 (→I1) accrued 300 gross; child T2 (→I2) 100.
     const accruals: ReversalAccrual[] = [

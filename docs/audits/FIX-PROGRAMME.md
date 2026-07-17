@@ -23,6 +23,82 @@ starts.
 
 ## Progress
 
+- **2026-07-17** — **Attack-order 0c: the M3/M4/M25 tests written. The three
+  fixes 0b mutation-proved had ZERO coverage are now covered, and every test is
+  mutation-verified.** 248 → 272 tests (payment-service 164 → 175, shared 84 →
+  97). Each fix was reverted and the suite re-run: **before, all three could be
+  deleted with the suite fully green; now each deletion fails tests.** That
+  revert-and-re-run is the acceptance criterion — a test written for an
+  already-passing fix proves nothing until you have watched it fail.
+  - **M3 `claimedByPendingPayout`** (money) — 3 tests in the existing
+    `chargeback-reversal.test.ts`, built as the direct contrast to the
+    already-present unclaimed `platform_settled` case: same state, opposite
+    treatment, decided solely by the claim. Covers the full reversal (−920), the
+    carve-reduced variant (−620, proving the claim routes down the paid-side
+    branch's *arithmetic*, not just a flat full-net reversal), and the third leg
+    of the triple state — a **publication** read with the flag set must still
+    reverse only its split recipients, never the author (guards the F5
+    mis-attribution if anyone moves the check above the publication branch).
+    **Mutation:** dropping `|| r.claimedByPendingPayout` → 2 fail (was 164/164
+    green).
+  - **M4(a) pool clamp** (money) — 2 tests in `payout-math.test.ts`. The existing
+    combined flat+bps test never overdraws (pool 820 vs payout 80), so `Math.min`
+    never bound; the new one starves the pool with a 900 flat fee so a 460 override
+    must clamp to the 20 left. **The assertion is Σ splits ≤ the distributable
+    pool, deliberately not `remainingPool`** — the F10 `if (remainingPool < 0)`
+    floor sits directly below the clamp and scrubs the negative pool back to 0, so
+    a pool-level assertion cannot see an unclamped overdraw; the over-paid split is
+    the only evidence. Paired with an over-clamp guard (an override that fits is
+    still paid in full). **Mutation:** removing the clamp → 1 fail.
+  - **M4(b) short-pool `ORDER BY`** — the one 0b called structurally unreachable.
+    New DB-backed `publication-share-order-integration.test.ts` on the
+    `dedup-integration.test.ts` idiom: real Postgres, fixtures seeded in an
+    always-rolled-back transaction, `describe.skipIf(!DB_URL)` so the no-Postgres
+    CI `test` job stays green (verified both ways; CI sets no `DATABASE_URL`).
+    Rollback **proven**, not assumed — row counts snapshotted before/after are
+    identical. To make the test run the *same* SQL the cycle does rather than a
+    copy that could drift, the two order-dependent reads are extracted to exported
+    constants (`PUBLICATION_ARTICLE_SHARES_SQL` / `PUBLICATION_STANDING_MEMBERS_SQL`)
+    — the only production change in this batch, SQL text identical, tsc + 169 tests
+    unchanged. The test composes real SQL → real `computePublicationSplits`, as
+    production does, and **each ordering test is paired with a deterministic
+    control**: the same rows in the order an unordered query could return them
+    allocate the money to a *different person* (flat fee skipped entirely, the
+    freelancer paid nothing; standing clamp clips the senior member instead of the
+    junior). That control is what proves the `ORDER BY` is money logic, not tidiness.
+  - **M25 credential stripping** (credentials) — new `shared/tests/safe-fetch-redirect.test.ts`,
+    13 tests. `safeFetch` was not imported by any test; the only test touching the
+    exfiltration risk (`gateway/tests/activitypub-follow-reader.test.ts:206`)
+    **mocks `safeFetch` itself**, i.e. mocks the defence away. Here only the
+    *transport* (undici `fetch`) and DNS are mocked — the strip logic under test
+    runs for real between hops, and every assertion reads the headers the transport
+    was actually handed on hop 2. Covers Authorization/Cookie/Proxy-Authorization
+    dropped on host/scheme/port change, any header casing, non-credential headers
+    surviving, no reappearance on a later same-origin hop, and the 301/302/303
+    POST→GET body drop vs 307/308 preservation. **Controls** (same-origin keeps the
+    token, absolute and relative) are what stop a safeFetch that dropped *every*
+    header from passing. **Mutation:** neutering both blocks → 8 of 13 fail; the 5
+    that survive are exactly the controls, which assert the *absence* of stripping
+    and so should pass — the mutation result is itself readable as a check on the
+    tests' construction.
+  - **The methodology bit worth keeping — an ORDER BY test can pass against a
+    build with no ORDER BY.** The first M4(b) draft used the obvious 2-row fixture
+    and **passed under mutation**: with the clause stripped, the plan is a Hash
+    Join (build on `publication_article_shares`, probe with `articles`) whose
+    incidental output order *happened* to match the expected one. An unordered
+    query's order isn't random, it's a plan artefact — so a 2-row fixture is a coin
+    flip, and mine landed heads. The test asserted a true property while being
+    structurally incapable of detecting the fix's removal: **the C1 error, in
+    miniature, inside the session written to prevent it.** Fixed by widening the
+    fixture (8 scrambled rows over 4 articles; 5 pinned-id rows for the tiebreak)
+    so an incidental match is vanishingly unlikely — re-mutated to confirm all
+    three ordering tests now fail. The money-property test still cannot detect the
+    mutation on its own (2 rows), and **says so in its own comment** rather than
+    implying coverage it lacks; its job is the composition, and its control is its
+    proof. Generalises: **when a test passes the moment you write it, you have
+    learned nothing yet — mutate, and if it still passes, the fixture is the
+    problem.** → `CONSOLIDATED-TODO.md` §11.
+
 - **2026-07-17** — **Attack-order 0b: the 2026-07-16 batch's evidence tier,
   re-checked. 6 fixes driven (all pass), 3 proven to have ZERO test coverage,
   1 new residual found.** The queued task was to audit *evidence*, not code —

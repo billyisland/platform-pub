@@ -284,6 +284,57 @@ describe('computePublicationSplits', () => {
       expect(result.splits[2]).toMatchObject({ accountId: 'editor', amountPence: 740, shareType: 'standing' })
     })
 
+    // M4: a bps override pays a fraction of its ARTICLE's net, but it draws from
+    // the SHARED pool that flat fees have already eaten into. Unclamped, the two
+    // together distribute more than the pool holds and the platform funds the
+    // difference. The clamp is only reachable when the flat fee actually starves
+    // the pool — the test above never overdraws (pool 820 vs payout 80), so it
+    // cannot see this.
+    it('M4: a bps override is clamped to the pool the flat fee left behind', () => {
+      const articleShares: ArticleShare[] = [
+        {
+          id: 'flat-1', articleId: 'art-1', accountId: 'freelancer',
+          shareType: 'flat_fee_pence', shareValue: 900, paidOut: false,
+        },
+        {
+          id: 'rev-1', articleId: 'art-2', accountId: 'contributor',
+          shareType: 'revenue_bps', shareValue: 5000, paidOut: false, // 50%
+        },
+      ]
+      const earnings = new Map([['art-2', 920]])
+
+      // Gross: 1000, fee: 80, pool: 920
+      // Flat fee: -900, pool: 20
+      // Article rev wants floor(920 * 5000 / 10000) = 460 — but only 20 is left.
+      const result = computePublicationSplits(1000, feeBps, articleShares, earnings, [])
+
+      expect(result.splits[1]).toMatchObject({ accountId: 'contributor', shareType: 'article_revenue' })
+      expect(result.splits[1].amountPence).toBe(20) // clamped, not 460
+      // The money property, and the one that survives the F10 floor: the splits
+      // together never exceed the distributable pool. Asserting on remainingPool
+      // would NOT catch an unclamped overdraw — the `if (remainingPool < 0)`
+      // floor below the clamp scrubs the negative pool back to 0, leaving the
+      // over-paid split as the only evidence.
+      const distributed = result.splits.reduce((s, x) => s + x.amountPence, 0)
+      expect(distributed).toBeLessThanOrEqual(920)
+      expect(distributed).toBe(920)
+      expect(result.remainingPool).toBe(0)
+    })
+
+    it('M4: the clamp still lets a bps override take the whole pool when it fits', () => {
+      // Guard against over-clamping: with room in the pool the override is paid in
+      // full, so the test above is proving a clamp, not a cap at some lower value.
+      const articleShares: ArticleShare[] = [
+        {
+          id: 'rev-1', articleId: 'art-1', accountId: 'contributor',
+          shareType: 'revenue_bps', shareValue: 5000, paidOut: false,
+        },
+      ]
+      const result = computePublicationSplits(1000, feeBps, articleShares, new Map([['art-1', 920]]), [])
+      expect(result.splits[0].amountPence).toBe(460) // floor(920 * 0.5), unclamped
+      expect(result.remainingPool).toBe(460)
+    })
+
     it('uses floor everywhere — platform absorbs rounding dust', () => {
       const members: StandingMember[] = [
         { accountId: 'acc-a', revenueShareBps: 3333 },
