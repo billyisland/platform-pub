@@ -23,6 +23,53 @@ starts.
 
 ## Progress
 
+- **2026-07-17** — **§11 smoke session (part 1): 11 verifies driven against a
+  HEAD dev stack; 1 CRITICAL found (above), 10 passed.** Stack rebuilt to HEAD
+  first (all six images predated the 2026-07-16 M-batch; the M20 SQL and the
+  M19 `commentsEnabled` token were confirmed *in* the built gateway dist / web
+  bundle before trusting any result — the BuildKit stale-context gotcha). DB
+  seeded `--small` (41 accounts, 54 articles). **Verified:**
+  - **Relay end-to-end (C1's real close-out).** A `/sign-and-publish` kind-1 and
+    a scheduler-published kind-30023 both reach strfry and are stored — outbox
+    `sent`, correct NIP-23 `d`/`title`/`published_at` tags. First native events
+    to land since ~March. (Required the strfry fix above; see that entry.)
+  - **H1 key-service gate** — no secret → 401, *wrong* secret of equal length →
+    401 (so the constant-time compare is genuinely exercised), correct secret →
+    passes into route logic (404 `ARTICLE_NOT_FOUND`).
+  - **H2 convert route** — 503 `conversion_unavailable`.
+  - **Paywall Step-1b** — gate-pass on a vaultless paywalled article → 409
+    `article_misconfigured` with honest "You have not been charged" copy, and
+    **no money moved** (reads/ledger/unlocks all 0 after).
+  - **Three-validator lockstep** (the 2026-07-07 poisoned-article bug) — gateway
+    paywalled+price0 → 400, paywalled+gate0 → 400, public+price0 → 201 (still
+    allowed), all in the shared `zodValidationError` envelope; editor
+    `validatePaywalledPublish` confirmed called **pre-sign on BOTH the publish
+    and schedule paths** (early `return` into `publishError`, so it is a message
+    not a 400); key-service `PublishVaultSchema` agrees (`positive()`, gate 1..99).
+  - **Duplicate-draft race** — 6 concurrent first-saves (no `draftId`/`dTag`) →
+    one 201 + five 200s, **all six returning the same `draftId`**, exactly 1 row.
+    The `pg_advisory_xact_lock` holds under real concurrency.
+  - **Scheduled draft excluded from the guess target** — with the only untagged
+    draft scheduled, a new first-save → **201 (fresh row)**, scheduled draft
+    untouched.
+  - **Scheduler publish disposes of its draft** — due draft → article published
+    (`published_at`, event id) **and** the draft row deleted.
+  - **Wave-3 collection gate** — card-less subscribe → 402 `card_required`.
+  - **F1 subscription money legs** (card gate passed with a synthetic
+    `stripe_customer_id`, reverted after; the charge is pure tab debt so no
+    Stripe call) — subscribe 367p → tab 367 debt + `subscription_charge` −367
+    (reader, writer counterparty) + `subscription_earning` +338 (writer,
+    post-fee); **`reading_tabs.balance_pence == −SUM(reader ledger)` holds**; both
+    `subscription_events` rows `settled_at` NULL (collection-gated — the payout
+    cycle cannot claim them yet).
+  - **Mobile pip order** (MOBILE-LAYOUT-ADR §X) — 6 pips, **Feed 1 leftmost,
+    ascending 1→6**, aria-labels carrying the feed names; matches the desktop
+    numerals in the same session. The removed `.reverse()` has not regressed.
+  **Still unproven, and why:** everything Stripe-calling — settlement, card
+  attach/3DS, the publication-subscription payout loop (§1.3) — dev's
+  `STRIPE_SECRET_KEY` is the literal placeholder `sk_test_...`, so those need
+  real test keys, not more dev driving. Also outstanding from §11: external-author
+  history hydration, Explain, PaywallGate copy, mobile swipe/drag gestures.
 - **2026-07-17** — **CRITICAL: strfry rejected 100% of native publishes —
   `rejectEventsOlderThanSeconds = 0` (C1 was only half-fixed).** Found by the
   §11 smoke session, driving the real publish path end-to-end in dev rather
