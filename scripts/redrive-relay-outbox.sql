@@ -21,17 +21,29 @@
 -- (and whose original 30023 almost certainly never did either, since publishing
 -- was broken) has nothing to tombstone.
 --
--- ─── CAVEAT: STALE EVENTS CANNOT BE REDRIVEN THROUGH THE RELAY ─────────────────
+-- ─── STALE EVENTS: REDRIVE NOW WORKS (corrected 2026-07-17) ───────────────────
 -- A redriven row re-publishes its ORIGINAL signed event, and a Nostr signature
--- covers `created_at`. strfry refuses events whose created_at is outside its
--- accepted window (observed on prod 2026-07-16: `dockurr/strfry:latest` rejected
--- every 1–5-week-old event with "invalid: created_at too early", even though the
--- repo strfry.conf sets rejectEventsOlderThanSeconds = 0 — the image applies an
--- older-than default regardless). So after a long outage the redrive proves the
--- transport works but the stale rows land in status='failed' and eventually
--- re-abandon; they cannot be freshened without RE-SIGNING (custodial key). To
--- actually get the stuck-but-valid content onto the relay, IMPORT the signed
--- events directly (bypasses the write-policy timestamp check):
+-- covers `created_at` — so a stale row can never be "freshened" without
+-- re-signing. That part stands. What was WRONG here (and is corrected below):
+-- the 2026-07-16 rejections were NOT "an older-than default the image applies
+-- regardless of the config". The config was applied exactly as written:
+-- `rejectEventsOlderThanSeconds` is a REJECT WINDOW ("reject anything whose
+-- created_at is older than N seconds"), and the repo's `0` meant "reject every
+-- event not dated in the future" — i.e. strfry was rejecting 100% of publishes,
+-- fresh ones included, not just the stale backlog. Fixed 2026-07-17: the window
+-- is now 315360000 (10 years). See FIX-PROGRAMME 2026-07-17.
+--
+-- CONSEQUENCE FOR THIS SCRIPT: on a relay carrying the fix, **a plain redrive is
+-- enough** — the 10-year window accepts a stale backlog, so PHASE 3 delivers it
+-- normally and you do NOT need the `strfry import` path below. Before redriving,
+-- confirm the relay actually has the fix:
+--   docker compose exec strfry grep rejectEventsOlder /etc/strfry.conf   # expect 315360000
+-- If it still reads 0, the relay was not re-created after the config change
+-- (`docker compose up -d strfry`, not `restart` — the config is bind-mounted).
+--
+-- LEGACY ESCAPE HATCH (only if you are on a relay you cannot reconfigure, or an
+-- event is older than the configured window): import the signed events straight
+-- to LMDB, bypassing the write-policy timestamp check:
 --   docker exec -i <postgres> psql -U platformpub -d platformpub -tAc \
 --     "SELECT signed_event FROM relay_outbox WHERE status IN ('failed','abandoned')" \
 --   | docker exec -i <strfry> /app/strfry --config=/etc/strfry.conf import --show-rejected
