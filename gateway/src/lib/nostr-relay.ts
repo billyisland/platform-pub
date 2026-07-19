@@ -23,24 +23,84 @@ export const NOSTR_FALLBACK_RELAYS = [
   "wss://relay.primal.net",
 ];
 
+// Early-resolve strategy for fetchNostrEvents (THREAD-HYDRATION-LATENCY-ADR D3).
+// The default is `exhaustive` — wait every relay to EOSE-or-timeout — so no
+// existing caller silently changes behaviour. The two opt-in modes let the
+// latency-sensitive thread-hydration phases stop waiting for the slowest relay:
+//
+// - `first-event`: resolve the moment ANY relay returns an EVENT. Correct ONLY
+//   for content-addressed `{ ids: [x] }` lookups — an event id uniquely
+//   identifies its content, so the first hit is authoritative (there is no
+//   "newer" copy to wait for). Never use for replaceable-by-author kind 0/3/10002
+//   lookups, where a relay may return a STALE event and the caller reduces to
+//   newest-by-created_at — first-hit there imports the wrong copy.
+// - `k-of-n`: resolve once `k` relays have EOSE'd OR a soft deadline elapses,
+//   whichever first (the broad `#e`-tag reply nets). Slower relays are dropped;
+//   the hard `timeoutMs` still bounds the whole call.
+export type NostrFetchResolve =
+  | { mode: "exhaustive" }
+  | { mode: "first-event" }
+  | { mode: "k-of-n"; k: number; softDeadlineMs: number };
+
 // Open one REQ against each relay (in parallel), collect EVENTs until EOSE or a
 // short timeout, dedupe by event id. Mirrors feed-ingest's fetchFromRelay but
 // takes arbitrary filters and runs read-only in the gateway request path.
+//
+// `resolve` (default exhaustive) selects the D3 early-resolve mode above. When
+// an early condition fires, every still-open relay socket is closed and the
+// events collected so far are returned — the point is to not pay a hung relay's
+// full timeout on every phase.
 export async function fetchNostrEvents(
   relays: string[],
   filters: Record<string, unknown>[],
   timeoutMs: number,
+  resolve: NostrFetchResolve = { mode: "exhaustive" },
 ): Promise<RawNostrEvent[]> {
   const byId = new Map<string, RawNostrEvent>();
-  await Promise.all(
-    relays.map(async (relayUrl) => {
-      let wsOpts: PinnedWebSocketOptions;
-      try {
-        wsOpts = await pinnedWebSocketOptions(relayUrl);
-      } catch {
-        return; // unresolvable / blocked host — skip this relay
-      }
-      await new Promise<void>((resolve) => {
+
+  await new Promise<void>((resolveOuter) => {
+    let outerSettled = false;
+    let pending = relays.length;
+    let eoseCount = 0;
+    // Per-relay `done` closers, so an early resolve can hang up the stragglers.
+    const closers: Array<() => void> = [];
+    const softTimer =
+      resolve.mode === "k-of-n"
+        ? setTimeout(() => finishOuter(), resolve.softDeadlineMs)
+        : undefined;
+
+    function finishOuter() {
+      if (outerSettled) return;
+      outerSettled = true;
+      if (softTimer) clearTimeout(softTimer);
+      // Hang up whatever is still connected; we already have our snapshot.
+      for (const close of closers) close();
+      resolveOuter();
+    }
+
+    function onRelayDone() {
+      pending--;
+      if (pending <= 0) finishOuter();
+    }
+
+    if (relays.length === 0) {
+      finishOuter();
+      return;
+    }
+
+    for (const relayUrl of relays) {
+      void (async () => {
+        let wsOpts: PinnedWebSocketOptions;
+        try {
+          wsOpts = await pinnedWebSocketOptions(relayUrl);
+        } catch {
+          onRelayDone(); // unresolvable / blocked host — skip this relay
+          return;
+        }
+        if (outerSettled) {
+          onRelayDone(); // early-resolved while pinning DNS — don't open the socket
+          return;
+        }
         let settled = false;
         const ws = new WebSocket(relayUrl, wsOpts);
         const subId = `gw-${randomUUID()}`;
@@ -60,8 +120,9 @@ export async function fetchNostrEvents(
           } catch {
             /* already closed */
           }
-          resolve();
+          onRelayDone();
         };
+        closers.push(done);
         const timer = setTimeout(done, timeoutMs);
         ws.on("open", () => {
           try {
@@ -76,7 +137,11 @@ export async function fetchNostrEvents(
             if (msg[0] === "EVENT" && msg[1] === subId) {
               const ev = msg[2] as RawNostrEvent;
               if (ev?.id && !byId.has(ev.id)) byId.set(ev.id, ev);
+              if (resolve.mode === "first-event") finishOuter();
             } else if (msg[0] === "EOSE" && msg[1] === subId) {
+              if (resolve.mode === "k-of-n" && ++eoseCount >= resolve.k) {
+                finishOuter();
+              }
               done();
             }
           } catch {
@@ -85,9 +150,10 @@ export async function fetchNostrEvents(
         });
         ws.on("error", done);
         ws.on("close", done);
-      });
-    }),
-  );
+      })();
+    }
+  });
+
   return [...byId.values()];
 }
 

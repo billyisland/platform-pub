@@ -425,6 +425,11 @@ const NOSTR_THREAD_REQ_TIMEOUT_MS = 6_000;
 // a deep/slow chain can't stall the request (it breaks early on the first miss).
 const NOSTR_WALK_TIMEOUT_MS = 4_000;
 const NOSTR_ANCESTOR_DEPTH_CAP = 12;
+// D3 broad-net early-resolve: return once this many relays EOSE, or the soft
+// deadline elapses (whichever first), rather than paying a hung relay's full
+// NOSTR_THREAD_REQ_TIMEOUT_MS. The hard timeout still bounds the call.
+const NOSTR_BROAD_KOFN = 2;
+const NOSTR_BROAD_SOFT_DEADLINE_MS = 2_500;
 
 async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   const data = item.interaction_data as { id?: string; relays?: unknown } | null;
@@ -454,10 +459,13 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   if (relays.length === 0) return;
 
   // 1. Fetch the focal event to read its NIP-10 tags → root + immediate parent.
+  //    Content-addressed by id → the first relay to return it is authoritative
+  //    (D3 first-event; no "newer" copy to wait for).
   const [focal] = await fetchNostrEvents(
     relays,
     [{ ids: [focalId] }],
     NOSTR_THREAD_REQ_TIMEOUT_MS,
+    { mode: "first-event" },
   );
   const rootId = focal ? nostrRootId(focal) : focalId;
 
@@ -467,6 +475,8 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
   // 2. Broad net: the root event, everything that `#e`-tags the root (catches
   //    descendants — replies conventionally tag the root), and direct replies to
   //    the focal. One multi-filter REQ.
+  //    The broad `#e` nets legitimately trickle events over time, so resolve
+  //    k-of-n relays (or the soft deadline) rather than the slowest (D3 k-of-n).
   const broad = await fetchNostrEvents(
     relays,
     [
@@ -475,13 +485,32 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
       { kinds: [1], "#e": [focalId], limit: NOSTR_THREAD_NODE_CAP },
     ],
     NOSTR_THREAD_REQ_TIMEOUT_MS,
+    { mode: "k-of-n", k: NOSTR_BROAD_KOFN, softDeadlineMs: NOSTR_BROAD_SOFT_DEADLINE_MS },
   );
   for (const ev of broad) all.set(ev.id, ev);
+  // Nothing found (focal absent, broad empty) ⇒ the walk can't start either
+  // (its cursor is the focal's reply target), so bail before the profile fetch.
+  if (all.size === 0) return;
+
+  // D4: the kind-0 profile REQ for every author known after the broad net runs
+  // CONCURRENTLY with the ancestor walk below — the two slow phases cost `max`,
+  // not `sum`. Profiles stay exhaustive (replaceable-by-author: newest-wins must
+  // survive, so no early-resolve here). Authors the walk newly discovers get a
+  // small follow-up REQ once both settle.
+  const pubkeysBeforeWalk = [...new Set([...all.values()].map((e) => e.pubkey))];
+  const profilesPromise: Promise<RawNostrEvent[]> = pubkeysBeforeWalk.length
+    ? fetchNostrEvents(
+        relays,
+        [{ kinds: [0], authors: pubkeysBeforeWalk, limit: pubkeysBeforeWalk.length }],
+        NOSTR_THREAD_REQ_TIMEOUT_MS,
+      )
+    : Promise.resolve([]);
 
   // 3. Ancestor walk. The broad net only finds ancestors that tag the *root* —
   //    but many clients tag only the immediate parent, so an intermediate
   //    ancestor (root ≠ parent) is missed and the chain breaks at the first hop.
-  //    Climb parent-by-parent by id instead, fetching only hops not already held.
+  //    Climb parent-by-parent by id instead, fetching only hops not already held
+  //    (each hop is content-addressed → D3 first-event).
   let cursor = focal ? nostrReplyTargetId(focal) : null;
   const walked = new Set<string>([focalId]);
   for (let depth = 0; depth < NOSTR_ANCESTOR_DEPTH_CAP && cursor; depth++) {
@@ -493,21 +522,30 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
         relays,
         [{ ids: [cursor] }],
         NOSTR_WALK_TIMEOUT_MS,
+        { mode: "first-event" },
       );
       if (!parent) break; // parent not on any relay — chain ends here
       all.set(parent.id, parent);
     }
     cursor = nostrReplyTargetId(parent);
   }
-  if (all.size === 0) return;
 
-  // 3. One REQ for every distinct author's kind-0 profile; keep the newest.
-  const pubkeys = [...new Set([...all.values()].map((e) => e.pubkey))];
-  const profileEvents = await fetchNostrEvents(
-    relays,
-    [{ kinds: [0], authors: pubkeys, limit: pubkeys.length }],
-    NOSTR_THREAD_REQ_TIMEOUT_MS,
+  // 4. Assemble the profile events: the concurrent batch, plus a follow-up REQ
+  //    for any authors the walk discovered that the first batch didn't cover.
+  const profileEvents = [...(await profilesPromise)];
+  const knownPubkeys = new Set(pubkeysBeforeWalk);
+  const walkPubkeys = [...new Set([...all.values()].map((e) => e.pubkey))].filter(
+    (pk) => !knownPubkeys.has(pk),
   );
+  if (walkPubkeys.length) {
+    profileEvents.push(
+      ...(await fetchNostrEvents(
+        relays,
+        [{ kinds: [0], authors: walkPubkeys, limit: walkPubkeys.length }],
+        NOSTR_THREAD_REQ_TIMEOUT_MS,
+      )),
+    );
+  }
   const profiles = new Map<string, NostrProfile>();
   for (const ev of [...profileEvents].sort(
     (a, b) => b.created_at - a.created_at,

@@ -155,7 +155,16 @@ on every phase. Not launch-blocking.
    drives `hydrating`; client polls with backoff until settled and never caches a
    partial. Mutation-verified tests: `gateway/tests/thread-hydration-guard.test.ts`,
    `web/src/hooks/usePostThread.cache.test.ts`. (FIX-PROGRAMME 2026-07-19.)
-2. D3 + D4 — latency. D3 behind a per-call flag.
+2. **✅ SHIPPED 2026-07-19** — D3 + D4, the latency levers. `fetchNostrEvents`
+   gained the opt-in `resolve` param (`NostrFetchResolve`): `first-event` for the
+   content-addressed focal + ancestor-walk hops, `k-of-n` (2-of-n, 2.5 s soft
+   deadline) for the broad `#e` reply nets; the default stays `exhaustive` so the
+   replaceable-by-author callers (kind 0/3/10002 newest-wins) are untouched. D4
+   overlaps the kind-0 profile REQ with the ancestor walk (a straggler follow-up
+   REQ covers authors the walk newly finds), so the two slow phases cost `max`,
+   not `sum`. Mutation-verified test: `gateway/tests/nostr-relay-resolve.test.ts`
+   (first-event, k-of-n at k EOSEs, k-of-n soft-deadline fallback, exhaustive
+   preserved). (FIX-PROGRAMME 2026-07-19.)
 3. D5 + D6 — perceived instantaneity.
 4. D7 — post-launch.
 

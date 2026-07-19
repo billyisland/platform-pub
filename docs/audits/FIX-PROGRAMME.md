@@ -23,6 +23,42 @@ starts.
 
 ## Progress
 
+- **2026-07-19** — **THREAD-HYDRATION-LATENCY-ADR Slice 2 (D3+D4): the latency
+  levers — stop waiting for the slowest relay, and overlap the two slow phases.**
+  Slice 1 killed the deadlock; the cold-expand still paid a hung relay's full
+  per-phase timeout on every phase (the ADR's realistic ~18 s).
+  - **D3 (`gateway/src/lib/nostr-relay.ts`):** `fetchNostrEvents` gained an opt-in
+    `resolve` param (`NostrFetchResolve`). Restructured from `Promise.all` over
+    per-relay promises to a single outer promise with a per-relay closer list, so
+    an early condition can hang up the stragglers. Three modes: `exhaustive`
+    (default, unchanged — waits every relay to EOSE-or-timeout), `first-event`
+    (resolve on the first EVENT from any relay — only safe for content-addressed
+    `{ ids: [x] }` lookups, where the first hit is authoritative), `k-of-n`
+    (resolve at `k` EOSEs or a soft deadline). The default being unchanged is the
+    whole safety story: the replaceable-by-author callers
+    (`fetchNostrContacts`/`fetchNostrWriteRelays`/`fetchNostrAuthorProfile` and the
+    kind-0 thread-profile REQ) keep newest-wins by staying exhaustive; no
+    higher-level helper needed an edit.
+  - **D3 wiring (`gateway/src/lib/external-hydration.ts::hydrateNostrThread`):**
+    focal fetch → `first-event`; broad `#e` reply nets → `k-of-n` (2-of-n, 2.5 s
+    soft deadline, 6 s hard); ancestor-walk hops → `first-event`; kind-0 profiles
+    stay exhaustive.
+  - **D4 (same function):** the kind-0 profile REQ for the authors known after the
+    broad net now runs CONCURRENTLY with the ancestor walk (kicked off as a
+    promise before the walk loop, awaited after); a small follow-up REQ covers
+    authors the walk newly discovers. The two slow phases cost `max`, not `sum`.
+    Moved the `all.size === 0` bail up ahead of both (the walk can't start without
+    the focal anyway).
+  - **Tests (mutation-verified):** `gateway/tests/nostr-relay-resolve.test.ts`
+    scripts a fake `ws` under fake timers to assert each mode resolves early vs
+    waits: first-event, k-of-n-at-k-EOSEs, k-of-n-soft-deadline-fallback, and
+    exhaustive-waits-for-the-hung-relay. All four early-resolve guards go red under
+    targeted mutation (disable first-event / disable k-of-n EOSE / disable soft
+    timer / flip the default to first-event). Full gateway suite green (349),
+    `tsc` clean. Server-only; no client change (D2's poll settles sooner for free).
+  - **Remaining:** Slice 3 (D5 short sync await on first expand — `getInFlightHydration`
+    is already staged for it — + D6 viewport prefetch), then D7 relay health scoring.
+
 - **2026-07-19** — **THREAD-HYDRATION-LATENCY-ADR Slice 1 (D1+D2): the 60 s
   external-thread expand deadlock is fixed by construction.** Expanding an
   external (Bluesky/Mastodon/Nostr) card stalled ~60 s and recovered only after
