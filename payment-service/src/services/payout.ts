@@ -996,12 +996,17 @@ class PayoutService {
     payoutId: string,
   ): Promise<void> {
     // Reads → platform_settled, unclaimed (picked up by the next cycle).
+    // State-filtered: a claimed read that a chargeback flipped to 'charged_back'
+    // (settlement.ts reverseSettlement) has already been ledger-reversed as if
+    // paid — overwriting it back to platform_settled would erase the chargeback
+    // marker and re-pay the writer for a clawed-back read on the next cycle.
     await client.query(
       `UPDATE read_events
        SET state = 'platform_settled',
            writer_payout_id = NULL,
            state_updated_at = now()
-       WHERE writer_payout_id = $1`,
+       WHERE writer_payout_id = $1
+         AND state = 'platform_settled'`,
       [payoutId],
     )
 
@@ -2101,12 +2106,31 @@ class PayoutService {
     client: PoolClient,
     payoutId: string,
   ): Promise<void> {
-    // The node's own accruals this payout advanced (released → paid): roll back
-    // to 'released' and unclaim so the next cycle re-pays them.
+    // A claimed accrual whose READ was charged back mid-flight was ledger-
+    // reversed as-if-paid by the chargeback planner (chargeback.ts: claimed &&
+    // released ⇒ terminal 'paid'), but its state stayed 'released' + claimed —
+    // there is no charged-back accrual state, the marker lives on
+    // read_events.state. Releasing it here would let the next cycle re-claim
+    // and re-pay clawed-back money; void it instead (terminal, unclaimable —
+    // same disposition the planner gives an UNCLAIMED released accrual).
+    await client.query(
+      `UPDATE tribute_accruals ta
+          SET state = 'voided', tribute_payout_id = NULL
+         FROM read_events re
+        WHERE ta.tribute_payout_id = $1
+          AND re.id = ta.read_event_id
+          AND re.state = 'charged_back'`,
+      [payoutId],
+    )
+    // The rest — the node's own accruals this payout advanced (released →
+    // paid): roll back to 'released' and unclaim so the next cycle re-pays.
+    // State-filtered like the writer-read rollback: never flip a terminal
+    // ('paid'/'voided') accrual back to claimable.
     await client.query(
       `UPDATE tribute_accruals
           SET state = 'released', tribute_payout_id = NULL
-        WHERE tribute_payout_id = $1`,
+        WHERE tribute_payout_id = $1
+          AND state = 'released'`,
       [payoutId],
     )
   }

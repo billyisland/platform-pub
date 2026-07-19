@@ -118,17 +118,25 @@ const CRITICAL_CHECKS: Check[] = [
          -- reversal / tribute_payout_reversal whose ref_id is a writer_payouts /
          -- tribute_payouts id would fail the tab_settlements lookup and halt ALL
          -- payouts on the next run — recurring forever, the entry being append-
-         -- only). writer_payout_reversal is dual-table: F5 reuses it for
-         -- publication-split-recipient reversals with ref_table
-         -- 'publication_payout_splits'.
+         -- only). BOTH reversal triggers are multi-table: F5 reuses
+         -- writer_payout_reversal for publication-split-recipient reversals
+         -- (ref_table 'publication_payout_splits'), and the chargeback planner
+         -- (settlement.ts reverseSettlement) posts writer_payout_reversal AND
+         -- tribute_payout_reversal with ref_table 'tab_settlements'. Every
+         -- branch is ref_table-scoped — an unscoped branch flags the other
+         -- handlers' rows as orphans forever (§0f item 3).
          OR (le.trigger_type = 'tab_settlement_reversal'
                AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
          OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'writer_payouts'
                AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
          OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'publication_payout_splits'
                AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
-         OR (le.trigger_type = 'tribute_payout_reversal'
+         OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'tab_settlements'
+               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+         OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tribute_payouts'
                AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
+         OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tab_settlements'
+               AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
       LIMIT ${SAMPLE_LIMIT}`,
   },
 ]

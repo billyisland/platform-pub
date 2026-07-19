@@ -222,16 +222,24 @@ WHERE (le.trigger_type IN ('read_accrual', 'pledge_fulfil')
    OR (le.trigger_type = 'tribute_payout'
          AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
    -- Reversals resolve against the table each handler refs (ref_table), not all
-   -- against tab_settlements. writer_payout_reversal is dual-table: F5 reuses it
-   -- for publication-split-recipient reversals (ref_table 'publication_payout_splits').
+   -- against tab_settlements. BOTH reversal triggers are multi-table:
+   -- writer_payout_reversal is reused by F5 for publication-split-recipient
+   -- reversals (ref_table 'publication_payout_splits'), and the chargeback
+   -- planner posts writer_payout_reversal AND tribute_payout_reversal with
+   -- ref_table 'tab_settlements'. Every branch must be ref_table-scoped — an
+   -- unscoped branch flags the other handlers' rows as orphans forever (§0f 3).
    OR (le.trigger_type = 'tab_settlement_reversal'
          AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
    OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'writer_payouts'
          AND NOT EXISTS (SELECT 1 FROM writer_payouts wp WHERE wp.id = le.ref_id))
    OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'publication_payout_splits'
          AND NOT EXISTS (SELECT 1 FROM publication_payout_splits ps WHERE ps.id = le.ref_id))
-   OR (le.trigger_type = 'tribute_payout_reversal'
-         AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id));
+   OR (le.trigger_type = 'writer_payout_reversal' AND le.ref_table = 'tab_settlements'
+         AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id))
+   OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tribute_payouts'
+         AND NOT EXISTS (SELECT 1 FROM tribute_payouts tp WHERE tp.id = le.ref_id))
+   OR (le.trigger_type = 'tribute_payout_reversal' AND le.ref_table = 'tab_settlements'
+         AND NOT EXISTS (SELECT 1 FROM tab_settlements ts WHERE ts.id = le.ref_id));
 
 -- A12: F3 reversal pairing. Every reversed settlement (reversed_at set) holds
 -- exactly one reader-side reversal of −amount_pence (the restored debt), and no
