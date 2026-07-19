@@ -79,6 +79,10 @@ export async function fetchNostrEvents(
     }
 
     function onRelayDone() {
+      // Stragglers keep decrementing after an early resolve (k-of-n /
+      // first-event) has already settled the outer promise, so `pending` can
+      // legitimately go negative post-resolve. Harmless: finishOuter is
+      // guarded by outerSettled, so the extra calls are no-ops (§0f-18).
       pending--;
       if (pending <= 0) finishOuter();
     }

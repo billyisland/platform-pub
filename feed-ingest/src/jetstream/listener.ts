@@ -533,6 +533,21 @@ export class JetstreamListener {
     // DID set or stop flag may have changed while we awaited DNS.
     if (this.stopping || this.currentDids.size === 0) return;
 
+    // §0f-13 (H13 residual): two connect() calls can overlap — a fired
+    // backoff-reconnect awaiting the DNS pin while a refreshDids tick with a
+    // changed DID set calls connect() (it clears only a PENDING timer, not an
+    // in-flight connect). Whichever lands second must not orphan the first's
+    // live socket: close any socket already in the slot before claiming it.
+    // Its eventual close event is silenced by the `this.ws !== ws` guard
+    // below — which is correct HERE (we're deliberately replacing it), the
+    // guard only made the loser silent when nothing closed it at all.
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch {
+        /* already closing/dead */
+      }
+    }
     const ws = new WebSocket(fullUrl, wsOpts);
     this.ws = ws;
 

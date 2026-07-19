@@ -250,6 +250,21 @@ export function ArticleEditor({
   })
   editorRef.current = editor
 
+  // Seed the autosaver with the loaded snapshot once the editor exists (§0f-4).
+  // lastSaved starts "" inside createAutoSaver, so an untouched open-then-close
+  // otherwise reads dirty and the unmount flush saves — which, for a published
+  // article opened via Edit (dTag set), MINTS a fresh draft row through the
+  // (writer_id, nostr_d_tag) upsert: "draft + published article, both in the
+  // dashboard", the exact class the one-draft invariant bans. The editor mounts
+  // only after init populated every initial* prop, so this snapshot is the true
+  // loaded state.
+  const seededRef = useRef(false)
+  useEffect(() => {
+    if (!editor || seededRef.current) return
+    seededRef.current = true
+    autoSaver.markSaved(snapshotDraft())
+  }, [editor, autoSaver, snapshotDraft])
+
   // Autosave on metadata changes too (M21) — the TipTap onUpdate above only
   // fires on BODY edits, so a title/dek/price/cover/comments change scheduled
   // nothing. Skip the initial mount (nothing dirtied yet) and only fire once
@@ -343,10 +358,15 @@ export function ArticleEditor({
       }
 
       if (onPublish) {
+        // Set BEFORE the await (§0f-4): onPublish closes the overlay inside
+        // itself, so React can commit the unmount before this continuation
+        // resumes — a flag set after the await leaves the flush seeing
+        // disposed=false and re-saving the just-deleted draft. Reset on catch.
+        disposedRef.current = true
         await onPublish(data)
-        disposedRef.current = true // draft disposed — don't let the flush recreate it
       }
     } catch (err) {
+      disposedRef.current = false // publish failed — the draft still exists
       console.error('Publish error:', err)
       setPublishError(err instanceof Error ? err.message : 'Publishing failed — please try again.')
     } finally {
@@ -419,9 +439,11 @@ export function ArticleEditor({
         draftId: currentDraftId,
       }
 
+      // Set BEFORE the await (§0f-4) — same unmount race as handlePublish.
+      disposedRef.current = true
       await onSchedule(data, new Date(scheduleDateTime).toISOString())
-      disposedRef.current = true // scheduled draft is owned by the scheduler now
     } catch (err) {
+      disposedRef.current = false // schedule failed — the draft still exists
       console.error('Schedule error:', err)
       setPublishError(err instanceof Error ? err.message : 'Scheduling failed — please try again.')
     } finally {

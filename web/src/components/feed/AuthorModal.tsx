@@ -89,9 +89,16 @@ export function AuthorModal({
   // on the trigger toggles rather than close-then-reopen).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // The lightbox (opened off this modal's avatar) floats above at z-[70];
+      // while it's up, Escape/clicks belong to IT alone. Its own listener
+      // stopPropagation can't shield us — both listeners sit on `document`
+      // (same node, registration order wins), so the M22 fix left this pair
+      // still double-closing (§0f-15). Yield explicitly.
+      if (useLightbox.getState().isOpen) return;
       if (e.key === "Escape") onClose();
     }
     function onPointerDown(e: PointerEvent) {
+      if (useLightbox.getState().isOpen) return; // lightbox scrim click is not "outside"
       const target = e.target as Node;
       if (modalRef.current?.contains(target)) return;
       if (anchorRef.current?.contains(target)) return;

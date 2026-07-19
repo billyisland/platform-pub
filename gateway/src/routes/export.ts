@@ -43,7 +43,9 @@ interface ExportedKey {
 }
 
 async function fetchExportedKeys(writerId: string, writerPubkey: string): Promise<ExportedKey[]> {
-  const res = await fetch(`${KEY_SERVICE_URL}/writers/export-keys`, {
+  // key-service mounts keyRoutes under /api/v1 (key-service/src/index.ts) —
+  // the unprefixed path 404s (§0f-19; every other gateway caller carries it).
+  const res = await fetch(`${KEY_SERVICE_URL}/api/v1/writers/export-keys`, {
     headers: {
       'x-writer-id': writerId,
       'x-writer-pubkey': writerPubkey,

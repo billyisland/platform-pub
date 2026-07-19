@@ -81,8 +81,10 @@ interface HydratedNode {
 //   • hydrationInFlight: "is a hydrate for this item RUNNING right now?" — the
 //     truth source for the response's `hydrating` flag. A settled job (success or
 //     failure) is absent from this map even while the guard still throttles.
+// The in-flight promise resolves a SUCCESS bit (§0f-5): true = the hydrate ran
+// to completion (rows committed), false = it failed (guard cleared, retriable).
 const hydrateGuard = new Map<string, number>();
-const hydrationInFlight = new Map<string, Promise<void>>();
+const hydrationInFlight = new Map<string, Promise<boolean>>();
 const HYDRATE_TTL_MS = 60_000;
 
 // Would a hydrate RE-TRIGGER right now (hydratable protocol AND not throttled)?
@@ -108,7 +110,9 @@ export function isThreadHydrating(itemId: string): boolean {
 
 // The in-flight hydration promise for this item, if one is running — so a caller
 // (D5's short synchronous await) can Promise.race it against a budget.
-export function getInFlightHydration(itemId: string): Promise<void> | undefined {
+export function getInFlightHydration(
+  itemId: string,
+): Promise<boolean> | undefined {
   return hydrationInFlight.get(itemId);
 }
 
@@ -117,26 +121,36 @@ export function getInFlightHydration(itemId: string): Promise<void> | undefined 
 export const THREAD_HYDRATE_SYNC_BUDGET_MS = 2_000;
 
 // Race an in-flight hydration against a budget (THREAD-HYDRATION-LATENCY-ADR D5).
-// Resolves TRUE if the job settled within budgetMs — the hydrated rows are now
-// committed, so the caller can assemble a COMPLETE thread and report
-// `hydrating: false`, sparing the client any polling on a fast relay. Resolves
-// FALSE if the budget elapsed first — the caller returns whatever is ingested so
-// far with `hydrating: true` and the client polls to merge the rest (D2). A
-// missing job (nothing to wait for: not hydratable, or throttled-and-settled)
-// resolves TRUE immediately. Never rejects — a *failed* hydrate still "settles"
-// (the job never rejects; it swallows its own error), and the client's poll would
-// re-trigger the retriable guard-cleared hydrate anyway.
+// Resolves TRUE only if the job settled within budgetMs AND SUCCEEDED — the
+// hydrated rows are now committed, so the caller can assemble a COMPLETE thread
+// and report `hydrating: false`, sparing the client any polling on a fast
+// relay. Resolves FALSE if the budget elapsed first, OR if the job settled by
+// FAILING within the budget (§0f-5): a fast failure (all relays refused in
+// <2s) must NOT read as "settled" — that let the caller report
+// `hydrating: false` and cache the bare-focal thread for 60s, during which no
+// client poll ever fired to pick up D1's guard-cleared retry. On FALSE the
+// caller returns whatever is ingested so far with `hydrating: true` and the
+// client polls to merge the rest (D2) — the poll is also exactly what
+// re-triggers the retriable failed hydrate. A missing job (nothing to wait
+// for: not hydratable, or throttled-and-settled) resolves TRUE immediately.
+// Never rejects (the job never rejects; it resolves its success bit).
 export function awaitHydrationWithinBudget(
-  job: Promise<void> | undefined,
+  job: Promise<boolean> | undefined,
   budgetMs: number,
 ): Promise<boolean> {
   if (!job) return Promise.resolve(true);
   return new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => resolve(false), budgetMs);
-    void job.finally(() => {
-      clearTimeout(timer);
-      resolve(true); // no-op if the timer already resolved false
-    });
+    job.then(
+      (ok) => {
+        clearTimeout(timer);
+        resolve(ok); // no-op if the timer already resolved false
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(false); // defensive — the job catches its own errors
+      },
+    );
   });
 }
 
@@ -618,33 +632,36 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
 // source thread into external_items + feed_items, so the pure-DB /thread
 // projector can then resolve its ancestors + replies. Never throws.
 //
-// Returns the in-flight hydration promise (D1/D5): a caller can race it against a
-// budget. The promise is registered in hydrationInFlight for its lifetime and
+// Returns the in-flight hydration promise (D1/D5) resolving its SUCCESS bit
+// (§0f-5): a caller can race it against a budget and only report "settled" on
+// success. The promise is registered in hydrationInFlight for its lifetime and
 // deleted in a `finally` when it settles, so isThreadHydrating tracks it exactly.
 // Concurrent callers in the same throttle window share the running job; a caller
-// arriving while throttled-but-settled gets a resolved promise (nothing to do).
+// arriving while throttled-but-settled gets a resolved promise (nothing to do —
+// and the guard surviving means the prior run SUCCEEDED, so it resolves true).
 export function hydrateExternalThreadContext(item: {
   id: string;
   source_id: string;
   protocol: string;
   source_item_uri: string;
   interaction_data: Record<string, unknown> | null;
-}): Promise<void> {
+}): Promise<boolean> {
   if (
     item.protocol !== "atproto" &&
     item.protocol !== "activitypub" &&
     item.protocol !== "nostr_external"
   )
-    return Promise.resolve();
+    return Promise.resolve(true);
 
   // Concurrent caller while a job is already running → share it (so `hydrating`
   // and D5's race observe the same settle).
   const existing = hydrationInFlight.get(item.id);
   if (existing) return existing;
 
-  // Throttled and NOT in flight → it ran recently and settled; nothing to do.
+  // Throttled and NOT in flight → it ran recently, settled, and succeeded (a
+  // failure clears the guard); nothing to do.
   const until = hydrateGuard.get(item.id);
-  if (until && until > Date.now()) return Promise.resolve();
+  if (until && until > Date.now()) return Promise.resolve(true);
 
   hydrateGuard.set(item.id, Date.now() + HYDRATE_TTL_MS);
   if (hydrateGuard.size > CACHE_MAX_ENTRIES) {
@@ -668,6 +685,7 @@ export function hydrateExternalThreadContext(item: {
       if (item.protocol === "atproto") await hydrateBlueskyThread(row);
       else if (item.protocol === "activitypub") await hydrateMastodonThread(row);
       else await hydrateNostrThread(row);
+      return true;
     } catch (err) {
       logger.debug(
         { err: err instanceof Error ? err.message : String(err), id: item.id },
@@ -677,6 +695,7 @@ export function hydrateExternalThreadContext(item: {
       // clear it so willHydrateThread is true again on the next poll instead of
       // freezing retries for the full TTL.
       hydrateGuard.delete(item.id);
+      return false;
     }
   })();
   // Register synchronously (before returning) so a same-tick concurrent caller

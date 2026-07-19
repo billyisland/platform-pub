@@ -118,6 +118,19 @@ describe.skipIf(!DB_URL)("external_items_prune — reference guards + wedge (M15
     await client.query("ROLLBACK");
   });
 
+  // Run the batched FIXED delete to completion, like the task's loop — a single
+  // LIMIT-ed call picks arbitrary rows and could miss the fixture's on a DB
+  // with a large prunable backlog. Returns total rows deleted (DB-wide).
+  const BATCH = 10_000;
+  const runFixedToCompletion = async (): Promise<number> => {
+    let total = 0;
+    for (;;) {
+      const { rowCount } = await client.query(FIXED_DELETE, ["90", BATCH]);
+      total += rowCount ?? 0;
+      if ((rowCount ?? 0) < BATCH) return total;
+    }
+  };
+
   const survivors = async (): Promise<string[]> => {
     const { rows } = await client.query<{ source_item_uri: string }>(
       `SELECT source_item_uri FROM external_items WHERE source_id = $1`,
@@ -128,8 +141,11 @@ describe.skipIf(!DB_URL)("external_items_prune — reference guards + wedge (M15
   };
 
   it("FIXED: spares cited + native-reply-parent, prunes plain + tombstoned", async () => {
-    const { rowCount } = await client.query(FIXED_DELETE, ["90"]);
-    expect(rowCount).toBe(2);
+    const pruned = await runFixedToCompletion();
+    // ≥, not an exact count (§0f-12): the DELETE has no source scoping, so on a
+    // seasoned dev DB the total includes every unreferenced >90-day item DB-wide
+    // (rolled back with the fixture). The per-fixture claim is `survivors()`.
+    expect(pruned).toBeGreaterThanOrEqual(2);
     expect(await survivors()).toEqual(["cited", "parent"]);
   });
 
@@ -145,8 +161,15 @@ describe.skipIf(!DB_URL)("external_items_prune — reference guards + wedge (M15
   it("CONTROL (privacy inversion): with the cited item removed, the pre-M15 query RETAINS the tombstoned item", async () => {
     // Isolate the deleted_at defect from the wedge: drop the citation so the old
     // query can run to completion, and show it keeps exactly the author-deleted
-    // content (the inverted retention the fix corrects).
-    await client.query(`DELETE FROM citation_edges WHERE source_external_item_id = $1`, [ids.cited]);
+    // content (the inverted retention the fix corrects). Drop EVERY citation on
+    // an in-window item, not just the fixture's — the unscoped BUGGY_DELETE
+    // would otherwise 23503 on any pre-existing cited old item in a seasoned
+    // dev DB (§0f-12; rolled back with the fixture).
+    await client.query(
+      `DELETE FROM citation_edges ce USING external_items ei
+       WHERE ce.source_external_item_id = ei.id
+         AND ei.created_at < now() - interval '90 days'`,
+    );
     const { rowCount } = await client.query(BUGGY_DELETE, ["90"]);
     const after = await survivors();
     // Buggy keeps the tombstoned item; the fixed query (other test) prunes it.
@@ -159,7 +182,7 @@ describe.skipIf(!DB_URL)("external_items_prune — reference guards + wedge (M15
 
   it("a cited item whose citation is later removed becomes prunable (guard is live, not sticky)", async () => {
     await client.query(`DELETE FROM citation_edges WHERE source_external_item_id = $1`, [ids.cited]);
-    await client.query(FIXED_DELETE, ["90"]);
+    await runFixedToCompletion();
     expect(await survivors()).toEqual(["parent"]); // cited now gone too
   });
 });

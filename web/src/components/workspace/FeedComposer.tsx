@@ -1040,6 +1040,7 @@ function SchemeMenu({
   const dark = useColorScheme((s) => s.dark);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const current = normalizeBrightness(scheme);
 
   useEffect(() => {
@@ -1052,11 +1053,40 @@ function SchemeMenu({
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
+    // Menus receive focus on open (§0f-18): land on the checked swatch so
+    // arrow keys work immediately.
+    (
+      menuRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ??
+      menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitemradio"]')
+    )?.focus();
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
+  // role="menu" contract: arrow keys rove focus between the swatches (§0f-18).
+  const onMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+    );
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next = -1;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      next = idx < 0 ? 0 : (idx + 1) % items.length;
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      next = idx < 0 ? items.length - 1 : (idx - 1 + items.length) % items.length;
+    } else if (e.key === "Home") {
+      next = 0;
+    } else if (e.key === "End") {
+      next = items.length - 1;
+    }
+    if (next >= 0) {
+      e.preventDefault();
+      items[next].focus();
+    }
+  };
 
   return (
     <div
@@ -1072,6 +1102,7 @@ function SchemeMenu({
           onClick={() => setOpen((v) => !v)}
           aria-haspopup="menu"
           aria-expanded={open}
+          aria-label="Colour scheme"
           className="font-sans text-ui-sm"
           style={{
             display: "inline-flex",
@@ -1106,7 +1137,9 @@ function SchemeMenu({
 
         {open && (
           <div
+            ref={menuRef}
             role="menu"
+            onKeyDown={onMenuKeyDown}
             className="shadow-lg"
             style={{
               position: "absolute",

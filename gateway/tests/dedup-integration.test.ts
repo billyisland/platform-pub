@@ -39,6 +39,18 @@ const SUPPRESSED_SQL = `
   SELECT fi_id FROM suppressed
 `;
 
+// M11 predicate coverage: same as SUPPRESSED_SQL but with per-row
+// allow_replies — $3 lists the fi_ids whose (stub) feed membership disallows
+// replies, mirroring the host's `m.allow_replies` join column.
+const SUPPRESSED_SQL_REPLY_GATED = `
+  WITH RECURSIVE matched AS (
+    SELECT id AS fi_id, (id <> ALL($3::uuid[])) AS allow_replies
+    FROM feed_items WHERE id = ANY($2::uuid[])
+  ),
+  ${DEDUP_CTES}
+  SELECT fi_id FROM suppressed
+`;
+
 // Survivors + their provenance, exercising the real suppress filter + lateral.
 const SURVIVORS_SQL = `
   WITH RECURSIVE matched AS (
@@ -109,11 +121,13 @@ describe.skipIf(!DB_URL)("dedup integration (Slice 8 P1/P2)", () => {
     contentText?: string;
     publishedAt: string; // ISO
     uri: string;
+    isContextOnly?: boolean; // M11: hydration context row
+    isReply?: boolean; // M11: reply row (visibility rides allow_replies)
   }): Promise<string> {
     const ext = await client.query<{ id: string }>(
       `INSERT INTO external_items
-         (source_id, protocol, tier, source_item_uri, canonical_url, content_text, published_at)
-       VALUES ($1, $2::external_protocol, $3::content_tier, $4, $5, $6, $7)
+         (source_id, protocol, tier, source_item_uri, canonical_url, content_text, published_at, is_context_only)
+       VALUES ($1, $2::external_protocol, $3::content_tier, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         opts.sourceId,
@@ -123,16 +137,17 @@ describe.skipIf(!DB_URL)("dedup integration (Slice 8 P1/P2)", () => {
         opts.canonicalUrl ?? null,
         opts.contentText ?? null,
         opts.publishedAt,
+        opts.isContextOnly ?? false,
       ],
     );
     const extId = ext.rows[0].id;
     const fi = await client.query<{ id: string }>(
       `INSERT INTO feed_items
          (item_type, external_item_id, author_name, published_at,
-          source_protocol, source_id, biddability_tier, post_id)
-       VALUES ('external', $1, 'fixture', $2, $3, $4, $5, $6)
+          source_protocol, source_id, biddability_tier, post_id, is_reply)
+       VALUES ('external', $1, 'fixture', $2, $3, $4, $5, $6, $7)
        RETURNING id`,
-      [extId, opts.publishedAt, opts.protocol, opts.sourceId, opts.tier, opts.uri],
+      [extId, opts.publishedAt, opts.protocol, opts.sourceId, opts.tier, opts.uri, opts.isReply ?? false],
     );
     return fi.rows[0].id;
   }
@@ -234,6 +249,81 @@ describe.skipIf(!DB_URL)("dedup integration (Slice 8 P1/P2)", () => {
     expect(surv.has(loser)).toBe(false);
     // Provenance: the survivor advertises the loser's protocol.
     expect(surv.get(winner)).toContain("rss");
+  });
+
+  it("M11: a context-only twin never suppresses its visible sibling (double-hide)", async () => {
+    // The would-be winner (better tier, earlier) is a hydration context row —
+    // the host feed query filters it AFTER dedup, so if it wins here BOTH
+    // copies vanish. The candidates predicate (ei.is_context_only IS NOT TRUE)
+    // must keep it out of the universe entirely.
+    const sA = await source("atproto", "did:plc:ctxwinner");
+    const sC = await source("rss", "https://ctxloser.example/feed");
+    const url = "https://ctx.example/article";
+    const contextTwin = await item({
+      sourceId: sA, protocol: "atproto", contentTier: "tier3", tier: "A",
+      canonicalUrl: url, uri: "ctx-a", publishedAt: "2026-02-01T10:00:00Z",
+      isContextOnly: true,
+    });
+    const visibleTwin = await item({
+      sourceId: sC, protocol: "rss", contentTier: "tier4", tier: "C",
+      canonicalUrl: url, uri: "ctx-c", publishedAt: "2026-02-02T10:00:00Z",
+    });
+    await link(sA, sC, "user_asserted", readerA);
+
+    // The context row is not a candidate → nothing suppresses the visible twin.
+    const sup = await suppressed(readerA, [contextTwin, visibleTwin]);
+    expect(sup.has(visibleTwin)).toBe(false);
+    expect(sup.size).toBe(0);
+
+    // Positive control (mutation guard): promote the context row to real and
+    // the identical fixture DOES suppress the visible twin — proving the empty
+    // set above is the predicate's doing, not a broken fixture.
+    await client.query(
+      `UPDATE external_items SET is_context_only = FALSE
+        WHERE id = (SELECT external_item_id FROM feed_items WHERE id = $1)`,
+      [contextTwin],
+    );
+    const supAfter = await suppressed(readerA, [contextTwin, visibleTwin]);
+    expect(supAfter.has(visibleTwin)).toBe(true);
+  });
+
+  it("M11: a reply-suppressed twin never suppresses its visible sibling", async () => {
+    // Same shape on the other predicate: the would-be winner is a REPLY in a
+    // feed whose membership disallows replies (m.allow_replies = FALSE), so the
+    // host filters it after dedup. (fi.is_reply IS NOT TRUE OR m.allow_replies)
+    // must keep it out of the candidate universe.
+    const sA = await source("atproto", "did:plc:replywinner");
+    const sC = await source("rss", "https://replyloser.example/feed");
+    const url = "https://replygate.example/article";
+    const replyTwin = await item({
+      sourceId: sA, protocol: "atproto", contentTier: "tier3", tier: "A",
+      canonicalUrl: url, uri: "rg-a", publishedAt: "2026-02-01T10:00:00Z",
+      isReply: true,
+    });
+    const visibleTwin = await item({
+      sourceId: sC, protocol: "rss", contentTier: "tier4", tier: "C",
+      canonicalUrl: url, uri: "rg-c", publishedAt: "2026-02-02T10:00:00Z",
+    });
+    await link(sA, sC, "user_asserted", readerA);
+
+    const gated = async (disallowed: string[]) => {
+      const { rows } = await client.query<{ fi_id: string }>(
+        SUPPRESSED_SQL_REPLY_GATED,
+        [readerA, [replyTwin, visibleTwin], disallowed],
+      );
+      return new Set(rows.map((r) => r.fi_id));
+    };
+
+    // Reply twin's feed disallows replies → it is not a candidate → the
+    // visible twin survives.
+    const sup = await gated([replyTwin]);
+    expect(sup.has(visibleTwin)).toBe(false);
+    expect(sup.size).toBe(0);
+
+    // Positive control (mutation guard): with replies allowed, the same reply
+    // row IS a candidate and suppresses the visible twin.
+    const supAllowed = await gated([]);
+    expect(supAllowed.has(visibleTwin)).toBe(true);
   });
 
   it("breaks a same-tier tie by earlier published_at", async () => {

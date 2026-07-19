@@ -235,4 +235,56 @@ describe("safeFetch — redirect method/body downgrade (M25)", () => {
 
     expect(hopMethod(1)).toBe("HEAD");
   });
+
+  // §0f-17: 301/302 rewrite POST only — PUT/DELETE re-send unchanged (fetch/
+  // browser semantics); the old blanket rewrite silently re-issued them as GET.
+  for (const status of [301, 302]) {
+    it(`${status} preserves a PUT's method and body (only POST downgrades)`, async () => {
+      undiciFetch
+        .mockResolvedValueOnce(redirectTo(status, "https://origin-a.example/moved"))
+        .mockResolvedValueOnce(okResponse());
+
+      await safeFetch("https://origin-a.example/resource", {
+        method: "PUT",
+        body: "payload=1",
+        headers: { "Content-Type": "text/plain" },
+      });
+
+      expect(hopMethod(1)).toBe("PUT");
+      expect(hopBody(1)).toBe("payload=1");
+      expect(hopHeaders(1)["content-type"]).toBe("text/plain");
+    });
+  }
+
+  it("303 downgrades a PUT → GET (303 rewrites every method except HEAD)", async () => {
+    undiciFetch
+      .mockResolvedValueOnce(redirectTo(303, "https://origin-a.example/moved"))
+      .mockResolvedValueOnce(okResponse());
+
+    await safeFetch("https://origin-a.example/resource", {
+      method: "PUT",
+      body: "payload=1",
+    });
+
+    expect(hopMethod(1)).toBe("GET");
+    expect(hopBody(1)).toBeUndefined();
+  });
+
+  it("a downgrade strips the dropped body's describing headers (§0f-17)", async () => {
+    undiciFetch
+      .mockResolvedValueOnce(redirectTo(302, "https://origin-a.example/moved"))
+      .mockResolvedValueOnce(okResponse());
+
+    await safeFetch("https://origin-a.example/resource", {
+      method: "POST",
+      body: "payload=1",
+      headers: { "Content-Type": "application/json", "Content-Length": "9" },
+    });
+
+    expect(hopMethod(1)).toBe("GET");
+    expect(hopHeaders(1)["content-type"]).toBeUndefined();
+    expect(hopHeaders(1)["content-length"]).toBeUndefined();
+    // Non-body headers survive the strip.
+    expect(hopHeaders(1)["user-agent"]).toContain("all.haus");
+  });
 });

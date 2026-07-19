@@ -53,7 +53,7 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   "reader.gate":
     "This is a paywall. Click through it and the charge goes on your tab, which you can find in the ∀ menu under 'Ledger'.",
   composer:
-    "This is for writing notes - short posts published to anyone who follows your all.haus account. If you want to write something longer, click 'make it an article'.",
+    "This is for writing notes: short posts published to anyone who follows your all.haus account. If you want to write something longer, click 'Make this an article'.",
   "composer.crosspost":
     "One switch per network you have connected to your all.haus account: dark means this note will also post there. The default for each network is set in Settings, under Reach other networks.",
   "composer.article":

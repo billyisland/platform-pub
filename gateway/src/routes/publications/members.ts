@@ -188,6 +188,31 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'This invite is for another user' })
       }
 
+      // Re-validate the grant at execution time (§0f-16): the M9 escalation
+      // guard runs at MINT time, so an invite minted before the guard shipped —
+      // or by an inviter demoted since — would still confer its role's full
+      // ROLE_DEFAULTS here. An invite is a deferred grant; it is only
+      // acceptable while its inviter currently holds every permission the role
+      // confers (owner exempt; a departed/removed inviter holds nothing).
+      const { rows: inviterRows } = await pool.query(
+        `SELECT is_owner, can_publish, can_edit_others, can_manage_members,
+                can_manage_finances, can_manage_settings
+           FROM publication_members
+          WHERE publication_id = $1 AND account_id = $2 AND removed_at IS NULL`,
+        [invite.publication_id, invite.invited_by]
+      )
+      const inviteOffending = inviterRows.length === 0
+        ? 'a grant from an inviter who is no longer a member'
+        : escalationBeyond(
+            inviterRows[0],
+            ROLE_DEFAULTS[invite.role as keyof typeof ROLE_DEFAULTS],
+          )
+      if (inviteOffending) {
+        return reply.status(403).send({
+          error: `This invite can no longer be accepted: it confers ${inviteOffending}, which the inviter does not hold`,
+        })
+      }
+
       await withTransaction(async (client) => {
         const perms = ROLE_DEFAULTS[invite.role as keyof typeof ROLE_DEFAULTS]
 
@@ -278,6 +303,24 @@ export async function publicationMembersRoutes(app: FastifyInstance) {
         return reply.status(403).send({
           error: `Cannot grant ${offending}, which you do not hold`,
         })
+      }
+
+      // The role LABEL is itself a capability, not just cosmetics (§0f-16):
+      // `editor_in_chief` appears on the masthead as the publication's voice AND
+      // gates ownership-transfer eligibility (the transfer route requires the
+      // new owner to be an active EiC). So guard it like a grant: setting a
+      // role whose ROLE_DEFAULTS confer permissions the editor doesn't hold is
+      // the same escalation whether or not the columns move.
+      if (data.role !== undefined) {
+        const labelOffending = escalationBeyond(
+          req.publicationMember!,
+          ROLE_DEFAULTS[data.role],
+        )
+        if (labelOffending) {
+          return reply.status(403).send({
+            error: `Cannot assign the ${data.role} role: it implies ${labelOffending}, which you do not hold`,
+          })
+        }
       }
 
       const setClauses: string[] = []

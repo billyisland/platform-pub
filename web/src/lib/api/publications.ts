@@ -141,7 +141,7 @@ export const publications = {
     title: string; summary?: string; content: string; fullContent: string;
     accessMode?: string; pricePence?: number; gatePositionPct?: number;
     showOnWriterProfile: boolean; existingDTag?: string;
-    coverImageUrl?: string | null;
+    coverImageUrl?: string | null; commentsEnabled?: boolean;
   }) =>
     request<{ articleId: string; status: string; dTag: string; nostrEventId?: string }>(
       `/publications/${id}/articles`,

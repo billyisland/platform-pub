@@ -257,6 +257,7 @@ export async function publishToPublication(
     gatePositionPct: data.isPaywalled ? data.gatePositionPct : undefined,
     showOnWriterProfile: data.showOnWriterProfile,
     coverImageUrl: data.coverImageUrl ?? null,
+    commentsEnabled: data.commentsEnabled,
     existingDTag,
   })
 

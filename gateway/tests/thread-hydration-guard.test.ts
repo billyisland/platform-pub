@@ -81,15 +81,18 @@ describe("thread hydration in-flight registry (D1)", () => {
     expect(willHydrateThread("C", "nostr_external")).toBe(false);
     // … but the job is done, so the flag is honest.
     expect(isThreadHydrating("C")).toBe(false);
-    // A throttled caller gets a resolved no-op, never a second run.
+    // A throttled caller gets a resolved no-op, never a second run. The guard
+    // surviving means the prior run succeeded, so it resolves true (§0f-5).
     const noop = hydrateExternalThreadContext(item("C"));
     expect(getInFlightHydration("C")).toBeUndefined();
-    await expect(noop).resolves.toBeUndefined();
+    await expect(noop).resolves.toBe(true);
   });
 
   it("guard-on-failure: a failed hydrate is immediately re-triggerable", async () => {
     fetchNostrEvents.mockRejectedValue(new Error("relay boom"));
-    await hydrateExternalThreadContext(item("D"));
+    // The job resolves its success bit — false here (§0f-5), so D5's race
+    // reports not-settled and the route keeps `hydrating: true`.
+    await expect(hydrateExternalThreadContext(item("D"))).resolves.toBe(false);
     // The catch cleared the guard, so willHydrateThread is true again at once —
     // no 60 s freeze — and nothing is left in flight.
     expect(willHydrateThread("D", "nostr_external")).toBe(true);
@@ -99,7 +102,7 @@ describe("thread hydration in-flight registry (D1)", () => {
   it("non-hydratable protocols are a resolved no-op, never in flight", async () => {
     const job = hydrateExternalThreadContext(item("E", { protocol: "rss" }));
     expect(isThreadHydrating("E")).toBe(false);
-    await expect(job).resolves.toBeUndefined();
+    await expect(job).resolves.toBe(true); // nothing to hydrate ⇒ settled
   });
 });
 
@@ -110,20 +113,33 @@ describe("thread hydration in-flight registry (D1)", () => {
 // The helper is the pure race; the route derives `hydrating = !settled`.
 // =============================================================================
 describe("awaitHydrationWithinBudget (D5)", () => {
-  it("resolves true when the job settles within budget", async () => {
-    let done!: () => void;
-    const job = new Promise<void>((r) => {
+  it("resolves true when the job SUCCEEDS within budget", async () => {
+    let done!: (ok: boolean) => void;
+    const job = new Promise<boolean>((r) => {
       done = r;
     });
     const raced = awaitHydrationWithinBudget(job, 2_000);
-    done();
+    done(true);
     await expect(raced).resolves.toBe(true);
+  });
+
+  it("resolves false when the job FAILS within budget (§0f-5)", async () => {
+    // A fast failure (all relays refused in <2s) must not read as settled —
+    // that let the route report hydrating:false and cache the bare-focal
+    // thread for 60s with no client poll to drive D1's guard-cleared retry.
+    let done!: (ok: boolean) => void;
+    const job = new Promise<boolean>((r) => {
+      done = r;
+    });
+    const raced = awaitHydrationWithinBudget(job, 2_000);
+    done(false);
+    await expect(raced).resolves.toBe(false);
   });
 
   it("resolves false when the budget elapses before the job settles", async () => {
     vi.useFakeTimers();
     try {
-      const job = new Promise<void>(() => {}); // never settles
+      const job = new Promise<boolean>(() => {}); // never settles
       const raced = awaitHydrationWithinBudget(job, 2_000);
       await vi.advanceTimersByTimeAsync(2_000);
       await expect(raced).resolves.toBe(false);

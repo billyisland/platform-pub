@@ -20,6 +20,16 @@ import logger from '@platform-pub/shared/lib/logger.js'
 // the same transaction. Notes cascade out of feed_items on DELETE, so they only
 // need the tombstone. Signed with the content author's own custodial key (the
 // platform holds it), exactly as a self-delete would be.
+//
+// Two-phase (§0f-14, H4): PREPARE — select the removable set and sign every
+// tombstone (one key-custody HTTP round-trip each) — runs OUTSIDE the caller's
+// transaction, so a prolific account's hundreds of sign calls no longer hold a
+// transaction open, and key-custody downtime fails the request cleanly instead
+// of mid-transaction. APPLY — pure DB writes + outbox enqueues — is what runs
+// inside the transaction (only the enqueue ever needed it). Content published
+// in the tiny prepare→commit window escapes this sweep, but a suspension
+// commits `status = 'suspended'` which blocks further publishing, and the
+// admin surface can always re-run a removal.
 // -----------------------------------------------------------------------------
 
 interface RemovableArticle {
@@ -30,89 +40,114 @@ interface RemovableArticle {
   nostr_pubkey: string
 }
 
-async function removeArticle(client: PoolClient, a: RemovableArticle): Promise<void> {
-  await client.query(
-    `UPDATE articles SET published_at = NULL, updated_at = now() WHERE id = $1`,
-    [a.id]
-  )
-  await client.query(
-    `UPDATE feed_items SET deleted_at = now() WHERE article_id = $1 AND deleted_at IS NULL`,
-    [a.id]
-  )
-  if (a.nostr_event_id && a.nostr_d_tag) {
-    const deletionEvent = await signEvent(a.writer_id, {
-      kind: 5,
-      content: '',
-      tags: [
-        ['e', a.nostr_event_id],
-        ['a', `30023:${a.nostr_pubkey}:${a.nostr_d_tag}`],
-      ],
-      created_at: Math.floor(Date.now() / 1000),
-    })
-    await enqueueRelayPublish(client, {
-      entityType: 'article_deletion',
-      entityId: a.id,
-      signedEvent: deletionEvent as SignedNostrEvent,
-    })
-  }
-}
-
 interface RemovableNote {
   id: string
   nostr_event_id: string | null
   author_id: string
 }
 
-async function removeNote(client: PoolClient, n: RemovableNote): Promise<void> {
-  if (n.nostr_event_id) {
-    const deletionEvent = await signEvent(n.author_id, {
-      kind: 5,
-      content: '',
-      tags: [['e', n.nostr_event_id]],
-      created_at: Math.floor(Date.now() / 1000),
-    })
-    await enqueueRelayPublish(client, {
-      entityType: 'note_deletion',
-      entityId: n.id,
-      signedEvent: deletionEvent as SignedNostrEvent,
-    })
-  }
-  // Cascades to feed_items via feed_items_note_id_fkey ON DELETE CASCADE.
-  await client.query(`DELETE FROM notes WHERE id = $1`, [n.id])
+interface PreparedRemoval {
+  articles: Array<{ article: RemovableArticle; tombstone: SignedNostrEvent | null }>
+  notes: Array<{ note: RemovableNote; tombstone: SignedNostrEvent | null }>
 }
 
-// Remove one target by its Nostr event id (article or note).
-async function removeContentByEventId(client: PoolClient, eventId: string): Promise<void> {
-  const { rows: articles } = await client.query<RemovableArticle>(
+async function signRemovals(
+  articles: RemovableArticle[],
+  notes: RemovableNote[],
+): Promise<PreparedRemoval> {
+  const prepared: PreparedRemoval = { articles: [], notes: [] }
+  for (const a of articles) {
+    let tombstone: SignedNostrEvent | null = null
+    if (a.nostr_event_id && a.nostr_d_tag) {
+      tombstone = (await signEvent(a.writer_id, {
+        kind: 5,
+        content: '',
+        tags: [
+          ['e', a.nostr_event_id],
+          ['a', `30023:${a.nostr_pubkey}:${a.nostr_d_tag}`],
+        ],
+        created_at: Math.floor(Date.now() / 1000),
+      })) as SignedNostrEvent
+    }
+    prepared.articles.push({ article: a, tombstone })
+  }
+  for (const n of notes) {
+    let tombstone: SignedNostrEvent | null = null
+    if (n.nostr_event_id) {
+      tombstone = (await signEvent(n.author_id, {
+        kind: 5,
+        content: '',
+        tags: [['e', n.nostr_event_id]],
+        created_at: Math.floor(Date.now() / 1000),
+      })) as SignedNostrEvent
+    }
+    prepared.notes.push({ note: n, tombstone })
+  }
+  return prepared
+}
+
+// PREPARE one target by its Nostr event id (article or note). No transaction.
+async function prepareContentRemovalByEventId(eventId: string): Promise<PreparedRemoval> {
+  const { rows: articles } = await pool.query<RemovableArticle>(
     `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, a.writer_id, acc.nostr_pubkey
        FROM articles a JOIN accounts acc ON acc.id = a.writer_id
       WHERE a.nostr_event_id = $1 AND a.deleted_at IS NULL`,
     [eventId]
   )
-  for (const a of articles) await removeArticle(client, a)
-
-  const { rows: notes } = await client.query<RemovableNote>(
+  const { rows: notes } = await pool.query<RemovableNote>(
     `SELECT id, nostr_event_id, author_id FROM notes WHERE nostr_event_id = $1`,
     [eventId]
   )
-  for (const n of notes) await removeNote(client, n)
+  return signRemovals(articles, notes)
 }
 
-// Remove all of an account's published articles + notes from every surface.
-async function removeAllContentForAccount(client: PoolClient, accountId: string): Promise<void> {
-  const { rows: articles } = await client.query<RemovableArticle>(
+// PREPARE all of an account's published articles + notes. No transaction.
+async function prepareAllContentRemovalForAccount(accountId: string): Promise<PreparedRemoval> {
+  const { rows: articles } = await pool.query<RemovableArticle>(
     `SELECT a.id, a.nostr_event_id, a.nostr_d_tag, a.writer_id, acc.nostr_pubkey
        FROM articles a JOIN accounts acc ON acc.id = a.writer_id
       WHERE a.writer_id = $1 AND a.published_at IS NOT NULL AND a.deleted_at IS NULL`,
     [accountId]
   )
-  for (const a of articles) await removeArticle(client, a)
-
-  const { rows: notes } = await client.query<RemovableNote>(
+  const { rows: notes } = await pool.query<RemovableNote>(
     `SELECT id, nostr_event_id, author_id FROM notes WHERE author_id = $1`,
     [accountId]
   )
-  for (const n of notes) await removeNote(client, n)
+  return signRemovals(articles, notes)
+}
+
+// APPLY a prepared removal: DB effects + outbox enqueues only — no external IO,
+// safe to run inside the caller's transaction. Idempotent per row (UPDATE/
+// DELETE by id), so re-applying after a retried transaction is harmless.
+async function applyPreparedRemoval(client: PoolClient, prepared: PreparedRemoval): Promise<void> {
+  for (const { article: a, tombstone } of prepared.articles) {
+    await client.query(
+      `UPDATE articles SET published_at = NULL, updated_at = now() WHERE id = $1`,
+      [a.id]
+    )
+    await client.query(
+      `UPDATE feed_items SET deleted_at = now() WHERE article_id = $1 AND deleted_at IS NULL`,
+      [a.id]
+    )
+    if (tombstone) {
+      await enqueueRelayPublish(client, {
+        entityType: 'article_deletion',
+        entityId: a.id,
+        signedEvent: tombstone,
+      })
+    }
+  }
+  for (const { note: n, tombstone } of prepared.notes) {
+    if (tombstone) {
+      await enqueueRelayPublish(client, {
+        entityType: 'note_deletion',
+        entityId: n.id,
+        signedEvent: tombstone,
+      })
+    }
+    // Cascades to feed_items via feed_items_note_id_fkey ON DELETE CASCADE.
+    await client.query(`DELETE FROM notes WHERE id = $1`, [n.id])
+  }
 }
 
 // =============================================================================
@@ -338,25 +373,47 @@ export async function moderationRoutes(app: FastifyInstance) {
       // invalidate races a concurrent request re-caching the pre-commit row.
       let suspendedAccountId: string | null = null
 
+      // Read the report + PREPARE the removal (select + sign every tombstone
+      // via key-custody) BEFORE the transaction (§0f-14): the sign loop is one
+      // HTTP round-trip per item, so a prolific account held a transaction
+      // open across hundreds of calls — and key-custody downtime failed the
+      // resolution mid-transaction. The status is re-checked inside the
+      // transaction, so a concurrent resolve still loses cleanly (409).
+      const preRead = await pool.query<{
+        id: string
+        target_nostr_event_id: string | null
+        target_account_id: string | null
+        status: string
+      }>(
+        'SELECT id, target_nostr_event_id, target_account_id, status FROM moderation_reports WHERE id = $1',
+        [reportId]
+      )
+      if (preRead.rows.length === 0) {
+        return reply.status(404).send({ error: 'Report not found' })
+      }
+      const report = preRead.rows[0]
+      if (report.status === 'resolved_removed' || report.status === 'resolved_no_action') {
+        return reply.status(409).send({ error: 'Report already resolved' })
+      }
+
+      let prepared: PreparedRemoval | null = null
+      if (action === 'remove_content' && report.target_nostr_event_id) {
+        prepared = await prepareContentRemovalByEventId(report.target_nostr_event_id)
+      } else if (action === 'suspend_account' && report.target_account_id) {
+        prepared = await prepareAllContentRemovalForAccount(report.target_account_id)
+      }
+
       const result = await withTransaction(async (client) => {
-        // Fetch the report
-        const reportResult = await client.query<{
-          id: string
-          target_nostr_event_id: string | null
-          target_account_id: string | null
-          status: string
-        }>(
-          'SELECT id, target_nostr_event_id, target_account_id, status FROM moderation_reports WHERE id = $1',
+        // Re-check under lock: only one resolver may move the report out of
+        // its open state (the pre-read above was advisory).
+        const { rows: current } = await client.query<{ status: string }>(
+          'SELECT status FROM moderation_reports WHERE id = $1 FOR UPDATE',
           [reportId]
         )
-
-        if (reportResult.rows.length === 0) {
+        if (current.length === 0) {
           return reply.status(404).send({ error: 'Report not found' })
         }
-
-        const report = reportResult.rows[0]
-
-        if (report.status === 'resolved_removed' || report.status === 'resolved_no_action') {
+        if (current[0].status === 'resolved_removed' || current[0].status === 'resolved_no_action') {
           return reply.status(409).send({ error: 'Report already resolved' })
         }
 
@@ -372,8 +429,8 @@ export async function moderationRoutes(app: FastifyInstance) {
 
             // Remove from every workspace feed AND the relay (kind-5), not just
             // un-publish — see the removal-helper header.
-            if (report.target_nostr_event_id) {
-              await removeContentByEventId(client, report.target_nostr_event_id)
+            if (prepared) {
+              await applyPreparedRemoval(client, prepared)
 
               logger.info(
                 { nostrEventId: report.target_nostr_event_id, reportId },
@@ -398,7 +455,7 @@ export async function moderationRoutes(app: FastifyInstance) {
               suspendedAccountId = report.target_account_id
 
               // Remove all their content from every feed AND the relay.
-              await removeAllContentForAccount(client, report.target_account_id)
+              if (prepared) await applyPreparedRemoval(client, prepared)
 
               logger.info(
                 { accountId: report.target_account_id, reportId },
@@ -438,12 +495,16 @@ export async function moderationRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { accountId } = req.params
 
+      // Sign all tombstones before the transaction (§0f-14) — see the
+      // removal-helper header.
+      const prepared = await prepareAllContentRemovalForAccount(accountId)
+
       const result = await withTransaction(async (client) => {
         await client.query(
           `UPDATE accounts SET status = 'suspended', updated_at = now() WHERE id = $1`,
           [accountId]
         )
-        await removeAllContentForAccount(client, accountId)
+        await applyPreparedRemoval(client, prepared)
 
         logger.info({ accountId, adminId: req.session!.sub }, 'Account suspended directly')
 

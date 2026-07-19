@@ -10,19 +10,29 @@ import {
 } from "../../lib/post-mapper.js";
 import { UUID_RE, feedRowToResponse, loadFeed } from "./shared.js";
 
-// Slice 20 cursor parser: `${epoch_ms}:${uuid}`. Distinct from parseCursor /
-// parseScoredCursor because saves have no score axis — order is purely
-// save-time. Storing ms (vs seconds) preserves intra-second ordering
-// without needing a tiebreaker beyond the row id we already include.
+// Slice 20 cursor parser: `${fractional_epoch_seconds}:${uuid}`. Distinct from
+// parseCursor / parseScoredCursor because saves have no score axis — order is
+// purely save-time. The epoch component is the shared fractional-seconds
+// pattern (M13/§0f-6): full precision on the wire, `Number` (never `parseInt`)
+// to parse, compared via to_timestamp() against the full-precision
+// fs.created_at. The former bespoke ms codec is retired — its
+// `(EXTRACT(EPOCH …) * 1000)::bigint` encoder ROUNDED to nearest ms, so ~half
+// of all rows minted a cursor later than their own created_at and the next
+// page's `<` filter re-admitted them (page-edge duplicates).
 function parseSaveCursor(
   raw: string | undefined,
 ): { ts: number; id: string } | undefined {
   if (!raw) return undefined;
   const parts = raw.split(":");
   if (parts.length !== 2) return undefined;
-  const ts = parseInt(parts[0], 10);
+  if (parts[0].trim() === "") return undefined;
+  let ts = Number(parts[0]);
   const id = parts[1];
-  if (Number.isNaN(ts) || !UUID_RE.test(id)) return undefined;
+  if (!Number.isFinite(ts) || !UUID_RE.test(id)) return undefined;
+  // Back-compat: a pre-§0f-6 in-flight cursor is integer MILLISECONDS
+  // (~1.7e12); real seconds are ~1.7e9. Anything past year 5138 in seconds is
+  // a legacy ms cursor — rescale rather than strand the client mid-scroll.
+  if (ts > 1e11) ts = ts / 1000;
   return { ts, id };
 }
 
@@ -32,8 +42,8 @@ export function registerFeedSavesRoutes(app: FastifyInstance) {
   //
   // Renders the same item shape as /items, sourced from feed_saves rows
   // joined to feed_items. Order is save-time DESC. Cursor parses
-  // `${epoch_ms}:${feed_save_id}` for stable pagination across the compound
-  // (created_at, id) index. Soft-deleted feed_items are filtered out so
+  // `${fractional_epoch_seconds}:${feed_save_id}` for stable pagination across
+  // the compound (created_at, id) index. Soft-deleted feed_items are filtered out so
   // saving an item that later got deleted cleans visually without a
   // separate sweep.
   //
@@ -59,18 +69,18 @@ export function registerFeedSavesRoutes(app: FastifyInstance) {
       ? `AND (fs.created_at, fs.id) < (to_timestamp($3), $4::uuid)`
       : "";
     const params: any[] = cursor
-      ? [id, limit, cursor.ts / 1000, cursor.id]
+      ? [id, limit, cursor.ts, cursor.id]
       : [id, limit];
 
     const result = await pool.query<any>(
       `
       SELECT ${FEED_SELECT}${POST_SELECT},
         EXTRACT(EPOCH FROM fs.created_at)::bigint AS saved_at_epoch,
-        -- Preserve sub-second precision in the cursor (M13): the ::bigint cast
-        -- BEFORE ×1000 truncated created_at to whole seconds, so with several
-        -- saves in one second the cursor (whole-second) compared against the
-        -- full-precision fs.created_at skipped/duplicated rows at page edges.
-        (EXTRACT(EPOCH FROM fs.created_at) * 1000)::bigint AS saved_at_ms,
+        -- Fractional epoch for the cursor (M13/§0f-6) — full precision, no
+        -- rounding/truncation: the cursor must compare exactly against the
+        -- full-precision fs.created_at the ORDER BY sorts on, or page edges
+        -- duplicate (rounded-up cursor) / skip (truncated cursor) rows.
+        EXTRACT(EPOCH FROM fs.created_at) AS saved_at_secs,
         fs.id AS save_id
       FROM feed_saves fs
       JOIN feed_items fi ON fi.id = fs.feed_item_id
@@ -90,7 +100,7 @@ export function registerFeedSavesRoutes(app: FastifyInstance) {
     }));
     const lastRow = result.rows[result.rows.length - 1];
     const nextCursor = lastRow
-      ? `${Number(lastRow.saved_at_ms)}:${lastRow.save_id}`
+      ? `${Number(lastRow.saved_at_secs)}:${lastRow.save_id}`
       : undefined;
 
     return reply.send({

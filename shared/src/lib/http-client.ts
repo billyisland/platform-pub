@@ -373,14 +373,32 @@ export async function safeFetch(
             }),
           );
         }
-        // 301/302/303 → GET with no body; 307/308 preserve method + body.
-        if (
-          response.status === 301 ||
-          response.status === 302 ||
+        // Method rewrite on redirect, matching fetch/browser semantics (§0f-17):
+        // 303 → GET for every method except HEAD; 301/302 → GET for POST ONLY
+        // (a 301'd PUT/DELETE re-sends as PUT/DELETE — the old blanket rewrite
+        // silently re-issued them as GET). 307/308 preserve method + body.
+        const rewriteToGet =
           response.status === 303
-        ) {
-          if (currentMethod !== "HEAD") currentMethod = "GET";
+            ? currentMethod !== "HEAD"
+            : (response.status === 301 || response.status === 302) &&
+              currentMethod === "POST";
+        if (rewriteToGet) {
+          currentMethod = "GET";
           currentBody = undefined;
+          // The body is gone, so its describing headers must go too — a
+          // Content-Type/Content-Length surviving onto a bodyless GET is at
+          // best confusing and at worst rejected by the origin.
+          currentHeaders = Object.fromEntries(
+            Object.entries(currentHeaders).filter(([k]) => {
+              const lk = k.toLowerCase();
+              return (
+                lk !== "content-type" &&
+                lk !== "content-length" &&
+                lk !== "content-encoding" &&
+                lk !== "transfer-encoding"
+              );
+            }),
+          );
         }
         currentUrl = nextUrl.toString();
         continue;

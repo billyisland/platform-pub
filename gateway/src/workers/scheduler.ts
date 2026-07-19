@@ -151,6 +151,7 @@ async function publishPublicationDraft(draft: ScheduledDraft): Promise<void> {
     canPublish,
     existingDTag: draft.nostr_d_tag ?? undefined,
     coverImageUrl: draft.cover_image_url,
+    commentsEnabled: draft.comments_enabled ?? true,
   });
 
   // Send notification emails for new articles

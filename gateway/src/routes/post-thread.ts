@@ -445,8 +445,11 @@ export async function postThreadRoutes(app: FastifyInstance) {
         // synchronous budget to finish (D5): on a fast relay the whole thread is
         // committed before we assemble below, so `settled` is true and we return
         // the thread complete in one round trip with hydrating:false — no client
-        // poll. If the budget elapses first, we assemble whatever is ingested so
-        // far and flag hydrating:true so the client polls to merge the rest (D2).
+        // poll. If the budget elapses first — or the hydrate FAILS within it
+        // (§0f-5: a fast failure must not read as settled, else the bare-focal
+        // thread gets cached 60s with no poll to drive the retry) — we assemble
+        // whatever is ingested so far and flag hydrating:true so the client
+        // polls to merge the rest (D2).
         // `hydrating` = !settled derives from the in-flight registry (D1), NOT
         // from willHydrateThread — the latter flips false the instant the
         // throttle guard is set, so reading it here would yield a mid-flight

@@ -37,6 +37,7 @@ interface PublishToPublicationInput {
   canPublish: boolean;
   existingDTag?: string;
   coverImageUrl?: string | null;
+  commentsEnabled?: boolean; // "allow replies" toggle (M19/§0f-7 — omitting it dropped the editor's choice)
 }
 
 interface PublishToPublicationResult {
@@ -114,10 +115,10 @@ export async function publishToPublication(
          content_free, word_count, tier,
          access_mode, price_pence, gate_position_pct,
          publication_id, publication_article_status, show_on_writer_profile,
-         cover_image_url, published_at
+         cover_image_url, comments_enabled, published_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, 'tier1',
-         $9, $10, $11, $12, 'submitted', $13, $14, NULL
+         $9, $10, $11, $12, 'submitted', $13, $14, $15, NULL
        )
        RETURNING id`,
       [
@@ -135,6 +136,7 @@ export async function publishToPublication(
         input.publicationId,
         input.showOnWriterProfile,
         input.coverImageUrl ?? null,
+        input.commentsEnabled ?? true,
       ],
     );
 
@@ -208,10 +210,10 @@ export async function publishToPublication(
          content_free, word_count, tier,
          access_mode, price_pence, gate_position_pct,
          publication_id, publication_article_status, show_on_writer_profile,
-         cover_image_url, published_at
+         cover_image_url, comments_enabled, published_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, 'tier1',
-         $9, $10, $11, $12, 'published', $13, $14, now()
+         $9, $10, $11, $12, 'published', $13, $14, $15, now()
        )
        ON CONFLICT (writer_id, nostr_d_tag) WHERE deleted_at IS NULL DO UPDATE SET
          nostr_event_id = EXCLUDED.nostr_event_id,
@@ -223,6 +225,7 @@ export async function publishToPublication(
          price_pence = EXCLUDED.price_pence,
          gate_position_pct = EXCLUDED.gate_position_pct,
          cover_image_url = EXCLUDED.cover_image_url,
+         comments_enabled = EXCLUDED.comments_enabled,
          publication_article_status = 'published',
          published_at = now()
        RETURNING id`,
@@ -241,6 +244,7 @@ export async function publishToPublication(
         input.publicationId,
         input.showOnWriterProfile,
         input.coverImageUrl ?? null,
+        input.commentsEnabled ?? true,
       ],
     );
 

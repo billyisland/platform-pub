@@ -38,6 +38,7 @@ const SubmitArticleSchema = z.object({
   showOnWriterProfile: z.boolean().default(true),
   existingDTag: z.string().optional(),
   coverImageUrl: z.string().url().nullable().optional(),
+  commentsEnabled: z.boolean().optional(), // "allow replies" toggle (M19/§0f-7)
 });
 
 const EditArticleSchema = z.object({
@@ -344,18 +345,27 @@ export async function publicationCmsRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id, articleId } = req.params;
 
-      await withTransaction(async (client) => {
-        await client.query(
+      const found = await withTransaction(async (client) => {
+        const updated = await client.query(
           `UPDATE articles SET publication_article_status = 'unpublished', published_at = NULL
            WHERE id = $1 AND publication_id = $2`,
           [articleId, id],
         );
+        // The DELETE below must only run when the UPDATE matched: it is
+        // unscoped by publication, so running it on a 0-row UPDATE would let a
+        // member of any publication strip an arbitrary article's cards sitewide.
+        if (updated.rowCount === 0) return false;
         // Remove from every workspace feed (M6). Feed queries filter only on
         // feed_items.deleted_at, never published_at, and the daily reconcile is
         // ON CONFLICT DO NOTHING — so without this the pulled article's card
         // lingers in feeds indefinitely (personal unpublish deletes them too).
         await client.query(`DELETE FROM feed_items WHERE article_id = $1`, [articleId]);
+        return true;
       });
+
+      if (!found) {
+        return reply.status(404).send({ error: "article_not_found" });
+      }
 
       return reply.send({ ok: true });
     },
