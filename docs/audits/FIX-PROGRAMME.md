@@ -23,6 +23,24 @@ starts.
 
 ## Progress
 
+- **2026-07-19** — **Feed appearance: colour picker → menu; density → two-state;
+  dead density plumbing cleared.** Two FeedComposer cleanups (GLASSHOUSE-AND-PALETTE-ADR
+  §III.4 amendment + new §III.4a). (1) The **Colour** control is now a menu
+  (`SchemeMenu`) instead of a click-through cycle: the trigger shows the selected
+  scheme's dot, opening drops a little palette of one `SchemeDot` per scheme (a
+  solid dot in the scheme's `walls` colour, current global light/dark variant),
+  click to pick. Retired the three-bar `SchemeSwatch` and `tokens.ts::nextScheme`.
+  (2) **Density** collapsed from `compact | standard | full` to `compact | standard`:
+  `full` rendered byte-identically to `standard` in every path (the only density
+  branches — card padding, action-row visibility, media visibility, drag — test
+  `=== "compact"` only). New `tokens.ts::normalizeDensity` migrates any persisted
+  `full`/junk → `standard` on read (localStorage rehydrate + server reconcile), so
+  no DB backfill; gateway `FEED_DENSITIES` keeps `full` accepted for stale-client
+  round-trips (mirrors the `primary`/`dark` scheme tolerance). Dead code cleared:
+  the `Vessel` `density` prop (density reaches cards via `WorkspaceView`'s
+  `CardContext`, not the vessel) and its never-read `effDensity`, plus a stale
+  "300px default at standard density" comment. CLAUDE.md scheme-control passages
+  updated. Web + gateway typecheck + `next build` green.
 - **2026-07-19** — **Explain-label copy re-voiced (plain-spoken register).**
   All on-screen Explain labels in `web/src/lib/explain/copy.ts`
   (`EXPLAIN_LABELS`, `CARD_FLAVOUR_COPY`, `VESSEL_COPY`) moved from the original

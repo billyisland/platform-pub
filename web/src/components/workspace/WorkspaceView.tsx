@@ -30,6 +30,7 @@ import { originWebUrl } from "../../lib/post/origin-url";
 import {
   paletteFor,
   normalizeBrightness,
+  normalizeDensity,
   TEXT_SIZE_PX,
   DEFAULT_DENSITY,
   DEFAULT_TEXT_SIZE,
@@ -909,14 +910,11 @@ export function WorkspaceView() {
           if (scheme && stored[feed.id]?.brightness !== scheme) {
             setVesselBrightness(feed.id, normalizeBrightness(scheme));
           }
-          const density = feed.appearance?.density;
-          if (
-            (density === "compact" ||
-              density === "standard" ||
-              density === "full") &&
-            stored[feed.id]?.density !== density
-          ) {
-            setVesselDensity(feed.id, density);
+          if (feed.appearance?.density !== undefined) {
+            const density = normalizeDensity(feed.appearance.density);
+            if (stored[feed.id]?.density !== density) {
+              setVesselDensity(feed.id, density);
+            }
           }
         });
 
@@ -1316,7 +1314,6 @@ export function WorkspaceView() {
                 position={{ x: layout.x, y: layout.y }}
                 size={{ w: layout.w, h: layout.h }}
                 brightness={layout.brightness}
-                density={layout.density}
                 orientation={layout.orientation}
                 onHide={() => void handleSetFeedHidden(v.feed.id, true)}
                 onPositionCommit={(next) =>

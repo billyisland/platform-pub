@@ -30,11 +30,10 @@ import {
   nextDensity,
   nextOrientation,
   nextTextSize,
-  nextScheme,
   normalizeBrightness,
+  normalizeDensity,
   paletteFor,
-  DEFAULT_BRIGHTNESS,
-  DEFAULT_DENSITY,
+  SCHEME_OPTIONS,
   DEFAULT_ORIENTATION,
   DEFAULT_TEXT_SIZE,
 } from "./tokens";
@@ -766,14 +765,7 @@ export function FeedComposer({
               }}
             >
               {onSchemeChange && (
-                <AppearanceControl
-                  label="Colour"
-                  dataExplain="feedComposer.colour"
-                  glyph={<SchemeSwatch scheme={normalizeBrightness(scheme)} />}
-                  onClick={() =>
-                    onSchemeChange(nextScheme(scheme ?? DEFAULT_BRIGHTNESS))
-                  }
-                />
+                <SchemeMenu scheme={scheme} onSchemeChange={onSchemeChange} />
               )}
               {onDensityChange && (
                 <AppearanceControl
@@ -783,11 +775,10 @@ export function FeedComposer({
                     {
                       compact: "Condensed",
                       standard: "Standard",
-                      full: "Full",
-                    }[density ?? DEFAULT_DENSITY]
+                    }[normalizeDensity(density)]
                   }
                   onClick={() =>
-                    onDensityChange(nextDensity(density ?? DEFAULT_DENSITY))
+                    onDensityChange(nextDensity(normalizeDensity(density)))
                   }
                 />
               )}
@@ -993,36 +984,174 @@ function OrientationGlyph({ orientation }: { orientation: Orientation }) {
 }
 
 // The colour-scheme glyph (feature-debt §3, GLASSHOUSE-AND-PALETTE-ADR §III.4)
-// — the scheme's three surfaces shown as three fat equal bars, French-flag
-// style (walls · interior · card), echoing the vessel grammar inside the Colour
-// AppearanceControl. Bigger and clearer than the old concentric-rectangle chip
-// (which read as murky at small size). Every text colour derives from these
-// surfaces in tokens.ts, so cycling can't produce an illegible feed. The
-// schemes carry no display name (DESIGN-TUNING-FINDINGS §3), so this swatch is
-// the sole identifier — the Colour control shows no text indicator. Each bar is
-// ~14px wide (≥2px, per the sitewide no-thin-line rule); no outline. The
-// colourway now adapts to the global light/dark toggle, so the swatch previews
-// the variant for the CURRENT global mode (paletteFor(scheme, dark)); it carries
-// the light island only so basic's neutral slugs resolve cleanly in the preview.
-function SchemeSwatch({ scheme }: { scheme: FeedScheme }) {
-  const dark = useColorScheme((s) => s.dark);
+// — a single solid dot in the scheme's most forceful surface, its WALLS colour
+// (the saturated frame/bar spine that carries a colourway's identity). One dot
+// per scheme reads as a little palette of colour chips in the SchemeMenu, and
+// the trigger shows the selected scheme's dot. Every text colour derives from
+// the same surfaces in tokens.ts, so picking any scheme can't produce an
+// illegible feed. The schemes carry no display name (DESIGN-TUNING-FINDINGS §3),
+// so the dot is the sole visual identifier. The colourway adapts to the global
+// light/dark toggle, so the dot previews the WALLS of the variant for the
+// CURRENT global mode (paletteFor(scheme, dark)); it carries the light island
+// only so basic's neutral slugs resolve cleanly in the preview. Active state is
+// a 2px ring (≥2px, the a11y exemption to the sitewide no-thin-line rule).
+function SchemeDot({
+  scheme,
+  dark,
+  size = 22,
+  active = false,
+}: {
+  scheme: FeedScheme;
+  dark: boolean;
+  size?: number;
+  active?: boolean;
+}) {
   const pal = paletteFor(scheme, dark);
   return (
     <span
       aria-hidden="true"
       style={{
         ...LIGHT_ISLAND_STYLE,
-        display: "flex",
-        width: 42,
-        height: 22,
-        overflow: "hidden",
-        borderRadius: 2,
+        display: "inline-block",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: pal.walls,
+        outline: active ? "2px solid var(--ah-ink)" : "none",
+        outlineOffset: 2,
       }}
+    />
+  );
+}
+
+// The Colour control — a menu, not a click-through cycle. The trigger shows the
+// selected scheme's dot (+ a ▾ affordance); opening drops a little palette: one
+// SchemeDot per scheme in a row, click to pick. Closes on pick, outside click,
+// or Escape. Replaces the four-way AppearanceControl cycle for colour only
+// (density/orientation/text-size stay cycles — a handful of ordered steps, not a
+// swatch set).
+function SchemeMenu({
+  scheme,
+  onSchemeChange,
+}: {
+  scheme: FeedScheme | undefined;
+  onSchemeChange: (s: FeedScheme) => void;
+}) {
+  const dark = useColorScheme((s) => s.dark);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = normalizeBrightness(scheme);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 4 }}
+      data-explain="feedComposer.colour"
     >
-      <span style={{ flex: 1, background: pal.walls }} />
-      <span style={{ flex: 1, background: pal.interior }} />
-      <span style={{ flex: 1, background: pal.cardBg }} />
-    </span>
+      <div className="label-ui" style={{ color: TOKENS.hintFg }}>
+        Colour
+      </div>
+      <div ref={ref} style={{ position: "relative", width: 104 }}>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className="font-sans text-ui-sm"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            width: 104,
+            height: 34,
+            padding: "0 10px",
+            boxSizing: "border-box",
+            background: open ? TOKENS.fieldBg : TOKENS.matchHoverBg,
+            color: TOKENS.panelBorder,
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = TOKENS.fieldBg)
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = open
+              ? TOKENS.fieldBg
+              : TOKENS.matchHoverBg)
+          }
+        >
+          <SchemeDot scheme={current} dark={dark} size={18} />
+          <span
+            aria-hidden="true"
+            style={{ fontSize: 9, lineHeight: 1, color: TOKENS.hintFg }}
+          >
+            ▾
+          </span>
+        </button>
+
+        {open && (
+          <div
+            role="menu"
+            className="shadow-lg"
+            style={{
+              position: "absolute",
+              top: "calc(100% + 6px)",
+              left: 0,
+              zIndex: TOKENS.hoverZ,
+              display: "flex",
+              gap: 10,
+              padding: 10,
+              borderRadius: 4,
+              background: TOKENS.fieldBg,
+            }}
+          >
+            {SCHEME_OPTIONS.map(({ id }) => (
+              <button
+                key={id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={id === current}
+                aria-label={`Colour scheme: ${id}`}
+                onClick={() => {
+                  onSchemeChange(id);
+                  setOpen(false);
+                }}
+                style={{
+                  display: "inline-flex",
+                  padding: 0,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  lineHeight: 0,
+                }}
+              >
+                <SchemeDot
+                  scheme={id}
+                  dark={dark}
+                  size={22}
+                  active={id === current}
+                />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

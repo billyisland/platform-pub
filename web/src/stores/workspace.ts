@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { snap } from "../lib/workspace/grid";
 import {
   normalizeBrightness,
+  normalizeDensity,
   type Brightness,
   type Density,
   type Orientation,
@@ -95,9 +96,12 @@ function readFromStorage(userId: string): Record<string, VesselLayout> {
         Number.isFinite(v.y)
       ) {
         const layout = v as unknown as VesselLayout;
-        // Retire stale brightness values ('medium'/'dim') from older builds.
+        // Retire stale brightness values ('medium'/'dim') from older builds,
+        // and the removed 'full' density (→ 'standard').
         if (layout.brightness !== undefined)
           layout.brightness = normalizeBrightness(layout.brightness);
+        if (layout.density !== undefined)
+          layout.density = normalizeDensity(layout.density);
         clean[key] = layout;
       }
     }

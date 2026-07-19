@@ -41,7 +41,7 @@ export type FeedScheme =
 // Legacy name — the per-vessel "brightness" axis grew into the scheme picker;
 // the persisted localStorage field and existing prop names keep this alias.
 export type Brightness = FeedScheme
-export type Density = 'compact' | 'standard' | 'full'
+export type Density = 'compact' | 'standard'
 export type Orientation = 'vertical' | 'horizontal'
 
 export const DEFAULT_BRIGHTNESS: FeedScheme = 'basic'
@@ -266,9 +266,10 @@ export function globalContentPalette(dark: boolean): VesselPalette {
     : BASIC_LIGHT
 }
 
-// Scheme order for the click-through cycle (FeedComposer Colour control). The
-// schemes carry no user-facing display name — the SchemeSwatch (the rendered
-// walls/interior/card colours) is the sole identifier — so this is id-only.
+// Scheme order for the FeedComposer Colour menu (a little palette of one dot
+// per scheme). The schemes carry no user-facing display name — the SchemeDot
+// (the scheme's forceful walls colour) is the sole identifier — so this is
+// id-only.
 export const SCHEME_OPTIONS: ReadonlyArray<{ id: FeedScheme }> = [
   { id: 'basic' },
   { id: 'spring' },
@@ -335,23 +336,23 @@ export function isDarkPalette(p: VesselPalette): boolean {
   return p.isDark
 }
 
+// Density is a two-state toggle: Condensed (tight padding, media + action row
+// hidden) vs Standard (the full card). A former third value 'full' rendered
+// byte-identically to 'standard' in every path, so it was removed;
+// normalizeDensity migrates any persisted 'full' (or junk) to 'standard' on
+// read, so no DB backfill is needed.
+export function normalizeDensity(
+  d: Density | string | null | undefined,
+): Density {
+  return d === 'compact' ? 'compact' : 'standard'
+}
+
 export function nextDensity(d: Density): Density {
-  if (d === 'compact') return 'standard'
-  if (d === 'standard') return 'full'
-  return 'compact'
+  return d === 'compact' ? 'standard' : 'compact'
 }
 
 export function nextOrientation(o: Orientation): Orientation {
   return o === 'vertical' ? 'horizontal' : 'vertical'
-}
-
-// Per-feed colour scheme as a click-through cycle (GLASSHOUSE-AND-PALETTE-ADR
-// §III.4) — the colour axis joins density / orientation / text-size as a single
-// AppearanceControl rather than a swatch row. Order follows SCHEME_OPTIONS.
-export function nextScheme(s: FeedScheme): FeedScheme {
-  const order = SCHEME_OPTIONS.map((o) => o.id)
-  const i = order.indexOf(normalizeBrightness(s))
-  return order[(i + 1) % order.length]
 }
 
 // Per-feed reading-text size (task 8/9). Governs the prose body of every card

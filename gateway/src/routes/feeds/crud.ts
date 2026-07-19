@@ -43,7 +43,11 @@ const FEED_SCHEME_IDS = [
 
 // Per-feed density (MOBILE-LAYOUT-ADR §VI): feed character like the scheme,
 // stored as a second key in the same appearance JSONB — no DDL. Must mirror
-// the Density type in web/src/components/workspace/tokens.ts.
+// the Density type in web/src/components/workspace/tokens.ts, now a two-state
+// toggle (compact/standard). The retired "full" stays accepted (the client
+// aliases it to "standard" on read via normalizeDensity) so a feed PATCH that
+// round-trips an old persisted value from a stale client is not rejected; new
+// clients never write it.
 const FEED_DENSITIES = ["compact", "standard", "full"] as const;
 
 // PATCH accepts any of name + appearance + hidden. Appearance is merged into

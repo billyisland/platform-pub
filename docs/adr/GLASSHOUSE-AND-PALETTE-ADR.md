@@ -352,6 +352,33 @@ export function nextScheme(s: FeedScheme): FeedScheme {
 echoing the vessel grammar), indicator = the scheme name. Persistence and the
 `onSchemeChange` wiring are unchanged — only the control shape changes.
 
+**Amendment (2026-07-19) — colour is a menu, not a cycle; and `nextScheme` is
+retired.** The single-`AppearanceControl` colour cycle above proved awkward:
+reaching a specific scheme took up to four clicks and you couldn't see the
+options. The colour axis is now a small **menu** (`SchemeMenu` in
+`FeedComposer.tsx`) — the trigger shows the selected scheme's dot, and opening
+drops a little palette of one `SchemeDot` per scheme (a solid dot in the
+scheme's most forceful surface, its `walls` colour, in the current global
+light/dark variant), click to pick. This replaces both the old swatch row _and_
+this decision's cycle button for colour only. The three-bar `SchemeSwatch` and
+`tokens.ts::nextScheme` are removed. **Orientation and text size stay cycles**
+(a couple of ordered steps, no palette to preview), and **density collapsed to a
+two-state cycle** (`compact`/`standard`) the same day — see §III.4a.
+
+### 4a — Density is a two-state toggle (2026-07-19)
+
+`Density` was `compact | standard | full`, but `full` rendered byte-identically
+to `standard` in every path (the only density branches — card padding, action-row
+visibility, media visibility, drag — all test `=== "compact"` only). It is
+removed: `Density = 'compact' | 'standard'`, `nextDensity` toggles the two, and a
+new `tokens.ts::normalizeDensity` migrates any persisted `full` (or junk) to
+`standard` on read (localStorage rehydrate + server-appearance reconcile), so no
+DB backfill is needed. The gateway `FEED_DENSITIES` enum keeps `full` **accepted**
+(a round-tripped stale value is not rejected), mirroring how `FEED_SCHEME_IDS`
+tolerates the retired `primary`/`dark`. Dead plumbing cleared alongside: the
+`Vessel` `density` prop (density reaches cards via `WorkspaceView`'s
+`CardContext`, never through the vessel) and its never-read `effDensity`.
+
 ### 5 — Retire palette-editing surfaces, keep hydration (req 4)
 
 > **CLAUDE.md invariant.** `registry.ts` and CLAUDE.md mark the registry, the

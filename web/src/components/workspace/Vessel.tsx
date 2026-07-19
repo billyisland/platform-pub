@@ -18,10 +18,8 @@ import { snap, GRID } from "../../lib/workspace/grid";
 import { LIGHT_ISLAND_STYLE } from "../../lib/palette/island";
 import {
   paletteFor,
-  DEFAULT_DENSITY,
   DEFAULT_ORIENTATION,
   type Brightness,
-  type Density,
   type Orientation,
 } from "./tokens";
 import { VesselBar, BAR_H } from "./VesselBar";
@@ -33,18 +31,13 @@ import { useExplainable } from "./ExplainProvider";
 //
 // Slice 5a: drag-to-position via the name label as drag handle.
 // Slice 5b: resize via bottom-right corner handle.
-// Slice 5c: brightness / density / orientation. Brightness drives a
-// resolved palette across walls, interior, name label, and (via prop) the
-// cards inside. Density flows to cards. Orientation toggles the chassis
-// between vertical (⊔: left + right + bottom walls) and horizontal
-// (⊏: top + left + bottom walls, opening on the right) — cards lay out
-// in a row when horizontal, with horizontal scroll when h or w is set.
-//
-// The three controls live as small cycle buttons on the chassis bottom-right
-// edge (alongside the resize handle). Per ADR §5 the touch gestures
-// (two-finger vertical drag for brightness, two-finger rotation for
-// orientation, gestural density toggle) are deferred; the cycle buttons are
-// the desktop alternative for now.
+// Slice 5c: brightness / orientation. Brightness drives a resolved palette
+// across walls, interior, name label, and (via prop) the cards inside.
+// Orientation toggles the chassis between vertical (⊔: left + right + bottom
+// walls) and horizontal (⊏: top + left + bottom walls, opening on the right) —
+// cards lay out in a row when horizontal, with horizontal scroll when h or w is
+// set. (Density is a per-feed control too, but it's applied to the cards in
+// WorkspaceView's CardContext, not threaded through the Vessel.)
 
 // Side-wall thickness. Exported so overlays launched from a feed (the reader /
 // profile Glasshouse) can frame themselves at the SAME thickness as the feed's
@@ -52,7 +45,7 @@ import { useExplainable } from "./ExplainProvider";
 export const WALL = 8; // px
 const PAD = 16; // px interior padding (top zone left open per Step 1: "Opening: full width of the vessel interior")
 const GAP = 12; // px inter-card gap
-const WIDTH = 300; // px default at standard density
+const WIDTH = 300; // px default vessel width (fallback when no stored/live size)
 
 const ROUNDEL_TOKENS = {
   bg: "var(--ah-ink-925)",
@@ -82,7 +75,6 @@ interface VesselProps {
   position: { x: number; y: number };
   size?: { w?: number; h?: number };
   brightness?: Brightness;
-  density?: Density;
   orientation?: Orientation;
   hidden?: boolean;
   onHide?: () => void;
@@ -113,7 +105,6 @@ export function Vessel({
   position,
   size,
   brightness,
-  density,
   orientation,
   hidden,
   onHide,
@@ -157,7 +148,6 @@ export function Vessel({
     maxH: number;
   } | null>(null);
 
-  const effDensity = density ?? DEFAULT_DENSITY;
   const effOrientation = orientation ?? DEFAULT_ORIENTATION;
   // The colourway renders in the global mode's light/dark variant; the vessel
   // stays islanded (LIGHT_ISLAND_STYLE) so the derived text slugs the palette

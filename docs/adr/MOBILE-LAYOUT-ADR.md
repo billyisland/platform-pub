@@ -142,7 +142,9 @@ the unification taking effect, not a regression.)
 
 **Retained:** the colour scheme, density, and the hide toggle (§V), surfaced through a
 per-feed **settings sheet** — the mobile form of the FeedComposer gear that already owns
-appearance on desktop. (Since 2026-06-11 the colour scheme — brightness's successor,
+appearance on desktop. (Density is a two-state toggle since 2026-07-19 — `compact`
+vs `standard`; the identical-to-standard `full` was removed. See
+GLASSHOUSE-AND-PALETTE-ADR §III.4a.) (Since 2026-06-11 the colour scheme — brightness's successor,
 the six-swatch `SchemePicker` — already persists server-side on
 `feeds.appearance.scheme`, migration 112, so it travels to mobile for free; **density is
 the remaining per-device localStorage gap**, and `feeds.appearance` JSONB is its natural
