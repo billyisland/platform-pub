@@ -55,7 +55,7 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   composer:
     "This is for writing notes - short posts published to anyone who follows your all.haus account. If you want to write something longer, click 'make it an article'.",
   "composer.crosspost":
-    "One switch per network you have linked to your all.haus account: dark means this note will also post there. The default for each network is set in Settings, under Reach other networks.",
+    "One switch per network you have connected to your all.haus account: dark means this note will also post there. The default for each network is set in Settings, under Reach other networks.",
   "composer.article":
     "Turn what you're writing into a full article. Articles have no length limit. They can take a title, a standfirst, images, tags and a paywall.",
   editor:
@@ -69,7 +69,7 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   "editor.price":
     "This is what a reader pays to cross the paywall. Based on length, all.haus suggests a default price, but you can charge whatever you want.",
   "editor.tags":
-    "Tags say what the piece is about. Everything published under each one is collected by all.haus, and readers can add it to their feeds as a source.",
+    "Tags say what the piece is about. To read everything that is published on all.haus under a given tag, add that tag to a feed as a source.",
   "editor.schedule":
     "This delays publication to a time you choose. A scheduled piece waits in your dashboard and goes out by itself.",
   "editor.draft":
@@ -78,8 +78,6 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
     "This chooses who the article goes out as: you, or a publication you belong to. Depending on your role there, a publication piece might need an editor's approval before it goes live.",
   feedComposer:
     "This is the feed composer, where you set everything about one feed: its name, its sources and their volumes, how it looks, and where it sits in the order.",
-  // First sentence deliberately identical to vessel.addSource: one grammar for
-  // one gesture (Appendix A.4).
   "feedComposer.addSource":
     "Type here to add a source: a writer, a blog, a newsletter, a tag, or almost anything else that publishes. Paste whatever you have, a username, a URL, an npub or a #tag, and all.haus works it out.",
   "feedComposer.source":
@@ -89,15 +87,15 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   "feedComposer.reach":
     "These add the site's shared streams to the feed: Following is everyone you follow, Explore is the wider platform. Either can sit alongside your individual sources.",
   "feedComposer.colour":
-    "This cycles the feed's colour scheme. The swatch is its only name: three bars for the frame, the ground and the cards. Light or dark follows your sitewide appearance setting; the colour character is the feed's own.",
+    "Select a colour scheme for this feed. (Light or dark mode follows your sitewide appearance setting.)",
   "feedComposer.view":
-    "This cycles how much of each post the feed shows: condensed, standard, or full.",
+    "Select how much of each post this feed shows.",
   "feedComposer.orientation":
-    "This turns the feed between tall and wide. The symbol is the feed's own container, open on the side it grows from.",
+    "Switch this feed between vertical and horizontal mode.",
   "feedComposer.textSize":
-    "This steps the feed's text size, one to five. It belongs to this feed alone; the sitewide type size lives in Settings.",
+    "Set the text size for this feed only. (The control for sitewide text size is in Settings.)",
   "feedComposer.order":
-    "Drag the rows to put your feeds in order. These numbers are the ones the feeds show on the floor, and on a phone it's the order you swipe through. Hidden feeds keep their place but show no number.",
+    "Drag the rows to put your feeds in order. These numbers are the ones the feeds show on the floor, and on a phone it's the order you swipe through.",
   // Verbatim reuse of vessel.hide: one grammar for one gesture (Appendix A.4).
   "feedComposer.hide":
     "This hides the feed without destroying it. Restore a hidden one from the menu at any time.",
@@ -107,7 +105,7 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   messages:
     "This is your inbox, in three parts: notifications on the left, your conversations in the middle, and the open conversation on the right. Everything addressed to you lands somewhere here.",
   "messages.notifications":
-    "This is the activity log: follows, replies, quotes, mentions, and news from any publication you belong to. Click a row to open whatever it's about; a message notification opens the conversation right here.",
+    "This is your activity log, recording follows, replies, quotes, mentions, and news from any publication you belong to. Click a row to open whatever it's about; a message notification opens the conversation right here.",
   // Echoes the omnivorous grammar of feedComposer.addSource ("whatever you
   // have"): one grammar for one gesture (A.4).
   "messages.new":
@@ -123,13 +121,13 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   "dashboard.gifts":
     "This makes gift links for a paywalled piece: anyone opening one reads it free. Each link carries a set number of uses and can be revoked.",
   "dashboard.pricing":
-    "Your prices live here: what a monthly subscription to you costs, and the default price of a paywalled article (scaling with length, or fixed). To actually get paid, connect Stripe at the bottom; you only do it once.",
+    "Set your prices here: the cost of a monthly subscription, and the default price of a paywalled article (scaling with length, or fixed). To actually get paid, connect Stripe.",
   library:
     "This is your library: pieces you have bookmarked and pieces you have read. Anything here opens straight back into the reader.",
   "library.bookmarks":
     "Pieces you've saved with the Bookmark action on a card. They stay here until you unbookmark them.",
   "library.history":
-    "Every piece you've opened, newest first, marked paid or free. What the paid ones cost you is in the Ledger.",
+    "Every all.haus piece you've opened, newest first, marked paid or free. What the paid ones cost you is in the Ledger.",
   network:
     "This is your network: who you follow, who follows you, and the accounts you've blocked or muted.",
   "network.dmFee":
@@ -143,15 +141,15 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
     "Accounts you've muted: you stop seeing them, and they're not told. To also stop someone replying to you, block them instead.",
   // Carries the Ed-approved "this is your reading tab" sentence (C3 scope).
   ledger:
-    "This is your ledger: everything your account earns and spends, to the penny. Most of it is your reading tab, which settles later in one charge instead of a card form per article.",
+    "This is your ledger, which records everything your account earns and spends, to the penny. The reading tab settles periodically in one charge, not every time you read an article.",
   "ledger.balance":
-    "One figure for the whole account: what you've earned minus what you've read. In credit, it's yours; if you owe, it settles from your card once the tab reaches its threshold.",
+    "One figure for the whole account: what you've earned minus what you've spent. In credit, it's yours; if you owe, it settles from your card once the tab reaches its threshold.",
   "ledger.allowance":
-    "This is your free allowance, spent before your tab is: paid reading draws it down first, and only once it's gone do prices start landing on the tab.",
+    "This is your free allowance. Charges only start landing on the tab once it's gone.",
   "ledger.transactions":
-    "Every movement, one row each: reads, settlements, subscriptions, earnings. Filter by direction, or hide the free reads.",
+    "This records all your reads, settlements, subscriptions, and earnings. Filter by direction, or hide the free reads.",
   "ledger.subscriptions":
-    "Subscriptions you hold. Each row manages its own: whether new pieces reach your email, whether it shows on your profile, and cancelling (which keeps your access until the period ends).",
+    "Subscriptions you hold. For each one, you decide whether new pieces are sent to your email, whether the subscription shows up on your profile, and whether to cancel it (which keeps your access until the period ends).",
   settings:
     "These are your account settings: who you are, how you pay and get paid, how far your words travel, and this device's preferences. Anything about a particular feed lives in that feed's composer instead.",
   "settings.payment":
@@ -167,12 +165,12 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   // Reciprocates feedComposer.textSize ("the sitewide type size lives in
   // Settings").
   "settings.typeSize":
-    "This steps the site's type size on this device. A single feed can be stepped on its own too, from its feed composer.",
+    "This sets all.haus's type size on this device. You can adjust the type size of individual feeds, too, in the feed composer.",
   "settings.export":
     "This downloads everything that's yours: your keys, your writing, your receipts. The keys are the point: with them, your identity and your audience work anywhere on the open network, not just here.",
   // --- C4: profile + surface overlays (Appendix A.3e) ---
   profile:
-    "This is a profile. Writers on all.haus and people from other networks both open here, the same way: who they are, what they've posted, and the ways to follow them.",
+    "This is a profile page. It tells you the same stuff whether it's for an all.haus account or an account on another network: who they are, what they've posted, and the ways to follow them.",
   "profile.follow":
     "This follows the writer: their posts reach any of your feeds carrying the Following stream. Everyone you follow is listed under Network in the ∀ menu.",
   // Teaches the feed-derived external-follow invariant from the doer's side,
@@ -188,7 +186,7 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   "profile.identityLinks":
     "If the same person posts from more than one place, link their accounts here. Your feeds then treat those accounts as one person, and a piece posted to several networks shows only once.",
   source:
-    "This is a source's own page: what it publishes, newest first, as far back as all.haus has seen. To keep it in your workspace, add it to one of your feeds.",
+    "This is a source's own page: what it publishes, newest first, as far back as all.haus has seen. To keep this source in your workspace, add it to one of your feeds.",
   // Second sentence deliberately reciprocates editor.tags (A.4).
   tag: "This is a tag's page, where all.haus collects every article published under it. Add a tag to a feed as a source, like anything else that publishes.",
   pub: "This is a publication: writers publishing together under one name, with a masthead, an archive and followers of its own.",
@@ -199,11 +197,11 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   "vessel.name":
     "This is the feed's name. Click to rename it and manage its sources, or click and drag to move the feed around your workspace.",
   "vessel.gear":
-    "Each feed's individual settings live behind this button: renaming, appearance, the full list of sources, and deletion.",
+    "Access each feed's individual settings via this button: renaming, appearance, the full list of sources, and deletion.",
   "vessel.hide":
     "This hides the feed without destroying it. Restore a hidden one from the menu at any time.",
   "vessel.addSource":
-    "Type here to add a source: a writer, a blog, a newsletter, a tag, or almost anything else that publishes. It all arrives in the same place.",
+    "Type here to add a source: a social media account, a blog, a newsletter, a tag, anything.",
   "vessel.resize": "Drag this corner to make the feed bigger or smaller.",
   // Fallback card label: renders only when a card carries no recognised
   // flavour (see CARD_FLAVOUR_COPY below).
@@ -226,16 +224,16 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
 
 export const CARD_FLAVOUR_COPY: Record<CardFlavour, string> = {
   "native-article":
-    "This is an article by an all.haus writer, arriving in the feed like everything else. Click the card and the whole piece opens in the reader.",
+    "This is an article from an all.haus account. Click the card and the whole piece opens in the reader.",
   "native-note":
-    "This is a note by an all.haus writer: a short post, shown in the order it arrived. Click it to open the conversation around it.",
+    "This is a note from an all.haus account. Click it to open the conversation around it.",
   nostr:
-    "This is a post from the open Nostr network beyond all.haus, arriving in the feed like everything else its sources publish.",
+    "This is a Nostr post from the open network beyond all.haus.",
   atproto:
-    "This is a Bluesky post, arriving in the feed like everything else its sources publish.",
+    "This is a Bluesky post.",
   activitypub:
-    "This is a post from the Fediverse, Mastodon and its relatives, arriving in the feed like everything else its sources publish.",
-  rss: "This is an item from an RSS feed: a blog post, an article, whatever the site publishes. It arrives here like everything else.",
+    "This is a post from the Fediverse, Mastodon and its relatives.",
+  rss: "This is an item from an RSS feed.",
   email:
     "This is an email newsletter, caught by the feed and read here instead of in your inbox.",
 };
