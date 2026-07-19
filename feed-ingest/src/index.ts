@@ -30,6 +30,7 @@ import { relayOutboxRedrive } from "./tasks/relay-outbox-redrive.js";
 import { relayOutboxReconcile } from "./tasks/relay-outbox-reconcile.js";
 import { relayOutboxPrune } from "./tasks/relay-outbox-prune.js";
 import { externalEngagementRefresh } from "./tasks/external-engagement-refresh.js";
+import { engagementBaselineRefresh } from "./tasks/engagement-baseline-refresh.js";
 import { externalParentPrefetch } from "./tasks/external-parent-prefetch.js";
 import { externalContextGc } from "./tasks/external-context-gc.js";
 import { feedIngestEmail } from "./tasks/feed-ingest-email.js";
@@ -110,6 +111,10 @@ async function start() {
     "30 3 * * * relay_outbox_prune",
     // Refresh engagement counts on recent external items — every 30 min
     "*/30 * * * * external_engagement_refresh",
+    // Rebuild author engagement baselines + network ambient — daily at 04:45
+    // UTC, after external_engagement_refresh's 04:00 full <7d sweep so the
+    // medians see that run's counts (SOCIAL-PROOF-RESONANCE-ADR D3)
+    "45 4 * * * engagement_baseline_refresh",
     // Garbage-collect unreferenced context-only external items — daily at 02:30 UTC
     "30 2 * * * external_context_gc",
     ...(identityDetectOn
@@ -151,6 +156,7 @@ async function start() {
       relay_outbox_reconcile: relayOutboxReconcile,
       relay_outbox_prune: relayOutboxPrune,
       external_engagement_refresh: externalEngagementRefresh,
+      engagement_baseline_refresh: engagementBaselineRefresh,
       external_parent_prefetch: externalParentPrefetch,
       external_context_gc: externalContextGc,
       feed_ingest_email: feedIngestEmail,

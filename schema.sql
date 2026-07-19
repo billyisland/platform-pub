@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict tgy6nj7wHkUhqs2yNYFfjfliN0RcaQ0EYLY3hS31HKuEmy2Ole73KIZndfKUZve
+\restrict X6WsDq9tsxAFblJIGGYa3GSbrPlic4uRDXmgSYD7hxEE41zbCCkDJ8dZ3ESN7GS
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -889,6 +889,20 @@ CREATE TABLE public.atproto_oauth_sessions (
 
 
 --
+-- Name: author_engagement_baseline; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.author_engagement_baseline (
+    author_ref text NOT NULL,
+    protocol text NOT NULL,
+    post_type text DEFAULT 'all'::text NOT NULL,
+    median_e numeric DEFAULT 0 NOT NULL,
+    n integer DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: blocks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1271,6 +1285,9 @@ CREATE TABLE public.feed_items (
     biddability_tier text,
     external_author_id uuid,
     reply_to_author text,
+    resonance numeric,
+    resonance_band smallint,
+    ambient_pctl numeric,
     CONSTRAINT exactly_one_source CHECK ((((((article_id IS NOT NULL))::integer + ((note_id IS NOT NULL))::integer) + ((external_item_id IS NOT NULL))::integer) = 1)),
     CONSTRAINT feed_items_biddability_tier_check CHECK ((biddability_tier = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text]))),
     CONSTRAINT feed_items_item_type_check CHECK ((item_type = ANY (ARRAY['article'::text, 'note'::text, 'external'::text])))
@@ -1769,6 +1786,20 @@ CREATE TABLE public.pledges (
     read_event_id uuid,
     fulfilled_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: protocol_engagement_ambient; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.protocol_engagement_ambient (
+    protocol text NOT NULL,
+    post_type text DEFAULT 'all'::text NOT NULL,
+    p50_e numeric DEFAULT 0 NOT NULL,
+    p90_e numeric DEFAULT 0 NOT NULL,
+    sample_n integer DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -2763,6 +2794,14 @@ ALTER TABLE ONLY public.atproto_oauth_sessions
 
 
 --
+-- Name: author_engagement_baseline author_engagement_baseline_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.author_engagement_baseline
+    ADD CONSTRAINT author_engagement_baseline_pkey PRIMARY KEY (author_ref, protocol, post_type);
+
+
+--
 -- Name: blocks blocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3200,6 +3239,14 @@ ALTER TABLE ONLY public.pledges
 
 ALTER TABLE ONLY public.pledges
     ADD CONSTRAINT pledges_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: protocol_engagement_ambient protocol_engagement_ambient_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.protocol_engagement_ambient
+    ADD CONSTRAINT protocol_engagement_ambient_pkey PRIMARY KEY (protocol, post_type);
 
 
 --
@@ -4303,6 +4350,13 @@ CREATE UNIQUE INDEX idx_feed_items_note ON public.feed_items USING btree (note_i
 --
 
 CREATE INDEX idx_feed_items_post_id ON public.feed_items USING btree (post_id);
+
+
+--
+-- Name: idx_feed_items_resonant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_feed_items_resonant ON public.feed_items USING btree (resonance_band) WHERE ((resonance_band >= 2) AND (deleted_at IS NULL));
 
 
 --
@@ -7065,7 +7119,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict tgy6nj7wHkUhqs2yNYFfjfliN0RcaQ0EYLY3hS31HKuEmy2Ole73KIZndfKUZve
+\unrestrict X6WsDq9tsxAFblJIGGYa3GSbrPlic4uRDXmgSYD7hxEE41zbCCkDJ8dZ3ESN7GS
 
 
 
@@ -7073,6 +7127,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- Seed _migrations so migrate.ts treats every baked-in migration as applied
 -- on a fresh schema.sql-bootstrapped database.
 --
+
 INSERT INTO public._migrations (filename) VALUES
     ('001_add_email_and_magic_links.sql'),
     ('002_draft_upsert_index.sql'),
@@ -7230,4 +7285,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('154_follow_import_sync.sql'),
     ('155_tax_schema_prepositioning.sql'),
     ('156_dial_a_tribute_simplification.sql'),
-    ('157_draft_dek_and_comments.sql');
+    ('157_draft_dek_and_comments.sql'),
+    ('158_resonance_baselines.sql');

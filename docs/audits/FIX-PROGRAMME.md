@@ -23,6 +23,34 @@ starts.
 
 ## Progress
 
+- **2026-07-19** — **Resonance foundation shipped (SOCIAL-PROOF-RESONANCE-ADR
+  Sequencing steps 1–2), with pre-ship review fixes.** Migration 158
+  (`author_engagement_baseline` + `protocol_engagement_ambient` tables; three
+  nullable `feed_items` columns `resonance`/`resonance_band`/`ambient_pctl`;
+  `idx_feed_items_resonant` partial index; `resonance_*` + `feed_alpha_*`
+  platform_config seeds) and the daily `engagement_baseline_refresh` task
+  (`feed-ingest/src/tasks/engagement-baseline-refresh.ts`, cron `45 4 * * *`
+  after the 04:00 external-engagement full sweep, registered in
+  `feed-ingest/src/index.ts`). Pre-ship close-read against source found and
+  fixed two defects in the drop: (1) the native branch selected the
+  nonexistent `articles.author_id` → `writer_id` (would have 42703'd every
+  run, rolling back the whole single-transaction refresh); (2) the ADR +
+  config descriptions carried the dead pre-F9 "paid up-vote" premise — voting
+  is free since F9 — corrected in the ADR Context/D2 (rev 2.1) and the
+  migration's description text, with the keep-at-5 decision made explicit
+  (identity-bound + capped 1/(voter,target,direction); first dial to turn if
+  step-3 dark distributions run hot). ADR filed at
+  `docs/adr/SOCIAL-PROOF-RESONANCE-ADR.md`. **Validation:** drift guard 4/4
+  green (seed lists 158 files; migrate no-op on schema.sql-built DB; canonical
+  round-trip); regenerated schema.sql via throwaway-from-committed;
+  feed-ingest `tsc` clean; root eslint 0 errors; task executed twice against
+  the dev DB — first run bootstrapped 4 ambient rows + 598 author baselines
+  with sane distributions (atproto/AP p50=4, p90 51–64; native articles
+  p50=20; dev notes 0), second run byte-identical on `(median_e, n)` (the
+  ADR's fold-idempotency regression, proven by checksum diff). Steps 3–5
+  queued at CONSOLIDATED-TODO §9.12; the account-deletion HIGH discovered
+  during review is CONSOLIDATED-TODO §0g.
+
 - **2026-07-19** — **§0f fix batch: all 19 items of the 2026-07-19 commit audit
   closed in one sweep** (CONSOLIDATED-TODO §0f; every item below cites its §0f
   number). **HIGH — 1**: the publication unpublish route
