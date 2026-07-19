@@ -165,7 +165,17 @@ on every phase. Not launch-blocking.
    not `sum`. Mutation-verified test: `gateway/tests/nostr-relay-resolve.test.ts`
    (first-event, k-of-n at k EOSEs, k-of-n soft-deadline fallback, exhaustive
    preserved). (FIX-PROGRAMME 2026-07-19.)
-3. D5 + D6 — perceived instantaneity.
+3. **✅ SHIPPED 2026-07-19** — D5, the sync-await lever. `/thread`'s external
+   branch kicks off (or finds, via `getInFlightHydration`) the hydration and
+   races it against `THREAD_HYDRATE_SYNC_BUDGET_MS` (2 s) with the pure helper
+   `awaitHydrationWithinBudget(job, budgetMs)`: settled-in-time ⇒ assemble the
+   now-committed full thread and return `hydrating: false` (no client poll on a
+   fast relay); budget-exceeded ⇒ `hydrating: true` and the client polls (D2).
+   `hydrating = !settled` still derives from the in-flight registry (D1), never
+   `willHydrateThread`. Mutation-verified test: `awaitHydrationWithinBudget`
+   cases in `gateway/tests/thread-hydration-guard.test.ts`. (FIX-PROGRAMME
+   2026-07-19.) **D6 (viewport prefetch) remains** — the one decision touching
+   the card component (`web/src/components/post/`).
 4. D7 — post-launch.
 
 ## Test battery

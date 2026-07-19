@@ -9,7 +9,9 @@ import { collectDescendants } from "../lib/thread-walk.js";
 import {
   hydrateExternalThreadContext,
   willHydrateThread,
-  isThreadHydrating,
+  getInFlightHydration,
+  awaitHydrationWithinBudget,
+  THREAD_HYDRATE_SYNC_BUDGET_MS,
 } from "../lib/external-hydration.js";
 import {
   POST_SELECT,
@@ -439,27 +441,34 @@ export async function postThreadRoutes(app: FastifyInstance) {
         // the pure-DB walk below can resolve ancestors + replies the projector
         // would otherwise miss (we only ingest a source's own posts, not the full
         // reply graph). Each protocol's hydrate makes several relay/API round
-        // trips, so we DON'T block the response on it: kick it off in the
-        // background and flag `hydrating` so the client refetches once it lands.
-        // The throttle guard (set synchronously at entry) keeps that refetch from
-        // re-triggering it. Only on the first/cursorless page — pagination walks
-        // the already-hydrated subtree. See §8 parity fix in external-items.ts.
-        // `hydrating` is derived from the in-flight registry (D1), NOT from
-        // willHydrateThread — the latter flips false the instant the throttle
-        // guard is set, so a client's mid-flight refetch would read
-        // `hydrating: false` and cache an empty thread (the 60 s deadlock).
+        // trips. We kick it off (or find a running one) and give it a short
+        // synchronous budget to finish (D5): on a fast relay the whole thread is
+        // committed before we assemble below, so `settled` is true and we return
+        // the thread complete in one round trip with hydrating:false — no client
+        // poll. If the budget elapses first, we assemble whatever is ingested so
+        // far and flag hydrating:true so the client polls to merge the rest (D2).
+        // `hydrating` = !settled derives from the in-flight registry (D1), NOT
+        // from willHydrateThread — the latter flips false the instant the
+        // throttle guard is set, so reading it here would yield a mid-flight
+        // `hydrating: false` and cache an empty thread (the 60 s deadlock). Only
+        // on the first/cursorless page — pagination walks the already-hydrated
+        // subtree. See §8 parity fix in external-items.ts.
         let hydrating = false;
         if (!replyCursor) {
-          if (willHydrateThread(node.itemId, node.protocol)) {
-            void hydrateExternalThreadContext({
-              id: node.itemId,
-              source_id: node.sourceId,
-              protocol: node.protocol,
-              source_item_uri: node.sourceItemUri,
-              interaction_data: node.interactionData,
-            });
-          }
-          hydrating = isThreadHydrating(node.itemId);
+          const job = willHydrateThread(node.itemId, node.protocol)
+            ? hydrateExternalThreadContext({
+                id: node.itemId,
+                source_id: node.sourceId,
+                protocol: node.protocol,
+                source_item_uri: node.sourceItemUri,
+                interaction_data: node.interactionData,
+              })
+            : getInFlightHydration(node.itemId);
+          const settled = await awaitHydrationWithinBudget(
+            job,
+            THREAD_HYDRATE_SYNC_BUDGET_MS,
+          );
+          hydrating = !settled;
         }
         const result = await assembleExternalThread(
           node,

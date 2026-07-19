@@ -23,6 +23,37 @@ starts.
 
 ## Progress
 
+- **2026-07-19** — **THREAD-HYDRATION-LATENCY-ADR Slice 3a (D5): short
+  synchronous await on first expand.** With the deadlock gone (Slice 1) and the
+  per-phase timeouts trimmed (Slice 2), a cold external expand still made the
+  client round-trip twice — once for `hydrating: true`, once more after the poll
+  merged the hydrated rows. D5 collapses the fast case to one round trip.
+  - **Server (`gateway/src/routes/post-thread.ts` + `lib/external-hydration.ts`):**
+    the external branch now captures the hydration job — the freshly-kicked-off
+    `hydrateExternalThreadContext(...)` promise when not throttled, else the
+    already-running `getInFlightHydration(itemId)` — and races it against the new
+    `THREAD_HYDRATE_SYNC_BUDGET_MS` (2 s) via the pure helper
+    `awaitHydrationWithinBudget(job, budgetMs)`. On a fast relay the hydrate
+    commits inside the budget, so `assembleExternalThread` (which still runs
+    *after* the await) reads the complete DB and the response carries
+    `hydrating: false` — the client renders the whole thread with no poll. If the
+    budget elapses first, it assembles whatever is ingested so far and flags
+    `hydrating: true`, and the D2 poll merges the rest. `hydrating = !settled`
+    keeps deriving from the in-flight registry (D1), never `willHydrateThread`
+    (which flips false the instant the throttle guard is set — the mid-flight
+    `hydrating: false` deadlock). A missing job (non-hydratable protocol, or
+    throttled-and-settled) resolves TRUE immediately, so the common warm path is
+    unchanged. The helper never rejects (a failed hydrate still "settles"; its
+    guard is cleared so the client's poll re-triggers a retry).
+  - **Test:** `awaitHydrationWithinBudget` cases in
+    `gateway/tests/thread-hydration-guard.test.ts` (settled-in-time → true,
+    budget-exceeded → false via fake timers, no-job → true). Mutation-verified:
+    flipping each of the three `resolve(...)` outcomes fails exactly the case
+    that asserts it; revert restores green. `tsc` + root promise-safety lint
+    clean (0 errors).
+  - **Remaining:** D6 (viewport prefetch) — the one decision that touches the
+    card component; D7 (relay health scoring) post-launch.
+
 - **2026-07-19** — **THREAD-HYDRATION-LATENCY-ADR Slice 2 (D3+D4): the latency
   levers — stop waiting for the slowest relay, and overlap the two slow phases.**
   Slice 1 killed the deadlock; the cold-expand still paid a hung relay's full

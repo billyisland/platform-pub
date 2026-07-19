@@ -36,6 +36,7 @@ const {
   willHydrateThread,
   isThreadHydrating,
   getInFlightHydration,
+  awaitHydrationWithinBudget,
   resetThreadHydrationGuards,
 } = await import("../src/lib/external-hydration.js");
 
@@ -99,5 +100,41 @@ describe("thread hydration in-flight registry (D1)", () => {
     const job = hydrateExternalThreadContext(item("E", { protocol: "rss" }));
     expect(isThreadHydrating("E")).toBe(false);
     await expect(job).resolves.toBeUndefined();
+  });
+});
+
+// =============================================================================
+// D5 — short synchronous await on first expand. /thread races the in-flight
+// hydration against a budget: settled-in-time ⇒ return the complete thread with
+// hydrating:false (no client poll); budget-exceeded ⇒ hydrating:true + D2 poll.
+// The helper is the pure race; the route derives `hydrating = !settled`.
+// =============================================================================
+describe("awaitHydrationWithinBudget (D5)", () => {
+  it("resolves true when the job settles within budget", async () => {
+    let done!: () => void;
+    const job = new Promise<void>((r) => {
+      done = r;
+    });
+    const raced = awaitHydrationWithinBudget(job, 2_000);
+    done();
+    await expect(raced).resolves.toBe(true);
+  });
+
+  it("resolves false when the budget elapses before the job settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const job = new Promise<void>(() => {}); // never settles
+      const raced = awaitHydrationWithinBudget(job, 2_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(raced).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves true immediately when there is no job to wait for", async () => {
+    await expect(awaitHydrationWithinBudget(undefined, 2_000)).resolves.toBe(
+      true,
+    );
   });
 });

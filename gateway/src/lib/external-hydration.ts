@@ -112,6 +112,34 @@ export function getInFlightHydration(itemId: string): Promise<void> | undefined 
   return hydrationInFlight.get(itemId);
 }
 
+// D5 — short synchronous await on first expand. How long /thread will wait on an
+// in-flight hydration before falling through to `hydrating: true` + D2 polling.
+export const THREAD_HYDRATE_SYNC_BUDGET_MS = 2_000;
+
+// Race an in-flight hydration against a budget (THREAD-HYDRATION-LATENCY-ADR D5).
+// Resolves TRUE if the job settled within budgetMs — the hydrated rows are now
+// committed, so the caller can assemble a COMPLETE thread and report
+// `hydrating: false`, sparing the client any polling on a fast relay. Resolves
+// FALSE if the budget elapsed first — the caller returns whatever is ingested so
+// far with `hydrating: true` and the client polls to merge the rest (D2). A
+// missing job (nothing to wait for: not hydratable, or throttled-and-settled)
+// resolves TRUE immediately. Never rejects — a *failed* hydrate still "settles"
+// (the job never rejects; it swallows its own error), and the client's poll would
+// re-trigger the retriable guard-cleared hydrate anyway.
+export function awaitHydrationWithinBudget(
+  job: Promise<void> | undefined,
+  budgetMs: number,
+): Promise<boolean> {
+  if (!job) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), budgetMs);
+    void job.finally(() => {
+      clearTimeout(timer);
+      resolve(true); // no-op if the timer already resolved false
+    });
+  });
+}
+
 // Test-only: clear both registries so cases don't leak throttle/in-flight state
 // into one another (mirrors resetAuthorTimelineGuard).
 export function resetThreadHydrationGuards(): void {
