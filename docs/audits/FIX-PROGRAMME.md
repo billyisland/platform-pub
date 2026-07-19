@@ -23,6 +23,38 @@ starts.
 
 ## Progress
 
+- **2026-07-19** — **THREAD-HYDRATION-LATENCY-ADR Slice 1 (D1+D2): the 60 s
+  external-thread expand deadlock is fixed by construction.** Expanding an
+  external (Bluesky/Mastodon/Nostr) card stalled ~60 s and recovered only after
+  repeated clicks. Root cause was three timing constants interacting, two of
+  which this slice removes:
+  - **D1 (server, `gateway/src/lib/external-hydration.ts` + `routes/post-thread.ts`):**
+    `hydrating` was reported from `willHydrateThread`, which flips false the
+    instant the 60 s throttle guard is set — so a client's mid-flight refetch was
+    answered `hydrating: false` and cached an empty thread. Now a module-level
+    `hydrationInFlight` registry is the truth source (`isThreadHydrating`), kept
+    distinct from the re-trigger guard. `hydrateExternalThreadContext` dedupes
+    concurrent callers, deletes its entry in a `finally` on settle (so
+    `hydrating` can't stick true and the map can't leak), **clears the guard in
+    its `catch`** (the secondary defect — a failed hydrate was frozen for the
+    full TTL; now retriable on the next poll), and returns the promise (for D5).
+    Also added `getInFlightHydration` (unused until D5).
+  - **D2 (client, `web/src/hooks/usePostThread.ts`):** replaced the fixed
+    `[3 s, 8 s]` merge offsets (which stopped at 8 s and let a slow relay's result
+    land on an empty DB) with a backoff poll (1.5→3→6→12→24 s, ~45 s budget) that
+    stops only on `hydrating: false`; `writeCache` now refuses to persist a
+    `hydrating: true` partial (the poisoned-cache leg). **D2 depends on D1** — it
+    stops-and-caches on `hydrating: false`, so under the old server it would have
+    re-created the exact stall; shipped together.
+  - **Tests (mutation-verified):** `gateway/tests/thread-hydration-guard.test.ts`
+    (in-flight truth, concurrent-caller dedupe, guard-on-failure) —
+    finally-delete and guard-clear mutations both go red; and
+    `web/src/hooks/usePostThread.cache.test.ts` (cache hygiene) — hygiene-guard
+    mutation goes red. `tsc` clean both sides; `next build` clean.
+  - **Remaining:** Slice 2 (D3 `fetchNostrEvents` early-resolve modes + D4 phase
+    parallelisation — the latency levers) and Slice 3 (D5 short sync await + D6
+    viewport prefetch), per the ADR Sequencing.
+
 - **2026-07-17** — **Attack-order 0d: finished the 0b sweep (M13 + M15). Both
   driven before/after; M13 was found to be STILL LIVE — its own fix defeated by
   its decoder — and re-fixed.** The pattern held from 0b/0c: audit the evidence,
