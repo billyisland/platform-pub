@@ -23,6 +23,38 @@ starts.
 
 ## Progress
 
+- **2026-07-19** — **§0g.1 HIGH fixed: account deletion was broken for
+  everyone — three independent latent defects, none ever reachable past the
+  first.** `POST /auth/delete-account` aborted 100% of the time; the whole
+  `withTransaction` rolled back, so the handler can never have completed once
+  in production. Peeled in order by driving the endpoint against the dev
+  stack: (1) `UPDATE notes SET deleted_at = now()` — `notes` has no
+  `deleted_at` column (42703; the §0g finding). Fixed by switching to the
+  hard-DELETE + kind-5 tombstone pattern `DELETE /notes/:nostrEventId`
+  already uses (`DELETE … RETURNING id, nostr_event_id`, then the existing
+  non-fatal sign+`enqueueRelayPublish` loop; both FKs into `notes` —
+  `feed_items.note_id`, `notifications.note_id` — are CASCADE). (2)
+  `DELETE FROM feed_saves WHERE user_id = $1` — `feed_saves` has no user
+  column (it's feed-scoped: `feed_id`/`feed_item_id`); rescoped via the
+  owner's feeds (`WHERE feed_id IN (SELECT id FROM feeds WHERE owner_id =
+  $1)`). (3) `SET status = 'deleted'` — `account_status` had no `'deleted'`
+  value (22P02): migration 049 ("account deletion") only ever added
+  `'deactivated'`. **Migration 159** adds `'deleted'` as a NEW terminal value
+  rather than reusing `'deactivated'`, because deactivated is reversible
+  (magic-link login matches `('active','deactivated')`; Google login
+  reactivates it) and a Google-linked "deleted" account must not resurrect.
+  Stale comments corrected (route header claimed the account row was
+  hard-deleted; the RESTRICT-FK comment listed `notes`). **Validation
+  (empirical, before/after):** pre-fix drive of the live endpoint with a
+  minted session → HTTP 500 42703 `column "deleted_at" does not exist`,
+  transaction proven rolled back (account still active, 3 notes intact);
+  post-fix drive → HTTP 200, account `status='deleted'` + scrambled email +
+  `sessions_invalidated_at` stamped, all notes hard-deleted, kind-5 enqueue
+  failed *non-fatally* as designed (throwaway account has no custodial key),
+  and a re-drive with the same token → 403 (terminal state holds). Gateway
+  `tsc` clean; drift guard 4/4 green (seed lists 159 files; schema.sql
+  regenerated via throwaway-from-committed). CONSOLIDATED-TODO §0g.1 closed.
+
 - **2026-07-19** — **Resonance foundation shipped (SOCIAL-PROOF-RESONANCE-ADR
   Sequencing steps 1–2), with pre-ship review fixes.** Migration 158
   (`author_engagement_baseline` + `protocol_engagement_ambient` tables; three

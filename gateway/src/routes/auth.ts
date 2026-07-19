@@ -616,8 +616,8 @@ export async function authRoutes(app: FastifyInstance) {
   // POST /auth/delete-account — permanently delete account
   //
   // Requires the user to confirm by submitting their email address.
-  // Cancels subscriptions, soft-deletes articles (with kind-5 events),
-  // and hard-deletes the account row (CASCADE handles related records).
+  // Cancels subscriptions, soft-deletes articles and hard-deletes notes
+  // (both with kind-5 events), and soft-deletes the account row.
   // ---------------------------------------------------------------------------
 
   const DeleteAccountSchema = z.object({
@@ -710,13 +710,15 @@ export async function authRoutes(app: FastifyInstance) {
           }
         }
 
-        // Soft-delete all notes and enqueue kind-5 tombstones
+        // Hard-delete all notes and enqueue kind-5 tombstones — notes has no
+        // soft-delete column, so this matches DELETE /notes/:nostrEventId
+        // (feed_items/notifications FKs cascade).
         const { rows: notes } = await client.query<{
           id: string;
           nostr_event_id: string;
         }>(
-          `UPDATE notes SET deleted_at = now()
-           WHERE author_id = $1 AND deleted_at IS NULL
+          `DELETE FROM notes
+           WHERE author_id = $1
            RETURNING id, nostr_event_id`,
           [accountId],
         );
@@ -743,7 +745,7 @@ export async function authRoutes(app: FastifyInstance) {
         }
 
         // Soft-delete the account — hard-delete would violate ON DELETE RESTRICT
-        // FKs on articles, notes, read_events, vote_charges, unlock_records, etc.
+        // FKs on articles, read_events, vote_charges, unlock_records, etc.
         // Clean up relations that won't be useful post-deletion.
         await client.query(
           "DELETE FROM follows WHERE follower_id = $1 OR followee_id = $1",
@@ -752,9 +754,12 @@ export async function authRoutes(app: FastifyInstance) {
         await client.query("DELETE FROM bookmarks WHERE user_id = $1", [
           accountId,
         ]);
-        await client.query("DELETE FROM feed_saves WHERE user_id = $1", [
-          accountId,
-        ]);
+        // feed_saves is feed-scoped (no user column) — clear via the owner's feeds
+        await client.query(
+          `DELETE FROM feed_saves
+           WHERE feed_id IN (SELECT id FROM feeds WHERE owner_id = $1)`,
+          [accountId],
+        );
         await client.query(
           `UPDATE accounts
            SET status = 'deleted', email = 'deleted-' || id || '@deleted',

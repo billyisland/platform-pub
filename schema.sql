@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict X6WsDq9tsxAFblJIGGYa3GSbrPlic4uRDXmgSYD7hxEE41zbCCkDJ8dZ3ESN7GS
+\restrict LoafpNgCjOy5TlUoX2XFDv66zmcga6T5chqojSCbtLJfRvFyKJsWSmjonFFdMWv
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -61,7 +61,8 @@ CREATE TYPE public.account_status AS ENUM (
     'active',
     'suspended',
     'moderated',
-    'deactivated'
+    'deactivated',
+    'deleted'
 );
 
 
@@ -7119,7 +7120,7 @@ ALTER TABLE ONLY traffology.writer_baselines
 -- PostgreSQL database dump complete
 --
 
-\unrestrict X6WsDq9tsxAFblJIGGYa3GSbrPlic4uRDXmgSYD7hxEE41zbCCkDJ8dZ3ESN7GS
+\unrestrict LoafpNgCjOy5TlUoX2XFDv66zmcga6T5chqojSCbtLJfRvFyKJsWSmjonFFdMWv
 
 
 
@@ -7286,4 +7287,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('155_tax_schema_prepositioning.sql'),
     ('156_dial_a_tribute_simplification.sql'),
     ('157_draft_dek_and_comments.sql'),
-    ('158_resonance_baselines.sql');
+    ('158_resonance_baselines.sql'),
+    ('159_account_status_deleted.sql');
