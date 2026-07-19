@@ -9,6 +9,7 @@ import { collectDescendants } from "../lib/thread-walk.js";
 import {
   hydrateExternalThreadContext,
   willHydrateThread,
+  isThreadHydrating,
 } from "../lib/external-hydration.js";
 import {
   POST_SELECT,
@@ -443,16 +444,22 @@ export async function postThreadRoutes(app: FastifyInstance) {
         // The throttle guard (set synchronously at entry) keeps that refetch from
         // re-triggering it. Only on the first/cursorless page — pagination walks
         // the already-hydrated subtree. See §8 parity fix in external-items.ts.
+        // `hydrating` is derived from the in-flight registry (D1), NOT from
+        // willHydrateThread — the latter flips false the instant the throttle
+        // guard is set, so a client's mid-flight refetch would read
+        // `hydrating: false` and cache an empty thread (the 60 s deadlock).
         let hydrating = false;
-        if (!replyCursor && willHydrateThread(node.itemId, node.protocol)) {
-          hydrating = true;
-          void hydrateExternalThreadContext({
-            id: node.itemId,
-            source_id: node.sourceId,
-            protocol: node.protocol,
-            source_item_uri: node.sourceItemUri,
-            interaction_data: node.interactionData,
-          });
+        if (!replyCursor) {
+          if (willHydrateThread(node.itemId, node.protocol)) {
+            void hydrateExternalThreadContext({
+              id: node.itemId,
+              source_id: node.sourceId,
+              protocol: node.protocol,
+              source_item_uri: node.sourceItemUri,
+              interaction_data: node.interactionData,
+            });
+          }
+          hydrating = isThreadHydrating(node.itemId);
         }
         const result = await assembleExternalThread(
           node,

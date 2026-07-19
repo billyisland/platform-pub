@@ -73,13 +73,21 @@ interface HydratedNode {
   publishedAt: Date;
 }
 
-// Throttle: skip the live fetch + re-write when we hydrated this item recently.
+// Two registries, answering two different questions (THREAD-HYDRATION-LATENCY-ADR
+// D1). Keep them distinct — conflating them is the deadlock this ADR fixes:
+//   • hydrateGuard: "may I RE-TRIGGER a hydrate for this item?" — a TTL throttle
+//     so repeated expands don't storm the source. Set at kickoff, cleared early
+//     only on failure so a failed hydrate is immediately retriable.
+//   • hydrationInFlight: "is a hydrate for this item RUNNING right now?" — the
+//     truth source for the response's `hydrating` flag. A settled job (success or
+//     failure) is absent from this map even while the guard still throttles.
 const hydrateGuard = new Map<string, number>();
+const hydrationInFlight = new Map<string, Promise<void>>();
 const HYDRATE_TTL_MS = 60_000;
 
-// Would a hydrate run right now (hydratable protocol AND not throttled)? Lets a
-// caller decide synchronously whether to kick off background hydration and flag
-// the response `hydrating`, without paying the cost or duplicating the throttle.
+// Would a hydrate RE-TRIGGER right now (hydratable protocol AND not throttled)?
+// Solely the re-trigger throttle — NOT "is one running" (that's isThreadHydrating).
+// Lets a caller decide synchronously whether to kick off background hydration.
 export function willHydrateThread(itemId: string, protocol: string): boolean {
   if (
     protocol !== "atproto" &&
@@ -89,6 +97,26 @@ export function willHydrateThread(itemId: string, protocol: string): boolean {
     return false;
   const until = hydrateGuard.get(itemId);
   return !(until && until > Date.now());
+}
+
+// Is a hydrate for this item in flight? The response's `hydrating` flag is
+// derived from THIS, never from willHydrateThread (which flips false the instant
+// the throttle guard is set — the mid-flight `hydrating: false` deadlock, D1).
+export function isThreadHydrating(itemId: string): boolean {
+  return hydrationInFlight.has(itemId);
+}
+
+// The in-flight hydration promise for this item, if one is running — so a caller
+// (D5's short synchronous await) can Promise.race it against a budget.
+export function getInFlightHydration(itemId: string): Promise<void> | undefined {
+  return hydrationInFlight.get(itemId);
+}
+
+// Test-only: clear both registries so cases don't leak throttle/in-flight state
+// into one another (mirrors resetAuthorTimelineGuard).
+export function resetThreadHydrationGuards(): void {
+  hydrateGuard.clear();
+  hydrationInFlight.clear();
 }
 
 // Dual-write a batch of hydrated nodes (external_items + feed_items) in one
@@ -523,7 +551,13 @@ async function hydrateNostrThread(item: ExternalItemRow): Promise<void> {
 // Public entrypoint: best-effort, throttled hydration of an external item's live
 // source thread into external_items + feed_items, so the pure-DB /thread
 // projector can then resolve its ancestors + replies. Never throws.
-export async function hydrateExternalThreadContext(item: {
+//
+// Returns the in-flight hydration promise (D1/D5): a caller can race it against a
+// budget. The promise is registered in hydrationInFlight for its lifetime and
+// deleted in a `finally` when it settles, so isThreadHydrating tracks it exactly.
+// Concurrent callers in the same throttle window share the running job; a caller
+// arriving while throttled-but-settled gets a resolved promise (nothing to do).
+export function hydrateExternalThreadContext(item: {
   id: string;
   source_id: string;
   protocol: string;
@@ -535,9 +569,17 @@ export async function hydrateExternalThreadContext(item: {
     item.protocol !== "activitypub" &&
     item.protocol !== "nostr_external"
   )
-    return;
+    return Promise.resolve();
+
+  // Concurrent caller while a job is already running → share it (so `hydrating`
+  // and D5's race observe the same settle).
+  const existing = hydrationInFlight.get(item.id);
+  if (existing) return existing;
+
+  // Throttled and NOT in flight → it ran recently and settled; nothing to do.
   const until = hydrateGuard.get(item.id);
-  if (until && until > Date.now()) return;
+  if (until && until > Date.now()) return Promise.resolve();
+
   hydrateGuard.set(item.id, Date.now() + HYDRATE_TTL_MS);
   if (hydrateGuard.size > CACHE_MAX_ENTRIES) {
     const oldest = hydrateGuard.keys().next().value;
@@ -555,14 +597,26 @@ export async function hydrateExternalThreadContext(item: {
     repost_count: 0,
     interaction_data: item.interaction_data ?? {},
   };
-  try {
-    if (item.protocol === "atproto") await hydrateBlueskyThread(row);
-    else if (item.protocol === "activitypub") await hydrateMastodonThread(row);
-    else await hydrateNostrThread(row);
-  } catch (err) {
-    logger.debug(
-      { err: err instanceof Error ? err.message : String(err), id: item.id },
-      "External thread hydration failed",
-    );
-  }
+  const job = (async () => {
+    try {
+      if (item.protocol === "atproto") await hydrateBlueskyThread(row);
+      else if (item.protocol === "activitypub") await hydrateMastodonThread(row);
+      else await hydrateNostrThread(row);
+    } catch (err) {
+      logger.debug(
+        { err: err instanceof Error ? err.message : String(err), id: item.id },
+        "External thread hydration failed",
+      );
+      // Secondary defect (D1): the guard was set before the run; a failure must
+      // clear it so willHydrateThread is true again on the next poll instead of
+      // freezing retries for the full TTL.
+      hydrateGuard.delete(item.id);
+    }
+  })();
+  // Register synchronously (before returning) so a same-tick concurrent caller
+  // sees the in-flight entry; delete on settle so `hydrating` never sticks true
+  // and the map can't leak one entry per thread.
+  hydrationInFlight.set(item.id, job);
+  void job.finally(() => hydrationInFlight.delete(item.id));
+  return job;
 }

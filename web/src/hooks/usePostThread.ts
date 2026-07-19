@@ -19,9 +19,14 @@ import type { Post, RepostEdge } from "../lib/post/types";
 
 const REPLY_PAGE = 5; // §8 initial descendant page
 
-// When the host thread fetch reports background hydration in flight, silently
-// refetch at these offsets and merge — early for fast relays, later for slow.
-const HYDRATION_MERGE_DELAYS_MS = [3_000, 8_000];
+// When the host thread fetch reports background hydration in flight, poll with
+// backoff and merge whatever landed, STOPPING only when a response arrives with
+// `hydrating: false` (the job genuinely settled — D1 guarantees that meaning).
+// Bounded by a total budget so a hydrate that never settles can't poll forever.
+// (Replaces the fixed [3000, 8000] merge offsets that stopped at 8 s and let a
+// slow relay's result land on an empty DB — THREAD-HYDRATION-LATENCY-ADR D2.)
+const HYDRATION_POLL_MS = [1_500, 3_000, 6_000, 12_000, 24_000]; // step, cap ~30 s
+const HYDRATION_POLL_BUDGET_MS = 45_000;
 
 // Per-focal pagination state: the cursor for the *next* page of that focal's
 // flattened descendants, and the full subtree count for the "more" affordance.
@@ -35,7 +40,12 @@ interface FocalMeta {
 const cache = new Map<string, { res: PostThreadResponse; ts: number }>();
 const CACHE_TTL_MS = 60_000;
 const CACHE_MAX = 200;
-function readCache(id: string): PostThreadResponse | undefined {
+// Exported for the cache-hygiene test (D2): a `hydrating: true` response must
+// never round-trip through the cache. Test-only reset clears module state.
+export function __resetThreadCache(): void {
+  cache.clear();
+}
+export function readCache(id: string): PostThreadResponse | undefined {
   const e = cache.get(id);
   if (!e) return undefined;
   if (Date.now() - e.ts > CACHE_TTL_MS) {
@@ -44,7 +54,11 @@ function readCache(id: string): PostThreadResponse | undefined {
   }
   return e.res;
 }
-function writeCache(id: string, res: PostThreadResponse): void {
+export function writeCache(id: string, res: PostThreadResponse): void {
+  // Cache hygiene (D2): never persist a partial (`hydrating: true`) response.
+  // Caching it for the 60 s TTL is exactly what pinned every re-expand to an
+  // empty thread until both TTLs expired. Only settled results are cacheable.
+  if (res.hydrating) return;
   cache.set(id, { res, ts: Date.now() });
   if (cache.size > CACHE_MAX) {
     const oldest = cache.keys().next().value;
@@ -220,34 +234,48 @@ export function usePostThread(
     servicedKey.current = refreshKey;
     if (isRefresh) cache.delete(rootPostId);
     let cancelled = false;
-    // Background-hydration refetch timers (external threads): the host fetch may
-    // return `hydrating` before ancestors/replies are in the DB, so we silently
-    // refetch a couple of times and merge whatever landed. Two attempts cover
-    // both fast and slow relays without a tight poll.
+    // Background-hydration poll (external threads): the host fetch may return
+    // `hydrating: true` before ancestors/replies are in the DB. Poll with backoff
+    // and merge whatever landed, stopping only when a response reports
+    // `hydrating: false` (the job settled — D1 makes that meaning honest) or the
+    // total budget elapses. Partials never enter the cache (writeCache hygiene),
+    // so a re-expand mid-hydration re-fetches instead of serving an empty thread.
     const timers: ReturnType<typeof setTimeout>[] = [];
-    const scheduleHydrationMerge = () => {
-      for (const delay of HYDRATION_MERGE_DELAYS_MS) {
-        timers.push(
-          setTimeout(() => {
+    const startHydrationPoll = () => {
+      const startedAt = Date.now();
+      let step = 0;
+      const tick = () => {
+        if (cancelled || !mounted.current) return;
+        if (Date.now() - startedAt > HYDRATION_POLL_BUDGET_MS) return; // give up
+        postThread(rootPostId, { replyLimit: REPLY_PAGE })
+          .then((res) => {
             if (cancelled || !mounted.current) return;
-            postThread(rootPostId, { replyLimit: REPLY_PAGE })
-              .then((res) => {
-                writeCache(rootPostId, res);
-                if (cancelled || !mounted.current) return;
-                dispatch({ kind: "merge", res });
-              })
-              .catch(() => {});
-          }, delay),
-        );
-      }
+            writeCache(rootPostId, res); // no-op while hydrating (hygiene)
+            dispatch({ kind: "merge", res });
+            if (res.hydrating) {
+              const delay =
+                HYDRATION_POLL_MS[Math.min(step, HYDRATION_POLL_MS.length - 1)];
+              step++;
+              timers.push(setTimeout(tick, delay));
+            }
+            // hydrating: false → stop; writeCache above persisted the clean result.
+          })
+          .catch(() => {
+            // Keep the loaded thread; schedule one more attempt within budget.
+            if (cancelled || !mounted.current) return;
+            const delay =
+              HYDRATION_POLL_MS[Math.min(step, HYDRATION_POLL_MS.length - 1)];
+            step++;
+            timers.push(setTimeout(tick, delay));
+          });
+      };
+      timers.push(setTimeout(tick, HYDRATION_POLL_MS[0]));
     };
     const cached = isRefresh ? undefined : readCache(rootPostId);
     if (cached) {
+      // Only settled results are ever cached now (writeCache hygiene), so a
+      // cached response is complete — no poll needed on a cache hit.
       dispatch({ kind: "ingest", res: cached, root: true });
-      // A reopen while hydration is still in flight (cached response carries the
-      // flag; the completing merge overwrites the cache with a clean one) keeps
-      // chasing the result instead of stalling on the partial cache.
-      if (cached.hydrating) scheduleHydrationMerge();
       return () => {
         cancelled = true;
         for (const t of timers) clearTimeout(t);
@@ -259,7 +287,7 @@ export function usePostThread(
         writeCache(rootPostId, res);
         if (cancelled || !mounted.current) return;
         dispatch({ kind: "ingest", res, root: true });
-        if (res.hydrating) scheduleHydrationMerge();
+        if (res.hydrating) startHydrationPoll();
       })
       .catch(() => {
         if (cancelled || !mounted.current) return;
