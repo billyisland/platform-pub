@@ -23,6 +23,23 @@ starts.
 
 ## Progress
 
+- **2026-07-19** — **Explain-label copy re-voiced (plain-spoken register).**
+  All on-screen Explain labels in `web/src/lib/explain/copy.ts`
+  (`EXPLAIN_LABELS`, `CARD_FLAVOUR_COPY`, `VESSEL_COPY`) moved from the original
+  editorial "signage" voice to a plainer, conversational one: contractions and
+  direct address, `all.haus` as an actor, and labels that name what a thing is
+  and what happens when you touch it. The reading-tab/paying explanations were
+  trimmed (paying is a standard concept). Small fixes folded in: a stale
+  `editor.gate`↔`reader.gate` harmonisation comment removed (the parallel no
+  longer holds), an `editor.dek` "card title card" typo, two sentence-initial
+  "All.haus" brand-casing slips, and a `FIRST_RUN_COPY.floor` phrase synced to
+  its `EXPLAIN_LABELS.floor` twin. `FIRST_RUN_COPY` is otherwise unchanged — the
+  six-beat onboarding keeps its poetic register by design (deliberate two-voice
+  split). Typechecks + `next build` green. Editorial record: `EXPLAIN-ADR`
+  Appendix A now carries a 2026-07-19 amendment marking `copy.ts` authoritative.
+  **Flag:** `ledger.allowance` still describes a `free_allowance` that the
+  money-ledger F1 change retired — reworded for voice, but if that UI element is
+  gone the whole label should be deleted, not kept (unverified).
 - **2026-07-19** — **THREAD-HYDRATION-LATENCY-ADR Slice 3a (D5): short
   synchronous await on first expand.** With the deadlock gone (Slice 1) and the
   per-phase timeouts trimmed (Slice 2), a cold external expand still made the

@@ -259,6 +259,8 @@ Fourteen kinds. Explain's derived order: `floor` → per-vessel (`vessel`, then 
 
 Copy is data; the engine renders it verbatim. No em-dashes anywhere by editorial rule. First-run editorialises; Explain labels are signage.
 
+> **Amendment (2026-07-19) — Explain-label voice revised; this appendix is now the historical record.** The on-screen Explain labels (`EXPLAIN_LABELS`, `CARD_FLAVOUR_COPY`, `VESSEL_COPY`) were re-voiced to a plainer, conversational register: contractions and direct address are allowed, `all.haus` may act as the subject ("all.haus suggests…"), and a label names what a thing is and what happens when you touch it rather than teaching the model behind it (the reading-tab/paying mechanics in particular are trimmed — paying is a standard concept). The "declarative 'This is…' opening" rule and the strict no-dash form are relaxed for these labels. **`web/src/lib/explain/copy.ts` is now authoritative for the exact strings**; the verbatim quotes below (A.2–A.6) capture the prior editorial draft and are no longer kept in lockstep. **A.1 first-run copy is unchanged** — the six beats keep their original editorial register by design (the two registers, poetic onboarding vs. utilitarian signage, are a deliberate split).
+
 ### A.1 First-run (six beats)
 
 **1 · `vessel` — starter variant (D7)**
