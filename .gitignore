@@ -21,3 +21,6 @@ shared/src/**/*.d.ts
 shared/src/**/*.d.ts.map
 
 *.log
+
+# Claude Code harness state — churns every session, never meaningful to track (§0f-18)
+.claude/scheduled_tasks.lock

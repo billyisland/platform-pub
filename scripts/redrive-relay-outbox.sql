@@ -38,8 +38,11 @@
 -- normally and you do NOT need the `strfry import` path below. Before redriving,
 -- confirm the relay actually has the fix:
 --   docker compose exec strfry grep rejectEventsOlder /etc/strfry.conf   # expect 315360000
--- If it still reads 0, the relay was not re-created after the config change
--- (`docker compose up -d strfry`, not `restart` — the config is bind-mounted).
+-- If it still reads 0, the relay was not re-created after the config change:
+-- run `docker compose up -d --force-recreate strfry`. `--force-recreate` is
+-- load-bearing (prod lesson, 2026-07-17): the config is bind-mounted and a git
+-- pull replaces the file's inode, so compose sees no spec change — a plain
+-- `up -d` (and a `restart`) silently keeps the container on the OLD config.
 --
 -- LEGACY ESCAPE HATCH (only if you are on a relay you cannot reconfigure, or an
 -- event is older than the configured window): import the signed events straight

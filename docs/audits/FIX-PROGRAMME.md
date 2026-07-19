@@ -23,6 +23,77 @@ starts.
 
 ## Progress
 
+- **2026-07-19** — **§0f fix batch: all 19 items of the 2026-07-19 commit audit
+  closed in one sweep** (CONSOLIDATED-TODO §0f; every item below cites its §0f
+  number). **HIGH — 1**: the publication unpublish route
+  (`publications/cms.ts`) now gates the unscoped `feed_items` DELETE on the
+  UPDATE's rowCount (0 rows → 404 before any delete), closing the
+  cross-publication sitewide feed-strip. **MEDIUM — 2**:
+  `rollbackWriterPayoutRows` takes `AND state = 'platform_settled'`, so a
+  chargeback's `charged_back` marker survives a payout failure (no re-pay of
+  clawed-back reads; symmetric with the completion flip's existing filter).
+  **3**: both A6 orphan checks (`reconcile-ledger.ts` + `scripts/reconcile-ledger.sql`)
+  are now fully `ref_table`-scoped — `tribute_payout_reversal` splits
+  tribute_payouts/tab_settlements, and the chargeback-derived
+  `writer_payout_reversal` (ref_table tab_settlements) branch is restored — so
+  the first live-tribute chargeback can no longer halt payouts forever.
+  **3-sibling**: `rollbackTributePayoutRows` VOIDS (terminal) any claimed
+  accrual whose read is `charged_back` — joined on `read_events.state`, the
+  ground truth the accrual row lacks — and state-filters its release leg;
+  chargeback-time terminalisation was rejected because it would skew the
+  completion path's `tribute_carve` sum (computed from the released→paid flip).
+  **4**: the editor seeds `autoSaver.markSaved(snapshotDraft())` once the
+  editor exists (untouched open→close of a published article no longer mints a
+  draft via the dTag upsert), and `disposedRef` is set BEFORE the
+  publish/schedule awaits (reset on catch) so the unmount flush can't recreate
+  a just-deleted draft. **5**: the hydration job resolves a success bit;
+  `awaitHydrationWithinBudget` reports settled only on SUCCESS, so a fast
+  failure returns `hydrating: true` (not cached; client polls; D1's
+  guard-cleared retry actually fires). Guard tests updated + a
+  settled-by-failure case added. **6**: saves cursor moved off the bespoke
+  rounding ms codec onto the shared fractional-seconds + `Number` pattern
+  (legacy ms cursors auto-rescaled by magnitude), ending the last M13 page-edge
+  duplicate. **7**: `commentsEnabled` threaded through the whole publication
+  pipeline (both INSERTs + ON CONFLICT in `publication-publisher.ts`, the CMS
+  schema, the scheduler call, web `submitArticle`/`publishToPublication`) —
+  publication articles no longer drop "allow replies". **Docs/tests — 8**: the
+  redrive runbook now instructs `--force-recreate` (bind-mount inode trap
+  documented). **9**: Explain composer caption names the real "Make this an
+  article" affordance (+ colon). **10**: CLAUDE.md density rule amended to
+  state the deliberate gateway superset. **11**: dedup integration tests grew
+  context-only-twin + reply-suppressed-twin fixtures with in-test positive
+  controls (mutating either M11 predicate now fails; 15/15 green on dev
+  Postgres). **12**: the prune DELETE is batched (LIMIT-subquery ×5k, 200
+  batches/run cap, capped-run warning) and the integration test no longer
+  asserts a DB-global rowCount (loops to completion; the BUGGY-control
+  pre-clears ALL in-window citations so seasoned DBs can't 23503 it; 4/4 green
+  on dev). **LOW — 13**: Jetstream `connect()` closes any socket already in
+  `this.ws` before claiming the slot (overlap can't orphan a live socket).
+  **14**: moderation removal is two-phase — tombstones signed via key-custody
+  BEFORE the transaction (`prepare*` on pool + `applyPreparedRemoval` in-txn;
+  resolve route re-checks report status `FOR UPDATE`), so a prolific account's
+  sign loop no longer holds a transaction open. **15**: AuthorModal's
+  document-level Escape/pointerdown handlers yield while the lightbox is open
+  (same-node listeners — stopPropagation never shielded them). **16**: the
+  PATCH role LABEL is guarded like a grant (assigning a role whose
+  ROLE_DEFAULTS exceed the editor's own powers → 403; the label gates
+  masthead + transfer-eligibility), and invite-accept re-validates the grant
+  against the INVITER's current permissions (pre-guard/demoted-inviter invites
+  refuse). **17**: safeFetch 301/302 rewrite POST→GET only (303 rewrites all
+  but HEAD; PUT/DELETE re-send unchanged) and a rewrite strips the dropped
+  body's Content-* headers — 4 new transport-mock tests. **18**: SchemeMenu
+  trigger `aria-label="Colour scheme"` + arrow-key roving focus on the
+  `role="menu"` palette (focus lands on the checked swatch on open); the
+  `pending`-goes-negative comment added in `nostr-relay.ts`;
+  `.claude/scheduled_tasks.lock` gitignored + untracked. **19**: account-export
+  key fetch now hits `/api/v1/writers/export-keys` (empirically: unprefixed
+  404s, prefixed reaches the route) — the export-mandatory invariant works
+  again. Validation: payment-service 169/169, gateway 353 passed, shared
+  101/101, feed-ingest 209 passed, dedup 15/15 + prune 4/4 against dev
+  Postgres, `next build` clean, root eslint 0 errors, hairline tripwire clean,
+  ledger-adjacency guard green. (Known pre-existing, unrelated:
+  `web/tests/collision.test.ts` "pushes upward" fails at clean HEAD too.)
+
 - **2026-07-19** — **Feed appearance: colour picker → menu; density → two-state;
   dead density plumbing cleared.** Two FeedComposer cleanups (GLASSHOUSE-AND-PALETTE-ADR
   §III.4 amendment + new §III.4a). (1) The **Colour** control is now a menu
