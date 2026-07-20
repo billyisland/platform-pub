@@ -132,3 +132,41 @@ describe("resolveSpec — articles override click to reader-pane", () => {
     expect(resolveSpec("feed", "A", native).click).toBe("expand-focal");
   });
 });
+
+// SOCIAL-PROOF-RESONANCE-ADR D7 — the glyph is level-gated AND data-gated.
+describe("resonance glyph (D7)", () => {
+  const banded = (band: number | null | undefined) =>
+    makePost({ resonanceBand: band });
+
+  it("shows at feed and thread-focal levels only", () => {
+    for (const lvl of ALL_LEVELS) {
+      const shown = resolveSpec(lvl, "A", banded(2)).showResonance;
+      expect(shown).toBe(lvl === "feed" || lvl === "focal");
+    }
+  });
+
+  it("shows for bands 1-3 and never for band 0", () => {
+    expect(resolveSpec("feed", "A", banded(1)).showResonance).toBe(true);
+    expect(resolveSpec("feed", "A", banded(2)).showResonance).toBe(true);
+    expect(resolveSpec("feed", "A", banded(3)).showResonance).toBe(true);
+    expect(resolveSpec("feed", "A", banded(0)).showResonance).toBe(false);
+  });
+
+  // Absence is not zero (D4): an unscored / rss / dark-nostr row carries no
+  // band at all. It renders nothing, same as band 0, but must never throw or
+  // be coerced into a band by a stray COALESCE upstream.
+  it("treats a missing band as no glyph", () => {
+    expect(resolveSpec("feed", "A", banded(null)).showResonance).toBe(false);
+    expect(resolveSpec("feed", "A", banded(undefined)).showResonance).toBe(false);
+    expect(resolveSpec("feed", "A", makePost()).showResonance).toBe(false);
+  });
+
+  // Resonance measures response, not identity — so it is NOT tier-masked the
+  // way origin counters are. Silence for rss/email comes from no band being
+  // computed, not from a mask here.
+  it("is not tier-masked", () => {
+    for (const tier of ["A", "B", "C", "D"] as BiddabilityTier[]) {
+      expect(resolveSpec("feed", tier, banded(3)).showResonance).toBe(true);
+    }
+  });
+});

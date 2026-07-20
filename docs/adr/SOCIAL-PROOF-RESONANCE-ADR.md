@@ -337,7 +337,19 @@ leaderboards; no absolute "score" is ever displayed.
    construction: nothing reads the three columns until steps 4/5. See
    *Step-3 measurement* below.
 4. D7 glyph + tooltip + Explain caption + `Post`/mapper/`FEED_SELECT`
-   plumbing.
+   plumbing — **shipped 2026-07-20**. `fi.resonance_band` joins `FEED_SELECT`;
+   `post-mapper.ts` carries it as `Post.resonanceBand`; `resolveSpec` gains
+   `showResonance` (level `feed`/`focal` AND band ≥ 1, deliberately not
+   tier-masked); `PostResonance.tsx` renders the dots in `palette.cardMeta`
+   with the D4 gloss as `title` + `aria-label`; Explain kind `card.resonance`
+   sits between `card.byline` and `card.reply`.
+   **Behind the operator brake `RESONANCE_GLYPH_ENABLED`, default OFF** — the
+   band gates were tuned on dev volume and the per-protocol re-measurement
+   below is still outstanding, so the glyph is a claim we hold back until prod
+   distributions support it. The brake gates the MAPPER, not the renderer:
+   while off, `resonanceBand` is null on every read path and the band never
+   leaves the gateway, so there is no client-side flag to keep in sync and no
+   half-lit state. Scoring crons are unaffected either way.
 5. D6 read-time blend in `items.ts` behind a feature flag; A/B the explore
    feed.
 6. Later: zap ingestion, native repost recording (activates the seeded

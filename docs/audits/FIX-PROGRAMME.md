@@ -23,6 +23,46 @@ starts.
 
 ## Progress
 
+- **2026-07-20** — **Resonance step 4: the D7 glyph, wired end to end and
+  shipped dark.** (SOCIAL-PROOF-RESONANCE-ADR Sequencing step 4 / D7;
+  CONSOLIDATED-TODO §9.12.)
+  - Plumbing, the ADR's own path: `fi.resonance_band` added to `FEED_SELECT`
+    (`gateway/src/lib/feed-sql.ts`) → `Post.resonanceBand` in
+    `gateway/src/lib/post-mapper.ts` and its web mirror
+    `web/src/lib/post/types.ts` → `showResonance` on `ResolvedSpec`.
+    Verified safe across all seven `FEED_SELECT` consumers first: the only
+    `GROUP BY` in that neighbourhood (`items.ts` `matched` CTE) projects
+    `fi.id` alone, so it can't be broken by an added column.
+  - `web/src/components/post/PostResonance.tsx` renders `·` / `··` / `···` for
+    bands 1–3 in `palette.cardMeta`, in the byline metadata cluster via the
+    `trailing` slot (ahead of any caller trailing, so price/protocol badges stay
+    rightmost). The D4 two-clause gloss is both `title` and `aria-label` —
+    author-relative clause + ambient clause naming the network it was measured
+    against ("all.haus" for native, since a native post is scored against the
+    house corpus, not the open Nostr network).
+  - Level-gated per D7 to `feed` + `focal` only, and **not** tier-masked:
+    resonance measures response, not identity, so the silence on rss/email
+    comes from D4's absence semantics (no band computed) rather than a mask —
+    keeping "no band" and "band 0" distinct all the way up even though both
+    render nothing. Explain kind `card.resonance` registered in the union,
+    `CARD_KIND_ORDER`, and `EXPLAIN_LABELS` (the `Record<ExplainKind>` type
+    makes a missing caption a build failure).
+  - **Shipped behind `RESONANCE_GLYPH_ENABLED`, default OFF.** The brake gates
+    the MAPPER, not the renderer: while off the band is nulled for every read
+    path and never leaves the gateway, so there's no client flag to drift and
+    no half-lit state. Chosen over the ADR's unflagged step-4 because the
+    migration-160 gates are dev-tuned and the per-protocol band-3
+    re-measurement is still outstanding — the queue item now records that
+    measurement as the gate on flipping it, not merely as follow-up.
+  - Verified: gateway tsc + 353 tests; web tsc + `next build`; root eslint 0
+    errors; hairline tripwire clean on all touched files. Four new
+    `level-spec.test.ts` cases (level gate, bands 1–3 vs 0, absent band, no
+    tier mask) — **mutation-checked**: inverting the band gate to `>= 0`,
+    deleting the level gate, and flipping `thread-parent` on each turned the
+    suite red, and it went green again on restore. Brake proven against live
+    dev rows (band 3 present in 619 rows): same query, `mapped=null` with the
+    brake off and `mapped=3` with it on.
+
 - **2026-07-20** — **Resonance step 3: per-item scoring in the refresh crons,
   and the tuning verdict it was built to produce.** (SOCIAL-PROOF-RESONANCE-ADR
   Sequencing step 3; CONSOLIDATED-TODO §9.12.)

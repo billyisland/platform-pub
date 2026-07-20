@@ -4,6 +4,7 @@ import React from "react";
 import { Byline } from "../workspace/Byline";
 import { TrustPip } from "../ui/TrustPip";
 import { AuthorModal, useAuthorHover } from "../feed/AuthorModal";
+import { PostResonance } from "./PostResonance";
 import { useWriterName } from "../../hooks/useWriterName";
 import type { VesselPalette } from "../workspace/tokens";
 import type { Post } from "../../lib/post/types";
@@ -55,6 +56,7 @@ export function PostByline({
   post,
   palette,
   bylineProfile,
+  showResonance,
   trailing,
   replyingTo,
   feedId,
@@ -62,6 +64,9 @@ export function PostByline({
   post: Post;
   palette: VesselPalette;
   bylineProfile: boolean;
+  // D7: resolveSpec has already checked both that this level shows the glyph
+  // and that the post carries a band >= 1.
+  showResonance?: boolean;
   trailing?: React.ReactNode;
   replyingTo?: { name: string } | null;
   // Dormant: the pip panel is parked, so onPipOpen is accepted (callers still
@@ -69,13 +74,25 @@ export function PostByline({
   onPipOpen?: PipOpen;
   feedId?: string;
 }) {
+  // The glyph belongs to the metadata cluster, so it rides the trailing slot
+  // immediately after the timestamp and ahead of any caller-supplied trailing
+  // (price / protocol badge), which stays the rightmost element.
+  const merged = showResonance ? (
+    <>
+      <PostResonance post={post} palette={palette} />
+      {trailing}
+    </>
+  ) : (
+    trailing
+  );
+
   if (post.author.pubkey) {
     return (
       <NativeByline
         post={post}
         palette={palette}
         bylineProfile={bylineProfile}
-        trailing={trailing}
+        trailing={merged}
         replyingTo={replyingTo}
         feedId={feedId}
       />
@@ -86,7 +103,7 @@ export function PostByline({
       post={post}
       palette={palette}
       bylineProfile={bylineProfile}
-      trailing={trailing}
+      trailing={merged}
       replyingTo={replyingTo}
       feedId={feedId}
     />

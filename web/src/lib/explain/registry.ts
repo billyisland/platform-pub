@@ -143,6 +143,7 @@ export type ExplainKind =
   // instances hover-discoverable
   | "card"
   | "card.byline"
+  | "card.resonance"
   | "card.reply"
   | "card.quote";
 
@@ -275,6 +276,7 @@ export const VESSEL_LEAF_ORDER: readonly ExplainKind[] = [
 export const CARD_KIND_ORDER: readonly ExplainKind[] = [
   "card",
   "card.byline",
+  "card.resonance",
   "card.reply",
   "card.quote",
 ] as const;

@@ -74,6 +74,12 @@ export const FEED_SELECT = `
   fi.author_id, fi.nostr_event_id, fi.source_protocol, fi.source_item_uri,
   fi.source_id, COALESCE(ei.media, fi.media) AS media, fi.score,
   EXTRACT(EPOCH FROM fi.published_at)::bigint AS published_at_epoch,
+  -- Resonance band (SOCIAL-PROOF-RESONANCE-ADR D7). NULL is meaningful and
+  -- load-bearing: rss/email and dark-nostr rows get no band at all, and a
+  -- silent protocol must not read as an unpopular writer. Never COALESCE it.
+  -- (D4/D6 also store fi.resonance + fi.ambient_pctl; the glyph needs only the
+  -- band, and the step-5 ranking blend reads those two in its own scored CTE.)
+  fi.resonance_band,
   -- Author pubkey (native content only — single join covers both articles and notes)
   acc.nostr_pubkey AS nostr_pubkey,
   -- Article-specific (NULL for non-articles)

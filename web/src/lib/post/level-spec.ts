@@ -40,6 +40,12 @@ interface LevelSpec {
   originCounters: CountersMode;
   quoteEmbed: QuoteMode;
   click: ClickAction;
+  // D7: the resonance glyph rides the byline metadata cluster at feed and
+  // thread-focal levels ONLY. Off everywhere else — the cluster is already
+  // tight on quoted/condensed, and band-at-a-glance earns its space where the
+  // reader is deciding whether to read, not on context chrome around something
+  // they're already reading.
+  resonance: boolean;
 }
 
 // One row per §4 column. Read the ADR §4 table top-to-bottom against this.
@@ -57,6 +63,7 @@ export const LEVEL_SPEC: Record<Level, LevelSpec> = {
     originCounters: "fresh-on-expand",
     quoteEmbed: "full-child",
     click: "collapse",
+    resonance: true,
   },
   feed: {
     textScale: 1.0,
@@ -71,6 +78,7 @@ export const LEVEL_SPEC: Record<Level, LevelSpec> = {
     originCounters: "none",
     quoteEmbed: "mini",
     click: "expand-focal",
+    resonance: true,
   },
   "thread-parent": {
     textScale: 0.9,
@@ -85,6 +93,7 @@ export const LEVEL_SPEC: Record<Level, LevelSpec> = {
     originCounters: "static",
     quoteEmbed: "mini",
     click: "reroot-focal",
+    resonance: false,
   },
   "thread-reply": {
     textScale: 0.9,
@@ -99,6 +108,7 @@ export const LEVEL_SPEC: Record<Level, LevelSpec> = {
     originCounters: "static",
     quoteEmbed: "mini",
     click: "reroot-focal",
+    resonance: false,
   },
   quoted: {
     textScale: 0.85,
@@ -113,6 +123,7 @@ export const LEVEL_SPEC: Record<Level, LevelSpec> = {
     originCounters: "none",
     quoteEmbed: "stub",
     click: "reroot-focal",
+    resonance: false,
   },
   condensed: {
     textScale: 0.85,
@@ -127,6 +138,7 @@ export const LEVEL_SPEC: Record<Level, LevelSpec> = {
     originCounters: "inline-numerals",
     quoteEmbed: "stub",
     click: "expand-focal",
+    resonance: false,
   },
 };
 
@@ -188,6 +200,9 @@ export interface ResolvedSpec {
   bylineProfile: boolean; // byline routes to a profile
   threads: boolean;
   interactBack: boolean;
+  // D7 resonance glyph: the level permits it AND this post actually carries a
+  // band ≥ 1. Band 0 and "no band" both render nothing, so they collapse here.
+  showResonance: boolean;
 }
 
 // A Post is native iff it carries a nostr pubkey (external items never do).
@@ -227,5 +242,11 @@ export function resolveSpec(
     bylineProfile: caps.bylineProfile,
     threads: caps.threads,
     interactBack: caps.interactBack,
+    // Not tier-masked: resonance is a property of the response a post drew, not
+    // of how much identity we hold on its author, so a tier-C rss item with a
+    // band would show one. In practice rss/email never get a band computed at
+    // all (D4 absence semantics), which is the ADR's chosen mechanism — the
+    // silence lives in the data, deliberately, rather than in a tier mask here.
+    showResonance: spec.resonance && (post.resonanceBand ?? 0) >= 1,
   };
 }

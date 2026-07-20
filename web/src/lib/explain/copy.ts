@@ -208,6 +208,11 @@ export const EXPLAIN_LABELS: Record<Exclude<ExplainKind, "vessel">, string> = {
   card: "This is one item from one of the feed's sources, shown in the order it arrived.",
   "card.byline":
     "Hover over the name to follow this person and set how prominent they are in this feed. It's basically a volume knob: louder, quieter, or mute.",
+  // D7 resonance glyph. Names what the dots measure without teaching the
+  // model behind them, and says the thing people will otherwise assume it is:
+  // not a popularity count, and nothing to do with money.
+  "card.resonance":
+    "These dots mean a post is getting an unusual amount of response \u2014 measured against what this author usually gets, not against everyone else. One dot is noticed, three is surging. It's not a popularity score, and nothing to do with money.",
   "card.reply":
     "This posts a reply, which appears in the thread underneath the original.",
   "card.quote":

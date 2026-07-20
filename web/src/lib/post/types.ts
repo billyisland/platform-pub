@@ -120,6 +120,12 @@ export interface Post {
   // carrying the same content as this (winning) card — rendered as a quiet
   // "ALSO ON BLUESKY · MASTODON" line. Empty/undefined ⇒ nothing rendered.
   alsoOn?: string[];
+  // SOCIAL-PROOF-RESONANCE-ADR D7: 0-3 resonance band → the byline glyph
+  // (nothing / · / ·· / ···). null/undefined means NO BAND WAS COMPUTED — an
+  // rss/email or dark-nostr item, or one the crons haven't reached — which is
+  // deliberately distinct from band 0 "quiet" even though both render nothing.
+  // The gateway withholds this entirely unless RESONANCE_GLYPH_ENABLED is set.
+  resonanceBand?: number | null;
 }
 
 // Bare reposts are edges, not Posts (§2.2). Mirror of gateway RepostEdgeDTO.

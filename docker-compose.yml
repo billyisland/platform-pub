@@ -149,6 +149,14 @@ services:
       # web twin is the build-time NEXT_PUBLIC_PLEDGES_ENABLED (web build.args).
       # Revive by flipping both to 1 (+ rebuild web). See FIX-PROGRAMME 2026-07-13.
       PLEDGES_ENABLED: ${PLEDGES_ENABLED:-0}
+      # Resonance glyph on feed cards (SOCIAL-PROOF-RESONANCE-ADR D7, step 4,
+      # shipped 2026-07-20). Ships dark: flag off ⇒ the post mapper nulls
+      # Post.resonanceBand on every read path, so the band never leaves the
+      # gateway and no glyph renders. Display-only — the feed-ingest scoring
+      # crons write feed_items.resonance* either way, so flipping needs no
+      # backfill and is instantly reversible. No web twin, by design.
+      # Gated on prod per-protocol band-3 re-measurement (CONSOLIDATED-TODO §9.12).
+      RESONANCE_GLYPH_ENABLED: ${RESONANCE_GLYPH_ENABLED:-0}
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
       PUBLIC_RELAY_URL: ${PUBLIC_RELAY_URL:-wss://all.haus/relay}
       PUBLIC_FANOUT_RELAY_URLS: ${PUBLIC_FANOUT_RELAY_URLS:-}
