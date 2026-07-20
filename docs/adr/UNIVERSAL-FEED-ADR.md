@@ -480,6 +480,15 @@ When a user connects a Mastodon account, the gateway checks for an existing `oau
 
 ### IV.9 `platform_config` additions
 
+> **Superseded mechanism (2026-07-20).** Config defaults no longer ship in a
+> migration — a migration's INSERT never runs on a DB booted from `schema.sql`.
+> They live in `shared/src/db/config-defaults.sql`, applied by `migrate.ts` on
+> every run. The block below is the historical spec for migration 052; note that
+> four of these keys (`rss_max_interval_seconds`, both RSS interval factors, and
+> `engagement_max_items`) were specified here but never actually made it into
+> that migration, so they existed only as code fallbacks until the defaults file
+> picked them up. See CLAUDE.md's tuning-dial rule.
+
 ```sql
 INSERT INTO platform_config (key, value, description) VALUES
   ('feed_ingest_rss_interval_seconds',    '300',   'Default RSS polling interval (5 min)'),

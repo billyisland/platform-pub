@@ -329,7 +329,10 @@ CREATE INDEX idx_feed_scores_publication ON feed_scores (publication_id, score D
   WHERE publication_id IS NOT NULL;
 ```
 
-**`platform_config`** — add publication payout threshold:
+**`platform_config`** — add publication payout threshold (historical: as of
+2026-07-20 a config default goes in `shared/src/db/config-defaults.sql`, never a
+migration — a migration's INSERT never runs on a `schema.sql`-booted DB; see
+CLAUDE.md's tuning-dial rule):
 
 ```sql
 INSERT INTO platform_config (key, value, description) VALUES

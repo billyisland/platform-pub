@@ -654,6 +654,17 @@ nothing fixed yet.
   in `schema.sql`, so all operator-tunable keys (rss interval, backoff/decay,
   engagement cap, …) are absent on fresh prod boots and run on code defaults.
   Closing that is the genesis-seed work tracked under B1 — out of scope here.
+  **✅ THAT REMAINDER IS NOW CLOSED (2026-07-20).** Taking the code option here
+  treated the symptom, and the root cause resurfaced six weeks later during
+  resonance step 5 — the same diagnosis, rediscovered from scratch. Fixed
+  properly: defaults live in `shared/src/db/config-defaults.sql`, applied by
+  `migrate.ts` on every run, with drift-guard Checks 4a/4b/4c enforcing it. 46
+  dials were seeded on dev (31 migration-seeded + 15 that had no default row
+  anywhere, including the six money dials — platform fee, free allowance, both
+  settlement thresholds — silently dropped from `schema.sql` by the f8c73e6
+  regeneration). The lesson this entry now carries: a config key that is
+  unreachable is a *structural* defect, and patching one consumer's fallback
+  leaves the mechanism broken for every other key. See FIX-PROGRAMME 2026-07-20.
 
 - [x] **D2 — Mastodon thread/quote id-space fixed in only 1 of 4 write paths.** ✅ FIXED 2026-06-07
   **Verified:** b2f64ac keyed *hydration* on the federated `uri`, but

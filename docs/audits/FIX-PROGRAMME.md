@@ -87,10 +87,57 @@ starts.
   - **Rule added to CLAUDE.md** (tuning-dial section): dials go in
     `config-defaults.sql`, never a migration; never `UPDATE platform_config`,
     upsert.
+  - **Second pass — 15 more dials that had no default row ANYWHERE.** Sweeping
+    every `platform_config` key read across the services (not just the ones
+    migrations seed) found fifteen that were pure code constants:
+    - **Six money dials** — `platform_fee_bps`, `free_allowance_pence`,
+      `tab_settlement_threshold_pence`, `monthly_fallback_minimum_pence`,
+      `monthly_fallback_days`, `writer_payout_threshold_pence`. These were
+      seeded by an `INSERT INTO platform_config` inside **`schema.sql` itself**,
+      until **`f8c73e6` "chore(schema): regenerate schema.sql from current DB
+      state"** replaced it with a `--schema-only` dump and silently dropped the
+      data. Since then nobody could change the platform fee by any means but a
+      deploy. Recovered values verified identical to both the pre-`f8c73e6` seed
+      and today's `loadConfig` fallbacks — restores the dials, changes no
+      behaviour. That commit is also the standing argument for why config data
+      must never live in `schema.sql`: a regeneration will drop it again.
+    - **Nine feed-ingest/GC dials** — the adaptive-RSS ceiling and both interval
+      factors, the nostr backfill window, the engagement per-run cap, the email
+      error cap, and the three external-GC retention dials. Four of them
+      (`rss_max_interval_seconds`, both RSS factors, `engagement_max_items`)
+      are *specified* in UNIVERSAL-FEED-ADR §IV.9 but never made it into
+      migration 052 — spec'd, documented, never real.
+    - **Not resurrected:** `note_char_limit`, `comment_char_limit`,
+      `media_max_size_bytes` were in the same genesis seed but have no reader
+      anywhere (all services + web). Dead config stays dead.
+    - **Logged, not silently reconciled:** `feed_ingest_max_errors` (50, read
+      only by the email adapter) vs `feed_ingest_max_error_count` (10, every
+      other adapter) — two keys, one meaning, 5× apart. Both seeded at current
+      values; unifying them changes live ingest behaviour. → CONSOLIDATED-TODO.
+    - Dev now carries **60** dials; the stale `loadConfig` header comment
+      ("these match the INSERT statements in schema.sql exactly") was corrected
+      to point at `config-defaults.sql` and record why schema.sql must not hold
+      config data.
+  - **This was a re-discovery, not a discovery.** `AUDIT-BACKLOG` **D1**
+    (2026-06-07) diagnosed the identical root cause — "`schema.sql` carries no
+    `platform_config` seed data while its `_migrations` seed marks 106
+    already-applied" — and explicitly noted the same omission stranded the RSS
+    interval, backoff/decay factors and engagement cap. The fix taken then was
+    to change one consumer's code fallback, with the structural work deferred to
+    a "B1 genesis-seed" item that never happened; six weeks later it was
+    rediscovered from scratch during resonance step 5. The entry is now marked
+    closed with that lesson attached: patching a consumer's fallback leaves the
+    mechanism broken for every other key.
+  - **Docs corrected** where they'd have taught the old pattern:
+    UNIVERSAL-FEED-ADR §IV.9 and PUBLICATIONS-SPEC (both show a migration
+    seeding config) now carry a superseded-mechanism note;
+    UPSTREAM-EDGES-BUILD-PLAN's "all four checks green" instruction updated.
+    Historical log entries saying "all 4 checks" are left alone — they were
+    true when written.
   - **Outstanding, needs the operator:** whether **prod** was affected. It may
     have been migrated incrementally from before genesis, in which case its rows
     exist and the two environments differed. The next prod `migrate.ts` run
-    repairs it either way and prints the count — compare against dev's 31.
+    repairs it either way and prints the count — compare against dev's 46.
 
 - **2026-07-20** — **Resonance step 5: the D6 read-time proof blend, shipped
   dark.** (SOCIAL-PROOF-RESONANCE-ADR Sequencing step 5 / D6;

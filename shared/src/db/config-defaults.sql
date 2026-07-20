@@ -143,3 +143,58 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO platform_config (key, value, description) VALUES
   ('feed_proof_floor', '0.05', 'D6 read-time blend: floor under proof_term so zero-proof items still order by recency instead of collapsing to a constant (see migration header)')
 ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Recovered from the ORIGINAL genesis seed (2026-07-20).
+--
+-- These six were never seeded by any migration because they predate the
+-- migration chain: schema.sql itself carried an INSERT INTO platform_config,
+-- and commit f8c73e6 ("chore(schema): regenerate schema.sql from current DB
+-- state") silently dropped it — a --schema-only pg_dump carries no data. Since
+-- that regeneration they have existed ONLY as code fallbacks on any DB built
+-- from schema.sql, so the platform fee, the free allowance and both settlement
+-- thresholds were operator-untunable: an UPDATE on a missing row changes
+-- nothing and reports no error.
+--
+-- Values verified identical to both the pre-f8c73e6 seed AND today's code
+-- fallbacks in shared/src/db/client.ts::loadConfig — this restores the dials
+-- without changing any behaviour.
+--
+-- NOT recovered, deliberately: note_char_limit, comment_char_limit and
+-- media_max_size_bytes were in that same seed but have no reader anywhere in
+-- the repo (checked across all services and web). Dead config stays dead.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('free_allowance_pence',           '500',  'New reader free allowance (£5.00)'),
+  ('tab_settlement_threshold_pence', '800',  'Reader tab threshold that triggers Stripe charge (£8.00)'),
+  ('monthly_fallback_minimum_pence', '200',  'Minimum balance for time-based settlement trigger (£2.00)'),
+  ('monthly_fallback_days',          '30',   'Days since last read before monthly settlement fires'),
+  ('writer_payout_threshold_pence',  '2000', 'Writer balance threshold that triggers Stripe Connect transfer (£20.00)'),
+  ('platform_fee_bps',               '800',  'Platform cut in basis points (800 = 8%)')
+ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Never seeded anywhere (2026-07-20): dials that only ever existed as a code
+-- fallback, so `platform_config` was a promise the schema never kept. Each
+-- default below is that exact fallback, so seeding changes no behaviour — it
+-- only makes the dial real. Cited at its consumer.
+--
+-- NOTE, not silently reconciled: `feed_ingest_max_errors` (50) is read ONLY by
+-- the email adapter (feed-ingest-email.ts), while every other adapter reads
+-- `feed_ingest_max_error_count` (10, seeded by migration 052). Two keys, two
+-- defaults, one meaning — email tolerates 5x the failures before deactivating a
+-- source. Almost certainly an oversight, but unifying them changes live ingest
+-- behaviour, so both are seeded at their current values and the discrepancy is
+-- logged in CONSOLIDATED-TODO instead.
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_config (key, value, description) VALUES
+  ('feed_ingest_rss_max_interval_seconds',     '3600', 'Adaptive RSS polling ceiling (feed-ingest-rss.ts)'),
+  ('feed_ingest_rss_interval_backoff_factor',  '1.5',  'Adaptive RSS interval growth on an empty fetch (feed-ingest-rss.ts)'),
+  ('feed_ingest_rss_interval_decay_factor',    '0.5',  'Adaptive RSS interval shrink on a productive fetch (feed-ingest-rss.ts)'),
+  ('feed_ingest_nostr_backfill_hours',         '168',  'Lookback window for the nostr subscribe-time backfill (feed-ingest-nostr-backfill.ts)'),
+  ('feed_ingest_engagement_max_items',         '2000', 'Max items per external engagement refresh run (external-engagement-refresh.ts)'),
+  ('feed_ingest_max_errors',                   '50',   'Consecutive errors before deactivating an EMAIL source — see the note above (feed-ingest-email.ts)'),
+  ('external_context_gc_retention_days',       '30',   'Age at which context-only hydration rows are reclaimed (external-context-gc.ts)'),
+  ('external_sources_gc_grace_days',           '7',    'Grace period before an unsubscribed external source is culled (external-sources-gc.ts)'),
+  ('external_sources_gc_cull_days',            '90',   'Age at which an unsubscribed external source is culled (external-sources-gc.ts)')
+ON CONFLICT (key) DO NOTHING;
