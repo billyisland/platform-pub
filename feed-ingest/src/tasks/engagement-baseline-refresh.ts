@@ -1,5 +1,5 @@
 import type { Task } from "graphile-worker";
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 import { pool } from "@platform-pub/shared/db/client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { getPlatformConfig } from "../lib/platform-config.js";
@@ -49,7 +49,7 @@ function nostrEngagementEnabled(): boolean {
   return v === "1" || v === "true";
 }
 
-interface ResonanceWeights {
+export interface ResonanceWeights {
   like: number;
   reply: number;
   repost: number;
@@ -89,7 +89,17 @@ export const engagementBaselineRefresh: Task = async () => {
   }
 };
 
-async function refresh(client: PoolClient, w: ResonanceWeights): Promise<void> {
+/**
+ * Exported for the test battery: the caller supplies the client, so a test can
+ * drive the real refresh inside a transaction it rolls back. Typed ClientBase
+ * rather than PoolClient because all this needs is query() — which lets a test
+ * hand it a standalone Client. Note the temp table is ON COMMIT DROP, so a
+ * single transaction can run this exactly once.
+ */
+export async function refresh(
+  client: ClientBase,
+  w: ResonanceWeights,
+): Promise<void> {
   const externalProtocols = nostrEngagementEnabled()
     ? ["atproto", "activitypub", "nostr_external"]
     : ["atproto", "activitypub"];

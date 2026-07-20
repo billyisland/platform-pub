@@ -1,0 +1,318 @@
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from "vitest";
+import pg from "pg";
+import { refresh, type ResonanceWeights } from "./engagement-baseline-refresh.js";
+
+// =============================================================================
+// engagement-baseline-refresh battery (SOCIAL-PROOF-RESONANCE-ADR D3, step 2).
+//
+// The two properties the "recompute, don't fold" decision rests on:
+//
+//   FOLD IDEMPOTENCY — the reason the task may be re-run freely after an
+//   outage, and the reason the <7d engagement sweep touching an item ~6 times
+//   cannot multiple-count it into a baseline.
+//
+//   STRUCTURAL LAG — no post younger than BASELINE_MIN_AGE_HOURS enters any
+//   baseline, so a surging post is measured against its author's PRIOR
+//   expectation and can never contaminate the baseline it is scored against.
+//   This is what makes resonance a claim about surprise rather than a
+//   self-fulfilling one.
+//
+// Runs the REAL refresh (not a copy) against a live Postgres, always inside a
+// transaction that is rolled back. Note refresh() creates a temp table
+// ON COMMIT DROP, so it can run at most once per transaction — the idempotency
+// test therefore uses two sequential transactions and compares snapshots
+// carried out in JS memory rather than in the database.
+//
+// Skipped unless a DB URL is supplied so the no-Postgres CI `test` job stays
+// green. Run locally against dev:
+//   TEST_DATABASE_URL=postgresql://platformpub:PASSWORD@localhost:5432/platformpub \
+//     npx vitest run src/tasks/engagement-baseline-refresh.test.ts
+// =============================================================================
+
+const DB_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+
+/** Isolates fixture baselines from real rows — see resonance.test.ts. */
+const TEST_PROTOCOL = "test_proto_baseline";
+
+const WEIGHTS: ResonanceWeights = {
+  like: 1,
+  reply: 3,
+  repost: 2,
+  nativeUp: 5,
+  nativeGate: 5,
+};
+
+interface BaselineRow {
+  author_ref: string;
+  protocol: string;
+  post_type: string;
+  median_e: string;
+  n: number;
+}
+
+describe.skipIf(!DB_URL)("engagement baseline refresh (step 2)", () => {
+  let client: pg.Client;
+
+  beforeAll(async () => {
+    client = new pg.Client({ connectionString: DB_URL });
+    await client.connect();
+  });
+  afterAll(async () => {
+    await client.end();
+  });
+
+  beforeEach(async () => {
+    await client.query("BEGIN");
+  });
+  afterEach(async () => {
+    await client.query("ROLLBACK");
+  });
+
+  async function snapshot(): Promise<BaselineRow[]> {
+    const { rows } = await client.query<BaselineRow>(
+      `SELECT author_ref, protocol, post_type, median_e::text, n
+       FROM author_engagement_baseline
+       ORDER BY author_ref, protocol, post_type`,
+    );
+    return rows;
+  }
+
+  /** An external author with posts at the given (ageHours, likeCount) pairs. */
+  async function seedAuthor(
+    posts: Array<{ ageHours: number; likes: number; contextOnly?: boolean }>,
+  ): Promise<string> {
+    const src = await client.query<{ id: string }>(
+      `INSERT INTO external_sources (protocol, source_uri, is_active)
+       VALUES ('atproto', 'at://baseline-test/' || gen_random_uuid(), false)
+       RETURNING id`,
+    );
+    const sourceId = src.rows[0].id;
+    const auth = await client.query<{ id: string }>(
+      `INSERT INTO external_authors (protocol, stable_handle, tier)
+       VALUES ('atproto', 'baseline-test-' || gen_random_uuid(), 'A')
+       RETURNING id`,
+    );
+    const authorId = auth.rows[0].id;
+
+    for (const p of posts) {
+      const ext = await client.query<{ id: string }>(
+        `INSERT INTO external_items
+           (source_id, protocol, tier, source_item_uri, published_at,
+            like_count, reply_count, repost_count, is_context_only)
+         VALUES ($1, 'atproto', 'tier3', 'at://item/' || gen_random_uuid(),
+                 now() - make_interval(hours => $2), $3, 0, 0, $4)
+         RETURNING id`,
+        [sourceId, p.ageHours, p.likes, p.contextOnly ?? false],
+      );
+      await client.query(
+        `INSERT INTO feed_items
+           (item_type, external_item_id, external_author_id, author_name,
+            published_at, source_protocol, source_id)
+         VALUES ('external', $1, $2, 'Baseline Fixture',
+                 now() - make_interval(hours => $3), $4, $5)`,
+        [ext.rows[0].id, authorId, p.ageHours, TEST_PROTOCOL, sourceId],
+      );
+    }
+    return authorId;
+  }
+
+  async function baselineFor(authorId: string): Promise<BaselineRow | null> {
+    const { rows } = await client.query<BaselineRow>(
+      `SELECT author_ref, protocol, post_type, median_e::text, n
+       FROM author_engagement_baseline
+       WHERE author_ref = $1 AND protocol = $2`,
+      [authorId, TEST_PROTOCOL],
+    );
+    return rows[0] ?? null;
+  }
+
+  // --- D3: structural lag ---------------------------------------------------
+
+  it("admits no post younger than the 48h minimum age into a baseline", async () => {
+    // Three settled posts at E=10, plus a post from an hour ago that is going
+    // viral. If the young post entered, both n and the median would move.
+    const authorId = await seedAuthor([
+      { ageHours: 120, likes: 10 },
+      { ageHours: 144, likes: 10 },
+      { ageHours: 168, likes: 10 },
+      { ageHours: 1, likes: 10000 },
+    ]);
+
+    await refresh(client, WEIGHTS);
+
+    const row = await baselineFor(authorId);
+    expect(row).not.toBeNull();
+    expect(row!.n).toBe(3);
+    expect(parseFloat(row!.median_e)).toBe(10);
+  });
+
+  it("PAIRED CONTROL: the same viral post counts once it is old enough", async () => {
+    // Identical fixture with the viral post aged past the threshold. If this
+    // did not move, the test above would prove only that medians are stable.
+    const authorId = await seedAuthor([
+      { ageHours: 120, likes: 10 },
+      { ageHours: 144, likes: 10 },
+      { ageHours: 168, likes: 10 },
+      { ageHours: 72, likes: 10000 },
+    ]);
+
+    await refresh(client, WEIGHTS);
+
+    const row = await baselineFor(authorId);
+    expect(row!.n).toBe(4);
+    // Median of [10, 10, 10, 10000] — percentile_cont interpolates the middle
+    // pair, so the viral post lifts n but barely moves the expectation. That
+    // is the median doing its job against exactly this kind of outlier.
+    expect(parseFloat(row!.median_e)).toBe(10);
+  });
+
+  it("excludes context-only rows (thread scaffolding is not the author's output)", async () => {
+    const authorId = await seedAuthor([
+      { ageHours: 120, likes: 10 },
+      { ageHours: 144, likes: 10 },
+      { ageHours: 168, likes: 500, contextOnly: true },
+    ]);
+
+    await refresh(client, WEIGHTS);
+
+    const row = await baselineFor(authorId);
+    expect(row!.n).toBe(2);
+    expect(parseFloat(row!.median_e)).toBe(10);
+  });
+
+  it("caps the sample at the last 20 qualifying posts", async () => {
+    // 25 posts: the 20 most recent are E=1, the 5 oldest are E=1000. If the
+    // cap were not applied the median would be pulled off 1.
+    const posts = [
+      ...Array.from({ length: 20 }, (_, i) => ({
+        ageHours: 72 + i,
+        likes: 1,
+      })),
+      ...Array.from({ length: 5 }, (_, i) => ({
+        ageHours: 200 + i,
+        likes: 1000,
+      })),
+    ];
+    const authorId = await seedAuthor(posts);
+
+    await refresh(client, WEIGHTS);
+
+    const row = await baselineFor(authorId);
+    expect(row!.n).toBe(20);
+    expect(parseFloat(row!.median_e)).toBe(1);
+  });
+
+  it("records the true sampled-post count in the ambient row", async () => {
+    // sample_n has no code reader — migration 158 calls it a "sanity signal
+    // for tuning". It is pinned anyway because it is precisely what an
+    // operator reads when re-measuring band incidence on prod (the gate on
+    // turning RESONANCE_GLYPH_ENABLED on), and a silently wrong denominator
+    // there would misinform the tuning rather than break a feature.
+    await seedAuthor([
+      { ageHours: 120, likes: 10 },
+      { ageHours: 144, likes: 20 },
+      { ageHours: 168, likes: 30 },
+      { ageHours: 1, likes: 999 }, // too young to be sampled
+    ]);
+
+    await refresh(client, WEIGHTS);
+
+    const { rows } = await client.query<{ sample_n: number; p50_e: string }>(
+      `SELECT sample_n, p50_e::text FROM protocol_engagement_ambient
+       WHERE protocol = $1 AND post_type = 'all'`,
+      [TEST_PROTOCOL],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sample_n).toBe(3);
+    expect(parseFloat(rows[0].p50_e)).toBe(20);
+  });
+
+  // --- D3: recompute is idempotent ------------------------------------------
+
+  it("is a no-op on median_e and n when run twice over the same corpus", async () => {
+    // The property that makes recompute safe to repeat: two independent runs
+    // over the whole dev corpus must agree exactly. Each runs in its own
+    // transaction (the temp table is ON COMMIT DROP) and is rolled back, so
+    // the comparison is carried in JS rather than in the database.
+    await seedAuthor([
+      { ageHours: 120, likes: 7 },
+      { ageHours: 144, likes: 9 },
+    ]);
+    await refresh(client, WEIGHTS);
+    const first = await snapshot();
+
+    await client.query("ROLLBACK");
+    await client.query("BEGIN");
+
+    await seedAuthor([
+      { ageHours: 120, likes: 7 },
+      { ageHours: 144, likes: 9 },
+    ]);
+    await refresh(client, WEIGHTS);
+    const second = await snapshot();
+
+    expect(second.length).toBe(first.length);
+
+    // Compare on the value columns only: the two runs seed different author
+    // uuids, so author_ref is expected to differ for the fixture rows.
+    const values = (rows: BaselineRow[]) =>
+      rows.map((r) => `${r.protocol}|${r.post_type}|${r.median_e}|${r.n}`).sort();
+    expect(values(second)).toEqual(values(first));
+  });
+
+  it("REPLACES a pre-existing baseline row rather than accumulating onto it", async () => {
+    // The specific failure mode "recompute, don't fold" exists to prevent. The
+    // daily sweep touches a <7d item ~6 times; an incremental fold would count
+    // it once per touch, so n would climb on every pass and the median would
+    // drift toward whatever was folded last.
+    //
+    // This drives the ON CONFLICT DO UPDATE path directly by planting a stale
+    // row first: refresh must overwrite it to the corpus truth (n=3, median=6),
+    // never add to it (n=102) and never leave the stale estimate standing.
+    const authorId = await seedAuthor([
+      { ageHours: 120, likes: 4 },
+      { ageHours: 144, likes: 6 },
+      { ageHours: 168, likes: 8 },
+    ]);
+    await client.query(
+      `INSERT INTO author_engagement_baseline
+         (author_ref, protocol, post_type, median_e, n)
+       VALUES ($1, $2, 'all', 999, 99)`,
+      [authorId, TEST_PROTOCOL],
+    );
+
+    await refresh(client, WEIGHTS);
+
+    const row = await baselineFor(authorId);
+    expect(row!.n).toBe(3);
+    expect(parseFloat(row!.median_e)).toBe(6);
+  });
+});
+
+// =============================================================================
+// MUTATION LOG — each assertion above was checked by breaking the code it
+// claims to cover. Mutations applied to engagement-baseline-refresh.ts one at
+// a time, each reverted before the next. All were DETECTED:
+//
+//   1. drop the 48h minimum-age floor on the external pass   -> 7 fail
+//   2. `WHERE rn <= $1` -> effectively uncapped              -> 7 fail
+//   3. drop `AND ei.is_context_only = false`                 -> 1 fail
+//   4. ON CONFLICT DO UPDATE -> keep the existing median_e   -> 1 fail
+//   5. ambient `COUNT(*)` -> `COUNT(*) * 2` (sample_n)       -> 1 fail
+//   5b. baseline `COUNT(*)` -> `COUNT(*) * 2` (n)            -> 1 fail
+//   6. `percentile_cont(0.5)` -> `avg(e)`                    -> 1 fail
+//
+// Mutations 1 and 2 failing the WHOLE file is the expected shape, not
+// over-coupling: every fixture author's baseline is defined by which of their
+// posts qualify, so widening the sample moves every row. Mutation 6 is the one
+// worth re-running by hand if the estimator is ever revisited — the median is
+// load-bearing against exactly the viral-outlier case test 2 fixes in place.
+// =============================================================================

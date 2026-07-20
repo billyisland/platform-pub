@@ -23,6 +23,57 @@ starts.
 
 ## Progress
 
+- **2026-07-20** — **Resonance test battery built (ADR steps 2–3), and two
+  clauses proved redundant by mutation.** The ADR specified a nine-item test
+  battery; steps 4 and 5 were covered when they shipped, but the **scoring
+  engine itself — shrinkage, the ambient veto, the band gates, absence
+  semantics, D2a composition — shipped with zero tests**, which is the exact
+  "component ≠ feature" shape §11 catalogues. Now 27 tests across
+  `feed-ingest/src/lib/resonance.test.ts` (20) and
+  `.../tasks/engagement-baseline-refresh.test.ts` (7); feed-ingest 221 → 248.
+  - **Both run the crons' OWN SQL.** `EXTERNAL_RESONANCE_SQL` /
+    `NATIVE_RESONANCE_SQL` extracted as exported constants and `refresh()`
+    exported (typed `ClientBase`, not `PoolClient` — it needs only `query()`),
+    so a test drives the real strings on its own rolled-back client instead of
+    a copy that can drift. Pure extraction: no SQL body changed.
+  - **Isolation.** The external pass keys its ambient join on
+    `feed_items.source_protocol`, which is free TEXT — so fixtures file under a
+    synthetic `test_proto` and no test can touch the shared atproto/activitypub
+    ambients or be perturbed by the 26,727 real scored rows.
+  - **Mutation-verified, and that is where the value came from.** 18 mutations
+    applied one at a time; **16 detected, 2 survived — correctly.** Working out
+    *why* the survivors survived produced the two findings below, which a green
+    suite would have hidden. (Three earlier "survivors" were harness artifacts —
+    a first-occurrence-only replace hitting the wrong one of two identical
+    substrings. Worth noting as a trap: a mutation that doesn't apply where you
+    think it does reads exactly like a test gap.)
+  - **FINDING 1 — the band-2 ambient veto is unreachable.** `n` is capped at 20
+    by `BASELINE_LAST_N`, so `baseline ≥ 3·p50/23`; `resonance ≥ 4` then forces
+    `1+E ≥ 16 + 2.087·p50`, while the veto binds only when `1+E < 1+p50`.
+    Together: `p50 < −13.8`, impossible. Anything scoring band-2 resonance has
+    already cleared p50 arithmetically. The band-1 arm is reachable, but only
+    above ambient p50 ≥ 22 — so D4's veto does real work on band 1 alone.
+    **This bounds a claim the ADR makes**, and it means my first veto fixture
+    (n=100, p50=10) tested a state production cannot reach; rewritten to
+    n=20/p50=25/E=24, which it can.
+  - **FINDING 2 — `PCTL_EXPR`'s `p50_e <= 0` branch is redundant**, computing
+    exactly what the general path computes at p50 = 0 (the divide-by-zero it
+    guards is already unreachable via that segment's own `e < p50` guard).
+  - Both clauses **retained** (zero cost, they document intent) and recorded in
+    the ADR under *Clause redundancy* plus in-file mutation logs, so the next
+    reader doesn't mistake a surviving mutation for an untested branch.
+  - **Battery correction:** the ADR's "n=20 author is ≥87% own-median" holds
+    only when ambient p50 > 0 — it is exactly 86.96% at p50 = 0. Tested as the
+    algebra, ADR amended.
+  - **`sample_n` pinned despite having no code reader** — it is the diagnostic
+    an operator reads when re-measuring band incidence on prod, which is the
+    standing gate on `RESONANCE_GLYPH_ENABLED`; a wrong denominator there
+    misinforms tuning rather than breaking a feature.
+  - **Still open:** *monotonic writes* is the one battery item deliberately
+    uncovered — it belongs to the engagement cron's count writer, not to either
+    module tested here. feed-ingest suite 248/248, tsc clean, root lint 0
+    errors.
+
 - **2026-07-20** — **`platform_config` defaults never landed on a fresh DB —
   fixed, and the hole closed in CI.** (Found during resonance step 5;
   CONSOLIDATED-TODO §9.13, now struck.)

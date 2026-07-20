@@ -408,27 +408,77 @@ leaderboards; no absolute "score" is ever displayed.
 
 ## Test battery
 
+**Built 2026-07-20** (steps 2–3; steps 4–5 were covered when they shipped).
+27 tests across two live-DB files, every fixture inside a rolled-back
+transaction, both driving the crons' **own** exported SQL rather than a copy:
+`feed-ingest/src/lib/resonance.test.ts` (20) and
+`feed-ingest/src/tasks/engagement-baseline-refresh.test.ts` (7). Both carry a
+mutation log in-file: 16 of 18 mutations are detected, and the two survivors
+are the provable redundancies recorded under *Clause redundancy* below.
+
 - **Shrinkage:** n=0 author scores against pure ambient; n=20 author is
-  ≥87% own-median (k=3).
+  ≥87% own-median (k=3). ✅ — with a **correction**: the ≥87% figure holds only
+  when ambient p50 > 0. The fraction is (20M + 3p)/(23M) =
+  0.8696 + 0.1304·(p/M), i.e. exactly **86.96%** at p50 = 0, crossing 87% once
+  p/M > 0.0031. The mechanism is as designed; the round number was never a
+  floor. Tested as the algebra.
 - **Veto:** E=3 vs. baseline 0.4 never exceeds band 0 when ambient p50 > 3.
+  ✅ — but the drafted numbers are **not reachable in production** and the
+  shipped test uses reachable ones (n=20, p50=25, E=24). See *Clause
+  redundancy*: with n capped at 20, the band-1 veto binds only once ambient
+  p50 ≥ 22, and the band-2 veto never binds at all.
 - **Lag (structural):** no post <48h old appears in any baseline window; a
   post's own E therefore never contaminates the baseline it is scored
-  against while young.
+  against while young. ✅ — with a paired control (the same viral post counted
+  once aged past the threshold), so the pass isn't just median stability.
 - **Fold idempotency (regression):** running `engagement-baseline-refresh`
-  twice consecutively is a no-op on `median_e` and `n`.
+  twice consecutively is a no-op on `median_e` and `n`. ✅ — two full runs over
+  the whole dev corpus (606 baseline rows) compared row-for-row, plus a
+  direct test of the `ON CONFLICT DO UPDATE` path against a planted stale row
+  (the fold-vs-replace distinction the decision rests on).
 - **Absence:** rss/email and dark-flagged nostr rows have NULL
   resonance/band/pctl; card renders no glyph (not band-0 styling); NULL rows
-  take proof_term = 0 in D6, ranking on recency.
+  take proof_term = 0 in D6, ranking on recency. ✅ (first two clauses; the D6
+  half is step 5's own test).
 - **D2a parity:** a native article's E equals
   5·up + 5·(read_events ≠ charged_back) + 3·replies; charged-back reads and
-  down-votes contribute 0.
+  down-votes contribute 0. ✅ — one assertion recovering E from the score pins
+  all three weights and both exclusions.
 - **Monotonic writes:** partial relay reads never lower a stored Nostr E
-  (inherits the existing monotonic-count guarantee).
+  (inherits the existing monotonic-count guarantee). ⬜ **Not covered** — the
+  guarantee belongs to the engagement cron's count writer, not to either
+  module tested here. Left open deliberately.
 - **α isolation:** changing `feed_alpha_explore` alters explore ordering
-  only; stored resonance/band/pctl unchanged.
+  only; stored resonance/band/pctl unchanged. ✅ (step 5,
+  `gateway/tests/feed-rank-blend.test.ts`); the "stored columns unchanged"
+  half is structural — the blend is read-time and writes nothing.
 - **Unit commensurability:** with the D6 flag on, native and external items
   interleave under one expression; no path consumes `fi.score` for external
-  items.
+  items. ✅ (step 5).
+
+### Clause redundancy (found by mutation, 2026-07-20)
+
+Two clauses in `resonance.ts` cannot be distinguished by any input. Both are
+**retained** — they cost nothing and document intent — but they are recorded
+here so a future reader doesn't mistake a surviving mutation for a test gap,
+and because the first one bounds a claim D4 makes about the veto.
+
+1. **The band-2 arm's `AND r.e >= r.p50_e` is unreachable.** `baseline ≥
+   k·p50/(n+k)`, and `engagement-baseline-refresh` writes `n = COUNT(*)` over
+   the last `BASELINE_LAST_N = 20` posts, so n ≤ 20 and baseline ≥ 3·p50/23.
+   `resonance ≥ 4` then forces `1+E ≥ 16(1 + 3·p50/23) = 16 + 2.087·p50`,
+   while the veto binds only when `1+E < 1+p50`. Together these require
+   `p50 < −13.8` — impossible. **Anything scoring band-2 resonance has already
+   cleared ambient p50 arithmetically.** The band-1 arm *is* reachable, but
+   only above ambient p50 ≥ 22. So D4's "the ambient clause is a veto on every
+   band above 0" is true as written but does real work on band 1 only; if the
+   veto is meant to bite harder, the lever is k or the gates, not the clause.
+2. **`PCTL_EXPR`'s `WHEN r.p50_e <= 0` branch** computes exactly what the
+   general path computes at p50 = 0. Its stated purpose — avoiding a
+   divide-by-zero in the `0.5 * e / p50` segment — is already met by that
+   segment's `r.e < r.p50_e` guard, unreachable when p50 = 0 and e > 0 (e ≤ 0
+   having returned 0 in the first branch). Both remaining segments reduce to
+   the same expressions.
 
 ## Step-3 measurement (2026-07-20, dev corpus)
 

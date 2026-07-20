@@ -162,13 +162,12 @@ function scoreTail(
  * carries no author id). External rows have no note/article axis, so they key
  * on post_type 'all'.
  */
-export async function updateExternalResonance(
-  externalItemIds: string[],
-  params: ResonanceParams,
-): Promise<number> {
-  if (externalItemIds.length === 0) return 0;
-  const result = await pool.query(
-    `
+/**
+ * Exported so the test battery drives the cron's OWN SQL rather than a copy
+ * that can drift out from under it (the publication-split lesson). Params:
+ * $1 external_item_id[], $2 w_like, $3 w_reply, $4 w_repost, $5 k, $6..$8 bands.
+ */
+export const EXTERNAL_RESONANCE_SQL = `
     WITH e AS (
       SELECT fi.id AS feed_item_id,
              fi.external_author_id::text AS author_ref,
@@ -182,8 +181,14 @@ export async function updateExternalResonance(
         AND fi.deleted_at IS NULL
     ),
     ${scoreTail("$5::numeric", "$6::numeric", "$7::numeric", "$8::numeric")}
-    `,
-    [
+    `;
+
+export async function updateExternalResonance(
+  externalItemIds: string[],
+  params: ResonanceParams,
+): Promise<number> {
+  if (externalItemIds.length === 0) return 0;
+  const result = await pool.query(EXTERNAL_RESONANCE_SQL, [
       externalItemIds,
       params.like,
       params.reply,
@@ -217,11 +222,11 @@ export async function updateExternalResonance(
  * money is D8's axis. Native reposts aren't recorded for native targets yet, so
  * that seeded weight has no term.
  */
-export async function updateNativeResonance(
-  params: ResonanceParams,
-): Promise<number> {
-  const result = await pool.query(
-    `
+/**
+ * Exported for the same reason as EXTERNAL_RESONANCE_SQL. Params:
+ * $1 window days, $2 w_native_up, $3 w_native_gate, $4 w_reply, $5 k, $6..$8 bands.
+ */
+export const NATIVE_RESONANCE_SQL = `
     WITH p AS (
       SELECT fi.id AS feed_item_id,
              fi.author_id::text AS author_ref,
@@ -253,8 +258,12 @@ export async function updateNativeResonance(
       ) rp ON true
     ),
     ${scoreTail("$5::numeric", "$6::numeric", "$7::numeric", "$8::numeric")}
-    `,
-    [
+    `;
+
+export async function updateNativeResonance(
+  params: ResonanceParams,
+): Promise<number> {
+  const result = await pool.query(NATIVE_RESONANCE_SQL, [
       NATIVE_WINDOW_DAYS,
       params.nativeUp,
       params.nativeGate,
