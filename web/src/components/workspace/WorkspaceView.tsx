@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import nextDynamic from "next/dynamic";
 import { useAuth } from "../../stores/auth";
@@ -10,6 +17,7 @@ import {
   type VesselRect,
 } from "../../lib/workspace/collision";
 import { snap } from "../../lib/workspace/grid";
+import { computeExtent, EDGE_PAD } from "../../lib/workspace/canvas";
 import {
   workspaceFeeds as workspaceFeedsApi,
   follows as followsApi,
@@ -148,6 +156,10 @@ interface PendingCeremony {
 // without a stored position, we compute a default grid slot and write back.
 
 const MIN_H = 200;
+
+// Vessel.tsx's intrinsic default width, mirrored here so the canvas extent can
+// be derived at render time from layout state alone (no DOM measurement).
+const VESSEL_DEFAULT_W = 300;
 
 const DEFAULT_GRID = {
   paddingX: 40,
@@ -320,6 +332,64 @@ export function WorkspaceView() {
   const removeVesselLayout = useWorkspace((s) => s.removeVessel);
   const batchUpdatePositions = useWorkspace((s) => s.batchUpdatePositions);
 
+  // ── Infinite horizontal floor ────────────────────────────────────────────
+  // The floor pans sideways over a canvas whose extent is DERIVED from the
+  // vessels on it (lib/workspace/canvas.ts). Vertical extent is the viewport,
+  // always — the floor can be made wider, never taller.
+  const [viewport, setViewport] = useState({ w: 1280, h: 800 });
+  useEffect(() => {
+    function measure() {
+      setViewport({ w: window.innerWidth, h: window.innerHeight });
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  // Slack beyond the outermost vessel, on each side. A full viewport rather
+  // than a hairsbreadth so there is always somewhere to drag INTO: the origin
+  // then only ever moves at a gesture boundary, where a single scrollLeft
+  // compensation is invisible, instead of every frame, where it jitters.
+  // Contract-to-fit still holds — the extent is recomputed from scratch on
+  // every commit, so space you stop using goes away.
+  const canvasSlack = Math.max(EDGE_PAD, viewport.w);
+
+  const extent = useMemo(
+    () =>
+      computeExtent(
+        vessels
+          .filter((v) => !v.feed.hidden)
+          .map((v) => {
+            const l = positions[v.feed.id];
+            return { x: l?.x ?? 0, w: l?.w ?? VESSEL_DEFAULT_W };
+          }),
+        viewport.w,
+        canvasSlack,
+      ),
+    [vessels, positions, viewport.w, canvasSlack],
+  );
+
+  // Keep the floor visually still when the origin moves. Canvas-x of every
+  // vessel is `store.x - originX`, so an origin that shifts left by d slides
+  // all content right by d; scrolling right by the same d cancels it exactly.
+  const prevOriginRef = useRef(extent.originX);
+  const didInitScrollRef = useRef(false);
+  useLayoutEffect(() => {
+    const floor = floorRef.current;
+    if (!floor || isMobile) return;
+    if (!didInitScrollRef.current) {
+      // First paint: open on the content, not on the empty left slack.
+      if (vessels.length === 0) return;
+      floor.scrollLeft = Math.max(0, canvasSlack - EDGE_PAD);
+      prevOriginRef.current = extent.originX;
+      didInitScrollRef.current = true;
+      return;
+    }
+    const delta = prevOriginRef.current - extent.originX;
+    if (delta !== 0) floor.scrollLeft += delta;
+    prevOriginRef.current = extent.originX;
+  }, [extent.originX, canvasSlack, isMobile, vessels.length]);
+
   const dragActiveRef = useRef<string | null>(null);
 
   function handleVesselDragStart(feedId: string) {
@@ -365,10 +435,9 @@ export function WorkspaceView() {
       h: moverEl.offsetHeight,
     };
 
-    const updates = resolveCollisions(mover, others, {
-      w: floor.clientWidth,
-      h: floor.clientHeight,
-    });
+    // Vertical bound only — a pushed vessel may land at any x (the canvas
+    // grows to cover it); bounding x would pin it to the viewport edge.
+    const updates = resolveCollisions(mover, others, { h: floor.clientHeight });
 
     if (updates.size > 0) {
       batchUpdatePositions(Object.fromEntries(updates));
@@ -1303,13 +1372,26 @@ export function WorkspaceView() {
           }}
         />
       )}
-      {bootstrap === "ready" &&
-        !isMobile &&
-        vessels
-          .filter((v) => !v.feed.hidden)
-          .map((v) => {
-            const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
-            return (
+      {/* The canvas: an explicitly-sized plane inside the scrolling floor.
+          Width is derived from the vessels on it, height is always the
+          viewport. Vessels are absolutely positioned in CANVAS coordinates
+          (store x minus the extent origin); every other consumer of position —
+          collision, merge hit-testing, persistence — stays in store space, and
+          the conversion happens only at this seam. */}
+      {bootstrap === "ready" && !isMobile && (
+        <div
+          data-workspace-canvas
+          style={{
+            position: "relative",
+            width: extent.width,
+            height: "100%",
+          }}
+        >
+          {vessels
+            .filter((v) => !v.feed.hidden)
+            .map((v) => {
+              const layout = positions[v.feed.id] ?? { x: 0, y: 0 };
+              return (
               <Vessel
                 key={v.feed.id}
                 feedId={v.feed.id}
@@ -1331,19 +1413,29 @@ export function WorkspaceView() {
                     )
                     .catch(() => {});
                 }}
-                position={{ x: layout.x, y: layout.y }}
+                // store → canvas
+                position={{ x: layout.x - extent.originX, y: layout.y }}
                 size={{ w: layout.w, h: layout.h }}
                 brightness={layout.brightness}
                 orientation={layout.orientation}
                 onHide={() => void handleSetFeedHidden(v.feed.id, true)}
+                // canvas → store
                 onPositionCommit={(next) =>
-                  handleVesselDragEnd(v.feed.id, next)
+                  handleVesselDragEnd(v.feed.id, {
+                    x: next.x + extent.originX,
+                    y: next.y,
+                  })
                 }
                 onSizeCommit={(next) => setVesselSize(v.feed.id, next)}
                 onDragStart={() => handleVesselDragStart(v.feed.id)}
-                onDragFrame={(pos) => handleVesselDragFrame(v.feed.id, pos)}
+                onDragFrame={(pos) =>
+                  handleVesselDragFrame(v.feed.id, {
+                    x: pos.x + extent.originX,
+                    y: pos.y,
+                  })
+                }
                 hidden={ceremony?.feedId === v.feed.id}
-                dragConstraints={floorRef}
+                floorRef={floorRef}
                 onCardDrop={(raw) => handleCardDrop(v.feed.id, raw)}
                 onRefresh={() => loadVesselItems(v.feed)}
                 onLoadMore={loadMoreVesselItems}
@@ -1360,8 +1452,10 @@ export function WorkspaceView() {
               >
                 {renderFeedContents(v)}
               </Vessel>
-            );
-          })}
+              );
+            })}
+        </div>
+      )}
       <ForallMenu
         onAction={handleForallAction}
         hiddenFeeds={hiddenFeeds}
@@ -1648,12 +1742,20 @@ function Floor({
   return (
     <div
       ref={ref}
+      className="scroll-silent"
       style={{
         background: FLOOR,
         minHeight: "100vh",
         height: "100vh",
         position: "relative",
-        overflow: "hidden",
+        // The floor is the scroll VIEWPORT onto an infinitely-wide canvas:
+        // pans sideways, never taller than the screen. Deliberately NOT a CSS
+        // transform — a transform here would establish a containing block and
+        // capture the position:fixed ∀ chrome (and the mobile bar), dragging
+        // them around with the canvas instead of leaving them pinned.
+        overflowX: "auto",
+        overflowY: "hidden",
+        overscrollBehaviorX: "contain",
       }}
     >
       {children}

@@ -23,6 +23,44 @@ starts.
 
 ## Progress
 
+- **2026-07-20** — **The workspace floor extends infinitely sideways; the snap
+  lattice halved to 10px.** The floor was a fixed `100vh` box with
+  `overflow: hidden`, and seven places encoded "the floor is the viewport" (the
+  drag clamp, the resize ceiling, framer's `dragConstraints`, the collision
+  bounds, the default grid pack, the merge hit-test). It is now the scroll
+  viewport onto a canvas whose horizontal extent is **derived** from the vessels
+  on it (`web/src/lib/workspace/canvas.ts`) — drag a feed past the edge and the
+  space stretches, drag it back and the space contracts; nothing new is
+  persisted. Vertical extent stays the viewport, so a feed can never hide below
+  the fold. Store coordinates became signed with no origin, so the canvas
+  carries an `originX` (native scroll has no negative offset) and the store↔canvas
+  conversion happens at exactly one seam — the `Vessel` call site — with
+  collision, merge hit-testing and persistence all staying in store space.
+  Clamps are axis-split (`resolveCollisions` now takes `{ h }` only); framer's
+  `dragConstraints` is gone. **Two decisions worth re-reading before tuning
+  this:** (1) slack beyond the outermost vessel is a *full viewport*, not the
+  40px `EDGE_PAD` a literal reading of contract-to-fit implies — that confines
+  origin shifts to gesture boundaries, where a single `scrollLeft` compensation
+  is invisible, rather than every frame, where it jitters and loses a fight with
+  framer for ownership of the motion value; the visible cost is ~one screen of
+  scrollable emptiness each side, as in Figma/Miro. (2) The floor pans by
+  **native scroll, never a transform** — a transform establishes a containing
+  block and captures the `position: fixed` ∀ chrome and mobile bar, which is
+  precisely what must stay pinned bottom-right and superimposed over the feeds.
+  Scrollbar suppressed via a new `.scroll-silent` (a native one draws a banned
+  single-pixel rule). Separately, `GRID` was halved 20 → 10 for finer placement:
+  it is a **shared** lattice, so Glasshouse pane drag/resize moved with it. That
+  gives up the old 20 = LCM(10, 4) property that kept the floor in phase with
+  the 4px design rhythm; 10 is still even, so vessels and panes keep landing on
+  whole pixels and the sub-pixel-blur rationale survives — 8px is the nearest
+  value that would halve the grid *and* keep the 4px phase, if the drift ever
+  shows. **Not verified running** (the dev container swap is blocked on the
+  stale-AppArmor issue), and **no edge-pan**: a single drag moves a feed only as
+  far as the pointer reaches within the viewport, so a long move is
+  drag-release-scroll-drag. Both are the obvious follow-ups. Docs: CLAUDE.md
+  › *Desktop workspace floor*, `WORKSPACE-DESIGN-SPEC.md` › *The workspace* +
+  *Position*.
+
 - **2026-07-20** — **Resonance test battery built (ADR steps 2–3), and two
   clauses proved redundant by mutation.** The ADR specified a nine-item test
   battery; steps 4 and 5 were covered when they shipped, but the **scoring

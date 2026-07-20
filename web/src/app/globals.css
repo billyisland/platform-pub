@@ -895,3 +895,18 @@ html.ah-session main {
 .animate-push-in {
   animation: ah-push-in-right 200ms ease-out;
 }
+
+/* ── Scroll without a visible scrollbar ─────────────────────────────────────
+   The workspace floor pans horizontally across an infinitely-wide canvas. A
+   native scrollbar there would draw a thin rule across the bottom of the
+   viewport — exactly the single-pixel treatment the design system bans — so the
+   floor scrolls silently and the canvas edge is read from the content itself. */
+
+.scroll-silent {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+
+.scroll-silent::-webkit-scrollbar {
+  display: none;
+}

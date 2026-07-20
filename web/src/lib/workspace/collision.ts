@@ -11,7 +11,11 @@ export interface VesselRect {
 export function resolveCollisions(
   mover: VesselRect,
   others: VesselRect[],
-  floorBounds?: { w: number; h: number },
+  // Only the vertical bound exists: the floor extends infinitely to the sides,
+  // so a pushed vessel may be displaced to any x (including negative) and the
+  // canvas extent grows to cover it. Bounding x here would pin vessels against
+  // the viewport edge forever.
+  floorBounds?: { h: number },
 ): Map<string, { x: number; y: number }> {
   const updates = new Map<string, { x: number; y: number }>();
   const live = new Map<string, VesselRect>();
@@ -49,7 +53,6 @@ export function resolveCollisions(
       else ny = pusher.y - other.h;
 
       if (floorBounds) {
-        nx = Math.max(0, Math.min(floorBounds.w - other.w, nx));
         ny = Math.max(0, Math.min(floorBounds.h - other.h, ny));
       }
 

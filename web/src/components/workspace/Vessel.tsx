@@ -82,7 +82,14 @@ interface VesselProps {
   onSizeCommit?: (size: { w: number; h: number }) => void;
   onDragStart?: () => void;
   onDragFrame?: (pos: { x: number; y: number }) => void;
-  dragConstraints?: RefObject<HTMLElement>;
+  /**
+   * The scroll viewport the floor lives in. Used for MEASUREMENT only (the
+   * vertical clamp + resize ceiling read its clientHeight) — never as a
+   * framer `dragConstraints` box, since the floor extends past it sideways.
+   * `position` and the coordinates handed back are CANVAS space; the host owns
+   * the canvas↔store conversion (web/src/lib/workspace/canvas.ts).
+   */
+  floorRef?: RefObject<HTMLElement>;
   onCardDrop?: (data: string) => void;
   onRefresh?: () => Promise<void>;
   /** Infinite scroll: called when the scroll body nears its end so the host can
@@ -112,7 +119,7 @@ export function Vessel({
   onSizeCommit,
   onDragStart: onDragStartProp,
   onDragFrame,
-  dragConstraints,
+  floorRef,
   onCardDrop,
   onRefresh,
   onLoadMore,
@@ -235,22 +242,18 @@ export function Vessel({
     dragControls.start(event);
   }
 
+  // Vertical clamp only. The floor extends infinitely to the sides, so x is
+  // free — dragging past the current edge is what stretches the canvas — while
+  // y stays boxed by the viewport, which can never be made taller.
   function clampPos(x: number, y: number) {
-    const floor = dragConstraints?.current;
+    const floor = floorRef?.current;
     const vessel = vesselRef.current;
     if (!floor || !vessel) return { x, y };
-    const maxX = Math.max(
-      0,
-      Math.floor((floor.clientWidth - vessel.offsetWidth) / GRID) * GRID,
-    );
     const maxY = Math.max(
       0,
       Math.floor((floor.clientHeight - vessel.offsetHeight) / GRID) * GRID,
     );
-    return {
-      x: Math.max(0, Math.min(x, maxX)),
-      y: Math.max(0, Math.min(y, maxY)),
-    };
+    return { x, y: Math.max(0, Math.min(y, maxY)) };
   }
 
   // Effective dimensions: liveSize during a resize gesture wins; otherwise
@@ -268,19 +271,15 @@ export function Vessel({
       "[data-vessel-chassis]",
     ) as HTMLElement | null;
     const startH = effH ?? chassisEl?.getBoundingClientRect().height ?? MIN_H;
-    let maxW = MAX_W;
+    // Width is bounded only by MAX_W — a vessel widened past the current right
+    // edge stretches the canvas, same as dragging it there. Height still stops
+    // at the viewport floor.
+    const maxW = MAX_W;
     let maxH = MAX_H;
-    const floor = dragConstraints?.current;
+    const floor = floorRef?.current;
     const vessel = vesselRef.current;
     if (floor && vessel) {
       const overhead = vessel.offsetHeight - startH;
-      maxW = Math.max(
-        MIN_W,
-        Math.min(
-          MAX_W,
-          Math.floor((floor.clientWidth - mx.get()) / GRID) * GRID,
-        ),
-      );
       maxH = Math.max(
         MIN_H,
         Math.min(
@@ -374,7 +373,9 @@ export function Vessel({
       drag
       dragListener={false}
       dragControls={dragControls}
-      dragConstraints={dragConstraints}
+      // No dragConstraints: framer would box the vessel into the scroll
+      // viewport, which is exactly the limit the infinite floor removes.
+      // clampPos owns the one axis that is still bounded.
       dragMomentum={false}
       dragElastic={0}
       onPointerDown={startDrag}
