@@ -94,6 +94,8 @@ Seven feeds fill the workspace. Pressure is visible and productive. User has res
 
 No overlap in any scenario. All vessels tile with floor visible between them.
 
+**Refined 2026-07-20** — the rule governs the *resting* state, not the drag gesture: a vessel held under the pointer may ride over another (that is how merge-by-drag is aimed), but the workspace never comes to rest overlapping. Collision falls back to a horizontal push where a vertical one would clamp, so resolution always succeeds. See WORKSPACE-DESIGN-SPEC.md › *Addendum — No-overlap governs the resting state*.
+
 ### Horizontal strip: Works
 
 The ⊔ rotated 90° reads correctly. Compact titles run left-to-right as a scan line. Name label repositions alongside the opening.

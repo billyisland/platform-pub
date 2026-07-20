@@ -232,3 +232,33 @@ The phase one platform is not a placeholder. It is a complete reading-and-writin
 ---
 
 *This spec is preliminary. It describes the workspace the conversation has arrived at, with defaults named where defaults need naming. Decisions below this point should be checked against both this document and PRINCIPLES.md. Revisions to either should carry a note on what changed and why.*
+
+---
+
+## Addendum — No-overlap governs the resting state; merge is a drop target (2026-07-20)
+
+**What changed and why.** The no-overlap rule above and merge-by-drag (MOBILE-LAYOUT-ADR §II) read as contradictory: merge is triggered by dragging one vessel onto another, and the rule forbids vessels being on top of each other. The implementation resolved the contradiction by accident and in the worst direction — collision resolution pushed every overlapping vessel away, so the merge hit-test could only ever fire when collision *failed*, which it did via a clamping bug on the vertical axis. Merge was reachable only through a defect. This addendum states the reading of the rule that makes both behaviours coherent, and names the axis rule that lets collision always succeed.
+
+**The rule governs the resting state, not the gesture.** Feeds do not overlap *at rest*. The spec's own framing is about arrangement — *"persistent position … the arrangement the user produces is the arrangement the workspace remembers"* — and a vessel held under the pointer mid-drag is not an arrangement. Overlap on release is forbidden. Overlap during a drag is simply what dragging looks like, and suppressing it costs the user the ability to aim.
+
+The rationale is unchanged and still governs: occlusion without affording retrieval. It applies with full force to the resting state, because that is the state a user returns to. It does not apply to a transient the user is actively holding and can see.
+
+**Merge asks a different question from collision.** These are two hit-tests, not one:
+
+- **Collision is a rect question** — do these two vessels' rectangles intersect? If so, push. It maintains the resting-state invariant.
+- **Merge is a pointer question** — is the user's cursor inside that vessel? If so, arm it. It reads intent.
+
+Conflating them is what produced the fight. Split, they compose:
+
+1. The pointer enters vessel B while A is being dragged → B arms: it takes a visible target state, and collision is suspended **for B alone**. A rides over B, visibly, which is the affordance that makes the gesture legible.
+2. The pointer leaves B → B disarms; collision resumes and pushes B clear as normal.
+3. Release with B armed → the merge confirmation.
+4. **The confirmation is declined, or the merge fails → collision runs immediately for A.** This is what keeps the invariant honest: the workspace never comes to rest overlapping, including on the cancel path.
+
+The pointer, not the dragged vessel's centre, is the correct probe. A vessel is grabbed by its numeral in the bottom-left corner as readily as anywhere else, so its centre routinely sits over something the user never aimed at.
+
+**Horizontal is the escape valve.** The floor's asymmetry — bounded vertically, unbounded laterally — decides what happens when a push cannot be satisfied. Collision prefers the axis of minimum displacement, as before. But where that axis is vertical and the displacement would be clamped by the viewport, it falls back to a horizontal push instead of accepting the overlap. Sideways there is always room; that is what an infinite floor is *for*.
+
+This is what makes *"no overlap in any scenario"* (WIREFRAME-DECISIONS-CONSOLIDATED, Step 3) literally achievable rather than aspirational. Collision must always resolve, and only the unbounded axis can guarantee it. A resolver that can terminate with vessels still intersecting is not enforcing this rule, whatever its intent.
+
+**Consequences for anything that moves or sizes a vessel.** The invariant is a property of the resting state, so *every* gesture that produces one owes it a resolution pass — drag and resize alike. A stretch that ends with a vessel over its neighbour is the same violation as a drop that does, and is worse in practice: there is no subsequent gesture that repairs it.
