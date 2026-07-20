@@ -4,6 +4,10 @@ import { safeFetch } from "@platform-pub/shared/lib/http-client.js";
 import logger from "@platform-pub/shared/lib/logger.js";
 import { getPlatformConfig } from "../lib/platform-config.js";
 import { fetchNostrEngagementCounts } from "../lib/nostr-relay.js";
+import {
+  loadResonanceParams,
+  updateExternalResonance,
+} from "../lib/resonance.js";
 
 // =============================================================================
 // external_engagement_refresh — periodic snapshot of engagement counts
@@ -213,6 +217,10 @@ export const externalEngagementRefresh: Task = async (_payload, _helpers) => {
 // ---------------------------------------------------------------------------
 // Batched count write — one UPDATE ... FROM (VALUES ...) for the whole set.
 // Callers pre-filter to only the rows whose counts actually changed (#8 / B3).
+//
+// Resonance (SOCIAL-PROOF-RESONANCE-ADR D5) rides the same set: the rows whose
+// counts moved are exactly the rows whose band can have moved, so the derived
+// feed_items columns are recomputed here, immediately after the counts land.
 // ---------------------------------------------------------------------------
 
 async function batchUpdateCounts(rows: CountUpdate[]): Promise<void> {
@@ -233,6 +241,25 @@ async function batchUpdateCounts(rows: CountUpdate[]): Promise<void> {
      WHERE ei.id = v.id`,
     params,
   );
+  await refreshResonanceFor(rows.map((r) => r.id));
+}
+
+/**
+ * Recompute the derived resonance columns for the given external_items ids.
+ * Never fatal: a resonance failure must not lose an engagement-count refresh
+ * (the counts are the durable signal; bands rebuild on the next pass).
+ */
+async function refreshResonanceFor(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  try {
+    const params = await loadResonanceParams();
+    await updateExternalResonance(ids, params);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), count: ids.length },
+      "resonance recompute failed during engagement refresh",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +425,8 @@ async function refreshMastodonBatch(items: ExternalItemRow[]): Promise<number> {
       [u.like, u.reply, u.repost, u.id, u.media],
     );
   }
+  // The media rows bypass batchUpdateCounts, so they need their own recompute.
+  await refreshResonanceFor(withMedia.map((u) => u.id));
 
   return pending.length;
 }

@@ -7288,4 +7288,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('156_dial_a_tribute_simplification.sql'),
     ('157_draft_dek_and_comments.sql'),
     ('158_resonance_baselines.sql'),
-    ('159_account_status_deleted.sql');
+    ('159_account_status_deleted.sql'),
+    ('160_resonance_band_thresholds.sql');

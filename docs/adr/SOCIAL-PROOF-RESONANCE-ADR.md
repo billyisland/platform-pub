@@ -198,9 +198,14 @@ pure ratios would let 3 replies against a shrunk baseline of 0.4 read as
 | Band | Requires |
 |---|---|
 | 0 quiet | default |
-| 1 noticed | resonance ≥ 1 **and** E ≥ ambient p50 |
-| 2 resonant | resonance ≥ 2 **and** E ≥ ambient p50 |
-| 3 surging | resonance ≥ 3 **and** E ≥ ambient p90 |
+| 1 noticed | resonance ≥ `resonance_band1_min` **and** E ≥ ambient p50 |
+| 2 resonant | resonance ≥ `resonance_band2_min` **and** E ≥ ambient p50 |
+| 3 surging | resonance ≥ `resonance_band3_min` **and** E ≥ ambient p90 |
+
+**Gates are `platform_config`, not constants** (migration 160, from the step-3
+measurement below): tuning a band must never need a deploy, for the same reason
+the weights don't. Shipped values 2.5 / 4 / 6 — the draft's 1 / 2 / 3 ran 2–3×
+hot against this ADR's own targets.
 
 Every band has a two-clause English gloss for the tooltip/Explain caption:
 "well above this writer's usual, and non-trivial for Bluesky."
@@ -327,9 +332,10 @@ leaderboards; no absolute "score" is ever displayed.
 2. `engagement-baseline-refresh` task + cron registration
    (`45 4 * * *`) — drafted. Ships immediately; read-only with respect to
    feed behaviour, and its first run is the bootstrap.
-3. Resonance computation in the two refresh crons (D5). Ship dark; verify
-   band distributions per protocol against expectation (roughly: band ≥ 1 on
-   ~10–15 % of items, band 3 on ~1 %). Tune thresholds.
+3. Resonance computation in the two refresh crons (D5) — **shipped
+   2026-07-20**, `feed-ingest/src/lib/resonance.ts` + migration 160. Dark by
+   construction: nothing reads the three columns until steps 4/5. See
+   *Step-3 measurement* below.
 4. D7 glyph + tooltip + Explain caption + `Post`/mapper/`FEED_SELECT`
    plumbing.
 5. D6 read-time blend in `items.ts` behind a feature flag; A/B the explore
@@ -361,6 +367,37 @@ leaderboards; no absolute "score" is ever displayed.
   interleave under one expression; no path consumes `fi.score` for external
   items.
 
+## Step-3 measurement (2026-07-20, dev corpus)
+
+26,719 real Bluesky + Mastodon items scored; 8 native (dev has almost no native
+engagement). Targets from Sequencing step 3: band ≥ 1 on ~10–15 %, band 3 on ~1 %.
+
+| | band ≥ 1 (draft gates) | band 3 (draft) | band ≥ 1 (shipped 2.5/4/6) | band 3 (shipped) |
+|---|---|---|---|---|
+| atproto | 35.1 % | 9.1 % | 15.5 % | 3.2 % |
+| activitypub | 30.1 % | 6.0 % | 11.7 % | 1.3 % |
+
+Three findings:
+
+1. **The gates, not the veto, were mis-set.** 66 % of atproto items clear the
+   ambient p50 (corpus median E is only 4), so the veto rarely binds; the
+   resonance clause does all the work, and observed resonance p85 is already
+   ~2.1–2.6. A "≥ 1" gate sat near the 65th percentile. Retuned in migration 160.
+2. **Band-3 incidence is protocol-dependent and one global gate cannot land
+   both.** At 6.0, activitypub is on target (1.3 %) while atproto is 3×
+   (3.2 %); at 8.0 atproto reaches 1.5 % but activitypub band 3 nearly goes
+   extinct (0.18 %). Atproto's fatter upper tail traces to a handful of
+   very-high-baseline accounts in dev's source mix, so per-protocol gates would
+   be over-fitting to dev. Kept global at 6.0; re-measure on prod (new open
+   question below).
+3. **Absence semantics hold.** All 7,392 `nostr_external` (dark flag) and 230
+   `rss` rows scored NULL, as did native items outside the 7-day window;
+   `ambient_pctl` was within [0,1] on every scored row.
+
+Not retuned, for want of evidence: the native up-vote weight of 5, which D2
+flagged for revisit here. Dev has 8 scored native items and a native-note
+ambient of p50 = p90 = 0 — no signal. Deferred to prod volume.
+
 ## Open questions
 
 - Zap ingestion (count vs. amount; amount belongs to the future backing axis).
@@ -369,6 +406,17 @@ leaderboards; no absolute "score" is ever displayed.
 - Age-expectation curves to un-lag "surging" for young posts (v2 candidate;
   requires per-protocol engagement-accrual profiles — measure from step 3's
   dark data before deciding).
+- **Whether band gates need per-protocol values** (step-3 finding 2): one
+  global band-3 gate lands ~1 % on activitypub or ~1.5 % on atproto, not both.
+  Deliberately deferred rather than fixed — dev's atproto tail may be an
+  artifact of its narrow source mix. Re-measure on prod; if the gap persists,
+  the fix is per-protocol keys, which is a modest dent in the "resonance is
+  already protocol-normalised" claim (the author baseline normalises the
+  centre; the spread of author-relative outliers can still differ by network).
+- A degenerate ambient (p50 = p90 = 0, e.g. native notes in dev) makes the veto
+  vacuous — every band then rests on the resonance gate alone. Correct in
+  principle (on a silent corpus any response *is* exceptional) and mitigated by
+  the raised gates, but worth re-checking once native volume exists.
 - Ambient segmentation finer than protocol (× post_type for native) — e.g.
   follower-count strata — deferred until step 3 distributions say it is
   needed.

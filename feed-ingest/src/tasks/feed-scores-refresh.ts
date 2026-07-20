@@ -1,6 +1,7 @@
 import type { Task } from 'graphile-worker'
 import { pool } from '@platform-pub/shared/db/client.js'
 import logger from '@platform-pub/shared/lib/logger.js'
+import { loadResonanceParams, updateNativeResonance } from '../lib/resonance.js'
 
 // =============================================================================
 // feed_scores_refresh — HN-style gravity scoring for feed_items
@@ -122,5 +123,21 @@ export const feedScoresRefresh: Task = async () => {
        )`
   )
 
-  logger.info({ updated: result.rowCount }, 'Feed scores refreshed')
+  // Native resonance (SOCIAL-PROOF-RESONANCE-ADR D5). Distinct from the score
+  // above in every respect — lifetime not 48h, D2a source tables not the
+  // reply-only feed_engagement mirror, resonance_* weights not feed_weight_* —
+  // so it is a separate pass that happens to share this cron's cadence, not an
+  // extension of the gravity query. Non-fatal: hotness must still refresh if
+  // the resonance pass trips.
+  let resonanceRows = 0
+  try {
+    resonanceRows = await updateNativeResonance(await loadResonanceParams())
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'native resonance recompute failed'
+    )
+  }
+
+  logger.info({ updated: result.rowCount, resonanceRows }, 'Feed scores refreshed')
 }

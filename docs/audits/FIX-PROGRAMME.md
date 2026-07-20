@@ -23,6 +23,40 @@ starts.
 
 ## Progress
 
+- **2026-07-20** — **Resonance step 3: per-item scoring in the refresh crons,
+  and the tuning verdict it was built to produce.** (SOCIAL-PROOF-RESONANCE-ADR
+  Sequencing step 3; CONSOLIDATED-TODO §9.12.)
+  - New `feed-ingest/src/lib/resonance.ts` writes the three migration-158
+    columns (`resonance` / `resonance_band` / `ambient_pctl`) from stored counts
+    + the daily baselines. `external-engagement-refresh` recomputes exactly the
+    rows whose counts moved — folded into `batchUpdateCounts`, plus a separate
+    call for the Mastodon media rows that bypass it; `feed-scores-refresh` runs
+    the D2a native union (votes / read_events / feed_engagement) over a 7-day
+    window as a pass distinct from the gravity query it shares a cron with.
+    Both recomputes are non-fatal: a resonance failure must never cost an
+    engagement-count refresh or a hotness refresh.
+  - **Dark by construction, not by flag** — nothing reads the three columns
+    until steps 4 (glyph) and 5 (ranking), so there is no behaviour to gate.
+  - **The measurement was the point, and it failed the ADR's own targets.**
+    Over 26,719 real Bluesky + Mastodon items the draft gates (resonance
+    ≥ 1/2/3) gave band ≥ 1 on 30–35 % against a 10–15 % target, and band 3 on
+    6–9 % against ~1 %. Diagnosis: the ambient veto rarely binds (66 % of
+    atproto items clear a corpus median E of 4) — the resonance gate does all
+    the work, and observed resonance p85 was already ~2.1–2.6, so "≥ 1" sat
+    near the 65th percentile.
+  - **Migration 160 moves the gates out of the code into `platform_config`**
+    (2.5 / 4 / 6 → 11.7 %/1.3 % activitypub, 15.5 %/3.2 % atproto). They are
+    config for the same reason the weights are: tuning a band must not need a
+    deploy. Deliberately not over-fitted further — see the two carried-forward
+    open questions (per-protocol band-3 gates; the native up-vote weight, which
+    dev's 8 scored native items could not test).
+  - Absence semantics verified empirically, not assumed: all 7,392 dark-nostr
+    and 230 rss rows scored NULL, and `ambient_pctl` was inside [0,1] on every
+    scored row.
+  - Verified: drift guard 4/4; feed-ingest tsc + 209 tests; root eslint 0
+    errors; both passes executed against the dev corpus before and after the
+    retune.
+
 - **2026-07-20** — **§7 cleanup cluster: one batched pass.** Fourteen of the
   eighteen items closed; two dispositioned without code; two narrowed. Every
   fix re-verified in source first, and the three with a testable premise were
