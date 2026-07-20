@@ -23,6 +23,80 @@ starts.
 
 ## Progress
 
+- **2026-07-20** — **Resonance step 5: the D6 read-time proof blend, shipped
+  dark.** (SOCIAL-PROOF-RESONANCE-ADR Sequencing step 5 / D6;
+  CONSOLIDATED-TODO §9.12.)
+  - **The blend.** `gateway/src/lib/feed-rank.ts` (new) owns the two SQL
+    builders — `feedAlphaCte` + `proofBlendScoreSql` — spliced into the `scored`
+    CTE of `sourceFilteredItems` (`routes/feeds/items.ts`), replacing the
+    `COALESCE(fi.score, 0) * m.weight` numerator for the `scored` sampling mode
+    only. `fi.score` and `feed-scores-refresh`'s gravity write are untouched:
+    they are the flag-off fallback, so the brake needs no backfill and is
+    instantly reversible. The four blend params are appended AFTER the optional
+    cursor pair so their `$n` indices don't shift with cursor presence.
+  - **α is derived, not stored.** A feed carrying a non-muted `reach:explore`
+    source *is* the explore surface (`feed_alpha_explore`); anything else is
+    following-shaped (`feed_alpha_following`). Keeps the surface decision
+    derived from what the user composed, with no third place to drift.
+  - **Correction to D6 as drafted — `proof_term` needs a floor.** The ADR said
+    NULL-band items (rss/email, dark nostr) "take `proof_term = 0` and rank on
+    recency alone within the gravity expression". They cannot: `0/(age+2)^g` is
+    0 at *every* age, so a zero proof term collapses every silent item onto one
+    constant score and the `ORDER BY` falls through to its uuid tiebreak —
+    arbitrary order, strictly worse than the chronology D6 replaces. Added
+    `GREATEST(…, feed_proof_floor)`, seeded at 0.05 by **migration 161** as a
+    `platform_config` dial per the tuning-dial rule (its right value is only
+    knowable from a live mixed feed: it sets how far a silent-but-fresh item may
+    outrank a resonant-but-older one). ADR D6 amended in place.
+  - **Read-time clamping**, also new: `resonance` is unbounded above and
+    negative below, `ambient_pctl` is a plain `NUMERIC`. Both are clamped so one
+    bad row can't dominate a feed's ordering — and negative resonance clamps to
+    0 rather than *subtracting*, since a below-baseline post that is still top-
+    decile for its network keeps its ambient proof.
+  - **`gateway/src/lib/platform-config.ts`** (new, deliberate sibling of
+    feed-ingest's): 30s in-process cache, so the hottest read path in the
+    service doesn't add a `platform_config` SELECT per feed page × every feed in
+    a `/bootstrap` fan-out.
+  - **Not converted:** `placeholderExploreItems` (the empty-vessel fallback).
+    It selects native items only, so D6's commensurability argument doesn't
+    bite, and its cursor filters the `fi.score` *column* directly. The real
+    explore surface is a `reach:explore` source inside a composed feed, which
+    goes through `sourceFilteredItems` and does take `feed_alpha_explore`.
+    Documented at the function.
+  - **Brake:** `RESONANCE_RANKING_ENABLED`, default OFF, gating the one splice
+    point (`DEPLOYMENT.md` row + `docker-compose.yml` default). Deliberately
+    **independent** of the step-4 `RESONANCE_GLYPH_ENABLED`: ranking on
+    resonance and displaying the band are separate claims with separate
+    evidence bars, so the explore A/B can run with the glyph still dark.
+  - **Tests:** `gateway/tests/feed-rank-blend.test.ts` — 14 cases against a live
+    Postgres, all fixtures rolled back, exercising the *real* builders (the
+    dedup-integration pattern). Covers ordering by proof, ordering by age,
+    NULL-item recency ordering, the silent-below-resonant rule, all three
+    clamps, α selection incl. the muted-source case, and weight composition.
+    Then **mutation-verified**: seven implementation mutations (drop the floor,
+    swap the alphas, drop each clamp, drop the weight multiplier, ignore
+    `muted_at`) were each confirmed to fail the suite. One survived first pass —
+    the negative-clamp test only asserted `score > 0`, which the floor satisfies
+    on its own — so it was sharpened to compare against an ambient-matched item.
+    Full suite green (31 gateway test files), root lint 0 errors, `tsc` clean.
+  - **Smoke, real route + real dev feed** (`loadFeedItemsPage`, 11-source feed
+    forced to `scored`): flag off → every item scored 0, cursor `scored:0:<uuid>`
+    — i.e. that surface is ordered *by uuid* today, because `fi.score` is only
+    ever written for native items. Flag on → positive scores, page shifted to
+    items ~4 days fresher, page 2 paginated cleanly against the computed score.
+    Recorded in the ADR as the *Step-5 note*, with its consequence: the flag-off
+    state is **not** a meaningful control for the A/B on external-heavy feeds;
+    the honest comparison there is against chronological.
+  - **Side-finding, logged not fixed** (CONSOLIDATED-TODO §9.13): pre-genesis
+    `platform_config` seeds never land on a fresh DB — `schema.sql` is
+    structure-only but seeds `_migrations` with every filename, so `migrate.ts`
+    skips those migrations and their config INSERTs never run. Dev is missing
+    `feed_gravity` + the four `feed_weight_*` keys from migration 035. Masked by
+    code fallbacks today, but it silently demotes an operator dial to a
+    constant.
+  - **Still outstanding:** the A/B measurement itself (needs prod volume), and
+    the two step-3 measurements gating the step-4 glyph brake.
+
 - **2026-07-20** — **Resonance step 4: the D7 glyph, wired end to end and
   shipped dark.** (SOCIAL-PROOF-RESONANCE-ADR Sequencing step 4 / D7;
   CONSOLIDATED-TODO §9.12.)

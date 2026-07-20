@@ -157,6 +157,13 @@ services:
       # backfill and is instantly reversible. No web twin, by design.
       # Gated on prod per-protocol band-3 re-measurement (CONSOLIDATED-TODO §9.12).
       RESONANCE_GLYPH_ENABLED: ${RESONANCE_GLYPH_ENABLED:-0}
+      # D6 read-time proof blend (step 5). Off = 'scored' feeds rank on the
+      # cron-baked fi.score exactly as before; on = every item in a scored feed,
+      # native and external alike, ranks by one commensurable expression built
+      # from feed_items.resonance/ambient_pctl. Independent of the glyph brake
+      # above on purpose — ranking on resonance and displaying the band are
+      # separate claims, so the explore A/B can run with the glyph still dark.
+      RESONANCE_RANKING_ENABLED: ${RESONANCE_RANKING_ENABLED:-0}
       PLATFORM_RELAY_WS_URL: ws://strfry:7777
       PUBLIC_RELAY_URL: ${PUBLIC_RELAY_URL:-wss://all.haus/relay}
       PUBLIC_FANOUT_RELAY_URLS: ${PUBLIC_FANOUT_RELAY_URLS:-}

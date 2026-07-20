@@ -15,6 +15,12 @@ import {
   DEDUP_SUPPRESS_FILTER,
   DEDUP_PROVENANCE_LATERAL,
 } from "../../lib/dedup-sql.js";
+import {
+  resonanceRankingEnabled,
+  loadProofBlendParams,
+  feedAlphaCte,
+  proofBlendScoreSql,
+} from "../../lib/feed-rank.js";
 
 export function registerFeedItemsRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
@@ -175,6 +181,8 @@ export function decodeFeedCursor(raw: string | undefined): FeedCursor | undefine
 //     tiebreak for determinism):
 //       chronological → epoch(published_at) * weight
 //       scored        → feed_items.score * weight
+//                       (or, with RESONANCE_RANKING_ENABLED, the D6 read-time
+//                        proof blend — see lib/feed-rank.ts)
 //       random        → random() * weight  (re-rolls per query)
 //
 //   - Cursor is (effective_score, id). Random mode's cursor is mathematically
@@ -202,9 +210,28 @@ async function sourceFilteredItems(
     ? [readerId, feedId, limit, cursor.score, cursor.id]
     : [readerId, feedId, limit];
 
+  // ── D6 read-time proof blend (step 5), behind RESONANCE_RANKING_ENABLED ────
+  // When on, the 'scored' sampling mode ranks every item — native and external
+  // alike — by one commensurable expression built from the stored resonance
+  // columns, instead of the cron-baked native-only fi.score. Off, the branch
+  // below is byte-for-byte what it always was. The extra params are appended
+  // AFTER the optional cursor pair so their indices don't shift with it.
+  const blend = resonanceRankingEnabled() ? await loadProofBlendParams() : null;
+  let alphaCte = "";
+  let scoredModeExpr = `COALESCE(fi.score, 0)::float8 * m.weight`;
+  if (blend) {
+    const aExplore = params.push(blend.alphaExplore);
+    const aFollowing = params.push(blend.alphaFollowing);
+    const gravity = params.push(blend.gravity);
+    const floor = params.push(blend.floor);
+    alphaCte = `${feedAlphaCte(2, aExplore, aFollowing)},`;
+    scoredModeExpr = proofBlendScoreSql(gravity, floor);
+  }
+
   const result = await pool.query<any>(
     `
-    WITH RECURSIVE feed_mode AS (
+    WITH RECURSIVE ${alphaCte}
+    feed_mode AS (
       SELECT sampling_mode
         FROM feed_sources
         WHERE feed_id = $2 AND muted_at IS NULL
@@ -262,7 +289,7 @@ async function sourceFilteredItems(
       SELECT ${FEED_SELECT}${POST_SELECT},
         (CASE
           WHEN (SELECT sampling_mode FROM feed_mode) = 'scored'
-            THEN COALESCE(fi.score, 0)::float8 * m.weight
+            THEN ${scoredModeExpr}
           WHEN (SELECT sampling_mode FROM feed_mode) = 'random'
             THEN random() * m.weight
           ELSE EXTRACT(EPOCH FROM fi.published_at)::float8 * m.weight
@@ -324,7 +351,9 @@ async function sourceFilteredItems(
   // Emits the unified Post[] (shared feedItemToPost) so the workspace consumes the
   // same shape every other surface does — no client-side legacy-item→Post adapter.
   // Ranking stays the composed-vessel effective_score (weight × sampling_mode); the
-  // §5 hotness number is NOT applied here (FEED-RETIREMENT-PLAN Slice 6 item 4).
+  // §5 hotness number is NOT applied here (FEED-RETIREMENT-PLAN Slice 6 item 4) —
+  // in 'scored' mode the numerator is fi.score, or the D6 proof blend when
+  // RESONANCE_RANKING_ENABLED is on.
   const items = result.rows.map(feedItemToPost);
   const lastRow = result.rows[result.rows.length - 1];
   const nextCursor = lastRow
@@ -338,6 +367,14 @@ async function sourceFilteredItems(
   return { items, nextCursor };
 }
 
+// The empty-vessel fallback. Deliberately NOT converted to the D6 proof blend
+// (step 5): this path selects native items only (`item_type IN ('article',
+// 'note')`), so the commensurability argument that drives D6 — native and
+// external ranking in the same units — does not bite here, and its cursor
+// filters on the fi.score COLUMN directly, which a computed expression would
+// force into a different cursor shape for no behavioural gain. The real explore
+// surface is a `reach:explore` source inside a composed feed, which goes
+// through sourceFilteredItems above and DOES take feed_alpha_explore.
 async function placeholderExploreItems(
   readerId: string,
   rawCursor: string | undefined,

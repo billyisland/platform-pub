@@ -7289,4 +7289,5 @@ INSERT INTO public._migrations (filename) VALUES
     ('157_draft_dek_and_comments.sql'),
     ('158_resonance_baselines.sql'),
     ('159_account_status_deleted.sql'),
-    ('160_resonance_band_thresholds.sql');
+    ('160_resonance_band_thresholds.sql'),
+    ('161_feed_proof_floor.sql');

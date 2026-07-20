@@ -5,8 +5,9 @@
 `feed-ingest/src/tasks/feed-scores-refresh.ts`,
 `feed-ingest/src/tasks/engagement-baseline-refresh.ts` (new),
 `gateway/src/lib/post-mapper.ts`, `gateway/src/lib/feed-sql.ts`,
-`gateway/src/routes/feeds/items.ts`, `web/src/components/post/PostCard.tsx`,
-`web/src/lib/post/level-spec.ts`, migration 158
+`gateway/src/routes/feeds/items.ts`, `gateway/src/lib/feed-rank.ts`,
+`gateway/src/lib/platform-config.ts`, `web/src/components/post/PostCard.tsx`,
+`web/src/lib/post/level-spec.ts`, migrations 158 / 160 / 161
 **Relates to:** UNIVERSAL-POST-ADR §5 (hotness) / §6 (native vs. origin counts),
 CARD-BEHAVIOUR-ADR (glyph grammar), EXPLAIN-ADR (new card glyph ⇒ new caption)
 
@@ -263,10 +264,39 @@ resonance_norm  = clamp(resonance, 0, 4) / 4
 effective_score = proof_term / power(age_hours + 2, gravity) · weight
 ```
 
-NULL-band items (rss/email, dark nostr) take `proof_term = 0` and rank on
-recency alone within the gravity expression. `α` is a per-feed-surface
-constant in `platform_config` (`feed_alpha_following = 0.8`,
-`feed_alpha_explore = 0.4` initial). The blend of "moment for this writer"
+NULL-band items (rss/email, dark nostr) rank on recency alone within the
+gravity expression. `α` is a per-feed-surface constant in `platform_config`
+(`feed_alpha_following = 0.8`, `feed_alpha_explore = 0.4` initial).
+
+**Correction at step 5 — `proof_term` carries a floor, it is not zero.** The
+paragraph above originally said NULL-band items "take `proof_term = 0` and rank
+on recency". They cannot: `0 / (age+2)^gravity` is 0 at every age, so a
+proof term of exactly zero collapses *every* silent item onto one constant score
+and the `ORDER BY` falls through to its uuid tiebreak — arbitrary order, not
+recency. A structurally silent protocol would then rank by random uuid, strictly
+worse than the chronology D6 replaces. So the expression is
+
+```
+proof_term = GREATEST(α · resonance_norm + (1 − α) · ambient_pctl, feed_proof_floor)
+```
+
+with `feed_proof_floor` a `platform_config` dial (migration 161, initial 0.05)
+rather than a constant: its right value is only knowable from a live mixed feed,
+since it sets how far a silent-but-fresh item may outrank a resonant-but-older
+one. Silent items keep a positive numerator, order among themselves by age
+exactly as intended, and still sit below any item carrying real proof.
+
+Both stored inputs are **clamped at read time**, not trusted: `resonance` is
+unbounded above (log2 of an arbitrary ratio) and negative below (E under
+baseline), and `ambient_pctl` is a plain `NUMERIC`. Negative resonance clamps to
+0 rather than subtracting — a below-baseline post that is nonetheless in the top
+decile for its network still carries ambient proof, and a negative term would
+eat it.
+
+**α is derived from the feed's composition, not stored:** a feed carrying a
+non-muted `reach:explore` source *is* the explore surface; anything else is
+following-shaped. That keeps the surface decision derived from what the user
+actually composed, with no third place to fall out of sync. The blend of "moment for this writer"
 vs. "big on the network" thereby becomes a per-surface product decision,
 tunable post-launch without touching the estimator or bands. `fi.score` and
 `feed-scores-refresh`'s gravity write remain untouched as the flag-off
@@ -350,8 +380,29 @@ leaderboards; no absolute "score" is ever displayed.
    while off, `resonanceBand` is null on every read path and the band never
    leaves the gateway, so there is no client-side flag to keep in sync and no
    half-lit state. Scoring crons are unaffected either way.
-5. D6 read-time blend in `items.ts` behind a feature flag; A/B the explore
-   feed.
+5. D6 read-time blend in `items.ts` behind a feature flag — **shipped
+   2026-07-20**, behind the default-OFF operator brake
+   `RESONANCE_RANKING_ENABLED` (independent of the step-4 glyph brake: ranking
+   on resonance and displaying the band are separate claims with separate
+   evidence bars, so the A/B can run with the glyph dark). The SQL builders live
+   in `gateway/src/lib/feed-rank.ts` (`feedAlphaCte` + `proofBlendScoreSql`) and
+   are spliced into the `scored` CTE of `sourceFilteredItems`, replacing the
+   `fi.score` numerator for that sampling mode only; `fi.score` and
+   `feed-scores-refresh`'s gravity write are untouched as the flag-off fallback.
+   Params are appended after the optional cursor pair so their indices don't
+   shift with it. `gateway/src/lib/platform-config.ts` (new, sibling of
+   feed-ingest's) caches the dials in-process for 30s so the hottest read path
+   doesn't add a `platform_config` SELECT per feed page. Carries the
+   `feed_proof_floor` correction + read-time clamping above (migration 161).
+   The empty-vessel `placeholderExploreItems` fallback is deliberately NOT
+   converted — it selects native items only, so D6's commensurability argument
+   doesn't bite, and its cursor filters the `fi.score` column directly; the real
+   explore surface is a `reach:explore` source inside a composed feed, which
+   goes through `sourceFilteredItems` and does take `feed_alpha_explore`.
+   Covered by `gateway/tests/feed-rank-blend.test.ts` (live-DB, rolled back,
+   exercising the real builders; seven implementation mutations verified to
+   fail it). **A/B of the explore feed is still outstanding** — the flag is the
+   mechanism, the measurement is the work.
 6. Later: zap ingestion, native repost recording (activates the seeded
    weight), "resonant only" filter, financial-backing axis.
 
@@ -409,6 +460,25 @@ Three findings:
 Not retuned, for want of evidence: the native up-vote weight of 5, which D2
 flagged for revisit here. Dev has 8 scored native items and a native-note
 ambient of p50 = p90 = 0 — no signal. Deferred to prod volume.
+
+## Step-5 note (2026-07-20)
+
+Running a real 11-source dev feed through `loadFeedItemsPage` with the feed
+forced to `scored`, flag off vs. on:
+
+- **Off**, every returned item scored `effective_score = 0` — the cursor came
+  back as `scored:0:<uuid>`. That is the Context section's claim made concrete:
+  `fi.score` is only ever written for native items, so a *scored* feed of
+  external sources today is ordered by `fi_id DESC`, i.e. by uuid. Not "ranked
+  chronologically" — ranked arbitrarily.
+- **On**, scores were positive and the page shifted to items ~4 days fresher,
+  paginating cleanly onto page 2 against the computed score.
+
+So for external-source feeds in scored mode, the flag's effect is larger than
+"a re-ranking": it replaces an arbitrary order with a real one. This raises the
+value of the A/B but also means the off-state is not a meaningful control for
+"did resonance help?" — the honest comparison for external-heavy feeds is
+against *chronological*, not against the incumbent scored order.
 
 ## Open questions
 
